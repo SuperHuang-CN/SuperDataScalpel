@@ -1,0 +1,9 @@
+package cn.superhuang.data.scalpel.business.directory.domain;
+
+/** Identifies the business area whose directory tree is being managed. */
+public enum DirectoryScope {
+
+    DATA_SOURCE,
+    MODEL,
+    DATA_SERVICE
+}

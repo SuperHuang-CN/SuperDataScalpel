@@ -1,0 +1,78 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-starter-parent</artifactId>
+        <version>4.1.0</version>
+        <relativePath/>
+    </parent>
+
+    <groupId>cn.superhuang</groupId>
+    <artifactId>data-scalpel</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+    <packaging>pom</packaging>
+
+    <name>DataScalpel Backend</name>
+    <description>DataScalpel backend foundation</description>
+
+    <modules>
+        <module>data-scalpel-contracts</module>
+        <module>data-scalpel-web-core</module>
+        <module>data-scalpel-dialect</module>
+        <module>data-scalpel-business</module>
+        <module>data-scalpel-admin</module>
+    </modules>
+
+    <properties>
+        <java.version>21</java.version>
+        <maven.compiler.release>21</maven.compiler.release>
+        <maven.compiler.parameters>true</maven.compiler.parameters>
+        <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+        <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <springdoc.version>3.0.3</springdoc.version>
+        <clickhouse-jdbc.version>0.9.8</clickhouse-jdbc.version>
+        <dameng-jdbc.version>8.1.3.140</dameng-jdbc.version>
+        <kingbase-jdbc.version>8.6.1</kingbase-jdbc.version>
+        <opengauss-jdbc.version>6.0.0-og</opengauss-jdbc.version>
+    </properties>
+
+    <dependencyManagement>
+        <dependencies>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-contracts</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-web-core</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-dialect</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-business</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+        </dependencies>
+    </dependencyManagement>
+
+    <build>
+        <pluginManagement>
+            <plugins>
+                <plugin>
+                    <groupId>org.springframework.boot</groupId>
+                    <artifactId>spring-boot-maven-plugin</artifactId>
+                </plugin>
+            </plugins>
+        </pluginManagement>
+    </build>
+</project>

@@ -1,0 +1,432 @@
+import {
+  DeleteOutlined,
+  EditOutlined,
+  FilterOutlined,
+  MoreOutlined,
+  PauseCircleOutlined,
+  PlayCircleOutlined,
+  PlusOutlined,
+  ReloadOutlined,
+  SendOutlined,
+  TableOutlined,
+} from '@ant-design/icons';
+import type { TableProps } from 'antd';
+import {
+  Badge,
+  Button,
+  Card,
+  Dropdown,
+  Form,
+  Input,
+  Modal,
+  Popover,
+  Select,
+  Space,
+  Table,
+  Tag,
+  Tooltip,
+  message,
+} from 'antd';
+import { useMemo, useState } from 'react';
+import { ApiError } from '../../../shared/api/http';
+import { useDataSources } from '../../datasource';
+import {
+  DirectoryTreePanel,
+  findDirectoryDescendantIds,
+  useDirectoryTree,
+  type DirectorySelection,
+  type DirectoryTreeNode,
+} from '../../directory';
+import { useCurrentUser } from '../../system';
+import { DataModelDetailDrawer } from '../components/DataModelDetailDrawer';
+import { DataModelDrawer } from '../components/DataModelDrawer';
+import { DataModelFieldsDrawer } from '../components/DataModelFieldsDrawer';
+import {
+  useDataModelCommand,
+  useDataModels,
+  useDeleteDataModel,
+} from '../hooks/useDataModels';
+import {
+  dataModelStatusLabels,
+  physicalLocation,
+  type DataModel,
+  type DataModelFilters,
+  type DataModelStatus,
+} from '../model/dataModel';
+import { buildDataModelSearch } from '../model/dataModelSearch';
+
+const DEFAULT_PAGE_SIZE = 20;
+
+const storageRequest = {
+  search: 'storageEnabled:"true"',
+  page: 0,
+  size: 200,
+  sort: 'code',
+} as const;
+
+const statusColor: Record<DataModelStatus, string> = {
+  DRAFT: 'default',
+  PUBLISHED: 'success',
+  DISABLED: 'warning',
+};
+
+const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
+  dateStyle: 'medium',
+  timeStyle: 'medium',
+  hour12: false,
+}).format(new Date(value));
+
+export const DataModelPage = () => {
+  const [filterForm] = Form.useForm<DataModelFilters>();
+  const selectedStorageId = Form.useWatch('storageDataSourceId', filterForm);
+  const [filters, setFilters] = useState<DataModelFilters>({});
+  const [directorySelection, setDirectorySelection] = useState<DirectorySelection>(undefined);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [editingModel, setEditingModel] = useState<DataModel | null>(null);
+  const [fieldsModel, setFieldsModel] = useState<DataModel | null>(null);
+  const [detailModel, setDetailModel] = useState<DataModel | null>(null);
+  const [messageApi, messageContext] = message.useMessage();
+  const [modalApi, modalContext] = Modal.useModal();
+  const currentUserQuery = useCurrentUser();
+  const permissions = new Set(currentUserQuery.data?.permissions ?? []);
+  const canViewDirectories = permissions.has('directory.view');
+  const canManageDirectories = permissions.has('directory.manage');
+  const canCreate = permissions.has('model.create');
+  const canUpdate = permissions.has('model.update');
+  const canDelete = permissions.has('model.delete');
+  const canPublish = permissions.has('model.publish');
+  const directoriesQuery = useDirectoryTree('MODEL', canViewDirectories);
+  const storageQuery = useDataSources(storageRequest);
+  const request = useMemo(() => ({
+    search: buildDataModelSearch(filters),
+    page,
+    size,
+    sort: '-updatedAt,code',
+  }), [filters, page, size]);
+  const modelsQuery = useDataModels(request);
+  const deleteMutation = useDeleteDataModel();
+  const publishMutation = useDataModelCommand('publish');
+  const disableMutation = useDataModelCommand('disable');
+  const enableMutation = useDataModelCommand('enable');
+  const storageOptions = storageQuery.data?.content.map((source) => ({ value: source.id, label: source.name })) ?? [];
+  const advancedFilterCount = Number(Boolean(selectedStorageId));
+  const directoryTree = directoriesQuery.data;
+
+  const directoryNameById = useMemo(() => {
+    const names = new Map<string, string>();
+    const collect = (directories: DirectoryTreeNode[]) => directories.forEach((directory) => {
+      names.set(directory.id, directory.name);
+      collect(directory.children);
+    });
+    collect(directoryTree ?? []);
+    return names;
+  }, [directoryTree]);
+
+  const search = (nextFilters: DataModelFilters) => {
+    setFilters(nextFilters);
+    setPage(0);
+  };
+
+  const reset = () => {
+    filterForm.resetFields();
+    setDirectorySelection(undefined);
+    search({});
+  };
+
+  const selectDirectory = (selection: DirectorySelection) => {
+    setDirectorySelection(selection);
+    if (selection === undefined) {
+      search({ ...filters, directoryIds: undefined, uncategorized: undefined });
+    } else if (selection === null) {
+      search({ ...filters, directoryIds: undefined, uncategorized: true });
+    } else {
+      search({
+        ...filters,
+        directoryIds: findDirectoryDescendantIds(directoriesQuery.data ?? [], selection),
+        uncategorized: undefined,
+      });
+    }
+  };
+
+  const executeCommand = async (model: DataModel, command: 'publish' | 'disable' | 'enable') => {
+    try {
+      const mutation = command === 'publish'
+        ? publishMutation
+        : command === 'disable' ? disableMutation : enableMutation;
+      await mutation.mutateAsync(model.id);
+      const successMessage = command === 'publish'
+        ? '模型元数据已发布，未操作物理表'
+        : command === 'disable' ? '模型已停用' : '模型已启用';
+      messageApi.success(successMessage);
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '模型状态操作失败');
+    }
+  };
+
+  const transition = (model: DataModel) => {
+    if (model.status === 'DRAFT') {
+      modalApi.confirm({
+        title: '发布模型元数据',
+        content: '发布后字段结构将变为只读。第一版不会创建或修改物理表。',
+        okText: '发布',
+        cancelText: '取消',
+        onOk: () => executeCommand(model, 'publish'),
+      });
+      return;
+    }
+    void executeCommand(model, model.status === 'PUBLISHED' ? 'disable' : 'enable');
+  };
+
+  const remove = (model: DataModel) => {
+    modalApi.confirm({
+      title: '删除模型',
+      content: `确认删除“${model.name}”吗？只删除模型元数据，不操作物理表。`,
+      okText: '删除',
+      okButtonProps: { danger: true },
+      cancelText: '取消',
+      onOk: async () => {
+        try {
+          await deleteMutation.mutateAsync(model.id);
+          messageApi.success('模型已删除');
+        } catch (error) {
+          messageApi.error(error instanceof ApiError ? error.message : '删除模型失败');
+          throw error;
+        }
+      },
+    });
+  };
+
+  const lifecycleIcon = (status: DataModelStatus) => {
+    if (status === 'DRAFT') return <SendOutlined />;
+    if (status === 'PUBLISHED') return <PauseCircleOutlined />;
+    return <PlayCircleOutlined />;
+  };
+
+  const lifecycleLabel = (status: DataModelStatus) => {
+    if (status === 'DRAFT') return '发布';
+    if (status === 'PUBLISHED') return '停用';
+    return '启用';
+  };
+
+  const lifecycleLoading = (model: DataModel) => (
+    (model.status === 'DRAFT' && publishMutation.isPending && publishMutation.variables === model.id)
+    || (model.status === 'PUBLISHED' && disableMutation.isPending && disableMutation.variables === model.id)
+    || (model.status === 'DISABLED' && enableMutation.isPending && enableMutation.variables === model.id)
+  );
+
+  const columns: TableProps<DataModel>['columns'] = [
+    {
+      title: '模型名称',
+      dataIndex: 'name',
+      width: 180,
+      ellipsis: true,
+      render: (value: string, model: DataModel) => (
+        <Button type="link" size="small" className="data-model-name-button" onClick={() => setDetailModel(model)}>
+          {value}
+        </Button>
+      ),
+    },
+    { title: '模型编码', dataIndex: 'code', width: 170, ellipsis: true, render: (value: string) => <code>{value}</code> },
+    {
+      title: '目录',
+      dataIndex: 'directoryId',
+      width: 140,
+      ellipsis: true,
+      render: (value: string | null) => value ? directoryNameById.get(value) ?? '—' : '未分类',
+    },
+    { title: '数据存储', dataIndex: 'storageDataSourceName', width: 170, ellipsis: true },
+    {
+      title: '物理位置',
+      key: 'physicalLocation',
+      width: 250,
+      ellipsis: true,
+      render: (_value, model) => <code>{physicalLocation(model)}</code>,
+    },
+    {
+      title: '状态',
+      dataIndex: 'status',
+      width: 90,
+      render: (status: DataModelStatus) => <Tag color={statusColor[status]}>{dataModelStatusLabels[status]}</Tag>,
+    },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: (value: string) => formatDateTime(value) },
+    {
+      title: '操作',
+      key: 'actions',
+      width: 132,
+      fixed: 'right',
+      render: (_value, model) => (
+        <Space size={2}>
+          {canUpdate && (
+            <Tooltip title={model.status === 'DRAFT' ? '字段管理' : '查看字段'}>
+              <Button
+                type="text"
+                size="small"
+                icon={<TableOutlined />}
+                aria-label={`${model.status === 'DRAFT' ? '管理' : '查看'}${model.name}字段`}
+                onClick={() => setFieldsModel(model)}
+              />
+            </Tooltip>
+          )}
+          {canUpdate && (
+            <Tooltip title="修改模型">
+              <Button
+                type="text"
+                size="small"
+                icon={<EditOutlined />}
+                aria-label={`修改${model.name}`}
+                onClick={() => setEditingModel(model)}
+              />
+            </Tooltip>
+          )}
+          {canPublish && (
+            <Tooltip title={lifecycleLabel(model.status)}>
+              <Button
+                type="text"
+                size="small"
+                icon={lifecycleIcon(model.status)}
+                aria-label={`${lifecycleLabel(model.status)}${model.name}`}
+                loading={lifecycleLoading(model)}
+                onClick={() => transition(model)}
+              />
+            </Tooltip>
+          )}
+          {canDelete && (
+            <Dropdown
+              trigger={['click']}
+              menu={{
+                items: [{ key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }],
+                onClick: ({ key }) => key === 'delete' && remove(model),
+              }}
+            >
+              <Tooltip title="更多">
+                <Button type="text" size="small" icon={<MoreOutlined />} aria-label={`${model.name}更多操作`} />
+              </Tooltip>
+            </Dropdown>
+          )}
+        </Space>
+      ),
+    },
+  ];
+
+  return (
+    <>
+      {messageContext}
+      {modalContext}
+      <div className={canViewDirectories ? 'directory-management-layout' : 'page-stack'}>
+        {canViewDirectories && (
+          <DirectoryTreePanel
+            scope="MODEL"
+            tree={directoriesQuery.data ?? []}
+            loading={directoriesQuery.isFetching}
+            selection={directorySelection}
+            canManage={canManageDirectories}
+            onSelectionChange={selectDirectory}
+          />
+        )}
+        <Card className="management-card">
+          <div className="management-toolbar">
+            <Form<DataModelFilters>
+              form={filterForm}
+              layout="inline"
+              className="management-filter-form"
+              onFinish={search}
+            >
+              <Form.Item name="keyword" label="名称/编码">
+                <Input allowClear placeholder="按名称或编码筛选" className="data-model-keyword-input" />
+              </Form.Item>
+              <Form.Item name="status" label="状态">
+                <Select
+                  allowClear
+                  placeholder="全部"
+                  className="data-model-status-select"
+                  options={(Object.entries(dataModelStatusLabels) as [DataModelStatus, string][])
+                    .map(([value, label]) => ({ value, label }))}
+                />
+              </Form.Item>
+              <Popover
+                trigger="click"
+                placement="bottomLeft"
+                content={(
+                  <div className="advanced-filter-popover">
+                    <div className="advanced-filter-title">更多筛选</div>
+                    <Form.Item name="storageDataSourceId" label="数据存储">
+                      <Select
+                        allowClear
+                        showSearch
+                        optionFilterProp="label"
+                        placeholder="全部数据存储"
+                        loading={storageQuery.isFetching}
+                        options={storageOptions}
+                        className="advanced-filter-select"
+                      />
+                    </Form.Item>
+                    <div className="advanced-filter-actions">
+                      <Button
+                        type="link"
+                        size="small"
+                        htmlType="button"
+                        disabled={!advancedFilterCount}
+                        onClick={() => filterForm.setFieldValue('storageDataSourceId', undefined)}
+                      >
+                        清空更多条件
+                      </Button>
+                    </div>
+                  </div>
+                )}
+              >
+                <Badge count={advancedFilterCount} size="small" offset={[-2, 2]}>
+                  <Button icon={<FilterOutlined />}>更多</Button>
+                </Badge>
+              </Popover>
+            </Form>
+            <Space size={4} className="management-toolbar-actions">
+              <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
+              <Button onClick={reset}>重置</Button>
+              <Button icon={<ReloadOutlined />} onClick={() => void modelsQuery.refetch()}>刷新</Button>
+              {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
+            </Space>
+          </div>
+          <Table<DataModel>
+            size="small"
+            className="management-table"
+            rowKey="id"
+            columns={columns}
+            dataSource={modelsQuery.data?.content ?? []}
+            loading={modelsQuery.isFetching}
+            scroll={{ x: 1312, y: '100%' }}
+            pagination={{
+              current: page + 1,
+              pageSize: size,
+              total: modelsQuery.data?.totalElements ?? 0,
+              size: 'small',
+              placement: ['bottomEnd'],
+              hideOnSinglePage: false,
+              showSizeChanger: true,
+              showTotal: (total) => `共 ${total} 项`,
+            }}
+            onChange={(pagination) => {
+              setPage((pagination.current ?? 1) - 1);
+              setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
+            }}
+          />
+        </Card>
+      </div>
+      <DataModelDrawer
+        open={createDrawerOpen || Boolean(editingModel)}
+        model={editingModel}
+        canViewDirectories={canViewDirectories}
+        onClose={() => { setCreateDrawerOpen(false); setEditingModel(null); }}
+        onSaved={(savedModel, created) => created && setFieldsModel(savedModel)}
+      />
+      <DataModelFieldsDrawer open={Boolean(fieldsModel)} model={fieldsModel} onClose={() => setFieldsModel(null)} />
+      <DataModelDetailDrawer
+        open={Boolean(detailModel)}
+        model={detailModel}
+        directoryName={detailModel?.directoryId ? directoryNameById.get(detailModel.directoryId) : undefined}
+        onClose={() => setDetailModel(null)}
+      />
+    </>
+  );
+};

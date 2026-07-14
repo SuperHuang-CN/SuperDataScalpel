@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<settings xmlns="http://maven.apache.org/SETTINGS/1.0.0"
+          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+          xsi:schemaLocation="http://maven.apache.org/SETTINGS/1.0.0 https://maven.apache.org/xsd/settings-1.0.0.xsd">
+    <mirrors>
+        <mirror>
+            <id>aliyun-maven</id>
+            <mirrorOf>central</mirrorOf>
+            <name>Aliyun Maven mirror</name>
+            <url>https://maven.aliyun.com/repository/public</url>
+        </mirror>
+    </mirrors>
+
+    <!--
+      Add private repository servers and profiles here when needed. Keep real
+      credentials in settings-superhuang.xml only; that file is ignored by Git.
+    -->
+</settings>

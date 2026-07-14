@@ -1,0 +1,25 @@
+.DS_Store
+.idea/
+*.iml
+*.log
+
+target/
+**/target/
+
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+playwright-report/
+test-results/
+
+.env
+.env.*
+!.env.example
+
+application-local.yml
+application-local.yaml
+/start-local.sh
+
+# Maven repository credentials are local-only. Copy the tracked example first.
+/settings-superhuang.xml

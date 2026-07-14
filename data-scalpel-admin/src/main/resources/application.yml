@@ -1,0 +1,51 @@
+server:
+  port: ${DATASCALPEL_SERVER_PORT:8080}
+
+spring:
+  application:
+    name: data-scalpel-admin
+  datasource:
+    url: ${DATASCALPEL_DB_URL:jdbc:postgresql://localhost:5432/data_scalpel}
+    username: ${DATASCALPEL_DB_USERNAME:postgres}
+    password: ${DATASCALPEL_DB_PASSWORD:postgres}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+data-scalpel:
+  security:
+    admin:
+      username: ${DATASCALPEL_ADMIN_USERNAME:admin}
+      password: ${DATASCALPEL_ADMIN_PASSWORD:admin123456}
+    jwt:
+      issuer: ${DATASCALPEL_JWT_ISSUER:data-scalpel-admin}
+      secret: ${DATASCALPEL_JWT_SECRET:change-me-data-scalpel-development-secret-key-32-bytes}
+      time-to-live: ${DATASCALPEL_JWT_TTL:8h}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when_authorized
+  info:
+    env:
+      enabled: true
+
+info:
+  application:
+    name: ${spring.application.name}
+    version: '@project.version@'
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+    persist-authorization: true
+

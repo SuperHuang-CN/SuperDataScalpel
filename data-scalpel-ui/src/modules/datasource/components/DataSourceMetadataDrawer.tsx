@@ -1,0 +1,300 @@
+import { ReloadOutlined, TableOutlined } from '@ant-design/icons';
+import type { TableProps } from 'antd';
+import {
+  Alert,
+  Button,
+  Checkbox,
+  Drawer,
+  Empty,
+  Input,
+  Select,
+  Space,
+  Spin,
+  Table,
+  Tabs,
+  Tag,
+  Typography,
+} from 'antd';
+import { useMemo, useState } from 'react';
+import { ApiError } from '../../../shared/api/http';
+import {
+  useDataSourceNamespaces,
+  useDataSourceTables,
+  useTableMetadata,
+  useTablePreview,
+} from '../hooks/useDataSources';
+import type {
+  ColumnMetadata,
+  DataSource,
+  DataSourceTable,
+  IndexMetadata,
+  TableIdentifier,
+} from '../model/dataSource';
+import { defaultNamespaceKey, namespaceKey } from '../model/metadataSelection';
+
+interface DataSourceMetadataDrawerProps {
+  dataSource: DataSource | null;
+  open: boolean;
+  onClose: () => void;
+}
+
+interface PreviewRow {
+  key: number;
+  cells: unknown[];
+}
+
+const errorMessage = (error: unknown, fallback: string) => (
+  error instanceof ApiError ? error.message : fallback
+);
+
+const identifierKey = (identifier: TableIdentifier) => JSON.stringify([
+  identifier.catalog ?? '',
+  identifier.schema ?? '',
+  identifier.table,
+]);
+
+const displayCell = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return <Typography.Text type="secondary">NULL</Typography.Text>;
+  }
+  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+};
+
+export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSourceMetadataDrawerProps) => {
+  const [selectedNamespaceKey, setSelectedNamespaceKey] = useState<string>();
+  const [keyword, setKeyword] = useState('');
+  const [submittedKeyword, setSubmittedKeyword] = useState('');
+  const [includeViews, setIncludeViews] = useState(false);
+  const [selectedTableKey, setSelectedTableKey] = useState<string>();
+  const [activeTab, setActiveTab] = useState('columns');
+  const namespacesQuery = useDataSourceNamespaces(dataSource?.id, open);
+  const effectiveNamespaceKey = selectedNamespaceKey ?? defaultNamespaceKey(namespacesQuery.data ?? []);
+  const selectedNamespace = namespacesQuery.data?.find((namespace) => namespaceKey(namespace) === effectiveNamespaceKey);
+  const tableQuery = useMemo(() => ({
+    catalog: selectedNamespace?.catalog ?? undefined,
+    schema: selectedNamespace?.schema ?? undefined,
+    keyword: submittedKeyword || undefined,
+    includeViews,
+  }), [includeViews, selectedNamespace?.catalog, selectedNamespace?.schema, submittedKeyword]);
+  const tablesQuery = useDataSourceTables(dataSource?.id, tableQuery, open && Boolean(selectedNamespace));
+  const selectedTable = tablesQuery.data?.tables.find((table) => identifierKey(table.identifier) === selectedTableKey)
+    ?? tablesQuery.data?.tables[0];
+  const metadataQuery = useTableMetadata(dataSource?.id, selectedTable?.identifier, open);
+  const previewQuery = useTablePreview(dataSource?.id, selectedTable?.identifier, open && activeTab === 'preview');
+
+  const close = () => {
+    setSelectedNamespaceKey(undefined);
+    setKeyword('');
+    setSubmittedKeyword('');
+    setIncludeViews(false);
+    setSelectedTableKey(undefined);
+    setActiveTab('columns');
+    onClose();
+  };
+
+  const columnColumns: TableProps<ColumnMetadata>['columns'] = [
+    { title: '#', dataIndex: 'ordinal', width: 48 },
+    { title: '字段', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => <code>{value}</code> },
+    { title: '数据库类型', dataIndex: 'nativeType', width: 140, ellipsis: true },
+    { title: '逻辑类型', dataIndex: 'logicalType', width: 100, render: (value: string) => <Tag>{value}</Tag> },
+    {
+      title: '长度/精度',
+      key: 'size',
+      width: 100,
+      render: (_: unknown, column: ColumnMetadata) => column.precision !== null
+        ? `${column.precision}${column.scale !== null ? `,${column.scale}` : ''}`
+        : column.length ?? '—',
+    },
+    { title: '可空', dataIndex: 'nullable', width: 64, render: (value: boolean) => value ? '是' : '否' },
+    { title: '默认值', dataIndex: 'defaultValue', width: 150, ellipsis: true, render: (value: string | null) => value ?? '—' },
+    {
+      title: '特性',
+      key: 'features',
+      width: 120,
+      render: (_: unknown, column: ColumnMetadata) => (
+        <Space size={2}>
+          {column.autoIncrement && <Tag color="blue">自增</Tag>}
+          {column.generated && <Tag color="purple">生成</Tag>}
+          {!column.autoIncrement && !column.generated && '—'}
+        </Space>
+      ),
+    },
+    { title: '注释', dataIndex: 'comment', ellipsis: true, render: (value: string | null) => value ?? '—' },
+  ];
+
+  const indexColumns: TableProps<IndexMetadata>['columns'] = [
+    { title: '索引名称', dataIndex: 'name', width: 220, render: (value: string) => <code>{value}</code> },
+    { title: '唯一', dataIndex: 'unique', width: 80, render: (value: boolean) => value ? <Tag color="green">是</Tag> : '否' },
+    { title: '字段', dataIndex: 'columns', render: (columns: string[]) => columns.map((column) => <Tag key={column}>{column}</Tag>) },
+  ];
+
+  const previewRows: PreviewRow[] = (previewQuery.data?.rows ?? []).map((cells, index) => ({ key: index, cells }));
+  const previewColumns: TableProps<PreviewRow>['columns'] = (previewQuery.data?.columns ?? []).map((column, index) => ({
+    title: (
+      <div>
+        <div>{column.name}</div>
+        <Typography.Text type="secondary" className="metadata-column-type">{column.nativeType}</Typography.Text>
+      </div>
+    ),
+    dataIndex: ['cells', index],
+    width: 180,
+    ellipsis: true,
+    render: displayCell,
+  }));
+
+  const detailContent = selectedTable ? (
+    <>
+      <div className="metadata-detail-header">
+        <Space size={6}>
+          <TableOutlined />
+          <Typography.Text strong>{selectedTable.identifier.table}</Typography.Text>
+          <Tag>{selectedTable.type}</Tag>
+          {selectedTable.comment && <Typography.Text type="secondary">{selectedTable.comment}</Typography.Text>}
+        </Space>
+      </div>
+      {metadataQuery.isError && (
+        <Alert type="error" showIcon message={errorMessage(metadataQuery.error, '读取表元数据失败')} />
+      )}
+      <Tabs
+        size="small"
+        activeKey={activeTab}
+        onChange={setActiveTab}
+        items={[
+          {
+            key: 'columns',
+            label: `字段（${metadataQuery.data?.columns.length ?? 0}）`,
+            children: (
+              <Table<ColumnMetadata>
+                size="small"
+                rowKey="name"
+                columns={columnColumns}
+                dataSource={metadataQuery.data?.columns ?? []}
+                loading={metadataQuery.isFetching}
+                pagination={false}
+                scroll={{ x: 1150, y: 'calc(100vh - 245px)' }}
+              />
+            ),
+          },
+          {
+            key: 'indexes',
+            label: `索引（${metadataQuery.data?.indexes.length ?? 0}）`,
+            children: (
+              <Space direction="vertical" size={8} className="metadata-index-content">
+                {metadataQuery.data?.primaryKey && (
+                  <Alert
+                    type="info"
+                    showIcon
+                    message={`主键：${metadataQuery.data.primaryKey.name ?? '未命名'}`}
+                    description={metadataQuery.data.primaryKey.columns.join('、')}
+                  />
+                )}
+                <Table<IndexMetadata>
+                  size="small"
+                  rowKey="name"
+                  columns={indexColumns}
+                  dataSource={metadataQuery.data?.indexes ?? []}
+                  loading={metadataQuery.isFetching}
+                  pagination={false}
+                  scroll={{ y: 'calc(100vh - 315px)' }}
+                />
+              </Space>
+            ),
+          },
+          {
+            key: 'preview',
+            label: '数据预览',
+            children: previewQuery.isError ? (
+              <Alert type="error" showIcon message={errorMessage(previewQuery.error, '预览数据失败')} />
+            ) : (
+              <>
+                {previewQuery.data?.truncated && <Alert type="info" banner message="仅显示前 50 行数据" />}
+                <Table<PreviewRow>
+                  size="small"
+                  rowKey="key"
+                  columns={previewColumns}
+                  dataSource={previewRows}
+                  loading={previewQuery.isFetching}
+                  pagination={false}
+                  scroll={{ x: 'max-content', y: 'calc(100vh - 260px)' }}
+                />
+              </>
+            ),
+          },
+        ]}
+      />
+    </>
+  ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择数据表" />;
+
+  return (
+    <Drawer
+      title={dataSource ? `${dataSource.name} · 表结构` : '表结构'}
+      open={open}
+      width="86vw"
+      className="data-source-metadata-drawer"
+      onClose={close}
+      destroyOnHidden
+    >
+      <div className="metadata-toolbar">
+        <Select
+          value={effectiveNamespaceKey}
+          loading={namespacesQuery.isFetching}
+          placeholder="选择库 / Schema"
+          className="metadata-namespace-select"
+          options={(namespacesQuery.data ?? []).map((namespace) => ({
+            value: namespaceKey(namespace),
+            label: namespace.displayName,
+          }))}
+          onChange={(value) => {
+            setSelectedNamespaceKey(value);
+            setSelectedTableKey(undefined);
+          }}
+        />
+        <Input.Search
+          allowClear
+          value={keyword}
+          placeholder="筛选表名"
+          className="metadata-table-search"
+          onChange={(event) => setKeyword(event.target.value)}
+          onSearch={(value) => setSubmittedKeyword(value.trim())}
+        />
+        <Checkbox checked={includeViews} onChange={(event) => setIncludeViews(event.target.checked)}>包含视图</Checkbox>
+        <Button icon={<ReloadOutlined />} onClick={() => void tablesQuery.refetch()}>刷新</Button>
+        {tablesQuery.data?.truncated && <Typography.Text type="warning">结果已截断为 500 张表</Typography.Text>}
+      </div>
+      {namespacesQuery.isError && (
+        <Alert type="error" showIcon message={errorMessage(namespacesQuery.error, '读取库和 Schema 失败')} />
+      )}
+      {tablesQuery.isError && (
+        <Alert type="error" showIcon message={errorMessage(tablesQuery.error, '读取数据表失败')} />
+      )}
+      <div className="metadata-workspace">
+        <div className="metadata-table-browser">
+          <Spin spinning={tablesQuery.isFetching}>
+            <Table<DataSourceTable>
+              size="small"
+              showHeader={false}
+              rowKey={(table) => identifierKey(table.identifier)}
+              dataSource={tablesQuery.data?.tables ?? []}
+              pagination={false}
+              columns={[{
+                key: 'table',
+                render: (_: unknown, table: DataSourceTable) => (
+                  <div className="metadata-table-item">
+                    <Typography.Text ellipsis>{table.identifier.table}</Typography.Text>
+                    <Tag bordered={false}>{table.type === 'TABLE' ? '表' : '视图'}</Tag>
+                  </div>
+                ),
+              }]}
+              rowClassName={(table) => identifierKey(table.identifier) === (selectedTable ? identifierKey(selectedTable.identifier) : '')
+                ? 'metadata-table-row-selected'
+                : ''}
+              onRow={(table) => ({ onClick: () => setSelectedTableKey(identifierKey(table.identifier)) })}
+              scroll={{ y: 'calc(100vh - 175px)' }}
+            />
+          </Spin>
+        </div>
+        <div className="metadata-detail">{detailContent}</div>
+      </div>
+    </Drawer>
+  );
+};
