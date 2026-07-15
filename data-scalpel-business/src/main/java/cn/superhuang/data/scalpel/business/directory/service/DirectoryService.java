@@ -4,11 +4,14 @@ import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepos
 import cn.superhuang.data.scalpel.business.directory.domain.Directory;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.repository.DirectoryRepository;
+import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetRepository;
 import cn.superhuang.data.scalpel.business.directory.web.request.CreateDirectoryRequest;
 import cn.superhuang.data.scalpel.business.directory.web.request.UpdateDirectoryRequest;
 import cn.superhuang.data.scalpel.business.directory.web.response.DirectoryResponse;
 import cn.superhuang.data.scalpel.business.directory.web.response.DirectoryTreeNodeResponse;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
+import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
+import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -25,16 +28,25 @@ public class DirectoryService {
 
     private final DirectoryRepository repository;
     private final DataSourceRepository dataSourceRepository;
+    private final FileDatasetRepository fileDatasetRepository;
     private final DataModelRepository dataModelRepository;
+    private final DataTaskRepository dataTaskRepository;
+    private final DataServiceRepository dataServiceRepository;
 
     public DirectoryService(
             DirectoryRepository repository,
             DataSourceRepository dataSourceRepository,
-            DataModelRepository dataModelRepository
+            FileDatasetRepository fileDatasetRepository,
+            DataModelRepository dataModelRepository,
+            DataTaskRepository dataTaskRepository,
+            DataServiceRepository dataServiceRepository
     ) {
         this.repository = repository;
         this.dataSourceRepository = dataSourceRepository;
+        this.fileDatasetRepository = fileDatasetRepository;
         this.dataModelRepository = dataModelRepository;
+        this.dataTaskRepository = dataTaskRepository;
+        this.dataServiceRepository = dataServiceRepository;
     }
 
     @Transactional(readOnly = true)
@@ -124,8 +136,20 @@ public class DirectoryService {
             for (DataSourceRepository.DirectoryResourceCount count : dataSourceRepository.countByDirectoryIdIn(directoryIds)) {
                 counts.put(count.directoryId(), count.resourceCount());
             }
+        } else if (scope == DirectoryScope.FILE_DATASET) {
+            for (FileDatasetRepository.DirectoryResourceCount count : fileDatasetRepository.countByDirectoryIdIn(directoryIds)) {
+                counts.put(count.directoryId(), count.resourceCount());
+            }
         } else if (scope == DirectoryScope.MODEL) {
             for (DataModelRepository.DirectoryResourceCount count : dataModelRepository.countByDirectoryIdIn(directoryIds)) {
+                counts.put(count.directoryId(), count.resourceCount());
+            }
+        } else if (scope == DirectoryScope.TASK) {
+            for (DataTaskRepository.DirectoryResourceCount count : dataTaskRepository.countByDirectoryIdIn(directoryIds)) {
+                counts.put(count.directoryId(), count.resourceCount());
+            }
+        } else if (scope == DirectoryScope.DATA_SERVICE) {
+            for (DataServiceRepository.DirectoryResourceCount count : dataServiceRepository.countByDirectoryIdIn(directoryIds)) {
                 counts.put(count.directoryId(), count.resourceCount());
             }
         }
@@ -135,8 +159,11 @@ public class DirectoryService {
     private boolean hasResources(DirectoryScope scope, UUID directoryId) {
         return switch (scope) {
             case DATA_SOURCE -> dataSourceRepository.existsByDirectoryId(directoryId);
+            case FILE_DATASET -> fileDatasetRepository.existsByDirectoryId(directoryId);
             case MODEL -> dataModelRepository.existsByDirectoryId(directoryId);
-            case DATA_SERVICE -> false;
+            case TASK -> dataTaskRepository.existsByDirectoryId(directoryId);
+            case DATA_SERVICE -> dataServiceRepository.countByDirectoryIdIn(List.of(directoryId)).stream()
+                    .anyMatch(count -> count.resourceCount() > 0);
         };
     }
 

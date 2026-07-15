@@ -4,7 +4,6 @@ import java.util.List;
 
 public record DataModelDetailResponse(
         DataModelResponse model,
-        List<DataModelFieldResponse> fields,
-        boolean physicalTableManaged
+        List<DataModelFieldResponse> fields
 ) {
 }

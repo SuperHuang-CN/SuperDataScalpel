@@ -28,6 +28,7 @@ import {
   message,
 } from 'antd';
 import { useMemo, useState } from 'react';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { useDataSources } from '../../datasource';
 import {
@@ -38,9 +39,7 @@ import {
   type DirectoryTreeNode,
 } from '../../directory';
 import { useCurrentUser } from '../../system';
-import { DataModelDetailDrawer } from '../components/DataModelDetailDrawer';
 import { DataModelDrawer } from '../components/DataModelDrawer';
-import { DataModelFieldsDrawer } from '../components/DataModelFieldsDrawer';
 import {
   useDataModelCommand,
   useDataModels,
@@ -54,6 +53,7 @@ import {
   type DataModelStatus,
 } from '../model/dataModel';
 import { buildDataModelSearch } from '../model/dataModelSearch';
+import { parseDataModelListRoute, serializeDataModelListRoute } from '../model/dataModelListRoute';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -77,16 +77,17 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 }).format(new Date(value));
 
 export const DataModelPage = () => {
+  const navigate = useNavigate();
+  const [routeSearchParams, setRouteSearchParams] = useSearchParams();
+  const [initialRouteState] = useState(() => parseDataModelListRoute(routeSearchParams));
   const [filterForm] = Form.useForm<DataModelFilters>();
   const selectedStorageId = Form.useWatch('storageDataSourceId', filterForm);
-  const [filters, setFilters] = useState<DataModelFilters>({});
-  const [directorySelection, setDirectorySelection] = useState<DirectorySelection>(undefined);
-  const [page, setPage] = useState(0);
-  const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
+  const [filters, setFilters] = useState<DataModelFilters>(initialRouteState.filters);
+  const [directorySelection, setDirectorySelection] = useState<DirectorySelection>(initialRouteState.directorySelection);
+  const [page, setPage] = useState(initialRouteState.page);
+  const [size, setSize] = useState(initialRouteState.size);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [editingModel, setEditingModel] = useState<DataModel | null>(null);
-  const [fieldsModel, setFieldsModel] = useState<DataModel | null>(null);
-  const [detailModel, setDetailModel] = useState<DataModel | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const currentUserQuery = useCurrentUser();
@@ -99,12 +100,21 @@ export const DataModelPage = () => {
   const canPublish = permissions.has('model.publish');
   const directoriesQuery = useDirectoryTree('MODEL', canViewDirectories);
   const storageQuery = useDataSources(storageRequest);
+  const effectiveFilters = useMemo(() => (
+    typeof directorySelection === 'string'
+      ? {
+        ...filters,
+        directoryIds: findDirectoryDescendantIds(directoriesQuery.data ?? [], directorySelection),
+        uncategorized: undefined,
+      }
+      : filters
+  ), [directorySelection, directoriesQuery.data, filters]);
   const request = useMemo(() => ({
-    search: buildDataModelSearch(filters),
+    search: buildDataModelSearch(effectiveFilters),
     page,
     size,
     sort: '-updatedAt,code',
-  }), [filters, page, size]);
+  }), [effectiveFilters, page, size]);
   const modelsQuery = useDataModels(request);
   const deleteMutation = useDeleteDataModel();
   const publishMutation = useDataModelCommand('publish');
@@ -113,6 +123,20 @@ export const DataModelPage = () => {
   const storageOptions = storageQuery.data?.content.map((source) => ({ value: source.id, label: source.name })) ?? [];
   const advancedFilterCount = Number(Boolean(selectedStorageId));
   const directoryTree = directoriesQuery.data;
+
+  const syncRoute = (
+    nextFilters: DataModelFilters,
+    nextDirectorySelection: DirectorySelection,
+    nextPage: number,
+    nextSize: number,
+  ) => setRouteSearchParams(
+    serializeDataModelListRoute(nextFilters, nextDirectorySelection, nextPage, nextSize),
+    { replace: true },
+  );
+
+  const openDetail = (model: DataModel, tab: 'basic' | 'fields' = 'basic') => {
+    navigate(`/model/${model.id}?tab=${tab}`, { state: { fromModelList: true } });
+  };
 
   const directoryNameById = useMemo(() => {
     const names = new Map<string, string>();
@@ -124,29 +148,30 @@ export const DataModelPage = () => {
     return names;
   }, [directoryTree]);
 
-  const search = (nextFilters: DataModelFilters) => {
+  const search = (nextFilters: DataModelFilters, nextDirectorySelection = directorySelection) => {
     setFilters(nextFilters);
     setPage(0);
+    syncRoute(nextFilters, nextDirectorySelection, 0, size);
   };
 
   const reset = () => {
     filterForm.resetFields();
     setDirectorySelection(undefined);
-    search({});
+    search({}, undefined);
   };
 
   const selectDirectory = (selection: DirectorySelection) => {
     setDirectorySelection(selection);
     if (selection === undefined) {
-      search({ ...filters, directoryIds: undefined, uncategorized: undefined });
+      search({ ...filters, directoryIds: undefined, uncategorized: undefined }, selection);
     } else if (selection === null) {
-      search({ ...filters, directoryIds: undefined, uncategorized: true });
+      search({ ...filters, directoryIds: undefined, uncategorized: true }, selection);
     } else {
       search({
         ...filters,
         directoryIds: findDirectoryDescendantIds(directoriesQuery.data ?? [], selection),
         uncategorized: undefined,
-      });
+      }, selection);
     }
   };
 
@@ -157,7 +182,7 @@ export const DataModelPage = () => {
         : command === 'disable' ? disableMutation : enableMutation;
       await mutation.mutateAsync(model.id);
       const successMessage = command === 'publish'
-        ? '模型元数据已发布，未操作物理表'
+        ? '模型已发布，物理表结构校验通过'
         : command === 'disable' ? '模型已停用' : '模型已启用';
       messageApi.success(successMessage);
     } catch (error) {
@@ -168,8 +193,8 @@ export const DataModelPage = () => {
   const transition = (model: DataModel) => {
     if (model.status === 'DRAFT') {
       modalApi.confirm({
-        title: '发布模型元数据',
-        content: '发布后字段结构将变为只读。第一版不会创建或修改物理表。',
+        title: '发布模型',
+        content: '发布前会实时检查物理表是否存在且与模型字段一致；发布后字段结构将变为只读。',
         okText: '发布',
         cancelText: '取消',
         onOk: () => executeCommand(model, 'publish'),
@@ -223,7 +248,7 @@ export const DataModelPage = () => {
       width: 180,
       ellipsis: true,
       render: (value: string, model: DataModel) => (
-        <Button type="link" size="small" className="data-model-name-button" onClick={() => setDetailModel(model)}>
+        <Button type="link" size="small" className="data-model-name-button" onClick={() => openDetail(model)}>
           {value}
         </Button>
       ),
@@ -265,7 +290,7 @@ export const DataModelPage = () => {
                 size="small"
                 icon={<TableOutlined />}
                 aria-label={`${model.status === 'DRAFT' ? '管理' : '查看'}${model.name}字段`}
-                onClick={() => setFieldsModel(model)}
+                onClick={() => openDetail(model, 'fields')}
               />
             </Tooltip>
           )}
@@ -331,6 +356,7 @@ export const DataModelPage = () => {
               form={filterForm}
               layout="inline"
               className="management-filter-form"
+              initialValues={initialRouteState.filters}
               onFinish={search}
             >
               <Form.Item name="keyword" label="名称/编码">
@@ -407,8 +433,11 @@ export const DataModelPage = () => {
               showTotal: (total) => `共 ${total} 项`,
             }}
             onChange={(pagination) => {
-              setPage((pagination.current ?? 1) - 1);
-              setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
+              const nextPage = (pagination.current ?? 1) - 1;
+              const nextSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
+              setPage(nextPage);
+              setSize(nextSize);
+              syncRoute(filters, directorySelection, nextPage, nextSize);
             }}
           />
         </Card>
@@ -418,14 +447,7 @@ export const DataModelPage = () => {
         model={editingModel}
         canViewDirectories={canViewDirectories}
         onClose={() => { setCreateDrawerOpen(false); setEditingModel(null); }}
-        onSaved={(savedModel, created) => created && setFieldsModel(savedModel)}
-      />
-      <DataModelFieldsDrawer open={Boolean(fieldsModel)} model={fieldsModel} onClose={() => setFieldsModel(null)} />
-      <DataModelDetailDrawer
-        open={Boolean(detailModel)}
-        model={detailModel}
-        directoryName={detailModel?.directoryId ? directoryNameById.get(detailModel.directoryId) : undefined}
-        onClose={() => setDetailModel(null)}
+        onSaved={(savedModel, created) => created && navigate(`/model/${savedModel.id}?tab=fields`, { state: { fromModelList: true } })}
       />
     </>
   );

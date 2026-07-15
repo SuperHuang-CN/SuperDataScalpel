@@ -4,6 +4,10 @@ server:
 spring:
   application:
     name: data-scalpel-admin
+  servlet:
+    multipart:
+      max-file-size: ${DATASCALPEL_FILE_MAX_SIZE:1GB}
+      max-request-size: ${DATASCALPEL_FILE_MAX_REQUEST_SIZE:1GB}
   datasource:
     url: ${DATASCALPEL_DB_URL:jdbc:postgresql://localhost:5432/data_scalpel}
     username: ${DATASCALPEL_DB_USERNAME:postgres}
@@ -18,6 +22,23 @@ spring:
           time_zone: UTC
 
 data-scalpel:
+  file-parsing:
+    temporary-directory: ${DATASCALPEL_FILE_PARSING_TEMPORARY_DIRECTORY:${java.io.tmpdir}/data-scalpel/file-parsing}
+    max-sampled-uncompressed-size: ${DATASCALPEL_FILE_PARSING_MAX_SAMPLED_UNCOMPRESSED_SIZE:64MB}
+    max-materialized-size: ${DATASCALPEL_FILE_PARSING_MAX_MATERIALIZED_SIZE:1GB}
+    orphan-retention: ${DATASCALPEL_FILE_PARSING_ORPHAN_RETENTION:24h}
+  service-engine:
+    management-token: ${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:change-me-engine-management-token}
+  file-storage:
+    s3:
+      region: ${DATASCALPEL_FILE_STORAGE_REGION:us-east-1}
+      bucket: ${DATASCALPEL_FILE_STORAGE_BUCKET:datascalpel}
+      root-prefix: ${DATASCALPEL_FILE_STORAGE_ROOT_PREFIX:data-scalpel}
+      path-style-access: ${DATASCALPEL_FILE_STORAGE_PATH_STYLE_ACCESS:true}
+  task-run:
+    executor:
+      concurrency: ${DATASCALPEL_TASK_RUN_CONCURRENCY:4}
+      queue-capacity: ${DATASCALPEL_TASK_RUN_QUEUE_CAPACITY:100}
   security:
     admin:
       username: ${DATASCALPEL_ADMIN_USERNAME:admin}
@@ -48,4 +69,3 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     persist-authorization: true
-

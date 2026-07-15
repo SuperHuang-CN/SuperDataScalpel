@@ -2,7 +2,8 @@ package cn.superhuang.data.scalpel.business.datasource.web.response;
 
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
-import cn.superhuang.data.scalpel.business.datasource.domain.DatabaseType;
+import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceConnectionKind;
+import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 
 import java.time.Instant;
 import java.util.Set;
@@ -14,7 +15,8 @@ public record DataSourceResponse(
         String name,
         UUID directoryId,
         Set<DataSourcePurpose> purposes,
-        DatabaseType databaseType,
+        DataSourceType type,
+        DataSourceConnectionKind connectionKind,
         boolean enabled,
         String description,
         DataSourceConnectionResponse connection,
@@ -28,12 +30,21 @@ public record DataSourceResponse(
                 dataSource.getName(),
                 dataSource.getDirectoryId(),
                 dataSource.getPurposes(),
-                dataSource.getDatabaseType(),
+                dataSource.getType(),
+                dataSource.getType().connectionKind(),
                 dataSource.isEnabled(),
                 dataSource.getDescription(),
-                DataSourceConnectionResponse.from(dataSource.getConnection()),
+                connectionResponse(dataSource),
                 dataSource.getCreatedAt(),
                 dataSource.getUpdatedAt()
         );
+    }
+
+    private static DataSourceConnectionResponse connectionResponse(DataSource dataSource) {
+        return switch (dataSource.getType().connectionKind()) {
+            case JDBC -> JdbcDataSourceConnectionResponse.from(dataSource.getConnection());
+            case KAFKA -> KafkaDataSourceConnectionResponse.from(dataSource.getConnection());
+            case S3 -> S3DataSourceConnectionResponse.from(dataSource.getConnection());
+        };
     }
 }

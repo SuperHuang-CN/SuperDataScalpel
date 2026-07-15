@@ -1,7 +1,7 @@
 package cn.superhuang.data.scalpel.business.datasource.web.resource;
 
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceRuntimeService;
-import cn.superhuang.data.scalpel.business.datasource.web.response.DatabaseTypeResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceTypeResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -25,7 +25,7 @@ public class DataSourceTypeResource {
     @GetMapping
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询支持的数据库类型和连接能力")
-    public List<DatabaseTypeResponse> list() {
-        return service.databaseTypes();
+    public List<DataSourceTypeResponse> list() {
+        return service.dataSourceTypes();
     }
 }

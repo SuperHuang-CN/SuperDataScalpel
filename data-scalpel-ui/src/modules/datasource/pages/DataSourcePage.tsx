@@ -17,9 +17,9 @@ import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type 
 import { useCurrentUser } from '../../system';
 import { DataSourceDrawer } from '../components/DataSourceDrawer';
 import { DataSourceMetadataDrawer } from '../components/DataSourceMetadataDrawer';
-import { useDatabaseTypes, useDataSources, useDeleteDataSource, useTestSavedDataSourceConnection } from '../hooks/useDataSources';
+import { useDataSourceTypes, useDataSources, useDeleteDataSource, useTestSavedDataSourceConnection } from '../hooks/useDataSources';
 import {
-  databaseTypeLabels,
+  dataSourceTypeLabels,
   dataSourcePurposeLabels,
   type DataSource,
   type DataSourceFilters,
@@ -59,7 +59,7 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 
 export const DataSourcePage = () => {
   const [filterForm] = Form.useForm<DataSourceFilters>();
-  const selectedDatabaseType = Form.useWatch('databaseType', filterForm);
+  const selectedType = Form.useWatch('type', filterForm);
   const selectedEnabled = Form.useWatch('enabled', filterForm);
   const [filters, setFilters] = useState<DataSourceFilters>({});
   const [directorySelection, setDirectorySelection] = useState<DirectorySelection>(undefined);
@@ -79,7 +79,7 @@ export const DataSourcePage = () => {
   const canTest = permissions.has('datasource.test');
   const canReadMetadata = permissions.has('datasource.metadata');
   const directoriesQuery = useDirectoryTree('DATA_SOURCE', canViewDirectories);
-  const databaseTypesQuery = useDatabaseTypes();
+  const dataSourceTypesQuery = useDataSourceTypes();
   const request = useMemo(() => ({
     search: buildDataSourceSearch(filters),
     page,
@@ -89,12 +89,13 @@ export const DataSourcePage = () => {
   const dataSourcesQuery = useDataSources(request);
   const deleteMutation = useDeleteDataSource();
   const testMutation = useTestSavedDataSourceConnection();
-  const databaseTypeOptions = databaseTypesQuery.data?.map((definition) => ({
+  const dataSourceTypeOptions = dataSourceTypesQuery.data?.map((definition) => ({
     value: definition.id,
     label: definition.displayName,
-  })) ?? Object.entries(databaseTypeLabels).map(([value, label]) => ({ value, label }));
-  const databaseTypeName = new Map(databaseTypesQuery.data?.map((definition) => [definition.id, definition.displayName]) ?? []);
-  const advancedFilterCount = Number(Boolean(selectedDatabaseType)) + Number(typeof selectedEnabled === 'boolean');
+  })) ?? Object.entries(dataSourceTypeLabels).map(([value, label]) => ({ value, label }));
+  const dataSourceTypeName = new Map(dataSourceTypesQuery.data?.map((definition) => [definition.id, definition.displayName]) ?? []);
+  const dataSourceTypeDefinition = new Map(dataSourceTypesQuery.data?.map((definition) => [definition.id, definition]) ?? []);
+  const advancedFilterCount = Number(Boolean(selectedType)) + Number(typeof selectedEnabled === 'boolean');
   const search = (nextFilters: DataSourceFilters) => {
     setFilters(nextFilters);
     setPage(0);
@@ -107,7 +108,7 @@ export const DataSourcePage = () => {
   };
 
   const clearAdvancedFilters = () => {
-    filterForm.setFieldsValue({ databaseType: undefined, enabled: undefined });
+    filterForm.setFieldsValue({ type: undefined, enabled: undefined });
   };
 
   const selectDirectory = (selection: DirectorySelection) => {
@@ -176,14 +177,33 @@ export const DataSourcePage = () => {
         </Space>
       ),
     },
-    { title: '数据库类型', dataIndex: 'databaseType', width: 130, render: (value: DataSource['databaseType']) => databaseTypeName.get(value) ?? databaseTypeLabels[value] },
+    { title: '连接类型', dataIndex: 'type', width: 150, render: (value: DataSource['type']) => dataSourceTypeName.get(value) ?? dataSourceTypeLabels[value] },
     {
       title: '地址',
       key: 'endpoint',
       width: 200,
-      render: (_: unknown, dataSource: DataSource) => `${dataSource.connection.host}:${dataSource.connection.port}`,
+      render: (_: unknown, dataSource: DataSource) => {
+        switch (dataSource.connection.kind) {
+          case 'JDBC': return `${dataSource.connection.host}:${dataSource.connection.port}`;
+          case 'KAFKA': return dataSource.connection.bootstrapServers;
+          case 'S3': return dataSource.connection.endpoint;
+        }
+      },
     },
-    { title: '数据库/服务名', dataIndex: ['connection', 'databaseName'], width: 180, ellipsis: true },
+    {
+      title: '目标',
+      key: 'target',
+      width: 180,
+      ellipsis: true,
+      render: (_: unknown, dataSource: DataSource) => {
+        switch (dataSource.connection.kind) {
+          case 'JDBC': return dataSource.connection.databaseName;
+          case 'KAFKA': return 'Topic 在任务中选择';
+          case 'S3': return dataSource.connection.rootPrefix
+            ? `${dataSource.connection.bucket}/${dataSource.connection.rootPrefix}` : dataSource.connection.bucket;
+        }
+      },
+    },
     {
       title: '状态',
       dataIndex: 'enabled',
@@ -207,7 +227,7 @@ export const DataSourcePage = () => {
               onClick={() => setEditingDataSource(dataSource)}
             />
           </Tooltip>}
-          {canTest && <Tooltip title="测试连接">
+          {canTest && dataSource.connectionKind === 'JDBC' && dataSourceTypeDefinition.get(dataSource.type)?.connectionTestAvailable && <Tooltip title="测试连接">
             <Button
               type="text"
               size="small"
@@ -217,7 +237,7 @@ export const DataSourcePage = () => {
               onClick={() => void testConnection(dataSource)}
             />
           </Tooltip>}
-          {canReadMetadata && <Tooltip title="表结构">
+          {canReadMetadata && dataSource.connectionKind === 'JDBC' && <Tooltip title="表结构">
             <Button
               type="text"
               size="small"
@@ -268,8 +288,8 @@ export const DataSourcePage = () => {
                 content={(
                   <div className="advanced-filter-popover">
                     <div className="advanced-filter-title">更多筛选</div>
-                    <Form.Item name="databaseType" label="数据库类型">
-                      <Select allowClear placeholder="全部数据库" options={databaseTypeOptions} className="advanced-filter-select" />
+                    <Form.Item name="type" label="连接类型">
+                      <Select allowClear placeholder="全部类型" options={dataSourceTypeOptions} className="advanced-filter-select" />
                     </Form.Item>
                     <Form.Item name="enabled" label="状态">
                       <Select

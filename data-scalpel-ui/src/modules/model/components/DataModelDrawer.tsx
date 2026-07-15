@@ -1,10 +1,22 @@
-import { Alert, Button, Col, Drawer, Form, Input, Row, Select, Space, TreeSelect, message } from 'antd';
-import { useEffect, useMemo } from 'react';
+import type { TableProps } from 'antd';
+import { Alert, Button, Col, Drawer, Form, Input, Radio, Row, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { useDatabaseTypes, useDataSources } from '../../datasource';
+import {
+  useDataSourceNamespaces,
+  useDataSourceTables,
+  useDataSources,
+} from '../../datasource';
 import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
-import { useCreateDataModel, useUpdateDataModel } from '../hooks/useDataModels';
-import type { CreateDataModelRequest, DataModel, UpdateDataModelRequest } from '../model/dataModel';
+import { useCreateDataModel, useExternalTableImportPreview, useUpdateDataModel } from '../hooks/useDataModels';
+import {
+  dataModelFieldTypeLabels,
+  type CreateDataModelRequest,
+  type DataModel,
+  type ExternalTableImportColumn,
+  type PhysicalTableMode,
+  type UpdateDataModelRequest,
+} from '../model/dataModel';
 
 interface DataModelDrawerProps {
   open: boolean;
@@ -19,9 +31,9 @@ interface DataModelFormValues {
   name: string;
   directoryId?: string;
   storageDataSourceId: string;
-  catalogName?: string;
-  schemaName?: string;
   physicalTableName: string;
+  physicalTableMode: PhysicalTableMode;
+  clickHouseOrderByColumns?: string[];
   description?: string;
 }
 
@@ -32,23 +44,117 @@ const storageRequest = {
   sort: 'code',
 } as const;
 
+const lowerIdentifier = (value: string, maxLength: number) => (
+  new RegExp(`^[a-z][a-z0-9_]{0,${maxLength - 1}}$`).test(value)
+);
+
+const externalTypeLabel = (column: ExternalTableImportColumn) => {
+  if (!column.platformType) return '不支持';
+  const label = dataModelFieldTypeLabels[column.platformType];
+  if (column.platformType === 'STRING') return column.length ? `${label}(${column.length})` : `${label}(无上限)`;
+  if (column.platformType === 'DECIMAL') return `${label}(${column.precision},${column.scale})`;
+  return label;
+};
+
+const externalColumnColumns: TableProps<ExternalTableImportColumn>['columns'] = [
+  { title: '字段', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => <code>{value}</code> },
+  { title: '原生类型', dataIndex: 'nativeType', width: 160, ellipsis: true, render: (value: string) => <code>{value}</code> },
+  {
+    title: '导入类型',
+    key: 'targetType',
+    width: 120,
+    render: (_value, column) => {
+      return column.importable
+        ? externalTypeLabel(column)
+        : <Typography.Text type="danger">{externalTypeLabel(column)}</Typography.Text>;
+    },
+  },
+  {
+    title: '主键',
+    key: 'primaryKey',
+    width: 72,
+    render: (_value, column) => column.primaryKey ? '是' : '—',
+  },
+  {
+    title: '映射',
+    key: 'mappingQuality',
+    width: 100,
+    render: (_value, column) => (
+      <Tooltip title={column.message ?? undefined}>
+        <Tag color={column.mappingQuality === 'EXACT' ? 'success' : column.importable ? 'warning' : 'error'}>
+          {column.mappingQuality === 'EXACT' ? '精确' : column.mappingQuality === 'NORMALIZED' ? '已归一化' : '不可导入'}
+        </Tag>
+      </Tooltip>
+    ),
+  },
+  { title: '可空', dataIndex: 'nullable', width: 72, render: (value: boolean) => value ? '是' : '否' },
+  { title: '说明', dataIndex: 'comment', width: 220, ellipsis: true, render: (value: string | null) => value || '—' },
+];
+
 export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSaved }: DataModelDrawerProps) => {
   const [form] = Form.useForm<DataModelFormValues>();
   const [messageApi, messageContext] = message.useMessage();
+  const [externalTableKeyword, setExternalTableKeyword] = useState('');
   const createMutation = useCreateDataModel();
   const updateMutation = useUpdateDataModel();
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
   const storageQuery = useDataSources(storageRequest);
-  const databaseTypesQuery = useDatabaseTypes();
   const selectedStorageId = Form.useWatch('storageDataSourceId', form);
+  const selectedPhysicalTableMode = Form.useWatch('physicalTableMode', form);
+  const selectedPhysicalTableName = Form.useWatch('physicalTableName', form);
   const selectedStorage = storageQuery.data?.content.find((source) => source.id === selectedStorageId);
-  const databaseDefinition = databaseTypesQuery.data?.find((item) => item.id === selectedStorage?.databaseType);
   const editing = Boolean(model);
   const physicalDefinitionLocked = model?.status !== undefined && model.status !== 'DRAFT';
+  const externalTableMode = selectedPhysicalTableMode === 'EXTERNAL';
+  const clickHouseManaged = selectedStorage?.type === 'CLICKHOUSE' && selectedPhysicalTableMode === 'MANAGED';
+  const namespacesQuery = useDataSourceNamespaces(
+    selectedStorageId,
+    open && externalTableMode && !physicalDefinitionLocked,
+  );
+  const selectedNamespace = namespacesQuery.data?.find((namespace) => namespace.defaultNamespace)
+    ?? namespacesQuery.data?.[0];
+  const externalTableQuery = useMemo(() => ({
+    ...(selectedNamespace?.catalog ? { catalog: selectedNamespace.catalog } : {}),
+    ...(selectedNamespace?.schema ? { schema: selectedNamespace.schema } : {}),
+    ...(externalTableKeyword.trim() ? { keyword: externalTableKeyword.trim() } : {}),
+    includeViews: false,
+  }), [externalTableKeyword, selectedNamespace]);
+  const tablesQuery = useDataSourceTables(
+    selectedStorageId,
+    externalTableQuery,
+    open && externalTableMode && !physicalDefinitionLocked && Boolean(selectedNamespace),
+  );
+  const selectedExternalTable = tablesQuery.data?.tables.find((table) => (
+    table.identifier.table.toLowerCase() === selectedPhysicalTableName?.toLowerCase()
+  ));
+  const externalPreviewQuery = useExternalTableImportPreview(
+    selectedStorageId,
+    selectedExternalTable?.identifier.table,
+    open && externalTableMode && Boolean(selectedExternalTable)
+      && lowerIdentifier(selectedExternalTable?.identifier.table ?? '', 128),
+  );
+  const externalTableIssues = useMemo(() => (
+    [
+      selectedExternalTable && !lowerIdentifier(selectedExternalTable.identifier.table, 128)
+        ? `${selectedExternalTable.identifier.table} 的表名不符合当前模型规则（仅支持小写字母、数字和下划线）`
+        : null,
+      ...(externalPreviewQuery.data?.issues ?? []),
+    ].filter((issue): issue is string => Boolean(issue))
+  ), [externalPreviewQuery.data, selectedExternalTable]);
   const storageOptions = useMemo(() => storageQuery.data?.content.map((source) => ({
     value: source.id,
-    label: `${source.name}（${source.connection.databaseName}）`,
+    label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : '不支持的存储类型'}）`,
   })) ?? [], [storageQuery.data]);
+  const externalTableOptions = useMemo(() => tablesQuery.data?.tables.map((table) => ({
+    value: table.identifier.table,
+    label: table.comment ? `${table.identifier.table}（${table.comment}）` : table.identifier.table,
+  })) ?? [], [tablesQuery.data]);
+  const externalTableImportBlocked = externalTableMode && (
+    !selectedExternalTable
+    || externalPreviewQuery.isFetching
+    || externalPreviewQuery.isError
+    || !externalPreviewQuery.data?.importable
+  );
 
   useEffect(() => {
     if (!open) return;
@@ -59,25 +165,17 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
         name: model.name,
         directoryId: model.directoryId ?? undefined,
         storageDataSourceId: model.storageDataSourceId,
-        catalogName: model.catalogName ?? undefined,
-        schemaName: model.schemaName ?? undefined,
         physicalTableName: model.physicalTableName,
+        physicalTableMode: model.physicalTableMode,
+        clickHouseOrderByColumns: model.clickHouseOrderByColumns,
         description: model.description ?? undefined,
       });
     }
   }, [form, model, open]);
 
-  const applyStorageDefaults = (storageId: string) => {
-    const storage = storageQuery.data?.content.find((source) => source.id === storageId);
-    const definition = databaseTypesQuery.data?.find((item) => item.id === storage?.databaseType);
-    if (!storage || !definition) return;
-
-    form.setFieldValue('catalogName', definition.namespaceMode === 'SCHEMA'
-      ? undefined
-      : storage.connection.databaseName);
-    form.setFieldValue('schemaName', definition.namespaceMode === 'CATALOG'
-      ? undefined
-      : storage.connection.schemaName ?? definition.defaultSchema ?? undefined);
+  const closeDrawer = () => {
+    setExternalTableKeyword('');
+    onClose();
   };
 
   const submit = async (values: DataModelFormValues) => {
@@ -86,9 +184,9 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
         name: values.name,
         directoryId: values.directoryId,
         storageDataSourceId: values.storageDataSourceId,
-        catalogName: values.catalogName,
-        schemaName: values.schemaName,
         physicalTableName: values.physicalTableName,
+        physicalTableMode: values.physicalTableMode,
+        clickHouseOrderByColumns: clickHouseManaged ? values.clickHouseOrderByColumns ?? [] : [],
         description: values.description,
       };
       if (model) {
@@ -99,17 +197,36 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
         if (!values.code) return;
         const createRequest: CreateDataModelRequest = { ...request, code: values.code };
         const detail = await createMutation.mutateAsync(createRequest);
-        messageApi.success('模型已创建，请继续配置字段');
+        messageApi.success(values.physicalTableMode === 'EXTERNAL'
+          ? `模型已创建，已导入 ${detail.fields.length} 个字段`
+          : '模型已创建，请继续配置字段');
         onSaved(detail.model, true);
       }
-      onClose();
+      closeDrawer();
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '保存模型失败');
     }
   };
 
   const fillPhysicalTableName = () => {
-    if (!editing && !form.getFieldValue('physicalTableName')) {
+    if (!editing && selectedPhysicalTableMode !== 'EXTERNAL' && !form.getFieldValue('physicalTableName')) {
+      form.setFieldValue('physicalTableName', form.getFieldValue('code'));
+    }
+  };
+
+  const selectStorage = () => {
+    setExternalTableKeyword('');
+    if (externalTableMode) {
+      form.setFieldValue('physicalTableName', undefined);
+    }
+  };
+
+  const selectPhysicalTableMode = (mode: PhysicalTableMode) => {
+    setExternalTableKeyword('');
+    form.setFieldValue('clickHouseOrderByColumns', []);
+    if (mode === 'EXTERNAL') {
+      form.setFieldValue('physicalTableName', undefined);
+    } else if (!editing && !form.getFieldValue('physicalTableName')) {
       form.setFieldValue('physicalTableName', form.getFieldValue('code'));
     }
   };
@@ -122,14 +239,15 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
         open={open}
         size="large"
         className="data-model-drawer"
-        onClose={onClose}
+        onClose={closeDrawer}
         destroyOnHidden
         footer={(
           <Space>
-            <Button onClick={onClose}>取消</Button>
+            <Button onClick={closeDrawer}>取消</Button>
             <Button
               type="primary"
               loading={createMutation.isPending || updateMutation.isPending}
+              disabled={externalTableImportBlocked}
               onClick={() => form.submit()}
             >
               保存
@@ -141,9 +259,16 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
           type="info"
           showIcon
           className="data-model-mode-alert"
-          title="第一版为元数据模式：发布不会创建、修改或删除物理表。"
+          title={externalTableMode
+            ? '选择已有表后会读取并导入字段；发布前仍会实时校验，系统不会修改该表。'
+            : '物理表会在发布前实时校验；已存在的受管物理表通过变更计划修改，不直接保存字段定义。'}
         />
-        <Form<DataModelFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
+        <Form<DataModelFormValues>
+          form={form}
+          layout="vertical"
+          initialValues={{ physicalTableMode: 'MANAGED' }}
+          onFinish={(values) => void submit(values)}
+        >
           <Row gutter={12}>
             <Col span={12}>
               <Form.Item
@@ -191,7 +316,7 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
                   disabled={physicalDefinitionLocked}
                   options={storageOptions}
                   placeholder="选择具有数据存储用途的连接"
-                  onChange={applyStorageDefaults}
+                  onChange={selectStorage}
                 />
               </Form.Item>
             </Col>
@@ -199,32 +324,111 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
 
           <div className="data-source-form-section-title">物理位置定义</div>
           <Row gutter={12}>
-            {databaseDefinition?.namespaceMode !== 'SCHEMA' && (
-              <Col span={12}>
-                <Form.Item label="数据库/Catalog" name="catalogName" rules={[{ max: 128 }]}>
-                  <Input disabled={physicalDefinitionLocked} placeholder="可选" />
-                </Form.Item>
-              </Col>
-            )}
-            {databaseDefinition?.namespaceMode !== 'CATALOG' && (
-              <Col span={12}>
-                <Form.Item label="Schema" name="schemaName" rules={[{ max: 128 }]}>
-                  <Input disabled={physicalDefinitionLocked} placeholder="可选" />
-                </Form.Item>
-              </Col>
-            )}
             <Col span={12}>
               <Form.Item
-                label="物理表名"
-                name="physicalTableName"
-                rules={[
-                  { required: true, whitespace: true, message: '请输入物理表名' },
-                  { pattern: /^[A-Za-z][A-Za-z0-9_]{0,127}$/, message: '表名以字母开头，只能包含字母、数字和下划线' },
-                ]}
+                label="物理表来源"
+                name="physicalTableMode"
+                rules={[{ required: true, message: '请选择物理表来源' }]}
               >
-                <Input disabled={physicalDefinitionLocked} placeholder="默认与模型编码一致" />
+                <Radio.Group
+                  disabled={physicalDefinitionLocked}
+                  onChange={(event) => selectPhysicalTableMode(event.target.value as PhysicalTableMode)}
+                >
+                  <Radio value="MANAGED">新建物理表</Radio>
+                  <Radio value="EXTERNAL">绑定已有表</Radio>
+                </Radio.Group>
               </Form.Item>
             </Col>
+            <Col span={12}>
+              {externalTableMode ? (
+                <Form.Item
+                  label="已有物理表"
+                  name="physicalTableName"
+                  rules={[{ required: true, message: '请选择已有物理表' }]}
+                  extra={selectedNamespace ? `仅显示数据存储默认命名空间：${selectedNamespace.displayName}` : undefined}
+                >
+                  <Select
+                    allowClear
+                    showSearch
+                    filterOption={false}
+                    loading={namespacesQuery.isFetching || tablesQuery.isFetching}
+                    disabled={physicalDefinitionLocked || !selectedStorageId || namespacesQuery.isError || tablesQuery.isError}
+                    options={externalTableOptions}
+                    placeholder="选择要绑定的物理表"
+                    notFoundContent={tablesQuery.data?.truncated ? '结果已截断，请调整数据源范围' : '未找到可绑定的物理表'}
+                    onSearch={setExternalTableKeyword}
+                    onClear={() => setExternalTableKeyword('')}
+                  />
+                </Form.Item>
+              ) : (
+                <Form.Item
+                  label="物理表名"
+                  name="physicalTableName"
+                  rules={[
+                    { required: true, whitespace: true, message: '请输入物理表名' },
+                    { pattern: /^[A-Za-z][A-Za-z0-9_]{0,127}$/, message: '表名以字母开头，只能包含字母、数字和下划线' },
+                  ]}
+                >
+                  <Input disabled={physicalDefinitionLocked} placeholder="默认与模型编码一致" />
+                </Form.Item>
+              )}
+            </Col>
+            {externalTableMode && (
+              <Col span={24}>
+                {namespacesQuery.isError && <Alert showIcon type="error" title="读取数据存储命名空间失败，无法选择已有表" />}
+                {tablesQuery.isError && <Alert showIcon type="error" title="读取已有表列表失败，请检查数据存储连接" />}
+                {tablesQuery.data?.truncated && (
+                  <Alert showIcon type="warning" title="可选表已截断为前 500 项，请在数据源管理中缩小连接范围后重试" />
+                )}
+                {externalPreviewQuery.isFetching && <Alert showIcon type="info" title="正在读取并映射外部表字段…" />}
+                {externalPreviewQuery.isError && <Alert showIcon type="error" title="读取外部表导入预览失败，当前不能创建模型" />}
+                {externalTableIssues.length > 0 && (
+                  <Alert
+                    showIcon
+                    type="warning"
+                    title="该表包含当前模型无法准确表达的字段，不能导入"
+                    description={externalTableIssues.join('；')}
+                  />
+                )}
+                {externalPreviewQuery.data && (
+                  <Table<ExternalTableImportColumn>
+                    size="small"
+                    className="external-table-field-preview"
+                    rowKey={(column) => column.name}
+                    columns={externalColumnColumns}
+                    dataSource={externalPreviewQuery.data.columns}
+                    pagination={false}
+                    scroll={{ x: 860, y: 180 }}
+                  />
+                )}
+              </Col>
+            )}
+            {clickHouseManaged && (
+              <Col span={24}>
+                <Form.Item
+                  label="ClickHouse 排序键"
+                  name="clickHouseOrderByColumns"
+                  extra="按字段编码顺序输入；它决定单机 MergeTree 的 ORDER BY，不是关系型唯一主键。"
+                  rules={[
+                    { max: 16, type: 'array', message: '最多配置 16 个排序键字段' },
+                    {
+                      validator: async (_rule, value: string[] | undefined) => {
+                        if (!value?.every((item) => /^[A-Za-z][A-Za-z0-9_]{0,63}$/.test(item))) {
+                          throw new Error('排序键必须是合法字段编码');
+                        }
+                      },
+                    },
+                  ]}
+                >
+                  <Select
+                    mode="tags"
+                    tokenSeparators={[',']}
+                    disabled={physicalDefinitionLocked}
+                    placeholder="如：event_time, event_id（可留空，使用 tuple()）"
+                  />
+                </Form.Item>
+              </Col>
+            )}
             <Col span={12}>
               <Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}>
                 <Input placeholder="可选" />

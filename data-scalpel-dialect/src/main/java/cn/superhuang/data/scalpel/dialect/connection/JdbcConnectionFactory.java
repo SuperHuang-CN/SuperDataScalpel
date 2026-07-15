@@ -8,7 +8,20 @@ public final class JdbcConnectionFactory {
 
     public Connection open(JdbcConnectionSpec spec) throws SQLException, ClassNotFoundException {
         Class.forName(spec.driverClassName());
-        return DriverManager.getConnection(spec.jdbcUrl(), spec.properties());
+        Connection connection = DriverManager.getConnection(spec.jdbcUrl(), spec.properties());
+        try {
+            if (spec.schemaName() != null) {
+                connection.setSchema(spec.schemaName());
+            }
+            return connection;
+        } catch (SQLException exception) {
+            try {
+                connection.close();
+            } catch (SQLException closeException) {
+                exception.addSuppressed(closeException);
+            }
+            throw exception;
+        }
     }
 
     public boolean isDriverAvailable(String driverClassName) {

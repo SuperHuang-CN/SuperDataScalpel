@@ -8,7 +8,9 @@ import jakarta.persistence.Embeddable;
 import java.util.Map;
 
 /**
- * Connection parameters stored with a data source.
+ * Generic persisted connection values. Their business meaning is interpreted from
+ * {@link DataSourceType}: a JDBC target is a database/schema, Kafka uses an endpoint only, and
+ * S3 uses the target and namespace as bucket and root prefix.
  *
  * <p>This is intentionally an embedded value object rather than searchable root fields. In
  * particular, its password must never become part of the common entity-search DSL.</p>
@@ -16,23 +18,23 @@ import java.util.Map;
 @Embeddable
 public class DataSourceConnection {
 
-    @Column(nullable = false, length = 255)
-    private String host;
+    @Column(name = "host", nullable = false, length = 500)
+    private String endpoint;
 
-    @Column(nullable = false)
+    @Column(name = "port")
     private Integer port;
 
-    @Column(name = "database_name", nullable = false, length = 128)
-    private String databaseName;
+    @Column(name = "database_name", length = 128)
+    private String target;
 
     @Column(name = "schema_name", length = 128)
-    private String schemaName;
+    private String namespace;
 
-    @Column(nullable = false, length = 128)
-    private String username;
+    @Column(name = "username", length = 128)
+    private String principal;
 
     @Column(name = "connection_password", length = 512)
-    private String password;
+    private String secret;
 
     @Convert(converter = ConnectionOptionsConverter.class)
     @Column(name = "connection_options", length = 4000)
@@ -42,36 +44,36 @@ public class DataSourceConnection {
     }
 
     private DataSourceConnection(
-            String host,
+            String endpoint,
             Integer port,
-            String databaseName,
-            String schemaName,
-            String username,
-            String password,
+            String target,
+            String namespace,
+            String principal,
+            String secret,
             Map<String, String> options
     ) {
-        this.host = host;
+        this.endpoint = endpoint;
         this.port = port;
-        this.databaseName = databaseName;
-        this.schemaName = schemaName;
-        this.username = username;
-        this.password = password;
+        this.target = target;
+        this.namespace = namespace;
+        this.principal = principal;
+        this.secret = secret;
         this.options = options == null ? null : immutableOptions(options);
     }
 
     public static DataSourceConnection create(
-            String host,
+            String endpoint,
             Integer port,
-            String databaseName,
-            String schemaName,
-            String username,
-            String password,
+            String target,
+            String namespace,
+            String principal,
+            String secret,
             Map<String, String> options
     ) {
-        return new DataSourceConnection(host, port, databaseName, schemaName, username, password, options);
+        return new DataSourceConnection(endpoint, port, target, namespace, principal, secret, options);
     }
 
-    public void update(
+    public static DataSourceConnection jdbc(
             String host,
             Integer port,
             String databaseName,
@@ -80,21 +82,34 @@ public class DataSourceConnection {
             String password,
             Map<String, String> options
     ) {
-        this.host = host;
-        this.port = port;
-        this.databaseName = databaseName;
-        this.schemaName = schemaName;
-        this.username = username;
-        if (password != null) {
-            this.password = password;
-        }
-        if (options != null) {
-            this.options = immutableOptions(options);
-        }
+        return create(host, port, databaseName, schemaName, username, password, options);
+    }
+
+    /**
+     * Persists a non-JDBC connection while remaining compatible with the original JDBC table
+     * columns, whose port, database name and username were defined as non-null.
+     *
+     * <p>Zero and empty strings are persistence-only placeholders; typed response DTOs translate
+     * them back to absent values and no runtime path uses them as JDBC settings.</p>
+     */
+    public static DataSourceConnection nonJdbc(
+            String endpoint,
+            String target,
+            String namespace,
+            String principal,
+            String secret,
+            Map<String, String> options
+    ) {
+        return create(endpoint, 0, target == null ? "" : target, namespace,
+                principal == null ? "" : principal, secret, options);
+    }
+
+    public String getEndpoint() {
+        return endpoint;
     }
 
     public String getHost() {
-        return host;
+        return endpoint;
     }
 
     public Integer getPort() {
@@ -102,19 +117,36 @@ public class DataSourceConnection {
     }
 
     public String getDatabaseName() {
-        return databaseName;
+        return target;
     }
 
     public String getSchemaName() {
-        return schemaName;
+        return namespace;
     }
 
     public String getUsername() {
-        return username;
+        return principal;
+    }
+
+    public String getTarget() {
+        return blankToNull(target);
+    }
+
+    public String getNamespace() {
+        return namespace;
+    }
+
+    public String getPrincipal() {
+        return blankToNull(principal);
     }
 
     public boolean hasPassword() {
-        return password != null && !password.isBlank();
+        return secret != null && !secret.isBlank();
+    }
+
+    /** Internal aggregate value used only to preserve a write-only secret during an update. */
+    public String secretValue() {
+        return secret;
     }
 
     public Map<String, String> getOptions() {
@@ -124,25 +156,21 @@ public class DataSourceConnection {
     /** Internal runtime snapshot. API responses use a separate DTO and never expose the password. */
     public JdbcConnectionConfig toJdbcConnectionConfig() {
         return new JdbcConnectionConfig(
-                host,
+                endpoint,
                 port,
-                databaseName,
-                schemaName,
-                username,
-                password,
+                target,
+                namespace,
+                principal,
+                secret,
                 getOptions()
         );
     }
 
-    String passwordValue() {
-        return password;
-    }
-
-    Map<String, String> optionsValue() {
-        return options;
-    }
-
     private static Map<String, String> immutableOptions(Map<String, String> options) {
         return options == null || options.isEmpty() ? Map.of() : Map.copyOf(options);
+    }
+
+    private static String blankToNull(String value) {
+        return value == null || value.isBlank() ? null : value;
     }
 }

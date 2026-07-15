@@ -18,11 +18,31 @@ public enum SystemPermissionDefinition {
     DATA_SOURCE_DELETE("datasource.delete", "数据源管理", "删除数据源", "删除数据源连接", 230),
     DATA_SOURCE_TEST("datasource.test", "数据源管理", "测试数据源", "测试数据源连接", 240),
     DATA_SOURCE_METADATA("datasource.metadata", "数据源管理", "读取数据源元数据", "读取库表、字段和数据预览", 250),
+    FILE_DATASET_VIEW("filedataset.view", "文件数据集", "查看文件数据集", "查询文件数据集及下载原始文件", 260),
+    FILE_DATASET_CREATE("filedataset.create", "文件数据集", "新增文件数据集", "上传并新增文件数据集", 270),
+    FILE_DATASET_UPDATE("filedataset.update", "文件数据集", "修改文件数据集", "修改信息、解析参数或替换内容", 280),
+    FILE_DATASET_DELETE("filedataset.delete", "文件数据集", "删除文件数据集", "删除文件数据集及其存储内容", 290),
     MODEL_VIEW("model.view", "模型管理", "查看模型", "查询模型及字段定义", 300),
     MODEL_CREATE("model.create", "模型管理", "新增模型", "新增模型元数据", 310),
     MODEL_UPDATE("model.update", "模型管理", "修改模型", "修改模型元数据和字段定义", 320),
     MODEL_DELETE("model.delete", "模型管理", "删除模型", "删除模型元数据", 330),
-    MODEL_PUBLISH("model.publish", "模型管理", "发布模型", "发布、停用和启用模型元数据", 340);
+    MODEL_PUBLISH("model.publish", "模型管理", "发布模型", "发布、停用和启用模型元数据", 340),
+    TASK_VIEW("task.view", "任务管理", "查看任务", "查询本地 SQL 任务及其定义", 350),
+    TASK_CREATE("task.create", "任务管理", "新增任务", "新增本地 SQL 任务", 360),
+    TASK_UPDATE("task.update", "任务管理", "修改任务", "修改任务基本信息和草稿定义", 370),
+    TASK_DELETE("task.delete", "任务管理", "删除任务", "删除未发布或已停用任务", 380),
+    TASK_PUBLISH("task.publish", "任务管理", "发布任务", "校验、发布、停用和启用本地 SQL 任务", 390),
+    TASK_EXECUTE("task.execute", "任务管理", "执行任务", "手动运行已发布本地 SQL 任务", 395),
+    SERVICE_ENGINE_VIEW("service.engine.view", "服务引擎", "查看服务引擎", "查询服务引擎定义", 400),
+    SERVICE_ENGINE_CREATE("service.engine.create", "服务引擎", "新增服务引擎", "新增服务引擎定义", 410),
+    SERVICE_ENGINE_UPDATE("service.engine.update", "服务引擎", "修改服务引擎", "修改服务引擎定义", 420),
+    SERVICE_ENGINE_DELETE("service.engine.delete", "服务引擎", "删除服务引擎", "删除服务引擎定义", 430),
+    SERVICE_ENGINE_TEST("service.engine.test", "服务引擎", "测试服务引擎", "测试服务引擎连通性和能力", 440),
+    SERVICE_VIEW("service.view", "数据服务", "查看数据服务", "查询数据服务及部署状态", 450),
+    SERVICE_CREATE("service.create", "数据服务", "新增数据服务", "新增标准数据服务", 460),
+    SERVICE_UPDATE("service.update", "数据服务", "修改数据服务", "修改未发布或已下线的数据服务", 470),
+    SERVICE_DELETE("service.delete", "数据服务", "删除数据服务", "删除已下线的数据服务", 480),
+    SERVICE_PUBLISH("service.publish", "数据服务", "发布数据服务", "发布和下线数据服务", 490);
 
     private final String code;
     private final String module;

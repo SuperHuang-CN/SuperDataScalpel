@@ -1,12 +1,12 @@
 package cn.superhuang.data.scalpel.business.datasource.web.request;
 
-import cn.superhuang.data.scalpel.business.datasource.domain.DatabaseType;
+import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 
-/** Request shape kept stable for the later real database adapter implementation. */
+/** Tests a draft configuration when its runtime client is currently implemented. */
 public record TestDataSourceConnectionRequest(
-        @NotNull DatabaseType databaseType,
+        @NotNull DataSourceType type,
         @NotNull @Valid DataSourceConnectionRequest connection
 ) {
 }

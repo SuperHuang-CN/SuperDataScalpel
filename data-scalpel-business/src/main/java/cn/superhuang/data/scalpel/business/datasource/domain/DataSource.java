@@ -16,7 +16,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
-/** A reusable database connection with one or more business purposes. */
+/** A reusable JDBC, Kafka, or S3 connection with one or more business purposes. */
 @Entity
 @Table(
         name = "ds_data_source",
@@ -45,7 +45,7 @@ public class DataSource extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "database_type", nullable = false, length = 32)
-    private DatabaseType databaseType;
+    private DataSourceType type;
 
     @Column(nullable = false)
     private boolean enabled;
@@ -64,13 +64,13 @@ public class DataSource extends BaseEntity {
             String name,
             UUID directoryId,
             Set<DataSourcePurpose> purposes,
-            DatabaseType databaseType,
+            DataSourceType type,
             boolean enabled,
             String description,
             DataSourceConnection connection
     ) {
         this.code = normalizeCode(code);
-        update(name, directoryId, purposes, databaseType, enabled, description, connection);
+        update(name, directoryId, purposes, type, enabled, description, connection);
     }
 
     public static DataSource create(
@@ -78,19 +78,19 @@ public class DataSource extends BaseEntity {
             String name,
             UUID directoryId,
             Set<DataSourcePurpose> purposes,
-            DatabaseType databaseType,
+            DataSourceType type,
             boolean enabled,
             String description,
             DataSourceConnection connection
     ) {
-        return new DataSource(code, name, directoryId, purposes, databaseType, enabled, description, connection);
+        return new DataSource(code, name, directoryId, purposes, type, enabled, description, connection);
     }
 
     public void update(
             String name,
             UUID directoryId,
             Set<DataSourcePurpose> purposes,
-            DatabaseType databaseType,
+            DataSourceType type,
             boolean enabled,
             String description,
             DataSourceConnection connection
@@ -98,22 +98,10 @@ public class DataSource extends BaseEntity {
         applyPurposes(purposes);
         this.name = normalizeRequiredText(name);
         this.directoryId = directoryId;
-        this.databaseType = databaseType;
+        this.type = type;
         this.enabled = enabled;
         this.description = normalizeOptionalText(description);
-        if (this.connection == null) {
-            this.connection = connection;
-        } else {
-            this.connection.update(
-                    connection.getHost(),
-                    connection.getPort(),
-                    connection.getDatabaseName(),
-                    connection.getSchemaName(),
-                    connection.getUsername(),
-                    connection.passwordValue(),
-                    connection.optionsValue()
-            );
-        }
+        this.connection = connection;
     }
 
     @Transient
@@ -155,8 +143,8 @@ public class DataSource extends BaseEntity {
         return distributionEnabled;
     }
 
-    public DatabaseType getDatabaseType() {
-        return databaseType;
+    public DataSourceType getType() {
+        return type;
     }
 
     public boolean isEnabled() {

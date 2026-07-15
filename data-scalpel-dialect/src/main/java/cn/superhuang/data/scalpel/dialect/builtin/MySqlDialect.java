@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionType;
 import cn.superhuang.data.scalpel.dialect.api.NamespaceMode;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
+import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 
 import java.util.List;
 import java.util.Properties;
@@ -36,7 +37,7 @@ public final class MySqlDialect extends AbstractJdbcDialect {
         properties.setProperty("serverTimezone", option(config, "serverTimezone", "UTC"));
         copyOptions(config, properties, Set.of("useSSL", "serverTimezone"));
         String url = "jdbc:mysql://" + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());
-        return new JdbcConnectionSpec(driverClassName(), url, properties);
+        return new JdbcConnectionSpec(driverClassName(), url, properties, null);
     }
 
     @Override
@@ -54,5 +55,25 @@ public final class MySqlDialect extends AbstractJdbcDialect {
                 key, label, ConnectionOptionType.BOOLEAN, defaultValue,
                 List.of(new ConnectionOptionChoice("true", "是"), new ConnectionOptionChoice("false", "否"))
         );
+    }
+
+    @Override
+    protected String columnTypeSql(TableColumnDefinition column) {
+        return switch (column.type()) {
+            case BYTE -> "tinyint";
+            case SHORT -> "smallint";
+            case STRING -> "varchar(" + column.length() + ")";
+            case TEXT -> "text";
+            case INTEGER -> "int";
+            case LONG -> "bigint";
+            case FLOAT -> "float";
+            case DOUBLE -> "double";
+            case DECIMAL -> "decimal(" + column.precision() + "," + column.scale() + ")";
+            case BOOLEAN -> "bit";
+            case DATE -> "date";
+            case TIMESTAMP -> "timestamp";
+            case TIMESTAMP_NTZ, DATETIME -> "datetime";
+            case BINARY -> "blob";
+        };
     }
 }

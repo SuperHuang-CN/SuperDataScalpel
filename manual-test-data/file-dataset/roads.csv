@@ -1,0 +1,4 @@
+road_id,name,opened,active,amount
+7,南环路,2024-01-02,true,123.45
+8,北环路,2024-01-03,false,67.89
+9,东环路,2024-01-04,true,88.00

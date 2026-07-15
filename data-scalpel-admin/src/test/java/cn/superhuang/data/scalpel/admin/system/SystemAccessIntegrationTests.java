@@ -17,6 +17,7 @@ import static cn.superhuang.data.scalpel.admin.support.AuthenticationTestSupport
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -96,7 +97,15 @@ class SystemAccessIntegrationTests {
         rawMockMvc.perform(get("/api/v1/data-source-types").header("Authorization", "Bearer " + userToken))
                 .andExpect(status().isOk());
         rawMockMvc.perform(get("/api/v1/system/users").header("Authorization", "Bearer " + userToken))
-                .andExpect(status().isForbidden());
+                .andExpect(status().isForbidden())
+                .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
+                .andExpect(jsonPath("$.type").value("urn:datascalpel:problem:access-denied"))
+                .andExpect(jsonPath("$.title").value("无权访问"))
+                .andExpect(jsonPath("$.status").value(403))
+                .andExpect(jsonPath("$.detail").value("当前账号无权访问该资源"))
+                .andExpect(jsonPath("$.code").value("ACCESS_DENIED"))
+                .andExpect(jsonPath("$.instance").value("/api/v1/system/users"))
+                .andExpect(jsonPath("$.timestamp").exists());
 
         mockMvc.perform(post("/api/v1/system/roles/{id}/actions/delete", roleId))
                 .andExpect(status().isConflict())

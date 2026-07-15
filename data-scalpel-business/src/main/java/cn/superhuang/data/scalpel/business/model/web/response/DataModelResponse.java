@@ -2,8 +2,10 @@ package cn.superhuang.data.scalpel.business.model.web.response;
 
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
+import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 
 import java.time.Instant;
+import java.util.List;
 import java.util.UUID;
 
 public record DataModelResponse(
@@ -16,7 +18,10 @@ public record DataModelResponse(
         String catalogName,
         String schemaName,
         String physicalTableName,
+        PhysicalTableMode physicalTableMode,
+        List<String> clickHouseOrderByColumns,
         DataModelStatus status,
+        int schemaVersion,
         String description,
         Instant createdAt,
         Instant updatedAt
@@ -25,7 +30,7 @@ public record DataModelResponse(
         return new DataModelResponse(
                 model.getId(), model.getCode(), model.getName(), model.getDirectoryId(),
                 model.getStorageDataSourceId(), storageDataSourceName, model.getCatalogName(), model.getSchemaName(),
-                model.getPhysicalTableName(), model.getStatus(), model.getDescription(),
+                model.getPhysicalTableName(), model.getPhysicalTableMode(), model.getClickHouseOrderByColumns(), model.getStatus(), model.getSchemaVersion(), model.getDescription(),
                 model.getCreatedAt(), model.getUpdatedAt()
         );
     }

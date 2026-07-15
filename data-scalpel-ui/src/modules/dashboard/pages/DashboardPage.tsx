@@ -5,7 +5,7 @@ const dashboardCards = [
   { title: '数据源', value: 0, icon: <DatabaseOutlined />, hint: '等待接入数据源管理能力' },
   { title: '数据模型', value: 0, icon: <DeploymentUnitOutlined />, hint: '等待接入模型管理能力' },
   { title: '运行任务', value: 0, icon: <ApartmentOutlined />, hint: '等待接入任务管理能力' },
-  { title: '已发布服务', value: 0, icon: <ApiOutlined />, hint: '等待接入服务管理能力' },
+  { title: '已发布服务', value: 0, icon: <ApiOutlined />, hint: '在数据服务页登记 Engine 并发布模型' },
 ];
 
 export const DashboardPage = () => (

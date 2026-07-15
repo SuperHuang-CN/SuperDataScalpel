@@ -4,6 +4,8 @@ package cn.superhuang.data.scalpel.business.directory.domain;
 public enum DirectoryScope {
 
     DATA_SOURCE,
+    FILE_DATASET,
     MODEL,
+    TASK,
     DATA_SERVICE
 }

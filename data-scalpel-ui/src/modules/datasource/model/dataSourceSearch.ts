@@ -23,7 +23,7 @@ export const buildDataSourceSearch = (filters: DataSourceFilters): string | unde
     filters.purpose === 'BOTH'
       ? `${equals('sourceEnabled', true)} AND ${equals('storageEnabled', true)}`
       : undefined,
-    filters.databaseType ? equals('databaseType', filters.databaseType) : undefined,
+    filters.type ? equals('type', filters.type) : undefined,
     filters.enabled === undefined ? undefined : equals('enabled', filters.enabled),
   ].filter((condition): condition is string => Boolean(condition));
 

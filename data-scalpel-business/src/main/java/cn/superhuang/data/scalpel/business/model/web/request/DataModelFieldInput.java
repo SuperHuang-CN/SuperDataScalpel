@@ -1,6 +1,6 @@
 package cn.superhuang.data.scalpel.business.model.web.request;
 
-import cn.superhuang.data.scalpel.business.model.domain.DataModelFieldType;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -16,8 +16,8 @@ public record DataModelFieldInput(
         @Pattern(regexp = "[A-Za-z][A-Za-z0-9_]{0,63}", message = "字段编码只能包含字母、数字和下划线，且必须以字母开头")
         String code,
         @NotBlank @Size(max = 100) String name,
-        @NotNull DataModelFieldType fieldType,
-        @Min(1) @Max(4000) Integer length,
+        @NotNull PlatformDataType fieldType,
+        @Min(1) Integer length,
         @Min(1) @Max(38) Integer precision,
         @Min(0) @Max(38) Integer scale,
         @NotNull Boolean nullable,

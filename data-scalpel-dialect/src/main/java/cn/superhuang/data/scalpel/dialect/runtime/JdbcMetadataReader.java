@@ -122,7 +122,8 @@ final class JdbcMetadataReader {
                 summary,
                 columns,
                 readPrimaryKey(metadata, table),
-                readIndexes(metadata, table)
+                readIndexes(metadata, table),
+                dialect.readTableStorageMetadata(connection, table)
         );
     }
 

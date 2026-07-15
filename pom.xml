@@ -25,6 +25,7 @@
         <module>data-scalpel-dialect</module>
         <module>data-scalpel-business</module>
         <module>data-scalpel-admin</module>
+        <module>data-scalpel-service-engine</module>
     </modules>
 
     <properties>
@@ -38,6 +39,14 @@
         <dameng-jdbc.version>8.1.3.140</dameng-jdbc.version>
         <kingbase-jdbc.version>8.6.1</kingbase-jdbc.version>
         <opengauss-jdbc.version>6.0.0-og</opengauss-jdbc.version>
+        <aws.sdk.version>2.46.8</aws.sdk.version>
+        <apache.poi.version>5.5.1</apache.poi.version>
+        <parquet.version>1.17.1</parquet.version>
+        <hadoop.version>3.3.0</hadoop.version>
+        <apache.avro.version>1.12.1</apache.avro.version>
+        <snappy-java.version>1.1.10.8</snappy-java.version>
+        <xz.version>1.10</xz.version>
+        <zstd-jni.version>1.5.7-4</zstd-jni.version>
     </properties>
 
     <dependencyManagement>
@@ -60,6 +69,11 @@
             <dependency>
                 <groupId>cn.superhuang</groupId>
                 <artifactId>data-scalpel-business</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-service-engine</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

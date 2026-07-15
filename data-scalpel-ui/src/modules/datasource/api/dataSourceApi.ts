@@ -5,7 +5,7 @@ import type {
   ConnectionTestResult,
   CreateDataSourceRequest,
   DataSource,
-  DatabaseTypeDefinition,
+  DataSourceTypeDefinition,
   DataSourceNamespace,
   TableIdentifier,
   TableListResult,
@@ -18,8 +18,8 @@ import type {
 
 const DATA_SOURCE_PATH = '/v1/data-sources';
 
-export const fetchDatabaseTypes = (): Promise<DatabaseTypeDefinition[]> => (
-  requestJson<DatabaseTypeDefinition[]>('/v1/data-source-types')
+export const fetchDataSourceTypes = (): Promise<DataSourceTypeDefinition[]> => (
+  requestJson<DataSourceTypeDefinition[]>('/v1/data-source-types')
 );
 
 export const fetchDataSources = async (request: SearchRequest): Promise<PageResponse<DataSource>> => {

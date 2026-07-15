@@ -1,10 +1,10 @@
 package cn.superhuang.data.scalpel.business.model.domain;
 
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import jakarta.persistence.Column;
+import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
-import jakarta.persistence.EnumType;
-import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -31,9 +31,9 @@ public class DataModelField extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String name;
 
-    @Enumerated(EnumType.STRING)
+    @Convert(converter = PlatformDataTypeConverter.class)
     @Column(name = "field_type", nullable = false, length = 32)
-    private DataModelFieldType fieldType;
+    private PlatformDataType fieldType;
 
     @Column(name = "field_length")
     private Integer length;
@@ -63,7 +63,7 @@ public class DataModelField extends BaseEntity {
             UUID modelId,
             String code,
             String name,
-            DataModelFieldType fieldType,
+            PlatformDataType fieldType,
             Integer length,
             Integer precision,
             Integer scale,
@@ -80,7 +80,7 @@ public class DataModelField extends BaseEntity {
             UUID modelId,
             String code,
             String name,
-            DataModelFieldType fieldType,
+            PlatformDataType fieldType,
             Integer length,
             Integer precision,
             Integer scale,
@@ -98,7 +98,7 @@ public class DataModelField extends BaseEntity {
     public void update(
             String code,
             String name,
-            DataModelFieldType fieldType,
+            PlatformDataType fieldType,
             Integer length,
             Integer precision,
             Integer scale,
@@ -131,7 +131,7 @@ public class DataModelField extends BaseEntity {
         return name;
     }
 
-    public DataModelFieldType getFieldType() {
+    public PlatformDataType getFieldType() {
         return fieldType;
     }
 

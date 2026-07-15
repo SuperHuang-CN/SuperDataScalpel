@@ -4,7 +4,7 @@ import type { SearchRequest } from '../../../shared/search';
 import {
   createDataSource,
   deleteDataSource,
-  fetchDatabaseTypes,
+  fetchDataSourceTypes,
   fetchDataSourceNamespaces,
   fetchDataSourceTables,
   fetchTableMetadata,
@@ -23,9 +23,9 @@ import type {
 
 const dataSourcesQueryKey = 'data-sources';
 
-export const useDatabaseTypes = () => useQuery({
+export const useDataSourceTypes = () => useQuery({
   queryKey: ['data-source-types'],
-  queryFn: fetchDatabaseTypes,
+  queryFn: fetchDataSourceTypes,
   staleTime: 5 * 60 * 1000,
 });
 

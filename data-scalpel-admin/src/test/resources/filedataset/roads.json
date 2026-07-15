@@ -1,0 +1,21 @@
+{
+  "data": {
+    "items": [
+      {
+        "id": 1,
+        "name": "南路",
+        "enabled": true,
+        "amount": 12.50,
+        "tags": ["main", "urban"],
+        "geometry": {"type": "Point", "coordinates": [120.1, 30.2]}
+      },
+      {
+        "id": 2,
+        "name": "北路",
+        "enabled": false,
+        "amount": 18.75,
+        "tags": ["secondary"]
+      }
+    ]
+  }
+}

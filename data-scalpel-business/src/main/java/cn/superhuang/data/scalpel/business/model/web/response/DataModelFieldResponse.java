@@ -1,7 +1,7 @@
 package cn.superhuang.data.scalpel.business.model.web.response;
 
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
-import cn.superhuang.data.scalpel.business.model.domain.DataModelFieldType;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -11,7 +11,7 @@ public record DataModelFieldResponse(
         UUID modelId,
         String code,
         String name,
-        DataModelFieldType fieldType,
+        PlatformDataType fieldType,
         Integer length,
         Integer precision,
         Integer scale,

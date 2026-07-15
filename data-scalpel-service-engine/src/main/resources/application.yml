@@ -1,0 +1,44 @@
+server:
+  port: ${DATASCALPEL_ENGINE_PORT:8081}
+
+spring:
+  application:
+    name: data-scalpel-service-engine
+  datasource:
+    url: ${DATASCALPEL_ENGINE_DB_URL}
+    username: ${DATASCALPEL_ENGINE_DB_USERNAME}
+    password: ${DATASCALPEL_ENGINE_DB_PASSWORD}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+data-scalpel:
+  engine:
+    code: ${DATASCALPEL_ENGINE_CODE}
+    management-token: ${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN}
+    encryption-key: ${DATASCALPEL_ENGINE_ENCRYPTION_KEY}
+    query:
+      default-page-size: ${DATASCALPEL_ENGINE_QUERY_DEFAULT_PAGE_SIZE:20}
+      maximum-page-size: ${DATASCALPEL_ENGINE_QUERY_MAXIMUM_PAGE_SIZE:100}
+      maximum-filter-count: ${DATASCALPEL_ENGINE_QUERY_MAXIMUM_FILTER_COUNT:50}
+      maximum-in-values: ${DATASCALPEL_ENGINE_QUERY_MAXIMUM_IN_VALUES:1000}
+      timeout-seconds: ${DATASCALPEL_ENGINE_QUERY_TIMEOUT_SECONDS:30}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never
+
+info:
+  application:
+    name: ${spring.application.name}
+    version: '@project.version@'

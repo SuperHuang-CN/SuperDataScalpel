@@ -17,6 +17,8 @@ public interface DataModelRepository extends SearchRepository<DataModel, UUID> {
 
     boolean existsByStorageDataSourceId(UUID storageDataSourceId);
 
+    List<DataModel> findAllByStorageDataSourceId(UUID storageDataSourceId);
+
     boolean existsByStorageDataSourceIdAndCatalogNameAndSchemaNameAndPhysicalTableName(
             UUID storageDataSourceId,
             String catalogName,

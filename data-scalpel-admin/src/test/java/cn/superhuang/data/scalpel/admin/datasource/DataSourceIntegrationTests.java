@@ -70,10 +70,11 @@ class DataSourceIntegrationTests {
                                   "code": "Business_PostgreSQL",
                                   "name": "业务 PostgreSQL",
                                   "purposes": ["SOURCE", "STORAGE", "DISTRIBUTION"],
-                                  "databaseType": "POSTGRESQL",
+                                  "type": "POSTGRESQL",
                                   "enabled": true,
                                   "description": "业务主库",
                                   "connection": {
+                                    "kind": "JDBC",
                                     "host": "192.168.1.10",
                                     "port": 5432,
                                     "databaseName": "business",
@@ -111,10 +112,11 @@ class DataSourceIntegrationTests {
                                 {
                                   "name": "业务 PostgreSQL（已更新）",
                                   "purposes": ["STORAGE"],
-                                  "databaseType": "POSTGRESQL",
+                                  "type": "POSTGRESQL",
                                   "enabled": false,
                                   "description": "更新后说明",
                                   "connection": {
+                                    "kind": "JDBC",
                                     "host": "192.168.1.11",
                                     "port": 5432,
                                     "databaseName": "business",
@@ -143,7 +145,7 @@ class DataSourceIntegrationTests {
     void validatesInputRejectsDuplicateCodesAndKeepsTheTestApiStable() throws Exception {
         mockMvc.perform(get("/api/v1/data-source-types"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.length()").value(8))
+                .andExpect(jsonPath("$.length()").value(10))
                 .andExpect(jsonPath("$[?(@.id == 'POSTGRESQL')].defaultPort").value(hasItem(5432)));
 
         String createRequest = """
@@ -151,8 +153,9 @@ class DataSourceIntegrationTests {
                   "code": "warehouse",
                   "name": "数仓",
                   "purposes": ["STORAGE"],
-                  "databaseType": "DAMENG",
+                  "type": "DAMENG",
                   "connection": {
+                    "kind": "JDBC",
                     "host": "localhost",
                     "port": 5236,
                     "databaseName": "warehouse",
@@ -180,8 +183,9 @@ class DataSourceIntegrationTests {
                                   "code": "invalid",
                                   "name": "无用途连接",
                                   "purposes": [],
-                                  "databaseType": "MYSQL",
+                                  "type": "MYSQL",
                                   "connection": {
+                                    "kind": "JDBC",
                                     "host": "localhost",
                                     "port": 3306,
                                     "databaseName": "test",
@@ -196,8 +200,9 @@ class DataSourceIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "databaseType": "MYSQL",
+                                  "type": "MYSQL",
                                   "connection": {
+                                    "kind": "JDBC",
                                     "host": "localhost",
                                     "port": 3306,
                                     "databaseName": "test",
@@ -210,6 +215,88 @@ class DataSourceIntegrationTests {
                 .andExpect(jsonPath("$.code").value("SUCCESS"))
                 .andExpect(jsonPath("$.databaseProduct").value("Test Database"))
                 .andExpect(jsonPath("$.message").value("连接测试成功"));
+    }
+
+    @Test
+    void managesKafkaAndS3RegistrationsWithoutEnablingTheirRuntimeClients() throws Exception {
+        mockMvc.perform(post("/api/v1/data-sources")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "event_cluster",
+                                  "name": "事件 Kafka 集群",
+                                  "purposes": ["SOURCE", "DISTRIBUTION"],
+                                  "type": "KAFKA",
+                                  "connection": {
+                                    "kind": "KAFKA",
+                                    "bootstrapServers": "kafka-1.internal:9092,kafka-2.internal:9092",
+                                    "securityProtocol": "SASL_SSL",
+                                    "saslMechanism": "SCRAM-SHA-512",
+                                    "username": "processor",
+                                    "password": "kafka-secret"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("KAFKA"))
+                .andExpect(jsonPath("$.connection.kind").value("KAFKA"))
+                .andExpect(jsonPath("$.connection.bootstrapServers").value("kafka-1.internal:9092,kafka-2.internal:9092"))
+                .andExpect(jsonPath("$.connection.passwordConfigured").value(true))
+                .andExpect(jsonPath("$.connection.password").doesNotExist());
+
+        String s3Response = mockMvc.perform(post("/api/v1/data-sources")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "archive_bucket",
+                                  "name": "归档对象存储",
+                                  "purposes": ["SOURCE", "DISTRIBUTION"],
+                                  "type": "S3",
+                                  "connection": {
+                                    "kind": "S3",
+                                    "endpoint": "https://minio.internal",
+                                    "region": "cn-north-1",
+                                    "bucket": "data-archive",
+                                    "rootPrefix": "/projects/2026/",
+                                    "accessKey": "archive-user",
+                                    "secretKey": "s3-secret",
+                                    "pathStyleAccess": true
+                                  }
+                                }
+                                """))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.type").value("S3"))
+                .andExpect(jsonPath("$.connection.kind").value("S3"))
+                .andExpect(jsonPath("$.connection.bucket").value("data-archive"))
+                .andExpect(jsonPath("$.connection.rootPrefix").value("projects/2026"))
+                .andExpect(jsonPath("$.connection.secretKeyConfigured").value(true))
+                .andExpect(jsonPath("$.connection.secretKey").doesNotExist())
+                .andReturn().getResponse().getContentAsString();
+
+        String s3Id = com.jayway.jsonpath.JsonPath.read(s3Response, "$.id");
+        mockMvc.perform(post("/api/v1/data-sources/{id}/actions/test", s3Id))
+                .andExpect(status().isNotImplemented())
+                .andExpect(jsonPath("$.status").value(501));
+
+        mockMvc.perform(post("/api/v1/data-sources")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "invalid_s3_storage",
+                                  "name": "无效 S3 存储",
+                                  "purposes": ["STORAGE"],
+                                  "type": "S3",
+                                  "connection": {
+                                    "kind": "S3",
+                                    "endpoint": "https://minio.internal",
+                                    "bucket": "data-archive",
+                                    "accessKey": "archive-user",
+                                    "secretKey": "s3-secret"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
     }
 
     @TestConfiguration(proxyBeanMethods = false)

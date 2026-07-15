@@ -72,8 +72,9 @@ class DirectoryIntegrationTests {
                                   "name": "目录示例连接",
                                   "directoryId": "%s",
                                   "purposes": ["SOURCE"],
-                                  "databaseType": "POSTGRESQL",
+                                  "type": "POSTGRESQL",
                                   "connection": {
+                                    "kind": "JDBC",
                                     "host": "localhost",
                                     "port": 5432,
                                     "databaseName": "sample",
@@ -134,8 +135,9 @@ class DirectoryIntegrationTests {
                                   "name": "错误目录",
                                   "directoryId": "%s",
                                   "purposes": ["SOURCE"],
-                                  "databaseType": "POSTGRESQL",
+                                  "type": "POSTGRESQL",
                                   "connection": {
+                                    "kind": "JDBC",
                                     "host": "localhost", "port": 5432, "databaseName": "sample", "username": "datascalpel"
                                   }
                                 }

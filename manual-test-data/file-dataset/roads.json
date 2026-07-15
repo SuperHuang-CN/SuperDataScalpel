@@ -1,0 +1,4 @@
+[
+  {"road_id":7,"name":"南环路","opened":"2024-01-02","active":true,"amount":123.45,"tags":["主干道","城区"]},
+  {"road_id":8,"name":"北环路","opened":"2024-01-03","active":false,"amount":67.89,"tags":["次干道"]}
+]

@@ -44,14 +44,27 @@
 - API 使用明确的请求和响应 DTO，不直接向前端暴露 JPA Entity。
 - 第一版本不引入 MapStruct；简单 DTO 映射使用直接、明确的 Java 代码。
 
+## 大文本与事务约定
+
+- 新增大文本 `String` 字段不得使用 `@Lob`。优先使用 `@JdbcTypeCode(SqlTypes.LONG32VARCHAR)`，在 PostgreSQL 中保存为 `text`，避免 Large Object/OID 事务限制。
+- 外部 JDBC、HTTP 调用不得放进管理数据库长事务。使用：短事务读取快照 → 事务外执行外部操作 → 短事务提交状态并组装响应。
+
 ## 后端 REST API 约定
 
 - 对外业务接口只允许使用 HTTP `GET` 和 `POST`；新代码不得声明 `PUT`、`PATCH` 或 `DELETE` 接口。
-- 查询详情、列表和其他只读操作使用 `GET`；创建资源使用集合地址上的 `POST`，例如 `POST /api/v1/data-sources`。
+- 查询详情、列表和其他只读操作使用 `GET`；创建资源使用集合地址上的 `POST`，例如 `POST /api/v1/data-sources`。仅当只读查询必须提交复杂的结构化条件、无法合理编码为 URL 参数时，允许使用带 `actions/query-*` 的 `POST`；该接口必须在 Resource、DTO 和文档中明确“只读”，且不得改变资源状态。
 - 更新资源统一使用 `POST /api/v1/{resources}/{id}/actions/update`，不得使用 `PUT` 或 `PATCH`。
 - 删除资源统一使用 `POST /api/v1/{resources}/{id}/actions/delete`，不得使用 HTTP `DELETE`。
 - 测试、移动、发布、启停等其他命令也统一使用 `POST /api/v1/{resources}/{id}/actions/{action}`；不需要资源 ID 的集合级命令使用 `POST /api/v1/{resources}/actions/{action}`。
 - Action 接口必须使用表达业务含义的明确请求和响应 DTO。现有不符合本约定的接口也应在对应功能调整时完成迁移，不得继续扩散旧形式。
+
+## 后端响应与异常处理
+
+- 成功响应直接返回明确的 Response DTO、`PageResponse`、文件流或空响应；不得新增 `Result<T>`、`ApiResponse<T>` 等成功响应包裹层。创建、删除等操作应使用准确的 HTTP 状态码。
+- 所有 HTTP 错误响应统一使用 RFC 9457 `ProblemDetail` 和 `application/problem+json`。标准字段为 `type`、`title`、`status`、`detail`、`instance`，扩展字段固定使用稳定的 `code`、`timestamp`，字段校验失败时使用 `violations`；不得另造 `path`、`success`、`message` 等并行错误协议。
+- `ProblemDetailFactory`、全局异常映射和安全响应位于 `data-scalpel-web-core`。业务 Resource、Service、安全配置与 Service Engine 不得手工拼装错误 JSON 或使用 `sendError` 绕过该机制。
+- 现有 `ResponseStatusException` 仍是可用的直接业务错误表达方式；新增业务错误应选择准确的 HTTP 状态，公共处理器会映射为稳定问题码。未预期异常必须记录完整日志，但对外只返回安全的通用 500 信息。
+- 修改错误映射、认证/鉴权失败行为或错误契约时，必须补充相应测试，并同步更新 [后端 API 响应与异常处理](docs/design/backend-api-response-and-error-handling.md)。
 
 ## 后端 Web 代码结构
 
@@ -71,6 +84,10 @@
 - 复杂报表、聚合统计和动态物理表查询不属于实体查询能力，不得为了这些场景扭曲当前查询 API。
 
 ## 实现原则
+
+- 模型、任务和数据服务的稳定标量类型统一使用 `data-scalpel-contracts` 中的 `PlatformDataType` 和 `PlatformTypeDefinition`。不得在业务模块或前端重新定义数据库原生类型到平台类型的映射。
+- 物理类型到平台类型、平台类型到物理类型的双向转换只能由 `data-scalpel-dialect` 实现；JDBC 类型只允许停留在元数据边界。映射存在 `LOSSY` 或 `UNSUPPORTED` 时必须阻止导入或建表，不得静默截断精度、长度、值域或时区语义。
+- Spark 类不得进入 JPA 实体、REST 契约或核心模块。实际接入 Spark 时，由执行模块使用 Java `DataTypes` 与 `PlatformTypeDefinition` 显式转换。
 
 - 优先使用直接、清晰的 Spring/JPA 实现和职责集中的小类。没有当前使用场景时，不增加额外分层、接口、工厂或扩展点。
 - 除非任务明确要求修改，否则保持现有 API 行为兼容。

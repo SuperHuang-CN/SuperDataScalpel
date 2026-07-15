@@ -1,6 +1,8 @@
 export type DataSourcePurpose = 'SOURCE' | 'STORAGE' | 'DISTRIBUTION';
 
-export type DatabaseType =
+export type DataSourceConnectionKind = 'JDBC' | 'KAFKA' | 'S3';
+
+export type DataSourceType =
   | 'MYSQL'
   | 'POSTGRESQL'
   | 'ORACLE'
@@ -8,9 +10,12 @@ export type DatabaseType =
   | 'CLICKHOUSE'
   | 'DAMENG'
   | 'KINGBASE'
-  | 'OPENGAUSS';
+  | 'OPENGAUSS'
+  | 'KAFKA'
+  | 'S3';
 
-export interface DataSourceConnection {
+export interface JdbcDataSourceConnection {
+  kind: 'JDBC';
   host: string;
   port: number;
   databaseName: string;
@@ -20,7 +25,30 @@ export interface DataSourceConnection {
   passwordConfigured: boolean;
 }
 
-export interface DataSourceConnectionInput {
+export interface KafkaDataSourceConnection {
+  kind: 'KAFKA';
+  bootstrapServers: string;
+  securityProtocol: string | null;
+  saslMechanism: string | null;
+  username: string | null;
+  passwordConfigured: boolean;
+}
+
+export interface S3DataSourceConnection {
+  kind: 'S3';
+  endpoint: string;
+  region: string | null;
+  bucket: string;
+  rootPrefix: string | null;
+  accessKey: string;
+  secretKeyConfigured: boolean;
+  pathStyleAccess: boolean;
+}
+
+export type DataSourceConnection = JdbcDataSourceConnection | KafkaDataSourceConnection | S3DataSourceConnection;
+
+export interface JdbcDataSourceConnectionInput {
+  kind: 'JDBC';
   host: string;
   port: number;
   databaseName: string;
@@ -30,13 +58,39 @@ export interface DataSourceConnectionInput {
   options?: Record<string, string>;
 }
 
+export interface KafkaDataSourceConnectionInput {
+  kind: 'KAFKA';
+  bootstrapServers: string;
+  securityProtocol?: 'PLAINTEXT' | 'SSL' | 'SASL_PLAINTEXT' | 'SASL_SSL';
+  saslMechanism?: string;
+  username?: string;
+  password?: string;
+}
+
+export interface S3DataSourceConnectionInput {
+  kind: 'S3';
+  endpoint: string;
+  region?: string;
+  bucket: string;
+  rootPrefix?: string;
+  accessKey: string;
+  secretKey?: string;
+  pathStyleAccess?: boolean;
+}
+
+export type DataSourceConnectionInput =
+  | JdbcDataSourceConnectionInput
+  | KafkaDataSourceConnectionInput
+  | S3DataSourceConnectionInput;
+
 export interface DataSource {
   id: string;
   code: string;
   name: string;
   directoryId: string | null;
   purposes: DataSourcePurpose[];
-  databaseType: DatabaseType;
+  type: DataSourceType;
+  connectionKind: DataSourceConnectionKind;
   enabled: boolean;
   description: string | null;
   connection: DataSourceConnection;
@@ -49,7 +103,7 @@ export interface CreateDataSourceRequest {
   name: string;
   directoryId?: string;
   purposes: DataSourcePurpose[];
-  databaseType: DatabaseType;
+  type: DataSourceType;
   enabled: boolean;
   description?: string;
   connection: DataSourceConnectionInput;
@@ -59,15 +113,15 @@ export interface UpdateDataSourceRequest {
   name: string;
   directoryId?: string;
   purposes: DataSourcePurpose[];
-  databaseType: DatabaseType;
+  type: DataSourceType;
   enabled: boolean;
   description?: string;
   connection: DataSourceConnectionInput;
 }
 
 export interface TestDataSourceConnectionRequest {
-  databaseType: DatabaseType;
-  connection: DataSourceConnectionInput;
+  type: DataSourceType;
+  connection: JdbcDataSourceConnectionInput;
 }
 
 export interface ConnectionTestResult {
@@ -85,7 +139,8 @@ export type DatabaseCapability =
   | 'LIST_NAMESPACES'
   | 'LIST_TABLES'
   | 'READ_TABLE_METADATA'
-  | 'PREVIEW_DATA';
+  | 'PREVIEW_DATA'
+  | 'CREATE_TABLE';
 
 export interface ConnectionOptionChoice {
   value: string;
@@ -100,14 +155,18 @@ export interface ConnectionOptionDefinition {
   choices: ConnectionOptionChoice[];
 }
 
-export interface DatabaseTypeDefinition {
-  id: DatabaseType;
+export interface DataSourceTypeDefinition {
+  id: DataSourceType;
   displayName: string;
-  defaultPort: number;
-  databaseNameLabel: string;
-  schemaNameLabel: string;
+  connectionKind: DataSourceConnectionKind;
+  supportedPurposes: DataSourcePurpose[];
+  connectionTestAvailable: boolean;
+  metadataAvailable: boolean;
+  defaultPort: number | null;
+  databaseNameLabel: string | null;
+  schemaNameLabel: string | null;
   defaultSchema: string | null;
-  namespaceMode: 'CATALOG' | 'SCHEMA' | 'CATALOG_AND_SCHEMA';
+  namespaceMode: 'CATALOG' | 'SCHEMA' | 'CATALOG_AND_SCHEMA' | null;
   capabilities: DatabaseCapability[];
   connectionOptions: ConnectionOptionDefinition[];
   driverAvailable: boolean;
@@ -199,11 +258,11 @@ export interface DataSourceFilters {
   directoryIds?: string[];
   uncategorized?: boolean;
   purpose?: DataSourcePurposeFilter;
-  databaseType?: DatabaseType;
+  type?: DataSourceType;
   enabled?: boolean;
 }
 
-export const databaseTypeLabels: Record<DatabaseType, string> = {
+export const dataSourceTypeLabels: Record<DataSourceType, string> = {
   MYSQL: 'MySQL',
   POSTGRESQL: 'PostgreSQL',
   ORACLE: 'Oracle',
@@ -212,6 +271,8 @@ export const databaseTypeLabels: Record<DatabaseType, string> = {
   DAMENG: '达梦',
   KINGBASE: '人大金仓',
   OPENGAUSS: 'openGauss',
+  KAFKA: 'Kafka',
+  S3: 'S3 兼容对象存储',
 };
 
 export const dataSourcePurposeLabels: Record<DataSourcePurpose, string> = {

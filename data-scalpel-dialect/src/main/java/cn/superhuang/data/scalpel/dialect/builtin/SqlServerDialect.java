@@ -6,6 +6,8 @@ import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionType;
 import cn.superhuang.data.scalpel.dialect.api.NamespaceMode;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
+import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
+import cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery;
 
 import java.util.List;
 import java.util.Properties;
@@ -35,12 +37,25 @@ public final class SqlServerDialect extends AbstractJdbcDialect {
         properties.setProperty("trustServerCertificate", option(config, "trustServerCertificate", "false"));
         copyOptions(config, properties, Set.of("encrypt", "trustServerCertificate"));
         String url = "jdbc:sqlserver://" + hostForUrl(config) + ":" + config.port();
-        return new JdbcConnectionSpec(driverClassName(), url, properties);
+        // The Microsoft JDBC driver does not support changing the default schema for a session.
+        return new JdbcConnectionSpec(driverClassName(), url, properties, null);
     }
 
     @Override
     public String resolveCatalog(JdbcConnectionConfig config, String requestedCatalog) {
         return optional(requestedCatalog) == null ? config.databaseName() : requestedCatalog.trim();
+    }
+
+    @Override
+    public String renderInsertSelect(TableIdentifier target, List<String> targetColumns, InsertSelectQuery query) {
+        String rendered = super.renderInsertSelect(target, targetColumns, query);
+        if (query.withClause() == null) {
+            return rendered;
+        }
+        String insert = "INSERT INTO " + qualifiedName(target) + " (" + targetColumns.stream()
+                .map(column -> quoteIdentifier(column.trim()))
+                .collect(java.util.stream.Collectors.joining(", ")) + ") ";
+        return query.withClause() + " " + insert + query.selectSql();
     }
 
     private static ConnectionOptionDefinition booleanOption(String key, String label, String defaultValue) {

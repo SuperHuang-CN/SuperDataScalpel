@@ -6,9 +6,9 @@ describe('buildDataSourceSearch', () => {
     expect(buildDataSourceSearch({
       keyword: '业务',
       purpose: 'BOTH',
-      databaseType: 'POSTGRESQL',
+      type: 'POSTGRESQL',
       enabled: true,
-    })).toBe('(name:*"业务"* OR code:*"业务"*) AND sourceEnabled:"true" AND storageEnabled:"true" AND databaseType:"POSTGRESQL" AND enabled:"true"');
+    })).toBe('(name:*"业务"* OR code:*"业务"*) AND sourceEnabled:"true" AND storageEnabled:"true" AND type:"POSTGRESQL" AND enabled:"true"');
   });
 
   it('escapes keyword and omits empty filters', () => {

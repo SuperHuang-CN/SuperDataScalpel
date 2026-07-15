@@ -5,22 +5,24 @@ import cn.superhuang.data.scalpel.business.system.configuration.repository.Syste
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Configuration(proxyBeanMethods = false)
 class SystemConfigurationInitializer {
 
     @Bean
-    ApplicationRunner initializeSystemConfigurations(SystemConfigurationRepository repository) {
-        return arguments -> insertMissingConfigurations(repository);
-    }
-
-    @Transactional
-    void insertMissingConfigurations(SystemConfigurationRepository repository) {
-        for (SystemConfigurationDefinition definition : SystemConfigurationDefinition.values()) {
-            if (repository.findByConfigKey(definition.getConfigKey()).isEmpty()) {
-                repository.save(definition.newEntity());
+    ApplicationRunner initializeSystemConfigurations(
+            SystemConfigurationRepository repository,
+            PlatformTransactionManager transactionManager
+    ) {
+        TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
+        return arguments -> transactionTemplate.executeWithoutResult(status -> {
+            for (SystemConfigurationDefinition definition : SystemConfigurationDefinition.values()) {
+                if (repository.findByConfigKey(definition.getConfigKey()).isEmpty()) {
+                    repository.save(definition.newEntity());
+                }
             }
-        }
+        });
     }
 }

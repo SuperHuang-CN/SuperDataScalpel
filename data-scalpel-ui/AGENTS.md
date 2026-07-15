@@ -57,6 +57,9 @@ modules/<module>/
 ## API 与统一查询
 
 - HTTP 客户端、统一错误转换和请求拦截能力放在 `shared/api`，业务模块不得各自创建 HTTP 客户端。
+- 后端成功响应直接消费明确 DTO 或 `PageResponse`，不得在前端假定或自行引入 `Result<T>`、`ApiResponse<T>` 等成功响应包裹层。
+- 所有 API 错误均按 RFC 9457 Problem Details 消费。`ApiError` 必须保留完整 `problem`（包括稳定 `code`、`instance` 和字段校验 `violations`）；页面优先显示 `detail`，需要差异化交互时依据 `code`，不得各模块自行解析错误响应。
+- 具体字段与状态码约定见根目录 [后端 API 响应与异常处理](../docs/design/backend-api-response-and-error-handling.md)；修改前后端错误契约时必须同步更新该文档和相关测试。
 - 常规列表查询应与后台统一 Search API 对应。`SearchRequest`、操作符、条件组合、分页和排序等通用类型及构造能力放在 `shared/search`。
 - 业务模块只声明本业务可查询字段、页面筛选项和接口地址，不重复实现通用 SearchRequest 组装逻辑。
 - TanStack Query 的 query key 应稳定、可序列化，并包含会影响响应结果的查询参数。

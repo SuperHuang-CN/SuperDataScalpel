@@ -41,7 +41,7 @@ public final class OracleDialect extends AbstractJdbcDialect {
             case "SID" -> "jdbc:oracle:thin:@" + hostForUrl(config) + ":" + config.port() + ":" + config.databaseName();
             default -> throw new IllegalArgumentException("Oracle 连接方式只支持 SERVICE 或 SID");
         };
-        return new JdbcConnectionSpec(driverClassName(), url, properties);
+        return new JdbcConnectionSpec(driverClassName(), url, properties, config.schemaName());
     }
 
     @Override

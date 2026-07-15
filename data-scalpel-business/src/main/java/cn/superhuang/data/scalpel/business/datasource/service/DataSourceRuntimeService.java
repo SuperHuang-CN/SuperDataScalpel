@@ -1,12 +1,14 @@
 package cn.superhuang.data.scalpel.business.datasource.service;
 
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
-import cn.superhuang.data.scalpel.business.datasource.domain.DatabaseType;
+import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceConnectionKind;
+import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.datasource.web.request.DataSourceConnectionRequest;
+import cn.superhuang.data.scalpel.business.datasource.web.request.JdbcDataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.TestDataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.response.ConnectionTestResponse;
-import cn.superhuang.data.scalpel.business.datasource.web.response.DatabaseTypeResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceTypeResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.NamespaceResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableListResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadataResponse;
@@ -45,25 +47,34 @@ public class DataSourceRuntimeService {
         this.inspector = inspector;
     }
 
-    public List<DatabaseTypeResponse> databaseTypes() {
-        return registry.all().stream()
-                .map(dialect -> DatabaseTypeResponse.from(
-                        dialect.definition(),
-                        inspector.isDriverAvailable(dialect.definition().id())
+    public List<DataSourceTypeResponse> dataSourceTypes() {
+        List<DataSourceTypeResponse> result = new java.util.ArrayList<>(registry.all().stream()
+                .map(dialect -> DataSourceTypeResponse.jdbc(
+                        dialect.definition(), inspector.isDriverAvailable(dialect.definition().id())
                 ))
-                .toList();
+                .toList());
+        result.add(DataSourceTypeResponse.kafka());
+        result.add(DataSourceTypeResponse.s3());
+        return List.copyOf(result);
     }
 
     public ConnectionTestResponse test(TestDataSourceConnectionRequest request) {
+        JdbcDataSourceConnectionRequest connection = requireJdbc(request.type(), request.connection());
         return ConnectionTestResponse.from(inspector.test(
-                request.databaseType().name(),
-                toConfig(request.connection())
+                request.type().name(),
+                toConfig(connection)
         ));
     }
 
-    public void validateConfiguration(DatabaseType databaseType, DataSourceConnectionRequest connection) {
+    public void validateConfiguration(DataSourceType type, DataSourceConnectionRequest connection) {
+        if (type.connectionKind() != connection.kind()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "数据源类型与连接配置不匹配");
+        }
+        if (type.connectionKind() != DataSourceConnectionKind.JDBC) {
+            return;
+        }
         try {
-            registry.require(databaseType.name()).createConnectionSpec(toConfig(connection));
+            registry.require(type.name()).createConnectionSpec(toConfig((JdbcDataSourceConnectionRequest) connection));
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
@@ -71,17 +82,19 @@ public class DataSourceRuntimeService {
 
     public ConnectionTestResponse test(UUID id) {
         DataSource dataSource = requireDataSource(id);
+        requireJdbc(dataSource);
         return ConnectionTestResponse.from(inspector.test(
-                dataSource.getDatabaseType().name(),
+                dataSource.getType().name(),
                 dataSource.getConnection().toJdbcConnectionConfig()
         ));
     }
 
     public List<NamespaceResponse> listNamespaces(UUID id) {
         DataSource dataSource = requireDataSource(id);
+        requireJdbc(dataSource);
         try {
             return inspector.listNamespaces(
-                            dataSource.getDatabaseType().name(),
+                            dataSource.getType().name(),
                             dataSource.getConnection().toJdbcConnectionConfig()
                     ).stream()
                     .map(NamespaceResponse::from)
@@ -99,9 +112,10 @@ public class DataSourceRuntimeService {
             boolean includeViews
     ) {
         DataSource dataSource = requireDataSource(id);
+        requireJdbc(dataSource);
         try {
             return TableListResponse.from(inspector.listTables(
-                    dataSource.getDatabaseType().name(),
+                    dataSource.getType().name(),
                     dataSource.getConnection().toJdbcConnectionConfig(),
                     new TableQuery(catalog, schema, keyword, includeViews, TABLE_LIST_LIMIT)
             ));
@@ -112,11 +126,12 @@ public class DataSourceRuntimeService {
 
     public TableMetadataResponse readTable(UUID id, String catalog, String schema, String table) {
         DataSource dataSource = requireDataSource(id);
+        requireJdbc(dataSource);
         JdbcConnectionConfig config = dataSource.getConnection().toJdbcConnectionConfig();
-        DatabaseDialect dialect = registry.require(dataSource.getDatabaseType().name());
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
         try {
             return TableMetadataResponse.from(inspector.readTable(
-                    dataSource.getDatabaseType().name(),
+                    dataSource.getType().name(),
                     config,
                     resolvedTable(dialect, config, catalog, schema, table)
             ));
@@ -127,11 +142,12 @@ public class DataSourceRuntimeService {
 
     public TablePreviewResponse preview(UUID id, String catalog, String schema, String table, int limit) {
         DataSource dataSource = requireDataSource(id);
+        requireJdbc(dataSource);
         JdbcConnectionConfig config = dataSource.getConnection().toJdbcConnectionConfig();
-        DatabaseDialect dialect = registry.require(dataSource.getDatabaseType().name());
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
         try {
             return TablePreviewResponse.from(inspector.preview(
-                    dataSource.getDatabaseType().name(),
+                    dataSource.getType().name(),
                     config,
                     resolvedTable(dialect, config, catalog, schema, table),
                     limit
@@ -146,7 +162,7 @@ public class DataSourceRuntimeService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "数据源不存在"));
     }
 
-    private static JdbcConnectionConfig toConfig(DataSourceConnectionRequest connection) {
+    private static JdbcConnectionConfig toConfig(JdbcDataSourceConnectionRequest connection) {
         return new JdbcConnectionConfig(
                 connection.host(),
                 connection.port(),
@@ -156,6 +172,26 @@ public class DataSourceRuntimeService {
                 connection.password(),
                 connection.options()
         );
+    }
+
+    private static JdbcDataSourceConnectionRequest requireJdbc(
+            DataSourceType type,
+            DataSourceConnectionRequest connection
+    ) {
+        if (type.connectionKind() != DataSourceConnectionKind.JDBC || !(connection instanceof JdbcDataSourceConnectionRequest jdbc)) {
+            throw unsupportedRuntime(type);
+        }
+        return jdbc;
+    }
+
+    private static void requireJdbc(DataSource dataSource) {
+        if (!dataSource.getType().isJdbc()) {
+            throw unsupportedRuntime(dataSource.getType());
+        }
+    }
+
+    private static ResponseStatusException unsupportedRuntime(DataSourceType type) {
+        return new ResponseStatusException(HttpStatus.NOT_IMPLEMENTED, type.displayName() + "连接器尚未实现运行时操作");
     }
 
     private static TableIdentifier resolvedTable(
