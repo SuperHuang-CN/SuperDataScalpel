@@ -111,7 +111,9 @@ final class JdbcMetadataReader {
     TableMetadata readTable(Connection connection, TableIdentifier table) throws SQLException {
         DatabaseMetaData metadata = connection.getMetaData();
         TableSummary summary = readSummary(metadata, table);
-        List<ColumnMetadata> columns = readColumns(metadata, table);
+        List<ColumnMetadata> columns = dialect.enrichColumnMetadata(
+                connection, table, readColumns(metadata, table)
+        );
         if (columns.isEmpty()) {
             throw new DatabaseAccessException("TABLE_NOT_FOUND", "未找到指定的数据表", null);
         }

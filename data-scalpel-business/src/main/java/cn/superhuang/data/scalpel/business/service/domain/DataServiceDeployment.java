@@ -7,6 +7,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -24,6 +26,16 @@ public class DataServiceDeployment extends BaseEntity {
     @Column(nullable = false)
     private long revision;
 
+    @Column(name = "engine_id", nullable = false)
+    private UUID engineId;
+
+    @Column(name = "definition_digest", nullable = false, length = 128)
+    private String definitionDigest;
+
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "definition_json", nullable = false)
+    private String definitionJson;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
     private DataServiceDeploymentStatus status;
@@ -37,18 +49,32 @@ public class DataServiceDeployment extends BaseEntity {
     protected DataServiceDeployment() {
     }
 
-    private DataServiceDeployment(UUID dataServiceId, long revision) {
+    private DataServiceDeployment(
+            UUID dataServiceId,
+            long revision,
+            UUID engineId,
+            String definitionDigest,
+            String definitionJson
+    ) {
         this.dataServiceId = dataServiceId;
-        this.revision = revision;
-        this.status = DataServiceDeploymentStatus.PENDING;
+        begin(revision, engineId, definitionDigest, definitionJson);
     }
 
-    public static DataServiceDeployment pending(UUID dataServiceId, long revision) {
-        return new DataServiceDeployment(dataServiceId, revision);
+    public static DataServiceDeployment pending(
+            UUID dataServiceId,
+            long revision,
+            UUID engineId,
+            String definitionDigest,
+            String definitionJson
+    ) {
+        return new DataServiceDeployment(dataServiceId, revision, engineId, definitionDigest, definitionJson);
     }
 
-    public void begin(long revision) {
+    public void begin(long revision, UUID engineId, String definitionDigest, String definitionJson) {
         this.revision = revision;
+        this.engineId = java.util.Objects.requireNonNull(engineId, "Engine is required");
+        this.definitionDigest = required(definitionDigest, "Definition digest");
+        this.definitionJson = required(definitionJson, "Definition JSON");
         this.status = DataServiceDeploymentStatus.PENDING;
         this.lastError = null;
     }
@@ -82,6 +108,18 @@ public class DataServiceDeployment extends BaseEntity {
         return revision;
     }
 
+    public UUID getEngineId() {
+        return engineId;
+    }
+
+    public String getDefinitionDigest() {
+        return definitionDigest;
+    }
+
+    public String getDefinitionJson() {
+        return definitionJson;
+    }
+
     public DataServiceDeploymentStatus getStatus() {
         return status;
     }
@@ -92,5 +130,10 @@ public class DataServiceDeployment extends BaseEntity {
 
     public Instant getDeployedAt() {
         return deployedAt;
+    }
+
+    private static String required(String value, String label) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " is required");
+        return value;
     }
 }

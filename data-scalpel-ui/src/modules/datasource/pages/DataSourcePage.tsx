@@ -15,13 +15,16 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type DirectorySelection } from '../../directory';
 import { useCurrentUser } from '../../system';
+import { ConnectionTestResultModal } from '../components/ConnectionTestResultModal';
 import { DataSourceDrawer } from '../components/DataSourceDrawer';
 import { DataSourceMetadataDrawer } from '../components/DataSourceMetadataDrawer';
+import { ApiResourceListDrawer } from '../components/ApiResourceListDrawer';
 import { useDataSourceTypes, useDataSources, useDeleteDataSource, useTestSavedDataSourceConnection } from '../hooks/useDataSources';
 import {
   dataSourceTypeLabels,
   dataSourcePurposeLabels,
   type DataSource,
+  type ConnectionTestResult,
   type DataSourceFilters,
   type DataSourcePurpose,
   type DataSourcePurposeFilter,
@@ -67,6 +70,11 @@ export const DataSourcePage = () => {
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [editingDataSource, setEditingDataSource] = useState<DataSource | null>(null);
   const [metadataDataSource, setMetadataDataSource] = useState<DataSource | null>(null);
+  const [apiResourceDataSource, setApiResourceDataSource] = useState<DataSource | null>(null);
+  const [testFailure, setTestFailure] = useState<{
+    result: ConnectionTestResult;
+    targetLabel: string;
+  } | null>(null);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [messageApi, messageContext] = message.useMessage();
   const currentUserQuery = useCurrentUser();
@@ -135,11 +143,19 @@ export const DataSourcePage = () => {
 
   const testConnection = async (dataSource: DataSource) => {
     try {
+      setTestFailure(null);
       const result = await testMutation.mutateAsync(dataSource.id);
       if (result.success) {
         messageApi.success(`${dataSource.name}：${result.message}`);
       } else {
-        messageApi.error(`${dataSource.name}：${result.message}`);
+        const connection = dataSource.connection;
+        const target = connection.kind === 'JDBC'
+          ? `${connection.host}:${connection.port}/${connection.databaseName}`
+          : dataSource.name;
+        setTestFailure({
+          result,
+          targetLabel: `${dataSource.name} · ${target}`,
+        });
       }
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '测试连接失败');
@@ -187,6 +203,7 @@ export const DataSourcePage = () => {
           case 'JDBC': return `${dataSource.connection.host}:${dataSource.connection.port}`;
           case 'KAFKA': return dataSource.connection.bootstrapServers;
           case 'S3': return dataSource.connection.endpoint;
+          case 'HTTP_API': return dataSource.connection.configuration.baseUrl;
         }
       },
     },
@@ -201,6 +218,7 @@ export const DataSourcePage = () => {
           case 'KAFKA': return 'Topic 在任务中选择';
           case 'S3': return dataSource.connection.rootPrefix
             ? `${dataSource.connection.bucket}/${dataSource.connection.rootPrefix}` : dataSource.connection.bucket;
+          case 'HTTP_API': return 'API 资源中配置路径';
         }
       },
     },
@@ -227,7 +245,7 @@ export const DataSourcePage = () => {
               onClick={() => setEditingDataSource(dataSource)}
             />
           </Tooltip>}
-          {canTest && dataSource.connectionKind === 'JDBC' && dataSourceTypeDefinition.get(dataSource.type)?.connectionTestAvailable && <Tooltip title="测试连接">
+          {canTest && (dataSource.connectionKind === 'JDBC' || dataSource.connectionKind === 'HTTP_API') && dataSourceTypeDefinition.get(dataSource.type)?.connectionTestAvailable && <Tooltip title="测试连接">
             <Button
               type="text"
               size="small"
@@ -235,6 +253,15 @@ export const DataSourcePage = () => {
               icon={<ApiOutlined />}
               loading={testMutation.isPending && testMutation.variables === dataSource.id}
               onClick={() => void testConnection(dataSource)}
+            />
+          </Tooltip>}
+          {dataSource.connectionKind === 'HTTP_API' && <Tooltip title="API 资源">
+            <Button
+              type="text"
+              size="small"
+              aria-label={`管理${dataSource.name}API资源`}
+              icon={<ApiOutlined />}
+              onClick={() => setApiResourceDataSource(dataSource)}
             />
           </Tooltip>}
           {canReadMetadata && dataSource.connectionKind === 'JDBC' && <Tooltip title="表结构">
@@ -356,6 +383,23 @@ export const DataSourcePage = () => {
         dataSource={metadataDataSource}
         onClose={() => setMetadataDataSource(null)}
       />
+      <ApiResourceListDrawer
+        open={Boolean(apiResourceDataSource)}
+        dataSource={apiResourceDataSource}
+        canCreate={canCreate}
+        canUpdate={canUpdate}
+        canDelete={canDelete}
+        canTest={canTest}
+        onClose={() => setApiResourceDataSource(null)}
+      />
+      {testFailure && (
+        <ConnectionTestResultModal
+          open
+          result={testFailure.result}
+          targetLabel={testFailure.targetLabel}
+          onClose={() => setTestFailure(null)}
+        />
+      )}
     </>
   );
 };

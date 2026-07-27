@@ -10,12 +10,10 @@ const anyEquals = (field: string, values: string[]) => values.length === 1
 export const buildFileDatasetSearch = (filters: FileDatasetFilters): string | undefined => {
   const keyword = filters.keyword?.trim();
   const conditions = [
-    keyword ? `(${contains('name', keyword)} OR ${contains('originalFileName', keyword)})` : undefined,
+    keyword ? contains('name', keyword) : undefined,
     filters.directoryIds?.length ? anyEquals('directoryId', filters.directoryIds) : undefined,
     filters.uncategorized ? 'directoryId:null' : undefined,
-    filters.format ? equals('format', filters.format) : undefined,
-    filters.compression ? equals('compression', filters.compression) : undefined,
-    filters.parseStatus ? equals('parseStatus', filters.parseStatus) : undefined,
+    filters.type ? equals('type', filters.type) : undefined,
   ].filter((condition): condition is string => Boolean(condition));
 
   return conditions.length ? conditions.join(' AND ') : undefined;

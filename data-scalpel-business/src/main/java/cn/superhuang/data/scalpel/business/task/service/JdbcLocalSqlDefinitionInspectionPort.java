@@ -95,6 +95,16 @@ public class JdbcLocalSqlDefinitionInspectionPort implements LocalSqlDefinitionI
             LocalSqlDefinitionInspectionRequest request,
             List<LocalSqlDefinitionInspectionProblem> problems
     ) {
+        if (subject.fields().stream().anyMatch(
+                field -> field.getFieldType() == PlatformDataType.GEOMETRY
+        )) {
+            problems.add(problem(
+                    "SPATIAL_FIELD_UNSUPPORTED",
+                    role + "包含空间字段，Local SQL 第一版不支持空间字段：" + subject.model().getName(),
+                    null
+            ));
+            return;
+        }
         if (subject.model().getStatus() != DataModelStatus.PUBLISHED) {
             problems.add(problem("MODEL_NOT_PUBLISHED", role + "未发布：" + subject.model().getName(), null));
             return;
@@ -186,6 +196,7 @@ public class JdbcLocalSqlDefinitionInspectionPort implements LocalSqlDefinitionI
             case DATE -> actual == LogicalType.DATE;
             case TIMESTAMP, TIMESTAMP_NTZ -> actual == LogicalType.DATETIME;
             case BINARY -> actual == LogicalType.BINARY;
+            case GEOMETRY -> false;
         };
     }
 

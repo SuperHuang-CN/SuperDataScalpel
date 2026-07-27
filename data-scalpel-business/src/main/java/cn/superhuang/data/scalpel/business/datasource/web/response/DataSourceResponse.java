@@ -45,6 +45,7 @@ public record DataSourceResponse(
             case JDBC -> JdbcDataSourceConnectionResponse.from(dataSource.getConnection());
             case KAFKA -> KafkaDataSourceConnectionResponse.from(dataSource.getConnection());
             case S3 -> S3DataSourceConnectionResponse.from(dataSource.getConnection());
+            case HTTP_API -> HttpApiDataSourceConnectionResponse.from(dataSource.getConnection());
         };
     }
 }

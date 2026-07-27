@@ -81,14 +81,53 @@ class BuiltInDialectsTest {
     }
 
     @Test
-    void rejectsUnknownConnectionOptionsAndMapsJdbcTypes() {
+    void passesCustomConnectionOptionsThroughPropertiesWithoutChangingTheUrl() {
         DatabaseDialect postgres = registry.require("POSTGRESQL");
-        assertThrows(IllegalArgumentException.class, () ->
-                postgres.createConnectionSpec(config(Map.of("unexpected", "value"))));
+        var spec = postgres.createConnectionSpec(config(Map.of(
+                "sslmode", "REQUIRE",
+                "tcpKeepAlive", "true"
+        )));
+
+        assertEquals("jdbc:postgresql://db.internal:5432/business", spec.jdbcUrl());
+        assertEquals("require", spec.properties().getProperty("sslmode"));
+        assertEquals("true", spec.properties().getProperty("tcpKeepAlive"));
+        assertEquals("reader", spec.properties().getProperty("user"));
+        assertEquals("do-not-leak", spec.properties().getProperty("password"));
+
         assertEquals(LogicalType.JSON, postgres.logicalType(Types.OTHER, "jsonb"));
         assertEquals(LogicalType.INTEGER, postgres.logicalType(Types.BIGINT, "int8"));
         assertEquals(LogicalType.DATETIME, postgres.logicalType(Types.TIMESTAMP_WITH_TIMEZONE, "timestamptz"));
         assertFalse(postgres.definition().connectionOptions().isEmpty());
+    }
+
+    @Test
+    void rejectsProtectedSensitiveAndInvalidTypedConnectionOptions() {
+        DatabaseDialect postgres = registry.require("POSTGRESQL");
+
+        assertThrows(IllegalArgumentException.class, () ->
+                postgres.createConnectionSpec(config(Map.of("connectTimeout", "60"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                postgres.createConnectionSpec(config(Map.of("apiToken", "do-not-store"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                postgres.createConnectionSpec(config(Map.of("apiKey", "do-not-store"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                postgres.createConnectionSpec(config(Map.of("sslmode", "unexpected"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                registry.require("MYSQL").createConnectionSpec(config(Map.of("useSSL", "sometimes"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                postgres.createConnectionSpec(config(Map.of("tcpKeepAlive", ""))));
+    }
+
+    @Test
+    void consumesOracleConnectionModeWithoutPassingItToTheDriver() {
+        var spec = registry.require("ORACLE").createConnectionSpec(config(Map.of(
+                "connectionMode", "sid",
+                "oracle.net.keepAlive", "true"
+        )));
+
+        assertEquals("jdbc:oracle:thin:@db.internal:5432:business", spec.jdbcUrl());
+        assertNull(spec.properties().getProperty("connectionMode"));
+        assertEquals("true", spec.properties().getProperty("oracle.net.keepAlive"));
     }
 
     @Test

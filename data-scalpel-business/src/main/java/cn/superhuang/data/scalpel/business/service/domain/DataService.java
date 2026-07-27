@@ -1,23 +1,26 @@
 package cn.superhuang.data.scalpel.business.service.domain;
 
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
+import cn.superhuang.data.scalpel.contract.service.DataServiceType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.ColumnDefault;
 
 import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 
-/** One V1 standard service backed by exactly one published data model. */
+/** Common lifecycle and routing metadata for one data service. */
 @Entity
 @Table(
         name = "ds_data_service",
         uniqueConstraints = {
                 @UniqueConstraint(name = "uk_ds_data_service_code", columnNames = "code"),
-                @UniqueConstraint(name = "uk_ds_data_service_engine_route", columnNames = {"engine_id", "route_path"})
+                @UniqueConstraint(name = "uk_ds_data_service_route", columnNames = "route_path")
         }
 )
 public class DataService extends BaseEntity {
@@ -31,14 +34,20 @@ public class DataService extends BaseEntity {
     @Column(name = "directory_id")
     private UUID directoryId;
 
-    @Column(name = "model_id", nullable = false)
-    private UUID modelId;
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, updatable = false, length = 32)
+    private DataServiceType type;
 
     @Column(name = "engine_id", nullable = false)
     private UUID engineId;
 
     @Column(name = "route_path", nullable = false, length = 255)
     private String routePath;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "access_mode", nullable = false, length = 32)
+    @ColumnDefault("'PUBLIC'")
+    private DataServiceAccessMode accessMode;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -57,42 +66,70 @@ public class DataService extends BaseEntity {
             String code,
             String name,
             UUID directoryId,
-            UUID modelId,
+            DataServiceType type,
             UUID engineId,
             String routePath,
+            DataServiceAccessMode accessMode,
             String description
     ) {
         this.code = normalizeCode(code);
+        this.type = Objects.requireNonNull(type, "数据服务类型不能为空");
         this.status = DataServiceStatus.DRAFT;
-        update(name, directoryId, modelId, engineId, routePath, description);
+        this.accessMode = accessMode == null ? DataServiceAccessMode.PUBLIC : accessMode;
+        update(name, directoryId, engineId, routePath, accessMode, description);
     }
 
     public static DataService create(
             String code,
             String name,
             UUID directoryId,
-            UUID modelId,
+            DataServiceType type,
+            UUID engineId,
+            String routePath,
+            DataServiceAccessMode accessMode,
+            String description
+    ) {
+        return new DataService(code, name, directoryId, type, engineId, routePath, accessMode, description);
+    }
+
+    public static DataService create(
+            String code,
+            String name,
+            UUID directoryId,
+            DataServiceType type,
             UUID engineId,
             String routePath,
             String description
     ) {
-        return new DataService(code, name, directoryId, modelId, engineId, routePath, description);
+        return create(code, name, directoryId, type, engineId, routePath, DataServiceAccessMode.PUBLIC, description);
     }
 
     public void update(
             String name,
             UUID directoryId,
-            UUID modelId,
             UUID engineId,
             String routePath,
+            DataServiceAccessMode accessMode,
             String description
     ) {
         this.name = required(name, "名称");
         this.directoryId = directoryId;
-        this.modelId = requireId(modelId, "模型");
         this.engineId = requireId(engineId, "服务引擎");
         this.routePath = ServiceRoutePath.normalize(routePath);
+        if (accessMode != null) {
+            this.accessMode = accessMode;
+        }
         this.description = optional(description);
+    }
+
+    public void update(
+            String name,
+            UUID directoryId,
+            UUID engineId,
+            String routePath,
+            String description
+    ) {
+        update(name, directoryId, engineId, routePath, null, description);
     }
 
     public long nextRevision() {
@@ -100,8 +137,8 @@ public class DataService extends BaseEntity {
         return revision;
     }
 
-    public void markPublished() {
-        status = DataServiceStatus.PUBLISHED;
+    public void markEnabled() {
+        status = DataServiceStatus.ENABLED;
     }
 
     public void markDisabled() {
@@ -120,8 +157,8 @@ public class DataService extends BaseEntity {
         return directoryId;
     }
 
-    public UUID getModelId() {
-        return modelId;
+    public DataServiceType getType() {
+        return type;
     }
 
     public UUID getEngineId() {
@@ -130,6 +167,10 @@ public class DataService extends BaseEntity {
 
     public String getRoutePath() {
         return routePath;
+    }
+
+    public DataServiceAccessMode getAccessMode() {
+        return accessMode == null ? DataServiceAccessMode.PUBLIC : accessMode;
     }
 
     public DataServiceStatus getStatus() {

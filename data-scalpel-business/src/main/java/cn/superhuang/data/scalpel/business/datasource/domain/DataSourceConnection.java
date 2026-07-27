@@ -4,6 +4,8 @@ import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Embeddable;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.util.Map;
 
@@ -35,6 +37,14 @@ public class DataSourceConnection {
 
     @Column(name = "connection_password", length = 512)
     private String secret;
+
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "api_configuration")
+    private String apiConfiguration;
+
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "api_credentials_ciphertext")
+    private String apiCredentialsCiphertext;
 
     @Convert(converter = ConnectionOptionsConverter.class)
     @Column(name = "connection_options", length = 4000)
@@ -104,6 +114,17 @@ public class DataSourceConnection {
                 principal == null ? "" : principal, secret, options);
     }
 
+    public static DataSourceConnection httpApi(
+            String baseUrl,
+            String apiConfiguration,
+            String apiCredentialsCiphertext
+    ) {
+        DataSourceConnection connection = nonJdbc(baseUrl, null, null, null, null, Map.of());
+        connection.apiConfiguration = apiConfiguration;
+        connection.apiCredentialsCiphertext = apiCredentialsCiphertext;
+        return connection;
+    }
+
     public String getEndpoint() {
         return endpoint;
     }
@@ -147,6 +168,14 @@ public class DataSourceConnection {
     /** Internal aggregate value used only to preserve a write-only secret during an update. */
     public String secretValue() {
         return secret;
+    }
+
+    public String apiConfigurationValue() {
+        return apiConfiguration;
+    }
+
+    public String apiCredentialsCiphertextValue() {
+        return apiCredentialsCiphertext;
     }
 
     public Map<String, String> getOptions() {

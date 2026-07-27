@@ -1,6 +1,8 @@
 package cn.superhuang.data.scalpel.business.model.web.request;
 
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
+import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -20,6 +22,7 @@ public record DataModelFieldInput(
         @Min(1) Integer length,
         @Min(1) @Max(38) Integer precision,
         @Min(0) @Max(38) Integer scale,
+        @Valid GeometryTypeDefinition geometry,
         @NotNull Boolean nullable,
         @NotNull Boolean primaryKey,
         @Min(0) int sortOrder,

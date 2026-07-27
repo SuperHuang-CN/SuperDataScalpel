@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.JdbcTypeCode;
@@ -15,8 +16,12 @@ import java.util.UUID;
 /** The complete mutable SQL definition of a LOCAL_SQL task. */
 @Entity
 @Table(
-        name = "ds_local_sql_task_definition",
-        uniqueConstraints = @UniqueConstraint(name = "uk_ds_local_sql_task_definition_task", columnNames = "task_id")
+        name = "task_local_sql_definition",
+        uniqueConstraints = @UniqueConstraint(name = "uk_task_local_sql_definition_task", columnNames = "task_id"),
+        indexes = @Index(
+                name = "idx_task_local_sql_definition_output_model_task",
+                columnList = "output_model_id, task_id"
+        )
 )
 public class LocalSqlTaskDefinition extends BaseEntity {
 

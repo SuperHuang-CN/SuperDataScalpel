@@ -1,7 +1,8 @@
 package cn.superhuang.data.scalpel.business.filedataset.domain;
 
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
-import cn.superhuang.data.scalpel.dialect.model.LogicalType;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -17,13 +18,13 @@ import java.util.UUID;
         name = "ds_file_dataset_field",
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_ds_file_dataset_field_name",
-                columnNames = {"file_dataset_id", "field_name"}
+                columnNames = {"file_dataset_table_id", "field_name"}
         )
 )
 public class FileDatasetField extends BaseEntity {
 
-    @Column(name = "file_dataset_id", nullable = false, updatable = false)
-    private UUID fileDatasetId;
+    @Column(name = "file_dataset_table_id", nullable = false, updatable = false)
+    private UUID fileDatasetTableId;
 
     @Column(name = "field_name", nullable = false, length = 255)
     private String name;
@@ -33,7 +34,16 @@ public class FileDatasetField extends BaseEntity {
 
     @Enumerated(EnumType.STRING)
     @Column(name = "logical_type", nullable = false, length = 32)
-    private LogicalType logicalType;
+    private PlatformDataType fieldType;
+
+    @Column
+    private Integer length;
+
+    @Column
+    private Integer precision;
+
+    @Column
+    private Integer scale;
 
     @Column(nullable = false)
     private boolean nullable;
@@ -41,9 +51,15 @@ public class FileDatasetField extends BaseEntity {
     protected FileDatasetField() {
     }
 
-    private FileDatasetField(UUID fileDatasetId, String name, int sortOrder, LogicalType logicalType, boolean nullable) {
-        if (fileDatasetId == null) {
-            throw new IllegalArgumentException("文件数据集不能为空");
+    private FileDatasetField(
+            UUID fileDatasetTableId,
+            String name,
+            int sortOrder,
+            PlatformTypeDefinition type,
+            boolean nullable
+    ) {
+        if (fileDatasetTableId == null) {
+            throw new IllegalArgumentException("文件数据集表不能为空");
         }
         if (name == null || name.trim().isEmpty()) {
             throw new IllegalArgumentException("字段名称不能为空");
@@ -51,28 +67,31 @@ public class FileDatasetField extends BaseEntity {
         if (sortOrder < 0) {
             throw new IllegalArgumentException("字段顺序不能小于零");
         }
-        if (logicalType == null) {
-            throw new IllegalArgumentException("字段逻辑类型不能为空");
+        if (type == null) {
+            throw new IllegalArgumentException("字段平台类型不能为空");
         }
-        this.fileDatasetId = fileDatasetId;
+        this.fileDatasetTableId = fileDatasetTableId;
         this.name = name.trim();
         this.sortOrder = sortOrder;
-        this.logicalType = logicalType;
+        this.fieldType = type.type();
+        this.length = type.length();
+        this.precision = type.precision();
+        this.scale = type.scale();
         this.nullable = nullable;
     }
 
     public static FileDatasetField create(
-            UUID fileDatasetId,
+            UUID fileDatasetTableId,
             String name,
             int sortOrder,
-            LogicalType logicalType,
+            PlatformTypeDefinition type,
             boolean nullable
     ) {
-        return new FileDatasetField(fileDatasetId, name, sortOrder, logicalType, nullable);
+        return new FileDatasetField(fileDatasetTableId, name, sortOrder, type, nullable);
     }
 
-    public UUID getFileDatasetId() {
-        return fileDatasetId;
+    public UUID getFileDatasetTableId() {
+        return fileDatasetTableId;
     }
 
     public String getName() {
@@ -83,8 +102,24 @@ public class FileDatasetField extends BaseEntity {
         return sortOrder;
     }
 
-    public LogicalType getLogicalType() {
-        return logicalType;
+    public PlatformDataType getFieldType() {
+        return fieldType;
+    }
+
+    public Integer getLength() {
+        return length;
+    }
+
+    public Integer getPrecision() {
+        return precision;
+    }
+
+    public Integer getScale() {
+        return scale;
+    }
+
+    public PlatformTypeDefinition getTypeDefinition() {
+        return new PlatformTypeDefinition(fieldType, length, precision, scale);
     }
 
     public boolean isNullable() {

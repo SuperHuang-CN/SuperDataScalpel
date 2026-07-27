@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.model.web.response;
 
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingQuality;
 
 public record ExternalTableImportColumnResponse(
@@ -10,6 +11,7 @@ public record ExternalTableImportColumnResponse(
         Integer length,
         Integer precision,
         Integer scale,
+        GeometryTypeDefinition geometry,
         boolean nullable,
         boolean primaryKey,
         TypeMappingQuality mappingQuality,

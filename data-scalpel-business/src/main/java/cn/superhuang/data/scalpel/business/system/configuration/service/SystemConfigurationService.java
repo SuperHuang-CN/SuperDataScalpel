@@ -1,6 +1,8 @@
 package cn.superhuang.data.scalpel.business.system.configuration.service;
 
 import cn.superhuang.data.scalpel.business.system.configuration.domain.SystemConfiguration;
+import cn.superhuang.data.scalpel.business.system.configuration.domain.SystemConfigurationDefinition;
+import cn.superhuang.data.scalpel.business.system.configuration.domain.SystemConfigurationValueType;
 import cn.superhuang.data.scalpel.business.system.configuration.repository.SystemConfigurationRepository;
 import cn.superhuang.data.scalpel.business.system.configuration.web.request.UpdateSystemConfigurationRequest;
 import cn.superhuang.data.scalpel.business.system.configuration.web.response.SystemConfigurationResponse;
@@ -38,15 +40,49 @@ public class SystemConfigurationService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public String requireValue(String configKey) {
+        return repository.findByConfigKey(configKey)
+                .map(SystemConfiguration::getConfigValue)
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.BAD_GATEWAY,
+                        "系统配置不存在：" + configKey
+                ));
+    }
+
+    @Transactional(readOnly = true)
+    public boolean requireBoolean(SystemConfigurationDefinition definition) {
+        requireDefinitionType(definition, SystemConfigurationValueType.BOOLEAN);
+        return Boolean.parseBoolean(definition.normalizeValue(requireValue(definition.getConfigKey())));
+    }
+
+    @Transactional(readOnly = true)
+    public int requireInteger(SystemConfigurationDefinition definition) {
+        requireDefinitionType(definition, SystemConfigurationValueType.INTEGER);
+        return Integer.parseInt(definition.normalizeValue(requireValue(definition.getConfigKey())));
+    }
+
     @Transactional
     public SystemConfigurationResponse update(UUID id, UpdateSystemConfigurationRequest request) {
         SystemConfiguration configuration = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "系统配置不存在"));
         try {
-            configuration.updateValue(request.configValue());
+            String normalizedValue = SystemConfigurationDefinition.findByConfigKey(configuration.getConfigKey())
+                    .map(definition -> definition.normalizeValue(request.configValue()))
+                    .orElse(request.configValue());
+            configuration.updateValue(normalizedValue);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
         return SystemConfigurationResponse.from(repository.saveAndFlush(configuration));
+    }
+
+    private static void requireDefinitionType(
+            SystemConfigurationDefinition definition,
+            SystemConfigurationValueType expectedType
+    ) {
+        if (definition == null || definition.getValueType() != expectedType) {
+            throw new IllegalArgumentException("系统配置值类型不是 " + expectedType);
+        }
     }
 }

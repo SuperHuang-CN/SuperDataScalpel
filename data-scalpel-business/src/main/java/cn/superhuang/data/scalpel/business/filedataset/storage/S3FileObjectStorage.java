@@ -1,16 +1,33 @@
 package cn.superhuang.data.scalpel.business.filedataset.storage;
 
+import cn.superhuang.data.scalpel.filegdb.FileGeodatabase;
+import cn.superhuang.data.scalpel.filegdb.s3.S3FileGdbLocation;
+import cn.superhuang.data.scalpel.filegdb.s3.S3FileGdbOptions;
+import cn.superhuang.data.scalpel.filegdb.s3.S3FileGdbSource;
+import cn.superhuang.data.scalpel.shapefile.ShapefileComponent;
+import cn.superhuang.data.scalpel.shapefile.ShapefileDataset;
+import cn.superhuang.data.scalpel.shapefile.ShapefileOpenOptions;
+import cn.superhuang.data.scalpel.shapefile.s3.S3ShapefileLocation;
+import cn.superhuang.data.scalpel.shapefile.s3.S3ShapefileOptions;
+import cn.superhuang.data.scalpel.shapefile.s3.S3ShapefileSource;
 import software.amazon.awssdk.core.ResponseInputStream;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
 import software.amazon.awssdk.services.s3.model.GetObjectResponse;
+import software.amazon.awssdk.services.s3.model.Delete;
+import software.amazon.awssdk.services.s3.model.DeleteObjectsRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Response;
+import software.amazon.awssdk.services.s3.model.ObjectIdentifier;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 import software.amazon.awssdk.services.s3.model.PutObjectResponse;
 import software.amazon.awssdk.services.s3.model.S3Exception;
 
 import java.io.InputStream;
 import java.util.Objects;
+import java.util.List;
+import java.util.Set;
 
 /** S3-compatible implementation used for the system's private file-dataset bucket. */
 public class S3FileObjectStorage implements FileObjectStorage {
@@ -73,6 +90,66 @@ public class S3FileObjectStorage implements FileObjectStorage {
         } catch (RuntimeException exception) {
             throw new FileStorageException("S3 对象删除失败", exception);
         }
+    }
+
+    @Override
+    public void deletePrefix(String prefix) {
+        String fullPrefix = fullKey(prefix).replaceFirst("/+$", "") + "/";
+        String continuationToken = null;
+        try {
+            do {
+                ListObjectsV2Response response = client.listObjectsV2(ListObjectsV2Request.builder()
+                        .bucket(bucket)
+                        .prefix(fullPrefix)
+                        .continuationToken(continuationToken)
+                        .build());
+                List<ObjectIdentifier> objects = response.contents().stream()
+                        .map(item -> ObjectIdentifier.builder().key(item.key()).build())
+                        .toList();
+                if (!objects.isEmpty()) {
+                    client.deleteObjects(DeleteObjectsRequest.builder()
+                            .bucket(bucket)
+                            .delete(Delete.builder().objects(objects).quiet(true).build())
+                            .build());
+                }
+                continuationToken = Boolean.TRUE.equals(response.isTruncated())
+                        ? response.nextContinuationToken() : null;
+            } while (continuationToken != null);
+        } catch (S3Exception exception) {
+            throw new FileStorageException("S3 目录前缀删除失败", exception);
+        } catch (RuntimeException exception) {
+            throw new FileStorageException("S3 目录前缀删除失败", exception);
+        }
+    }
+
+    @Override
+    public FileGeodatabase openFileGeodatabase(String prefix) {
+        return FileGeodatabase.open(S3FileGdbSource.create(
+                client,
+                new S3FileGdbLocation(bucket, fullKey(prefix)),
+                S3FileGdbOptions.defaults()
+        ));
+    }
+
+    @Override
+    public ShapefileDataset openShapefile(
+            String prefix,
+            Set<ShapefileComponent> components,
+            ShapefileOpenOptions options
+    ) {
+        Objects.requireNonNull(components, "components");
+        Objects.requireNonNull(options, "options");
+        String shpKey = fullKey(prefix).replaceFirst("/+$", "") + "/data.shp";
+        S3ShapefileLocation location = S3ShapefileLocation.fromShpKey(bucket, shpKey);
+        for (ShapefileComponent component : ShapefileComponent.values()) {
+            if (!component.required() && !components.contains(component)) {
+                location = location.withComponentKey(component, null);
+            }
+        }
+        return ShapefileDataset.open(
+                S3ShapefileSource.create(client, location, S3ShapefileOptions.defaults()),
+                options
+        );
     }
 
     private String fullKey(String objectKey) {

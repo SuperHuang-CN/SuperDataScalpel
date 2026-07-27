@@ -1,5 +1,9 @@
 package cn.superhuang.data.scalpel.dialect;
 
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
@@ -12,6 +16,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class TableDefinitionTest {
 
@@ -63,6 +68,26 @@ class TableDefinitionTest {
         );
 
         assertNotEquals(first.structureFingerprint(), second.structureFingerprint());
+    }
+
+    @Test
+    void geometryCannotBeDeclaredWithoutItsSpatialDefinitionOrAttachedToAScalarColumn() {
+        GeometryTypeDefinition geometry = new GeometryTypeDefinition(
+                GeometryKind.POINT, CrsReference.epsg(4326), CoordinateDimension.XY
+        );
+
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new TableColumnDefinition(
+                        "shape", TableColumnType.GEOMETRY, null, null, null, true, null, null
+                )
+        );
+        assertThrows(
+                IllegalArgumentException.class,
+                () -> new TableColumnDefinition(
+                        "name", TableColumnType.STRING, 100, null, null, true, null, geometry
+                )
+        );
     }
 
     private static TableDefinition definition(

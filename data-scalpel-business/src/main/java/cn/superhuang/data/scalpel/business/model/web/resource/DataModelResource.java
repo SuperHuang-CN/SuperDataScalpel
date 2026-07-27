@@ -1,12 +1,17 @@
 package cn.superhuang.data.scalpel.business.model.web.resource;
 
 import cn.superhuang.data.scalpel.business.model.service.DataModelService;
+import cn.superhuang.data.scalpel.business.model.service.ModelMetadataExcelFile;
+import cn.superhuang.data.scalpel.business.model.service.ModelMetadataExcelService;
 import cn.superhuang.data.scalpel.business.model.web.request.CreateDataModelRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.CreateManagedDraftRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.CreatePhysicalTableChangePlanRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ExecutePhysicalTableChangePlanRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.ExportModelMetadataRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateDataModelFieldsRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateDataModelRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.ManagedImportPreviewRequest;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelDetailResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelDataQueryResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelPreviewResponse;
@@ -16,24 +21,36 @@ import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableDdlPl
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableInspectionResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImportPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PlatformTypeCapabilityResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportPreviewResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.ModelMetadataImportPreviewResponse;
+import cn.superhuang.data.scalpel.business.task.service.TaskModelRelationQueryService;
+import cn.superhuang.data.scalpel.business.task.web.response.ModelRelatedTaskResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.ModelTaskRelationRole;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.http.ContentDisposition;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.nio.charset.StandardCharsets;
 import java.util.UUID;
 import java.util.List;
 
@@ -43,9 +60,17 @@ import java.util.List;
 public class DataModelResource {
 
     private final DataModelService service;
+    private final ModelMetadataExcelService metadataExcelService;
+    private final TaskModelRelationQueryService taskModelRelationQueryService;
 
-    public DataModelResource(DataModelService service) {
+    public DataModelResource(
+            DataModelService service,
+            ModelMetadataExcelService metadataExcelService,
+            TaskModelRelationQueryService taskModelRelationQueryService
+    ) {
         this.service = service;
+        this.metadataExcelService = metadataExcelService;
+        this.taskModelRelationQueryService = taskModelRelationQueryService;
     }
 
     @GetMapping
@@ -62,6 +87,17 @@ public class DataModelResource {
         return service.get(id);
     }
 
+    @GetMapping("/{id}/related-tasks")
+    @PreAuthorize("hasAuthority('model.view') and hasAuthority('task.view')")
+    @Operation(summary = "查询当前保存任务定义中引用模型的任务")
+    public PageResponse<ModelRelatedTaskResponse> searchRelatedTasks(
+            @PathVariable UUID id,
+            @RequestParam(required = false) ModelTaskRelationRole role,
+            @ParameterObject @ModelAttribute SearchRequest request
+    ) {
+        return taskModelRelationQueryService.searchRelatedTasks(id, role, request);
+    }
+
     @GetMapping("/external-table-import-preview")
     @PreAuthorize("hasAuthority('model.create')")
     @Operation(summary = "预览已有物理表导入后的平台字段类型")
@@ -70,6 +106,51 @@ public class DataModelResource {
             @RequestParam String physicalTableName
     ) {
         return service.previewExternalTableImport(storageDataSourceId, physicalTableName);
+    }
+
+    @PostMapping("/managed-import-preview")
+    @PreAuthorize("hasAuthority('datasource.metadata')")
+    @Operation(summary = "预览从 JDBC 表结构创建受管模型草稿的字段")
+    public ManagedImportPreviewResponse previewManagedImport(
+            @Valid @RequestBody ManagedImportPreviewRequest request
+    ) {
+        return service.previewManagedImport(request);
+    }
+
+    @PostMapping("/managed-drafts")
+    @ResponseStatus(HttpStatus.CREATED)
+    @PreAuthorize("hasAuthority('model.create')")
+    @Operation(summary = "根据已校对的字段原子创建受管模型草稿")
+    public DataModelDetailResponse createManagedDraft(
+            @Valid @RequestBody CreateManagedDraftRequest request
+    ) {
+        return service.createManagedDraft(request);
+    }
+
+    @GetMapping("/metadata-import-template")
+    @PreAuthorize("hasAuthority('model.create')")
+    @Operation(summary = "下载模型元数据 Excel 导入模板")
+    public ResponseEntity<byte[]> metadataImportTemplate() {
+        return excelFile(metadataExcelService.template());
+    }
+
+    @PostMapping("/actions/export-metadata")
+    @PreAuthorize("hasAuthority('model.view')")
+    @Operation(summary = "将选中的受管模型导出为 Excel 元数据")
+    public ResponseEntity<byte[]> exportMetadata(
+            @Valid @RequestBody ExportModelMetadataRequest request
+    ) {
+        return excelFile(metadataExcelService.export(request));
+    }
+
+    @PostMapping(path = "/actions/preview-metadata-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    @PreAuthorize("hasAuthority('model.create')")
+    @Operation(summary = "解析并校验模型元数据 Excel，不保存模型")
+    public ModelMetadataImportPreviewResponse previewMetadataImport(
+            @RequestParam UUID targetStorageDataSourceId,
+            @RequestPart("file") MultipartFile file
+    ) {
+        return metadataExcelService.preview(targetStorageDataSourceId, file);
     }
 
     @GetMapping("/platform-types")
@@ -226,5 +307,20 @@ public class DataModelResource {
     @Operation(summary = "删除模型元数据，不操作物理表")
     public void delete(@PathVariable UUID id) {
         service.delete(id);
+    }
+
+    private ResponseEntity<byte[]> excelFile(ModelMetadataExcelFile file) {
+        byte[] content = file.content();
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(metadataExcelService.contentType()))
+                .contentLength(content.length)
+                .header(
+                        HttpHeaders.CONTENT_DISPOSITION,
+                        ContentDisposition.attachment()
+                                .filename(file.fileName(), StandardCharsets.UTF_8)
+                                .build()
+                                .toString()
+                )
+                .body(content);
     }
 }

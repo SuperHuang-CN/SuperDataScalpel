@@ -3,20 +3,25 @@ import type { SearchRequest } from '../../../shared/search';
 import { invalidateDirectoryTree } from '../../directory';
 import {
   createDataModel,
+  createManagedDataModelDraft,
   createPhysicalTableChangePlan,
   cancelPhysicalTableChangePlan,
   createPhysicalTable,
   deleteDataModel,
   executeDataModelCommand,
   executePhysicalTableChangePlan,
+  downloadModelMetadataTemplate,
+  exportModelMetadata,
   fetchDataModelPreview,
   fetchDataModel,
   fetchExternalTableImportPreview,
+  fetchManagedImportPreview,
   fetchDataModels,
   fetchPhysicalTableChangePlan,
   fetchPhysicalTableChangePlans,
   fetchPhysicalTableInspection,
   fetchPlatformTypeCapabilities,
+  previewModelMetadataImport,
   queryDataModelData,
   updateDataModel,
   updateDataModelFields,
@@ -24,15 +29,44 @@ import {
 } from '../api/dataModelApi';
 import type {
   CreateDataModelRequest,
+  CreateManagedDataModelDraftRequest,
   CreatePhysicalTableChangePlanRequest,
   ExecutePhysicalTableChangePlanRequest,
   DataModelDataQueryRequest,
+  ManagedImportPreview,
+  ManagedImportPreviewRequest,
   UpdateDataModelFieldsRequest,
   UpdateDataModelRequest,
 } from '../model/dataModel';
+import { runManagedImportTasks } from '../model/managedTableImport';
+
+export interface ManagedImportPreviewItem {
+  key: string;
+  request: ManagedImportPreviewRequest;
+}
+
+export interface ManagedImportPreviewResult extends ManagedImportPreviewItem {
+  preview?: ManagedImportPreview;
+  error?: unknown;
+}
+
+export interface ManagedDataModelDraftItem {
+  key: string;
+  request: CreateManagedDataModelDraftRequest;
+}
+
+export interface ManagedDataModelDraftResult extends ManagedDataModelDraftItem {
+  detail?: Awaited<ReturnType<typeof createManagedDataModelDraft>>;
+  error?: unknown;
+}
 
 const dataModelsQueryKey = 'data-models';
 const physicalTableChangePlansQueryKey = 'physical-table-change-plans';
+const taskModelRelationsQueryKey = 'task-model-relations';
+
+const invalidateTaskModelRelations = (
+  queryClient: ReturnType<typeof useQueryClient>,
+) => queryClient.invalidateQueries({ queryKey: [taskModelRelationsQueryKey] });
 
 const invalidateDataModels = async (queryClient: ReturnType<typeof useQueryClient>) => {
   await Promise.all([
@@ -109,13 +143,56 @@ export const useCreateDataModel = () => {
   });
 };
 
+const fetchManagedImportPreviews = async (
+  items: ManagedImportPreviewItem[],
+): Promise<ManagedImportPreviewResult[]> => (
+  (await runManagedImportTasks(items, (item) => fetchManagedImportPreview(item.request)))
+    .map(({ item, result, error }) => ({ ...item, preview: result, error }))
+);
+
+export const useManagedImportPreviews = () => useMutation({
+  mutationFn: fetchManagedImportPreviews,
+});
+
+export const useDownloadModelMetadataTemplate = () => useMutation({
+  mutationFn: downloadModelMetadataTemplate,
+});
+
+export const useExportModelMetadata = () => useMutation({
+  mutationFn: exportModelMetadata,
+});
+
+export const usePreviewModelMetadataImport = () => useMutation({
+  mutationFn: ({ file, targetStorageDataSourceId }: { file: File; targetStorageDataSourceId: string }) => (
+    previewModelMetadataImport(file, targetStorageDataSourceId)
+  ),
+});
+
+const createManagedDataModelDrafts = async (
+  items: ManagedDataModelDraftItem[],
+): Promise<ManagedDataModelDraftResult[]> => (
+  (await runManagedImportTasks(items, (item) => createManagedDataModelDraft(item.request)))
+    .map(({ item, result, error }) => ({ ...item, detail: result, error }))
+);
+
+export const useCreateManagedDataModelDrafts = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: createManagedDataModelDrafts,
+    onSuccess: () => invalidateDataModels(queryClient),
+  });
+};
+
 export const useUpdateDataModel = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: ({ id, request }: { id: string; request: UpdateDataModelRequest }) => updateDataModel(id, request),
     onSuccess: (detail) => {
       queryClient.setQueryData([dataModelsQueryKey, detail.model.id], detail);
-      return invalidateDataModels(queryClient);
+      return Promise.all([
+        invalidateDataModels(queryClient),
+        invalidateTaskModelRelations(queryClient),
+      ]);
     },
   });
 };
@@ -128,6 +205,7 @@ export const useUpdateDataModelFields = () => {
       queryClient.setQueryData([dataModelsQueryKey, detail.model.id], detail);
       return Promise.all([
         invalidateDataModels(queryClient),
+        invalidateTaskModelRelations(queryClient),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, detail.model.id, 'physical-table'] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, detail.model.id, 'data-preview'] }),
       ]);
@@ -179,6 +257,7 @@ export const useExecutePhysicalTableChangePlan = () => {
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, physicalTableChangePlansQueryKey] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, 'physical-table'] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, 'data-preview'] }),
+        invalidateTaskModelRelations(queryClient),
       ]);
     },
   });
@@ -190,7 +269,10 @@ export const useDataModelCommand = (command: DataModelCommand) => {
     mutationFn: (id: string) => executeDataModelCommand(id, command),
     onSuccess: (detail) => {
       queryClient.setQueryData([dataModelsQueryKey, detail.model.id], detail);
-      return invalidateDataModels(queryClient);
+      return Promise.all([
+        invalidateDataModels(queryClient),
+        invalidateTaskModelRelations(queryClient),
+      ]);
     },
   });
 };
@@ -210,6 +292,9 @@ export const useDeleteDataModel = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteDataModel,
-    onSuccess: () => invalidateDataModels(queryClient),
+    onSuccess: () => Promise.all([
+      invalidateDataModels(queryClient),
+      invalidateTaskModelRelations(queryClient),
+    ]),
   });
 };

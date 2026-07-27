@@ -2,7 +2,7 @@
 
 ## 目标
 
-模型、任务和数据服务统一使用 `PlatformDataType` 表达数据库无关的标量类型。类型名称和语义尽量与 Spark SQL 对齐，但核心模块不依赖 Spark 类，也不持久化 Spark `DataType`、Catalyst JSON 或 Java 类名。
+模型、任务和数据服务统一使用 `PlatformDataType` 表达数据库无关的稳定类型。标量类型名称和语义尽量与 Spark SQL 对齐，但核心模块不依赖 Spark 类，也不持久化 Spark `DataType`、Catalyst JSON 或 Java 类名；空间字段使用独立 Geometry 定义，不假装成 Spark String/Binary。
 
 平台类型包括：
 
@@ -10,8 +10,13 @@
 - `FLOAT`、`DOUBLE`、`DECIMAL`
 - `STRING`、`BINARY`
 - `DATE`、`TIMESTAMP`、`TIMESTAMP_NTZ`
+- `GEOMETRY`
 
 `TIMESTAMP` 表示时间线上的时刻，对应 Spark `TimestampType`；`TIMESTAMP_NTZ` 表示不带时区的本地墙上时间，对应 Spark `TimestampNTZType`。`STRING` 的 `length` 可为空：指定长度表示保留物理长度约束，空值表示无长度上限。`DECIMAL` 精度限制为 1～38，小数位必须在 0～精度之间。
+
+`GEOMETRY` 使用 `GeometryTypeDefinition(kind, crs, dimension)` 表达。V1 业务范围固定为
+八种 GeometryKind、EPSG 正整数编码和 XY；Geometry 不能作为主键。数据库本地 SRID/SRS ID
+不进入平台契约，完整边界见[空间字段结构管理 V1](spatial-field-structure-management-v1.md)。
 
 参考 Spark JDBC 的实现顺序：读取时先处理数据库方言的原生类型，再使用标准 JDBC 类型回退；写入时先由数据库方言决定物理类型。详见 [Spark JDBC 类型映射](https://spark.apache.org/docs/latest/sql-data-sources-jdbc.html#data-type-mapping)和 [Spark JdbcUtils](https://github.com/apache/spark/blob/master/sql/core/src/main/scala/org/apache/spark/sql/execution/datasources/jdbc/JdbcUtils.scala)。
 
@@ -50,8 +55,13 @@
 | `DATE` | `date` | `DATE` | `Date` |
 | `TIMESTAMP` | `timestamp with time zone` | `TIMESTAMP WITH TIME ZONE` | `DateTime64(6,'UTC')` |
 | `TIMESTAMP_NTZ` | `timestamp` | `TIMESTAMP` | 暂不支持 |
+| `GEOMETRY` | PostGIS `geometry(KIND,localSrid)` | 暂不支持 | 暂不支持 |
 
 ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型归一：`UInt8 -> SHORT`、`UInt16 -> INTEGER`、`UInt32 -> LONG`、`UInt64 -> DECIMAL(20,0)`。
+
+MySQL 8 的 Geometry 写入使用 `KIND SRID localSrsId` 并强制 Geometry 受管表为 InnoDB；
+读取通过空间 catalog 还原 subtype、EPSG 和 XY。MySQL 5.7、MariaDB、无 SRID restriction
+的列及非二维空间列均为 `UNSUPPORTED`。
 
 ## 接口与交互
 
@@ -64,7 +74,7 @@ ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型
 
 ## Spark 接入边界
 
-真正开始 Spark 执行能力时，在执行模块增加 Java 映射器：
+Spark 执行模块使用 Java 映射器：
 
 ```java
 DataType toSparkType(PlatformTypeDefinition type);
@@ -72,7 +82,7 @@ DataType toSparkType(PlatformTypeDefinition type);
 PlatformTypeDefinition fromSparkType(DataType type);
 ```
 
-映射器使用 `org.apache.spark.sql.types.DataTypes`，但 `contracts`、`dialect`、`business` 和 `admin` 不增加 Spark 依赖。第一版不支持 `ARRAY`、`MAP`、`STRUCT` 等复杂模型字段；出现真实需求后再扩充平台契约和每个方言的能力测试。
+映射器使用 `org.apache.spark.sql.types.DataTypes`，但 `contracts`、`dialect`、`business` 和 `admin` 不增加 Spark 依赖。Geometry 在 V1 显式抛出 `SPATIAL_FIELD_UNSUPPORTED`，不得映射为 String/Binary。第一版不支持 `ARRAY`、`MAP`、`STRUCT` 等复杂模型字段；出现真实需求后再扩充平台契约和每个方言的能力测试。
 
 ## 验证要求
 

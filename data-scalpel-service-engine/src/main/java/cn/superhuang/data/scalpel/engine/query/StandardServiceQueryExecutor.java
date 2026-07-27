@@ -1,7 +1,7 @@
 package cn.superhuang.data.scalpel.engine.query;
 
 import cn.superhuang.data.scalpel.contract.service.StandardServiceQueryRequest;
-import cn.superhuang.data.scalpel.contract.service.StandardServiceQueryResponse;
+import cn.superhuang.data.scalpel.contract.service.ServiceQueryResponse;
 import cn.superhuang.data.scalpel.engine.deployment.StoredServiceDeployment;
 import cn.superhuang.data.scalpel.engine.datasource.EngineDataSourceStore;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
@@ -41,11 +41,13 @@ public class StandardServiceQueryExecutor {
         this.properties = properties;
     }
 
-    public StandardServiceQueryResponse execute(
+    public ServiceQueryResponse execute(
             StoredServiceDeployment deployment,
             StandardServiceQueryRequest request
     ) {
-        CompiledServiceRequest compiledRequest = requestCompiler.compile(deployment.request().definition(), request);
+        CompiledServiceRequest compiledRequest = requestCompiler.compile(
+                deployment.request().definition().standardDefinition(), request
+        );
         var dataSource = dataSourceStore.requireSnapshot(deployment.request().dataSourceId());
         DatabaseDialect dialect;
         try {
@@ -58,7 +60,7 @@ public class StandardServiceQueryExecutor {
             StandardQueryResult result = jdbcExecutor.execute(
                     connection, query, compiledRequest.pageSize(), Duration.ofSeconds(properties.timeoutSeconds())
             );
-            return new StandardServiceQueryResponse(
+            return new ServiceQueryResponse(
                     compiledRequest.pageNo(), compiledRequest.pageSize(), result.totalCount(), result.rows()
             );
         } catch (SQLException exception) {

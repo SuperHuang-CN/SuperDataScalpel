@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.task.web.resource;
 
 import cn.superhuang.data.scalpel.business.task.service.TaskRunService;
+import cn.superhuang.data.scalpel.business.task.service.TaskRunService.TaskRunArtifact;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
@@ -8,6 +9,9 @@ import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -53,4 +57,34 @@ public class TaskRunResource {
     public TaskRunResponse get(@PathVariable UUID runId) {
         return service.get(runId);
     }
+
+    @GetMapping("/api/v1/task-runs/{runId}/artifacts/result")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "读取 Canvas 任务运行结果")
+    public ResponseEntity<byte[]> resultArtifact(@PathVariable UUID runId) {
+        return artifactResponse(service.resultArtifact(runId));
+    }
+
+    @GetMapping("/api/v1/task-runs/{runId}/artifacts/log")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "读取 Canvas 任务运行日志")
+    public ResponseEntity<byte[]> logArtifact(@PathVariable UUID runId) {
+        return artifactResponse(service.logArtifact(runId));
+    }
+
+    @PostMapping("/api/v1/task-runs/{runId}/actions/cancel")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasAuthority('task.execute')")
+    @Operation(summary = "取消 Canvas 任务运行")
+    public TaskRunResponse cancel(@PathVariable UUID runId) {
+        return service.cancel(runId);
+    }
+
+    private static ResponseEntity<byte[]> artifactResponse(TaskRunArtifact artifact) {
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType(artifact.contentType()))
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + artifact.fileName() + "\"")
+                .body(artifact.content());
+    }
+
 }

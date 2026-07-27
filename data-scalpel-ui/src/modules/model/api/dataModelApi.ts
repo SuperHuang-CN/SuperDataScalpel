@@ -1,8 +1,9 @@
-import { requestJson } from '../../../shared/api/http';
+import { requestBlob, requestJson } from '../../../shared/api/http';
 import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
   CreateDataModelRequest,
+  CreateManagedDataModelDraftRequest,
   CreatePhysicalTableChangePlanRequest,
   DataModel,
   DataModelDataQueryRequest,
@@ -12,6 +13,9 @@ import type {
   DataModelPreview,
   ExecutePhysicalTableChangePlanRequest,
   ExternalTableImportPreview,
+  ManagedImportPreview,
+  ManagedImportPreviewRequest,
+  ModelMetadataImportPreview,
   PhysicalTableDdlPlan,
   PhysicalTableInspection,
   PlatformTypeCapability,
@@ -46,6 +50,41 @@ export const fetchPlatformTypeCapabilities = (storageDataSourceId: string): Prom
 export const fetchPhysicalTableInspection = (id: string): Promise<PhysicalTableInspection> => (
   requestJson<PhysicalTableInspection>(`${DATA_MODEL_PATH}/${id}/physical-table`)
 );
+
+export const fetchManagedImportPreview = (
+  request: ManagedImportPreviewRequest,
+): Promise<ManagedImportPreview> => (
+  requestJson<ManagedImportPreview>(`${DATA_MODEL_PATH}/managed-import-preview`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+);
+
+export const downloadModelMetadataTemplate = (): Promise<Blob> => (
+  requestBlob(`${DATA_MODEL_PATH}/metadata-import-template`)
+);
+
+export const exportModelMetadata = (modelIds: string[]): Promise<Blob> => (
+  requestBlob(`${DATA_MODEL_PATH}/actions/export-metadata`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modelIds }),
+  })
+);
+
+export const previewModelMetadataImport = (
+  file: File,
+  targetStorageDataSourceId: string,
+): Promise<ModelMetadataImportPreview> => {
+  const body = new FormData();
+  body.append('file', file);
+  const query = new URLSearchParams({ targetStorageDataSourceId });
+  return requestJson<ModelMetadataImportPreview>(
+    `${DATA_MODEL_PATH}/actions/preview-metadata-import?${query.toString()}`,
+    { method: 'POST', body },
+    60_000,
+  );
+};
 
 export const fetchPhysicalTableDdlPlan = (id: string): Promise<PhysicalTableDdlPlan> => (
   requestJson<PhysicalTableDdlPlan>(`${DATA_MODEL_PATH}/${id}/physical-table/ddl`)
@@ -111,6 +150,15 @@ export const queryDataModelData = (
 
 export const createDataModel = (request: CreateDataModelRequest): Promise<DataModelDetail> => (
   requestJson<DataModelDetail>(DATA_MODEL_PATH, { method: 'POST', body: JSON.stringify(request) })
+);
+
+export const createManagedDataModelDraft = (
+  request: CreateManagedDataModelDraftRequest,
+): Promise<DataModelDetail> => (
+  requestJson<DataModelDetail>(`${DATA_MODEL_PATH}/managed-drafts`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
 );
 
 export const updateDataModel = (id: string, request: UpdateDataModelRequest): Promise<DataModelDetail> => (

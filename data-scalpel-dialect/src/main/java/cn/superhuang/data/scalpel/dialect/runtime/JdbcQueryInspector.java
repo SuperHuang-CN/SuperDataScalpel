@@ -6,8 +6,8 @@ import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
 import cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery;
-import cn.superhuang.data.scalpel.dialect.query.QueryColumn;
 import cn.superhuang.data.scalpel.dialect.query.QueryInspection;
+import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -15,7 +15,6 @@ import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
 import java.time.Duration;
-import java.util.ArrayList;
 import java.util.List;
 
 /** Reads output metadata for an already-validated read-only query without accepting arbitrary SQL text. */
@@ -35,6 +34,28 @@ public final class JdbcQueryInspector {
             InsertSelectQuery query,
             Duration timeout
     ) {
+        return inspect(databaseType, config, query, List.of(), timeout, true);
+    }
+
+    /** Inspects a prepared SQL-service query without executing it as a metadata fallback. */
+    public QueryInspection inspectPrepared(
+            String databaseType,
+            JdbcConnectionConfig config,
+            InsertSelectQuery query,
+            List<SqlQueryParameter> parameters,
+            Duration timeout
+    ) {
+        return inspect(databaseType, config, query, parameters, timeout, false);
+    }
+
+    private QueryInspection inspect(
+            String databaseType,
+            JdbcConnectionConfig config,
+            InsertSelectQuery query,
+            List<SqlQueryParameter> parameters,
+            Duration timeout,
+            boolean allowExecutionFallback
+    ) {
         if (timeout == null || timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("Inspection timeout must be positive");
         }
@@ -51,6 +72,7 @@ public final class JdbcQueryInspector {
                 }
                 try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
                     statement.setMaxRows(1);
+                    JdbcPlatformParameterBinder.bind(statement, parameters);
                     try {
                         statement.setQueryTimeout(Math.max(1, Math.toIntExact(timeout.toSeconds())));
                     } catch (SQLException ignored) {
@@ -58,10 +80,13 @@ public final class JdbcQueryInspector {
                     }
                     ResultSetMetaData metadata = statement.getMetaData();
                     if (metadata != null) {
-                        return toInspection(metadata, dialect);
+                        return JdbcQueryMetadata.inspect(metadata, dialect);
+                    }
+                    if (!allowExecutionFallback) {
+                        throw new SQLException("JDBC driver did not provide prepared query metadata");
                     }
                     try (ResultSet resultSet = statement.executeQuery()) {
-                        return toInspection(resultSet.getMetaData(), dialect);
+                        return JdbcQueryMetadata.inspect(resultSet.getMetaData(), dialect);
                     }
                 }
             }
@@ -77,19 +102,4 @@ public final class JdbcQueryInspector {
         }
     }
 
-    private static QueryInspection toInspection(ResultSetMetaData metadata, DatabaseDialect dialect) throws SQLException {
-        List<QueryColumn> columns = new ArrayList<>(metadata.getColumnCount());
-        for (int index = 1; index <= metadata.getColumnCount(); index++) {
-            int jdbcType = metadata.getColumnType(index);
-            String nativeType = metadata.getColumnTypeName(index);
-            columns.add(new QueryColumn(
-                    metadata.getColumnLabel(index),
-                    jdbcType,
-                    nativeType,
-                    dialect.logicalType(jdbcType, nativeType),
-                    metadata.isNullable(index) != ResultSetMetaData.columnNoNulls
-            ));
-        }
-        return new QueryInspection(columns);
-    }
 }

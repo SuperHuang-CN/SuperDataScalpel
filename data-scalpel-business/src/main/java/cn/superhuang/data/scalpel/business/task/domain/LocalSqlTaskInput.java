@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.task.domain;
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -11,11 +12,15 @@ import java.util.UUID;
 /** One explicit input-model reference for a local SQL task. */
 @Entity
 @Table(
-        name = "ds_local_sql_task_input",
+        name = "task_local_sql_input",
         uniqueConstraints = {
-                @UniqueConstraint(name = "uk_ds_local_sql_task_input_model", columnNames = {"task_id", "model_id"}),
-                @UniqueConstraint(name = "uk_ds_local_sql_task_input_order", columnNames = {"task_id", "sort_order"})
-        }
+                @UniqueConstraint(name = "uk_task_local_sql_input_model", columnNames = {"task_id", "model_id"}),
+                @UniqueConstraint(name = "uk_task_local_sql_input_order", columnNames = {"task_id", "sort_order"})
+        },
+        indexes = @Index(
+                name = "idx_task_local_sql_input_model_task",
+                columnList = "model_id, task_id"
+        )
 )
 public class LocalSqlTaskInput extends BaseEntity {
 

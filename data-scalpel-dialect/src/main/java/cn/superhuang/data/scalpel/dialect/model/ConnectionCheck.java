@@ -9,7 +9,4 @@ public record ConnectionCheck(
         String databaseVersion,
         String driverName
 ) {
-    public static ConnectionCheck failed(String code, String message, long elapsedMs) {
-        return new ConnectionCheck(false, code, message, elapsedMs, null, null, null);
-    }
 }

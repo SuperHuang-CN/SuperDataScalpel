@@ -3,6 +3,8 @@ package cn.superhuang.data.scalpel.business.service.repository;
 import cn.superhuang.data.scalpel.business.service.domain.DataService;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.search.SearchRepository;
+import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -16,15 +18,17 @@ public interface DataServiceRepository extends SearchRepository<DataService, UUI
 
     boolean existsByEngineId(UUID engineId);
 
-    boolean existsByModelId(UUID modelId);
+    boolean existsByRoutePath(String routePath);
 
-    boolean existsByEngineIdAndRoutePath(UUID engineId, String routePath);
+    boolean existsByRoutePathAndIdNot(String routePath, UUID id);
 
-    boolean existsByEngineIdAndRoutePathAndIdNot(UUID engineId, String routePath, UUID id);
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select service from DataService service where service.id = :id")
+    java.util.Optional<DataService> findByIdForUpdate(@Param("id") UUID id);
 
-    boolean existsByModelIdInAndStatus(Collection<UUID> modelIds, DataServiceStatus status);
+    boolean existsByIdInAndStatus(Collection<UUID> ids, DataServiceStatus status);
 
-    boolean existsByEngineIdAndModelIdInAndStatus(UUID engineId, Collection<UUID> modelIds, DataServiceStatus status);
+    boolean existsByEngineIdAndIdInAndStatus(UUID engineId, Collection<UUID> ids, DataServiceStatus status);
 
     @Query("""
             select new cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository$DirectoryResourceCount(

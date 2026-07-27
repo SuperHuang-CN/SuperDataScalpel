@@ -16,7 +16,9 @@ public sealed interface FileDatasetParsingConfiguration permits
         FileDatasetParsingConfiguration.JsonLines,
         FileDatasetParsingConfiguration.Spreadsheet,
         FileDatasetParsingConfiguration.Parquet,
-        FileDatasetParsingConfiguration.Avro {
+        FileDatasetParsingConfiguration.Avro,
+        FileDatasetParsingConfiguration.Gdb,
+        FileDatasetParsingConfiguration.Shp {
 
     record Csv(
             String charset,
@@ -37,7 +39,7 @@ public sealed interface FileDatasetParsingConfiguration permits
     record JsonLines(String charset, FileRecordDelimiter recordDelimiter) implements FileDatasetParsingConfiguration {
     }
 
-    record Spreadsheet(String sheetName, int headerRowIndex, int dataStartRowIndex)
+    record Spreadsheet(String sourceKey, int headerRowIndex, int dataStartRowIndex)
             implements FileDatasetParsingConfiguration {
     }
 
@@ -45,5 +47,26 @@ public sealed interface FileDatasetParsingConfiguration permits
     }
 
     record Avro() implements FileDatasetParsingConfiguration {
+    }
+
+    record Gdb(String layerId) implements FileDatasetParsingConfiguration {
+        public Gdb {
+            if (layerId == null || layerId.isBlank()) {
+                throw new IllegalArgumentException("GDB 图层 ID 不能为空");
+            }
+            layerId = layerId.trim();
+        }
+    }
+
+    record Shp(String dbfCharsetOverride, String dbfFallbackCharset)
+            implements FileDatasetParsingConfiguration {
+        public Shp {
+            dbfCharsetOverride = dbfCharsetOverride == null || dbfCharsetOverride.isBlank()
+                    ? null : dbfCharsetOverride.trim();
+            if (dbfFallbackCharset == null || dbfFallbackCharset.isBlank()) {
+                throw new IllegalArgumentException("SHP DBF 回退编码不能为空");
+            }
+            dbfFallbackCharset = dbfFallbackCharset.trim();
+        }
     }
 }

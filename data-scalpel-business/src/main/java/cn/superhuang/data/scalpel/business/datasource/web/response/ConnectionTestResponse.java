@@ -9,7 +9,8 @@ public record ConnectionTestResponse(
         long elapsedMs,
         String databaseProduct,
         String databaseVersion,
-        String driverName
+        String driverName,
+        ConnectionTestDiagnosticResponse diagnostic
 ) {
     public static ConnectionTestResponse from(ConnectionCheck check) {
         return new ConnectionTestResponse(
@@ -19,7 +20,17 @@ public record ConnectionTestResponse(
                 check.elapsedMs(),
                 check.databaseProduct(),
                 check.databaseVersion(),
-                check.driverName()
+                check.driverName(),
+                null
         );
+    }
+
+    public static ConnectionTestResponse failed(
+            String code,
+            String message,
+            long elapsedMs,
+            ConnectionTestDiagnosticResponse diagnostic
+    ) {
+        return new ConnectionTestResponse(false, code, message, elapsedMs, null, null, null, diagnostic);
     }
 }

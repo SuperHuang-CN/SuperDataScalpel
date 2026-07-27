@@ -75,7 +75,10 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
         properties.setProperty("connection_timeout", "5000");
         properties.setProperty("socket_timeout", "15000");
         properties.setProperty("ssl", option(config, "ssl", "false"));
-        copyOptions(config, properties, Set.of("ssl"));
+        applyConnectionOptions(
+                config, properties, Set.of(),
+                Set.of("connection_timeout", "socket_timeout")
+        );
         String scheme = Boolean.parseBoolean(option(config, "ssl", "false")) ? "https" : "http";
         String url = "jdbc:clickhouse:" + scheme + "://" + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());
         return new JdbcConnectionSpec(driverClassName(), url, properties, null);
@@ -335,6 +338,7 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
             case TIMESTAMP, DATETIME -> type.startsWith("DateTime");
             case TIMESTAMP_NTZ -> false;
             case BINARY -> false;
+            case GEOMETRY -> false;
         };
     }
 
@@ -688,6 +692,7 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
             case TIMESTAMP_NTZ -> throw new IllegalArgumentException("ClickHouse managed tables do not support TIMESTAMP_NTZ fields");
             case DATETIME -> "DateTime";
             case BINARY -> throw new IllegalArgumentException("ClickHouse managed tables do not support BINARY fields");
+            case GEOMETRY -> throw new IllegalArgumentException("ClickHouse managed tables do not support GEOMETRY fields");
         };
         return column.nullable() ? "Nullable(" + base + ")" : base;
     }

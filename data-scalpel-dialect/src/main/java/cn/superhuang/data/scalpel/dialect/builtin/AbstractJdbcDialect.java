@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.dialect.builtin;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionDefinition;
+import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionType;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDefinition;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
@@ -27,9 +28,11 @@ import cn.superhuang.data.scalpel.dialect.model.TableStructureDifferenceType;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 import cn.superhuang.data.scalpel.dialect.query.AggregateFunction;
 import cn.superhuang.data.scalpel.dialect.query.CompiledStandardQuery;
+import cn.superhuang.data.scalpel.dialect.query.CompiledSqlServiceQuery;
 import cn.superhuang.data.scalpel.dialect.query.ConditionConjunction;
 import cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery;
 import cn.superhuang.data.scalpel.dialect.query.PreparedQuery;
+import cn.superhuang.data.scalpel.dialect.query.PreparedSqlQuery;
 import cn.superhuang.data.scalpel.dialect.query.QueryAggregate;
 import cn.superhuang.data.scalpel.dialect.query.QueryFilter;
 import cn.superhuang.data.scalpel.dialect.query.QueryFilterOperator;
@@ -37,6 +40,7 @@ import cn.superhuang.data.scalpel.dialect.query.QueryOrder;
 import cn.superhuang.data.scalpel.dialect.query.QueryParameter;
 import cn.superhuang.data.scalpel.dialect.query.QuerySortDirection;
 import cn.superhuang.data.scalpel.dialect.query.QueryValueType;
+import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
 import cn.superhuang.data.scalpel.dialect.query.StandardQuery;
 
 import java.net.URLEncoder;
@@ -47,14 +51,24 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.Map;
 import java.util.List;
 import java.util.Locale;
 import java.util.Properties;
 import java.util.Optional;
 import java.util.Set;
+import java.util.regex.Pattern;
 
 abstract class AbstractJdbcDialect implements DatabaseDialect {
+
+    private static final Pattern CONNECTION_OPTION_KEY = Pattern.compile("[A-Za-z][A-Za-z0-9._-]{0,63}");
+    private static final Set<String> GLOBAL_RESERVED_CONNECTION_OPTION_KEYS = Set.of(
+            "user", "username", "password", "host", "port", "database", "databasename", "schema",
+            "driver", "driverclassname", "url", "jdbcurl", "connecttimeout", "sockettimeout",
+            "logintimeout", "connection_timeout", "socket_timeout", "applicationname", "currentschema",
+            "useunicode", "characterencoding", "oracle.net.connect_timeout", "oracle.jdbc.readtimeout"
+    );
 
     enum QualificationMode {
         CATALOG,
@@ -172,6 +186,32 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
     }
 
     @Override
+    public final CompiledSqlServiceQuery compileSqlServiceQuery(
+            String jdbcSql,
+            List<SqlQueryParameter> parameters,
+            int offset,
+            int limit,
+            boolean returnCount
+    ) {
+        if (!definition().capabilities().contains(DatabaseCapability.SQL_SERVICE_QUERY)) {
+            throw new UnsupportedOperationException(definition().displayName() + " does not support SQL query services");
+        }
+        if (jdbcSql == null || jdbcSql.isBlank() || offset < 0 || limit < 1) {
+            throw new IllegalArgumentException("Invalid SQL service query pagination");
+        }
+        List<SqlQueryParameter> dataParameters = new ArrayList<>(parameters);
+        dataParameters.add(new SqlQueryParameter(limit, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        dataParameters.add(new SqlQueryParameter(offset, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        PreparedSqlQuery dataQuery = new PreparedSqlQuery(
+                "SELECT * FROM (" + jdbcSql + ") ds_query LIMIT ? OFFSET ?", dataParameters
+        );
+        PreparedSqlQuery countQuery = returnCount
+                ? new PreparedSqlQuery("SELECT COUNT(*) FROM (" + jdbcSql + ") ds_count", parameters)
+                : null;
+        return new CompiledSqlServiceQuery(dataQuery, countQuery);
+    }
+
+    @Override
     public String renderInsertSelect(TableIdentifier target, List<String> targetColumns, InsertSelectQuery query) {
         if (!definition().capabilities().contains(DatabaseCapability.INSERT_SELECT)) {
             throw new UnsupportedOperationException(definition().displayName() + " does not support insert-select tasks");
@@ -258,6 +298,11 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
     protected TypeMappingResult<PhysicalTypeDefinition> mapPlatformTypeToPhysical(
             PlatformTypeDefinition platformType
     ) {
+        if (platformType.type() == PlatformDataType.GEOMETRY) {
+            return TypeMappingResult.unsupported(
+                    definition.displayName() + " 暂不支持受管 GEOMETRY 字段"
+            );
+        }
         PhysicalTypeDefinition physical = switch (platformType.type()) {
             case BOOLEAN -> physical(TableColumnType.BOOLEAN);
             case BYTE -> physical(TableColumnType.BYTE);
@@ -276,6 +321,7 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
             case DATE -> physical(TableColumnType.DATE);
             case TIMESTAMP -> physical(TableColumnType.TIMESTAMP);
             case TIMESTAMP_NTZ -> physical(TableColumnType.TIMESTAMP_NTZ);
+            case GEOMETRY -> throw new IllegalStateException("GEOMETRY mapping must be handled by a spatial dialect");
         };
         return TypeMappingResult.exact(physical);
     }
@@ -412,26 +458,107 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         return properties;
     }
 
-    protected final void copyOptions(
+    protected final void applyConnectionOptions(
             JdbcConnectionConfig config,
             Properties properties,
-            Set<String> supportedKeys
+            Set<String> dialectOnlyKeys,
+            Set<String> protectedKeys
     ) {
+        if (config.options().size() > 20) {
+            throw new IllegalArgumentException("JDBC 连接参数不能超过 20 个");
+        }
+        Map<String, ConnectionOptionDefinition> definitions = definition.connectionOptions().stream()
+                .collect(java.util.stream.Collectors.toUnmodifiableMap(
+                        option -> normalizeOptionKey(option.key()),
+                        option -> option
+                ));
+        Set<String> normalizedDialectOnlyKeys = normalizeOptionKeys(dialectOnlyKeys);
+        Set<String> normalizedProtectedKeys = new HashSet<>(GLOBAL_RESERVED_CONNECTION_OPTION_KEYS);
+        normalizedProtectedKeys.addAll(normalizeOptionKeys(protectedKeys));
+        Set<String> seenKeys = new HashSet<>();
+
         for (var entry : config.options().entrySet()) {
-            if (entry.getValue() == null || entry.getValue().isBlank()) {
+            String key = entry.getKey() == null ? "" : entry.getKey().trim();
+            String value = entry.getValue() == null ? "" : entry.getValue().trim();
+            if (key.isEmpty() && value.isEmpty()) {
                 continue;
             }
-            if (!supportedKeys.contains(entry.getKey())) {
+            if (!CONNECTION_OPTION_KEY.matcher(key).matches()) {
+                throw new IllegalArgumentException("JDBC 连接参数名格式无效：" + key);
+            }
+            if (value.isEmpty()) {
+                throw new IllegalArgumentException("JDBC 连接参数值不能为空：" + key);
+            }
+            if (value.length() > 512) {
+                throw new IllegalArgumentException("JDBC 连接参数值不能超过 512 个字符：" + key);
+            }
+            String normalizedKey = normalizeOptionKey(key);
+            if (!seenKeys.add(normalizedKey)) {
+                throw new IllegalArgumentException("JDBC 连接参数名不能重复：" + key);
+            }
+            ConnectionOptionDefinition optionDefinition = definitions.get(normalizedKey);
+            if (optionDefinition == null && normalizedProtectedKeys.contains(normalizedKey)) {
                 throw new IllegalArgumentException(
-                        definition.displayName() + " 不支持连接参数：" + entry.getKey()
+                        definition.displayName() + " 连接参数由系统管理，不能自定义：" + key
                 );
             }
-            properties.setProperty(entry.getKey(), entry.getValue().trim());
+            if (optionDefinition == null && sensitiveOptionKey(normalizedKey)) {
+                throw new IllegalArgumentException("敏感 JDBC 连接参数不能保存在普通 options 中：" + key);
+            }
+
+            String validatedValue = optionDefinition == null
+                    ? value
+                    : validateDefinedOption(optionDefinition, value);
+            if (!normalizedDialectOnlyKeys.contains(normalizedKey)) {
+                properties.setProperty(optionDefinition == null ? key : optionDefinition.key(), validatedValue);
+            }
         }
     }
 
+    private static String validateDefinedOption(ConnectionOptionDefinition definition, String value) {
+        if (definition.type() == ConnectionOptionType.BOOLEAN) {
+            if (!"true".equalsIgnoreCase(value) && !"false".equalsIgnoreCase(value)) {
+                throw new IllegalArgumentException(definition.label() + "只允许 true 或 false");
+            }
+            return value.toLowerCase(Locale.ROOT);
+        }
+        if (definition.type() == ConnectionOptionType.SELECT) {
+            return definition.choices().stream()
+                    .map(choice -> choice.value())
+                    .filter(choice -> choice.equalsIgnoreCase(value))
+                    .findFirst()
+                    .orElseThrow(() -> new IllegalArgumentException(definition.label() + "的值不受支持：" + value));
+        }
+        return value;
+    }
+
+    private static Set<String> normalizeOptionKeys(Set<String> keys) {
+        return keys.stream().map(AbstractJdbcDialect::normalizeOptionKey)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+    }
+
+    private static String normalizeOptionKey(String key) {
+        return key.toLowerCase(Locale.ROOT);
+    }
+
+    private static boolean sensitiveOptionKey(String normalizedKey) {
+        return normalizedKey.contains("password")
+                || normalizedKey.contains("passwd")
+                || normalizedKey.contains("secret")
+                || normalizedKey.contains("token")
+                || normalizedKey.contains("apikey")
+                || normalizedKey.contains("api_key")
+                || normalizedKey.equals("accesskey")
+                || normalizedKey.equals("access_key")
+                || normalizedKey.endsWith(".accesskey");
+    }
+
     protected final String option(JdbcConnectionConfig config, String key, String defaultValue) {
-        String value = config.options().get(key);
+        String value = config.options().entrySet().stream()
+                .filter(entry -> entry.getKey().equalsIgnoreCase(key))
+                .map(Map.Entry::getValue)
+                .findFirst()
+                .orElse(null);
         return value == null || value.isBlank() ? defaultValue : value.trim();
     }
 
@@ -654,6 +781,13 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
                     || containsAny(actual.nativeType(), "DATETIME");
             case BINARY -> jdbcType == Types.BINARY || jdbcType == Types.VARBINARY || jdbcType == Types.LONGVARBINARY
                     || jdbcType == Types.BLOB || containsAny(actual.nativeType(), "BLOB", "BINARY");
+            case GEOMETRY -> {
+                TypeMappingResult<PlatformTypeDefinition> mapping =
+                        mapToPlatformType(JdbcTypeDescriptor.from(actual));
+                yield mapping.acceptable()
+                        && mapping.definition().type() == PlatformDataType.GEOMETRY
+                        && java.util.Objects.equals(expected.geometry(), mapping.definition().geometry());
+            }
         };
     }
 
@@ -685,12 +819,26 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         Integer length = type == TableColumnType.STRING ? requireLength(actual) : null;
         Integer precision = type == TableColumnType.DECIMAL ? requirePrecision(actual) : null;
         Integer scale = type == TableColumnType.DECIMAL ? requireScale(actual) : null;
-        return new TableColumnDefinition(
-                actual.name(), type, length, precision, scale, actual.nullable()
-        );
+        if (type == TableColumnType.GEOMETRY) {
+            TypeMappingResult<PlatformTypeDefinition> mapping =
+                    mapToPlatformType(JdbcTypeDescriptor.from(actual));
+            if (!mapping.acceptable() || mapping.definition().type() != PlatformDataType.GEOMETRY) {
+                throw new UnsupportedOperationException(
+                        mapping.message() == null ? "Unsupported geometry column: " + actual.name() : mapping.message()
+                );
+            }
+            return new TableColumnDefinition(
+                    actual.name(), type, null, null, null, actual.nullable(), null,
+                    mapping.definition().geometry()
+            );
+        }
+        return new TableColumnDefinition(actual.name(), type, length, precision, scale, actual.nullable());
     }
 
     private static TableColumnType tableColumnType(ColumnMetadata actual) {
+        if (actual.spatial() != null) {
+            return TableColumnType.GEOMETRY;
+        }
         if (containsAny(actual.nativeType(), "TEXT", "CLOB")) {
             return TableColumnType.TEXT;
         }
@@ -816,6 +964,13 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
             result.append(')');
         }
         if (!column.nullable()) result.append(" NOT NULL");
+        if (column.spatial() != null) {
+            result.append(" [")
+                    .append(column.spatial().nativeGeometryKind())
+                    .append(", SRID=")
+                    .append(column.spatial().spatialReferenceId())
+                    .append(']');
+        }
         return result.toString();
     }
 
@@ -830,12 +985,22 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
     }
 
     private static Set<DatabaseCapability> capabilitiesFor(String id) {
-        Set<DatabaseCapability> capabilities = EnumSet.allOf(DatabaseCapability.class);
-        if (!"POSTGRESQL".equals(id)) {
-            capabilities.remove(DatabaseCapability.OVERWRITE_INSERT_SELECT);
+        Set<DatabaseCapability> capabilities = EnumSet.of(
+                DatabaseCapability.TEST_CONNECTION,
+                DatabaseCapability.LIST_NAMESPACES,
+                DatabaseCapability.LIST_TABLES,
+                DatabaseCapability.READ_TABLE_METADATA,
+                DatabaseCapability.PREVIEW_DATA,
+                DatabaseCapability.STANDARD_QUERY,
+                DatabaseCapability.QUERY_METADATA,
+                DatabaseCapability.INSERT_SELECT
+        );
+        if ("POSTGRESQL".equals(id)) {
+            capabilities.add(DatabaseCapability.SQL_SERVICE_QUERY);
+            capabilities.add(DatabaseCapability.OVERWRITE_INSERT_SELECT);
         }
-        if (!"POSTGRESQL".equals(id) && !"MYSQL".equals(id) && !"CLICKHOUSE".equals(id)) {
-            capabilities.remove(DatabaseCapability.CREATE_TABLE);
+        if ("POSTGRESQL".equals(id) || "MYSQL".equals(id) || "CLICKHOUSE".equals(id)) {
+            capabilities.add(DatabaseCapability.CREATE_TABLE);
         }
         return capabilities;
     }

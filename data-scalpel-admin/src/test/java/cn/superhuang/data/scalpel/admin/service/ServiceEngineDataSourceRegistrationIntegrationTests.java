@@ -32,9 +32,11 @@ import org.springframework.transaction.support.TransactionSynchronizationManager
 import org.springframework.web.context.WebApplicationContext;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static cn.superhuang.data.scalpel.admin.support.AuthenticationTestSupport.loginAsAdministrator;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -117,12 +119,15 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                                   "enabled":true,
                                   "connection":{
                                     "kind":"JDBC",
-                                    "host":"192.168.20.12",
+                                    "host":"192.168.20.11",
                                     "port":5432,
                                     "databaseName":"runtime",
                                     "schemaName":"public",
                                     "username":"reader",
-                                    "password":"new-secret"
+                                    "options":{
+                                      "sslmode":"require",
+                                      "tcpKeepAlive":"false"
+                                    }
                                   }
                                 }
                                 """))
@@ -179,7 +184,11 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                                     "databaseName":"runtime",
                                     "schemaName":"public",
                                     "username":"reader",
-                                    "password":"secret"
+                                    "password":"secret",
+                                    "options":{
+                                      "sslmode":"prefer",
+                                      "tcpKeepAlive":"true"
+                                    }
                                   }
                                 }
                                 """.formatted(code)))
@@ -224,6 +233,10 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                         EngineDataSourceRegistrationRequest request
                 ) {
                     assertNoManagementTransaction();
+                    Map<String, String> expectedOptions = request.revision() == 1
+                            ? Map.of("sslmode", "prefer", "tcpKeepAlive", "true")
+                            : Map.of("sslmode", "require", "tcpKeepAlive", "false");
+                    assertEquals(expectedOptions, request.dataSource().options());
                     return new EngineDataSourceRegistrationResponse(
                             engine.getCode(), request.dataSourceId(), request.revision(), EngineDataSourceStatus.READY, "已注册"
                     );

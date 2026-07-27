@@ -7,10 +7,13 @@ import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTableInspection;
 import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTablePort;
 import cn.superhuang.data.scalpel.business.model.service.PhysicalTableState;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
+import cn.superhuang.data.scalpel.dialect.model.IndexMetadata;
 import cn.superhuang.data.scalpel.dialect.model.PrimaryKeyMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeOperation;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeOperationType;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
@@ -27,6 +30,8 @@ import cn.superhuang.data.scalpel.dialect.query.StandardQuery;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryResult;
 import cn.superhuang.data.scalpel.dialect.model.TableSummary;
 import com.jayway.jsonpath.JsonPath;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -39,19 +44,26 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.context.WebApplicationContext;
 
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.sql.Types;
 import java.time.Duration;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static cn.superhuang.data.scalpel.admin.support.AuthenticationTestSupport.loginAsAdministrator;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -89,6 +101,7 @@ class DataModelIntegrationTests {
                 .apply(springSecurity())
                 .build();
         clearData();
+        PhysicalTableTestConfiguration.reset();
     }
 
     @AfterEach
@@ -223,7 +236,7 @@ class DataModelIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{\"fields\":[]}"))
                 .andExpect(status().isConflict())
-                .andExpect(jsonPath("$.detail").value("只有草稿模型可以修改字段结构"));
+                .andExpect(jsonPath("$.detail").value("已发布模型请先停用后再修改字段"));
 
         mockMvc.perform(post("/api/v1/data-sources/{id}/actions/delete", storageId))
                 .andExpect(status().isConflict())
@@ -255,6 +268,592 @@ class DataModelIntegrationTests {
                 .andExpect(status().isNoContent());
         mockMvc.perform(post("/api/v1/directories/{id}/actions/delete", directoryId))
                 .andExpect(status().isNoContent());
+    }
+
+    @Test
+    void importsExternalTableFromSourceOnlyJdbcDataSource() throws Exception {
+        String sourceId = createDataSource("external_source", "外部表来源", "SOURCE", true);
+
+        mockMvc.perform(get("/api/v1/models/external-table-import-preview")
+                        .param("storageDataSourceId", sourceId)
+                        .param("physicalTableName", "external_orders"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importable").value(true))
+                .andExpect(jsonPath("$.columns.length()").value(3));
+
+        String created = mockMvc.perform(post("/api/v1/models")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "source_external_order", "name": "来源库外部订单模型",
+                                  "storageDataSourceId": "%s", "physicalTableName": "external_orders",
+                                  "physicalTableMode": "EXTERNAL"
+                                }
+                                """.formatted(sourceId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.model.physicalTableMode").value("EXTERNAL"))
+                .andExpect(jsonPath("$.model.storageDataSourceId").value(sourceId))
+                .andExpect(jsonPath("$.fields.length()").value(3))
+                .andReturn().getResponse().getContentAsString();
+        String modelId = JsonPath.read(created, "$.model.id");
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/publish", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.model.status").value("PUBLISHED"));
+    }
+
+    @Test
+    void previewsJdbcStructureAndCreatesManagedDraftWithoutCreatingThePhysicalTable() throws Exception {
+        String sourceId = createDataSource("managed_import_source", "受管模型导入来源", "SOURCE", true);
+        String storageId = createDataSource("managed_import_storage", "受管模型目标存储", "STORAGE", true);
+        String directoryId = createDirectory("MODEL", "导入模型");
+
+        mockMvc.perform(post("/api/v1/models/managed-import-preview")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceDataSourceId": "%s",
+                                  "sourceTable": {"catalog": "warehouse", "schema": "public", "table": "external_orders"},
+                                  "targetStorageDataSourceId": "%s"
+                                }
+                                """.formatted(sourceId, storageId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sourceTable.table").value("external_orders"))
+                .andExpect(jsonPath("$.suggestedCode").value("external_orders"))
+                .andExpect(jsonPath("$.suggestedName").value("外部订单表"))
+                .andExpect(jsonPath("$.suggestedPhysicalTableName").value("external_orders"))
+                .andExpect(jsonPath("$.tableImportable").value(true))
+                .andExpect(jsonPath("$.importable").value(true))
+                .andExpect(jsonPath("$.columns.length()").value(3))
+                .andExpect(jsonPath("$.columns[0].code").value("order_id"))
+                .andExpect(jsonPath("$.columns[0].fieldType").value("LONG"))
+                .andExpect(jsonPath("$.columns[0].primaryKey").value(true))
+                .andExpect(jsonPath("$.columns[1].precision").value(18))
+                .andExpect(jsonPath("$.columns[2].length").value(200))
+                .andExpect(jsonPath("$.warnings[0]").value("字段 order_id 的自增属性未导入"));
+
+        String created = mockMvc.perform(post("/api/v1/models/managed-drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "external_orders", "name": "外部订单表", "directoryId": "%s",
+                                  "storageDataSourceId": "%s", "physicalTableName": "imported_orders",
+                                  "clickHouseOrderByColumns": [],
+                                  "fields": [
+                                    {
+                                      "code": "order_id", "name": "订单主键", "fieldType": "LONG",
+                                      "nullable": false, "primaryKey": true, "sortOrder": 10, "description": "订单主键"
+                                    },
+                                    {
+                                      "code": "amount", "name": "订单金额", "fieldType": "DECIMAL",
+                                      "precision": 18, "scale": 2, "nullable": true, "primaryKey": false,
+                                      "sortOrder": 20
+                                    },
+                                    {
+                                      "code": "remark", "name": "订单备注", "fieldType": "STRING", "length": 200,
+                                      "nullable": true, "primaryKey": false, "sortOrder": 30
+                                    }
+                                  ]
+                                }
+                                """.formatted(directoryId, storageId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.model.physicalTableMode").value("MANAGED"))
+                .andExpect(jsonPath("$.model.status").value("DRAFT"))
+                .andExpect(jsonPath("$.model.storageDataSourceId").value(storageId))
+                .andExpect(jsonPath("$.model.physicalTableName").value("imported_orders"))
+                .andExpect(jsonPath("$.fields.length()").value(3))
+                .andReturn().getResponse().getContentAsString();
+        String modelId = JsonPath.read(created, "$.model.id");
+
+        assertEquals(0, PhysicalTableTestConfiguration.createCalls());
+        mockMvc.perform(get("/api/v1/models/{id}/physical-table", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("NOT_FOUND"));
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/create-physical-table", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("MATCHED"));
+        assertEquals(1, PhysicalTableTestConfiguration.createCalls());
+    }
+
+    @Test
+    void reportsUnresolvedManagedImportColumnsAndRejectsInvalidTargetsWithoutPartialModels() throws Exception {
+        String sourceId = createDataSource("managed_problem_source", "问题字段来源", "DISTRIBUTION", true);
+        String disabledSourceId = createDataSource("managed_disabled_source", "停用来源", "SOURCE", false);
+        String storageId = createDataSource("managed_problem_storage", "问题字段目标", "STORAGE", true);
+        String clickHouseStorageId = createDataSource(
+                "managed_clickhouse_storage", "ClickHouse 问题字段目标", "STORAGE", true, "CLICKHOUSE", 8123
+        );
+        String nonStorageId = createDataSource("managed_non_storage", "非存储目标", "SOURCE", true);
+
+        mockMvc.perform(post("/api/v1/models/managed-import-preview")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceDataSourceId": "%s",
+                                  "sourceTable": {"catalog": "warehouse", "schema": "public", "table": "problem_columns"},
+                                  "targetStorageDataSourceId": "%s"
+                                }
+                                """.formatted(sourceId, storageId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importable").value(false))
+                .andExpect(jsonPath("$.columns[0].code").value(""))
+                .andExpect(jsonPath("$.columns[1].code").value(""))
+                .andExpect(jsonPath("$.columns[2].code").value(""))
+                .andExpect(jsonPath("$.columns[3].fieldType").doesNotExist())
+                .andExpect(jsonPath("$.columns[3].importable").value(false))
+                .andExpect(jsonPath("$.warnings.length()").value(2));
+
+        mockMvc.perform(post("/api/v1/models/managed-import-preview")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceDataSourceId": "%s",
+                                  "sourceTable": {"catalog": "warehouse", "schema": "public", "table": "binary_source"},
+                                  "targetStorageDataSourceId": "%s"
+                                }
+                                """.formatted(sourceId, clickHouseStorageId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importable").value(false))
+                .andExpect(jsonPath("$.columns[0].fieldType").doesNotExist())
+                .andExpect(jsonPath("$.columns[0].mappingQuality").value("UNSUPPORTED"))
+                .andExpect(jsonPath("$.columns[0].issues[0]").value(
+                        org.hamcrest.Matchers.containsString("目标数据存储")
+                ));
+
+        mockMvc.perform(post("/api/v1/models/managed-import-preview")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceDataSourceId": "%s",
+                                  "sourceTable": {"catalog": "warehouse", "schema": "public", "table": "source_view"},
+                                  "targetStorageDataSourceId": "%s"
+                                }
+                                """.formatted(sourceId, storageId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.tableImportable").value(false))
+                .andExpect(jsonPath("$.importable").value(false))
+                .andExpect(jsonPath("$.tableIssues[0]").value(
+                        org.hamcrest.Matchers.containsString("只能导入普通物理表")
+                ));
+
+        mockMvc.perform(post("/api/v1/models/managed-import-preview")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceDataSourceId": "%s",
+                                  "sourceTable": {"table": "external_orders"},
+                                  "targetStorageDataSourceId": "%s"
+                                }
+                                """.formatted(disabledSourceId, storageId)))
+                .andExpect(status().isConflict());
+
+        mockMvc.perform(post("/api/v1/models/managed-import-preview")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "sourceDataSourceId": "%s",
+                                  "sourceTable": {"table": "external_orders"},
+                                  "targetStorageDataSourceId": "%s"
+                                }
+                                """.formatted(sourceId, nonStorageId)))
+                .andExpect(status().isBadRequest());
+
+        mockMvc.perform(post("/api/v1/models/managed-drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "existing_target_model", "name": "目标冲突模型",
+                                  "storageDataSourceId": "%s", "physicalTableName": "existing_target",
+                                  "fields": [{
+                                    "code": "id", "name": "ID", "fieldType": "LONG",
+                                    "nullable": false, "primaryKey": true, "sortOrder": 10
+                                  }]
+                                }
+                                """.formatted(storageId)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("目标物理表必须不存在")));
+        assertEquals(0, modelRepository.count());
+        assertEquals(0, fieldRepository.count());
+        assertEquals(0, PhysicalTableTestConfiguration.createCalls());
+    }
+
+    @Test
+    void downloadsMetadataTemplateAndPreviewsExcelAsManagedDraftsWithoutDdl() throws Exception {
+        String storageId = createDataSource("metadata_import_storage", "元数据导入存储", "STORAGE", true);
+
+        byte[] template = mockMvc.perform(get("/api/v1/models/metadata-import-template"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        byte[] workbook = metadataWorkbook(template, "metadata_orders", "元数据订单模型", "metadata_orders_table");
+
+        String preview = mockMvc.perform(multipart("/api/v1/models/actions/preview-metadata-import")
+                        .file(new MockMultipartFile(
+                                "file", "models.xlsx",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", workbook
+                        ))
+                        .param("targetStorageDataSourceId", storageId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.formatVersion").value(2))
+                .andExpect(jsonPath("$.importable").value(true))
+                .andExpect(jsonPath("$.models[0].code").value("metadata_orders"))
+                .andExpect(jsonPath("$.models[0].physicalTableName").value("metadata_orders_table"))
+                .andExpect(jsonPath("$.models[0].clickHouseOrderByColumns.length()").value(0))
+                .andExpect(jsonPath("$.models[0].warnings[0]").value(
+                        org.hamcrest.Matchers.containsString("ClickHouse 排序键已忽略")
+                ))
+                .andExpect(jsonPath("$.models[0].fields.length()").value(2))
+                .andExpect(jsonPath("$.models[0].fields[0].fieldType").value("LONG"))
+                .andExpect(jsonPath("$.models[0].fields[0].primaryKey").value(true))
+                .andExpect(jsonPath("$.models[0].fields[1].fieldType").value("DECIMAL"))
+                .andReturn().getResponse().getContentAsString();
+
+        assertEquals("metadata_orders", JsonPath.read(preview, "$.models[0].code"));
+        assertEquals(0, modelRepository.count());
+        assertEquals(0, fieldRepository.count());
+        assertEquals(0, PhysicalTableTestConfiguration.createCalls());
+    }
+
+    @Test
+    void rejectsNonXlsxModelMetadataImportFiles() throws Exception {
+        String storageId = createDataSource("metadata_xls_storage", "旧版 Excel 导入存储", "STORAGE", true);
+
+        mockMvc.perform(multipart("/api/v1/models/actions/preview-metadata-import")
+                        .file(new MockMultipartFile(
+                                "file", "models.xls", "application/vnd.ms-excel", new byte[]{1, 2, 3}
+                        ))
+                        .param("targetStorageDataSourceId", storageId))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("只支持 .xlsx")));
+
+        assertEquals(0, modelRepository.count());
+        assertEquals(0, fieldRepository.count());
+        assertEquals(0, PhysicalTableTestConfiguration.createCalls());
+    }
+
+    @Test
+    void importsLegacyV1ScalarMetadataAndV2GeometryMetadata() throws Exception {
+        String storageId = createDataSource("metadata_versions_storage", "元数据版本存储", "STORAGE", true);
+
+        mockMvc.perform(multipart("/api/v1/models/actions/preview-metadata-import")
+                        .file(new MockMultipartFile(
+                                "file", "legacy-v1.xlsx",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                legacyMetadataWorkbook()
+                        ))
+                        .param("targetStorageDataSourceId", storageId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.formatVersion").value(1))
+                .andExpect(jsonPath("$.importable").value(true))
+                .andExpect(jsonPath("$.models[0].fields[0].fieldType").value("LONG"))
+                .andExpect(jsonPath("$.models[0].fields[0].geometry").doesNotExist());
+
+        byte[] template = mockMvc.perform(get("/api/v1/models/metadata-import-template"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        mockMvc.perform(multipart("/api/v1/models/actions/preview-metadata-import")
+                        .file(new MockMultipartFile(
+                                "file", "geometry-v2.xlsx",
+                                "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                                geometryMetadataWorkbook(template)
+                        ))
+                        .param("targetStorageDataSourceId", storageId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.formatVersion").value(2))
+                .andExpect(jsonPath("$.importable").value(true))
+                .andExpect(jsonPath("$.models[0].fields[0].fieldType").value("GEOMETRY"))
+                .andExpect(jsonPath("$.models[0].fields[0].geometry.kind").value("MULTIPOLYGON"))
+                .andExpect(jsonPath("$.models[0].fields[0].geometry.crs.authority").value("EPSG"))
+                .andExpect(jsonPath("$.models[0].fields[0].geometry.crs.code").value(4326))
+                .andExpect(jsonPath("$.models[0].fields[0].geometry.dimension").value("XY"))
+                .andExpect(jsonPath("$.models[0].fields[0].primaryKey").value(false));
+
+        assertEquals(0, modelRepository.count());
+        assertEquals(0, fieldRepository.count());
+        assertEquals(0, PhysicalTableTestConfiguration.createCalls());
+    }
+
+    @Test
+    void managesGeometryFieldsAndEnforcesV1QueryAndPhysicalChangeBoundaries() throws Exception {
+        String storageId = createDataSource("geometry_storage", "空间模型存储", "STORAGE", true);
+        mockMvc.perform(get("/api/v1/models/platform-types").param("storageDataSourceId", storageId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$[13].type").value("GEOMETRY"))
+                .andExpect(jsonPath("$[13].supported").value(true))
+                .andExpect(jsonPath("$[13].geometryKinds.length()").value(8))
+                .andExpect(jsonPath("$[13].coordinateDimensions[0]").value("XY"))
+                .andExpect(jsonPath("$[13].crsAuthorities[0]").value("EPSG"));
+
+        String created = mockMvc.perform(post("/api/v1/models/managed-drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "spatial_asset", "name": "空间资产",
+                                  "storageDataSourceId": "%s", "physicalTableName": "spatial_asset",
+                                  "fields": [
+                                    {
+                                      "code": "asset_id", "name": "资产ID", "fieldType": "LONG",
+                                      "nullable": false, "primaryKey": true, "sortOrder": 10
+                                    },
+                                    {
+                                      "code": "shape", "name": "空间位置", "fieldType": "GEOMETRY",
+                                      "geometry": {
+                                        "kind": "POINT",
+                                        "crs": {"authority": "epsg", "code": 4326},
+                                        "dimension": "XY"
+                                      },
+                                      "nullable": true, "primaryKey": false, "sortOrder": 20
+                                    }
+                                  ]
+                                }
+                                """.formatted(storageId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.fields[1].fieldType").value("GEOMETRY"))
+                .andExpect(jsonPath("$.fields[1].geometry.kind").value("POINT"))
+                .andExpect(jsonPath("$.fields[1].geometry.crs.authority").value("EPSG"))
+                .andExpect(jsonPath("$.fields[1].geometry.crs.code").value(4326))
+                .andExpect(jsonPath("$.fields[1].geometry.dimension").value("XY"))
+                .andReturn().getResponse().getContentAsString();
+        String modelId = JsonPath.read(created, "$.model.id");
+        String idFieldId = JsonPath.read(created, "$.fields[0].id");
+        String geometryFieldId = JsonPath.read(created, "$.fields[1].id");
+
+        assertEquals(
+                "POINT",
+                fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(
+                                java.util.UUID.fromString(modelId)
+                        ).get(1).getGeometry().kind().name()
+        );
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [{
+                                  "code": "invalid_shape", "name": "非法主键", "fieldType": "GEOMETRY",
+                                  "geometry": {
+                                    "kind": "POINT",
+                                    "crs": {"authority": "EPSG", "code": 4326},
+                                    "dimension": "XY"
+                                  },
+                                  "nullable": false, "primaryKey": true, "sortOrder": 10
+                                }]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.containsString("Geometry 字段不能作为主键")
+                ));
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/create-physical-table", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("MATCHED"));
+
+        mockMvc.perform(get("/api/v1/models/{id}/data-preview", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.columns.length()").value(1))
+                .andExpect(jsonPath("$.columns[0].code").value("asset_id"));
+        assertEquals(
+                List.of("asset_id"),
+                PhysicalTableTestConfiguration.lastQuery().projections().stream()
+                        .map(projection -> projection.alias()).toList()
+        );
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/query-data", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"pageNo":1,"pageSize":20,"columns":["shape"]}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.containsString("返回字段不支持该字段")
+                ));
+        mockMvc.perform(post("/api/v1/models/{id}/actions/query-data", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "pageNo":1,"pageSize":20,
+                                  "filters":[{"field":"shape","operator":"EQ","value":"POINT(0 0)"}]
+                                }
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.containsString("过滤字段不支持该字段")
+                ));
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [
+                                  {
+                                    "id":"%s", "code":"asset_id", "name":"资产编号", "fieldType":"LONG",
+                                    "nullable":false, "primaryKey":true, "sortOrder":20
+                                  },
+                                  {
+                                    "id":"%s", "code":"shape", "name":"定位点", "fieldType":"GEOMETRY",
+                                    "geometry":{
+                                      "kind":"POINT",
+                                      "crs":{"authority":"EPSG","code":4326},
+                                      "dimension":"XY"
+                                    },
+                                    "nullable":true, "primaryKey":false, "sortOrder":10,
+                                    "description":"仅保存结构定义"
+                                  }
+                                ]}
+                                """.formatted(idFieldId, geometryFieldId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fields[0].name").value("定位点"))
+                .andExpect(jsonPath("$.fields[0].description").value("仅保存结构定义"));
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [
+                                  {
+                                    "id":"%s", "code":"asset_id", "name":"资产编号", "fieldType":"LONG",
+                                    "nullable":false, "primaryKey":true, "sortOrder":20
+                                  },
+                                  {
+                                    "id":"%s", "code":"shape", "name":"定位点", "fieldType":"GEOMETRY",
+                                    "geometry":{
+                                      "kind":"POINT",
+                                      "crs":{"authority":"EPSG","code":3857},
+                                      "dimension":"XY"
+                                    },
+                                    "nullable":true, "primaryKey":false, "sortOrder":10
+                                  }
+                                ]}
+                                """.formatted(idFieldId, geometryFieldId)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.containsString("只能修改字段名称、说明和展示顺序")
+                ));
+
+        mockMvc.perform(post("/api/v1/models/{id}/physical-table-change-plans", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [
+                                  {
+                                    "id":"%s", "code":"asset_id", "name":"资产编号", "fieldType":"LONG",
+                                    "nullable":false, "primaryKey":true, "sortOrder":20
+                                  },
+                                  {
+                                    "id":"%s", "code":"shape", "name":"定位点", "fieldType":"GEOMETRY",
+                                    "geometry":{
+                                      "kind":"POINT",
+                                      "crs":{"authority":"EPSG","code":4326},
+                                      "dimension":"XY"
+                                    },
+                                    "nullable":true, "primaryKey":false, "sortOrder":10
+                                  }
+                                ]}
+                                """.formatted(idFieldId, geometryFieldId)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(
+                        org.hamcrest.Matchers.containsString("不支持物理结构变更")
+                ));
+    }
+
+    @Test
+    void importsGeometryFromAnExternalPostGisTableWithoutFlatteningSpatialParameters() throws Exception {
+        String storageId = createDataSource("geometry_external_storage", "空间外部表存储", "STORAGE", true);
+
+        mockMvc.perform(get("/api/v1/models/external-table-import-preview")
+                        .param("storageDataSourceId", storageId)
+                        .param("physicalTableName", "geometry_source"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.importable").value(true))
+                .andExpect(jsonPath("$.columns[0].platformType").value("GEOMETRY"))
+                .andExpect(jsonPath("$.columns[0].geometry.kind").value("MULTIPOLYGON"))
+                .andExpect(jsonPath("$.columns[0].geometry.crs.authority").value("EPSG"))
+                .andExpect(jsonPath("$.columns[0].geometry.crs.code").value(4490))
+                .andExpect(jsonPath("$.columns[0].geometry.dimension").value("XY"));
+
+        mockMvc.perform(post("/api/v1/models")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code":"geometry_external", "name":"空间外部表",
+                                  "storageDataSourceId":"%s", "physicalTableName":"geometry_source",
+                                  "physicalTableMode":"EXTERNAL"
+                                }
+                                """.formatted(storageId)))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.fields[0].fieldType").value("GEOMETRY"))
+                .andExpect(jsonPath("$.fields[0].geometry.kind").value("MULTIPOLYGON"))
+                .andExpect(jsonPath("$.fields[0].geometry.crs.code").value(4490))
+                .andExpect(jsonPath("$.fields[0].primaryKey").value(false));
+    }
+
+    @Test
+    void exportsOnlyManagedModelMetadataWithoutEnvironmentBindings() throws Exception {
+        String storageId = createDataSource("metadata_export_storage", "元数据导出存储", "STORAGE", true);
+        String managed = mockMvc.perform(post("/api/v1/models/managed-drafts")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "metadata_export", "name": "元数据导出模型",
+                                  "storageDataSourceId": "%s", "physicalTableName": "metadata_export_table",
+                                  "clickHouseOrderByColumns": [], "description": "只导出平台表结构",
+                                  "fields": [{
+                                    "code": "id", "name": "主键", "fieldType": "LONG",
+                                    "nullable": false, "primaryKey": true, "sortOrder": 10
+                                  }, {
+                                    "code": "shape", "name": "位置", "fieldType": "GEOMETRY",
+                                    "geometry": {
+                                      "kind": "POINT",
+                                      "crs": {"authority": "EPSG", "code": 4326},
+                                      "dimension": "XY"
+                                    },
+                                    "nullable": true, "primaryKey": false, "sortOrder": 20
+                                  }]
+                                }
+                                """.formatted(storageId)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String managedId = JsonPath.read(managed, "$.model.id");
+
+        byte[] exported = mockMvc.perform(post("/api/v1/models/actions/export-metadata")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"modelIds":["%s"]}
+                                """.formatted(managedId)))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsByteArray();
+        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(exported))) {
+            assertEquals("DATASCALPEL_MODEL_METADATA", workbook.getSheet("说明").getRow(0).getCell(1).getStringCellValue());
+            assertEquals("metadata_export", workbook.getSheet("模型").getRow(1).getCell(0).getStringCellValue());
+            assertEquals("metadata_export_table", workbook.getSheet("模型").getRow(1).getCell(2).getStringCellValue());
+            assertEquals("id", workbook.getSheet("字段").getRow(1).getCell(1).getStringCellValue());
+            assertEquals("LONG", workbook.getSheet("字段").getRow(1).getCell(3).getStringCellValue());
+            assertEquals("2", workbook.getSheet("说明").getRow(1).getCell(1).getStringCellValue());
+            assertEquals("shape", workbook.getSheet("字段").getRow(2).getCell(1).getStringCellValue());
+            assertEquals("GEOMETRY", workbook.getSheet("字段").getRow(2).getCell(3).getStringCellValue());
+            assertEquals("POINT", workbook.getSheet("字段").getRow(2).getCell(7).getStringCellValue());
+            assertEquals("EPSG", workbook.getSheet("字段").getRow(2).getCell(8).getStringCellValue());
+            assertEquals(4326, (int) workbook.getSheet("字段").getRow(2).getCell(9).getNumericCellValue());
+            assertEquals("XY", workbook.getSheet("字段").getRow(2).getCell(10).getStringCellValue());
+            assertEquals(15, workbook.getSheet("字段").getRow(0).getLastCellNum());
+            assertEquals(5, workbook.getSheet("模型").getRow(0).getLastCellNum());
+        }
+
+        String external = mockMvc.perform(post("/api/v1/models")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "metadata_external", "name": "外部模型不导出",
+                                  "storageDataSourceId": "%s", "physicalTableName": "external_orders",
+                                  "physicalTableMode": "EXTERNAL"
+                                }
+                                """.formatted(storageId)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String externalId = JsonPath.read(external, "$.model.id");
+        mockMvc.perform(post("/api/v1/models/actions/export-metadata")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"modelIds":["%s"]}
+                                """.formatted(externalId)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value(org.hamcrest.Matchers.containsString("EXTERNAL")));
     }
 
     @Test
@@ -596,6 +1195,103 @@ class DataModelIntegrationTests {
     }
 
     @Test
+    void allowsDisabledModelMetadataUpdatesAndRoutesStructuralUpdatesThroughAChangePlan() throws Exception {
+        String storageId = createDataSource("disabled_change_storage", "停用模型变更存储", "STORAGE", true);
+        String modelId = JsonPath.read(mockMvc.perform(post("/api/v1/models")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(modelRequest("disabled_change_model", storageId, "disabled_change_table")))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString(), "$.model.id");
+        String fields = mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [{
+                                  "code": "order_id", "name": "订单ID", "fieldType": "LONG",
+                                  "nullable": false, "primaryKey": true, "sortOrder": 10
+                                }]}
+                                """))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String orderIdFieldId = JsonPath.read(fields, "$.fields[0].id");
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/create-physical-table", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("MATCHED"));
+        mockMvc.perform(post("/api/v1/models/{id}/actions/publish", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.model.status").value("PUBLISHED"));
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [{
+                                  "id": "%s", "code": "order_id", "name": "订单主键", "fieldType": "LONG",
+                                  "nullable": false, "primaryKey": true, "sortOrder": 20
+                                }]}
+                                """.formatted(orderIdFieldId)))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("已发布模型请先停用后再修改字段"));
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/disable", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.model.status").value("DISABLED"));
+        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [{
+                                  "id": "%s", "code": "order_id", "name": "订单主键", "fieldType": "LONG",
+                                  "nullable": false, "primaryKey": true, "sortOrder": 20,
+                                  "description": "停用后可直接修改业务信息"
+                                }]}
+                                """.formatted(orderIdFieldId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.model.status").value("DISABLED"))
+                .andExpect(jsonPath("$.fields[0].name").value("订单主键"))
+                .andExpect(jsonPath("$.fields[0].description").value("停用后可直接修改业务信息"));
+
+        String targetFields = """
+                {"fields": [
+                  {
+                    "id": "%s", "code": "order_id", "name": "订单主键", "fieldType": "LONG",
+                    "nullable": false, "primaryKey": true, "sortOrder": 20,
+                    "description": "停用后可直接修改业务信息"
+                  },
+                  {
+                    "code": "remark", "name": "备注", "fieldType": "STRING", "length": 200,
+                    "nullable": true, "primaryKey": false, "sortOrder": 30
+                  }
+                ]}
+                """.formatted(orderIdFieldId);
+        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(targetFields))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("受管物理表已存在，请先生成并执行物理表变更计划"));
+
+        String planId = JsonPath.read(mockMvc.perform(
+                        post("/api/v1/models/{id}/physical-table-change-plans", modelId)
+                                .contentType(MediaType.APPLICATION_JSON)
+                                .content(targetFields))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PLANNED"))
+                .andReturn().getResponse().getContentAsString(), "$.id");
+        mockMvc.perform(post(
+                        "/api/v1/models/{id}/physical-table-change-plans/{planId}/actions/execute",
+                        modelId,
+                        planId
+                )
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"executionMode\":\"IN_PLACE\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("SUCCEEDED"));
+        mockMvc.perform(get("/api/v1/models/{id}", modelId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.model.status").value("DISABLED"))
+                .andExpect(jsonPath("$.fields.length()").value(2))
+                .andExpect(jsonPath("$.fields[1].code").value("remark"));
+    }
+
+    @Test
     void appliesTargetFieldSnapshotOnlyAfterThePhysicalChangeExecutionSucceeds() throws Exception {
         String storageId = createDataSource("execute_storage", "执行存储", "STORAGE", true);
         String modelId = JsonPath.read(mockMvc.perform(post("/api/v1/models")
@@ -689,6 +1385,111 @@ class DataModelIntegrationTests {
         return JsonPath.read(response, "$.id");
     }
 
+    private byte[] metadataWorkbook(byte[] template, String code, String name, String tableName) throws Exception {
+        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template));
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var modelRow = workbook.getSheet("模型").createRow(1);
+            modelRow.createCell(0).setCellValue(code);
+            modelRow.createCell(1).setCellValue(name);
+            modelRow.createCell(2).setCellValue(tableName);
+            modelRow.createCell(3).setCellValue("来自固定 Excel 模板");
+            modelRow.createCell(4).setCellValue("order_id");
+
+            var idRow = workbook.getSheet("字段").createRow(1);
+            idRow.createCell(0).setCellValue(code);
+            idRow.createCell(1).setCellValue("order_id");
+            idRow.createCell(2).setCellValue("订单主键");
+            idRow.createCell(3).setCellValue("LONG");
+            idRow.createCell(11).setCellValue("否");
+            idRow.createCell(12).setCellValue("是");
+            idRow.createCell(13).setCellValue(10);
+
+            var amountRow = workbook.getSheet("字段").createRow(2);
+            amountRow.createCell(0).setCellValue(code);
+            amountRow.createCell(1).setCellValue("amount");
+            amountRow.createCell(2).setCellValue("订单金额");
+            amountRow.createCell(3).setCellValue("DECIMAL");
+            amountRow.createCell(5).setCellValue(18);
+            amountRow.createCell(6).setCellValue(2);
+            amountRow.createCell(11).setCellValue("是");
+            amountRow.createCell(12).setCellValue("否");
+            amountRow.createCell(13).setCellValue(20);
+
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private byte[] geometryMetadataWorkbook(byte[] template) throws Exception {
+        try (Workbook workbook = new XSSFWorkbook(new ByteArrayInputStream(template));
+             ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var modelRow = workbook.getSheet("模型").createRow(1);
+            modelRow.createCell(0).setCellValue("geometry_excel");
+            modelRow.createCell(1).setCellValue("Excel 空间模型");
+            modelRow.createCell(2).setCellValue("geometry_excel_table");
+
+            var fieldRow = workbook.getSheet("字段").createRow(1);
+            fieldRow.createCell(0).setCellValue("geometry_excel");
+            fieldRow.createCell(1).setCellValue("shape");
+            fieldRow.createCell(2).setCellValue("行政区");
+            fieldRow.createCell(3).setCellValue("GEOMETRY");
+            fieldRow.createCell(7).setCellValue("MULTIPOLYGON");
+            fieldRow.createCell(8).setCellValue("epsg");
+            fieldRow.createCell(9).setCellValue(4326);
+            fieldRow.createCell(10).setCellValue("XY");
+            fieldRow.createCell(11).setCellValue("是");
+            fieldRow.createCell(12).setCellValue("否");
+            fieldRow.createCell(13).setCellValue(10);
+
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
+    private byte[] legacyMetadataWorkbook() throws Exception {
+        try (Workbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
+            var instructions = workbook.createSheet("说明");
+            instructions.createRow(0).createCell(0).setCellValue("文件标识");
+            instructions.getRow(0).createCell(1).setCellValue("DATASCALPEL_MODEL_METADATA");
+            instructions.createRow(1).createCell(0).setCellValue("格式版本");
+            instructions.getRow(1).createCell(1).setCellValue("1");
+
+            var models = workbook.createSheet("模型");
+            var modelHeaders = models.createRow(0);
+            List<String> modelHeaderNames = List.of(
+                    "模型编码*", "模型名称*", "目标物理表名*", "模型说明", "ClickHouse排序键"
+            );
+            for (int index = 0; index < modelHeaderNames.size(); index++) {
+                modelHeaders.createCell(index).setCellValue(modelHeaderNames.get(index));
+            }
+            var modelRow = models.createRow(1);
+            modelRow.createCell(0).setCellValue("legacy_model");
+            modelRow.createCell(1).setCellValue("旧版模型");
+            modelRow.createCell(2).setCellValue("legacy_model_table");
+
+            var fields = workbook.createSheet("字段");
+            var fieldHeaders = fields.createRow(0);
+            List<String> fieldHeaderNames = List.of(
+                    "模型编码*", "字段编码*", "字段名称*", "平台字段类型*", "长度", "精度", "小数位",
+                    "是否可空*", "是否主键*", "排序值*", "字段说明"
+            );
+            for (int index = 0; index < fieldHeaderNames.size(); index++) {
+                fieldHeaders.createCell(index).setCellValue(fieldHeaderNames.get(index));
+            }
+            var fieldRow = fields.createRow(1);
+            fieldRow.createCell(0).setCellValue("legacy_model");
+            fieldRow.createCell(1).setCellValue("id");
+            fieldRow.createCell(2).setCellValue("主键");
+            fieldRow.createCell(3).setCellValue("LONG");
+            fieldRow.createCell(7).setCellValue("否");
+            fieldRow.createCell(8).setCellValue("是");
+            fieldRow.createCell(9).setCellValue(10);
+
+            workbook.write(output);
+            return output.toByteArray();
+        }
+    }
+
     private String modelRequest(String code, String storageId, String physicalTableName) {
         return """
                 {
@@ -708,12 +1509,28 @@ class DataModelIntegrationTests {
     @TestConfiguration(proxyBeanMethods = false)
     static class PhysicalTableTestConfiguration {
 
+        private static final java.util.Set<java.util.UUID> READY_MODEL_IDS = java.util.concurrent.ConcurrentHashMap.newKeySet();
+        private static final AtomicInteger CREATE_CALLS = new AtomicInteger();
+        private static final AtomicReference<StandardQuery> LAST_QUERY = new AtomicReference<>();
+
+        static void reset() {
+            READY_MODEL_IDS.clear();
+            CREATE_CALLS.set(0);
+            LAST_QUERY.set(null);
+        }
+
+        static int createCalls() {
+            return CREATE_CALLS.get();
+        }
+
+        static StandardQuery lastQuery() {
+            return LAST_QUERY.get();
+        }
+
         @Bean
         @Primary
         ModelPhysicalTablePort modelPhysicalTablePort() {
             return new ModelPhysicalTablePort() {
-                private final java.util.Set<java.util.UUID> readyModelIds = java.util.concurrent.ConcurrentHashMap.newKeySet();
-
                 @Override
                 public ModelPhysicalTableInspection inspect(
                         cn.superhuang.data.scalpel.business.datasource.domain.DataSource dataSource,
@@ -722,7 +1539,9 @@ class DataModelIntegrationTests {
                 ) {
                     assertNoManagementTransaction();
                     TableIdentifier table = new TableIdentifier(model.getCatalogName(), model.getSchemaName(), model.getPhysicalTableName());
-                    boolean ready = readyModelIds.contains(model.getId()) || model.getPhysicalTableMode().name().equals("EXTERNAL");
+                    boolean ready = (model.getId() != null && READY_MODEL_IDS.contains(model.getId()))
+                            || model.getPhysicalTableMode().name().equals("EXTERNAL")
+                            || model.getPhysicalTableName().equals("existing_target");
                     return new ModelPhysicalTableInspection(
                             table,
                             ready ? PhysicalTableState.MATCHED : PhysicalTableState.NOT_FOUND,
@@ -730,6 +1549,16 @@ class DataModelIntegrationTests {
                             ready ? "测试物理表已就绪" : "测试物理表尚未创建",
                             java.util.List.of()
                     );
+                }
+
+                @Override
+                public ModelPhysicalTableInspection inspect(
+                        cn.superhuang.data.scalpel.business.datasource.domain.DataSource dataSource,
+                        cn.superhuang.data.scalpel.business.model.domain.DataModel model,
+                        java.util.List<cn.superhuang.data.scalpel.business.model.domain.DataModelField> fields,
+                        TableMetadata metadata
+                ) {
+                    return inspect(dataSource, model, fields);
                 }
 
                 @Override
@@ -753,12 +1582,74 @@ class DataModelIntegrationTests {
                 }
 
                 private TableMetadata externalTableMetadata(TableIdentifier table) {
+                    if (table.table().equals("source_view")) {
+                        return new TableMetadata(
+                                new TableSummary(table, "VIEW", "来源视图"),
+                                List.of(new ColumnMetadata(
+                                        "order_id", 1, Types.BIGINT, "int8", LogicalType.INTEGER,
+                                        null, null, null, false, null, false, false, "订单主键"
+                                )),
+                                new PrimaryKeyMetadata(null, List.of()),
+                                List.of()
+                        );
+                    }
+                    if (table.table().equals("binary_source")) {
+                        return new TableMetadata(
+                                new TableSummary(table, "TABLE", "二进制字段表"),
+                                List.of(new ColumnMetadata(
+                                        "payload", 1, Types.BINARY, "bytea", LogicalType.BINARY,
+                                        null, null, null, true, null, false, false, null
+                                )),
+                                new PrimaryKeyMetadata(null, List.of()),
+                                List.of()
+                        );
+                    }
+                    if (table.table().equals("problem_columns")) {
+                        return new TableMetadata(
+                                new TableSummary(table, "TABLE", "问题字段表"),
+                                List.of(
+                                        new ColumnMetadata(
+                                                "Order_ID", 1, Types.BIGINT, "int8", LogicalType.INTEGER,
+                                                null, null, null, false, "1", false, false, null
+                                        ),
+                                        new ColumnMetadata(
+                                                "order_id", 2, Types.BIGINT, "int8", LogicalType.INTEGER,
+                                                null, null, null, false, null, false, false, null
+                                        ),
+                                        new ColumnMetadata(
+                                                "bad-name", 3, Types.VARCHAR, "varchar", LogicalType.STRING,
+                                                20, null, null, true, null, false, false, null
+                                        ),
+                                        new ColumnMetadata(
+                                                "event_time", 4, Types.TIME, "time", LogicalType.TIME,
+                                                null, null, null, true, null, false, false, null
+                                        )
+                                ),
+                                new PrimaryKeyMetadata(null, List.of()),
+                                List.of(new IndexMetadata("idx_problem", false, List.of("order_id")))
+                        );
+                    }
                     if (table.table().equals("unsupported_external")) {
                         return new TableMetadata(
                                 new TableSummary(table, "TABLE", null),
                                 List.of(new ColumnMetadata(
                                         "event_time", 1, Types.TIME, "time", LogicalType.TIME,
                                         null, null, null, false, null, false, false, null
+                                )),
+                                new PrimaryKeyMetadata(null, List.of()),
+                                List.of()
+                        );
+                    }
+                    if (table.table().equals("geometry_source")) {
+                        return new TableMetadata(
+                                new TableSummary(table, "TABLE", "PostGIS 空间表"),
+                                List.of(new ColumnMetadata(
+                                        "shape", 1, Types.OTHER, "geometry", LogicalType.OTHER,
+                                        null, null, null, true, null, false, false, "行政区",
+                                        new SpatialColumnMetadata(
+                                                "MULTIPOLYGON", 990001, "EPSG", 4490,
+                                                CoordinateDimension.XY, true, true
+                                        )
                                 )),
                                 new PrimaryKeyMetadata(null, List.of()),
                                 List.of()
@@ -791,6 +1682,7 @@ class DataModelIntegrationTests {
                         cn.superhuang.data.scalpel.business.model.domain.DataModel model,
                         java.util.List<cn.superhuang.data.scalpel.business.model.domain.DataModelField> fields
                 ) {
+                    assertNoManagementTransaction();
                     TableIdentifier table = new TableIdentifier(model.getCatalogName(), model.getSchemaName(), model.getPhysicalTableName());
                     return new DdlPlan(table, java.util.List.of("CREATE TABLE test_table"));
                 }
@@ -849,7 +1741,8 @@ class DataModelIntegrationTests {
                         java.util.List<cn.superhuang.data.scalpel.business.model.domain.DataModelField> fields
                 ) {
                     assertNoManagementTransaction();
-                    readyModelIds.add(model.getId());
+                    CREATE_CALLS.incrementAndGet();
+                    READY_MODEL_IDS.add(model.getId());
                     return inspect(dataSource, model, fields);
                 }
 
@@ -862,6 +1755,7 @@ class DataModelIntegrationTests {
                         Duration timeout
                 ) {
                     assertNoManagementTransaction();
+                    LAST_QUERY.set(query);
                     return new StandardQueryResult(null, List.of(Map.of("order_id", "1001")));
                 }
 

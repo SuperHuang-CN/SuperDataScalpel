@@ -1,6 +1,6 @@
 package cn.superhuang.data.scalpel.business.filedataset.domain;
 
-/** Declared physical format of one uploaded file dataset. */
+/** Actual physical format of one uploaded file. */
 public enum FileDatasetFormat {
 
     CSV,
@@ -12,7 +12,6 @@ public enum FileDatasetFormat {
     XLSX,
     PARQUET,
     AVRO,
-    SHP,
     GDB,
-    OTHER
+    SHP
 }

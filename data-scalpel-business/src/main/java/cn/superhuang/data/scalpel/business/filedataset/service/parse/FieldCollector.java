@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.filedataset.service.parse;
 
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 
 import java.math.BigDecimal;
 import java.time.LocalDate;
@@ -12,7 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Pattern;
 
-/** Collects a small ordered sample while merging field types conservatively. */
+/** Scans all rows while retaining a bounded ordered preview and merging field types conservatively. */
 final class FieldCollector {
 
     private static final Pattern INTEGER = Pattern.compile("[+-]?(0|[1-9][0-9]*)");
@@ -20,13 +21,26 @@ final class FieldCollector {
 
     private final LinkedHashMap<String, FieldState> fieldStates = new LinkedHashMap<>();
     private final List<Map<String, Object>> rows = new ArrayList<>();
+    private final int previewLimit;
+    private long rowCount;
+
+    FieldCollector() {
+        this(Integer.MAX_VALUE);
+    }
+
+    FieldCollector(int previewLimit) {
+        if (previewLimit < 0) {
+            throw new IllegalArgumentException("预览记录数不能小于零");
+        }
+        this.previewLimit = previewLimit;
+    }
 
     void ensureField(String name) {
         fieldStates.computeIfAbsent(name, ignored -> new FieldState());
     }
 
     void addRow(Map<String, Object> values, Map<String, LogicalType> valueTypes) {
-        Map<String, Object> row = new LinkedHashMap<>();
+        Map<String, Object> row = rows.size() < previewLimit ? new LinkedHashMap<>() : null;
         for (Map.Entry<String, Object> entry : values.entrySet()) {
             String name = entry.getKey();
             FieldState state = fieldStates.computeIfAbsent(name, ignored -> new FieldState());
@@ -35,21 +49,27 @@ final class FieldCollector {
             if (value == null) {
                 state.nullable = true;
             } else {
-                state.logicalType = merge(state.logicalType, valueTypes.get(name));
+                LogicalType candidate = valueTypes.get(name);
+                state.logicalType = merge(state.logicalType, candidate);
+                state.observeDecimal(value, candidate);
             }
-            row.put(name, value);
+            if (row != null) {
+                row.put(name, value);
+            }
         }
-        rows.add(row);
+        if (row != null) {
+            rows.add(row);
+        }
+        rowCount++;
     }
 
     List<FileDatasetParser.Field> fields() {
-        int rowCount = rows.size();
         List<FileDatasetParser.Field> fields = new ArrayList<>(fieldStates.size());
         int sortOrder = 0;
         for (Map.Entry<String, FieldState> entry : fieldStates.entrySet()) {
             FieldState state = entry.getValue();
             fields.add(new FileDatasetParser.Field(
-                    entry.getKey(), sortOrder++, state.logicalType == null ? LogicalType.STRING : state.logicalType,
+                    entry.getKey(), sortOrder++, state.typeDefinition(),
                     state.nullable || state.presentCount < rowCount
             ));
         }
@@ -58,6 +78,10 @@ final class FieldCollector {
 
     List<Map<String, Object>> rows() {
         return List.copyOf(rows);
+    }
+
+    long rowCount() {
+        return rowCount;
     }
 
     static LogicalType textType(String value) {
@@ -162,5 +186,37 @@ final class FieldCollector {
         private LogicalType logicalType;
         private int presentCount;
         private boolean nullable;
+        private int decimalPrecision;
+        private int decimalScale;
+
+        private void observeDecimal(Object value, LogicalType candidate) {
+            if (candidate != LogicalType.DECIMAL && candidate != LogicalType.INTEGER) {
+                return;
+            }
+            BigDecimal decimal;
+            try {
+                decimal = value instanceof BigDecimal bigDecimal
+                        ? bigDecimal
+                        : new BigDecimal(String.valueOf(value).trim());
+            } catch (RuntimeException ignored) {
+                return;
+            }
+            int scale = Math.max(0, decimal.scale());
+            int precision = decimal.precision() + Math.max(0, -decimal.scale());
+            decimalPrecision = Math.max(decimalPrecision, Math.max(1, precision));
+            decimalScale = Math.max(decimalScale, scale);
+        }
+
+        private PlatformTypeDefinition typeDefinition() {
+            LogicalType resolved = logicalType == null ? LogicalType.STRING : logicalType;
+            if (resolved != LogicalType.DECIMAL) {
+                return FileDatasetTypeDefinitions.fromLogicalType(resolved);
+            }
+            int scale = decimalScale;
+            int precision = Math.max(decimalPrecision, scale + 1);
+            return precision == 0
+                    ? FileDatasetTypeDefinitions.fromLogicalType(LogicalType.DECIMAL)
+                    : FileDatasetTypeDefinitions.decimal(precision, scale);
+        }
     }
 }

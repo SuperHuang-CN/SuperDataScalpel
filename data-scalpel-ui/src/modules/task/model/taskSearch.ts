@@ -7,9 +7,10 @@ const equals = (field: string, value: string) => `${field}:"${escapeDslText(valu
 export const buildTaskSearch = (filters: TaskFilters): string | undefined => {
   const conditions = [
     filters.keyword?.trim()
-      ? `(name:*"${escapeDslText(filters.keyword.trim())}"* OR code:*"${escapeDslText(filters.keyword.trim())}"*)`
+      ? `name:*"${escapeDslText(filters.keyword.trim())}"*`
       : undefined,
     filters.status ? equals('status', filters.status) : undefined,
+    filters.type ? equals('type', filters.type) : undefined,
     filters.directoryIds?.length
       ? filters.directoryIds.length === 1
         ? equals('directoryId', filters.directoryIds[0])

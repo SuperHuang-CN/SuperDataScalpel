@@ -2,6 +2,10 @@ package cn.superhuang.data.scalpel.dialect.builtin;
 
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionChoice;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionDefinition;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionType;
@@ -9,8 +13,10 @@ import cn.superhuang.data.scalpel.dialect.api.NamespaceMode;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
+import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
+import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheck;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheckType;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
@@ -31,6 +37,7 @@ import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 
 import java.sql.Connection;
+import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
@@ -38,6 +45,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -70,7 +78,10 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
         properties.setProperty("connectTimeout", "5");
         properties.setProperty("socketTimeout", "15");
         properties.setProperty("ApplicationName", "DataScalpel");
-        copyOptions(config, properties, Set.of("sslmode"));
+        applyConnectionOptions(
+                config, properties, Set.of(),
+                Set.of("connectTimeout", "socketTimeout", "ApplicationName", "currentSchema")
+        );
         String url = "jdbc:postgresql://" + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());
         return new JdbcConnectionSpec(driverClassName(), url, properties, config.schemaName());
     }
@@ -96,6 +107,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
             case TIMESTAMP -> "timestamp with time zone";
             case TIMESTAMP_NTZ, DATETIME -> "timestamp";
             case BINARY -> "bytea";
+            case GEOMETRY -> "geometry(" + column.geometry().kind().name() + ","
+                    + column.geometry().crs().code() + ")";
         };
     }
 
@@ -104,6 +117,15 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
             JdbcTypeDescriptor physicalType
     ) {
         String nativeType = physicalType.nativeTypeName().toLowerCase(Locale.ROOT);
+        if ("geography".equals(nativeType)) {
+            return Optional.of(TypeMappingResult.unsupported("PostGIS geography 第一版不支持"));
+        }
+        if ("raster".equals(nativeType)) {
+            return Optional.of(TypeMappingResult.unsupported("PostGIS raster 第一版不支持"));
+        }
+        if ("geometry".equals(nativeType)) {
+            return Optional.of(mapGeometryToPlatform(physicalType));
+        }
         return switch (nativeType) {
             case "bool", "boolean" -> exact(PlatformDataType.BOOLEAN);
             case "int2", "smallint", "smallserial", "serial2" -> exact(PlatformDataType.SHORT);
@@ -126,6 +148,14 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
     protected TypeMappingResult<PhysicalTypeDefinition> mapPlatformTypeToPhysical(
             PlatformTypeDefinition platformType
     ) {
+        if (platformType.type() == PlatformDataType.GEOMETRY) {
+            String issue = SpatialTypeSupport.validateV1Geometry(platformType.geometry());
+            return issue == null
+                    ? TypeMappingResult.exact(new PhysicalTypeDefinition(
+                    TableColumnType.GEOMETRY, null, null, null, platformType.geometry()
+            ))
+                    : TypeMappingResult.unsupported(issue);
+        }
         if (platformType.type() == PlatformDataType.BYTE) {
             return TypeMappingResult.normalized(
                     new PhysicalTypeDefinition(TableColumnType.SHORT, null, null, null),
@@ -140,7 +170,94 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
     }
 
     @Override
+    public List<ColumnMetadata> enrichColumnMetadata(
+            Connection connection,
+            TableIdentifier table,
+            List<ColumnMetadata> columns
+    ) throws SQLException {
+        if (columns.stream().noneMatch(PostgreSqlDialect::isPostGisNativeType)) {
+            return List.copyOf(columns);
+        }
+        String extensionSchema = postGisSchema(connection);
+        if (extensionSchema == null) {
+            return columns.stream().map(PostgreSqlDialect::unresolvedSpatialColumn).toList();
+        }
+
+        Map<String, SpatialColumnMetadata> spatialByColumn = new HashMap<>();
+        String sql = """
+                SELECT gc.f_geometry_column, gc.type, gc.srid, gc.coord_dimension,
+                       s.auth_name, s.auth_srid
+                  FROM %s.geometry_columns gc
+                  LEFT JOIN %s.spatial_ref_sys s ON s.srid = gc.srid
+                 WHERE gc.f_table_schema = ? AND gc.f_table_name = ?
+                """.formatted(quoteIdentifier(extensionSchema), quoteIdentifier(extensionSchema));
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, table.schema());
+            statement.setString(2, table.table());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    Integer srid = nullableInteger(resultSet, "srid");
+                    Integer authorityCode = nullableInteger(resultSet, "auth_srid");
+                    String columnName = resultSet.getString("f_geometry_column");
+                    spatialByColumn.put(normalizeSpatialName(columnName), new SpatialColumnMetadata(
+                            resultSet.getString("type"),
+                            srid,
+                            resultSet.getString("auth_name"),
+                            authorityCode,
+                            SpatialTypeSupport.coordinateDimension(nullableInteger(resultSet, "coord_dimension")),
+                            true,
+                            srid != null && srid > 0
+                    ));
+                }
+            }
+        }
+        return columns.stream().map(column -> {
+            if (!isPostGisNativeType(column)) {
+                return column;
+            }
+            SpatialColumnMetadata spatial = spatialByColumn.get(normalizeSpatialName(column.name()));
+            return spatial == null ? unresolvedSpatialColumn(column) : column.withSpatial(spatial);
+        }).toList();
+    }
+
+    @Override
+    public DdlPlan planCreateTable(TableDefinition definition) {
+        if (SpatialTypeSupport.containsGeometry(definition)) {
+            throw new IllegalArgumentException("PostGIS Geometry 建表规划需要连接目标数据库解析 CRS");
+        }
+        return super.planCreateTable(definition);
+    }
+
+    @Override
+    public DdlPlan planCreateTable(Connection connection, TableDefinition definition) throws SQLException {
+        if (!SpatialTypeSupport.containsGeometry(definition)) {
+            return super.planCreateTable(definition);
+        }
+        String extensionSchema = postGisSchema(connection);
+        if (extensionSchema == null) {
+            throw new IllegalArgumentException("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
+        }
+        Map<CrsReference, Integer> localSrids = resolvePostGisSrids(connection, extensionSchema, definition);
+        List<String> clauses = new ArrayList<>();
+        for (TableColumnDefinition column : definition.columns()) {
+            String typeSql = column.type() == TableColumnType.GEOMETRY
+                    ? postGisGeometryType(extensionSchema, column.geometry(), localSrids)
+                    : columnTypeSql(column);
+            clauses.add(quoteIdentifier(column.name()) + " " + typeSql
+                    + (column.nullable() ? "" : " NOT NULL"));
+        }
+        appendPrimaryKey(definition, clauses);
+        return new DdlPlan(
+                definition.table(),
+                List.of("CREATE TABLE " + qualifiedName(definition.table()) + " (" + String.join(", ", clauses) + ")")
+        );
+    }
+
+    @Override
     public TableChangePlan planTableChange(TableDefinition before, TableDefinition target, TableMetadata actual) {
+        if (SpatialTypeSupport.containsGeometry(before) || SpatialTypeSupport.containsGeometry(target)) {
+            throw new UnsupportedOperationException("空间字段所在受管表第一版不支持物理结构变更");
+        }
         if (!compareTable(before, actual).compatible()) {
             throw new IllegalArgumentException("Physical table structure has drifted from the source definition");
         }
@@ -1032,6 +1149,155 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
 
     private static String normalize(String value) {
         return value.toLowerCase(Locale.ROOT);
+    }
+
+    private static TypeMappingResult<PlatformTypeDefinition> mapGeometryToPlatform(
+            JdbcTypeDescriptor physicalType
+    ) {
+        SpatialColumnMetadata spatial = physicalType.spatial();
+        if (spatial == null) {
+            return TypeMappingResult.unsupported("PostGIS Geometry 缺少 subtype、SRID 和维度元数据");
+        }
+        if (!spatial.subtypeConstrained()) {
+            return TypeMappingResult.unsupported("PostGIS Geometry 列没有稳定的 subtype 约束");
+        }
+        GeometryKind kind = SpatialTypeSupport.geometryKind(spatial.nativeGeometryKind());
+        if (kind == null) {
+            return TypeMappingResult.unsupported("不支持 PostGIS Geometry 类型：" + spatial.nativeGeometryKind());
+        }
+        if (!spatial.crsConstrained() || spatial.spatialReferenceId() == null
+                || spatial.spatialReferenceId() < 1) {
+            return TypeMappingResult.unsupported("PostGIS Geometry 列没有固定 SRID");
+        }
+        if (!"EPSG".equals(spatial.crsAuthority()) || spatial.crsCode() == null
+                || spatial.crsCode() < 1) {
+            return TypeMappingResult.unsupported("PostGIS Geometry SRID 无法解析为 EPSG CRS");
+        }
+        if (spatial.coordinateDimension() != CoordinateDimension.XY) {
+            return TypeMappingResult.unsupported("空间字段第一版只支持 XY 二维坐标");
+        }
+        return TypeMappingResult.exact(PlatformTypeDefinition.geometry(new GeometryTypeDefinition(
+                kind,
+                CrsReference.epsg(spatial.crsCode()),
+                CoordinateDimension.XY
+        )));
+    }
+
+    private static boolean isPostGisNativeType(ColumnMetadata column) {
+        return isPostGisNativeType(column.nativeType());
+    }
+
+    private static boolean isPostGisNativeType(String nativeType) {
+        if (nativeType == null) {
+            return false;
+        }
+        return switch (nativeType.trim().toLowerCase(Locale.ROOT)) {
+            case "geometry", "geography", "raster" -> true;
+            default -> false;
+        };
+    }
+
+    private static ColumnMetadata unresolvedSpatialColumn(ColumnMetadata column) {
+        if (!isPostGisNativeType(column)) {
+            return column;
+        }
+        return column.withSpatial(new SpatialColumnMetadata(
+                column.nativeType(), null, null, null, null, false, false
+        ));
+    }
+
+    private static String normalizeSpatialName(String value) {
+        return value == null ? "" : value.toLowerCase(Locale.ROOT);
+    }
+
+    private String postGisSchema(Connection connection) throws SQLException {
+        String sql = """
+                SELECT namespace.nspname
+                  FROM pg_extension extension
+                  JOIN pg_namespace namespace ON namespace.oid = extension.extnamespace
+                 WHERE extension.extname = 'postgis'
+                """;
+        try (Statement statement = connection.createStatement();
+             ResultSet resultSet = statement.executeQuery(sql)) {
+            return resultSet.next() ? resultSet.getString(1) : null;
+        }
+    }
+
+    private Map<CrsReference, Integer> resolvePostGisSrids(
+            Connection connection,
+            String extensionSchema,
+            TableDefinition definition
+    ) throws SQLException {
+        Set<Integer> codes = definition.columns().stream()
+                .filter(column -> column.type() == TableColumnType.GEOMETRY)
+                .map(column -> column.geometry().crs().code())
+                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
+        String placeholders = codes.stream().map(ignored -> "?")
+                .collect(java.util.stream.Collectors.joining(", "));
+        String sql = "SELECT srid, auth_name, auth_srid FROM " + quoteIdentifier(extensionSchema)
+                + ".spatial_ref_sys WHERE UPPER(auth_name) = 'EPSG' AND auth_srid IN (" + placeholders + ")";
+        Map<CrsReference, Integer> result = new LinkedHashMap<>();
+        Set<CrsReference> duplicates = new HashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            int parameter = 1;
+            for (Integer code : codes) {
+                statement.setInt(parameter++, code);
+            }
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    CrsReference crs = new CrsReference(
+                            resultSet.getString("auth_name"), resultSet.getInt("auth_srid")
+                    );
+                    Integer previous = result.putIfAbsent(crs, resultSet.getInt("srid"));
+                    if (previous != null) {
+                        duplicates.add(crs);
+                    }
+                }
+            }
+        }
+        for (Integer code : codes) {
+            CrsReference crs = CrsReference.epsg(code);
+            if (duplicates.contains(crs)) {
+                throw new IllegalArgumentException("目标 PostGIS 中 EPSG:" + code + " 对应多个本地 SRID");
+            }
+            if (!result.containsKey(crs)) {
+                throw new IllegalArgumentException("目标 PostGIS 中不存在 EPSG:" + code);
+            }
+        }
+        return Map.copyOf(result);
+    }
+
+    private String postGisGeometryType(
+            String extensionSchema,
+            GeometryTypeDefinition geometry,
+            Map<CrsReference, Integer> localSrids
+    ) {
+        String issue = SpatialTypeSupport.validateV1Geometry(geometry);
+        if (issue != null) {
+            throw new IllegalArgumentException(issue);
+        }
+        Integer localSrid = localSrids.get(geometry.crs());
+        if (localSrid == null) {
+            throw new IllegalArgumentException("目标 PostGIS 中不存在 "
+                    + geometry.crs().authority() + ":" + geometry.crs().code());
+        }
+        return quoteIdentifier(extensionSchema) + "." + quoteIdentifier("geometry")
+                + "(" + geometry.kind().name() + "," + localSrid + ")";
+    }
+
+    private void appendPrimaryKey(TableDefinition definition, List<String> clauses) {
+        if (definition.primaryKeyColumns().isEmpty()) {
+            return;
+        }
+        String primaryKeys = definition.primaryKeyColumns().stream()
+                .map(this::quoteIdentifier)
+                .collect(java.util.stream.Collectors.joining(", "));
+        clauses.add("PRIMARY KEY (" + primaryKeys + ")");
+    }
+
+    private static Integer nullableInteger(ResultSet resultSet, String column) throws SQLException {
+        int value = resultSet.getInt(column);
+        return resultSet.wasNull() ? null : value;
     }
 
     private record TypeChangeResult(

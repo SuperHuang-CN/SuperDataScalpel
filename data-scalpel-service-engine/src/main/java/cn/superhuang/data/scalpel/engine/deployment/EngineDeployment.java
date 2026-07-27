@@ -50,8 +50,11 @@ public class EngineDeployment {
     private String definitionDigest;
 
     @Enumerated(EnumType.STRING)
-    @Column(nullable = false, length = 16)
+    @Column(nullable = false, length = 32)
     private EngineDeploymentRecordStatus status;
+
+    @Column(name = "last_error", length = 1000)
+    private String lastError;
 
     @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(name = "definition_json", nullable = false)
@@ -82,11 +85,11 @@ public class EngineDeployment {
         EngineDeployment deployment = new EngineDeployment();
         deployment.engineCode = engineCode;
         deployment.serviceId = serviceId;
-        deployment.apply(revision, serviceCode, routePath, definitionDigest, definitionJson, dataSourceId);
+        deployment.beginDeployment(revision, serviceCode, routePath, definitionDigest, definitionJson, dataSourceId);
         return deployment;
     }
 
-    public void apply(
+    public void beginDeployment(
             long revision,
             String serviceCode,
             String routePath,
@@ -100,13 +103,40 @@ public class EngineDeployment {
         this.definitionDigest = definitionDigest;
         this.definitionJson = definitionJson;
         this.dataSourceId = dataSourceId;
-        this.status = EngineDeploymentRecordStatus.DEPLOYED;
+        this.status = EngineDeploymentRecordStatus.DEPLOYING;
+        this.lastError = null;
         this.updatedAt = Instant.now();
     }
 
-    public void markRemoved(long revision) {
+    public void deployed() {
+        this.status = EngineDeploymentRecordStatus.DEPLOYED;
+        this.lastError = null;
+        this.updatedAt = Instant.now();
+    }
+
+    public void deploymentFailed(String message) {
+        this.status = EngineDeploymentRecordStatus.DEPLOY_FAILED;
+        this.lastError = safe(message);
+        this.updatedAt = Instant.now();
+    }
+
+    public void beginRemoval(long revision) {
+        this.revision = revision;
+        this.status = EngineDeploymentRecordStatus.REMOVING;
+        this.lastError = null;
+        this.updatedAt = Instant.now();
+    }
+
+    public void removed(long revision) {
         this.revision = revision;
         this.status = EngineDeploymentRecordStatus.REMOVED;
+        this.lastError = null;
+        this.updatedAt = Instant.now();
+    }
+
+    public void removalFailed(String message) {
+        this.status = EngineDeploymentRecordStatus.REMOVE_FAILED;
+        this.lastError = safe(message);
         this.updatedAt = Instant.now();
     }
 
@@ -159,5 +189,14 @@ public class EngineDeployment {
 
     public UUID getDataSourceId() {
         return dataSourceId;
+    }
+
+    public String getLastError() {
+        return lastError;
+    }
+
+    private static String safe(String message) {
+        if (message == null || message.isBlank()) return "Engine deployment operation failed";
+        return message.substring(0, Math.min(1000, message.length()));
     }
 }

@@ -28,6 +28,24 @@ public class JsonFileDatasetParser implements FileDatasetParser {
     @Override
     public ParseResult parse(FileDatasetParseSource source, FileDatasetParsingConfiguration configuration, int recordLimit)
             throws IOException {
+        return read(source, configuration, recordLimit, false);
+    }
+
+    @Override
+    public ParseResult validate(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int previewLimit
+    ) throws IOException {
+        return read(source, configuration, previewLimit, true);
+    }
+
+    private ParseResult read(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int recordLimit,
+            boolean validateAll
+    ) throws IOException {
         if (!(configuration instanceof FileDatasetParsingConfiguration.Json json)) {
             throw new FileDatasetParsingException("JSON 解析参数无效");
         }
@@ -39,7 +57,10 @@ public class JsonFileDatasetParser implements FileDatasetParser {
             throw new FileDatasetParsingException("JSON 内容无效：" + safeMessage(exception), exception);
         }
         Object selected = followPointer(root, json.rootPointer());
-        return JsonValueSupport.sample(JsonValueSupport.asRecords(selected), recordLimit, objectMapper);
+        List<?> records = JsonValueSupport.asRecords(selected);
+        return validateAll
+                ? JsonValueSupport.validate(records, recordLimit, objectMapper)
+                : JsonValueSupport.sample(records, recordLimit, objectMapper);
     }
 
     private Object followPointer(Object root, String pointer) {

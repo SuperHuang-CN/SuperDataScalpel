@@ -2,9 +2,15 @@ package cn.superhuang.data.scalpel.business.model.domain;
 
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import jakarta.persistence.Column;
 import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -44,6 +50,20 @@ public class DataModelField extends BaseEntity {
     @Column(name = "numeric_scale")
     private Integer scale;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "geometry_kind", length = 32)
+    private GeometryKind geometryKind;
+
+    @Column(name = "crs_authority", length = 16)
+    private String crsAuthority;
+
+    @Column(name = "crs_code")
+    private Integer crsCode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "coordinate_dimension", length = 8)
+    private CoordinateDimension coordinateDimension;
+
     @Column(nullable = false)
     private boolean nullable;
 
@@ -67,13 +87,14 @@ public class DataModelField extends BaseEntity {
             Integer length,
             Integer precision,
             Integer scale,
+            GeometryTypeDefinition geometry,
             boolean nullable,
             boolean primaryKey,
             int sortOrder,
             String description
     ) {
         this.modelId = modelId;
-        update(code, name, fieldType, length, precision, scale, nullable, primaryKey, sortOrder, description);
+        update(code, name, fieldType, length, precision, scale, geometry, nullable, primaryKey, sortOrder, description);
     }
 
     public static DataModelField create(
@@ -89,8 +110,28 @@ public class DataModelField extends BaseEntity {
             int sortOrder,
             String description
     ) {
+        return create(
+                modelId, code, name, fieldType, length, precision, scale, null,
+                nullable, primaryKey, sortOrder, description
+        );
+    }
+
+    public static DataModelField create(
+            UUID modelId,
+            String code,
+            String name,
+            PlatformDataType fieldType,
+            Integer length,
+            Integer precision,
+            Integer scale,
+            GeometryTypeDefinition geometry,
+            boolean nullable,
+            boolean primaryKey,
+            int sortOrder,
+            String description
+    ) {
         return new DataModelField(
-                modelId, code, name, fieldType, length, precision, scale,
+                modelId, code, name, fieldType, length, precision, scale, geometry,
                 nullable, primaryKey, sortOrder, description
         );
     }
@@ -107,12 +148,36 @@ public class DataModelField extends BaseEntity {
             int sortOrder,
             String description
     ) {
+        update(
+                code, name, fieldType, length, precision, scale, null,
+                nullable, primaryKey, sortOrder, description
+        );
+    }
+
+    public void update(
+            String code,
+            String name,
+            PlatformDataType fieldType,
+            Integer length,
+            Integer precision,
+            Integer scale,
+            GeometryTypeDefinition geometry,
+            boolean nullable,
+            boolean primaryKey,
+            int sortOrder,
+            String description
+    ) {
+        validateGeometry(fieldType, geometry, primaryKey);
         this.code = normalizeRequired(code).toLowerCase(Locale.ROOT);
         this.name = normalizeRequired(name);
         this.fieldType = fieldType;
         this.length = length;
         this.precision = precision;
         this.scale = scale;
+        this.geometryKind = geometry == null ? null : geometry.kind();
+        this.crsAuthority = geometry == null ? null : geometry.crs().authority();
+        this.crsCode = geometry == null ? null : geometry.crs().code();
+        this.coordinateDimension = geometry == null ? null : geometry.dimension();
         this.nullable = nullable;
         this.primaryKey = primaryKey;
         this.sortOrder = sortOrder;
@@ -147,6 +212,17 @@ public class DataModelField extends BaseEntity {
         return scale;
     }
 
+    public GeometryTypeDefinition getGeometry() {
+        if (geometryKind == null || crsAuthority == null || crsCode == null || coordinateDimension == null) {
+            return null;
+        }
+        return new GeometryTypeDefinition(
+                geometryKind,
+                new CrsReference(crsAuthority, crsCode),
+                coordinateDimension
+        );
+    }
+
     public boolean isNullable() {
         return nullable;
     }
@@ -172,5 +248,28 @@ public class DataModelField extends BaseEntity {
 
     private static String normalizeOptional(String value) {
         return value == null || value.trim().isEmpty() ? null : value.trim();
+    }
+
+    private static void validateGeometry(
+            PlatformDataType fieldType,
+            GeometryTypeDefinition geometry,
+            boolean primaryKey
+    ) {
+        if (fieldType == PlatformDataType.GEOMETRY) {
+            if (geometry == null) {
+                throw new IllegalArgumentException("Geometry 字段必须指定几何类型、CRS 和坐标维度");
+            }
+            if (!"EPSG".equals(geometry.crs().authority())) {
+                throw new IllegalArgumentException("Geometry 字段第一版只支持 EPSG CRS");
+            }
+            if (geometry.dimension() != CoordinateDimension.XY) {
+                throw new IllegalArgumentException("Geometry 字段第一版只支持 XY 二维坐标");
+            }
+            if (primaryKey) {
+                throw new IllegalArgumentException("Geometry 字段不能作为主键");
+            }
+        } else if (geometry != null) {
+            throw new IllegalArgumentException("只有 Geometry 字段可以设置空间类型定义");
+        }
     }
 }

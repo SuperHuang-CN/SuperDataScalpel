@@ -1,4 +1,7 @@
 spring:
+  kafka:
+    listener:
+      auto-startup: false
   datasource:
     url: jdbc:h2:mem:data_scalpel;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DATABASE_TO_LOWER=TRUE
     driver-class-name: org.h2.Driver
@@ -7,8 +10,32 @@ spring:
   jpa:
     hibernate:
       ddl-auto: update
+  quartz:
+    job-store-type: memory
+    jdbc:
+      initialize-schema: never
 
 data-scalpel:
+  file-parsing:
+    background-worker-enabled: false
+  execution:
+    kafka:
+      admin-event-topics: datascalpel.execution.event,admin.events
+      outbox-poll-interval: 1h
+  compute-engine:
+    credential-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+    connect-timeout: 1s
+    request-timeout: 2s
+  datasource:
+    credential-key: MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=
+  task-run:
+    canvas:
+      timeout: 1h
+      recovery-grace: 1m
+  task-engine:
+    token: test-task-engine-token
+    connect-timeout: 3s
+    request-timeout: 35s
   security:
     admin:
       username: admin
@@ -17,4 +44,3 @@ data-scalpel:
       issuer: data-scalpel-admin-test
       secret: test-data-scalpel-jwt-secret-key-at-least-32-bytes
       time-to-live: 30m
-

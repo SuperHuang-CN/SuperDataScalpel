@@ -1,6 +1,9 @@
 import {
+  DatabaseOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
+  FileExcelOutlined,
   FilterOutlined,
   MoreOutlined,
   PauseCircleOutlined,
@@ -30,6 +33,7 @@ import {
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useDataSources } from '../../datasource';
 import {
   DirectoryTreePanel,
@@ -40,10 +44,13 @@ import {
 } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { DataModelDrawer } from '../components/DataModelDrawer';
+import { ManagedTableModelImportDrawer } from '../components/ManagedTableModelImportDrawer';
+import { ModelMetadataImportDrawer } from '../components/ModelMetadataImportDrawer';
 import {
   useDataModelCommand,
   useDataModels,
   useDeleteDataModel,
+  useExportModelMetadata,
 } from '../hooks/useDataModels';
 import {
   dataModelStatusLabels,
@@ -57,10 +64,9 @@ import { parseDataModelListRoute, serializeDataModelListRoute } from '../model/d
 
 const DEFAULT_PAGE_SIZE = 20;
 
-const storageRequest = {
-  search: 'storageEnabled:"true"',
+const jdbcDataSourceRequest = {
   page: 0,
-  size: 200,
+  size: 500,
   sort: 'code',
 } as const;
 
@@ -87,6 +93,9 @@ export const DataModelPage = () => {
   const [page, setPage] = useState(initialRouteState.page);
   const [size, setSize] = useState(initialRouteState.size);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [importDrawerOpen, setImportDrawerOpen] = useState(false);
+  const [metadataImportDrawerOpen, setMetadataImportDrawerOpen] = useState(false);
+  const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const [editingModel, setEditingModel] = useState<DataModel | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
@@ -95,11 +104,13 @@ export const DataModelPage = () => {
   const canViewDirectories = permissions.has('directory.view');
   const canManageDirectories = permissions.has('directory.manage');
   const canCreate = permissions.has('model.create');
+  const canViewDataSources = permissions.has('datasource.view');
+  const canReadDataSourceMetadata = permissions.has('datasource.metadata');
   const canUpdate = permissions.has('model.update');
   const canDelete = permissions.has('model.delete');
   const canPublish = permissions.has('model.publish');
   const directoriesQuery = useDirectoryTree('MODEL', canViewDirectories);
-  const storageQuery = useDataSources(storageRequest);
+  const dataSourcesQuery = useDataSources(jdbcDataSourceRequest);
   const effectiveFilters = useMemo(() => (
     typeof directorySelection === 'string'
       ? {
@@ -117,10 +128,13 @@ export const DataModelPage = () => {
   }), [effectiveFilters, page, size]);
   const modelsQuery = useDataModels(request);
   const deleteMutation = useDeleteDataModel();
+  const exportMutation = useExportModelMetadata();
   const publishMutation = useDataModelCommand('publish');
   const disableMutation = useDataModelCommand('disable');
   const enableMutation = useDataModelCommand('enable');
-  const storageOptions = storageQuery.data?.content.map((source) => ({ value: source.id, label: source.name })) ?? [];
+  const dataSourceOptions = dataSourcesQuery.data?.content
+    .filter((source) => source.connection.kind === 'JDBC')
+    .map((source) => ({ value: source.id, label: source.name })) ?? [];
   const advancedFilterCount = Number(Boolean(selectedStorageId));
   const directoryTree = directoriesQuery.data;
 
@@ -151,6 +165,7 @@ export const DataModelPage = () => {
   const search = (nextFilters: DataModelFilters, nextDirectorySelection = directorySelection) => {
     setFilters(nextFilters);
     setPage(0);
+    setSelectedModelIds([]);
     syncRoute(nextFilters, nextDirectorySelection, 0, size);
   };
 
@@ -223,6 +238,16 @@ export const DataModelPage = () => {
     });
   };
 
+  const exportModels = async (modelIds: string[]) => {
+    try {
+      const blob = await exportMutation.mutateAsync(modelIds);
+      downloadBlob(blob, `DataScalpel-模型元数据-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      messageApi.success('模型元数据导出已开始');
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '导出模型元数据失败');
+    }
+  };
+
   const lifecycleIcon = (status: DataModelStatus) => {
     if (status === 'DRAFT') return <SendOutlined />;
     if (status === 'PUBLISHED') return <PauseCircleOutlined />;
@@ -261,7 +286,7 @@ export const DataModelPage = () => {
       ellipsis: true,
       render: (value: string | null) => value ? directoryNameById.get(value) ?? '—' : '未分类',
     },
-    { title: '数据存储', dataIndex: 'storageDataSourceName', width: 170, ellipsis: true },
+    { title: 'JDBC 数据源', dataIndex: 'storageDataSourceName', width: 170, ellipsis: true },
     {
       title: '物理位置',
       key: 'physicalLocation',
@@ -317,12 +342,20 @@ export const DataModelPage = () => {
               />
             </Tooltip>
           )}
-          {canDelete && (
+          {(model.physicalTableMode === 'MANAGED' || canDelete) && (
             <Dropdown
               trigger={['click']}
               menu={{
-                items: [{ key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }],
-                onClick: ({ key }) => key === 'delete' && remove(model),
+                items: [
+                  ...(model.physicalTableMode === 'MANAGED'
+                    ? [{ key: 'export', label: '导出 Excel 结构', icon: <DownloadOutlined /> }]
+                    : []),
+                  ...(canDelete ? [{ key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
+                ],
+                onClick: ({ key }) => {
+                  if (key === 'export') void exportModels([model.id]);
+                  if (key === 'delete') remove(model);
+                },
               }}
             >
               <Tooltip title="更多">
@@ -377,14 +410,14 @@ export const DataModelPage = () => {
                 content={(
                   <div className="advanced-filter-popover">
                     <div className="advanced-filter-title">更多筛选</div>
-                    <Form.Item name="storageDataSourceId" label="数据存储">
+                    <Form.Item name="storageDataSourceId" label="JDBC 数据源">
                       <Select
                         allowClear
                         showSearch
                         optionFilterProp="label"
-                        placeholder="全部数据存储"
-                        loading={storageQuery.isFetching}
-                        options={storageOptions}
+                        placeholder="全部 JDBC 数据源"
+                        loading={dataSourcesQuery.isFetching}
+                        options={dataSourceOptions}
                         className="advanced-filter-select"
                       />
                     </Form.Item>
@@ -411,6 +444,24 @@ export const DataModelPage = () => {
               <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
               <Button onClick={reset}>重置</Button>
               <Button icon={<ReloadOutlined />} onClick={() => void modelsQuery.refetch()}>刷新</Button>
+              {canCreate && canViewDataSources && canReadDataSourceMetadata && (
+                <Button icon={<DatabaseOutlined />} onClick={() => setImportDrawerOpen(true)}>
+                  从数据源导入
+                </Button>
+              )}
+              {canCreate && canViewDataSources && (
+                <Button icon={<FileExcelOutlined />} onClick={() => setMetadataImportDrawerOpen(true)}>
+                  导入 Excel
+                </Button>
+              )}
+              <Button
+                icon={<DownloadOutlined />}
+                loading={exportMutation.isPending}
+                disabled={selectedModelIds.length === 0}
+                onClick={() => void exportModels(selectedModelIds)}
+              >
+                导出结构{selectedModelIds.length ? `（${selectedModelIds.length}）` : ''}
+              </Button>
               {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
             </Space>
           </div>
@@ -421,6 +472,15 @@ export const DataModelPage = () => {
             columns={columns}
             dataSource={modelsQuery.data?.content ?? []}
             loading={modelsQuery.isFetching}
+            rowSelection={{
+              preserveSelectedRowKeys: true,
+              selectedRowKeys: selectedModelIds,
+              onChange: (keys) => setSelectedModelIds(keys.map(String)),
+              getCheckboxProps: (model) => ({
+                disabled: model.physicalTableMode === 'EXTERNAL',
+                title: model.physicalTableMode === 'EXTERNAL' ? 'EXTERNAL 模型暂不支持导出' : undefined,
+              }),
+            }}
             scroll={{ x: 1312, y: '100%' }}
             pagination={{
               current: page + 1,
@@ -449,6 +509,32 @@ export const DataModelPage = () => {
         onClose={() => { setCreateDrawerOpen(false); setEditingModel(null); }}
         onSaved={(savedModel, created) => created && navigate(`/model/${savedModel.id}?tab=fields`, { state: { fromModelList: true } })}
       />
+      {importDrawerOpen && (
+        <ManagedTableModelImportDrawer
+          open
+          canViewDirectories={canViewDirectories}
+          initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
+          initialTargetStorageDataSourceId={filters.storageDataSourceId}
+          onClose={() => setImportDrawerOpen(false)}
+          onAdjustFields={(modelId) => {
+            setImportDrawerOpen(false);
+            navigate(`/model/${modelId}?tab=fields`, { state: { fromModelList: true } });
+          }}
+        />
+      )}
+      {metadataImportDrawerOpen && (
+        <ModelMetadataImportDrawer
+          open
+          canViewDirectories={canViewDirectories}
+          initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
+          initialTargetStorageDataSourceId={filters.storageDataSourceId}
+          onClose={() => setMetadataImportDrawerOpen(false)}
+          onAdjustFields={(modelId) => {
+            setMetadataImportDrawerOpen(false);
+            navigate(`/model/${modelId}?tab=fields`, { state: { fromModelList: true } });
+          }}
+        />
+      )}
     </>
   );
 };

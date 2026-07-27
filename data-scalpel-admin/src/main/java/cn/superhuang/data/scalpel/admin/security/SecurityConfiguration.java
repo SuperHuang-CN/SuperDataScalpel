@@ -78,7 +78,14 @@ public class SecurityConfiguration {
 
     @Bean
     Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter() {
-        return jwt -> {
+        return new DataScalpelJwtAuthenticationConverter();
+    }
+
+    private static final class DataScalpelJwtAuthenticationConverter
+            implements Converter<Jwt, AbstractAuthenticationToken> {
+
+        @Override
+        public AbstractAuthenticationToken convert(Jwt jwt) {
             List<SimpleGrantedAuthority> authorities = new ArrayList<>();
             List<String> roles = jwt.getClaimAsStringList("roles");
             if (roles != null) {
@@ -89,7 +96,7 @@ public class SecurityConfiguration {
                 permissions.forEach(permission -> authorities.add(new SimpleGrantedAuthority(permission)));
             }
             return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
-        };
+        }
     }
 
     @Bean

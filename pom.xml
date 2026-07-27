@@ -26,6 +26,12 @@
         <module>data-scalpel-business</module>
         <module>data-scalpel-admin</module>
         <module>data-scalpel-service-engine</module>
+        <module>data-scalpel-task-engine</module>
+        <module>data-scalpel-task-dispatcher</module>
+        <module>data-scalpel-filegdb</module>
+        <module>data-scalpel-filegdb-s3</module>
+        <module>data-scalpel-shapefile</module>
+        <module>data-scalpel-shapefile-s3</module>
     </modules>
 
     <properties>
@@ -74,6 +80,31 @@
             <dependency>
                 <groupId>cn.superhuang</groupId>
                 <artifactId>data-scalpel-service-engine</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-task-dispatcher</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-filegdb</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-filegdb-s3</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-shapefile</artifactId>
+                <version>${project.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>cn.superhuang</groupId>
+                <artifactId>data-scalpel-shapefile-s3</artifactId>
                 <version>${project.version}</version>
             </dependency>
         </dependencies>

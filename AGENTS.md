@@ -31,6 +31,7 @@
 - `data-scalpel-dialect`：存放不依赖 Spring、JPA 和业务实体的 JDBC 方言、连接规格、元数据模型与只读数据库检查能力。不得放入业务编排、Controller、数据源实体或任务执行逻辑。
 - `data-scalpel-business`：统一存放业务实现，按照 `system`、`datasource`、`model`、`task`、`service` 等业务包组织；这些业务包允许真实、必要的直接协作，不拆成独立 Maven 模块。
 - `data-scalpel-admin`：Spring Boot 可执行应用和运行配置。不得把新的业务实体、Repository、Service 或 Controller 放入该模块。
+- `data-scalpel-task-engine`：负责 Canvas 任务编译和 Spark/JDBC 运行时执行。节点生命周期日志、错误分类、脱敏和执行结果必须遵循 [Task Engine 开发约定](data-scalpel-task-engine/AGENTS.md)。
 - 没有明确需求时，不新增模块，也不随意调整现有模块职责。
 
 ## 实体约定
@@ -96,6 +97,7 @@
 
 ## 验证要求
 
+- 启动工程进行本地联调、接口验证或依赖真实外部服务的测试时，优先启用 `local` Profile 并使用根目录不提交的 `config/application-local.yml`；`start-local-dev.sh` 是统一启动入口。Maven 中默认隔离运行的自动化测试仍使用各模块的 `application-test.yml`，不得因本地配置而连接共享环境。
 - 开发过程中可以使用 `./mvnw -pl <module> -am test` 进行模块级验证。
 - 后端代码修改完成前，必须在工程根目录运行完整构建：`./mvnw verify`。
 - 如果因为外部服务不可用而无法完成验证，必须明确说明已经验证和未验证的内容。

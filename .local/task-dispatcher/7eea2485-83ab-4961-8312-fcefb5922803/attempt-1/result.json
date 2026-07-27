@@ -1,0 +1,37 @@
+{
+  "schemaVersion" : 2,
+  "executionId" : "7eea2485-83ab-4961-8312-fcefb5922803",
+  "runId" : "3cff46a1-4697-48d9-a036-060adee98427",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-07-22T02:11:45.140022293Z",
+  "endedAt" : "2026-07-22T02:11:54.733888172Z",
+  "durationMs" : 9593,
+  "affectedRows" : 428,
+  "nodeResults" : [ {
+    "nodeId" : "65b9615d-b72a-42c1-8e4e-f28a660da082",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-07-22T02:11:49.023316878Z",
+    "endedAt" : "2026-07-22T02:11:49.779930212Z",
+    "durationMs" : 756,
+    "rowsWritten" : null,
+    "message" : "JDBC 输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "531cbfa3-712a-43b0-b1f0-687a1a5679e8",
+    "nodeType" : "JDBC_OUTPUT",
+    "nodeName" : "JDBC 输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-07-22T02:11:49.780876420Z",
+    "endedAt" : "2026-07-22T02:11:54.733311631Z",
+    "durationMs" : 4952,
+    "rowsWritten" : 428,
+    "message" : "JDBC 输出写入成功",
+    "error" : null
+  } ],
+  "error" : null
+}

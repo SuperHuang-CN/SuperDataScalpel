@@ -31,6 +31,8 @@ import {
 import {
   canSaveFieldsDirectly,
   dataModelFieldTypeLabels,
+  geometryKindLabels,
+  isMetadataOnlyFieldUpdate,
   shouldCreatePhysicalTableChangePlan,
   type DataModel,
   type DataModelField,
@@ -38,6 +40,7 @@ import {
   type PlatformDataType,
   type PlatformTypeCapability,
   type DataModelPhysicalChange,
+  type GeometryKind,
 } from '../model/dataModel';
 
 interface DataModelFieldsPanelProps {
@@ -78,6 +81,7 @@ const toEditableFields = (fields: DataModelField[]): EditableField[] => (
     ...(field.length !== null ? { length: field.length } : {}),
     ...(field.precision !== null ? { precision: field.precision } : {}),
     ...(field.scale !== null ? { scale: field.scale } : {}),
+    ...(field.geometry != null ? { geometry: field.geometry } : {}),
     nullable: field.nullable,
     primaryKey: field.primaryKey,
     sortOrder: field.sortOrder,
@@ -94,6 +98,7 @@ const toFieldInput = (field: EditableField): DataModelFieldInput => ({
   ...(field.length !== undefined ? { length: field.length } : {}),
   ...(field.precision !== undefined ? { precision: field.precision } : {}),
   ...(field.scale !== undefined ? { scale: field.scale } : {}),
+  ...(field.geometry !== undefined ? { geometry: field.geometry } : {}),
   nullable: field.nullable,
   primaryKey: field.primaryKey,
   sortOrder: field.sortOrder,
@@ -107,6 +112,9 @@ const fieldTypeDescription = (field: EditableField) => {
       : `${dataModelFieldTypeLabels[field.fieldType]}(无上限)`;
   }
   if (field.fieldType === 'DECIMAL') return `${dataModelFieldTypeLabels[field.fieldType]}(${field.precision ?? '—'},${field.scale ?? 0})`;
+  if (field.fieldType === 'GEOMETRY' && field.geometry) {
+    return `${geometryKindLabels[field.geometry.kind]} · ${field.geometry.crs.authority}:${field.geometry.crs.code} · ${field.geometry.dimension}`;
+  }
   return dataModelFieldTypeLabels[field.fieldType];
 };
 
@@ -137,6 +145,11 @@ const FieldEditorModal = ({
       title: capability?.message ?? undefined,
     };
   });
+  const geometryKindOptions = (
+    selectedCapability?.geometryKinds?.length
+      ? selectedCapability.geometryKinds
+      : (Object.keys(geometryKindLabels) as GeometryKind[])
+  ).map((value) => ({ value, label: geometryKindLabels[value] }));
 
   useEffect(() => {
     if (!open) return;
@@ -163,6 +176,14 @@ const FieldEditorModal = ({
     );
     form.setFieldValue('precision', fieldType === 'DECIMAL' ? form.getFieldValue('precision') ?? 18 : undefined);
     form.setFieldValue('scale', fieldType === 'DECIMAL' ? form.getFieldValue('scale') ?? 2 : undefined);
+    form.setFieldValue('geometry', fieldType === 'GEOMETRY'
+      ? form.getFieldValue('geometry') ?? {
+        kind: 'POINT',
+        crs: { authority: 'EPSG', code: 4326 },
+        dimension: 'XY',
+      }
+      : undefined);
+    if (fieldType === 'GEOMETRY') form.setFieldValue('primaryKey', false);
   };
 
   const submit = async () => {
@@ -183,8 +204,9 @@ const FieldEditorModal = ({
       fieldType: values.fieldType,
       ...(values.fieldType === 'STRING' ? { length: values.length } : {}),
       ...(values.fieldType === 'DECIMAL' ? { precision: values.precision, scale: values.scale } : {}),
+      ...(values.fieldType === 'GEOMETRY' ? { geometry: values.geometry } : {}),
       nullable: values.primaryKey ? false : values.nullable,
-      primaryKey: values.primaryKey,
+      primaryKey: values.fieldType === 'GEOMETRY' ? false : values.primaryKey,
       sortOrder: values.sortOrder,
       ...(values.description?.trim() ? { description: values.description.trim() } : {}),
       rowKey: field?.rowKey ?? newRowKey(),
@@ -257,6 +279,30 @@ const FieldEditorModal = ({
               </Col>
             </>
           )}
+          {selectedType === 'GEOMETRY' && (
+            <>
+              <Col span={12}>
+                <Form.Item label="几何类型" name={['geometry', 'kind']} rules={[{ required: true, message: '请选择几何类型' }]}>
+                  <Select disabled={structuralLocked} options={geometryKindOptions} />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                <Form.Item label="CRS Authority" name={['geometry', 'crs', 'authority']} rules={[{ required: true }]}>
+                  <Input disabled />
+                </Form.Item>
+              </Col>
+              <Col span={6}>
+                <Form.Item label="EPSG Code" name={['geometry', 'crs', 'code']} rules={[{ required: true, message: '请输入 EPSG Code' }]}>
+                  <InputNumber disabled={structuralLocked} min={1} precision={0} className="data-model-number-input" />
+                </Form.Item>
+              </Col>
+              <Col span={12}>
+                <Form.Item label="坐标维度" name={['geometry', 'dimension']} rules={[{ required: true }]}>
+                  <Select disabled options={[{ value: 'XY', label: 'XY（二维坐标）' }]} />
+                </Form.Item>
+              </Col>
+            </>
+          )}
           <Col span={8}>
             <Form.Item label="允许为空" name="nullable" valuePropName="checked">
               <Switch disabled={structuralLocked || selectedPrimaryKey} />
@@ -264,7 +310,10 @@ const FieldEditorModal = ({
           </Col>
           <Col span={8}>
             <Form.Item label="主键" name="primaryKey" valuePropName="checked">
-              <Switch disabled={structuralLocked} onChange={(checked) => checked && form.setFieldValue('nullable', false)} />
+              <Switch
+                disabled={structuralLocked || selectedType === 'GEOMETRY'}
+                onChange={(checked) => checked && form.setFieldValue('nullable', false)}
+              />
             </Form.Item>
           </Col>
           <Col span={8}>
@@ -297,7 +346,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
   const updateMutation = useUpdateDataModelFields();
   const createPlanMutation = useCreatePhysicalTableChangePlan();
   const detailModel = detailQuery.data?.model ?? model;
-  const readOnly = detailModel.status !== 'DRAFT' || !canUpdate;
+  const readOnly = detailModel.status === 'PUBLISHED' || !canUpdate;
   const externalModel = detailModel.physicalTableMode === 'EXTERNAL';
   const serverFields = useMemo(() => toEditableFields(detailQuery.data?.fields ?? []), [detailQuery.data?.fields]);
   const inspectionQuery = usePhysicalTableInspection(
@@ -306,9 +355,17 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
   );
   const fields = localFields ?? serverFields;
   const dirty = localFields !== null;
+  const metadataOnlyChange = dirty && isMetadataOnlyFieldUpdate(serverFields, fields);
   const physicalTableState = inspectionQuery.data?.state;
-  const requiresPhysicalChangePlan = shouldCreatePhysicalTableChangePlan(detailModel.physicalTableMode, physicalTableState);
+  const geometryModel = serverFields.some((field) => field.fieldType === 'GEOMETRY');
+  const geometryPhysicalLocked = geometryModel
+    && detailModel.physicalTableMode === 'MANAGED'
+    && physicalTableState === 'MATCHED';
+  const requiresPhysicalChangePlan = !geometryModel
+    && shouldCreatePhysicalTableChangePlan(detailModel.physicalTableMode, physicalTableState);
   const directSaveAllowed = serverFields.length === 0
+    || geometryPhysicalLocked
+    || metadataOnlyChange
     || canSaveFieldsDirectly(detailModel.physicalTableMode, physicalTableState);
   const physicalChangeBlocked = serverFields.length > 0
     && detailModel.physicalTableMode === 'MANAGED'
@@ -390,7 +447,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
               onClick={() => { setEditingField(field); setEditorOpen(true); }}
             />
           </Tooltip>
-          {!externalModel && (
+          {!externalModel && !geometryPhysicalLocked && (
             <Popconfirm
               title="删除字段"
               description={`确认删除“${field.name}”吗？保存后生效。`}
@@ -414,7 +471,20 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
     <div className="model-detail-tab-panel model-fields-panel">
       {messageContext}
       {readOnly && (
-        <Alert banner type="info" showIcon title={detailModel.status !== 'DRAFT' ? '模型已发布，字段结构只读。' : '当前账号没有修改模型的权限。'} />
+        <Alert
+          banner
+          type="info"
+          showIcon
+          title={!canUpdate ? '当前账号没有修改模型的权限。' : '模型已发布，字段结构只读；请先停用模型后再修改。'}
+        />
+      )}
+      {!readOnly && detailModel.status === 'DISABLED' && (
+        <Alert
+          banner
+          type="info"
+          showIcon
+          title="模型已停用，可以修改字段；涉及物理表结构的调整需生成并执行变更计划。"
+        />
       )}
       {!readOnly && externalModel && (
         <Alert
@@ -422,6 +492,14 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
           type="info"
           showIcon
           title="外部表字段结构由数据库维护；此处仅可修改字段名称、说明和展示排序。"
+        />
+      )}
+      {!readOnly && geometryPhysicalLocked && (
+        <Alert
+          banner
+          type="info"
+          showIcon
+          title="包含空间字段的受管物理表已创建；第一版仅可修改字段名称、说明和展示排序，不支持物理结构变更。"
         />
       )}
       {detailQuery.error && (
@@ -439,8 +517,8 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         <Alert
           showIcon
           type="error"
-          title="无法确认受管物理表状态，当前不能直接保存字段。"
-          description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查数据存储连接后重试。'}
+          title="无法确认受管物理表状态，当前只能保存字段名称、说明和展示排序。"
+          description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查数据存储连接后重试；物理结构修改暂不可用。'}
           action={<Button size="small" onClick={() => void inspectionQuery.refetch()}>重试</Button>}
         />
       )}
@@ -448,15 +526,15 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         <Alert
           showIcon
           type="info"
-          title="物理表结构已匹配：字段修改会先生成变更计划，执行成功后才同步模型字段。"
+          title="物理表结构已匹配：字段名称、说明和展示排序可直接保存；物理结构修改需生成并执行变更计划。"
         />
       )}
       {!readOnly && physicalChangeBlocked && (
         <Alert
           showIcon
           type="warning"
-          title="受管物理表未处于可规划状态，不能直接保存字段。"
-          description="请先在基本信息页检查并修复物理表状态；物理表严格匹配后可生成变更计划。"
+          title="受管物理表未处于可规划状态，物理结构修改暂不可用。"
+          description="字段名称、说明和展示排序仍可直接保存；请先修复物理表状态，再调整字段结构。"
         />
       )}
       <div className="model-tab-toolbar">
@@ -482,12 +560,12 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
               保存字段
             </Button>
           )}
-          {!readOnly && requiresPhysicalChangePlan && (
+          {!readOnly && requiresPhysicalChangePlan && !metadataOnlyChange && (
             <Button type="primary" icon={<FileSearchOutlined />} disabled={!dirty} loading={createPlanMutation.isPending} onClick={() => void createPlan()}>
               生成变更计划
             </Button>
           )}
-          {!readOnly && !externalModel && (
+          {!readOnly && !externalModel && !geometryPhysicalLocked && (
             <Button type={requiresPhysicalChangePlan ? 'default' : 'primary'} icon={<PlusOutlined />} onClick={() => { setEditingField(null); setEditorOpen(true); }}>
               新增字段
             </Button>
@@ -520,7 +598,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         open={editorOpen}
         field={editingField}
         nextSortOrder={nextSortOrder}
-        structuralLocked={externalModel}
+        structuralLocked={externalModel || geometryPhysicalLocked}
         storageDataSourceId={detailModel.storageDataSourceId}
         onCancel={() => { setEditorOpen(false); setEditingField(null); }}
         onSave={saveField}

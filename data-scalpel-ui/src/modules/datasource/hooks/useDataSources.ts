@@ -2,8 +2,13 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidateDirectoryTree } from '../../directory';
 import type { SearchRequest } from '../../../shared/search';
 import {
+  createApiResource,
   createDataSource,
+  deleteApiResource,
   deleteDataSource,
+  fetchApiResource,
+  fetchApiResources,
+  fetchDataSource,
   fetchDataSourceTypes,
   fetchDataSourceNamespaces,
   fetchDataSourceTables,
@@ -11,17 +16,23 @@ import {
   fetchTablePreview,
   fetchDataSources,
   testDraftDataSourceConnection,
+  testApiResource,
   testSavedDataSourceConnection,
+  updateApiResource,
   updateDataSource,
 } from '../api/dataSourceApi';
 import type {
+  CreateApiResourceRequest,
+  HttpApiRuntimeParameter,
   TableIdentifier,
   TableQuery,
   TestDataSourceConnectionRequest,
+  UpdateApiResourceRequest,
   UpdateDataSourceRequest,
 } from '../model/dataSource';
 
 const dataSourcesQueryKey = 'data-sources';
+const apiResourcesQueryKey = 'api-resources';
 
 export const useDataSourceTypes = () => useQuery({
   queryKey: ['data-source-types'],
@@ -36,9 +47,16 @@ const invalidateDataSources = async (queryClient: ReturnType<typeof useQueryClie
   ]);
 };
 
-export const useDataSources = (request: SearchRequest) => useQuery({
+export const useDataSources = (request: SearchRequest, enabled = true) => useQuery({
   queryKey: [dataSourcesQueryKey, request],
   queryFn: () => fetchDataSources(request),
+  enabled,
+});
+
+export const useDataSource = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [dataSourcesQueryKey, id],
+  queryFn: () => fetchDataSource(id as string),
+  enabled: enabled && Boolean(id),
 });
 
 export const useCreateDataSource = () => {
@@ -71,6 +89,60 @@ export const useTestDraftDataSourceConnection = () => useMutation({
 
 export const useTestSavedDataSourceConnection = () => useMutation({
   mutationFn: (id: string) => testSavedDataSourceConnection(id),
+});
+
+export const useApiResources = (dataSourceId: string | undefined, enabled = true) => useQuery({
+  queryKey: [apiResourcesQueryKey, dataSourceId],
+  queryFn: () => fetchApiResources(dataSourceId as string),
+  enabled: enabled && Boolean(dataSourceId),
+});
+
+export const useApiResource = (
+  dataSourceId: string | undefined,
+  resourceId: string | undefined,
+  enabled = true,
+) => useQuery({
+  queryKey: [apiResourcesQueryKey, dataSourceId, resourceId],
+  queryFn: () => fetchApiResource(dataSourceId as string, resourceId as string),
+  enabled: enabled && Boolean(dataSourceId) && Boolean(resourceId),
+});
+
+const invalidateApiResources = async (
+  queryClient: ReturnType<typeof useQueryClient>,
+  dataSourceId: string,
+) => queryClient.invalidateQueries({ queryKey: [apiResourcesQueryKey, dataSourceId] });
+
+export const useCreateApiResource = (dataSourceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateApiResourceRequest) => createApiResource(dataSourceId, request),
+    onSuccess: () => invalidateApiResources(queryClient, dataSourceId),
+  });
+};
+
+export const useUpdateApiResource = (dataSourceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ resourceId, request }: { resourceId: string; request: UpdateApiResourceRequest }) => (
+      updateApiResource(dataSourceId, resourceId, request)
+    ),
+    onSuccess: () => invalidateApiResources(queryClient, dataSourceId),
+  });
+};
+
+export const useDeleteApiResource = (dataSourceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (resourceId: string) => deleteApiResource(dataSourceId, resourceId),
+    onSuccess: () => invalidateApiResources(queryClient, dataSourceId),
+  });
+};
+
+export const useTestApiResource = (dataSourceId: string) => useMutation({
+  mutationFn: ({ resourceId, runtimeParameters }: {
+    resourceId: string;
+    runtimeParameters: HttpApiRuntimeParameter[];
+  }) => testApiResource(dataSourceId, resourceId, runtimeParameters),
 });
 
 export const useDataSourceNamespaces = (id: string | undefined, enabled: boolean) => useQuery({

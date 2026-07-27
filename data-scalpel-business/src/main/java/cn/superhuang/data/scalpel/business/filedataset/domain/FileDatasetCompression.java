@@ -4,5 +4,6 @@ package cn.superhuang.data.scalpel.business.filedataset.domain;
 public enum FileDatasetCompression {
 
     NONE,
-    GZIP
+    GZIP,
+    ZIP
 }

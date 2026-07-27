@@ -51,4 +51,21 @@ class ReadOnlySelectQueryParserTest {
 
         assertEquals("result", query.selectSql().substring(query.selectSql().indexOf("AS ") + 3, query.selectSql().indexOf(" FROM")));
     }
+
+    @Test
+    void serviceQueriesRejectRuntimeControlledPaginationAndLocking() {
+        assertThrows(IllegalArgumentException.class,
+                () -> ReadOnlySelectQueryParser.parseServiceQuery("SELECT * FROM customer LIMIT 20"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ReadOnlySelectQueryParser.parseServiceQuery("SELECT * FROM customer OFFSET 10"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ReadOnlySelectQueryParser.parseServiceQuery("SELECT * FROM customer FOR UPDATE"));
+        assertThrows(IllegalArgumentException.class,
+                () -> ReadOnlySelectQueryParser.parseServiceQuery("SELECT * FROM customer FOR SHARE"));
+
+        ReadOnlySelectQueryParser.parseServiceQuery("""
+                SELECT * FROM (SELECT * FROM customer LIMIT 20) nested
+                ORDER BY nested.id
+                """);
+    }
 }

@@ -12,6 +12,7 @@ public record EngineQueryProperties(
         @Min(1) @Max(1000) int maximumPageSize,
         @Min(1) @Max(100) int maximumFilterCount,
         @Min(1) @Max(10000) int maximumInValues,
+        @Min(1) int maximumOffset,
         @Min(1) @Max(300) int timeoutSeconds
 ) {
 

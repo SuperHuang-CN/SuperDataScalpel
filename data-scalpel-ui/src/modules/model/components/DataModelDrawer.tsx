@@ -17,6 +17,7 @@ import {
   type PhysicalTableMode,
   type UpdateDataModelRequest,
 } from '../model/dataModel';
+import { isModelDataSourceSelectable } from '../model/managedTableImport';
 
 interface DataModelDrawerProps {
   open: boolean;
@@ -37,10 +38,9 @@ interface DataModelFormValues {
   description?: string;
 }
 
-const storageRequest = {
-  search: 'storageEnabled:"true"',
+const jdbcDataSourceRequest = {
   page: 0,
-  size: 200,
+  size: 500,
   sort: 'code',
 } as const;
 
@@ -98,11 +98,11 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
   const createMutation = useCreateDataModel();
   const updateMutation = useUpdateDataModel();
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
-  const storageQuery = useDataSources(storageRequest);
+  const dataSourcesQuery = useDataSources(jdbcDataSourceRequest, open);
   const selectedStorageId = Form.useWatch('storageDataSourceId', form);
   const selectedPhysicalTableMode = Form.useWatch('physicalTableMode', form);
   const selectedPhysicalTableName = Form.useWatch('physicalTableName', form);
-  const selectedStorage = storageQuery.data?.content.find((source) => source.id === selectedStorageId);
+  const selectedStorage = dataSourcesQuery.data?.content.find((source) => source.id === selectedStorageId);
   const editing = Boolean(model);
   const physicalDefinitionLocked = model?.status !== undefined && model.status !== 'DRAFT';
   const externalTableMode = selectedPhysicalTableMode === 'EXTERNAL';
@@ -141,10 +141,16 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
       ...(externalPreviewQuery.data?.issues ?? []),
     ].filter((issue): issue is string => Boolean(issue))
   ), [externalPreviewQuery.data, selectedExternalTable]);
-  const storageOptions = useMemo(() => storageQuery.data?.content.map((source) => ({
-    value: source.id,
-    label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : '不支持的存储类型'}）`,
-  })) ?? [], [storageQuery.data]);
+  const storageOptions = useMemo(() => dataSourcesQuery.data?.content
+    .filter((source) => isModelDataSourceSelectable(
+      source,
+      externalTableMode ? 'EXTERNAL' : 'MANAGED',
+      model?.storageDataSourceId,
+    ))
+    .map((source) => ({
+      value: source.id,
+      label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : source.type}）`,
+    })) ?? [], [dataSourcesQuery.data, externalTableMode, model?.storageDataSourceId]);
   const externalTableOptions = useMemo(() => tablesQuery.data?.tables.map((table) => ({
     value: table.identifier.table,
     label: table.comment ? `${table.identifier.table}（${table.comment}）` : table.identifier.table,
@@ -226,8 +232,13 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
     form.setFieldValue('clickHouseOrderByColumns', []);
     if (mode === 'EXTERNAL') {
       form.setFieldValue('physicalTableName', undefined);
-    } else if (!editing && !form.getFieldValue('physicalTableName')) {
-      form.setFieldValue('physicalTableName', form.getFieldValue('code'));
+    } else {
+      if (selectedStorage && !selectedStorage.purposes.includes('STORAGE')) {
+        form.setFieldValue('storageDataSourceId', undefined);
+      }
+      if (!editing && !form.getFieldValue('physicalTableName')) {
+        form.setFieldValue('physicalTableName', form.getFieldValue('code'));
+      }
     }
   };
 
@@ -305,17 +316,17 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
             )}
             <Col span={canViewDirectories ? 12 : 24}>
               <Form.Item
-                label="数据存储"
+                label={externalTableMode ? 'JDBC 数据源' : '数据存储'}
                 name="storageDataSourceId"
-                rules={[{ required: true, message: '请选择数据存储' }]}
+                rules={[{ required: true, message: externalTableMode ? '请选择 JDBC 数据源' : '请选择数据存储' }]}
               >
                 <Select
                   showSearch
                   optionFilterProp="label"
-                  loading={storageQuery.isFetching}
+                  loading={dataSourcesQuery.isFetching}
                   disabled={physicalDefinitionLocked}
                   options={storageOptions}
-                  placeholder="选择具有数据存储用途的连接"
+                  placeholder={externalTableMode ? '选择已启用的 JDBC 数据源' : '选择具有数据存储用途的 JDBC 数据源'}
                   onChange={selectStorage}
                 />
               </Form.Item>
@@ -345,7 +356,7 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
                   label="已有物理表"
                   name="physicalTableName"
                   rules={[{ required: true, message: '请选择已有物理表' }]}
-                  extra={selectedNamespace ? `仅显示数据存储默认命名空间：${selectedNamespace.displayName}` : undefined}
+                  extra={selectedNamespace ? `仅显示 JDBC 数据源默认命名空间：${selectedNamespace.displayName}` : undefined}
                 >
                   <Select
                     allowClear
@@ -375,8 +386,8 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
             </Col>
             {externalTableMode && (
               <Col span={24}>
-                {namespacesQuery.isError && <Alert showIcon type="error" title="读取数据存储命名空间失败，无法选择已有表" />}
-                {tablesQuery.isError && <Alert showIcon type="error" title="读取已有表列表失败，请检查数据存储连接" />}
+                {namespacesQuery.isError && <Alert showIcon type="error" title="读取 JDBC 数据源命名空间失败，无法选择已有表" />}
+                {tablesQuery.isError && <Alert showIcon type="error" title="读取已有表列表失败，请检查 JDBC 数据源连接" />}
                 {tablesQuery.data?.truncated && (
                   <Alert showIcon type="warning" title="可选表已截断为前 500 项，请在数据源管理中缩小连接范围后重试" />
                 )}

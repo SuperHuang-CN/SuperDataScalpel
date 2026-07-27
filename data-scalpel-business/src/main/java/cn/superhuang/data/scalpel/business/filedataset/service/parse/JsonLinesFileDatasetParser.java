@@ -28,10 +28,57 @@ public class JsonLinesFileDatasetParser implements FileDatasetParser {
     @Override
     public ParseResult parse(FileDatasetParseSource source, FileDatasetParsingConfiguration configuration, int recordLimit)
             throws IOException {
+        return read(source, configuration, recordLimit, false);
+    }
+
+    @Override
+    public ParseResult validate(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int previewLimit
+    ) throws IOException {
+        return read(source, configuration, previewLimit, true);
+    }
+
+    private ParseResult read(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int recordLimit,
+            boolean validateAll
+    ) throws IOException {
         if (!(configuration instanceof FileDatasetParsingConfiguration.JsonLines jsonLines)) {
             throw new FileDatasetParsingException("JSONL 解析参数无效");
         }
         InputStream inputStream = FileDatasetParseSource.requireStream(source);
+        if (validateAll) {
+            FieldCollector collector = new FieldCollector(recordLimit);
+            long[] physicalLine = {0};
+            RecordReader.forEachLine(
+                    new InputStreamReader(inputStream, Charset.forName(jsonLines.charset())),
+                    jsonLines.recordDelimiter(),
+                    line -> {
+                        physicalLine[0]++;
+                        if (line.isBlank()) {
+                            return;
+                        }
+                        try {
+                            JsonValueSupport.addValue(collector, objectMapper.readValue(line, Object.class), objectMapper);
+                        } catch (RuntimeException exception) {
+                            throw new FileDatasetParsingException(
+                                    "JSONL 第 " + physicalLine[0] + " 条记录无效：" + safeMessage(exception),
+                                    exception
+                            );
+                        }
+                    }
+            );
+            if (collector.rowCount() == 0) {
+                throw new FileDatasetParsingException("JSONL 文件不包含任何记录");
+            }
+            return new ParseResult(
+                    collector.fields(), collector.rows(), collector.rowCount() > recordLimit,
+                    true, java.util.Map.of(), collector.rowCount()
+            );
+        }
         List<String> lines = RecordReader.readLines(
                 new InputStreamReader(inputStream, Charset.forName(jsonLines.charset())),
                 jsonLines.recordDelimiter(), recordLimit + 20

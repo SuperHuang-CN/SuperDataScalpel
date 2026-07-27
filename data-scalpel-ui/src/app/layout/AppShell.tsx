@@ -38,7 +38,16 @@ const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items
       ],
     }] : []),
     ...(permissions.has('service.engine.view') ? [{ key: '/service-engine', icon: <DeploymentUnitOutlined />, label: '服务引擎' }] : []),
-    ...(permissions.has('service.view') ? [{ key: '/dataservice', icon: <ApiOutlined />, label: '数据服务' }] : []),
+    ...(permissions.has('compute.engine.view') ? [{ key: '/compute-engine', icon: <DeploymentUnitOutlined />, label: '计算引擎' }] : []),
+    ...(permissions.has('service.view') ? [{
+      key: 'dataservice',
+      icon: <ApiOutlined />,
+      label: '数据服务',
+      children: [
+        { key: '/dataservice', label: '服务列表' },
+        { key: '/dataservice/consumers', label: '消费者管理' },
+      ],
+    }] : []),
   ];
 };
 
@@ -54,6 +63,8 @@ const selectedMenuKey = (pathname: string) => {
   if (pathname.startsWith('/file-dataset')) return '/file-dataset';
   if (pathname.startsWith('/model')) return '/model';
   if (pathname.startsWith('/service-engine')) return '/service-engine';
+  if (pathname.startsWith('/compute-engine')) return '/compute-engine';
+  if (pathname.startsWith('/dataservice/consumers')) return '/dataservice/consumers';
   if (pathname.startsWith('/dataservice')) return '/dataservice';
   return '/';
 };
@@ -65,12 +76,21 @@ const breadcrumbItems = (pathname: string): BreadcrumbProps['items'] => {
   if (pathname.startsWith('/system/configurations')) return [{ title: '系统管理' }, { title: '系统配置' }];
   if (pathname.startsWith('/system')) return [{ title: '系统管理' }];
   if (pathname.startsWith('/datasource')) return [{ title: '数据源管理' }];
+  if (/^\/file-dataset\/[^/]+/.test(pathname)) return [{ title: <Link to="/file-dataset">文件数据集</Link> }, { title: '数据集详情' }];
   if (pathname.startsWith('/file-dataset')) return [{ title: '文件数据集' }];
   if (/^\/model\/[^/]+/.test(pathname)) return [{ title: <Link to="/model">模型管理</Link> }, { title: '模型详情' }];
   if (pathname.startsWith('/model')) return [{ title: '模型管理' }];
   if (pathname.startsWith('/task/orchestration')) return [{ title: '任务管理' }, { title: '任务编排' }];
+  if (/^\/task\/[^/]+/.test(pathname)) {
+    return [{ title: <Link to="/task">任务管理</Link> }, { title: '任务详情' }];
+  }
   if (pathname.startsWith('/task')) return [{ title: '任务管理' }, { title: '任务列表' }];
   if (pathname.startsWith('/service-engine')) return [{ title: '服务引擎' }];
+  if (pathname.startsWith('/compute-engine')) return [{ title: '计算引擎' }];
+  if (pathname.startsWith('/dataservice/consumers')) return [{ title: '数据服务' }, { title: '消费者管理' }];
+  if (pathname === '/dataservice/new/standard') return [{ title: <Link to="/dataservice">数据服务</Link> }, { title: '新建标准单表服务' }];
+  if (pathname === '/dataservice/new/sql') return [{ title: <Link to="/dataservice">数据服务</Link> }, { title: '新建 SQL 查询服务' }];
+  if (/^\/dataservice\/[^/]+/.test(pathname)) return [{ title: <Link to="/dataservice">数据服务</Link> }, { title: '服务详情' }];
   if (pathname.startsWith('/dataservice')) return [{ title: '数据服务' }];
   return [{ title: '工作台' }];
 };
@@ -99,7 +119,7 @@ export const AppShell = () => {
           theme="dark"
           mode="inline"
           selectedKeys={[selectedMenuKey(location.pathname)]}
-          defaultOpenKeys={['system', 'task']}
+          defaultOpenKeys={['system', 'task', 'dataservice']}
           items={navigationItems(permissions)}
           onClick={({ key }) => navigate(key)}
         />

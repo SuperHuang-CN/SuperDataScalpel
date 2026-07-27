@@ -1,7 +1,7 @@
 package cn.superhuang.data.scalpel.engine.route;
 
 import cn.superhuang.data.scalpel.contract.service.StandardServiceQueryRequest;
-import cn.superhuang.data.scalpel.contract.service.StandardServiceQueryResponse;
+import cn.superhuang.data.scalpel.contract.service.ServiceQueryResponse;
 import cn.superhuang.data.scalpel.engine.query.StandardServiceQueryExecutor;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -24,7 +24,7 @@ public class StandardServiceQueryHandler {
     }
 
     @ResponseBody
-    public StandardServiceQueryResponse execute(
+    public ServiceQueryResponse execute(
             HttpServletRequest request,
             @Valid @RequestBody StandardServiceQueryRequest query
     ) {

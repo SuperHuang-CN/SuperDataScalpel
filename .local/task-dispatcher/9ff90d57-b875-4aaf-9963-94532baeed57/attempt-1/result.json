@@ -1,0 +1,22 @@
+{
+  "schemaVersion" : 1,
+  "executionId" : "9ff90d57-b875-4aaf-9963-94532baeed57",
+  "runId" : "42500f9b-e98e-42bc-a930-d6afef960965",
+  "attempt" : 1,
+  "state" : "FAILED",
+  "startedAt" : "2026-07-21T06:40:35.033433876Z",
+  "endedAt" : "2026-07-21T06:43:39.942229544Z",
+  "durationMs" : 184908,
+  "affectedRows" : null,
+  "nodeResults" : [ {
+    "nodeId" : "65b9615d-b72a-42c1-8e4e-f28a660da082",
+    "state" : "FAILED",
+    "rowsWritten" : null,
+    "message" : "节点执行失败，请查看受控执行日志"
+  } ],
+  "error" : {
+    "code" : "NODE_EXECUTION_FAILED",
+    "message" : "节点执行失败，请查看受控执行日志",
+    "nodeId" : "65b9615d-b72a-42c1-8e4e-f28a660da082"
+  }
+}

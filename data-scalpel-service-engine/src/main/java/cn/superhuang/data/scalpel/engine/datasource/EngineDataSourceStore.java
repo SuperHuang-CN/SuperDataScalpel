@@ -24,6 +24,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Map;
+import java.util.EnumSet;
 import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -158,8 +159,13 @@ public class EngineDataSourceStore {
     }
 
     private RemovalResult removeRegistration(EngineDataSourceRemovalRequest request) {
-        if (deploymentRepository.existsByEngineCodeAndDataSourceIdAndStatus(
-                properties.code(), request.dataSourceId(), EngineDeploymentRecordStatus.DEPLOYED
+        if (deploymentRepository.existsByEngineCodeAndDataSourceIdAndStatusIn(
+                properties.code(), request.dataSourceId(), EnumSet.of(
+                        EngineDeploymentRecordStatus.DEPLOYING,
+                        EngineDeploymentRecordStatus.DEPLOYED,
+                        EngineDeploymentRecordStatus.REMOVING,
+                        EngineDeploymentRecordStatus.REMOVE_FAILED
+                )
         )) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "仍有已部署服务正在使用该数据源");
         }

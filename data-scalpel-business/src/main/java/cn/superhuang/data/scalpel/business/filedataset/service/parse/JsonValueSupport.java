@@ -27,6 +27,18 @@ final class JsonValueSupport {
         return new FileDatasetParser.ParseResult(collector.fields(), collector.rows(), truncated);
     }
 
+    static FileDatasetParser.ParseResult validate(List<?> sourceRecords, int previewLimit, ObjectMapper objectMapper) {
+        if (sourceRecords.isEmpty()) {
+            throw new FileDatasetParsingException("JSON 文件不包含任何记录");
+        }
+        FieldCollector collector = new FieldCollector(previewLimit);
+        sourceRecords.forEach(value -> addValue(collector, value, objectMapper));
+        return new FileDatasetParser.ParseResult(
+                collector.fields(), collector.rows(), collector.rowCount() > previewLimit,
+                true, Map.of(), collector.rowCount()
+        );
+    }
+
     static void addValue(FieldCollector collector, Object value, ObjectMapper objectMapper) {
         Map<String, Object> row = new LinkedHashMap<>();
         Map<String, LogicalType> types = new LinkedHashMap<>();

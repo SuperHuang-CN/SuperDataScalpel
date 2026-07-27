@@ -35,7 +35,10 @@ public final class SqlServerDialect extends AbstractJdbcDialect {
         properties.setProperty("socketTimeout", "15000");
         properties.setProperty("encrypt", option(config, "encrypt", "true"));
         properties.setProperty("trustServerCertificate", option(config, "trustServerCertificate", "false"));
-        copyOptions(config, properties, Set.of("encrypt", "trustServerCertificate"));
+        applyConnectionOptions(
+                config, properties, Set.of(),
+                Set.of("databaseName", "loginTimeout", "socketTimeout")
+        );
         String url = "jdbc:sqlserver://" + hostForUrl(config) + ":" + config.port();
         // The Microsoft JDBC driver does not support changing the default schema for a session.
         return new JdbcConnectionSpec(driverClassName(), url, properties, null);

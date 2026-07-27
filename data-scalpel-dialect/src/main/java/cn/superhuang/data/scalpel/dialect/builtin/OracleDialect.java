@@ -34,7 +34,10 @@ public final class OracleDialect extends AbstractJdbcDialect {
         Properties properties = baseProperties(config);
         properties.setProperty("oracle.net.CONNECT_TIMEOUT", "5000");
         properties.setProperty("oracle.jdbc.ReadTimeout", "15000");
-        copyOptions(config, new Properties(), Set.of("connectionMode"));
+        applyConnectionOptions(
+                config, properties, Set.of("connectionMode"),
+                Set.of("oracle.net.CONNECT_TIMEOUT", "oracle.jdbc.ReadTimeout")
+        );
         String mode = option(config, "connectionMode", "SERVICE").toUpperCase(Locale.ROOT);
         String url = switch (mode) {
             case "SERVICE" -> "jdbc:oracle:thin:@//" + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());

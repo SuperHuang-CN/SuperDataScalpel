@@ -11,6 +11,7 @@ public record S3FileStorageProperties(
         String rootPrefix,
         String accessKey,
         String secretKey,
-        boolean pathStyleAccess
+        boolean pathStyleAccess,
+        String runnerEndpoint
 ) {
 }

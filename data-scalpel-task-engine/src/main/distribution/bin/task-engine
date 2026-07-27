@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+set -eu
+
+SCRIPT_DIR=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+ENGINE_HOME=$(CDPATH= cd -- "$SCRIPT_DIR/.." && pwd)
+CONFIG_FILE=${DATASCALPEL_TASK_ENGINE_CONFIG:-$ENGINE_HOME/conf/task-engine.properties}
+exec java ${DATASCALPEL_TASK_ENGINE_JAVA_OPTS:-} \
+  -Dlog4j.configurationFile="$ENGINE_HOME/conf/log4j2.properties" \
+  -cp "$ENGINE_HOME/lib/*" \
+  cn.superhuang.datascalpel.taskengine.TaskEngineDaemon \
+  "$CONFIG_FILE"

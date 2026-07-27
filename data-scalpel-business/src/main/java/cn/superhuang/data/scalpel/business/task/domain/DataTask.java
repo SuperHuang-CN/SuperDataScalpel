@@ -6,18 +6,13 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
 
-import java.util.Locale;
 import java.util.UUID;
 
-/** Root metadata for one locally executable data-processing task. */
+/** Common metadata root shared by all task definition families. */
 @Entity
-@Table(name = "ds_data_task", uniqueConstraints = @UniqueConstraint(name = "uk_ds_data_task_code", columnNames = "code"))
+@Table(name = "task")
 public class DataTask extends BaseEntity {
-
-    @Column(nullable = false, updatable = false, length = 64)
-    private String code;
 
     @Column(nullable = false, length = 100)
     private String name;
@@ -36,24 +31,51 @@ public class DataTask extends BaseEntity {
     @Column(length = 1000)
     private String description;
 
+    @Column(name = "compute_engine_id")
+    private UUID computeEngineId;
+
     protected DataTask() {
     }
 
-    private DataTask(String code, String name, UUID directoryId, String description) {
-        this.code = normalizeCode(code);
-        this.type = TaskType.LOCAL_SQL;
-        this.status = TaskStatus.DRAFT;
-        update(name, directoryId, description);
+    private DataTask(String name, UUID directoryId, TaskType type, String description) {
+        this(name, directoryId, type, description, null);
     }
 
-    public static DataTask create(String code, String name, UUID directoryId, String description) {
-        return new DataTask(code, name, directoryId, description);
+    private DataTask(String name, UUID directoryId, TaskType type, String description, UUID computeEngineId) {
+        if (type == null) {
+            throw new IllegalArgumentException("任务类型不能为空");
+        }
+        this.type = type;
+        this.status = TaskStatus.DRAFT;
+        update(name, directoryId, description, computeEngineId);
+    }
+
+    public static DataTask create(String name, UUID directoryId, TaskType type, String description) {
+        return new DataTask(name, directoryId, type, description);
+    }
+
+    public static DataTask create(
+            String name,
+            UUID directoryId,
+            TaskType type,
+            String description,
+            UUID computeEngineId
+    ) {
+        return new DataTask(name, directoryId, type, description, computeEngineId);
     }
 
     public void update(String name, UUID directoryId, String description) {
+        update(name, directoryId, description, computeEngineId);
+    }
+
+    public void update(String name, UUID directoryId, String description, UUID computeEngineId) {
         this.name = normalizeRequired(name);
         this.directoryId = directoryId;
         this.description = normalizeOptional(description);
+        if (type == TaskType.LOCAL_SQL && computeEngineId != null) {
+            throw new IllegalArgumentException("本地 SQL 任务不能绑定计算引擎");
+        }
+        this.computeEngineId = computeEngineId;
     }
 
     public void publish() {
@@ -62,10 +84,6 @@ public class DataTask extends BaseEntity {
 
     public void disable() {
         status = TaskStatus.DISABLED;
-    }
-
-    public String getCode() {
-        return code;
     }
 
     public String getName() {
@@ -88,8 +106,8 @@ public class DataTask extends BaseEntity {
         return description;
     }
 
-    private static String normalizeCode(String value) {
-        return normalizeRequired(value).toLowerCase(Locale.ROOT);
+    public UUID getComputeEngineId() {
+        return computeEngineId;
     }
 
     private static String normalizeRequired(String value) {

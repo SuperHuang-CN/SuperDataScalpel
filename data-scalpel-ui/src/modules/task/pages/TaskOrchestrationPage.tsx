@@ -1,33 +1,49 @@
-import { ApartmentOutlined } from '@ant-design/icons';
-import { Alert, Space, Typography, message } from 'antd';
-import { useState } from 'react';
+import { Modal } from 'antd';
+import { useCallback, useEffect, useState } from 'react';
+import { useBlocker, type BlockerFunction } from 'react-router-dom';
 import { CanvasDesigner } from '../canvas/CanvasDesigner';
-import { defaultCanvasDefinition } from '../canvas/defaultCanvas';
-import type { CanvasDefinition } from '../canvas/canvasTypes';
 
 export const TaskOrchestrationPage = () => {
-  const [savedDefinition, setSavedDefinition] = useState<CanvasDefinition>(defaultCanvasDefinition);
+  const [inspectorDirty, setInspectorDirty] = useState(false);
+  const blocker = useBlocker(useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation }) => inspectorDirty && (
+      currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search
+    ),
+    [inspectorDirty],
+  ));
 
-  const saveDefinition = (definition: CanvasDefinition) => {
-    setSavedDefinition(definition);
-    message.success(`编排已暂存：${definition.nodes.length} 个节点，${definition.edges.length} 条连线`);
-  };
+  useEffect(() => {
+    const warnBeforeUnload = (event: BeforeUnloadEvent) => {
+      if (!inspectorDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warnBeforeUnload);
+    return () => window.removeEventListener('beforeunload', warnBeforeUnload);
+  }, [inspectorDirty]);
+
+  useEffect(() => {
+    if (!inspectorDirty && blocker.state === 'blocked') blocker.reset();
+  }, [blocker, inspectorDirty]);
 
   return (
-    <Space orientation="vertical" size={16} className="page-stack">
-      <div>
-        <Typography.Title level={2}><ApartmentOutlined /> 任务编排</Typography.Title>
-        <Typography.Paragraph type="secondary">
-          Canvas 定义与 X6 图实例解耦。当前保存动作仅暂存于前端，后端任务 API 完成后会接入统一保存和预运行校验。
-        </Typography.Paragraph>
+    <>
+      <div className="task-orchestration-page">
+        <CanvasDesigner onInspectorDirtyChange={setInspectorDirty} />
       </div>
-      <Alert
-        showIcon
-        type="info"
-        title="第一版 Canvas 骨架"
-        description={`当前内存中的定义包含 ${savedDefinition.nodes.length} 个节点和 ${savedDefinition.edges.length} 条连线。`}
-      />
-      <CanvasDesigner initialDefinition={savedDefinition} onSave={saveDefinition} />
-    </Space>
+      <Modal
+        open={blocker.state === 'blocked'}
+        title="节点配置尚未应用"
+        okText="放弃并离开"
+        okButtonProps={{ danger: true }}
+        cancelText="继续编辑"
+        closable={false}
+        maskClosable={false}
+        onOk={() => blocker.proceed?.()}
+        onCancel={() => blocker.reset?.()}
+      >
+        当前节点的配置尚未应用，离开页面后这些修改会丢失。
+      </Modal>
+    </>
   );
 };

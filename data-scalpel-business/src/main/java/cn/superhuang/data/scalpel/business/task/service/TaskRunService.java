@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.task.service;
 
+import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutionService;
+import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutionService.ExecutionRoute;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
@@ -8,16 +10,30 @@ import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
+import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskInput;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
+import cn.superhuang.data.scalpel.business.task.domain.TaskOverlapPolicy;
+import cn.superhuang.data.scalpel.business.task.domain.TaskSchedule;
+import cn.superhuang.data.scalpel.business.task.domain.TaskScheduleStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStatus;
+import cn.superhuang.data.scalpel.business.task.domain.TaskType;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
+import cn.superhuang.data.scalpel.business.task.repository.CanvasTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskInputRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
+import cn.superhuang.data.scalpel.business.task.repository.TaskScheduleRepository;
+import cn.superhuang.data.scalpel.business.task.execution.service.TaskExecutionOutboxService;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
+import cn.superhuang.data.scalpel.contract.execution.CancelExecutionCommand;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
+import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
+import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
@@ -25,6 +41,7 @@ import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.query.ReadOnlySelectQueryParser;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.springframework.beans.factory.annotation.Qualifier;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.task.TaskExecutor;
 import org.springframework.core.task.TaskRejectedException;
 import org.springframework.data.domain.Page;
@@ -34,27 +51,39 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
+import java.time.Instant;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Creates persistent manual runs and coordinates the transaction boundary around external JDBC work. */
+/** Creates persistent runs and coordinates type-specific execution transaction boundaries. */
 @Service
 public class TaskRunService {
 
-    private static final List<TaskRunStatus> ACTIVE_STATUSES = List.of(TaskRunStatus.QUEUED, TaskRunStatus.RUNNING);
+    private static final Logger log = LoggerFactory.getLogger(TaskRunService.class);
+    private static final int MAXIMUM_RESULT_ARTIFACT_BYTES = 5 * 1024 * 1024;
+    private static final int MAXIMUM_LOG_ARTIFACT_BYTES = 20 * 1024 * 1024;
+    private static final List<TaskRunStatus> ACTIVE_STATUSES = List.of(
+            TaskRunStatus.QUEUED, TaskRunStatus.RUNNING, TaskRunStatus.CANCEL_REQUESTED);
 
     private final DataTaskRepository taskRepository;
     private final LocalSqlTaskDefinitionRepository definitionRepository;
+    private final CanvasTaskDefinitionRepository canvasDefinitionRepository;
     private final LocalSqlTaskInputRepository inputRepository;
     private final TaskRunRepository runRepository;
+    private final TaskScheduleRepository scheduleRepository;
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
     private final DataSourceRepository dataSourceRepository;
@@ -64,14 +93,22 @@ public class TaskRunService {
     private final TaskRunWorker worker;
     private final ObjectMapper objectMapper;
     private final SearchEngine searchEngine;
+    private final CanvasTaskDefinitionService canvasDefinitionService;
+    private final CanvasTaskRunPreparationService canvasPreparationService;
+    private final ComputeEngineExecutionService computeEngineExecutionService;
+    private final TaskExecutionOutboxService executionOutboxService;
+    private final ObjectProvider<TaskRunArtifactStorage> artifactStorageProvider;
+    private final CanvasTaskRunProperties canvasProperties;
     private final TransactionTemplate readTransactionTemplate;
     private final TransactionTemplate transactionTemplate;
 
     public TaskRunService(
             DataTaskRepository taskRepository,
             LocalSqlTaskDefinitionRepository definitionRepository,
+            CanvasTaskDefinitionRepository canvasDefinitionRepository,
             LocalSqlTaskInputRepository inputRepository,
             TaskRunRepository runRepository,
+            TaskScheduleRepository scheduleRepository,
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
             DataSourceRepository dataSourceRepository,
@@ -81,12 +118,20 @@ public class TaskRunService {
             TaskRunWorker worker,
             ObjectMapper objectMapper,
             SearchEngine searchEngine,
+            CanvasTaskDefinitionService canvasDefinitionService,
+            CanvasTaskRunPreparationService canvasPreparationService,
+            ComputeEngineExecutionService computeEngineExecutionService,
+            TaskExecutionOutboxService executionOutboxService,
+            ObjectProvider<TaskRunArtifactStorage> artifactStorageProvider,
+            CanvasTaskRunProperties canvasProperties,
             PlatformTransactionManager transactionManager
     ) {
         this.taskRepository = taskRepository;
         this.definitionRepository = definitionRepository;
+        this.canvasDefinitionRepository = canvasDefinitionRepository;
         this.inputRepository = inputRepository;
         this.runRepository = runRepository;
+        this.scheduleRepository = scheduleRepository;
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
         this.dataSourceRepository = dataSourceRepository;
@@ -96,12 +141,22 @@ public class TaskRunService {
         this.worker = worker;
         this.objectMapper = objectMapper;
         this.searchEngine = searchEngine;
+        this.canvasDefinitionService = canvasDefinitionService;
+        this.canvasPreparationService = canvasPreparationService;
+        this.computeEngineExecutionService = computeEngineExecutionService;
+        this.executionOutboxService = executionOutboxService;
+        this.artifactStorageProvider = artifactStorageProvider;
+        this.canvasProperties = canvasProperties;
         this.readTransactionTemplate = new TransactionTemplate(transactionManager);
         this.readTransactionTemplate.setReadOnly(true);
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     public TaskRunResponse run(UUID taskId) {
+        TaskType type = requireTransactionResult(readTransactionTemplate.execute(status -> requireTask(taskId).getType()));
+        if (type == TaskType.SPARK_CANVAS) {
+            return runCanvas(taskId);
+        }
         RunPreparation preparation = readPreparation(taskId);
         LocalSqlDefinitionInspection inspection = inspectionPort.inspect(preparation.inspectionRequest());
         requireValidInspection(inspection);
@@ -117,6 +172,27 @@ public class TaskRunService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "任务执行队列已满，请稍后重试", exception);
         }
         return TaskRunResponse.from(created);
+    }
+
+    public void runScheduled(UUID scheduleId, Instant scheduledFireAt) {
+        if (scheduleId == null || scheduledFireAt == null) {
+            throw new IllegalArgumentException("定时触发参数不能为空");
+        }
+        ScheduledCanvasRequest canvasRequest = transactionTemplate.execute(
+                status -> prepareScheduledRun(scheduleId, scheduledFireAt));
+        if (canvasRequest == null) {
+            return;
+        }
+        try {
+            submitCanvas(canvasRequest.taskId(), canvasRequest.trigger());
+        } catch (RuntimeException exception) {
+            transactionTemplate.executeWithoutResult(status -> recordScheduledCanvasSubmissionFailure(
+                    canvasRequest, exception));
+            log.warn(
+                    "Spark Canvas scheduled submission failed: taskId={} scheduleId={} scheduledFireAt={}",
+                    canvasRequest.taskId(), canvasRequest.trigger().scheduleId(),
+                    canvasRequest.trigger().scheduledFireAt(), exception);
+        }
     }
 
     @Transactional(readOnly = true)
@@ -139,18 +215,220 @@ public class TaskRunService {
         return TaskRunResponse.from(requireRun(runId));
     }
 
+    public TaskRunArtifact resultArtifact(UUID runId) {
+        return readArtifact(runId, ArtifactKind.RESULT);
+    }
+
+    public TaskRunArtifact logArtifact(UUID runId) {
+        return readArtifact(runId, ArtifactKind.LOG);
+    }
+
+    public TaskRunResponse cancel(UUID runId) {
+        return requireTransactionResult(transactionTemplate.execute(status -> {
+            TaskRun run = requireRunForUpdate(runId);
+            if (run.getTaskType() != TaskType.SPARK_CANVAS || run.getExternalExecutionId() == null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务运行不支持外部取消");
+            }
+            if (run.getStatus() == TaskRunStatus.CANCEL_REQUESTED) {
+                return TaskRunResponse.from(run);
+            }
+            if (!ACTIVE_STATUSES.contains(run.getStatus())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务运行已经结束");
+            }
+            run.requestCancel();
+            runRepository.save(run);
+            executionOutboxService.enqueue(run.getCommandTopicSnapshot(), new CancelExecutionCommand(
+                    1, UUID.randomUUID(), ExecutionMessageType.CANCEL_EXECUTION, Instant.now(),
+                    run.getComputeEngineId(), run.getExternalExecutionId(), run.getExecutionRunId(), run.getAttempt(),
+                    "用户请求停止任务运行"
+            ));
+            return TaskRunResponse.from(run);
+        }));
+    }
+
     @Transactional
     public void markInterruptedRunsFailed() {
         List<TaskRun> staleRuns = runRepository.findAllByStatusIn(ACTIVE_STATUSES);
-        staleRuns.forEach(run -> run.fail("应用重启导致任务运行中断", "APPLICATION_RESTARTED"));
-        if (!staleRuns.isEmpty()) {
-            runRepository.saveAllAndFlush(staleRuns);
+        List<TaskRun> interruptedLocalRuns = staleRuns.stream()
+                .filter(run -> run.getTaskType() == TaskType.LOCAL_SQL)
+                .toList();
+        interruptedLocalRuns.forEach(run -> run.fail("应用重启导致任务运行中断", "APPLICATION_RESTARTED"));
+        if (!interruptedLocalRuns.isEmpty()) {
+            runRepository.saveAllAndFlush(interruptedLocalRuns);
         }
+    }
+
+    private TaskRunResponse runCanvas(UUID taskId) {
+        TaskRunResponse response = submitCanvas(taskId, CanvasRunTrigger.manual());
+        if (response == null) {
+            throw new IllegalStateException("手动 Canvas 运行未创建任务实例");
+        }
+        return response;
+    }
+
+    private TaskRunResponse submitCanvas(UUID taskId, CanvasRunTrigger trigger) {
+        CanvasRunSource source = requireTransactionResult(readTransactionTemplate.execute(status -> {
+            DataTask task = requireTask(taskId);
+            if (task.getType() != TaskType.SPARK_CANVAS) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务不是 Spark Canvas 任务");
+            }
+            if (task.getStatus() != TaskStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已发布任务可以运行");
+            }
+            if (!trigger.scheduled() && runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+            }
+            CanvasTaskDefinition definition = canvasDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 任务定义不存在"));
+            return new CanvasRunSource(
+                    definition.getVersion(), canvasDefinitionService.deserialize(definition.getDefinitionJson()),
+                    task.getComputeEngineId());
+        }));
+        ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
+        CanvasTaskRunPreparationService.Preparation preparation = canvasPreparationService.prepare(source.definition());
+        TaskRunArtifactStorage storage = requireArtifactStorage();
+        UUID runId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        Instant deadline = Instant.now().plus(canvasProperties.timeout());
+        String base = "task-runs/%s/attempts/1/".formatted(runId);
+        String manifestKey = base + "manifest.json";
+        String resultKey = base + "result.json";
+        String logKey = base + "console.log";
+        CanvasTaskRunManifest manifest = new CanvasTaskRunManifest(
+                CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
+                new CanvasTaskRunManifest.Execution(
+                        executionId, runId, taskId, 1, source.definitionVersion(), createdAt, deadline),
+                new CanvasTaskRunManifest.Task(
+                        cn.superhuang.data.scalpel.contract.task.TaskType.CANVAS,
+                        source.definition()),
+                preparation.metadataSnapshot(),
+                preparation.runtimeDataSources(),
+                null,
+                preparation.runtimeFileStorage(),
+                preparation.runtimeFileInputs()
+        );
+        byte[] manifestBytes = writeBytes(manifest);
+        String manifestSha256 = sha256(manifestBytes);
+        try {
+            storage.store(manifestKey, manifestBytes, "application/json");
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "任务制品存储当前不可用", exception);
+        }
+        String snapshot = writeSnapshot(new CanvasRunSnapshotReference(
+                1, executionId, 1, source.definitionVersion(), route.engineId(), manifestKey, manifestSha256));
+        try {
+            CanvasQueueResult queueResult = requireTransactionResult(transactionTemplate.execute(status -> queueCanvasRun(
+                    runId, taskId, source.definitionVersion(), snapshot, executionId, deadline, route,
+                    manifestKey, manifestSha256, resultKey, logKey,
+                    preparation.dataSourceVersions(),
+                    preparation.modelVersions(),
+                    trigger
+            )));
+            if (!queueResult.dispatched()) {
+                deleteUnusedManifest(storage, manifestKey);
+            }
+            return queueResult.run() == null ? null : TaskRunResponse.from(queueResult.run());
+        } catch (RuntimeException exception) {
+            deleteOrphanManifest(storage, manifestKey, exception);
+            throw exception;
+        }
+    }
+
+    private CanvasQueueResult queueCanvasRun(
+            UUID runId,
+            UUID taskId,
+            int expectedDefinitionVersion,
+            String snapshot,
+            UUID executionId,
+            Instant deadline,
+            ExecutionRoute route,
+            String manifestKey,
+            String manifestSha256,
+            String resultKey,
+            String logKey,
+            Map<UUID, Instant> dataSourceVersions,
+            Map<UUID, CanvasTaskRunPreparationService.ModelVersion> modelVersions,
+            CanvasRunTrigger trigger
+    ) {
+        if (trigger.scheduled()) {
+            TaskSchedule schedule = scheduleRepository.findByIdForUpdate(trigger.scheduleId()).orElse(null);
+            TaskRun existing = runRepository.findByScheduleIdAndScheduledFireAt(
+                    trigger.scheduleId(), trigger.scheduledFireAt()).orElse(null);
+            if (existing != null) {
+                return CanvasQueueResult.notDispatched(existing);
+            }
+            if (schedule == null || !schedule.getTaskId().equals(taskId)) {
+                return CanvasQueueResult.notDispatched(null);
+            }
+            if (schedule.getStatus() != TaskScheduleStatus.ENABLED) {
+                TaskRun skipped = TaskRun.scheduledCanvasSkipped(
+                        taskId, trigger.scheduleId(), expectedDefinitionVersion, snapshot,
+                        trigger.scheduledFireAt(), "定时触发已跳过：运行计划已停用");
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+        }
+        DataTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+        if (task.getType() != TaskType.SPARK_CANVAS || task.getStatus() != TaskStatus.PUBLISHED) {
+            if (trigger.scheduled()) {
+                TaskRun skipped = TaskRun.scheduledCanvasSkipped(
+                        taskId, trigger.scheduleId(), expectedDefinitionVersion, snapshot,
+                        trigger.scheduledFireAt(), "定时触发已跳过：任务不再处于已发布状态");
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新运行");
+        }
+        CanvasTaskDefinition definition = canvasDefinitionRepository.findByTaskId(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 任务定义不存在"));
+        if (definition.getVersion() != expectedDefinitionVersion) {
+            if (trigger.scheduled()) {
+                TaskRun skipped = TaskRun.scheduledCanvasSkipped(
+                        taskId, trigger.scheduleId(), expectedDefinitionVersion, snapshot,
+                        trigger.scheduledFireAt(), "定时触发已跳过：Canvas 定义版本已变化");
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 定义已变化，请重新运行");
+        }
+        if ((!trigger.scheduled() || trigger.overlapPolicy() == TaskOverlapPolicy.FORBID)
+                && runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+            if (trigger.scheduled()) {
+                TaskRun skipped = TaskRun.scheduledCanvasSkipped(
+                        taskId, trigger.scheduleId(), expectedDefinitionVersion, snapshot,
+                        trigger.scheduledFireAt(), "定时触发已跳过：当前任务存在正在执行的实例");
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+        }
+        if (!route.engineId().equals(task.getComputeEngineId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新运行");
+        }
+        computeEngineExecutionService.assertUnchanged(route);
+        canvasPreparationService.assertDataSourcesUnchanged(dataSourceVersions);
+        canvasPreparationService.assertModelsUnchanged(modelVersions);
+        TaskRun run = trigger.scheduled()
+                ? TaskRun.queueScheduledDispatchedCanvas(
+                        runId, taskId, trigger.scheduleId(), trigger.scheduledFireAt(),
+                        expectedDefinitionVersion, snapshot, executionId, 1, deadline,
+                        route.engineId(), route.commandTopic())
+                : TaskRun.queueDispatchedCanvas(
+                        runId, taskId, expectedDefinitionVersion, snapshot, executionId, 1, deadline,
+                        route.engineId(), route.commandTopic());
+        run.attachArtifacts(manifestKey, resultKey, logKey);
+        TaskRun saved = runRepository.saveAndFlush(run);
+        executionOutboxService.enqueue(route.commandTopic(), new SubmitExecutionCommand(
+                1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, Instant.now(),
+                route.engineId(), executionId, runId, 1, taskId, ExecutionTaskType.SPARK_CANVAS,
+                expectedDefinitionVersion, deadline,
+                new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey)
+        ));
+        return CanvasQueueResult.dispatched(saved);
     }
 
     private RunPreparation readPreparation(UUID taskId) {
         return requireTransactionResult(readTransactionTemplate.execute(status -> {
             DataTask task = requireTask(taskId);
+            requireLocalSqlTask(task);
             if (task.getStatus() != TaskStatus.PUBLISHED) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已发布任务可以运行");
             }
@@ -189,6 +467,7 @@ public class TaskRunService {
     private TaskRun queueRun(UUID taskId, int expectedDefinitionVersion, String snapshot) {
         DataTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+        requireLocalSqlTask(task);
         if (task.getStatus() != TaskStatus.PUBLISHED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新运行");
         }
@@ -201,6 +480,100 @@ public class TaskRunService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
         }
         return runRepository.saveAndFlush(TaskRun.queue(taskId, expectedDefinitionVersion, snapshot));
+    }
+
+    private ScheduledCanvasRequest prepareScheduledRun(UUID scheduleId, Instant scheduledFireAt) {
+        TaskSchedule schedule = scheduleRepository.findByIdForUpdate(scheduleId).orElse(null);
+        if (schedule == null || schedule.getStatus() != TaskScheduleStatus.ENABLED) {
+            return null;
+        }
+        if (runRepository.findByScheduleIdAndScheduledFireAt(scheduleId, scheduledFireAt).isPresent()) {
+            return null;
+        }
+        DataTask task = taskRepository.findByIdForUpdate(schedule.getTaskId()).orElse(null);
+        if (task == null || task.getStatus() != TaskStatus.PUBLISHED) {
+            return null;
+        }
+        if (task.getType() == TaskType.SPARK_CANVAS) {
+            return prepareScheduledCanvasRun(task, schedule, scheduledFireAt);
+        }
+        if (task.getType() != TaskType.LOCAL_SQL) {
+            return null;
+        }
+        LocalSqlTaskDefinition definition = definitionRepository.findByTaskId(task.getId()).orElse(null);
+        if (definition == null) {
+            return null;
+        }
+        List<UUID> inputIds = inputRepository.findAllByTaskIdOrderBySortOrderAsc(task.getId()).stream()
+                .map(LocalSqlTaskInput::getModelId).toList();
+        String snapshot = writeScheduledSnapshot(new ScheduledTaskRunSnapshot(
+                inputIds, definition.getOutputModelId(), definition.getSqlText(), definition.getWriteMode(),
+                definition.getTimeoutSeconds()
+        ));
+        boolean shouldSkip = schedule.getOverlapPolicy() == TaskOverlapPolicy.FORBID
+                && runRepository.existsByTaskIdAndStatusIn(task.getId(), ACTIVE_STATUSES);
+        TaskRun run = shouldSkip
+                ? TaskRun.scheduledSkipped(task.getId(), scheduleId, definition.getVersion(), snapshot, scheduledFireAt)
+                : TaskRun.scheduledSuccess(task.getId(), scheduleId, definition.getVersion(), snapshot, scheduledFireAt);
+        runRepository.saveAndFlush(run);
+        return null;
+    }
+
+    private ScheduledCanvasRequest prepareScheduledCanvasRun(
+            DataTask task,
+            TaskSchedule schedule,
+            Instant scheduledFireAt
+    ) {
+        CanvasTaskDefinition definition = canvasDefinitionRepository.findByTaskId(task.getId()).orElse(null);
+        int definitionVersion = definition == null ? 0 : definition.getVersion();
+        String snapshot = writeSnapshot(new ScheduledCanvasSubmissionSnapshot(
+                1, definitionVersion, definition == null ? null : definition.getDefinitionJson()));
+        if (definition == null) {
+            TaskRun failed = TaskRun.failedScheduledCanvasSubmission(
+                    task.getId(), schedule.getId(), definitionVersion, snapshot, scheduledFireAt,
+                    new SafeExecutionError("CANVAS_DEFINITION_MISSING", "Canvas 任务定义不存在"));
+            runRepository.saveAndFlush(failed);
+            return null;
+        }
+        if (schedule.getOverlapPolicy() == TaskOverlapPolicy.FORBID
+                && runRepository.existsByTaskIdAndStatusIn(task.getId(), ACTIVE_STATUSES)) {
+            TaskRun skipped = TaskRun.scheduledCanvasSkipped(
+                    task.getId(), schedule.getId(), definitionVersion, snapshot, scheduledFireAt,
+                    "定时触发已跳过：当前任务存在正在执行的实例");
+            runRepository.saveAndFlush(skipped);
+            return null;
+        }
+        return new ScheduledCanvasRequest(
+                task.getId(),
+                CanvasRunTrigger.scheduled(schedule.getId(), scheduledFireAt, schedule.getOverlapPolicy()),
+                definitionVersion,
+                snapshot
+        );
+    }
+
+    private void recordScheduledCanvasSubmissionFailure(
+            ScheduledCanvasRequest request,
+            RuntimeException exception
+    ) {
+        UUID scheduleId = request.trigger().scheduleId();
+        Instant scheduledFireAt = request.trigger().scheduledFireAt();
+        if (runRepository.findByScheduleIdAndScheduledFireAt(scheduleId, scheduledFireAt).isPresent()) {
+            return;
+        }
+        if (!taskRepository.existsById(request.taskId())) {
+            return;
+        }
+        String message = exception instanceof ResponseStatusException responseStatusException
+                && responseStatusException.getReason() != null
+                && !responseStatusException.getReason().isBlank()
+                ? responseStatusException.getReason()
+                : "Spark Canvas 定时提交失败";
+        TaskRun failed = TaskRun.failedScheduledCanvasSubmission(
+                request.taskId(), scheduleId, request.definitionVersion(), request.failureSnapshot(),
+                scheduledFireAt,
+                new SafeExecutionError("CANVAS_SCHEDULE_SUBMISSION_FAILED", message)
+        );
+        runRepository.saveAndFlush(failed);
     }
 
     private void markQueueRejected(UUID runId) {
@@ -243,16 +616,108 @@ public class TaskRunService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
     }
 
+    private static void requireLocalSqlTask(DataTask task) {
+        if (task.getType() != TaskType.LOCAL_SQL) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务不是本地 SQL 任务");
+        }
+    }
+
     private TaskRun requireRun(UUID id) {
         return runRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务运行不存在"));
     }
 
-    private String writeSnapshot(TaskRunDefinitionSnapshot snapshot) {
+    private TaskRun requireRunForUpdate(UUID id) {
+        return runRepository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务运行不存在"));
+    }
+
+    private TaskRunArtifactStorage requireArtifactStorage() {
+        TaskRunArtifactStorage storage = artifactStorageProvider.getIfAvailable();
+        if (storage == null) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "任务制品存储尚未配置");
+        }
+        return storage;
+    }
+
+    private TaskRunArtifact readArtifact(UUID runId, ArtifactKind kind) {
+        ArtifactReference reference = requireTransactionResult(readTransactionTemplate.execute(status -> {
+            TaskRun run = requireRun(runId);
+            if (run.getTaskType() != TaskType.SPARK_CANVAS) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务运行没有 Canvas 执行制品");
+            }
+            String objectKey = kind == ArtifactKind.RESULT ? run.getResultObjectKey() : run.getLogObjectKey();
+            if (objectKey == null || objectKey.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, kind.notReadyMessage());
+            }
+            return new ArtifactReference(run.getId(), objectKey);
+        }));
+        TaskRunArtifactStorage storage = requireArtifactStorage();
+        try {
+            byte[] content = storage.readIfPresent(reference.objectKey(), kind.maximumBytes())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, kind.notReadyMessage()));
+            return new TaskRunArtifact(
+                    content,
+                    kind.contentType(),
+                    "task-run-%s-%s".formatted(reference.runId(), kind.fileSuffix())
+            );
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "任务运行制品存储当前不可用", exception);
+        }
+    }
+
+    private static void deleteOrphanManifest(
+            TaskRunArtifactStorage storage,
+            String manifestKey,
+            RuntimeException originalFailure
+    ) {
+        try {
+            storage.delete(manifestKey);
+        } catch (RuntimeException cleanupFailure) {
+            originalFailure.addSuppressed(cleanupFailure);
+            log.warn("Failed to delete orphan Canvas manifest object {}", manifestKey, cleanupFailure);
+        }
+    }
+
+    private static void deleteUnusedManifest(TaskRunArtifactStorage storage, String manifestKey) {
+        try {
+            storage.delete(manifestKey);
+        } catch (RuntimeException cleanupFailure) {
+            log.warn("Failed to delete unused Canvas manifest object {}", manifestKey, cleanupFailure);
+        }
+    }
+
+    private String writeSnapshot(Object snapshot) {
         try {
             return objectMapper.writeValueAsString(snapshot);
         } catch (RuntimeException exception) {
             throw new IllegalStateException("无法保存任务运行快照", exception);
+        }
+    }
+
+    private String writeScheduledSnapshot(ScheduledTaskRunSnapshot snapshot) {
+        try {
+            return objectMapper.writeValueAsString(snapshot);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("无法保存定时任务运行快照", exception);
+        }
+    }
+
+    private byte[] writeBytes(Object value) {
+        try {
+            return objectMapper.writeValueAsBytes(value);
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("无法创建 Canvas 任务 manifest", exception);
+        }
+    }
+
+    private static String sha256(byte[] content) {
+        try {
+            return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(content));
+        } catch (java.security.NoSuchAlgorithmException exception) {
+            throw new IllegalStateException("当前 JDK 不支持 SHA-256", exception);
         }
     }
 
@@ -279,6 +744,110 @@ public class TaskRunService {
             DataSource source,
             LocalSqlTaskDefinition definition,
             LocalSqlDefinitionInspectionRequest inspectionRequest
+    ) {
+    }
+
+    private record CanvasRunSource(
+            int definitionVersion,
+            cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition definition,
+            UUID computeEngineId
+    ) {
+    }
+
+    private record CanvasRunTrigger(
+            UUID scheduleId,
+            Instant scheduledFireAt,
+            TaskOverlapPolicy overlapPolicy
+    ) {
+        static CanvasRunTrigger manual() {
+            return new CanvasRunTrigger(null, null, null);
+        }
+
+        static CanvasRunTrigger scheduled(
+                UUID scheduleId,
+                Instant scheduledFireAt,
+                TaskOverlapPolicy overlapPolicy
+        ) {
+            if (scheduleId == null || scheduledFireAt == null || overlapPolicy == null) {
+                throw new IllegalArgumentException("Canvas 定时运行触发信息不能为空");
+            }
+            return new CanvasRunTrigger(scheduleId, scheduledFireAt, overlapPolicy);
+        }
+
+        boolean scheduled() {
+            return scheduleId != null;
+        }
+    }
+
+    private record ScheduledCanvasRequest(
+            UUID taskId,
+            CanvasRunTrigger trigger,
+            int definitionVersion,
+            String failureSnapshot
+    ) {
+    }
+
+    private record CanvasQueueResult(TaskRun run, boolean dispatched) {
+        static CanvasQueueResult dispatched(TaskRun run) {
+            return new CanvasQueueResult(run, true);
+        }
+
+        static CanvasQueueResult notDispatched(TaskRun run) {
+            return new CanvasQueueResult(run, false);
+        }
+    }
+
+    private record ScheduledCanvasSubmissionSnapshot(
+            int schemaVersion,
+            int definitionVersion,
+            String definitionJson
+    ) {
+    }
+
+    public record TaskRunArtifact(byte[] content, String contentType, String fileName) {
+        public TaskRunArtifact {
+            content = content.clone();
+        }
+
+        @Override
+        public byte[] content() {
+            return content.clone();
+        }
+    }
+
+    private record ArtifactReference(UUID runId, String objectKey) {
+    }
+
+    private enum ArtifactKind {
+        RESULT(MAXIMUM_RESULT_ARTIFACT_BYTES, "application/json", "result.json", "任务执行结果尚未生成"),
+        LOG(MAXIMUM_LOG_ARTIFACT_BYTES, "text/plain; charset=utf-8", "console.log", "任务执行日志尚未生成");
+
+        private final int maximumBytes;
+        private final String contentType;
+        private final String fileSuffix;
+        private final String notReadyMessage;
+
+        ArtifactKind(int maximumBytes, String contentType, String fileSuffix, String notReadyMessage) {
+            this.maximumBytes = maximumBytes;
+            this.contentType = contentType;
+            this.fileSuffix = fileSuffix;
+            this.notReadyMessage = notReadyMessage;
+        }
+
+        int maximumBytes() { return maximumBytes; }
+        String contentType() { return contentType; }
+        String fileSuffix() { return fileSuffix; }
+        String notReadyMessage() { return notReadyMessage; }
+    }
+
+    private record CanvasRunSnapshotReference(
+            int schemaVersion,
+            UUID executionId,
+            int attempt,
+            int definitionVersion,
+            UUID computeEngineId,
+            String manifestObjectKey,
+            String manifestSha256
     ) {
     }
 }

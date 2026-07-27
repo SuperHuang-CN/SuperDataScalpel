@@ -1,72 +1,155 @@
-import type { Graph } from '@antv/x6';
+import type { Edge, Graph } from '@antv/x6';
 import { canvasNodePorts } from './canvasPorts';
-import type { CanvasDefinition, CanvasEdgeDefinition, CanvasNodeData, CanvasNodeDefinition } from './canvasTypes';
+import { canvasNodeTemplate } from './canvasRegistry';
+import {
+  CANVAS_SCHEMA_MINOR_VERSION,
+  CANVAS_SCHEMA_VERSION,
+  CanvasNodeType,
+  type CanvasDefinition,
+  type CanvasEdgeDefinition,
+  type CanvasNodeDefinition,
+  type CanvasNodeRuntimeData,
+} from './canvasTypes';
 
-export const toCanvasDefinition = (graph: Graph): CanvasDefinition => ({
-  nodes: graph.getNodes().map((node): CanvasNodeDefinition => {
-    const position = node.getPosition();
-    const size = node.getSize();
-    const data = node.getData<CanvasNodeData>();
+const clone = <T,>(value: T): T => structuredClone(value);
 
-    return {
-      id: node.id,
-      shape: node.shape,
-      position,
-      size,
-      label: data.label,
-      category: data.category,
-      configuration: data.configuration,
-    };
-  }),
+export const runtimeDataFromDefinition = (node: CanvasNodeDefinition): CanvasNodeRuntimeData => {
+  switch (node.type) {
+    case CanvasNodeType.ModelInput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.JdbcInput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.FileDatasetInput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.HttpApiInput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.KafkaInput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.Join:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.StreamJoin:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.Rename:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.ModelOutput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.JdbcOutput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.KafkaOutput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+  }
+};
+
+interface SerializableCanvasNode {
+  id: string;
+  getPosition: () => { x: number; y: number };
+  getSize: () => { width: number; height: number };
+  getData: <T>() => T;
+}
+
+interface SerializableCanvasEdge {
+  id: string;
+  getSourceCellId: () => string | null;
+  getTargetCellId: () => string | null;
+}
+
+interface SerializableCanvasGraph {
+  getNodes: () => SerializableCanvasNode[];
+  getEdges: () => SerializableCanvasEdge[];
+}
+
+const nodeDefinition = (node: SerializableCanvasNode): CanvasNodeDefinition => {
+  const position = node.getPosition();
+  const size = node.getSize();
+  const data = node.getData<CanvasNodeRuntimeData>();
+  const common = {
+    id: node.id,
+    name: data.name,
+    layout: { x: position.x, y: position.y, width: size.width, height: size.height },
+  };
+
+  switch (data.type) {
+    case CanvasNodeType.ModelInput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.JdbcInput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.FileDatasetInput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.HttpApiInput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.KafkaInput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.Join:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.StreamJoin:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.Rename:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.ModelOutput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.JdbcOutput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.KafkaOutput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+  }
+};
+
+export const toCanvasDefinition = (graph: SerializableCanvasGraph): CanvasDefinition => ({
+  schemaVersion: CANVAS_SCHEMA_VERSION,
+  schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+  nodes: graph.getNodes().map(nodeDefinition),
   edges: graph.getEdges().flatMap((edge): CanvasEdgeDefinition[] => {
     const sourceNodeId = edge.getSourceCellId();
     const targetNodeId = edge.getTargetCellId();
     if (!sourceNodeId || !targetNodeId) return [];
-
-    return [{
-      id: edge.id,
-      source: {
-        nodeId: sourceNodeId,
-        portId: edge.getSourcePortId() ?? undefined,
-      },
-      target: {
-        nodeId: targetNodeId,
-        portId: edge.getTargetPortId() ?? undefined,
-      },
-    }];
+    return [{ id: edge.id, sourceNodeId, targetNodeId }];
   }),
 });
 
+const edgeAttrs = {
+  line: {
+    stroke: '#1677ff',
+    strokeWidth: 2,
+    targetMarker: 'block',
+  },
+};
+
 export const loadCanvasDefinition = (graph: Graph, definition: CanvasDefinition) => {
   definition.nodes.forEach((node) => {
+    const template = canvasNodeTemplate(node.type);
     graph.addNode({
       id: node.id,
-      shape: node.shape,
-      x: node.position.x,
-      y: node.position.y,
-      width: node.size.width,
-      height: node.size.height,
-      data: {
-        label: node.label,
-        category: node.category,
-        configuration: node.configuration,
-      },
-      ports: canvasNodePorts,
+      shape: template.shape,
+      x: node.layout.x,
+      y: node.layout.y,
+      width: node.layout.width,
+      height: node.layout.height,
+      data: runtimeDataFromDefinition(node),
+      ports: canvasNodePorts(node.type),
     });
   });
 
   definition.edges.forEach((edge) => {
     graph.addEdge({
       id: edge.id,
-      source: { cell: edge.source.nodeId, port: edge.source.portId },
-      target: { cell: edge.target.nodeId, port: edge.target.portId },
-      attrs: {
-        line: {
-          stroke: '#1677ff',
-          strokeWidth: 2,
-          targetMarker: 'block',
-        },
-      },
+      source: { cell: edge.sourceNodeId, port: 'out' },
+      target: { cell: edge.targetNodeId, port: 'in' },
+      attrs: edgeAttrs,
     });
   });
+};
+
+export const replaceCanvasDefinition = (graph: Graph, definition: CanvasDefinition) => {
+  graph.clearCells();
+  loadCanvasDefinition(graph, definition);
+};
+
+export const styleCanvasEdge = (edge: Pick<Edge, 'attr' | 'addTools'>) => {
+  edge.attr('line', edgeAttrs.line);
+  edge.addTools([
+    {
+      name: 'button-remove',
+      args: { distance: '50%' },
+    },
+  ]);
 };

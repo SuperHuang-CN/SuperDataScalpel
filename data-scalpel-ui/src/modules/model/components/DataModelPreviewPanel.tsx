@@ -104,7 +104,7 @@ const toColumns = (columns: QueryColumn[]): NonNullable<TableProps<QueryRow>['co
 }));
 
 const fieldOptions = (fields: DataModelField[]) => fields
-  .filter((field) => field.fieldType !== 'BINARY')
+  .filter((field) => field.fieldType !== 'BINARY' && field.fieldType !== 'GEOMETRY')
   .map((field) => ({
     value: field.code,
     label: `${field.name} (${field.code})`,
@@ -149,7 +149,10 @@ export const DataModelPreviewPanel = ({ model, fields }: DataModelPreviewPanelPr
   const [lastRequest, setLastRequest] = useState<DataModelDataQueryRequest>();
   const quickPreviewQuery = useDataModelPreview(model.id, mode === 'QUICK');
   const dataQueryMutation = useDataModelDataQuery();
-  const queryableFields = useMemo(() => fields.filter((field) => field.fieldType !== 'BINARY'), [fields]);
+  const queryableFields = useMemo(
+    () => fields.filter((field) => field.fieldType !== 'BINARY' && field.fieldType !== 'GEOMETRY'),
+    [fields],
+  );
   const options = useMemo(() => fieldOptions(fields), [fields]);
 
   const quickRows = useMemo(() => toRows(quickPreviewQuery.data?.rows ?? []), [quickPreviewQuery.data]);
@@ -367,7 +370,9 @@ export const DataModelPreviewPanel = ({ model, fields }: DataModelPreviewPanelPr
           options={[{ label: '快速预览', value: 'QUICK' }, { label: '条件查询', value: 'CONDITION' }]}
           onChange={setMode}
         />
-        {queryableFields.length < fields.length && <span className="model-preview-caption">二进制字段不会返回或参与筛选。</span>}
+        {queryableFields.length < fields.length && (
+          <span className="model-preview-caption">二进制和空间字段不会返回，也不能参与筛选、排序或聚合。</span>
+        )}
       </div>
       {mode === 'QUICK' ? renderQuickPreview() : renderConditionalQuery()}
     </div>

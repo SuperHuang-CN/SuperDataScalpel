@@ -1,6 +1,7 @@
 import {
   ArrowLeftOutlined,
   DeleteOutlined,
+  DownloadOutlined,
   EditOutlined,
   MoreOutlined,
   PauseCircleOutlined,
@@ -9,9 +10,10 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { DataModelBasicPanel } from '../components/DataModelBasicPanel';
@@ -25,6 +27,7 @@ import {
   useDataModel,
   useDataModelCommand,
   useDeleteDataModel,
+  useExportModelMetadata,
 } from '../hooks/useDataModels';
 import {
   dataModelStatusLabels,
@@ -33,7 +36,7 @@ import {
   type DataModel,
   type DataModelStatus,
 } from '../model/dataModel';
-import { mockRelatedTasks, normalizeModelDetailTab, type ModelDetailTabKey } from '../model/modelDetailMock';
+import { normalizeModelDetailTab, type ModelDetailTabKey } from '../model/modelDetailMock';
 
 interface ModelDetailLocationState {
   fromModelList?: boolean;
@@ -72,13 +75,25 @@ export const DataModelDetailPage = () => {
   const canUpdate = permissions.has('model.update');
   const canDelete = permissions.has('model.delete');
   const canPublish = permissions.has('model.publish');
+  const canViewTasks = permissions.has('task.view');
+  const permissionsLoaded = Boolean(currentUserQuery.data);
   const directoriesQuery = useDirectoryTree('MODEL', canViewDirectories);
   const deleteMutation = useDeleteDataModel();
+  const exportMutation = useExportModelMetadata();
   const publishMutation = useDataModelCommand('publish');
   const disableMutation = useDataModelCommand('disable');
   const enableMutation = useDataModelCommand('enable');
-  const activeTab = normalizeModelDetailTab(searchParams.get('tab'));
+  const requestedTab = normalizeModelDetailTab(searchParams.get('tab'));
+  const activeTab = requestedTab === 'tasks' && (!permissionsLoaded || !canViewTasks)
+    ? 'basic'
+    : requestedTab;
   const model = detailQuery.data?.model;
+
+  useEffect(() => {
+    if (permissionsLoaded && requestedTab === 'tasks' && !canViewTasks) {
+      setSearchParams({ tab: 'basic' }, { replace: true });
+    }
+  }, [canViewTasks, permissionsLoaded, requestedTab, setSearchParams]);
 
   const directoryNameById = useMemo(() => {
     const names = new Map<string, string>();
@@ -143,6 +158,16 @@ export const DataModelDetailPage = () => {
     },
   });
 
+  const exportMetadata = async (target: DataModel) => {
+    try {
+      const blob = await exportMutation.mutateAsync([target.id]);
+      downloadBlob(blob, `${target.code}-模型元数据.xlsx`);
+      messageApi.success('模型元数据导出已开始');
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '导出模型元数据失败');
+    }
+  };
+
   if (!id) {
     return <Result status="404" title="模型地址无效" extra={<Button type="primary" onClick={() => navigate('/model')}>返回模型列表</Button>} />;
   }
@@ -187,7 +212,9 @@ export const DataModelDetailPage = () => {
     },
     { key: 'changes', label: '物理变更', children: <DataModelPhysicalChangePanel model={model} canUpdate={canUpdate} /> },
     { key: 'data', label: '数据预览', children: <DataModelPreviewPanel model={model} fields={detailQuery.data.fields} /> },
-    { key: 'tasks', label: `关联任务 ${mockRelatedTasks.length}`, children: <DataModelTasksPanel /> },
+    ...(canViewTasks
+      ? [{ key: 'tasks', label: '关联任务', children: <DataModelTasksPanel modelId={model.id} /> }]
+      : []),
     { key: 'lineage', label: '血缘分析', children: <DataModelLineagePanel model={model} /> },
   ];
 
@@ -211,6 +238,11 @@ export const DataModelDetailPage = () => {
           </div>
         </div>
         <Space size={4}>
+          {model.physicalTableMode === 'MANAGED' && (
+            <Button icon={<DownloadOutlined />} loading={exportMutation.isPending} onClick={() => void exportMetadata(model)}>
+              导出 Excel
+            </Button>
+          )}
           <Tooltip title="刷新模型">
             <Button icon={<ReloadOutlined />} aria-label="刷新模型详情" onClick={() => void detailQuery.refetch()} />
           </Tooltip>

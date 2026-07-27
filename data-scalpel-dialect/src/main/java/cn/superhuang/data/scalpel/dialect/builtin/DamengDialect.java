@@ -36,6 +36,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 
 /**
@@ -57,6 +58,7 @@ public final class DamengDialect extends AbstractJdbcDialect {
         Properties properties = baseProperties(config);
         properties.setProperty("connectTimeout", "5000");
         properties.setProperty("socketTimeout", "15000");
+        applyConnectionOptions(config, properties, Set.of(), Set.of("connectTimeout", "socketTimeout"));
         String url = "jdbc:dm://" + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());
         return new JdbcConnectionSpec(driverClassName(), url, properties, config.schemaName());
     }
@@ -314,6 +316,7 @@ public final class DamengDialect extends AbstractJdbcDialect {
             case TIMESTAMP -> "TIMESTAMP WITH TIME ZONE";
             case TIMESTAMP_NTZ, DATETIME -> "TIMESTAMP";
             case BINARY -> "BLOB";
+            case GEOMETRY -> throw new IllegalArgumentException("Dameng managed tables do not support GEOMETRY fields");
         };
     }
 

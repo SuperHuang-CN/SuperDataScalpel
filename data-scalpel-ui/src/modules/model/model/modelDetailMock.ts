@@ -40,41 +40,6 @@ export const filterMockModelPreviewRows = (
   ));
 };
 
-export interface MockRelatedTask {
-  id: string;
-  code: string;
-  name: string;
-  relation: 'PRODUCER' | 'CONSUMER';
-  taskType: '同步任务' | '转换任务' | '数据服务';
-  status: 'RUNNING' | 'ENABLED' | 'DISABLED' | 'FAILED';
-  schedule: string;
-  lastRunAt: string | null;
-}
-
-export const mockRelatedTasks: MockRelatedTask[] = [
-  { id: 'task-1', code: 'sync_erp_order', name: 'ERP 订单同步', relation: 'PRODUCER', taskType: '同步任务', status: 'ENABLED', schedule: '每 10 分钟', lastRunAt: '2026-07-14 10:20:00' },
-  { id: 'task-2', code: 'merge_crm_customer', name: '客户信息补全', relation: 'PRODUCER', taskType: '转换任务', status: 'RUNNING', schedule: '每小时', lastRunAt: '2026-07-14 10:00:00' },
-  { id: 'task-3', code: 'build_order_wide', name: '订单服务宽表构建', relation: 'CONSUMER', taskType: '转换任务', status: 'ENABLED', schedule: '每日 02:00', lastRunAt: '2026-07-14 02:03:12' },
-  { id: 'task-4', code: 'publish_order_api', name: '订单查询服务', relation: 'CONSUMER', taskType: '数据服务', status: 'ENABLED', schedule: '实时', lastRunAt: '2026-07-14 10:26:18' },
-  { id: 'task-5', code: 'archive_order', name: '历史订单归档', relation: 'CONSUMER', taskType: '同步任务', status: 'DISABLED', schedule: '每月 1 日', lastRunAt: null },
-];
-
-export const filterMockRelatedTasks = (
-  tasks: MockRelatedTask[],
-  keyword?: string,
-  relation?: MockRelatedTask['relation'],
-  status?: MockRelatedTask['status'],
-) => {
-  const normalizedKeyword = keyword?.trim().toLowerCase();
-  return tasks.filter((task) => (
-    (!normalizedKeyword
-      || task.name.toLowerCase().includes(normalizedKeyword)
-      || task.code.toLowerCase().includes(normalizedKeyword))
-    && (!relation || task.relation === relation)
-    && (!status || task.status === status)
-  ));
-};
-
 export type MockLineageDirection = 'UPSTREAM' | 'DOWNSTREAM' | 'BOTH';
 export type MockLineageNodeKind = 'MODEL' | 'TASK' | 'SERVICE';
 

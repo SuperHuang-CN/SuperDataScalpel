@@ -51,11 +51,11 @@ public class DatabaseInspector {
                 );
             }
         } catch (ClassNotFoundException | LinkageError exception) {
-            return ConnectionCheck.failed("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", elapsedMs(startedAt));
+            throw new DatabaseAccessException("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", exception);
         } catch (IllegalArgumentException exception) {
-            return ConnectionCheck.failed("INVALID_CONNECTION_CONFIG", exception.getMessage(), elapsedMs(startedAt));
+            throw new DatabaseAccessException("INVALID_CONNECTION_CONFIG", exception.getMessage(), exception);
         } catch (SQLException exception) {
-            return ConnectionCheck.failed(errorCode(exception), safeMessage(exception), elapsedMs(startedAt));
+            throw new DatabaseAccessException(errorCode(exception), safeMessage(exception), exception);
         }
     }
 

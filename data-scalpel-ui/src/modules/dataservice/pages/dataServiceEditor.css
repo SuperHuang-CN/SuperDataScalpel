@@ -1,0 +1,210 @@
+.data-service-editor-page {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  margin: -12px -16px;
+  background: #f5f7fa;
+}
+
+.data-service-editor-header {
+  z-index: 2;
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 64px;
+  padding: 8px 16px;
+  background: #fff;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.data-service-editor-heading {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.data-service-editor-heading .ant-typography {
+  margin: 0;
+}
+
+.data-service-editor-actions {
+  justify-content: flex-end;
+}
+
+.data-service-editor-notices {
+  display: grid;
+  flex: none;
+  gap: 6px;
+  padding: 8px 16px 0;
+}
+
+.data-service-editor-notices:empty {
+  display: none;
+}
+
+.data-service-editor-form {
+  flex: 1;
+  min-height: 0;
+  padding: 12px 16px 16px;
+  overflow: auto;
+}
+
+.data-service-standard-editor {
+  display: grid;
+  gap: 12px;
+  width: min(100%, 880px);
+  margin: 0 auto;
+}
+
+.data-service-standard-editor .ant-card-body > .ant-form-item:last-child,
+.data-service-sql-sidebar > .ant-form-item:last-child {
+  margin-bottom: 0;
+}
+
+.data-service-sql-workbench {
+  display: grid;
+  grid-template-columns: 360px minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+
+.data-service-sql-sidebar,
+.data-service-sql-main {
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.data-service-sql-sidebar {
+  padding: 12px;
+}
+
+.data-service-sql-sidebar > .ant-typography {
+  margin: 0 0 12px;
+}
+
+.data-service-sql-main {
+  position: relative;
+  scroll-behavior: smooth;
+}
+
+.data-service-section-nav {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  gap: 18px;
+  padding: 9px 16px;
+  background: rgb(255 255 255 / 96%);
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.data-service-editor-section {
+  padding: 14px 16px;
+  scroll-margin-top: 42px;
+  border-bottom: 1px solid #f0f0f0;
+}
+
+.data-service-editor-section:last-child {
+  border-bottom: 0;
+}
+
+.data-service-editor-section > .ant-typography {
+  margin-top: 0;
+}
+
+.data-service-model-notice {
+  margin: -10px 0 10px;
+}
+
+.data-service-selected-models,
+.data-service-parameter-list,
+.data-service-test-result {
+  width: 100%;
+}
+
+.data-service-selected-models {
+  margin-bottom: 16px;
+}
+
+.data-service-selected-model {
+  display: grid;
+  gap: 3px;
+  padding: 7px 8px;
+  background: #fafafa;
+  border-radius: 4px;
+}
+
+.data-service-parameter-row {
+  padding: 8px;
+  background: #fafafa;
+  border: 1px solid #f0f0f0;
+  border-radius: 4px;
+}
+
+.data-service-test-arguments {
+  display: grid;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.data-service-full-width,
+.data-service-half-width {
+  width: 100% !important;
+}
+
+.data-service-editor-loading {
+  padding: 24px;
+}
+
+.data-service-create-option {
+  display: grid;
+  min-width: 300px;
+  padding: 2px 0;
+}
+
+.data-service-create-option-description {
+  font-size: 12px;
+}
+
+.data-service-name-button {
+  max-width: 100%;
+  padding-inline: 0;
+}
+
+@media (max-width: 1180px) {
+  .data-service-sql-workbench {
+    display: block;
+    height: auto;
+  }
+
+  .data-service-sql-sidebar,
+  .data-service-sql-main {
+    overflow: visible;
+  }
+
+  .data-service-sql-main {
+    margin-top: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .data-service-editor-page {
+    margin: -8px;
+  }
+
+  .data-service-editor-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .data-service-editor-form {
+    padding: 8px;
+  }
+}

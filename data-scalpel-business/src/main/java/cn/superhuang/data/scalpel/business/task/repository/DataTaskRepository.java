@@ -14,9 +14,9 @@ import jakarta.persistence.LockModeType;
 
 public interface DataTaskRepository extends SearchRepository<DataTask, UUID> {
 
-    boolean existsByCode(String code);
-
     boolean existsByDirectoryId(UUID directoryId);
+
+    boolean existsByComputeEngineId(UUID computeEngineId);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select task from DataTask task where task.id = :id")

@@ -89,7 +89,31 @@ export type PlatformDataType =
   | 'BINARY'
   | 'DATE'
   | 'TIMESTAMP'
-  | 'TIMESTAMP_NTZ';
+  | 'TIMESTAMP_NTZ'
+  | 'GEOMETRY';
+
+export type GeometryKind =
+  | 'GEOMETRY'
+  | 'POINT'
+  | 'LINESTRING'
+  | 'POLYGON'
+  | 'MULTIPOINT'
+  | 'MULTILINESTRING'
+  | 'MULTIPOLYGON'
+  | 'GEOMETRYCOLLECTION';
+
+export type CoordinateDimension = 'XY' | 'XYZ' | 'XYM' | 'XYZM';
+
+export interface CrsReference {
+  authority: string;
+  code: number;
+}
+
+export interface GeometryTypeDefinition {
+  kind: GeometryKind;
+  crs: CrsReference;
+  dimension: CoordinateDimension;
+}
 
 export type TypeMappingQuality = 'EXACT' | 'NORMALIZED' | 'LOSSY' | 'UNSUPPORTED';
 
@@ -108,7 +132,8 @@ export type PhysicalTableColumnType =
   | 'TIMESTAMP'
   | 'TIMESTAMP_NTZ'
   | 'DATETIME'
-  | 'BINARY';
+  | 'BINARY'
+  | 'GEOMETRY';
 
 export interface ExternalTableImportColumn {
   name: string;
@@ -117,6 +142,7 @@ export interface ExternalTableImportColumn {
   length: number | null;
   precision: number | null;
   scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
   nullable: boolean;
   primaryKey: boolean;
   mappingQuality: TypeMappingQuality;
@@ -136,12 +162,102 @@ export interface ExternalTableImportPreview {
   issues: string[];
 }
 
+export interface ManagedImportPreviewRequest {
+  sourceDataSourceId: string;
+  sourceTable: {
+    catalog: string | null;
+    schema: string | null;
+    table: string;
+  };
+  targetStorageDataSourceId: string;
+}
+
+export interface ManagedImportColumnPreview {
+  sourceName: string;
+  nativeType: string;
+  code: string | null;
+  name: string | null;
+  fieldType: PlatformDataType | null;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
+  nullable: boolean;
+  primaryKey: boolean;
+  sortOrder: number;
+  description: string | null;
+  mappingQuality: TypeMappingQuality;
+  mappingMessage: string | null;
+  importable: boolean;
+  issues: string[];
+}
+
+export interface ManagedImportPreview {
+  sourceTable: {
+    catalog: string | null;
+    schema: string | null;
+    table: string;
+  };
+  suggestedCode: string | null;
+  suggestedName: string | null;
+  suggestedPhysicalTableName: string | null;
+  tableImportable: boolean;
+  importable: boolean;
+  columns: ManagedImportColumnPreview[];
+  tableIssues: string[];
+  issues: string[];
+  warnings: string[];
+}
+
+export interface ModelMetadataImportFieldPreview {
+  key: string;
+  rowNumber: number;
+  code: string;
+  name: string;
+  fieldType: PlatformDataType | null;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
+  nullable: boolean | null;
+  primaryKey: boolean | null;
+  sortOrder: number | null;
+  description: string;
+  importable: boolean;
+  issues: string[];
+}
+
+export interface ModelMetadataImportModelPreview {
+  key: string;
+  rowNumber: number;
+  code: string;
+  name: string;
+  physicalTableName: string;
+  clickHouseOrderByColumns: string[];
+  description: string;
+  importable: boolean;
+  issues: string[];
+  warnings: string[];
+  fields: ModelMetadataImportFieldPreview[];
+}
+
+export interface ModelMetadataImportPreview {
+  fileName: string;
+  formatVersion: number;
+  importable: boolean;
+  issues: string[];
+  models: ModelMetadataImportModelPreview[];
+}
+
 export interface PlatformTypeCapability {
   type: PlatformDataType;
   supported: boolean;
   message: string | null;
   lengthParameterSupported: boolean;
   unboundedStringSupported: boolean;
+  geometryKinds?: GeometryKind[];
+  coordinateDimensions?: CoordinateDimension[];
+  crsAuthorities?: string[];
 }
 
 export interface DataModel {
@@ -172,6 +288,7 @@ export interface DataModelField {
   length: number | null;
   precision: number | null;
   scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
   nullable: boolean;
   primaryKey: boolean;
   sortOrder: number;
@@ -196,6 +313,17 @@ export interface CreateDataModelRequest {
   description?: string;
 }
 
+export interface CreateManagedDataModelDraftRequest {
+  code: string;
+  name: string;
+  directoryId?: string;
+  storageDataSourceId: string;
+  physicalTableName: string;
+  clickHouseOrderByColumns: string[];
+  description?: string;
+  fields: DataModelFieldInput[];
+}
+
 export type UpdateDataModelRequest = Omit<CreateDataModelRequest, 'code'>;
 
 export interface DataModelFieldInput {
@@ -206,6 +334,7 @@ export interface DataModelFieldInput {
   length?: number;
   precision?: number;
   scale?: number;
+  geometry?: GeometryTypeDefinition;
   nullable: boolean;
   primaryKey: boolean;
   sortOrder: number;
@@ -363,6 +492,7 @@ export interface PhysicalTableChangeColumn {
   length: number | null;
   precision: number | null;
   scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
   nullable: boolean;
 }
 
@@ -446,6 +576,44 @@ export const canSaveFieldsDirectly = (
   mode: PhysicalTableMode,
   state: PhysicalTableState | undefined,
 ) => mode !== 'MANAGED' || state === 'NOT_FOUND';
+
+const sameGeometryDefinition = (
+  current: GeometryTypeDefinition | undefined,
+  requested: GeometryTypeDefinition | undefined,
+) => current === requested || (
+  current !== undefined
+  && requested !== undefined
+  && current.kind === requested.kind
+  && current.crs.authority === requested.crs.authority
+  && current.crs.code === requested.crs.code
+  && current.dimension === requested.dimension
+);
+
+export const isMetadataOnlyFieldUpdate = (
+  currentFields: DataModelFieldInput[],
+  requestedFields: DataModelFieldInput[],
+) => {
+  if (currentFields.length !== requestedFields.length) return false;
+  const currentById = new Map(
+    currentFields
+      .filter((field): field is DataModelFieldInput & { id: string } => field.id !== undefined)
+      .map((field) => [field.id, field]),
+  );
+  if (currentById.size !== currentFields.length) return false;
+  return requestedFields.every((requested) => {
+    if (requested.id === undefined) return false;
+    const current = currentById.get(requested.id);
+    return current !== undefined
+      && current.code === requested.code
+      && current.fieldType === requested.fieldType
+      && current.length === requested.length
+      && current.precision === requested.precision
+      && current.scale === requested.scale
+      && sameGeometryDefinition(current.geometry, requested.geometry)
+      && current.nullable === requested.nullable
+      && current.primaryKey === requested.primaryKey;
+  });
+};
 
 export interface DataModelPreviewColumn {
   code: string;
@@ -538,6 +706,18 @@ export const dataModelFieldTypeLabels: Record<PlatformDataType, string> = {
   DATE: '日期',
   TIMESTAMP: '时间戳（时间线）',
   TIMESTAMP_NTZ: '时间戳（无时区）',
+  GEOMETRY: '空间几何',
+};
+
+export const geometryKindLabels: Record<GeometryKind, string> = {
+  GEOMETRY: 'Geometry',
+  POINT: 'Point',
+  LINESTRING: 'LineString',
+  POLYGON: 'Polygon',
+  MULTIPOINT: 'MultiPoint',
+  MULTILINESTRING: 'MultiLineString',
+  MULTIPOLYGON: 'MultiPolygon',
+  GEOMETRYCOLLECTION: 'GeometryCollection',
 };
 
 export const physicalLocation = (model: Pick<DataModel, 'catalogName' | 'schemaName' | 'physicalTableName'>) => (

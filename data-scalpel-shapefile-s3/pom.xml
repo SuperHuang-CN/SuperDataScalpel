@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.superhuang</groupId>
+        <artifactId>data-scalpel</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>data-scalpel-shapefile-s3</artifactId>
+    <name>DataScalpel Shapefile S3 Adapter</name>
+    <description>Range-based S3 source adapter for the pure Java Shapefile reader.</description>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.superhuang</groupId>
+            <artifactId>data-scalpel-shapefile</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>software.amazon.awssdk</groupId>
+            <artifactId>s3</artifactId>
+            <version>${aws.sdk.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>crt-core</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk.crt</groupId>
+                    <artifactId>aws-crt</artifactId>
+                </exclusion>
+                <exclusion>
+                    <groupId>software.amazon.awssdk</groupId>
+                    <artifactId>netty-nio-client</artifactId>
+                </exclusion>
+            </exclusions>
+        </dependency>
+        <dependency>
+            <groupId>cn.superhuang</groupId>
+            <artifactId>data-scalpel-shapefile</artifactId>
+            <version>${project.version}</version>
+            <type>test-jar</type>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <resources>
+            <resource>
+                <directory>src/main/resources</directory>
+            </resource>
+            <resource>
+                <directory>${project.basedir}</directory>
+                <targetPath>META-INF</targetPath>
+                <includes>
+                    <include>THIRD-PARTY-NOTICES.md</include>
+                </includes>
+            </resource>
+            <resource>
+                <directory>${maven.multiModuleProjectDirectory}/data-scalpel-shapefile/LICENSES</directory>
+                <targetPath>META-INF/LICENSES</targetPath>
+            </resource>
+        </resources>
+    </build>
+</project>

@@ -1,9 +1,15 @@
 package cn.superhuang.data.scalpel.business.filedataset.storage;
 
+import cn.superhuang.data.scalpel.filegdb.FileGeodatabase;
+import cn.superhuang.data.scalpel.shapefile.ShapefileComponent;
+import cn.superhuang.data.scalpel.shapefile.ShapefileDataset;
+import cn.superhuang.data.scalpel.shapefile.ShapefileOpenOptions;
+
 import java.io.InputStream;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.util.Objects;
+import java.util.Set;
 
 /** Internal storage for platform-managed file-dataset contents. */
 public interface FileObjectStorage {
@@ -13,6 +19,25 @@ public interface FileObjectStorage {
     FileObjectContent open(String objectKey);
 
     void delete(String objectKey);
+
+    /** Deletes every object below an immutable materialized directory prefix. */
+    default void deletePrefix(String prefix) {
+        throw new FileStorageException("当前对象存储不支持目录前缀删除", null);
+    }
+
+    /** Opens an unpacked FileGDB below an immutable materialized directory prefix. */
+    default FileGeodatabase openFileGeodatabase(String prefix) {
+        throw new FileStorageException("当前对象存储不支持 GDB 目录读取", null);
+    }
+
+    /** Opens one canonical, immutable Shapefile component set below a materialized prefix. */
+    default ShapefileDataset openShapefile(
+            String prefix,
+            Set<ShapefileComponent> components,
+            ShapefileOpenOptions options
+    ) {
+        throw new FileStorageException("当前对象存储不支持 SHP 组件集读取", null);
+    }
 
     record StoredFileObject(String eTag) {
     }

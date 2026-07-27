@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.model.web.response;
 
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
 
@@ -12,6 +13,7 @@ public record PhysicalTableChangeColumnResponse(
         Integer length,
         Integer precision,
         Integer scale,
+        GeometryTypeDefinition geometry,
         boolean nullable
 ) {
     static PhysicalTableChangeColumnResponse from(TableColumnDefinition column) {
@@ -19,7 +21,8 @@ public record PhysicalTableChangeColumnResponse(
             return null;
         }
         return new PhysicalTableChangeColumnResponse(
-                column.columnId(), column.name(), column.type(), column.length(), column.precision(), column.scale(), column.nullable()
+                column.columnId(), column.name(), column.type(), column.length(), column.precision(), column.scale(),
+                column.geometry(), column.nullable()
         );
     }
 }

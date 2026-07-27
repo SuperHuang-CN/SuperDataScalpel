@@ -56,7 +56,15 @@ export const requestJson = async <T>(
 ): Promise<T> => {
   const { skipAuthentication = false, ...requestInit } = init;
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const callerSignal = requestInit.signal;
+  const abortFromCaller = () => controller.abort();
+  if (callerSignal?.aborted) controller.abort();
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -76,8 +84,14 @@ export const requestJson = async <T>(
     }
 
     return body ? JSON.parse(body) as T : undefined as T;
+  } catch (error: unknown) {
+    if (timedOut && error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError('请求超时，请稍后重试');
+    }
+    throw error;
   } finally {
     window.clearTimeout(timeout);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
   }
 };
 

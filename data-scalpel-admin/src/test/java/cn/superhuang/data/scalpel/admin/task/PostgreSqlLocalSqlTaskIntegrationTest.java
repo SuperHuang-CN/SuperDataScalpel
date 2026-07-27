@@ -13,6 +13,7 @@ import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldReposi
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTablePort;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlWriteMode;
+import cn.superhuang.data.scalpel.business.task.domain.TaskType;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
@@ -311,7 +312,7 @@ class PostgreSqlLocalSqlTaskIntegrationTest {
 
     private UUID createTask(Fixture fixture, String name) {
         return dataTaskService.create(new CreateDataTaskRequest(
-                name + "_" + fixture.suffix(), name, null, "PostgreSQL LOCAL_SQL 集成验收"
+                name, null, TaskType.LOCAL_SQL, "PostgreSQL LOCAL_SQL 集成验收"
         )).id();
     }
 

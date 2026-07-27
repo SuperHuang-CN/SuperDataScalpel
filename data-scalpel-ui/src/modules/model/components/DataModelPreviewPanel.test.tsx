@@ -1,6 +1,6 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataModel, DataModelField } from '../model/dataModel';
 
 const mutateAsync = vi.fn();
@@ -65,6 +65,8 @@ const fields: DataModelField[] = [{
 }];
 
 describe('DataModelPreviewPanel', () => {
+  afterEach(cleanup);
+
   beforeEach(() => {
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     Object.defineProperty(window, 'matchMedia', {
@@ -105,5 +107,34 @@ describe('DataModelPreviewPanel', () => {
         filters: [{ field: 'id', operator: 'EQ', value: '1' }],
       }),
     }));
+    await new Promise((resolve) => window.setTimeout(resolve, 20));
+  }, 20_000);
+
+  it('does not offer Geometry as a projection, filter or sort field', async () => {
+    const user = userEvent.setup();
+    const geometryField: DataModelField = {
+      ...fields[0],
+      id: 'shape-field-id',
+      code: 'shape',
+      name: '空间位置',
+      fieldType: 'GEOMETRY',
+      geometry: {
+        kind: 'POINT',
+        crs: { authority: 'EPSG', code: 4326 },
+        dimension: 'XY',
+      },
+      nullable: true,
+      primaryKey: false,
+      sortOrder: 20,
+    };
+    render(<DataModelPreviewPanel model={model} fields={[...fields, geometryField]} />);
+
+    await user.click(screen.getByText('条件查询'));
+    await user.click(screen.getByRole('button', { name: /添加条件/ }));
+    const selects = screen.getAllByRole('combobox');
+    await user.click(selects[2]);
+
+    expect(await screen.findByText('Id (id)')).toBeInTheDocument();
+    expect(screen.queryByText('空间位置 (shape)')).not.toBeInTheDocument();
   });
 });

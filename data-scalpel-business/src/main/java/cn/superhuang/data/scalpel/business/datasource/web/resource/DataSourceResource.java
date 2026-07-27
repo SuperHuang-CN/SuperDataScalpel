@@ -10,6 +10,7 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.NamespaceResp
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableListResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadataResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TablePreviewResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.KafkaTopicResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -142,5 +143,15 @@ public class DataSourceResource {
             );
         }
         return service.preview(id, catalog, schema, table, limit);
+    }
+
+    @GetMapping("/{id}/kafka-topics")
+    @PreAuthorize("hasAuthority('datasource.view')")
+    @Operation(summary = "查询 Kafka Topic")
+    public List<KafkaTopicResponse> listKafkaTopics(
+            @PathVariable UUID id,
+            @RequestParam(required = false) String keyword
+    ) {
+        return service.listKafkaTopics(id, keyword);
     }
 }

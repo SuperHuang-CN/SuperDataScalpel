@@ -1,12 +1,24 @@
 package cn.superhuang.data.scalpel.dialect.model;
 
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
+
 /** Dialect-internal physical type family and its DDL parameters. */
 public record PhysicalTypeDefinition(
         TableColumnType type,
         Integer length,
         Integer precision,
-        Integer scale
+        Integer scale,
+        GeometryTypeDefinition geometry
 ) {
+
+    public PhysicalTypeDefinition(
+            TableColumnType type,
+            Integer length,
+            Integer precision,
+            Integer scale
+    ) {
+        this(type, length, precision, scale, null);
+    }
 
     public PhysicalTypeDefinition {
         if (type == null) {
@@ -23,9 +35,16 @@ public record PhysicalTypeDefinition(
                 throw new IllegalArgumentException("Physical decimal scale must be between 0 and precision");
             }
         }
+        if (type == TableColumnType.GEOMETRY) {
+            if (geometry == null) {
+                throw new IllegalArgumentException("Physical GEOMETRY requires a geometry definition");
+            }
+        } else if (geometry != null) {
+            throw new IllegalArgumentException("Only physical GEOMETRY accepts a geometry definition");
+        }
     }
 
     public TableColumnDefinition column(String name, boolean nullable, java.util.UUID columnId) {
-        return new TableColumnDefinition(name, type, length, precision, scale, nullable, columnId);
+        return new TableColumnDefinition(name, type, length, precision, scale, nullable, columnId, geometry);
     }
 }

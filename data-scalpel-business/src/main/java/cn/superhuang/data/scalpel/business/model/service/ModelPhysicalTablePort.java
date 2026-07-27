@@ -23,6 +23,14 @@ public interface ModelPhysicalTablePort {
 
     ModelPhysicalTableInspection inspect(DataSource dataSource, DataModel model, List<DataModelField> fields);
 
+    /** Applies the same model-compatibility rules to metadata that was already read by a caller. */
+    ModelPhysicalTableInspection inspect(
+            DataSource dataSource,
+            DataModel model,
+            List<DataModelField> fields,
+            TableMetadata metadata
+    );
+
     /** Reads one external table before its columns are imported into a model definition. */
     default TableMetadata readExternalTable(DataSource dataSource, DataModel model) {
         throw new UnsupportedOperationException("当前物理表实现不支持读取外部表元数据");

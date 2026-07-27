@@ -15,8 +15,8 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Spreadsheet.class, name = "SPREADSHEET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Parquet.class, name = "PARQUET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Avro.class, name = "AVRO"),
-        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Shapefile.class, name = "SHAPEFILE"),
-        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.FileGdb.class, name = "FILE_GDB")
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Gdb.class, name = "GDB"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Shp.class, name = "SHP")
 })
 public sealed interface FileDatasetParsingOptionsResponse permits
         FileDatasetParsingOptionsResponse.Csv,
@@ -26,8 +26,8 @@ public sealed interface FileDatasetParsingOptionsResponse permits
         FileDatasetParsingOptionsResponse.Spreadsheet,
         FileDatasetParsingOptionsResponse.Parquet,
         FileDatasetParsingOptionsResponse.Avro,
-        FileDatasetParsingOptionsResponse.Shapefile,
-        FileDatasetParsingOptionsResponse.FileGdb {
+        FileDatasetParsingOptionsResponse.Gdb,
+        FileDatasetParsingOptionsResponse.Shp {
 
     FileDatasetParsingOptionsKind kind();
 
@@ -41,12 +41,14 @@ public sealed interface FileDatasetParsingOptionsResponse permits
             case FileDatasetParsingOptionsRequest.Json value -> new Json(value.charset(), value.rootPointer());
             case FileDatasetParsingOptionsRequest.JsonLines value -> new JsonLines(value.charset(), value.recordDelimiter());
             case FileDatasetParsingOptionsRequest.Spreadsheet value -> new Spreadsheet(
-                    value.sheetName(), value.headerRowIndex(), value.dataStartRowIndex()
+                    value.headerRowIndex(), value.dataStartRowIndex()
             );
             case FileDatasetParsingOptionsRequest.Parquet ignored -> new Parquet();
             case FileDatasetParsingOptionsRequest.Avro ignored -> new Avro();
-            case FileDatasetParsingOptionsRequest.Shapefile value -> new Shapefile(value.charset(), value.layerName());
-            case FileDatasetParsingOptionsRequest.FileGdb value -> new FileGdb(value.layerName());
+            case FileDatasetParsingOptionsRequest.Gdb ignored -> new Gdb();
+            case FileDatasetParsingOptionsRequest.Shp value -> new Shp(
+                    value.dbfCharsetOverride(), value.dbfFallbackCharset()
+            );
         };
     }
 
@@ -85,7 +87,7 @@ public sealed interface FileDatasetParsingOptionsResponse permits
         }
     }
 
-    record Spreadsheet(String sheetName, int headerRowIndex, int dataStartRowIndex) implements FileDatasetParsingOptionsResponse {
+    record Spreadsheet(int headerRowIndex, int dataStartRowIndex) implements FileDatasetParsingOptionsResponse {
         @Override
         public FileDatasetParsingOptionsKind kind() {
             return FileDatasetParsingOptionsKind.SPREADSHEET;
@@ -106,17 +108,21 @@ public sealed interface FileDatasetParsingOptionsResponse permits
         }
     }
 
-    record Shapefile(String charset, String layerName) implements FileDatasetParsingOptionsResponse {
+    record Gdb() implements FileDatasetParsingOptionsResponse {
         @Override
         public FileDatasetParsingOptionsKind kind() {
-            return FileDatasetParsingOptionsKind.SHAPEFILE;
+            return FileDatasetParsingOptionsKind.GDB;
         }
     }
 
-    record FileGdb(String layerName) implements FileDatasetParsingOptionsResponse {
+    record Shp(
+            String dbfCharsetOverride,
+            String dbfFallbackCharset
+    ) implements FileDatasetParsingOptionsResponse {
         @Override
         public FileDatasetParsingOptionsKind kind() {
-            return FileDatasetParsingOptionsKind.FILE_GDB;
+            return FileDatasetParsingOptionsKind.SHP;
         }
     }
+
 }

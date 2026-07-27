@@ -16,8 +16,8 @@ export const buildDataServiceSearch = (filters: DataServiceFilters): string | un
       ? `(${contains('name', filters.keyword.trim())} OR ${contains('code', filters.keyword.trim())})`
       : undefined,
     filters.status ? equals('status', filters.status) : undefined,
+    filters.type ? equals('type', filters.type) : undefined,
     filters.engineId ? equals('engineId', filters.engineId) : undefined,
-    filters.modelId ? equals('modelId', filters.modelId) : undefined,
     filters.directoryIds?.length ? anyEquals('directoryId', filters.directoryIds) : undefined,
     filters.uncategorized ? 'directoryId:null' : undefined,
   ].filter((condition): condition is string => Boolean(condition));

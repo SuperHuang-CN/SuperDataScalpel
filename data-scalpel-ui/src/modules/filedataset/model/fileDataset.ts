@@ -1,33 +1,16 @@
-export type FileDatasetFormat = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'XLS' | 'XLSX' | 'PARQUET' | 'AVRO' | 'SHP' | 'GDB' | 'OTHER';
+export type FileDatasetType = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'PARQUET' | 'AVRO' | 'EXCEL' | 'GDB' | 'SHP';
 
-export type FileDatasetCompression = 'NONE' | 'GZIP';
+export type FileDatasetFormat = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'XLS' | 'XLSX' | 'PARQUET' | 'AVRO' | 'GDB' | 'SHP';
 
-export type FileDatasetParseStatus = 'UNPARSED' | 'PARSING' | 'READY' | 'FAILED';
+export type FileDatasetCompression = 'NONE' | 'GZIP' | 'ZIP';
 
-export type FileDatasetLogicalType = 'STRING' | 'INTEGER' | 'DECIMAL' | 'BOOLEAN' | 'DATE' | 'TIME' | 'DATETIME' | 'BINARY' | 'JSON' | 'ARRAY' | 'OTHER';
+export type FileDatasetFileStatus = 'PREPARING' | 'READY';
 
-export interface FileDatasetField {
-  name: string;
-  sortOrder: number;
-  logicalType: FileDatasetLogicalType;
-  nullable: boolean;
-}
+export type FileDatasetStorageKind = 'SINGLE_OBJECT' | 'GDB_DIRECTORY' | 'SHAPEFILE_COMPONENT_SET';
 
-export interface FileDataset {
-  id: string;
-  directoryId: string | null;
-  name: string;
-  format: FileDatasetFormat;
-  compression: FileDatasetCompression;
-  originalFileName: string;
-  contentType: string | null;
-  sizeBytes: number;
-  parseStatus: FileDatasetParseStatus;
-  parsingConfigured: boolean;
-  description: string | null;
-  createdAt: string;
-  updatedAt: string;
-}
+export type FileDatasetParseStatus = 'QUEUED' | 'PARSING' | 'SCHEMA_READY' | 'READY';
+
+export type FileDatasetTableSourceLoadMode = 'INITIAL' | 'APPEND' | 'REPLACE_ALL' | 'REPLACE_SOURCE';
 
 export type FileRecordDelimiter = 'AUTO' | 'LF' | 'CRLF' | 'CR';
 
@@ -36,22 +19,115 @@ export type FileDatasetParsingOptions =
   | { kind: 'TEXT'; charset: string; recordDelimiter: FileRecordDelimiter }
   | { kind: 'JSON'; charset: string; rootPointer?: string }
   | { kind: 'JSON_LINES'; charset: string; recordDelimiter: FileRecordDelimiter }
-  | { kind: 'SPREADSHEET'; sheetName?: string; headerRowIndex: number; dataStartRowIndex: number }
+  | { kind: 'SPREADSHEET'; headerRowIndex: number; dataStartRowIndex: number }
   | { kind: 'PARQUET' }
   | { kind: 'AVRO' }
-  | { kind: 'SHAPEFILE'; charset: string; layerName?: string }
-  | { kind: 'FILE_GDB'; layerName?: string };
+  | { kind: 'GDB' }
+  | { kind: 'SHP'; dbfCharsetOverride?: string; dbfFallbackCharset: string };
 
-export interface FileDatasetParsing {
+export interface FileDatasetField {
+  name: string;
+  sortOrder: number;
+  fieldType: PlatformDataType;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  nullable: boolean;
+}
+
+export interface FileDatasetCanvasTableMetadata {
+  fileDatasetTableId: string;
+  fileDatasetId: string;
+  fileDatasetName: string;
+  datasetType: FileDatasetType;
+  code: string;
+  name: string;
+  parseStatus: FileDatasetParseStatus;
+  fileStatus: FileDatasetFileStatus;
+  fields: FileDatasetField[];
+}
+
+export interface FileDatasetCanvasMetadata {
+  tables: FileDatasetCanvasTableMetadata[];
+}
+
+export interface FileDataset {
   id: string;
+  directoryId: string | null;
+  name: string;
+  type: FileDatasetType;
+  parsingOptions: FileDatasetParsingOptions;
+  fileCount: number;
+  tableCount: number;
+  readyTableCount: number;
+  parsingOptionsLocked: boolean;
+  description: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileDatasetFile {
+  id: string;
+  fileDatasetId: string;
+  originalFileName: string;
   format: FileDatasetFormat;
   compression: FileDatasetCompression;
+  contentType: string | null;
+  sizeBytes: number;
+  status: FileDatasetFileStatus;
+  storageKind: FileDatasetStorageKind;
+  materializedSizeBytes: number | null;
+  materializedEntryCount: number | null;
+  currentPreparationJobId: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileDatasetTable {
+  id: string;
+  fileDatasetId: string;
+  code: string;
+  name: string;
   parseStatus: FileDatasetParseStatus;
-  configured: boolean;
-  options: FileDatasetParsingOptions | null;
-  parseError: string | null;
+  sourceCount: number;
+  totalRowCount: number;
+  currentLoadJobId: string | null;
   sampledRecordCount: number;
   truncated: boolean;
+  previewSupported: boolean;
+  sourceMetadata: Record<string, unknown>;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileDatasetTableSource {
+  id: string;
+  tableId: string;
+  sourceFileId: string;
+  sourceName: string;
+  sourceKey: string;
+  sourceOrder: number;
+  rowCount: number;
+  schemaFingerprint: string;
+  activatedAt: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface FileDatasetTableLoadSubmission {
+  jobId: string;
+  file: FileDatasetFile;
+  table: FileDatasetTable;
+}
+
+export interface FileDatasetUploadResult {
+  files: FileDatasetFile[];
+  tables: FileDatasetTable[];
+  jobIds: string[];
+}
+
+export interface FileDatasetSchema {
+  tableId: string;
   fields: FileDatasetField[];
 }
 
@@ -65,20 +141,37 @@ export interface FileDatasetPreview {
 export interface CreateFileDatasetRequest {
   name: string;
   directoryId?: string;
-  format: FileDatasetFormat;
+  type: FileDatasetType;
+  parsingOptions: FileDatasetParsingOptions;
   description?: string;
 }
 
-export type UpdateFileDatasetRequest = CreateFileDatasetRequest;
+export interface UpdateFileDatasetRequest {
+  name: string;
+  directoryId?: string;
+  parsingOptions: FileDatasetParsingOptions;
+  description?: string;
+}
 
 export interface FileDatasetFilters {
   keyword?: string;
-  format?: FileDatasetFormat;
-  compression?: FileDatasetCompression;
-  parseStatus?: FileDatasetParseStatus;
+  type?: FileDatasetType;
   directoryIds?: string[];
   uncategorized?: boolean;
 }
+
+export const fileDatasetTypeLabels: Record<FileDatasetType, string> = {
+  CSV: 'CSV',
+  TSV: 'TSV',
+  TXT: '文本',
+  JSON: 'JSON',
+  JSONL: 'JSON Lines',
+  PARQUET: 'Parquet',
+  AVRO: 'Avro',
+  EXCEL: 'Excel',
+  GDB: 'FileGDB',
+  SHP: 'Shapefile',
+};
 
 export const fileDatasetFormatLabels: Record<FileDatasetFormat, string> = {
   CSV: 'CSV',
@@ -90,46 +183,71 @@ export const fileDatasetFormatLabels: Record<FileDatasetFormat, string> = {
   XLSX: 'Excel',
   PARQUET: 'Parquet',
   AVRO: 'Avro',
-  SHP: 'Shapefile（ZIP）',
-  GDB: 'FileGDB（ZIP）',
-  OTHER: '其他',
+  GDB: 'FileGDB ZIP',
+  SHP: 'Shapefile ZIP',
 };
 
 export const fileDatasetParseStatusLabels: Record<FileDatasetParseStatus, string> = {
-  UNPARSED: '待解析',
+  QUEUED: '排队中',
   PARSING: '解析中',
+  SCHEMA_READY: '仅 Schema',
   READY: '已就绪',
-  FAILED: '解析失败',
 };
+
+export const isActiveFileDatasetParseStatus = (status: FileDatasetParseStatus): boolean => (
+  status === 'QUEUED' || status === 'PARSING'
+);
 
 export const fileDatasetCompressionLabels: Record<FileDatasetCompression, string> = {
   NONE: '未压缩',
   GZIP: 'GZIP',
+  ZIP: 'ZIP',
 };
 
-export const fileDatasetFormatOptions = Object.entries(fileDatasetFormatLabels).map(([value, label]) => ({
-  value: value as FileDatasetFormat,
+export const fileDatasetTypeOptions = Object.entries(fileDatasetTypeLabels).map(([value, label]) => ({
+  value: value as FileDatasetType,
   label,
 }));
 
-export const fileDatasetCompressionOptions = Object.entries(fileDatasetCompressionLabels).map(([value, label]) => ({
-  value: value as FileDatasetCompression,
-  label,
-}));
-
-const formatByExtension: Record<string, FileDatasetFormat> = {
-  csv: 'CSV', tsv: 'TSV', txt: 'TXT', json: 'JSON', jsonl: 'JSONL', ndjson: 'JSONL',
-  xls: 'XLS', xlsx: 'XLSX', parquet: 'PARQUET', avro: 'AVRO',
+export const defaultFileDatasetParsingOptions = (type: FileDatasetType): FileDatasetParsingOptions => {
+  switch (type) {
+    case 'CSV': return { kind: 'CSV', charset: 'UTF-8', fieldDelimiter: ',', recordDelimiter: 'AUTO', quoteCharacter: '"', escapeCharacter: '\\', firstRowHeader: true };
+    case 'TSV': return { kind: 'CSV', charset: 'UTF-8', fieldDelimiter: '\t', recordDelimiter: 'AUTO', quoteCharacter: '"', escapeCharacter: '\\', firstRowHeader: true };
+    case 'TXT': return { kind: 'TEXT', charset: 'UTF-8', recordDelimiter: 'AUTO' };
+    case 'JSON': return { kind: 'JSON', charset: 'UTF-8' };
+    case 'JSONL': return { kind: 'JSON_LINES', charset: 'UTF-8', recordDelimiter: 'AUTO' };
+    case 'EXCEL': return { kind: 'SPREADSHEET', headerRowIndex: 0, dataStartRowIndex: 1 };
+    case 'PARQUET': return { kind: 'PARQUET' };
+    case 'AVRO': return { kind: 'AVRO' };
+    case 'GDB': return { kind: 'GDB' };
+    case 'SHP': return { kind: 'SHP', dbfFallbackCharset: 'GB18030' };
+  }
 };
 
-export const inferFileDatasetFormat = (fileName: string): FileDatasetFormat => {
-  const baseFileName = inferFileDatasetCompression(fileName) === 'GZIP' ? fileName.slice(0, -3) : fileName;
-  const extension = baseFileName.split('.').pop()?.toLowerCase() ?? '';
-  return formatByExtension[extension] ?? 'OTHER';
+export const fileDatasetAccept = (type: FileDatasetType): string => {
+  switch (type) {
+    case 'CSV': return '.csv,.csv.gz';
+    case 'TSV': return '.tsv,.tsv.gz';
+    case 'TXT': return '.txt,.txt.gz';
+    case 'JSON': return '.json';
+    case 'JSONL': return '.jsonl,.ndjson,.jsonl.gz,.ndjson.gz';
+    case 'PARQUET': return '.parquet';
+    case 'AVRO': return '.avro';
+    case 'EXCEL': return '.xls,.xlsx';
+    case 'GDB': return '.zip';
+    case 'SHP': return '.zip';
+  }
 };
+
+export const fileDatasetAllowsAdditionalUpload = (
+  type: FileDatasetType,
+  existingFileCount: number,
+): boolean => (type !== 'EXCEL' && type !== 'GDB') || existingFileCount === 0;
 
 export const inferFileDatasetCompression = (fileName: string): FileDatasetCompression => (
-  fileName.toLowerCase().endsWith('.gz') ? 'GZIP' : 'NONE'
+  fileName.toLowerCase().endsWith('.gz')
+    ? 'GZIP'
+    : fileName.toLowerCase().endsWith('.zip') ? 'ZIP' : 'NONE'
 );
 
 export const formatFileSize = (sizeBytes: number): string => {
@@ -143,3 +261,4 @@ export const formatFileSize = (sizeBytes: number): string => {
   }
   return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[unitIndex]}`;
 };
+import type { PlatformDataType } from '../../model';

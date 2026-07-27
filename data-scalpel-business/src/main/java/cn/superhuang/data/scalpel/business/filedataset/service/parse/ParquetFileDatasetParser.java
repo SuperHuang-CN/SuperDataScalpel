@@ -1,6 +1,8 @@
 package cn.superhuang.data.scalpel.business.filedataset.service.parse;
 
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFormat;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.GroupValueSource;
@@ -72,6 +74,7 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
             InputFile inputFile = new LocalInputFile(path);
             ParquetMetadata metadata = ParquetFileReader.readFooter(inputFile, ParquetMetadataConverter.NO_FILTER);
             MessageType schema = metadata.getFileMetaData().getSchema();
+            long rowCount = metadata.getBlocks().stream().mapToLong(block -> block.getRowCount()).sum();
             List<Field> fields = fields(schema);
             List<Map<String, Object>> rows = new ArrayList<>();
             boolean truncated = false;
@@ -85,7 +88,13 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
                     rows.add(row(row, schema));
                 }
             }
-            return new ParseResult(fields, rows, truncated);
+            Map<String, Object> sourceMetadata = new LinkedHashMap<>();
+            if (metadata.getFileMetaData().getCreatedBy() != null) {
+                sourceMetadata.put("parquetCreatedBy", metadata.getFileMetaData().getCreatedBy());
+            }
+            return new ParseResult(
+                    fields, rows, truncated || rowCount > rows.size(), true, sourceMetadata, rowCount
+            );
         } catch (FileDatasetParsingException exception) {
             throw exception;
         } catch (IOException exception) {
@@ -100,7 +109,7 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
         for (int index = 0; index < schema.getFieldCount(); index++) {
             Type type = schema.getType(index);
             fields.add(new Field(
-                    type.getName(), index, logicalType(type), type.getRepetition() != Type.Repetition.REQUIRED
+                    type.getName(), index, typeDefinition(type), type.getRepetition() != Type.Repetition.REQUIRED
             ));
         }
         return fields;
@@ -294,6 +303,48 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
             case FLOAT, DOUBLE -> LogicalType.DECIMAL;
             case INT96 -> LogicalType.DATETIME;
             case BINARY, FIXED_LEN_BYTE_ARRAY -> LogicalType.BINARY;
+        };
+    }
+
+    private static PlatformTypeDefinition typeDefinition(Type type) {
+        if (!type.isPrimitive()) {
+            return PlatformTypeDefinition.string(null);
+        }
+        LogicalTypeAnnotation annotation = type.getLogicalTypeAnnotation();
+        if (annotation instanceof LogicalTypeAnnotation.DecimalLogicalTypeAnnotation decimal) {
+            return FileDatasetTypeDefinitions.decimal(decimal.getPrecision(), decimal.getScale());
+        }
+        if (annotation instanceof LogicalTypeAnnotation.DateLogicalTypeAnnotation) {
+            return PlatformTypeDefinition.of(PlatformDataType.DATE);
+        }
+        if (annotation instanceof LogicalTypeAnnotation.TimeLogicalTypeAnnotation) {
+            return PlatformTypeDefinition.string(null);
+        }
+        if (annotation instanceof LogicalTypeAnnotation.TimestampLogicalTypeAnnotation timestamp) {
+            return PlatformTypeDefinition.of(
+                    timestamp.isAdjustedToUTC() ? PlatformDataType.TIMESTAMP : PlatformDataType.TIMESTAMP_NTZ
+            );
+        }
+        if (annotation instanceof LogicalTypeAnnotation.IntLogicalTypeAnnotation integer
+                && !integer.isSigned() && integer.getBitWidth() == Long.SIZE) {
+            return PlatformTypeDefinition.decimal(20, 0);
+        }
+        if (annotation instanceof LogicalTypeAnnotation.IntLogicalTypeAnnotation) {
+            return PlatformTypeDefinition.of(PlatformDataType.LONG);
+        }
+        if (annotation instanceof LogicalTypeAnnotation.StringLogicalTypeAnnotation
+                || annotation instanceof LogicalTypeAnnotation.EnumLogicalTypeAnnotation
+                || annotation instanceof LogicalTypeAnnotation.UUIDLogicalTypeAnnotation
+                || annotation instanceof LogicalTypeAnnotation.JsonLogicalTypeAnnotation) {
+            return PlatformTypeDefinition.string(null);
+        }
+        return switch (type.asPrimitiveType().getPrimitiveTypeName()) {
+            case BOOLEAN -> PlatformTypeDefinition.of(PlatformDataType.BOOLEAN);
+            case INT32, INT64 -> PlatformTypeDefinition.of(PlatformDataType.LONG);
+            case FLOAT -> PlatformTypeDefinition.of(PlatformDataType.FLOAT);
+            case DOUBLE -> PlatformTypeDefinition.of(PlatformDataType.DOUBLE);
+            case INT96 -> PlatformTypeDefinition.of(PlatformDataType.TIMESTAMP_NTZ);
+            case BINARY, FIXED_LEN_BYTE_ARRAY -> PlatformTypeDefinition.of(PlatformDataType.BINARY);
         };
     }
 

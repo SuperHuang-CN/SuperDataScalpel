@@ -10,9 +10,13 @@ import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineDataSourceRegistration;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineDataSourceRegistrationStatus;
+import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceDefinition;
+import cn.superhuang.data.scalpel.business.service.domain.StandardDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineDataSourceRegistrationRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
+import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefinitionRepository;
+import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateServiceEngineDataSourceRegistrationRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineDataSourceRegistrationResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineDataSourceTestResponse;
@@ -25,6 +29,8 @@ import cn.superhuang.data.scalpel.contract.service.EngineDataSourceStatus;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceTestResponse;
 import cn.superhuang.data.scalpel.contract.service.JdbcDataSourceSnapshot;
 import cn.superhuang.data.scalpel.contract.service.ServiceEngineInfoResponse;
+import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
+import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -39,10 +45,11 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.Collection;
 import java.util.List;
+import java.util.LinkedHashSet;
 import java.util.Map;
 import java.util.UUID;
 
-/** Coordinates explicitly registered JDBC storage data sources with remote Service Engines. */
+/** Coordinates explicitly registered JDBC data sources with remote Service Engines. */
 @Service
 public class ServiceEngineDataSourceRegistrationService {
 
@@ -51,6 +58,9 @@ public class ServiceEngineDataSourceRegistrationService {
     private final DataSourceRepository dataSourceRepository;
     private final DataModelRepository modelRepository;
     private final DataServiceRepository dataServiceRepository;
+    private final StandardDataServiceDefinitionRepository standardDefinitionRepository;
+    private final SqlDataServiceDefinitionRepository sqlDefinitionRepository;
+    private final DialectRegistry dialectRegistry;
     private final ServiceEngineClient engineClient;
     private final SearchEngine searchEngine;
     private final TransactionTemplate transactionTemplate;
@@ -61,6 +71,9 @@ public class ServiceEngineDataSourceRegistrationService {
             DataSourceRepository dataSourceRepository,
             DataModelRepository modelRepository,
             DataServiceRepository dataServiceRepository,
+            StandardDataServiceDefinitionRepository standardDefinitionRepository,
+            SqlDataServiceDefinitionRepository sqlDefinitionRepository,
+            DialectRegistry dialectRegistry,
             ServiceEngineClient engineClient,
             SearchEngine searchEngine,
             PlatformTransactionManager transactionManager
@@ -70,6 +83,9 @@ public class ServiceEngineDataSourceRegistrationService {
         this.dataSourceRepository = dataSourceRepository;
         this.modelRepository = modelRepository;
         this.dataServiceRepository = dataServiceRepository;
+        this.standardDefinitionRepository = standardDefinitionRepository;
+        this.sqlDefinitionRepository = sqlDefinitionRepository;
+        this.dialectRegistry = dialectRegistry;
         this.engineClient = engineClient;
         this.searchEngine = searchEngine;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -161,7 +177,7 @@ public class ServiceEngineDataSourceRegistrationService {
 
     private DeletePreparation prepareDelete(UUID id) {
         ServiceEngineDataSourceRegistration registration = requireRegistration(id);
-        assertNoPublishedService(registration.getEngineId(), registration.getDataSourceId());
+        assertNoEnabledService(registration.getEngineId(), registration.getDataSourceId());
         return new DeletePreparation(
                 registration.getId(), requireEngine(registration.getEngineId()),
                 registration.getDataSourceId(), registration.getRevision()
@@ -173,7 +189,7 @@ public class ServiceEngineDataSourceRegistrationService {
         if (registration.getRevision() != preparation.revision()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源注册版本已发生变化，请重新删除");
         }
-        assertNoPublishedService(registration.getEngineId(), registration.getDataSourceId());
+        assertNoEnabledService(registration.getEngineId(), registration.getDataSourceId());
         repository.delete(registration);
     }
 
@@ -255,7 +271,7 @@ public class ServiceEngineDataSourceRegistrationService {
         }
     }
 
-    /** Called before a data source loses its enabled JDBC storage capability. */
+    /** Called before a data source changes a runtime capability used by an enabled service. */
     @Transactional(readOnly = true)
     public void assertCanChangeRuntimeCapability(
             DataSource dataSource,
@@ -263,10 +279,18 @@ public class ServiceEngineDataSourceRegistrationService {
             Collection<DataSourcePurpose> nextPurposes,
             boolean nextEnabled
     ) {
-        if (isRuntimeEligible(dataSource)
-                && !isRuntimeEligible(nextType, nextPurposes, nextEnabled)
-                && hasPublishedServiceForDataSource(dataSource.getId())) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已发布服务使用该数据源，不能停用或移除 JDBC 存储用途");
+        boolean nextJdbcEnabled = nextEnabled && nextType.isJdbc();
+        if (!nextJdbcEnabled && hasEnabledServiceForDataSource(dataSource.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已启用服务使用该数据源，不能停用或移除 JDBC 能力");
+        }
+        if (!nextPurposes.contains(DataSourcePurpose.STORAGE)
+                && hasEnabledStandardServiceForDataSource(dataSource.getId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已启用标准服务使用该数据源，不能移除存储用途");
+        }
+        if (hasEnabledSqlServiceForDataSource(dataSource.getId())
+                && !dialectRegistry.require(nextType.name()).definition().capabilities()
+                .contains(DatabaseCapability.SQL_SERVICE_QUERY)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已启用 SQL 服务使用该数据源，不能切换到不支持的数据库类型");
         }
     }
 
@@ -298,7 +322,15 @@ public class ServiceEngineDataSourceRegistrationService {
                 + dataSource.getConnection().getHost() + "|" + dataSource.getConnection().getPort() + "|"
                 + dataSource.getConnection().getDatabaseName() + "|" + dataSource.getConnection().getSchemaName() + "|"
                 + dataSource.getConnection().getUsername() + "|" + dataSource.getConnection().secretValue() + "|"
-                + dataSource.getConnection().getOptions());
+                + stableOptions(dataSource.getConnection().getOptions()));
+    }
+
+    private static String stableOptions(Map<String, String> options) {
+        return options.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey().length() + ":" + entry.getKey()
+                        + entry.getValue().length() + ":" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining("|"));
     }
 
     private void verifyEngineCapability(ServiceEngine engine, DataSource dataSource) {
@@ -311,20 +343,51 @@ public class ServiceEngineDataSourceRegistrationService {
         }
     }
 
-    private void assertNoPublishedService(UUID engineId, UUID dataSourceId) {
-        List<UUID> modelIds = modelRepository.findAllByStorageDataSourceId(dataSourceId).stream()
-                .map(DataModel::getId).toList();
-        if (!modelIds.isEmpty() && dataServiceRepository.existsByEngineIdAndModelIdInAndStatus(
-                engineId, modelIds, DataServiceStatus.PUBLISHED
-        )) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "仍有已发布服务使用该数据源，不能解除注册");
+    private void assertNoEnabledService(UUID engineId, UUID dataSourceId) {
+        List<UUID> serviceIds = serviceIdsForDataSource(dataSourceId);
+        if (!serviceIds.isEmpty() && dataServiceRepository.existsByEngineIdAndIdInAndStatus(
+                engineId, serviceIds, DataServiceStatus.ENABLED)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "仍有已启用服务使用该数据源，不能解除注册");
         }
     }
 
-    private boolean hasPublishedServiceForDataSource(UUID dataSourceId) {
+    private boolean hasEnabledServiceForDataSource(UUID dataSourceId) {
+        List<UUID> serviceIds = serviceIdsForDataSource(dataSourceId);
+        return !serviceIds.isEmpty() && dataServiceRepository.existsByIdInAndStatus(serviceIds, DataServiceStatus.ENABLED);
+    }
+
+    private boolean hasEnabledStandardServiceForDataSource(UUID dataSourceId) {
+        List<UUID> serviceIds = standardServiceIdsForDataSource(dataSourceId);
+        return !serviceIds.isEmpty() && dataServiceRepository.existsByIdInAndStatus(serviceIds, DataServiceStatus.ENABLED);
+    }
+
+    private boolean hasEnabledSqlServiceForDataSource(UUID dataSourceId) {
+        List<UUID> serviceIds = sqlServiceIdsForDataSource(dataSourceId);
+        return !serviceIds.isEmpty() && dataServiceRepository.existsByIdInAndStatus(serviceIds, DataServiceStatus.ENABLED);
+    }
+
+    private List<UUID> serviceIdsForDataSource(UUID dataSourceId) {
+        LinkedHashSet<UUID> serviceIds = new LinkedHashSet<>(standardServiceIdsForDataSource(dataSourceId));
+        serviceIds.addAll(sqlServiceIdsForDataSource(dataSourceId));
+        return List.copyOf(serviceIds);
+    }
+
+    private List<UUID> standardServiceIdsForDataSource(UUID dataSourceId) {
         List<UUID> modelIds = modelRepository.findAllByStorageDataSourceId(dataSourceId).stream()
                 .map(DataModel::getId).toList();
-        return !modelIds.isEmpty() && dataServiceRepository.existsByModelIdInAndStatus(modelIds, DataServiceStatus.PUBLISHED);
+        LinkedHashSet<UUID> serviceIds = new LinkedHashSet<>();
+        if (!modelIds.isEmpty()) {
+            standardDefinitionRepository.findAllByModelIdIn(modelIds).stream()
+                    .map(StandardDataServiceDefinition::getDataServiceId)
+                    .forEach(serviceIds::add);
+        }
+        return List.copyOf(serviceIds);
+    }
+
+    private List<UUID> sqlServiceIdsForDataSource(UUID dataSourceId) {
+        return sqlDefinitionRepository.findAllByDataSourceId(dataSourceId).stream()
+                .map(SqlDataServiceDefinition::getDataServiceId)
+                .toList();
     }
 
     private ServiceEngineDataSourceRegistrationResponse response(ServiceEngineDataSourceRegistration registration) {
@@ -362,7 +425,7 @@ public class ServiceEngineDataSourceRegistrationService {
         DataSource dataSource = dataSourceRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "数据源不存在"));
         if (!isRuntimeEligible(dataSource)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "只能注册已启用的 JDBC 数据存储");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "只能注册已启用的 JDBC 数据源");
         }
         if (dataSource.getConnection().getPort() == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "JDBC 数据源缺少端口");
@@ -371,15 +434,7 @@ public class ServiceEngineDataSourceRegistrationService {
     }
 
     private static boolean isRuntimeEligible(DataSource dataSource) {
-        return isRuntimeEligible(dataSource.getType(), dataSource.getPurposes(), dataSource.isEnabled());
-    }
-
-    private static boolean isRuntimeEligible(
-            DataSourceType type,
-            Collection<DataSourcePurpose> purposes,
-            boolean enabled
-    ) {
-        return enabled && type.isJdbc() && purposes.contains(DataSourcePurpose.STORAGE);
+        return dataSource.isEnabled() && dataSource.getType().isJdbc();
     }
 
     private static JdbcDataSourceSnapshot snapshot(DataSource dataSource) {

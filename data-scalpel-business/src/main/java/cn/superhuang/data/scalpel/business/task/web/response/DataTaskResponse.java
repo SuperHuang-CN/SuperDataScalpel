@@ -9,12 +9,13 @@ import java.util.UUID;
 
 public record DataTaskResponse(
         UUID id,
-        String code,
         String name,
         UUID directoryId,
         TaskType type,
         TaskStatus status,
         String description,
+        UUID computeEngineId,
+        String computeEngineName,
         boolean definitionConfigured,
         Integer definitionVersion,
         UUID outputModelId,
@@ -25,15 +26,27 @@ public record DataTaskResponse(
 
     public static DataTaskResponse from(
             DataTask task,
+            String computeEngineName,
             boolean definitionConfigured,
             Integer definitionVersion,
             UUID outputModelId,
             String outputModelName
     ) {
         return new DataTaskResponse(
-                task.getId(), task.getCode(), task.getName(), task.getDirectoryId(), task.getType(), task.getStatus(),
-                task.getDescription(), definitionConfigured, definitionVersion, outputModelId, outputModelName,
+                task.getId(), task.getName(), task.getDirectoryId(), task.getType(), task.getStatus(),
+                task.getDescription(), task.getComputeEngineId(), computeEngineName,
+                definitionConfigured, definitionVersion, outputModelId, outputModelName,
                 task.getCreatedAt(), task.getUpdatedAt()
         );
+    }
+
+    public static DataTaskResponse from(
+            DataTask task,
+            boolean definitionConfigured,
+            Integer definitionVersion,
+            UUID outputModelId,
+            String outputModelName
+    ) {
+        return from(task, null, definitionConfigured, definitionVersion, outputModelId, outputModelName);
     }
 }

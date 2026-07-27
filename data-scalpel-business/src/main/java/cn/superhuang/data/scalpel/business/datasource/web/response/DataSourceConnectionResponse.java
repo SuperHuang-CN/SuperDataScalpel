@@ -9,10 +9,11 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonSubTypes({
         @JsonSubTypes.Type(value = JdbcDataSourceConnectionResponse.class, name = "JDBC"),
         @JsonSubTypes.Type(value = KafkaDataSourceConnectionResponse.class, name = "KAFKA"),
-        @JsonSubTypes.Type(value = S3DataSourceConnectionResponse.class, name = "S3")
+        @JsonSubTypes.Type(value = S3DataSourceConnectionResponse.class, name = "S3"),
+        @JsonSubTypes.Type(value = HttpApiDataSourceConnectionResponse.class, name = "HTTP_API")
 })
 public sealed interface DataSourceConnectionResponse permits JdbcDataSourceConnectionResponse,
-        KafkaDataSourceConnectionResponse, S3DataSourceConnectionResponse {
+        KafkaDataSourceConnectionResponse, S3DataSourceConnectionResponse, HttpApiDataSourceConnectionResponse {
 
     DataSourceConnectionKind kind();
 }

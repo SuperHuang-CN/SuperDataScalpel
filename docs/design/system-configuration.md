@@ -12,6 +12,12 @@
 | --- | --- | --- | --- | --- |
 | `platform.name` | 平台名称 | `STRING` | `DataScalpel` | 前端左侧品牌和顶部标题 |
 | `platform.subtitle` | 平台副标题 | `STRING` | `内网部署 · 模块化单体` | 前端顶部副标题 |
+| `task.engine.base-url` | Task Engine 地址 | `STRING` | `http://127.0.0.1:18091` | Admin 访问 Task Engine 的内部地址 |
+| `file-dataset.parsing.queue-enabled` | 文件数据集解析队列开关 | `BOOLEAN` | `true` | 是否允许解析 Worker 领取新任务 |
+| `file-dataset.parsing.worker-concurrency` | 文件数据集解析并发数 | `INTEGER` | `2` | 全格式共享并发，范围 `1..16` |
+| `file-dataset.parsing.max-attempts` | 文件数据集解析最大尝试次数 | `INTEGER` | `3` | 新任务尝试次数快照，范围 `1..10` |
+| `file-dataset.parsing.retry-base-delay-seconds` | 文件数据集解析重试基础延时 | `INTEGER` | `30` | 指数退避基础秒数，范围 `1..3600` |
+| `file-dataset.parsing.history-retention-days` | 文件数据集解析历史保留天数 | `INTEGER` | `30` | 终态任务保留天数，范围 `1..3650` |
 
 数据库连接、服务端口、JWT 密钥和其他部署密钥继续使用环境变量或外部 YAML，不进入系统配置表和管理页面。
 
@@ -51,9 +57,12 @@ data-scalpel-business/
 
 - `configKey` 由代码中的内置定义声明，创建后不可修改。
 - 页面只允许修改 `configValue`，不提供新增或删除操作。
-- `STRING` 接受非空文本；`INTEGER` 必须是 Java `Integer`；`BOOLEAN` 仅接受 `true` 或 `false`，保存时规范化为小写。
+- `STRING` 接受非空文本；`INTEGER` 必须是 Java `Integer`；`BOOLEAN` 仅接受 `true` 或 `false`，保存时规范化为小写。内置定义可以进一步声明整数最小值和最大值，更新时同时执行范围校验。
 - 应用启动时仅插入缺失的内置配置，不覆盖数据库中已经被修改的值，不执行删除或全量重置。
 - 第一版不缓存配置。业务模块需要读取配置时通过 `SystemConfigurationService` 查询，确保管理页面修改后下一次读取即可得到新值。
+- 文件解析队列开关和并发在下一轮 1 秒调度时生效；最大尝试次数只作为新任务快照；重试基础延时影响后续重试计划；历史保留天数在下一次每小时清理时读取。关闭队列只停止领取，不取消任务；历史清理只删除超过保留期的 `SUCCEEDED`、`FAILED`、`CANCELLED`。
+- 文件来源没有延迟清理系统配置。覆盖、替换、删除和最终失败会在事务提交后立即清理无引用对象；删除失败只记录日志并由运维人工处理孤儿对象。
+- `data-scalpel.file-parsing.max-validated-uncompressed-size` 是部署安全上限，默认 2 GiB，继续使用外部 YAML/环境变量，不进入业务系统配置。
 
 ### 2.4 API
 

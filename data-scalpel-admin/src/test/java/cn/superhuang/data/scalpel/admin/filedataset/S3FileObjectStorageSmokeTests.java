@@ -39,7 +39,8 @@ class S3FileObjectStorageSmokeTests {
                 ROOT_PREFIX,
                 System.getenv(ACCESS_KEY),
                 System.getenv(SECRET_KEY),
-                true
+                true,
+                null
         );
         FileStorageConfiguration configuration = new FileStorageConfiguration();
         String objectKey = "file-datasets/" + UUID.randomUUID() + "/orders.csv";

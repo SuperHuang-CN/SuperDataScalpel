@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.admin.filedataset;
 
 import cn.superhuang.data.scalpel.business.filedataset.storage.FileObjectStorage;
 import cn.superhuang.data.scalpel.business.filedataset.storage.S3FileObjectStorage;
+import cn.superhuang.data.scalpel.business.task.service.CanvasFileStorageRuntimeProvider;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -10,6 +11,7 @@ import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.regions.Region;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.presigner.S3Presigner;
 
 import java.net.URI;
 
@@ -36,6 +38,41 @@ public class FileStorageConfiguration {
     FileObjectStorage fileObjectStorage(S3Client fileDatasetS3Client, S3FileStorageProperties properties) {
         return new S3FileObjectStorage(
                 fileDatasetS3Client,
+                requireText(properties.bucket(), "S3 Bucket"),
+                properties.rootPrefix()
+        );
+    }
+
+    @Bean
+    CanvasFileStorageRuntimeProvider canvasFileStorageRuntimeProvider(S3FileStorageProperties properties) {
+        return new S3CanvasFileStorageRuntimeProvider(properties);
+    }
+
+    @Bean(destroyMethod = "close")
+    S3Presigner taskRunS3Presigner(S3FileStorageProperties properties) {
+        String endpoint = defaultIfBlank(properties.runnerEndpoint(), properties.endpoint());
+        return S3Presigner.builder()
+                .endpointOverride(URI.create(requireText(endpoint, "S3 Runner endpoint")))
+                .region(Region.of(defaultIfBlank(properties.region(), "us-east-1")))
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(
+                        requireText(properties.accessKey(), "S3 AccessKey"),
+                        requireText(properties.secretKey(), "S3 SecretKey")
+                )))
+                .serviceConfiguration(S3Configuration.builder()
+                        .pathStyleAccessEnabled(properties.pathStyleAccess())
+                        .build())
+                .build();
+    }
+
+    @Bean
+    cn.superhuang.data.scalpel.business.task.service.TaskRunArtifactStorage taskRunArtifactStorage(
+            S3Client fileDatasetS3Client,
+            S3Presigner taskRunS3Presigner,
+            S3FileStorageProperties properties
+    ) {
+        return new S3TaskRunArtifactStorage(
+                fileDatasetS3Client,
+                taskRunS3Presigner,
                 requireText(properties.bucket(), "S3 Bucket"),
                 properties.rootPrefix()
         );

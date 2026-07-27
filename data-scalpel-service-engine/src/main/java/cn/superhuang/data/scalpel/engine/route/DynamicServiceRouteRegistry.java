@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.engine.route;
 
 import cn.superhuang.data.scalpel.contract.service.ServiceDeploymentRequest;
+import cn.superhuang.data.scalpel.contract.service.DataServiceType;
 import cn.superhuang.data.scalpel.engine.deployment.StoredServiceDeployment;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Qualifier;
@@ -22,25 +23,33 @@ import java.util.UUID;
 public class DynamicServiceRouteRegistry {
 
     private final RequestMappingHandlerMapping handlerMapping;
-    private final ObjectProvider<StandardServiceQueryHandler> handlerProvider;
-    private final Method handlerMethod;
+    private final ObjectProvider<StandardServiceQueryHandler> standardHandlerProvider;
+    private final ObjectProvider<SqlServiceQueryHandler> sqlHandlerProvider;
+    private final Method standardHandlerMethod;
+    private final Method sqlHandlerMethod;
     private final Map<UUID, RequestMappingInfo> mappingsByServiceId = new HashMap<>();
     private final Map<String, UUID> serviceIdByPath = new HashMap<>();
     private final Map<String, StoredServiceDeployment> deploymentByPath = new HashMap<>();
 
     public DynamicServiceRouteRegistry(
             @Qualifier("requestMappingHandlerMapping") RequestMappingHandlerMapping handlerMapping,
-            ObjectProvider<StandardServiceQueryHandler> handlerProvider
+            ObjectProvider<StandardServiceQueryHandler> standardHandlerProvider,
+            ObjectProvider<SqlServiceQueryHandler> sqlHandlerProvider
     ) {
         this.handlerMapping = handlerMapping;
-        this.handlerProvider = handlerProvider;
+        this.standardHandlerProvider = standardHandlerProvider;
+        this.sqlHandlerProvider = sqlHandlerProvider;
         try {
-            this.handlerMethod = StandardServiceQueryHandler.class.getMethod(
+            this.standardHandlerMethod = StandardServiceQueryHandler.class.getMethod(
                     "execute", jakarta.servlet.http.HttpServletRequest.class,
                     cn.superhuang.data.scalpel.contract.service.StandardServiceQueryRequest.class
             );
+            this.sqlHandlerMethod = SqlServiceQueryHandler.class.getMethod(
+                    "execute", jakarta.servlet.http.HttpServletRequest.class,
+                    cn.superhuang.data.scalpel.contract.service.SqlServiceQueryRequest.class
+            );
         } catch (NoSuchMethodException exception) {
-            throw new IllegalStateException("标准服务处理方法不存在", exception);
+            throw new IllegalStateException("数据服务处理方法不存在", exception);
         }
     }
 
@@ -61,8 +70,9 @@ public class DynamicServiceRouteRegistry {
         String currentPath = existingMapping == null ? null : pathFor(serviceId);
         if (!path.equals(currentPath)) {
             RequestMappingInfo mapping = mapping(path);
+            HandlerBinding binding = binding(request.definition().type());
             try {
-                handlerMapping.registerMapping(mapping, handlerProvider.getObject(), handlerMethod);
+                handlerMapping.registerMapping(mapping, binding.handler(), binding.method());
             } catch (IllegalStateException exception) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "服务路径与系统现有路由冲突：" + path, exception);
             }
@@ -116,5 +126,15 @@ public class DynamicServiceRouteRegistry {
 
     private static RequestMappingInfo mapping(String path) {
         return RequestMappingInfo.paths(path).methods(RequestMethod.POST).build();
+    }
+
+    private HandlerBinding binding(DataServiceType type) {
+        return switch (type) {
+            case STANDARD_TABLE -> new HandlerBinding(standardHandlerProvider.getObject(), standardHandlerMethod);
+            case SQL_QUERY -> new HandlerBinding(sqlHandlerProvider.getObject(), sqlHandlerMethod);
+        };
+    }
+
+    private record HandlerBinding(Object handler, Method method) {
     }
 }

@@ -1,0 +1,125 @@
+server:
+  port: ${DATASCALPEL_TASK_DISPATCHER_PORT:18092}
+  shutdown: graceful
+
+spring:
+  application:
+    name: data-scalpel-task-dispatcher
+  datasource:
+    url: ${DATASCALPEL_DB_URL:jdbc:postgresql://127.0.0.1:5432/data_scalpel?currentSchema=dispatcher}
+    username: ${DATASCALPEL_DB_USERNAME:postgres}
+    password: ${DATASCALPEL_DB_PASSWORD:postgres}
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:dispatcher-schema.sql
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: update
+    properties:
+      hibernate:
+        default_schema: dispatcher
+        jdbc.time_zone: UTC
+  kafka:
+    bootstrap-servers: ${DATASCALPEL_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}
+    properties:
+      request.timeout.ms: ${DATASCALPEL_KAFKA_REQUEST_TIMEOUT_MS:60000}
+      socket.connection.setup.timeout.ms: ${DATASCALPEL_KAFKA_CONNECTION_SETUP_TIMEOUT_MS:30000}
+      socket.connection.setup.timeout.max.ms: ${DATASCALPEL_KAFKA_CONNECTION_SETUP_TIMEOUT_MAX_MS:120000}
+    admin:
+      properties:
+        default.api.timeout.ms: ${DATASCALPEL_KAFKA_API_TIMEOUT_MS:120000}
+    producer:
+      acks: all
+      properties:
+        enable.idempotence: true
+        delivery.timeout.ms: ${DATASCALPEL_KAFKA_DELIVERY_TIMEOUT_MS:120000}
+        max.block.ms: ${DATASCALPEL_KAFKA_MAX_BLOCK_MS:120000}
+    consumer:
+      enable-auto-commit: false
+      auto-offset-reset: earliest
+      properties:
+        default.api.timeout.ms: ${DATASCALPEL_KAFKA_API_TIMEOUT_MS:120000}
+    listener:
+      ack-mode: record
+
+data-scalpel:
+  dispatcher:
+    token: ${DATASCALPEL_TASK_DISPATCHER_TOKEN:}
+    backend: ${DATASCALPEL_TASK_DISPATCHER_BACKEND:LOCAL_DOCKER}
+    ensure-topics: ${DATASCALPEL_TASK_DISPATCHER_ENSURE_TOPICS:false}
+    admission-poll-interval: ${DATASCALPEL_TASK_DISPATCHER_ADMISSION_POLL_INTERVAL:500ms}
+    observation-poll-interval: ${DATASCALPEL_TASK_DISPATCHER_OBSERVATION_POLL_INTERVAL:5s}
+    outbox-poll-interval: ${DATASCALPEL_TASK_DISPATCHER_OUTBOX_POLL_INTERVAL:500ms}
+    outbox-claim-timeout: ${DATASCALPEL_TASK_DISPATCHER_OUTBOX_CLAIM_TIMEOUT:1m}
+    submission-uncertain-grace: ${DATASCALPEL_TASK_DISPATCHER_SUBMISSION_UNCERTAIN_GRACE:2m}
+    observation-failure-grace: ${DATASCALPEL_TASK_DISPATCHER_OBSERVATION_FAILURE_GRACE:5m}
+    deactivation-timeout: ${DATASCALPEL_TASK_DISPATCHER_DEACTIVATION_TIMEOUT:30s}
+    send-timeout: ${DATASCALPEL_TASK_DISPATCHER_SEND_TIMEOUT:120s}
+    log-max-bytes: ${DATASCALPEL_TASK_DISPATCHER_LOG_MAX_BYTES:20MB}
+    artifact:
+      endpoint: ${DATASCALPEL_FILE_STORAGE_ENDPOINT:}
+      runner-endpoint: ${DATASCALPEL_FILE_STORAGE_RUNNER_ENDPOINT:}
+      region: ${DATASCALPEL_FILE_STORAGE_REGION:us-east-1}
+      bucket: ${DATASCALPEL_FILE_STORAGE_BUCKET:datascalpel}
+      root-prefix: ${DATASCALPEL_FILE_STORAGE_ROOT_PREFIX:data-scalpel}
+      access-key: ${DATASCALPEL_FILE_STORAGE_ACCESS_KEY:}
+      secret-key: ${DATASCALPEL_FILE_STORAGE_SECRET_KEY:}
+      path-style-access: ${DATASCALPEL_FILE_STORAGE_PATH_STYLE_ACCESS:true}
+      url-lifetime: ${DATASCALPEL_TASK_DISPATCHER_ARTIFACT_URL_LIFETIME:2h}
+      maximum-manifest-bytes: ${DATASCALPEL_TASK_DISPATCHER_MAXIMUM_MANIFEST_BYTES:10485760}
+      maximum-result-bytes: ${DATASCALPEL_TASK_DISPATCHER_MAXIMUM_RESULT_BYTES:5242880}
+      result-availability-grace: ${DATASCALPEL_TASK_DISPATCHER_RESULT_AVAILABILITY_GRACE:30s}
+    local-docker:
+      executable: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_EXECUTABLE:docker}
+      image: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_IMAGE:eclipse-temurin:21-jdk}
+      platform: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_PLATFORM:}
+      pull: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_PULL:missing}
+      memory: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_MEMORY:4g}
+      cpus: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_CPUS:2}
+      runner-jar: ${DATASCALPEL_TASK_DISPATCHER_RUNNER_JAR:lib/data-scalpel-task-runner.jar}
+      work-directory: ${DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY:work/task-executions}
+      checkpoint-directory: ${DATASCALPEL_TASK_STREAMING_LOCAL_CHECKPOINT_DIRECTORY:work/task-streaming-checkpoints}
+      command-timeout: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_COMMAND_TIMEOUT:30s}
+      stop-timeout: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_STOP_TIMEOUT:10s}
+      runner-java-options: ${DATASCALPEL_TASK_DISPATCHER_RUNNER_JAVA_OPTIONS:-Xms512m -Xmx3g}
+    yarn:
+      spark-submit: ${DATASCALPEL_TASK_DISPATCHER_YARN_SPARK_SUBMIT:/opt/spark/bin/spark-submit}
+      yarn: ${DATASCALPEL_TASK_DISPATCHER_YARN_COMMAND:/opt/hadoop/bin/yarn}
+      hdfs: ${DATASCALPEL_TASK_DISPATCHER_HDFS_COMMAND:/opt/hadoop/bin/hdfs}
+      deploy-mode: cluster
+      queue: ${DATASCALPEL_TASK_DISPATCHER_YARN_QUEUE:default}
+      runner-jar: ${DATASCALPEL_TASK_DISPATCHER_YARN_RUNNER_JAR:hdfs:///datascalpel/runner/task-runner-cluster.jar}
+      driver-memory: ${DATASCALPEL_TASK_DISPATCHER_YARN_DRIVER_MEMORY:2g}
+      executor-memory: ${DATASCALPEL_TASK_DISPATCHER_YARN_EXECUTOR_MEMORY:2g}
+      executor-cores: ${DATASCALPEL_TASK_DISPATCHER_YARN_EXECUTOR_CORES:2}
+      num-executors: ${DATASCALPEL_TASK_DISPATCHER_YARN_NUM_EXECUTORS:2}
+      submit-timeout: ${DATASCALPEL_TASK_DISPATCHER_YARN_SUBMIT_TIMEOUT:5m}
+      command-timeout: ${DATASCALPEL_TASK_DISPATCHER_YARN_COMMAND_TIMEOUT:2m}
+      work-directory: ${DATASCALPEL_TASK_DISPATCHER_YARN_WORK_DIRECTORY:work/task-executions-yarn}
+    kubernetes:
+      spark-submit: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_SPARK_SUBMIT:/opt/spark/bin/spark-submit}
+      kubectl: ${DATASCALPEL_TASK_DISPATCHER_KUBECTL:/usr/local/bin/kubectl}
+      master: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_MASTER:k8s://https://kubernetes.default.svc}
+      namespace: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_NAMESPACE:datascalpel}
+      service-account: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_SERVICE_ACCOUNT:spark-runner}
+      image: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_IMAGE:}
+      driver-memory: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_DRIVER_MEMORY:2g}
+      executor-memory: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_EXECUTOR_MEMORY:2g}
+      executor-cores: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_EXECUTOR_CORES:2}
+      executor-instances: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_EXECUTOR_INSTANCES:2}
+      submit-timeout: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_SUBMIT_TIMEOUT:5m}
+      command-timeout: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_COMMAND_TIMEOUT:2m}
+      cancel-grace-seconds: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_CANCEL_GRACE_SECONDS:10}
+      work-directory: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_WORK_DIRECTORY:work/task-executions-kubernetes}
+    runner-kafka:
+      bootstrap-servers: ${DATASCALPEL_KAFKA_RUNNER_BOOTSTRAP_SERVERS:${DATASCALPEL_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}}
+      security-protocol: ${DATASCALPEL_KAFKA_RUNNER_SECURITY_PROTOCOL:PLAINTEXT}
+      client-id-prefix: ${DATASCALPEL_KAFKA_RUNNER_CLIENT_ID_PREFIX:datascalpel-runner}
+    streaming:
+      checkpoint-base-uri: ${DATASCALPEL_TASK_STREAMING_CHECKPOINT_BASE_URI:file:///checkpoints}
+
+management:
+  endpoints.web.exposure.include: health,info
+  endpoint.health.show-details: always

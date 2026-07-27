@@ -1,115 +1,146 @@
-# 文件数据集管理
+# 文件数据集管理设计
 
-## 范围
+## 1. 设计目标
 
-文件数据集是平台托管的原始文件资产，不是 JDBC 数据源的一种变体。当前支持浏览器上传到系统私有的 S3 兼容对象存储，并提供业务 CRUD、内容替换、下载、格式专属解析参数、抽样解析和预览；不读取外部 S3/SFTP/FTP，不创建版本历史，也不接入模型或任务。
+文件数据集只保存当前有效数据，不提供历史版本、恢复、回收站或旧来源保留。逻辑模型为：
 
-文件格式枚举包含 `CSV`、`TSV`、`TXT`、`JSON`、`JSONL`、`XLS`、`XLSX`、`PARQUET`、`AVRO`、`SHP`、`GDB` 和 `OTHER`。文件内容另有 `compression` 属性，当前为 `NONE` 或 `GZIP`；GZIP 不是一种文件格式。SHP、GDB 使用 ZIP 上传，Parquet 与 Avro 仅接受单文件 `.parquet`、`.avro`。
-
-## 数据模型
-
-表：`ds_file_dataset`
-
-| 字段 | 含义 |
-| --- | --- |
-| `id`、`created_at`、`updated_at` | 继承 `BaseEntity` 的 UUID 和审计时间 |
-| `directory_id` | 可选的 `FILE_DATASET` 目录 UUID |
-| `name`、`description` | 业务展示信息 |
-| `format` | 调用方声明的文件格式 |
-| `original_file_name` | 清理客户端路径后的原始文件名 |
-| `object_key` | 系统私有 S3 根前缀下的相对 Object Key，不通过 API 返回 |
-| `content_type`、`size_bytes`、`storage_etag` | 上传时记录的文件属性和对象存储标识 |
-| `parse_status` | `UNPARSED`、`PARSING`、`READY`、`FAILED`；创建、替换内容、修改格式或更新解析参数后回到 `UNPARSED` |
-| `parsing_options` | 已校验的格式专属解析参数 JSON；替换内容或修改格式后清空 |
-| `parsed_metadata`、`parse_error` | 最近一次成功解析的抽样摘要，以及最近一次失败原因 |
-
-表：`ds_file_dataset_field`
-
-每次成功解析都会替换该文件数据集已有的字段元数据，字段包括名称、顺序、逻辑类型和可空性。文件数据集仅保存 `file_dataset_id` UUID 标量引用，不建立 JPA 实体关联。
-
-文件内容替换不覆盖原 Object Key：先写入新的随机对象，数据库事务中切换 Key，提交后再尽力删除旧对象。创建的数据库保存失败时会补偿删除新对象；提交后的对象删除失败仅记录日志，作为可人工清理的孤儿对象。
-
-## 接口与权限
-
-| 方法 | 路径 | 权限 | 说明 |
-| --- | --- | --- | --- |
-| `GET` | `/api/v1/file-datasets` | `filedataset.view` | 统一 Search DSL 分页查询 |
-| `GET` | `/api/v1/file-datasets/{id}` | `filedataset.view` | 查询详情 |
-| `GET` | `/api/v1/file-datasets/{id}/parsing` | `filedataset.view` | 查询当前解析参数和状态 |
-| `GET` | `/api/v1/file-datasets/{id}/preview?limit=50` | `filedataset.view` | 预览已解析文件的最多 100 条记录 |
-| `POST` | `/api/v1/file-datasets` | `filedataset.create` | `multipart/form-data` 上传；`request` 是 JSON，`file` 是原始文件 |
-| `POST` | `/api/v1/file-datasets/{id}/actions/update` | `filedataset.update` | 修改名称、目录、格式和描述 |
-| `POST` | `/api/v1/file-datasets/{id}/actions/configure-parsing` | `filedataset.update` | 校验并保存解析参数，同时清除旧的字段元数据 |
-| `POST` | `/api/v1/file-datasets/{id}/actions/parse` | `filedataset.update` | 按已保存参数执行同步抽样解析 |
-| `POST` | `/api/v1/file-datasets/{id}/actions/replace-content` | `filedataset.update` | `multipart/form-data` 替换内容并声明格式 |
-| `GET` | `/api/v1/file-datasets/{id}/content` | `filedataset.view` | 后端从私有对象存储流式下载 |
-| `POST` | `/api/v1/file-datasets/{id}/actions/delete` | `filedataset.delete` | 删除记录，提交后删除对象 |
-
-上传接口不接受 Object Key、Bucket、Endpoint 或凭证。下载通过业务 API 代理，以免浏览器获得对象存储凭证或内部 Key。
-
-## 解析参数交互
-
-解析配置位于文件上传之后，是文件数据集自身的设置，不属于任务节点。配置完成后保持 `UNPARSED`；用户显式执行解析时，服务会从对象存储读取文件，临时置为 `PARSING`，最终写入 `READY` 或 `FAILED`。
-
-| 文件格式 | 参数 |
-| --- | --- |
-| CSV | 编码、字段分隔符、记录分隔符、引号字符、转义字符、首行是否表头 |
-| TSV | 与 CSV 相同；字段分隔符固定为制表符 |
-| TXT | 编码、记录分隔符 |
-| JSON | 编码、可选 JSON Pointer 根路径 |
-| JSONL | 编码、记录分隔符 |
-| XLS/XLSX | 工作表名称、表头行、数据起始行 |
-| Parquet | 无额外参数，保留显式的 Parquet 配置类型 |
-| Avro | 无额外参数，读取 Object Container File 内的 Schema 与 codec |
-| SHP | 编码、可选图层名称 |
-| GDB | 可选图层名称 |
-| OTHER | 第一版不支持解析配置 |
-
-请求使用带 `kind` 判别字段的明确 DTO。后台同时校验参数类型与数据集格式、Java 支持的字符集、JSON Pointer 形式，以及 Excel 数据起始行必须位于表头之后。
-
-当前真实解析范围是 CSV、TSV、TXT、JSON、JSONL、XLS、XLSX、Parquet 和 Avro：
-
-- CSV 支持字段分隔符、首行表头、引号、转义和记录分隔符；空列会标为可空，文本样本会保守推断布尔、整数、小数、日期和日期时间类型。
-- TSV 复用 CSV 的分隔文本解析能力，但服务端和前端均固定字段分隔符为制表符。
-- TXT 将每条记录解析为一个 `value` 字段。
-- JSON 支持可选 JSON Pointer，根节点可以是对象或数组；JSON 对象/数组字段保留为紧凑 JSON 文本，并标注为 `JSON`/`ARRAY` 类型。
-- JSONL 按配置的记录分隔符读取，忽略空行，并逐条使用 JSON 规则解析。
-- XLS/XLSX 以事件流读取选定工作表，不将整个工作簿加载到堆内存；表头行和数据起始行均从 0 开始计数。空白表头自动命名为 `column_N`，重复表头自动加后缀。数值、布尔、日期、时间、日期时间与可用的公式缓存值会保留为相应逻辑类型；不执行公式计算，不支持加密工作簿。
-- Parquet 从文件 schema 直接取得字段名称、可空性和逻辑类型，并读取至多 1,000 行。`DATE`、`TIME`、`TIMESTAMP`、`DECIMAL`、字符串和数值类型保持为对应预览值；二进制字段以 Base64 展示，嵌套 `LIST` 以 JSON 数组文本展示，`MAP`/结构体以 JSON 对象文本展示。不支持加密 Parquet 文件。
-- Avro 读取 Object Container File 内的顶层 `record` Schema；支持 `null`、`deflate`、`snappy`、`bzip2`、`xz`、`zstandard` 内部 codec。日期、时间、时间戳、decimal、数组、Map、嵌套 record、nullable union 与多分支 union 分别映射为对应的逻辑字段类型和预览值；不支持递归 Schema、裸 Avro 二进制和外层 `.avro.gz`。
-
-GZIP 外层压缩只支持 CSV、TSV、TXT、JSONL：文件名必须保留 `.csv.gz`、`.tsv.gz`、`.txt.gz`、`.jsonl.gz` 或 `.ndjson.gz` 双扩展名，并校验 `1F 8B` 文件头。解析时服务从 S3 流式读取、先解压再抽样；达到抽样上限或发生异常时显式中止 S3 响应，避免继续下载对象剩余内容。单次流式抽样的解压后读取上限由以下配置控制。
-
-一次解析最多读取 1,000 条有效记录，用于推断字段和保存抽样摘要。预览会从原文件重新读取最多 100 条，因此不会把样本行写入数据库；预览字段始终使用最近一次成功解析所保存的字段契约。SHP、GDB 仍可保存配置，但暂不能执行真实解析。
-
-## 解析临时文件
-
-CSV、TSV、TXT、JSON、JSONL 与 Avro 直接消费对象存储的输入流；其中 GZIP 文本先经过解压层再交给对应解析器。XLS、XLSX 与 Parquet 需要可随机读取的文件，因此服务先将对象存储流写入应用服务器的受控临时目录，再将本地文件路径交给对应解析器；解析结束后立即删除。这样解析内核不依赖 S3 SDK，也不会把完整文件放入 JVM 堆内存。
-
-| 配置项 | 环境变量 | 默认值 | 说明 |
-| --- | --- | --- | --- |
-| `data-scalpel.file-parsing.temporary-directory` | `DATASCALPEL_FILE_PARSING_TEMPORARY_DIRECTORY` | `${java.io.tmpdir}/data-scalpel/file-parsing` | 临时文件所在目录；生产环境应使用有足够空间且受操作系统权限保护的本地磁盘。 |
-| `data-scalpel.file-parsing.max-materialized-size` | `DATASCALPEL_FILE_PARSING_MAX_MATERIALIZED_SIZE` | `1GB` | 单个需要落盘解析的文件最大大小；超过上限时解析失败，不会继续写入磁盘。 |
-| `data-scalpel.file-parsing.orphan-retention` | `DATASCALPEL_FILE_PARSING_ORPHAN_RETENTION` | `24h` | 进程异常留下的同前缀临时文件的保留期限；每次新建临时文件时顺带清理到期文件。 |
-| `data-scalpel.file-parsing.max-sampled-uncompressed-size` | `DATASCALPEL_FILE_PARSING_MAX_SAMPLED_UNCOMPRESSED_SIZE` | `64MB` | 流式抽样最多允许读取的解压后字节数，避免压缩炸弹和异常超长记录。 |
-
-## S3 运行配置
-
-系统文件存储与“数据源管理”中可登记的外部 S3 数据源互不依赖。运行时通过环境变量或不提交的本地 Profile 配置：
-
-```bash
-export DATASCALPEL_FILE_STORAGE_ENDPOINT="http://home.superhuang.cn:9000"
-export DATASCALPEL_FILE_STORAGE_BUCKET="datascalpel"
-export DATASCALPEL_FILE_STORAGE_ACCESS_KEY="<access-key>"
-export DATASCALPEL_FILE_STORAGE_SECRET_KEY="<secret-key>"
+```text
+FileDataset
+  ├─ FileDatasetFile
+  └─ FileDatasetTable
+       ├─ FileDatasetField
+       └─ FileDatasetTableSource（有序当前来源）
 ```
 
-可选项包括 `DATASCALPEL_FILE_STORAGE_REGION`（默认 `us-east-1`）、`DATASCALPEL_FILE_STORAGE_ROOT_PREFIX`（默认 `data-scalpel`）和 `DATASCALPEL_FILE_STORAGE_PATH_STYLE_ACCESS`（默认 `true`）。未配置 Endpoint 时应用仍可启动，但所有文件数据集内容操作会返回“文件对象存储尚未配置”。
+数据集先按类型创建并保存共享解析参数，再上传文件。CSV、TSV、TXT、JSON、JSONL、Parquet、
+Avro 和 SHP 支持表级 `APPEND`、`REPLACE_ALL` 和 `REPLACE_SOURCE`，每次只上传一个文件。
+Excel 和 GDB 只支持整文件上传或替换。
 
-对象使用 AWS SDK for Java 2.x 的 S3 Client 访问。后续 Spark 任务只保存文件数据集 ID，由服务端解析为 `s3a://{bucket}/{root-prefix}/{object-key}` 并从运行环境注入 S3A Endpoint、Region、Path-style 和凭证。
+数据集级上传表示“创建新的逻辑表”，不会按名称自动追加。多个来源按顺序执行 `UNION ALL`，
+不合并文件、不去重、不做 Upsert，也不支持 Schema 演进。
 
-## 后续阶段
+## 2. 数据模型
 
-SHP 和 GDB 的设计见 [空间文件解析设计](geospatial-file-dataset-parsing.md)，当前仅冻结设计、不开发，统一放到最后的空间数据阶段。届时先确认 GDAL/OGR 是否作为部署运行时前置条件，再按设计顺序实施。当前阶段继续推进非空间文件数据集能力；同步抽样解析是否迁移为可恢复的后台任务，待真实文件规模和任务执行需求出现后再决定。
+### 2.1 `ds_file_dataset`
 
-[TSV、GZIP 与 Avro 文件数据集开发设计](file-dataset-tsv-gzip-avro.md)已实施；该文档保留业务建模、API、S3 流式抽样、Avro 类型映射和 Spark 衔接决策，作为后续维护依据。
+保存名称、目录、类型、描述和共享解析参数。数据集存在文件、逻辑表或非终态解析任务后，
+`parsingOptionsLocked=true`，此时只能修改名称、目录和描述。数据集重新清空后可再次修改解析参数。
+
+### 2.2 `ds_file_dataset_file`
+
+保存当前文件或临时待校验文件的原始文件名、格式、压缩方式、对象 Key、存储形态和物化信息。
+状态只有：
+
+- `PREPARING`：SHP/GDB 归档正在安全检查和物化；
+- `READY`：对象可供逻辑表校验或当前来源读取。
+
+普通格式直接使用原始对象。SHP/GDB 同时保存原归档对象和已发布物化前缀。准备或校验最终失败
+时删除临时文件记录、原始对象和物化目录，不保留失败文件。
+
+### 2.3 `ds_file_dataset_table`
+
+逻辑表保存稳定 ID、code、名称、权威 Schema 摘要和当前解析状态：
+
+- `parse_status`：`QUEUED/PARSING/READY/SCHEMA_READY`；
+- `current_load_job_id`：当前唯一装载任务，非空时拒绝第二个装载；
+- `parsed_metadata`：当前来源组合的预览摘要和来源元数据。
+
+初始解析最终失败时删除空逻辑表。已有数据的追加或覆盖失败只清理新临时文件，原表、Schema 和
+来源不变。
+
+### 2.4 `ds_file_dataset_table_source`
+
+来源表只保存已经生效的数据分片，不存在来源状态机。每条记录包含：
+
+- `file_dataset_table_id/source_file_id`；
+- `source_name/source_key/source_order`；
+- `row_count/schema_fingerprint/source_metadata/activated_at`。
+
+所有字段均描述当前数据。`APPEND` 在末尾创建来源；`REPLACE_ALL` 删除全部旧来源并创建顺序为
+0 的新来源；`REPLACE_SOURCE` 原地更新目标记录，保持来源 ID 和顺序稳定。删除中间来源后将剩余
+顺序压缩为 `0..n-1`。
+
+### 2.5 Schema 与解析任务
+
+`ds_file_dataset_field` 是逻辑表的权威 Schema。初始校验成功时创建；后续追加和覆盖只校验并
+复用，不自动增列、拓宽类型或重建字段记录。
+
+`ds_file_dataset_parse_job` 是可重试的执行历史，不是业务版本。任务类型为：
+
+- `FILE_PREPARATION`：SHP/GDB 归档检查、物化和表发现；
+- `TABLE_SOURCE_VALIDATE`：执行 `INITIAL/APPEND/REPLACE_ALL/REPLACE_SOURCE` 的完整校验。
+
+Job 保存数据集、表、文件名称快照，以及可空的 `load_mode/target_source_id/source_name/
+source_key`。队列状态为 `QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELLED`，并保留领取租约、
+心跳、自动重试和有界历史清理。
+
+## 3. 校验与提交
+
+初始来源完整扫描并建立字段、总行数、最多 1000 条预览样本和来源元数据。CSV、TSV、TXT、
+JSON 和 JSONL 必须逐条解码；Parquet 和 Avro 校验内置 Schema；SHP 还比较 Shape 类型、Z/M
+维度、Geometry 字段和规范化 PRJ WKT。
+
+后续来源固定比较字段数量、名称、顺序、完整 `PlatformTypeDefinition` 和 nullable。任一不一致
+都使 Job 失败并清理临时数据，不修改当前来源。
+
+异步提交只依赖 Job ID 防止旧结果覆盖当前状态：
+
+- 表结果必须满足 `table.currentLoadJobId == job.id`；
+- 文件准备结果必须满足 `file.currentPreparationJobId == job.id`。
+
+Worker 在事务外读取和校验，在短事务内锁定 Job、文件和表并提交。过期结果不会修改当前数据；
+其临时对象按无引用规则清理。
+
+## 4. 覆盖、删除与对象清理
+
+- `REPLACE_ALL` 校验期间继续使用旧来源；成功事务删除旧来源并发布新来源。
+- `REPLACE_SOURCE` 成功事务原地更新来源。
+- 删除来源时，多来源表直接删除并压缩顺序；最后一个来源有下游引用时返回 `409`，无引用时
+  删除表和字段。
+- 事务提交后立即删除不再被任何当前来源或非终态 Job 引用的文件记录、原始对象和物化目录。
+- 对象删除失败只记录告警，极少数孤儿对象由技术人员按日志人工处理。
+
+Excel/GDB 整文件替换采用破坏性语义：新文件提交后立即删除旧表和旧对象，再重新发现表。
+后续解析失败不恢复旧文件，数据集允许变为空。
+
+## 5. 预览和 Canvas
+
+预览按 `source_order` 读取当前来源，累计到请求 limit 后停止。任一来源不能安全预览时整表返回
+`409`，不得返回部分结果。
+
+状态为 `READY` 或 `SCHEMA_READY` 且存在来源的表可以作为 Canvas 输入。运行准备直接快照权威
+Schema、解析参数和有序 Object Key 列表，生成 Manifest v6：
+
+- 表输入保存数据集 ID、表 ID、Schema 指纹和目标 Schema；
+- 来源输入保存稳定来源 ID、文件 ID、格式、压缩、存储位置和来源键；
+- 不包含数据或解析修订号，也不建立旧对象读取保护。
+
+APPEND 不影响已经生成的 Manifest；覆盖、替换和删除会立即删除旧对象，已排队或运行任务允许
+因对象不存在而失败。Task Engine 严格只接受 v6，并对多个来源使用同一 Schema 和 FAILFAST
+Reader 后执行 `unionByName`。
+
+## 6. API 与管理端
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources` | 查询当前来源 |
+| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/append` | 追加单文件 |
+| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/replace-data` | 全量覆盖 |
+| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/replace` | 替换来源 |
+| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/delete` | 删除来源 |
+
+装载接口返回 `202 Accepted` 和 `jobId/file/table`，校验成功前不存在来源记录。初始上传响应增加
+`jobIds`。表响应使用 `sourceCount/totalRowCount/currentLoadJobId/previewSupported`。
+
+表级 `actions/parse`、来源 `actions/retry` 和文件 `actions/prepare` 不再提供。具体失败信息统一
+在解析队列抽屉查看。来源页签只展示当前来源及下载、替换和删除操作；危险确认明确提示不可恢复、
+旧对象立即删除以及旧 Canvas 任务可能失败。
+
+## 7. 破坏性重建
+
+旧结构不迁移。升级操作见
+[文件数据表当前来源模型重建](../operations/file-dataset-table-source-rebuild.md)。部署时必须停止
+Admin、解析 Worker、Task Engine 和 Dispatcher，清空 MinIO 的 `data-scalpel/file-datasets/`
+前缀，再执行重建 SQL 并启动应用。MinIO Bucket 必须关闭版本管理和 Object Lock。
+
+引用旧 `tableId` 的 Canvas 节点需要重新选择。

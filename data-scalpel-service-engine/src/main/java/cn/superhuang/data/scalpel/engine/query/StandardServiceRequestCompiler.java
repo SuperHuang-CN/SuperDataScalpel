@@ -55,7 +55,8 @@ public class StandardServiceRequestCompiler {
     }
 
     private static StandardQueryField field(ServiceFieldDefinition definition) {
-        if (definition.type() == PlatformDataType.BINARY) {
+        if (definition.type() == PlatformDataType.BINARY
+                || definition.type() == PlatformDataType.GEOMETRY) {
             return new StandardQueryField(definition.code(), definition.physicalColumn(), null, definition.primaryKey(), false);
         }
         return new StandardQueryField(
@@ -109,6 +110,7 @@ public class StandardServiceRequestCompiler {
             case DATE -> QueryValueType.DATE;
             case TIMESTAMP, TIMESTAMP_NTZ -> QueryValueType.DATETIME;
             case BINARY -> throw new IllegalArgumentException("BINARY 字段不支持标准服务查询");
+            case GEOMETRY -> throw new IllegalArgumentException("Geometry 字段不支持标准服务查询");
         };
     }
 }

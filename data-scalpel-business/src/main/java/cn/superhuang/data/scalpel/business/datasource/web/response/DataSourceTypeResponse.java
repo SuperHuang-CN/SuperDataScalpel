@@ -44,6 +44,14 @@ public record DataSourceTypeResponse(
         return nonJdbc(DataSourceType.S3);
     }
 
+    public static DataSourceTypeResponse httpApi() {
+        DataSourceType type = DataSourceType.HTTP_API;
+        return new DataSourceTypeResponse(
+                type.name(), type.displayName(), type.connectionKind().name(), purposes(type),
+                true, false, null, null, null, null, null, Set.of(), List.of(), true
+        );
+    }
+
     private static DataSourceTypeResponse nonJdbc(DataSourceType type) {
         return new DataSourceTypeResponse(
                 type.name(), type.displayName(), type.connectionKind().name(), purposes(type),

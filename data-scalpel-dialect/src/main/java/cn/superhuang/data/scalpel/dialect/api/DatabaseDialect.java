@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
+import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
@@ -16,8 +17,10 @@ import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableStorageMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableStructureComparison;
 import cn.superhuang.data.scalpel.dialect.query.CompiledStandardQuery;
+import cn.superhuang.data.scalpel.dialect.query.CompiledSqlServiceQuery;
 import cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery;
 import cn.superhuang.data.scalpel.dialect.query.StandardQuery;
+import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
 
 import java.sql.Connection;
 import java.sql.SQLException;
@@ -41,6 +44,15 @@ public interface DatabaseDialect {
 
     CompiledStandardQuery compileStandardQuery(StandardQuery query);
 
+    /** Wraps one already-validated SQL service query with controlled pagination and optional count. */
+    CompiledSqlServiceQuery compileSqlServiceQuery(
+            String jdbcSql,
+            List<SqlQueryParameter> parameters,
+            int offset,
+            int limit,
+            boolean returnCount
+    );
+
     /** Renders a controlled insert-select statement from a query that has already passed read-only validation. */
     String renderInsertSelect(TableIdentifier target, List<String> targetColumns, InsertSelectQuery query);
 
@@ -57,7 +69,27 @@ public interface DatabaseDialect {
 
     DdlPlan planCreateTable(TableDefinition definition);
 
+    /**
+     * Connection-aware create planning for physical types whose native representation depends on
+     * runtime catalogs, for example database-local spatial reference identifiers.
+     */
+    default DdlPlan planCreateTable(Connection connection, TableDefinition definition) throws SQLException {
+        return planCreateTable(definition);
+    }
+
     TableStructureComparison compareTable(TableDefinition expected, TableMetadata actual);
+
+    /**
+     * Enriches JDBC columns with dialect-specific metadata in one table-scoped operation.
+     * Implementations must not execute one query per column.
+     */
+    default List<ColumnMetadata> enrichColumnMetadata(
+            Connection connection,
+            TableIdentifier table,
+            List<ColumnMetadata> columns
+    ) throws SQLException {
+        return List.copyOf(columns);
+    }
 
     /** Reads dialect-specific physical storage attributes not exposed by JDBC metadata. */
     default TableStorageMetadata readTableStorageMetadata(Connection connection, TableIdentifier table) throws SQLException {

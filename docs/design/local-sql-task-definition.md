@@ -89,23 +89,22 @@ GROUP BY customer_id
 
 ### `DataTask`
 
-表名：`ds_data_task`
+表名：`task`
 
 | 字段 | 类型 | 约束与含义 |
 | --- | --- | --- |
 | `id`、`created_at`、`updated_at` | UUID / 时间 | 继承 `BaseEntity` |
-| `code` | String(64) | 全局唯一，创建后不可修改，统一转小写 |
 | `name` | String(100) | 任务名称 |
 | `directory_id` | UUID，可空 | `DirectoryScope.TASK` 下的目录标量引用 |
-| `type` | `TaskType` | 第一版固定为 `LOCAL_SQL`，创建接口不允许客户端任意指定其它类型 |
+| `type` | `TaskType` | 创建时必填；本任务定义只适用于 `LOCAL_SQL` |
 | `status` | `TaskStatus` | `DRAFT`、`PUBLISHED`、`DISABLED` |
 | `description` | String(1000)，可空 | 任务说明 |
 
-任务类型创建后不可修改。任务名称、目录和说明不影响执行语义，任何状态下都可以更新；编码、类型和当前定义版本不可通过基本信息接口修改。
+任务类型创建后不可修改。任务名称、目录和说明不影响执行语义，任何状态下都可以更新；类型和当前定义版本不可通过基本信息接口修改。任务及其定义、计划和运行实例统一使用任务 UUID 关联，不再维护额外的任务编码。
 
 ### `LocalSqlTaskDefinition`
 
-表名：`ds_local_sql_task_definition`
+表名：`task_local_sql_definition`
 
 | 字段 | 类型 | 约束与含义 |
 | --- | --- | --- |
@@ -123,7 +122,7 @@ SQL 文本使用普通字符串长字段映射，不使用 PostgreSQL 专属 `co
 
 ### `LocalSqlTaskInput`
 
-表名：`ds_local_sql_task_input`
+表名：`task_local_sql_input`
 
 | 字段 | 类型 | 约束与含义 |
 | --- | --- | --- |
@@ -144,6 +143,7 @@ SQL 文本使用普通字符串长字段映射，不使用 PostgreSQL 专属 `co
 ```text
 TaskType
   LOCAL_SQL
+  SPARK_CANVAS
 
 TaskStatus
   DRAFT
@@ -182,14 +182,14 @@ DRAFT ──发布──> PUBLISHED ──停用──> DISABLED
 
 ```json
 {
-  "code": "daily_order_summary",
   "name": "每日订单汇总",
   "directoryId": "uuid-or-null",
+  "type": "LOCAL_SQL",
   "description": "将订单明细汇总到订单统计模型"
 }
 ```
 
-`type` 不出现在创建请求中，服务端固定为 `LOCAL_SQL`。创建后状态为 `DRAFT`，定义尚未配置。
+`type` 在创建请求中必填；创建本地 SQL 任务时传 `LOCAL_SQL`。类型创建后不可修改，创建后状态为 `DRAFT`，定义尚未配置。
 
 ### 保存定义
 
@@ -214,7 +214,6 @@ DRAFT ──发布──> PUBLISHED ──停用──> DISABLED
 ```json
 {
   "id": "task-uuid",
-  "code": "daily_order_summary",
   "name": "每日订单汇总",
   "directoryId": "directory-uuid",
   "type": "LOCAL_SQL",
@@ -349,7 +348,8 @@ SQL 词法检查只承担“单条查询”这一明确边界，不负责推断�
 | `GET` | `/api/v1/tasks` | `task.view` | 使用统一 Search DSL 查询任务列表 |
 | `GET` | `/api/v1/tasks/{id}` | `task.view` | 查询任务基本详情和定义摘要 |
 | `GET` | `/api/v1/tasks/{id}/definition` | `task.view` | 查询完整本地 SQL 定义 |
-| `POST` | `/api/v1/tasks` | `task.create` | 创建本地 SQL 任务基本信息 |
+| `GET` | `/api/v1/tasks/{id}/model-relations` | `task.view` | 聚合查询最后保存定义中的输入、输出模型及引用位置 |
+| `POST` | `/api/v1/tasks` | `task.create` | 创建任务基本信息，`type` 决定定义类型 |
 | `POST` | `/api/v1/tasks/{id}/actions/update` | `task.update` | 修改名称、目录和说明 |
 | `POST` | `/api/v1/tasks/{id}/actions/update-definition` | `task.update` | 整体保存本地 SQL 定义 |
 | `POST` | `/api/v1/tasks/{id}/actions/validate-definition` | `task.update` | 对已保存定义执行完整只读校验 |
@@ -360,7 +360,9 @@ SQL 词法检查只承担“单条查询”这一明确边界，不负责推断�
 
 `validate-definition` 校验已保存版本，不接收临时 SQL。用户先保存，再校验，避免“界面验证的是一份内容、服务端发布的是另一份内容”。发布接口内部再次执行完整校验，不能依赖之前的校验结果或时间戳。
 
-普通列表使用 `SearchRequest`、`SearchEngine`、`SearchRepository`。第一版允许搜索和排序的主要字段为：`code`、`name`、`directoryId`、`type`、`status`、`createdAt`、`updatedAt`。SQL 长文本和模型引用不进入实体 Search DSL。
+任务详情的关联模型查询以 `task_local_sql_input` 和 `task_local_sql_definition.output_model_id` 为事实来源，分别映射为 `INPUT` 和 `OUTPUT`。同一模型按 UUID 聚合，输入位置使用一基顺序展示；SQL 文本中的表名不会被解析为模型关系。模型侧通过 `/api/v1/models/{id}/related-tasks` 反查任务，返回的是当前保存定义的只读投影，不包含运行快照或历史版本。
+
+普通列表使用 `SearchRequest`、`SearchEngine`、`SearchRepository`。第一版允许搜索和排序的主要字段为：`name`、`directoryId`、`type`、`status`、`createdAt`、`updatedAt`。SQL 长文本和模型引用不进入实体 Search DSL。
 
 ## 包结构
 
@@ -442,7 +444,7 @@ modules/task/
 
 后端至少覆盖：
 
-- 任务编码唯一、目录范围和状态流转；
+- 任务目录范围和状态流转；
 - 已发布定义不可修改、已发布任务不可删除；
 - 定义整体替换和版本递增；
 - 输入模型去重、输出不能作为输入、同一数据源约束；
@@ -453,6 +455,7 @@ modules/task/
 - 模型和目录删除引用保护；
 - REST 只使用 GET/POST，并返回明确 DTO；
 - 外部 JDBC 失败不会遗留错误的 `PUBLISHED` 状态。
+- 输入或输出模型包含 Geometry 时在 SQL 元数据检查前返回 `SPATIAL_FIELD_UNSUPPORTED`。
 
 前端至少覆盖：
 
@@ -471,6 +474,7 @@ modules/task/
 
 ## 已实现的运行边界
 
+- Local SQL V1 不支持 Geometry 模型输入或输出，不把空间列映射为字符串或二进制。
 - `POST /api/v1/tasks/{id}/actions/run` 只接受已发布任务，并立即创建 `TaskRun` 后提交到有界本地线程池；默认并发为 4、队列为 100，可通过 `DATASCALPEL_TASK_RUN_CONCURRENCY`、`DATASCALPEL_TASK_RUN_QUEUE_CAPACITY` 调整。
 - `TaskRun` 保存无凭据的定义版本快照，状态为 `QUEUED`、`RUNNING`、`SUCCESS`、`FAILED` 或 `TIMED_OUT`。同一任务同时只允许一个活动实例；应用启动时把遗留活动实例标为失败，不尝试恢复外部 JDBC 语句。
 - `APPEND` 执行方言生成的单条 `INSERT INTO ... SELECT`。PostgreSQL `OVERWRITE` 在同一个外部事务中先执行受控清空、再写入，异常时回滚；不对 ClickHouse 或其他方言静默执行 `TRUNCATE + INSERT`。

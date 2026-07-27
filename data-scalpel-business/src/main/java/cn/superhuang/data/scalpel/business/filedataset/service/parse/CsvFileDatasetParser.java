@@ -30,6 +30,24 @@ public class CsvFileDatasetParser implements FileDatasetParser {
     @Override
     public ParseResult parse(FileDatasetParseSource source, FileDatasetParsingConfiguration configuration, int recordLimit)
             throws IOException {
+        return read(source, configuration, recordLimit, false);
+    }
+
+    @Override
+    public ParseResult validate(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int previewLimit
+    ) throws IOException {
+        return read(source, configuration, previewLimit, true);
+    }
+
+    private ParseResult read(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int recordLimit,
+            boolean validateAll
+    ) throws IOException {
         if (!(configuration instanceof FileDatasetParsingConfiguration.Csv csv)) {
             throw new FileDatasetParsingException("分隔文本解析参数无效");
         }
@@ -37,6 +55,13 @@ public class CsvFileDatasetParser implements FileDatasetParser {
             throw new IllegalArgumentException("抽样记录数必须大于零");
         }
         InputStream inputStream = FileDatasetParseSource.requireStream(source);
+        if (validateAll) {
+            return validateAll(
+                    new InputStreamReader(inputStream, Charset.forName(csv.charset())),
+                    csv,
+                    recordLimit
+            );
+        }
         List<List<String>> records = readRecords(
                 new InputStreamReader(inputStream, Charset.forName(csv.charset())), csv, recordLimit + 2
         );
@@ -78,8 +103,78 @@ public class CsvFileDatasetParser implements FileDatasetParser {
         return new ParseResult(collector.fields(), collector.rows(), truncated);
     }
 
+    private ParseResult validateAll(
+            Reader reader,
+            FileDatasetParsingConfiguration.Csv options,
+            int previewLimit
+    ) throws IOException {
+        List<String> columnNames = new ArrayList<>();
+        FieldCollector collector = new FieldCollector(previewLimit);
+        long[] physicalRecord = {0};
+        readRecords(reader, options, record -> {
+            physicalRecord[0]++;
+            if (options.firstRowHeader() && physicalRecord[0] == 1) {
+                columnNames.addAll(columnNames(record, record.size()));
+                columnNames.forEach(collector::ensureField);
+                return;
+            }
+            if (columnNames.isEmpty()) {
+                columnNames.addAll(columnNames(List.of(), record.size()));
+                columnNames.forEach(collector::ensureField);
+            } else if (record.size() > columnNames.size()) {
+                List<String> expanded = columnNames(List.of(), record.size());
+                for (int index = columnNames.size(); index < expanded.size(); index++) {
+                    String name = expanded.get(index);
+                    columnNames.add(name);
+                    collector.ensureField(name);
+                }
+            }
+            Map<String, Object> row = new LinkedHashMap<>();
+            Map<String, LogicalType> types = new LinkedHashMap<>();
+            for (int index = 0; index < columnNames.size(); index++) {
+                String value = index < record.size() ? record.get(index) : null;
+                if (value != null && value.isEmpty()) {
+                    value = null;
+                }
+                row.put(columnNames.get(index), value);
+                types.put(columnNames.get(index), FieldCollector.textType(value));
+            }
+            collector.addRow(row, types);
+        });
+        if (physicalRecord[0] == 0 || columnNames.isEmpty()) {
+            throw new FileDatasetParsingException("分隔文本文件不包含任何记录");
+        }
+        return new ParseResult(
+                collector.fields(), collector.rows(), collector.rowCount() > previewLimit,
+                true, Map.of(), collector.rowCount()
+        );
+    }
+
     private List<List<String>> readRecords(Reader source, FileDatasetParsingConfiguration.Csv options, int maxRecords)
             throws IOException {
+        List<List<String>> records = new ArrayList<>();
+        readRecords(source, options, record -> {
+            if (records.size() < maxRecords) {
+                records.add(record);
+            }
+        }, () -> records.size() >= maxRecords);
+        return records;
+    }
+
+    private void readRecords(
+            Reader source,
+            FileDatasetParsingConfiguration.Csv options,
+            java.util.function.Consumer<List<String>> consumer
+    ) throws IOException {
+        readRecords(source, options, consumer, () -> false);
+    }
+
+    private void readRecords(
+            Reader source,
+            FileDatasetParsingConfiguration.Csv options,
+            java.util.function.Consumer<List<String>> consumer,
+            java.util.function.BooleanSupplier stop
+    ) throws IOException {
         String delimiter = options.fieldDelimiter();
         if (delimiter == null || delimiter.isEmpty()) {
             throw new FileDatasetParsingException("CSV 字段分隔符不能为空");
@@ -87,12 +182,11 @@ public class CsvFileDatasetParser implements FileDatasetParser {
         Character quote = character(options.quoteCharacter(), "引号字符");
         Character escape = character(options.escapeCharacter(), "转义字符");
         try (PushbackReader reader = new PushbackReader(source, Math.max(delimiter.length() + 2, 16))) {
-            List<List<String>> records = new ArrayList<>();
             List<String> fields = new ArrayList<>();
             StringBuilder current = new StringBuilder();
             boolean quoted = false;
             int value;
-            while (records.size() < maxRecords && (value = reader.read()) >= 0) {
+            while (!stop.getAsBoolean() && (value = reader.read()) >= 0) {
                 char character = (char) value;
                 if (quoted) {
                     if (quote != null && character == quote) {
@@ -124,7 +218,7 @@ public class CsvFileDatasetParser implements FileDatasetParser {
                     current.setLength(0);
                 } else if (RecordReader.isRecordDelimiter(reader, character, options.recordDelimiter())) {
                     fields.add(current.toString());
-                    records.add(List.copyOf(fields));
+                    consumer.accept(List.copyOf(fields));
                     fields.clear();
                     current.setLength(0);
                 } else {
@@ -134,11 +228,10 @@ public class CsvFileDatasetParser implements FileDatasetParser {
             if (quoted) {
                 throw new FileDatasetParsingException("CSV 文件包含未闭合的引号");
             }
-            if (records.size() < maxRecords && (!current.isEmpty() || !fields.isEmpty())) {
+            if (!stop.getAsBoolean() && (!current.isEmpty() || !fields.isEmpty())) {
                 fields.add(current.toString());
-                records.add(List.copyOf(fields));
+                consumer.accept(List.copyOf(fields));
             }
-            return records;
         }
     }
 

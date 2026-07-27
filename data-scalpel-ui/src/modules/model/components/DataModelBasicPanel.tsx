@@ -117,7 +117,7 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
     <div className="model-basic-section">
       <div className="model-basic-section-title">存储位置</div>
       <Descriptions size="small" bordered column={3}>
-        <Descriptions.Item label="数据存储">{model.storageDataSourceName}</Descriptions.Item>
+        <Descriptions.Item label="JDBC 数据源">{model.storageDataSourceName}</Descriptions.Item>
         <Descriptions.Item label="数据库/Catalog">{model.catalogName || '—'}</Descriptions.Item>
         <Descriptions.Item label="Schema">{model.schemaName || '—'}</Descriptions.Item>
         <Descriptions.Item label="物理表名"><code>{model.physicalTableName}</code></Descriptions.Item>
@@ -131,7 +131,7 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
           showIcon
           type="error"
           title="物理表检查失败"
-          description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查数据存储连接后重试。'}
+          description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查 JDBC 数据源连接后重试。'}
           action={<Button size="small" onClick={() => void inspectionQuery.refetch()}>重试</Button>}
         />
       )}

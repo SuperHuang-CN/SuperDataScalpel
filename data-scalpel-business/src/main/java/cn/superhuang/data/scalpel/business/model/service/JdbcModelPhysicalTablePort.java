@@ -81,6 +81,38 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
             TableMetadata metadata = inspector.readTable(
                     dataSource.getType().name(), dataSource.getConnection().toJdbcConnectionConfig(), table
             );
+            return inspect(dataSource, model, fields, metadata);
+        } catch (IllegalArgumentException exception) {
+            return new ModelPhysicalTableInspection(
+                    table, PhysicalTableState.UNSUPPORTED, createSupported, exception.getMessage(), List.of()
+            );
+        } catch (DatabaseAccessException exception) {
+            if ("TABLE_NOT_FOUND".equals(exception.code())) {
+                return new ModelPhysicalTableInspection(table, PhysicalTableState.NOT_FOUND, createSupported, "物理表不存在", List.of());
+            }
+            return new ModelPhysicalTableInspection(table, PhysicalTableState.UNREACHABLE, createSupported, exception.getMessage(), List.of());
+        }
+    }
+
+    @Override
+    public ModelPhysicalTableInspection inspect(
+            DataSource dataSource,
+            DataModel model,
+            List<DataModelField> fields,
+            TableMetadata metadata
+    ) {
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        TableIdentifier table = tableIdentifier(dialect, dataSource, model);
+        boolean createSupported = dialect.definition().capabilities().contains(DatabaseCapability.CREATE_TABLE);
+        if (!dataSource.getType().isJdbc()) {
+            return unsupported(table, "当前数据源类型不支持物理表操作");
+        }
+        if (!dataSource.isEnabled()) {
+            return new ModelPhysicalTableInspection(
+                    table, PhysicalTableState.UNREACHABLE, createSupported, "关联的数据存储已停用", List.of()
+            );
+        }
+        try {
             TableStructureComparison comparison = model.getPhysicalTableMode() == PhysicalTableMode.EXTERNAL
                     ? compareExternalTable(dialect, fields, metadata)
                     : dialect.compareTable(definition(dialect, dataSource, model, table, fields), metadata);
@@ -95,11 +127,6 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
             return new ModelPhysicalTableInspection(
                     table, PhysicalTableState.UNSUPPORTED, createSupported, exception.getMessage(), List.of()
             );
-        } catch (DatabaseAccessException exception) {
-            if ("TABLE_NOT_FOUND".equals(exception.code())) {
-                return new ModelPhysicalTableInspection(table, PhysicalTableState.NOT_FOUND, createSupported, "物理表不存在", List.of());
-            }
-            return new ModelPhysicalTableInspection(table, PhysicalTableState.UNREACHABLE, createSupported, exception.getMessage(), List.of());
         }
     }
 
@@ -135,7 +162,8 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
         }
         TableIdentifier table = tableIdentifier(dialect, dataSource, model);
         return tableOperator.planCreateTable(
-                dataSource.getType().name(), definition(dialect, dataSource, model, table, fields)
+                dataSource.getType().name(), dataSource.getConnection().toJdbcConnectionConfig(),
+                definition(dialect, dataSource, model, table, fields)
         );
     }
 
@@ -243,7 +271,7 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
 
     private static TableColumnDefinition physicalColumn(DatabaseDialect dialect, DataModelField field) {
         TypeMappingResult<PhysicalTypeDefinition> mapping = dialect.mapToPhysicalType(platformType(
-                field.getFieldType(), field.getLength(), field.getPrecision(), field.getScale()
+                field.getFieldType(), field.getLength(), field.getPrecision(), field.getScale(), field.getGeometry()
         ));
         if (!mapping.acceptable()) {
             throw new IllegalArgumentException(mapping.message());
@@ -255,11 +283,13 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
             PlatformDataType type,
             Integer length,
             Integer precision,
-            Integer scale
+            Integer scale,
+            cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition geometry
     ) {
         return switch (type) {
             case STRING -> PlatformTypeDefinition.string(length);
             case DECIMAL -> PlatformTypeDefinition.decimal(precision, scale);
+            case GEOMETRY -> PlatformTypeDefinition.geometry(geometry);
             default -> PlatformTypeDefinition.of(type);
         };
     }
@@ -286,7 +316,7 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
             }
             TypeMappingResult<PlatformTypeDefinition> mapping = dialect.mapToPlatformType(JdbcTypeDescriptor.from(actual));
             PlatformTypeDefinition expected = platformType(
-                    field.getFieldType(), field.getLength(), field.getPrecision(), field.getScale()
+                    field.getFieldType(), field.getLength(), field.getPrecision(), field.getScale(), field.getGeometry()
             );
             if (!mapping.acceptable() || !expected.equals(mapping.definition())) {
                 differences.add(new TableStructureDifference(

@@ -6,7 +6,7 @@ import com.fasterxml.jackson.annotation.JsonValue;
 import java.util.Locale;
 
 /**
- * Database-neutral scalar types used by model, task and service contracts.
+ * Database-neutral types used by model, task and service contracts.
  *
  * <p>The names intentionally follow Spark SQL scalar type semantics without depending on Spark runtime classes.</p>
  */
@@ -24,7 +24,8 @@ public enum PlatformDataType {
     BINARY,
     DATE,
     TIMESTAMP,
-    TIMESTAMP_NTZ;
+    TIMESTAMP_NTZ,
+    GEOMETRY;
 
     @JsonCreator
     public static PlatformDataType fromJson(String value) {

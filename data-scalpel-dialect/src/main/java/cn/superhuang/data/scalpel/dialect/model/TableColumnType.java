@@ -18,5 +18,6 @@ public enum TableColumnType {
     /** Legacy persisted change-plan value. New mappings must use TIMESTAMP_NTZ. */
     @Deprecated
     DATETIME,
-    BINARY
+    BINARY,
+    GEOMETRY
 }

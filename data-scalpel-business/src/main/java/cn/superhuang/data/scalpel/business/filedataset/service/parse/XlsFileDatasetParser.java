@@ -48,6 +48,29 @@ public class XlsFileDatasetParser implements FileDatasetParser {
     }
 
     @Override
+    public List<DiscoveredTable> discoverTables(FileDatasetParseSource source) throws IOException {
+        Path file = FileDatasetParseSource.requireLocalFile(source);
+        try (POIFSFileSystem fileSystem = new POIFSFileSystem(file.toFile(), true)) {
+            List<String> names = new ArrayList<>();
+            HSSFRequest request = new HSSFRequest();
+            request.addListener(record -> names.add(((BoundSheetRecord) record).getSheetname()), BoundSheetRecord.sid);
+            new HSSFEventFactory().processWorkbookEvents(request, fileSystem);
+            if (names.isEmpty()) {
+                throw new FileDatasetParsingException("XLS 文件不包含工作表");
+            }
+            return java.util.stream.IntStream.range(0, names.size())
+                    .mapToObj(index -> new DiscoveredTable(names.get(index), index))
+                    .toList();
+        } catch (FileDatasetParsingException exception) {
+            throw exception;
+        } catch (IOException exception) {
+            throw new FileDatasetParsingException("XLS 文件内容无效", exception);
+        } catch (RuntimeException exception) {
+            throw new FileDatasetParsingException("无法读取 XLS 文件", exception);
+        }
+    }
+
+    @Override
     public ParseResult parse(FileDatasetParseSource source, FileDatasetParsingConfiguration configuration, int recordLimit)
             throws IOException {
         if (!(configuration instanceof FileDatasetParsingConfiguration.Spreadsheet spreadsheet)) {
@@ -172,7 +195,7 @@ public class XlsFileDatasetParser implements FileDatasetParser {
             if (currentSheetIndex < 0) {
                 throw new FileDatasetParsingException("XLS 文件不包含工作表");
             }
-            String requestedSheetName = options.sheetName() == null ? "" : options.sheetName().trim();
+            String requestedSheetName = options.sourceKey() == null ? "" : options.sourceKey().trim();
             if (!requestedSheetName.isEmpty() && sheetNames.stream().noneMatch(requestedSheetName::equals)) {
                 throw new FileDatasetParsingException("指定的工作表不存在：" + requestedSheetName + "；可用工作表："
                         + String.join("、", sheetNames.stream().limit(10).toList()));
@@ -181,7 +204,7 @@ public class XlsFileDatasetParser implements FileDatasetParser {
         }
 
         private boolean isSelectedSheet(int sheetIndex) {
-            String requestedSheetName = options.sheetName() == null ? "" : options.sheetName().trim();
+            String requestedSheetName = options.sourceKey() == null ? "" : options.sourceKey().trim();
             if (requestedSheetName.isEmpty()) {
                 return sheetIndex == 0;
             }

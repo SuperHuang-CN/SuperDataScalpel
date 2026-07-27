@@ -4,5 +4,6 @@ package cn.superhuang.data.scalpel.business.datasource.domain;
 public enum DataSourceConnectionKind {
     JDBC,
     KAFKA,
-    S3
+    S3,
+    HTTP_API
 }

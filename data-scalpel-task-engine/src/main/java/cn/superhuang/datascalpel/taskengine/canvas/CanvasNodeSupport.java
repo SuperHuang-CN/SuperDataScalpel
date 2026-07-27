@@ -1,0 +1,70 @@
+package cn.superhuang.datascalpel.taskengine.canvas;
+
+import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
+import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
+import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
+
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+final class CanvasNodeSupport {
+
+    private CanvasNodeSupport() {
+    }
+
+    static boolean blank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    static void required(
+            String value,
+            String message,
+            String path,
+            CanvasNodeIssueSink issues
+    ) {
+        if (blank(value)) {
+            issues.error("REQUIRED_CONFIGURATION", message, path);
+        }
+    }
+
+    static UUID parseUuid(String value, String path, CanvasNodeIssueSink issues) {
+        if (blank(value)) {
+            issues.error("REQUIRED_CONFIGURATION", "数据源 ID 不能为空", path);
+            return null;
+        }
+        try {
+            return UUID.fromString(value);
+        } catch (IllegalArgumentException exception) {
+            issues.error("INVALID_DATA_SOURCE_ID", "数据源 ID 必须是 UUID", path);
+            return null;
+        }
+    }
+
+    static Map<String, CanvasColumnSchema> columns(CanvasTableSchema schema) {
+        Map<String, CanvasColumnSchema> columns = new LinkedHashMap<>();
+        for (CanvasColumnSchema column : schema.columns()) {
+            columns.put(column.name(), column);
+        }
+        return columns;
+    }
+
+    static List<CanvasTableSchema> schemas(Map<String, SparkCanvasTable> tables) {
+        return tables.values().stream().map(SparkCanvasTable::schema).toList();
+    }
+
+    static List<CanvasColumnSchema> concatenatedColumns(
+            CanvasTableSchema left,
+            CanvasTableSchema right
+    ) {
+        List<CanvasColumnSchema> columns = new ArrayList<>(left.columns());
+        columns.addAll(right.columns());
+        return List.copyOf(columns);
+    }
+
+    static String quoteIdentifier(String value) {
+        return "`" + value.replace("`", "``") + "`";
+    }
+}

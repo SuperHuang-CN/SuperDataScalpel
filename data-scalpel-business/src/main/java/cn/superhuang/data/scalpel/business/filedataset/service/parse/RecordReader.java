@@ -7,6 +7,7 @@ import java.io.PushbackReader;
 import java.io.Reader;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.Consumer;
 
 final class RecordReader {
 
@@ -14,23 +15,41 @@ final class RecordReader {
     }
 
     static List<String> readLines(Reader source, FileRecordDelimiter delimiter, int maxRecords) throws IOException {
+        List<String> records = new ArrayList<>();
+        forEachLine(source, delimiter, record -> {
+            if (records.size() < maxRecords) {
+                records.add(record);
+            }
+        }, () -> records.size() >= maxRecords);
+        return records;
+    }
+
+    static void forEachLine(Reader source, FileRecordDelimiter delimiter, Consumer<String> consumer)
+            throws IOException {
+        forEachLine(source, delimiter, consumer, () -> false);
+    }
+
+    private static void forEachLine(
+            Reader source,
+            FileRecordDelimiter delimiter,
+            Consumer<String> consumer,
+            java.util.function.BooleanSupplier stop
+    ) throws IOException {
         try (PushbackReader reader = new PushbackReader(source, 2)) {
-            List<String> records = new ArrayList<>();
             StringBuilder current = new StringBuilder();
             int value;
-            while (records.size() < maxRecords && (value = reader.read()) >= 0) {
+            while (!stop.getAsBoolean() && (value = reader.read()) >= 0) {
                 char character = (char) value;
                 if (isRecordDelimiter(reader, character, delimiter)) {
-                    records.add(current.toString());
+                    consumer.accept(current.toString());
                     current.setLength(0);
                 } else {
                     current.append(character);
                 }
             }
-            if (records.size() < maxRecords && !current.isEmpty()) {
-                records.add(current.toString());
+            if (!stop.getAsBoolean() && !current.isEmpty()) {
+                consumer.accept(current.toString());
             }
-            return records;
         }
     }
 

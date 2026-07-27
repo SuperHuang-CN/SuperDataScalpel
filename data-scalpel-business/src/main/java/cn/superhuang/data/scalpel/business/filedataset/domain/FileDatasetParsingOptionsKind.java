@@ -8,6 +8,6 @@ public enum FileDatasetParsingOptionsKind {
     SPREADSHEET,
     PARQUET,
     AVRO,
-    SHAPEFILE,
-    FILE_GDB
+    GDB,
+    SHP
 }

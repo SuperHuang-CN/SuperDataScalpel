@@ -88,10 +88,15 @@ public class DataSourcePoolRegistry {
         return new HikariDataSource(configuration);
     }
 
-    private static String fingerprint(JdbcDataSourceSnapshot snapshot) {
+    static String fingerprint(JdbcDataSourceSnapshot snapshot) {
+        String options = snapshot.options().entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .map(entry -> entry.getKey().length() + ":" + entry.getKey()
+                        + entry.getValue().length() + ":" + entry.getValue())
+                .collect(java.util.stream.Collectors.joining("|"));
         return snapshot.databaseType() + "\u0000" + snapshot.host() + "\u0000" + snapshot.port() + "\u0000"
                 + snapshot.databaseName() + "\u0000" + snapshot.schemaName() + "\u0000" + snapshot.username()
-                + "\u0000" + snapshot.password() + "\u0000" + snapshot.options();
+                + "\u0000" + snapshot.password() + "\u0000" + options;
     }
 
     private record PoolHolder(String fingerprint, HikariDataSource dataSource) {

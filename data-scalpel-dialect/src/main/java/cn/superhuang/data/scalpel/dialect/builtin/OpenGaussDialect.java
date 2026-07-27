@@ -34,7 +34,10 @@ public final class OpenGaussDialect extends AbstractJdbcDialect {
         Properties properties = baseProperties(config);
         properties.setProperty("connectTimeout", "5");
         properties.setProperty("socketTimeout", "15");
-        copyOptions(config, properties, Set.of("sslmode"));
+        applyConnectionOptions(
+                config, properties, Set.of(),
+                Set.of("connectTimeout", "socketTimeout", "currentSchema")
+        );
         String url = "jdbc:opengauss://" + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());
         return new JdbcConnectionSpec(driverClassName(), url, properties, config.schemaName());
     }

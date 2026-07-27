@@ -14,8 +14,23 @@ import java.util.stream.Collectors;
 @Converter
 public class ConnectionOptionsConverter implements AttributeConverter<Map<String, String>, String> {
 
+    public static final int MAX_DATABASE_COLUMN_LENGTH = 4000;
+
     @Override
     public String convertToDatabaseColumn(Map<String, String> attribute) {
+        String encoded = encodeOptions(attribute);
+        if (encoded != null && encoded.length() > MAX_DATABASE_COLUMN_LENGTH) {
+            throw new IllegalArgumentException("JDBC 连接参数编码后不能超过 4000 个字符");
+        }
+        return encoded;
+    }
+
+    public static int encodedLength(Map<String, String> options) {
+        String encoded = encodeOptions(options);
+        return encoded == null ? 0 : encoded.length();
+    }
+
+    private static String encodeOptions(Map<String, String> attribute) {
         if (attribute == null || attribute.isEmpty()) {
             return null;
         }

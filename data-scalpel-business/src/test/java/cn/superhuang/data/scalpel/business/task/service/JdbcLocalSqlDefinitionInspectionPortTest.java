@@ -6,15 +6,22 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTablePort;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlWriteMode;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
+import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.query.QueryColumn;
 import cn.superhuang.data.scalpel.dialect.query.QueryInspection;
 import cn.superhuang.data.scalpel.dialect.query.ReadOnlySelectQueryParser;
+import cn.superhuang.data.scalpel.dialect.runtime.JdbcQueryInspector;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Types;
@@ -27,6 +34,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 class JdbcLocalSqlDefinitionInspectionPortTest {
 
@@ -72,6 +80,52 @@ class JdbcLocalSqlDefinitionInspectionPortTest {
         assertFalse(inspection.valid());
         assertEquals(
                 List.of("OUTPUT_MODEL_PRIMARY_KEY_REQUIRED"),
+                inspection.problems().stream().map(LocalSqlDefinitionInspectionProblem::code).toList()
+        );
+    }
+
+    @Test
+    void rejectsGeometryModelsBeforeInspectingSql() {
+        DataModel geometryModel = outputModel();
+        DataModelField geometryField = DataModelField.create(
+                UUID.randomUUID(),
+                "shape",
+                "空间位置",
+                PlatformDataType.GEOMETRY,
+                null,
+                null,
+                null,
+                new GeometryTypeDefinition(
+                        GeometryKind.POINT,
+                        CrsReference.epsg(4326),
+                        CoordinateDimension.XY
+                ),
+                true,
+                false,
+                0,
+                null
+        );
+        JdbcLocalSqlDefinitionInspectionPort port = new JdbcLocalSqlDefinitionInspectionPort(
+                new DialectRegistry(List.of(POSTGRESQL)),
+                mock(JdbcQueryInspector.class),
+                mock(ModelPhysicalTablePort.class)
+        );
+
+        LocalSqlDefinitionInspection inspection = port.inspect(new LocalSqlDefinitionInspectionRequest(
+                dataSource(),
+                List.of(),
+                new LocalSqlDefinitionInspectionRequest.ModelWithFields(
+                        geometryModel,
+                        List.of(geometryField)
+                ),
+                "SELECT shape FROM source_user",
+                LocalSqlWriteMode.APPEND,
+                Duration.ofSeconds(30)
+        ));
+
+        assertFalse(inspection.valid());
+        assertEquals(
+                List.of("SPATIAL_FIELD_UNSUPPORTED"),
                 inspection.problems().stream().map(LocalSqlDefinitionInspectionProblem::code).toList()
         );
     }

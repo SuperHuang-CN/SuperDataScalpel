@@ -14,7 +14,7 @@ public record ServiceDeploymentRequest(
         @NotBlank String serviceCode,
         @NotBlank String routePath,
         @NotBlank String definitionDigest,
-        @NotNull @Valid StandardServiceDefinition definition,
+        @NotNull @Valid ServiceDefinitionSnapshot definition,
         @NotNull UUID dataSourceId
 ) {
 }

@@ -46,6 +46,32 @@ public class XlsxFileDatasetParser implements FileDatasetParser {
     }
 
     @Override
+    public List<DiscoveredTable> discoverTables(FileDatasetParseSource source) throws IOException {
+        Path file = FileDatasetParseSource.requireLocalFile(source);
+        try (OPCPackage packageFile = OPCPackage.open(file.toFile(), PackageAccess.READ)) {
+            XSSFReader reader = new XSSFReader(packageFile, true);
+            List<DiscoveredTable> tables = new ArrayList<>();
+            XSSFReader.SheetIterator iterator = (XSSFReader.SheetIterator) reader.getSheetsData();
+            int order = 0;
+            while (iterator.hasNext()) {
+                try (InputStream ignored = iterator.next()) {
+                    tables.add(new DiscoveredTable(iterator.getSheetName(), order++));
+                }
+            }
+            if (tables.isEmpty()) {
+                throw new FileDatasetParsingException("XLSX 文件不包含工作表");
+            }
+            return List.copyOf(tables);
+        } catch (FileDatasetParsingException exception) {
+            throw exception;
+        } catch (POIXMLException | OpenXML4JException exception) {
+            throw new FileDatasetParsingException("XLSX 文件内容无效", exception);
+        } catch (RuntimeException exception) {
+            throw new FileDatasetParsingException("无法读取 XLSX 文件", exception);
+        }
+    }
+
+    @Override
     public ParseResult parse(FileDatasetParseSource source, FileDatasetParsingConfiguration configuration, int recordLimit)
             throws IOException {
         if (!(configuration instanceof FileDatasetParsingConfiguration.Spreadsheet spreadsheet)) {
@@ -75,7 +101,7 @@ public class XlsxFileDatasetParser implements FileDatasetParser {
             int recordLimit,
             boolean use1904Windowing
     ) throws IOException, SAXException, OpenXML4JException {
-        String requestedSheetName = options.sheetName() == null ? "" : options.sheetName().trim();
+        String requestedSheetName = options.sourceKey() == null ? "" : options.sourceKey().trim();
         List<String> sheetNames = new ArrayList<>();
         XSSFReader.SheetIterator iterator = (XSSFReader.SheetIterator) reader.getSheetsData();
         while (iterator.hasNext()) {

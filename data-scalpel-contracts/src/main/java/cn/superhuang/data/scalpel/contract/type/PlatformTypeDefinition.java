@@ -5,8 +5,19 @@ public record PlatformTypeDefinition(
         PlatformDataType type,
         Integer length,
         Integer precision,
-        Integer scale
+        Integer scale,
+        GeometryTypeDefinition geometry
 ) {
+
+    /** Backward-compatible constructor for existing scalar call sites and serialized contracts. */
+    public PlatformTypeDefinition(
+            PlatformDataType type,
+            Integer length,
+            Integer precision,
+            Integer scale
+    ) {
+        this(type, length, precision, scale, null);
+    }
 
     public PlatformTypeDefinition {
         if (type == null) {
@@ -29,6 +40,13 @@ public record PlatformTypeDefinition(
         } else if (precision != null || scale != null) {
             throw new IllegalArgumentException("Only DECIMAL accepts precision and scale");
         }
+        if (type == PlatformDataType.GEOMETRY) {
+            if (geometry == null) {
+                throw new IllegalArgumentException("GEOMETRY requires a geometry definition");
+            }
+        } else if (geometry != null) {
+            throw new IllegalArgumentException("Only GEOMETRY accepts a geometry definition");
+        }
     }
 
     public static PlatformTypeDefinition of(PlatformDataType type) {
@@ -41,5 +59,9 @@ public record PlatformTypeDefinition(
 
     public static PlatformTypeDefinition decimal(int precision, int scale) {
         return new PlatformTypeDefinition(PlatformDataType.DECIMAL, null, precision, scale);
+    }
+
+    public static PlatformTypeDefinition geometry(GeometryTypeDefinition geometry) {
+        return new PlatformTypeDefinition(PlatformDataType.GEOMETRY, null, null, null, geometry);
     }
 }

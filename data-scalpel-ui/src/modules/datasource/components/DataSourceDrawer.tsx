@@ -1,5 +1,5 @@
 import { Button, Checkbox, Col, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, TreeSelect, message } from 'antd';
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
 import {
@@ -12,14 +12,27 @@ import {
   dataSourcePurposeLabels,
   dataSourceTypeLabels,
   type CreateDataSourceRequest,
+  type ConnectionTestResult,
   type DataSource,
   type DataSourceConnectionInput,
   type DataSourceConnectionKind,
   type DataSourcePurpose,
   type DataSourceType,
   type DataSourceTypeDefinition,
+  type HttpApiAuthenticationInput,
+  type HttpApiAuthenticationType,
+  type HttpApiNamedValue,
   type UpdateDataSourceRequest,
 } from '../model/dataSource';
+import {
+  defaultJdbcConnectionOptions,
+  mergeJdbcConnectionOptions,
+  splitJdbcConnectionOptions,
+  type JdbcConnectionOptionFormRow,
+} from '../model/jdbcConnectionOptions';
+import { ConnectionTestResultModal } from './ConnectionTestResultModal';
+import { JdbcConnectionOptionsFields } from './JdbcConnectionOptionsFields';
+import { HttpApiConnectionFields } from './HttpApiConnectionFields';
 
 interface DataSourceDrawerProps {
   dataSource: DataSource | null;
@@ -27,6 +40,11 @@ interface DataSourceDrawerProps {
   canViewDirectories: boolean;
   canTest: boolean;
   onClose: () => void;
+}
+
+interface ConnectionTestFailure {
+  result: ConnectionTestResult;
+  targetLabel: string;
 }
 
 type KafkaSecurityProtocol = 'PLAINTEXT' | 'SSL' | 'SASL_PLAINTEXT' | 'SASL_SSL';
@@ -39,6 +57,7 @@ interface DataSourceConnectionFormValues {
   username?: string;
   password?: string;
   options?: Record<string, string>;
+  customOptions?: JdbcConnectionOptionFormRow[];
   bootstrapServers?: string;
   securityProtocol?: KafkaSecurityProtocol;
   saslMechanism?: string;
@@ -49,6 +68,40 @@ interface DataSourceConnectionFormValues {
   accessKey?: string;
   secretKey?: string;
   pathStyleAccess?: boolean;
+  baseUrl?: string;
+  defaultHeaders?: HttpApiNamedValue[];
+  connectTimeoutMs?: number;
+  requestTimeoutMs?: number;
+  minimumRequestIntervalMs?: number;
+  maxRetries?: number;
+  authentication?: HttpApiAuthenticationFormValues;
+  signingSecret?: string;
+  signingPrivateKey?: string;
+}
+
+interface HttpApiAuthenticationFormValues {
+  type?: HttpApiAuthenticationType;
+  username?: string;
+  password?: string;
+  token?: string;
+  location?: 'HEADER' | 'QUERY' | 'BODY';
+  name?: string;
+  valueTemplate?: string;
+  apiKey?: string;
+  tokenUrl?: string;
+  clientId?: string;
+  clientSecret?: string;
+  scopesText?: string;
+  audience?: string;
+  method?: 'GET' | 'POST';
+  headers?: HttpApiNamedValue[];
+  bodyTemplate?: string;
+  tokenPointer?: string;
+  expiresInPointer?: string;
+  fixedTtlSeconds?: number;
+  tokenLocation?: 'HEADER' | 'QUERY' | 'BODY';
+  tokenName?: string;
+  tokenValueTemplate?: string;
 }
 
 interface DataSourceFormValues {
@@ -73,6 +126,7 @@ const kafkaSecurityProtocolOptions: { value: KafkaSecurityProtocol; label: strin
 const connectionKindForType = (type: DataSourceType): DataSourceConnectionKind => {
   if (type === 'KAFKA') return 'KAFKA';
   if (type === 'S3') return 'S3';
+  if (type === 'HTTP_API') return 'HTTP_API';
   return 'JDBC';
 };
 
@@ -91,20 +145,67 @@ const defaultConnection = (
       return { securityProtocol: 'PLAINTEXT' };
     case 'S3':
       return { pathStyleAccess: true };
-    case 'JDBC':
+    case 'HTTP_API':
       return {
-        port: definition?.defaultPort ?? (type === 'POSTGRESQL' ? 5432 : undefined),
-        schemaName: definition?.defaultSchema ?? undefined,
-        options: Object.fromEntries(
-          (definition?.connectionOptions ?? [])
-            .filter((option) => option.defaultValue !== null)
-            .map((option) => [option.key, option.defaultValue as string]),
-        ),
+        defaultHeaders: [{ name: 'Accept', value: 'application/json' }],
+        connectTimeoutMs: 5000,
+        requestTimeoutMs: 30000,
+        minimumRequestIntervalMs: 0,
+        maxRetries: 2,
+        authentication: { type: 'NONE' },
       };
+    case 'JDBC':
+      {
+        const optionValues = defaultJdbcConnectionOptions(definition?.connectionOptions ?? []);
+        return {
+          port: definition?.defaultPort ?? (type === 'POSTGRESQL' ? 5432 : undefined),
+          schemaName: definition?.defaultSchema ?? undefined,
+          ...optionValues,
+        };
+      }
   }
 };
 
-const buildConnectionInput = (values: DataSourceFormValues): DataSourceConnectionInput => {
+const buildConnectionInput = (
+  values: DataSourceFormValues,
+  definition?: DataSourceTypeDefinition,
+): DataSourceConnectionInput => {
+  const authentication = (): HttpApiAuthenticationInput => {
+    const value = values.connection.authentication ?? { type: 'NONE' };
+    switch (value.type) {
+      case 'BASIC':
+        return { type: 'BASIC', username: requiredText(value.username, 'Basic 用户名'), password: value.password || undefined };
+      case 'BEARER_TOKEN':
+        return { type: 'BEARER_TOKEN', token: value.token || undefined };
+      case 'API_KEY':
+        return {
+          type: 'API_KEY', location: value.location ?? 'HEADER', name: requiredText(value.name, 'API Key 参数名称'),
+          valueTemplate: value.valueTemplate?.trim() || '${credential.apiKey}', apiKey: value.apiKey || undefined,
+        };
+      case 'OAUTH2_CLIENT_CREDENTIALS':
+        return {
+          type: 'OAUTH2_CLIENT_CREDENTIALS', tokenUrl: requiredText(value.tokenUrl, 'Token URL'),
+          clientId: requiredText(value.clientId, 'Client ID'), clientSecret: value.clientSecret || undefined,
+          scopes: value.scopesText?.split(/\s+/).map((item) => item.trim()).filter(Boolean),
+          audience: value.audience?.trim() || undefined, tokenLocation: value.tokenLocation ?? 'HEADER',
+          tokenName: value.tokenName?.trim() || 'Authorization',
+          tokenValueTemplate: value.tokenValueTemplate?.trim() || 'Bearer ${token}',
+        };
+      case 'TOKEN_ENDPOINT':
+        return {
+          type: 'TOKEN_ENDPOINT', tokenUrl: requiredText(value.tokenUrl, 'Token URL'), method: value.method ?? 'POST',
+          headers: value.headers ?? [], bodyTemplate: value.bodyTemplate || undefined,
+          username: value.username?.trim() || undefined, password: value.password || undefined,
+          tokenPointer: requiredText(value.tokenPointer, 'Token JSON Pointer'),
+          expiresInPointer: value.expiresInPointer?.trim() || undefined, fixedTtlSeconds: value.fixedTtlSeconds,
+          tokenLocation: value.tokenLocation ?? 'HEADER', tokenName: value.tokenName?.trim() || 'Authorization',
+          tokenValueTemplate: value.tokenValueTemplate?.trim() || 'Bearer ${token}',
+        };
+      case 'NONE':
+      case undefined:
+        return { type: 'NONE' };
+    }
+  };
   switch (connectionKindForType(values.type)) {
     case 'KAFKA':
       return {
@@ -126,6 +227,19 @@ const buildConnectionInput = (values: DataSourceFormValues): DataSourceConnectio
         secretKey: values.connection.secretKey || undefined,
         pathStyleAccess: values.connection.pathStyleAccess ?? true,
       };
+    case 'HTTP_API':
+      return {
+        kind: 'HTTP_API',
+        baseUrl: requiredText(values.connection.baseUrl, 'Base URL'),
+        defaultHeaders: values.connection.defaultHeaders ?? [],
+        connectTimeoutMs: values.connection.connectTimeoutMs ?? 5000,
+        requestTimeoutMs: values.connection.requestTimeoutMs ?? 30000,
+        minimumRequestIntervalMs: values.connection.minimumRequestIntervalMs ?? 0,
+        maxRetries: values.connection.maxRetries ?? 2,
+        authentication: authentication(),
+        signingSecret: values.connection.signingSecret || undefined,
+        signingPrivateKey: values.connection.signingPrivateKey || undefined,
+      };
     case 'JDBC':
       return {
         kind: 'JDBC',
@@ -135,22 +249,35 @@ const buildConnectionInput = (values: DataSourceFormValues): DataSourceConnectio
         schemaName: values.connection.schemaName?.trim() || undefined,
         username: requiredText(values.connection.username, '用户名'),
         password: values.connection.password || undefined,
-        options: values.connection.options,
+        options: mergeJdbcConnectionOptions(
+          values.connection.options,
+          values.connection.customOptions,
+          definition?.connectionOptions ?? [],
+        ),
       };
   }
 };
 
-const setEditingConnection = (dataSource: DataSource): DataSourceConnectionFormValues => {
+const setEditingConnection = (
+  dataSource: DataSource,
+  definition?: DataSourceTypeDefinition,
+): DataSourceConnectionFormValues => {
   switch (dataSource.connection.kind) {
     case 'JDBC':
-      return {
-        host: dataSource.connection.host,
-        port: dataSource.connection.port,
-        databaseName: dataSource.connection.databaseName,
-        schemaName: dataSource.connection.schemaName ?? undefined,
-        username: dataSource.connection.username,
-        options: dataSource.connection.options,
-      };
+      {
+        const optionValues = splitJdbcConnectionOptions(
+          dataSource.connection.options,
+          definition?.connectionOptions ?? [],
+        );
+        return {
+          host: dataSource.connection.host,
+          port: dataSource.connection.port,
+          databaseName: dataSource.connection.databaseName,
+          schemaName: dataSource.connection.schemaName ?? undefined,
+          username: dataSource.connection.username,
+          ...optionValues,
+        };
+      }
     case 'KAFKA':
       return {
         bootstrapServers: dataSource.connection.bootstrapServers,
@@ -167,6 +294,41 @@ const setEditingConnection = (dataSource: DataSource): DataSourceConnectionFormV
         accessKey: dataSource.connection.accessKey,
         pathStyleAccess: dataSource.connection.pathStyleAccess,
       };
+    case 'HTTP_API': {
+      const { configuration } = dataSource.connection;
+      const auth = configuration.authentication;
+      const authentication: HttpApiAuthenticationFormValues = (() => {
+        switch (auth.type) {
+          case 'NONE': return { type: 'NONE' };
+          case 'BASIC': return { type: auth.type, username: auth.username };
+          case 'BEARER_TOKEN': return { type: auth.type };
+          case 'API_KEY': return {
+            type: auth.type, location: auth.location, name: auth.name, valueTemplate: auth.valueTemplate,
+          };
+          case 'OAUTH2_CLIENT_CREDENTIALS': return {
+            type: auth.type, tokenUrl: auth.tokenUrl, clientId: auth.clientId,
+            scopesText: auth.scopes.join(' '), audience: auth.audience ?? undefined,
+            tokenLocation: auth.tokenLocation, tokenName: auth.tokenName, tokenValueTemplate: auth.tokenValueTemplate,
+          };
+          case 'TOKEN_ENDPOINT': return {
+            type: auth.type, tokenUrl: auth.tokenUrl, method: auth.method, headers: auth.headers,
+            bodyTemplate: auth.bodyTemplate ?? undefined, username: auth.username ?? undefined,
+            tokenPointer: auth.tokenPointer, expiresInPointer: auth.expiresInPointer ?? undefined,
+            fixedTtlSeconds: auth.fixedTtlSeconds ?? undefined, tokenLocation: auth.tokenLocation,
+            tokenName: auth.tokenName, tokenValueTemplate: auth.tokenValueTemplate,
+          };
+        }
+      })();
+      return {
+        baseUrl: configuration.baseUrl,
+        defaultHeaders: configuration.defaultHeaders,
+        connectTimeoutMs: configuration.connectTimeoutMs,
+        requestTimeoutMs: configuration.requestTimeoutMs,
+        minimumRequestIntervalMs: configuration.minimumRequestIntervalMs,
+        maxRetries: configuration.maxRetries,
+        authentication,
+      };
+    }
   }
 };
 
@@ -280,6 +442,7 @@ const S3ConnectionFields = () => (
 export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest, onClose }: DataSourceDrawerProps) => {
   const [form] = Form.useForm<DataSourceFormValues>();
   const [messageApi, messageContext] = message.useMessage();
+  const [testFailure, setTestFailure] = useState<ConnectionTestFailure | null>(null);
   const createMutation = useCreateDataSource();
   const updateMutation = useUpdateDataSource();
   const testMutation = useTestDraftDataSourceConnection();
@@ -287,6 +450,7 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
   const directoriesQuery = useDirectoryTree('DATA_SOURCE', open && canViewDirectories);
   const editing = Boolean(dataSource);
   const selectedType = Form.useWatch('type', form);
+  const authenticationType = Form.useWatch(['connection', 'authentication', 'type'], form) ?? 'NONE';
   const selectedDefinition = dataSourceTypesQuery.data?.find((definition) => definition.id === selectedType);
   const selectedKind = selectedDefinition?.connectionKind ?? (selectedType ? connectionKindForType(selectedType) : 'JDBC');
   const typeOptions = dataSourceTypesQuery.data?.map((definition) => ({
@@ -308,7 +472,10 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
         type: dataSource.type,
         enabled: dataSource.enabled,
         description: dataSource.description ?? undefined,
-        connection: setEditingConnection(dataSource),
+        connection: setEditingConnection(
+          dataSource,
+          dataSourceTypesQuery.data?.find((item) => item.id === dataSource.type),
+        ),
       });
       return;
     }
@@ -321,7 +488,13 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
     });
   }, [dataSource, dataSourceTypesQuery.data, form, open]);
 
+  const closeDrawer = () => {
+    setTestFailure(null);
+    onClose();
+  };
+
   const changeType = (type: DataSourceType) => {
+    setTestFailure(null);
     const definition = dataSourceTypesQuery.data?.find((item) => item.id === type);
     const allowed = definition?.supportedPurposes ?? allPurposes;
     const currentPurposes = form.getFieldValue('purposes') ?? [];
@@ -341,7 +514,7 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
         type: values.type,
         enabled: values.enabled,
         description: values.description,
-        connection: buildConnectionInput(values),
+        connection: buildConnectionInput(values, selectedDefinition),
       };
       if (dataSource) {
         await updateMutation.mutateAsync({ id: dataSource.id, request });
@@ -350,7 +523,7 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
         await createMutation.mutateAsync({ ...request, code: values.code } satisfies CreateDataSourceRequest);
         messageApi.success('数据源已创建');
       }
-      onClose();
+      closeDrawer();
     } catch (error) {
       messageApi.error(error instanceof ApiError || error instanceof Error ? error.message : '保存数据源失败');
     }
@@ -358,15 +531,21 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
 
   const testConnection = async () => {
     try {
+      setTestFailure(null);
       const values = await form.validateFields();
-      const connection = buildConnectionInput(values);
-      if (connection.kind !== 'JDBC') return;
+      const connection = buildConnectionInput(values, selectedDefinition);
       const result = await testMutation.mutateAsync({ type: values.type, connection });
       if (result.success) {
         const product = result.databaseProduct ? `（${result.databaseProduct} ${result.databaseVersion ?? ''}，${result.elapsedMs} ms）` : '';
         messageApi.success(`${result.message}${product}`);
       } else {
-        messageApi.error(result.message);
+        const typeName = selectedDefinition?.displayName ?? dataSourceTypeLabels[values.type];
+        setTestFailure({
+          result,
+          targetLabel: connection.kind === 'JDBC'
+            ? `${typeName} · ${connection.host}:${connection.port}/${connection.databaseName}`
+            : `${typeName} · ${connection.kind === 'HTTP_API' ? connection.baseUrl : values.name}`,
+        });
       }
     } catch (error) {
       if (error instanceof ApiError || error instanceof Error) messageApi.error(error.message);
@@ -378,7 +557,9 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
     label: dataSourcePurposeLabels[purpose],
     disabled: !supportedPurposes.includes(purpose),
   }));
-  const testAvailable = canTest && selectedKind === 'JDBC' && Boolean(selectedDefinition?.connectionTestAvailable);
+  const testAvailable = canTest
+    && (selectedKind === 'JDBC' || selectedKind === 'HTTP_API')
+    && Boolean(selectedDefinition?.connectionTestAvailable);
 
   return (
     <>
@@ -388,9 +569,9 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
         open={open}
         size="large"
         className="data-source-drawer"
-        onClose={onClose}
+        onClose={closeDrawer}
         destroyOnHidden
-        footer={<Space>{testAvailable && <Button loading={testMutation.isPending} onClick={() => void testConnection()}>测试连接</Button>}<Button onClick={onClose}>取消</Button><Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
+        footer={<Space>{testAvailable && <Button loading={testMutation.isPending} onClick={() => void testConnection()}>测试连接</Button>}<Button onClick={closeDrawer}>取消</Button><Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
       >
         <Form<DataSourceFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
           <Row gutter={12}>
@@ -407,11 +588,20 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
             {selectedKind === 'JDBC' && <JdbcConnectionFields definition={selectedDefinition} />}
             {selectedKind === 'KAFKA' && <KafkaConnectionFields />}
             {selectedKind === 'S3' && <S3ConnectionFields />}
+            {selectedKind === 'HTTP_API' && <HttpApiConnectionFields authenticationType={authenticationType} />}
           </Row>
-          {selectedKind === 'JDBC' && selectedDefinition && selectedDefinition.connectionOptions.length > 0 && <><div className="data-source-form-section-title">高级连接参数</div><Row gutter={12}>{selectedDefinition.connectionOptions.map((option) => <Col span={12} key={option.key}><Form.Item label={option.label} name={['connection', 'options', option.key]}>{option.type === 'TEXT' ? <Input placeholder={option.defaultValue ?? '可选'} /> : <Select allowClear placeholder="使用驱动默认值" options={option.choices} />}</Form.Item></Col>)}</Row></>}
-          {selectedKind !== 'JDBC' && <div className="data-source-form-section-title">连接器状态：Kafka、S3 的真实测试与资源读取将在下一阶段开放。</div>}
+          {selectedKind === 'JDBC' && <JdbcConnectionOptionsFields definitions={selectedDefinition?.connectionOptions ?? []} />}
+          {(selectedKind === 'KAFKA' || selectedKind === 'S3') && <div className="data-source-form-section-title">连接器状态：Kafka、S3 的真实测试与资源读取将在下一阶段开放。</div>}
         </Form>
       </Drawer>
+      {testFailure && (
+        <ConnectionTestResultModal
+          open
+          result={testFailure.result}
+          targetLabel={testFailure.targetLabel}
+          onClose={() => setTestFailure(null)}
+        />
+      )}
     </>
   );
 };

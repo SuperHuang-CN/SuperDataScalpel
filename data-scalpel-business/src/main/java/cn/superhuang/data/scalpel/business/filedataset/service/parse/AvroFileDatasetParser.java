@@ -1,6 +1,8 @@
 package cn.superhuang.data.scalpel.business.filedataset.service.parse;
 
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFormat;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import org.apache.avro.Conversions;
 import org.apache.avro.Schema;
@@ -49,6 +51,24 @@ public class AvroFileDatasetParser implements FileDatasetParser {
     @Override
     public ParseResult parse(FileDatasetParseSource source, FileDatasetParsingConfiguration configuration, int recordLimit)
             throws IOException {
+        return read(source, configuration, recordLimit, false);
+    }
+
+    @Override
+    public ParseResult validate(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int previewLimit
+    ) throws IOException {
+        return read(source, configuration, previewLimit, true);
+    }
+
+    private ParseResult read(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int recordLimit,
+            boolean validateAll
+    ) throws IOException {
         if (!(configuration instanceof FileDatasetParsingConfiguration.Avro)) {
             throw new FileDatasetParsingException("Avro 解析参数无效");
         }
@@ -67,13 +87,20 @@ public class AvroFileDatasetParser implements FileDatasetParser {
             }
             List<Field> fields = fields(schema);
             List<Map<String, Object>> rows = new ArrayList<>();
+            long rowCount = 0;
             while (reader.hasNext()) {
-                if (rows.size() == recordLimit) {
-                    return new ParseResult(fields, rows, true);
+                GenericRecord record = reader.next();
+                rowCount++;
+                if (rows.size() < recordLimit) {
+                    rows.add(row(schema, record));
+                } else if (!validateAll) {
+                    return new ParseResult(fields, rows, true, true, Map.of(), rowCount);
                 }
-                rows.add(row(schema, reader.next()));
             }
-            return new ParseResult(fields, rows, false);
+            return new ParseResult(
+                    fields, rows, rowCount > rows.size(), true,
+                    Map.of("avroFullName", schema.getFullName()), rowCount
+            );
         } catch (FileDatasetParsingException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -86,7 +113,7 @@ public class AvroFileDatasetParser implements FileDatasetParser {
         for (int index = 0; index < schema.getFields().size(); index++) {
             Schema.Field field = schema.getFields().get(index);
             SchemaType schemaType = schemaType(field.schema());
-            fields.add(new Field(field.name(), index, schemaType.logicalType(), schemaType.nullable()));
+            fields.add(new Field(field.name(), index, schemaType.type(), schemaType.nullable()));
         }
         return fields;
     }
@@ -101,20 +128,57 @@ public class AvroFileDatasetParser implements FileDatasetParser {
 
     private SchemaType schemaType(Schema schema) {
         if (schema.getType() != Schema.Type.UNION) {
-            return new SchemaType(logicalType(schema), false);
+            return new SchemaType(typeDefinition(schema), false);
         }
         List<Schema> nonNullBranches = schema.getTypes().stream()
                 .filter(branch -> branch.getType() != Schema.Type.NULL)
                 .toList();
         boolean nullable = nonNullBranches.size() != schema.getTypes().size();
         if (nonNullBranches.size() == 1) {
-            return new SchemaType(logicalType(nonNullBranches.getFirst()), nullable);
+            return new SchemaType(typeDefinition(nonNullBranches.getFirst()), nullable);
         }
         if (!nonNullBranches.isEmpty() && nonNullBranches.stream().allMatch(this::isNumeric)) {
             boolean decimal = nonNullBranches.stream().anyMatch(this::isDecimalNumber);
-            return new SchemaType(decimal ? LogicalType.DECIMAL : LogicalType.INTEGER, nullable);
+            return new SchemaType(
+                    decimal
+                            ? FileDatasetTypeDefinitions.decimal(38, 18)
+                            : PlatformTypeDefinition.of(PlatformDataType.LONG),
+                    nullable
+            );
         }
-        return new SchemaType(LogicalType.JSON, nullable);
+        return new SchemaType(PlatformTypeDefinition.string(null), nullable);
+    }
+
+    private PlatformTypeDefinition typeDefinition(Schema schema) {
+        String logicalTypeName = schema.getLogicalType() == null ? null : schema.getLogicalType().getName();
+        if ("decimal".equals(logicalTypeName)) {
+            org.apache.avro.LogicalTypes.Decimal decimal =
+                    (org.apache.avro.LogicalTypes.Decimal) schema.getLogicalType();
+            return FileDatasetTypeDefinitions.decimal(decimal.getPrecision(), decimal.getScale());
+        }
+        if ("date".equals(logicalTypeName)) {
+            return PlatformTypeDefinition.of(PlatformDataType.DATE);
+        }
+        if ("time-millis".equals(logicalTypeName) || "time-micros".equals(logicalTypeName)) {
+            return PlatformTypeDefinition.string(null);
+        }
+        if ("timestamp-millis".equals(logicalTypeName) || "timestamp-micros".equals(logicalTypeName)) {
+            return PlatformTypeDefinition.of(PlatformDataType.TIMESTAMP);
+        }
+        if ("local-timestamp-millis".equals(logicalTypeName) || "local-timestamp-micros".equals(logicalTypeName)) {
+            return PlatformTypeDefinition.of(PlatformDataType.TIMESTAMP_NTZ);
+        }
+        if ("uuid".equals(logicalTypeName)) {
+            return PlatformTypeDefinition.string(null);
+        }
+        return switch (schema.getType()) {
+            case BOOLEAN -> PlatformTypeDefinition.of(PlatformDataType.BOOLEAN);
+            case INT, LONG -> PlatformTypeDefinition.of(PlatformDataType.LONG);
+            case FLOAT -> PlatformTypeDefinition.of(PlatformDataType.FLOAT);
+            case DOUBLE -> PlatformTypeDefinition.of(PlatformDataType.DOUBLE);
+            case STRING, ENUM, ARRAY, MAP, RECORD, UNION, NULL -> PlatformTypeDefinition.string(null);
+            case BYTES, FIXED -> PlatformTypeDefinition.of(PlatformDataType.BINARY);
+        };
     }
 
     private LogicalType logicalType(Schema schema) {
@@ -328,6 +392,6 @@ public class AvroFileDatasetParser implements FileDatasetParser {
         return message == null || message.isBlank() ? "格式错误" : message;
     }
 
-    private record SchemaType(LogicalType logicalType, boolean nullable) {
+    private record SchemaType(PlatformTypeDefinition type, boolean nullable) {
     }
 }

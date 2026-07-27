@@ -1,150 +1,216 @@
-# 数据服务发布第一版
+# 数据服务定义、Engine 启用与查询运行设计
 
-## 目标与范围
+## 目标与模式
 
-第一版只实现“一个模型（一个物理表）发布为一个标准数据服务”。服务的查询入参和响应格式固定，支持分页、字段选择、过滤、排序、分组和聚合；不支持任意 SQL、脚本发布、自定义响应模板、跨表关联或写入操作。
+数据服务提供两种创建后不可切换的模式：
 
-一个 `ServiceEngine` 是一个独立 JVM，不是为每个服务启动一个 JVM。一个数据服务在任一时刻只部署到一个已启用 Engine。这样可横向增加 Engine 来分摊运行服务数量，同时保留简单、同步的发布流程。
+- `STANDARD_TABLE`：绑定一个已发布模型，将模型对应的单张物理表启用为字段白名单约束的标准查询服务。
+- `SQL_QUERY`：先绑定一个已启用的 PostgreSQL JDBC 数据源，再关联该数据源下的一个或多个模型，并将一条启用时冻结的只读参数化 SQL 模板部署到已注册该数据源的目标 Engine。
 
-## 结构与职责
+SQL 服务不是任意 SQL 执行接口。调用方不能提交 SQL、表名、列名或 SQL 片段，只能向启用快照中声明的标量参数传值。第一版不支持写入语句、列表参数、动态 SQL、标识符参数、自定义 count、路径/Header 参数或自定义响应模板。
 
-```text
-Admin（控制面）
-  ├─ 数据服务定义、模型引用、发布状态与部署结果
-  ├─ Engine × JDBC 数据源的显式注册关系与同步状态
-  └─ 以固定 Token 调用 Engine 内部部署接口
+SQL 服务关联的模型只用于来源说明、血缘记录、编辑辅助和删除保护，不是 SQL 表访问白名单。第一版不解析 SQL 中的表名，也不要求实际查询表必须对应已选模型；只要查询通过现有只读、参数、类型、元数据和数据库执行检查即可。数据库账号的只读权限仍是实际安全边界。
 
-Service Engine（运行面，独立 JVM + 独立 PostgreSQL）
-  ├─ 保存部署定义快照和独立的数据源快照；凭据字段以 AES-GCM 加密保存
-  ├─ 发布时动态注册真实 Spring MVC 路由
-  └─ 将公共请求编译为 AST → 数据库方言 SQL → JDBC 参数化执行
+一个 `ServiceEngine` 是独立 JVM 和独立 PostgreSQL 运行库，不为每个服务启动进程。Admin 是控制面，Engine 是运行面；Engine 只持久化无凭据的服务快照和加密的数据源连接快照，不访问 Admin 数据库。
 
-业务数据源
-  └─ 只读查询目标表
-```
+## 管理领域模型
 
-Admin 保存业务定义；Engine 不读取 Admin 库。一个 JDBC 数据源必须先注册并同步到目标 Engine，Engine 才会保存其加密连接快照；部署快照只引用数据源 ID。Engine 重启后先恢复本地数据源，再恢复所有未移除的部署和动态路由。
+`DataService` 只保存编码、名称、目录、不可修改的类型、Engine、路由和生命周期状态。具体定义分表保存：
 
-## 控制面 API 与生命周期
+- `StandardDataServiceDefinition`：`dataServiceId`、`modelId`、定义版本。
+- `SqlDataServiceDefinition`：`dataServiceId`、`dataSourceId`、大文本 `sqlText`、定义版本。
+- `SqlDataServiceModelReference`：标量 `dataServiceId`、`modelId` 和关联顺序；同一服务内模型及顺序分别唯一。
+- `SqlDataServiceParameter`：标量 `dataServiceId`、参数名、平台类型及长度/精度/scale、必填标记、顺序和说明。
 
-Service Engine 管理接口：
+实体之间只使用 UUID 标量引用，不使用 JPA Entity 关联或级联。删除服务前必须已经从 Engine 停用且不存在网关绑定，再由业务 Service 显式删除模型引用、参数、具体定义、部署记录和根实体。模型删除同时检查标准服务定义和 SQL 服务模型引用；数据源和 Engine 数据源注册的删除保护仍依据 SQL 定义中的执行数据源。
 
-- `GET /api/v1/service-engines`、`GET /api/v1/service-engines/{id}`
-- `POST /api/v1/service-engines`
-- `POST /api/v1/service-engines/{id}/actions/update`
-- `POST /api/v1/service-engines/{id}/actions/test`
-- `POST /api/v1/service-engines/{id}/actions/delete`
+旧版数据服务状态 `PUBLISHED` 的实际含义是“已部署到 Engine”，Admin 启动时会迁移为 `ENABLED`，已有 Engine 部署快照继续保留。网关发布是独立的新状态，升级后需要对已启用服务执行一次“发布到网关”。完整生命周期与 Kong 映射见[数据服务启停与网关发布设计](data-service-gateway-publishing.md)。
 
-Engine 数据源注册接口：
+## Admin API
 
-- `GET /api/v1/service-engine-data-sources`、`GET /api/v1/service-engine-data-sources/{id}`
-- `POST /api/v1/service-engine-data-sources`（注册并首次同步）
-- `POST /api/v1/service-engine-data-sources/{id}/actions/sync`
-- `POST /api/v1/service-engine-data-sources/{id}/actions/test`
-- `POST /api/v1/service-engine-data-sources/{id}/actions/delete`
+数据服务统一使用以下资源：
 
-数据服务管理接口：
-
-- `GET /api/v1/data-services`、`GET /api/v1/data-services/{id}`
+- `GET /api/v1/data-services`：摘要分页，包含 `type`、`sourceId`、`sourceName`，不返回 SQL 大文本。
+- `GET /api/v1/data-services/{id}`：完整详情和具体定义。
 - `POST /api/v1/data-services`
 - `POST /api/v1/data-services/{id}/actions/update`
-- `POST /api/v1/data-services/{id}/actions/publish`
-- `POST /api/v1/data-services/{id}/actions/disable`
+- `POST /api/v1/data-services/actions/test-sql`：测试未保存表单定义并返回实际查询预览。
+- `POST /api/v1/data-services/{id}/actions/enable`：冻结定义并部署到 Service Engine。
+- `POST /api/v1/data-services/{id}/actions/publish`：将已启用服务发布到当前网关。
+- `POST /api/v1/data-services/{id}/actions/disable`：先撤回全部网关对象，再从 Service Engine 移除。
+- `POST /api/v1/data-services/{id}/actions/cleanup-deployment`
 - `POST /api/v1/data-services/{id}/actions/delete`
 
-创建服务时校验服务编码、目录、模型、Engine、Engine 数据源注册关系和同一 Engine 内的路由唯一性。发布前必须同时满足：模型已发布、模型绑定的是启用的 JDBC 数据存储、该数据源到目标 Engine 的注册状态为 `READY`、物理表结构与模型字段一致。随后 Admin 生成版本化部署定义并同步调用 Engine：
+创建与更新使用显式互斥定义。`STANDARD_TABLE` 只能提供 `standardDefinition.modelId`；`SQL_QUERY` 只能提供 `sqlDefinition`。更新请求仍携带类型以校验不可切换，但不能修改编码。
 
-1. Engine 校验 `/open-api/v1/...` 路径及与系统路由、已部署服务的冲突。
-2. Engine 持久化版本化部署定义，并引用已注册数据源的本地快照。
-3. Engine 动态注册 `POST` 路由并确认部署。
-4. Admin 收到确认后将服务标记为 `PUBLISHED`、部署标记为 `DEPLOYED`。
+SQL 服务的管理端选择顺序为：PostgreSQL 数据源 → 该数据源下的一个或多个模型 → 已注册该数据源的 Engine → SQL 和参数。`modelIds` 至少一个、不能包含空值或重复值，且所有模型的 `storageDataSourceId` 必须与 `dataSourceId` 相同。草稿、已发布和已停用模型均可关联，模型状态不参与保存、测试或启用判定。切换数据源后必须重新选择模型和 Engine。
 
-任何远程调用失败都会保留部署记录为 `FAILED` 和错误信息，服务不会进入 `PUBLISHED`。下线也以同步确认方式移除 Engine 路由；未确认移除的服务不能修改或删除，以免控制面与运行面状态失配。
+SQL 定义示例：
 
-数据源注册状态：
+```json
+{
+  "code": "customer_query",
+  "name": "客户查询",
+  "engineId": "00000000-0000-0000-0000-000000000001",
+  "routePath": "/open-api/v1/customers",
+  "type": "SQL_QUERY",
+  "standardDefinition": null,
+  "sqlDefinition": {
+    "dataSourceId": "00000000-0000-0000-0000-000000000002",
+    "modelIds": [
+      "00000000-0000-0000-0000-000000000003",
+      "00000000-0000-0000-0000-000000000004"
+    ],
+    "sqlText": "select id, name from customer where department_id = :departmentId",
+    "parameters": [{
+      "name": "departmentId",
+      "typeDefinition": {"type": "LONG", "length": null, "precision": null, "scale": null},
+      "required": true,
+      "description": "部门 ID"
+    }]
+  }
+}
+```
+
+SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数定义，并额外提供 `arguments` 和 1～50 的 `previewSize`。数据源或模型选择错误使用 RFC 9457 Problem Details 400；SQL 内容、参数、类型、元数据或执行失败属于正常测试结果，返回 HTTP 200 和 `valid=false`、稳定 `problems`。成功结果返回输出字段、固定第一页预览和 `elapsedMs`，不持久化输出快照，也不代替启用时重新检查。
+
+## 管理端创建与详情工作台
+
+数据服务列表的“新建服务”使用类型下拉菜单，不预设默认类型：
+
+- 标准单表服务：进入独立的紧凑表单页。
+- SQL 查询服务：进入独立的 SQL 工作台。
+- 脚本服务：仅显示“规划中”的禁用入口；后端不存在 `SCRIPT` 类型或接口契约。
+
+对应前端路由为：
+
+| 路由 | 用途 | 页面权限 |
+| --- | --- | --- |
+| `/dataservice` | 数据服务列表 | `service.view` |
+| `/dataservice/new/standard` | 新建标准单表服务 | `service.create` |
+| `/dataservice/new/sql` | 新建 SQL 查询服务 | `service.create` |
+| `/dataservice/:id` | 查看、编辑和执行生命周期操作 | `service.view` |
+
+创建页只提供“保存草稿”，不提供“保存并启用”。创建成功后用 `replace` 进入详情路由，因此浏览器返回会直接回到进入创建页之前的列表。列表将 `keyword`、`status`、`type`、`engine`、`directory`、`page` 和 `size` 写入 URL；`directory=uncategorized` 表示未分类。进入详情或创建页再返回时，筛选、目录和分页位置能够恢复。
+
+详情页根据服务端状态计算交互模式，不在前端提前猜测生命周期结果：
+
+| 服务与部署状态 | 定义模式 | 可用操作 |
+| --- | --- | --- |
+| 草稿且无未清理部署 | 可编辑 | SQL 测试、保存、启用 |
+| 已停用且部署为 `REMOVED` | 可编辑 | SQL 测试、保存、重新启用 |
+| 已启用、Engine 为 `DEPLOYED`、尚未发布网关 | 只读 | SQL 测试、发布到网关、停用 |
+| 已启用、当前 revision 已发布网关 | 只读 | SQL 测试、重新发布、复制网关 cURL、停用 |
+| Engine 为 `PENDING` 或 `FAILED` | 部署锁定 | SQL 测试、重试启用、清理 Engine 部署 |
+| 其他未完成移除状态 | 部署锁定 | 展示状态和错误，等待处理 |
+
+权限会继续叠加到以上状态：保存要求 `service.update`，详情页 SQL 测试要求 `service.update`，启用、发布到网关、停用、重试和清理要求 `service.publish`。标准服务创建还要求模型和 Engine 查看权限；SQL 服务创建还要求数据源查看权限。缺少依赖资源查看权限时页面持续显示提示，并禁用相关选择和维护操作。
+
+SQL 工作台在桌面端采用左右布局。左侧保存服务元数据、PostgreSQL 数据源、关联模型、Engine 和公开路由；右侧包含模型物理位置、Monaco SQL 编辑器、参数定义、临时测试值、输出字段、问题和预览数据。左右区域各自滚动，窄屏改为上下布局。SQL 编辑页面及 Monaco 均通过路由动态加载，不进入数据服务列表首屏包。
+
+页面仅对持久化服务定义计算未保存状态；测试参数、问题和预览结果不参与 dirty fingerprint，也不会随服务保存。站内跳转使用路由 blocker，刷新、关闭标签页和浏览器离开使用 `beforeunload`。启用或重新启用前若存在未保存修改，必须先保存。保存校验失败时按“基本信息、来源与 Engine、SQL 模板、参数定义”显示错误摘要并定位第一个错误字段。
+
+## SQL 模板与类型边界
+
+参数名格式为 `[A-Za-z][A-Za-z0-9_]{0,63}`。方言层命名参数编译器只在 SQL 代码区识别 `:name`，会跳过字符串、注释、引号标识符和 PostgreSQL dollar quote，并正确保留 `::` cast。同一参数可以重复出现，部署快照按占位符出现顺序保存参数名。
+
+固定限制：
+
+- SQL 最长 100000 字符。
+- 最多 50 个参数定义和 200 次占位符出现。
+- 只允许一条 `SELECT` 或 `WITH ... SELECT`。
+- 拒绝顶层 `LIMIT`、`OFFSET`、`FETCH` 和锁定查询。
+- 拒绝 `${}`、SQL 片段、列表展开和动态标识符。
+- 声明参数与 SQL 使用参数必须完全一致。
+
+参数使用 `PlatformTypeDefinition` 转换后由 `PreparedStatement` 绑定。可选参数缺失或显式 `null` 都绑定 JDBC NULL；未知参数、必填缺失/为 null、非标量或类型错误在公开接口返回 `INVALID_QUERY` 400。第一版拒绝 BINARY 和 Geometry 参数。
+
+启用时通过 PreparedStatement 元数据冻结输出字段名称、顺序、平台类型和 nullable。输出列名称必须非空且大小写不敏感唯一，最多 200 列。物理类型映射为 `EXACT` 或 `NORMALIZED` 才能启用；`LOSSY`、`UNSUPPORTED`、BINARY、Geometry、JSON、ARRAY 和无法映射的类型均被拒绝，Geometry 输出使用稳定问题码 `SPATIAL_FIELD_UNSUPPORTED`。无法稳定推导参数类型时，SQL 作者应在模板中显式 cast。
+
+## 部署快照
+
+Admin 向 Engine 发送统一 `ServiceDefinitionSnapshot`，其中 `type` 与 `standardDefinition`、`sqlDefinition` 恰好一种匹配。
+
+SQL 快照只包含：
+
+- 协议版本。
+- 编译后的 JDBC SQL。
+- 占位符顺序对应的参数名。
+- 参数及平台类型。
+- 启用时冻结的输出字段。
+
+Engine 的 SQL 快照不包含关联模型；运行面无需访问 Admin 模型。快照也不包含数据源密码、Admin 实体或测试参数值。服务部署摘要覆盖服务类型、路由、Engine、数据源、有序 `modelIds` 和完整 SQL 定义，不包含 revision。模型选择或顺序变化会改变定义版本和摘要；相同摘要的失败或超时重试复用 revision，定义变化才生成新 revision。同 revision 不同摘要由 Engine 返回冲突。
+
+Admin 按“短事务读取快照 → 事务外 JDBC 检查 → 短事务复核并持久化待部署快照 → 事务外调用 Engine → 短事务提交结果”执行启用。HTTP 超时不被当作确定失败；服务保留失败/不确定状态，可用同摘要重试或调用 `cleanup-deployment` 向原 Engine 幂等移除。
+
+## Engine 状态机与恢复
+
+Engine 本地部署状态为：
 
 | 状态 | 含义 |
 | --- | --- |
-| `PENDING` | 正在向 Engine 同步连接快照 |
-| `READY` | Engine 已确认当前快照，可以发布服务 |
-| `OUTDATED` | Admin 中的数据源连接或运行能力已变化，需手动同步 |
-| `FAILED` | 首次注册或同步失败，保留错误信息便于重试 |
+| `DEPLOYING` | 快照已持久化，路由尚未确认注册 |
+| `DEPLOYED` | 路由已注册 |
+| `DEPLOY_FAILED` | 注册失败，不暴露路由 |
+| `REMOVING` | 正在幂等注销路由 |
+| `REMOVE_FAILED` | 注销未完成，等待重试或恢复 |
+| `REMOVED` | 路由已注销 |
 
-数据源连接、数据库类型、JDBC 存储用途或启用状态变化时，所有对应 Engine 注册关系都会标记为 `OUTDATED`。再次同步成功后，Engine 会替换本地快照并清理旧连接池；所有引用该数据源的已发布服务随即使用新连接，无需重新发布。存在已发布服务时，不能停用/移除该数据源的 JDBC 存储能力，也不能解除对应 Engine 注册。
+部署先持久化 `DEPLOYING`，再注册/替换动态 Spring MVC `POST` 路由，最后标记 `DEPLOYED`。注册失败会撤销该服务的内存路由并标记 `DEPLOY_FAILED`，绝不返回成功。Engine 停用先标记 `REMOVING`，幂等注销后标记 `REMOVED`，失败则记录 `REMOVE_FAILED`。
 
-服务与部署状态：
+启动时先恢复本地数据源，再逐一处理服务：`DEPLOYED`、`DEPLOYING` 重新校验并注册；`DEPLOY_FAILED` 不自动暴露；`REMOVING`、`REMOVE_FAILED` 确保注销并完成为 `REMOVED`。单个服务恢复失败会记录完整日志和失败状态，不影响其他服务或应用启动。
 
-| 数据服务状态 | 部署状态 | 含义 |
-| --- | --- | --- |
-| `DRAFT` | 无或 `REMOVED` | 可编辑，尚未对外开放 |
-| `DRAFT` | `FAILED` | 发布失败，先处理错误再重试 |
-| `PUBLISHED` | `DEPLOYED` | 已注册公共路由 |
-| `PUBLISHED` | `FAILED` | 下线调用未获确认，继续视为已发布 |
-| `DISABLED` | `REMOVED` | 已从 Engine 下线 |
+Engine 接收 SQL 快照时再次检查只读单语句、占位符数量、参数顺序、输出快照和数据库 `SQL_SERVICE_QUERY` capability。当前只有 PostgreSQL 声明该 capability。
 
-## Engine 配置和安全
+## 公开查询协议
 
-Engine 必须使用独立 PostgreSQL，`ddl-auto=update` 管理其运行时部署表和本地数据源表。运行时使用以下环境变量：
-
-本版本不兼容旧的“部署内嵌数据源快照”表结构。按当前开发阶段约定，升级 Engine 时直接清空其运行时数据并重建 `ds_engine_deployment`、`ds_engine_data_source`，随后重新注册数据源并发布服务；不提供旧部署数据迁移。
-
-| 变量 | 用途 |
-| --- | --- |
-| `DATASCALPEL_ENGINE_DB_URL` / `USERNAME` / `PASSWORD` | Engine 自己的 PostgreSQL 连接 |
-| `DATASCALPEL_ENGINE_CODE` | 在控制面登记的稳定 Engine 编码 |
-| `DATASCALPEL_ENGINE_MANAGEMENT_TOKEN` | Admin 与 Engine 共用的内部调用 Token |
-| `DATASCALPEL_ENGINE_ENCRYPTION_KEY` | Base64 编码的 16/24/32 字节 AES 密钥 |
-| `DATASCALPEL_ENGINE_PORT` | 可选，默认 `8081` |
-
-内部 API `GET /internal/v1/info`、`POST /internal/v1/data-sources`、`POST /internal/v1/data-sources/{id}/actions/test`、`POST /internal/v1/data-sources/actions/remove`、`POST /internal/v1/deployments`、`POST /internal/v1/deployments/actions/remove` 都要求 `Authorization: Bearer <Token>`。第一版采用该固定 Token，公开路由不要求 Engine 层认证；网关、内网边界或调用方认证由部署环境负责。
-
-加密密钥和管理 Token 均不可提交到版本库。加密密钥改变后旧快照不能解密，必须在新密钥下重新发布服务。
-
-## 标准公共查询协议
-
-每个已发布服务都动态暴露其登记的 `routePath`，路径必须为不带尾斜杠的静态 `/open-api/v1/...`，例如：
+两种模式继续返回相同分页 JSON。SQL 服务请求示例：
 
 ```http
-POST /open-api/v1/orders
+POST /open-api/v1/customers
 Content-Type: application/json
 
 {
   "pageNo": 1,
   "pageSize": 20,
-  "columns": ["id", "customerName", "amount"],
-  "conditionType": "AND",
-  "filters": [
-    {"name": "amount", "operator": ">=", "value": 100},
-    {"name": "customerName", "operator": "like", "value": "张"}
-  ],
-  "orders": [{"column": "id", "direction": "DESC"}],
-  "returnCount": true
+  "arguments": {"departmentId": 1001, "keyword": null},
+  "returnCount": false
 }
 ```
 
-响应格式固定：
+响应：
 
 ```json
 {
   "pageNo": 1,
   "pageSize": 20,
-  "totalCount": 1,
-  "resultList": [
-    {"id": 1001, "customerName": "张三", "amount": "188.50"}
-  ]
+  "totalCount": null,
+  "resultList": [{"id": 1001, "name": "示例客户"}]
 }
 ```
 
-- `pageNo` 从 1 开始；默认大小 20，默认最大 100，可由 Engine 配置调整。
-- 管理控制台会为已发布且已部署的服务提供“复制访问 cURL”。命令使用 Service Engine 的公网地址、公开路由和基础分页请求体；如部署环境要求网关认证，应由调用方按实际约定补充认证请求头。
-- 未指定 `columns` 时返回所有非二进制字段；二进制字段不能返回、过滤、分组、聚合或排序。
-- 支持 `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `not in`, `between`, `not between`, `like`, `not like`, `is null`, `is not null`, `is empty`, `is not empty`。
-- `IN`、`NOT IN` 和范围操作通过 `values` 传值，范围操作必须恰有两个值。其它单值操作使用 `value`。
-- 分组使用 `groups`；聚合使用 `aggregators`（`COUNT`、`SUM`、`MIN`、`MAX`、`AVG`）并提供唯一 `alias`。聚合查询的普通返回字段必须同时出现在 `groups`。
-- 字段名永远从服务发布快照的字段白名单解析，值先按字段类型转换。SQL 使用占位符绑定，不能由调用方指定表名、物理列或任意 SQL。
+- `pageNo` 默认 1；`pageSize` 默认 20、最大 100。
+- offset 为 `(pageNo - 1) * pageSize`，检查整数溢出且不能超过 Engine `maximum-offset`。
+- `returnCount` 默认 false；为 true 时先执行 `SELECT COUNT(*) FROM (<baseSql>) ds_count`。
+- 数据查询由 PostgreSQL 方言包装为 `SELECT * FROM (<baseSql>) ds_query LIMIT ? OFFSET ?`。
+- 基础 SQL 参数先绑定，分页参数最后绑定；count 只复用基础参数。
+- BigDecimal 输出为字符串，日期和时间输出 ISO 字符串，null 保持 null。
+- 每次执行都会比较实际 ResultSet 的字段名称、顺序、类型和 nullable；结构漂移返回安全 502。
+- SQL/数据库执行失败返回 502；调用参数错误返回 `INVALID_QUERY` 400。
 
-## JDBC 方言执行
+Engine 使用按数据源复用的连接池、read-only connection、语句超时和 `setMaxRows`。数据库账号必须在数据库侧具备只读权限；关联模型、词法检查和 JDBC read-only 都不能替代数据库权限，其中关联模型尤其不构成 SQL 访问白名单。未提供顶层 `ORDER BY` 时允许查询，但跨页顺序由数据库决定。
 
-公共请求不直接生成字符串 SQL。Engine 依次完成：字段白名单验证 → 自有 `StandardQuery` AST → 方言编译 → 原生 JDBC 参数绑定。方言实现位于 `data-scalpel-dialect`，不依赖 Spring、JPA 或业务实体；当前内建 PostgreSQL、MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓和 openGauss 的查询方言与 JDBC 连接规格。
+## Engine 配置
 
-数据源连接池按 Engine 本地数据源 ID 惰性创建并复用，查询语句设置超时。SQL/脚本发布和额外数据库类型将以新增 AST 节点、方言编译器能力和受控协议的方式演进，不改变本版的标准服务契约。
+| 环境变量 | 默认值 | 用途 |
+| --- | --- | --- |
+| `DATASCALPEL_ENGINE_QUERY_DEFAULT_PAGE_SIZE` | `20` | 默认分页大小 |
+| `DATASCALPEL_ENGINE_QUERY_MAXIMUM_PAGE_SIZE` | `100` | 最大分页大小 |
+| `DATASCALPEL_ENGINE_QUERY_MAXIMUM_OFFSET` | `100000` | 最大分页偏移 |
+| `DATASCALPEL_ENGINE_QUERY_TIMEOUT_SECONDS` | `30` | JDBC 查询超时 |
+
+其他必需配置包括 Engine 独立数据库连接、稳定 Engine 编码、Admin/Engine 共享管理 Token 和 AES 快照加密密钥。管理接口位于 `/internal/v1/**` 并要求 Bearer Token；公开调用统一从已发布的网关 Proxy 地址进入，网关发布细节见[数据服务启停与网关发布设计](data-service-gateway-publishing.md)。
+
+## PostgreSQL 实库验收
+
+默认构建使用 H2 PostgreSQL 模式覆盖 Engine SQL 路由，不要求本机运行 PostgreSQL。设置 `DATASCALPEL_PG_INTEGRATION=true` 以及 `DATASCALPEL_PG_HOST`、`DATASCALPEL_PG_PORT`、`DATASCALPEL_PG_DATABASE`、`DATASCALPEL_PG_SCHEMA`、`DATASCALPEL_PG_USERNAME`、`DATASCALPEL_PG_PASSWORD` 后，`PostgreSqlSqlServiceIntegrationTest` 会在指定的可丢弃 schema 中创建随机表，并验证 PreparedStatement 元数据、标量和重复参数、显式 null、分页、count、read-only connection、BigDecimal 字符串以及日期时间 ISO 输出。测试结束始终删除随机表。

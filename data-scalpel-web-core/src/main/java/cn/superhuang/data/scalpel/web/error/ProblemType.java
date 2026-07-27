@@ -20,6 +20,7 @@ public enum ProblemType {
     METHOD_NOT_ALLOWED(HttpStatus.METHOD_NOT_ALLOWED, "METHOD_NOT_ALLOWED", "请求方法不支持"),
     NOT_ACCEPTABLE(HttpStatus.NOT_ACCEPTABLE, "NOT_ACCEPTABLE", "请求格式不可接受"),
     BUSINESS_CONFLICT(HttpStatus.CONFLICT, "BUSINESS_CONFLICT", "资源状态冲突"),
+    TOO_MANY_REQUESTS(HttpStatus.TOO_MANY_REQUESTS, "TOO_MANY_REQUESTS", "请求过于频繁"),
     PAYLOAD_TOO_LARGE(HttpStatus.PAYLOAD_TOO_LARGE, "PAYLOAD_TOO_LARGE", "请求内容过大"),
     UNSUPPORTED_MEDIA_TYPE(HttpStatus.UNSUPPORTED_MEDIA_TYPE, "UNSUPPORTED_MEDIA_TYPE", "媒体类型不支持"),
     NOT_IMPLEMENTED(HttpStatus.NOT_IMPLEMENTED, "NOT_IMPLEMENTED", "功能暂未实现"),
@@ -65,6 +66,7 @@ public enum ProblemType {
             case 405 -> METHOD_NOT_ALLOWED;
             case 406 -> NOT_ACCEPTABLE;
             case 409 -> BUSINESS_CONFLICT;
+            case 429 -> TOO_MANY_REQUESTS;
             case 413 -> PAYLOAD_TOO_LARGE;
             case 415 -> UNSUPPORTED_MEDIA_TYPE;
             case 501 -> NOT_IMPLEMENTED;

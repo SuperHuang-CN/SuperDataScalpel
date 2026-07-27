@@ -1,12 +1,21 @@
 package cn.superhuang.data.scalpel.business.task.web.resource;
 
 import cn.superhuang.data.scalpel.business.task.service.DataTaskService;
+import cn.superhuang.data.scalpel.business.task.service.CanvasTaskDefinitionService;
+import cn.superhuang.data.scalpel.business.task.service.TaskStreamingService;
+import cn.superhuang.data.scalpel.business.task.service.TaskModelRelationQueryService;
 import cn.superhuang.data.scalpel.business.task.web.request.CreateDataTaskRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.UpdateCanvasTaskDefinitionRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateDataTaskRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateLocalSqlTaskDefinitionRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.UpdateTaskStreamingConfigurationRequest;
 import cn.superhuang.data.scalpel.business.task.web.response.DataTaskResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.CanvasTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.LocalSqlDefinitionValidationResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.LocalSqlTaskDefinitionResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.TaskStreamingConfigurationResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.TaskStreamingStatusResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.TaskModelRelationsResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -32,9 +41,20 @@ import java.util.UUID;
 public class DataTaskResource {
 
     private final DataTaskService service;
+    private final CanvasTaskDefinitionService canvasDefinitionService;
+    private final TaskStreamingService streamingService;
+    private final TaskModelRelationQueryService taskModelRelationQueryService;
 
-    public DataTaskResource(DataTaskService service) {
+    public DataTaskResource(
+            DataTaskService service,
+            CanvasTaskDefinitionService canvasDefinitionService,
+            TaskStreamingService streamingService,
+            TaskModelRelationQueryService taskModelRelationQueryService
+    ) {
         this.service = service;
+        this.canvasDefinitionService = canvasDefinitionService;
+        this.streamingService = streamingService;
+        this.taskModelRelationQueryService = taskModelRelationQueryService;
     }
 
     @GetMapping
@@ -58,10 +78,38 @@ public class DataTaskResource {
         return service.getDefinition(id);
     }
 
+    @GetMapping("/{id}/canvas-definition")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询 Spark Canvas 任务定义")
+    public CanvasTaskDefinitionResponse getCanvasDefinition(@PathVariable UUID id) {
+        return canvasDefinitionService.get(id);
+    }
+
+    @GetMapping("/{id}/model-relations")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询当前保存任务定义引用的模型")
+    public TaskModelRelationsResponse getModelRelations(@PathVariable UUID id) {
+        return taskModelRelationQueryService.getTaskModelRelations(id);
+    }
+
+    @GetMapping("/{id}/streaming-configuration")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询实时任务配置")
+    public TaskStreamingConfigurationResponse getStreamingConfiguration(@PathVariable UUID id) {
+        return streamingService.getConfiguration(id);
+    }
+
+    @GetMapping("/{id}/streaming-status")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询实时任务运行状态")
+    public TaskStreamingStatusResponse getStreamingStatus(@PathVariable UUID id) {
+        return streamingService.status(id);
+    }
+
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('task.create')")
-    @Operation(summary = "创建本地 SQL 任务")
+    @Operation(summary = "创建任务")
     public DataTaskResponse create(@Valid @RequestBody CreateDataTaskRequest request) {
         return service.create(request);
     }
@@ -83,6 +131,42 @@ public class DataTaskResource {
         return service.updateDefinition(id, request);
     }
 
+    @PostMapping("/{id}/actions/update-canvas-definition")
+    @PreAuthorize("hasAuthority('task.update')")
+    @Operation(summary = "整体保存 Spark Canvas 任务定义")
+    public CanvasTaskDefinitionResponse updateCanvasDefinition(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateCanvasTaskDefinitionRequest request
+    ) {
+        return canvasDefinitionService.update(id, request);
+    }
+
+    @PostMapping("/{id}/actions/update-streaming-configuration")
+    @PreAuthorize("hasAuthority('task.update')")
+    @Operation(summary = "修改实时任务配置")
+    public TaskStreamingConfigurationResponse updateStreamingConfiguration(
+            @PathVariable UUID id,
+            @Valid @RequestBody UpdateTaskStreamingConfigurationRequest request
+    ) {
+        return streamingService.updateConfiguration(id, request);
+    }
+
+    @PostMapping("/{id}/actions/start")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasAuthority('task.execute')")
+    @Operation(summary = "启动或恢复实时任务")
+    public TaskStreamingStatusResponse startStreaming(@PathVariable UUID id) {
+        return streamingService.start(id);
+    }
+
+    @PostMapping("/{id}/actions/stop")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasAuthority('task.execute')")
+    @Operation(summary = "正常停止实时任务")
+    public TaskStreamingStatusResponse stopStreaming(@PathVariable UUID id) {
+        return streamingService.stop(id);
+    }
+
     @PostMapping("/{id}/actions/validate-definition")
     @PreAuthorize("hasAuthority('task.publish')")
     @Operation(summary = "校验本地 SQL 任务定义")
@@ -92,21 +176,21 @@ public class DataTaskResource {
 
     @PostMapping("/{id}/actions/publish")
     @PreAuthorize("hasAuthority('task.publish')")
-    @Operation(summary = "发布本地 SQL 任务")
+    @Operation(summary = "发布任务")
     public DataTaskResponse publish(@PathVariable UUID id) {
         return service.publish(id);
     }
 
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('task.publish')")
-    @Operation(summary = "停用本地 SQL 任务")
+    @Operation(summary = "停用任务")
     public DataTaskResponse disable(@PathVariable UUID id) {
         return service.disable(id);
     }
 
     @PostMapping("/{id}/actions/enable")
     @PreAuthorize("hasAuthority('task.publish')")
-    @Operation(summary = "重新启用本地 SQL 任务")
+    @Operation(summary = "重新启用任务")
     public DataTaskResponse enable(@PathVariable UUID id) {
         return service.enable(id);
     }
@@ -114,7 +198,7 @@ public class DataTaskResource {
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('task.delete')")
-    @Operation(summary = "删除未发布本地 SQL 任务")
+    @Operation(summary = "删除未发布任务")
     public void delete(@PathVariable UUID id) {
         service.delete(id);
     }

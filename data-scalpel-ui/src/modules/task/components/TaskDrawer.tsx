@@ -1,33 +1,50 @@
-import { Button, Drawer, Form, Input, Space, TreeSelect } from 'antd';
+import { Button, Drawer, Form, Input, Select, Space, TreeSelect } from 'antd';
 import { useEffect } from 'react';
 import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory';
-import type { DataTask } from '../model/task';
+import { computeEngineRegistrationStateLabels, isComputeEngineSelectable, useComputeEngines } from '../../computeengine';
+import { taskTypeLabels, type DataTask, type TaskType } from '../model/task';
+
+export interface TaskDrawerValues {
+  name: string;
+  type: TaskType;
+  directoryId?: string;
+  description?: string;
+  computeEngineId?: string;
+}
 
 interface TaskDrawerProps {
   open: boolean;
   task: DataTask | null;
   directories: DirectoryTreeNode[];
   onClose: () => void;
-  onSubmit: (values: { code?: string; name: string; directoryId?: string; description?: string }) => Promise<void>;
+  onSubmit: (values: TaskDrawerValues) => Promise<void>;
 }
 
 export const TaskDrawer = ({ open, task, directories, onClose, onSubmit }: TaskDrawerProps) => {
-  const [form] = Form.useForm<{ code?: string; name: string; directoryId?: string; description?: string }>();
+  const [form] = Form.useForm<TaskDrawerValues>();
+  const taskType = Form.useWatch('type', form);
+  const canvasTask = taskType === 'SPARK_CANVAS' || taskType === 'SPARK_STREAMING_CANVAS';
+  const computeEnginesQuery = useComputeEngines(
+    { page: 0, size: 500, sort: 'name' },
+    open && canvasTask,
+  );
 
   useEffect(() => {
     if (!open) return;
     form.setFieldsValue(task ? {
       name: task.name,
+      type: task.type,
       directoryId: task.directoryId ?? undefined,
       description: task.description ?? undefined,
-    } : { code: '', name: '', directoryId: undefined, description: '' });
+      computeEngineId: task.computeEngineId ?? undefined,
+    } : { name: '', type: 'LOCAL_SQL', directoryId: undefined, description: '', computeEngineId: undefined });
   }, [form, open, task]);
 
   return (
     <Drawer
-      title={task ? '修改任务基本信息' : '新建本地 SQL 任务'}
+      title={task ? '修改任务基本信息' : '新建任务'}
       open={open}
-      width={480}
+      size={480}
       onClose={onClose}
       destroyOnHidden
       footer={<Space>
@@ -36,8 +53,33 @@ export const TaskDrawer = ({ open, task, directories, onClose, onSubmit }: TaskD
       </Space>}
     >
       <Form form={form} layout="vertical">
-        {!task && <Form.Item name="code" label="任务编码" rules={[{ required: true, message: '请输入任务编码' }, { max: 64 }]}>
-          <Input placeholder="例如 daily_order_summary" />
+        {!task && <Form.Item name="type" label="任务类型" rules={[{ required: true, message: '请选择任务类型' }]}>
+          <Select options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))} />
+        </Form.Item>}
+        {task && <Form.Item name="type" label="任务类型">
+          <Select disabled options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))} />
+        </Form.Item>}
+        {canvasTask && <Form.Item
+          name="computeEngineId"
+          label="计算引擎"
+          extra={task?.status === 'PUBLISHED' ? '已发布任务需先停用，才能更换计算引擎。' : '发布和执行前，计算引擎必须已激活且健康。'}
+        >
+          <Select
+            allowClear
+            loading={computeEnginesQuery.isFetching}
+            disabled={task?.status === 'PUBLISHED'}
+            placeholder="请选择计算引擎"
+            options={[
+              ...(computeEnginesQuery.data?.content ?? []).map((engine) => ({
+                value: engine.id,
+                label: `${engine.name} · ${computeEngineRegistrationStateLabels[engine.registrationState]}`,
+                disabled: !isComputeEngineSelectable(engine) && engine.id !== task?.computeEngineId,
+              })),
+              ...((task?.computeEngineId && !(computeEnginesQuery.data?.content ?? []).some((engine) => engine.id === task.computeEngineId))
+                ? [{ value: task.computeEngineId, label: `${task.computeEngineName ?? '已删除计算引擎'} · 当前绑定`, disabled: true }]
+                : []),
+            ]}
+          />
         </Form.Item>}
         <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }, { max: 100 }]}>
           <Input />

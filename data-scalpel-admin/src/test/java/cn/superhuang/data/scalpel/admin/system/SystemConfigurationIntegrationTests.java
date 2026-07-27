@@ -67,6 +67,14 @@ class SystemConfigurationIntegrationTests {
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.content[0].configKey").value("platform.name"))
                 .andExpect(jsonPath("$.content[0].valueType").value("STRING"));
+
+        SystemConfiguration taskEngineBaseUrl = repository.findByConfigKey("task.engine.base-url").orElseThrow();
+        assertThat(taskEngineBaseUrl.getConfigValue()).isEqualTo("http://127.0.0.1:18091");
+        assertThat(configuration("file-dataset.parsing.queue-enabled").getConfigValue()).isEqualTo("true");
+        assertThat(configuration("file-dataset.parsing.worker-concurrency").getConfigValue()).isEqualTo("2");
+        assertThat(configuration("file-dataset.parsing.max-attempts").getConfigValue()).isEqualTo("3");
+        assertThat(configuration("file-dataset.parsing.retry-base-delay-seconds").getConfigValue()).isEqualTo("30");
+        assertThat(configuration("file-dataset.parsing.history-retention-days").getConfigValue()).isEqualTo("30");
     }
 
     @Test
@@ -109,7 +117,30 @@ class SystemConfigurationIntegrationTests {
         repository.delete(integerConfiguration);
     }
 
+    @Test
+    void rejectsFileDatasetQueueConfigurationValuesOutsideDeclaredRanges() throws Exception {
+        assertRejectedValue("file-dataset.parsing.queue-enabled", "paused");
+        assertRejectedValue("file-dataset.parsing.worker-concurrency", "0");
+        assertRejectedValue("file-dataset.parsing.worker-concurrency", "17");
+        assertRejectedValue("file-dataset.parsing.max-attempts", "11");
+        assertRejectedValue("file-dataset.parsing.retry-base-delay-seconds", "0");
+        assertRejectedValue("file-dataset.parsing.history-retention-days", "3651");
+    }
+
+    private void assertRejectedValue(String configKey, String configValue) throws Exception {
+        SystemConfiguration configuration = configuration(configKey);
+        mockMvc.perform(post("/api/v1/system/configurations/{id}/actions/update", configuration.getId())
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"configValue\":\"" + configValue + "\"}"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.status").value(400));
+    }
+
     private SystemConfiguration platformName() {
-        return repository.findByConfigKey("platform.name").orElseThrow();
+        return configuration("platform.name");
+    }
+
+    private SystemConfiguration configuration(String configKey) {
+        return repository.findByConfigKey(configKey).orElseThrow();
     }
 }

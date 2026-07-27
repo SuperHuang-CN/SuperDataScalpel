@@ -2,7 +2,10 @@ import { requestJson } from '../../../shared/api/http';
 import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
+  ApiResource,
+  ApiResourceTestResult,
   ConnectionTestResult,
+  CreateApiResourceRequest,
   CreateDataSourceRequest,
   DataSource,
   DataSourceTypeDefinition,
@@ -13,6 +16,9 @@ import type {
   TablePreview,
   TableQuery,
   TestDataSourceConnectionRequest,
+  HttpApiRuntimeParameter,
+  KafkaTopic,
+  UpdateApiResourceRequest,
   UpdateDataSourceRequest,
 } from '../model/dataSource';
 
@@ -27,6 +33,10 @@ export const fetchDataSources = async (request: SearchRequest): Promise<PageResp
   const path = query ? `${DATA_SOURCE_PATH}?${query}` : DATA_SOURCE_PATH;
   return requestJson<PageResponse<DataSource>>(path);
 };
+
+export const fetchDataSource = (id: string): Promise<DataSource> => (
+  requestJson<DataSource>(`${DATA_SOURCE_PATH}/${id}`)
+);
 
 export const createDataSource = (request: CreateDataSourceRequest): Promise<DataSource> => (
   requestJson<DataSource>(DATA_SOURCE_PATH, { method: 'POST', body: JSON.stringify(request) })
@@ -51,6 +61,47 @@ export const testDraftDataSourceConnection = (
 
 export const testSavedDataSourceConnection = (id: string): Promise<ConnectionTestResult> => (
   requestJson<ConnectionTestResult>(`${DATA_SOURCE_PATH}/${id}/actions/test`, { method: 'POST' })
+);
+
+const apiResourcePath = (dataSourceId: string) => `${DATA_SOURCE_PATH}/${dataSourceId}/api-resources`;
+
+export const fetchApiResources = (dataSourceId: string): Promise<ApiResource[]> => (
+  requestJson<ApiResource[]>(apiResourcePath(dataSourceId))
+);
+
+export const fetchApiResource = (dataSourceId: string, resourceId: string): Promise<ApiResource> => (
+  requestJson<ApiResource>(`${apiResourcePath(dataSourceId)}/${resourceId}`)
+);
+
+export const createApiResource = (
+  dataSourceId: string,
+  request: CreateApiResourceRequest,
+): Promise<ApiResource> => requestJson<ApiResource>(apiResourcePath(dataSourceId), {
+  method: 'POST',
+  body: JSON.stringify(request),
+});
+
+export const updateApiResource = (
+  dataSourceId: string,
+  resourceId: string,
+  request: UpdateApiResourceRequest,
+): Promise<ApiResource> => requestJson<ApiResource>(
+  `${apiResourcePath(dataSourceId)}/${resourceId}/actions/update`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export const deleteApiResource = (dataSourceId: string, resourceId: string): Promise<void> => (
+  requestJson<void>(`${apiResourcePath(dataSourceId)}/${resourceId}/actions/delete`, { method: 'POST' })
+);
+
+export const testApiResource = (
+  dataSourceId: string,
+  resourceId: string,
+  runtimeParameters: HttpApiRuntimeParameter[],
+): Promise<ApiResourceTestResult> => requestJson<ApiResourceTestResult>(
+  `${apiResourcePath(dataSourceId)}/${resourceId}/actions/test`,
+  { method: 'POST', body: JSON.stringify({ runtimeParameters }) },
+  60_000,
 );
 
 export const fetchDataSourceNamespaces = (id: string): Promise<DataSourceNamespace[]> => (
@@ -82,4 +133,11 @@ export const fetchTablePreview = (id: string, table: TableIdentifier, limit = 50
   const searchParams = tableSearchParams(table);
   searchParams.set('limit', String(limit));
   return requestJson<TablePreview>(`${DATA_SOURCE_PATH}/${id}/table-preview?${searchParams.toString()}`);
+};
+
+export const fetchKafkaTopics = (id: string, keyword?: string): Promise<KafkaTopic[]> => {
+  const searchParams = new URLSearchParams();
+  if (keyword?.trim()) searchParams.set('keyword', keyword.trim());
+  const suffix = searchParams.size ? `?${searchParams.toString()}` : '';
+  return requestJson<KafkaTopic[]>(`${DATA_SOURCE_PATH}/${id}/kafka-topics${suffix}`);
 };

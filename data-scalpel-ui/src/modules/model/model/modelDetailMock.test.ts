@@ -2,9 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   buildMockLineage,
   filterMockModelPreviewRows,
-  filterMockRelatedTasks,
   mockModelPreviewRows,
-  mockRelatedTasks,
   normalizeModelDetailTab,
 } from './modelDetailMock';
 
@@ -16,10 +14,9 @@ describe('model detail mock interactions', () => {
     expect(normalizeModelDetailTab(null)).toBe('basic');
   });
 
-  it('filters preview rows and related tasks', () => {
+  it('filters preview rows', () => {
     expect(filterMockModelPreviewRows(mockModelPreviewRows, '政务', 'NEW').length).toBeGreaterThan(0);
     expect(filterMockModelPreviewRows(mockModelPreviewRows, undefined, 'PAID').every((row) => row.status === 'PAID')).toBe(true);
-    expect(filterMockRelatedTasks(mockRelatedTasks, '订单', 'CONSUMER').every((task) => task.relation === 'CONSUMER')).toBe(true);
   });
 
   it('builds lineage by direction and depth', () => {

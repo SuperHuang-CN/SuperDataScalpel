@@ -1,66 +1,39 @@
 import { InboxOutlined } from '@ant-design/icons';
-import { Alert, Button, Drawer, Form, Select, Space, Upload, message } from 'antd';
-import { useEffect, useState } from 'react';
+import { Alert, Button, Drawer, Space, Upload, message } from 'antd';
+import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { useReplaceFileDatasetContent } from '../hooks/useFileDatasets';
-import {
-  fileDatasetCompressionLabels,
-  fileDatasetFormatOptions,
-  inferFileDatasetCompression,
-  inferFileDatasetFormat,
-  type FileDataset,
-  type FileDatasetFormat,
-} from '../model/fileDataset';
+import { useReplaceFileDatasetFile } from '../hooks/useFileDatasets';
+import { fileDatasetAccept, type FileDataset, type FileDatasetFile } from '../model/fileDataset';
 
 interface ReplaceFileDatasetContentDrawerProps {
   fileDataset: FileDataset | null;
+  file: FileDatasetFile | null;
   open: boolean;
   onClose: () => void;
 }
 
-interface ReplaceContentFormValues {
-  format: FileDatasetFormat;
-}
-
-export const ReplaceFileDatasetContentDrawer = ({ fileDataset, open, onClose }: ReplaceFileDatasetContentDrawerProps) => {
-  const [form] = Form.useForm<ReplaceContentFormValues>();
+export const ReplaceFileDatasetContentDrawer = ({ fileDataset, file, open, onClose }: ReplaceFileDatasetContentDrawerProps) => {
   const [messageApi, messageContext] = message.useMessage();
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
-  const [fileError, setFileError] = useState<string>();
-  const replaceMutation = useReplaceFileDatasetContent();
-  const selectedCompression = selectedFile ? inferFileDatasetCompression(selectedFile.name) : null;
-
-  useEffect(() => {
-    if (!open) return;
-    form.resetFields();
-    form.setFieldsValue({ format: fileDataset?.format ?? 'CSV' });
-  }, [fileDataset, form, open]);
+  const replaceMutation = useReplaceFileDatasetFile();
 
   const close = () => {
     setSelectedFile(null);
-    setFileError(undefined);
-    form.resetFields();
     onClose();
   };
 
-  const selectFile = (file: File) => {
-    setSelectedFile(file);
-    setFileError(undefined);
-    form.setFieldValue('format', inferFileDatasetFormat(file.name));
-    return Upload.LIST_IGNORE;
-  };
-
-  const submit = async ({ format }: ReplaceContentFormValues) => {
-    if (!fileDataset || !selectedFile) {
-      setFileError('请选择新的原始文件');
-      return;
-    }
+  const submit = async () => {
+    if (!fileDataset || !file || !selectedFile) return;
     try {
-      await replaceMutation.mutateAsync({ id: fileDataset.id, format, file: selectedFile });
-      messageApi.success('文件内容已替换');
+      await replaceMutation.mutateAsync({ datasetId: fileDataset.id, fileId: file.id, file: selectedFile });
+      messageApi.success(fileDataset.type === 'GDB'
+        ? 'GDB ZIP 已替换，后台正在解包、校验并发现图层'
+        : fileDataset.type === 'SHP'
+          ? 'SHP ZIP 已替换，后台正在校验并物化组件'
+          : '文件已替换，来源表已重建并提交后台解析');
       close();
     } catch (error) {
-      messageApi.error(error instanceof ApiError ? error.message : '替换文件内容失败');
+      messageApi.error(error instanceof ApiError ? error.message : '替换文件失败');
     }
   };
 
@@ -68,42 +41,38 @@ export const ReplaceFileDatasetContentDrawer = ({ fileDataset, open, onClose }: 
     <>
       {messageContext}
       <Drawer
-        title={`替换内容 · ${fileDataset?.name ?? ''}`}
+        title={`替换文件 · ${file?.originalFileName ?? ''}`}
         open={open}
         size={520}
-        className="file-dataset-drawer"
         onClose={close}
         destroyOnHidden
-        footer={<Space><Button onClick={close}>取消</Button><Button type="primary" loading={replaceMutation.isPending} onClick={() => form.submit()}>确认替换</Button></Space>}
+        footer={<Space><Button onClick={close}>取消</Button><Button type="primary" loading={replaceMutation.isPending} disabled={!selectedFile} onClick={() => void submit()}>确认替换</Button></Space>}
       >
         <Alert
           type="warning"
           showIcon
           className="file-dataset-form-alert"
-          message="替换后原文件将被清理"
-          description="替换成功后解析状态会回到“待解析”，已配置或生成的解析信息也会失效。"
+          message="替换会硬删除旧表和 Schema"
+          description={fileDataset?.type === 'GDB'
+            ? '系统会删除旧图层和 Schema，保留新原始 ZIP，并在后台解包为不可变 GDB 目录；校验通过后自动发现图层并提交表解析。'
+            : fileDataset?.type === 'SHP'
+              ? '系统会删除旧表和 Schema，保留新原始 ZIP，并在后台规范化物化 SHP 组件；校验通过后生成一张新表并提交解析。'
+              : '系统将从新文件重新发现表并生成新的 table ID；不会保留旧表、旧 Schema 或版本，新表会使用数据集解析设置自动进入后台队列。'}
         />
-        <Form<ReplaceContentFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
-          <Form.Item label="新原始文件" required validateStatus={fileError ? 'error' : undefined} help={fileError}>
-            <Upload.Dragger
-              accept=".csv,.tsv,.txt,.json,.jsonl,.ndjson,.xls,.xlsx,.parquet,.avro,.zip,.gz"
-              maxCount={1}
-              beforeUpload={selectFile}
-              fileList={selectedFile ? [{ uid: selectedFile.name, name: selectedFile.name, status: 'done' }] : []}
-              onRemove={() => {
-                setSelectedFile(null);
-                return true;
-              }}
-            >
-              <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-              <p>点击或拖入替换文件</p>
-            </Upload.Dragger>
-          </Form.Item>
-          {selectedCompression && <Alert type="info" showIcon className="file-dataset-form-alert" message={`已识别压缩方式：${fileDatasetCompressionLabels[selectedCompression]}`} />}
-          <Form.Item label="文件格式" name="format" rules={[{ required: true, message: '请选择文件格式' }]}>
-            <Select options={fileDatasetFormatOptions} />
-          </Form.Item>
-        </Form>
+        <Upload.Dragger
+          accept={fileDataset ? fileDatasetAccept(fileDataset.type) : undefined}
+          maxCount={1}
+          beforeUpload={(nextFile) => {
+            setSelectedFile(nextFile);
+            return Upload.LIST_IGNORE;
+          }}
+          fileList={selectedFile ? [{ uid: selectedFile.name, name: selectedFile.name, status: 'done' }] : []}
+          onRemove={() => { setSelectedFile(null); return true; }}
+        >
+          <p className="ant-upload-drag-icon"><InboxOutlined /></p>
+          <p>点击或拖入同类型的新文件</p>
+          <p className="ant-upload-hint">允许：{fileDataset ? fileDatasetAccept(fileDataset.type) : '—'}</p>
+        </Upload.Dragger>
       </Drawer>
     </>
   );

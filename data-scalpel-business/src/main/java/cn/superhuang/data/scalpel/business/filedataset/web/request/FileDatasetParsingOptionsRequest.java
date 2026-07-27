@@ -20,8 +20,8 @@ import jakarta.validation.constraints.Size;
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Spreadsheet.class, name = "SPREADSHEET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Parquet.class, name = "PARQUET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Avro.class, name = "AVRO"),
-        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Shapefile.class, name = "SHAPEFILE"),
-        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.FileGdb.class, name = "FILE_GDB")
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Gdb.class, name = "GDB"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Shp.class, name = "SHP")
 })
 public sealed interface FileDatasetParsingOptionsRequest permits
         FileDatasetParsingOptionsRequest.Csv,
@@ -31,8 +31,8 @@ public sealed interface FileDatasetParsingOptionsRequest permits
         FileDatasetParsingOptionsRequest.Spreadsheet,
         FileDatasetParsingOptionsRequest.Parquet,
         FileDatasetParsingOptionsRequest.Avro,
-        FileDatasetParsingOptionsRequest.Shapefile,
-        FileDatasetParsingOptionsRequest.FileGdb {
+        FileDatasetParsingOptionsRequest.Gdb,
+        FileDatasetParsingOptionsRequest.Shp {
 
     FileDatasetParsingOptionsKind kind();
 
@@ -81,7 +81,6 @@ public sealed interface FileDatasetParsingOptionsRequest permits
     }
 
     record Spreadsheet(
-            @Size(max = 128) String sheetName,
             @NotNull @Min(0) @Max(10000) Integer headerRowIndex,
             @NotNull @Min(0) @Max(10001) Integer dataStartRowIndex
     ) implements FileDatasetParsingOptionsRequest {
@@ -105,20 +104,21 @@ public sealed interface FileDatasetParsingOptionsRequest permits
         }
     }
 
-    record Shapefile(
-            @NotBlank @Size(max = 40) String charset,
-            @Size(max = 255) String layerName
-    ) implements FileDatasetParsingOptionsRequest {
+    record Gdb() implements FileDatasetParsingOptionsRequest {
         @Override
         public FileDatasetParsingOptionsKind kind() {
-            return FileDatasetParsingOptionsKind.SHAPEFILE;
+            return FileDatasetParsingOptionsKind.GDB;
         }
     }
 
-    record FileGdb(@Size(max = 255) String layerName) implements FileDatasetParsingOptionsRequest {
+    record Shp(
+            @Size(max = 40) String dbfCharsetOverride,
+            @NotBlank @Size(max = 40) String dbfFallbackCharset
+    ) implements FileDatasetParsingOptionsRequest {
         @Override
         public FileDatasetParsingOptionsKind kind() {
-            return FileDatasetParsingOptionsKind.FILE_GDB;
+            return FileDatasetParsingOptionsKind.SHP;
         }
     }
+
 }

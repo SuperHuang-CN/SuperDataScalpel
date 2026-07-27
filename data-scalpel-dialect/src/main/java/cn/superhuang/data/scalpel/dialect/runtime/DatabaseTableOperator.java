@@ -36,6 +36,30 @@ public class DatabaseTableOperator {
         return dialect.planCreateTable(definition);
     }
 
+    public DdlPlan planCreateTable(
+            String databaseType,
+            JdbcConnectionConfig config,
+            TableDefinition definition
+    ) {
+        DatabaseDialect dialect = registry.require(databaseType);
+        requireCreateTableCapability(dialect);
+        try (Connection connection = connectionFactory.open(dialect.createConnectionSpec(config))) {
+            try {
+                return dialect.planCreateTable(connection, definition);
+            } catch (IllegalArgumentException exception) {
+                throw new DatabaseAccessException("DDL_NOT_SUPPORTED", exception.getMessage(), exception);
+            }
+        } catch (DatabaseAccessException exception) {
+            throw exception;
+        } catch (ClassNotFoundException | LinkageError exception) {
+            throw new DatabaseAccessException("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", exception);
+        } catch (IllegalArgumentException exception) {
+            throw new DatabaseAccessException("INVALID_CONNECTION_CONFIG", exception.getMessage(), exception);
+        } catch (SQLException exception) {
+            throw new DatabaseAccessException(errorCode(exception), safeMessage(exception), exception);
+        }
+    }
+
     /**
      * Reads the physical structure and lets a dialect inspect connection-scoped runtime settings
      * before returning a controlled table-change plan.
@@ -64,16 +88,22 @@ public class DatabaseTableOperator {
     public void createTable(String databaseType, JdbcConnectionConfig config, TableDefinition definition) {
         DatabaseDialect dialect = registry.require(databaseType);
         requireCreateTableCapability(dialect);
-        DdlPlan plan = dialect.planCreateTable(definition);
-        try (Connection connection = connectionFactory.open(dialect.createConnectionSpec(config));
-             Statement statement = connection.createStatement()) {
+        try (Connection connection = connectionFactory.open(dialect.createConnectionSpec(config))) {
+            DdlPlan plan;
             try {
-                statement.setQueryTimeout(20);
-            } catch (SQLException ignored) {
-                // A few JDBC drivers do not expose statement timeouts.
+                plan = dialect.planCreateTable(connection, definition);
+            } catch (IllegalArgumentException exception) {
+                throw new DatabaseAccessException("DDL_NOT_SUPPORTED", exception.getMessage(), exception);
             }
-            for (String sql : plan.statements()) {
-                statement.execute(sql);
+            try (Statement statement = connection.createStatement()) {
+                try {
+                    statement.setQueryTimeout(20);
+                } catch (SQLException ignored) {
+                    // A few JDBC drivers do not expose statement timeouts.
+                }
+                for (String sql : plan.statements()) {
+                    statement.execute(sql);
+                }
             }
         } catch (ClassNotFoundException | LinkageError exception) {
             throw new DatabaseAccessException("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", exception);

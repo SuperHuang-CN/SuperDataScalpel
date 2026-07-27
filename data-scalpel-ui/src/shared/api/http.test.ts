@@ -80,6 +80,33 @@ describe('requestJson', () => {
     });
   });
 
+  it('combines a caller AbortSignal with the internal request timeout', async () => {
+    vi.mocked(fetch).mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    }));
+    const caller = new AbortController();
+
+    const request = requestJson('/v1/task-compilations', { signal: caller.signal }, 60_000);
+    caller.abort();
+
+    await expect(request).rejects.toMatchObject({ name: 'AbortError' });
+    expect(vi.mocked(fetch).mock.calls[0][1]?.signal).not.toBe(caller.signal);
+    expect(vi.mocked(fetch).mock.calls[0][1]?.signal?.aborted).toBe(true);
+  });
+
+  it('reports the internal timeout as an API failure instead of a caller cancellation', async () => {
+    vi.mocked(fetch).mockImplementation((_input, init) => new Promise((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    }));
+
+    const request = requestJson('/v1/task-compilations', {}, 1).catch((error: unknown) => error);
+
+    await expect(request).resolves.toMatchObject({
+      name: 'ApiError',
+      message: '请求超时，请稍后重试',
+    });
+  });
+
   it('downloads protected binary content with the session token', async () => {
     saveAccessToken('session-token');
     vi.mocked(fetch).mockResolvedValue({
