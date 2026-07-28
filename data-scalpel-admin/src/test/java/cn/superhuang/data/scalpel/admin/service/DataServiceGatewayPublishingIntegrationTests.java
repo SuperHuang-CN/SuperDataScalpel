@@ -11,7 +11,7 @@ import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTableInspe
 import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTablePort;
 import cn.superhuang.data.scalpel.business.model.service.PhysicalTableState;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineClient;
-import cn.superhuang.data.scalpel.business.service.ServiceEngineManagementProperties;
+import cn.superhuang.data.scalpel.business.service.ServiceEngineCredentialCipher;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.business.service.gateway.GatewayProvider;
 import cn.superhuang.data.scalpel.business.service.gateway.repository.GatewayServiceBindingRepository;
@@ -207,6 +207,73 @@ class DataServiceGatewayPublishingIntegrationTests {
     }
 
     @Test
+    void unpublishesEveryGatewayBindingWithoutStoppingEngineAndAllowsRepublish() throws Exception {
+        ServiceFixture fixture = createServiceFixture("/open-api/v1/unpublish-" + suffix());
+
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/unpublish", fixture.serviceId()))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("只有已启用服务可以取消发布"));
+
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/enable", fixture.serviceId()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/publish", fixture.serviceId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.gatewayBindings[0].publicationStatus").value("PUBLISHED"));
+
+        recorder.events.clear();
+        int engineRemovalsBeforeUnpublish = engineClient.removeCount;
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/unpublish", fixture.serviceId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ENABLED"))
+                .andExpect(jsonPath("$.deploymentStatus").value("DEPLOYED"))
+                .andExpect(jsonPath("$.gatewayBindings").isEmpty());
+
+        assertThat(recorder.events).containsExactly("gateway-remove");
+        assertThat(engineClient.removeCount).isEqualTo(engineRemovalsBeforeUnpublish);
+
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/unpublish", fixture.serviceId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ENABLED"))
+                .andExpect(jsonPath("$.deploymentStatus").value("DEPLOYED"))
+                .andExpect(jsonPath("$.gatewayBindings").isEmpty());
+        assertThat(recorder.events).containsExactly("gateway-remove");
+
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/publish", fixture.serviceId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ENABLED"))
+                .andExpect(jsonPath("$.deploymentStatus").value("DEPLOYED"))
+                .andExpect(jsonPath("$.gatewayBindings[0].publicationStatus").value("PUBLISHED"));
+        assertThat(recorder.events).containsExactly("gateway-remove", "gateway-publish");
+    }
+
+    @Test
+    void preservesUnpublishFailureForRetryWithoutStoppingEngine() throws Exception {
+        ServiceFixture fixture = createServiceFixture("/open-api/v1/unpublish-retry-" + suffix());
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/enable", fixture.serviceId()))
+                .andExpect(status().isOk());
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/publish", fixture.serviceId()))
+                .andExpect(status().isOk());
+
+        int engineRemovalsBeforeFailure = engineClient.removeCount;
+        gateway.failRemove = true;
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/unpublish", fixture.serviceId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ENABLED"))
+                .andExpect(jsonPath("$.deploymentStatus").value("DEPLOYED"))
+                .andExpect(jsonPath("$.gatewayBindings[0].publicationStatus").value("REMOVE_FAILED"))
+                .andExpect(jsonPath("$.gatewayBindings[0].lastError").value("模拟网关撤回失败"));
+        assertThat(engineClient.removeCount).isEqualTo(engineRemovalsBeforeFailure);
+
+        gateway.failRemove = false;
+        mockMvc.perform(post("/api/v1/data-services/{id}/actions/unpublish", fixture.serviceId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("ENABLED"))
+                .andExpect(jsonPath("$.deploymentStatus").value("DEPLOYED"))
+                .andExpect(jsonPath("$.gatewayBindings").isEmpty());
+        assertThat(engineClient.removeCount).isEqualTo(engineRemovalsBeforeFailure);
+    }
+
+    @Test
     void preservesGatewayFailuresForRetryAndDoesNotStopEngineWhenWithdrawalFails() throws Exception {
         ServiceFixture fixture = createServiceFixture("/open-api/v1/retry-" + suffix());
         mockMvc.perform(post("/api/v1/data-services/{id}/actions/enable", fixture.serviceId()))
@@ -388,6 +455,7 @@ class DataServiceGatewayPublishingIntegrationTests {
                                   "name":"网关发布 Engine",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
+                                  "managementToken":"engine-test-token",
                                   "enabled":true
                                 }
                                 """.formatted(code)))
@@ -451,10 +519,10 @@ class DataServiceGatewayPublishingIntegrationTests {
         @Bean
         @Primary
         FakeServiceEngineClient fakeServiceEngineClient(
-                ServiceEngineManagementProperties properties,
+                ServiceEngineCredentialCipher credentialCipher,
                 OperationRecorder recorder
         ) {
-            return new FakeServiceEngineClient(properties, recorder);
+            return new FakeServiceEngineClient(credentialCipher, recorder);
         }
 
         @Bean
@@ -596,8 +664,8 @@ class DataServiceGatewayPublishingIntegrationTests {
         private final List<Boolean> transactionStates = new ArrayList<>();
         private int removeCount;
 
-        FakeServiceEngineClient(ServiceEngineManagementProperties properties, OperationRecorder recorder) {
-            super(properties);
+        FakeServiceEngineClient(ServiceEngineCredentialCipher credentialCipher, OperationRecorder recorder) {
+            super(credentialCipher);
             this.recorder = recorder;
         }
 

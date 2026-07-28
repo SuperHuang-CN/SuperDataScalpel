@@ -6,7 +6,7 @@ import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
 import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineClient;
-import cn.superhuang.data.scalpel.business.service.ServiceEngineManagementProperties;
+import cn.superhuang.data.scalpel.business.service.ServiceEngineCredentialCipher;
 import cn.superhuang.data.scalpel.business.service.consumer.domain.ApiConsumer;
 import cn.superhuang.data.scalpel.business.service.consumer.repository.ApiConsumerRepository;
 import cn.superhuang.data.scalpel.business.service.consumer.subscription.domain.ApiServiceSubscription;
@@ -455,6 +455,7 @@ class DataServiceIntegrationTests {
                                   "name":"SQL 测试 Engine",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
+                                  "managementToken":"engine-test-token",
                                   "enabled":true
                                 }
                                 """.formatted(code)))
@@ -547,8 +548,8 @@ class DataServiceIntegrationTests {
 
         @Bean
         @Primary
-        ServiceEngineClient serviceEngineClient(ServiceEngineManagementProperties properties) {
-            return new ServiceEngineClient(properties) {
+        ServiceEngineClient serviceEngineClient(ServiceEngineCredentialCipher credentialCipher) {
+            return new ServiceEngineClient(credentialCipher) {
                 @Override
                 public ServiceEngineInfoResponse info(ServiceEngine engine) {
                     return new ServiceEngineInfoResponse(engine.getCode(), List.of("POSTGRESQL", "MYSQL"));

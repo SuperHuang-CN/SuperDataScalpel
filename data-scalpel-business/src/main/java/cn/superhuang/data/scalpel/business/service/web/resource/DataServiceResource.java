@@ -83,6 +83,12 @@ public class DataServiceResource {
         return service.reconcileGateway(id);
     }
 
+    @PostMapping("/{id}/actions/unpublish")
+    @PreAuthorize("hasAuthority('service.publish')")
+    public DataServiceDetailResponse unpublish(@PathVariable UUID id) {
+        return service.unpublish(id);
+    }
+
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('service.publish')")
     public DataServiceDetailResponse disable(@PathVariable UUID id) {

@@ -4,12 +4,13 @@ import {
   CopyOutlined,
   ExperimentOutlined,
   PlayCircleOutlined,
+  RollbackOutlined,
   SaveOutlined,
   StopOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import type { FormProps } from 'antd';
-import { Alert, Button, Form, Modal, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
+import { Alert, Button, Form, Modal, Popconfirm, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   useBlocker,
@@ -31,6 +32,7 @@ import {
   useEnableDataService,
   usePublishDataService,
   useTestSqlDataService,
+  useUnpublishDataService,
   useUpdateDataService,
 } from '../hooks/useDataServices';
 import {
@@ -135,6 +137,7 @@ export const DataServiceEditorPage = () => {
   const testMutation = useTestSqlDataService();
   const enableMutation = useEnableDataService();
   const publishMutation = usePublishDataService();
+  const unpublishMutation = useUnpublishDataService();
   const disableMutation = useDisableDataService();
   const cleanupMutation = useCleanupDataServiceDeployment();
   const currentFingerprint = useMemo(
@@ -322,6 +325,29 @@ export const DataServiceEditorPage = () => {
     }
   };
 
+  const unpublish = async () => {
+    if (!id) return;
+    setOperationError(null);
+    try {
+      const response = await unpublishMutation.mutateAsync(id);
+      if (response.status === 'ENABLED'
+          && response.deploymentStatus === 'DEPLOYED'
+          && response.gatewayBindings.length === 0) {
+        messageApi.success('已取消网关发布，Service Engine 保持运行');
+      } else {
+        const errorMessage = gatewayOperationError(response) || '网关未确认取消发布结果';
+        setOperationError(errorMessage);
+        messageApi.error(errorMessage);
+      }
+      await refreshDetail();
+    } catch (error) {
+      const errorMessage = problemMessage(error, '取消网关发布失败');
+      setOperationError(errorMessage);
+      messageApi.error(errorMessage);
+      await refreshDetail();
+    }
+  };
+
   const cleanup = async () => {
     if (!id) return;
     setOperationError(null);
@@ -412,7 +438,30 @@ export const DataServiceEditorPage = () => {
           {!creating && canPublish && mode === 'DEPLOYMENT_LOCKED' && lockedForRetry && <Button type="primary" icon={<PlayCircleOutlined />} loading={enableMutation.isPending} onClick={() => void enable()}>重试启用</Button>}
           {!creating && canPublish && mode === 'DEPLOYMENT_LOCKED' && lockedForRetry && <Button icon={<ClearOutlined />} loading={cleanupMutation.isPending} onClick={() => void cleanup()}>清理部署</Button>}
           {!creating && canPublish && mode === 'READ_ONLY' && detail?.status === 'ENABLED' && <Button type="primary" icon={<UploadOutlined />} loading={publishMutation.isPending} onClick={() => void publish()}>{currentGatewayBinding ? '重新发布到网关' : '发布到网关'}</Button>}
-          {!creating && canPublish && mode === 'READ_ONLY' && detail?.status === 'ENABLED' && <Button danger icon={<StopOutlined />} loading={disableMutation.isPending} onClick={() => void disable()}>停用</Button>}
+          {!creating && canPublish && mode === 'READ_ONLY' && detail?.status === 'ENABLED' && detail.gatewayBindings.length > 0 && (
+            <Popconfirm
+              title="取消发布到网关？"
+              description="调用方将无法继续通过网关访问；Service Engine、消费者订阅和凭证保持不变。"
+              okText="取消发布"
+              cancelText="返回"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => void unpublish()}
+            >
+              <Button danger icon={<RollbackOutlined />} loading={unpublishMutation.isPending}>取消发布</Button>
+            </Popconfirm>
+          )}
+          {!creating && canPublish && mode === 'READ_ONLY' && detail?.status === 'ENABLED' && (
+            <Popconfirm
+              title="停用数据服务？"
+              description="将先从所有网关撤回服务，再从 Service Engine 移除；停用成功后才能修改定义。"
+              okText="停用"
+              cancelText="返回"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => void disable()}
+            >
+              <Button danger icon={<StopOutlined />} loading={disableMutation.isPending}>停用</Button>
+            </Popconfirm>
+          )}
           {!creating && currentGatewayBinding && <Button icon={<CopyOutlined />} onClick={() => void copyCurl()}>复制网关 cURL</Button>}
         </Space>
       </header>

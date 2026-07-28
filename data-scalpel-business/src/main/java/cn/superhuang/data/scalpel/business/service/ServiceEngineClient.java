@@ -19,14 +19,19 @@ import java.util.UUID;
 @Component
 public class ServiceEngineClient {
 
-    private final ServiceEngineManagementProperties properties;
+    private final ServiceEngineCredentialCipher credentialCipher;
 
-    public ServiceEngineClient(ServiceEngineManagementProperties properties) {
-        this.properties = properties;
+    public ServiceEngineClient(ServiceEngineCredentialCipher credentialCipher) {
+        this.credentialCipher = credentialCipher;
     }
 
     public ServiceEngineInfoResponse info(ServiceEngine engine) {
         return client(engine).get().uri("/internal/v1/info").retrieve().body(ServiceEngineInfoResponse.class);
+    }
+
+    public ServiceEngineInfoResponse info(String adminUrl, String managementToken) {
+        return client(adminUrl, managementToken).get().uri("/internal/v1/info")
+                .retrieve().body(ServiceEngineInfoResponse.class);
     }
 
     public ServiceDeploymentResponse deploy(ServiceEngine engine, ServiceDeploymentRequest request) {
@@ -61,10 +66,17 @@ public class ServiceEngineClient {
     }
 
     private RestClient client(ServiceEngine engine) {
+        return client(
+                engine.getAdminUrl(),
+                credentialCipher.decrypt(engine.getManagementTokenCiphertext())
+        );
+    }
+
+    private RestClient client(String adminUrl, String managementToken) {
         try {
             return RestClient.builder()
-                    .baseUrl(engine.getAdminUrl())
-                    .defaultHeader("Authorization", "Bearer " + properties.managementToken())
+                    .baseUrl(adminUrl)
+                    .defaultHeader("Authorization", "Bearer " + managementToken)
                     .build();
         } catch (RestClientException exception) {
             throw new IllegalStateException("无法创建服务引擎调用：" + exception.getMessage(), exception);

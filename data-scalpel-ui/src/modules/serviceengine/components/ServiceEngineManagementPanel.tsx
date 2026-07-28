@@ -54,7 +54,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
 
   const test = async (engine: ServiceEngine) => {
     try {
-      const result = await testMutation.mutateAsync(engine.id);
+      const result = await testMutation.mutateAsync({ id: engine.id });
       messageApi.success(`${engine.name} 连接成功，支持：${result.databaseTypes.join('、') || '无'}`);
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '测试 Service Engine 失败');
@@ -75,7 +75,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     { title: '编码', dataIndex: 'code', width: 160, ellipsis: true, render: (value: string) => <code>{value}</code> },
     { title: '管理地址', dataIndex: 'adminUrl', width: 275, ellipsis: true },
     { title: '公共地址', dataIndex: 'publicUrl', width: 275, ellipsis: true },
-    { title: '状态', dataIndex: 'enabled', width: 90, render: (value: boolean) => <Tag color={value ? 'success' : 'default'}>{value ? '启用' : '停用'}</Tag> },
+    { title: '使用状态', dataIndex: 'enabled', width: 100, render: (value: boolean) => <Tag color={value ? 'success' : 'default'}>{value ? '启用' : '停用'}</Tag> },
     { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: (value: string) => formatDateTime(value) },
     {
       title: '操作', key: 'action', width: 156, fixed: 'right',
@@ -83,7 +83,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         <Space size={2}>
           <Tooltip title="管理数据源"><Button type="text" size="small" aria-label={`管理${engine.name}数据源`} icon={<DatabaseOutlined />} onClick={() => setDataSourceEngine(engine)} /></Tooltip>
           {canUpdate && <Tooltip title="修改"><Button type="text" size="small" aria-label={`修改${engine.name}`} icon={<EditOutlined />} onClick={() => setEditingEngine(engine)} /></Tooltip>}
-          {canTest && <Tooltip title="测试连接"><Button type="text" size="small" aria-label={`测试${engine.name}`} icon={<ApiOutlined />} loading={testMutation.isPending && testMutation.variables === engine.id} onClick={() => void test(engine)} /></Tooltip>}
+          {canTest && <Tooltip title="测试连接"><Button type="text" size="small" aria-label={`测试${engine.name}`} icon={<ApiOutlined />} loading={testMutation.isPending && testMutation.variables?.id === engine.id} onClick={() => void test(engine)} /></Tooltip>}
           {canDelete && <Popconfirm title="删除 Service Engine" description={`确认删除“${engine.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => remove(engine)}><Tooltip title="删除"><Button type="text" size="small" danger aria-label={`删除${engine.name}`} icon={<DeleteOutlined />} /></Tooltip></Popconfirm>}
         </Space>
       ),
@@ -97,7 +97,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         <div className="management-toolbar">
           <Form<ServiceEngineFilters> form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
             <Form.Item name="keyword" label="名称/编码"><Input allowClear placeholder="按名称或编码筛选" className="data-source-keyword-input" /></Form.Item>
-            <Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部" className="data-source-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
+            <Form.Item name="enabled" label="使用状态"><Select allowClear placeholder="全部" className="data-source-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
           </Form>
           <Space size={4} className="management-toolbar-actions">
             <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
@@ -114,7 +114,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
           onChange={(pagination) => { setPage((pagination.current ?? 1) - 1); setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE); }}
         />
       </Card>
-      <ServiceEngineDrawer open={createDrawerOpen || Boolean(editingEngine)} engine={editingEngine} onClose={closeDrawer} />
+      <ServiceEngineDrawer open={createDrawerOpen || Boolean(editingEngine)} engine={editingEngine} canTest={canTest} onClose={closeDrawer} />
       <ServiceEngineDataSourceDrawer open={Boolean(dataSourceEngine)} engine={dataSourceEngine} canUpdate={canUpdate} canTest={canTest} canViewDataSources={canViewDataSources} onClose={() => setDataSourceEngine(null)} />
     </>
   );

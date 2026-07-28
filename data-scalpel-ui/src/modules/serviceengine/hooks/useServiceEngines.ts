@@ -8,11 +8,17 @@ import {
   fetchServiceEngines,
   fetchServiceEngineDataSourceRegistrations,
   syncServiceEngineDataSourceRegistration,
+  testNewServiceEngine,
   testServiceEngine,
   testServiceEngineDataSourceRegistration,
   updateServiceEngine,
 } from '../api/serviceEngineApi';
-import type { CreateServiceEngineRequest, UpdateServiceEngineRequest } from '../model/serviceEngine';
+import type {
+  CreateServiceEngineRequest,
+  TestServiceEngineRequest,
+  TestStoredServiceEngineRequest,
+  UpdateServiceEngineRequest,
+} from '../model/serviceEngine';
 
 const serviceEnginesQueryKey = 'service-engines';
 const serviceEngineDataSourcesQueryKey = 'service-engine-data-sources';
@@ -43,7 +49,15 @@ export const useUpdateServiceEngine = () => {
   });
 };
 
-export const useTestServiceEngine = () => useMutation({ mutationFn: testServiceEngine });
+export const useTestNewServiceEngine = () => useMutation({
+  mutationFn: (request: TestServiceEngineRequest) => testNewServiceEngine(request),
+});
+
+export const useTestServiceEngine = () => useMutation({
+  mutationFn: ({ id, request }: { id: string; request?: TestStoredServiceEngineRequest }) => (
+    testServiceEngine(id, request)
+  ),
+});
 
 export const useDeleteServiceEngine = () => {
   const queryClient = useQueryClient();

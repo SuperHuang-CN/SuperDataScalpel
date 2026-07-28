@@ -79,7 +79,7 @@ data-scalpel:
       max-preview-geometry-points-per-feature: ${DATASCALPEL_SHP_MAX_PREVIEW_GEOMETRY_POINTS_PER_FEATURE:100000}
       max-preview-total-geometry-points: ${DATASCALPEL_SHP_MAX_PREVIEW_TOTAL_GEOMETRY_POINTS:200000}
   service-engine:
-    management-token: ${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:change-me-engine-management-token}
+    credential-key: ${DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY:}
   service-gateway:
     provider: ${DATASCALPEL_SERVICE_GATEWAY_PROVIDER:none}
     kong:

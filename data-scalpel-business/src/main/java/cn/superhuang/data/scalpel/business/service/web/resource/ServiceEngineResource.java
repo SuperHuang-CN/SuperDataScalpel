@@ -2,6 +2,8 @@ package cn.superhuang.data.scalpel.business.service.web.resource;
 
 import cn.superhuang.data.scalpel.business.service.ServiceEngineManagementService;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateServiceEngineRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.TestServiceEngineRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.TestStoredServiceEngineRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateServiceEngineRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineTestResponse;
@@ -59,8 +61,17 @@ public class ServiceEngineResource {
 
     @PostMapping("/{id}/actions/test")
     @PreAuthorize("hasAuthority('service.engine.test')")
-    public ServiceEngineTestResponse test(@PathVariable UUID id) {
-        return service.test(id);
+    public ServiceEngineTestResponse test(
+            @PathVariable UUID id,
+            @Valid @RequestBody(required = false) TestStoredServiceEngineRequest request
+    ) {
+        return service.test(id, request);
+    }
+
+    @PostMapping("/actions/test")
+    @PreAuthorize("hasAuthority('service.engine.test')")
+    public ServiceEngineTestResponse test(@Valid @RequestBody TestServiceEngineRequest request) {
+        return service.test(request);
     }
 
     @PostMapping("/{id}/actions/delete")

@@ -314,6 +314,17 @@ public class DataServiceManagementService {
         ));
     }
 
+    public DataServiceDetailResponse unpublish(UUID id) {
+        gatewayPublicationService.unpublish(id);
+        return requireTransactionResult(readTransactionTemplate.execute(
+                status -> detail(
+                        requireService(id),
+                        deploymentRepository.findByDataServiceId(id).orElse(null),
+                        gatewayBindingRepository.findAllByDataServiceId(id)
+                )
+        ));
+    }
+
     public DataServiceDetailResponse disable(UUID id) {
         Optional<DataServiceGatewayPublicationService.EngineDisablePreparation> preparation =
                 gatewayPublicationService.prepareDisable(id);

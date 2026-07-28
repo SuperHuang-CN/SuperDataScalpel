@@ -7,6 +7,8 @@ import type {
   ServiceEngineDataSourceRegistration,
   ServiceEngineDataSourceTestResult,
   ServiceEngineTestResult,
+  TestServiceEngineRequest,
+  TestStoredServiceEngineRequest,
   UpdateServiceEngineRequest,
 } from '../model/serviceEngine';
 
@@ -30,8 +32,21 @@ export const updateServiceEngine = (id: string, request: UpdateServiceEngineRequ
   requestJson<ServiceEngine>(`${SERVICE_ENGINE_PATH}/${id}/actions/update`, { method: 'POST', body: JSON.stringify(request) })
 );
 
-export const testServiceEngine = (id: string): Promise<ServiceEngineTestResult> => (
-  requestJson<ServiceEngineTestResult>(`${SERVICE_ENGINE_PATH}/${id}/actions/test`, { method: 'POST' })
+export const testNewServiceEngine = (request: TestServiceEngineRequest): Promise<ServiceEngineTestResult> => (
+  requestJson<ServiceEngineTestResult>(`${SERVICE_ENGINE_PATH}/actions/test`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+);
+
+export const testServiceEngine = (
+  id: string,
+  request?: TestStoredServiceEngineRequest,
+): Promise<ServiceEngineTestResult> => (
+  requestJson<ServiceEngineTestResult>(`${SERVICE_ENGINE_PATH}/${id}/actions/test`, {
+    method: 'POST',
+    body: request ? JSON.stringify(request) : undefined,
+  })
 );
 
 export const deleteServiceEngine = (id: string): Promise<void> => (

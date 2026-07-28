@@ -11,6 +11,7 @@ public record ServiceEngineResponse(
         String name,
         String adminUrl,
         String publicUrl,
+        boolean managementTokenConfigured,
         boolean enabled,
         String description,
         Instant createdAt,
@@ -20,6 +21,7 @@ public record ServiceEngineResponse(
     public static ServiceEngineResponse from(ServiceEngine engine) {
         return new ServiceEngineResponse(
                 engine.getId(), engine.getCode(), engine.getName(), engine.getAdminUrl(), engine.getPublicUrl(),
+                engine.getManagementTokenCiphertext() != null && !engine.getManagementTokenCiphertext().isBlank(),
                 engine.isEnabled(), engine.getDescription(), engine.getCreatedAt(), engine.getUpdatedAt()
         );
     }

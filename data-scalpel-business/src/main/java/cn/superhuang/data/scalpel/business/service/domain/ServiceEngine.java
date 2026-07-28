@@ -28,6 +28,9 @@ public class ServiceEngine extends BaseEntity {
     @Column(name = "public_url", nullable = false, length = 500)
     private String publicUrl;
 
+    @Column(name = "management_token_ciphertext", nullable = false, length = 8192)
+    private String managementTokenCiphertext;
+
     @Column(nullable = false)
     private boolean enabled;
 
@@ -37,9 +40,17 @@ public class ServiceEngine extends BaseEntity {
     protected ServiceEngine() {
     }
 
-    private ServiceEngine(String code, String name, String adminUrl, String publicUrl, boolean enabled, String description) {
+    private ServiceEngine(
+            String code,
+            String name,
+            String adminUrl,
+            String publicUrl,
+            String managementTokenCiphertext,
+            boolean enabled,
+            String description
+    ) {
         this.code = normalizeCode(code);
-        update(name, adminUrl, publicUrl, enabled, description);
+        update(name, adminUrl, publicUrl, managementTokenCiphertext, enabled, description);
     }
 
     public static ServiceEngine create(
@@ -47,16 +58,27 @@ public class ServiceEngine extends BaseEntity {
             String name,
             String adminUrl,
             String publicUrl,
+            String managementTokenCiphertext,
             boolean enabled,
             String description
     ) {
-        return new ServiceEngine(code, name, adminUrl, publicUrl, enabled, description);
+        return new ServiceEngine(
+                code, name, adminUrl, publicUrl, managementTokenCiphertext, enabled, description
+        );
     }
 
-    public void update(String name, String adminUrl, String publicUrl, boolean enabled, String description) {
+    public void update(
+            String name,
+            String adminUrl,
+            String publicUrl,
+            String managementTokenCiphertext,
+            boolean enabled,
+            String description
+    ) {
         this.name = required(name, "名称");
-        this.adminUrl = normalizeUrl(adminUrl, "管理地址");
+        this.adminUrl = normalizeAdminUrl(adminUrl);
         this.publicUrl = normalizeUrl(publicUrl, "公网地址");
+        this.managementTokenCiphertext = required(managementTokenCiphertext, "Management Token 密文");
         this.enabled = enabled;
         this.description = optional(description);
     }
@@ -77,6 +99,10 @@ public class ServiceEngine extends BaseEntity {
         return publicUrl;
     }
 
+    public String getManagementTokenCiphertext() {
+        return managementTokenCiphertext;
+    }
+
     public boolean isEnabled() {
         return enabled;
     }
@@ -87,6 +113,10 @@ public class ServiceEngine extends BaseEntity {
 
     private static String normalizeCode(String value) {
         return required(value, "编码").toLowerCase(Locale.ROOT);
+    }
+
+    public static String normalizeAdminUrl(String value) {
+        return normalizeUrl(value, "管理地址");
     }
 
     private static String normalizeUrl(String value, String label) {

@@ -51,6 +51,10 @@ export const reconcileDataServiceGateway = (id: string): Promise<DataServiceDeta
   requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/reconcile-gateway`, { method: 'POST' })
 );
 
+export const unpublishDataService = (id: string): Promise<DataServiceDetail> => (
+  requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/unpublish`, { method: 'POST' })
+);
+
 export const disableDataService = (id: string): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/disable`, { method: 'POST' })
 );

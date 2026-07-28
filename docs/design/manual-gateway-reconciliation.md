@@ -22,7 +22,7 @@
 
 | 对象 | 对账接口 | 显式修复动作 |
 |---|---|---|
-| 数据服务 | `POST /api/v1/data-services/{id}/actions/reconcile-gateway` | `actions/publish` |
+| 数据服务 | `POST /api/v1/data-services/{id}/actions/reconcile-gateway` | 期望存在时 `actions/publish`；期望撤回或清理残留时 `actions/unpublish` |
 | API Consumer | `POST /api/v1/api-consumers/{id}/actions/reconcile-gateway` | `actions/sync` |
 | API Key | `POST /api/v1/api-consumers/{consumerId}/credentials/{credentialId}/actions/reconcile-gateway` | `actions/rotate` |
 | 服务订阅 | `POST /api/v1/api-service-subscriptions/{id}/actions/reconcile-gateway` | `actions/sync`；撤回中的订阅继续使用 `actions/revoke` |
@@ -61,7 +61,7 @@ API Key 明文从不在 DataScalpel 中持久化。本地只保存 SHA-256 摘�
 - `LOCAL_BINDING_MISSING`：检查子资源所需的本地 Consumer 或服务 Binding 缺失；
 - `SECRET_MISMATCH`：API Key 明文的摘要与本地摘要不同。
 
-发布、同步、轮换、授权或撤回动作开始时，旧对账结论失效并恢复为 `NOT_CHECKED`。这些动作本身不会伪装成一次手动对账。
+发布、取消发布、同步、轮换、授权或撤回动作开始时，旧对账结论失效并恢复为 `NOT_CHECKED`。这些动作本身不会伪装成一次手动对账。
 
 ## 4. 事务和并发
 
@@ -71,7 +71,7 @@ API Key 明文从不在 DataScalpel 中持久化。本地只保存 SHA-256 摘�
 2. 事务外按 Provider 调用只读 `inspect`；
 3. 短事务重新锁定 Binding，仅当 `operationId` 仍匹配时写入 `IN_SYNC`、`DRIFTED` 或 `CHECK_FAILED`。
 
-如果检查期间用户执行了新的发布、同步、轮换或撤回，新的业务动作会清除旧对账令牌；迟到的检查结果因此被忽略，不会覆盖新状态。
+如果检查期间用户执行了新的发布、取消发布、同步、轮换或撤回，新的业务动作会清除旧对账令牌；迟到的检查结果因此被忽略，不会覆盖新状态。
 
 Provider 调用异常记录为 `CHECK_FAILED`，原 `publicationStatus`、`syncStatus`、Credential `status` 和 Subscription `status` 均保持不变。
 
@@ -107,7 +107,7 @@ Kong OSS 3.9 的 Service 插件列表可能忽略 `name` 查询参数，因此�
 
 - “立即对账”是独立行级操作，并显示行级 loading；
 - 发现漂移后不自动调用修复接口；
-- 数据服务继续使用“重新发布到网关”修复；
+- 数据服务期望远端存在时使用“重新发布到网关”修复，期望远端不存在或需要清理残留时使用“取消发布”修复；
 - Consumer 继续使用“同步到网关”修复；
 - Subscription 根据业务意图使用“同步授权”或“撤回”修复；
 - API Key 的 `REMOTE_MISSING` 和 `SECRET_MISMATCH` 明确提示“轮换并重新同步，无法恢复原密钥”。

@@ -11,7 +11,7 @@ import {
 } from '@ant-design/icons';
 import { Dnd, Graph, History, Keyboard, MiniMap, Selection, Shape, Snapline, Transform } from '@antv/x6';
 import type { Node } from '@antv/x6';
-import { Button, Divider, List, Modal, Space, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, List, Modal, Space, Tag, Tooltip, Typography, message } from 'antd';
 import {
   useCallback,
   useEffect,
@@ -35,6 +35,7 @@ import {
   requestCanvasNodeDeletion,
 } from './canvasNodeDeletion';
 import { canvasNodePorts } from './canvasPorts';
+import { canvasNodeCenterPlacement } from './canvasNodePlacement';
 import { canvasNodeTemplate, canvasNodeTemplates, registerCanvasNodes, type CanvasNodeTemplate } from './canvasRegistry';
 import {
   loadCanvasDefinition,
@@ -56,6 +57,7 @@ import { taskCompilationValidation } from './taskCompilationTypes';
 import { CanvasCompilationMask } from './components/CanvasCompilationMask';
 import { CanvasDefinitionModal } from './components/CanvasDefinitionModal';
 import { CanvasNodeInspector, type CanvasNodeInspectorHandle } from './components/CanvasNodeInspector';
+import { CanvasNodePalette } from './components/CanvasNodePalette';
 import { useCanvasMetadataSnapshot } from './useCanvasMetadataSnapshot';
 import {
   isCanvasTaskCompilationBlocking,
@@ -276,10 +278,7 @@ export const CanvasDesigner = ({
   const [applyingInspector, setApplyingInspector] = useState(false);
   const [validationRequestVersion, setValidationRequestVersion] = useState(0);
   const [definition, setDefinition] = useState<CanvasDefinition>(initialDefinition);
-  const availableTemplates = useMemo(
-    () => canvasNodeTemplates.filter((template) => template.supportedModes.includes(executionMode)),
-    [executionMode],
-  );
+  const [activePaletteCategory, setActivePaletteCategory] = useState<CanvasNodeCategory | null>(null);
   const metadata = useCanvasMetadataSnapshot(definition);
   const taskCompilation = useCanvasTaskCompilation({
     definition,
@@ -493,7 +492,14 @@ export const CanvasDesigner = ({
     graph.on('edge:added', ({ edge }) => styleCanvasEdge(edge));
     graph.on('edge:connected', refresh);
     graph.on('edge:removed', refresh);
-    graph.on('node:added', refresh);
+    graph.on('node:added', ({ node, options }) => {
+      refresh();
+      if (suspendedRef.current || !options.stencil) return;
+      queueMicrotask(() => {
+        setActivePaletteCategory(null);
+        selectInspectorNode(node.id);
+      });
+    });
     graph.on('node:change:position', refresh);
     graph.on('node:change:size', refresh);
     graph.on('node:change:data', ({ options }) => {
@@ -509,10 +515,14 @@ export const CanvasDesigner = ({
       refresh();
     });
     graph.on('node:click', ({ node }) => {
+      setActivePaletteCategory(null);
       if (selectedNodeIdRef.current === node.id) return;
       requestInspectorExit(() => selectInspectorNode(node.id));
     });
-    graph.on('blank:click', () => requestInspectorExit(closeInspector));
+    graph.on('blank:click', () => {
+      setActivePaletteCategory(null);
+      requestInspectorExit(closeInspector);
+    });
 
     suspendedRef.current = true;
     loadCanvasDefinition(graph, initialDefinitionRef.current);
@@ -561,6 +571,35 @@ export const CanvasDesigner = ({
     dnd.start(createNode(graph, template), event.nativeEvent);
   };
 
+  const addNodeAtViewportCenter = (template: CanvasNodeTemplate) => {
+    requestInspectorExit(() => {
+      const graph = graphRef.current;
+      const container = graphContainerRef.current;
+      if (!graph || !container) return;
+
+      const node = createNode(graph, template);
+      const containerBounds = container.getBoundingClientRect();
+      const viewportCenter = graph.clientToLocal(
+        containerBounds.left + containerBounds.width / 2,
+        containerBounds.top + containerBounds.height / 2,
+      );
+      const position = canvasNodeCenterPlacement({
+        viewportCenter,
+        nodeSize: { width: template.width, height: template.height },
+        gridSize: graph.getGridSize(),
+        occupiedBounds: graph.getNodes().map((existingNode) => existingNode.getBBox()),
+      });
+      node.position(position.x, position.y);
+      graph.addNode(node, { canvasPaletteAdd: true });
+      setActivePaletteCategory(null);
+      selectInspectorNode(node.id);
+    });
+  };
+
+  const handleBlockedNodeDrag = () => {
+    requestInspectorExit(() => undefined);
+  };
+
   const applyNodeConfiguration = (update: CanvasNodeConfigurationUpdate) => {
     const graphNode = graphRef.current?.getCellById(update.id);
     if (!graphNode?.isNode()) return;
@@ -581,6 +620,7 @@ export const CanvasDesigner = ({
     suspendedRef.current = true;
     selectedNodeIdRef.current = undefined;
     setSelectedNodeId(undefined);
+    setActivePaletteCategory(null);
     updateInspectorDirty(false);
     setInspectorResetVersion((current) => current + 1);
     replaceCanvasDefinition(graph, nextDefinition);
@@ -711,33 +751,19 @@ export const CanvasDesigner = ({
       </div>
 
       <div className="canvas-workspace">
-        <aside className="canvas-palette" ref={paletteRef} aria-label="可用节点">
-          <Typography.Text strong>可用节点</Typography.Text>
-          <Divider />
-          <Space orientation="vertical" size={8} className="canvas-palette-list">
-            {availableTemplates.map((template) => (
-              <Button
-                key={template.type}
-                block
-                className="canvas-palette-item"
-                onMouseDown={(event) => startNodeDrag(event, template)}
-              >
-                {executionMode === 'STREAMING' && template.type === CanvasNodeType.JdbcInput
-                  ? 'JDBC 静态维表'
-                  : template.label}
-              </Button>
-            ))}
-          </Space>
-          <Typography.Paragraph type="secondary" className="canvas-palette-tip">
-            拖动节点到画布，通过连线传递以表名为 Key 的数据表集合。
-          </Typography.Paragraph>
-          <Typography.Paragraph type="secondary" className="canvas-palette-tip canvas-operation-tip">
-            空白处拖动可平移；纵向滚轮可缩放，横向滑动可平移；按住 Shift 拖动可框选。
-          </Typography.Paragraph>
-        </aside>
-
         <div className={`canvas-stage${definition.nodes.length === 0 ? ' canvas-stage-empty' : ''}`}>
           <div className="canvas-graph" ref={graphContainerRef} aria-label="任务编排画布" />
+          <CanvasNodePalette
+            ref={paletteRef}
+            templates={canvasNodeTemplates}
+            executionMode={executionMode}
+            activeCategory={activePaletteCategory}
+            inspectorDirty={inspectorDirty}
+            onActiveCategoryChange={setActivePaletteCategory}
+            onAddNode={addNodeAtViewportCenter}
+            onStartNodeDrag={startNodeDrag}
+            onBlockedDrag={handleBlockedNodeDrag}
+          />
           <div className="canvas-navigation">
             <div className="canvas-minimap" ref={minimapContainerRef} aria-label="画布鹰眼图" />
             <div className="canvas-navigation-toolbar" role="toolbar" aria-label="画布视图控制">

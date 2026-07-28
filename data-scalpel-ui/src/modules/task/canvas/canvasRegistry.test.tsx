@@ -169,6 +169,8 @@ describe('CanvasNodeView', () => {
   it('declares a non-empty execution mode set for every registered node', () => {
     expect(canvasNodeTemplates).toHaveLength(11);
     expect(canvasNodeTemplates.every((template) => template.supportedModes.length > 0)).toBe(true);
+    expect(canvasNodeTemplates.every((template) => template.description.length > 0)).toBe(true);
+    expect(canvasNodeTemplates.every((template) => template.searchKeywords.length > 0)).toBe(true);
     expect(canvasNodeTemplates
       .filter((template) => template.supportedModes.includes('STREAMING'))
       .map((template) => template.type))

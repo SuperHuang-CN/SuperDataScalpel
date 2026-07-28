@@ -12,6 +12,7 @@ import {
   publishDataService,
   reconcileDataServiceGateway,
   testSqlDataService,
+  unpublishDataService,
   updateDataService,
 } from '../api/dataServiceApi';
 import type {
@@ -76,6 +77,14 @@ export const useEnableDataService = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: enableDataService,
+    onSuccess: () => invalidateDataServices(queryClient),
+  });
+};
+
+export const useUnpublishDataService = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: unpublishDataService,
     onSuccess: () => invalidateDataServices(queryClient),
   });
 };

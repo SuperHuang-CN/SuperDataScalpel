@@ -2,7 +2,7 @@ package cn.superhuang.data.scalpel.admin.service;
 
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineClient;
-import cn.superhuang.data.scalpel.business.service.ServiceEngineManagementProperties;
+import cn.superhuang.data.scalpel.business.service.ServiceEngineCredentialCipher;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineDataSourceRegistrationRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
@@ -206,6 +206,7 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                                   "name":"测试 Engine",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
+                                  "managementToken":"engine-test-token",
                                   "enabled":true
                                 }
                                 """.formatted(code)))
@@ -219,8 +220,8 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
 
         @Bean
         @Primary
-        ServiceEngineClient serviceEngineClient(ServiceEngineManagementProperties properties) {
-            return new ServiceEngineClient(properties) {
+        ServiceEngineClient serviceEngineClient(ServiceEngineCredentialCipher credentialCipher) {
+            return new ServiceEngineClient(credentialCipher) {
                 @Override
                 public ServiceEngineInfoResponse info(ServiceEngine engine) {
                     assertNoManagementTransaction();

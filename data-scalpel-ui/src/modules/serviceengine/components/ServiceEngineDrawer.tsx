@@ -1,12 +1,23 @@
-import { Button, Col, Drawer, Form, Input, Row, Space, Switch, message } from 'antd';
-import { useEffect } from 'react';
+import { Alert, Button, Col, Drawer, Form, Input, Row, Space, Switch, Typography, message } from 'antd';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { useCreateServiceEngine, useUpdateServiceEngine } from '../hooks/useServiceEngines';
-import type { CreateServiceEngineRequest, ServiceEngine, UpdateServiceEngineRequest } from '../model/serviceEngine';
+import {
+  useCreateServiceEngine,
+  useTestNewServiceEngine,
+  useTestServiceEngine,
+  useUpdateServiceEngine,
+} from '../hooks/useServiceEngines';
+import type {
+  CreateServiceEngineRequest,
+  ServiceEngine,
+  ServiceEngineTestResult,
+  UpdateServiceEngineRequest,
+} from '../model/serviceEngine';
 
 interface ServiceEngineDrawerProps {
   open: boolean;
   engine: ServiceEngine | null;
+  canTest: boolean;
   onClose: () => void;
 }
 
@@ -15,18 +26,37 @@ interface ServiceEngineFormValues {
   name: string;
   adminUrl: string;
   publicUrl: string;
+  managementToken?: string;
   enabled: boolean;
   description?: string;
 }
 
 const normalizedOptionalText = (value: string | undefined): string | undefined => value?.trim() || undefined;
 
-export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDrawerProps) => {
+export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceEngineDrawerProps) => {
   const [form] = Form.useForm<ServiceEngineFormValues>();
   const [messageApi, messageContext] = message.useMessage();
+  const [testedConnection, setTestedConnection] = useState<{
+    fingerprint: string;
+    result: ServiceEngineTestResult;
+  } | null>(null);
   const editing = Boolean(engine);
   const createMutation = useCreateServiceEngine();
   const updateMutation = useUpdateServiceEngine();
+  const testNewMutation = useTestNewServiceEngine();
+  const testStoredMutation = useTestServiceEngine();
+  const watchedCode = Form.useWatch('code', form);
+  const watchedAdminUrl = Form.useWatch('adminUrl', form);
+  const watchedManagementToken = Form.useWatch('managementToken', form);
+  const testFingerprint = JSON.stringify([
+    engine?.id ?? null,
+    editing ? engine?.code : watchedCode?.trim().toLowerCase(),
+    watchedAdminUrl?.trim(),
+    watchedManagementToken?.trim(),
+  ]);
+  const testResult = testedConnection?.fingerprint === testFingerprint
+    ? testedConnection.result
+    : null;
 
   useEffect(() => {
     if (!open) return;
@@ -36,6 +66,7 @@ export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDraw
         name: engine.name,
         adminUrl: engine.adminUrl,
         publicUrl: engine.publicUrl,
+        managementToken: undefined,
         enabled: engine.enabled,
         description: engine.description ?? undefined,
       });
@@ -46,6 +77,7 @@ export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDraw
 
   const close = () => {
     form.resetFields();
+    setTestedConnection(null);
     onClose();
   };
 
@@ -54,6 +86,7 @@ export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDraw
       name: values.name.trim(),
       adminUrl: values.adminUrl.trim(),
       publicUrl: values.publicUrl.trim(),
+      managementToken: normalizedOptionalText(values.managementToken),
       enabled: values.enabled,
       description: normalizedOptionalText(values.description),
     };
@@ -65,12 +98,42 @@ export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDraw
         await createMutation.mutateAsync({
           ...request,
           code: values.code?.trim().toLowerCase() ?? '',
+          managementToken: values.managementToken?.trim() ?? '',
         } satisfies CreateServiceEngineRequest);
         messageApi.success('Service Engine 已创建');
       }
       close();
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '保存 Service Engine 失败');
+    }
+  };
+
+  const testConnection = async () => {
+    try {
+      const fields: (keyof ServiceEngineFormValues)[] = editing
+        ? ['adminUrl', 'managementToken']
+        : ['code', 'adminUrl', 'managementToken'];
+      const values = await form.validateFields(fields);
+      const result = engine
+        ? await testStoredMutation.mutateAsync({
+          id: engine.id,
+          request: {
+            adminUrl: values.adminUrl.trim(),
+            managementToken: normalizedOptionalText(values.managementToken),
+          },
+        })
+        : await testNewMutation.mutateAsync({
+          code: values.code?.trim().toLowerCase() ?? '',
+          adminUrl: values.adminUrl.trim(),
+          managementToken: values.managementToken?.trim() ?? '',
+        });
+      setTestedConnection({ fingerprint: testFingerprint, result });
+      messageApi.success('Service Engine 连接成功');
+    } catch (error) {
+      setTestedConnection(null);
+      if (error instanceof ApiError || error instanceof Error) {
+        messageApi.error(error.message);
+      }
     }
   };
 
@@ -85,6 +148,14 @@ export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDraw
         destroyOnHidden
         footer={(
           <Space>
+            {canTest && (
+              <Button
+                loading={testNewMutation.isPending || testStoredMutation.isPending}
+                onClick={() => void testConnection()}
+              >
+                测试连接
+              </Button>
+            )}
             <Button onClick={close}>取消</Button>
             <Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>
               {editing ? '保存' : '创建'}
@@ -123,6 +194,21 @@ export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDraw
                 <Input placeholder="如：https://api.example.internal" />
               </Form.Item>
             </Col>
+            <Col span={24}>
+              <Form.Item
+                label={editing ? 'Management Token（留空保持不变）' : 'Management Token'}
+                name="managementToken"
+                extra={editing && engine?.managementTokenConfigured ? '当前已配置 Management Token。' : undefined}
+                rules={editing
+                  ? [{ max: 1000, message: 'Management Token 不能超过 1000 个字符' }]
+                  : [
+                    { required: true, whitespace: true, message: '请输入 Management Token' },
+                    { max: 1000, message: 'Management Token 不能超过 1000 个字符' },
+                  ]}
+              >
+                <Input.Password autoComplete="new-password" />
+              </Form.Item>
+            </Col>
             <Col span={12}>
               <Form.Item label="启用" name="enabled" valuePropName="checked">
                 <Switch checkedChildren="启用" unCheckedChildren="停用" />
@@ -134,6 +220,20 @@ export const ServiceEngineDrawer = ({ open, engine, onClose }: ServiceEngineDraw
               </Form.Item>
             </Col>
           </Row>
+          {testResult && (
+            <Alert
+              type="success"
+              showIcon
+              message="连接测试成功"
+              description={(
+                <Space direction="vertical" size={2}>
+                  <Typography.Text>Engine Code：<Typography.Text code>{testResult.code}</Typography.Text></Typography.Text>
+                  <Typography.Text>响应时间：{testResult.elapsedMs} ms</Typography.Text>
+                  <Typography.Text>支持数据库：{testResult.databaseTypes.join('、') || '无'}</Typography.Text>
+                </Space>
+              )}
+            />
+          )}
         </Form>
       </Drawer>
     </>

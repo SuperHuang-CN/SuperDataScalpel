@@ -4,6 +4,8 @@ import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateServiceEngineRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.TestServiceEngineRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.TestStoredServiceEngineRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateServiceEngineRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineTestResponse;
@@ -15,8 +17,10 @@ import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
+import java.util.List;
 import java.util.Locale;
 import java.util.UUID;
 
@@ -27,6 +31,7 @@ public class ServiceEngineManagementService {
     private final DataServiceRepository dataServiceRepository;
     private final SearchEngine searchEngine;
     private final ServiceEngineClient client;
+    private final ServiceEngineCredentialCipher credentialCipher;
     private final ServiceEngineDataSourceRegistrationService dataSourceRegistrationService;
 
     public ServiceEngineManagementService(
@@ -34,12 +39,14 @@ public class ServiceEngineManagementService {
             DataServiceRepository dataServiceRepository,
             SearchEngine searchEngine,
             ServiceEngineClient client,
+            ServiceEngineCredentialCipher credentialCipher,
             ServiceEngineDataSourceRegistrationService dataSourceRegistrationService
     ) {
         this.repository = repository;
         this.dataServiceRepository = dataServiceRepository;
         this.searchEngine = searchEngine;
         this.client = client;
+        this.credentialCipher = credentialCipher;
         this.dataSourceRegistrationService = dataSourceRegistrationService;
     }
 
@@ -65,6 +72,7 @@ public class ServiceEngineManagementService {
         }
         ServiceEngine engine = ServiceEngine.create(
                 code, request.name(), request.adminUrl(), request.publicUrl(),
+                credentialCipher.encrypt(request.managementToken()),
                 request.enabled() == null || request.enabled(), request.description()
         );
         return ServiceEngineResponse.from(repository.saveAndFlush(engine));
@@ -73,7 +81,13 @@ public class ServiceEngineManagementService {
     @Transactional
     public ServiceEngineResponse update(UUID id, UpdateServiceEngineRequest request) {
         ServiceEngine engine = requireEngine(id);
-        engine.update(request.name(), request.adminUrl(), request.publicUrl(), request.enabled(), request.description());
+        String managementTokenCiphertext = request.managementToken() == null || request.managementToken().isBlank()
+                ? engine.getManagementTokenCiphertext()
+                : credentialCipher.encrypt(request.managementToken());
+        engine.update(
+                request.name(), request.adminUrl(), request.publicUrl(), managementTokenCiphertext,
+                request.enabled(), request.description()
+        );
         return ServiceEngineResponse.from(repository.saveAndFlush(engine));
     }
 
@@ -86,15 +100,71 @@ public class ServiceEngineManagementService {
         repository.delete(requireEngine(id));
     }
 
-    public ServiceEngineTestResponse test(UUID id) {
+    public ServiceEngineTestResponse test(TestServiceEngineRequest request) {
+        return testConnection(
+                request.code().trim().toLowerCase(Locale.ROOT),
+                ServiceEngine.normalizeAdminUrl(request.adminUrl()),
+                request.managementToken()
+        );
+    }
+
+    public ServiceEngineTestResponse test(UUID id, TestStoredServiceEngineRequest request) {
         ServiceEngine engine = requireEngine(id);
+        String adminUrl = request == null || request.adminUrl() == null || request.adminUrl().isBlank()
+                ? engine.getAdminUrl()
+                : ServiceEngine.normalizeAdminUrl(request.adminUrl());
+        String managementToken = request == null
+                || request.managementToken() == null
+                || request.managementToken().isBlank()
+                ? credentialCipher.decrypt(engine.getManagementTokenCiphertext())
+                : request.managementToken();
+        return testConnection(engine.getCode(), adminUrl, managementToken);
+    }
+
+    private ServiceEngineTestResponse testConnection(String expectedCode, String adminUrl, String managementToken) {
+        long startedAt = System.nanoTime();
         ServiceEngineInfoResponse response;
         try {
-            response = client.info(engine);
+            response = client.info(adminUrl, managementToken);
         } catch (RuntimeException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "服务引擎不可访问：" + safeMessage(exception), exception);
+            throw testFailure(exception);
         }
-        return new ServiceEngineTestResponse(response.code(), response.databaseTypes());
+        if (response == null || response.code() == null || response.code().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Service Engine 返回的身份信息不完整");
+        }
+        if (!expectedCode.equals(response.code())) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Service Engine Code 不一致，期望 %s，实际 %s".formatted(expectedCode, response.code())
+            );
+        }
+        List<String> databaseTypes = response.databaseTypes() == null ? List.of() : response.databaseTypes();
+        long elapsedMs = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
+        return new ServiceEngineTestResponse(response.code(), databaseTypes, elapsedMs);
+    }
+
+    private static ResponseStatusException testFailure(RuntimeException exception) {
+        if (exception instanceof RestClientResponseException responseException
+                && (responseException.getStatusCode().value() == 401
+                || responseException.getStatusCode().value() == 403)) {
+            return new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Service Engine 拒绝访问，请检查 Management Token",
+                    exception
+            );
+        }
+        if (exception instanceof RestClientResponseException responseException) {
+            return new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Service Engine 返回异常状态：HTTP " + responseException.getStatusCode().value(),
+                    exception
+            );
+        }
+        return new ResponseStatusException(
+                HttpStatus.BAD_GATEWAY,
+                "服务引擎不可访问：" + safeMessage(exception),
+                exception
+        );
     }
 
     private ServiceEngine requireEngine(UUID id) {

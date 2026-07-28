@@ -31,6 +31,7 @@ FRONTEND_PORT="${FRONTEND_PORT:-18887}"
 ENGINE_CODE="${DATASCALPEL_LOCAL_ENGINE_CODE:-local_engine}"
 ENGINE_MANAGEMENT_TOKEN="${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:-change-me-engine-management-token}"
 ENGINE_ENCRYPTION_KEY="${DATASCALPEL_ENGINE_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
+SERVICE_ENGINE_CREDENTIAL_KEY="${DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
 TASK_ENGINE_TOKEN="${DATASCALPEL_TASK_ENGINE_TOKEN:-change-me-task-engine-token}"
 DISPATCHER_TOKEN="${DATASCALPEL_TASK_DISPATCHER_TOKEN:-change-me-task-dispatcher-token}"
 DISPATCHER_WORK_DIR="${DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY:-$ROOT_DIR/.local/task-dispatcher}"
@@ -290,6 +291,7 @@ mkdir -p "$DISPATCHER_WORK_DIR"
 
 export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="$ENGINE_MANAGEMENT_TOKEN"
 export DATASCALPEL_ENGINE_ENCRYPTION_KEY="$ENGINE_ENCRYPTION_KEY"
+export DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY="$SERVICE_ENGINE_CREDENTIAL_KEY"
 export DATASCALPEL_TASK_ENGINE_TOKEN="$TASK_ENGINE_TOKEN"
 export DATASCALPEL_COMPUTE_ENGINE_CREDENTIAL_KEY="$COMPUTE_ENGINE_CREDENTIAL_KEY"
 export DATASCALPEL_TASK_DISPATCHER_TOKEN="$DISPATCHER_TOKEN"
@@ -459,7 +461,7 @@ register_local_engine() {
   engine_id="$(printf '%s' "$engine_list" | sed -nE 's/.*"id":"([0-9a-fA-F-]{36})".*/\1/p')"
 
   local engine_payload
-  engine_payload="{\"name\":\"本地开发服务引擎\",\"adminUrl\":\"http://localhost:$ENGINE_PORT\",\"publicUrl\":\"http://localhost:$ENGINE_PORT\",\"enabled\":true,\"description\":\"由 start-local-dev.sh 自动登记，仅供本机开发测试。\"}"
+  engine_payload="{\"name\":\"本地开发服务引擎\",\"adminUrl\":\"http://localhost:$ENGINE_PORT\",\"publicUrl\":\"http://localhost:$ENGINE_PORT\",\"managementToken\":\"$(json_escape "$ENGINE_MANAGEMENT_TOKEN")\",\"enabled\":true,\"description\":\"由 start-local-dev.sh 自动登记，仅供本机开发测试。\"}"
   if [[ -z "$engine_id" ]]; then
     echo "正在登记本地服务引擎：$ENGINE_CODE"
     curl --fail --silent --show-error \

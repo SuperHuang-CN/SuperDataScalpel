@@ -90,7 +90,7 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 
 数据服务支持 `STANDARD_TABLE` 和 `SQL_QUERY` 两种创建后不可切换的模式。标准模式启用一个已发布且物理结构已校验的模型；SQL 模式先选择 PostgreSQL JDBC 数据源，再关联该数据源下至少一个任意状态的模型，并在启用时冻结只读、命名参数化 SQL 模板。控制面管理 Service Engine 和数据服务定义；每个 Engine 是独立 JVM，使用独立 PostgreSQL 保存可恢复的部署快照，并在启用成功后动态注册实际的 `POST /open-api/v1/...` 路由。
 
-启用/停用管理 Engine 运行态；“发布”只把已经启用的服务创建或同步到当前网关。第一阶段的 Kong OSS 适配器创建受 DataScalpel 标签保护的 Service 和 Route，调用方使用网关 Proxy 地址；停用会先撤回全部历史网关绑定，任一撤回失败时保持 Engine 在线。标准模式继续使用统一的分页、列选择、过滤、排序、分组和聚合协议；SQL 模式只接收启用快照声明的标量参数、分页和可选 count。详细设计见[数据服务定义、Engine 启用与查询运行设计](docs/design/data-service-publishing.md)和[数据服务启停与网关发布设计](docs/design/data-service-gateway-publishing.md)。
+启用/停用管理 Engine 运行态；“发布/取消发布”独立管理已经启用的服务是否通过网关向调用方开放。第一阶段的 Kong OSS 适配器创建受 DataScalpel 标签保护的 Service 和 Route，调用方使用网关 Proxy 地址；取消发布会撤回全部历史网关绑定但保持 Engine 在线，停用则在安全撤回后继续移除 Engine，任一撤回失败时都不会停止 Engine。标准模式继续使用统一的分页、列选择、过滤、排序、分组和聚合协议；SQL 模式只接收启用快照声明的标量参数、分页和可选 count。详细设计见[数据服务定义、Engine 启用与查询运行设计](docs/design/data-service-publishing.md)和[数据服务启停与网关发布设计](docs/design/data-service-gateway-publishing.md)。
 
 数据服务模块还提供与后台登录用户完全分离的 API Consumer 管理。Consumer 编码全局唯一且创建后不可修改；DataScalpel 保存 Consumer、API Key 和服务订阅主数据，通过职责单一的薄网关端口投影到当前网关。Kong 实现使用 `key-auth + acl`：API Key 只显示一次，Consumer 的全部有效 Key 共享服务订阅；受保护服务只有同时通过身份认证和服务 ACL 才能进入 Service Engine。当前不包含配额、限流和调用统计。详细设计见 [API 消费者、凭证与服务订阅管理](docs/design/api-consumer-management.md)和[API 消费者凭证与服务订阅开发计划](docs/design/api-consumer-service-subscription-development-plan.md)。
 
@@ -143,6 +143,14 @@ java -jar data-scalpel-admin/target/data-scalpel-admin-0.1.0-SNAPSHOT.jar
 
 文件对象存储使用 S3 协议；默认 Region 为 `us-east-1`、根前缀为 `data-scalpel`、path-style 为开启状态，均可通过 `DATASCALPEL_FILE_STORAGE_*` 环境变量覆盖。AccessKey 和 SecretKey 只应通过运行环境或不提交的本地 Profile 提供。`DATASCALPEL_DATA_SOURCE_CREDENTIAL_KEY` 用于加密 HTTP API 数据源凭据，必须使用包含 16、24 或 32 字节的 Base64 密钥并在部署生命周期内稳定保存；丢失或直接更换会导致既有 API 凭据无法解密。
 
+Admin 还需要独立的 Service Engine 凭据加密主密钥，用于加密保存每台 Engine 各自的 Management Token：
+
+```bash
+export DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY="$(openssl rand -base64 32)"
+```
+
+该密钥必须包含 16、24 或 32 字节的 Base64 内容并稳定保存。丢失或更换后，Admin 无法解密已登记 Engine 的 Token，需要使用原密钥恢复，或重建开发数据并重新登记 Engine。Admin 不再配置全局共享的 Engine Management Token。
+
 当前工作区的本地功能测试和联调优先使用根目录的 `config/application-local.yml`。其中可以保存不提交的数据库、Kong 等本地连接；Spring Boot 使用 `local` Profile 从该外部文件读取配置，它不会进入构建产物：
 
 ```bash
@@ -170,14 +178,14 @@ export DATASCALPEL_ENGINE_DB_URL="jdbc:postgresql://<engine-db-host>:5432/<engin
 export DATASCALPEL_ENGINE_DB_USERNAME="<engine-db-user>"
 export DATASCALPEL_ENGINE_DB_PASSWORD="<engine-db-password>"
 export DATASCALPEL_ENGINE_CODE="dev-engine-01"
-export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="<shared-admin-to-engine-token>"
+export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="<this-engine-management-token>"
 export DATASCALPEL_ENGINE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 export DATASCALPEL_ENGINE_QUERY_MAXIMUM_OFFSET="100000"
 ./mvnw -pl data-scalpel-service-engine -am package
 java -jar data-scalpel-service-engine/target/data-scalpel-service-engine-0.1.0-SNAPSHOT.jar
 ```
 
-`DATASCALPEL_ENGINE_MANAGEMENT_TOKEN` 必须与 Admin 的同名环境变量一致。`DATASCALPEL_ENGINE_ENCRYPTION_KEY` 用于加密 Engine 数据库中的数据源连接快照；更换它会导致既有快照无法恢复，因此需要按密钥轮换流程重新启用服务。Engine 健康检查为 `GET /actuator/health`，控制面接口位于 `/internal/v1/**`，公共数据接口位于 `/open-api/v1/**`。
+每台 Service Engine 独立配置 `DATASCALPEL_ENGINE_MANAGEMENT_TOKEN`。在 Admin 新建或修改该 Engine 时，填写与这台 Engine 相同的 Token；Admin 使用 `DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY` 加密保存它，不存在全局 Token 回退。`DATASCALPEL_ENGINE_ENCRYPTION_KEY` 用于加密 Engine 数据库中的数据源连接快照；更换它会导致既有快照无法恢复，因此需要按密钥轮换流程重新启用服务。Engine 健康检查为 `GET /actuator/health`，控制面接口位于 `/internal/v1/**`，公共数据接口位于 `/open-api/v1/**`。
 
 ### 启动 Task Engine
 

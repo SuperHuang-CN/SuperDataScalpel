@@ -8,6 +8,7 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  RollbackOutlined,
   StopOutlined,
   TeamOutlined,
   UploadOutlined,
@@ -45,6 +46,7 @@ import {
   useEnableDataService,
   usePublishDataService,
   useReconcileDataServiceGateway,
+  useUnpublishDataService,
 } from '../hooks/useDataServices';
 import {
   dataServiceDeploymentStatusLabels,
@@ -152,6 +154,7 @@ export const DataServiceListPanel = ({
   const enableMutation = useEnableDataService();
   const publishMutation = usePublishDataService();
   const reconcileMutation = useReconcileDataServiceGateway();
+  const unpublishMutation = useUnpublishDataService();
   const disableMutation = useDisableDataService();
   const cleanupMutation = useCleanupDataServiceDeployment();
   const engineNames = new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine.name]));
@@ -231,6 +234,23 @@ export const DataServiceListPanel = ({
       }
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.problem?.detail ?? error.message : '停用数据服务失败');
+    }
+  };
+
+  const unpublish = async (dataService: DataServiceSummary) => {
+    try {
+      const response = await unpublishMutation.mutateAsync(dataService.id);
+      if (response.status === 'ENABLED'
+          && response.deploymentStatus === 'DEPLOYED'
+          && response.gatewayBindings.length === 0) {
+        messageApi.success(`${dataService.name} 已取消网关发布，Service Engine 保持运行`);
+      } else {
+        messageApi.error(gatewayOperationError(response) || '网关未确认取消发布结果');
+      }
+    } catch (error) {
+      messageApi.error(error instanceof ApiError
+        ? error.problem?.detail ?? error.message
+        : '取消网关发布失败');
     }
   };
 
@@ -384,6 +404,28 @@ export const DataServiceListPanel = ({
           {canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && (
             <Tooltip title={publishedGatewayBinding(dataService) ? '重新发布到网关' : '发布到网关'}><Button type="text" size="small" aria-label={`发布${dataService.name}到网关`} icon={<UploadOutlined />} loading={publishMutation.isPending && publishMutation.variables === dataService.id} onClick={() => void publish(dataService)} /></Tooltip>
           )}
+          {canPublish && dataService.status === 'ENABLED' && dataService.gatewayBindings.length > 0 && (
+            <Popconfirm
+              title="取消发布到网关？"
+              description={`取消后“${dataService.name}”将无法通过网关访问，Service Engine 保持运行。`}
+              okText="取消发布"
+              cancelText="返回"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => void unpublish(dataService)}
+            >
+              <Tooltip title="取消发布">
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  aria-label={`取消发布${dataService.name}`}
+                  icon={<RollbackOutlined />}
+                  loading={unpublishMutation.isPending
+                    && unpublishMutation.variables === dataService.id}
+                />
+              </Tooltip>
+            </Popconfirm>
+          )}
           {canPublish && dataService.status !== 'ENABLED' && (
             <Tooltip title={dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING' ? '重试启用' : '启用'}><Button type="text" size="small" aria-label={`启用${dataService.name}`} icon={<PlayCircleOutlined />} loading={enableMutation.isPending && enableMutation.variables === dataService.id} onClick={() => void enable(dataService)} /></Tooltip>
           )}
@@ -391,7 +433,26 @@ export const DataServiceListPanel = ({
             <Tooltip title="清理失败部署"><Button type="text" size="small" aria-label={`清理${dataService.name}的失败部署`} icon={<ClearOutlined />} loading={cleanupMutation.isPending && cleanupMutation.variables === dataService.id} onClick={() => void cleanup(dataService)} /></Tooltip>
           )}
           {canPublish && dataService.status === 'ENABLED' && (
-            <Tooltip title="停用"><Button type="text" size="small" aria-label={`停用${dataService.name}`} icon={<StopOutlined />} loading={disableMutation.isPending && disableMutation.variables === dataService.id} onClick={() => void disable(dataService)} /></Tooltip>
+            <Popconfirm
+              title="停用数据服务？"
+              description={`将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`}
+              okText="停用"
+              cancelText="返回"
+              okButtonProps={{ danger: true }}
+              onConfirm={() => void disable(dataService)}
+            >
+              <Tooltip title="停用">
+                <Button
+                  type="text"
+                  size="small"
+                  danger
+                  aria-label={`停用${dataService.name}`}
+                  icon={<StopOutlined />}
+                  loading={disableMutation.isPending
+                    && disableMutation.variables === dataService.id}
+                />
+              </Tooltip>
+            </Popconfirm>
           )}
           {canDelete && dataService.gatewayBindings.length === 0 && (!dataService.deploymentStatus || dataService.deploymentStatus === 'REMOVED') && (
             <Popconfirm title="删除数据服务" description={`确认删除“${dataService.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => remove(dataService)}><Tooltip title="删除"><Button type="text" size="small" danger aria-label={`删除${dataService.name}`} icon={<DeleteOutlined />} /></Tooltip></Popconfirm>

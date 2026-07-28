@@ -104,14 +104,35 @@ public class DataServiceGatewayPublicationService {
     }
 
     /**
+     * Removes every gateway binding while keeping the current Engine deployment online.
+     */
+    public void unpublish(UUID id) {
+        GatewayRemovalPlan plan = prepareGatewayRemovalPlan(id, "取消发布");
+        List<GatewayRemovalAttempt> attempts = removeGatewayBindings(plan);
+        transactionTemplate.executeWithoutResult(
+                status -> completeGatewayRemoval(plan, attempts)
+        );
+    }
+
+    /**
      * Removes every gateway binding and atomically transitions the Engine deployment to REMOVING.
      * Empty means at least one gateway object could not be removed and the Engine must stay online.
      */
     public Optional<EngineDisablePreparation> prepareDisable(UUID id) {
-        GatewayRemovalPlan plan = requireTransactionResult(transactionTemplate.execute(
-                status -> prepareGatewayRemoval(id)
+        GatewayRemovalPlan plan = prepareGatewayRemovalPlan(id, "停用");
+        List<GatewayRemovalAttempt> attempts = removeGatewayBindings(plan);
+        return requireTransactionResult(transactionTemplate.execute(
+                status -> completeGatewayRemovalAndBeginEngineDisable(plan, attempts)
         ));
+    }
 
+    private GatewayRemovalPlan prepareGatewayRemovalPlan(UUID id, String actionName) {
+        return requireTransactionResult(transactionTemplate.execute(
+                status -> prepareGatewayRemoval(id, actionName)
+        ));
+    }
+
+    private List<GatewayRemovalAttempt> removeGatewayBindings(GatewayRemovalPlan plan) {
         List<GatewayRemovalAttempt> attempts = new ArrayList<>(plan.bindings().size());
         for (GatewayRemovalPreparation binding : plan.bindings()) {
             String failure = null;
@@ -127,10 +148,7 @@ public class DataServiceGatewayPublicationService {
             }
             attempts.add(new GatewayRemovalAttempt(binding, failure));
         }
-
-        return requireTransactionResult(transactionTemplate.execute(
-                status -> completeGatewayRemovalAndBeginEngineDisable(plan, attempts)
-        ));
+        return List.copyOf(attempts);
     }
 
     private PublishPreparation preparePublish(UUID id, GatewayProvider provider) {
@@ -200,10 +218,10 @@ public class DataServiceGatewayPublicationService {
         bindingRepository.saveAndFlush(binding);
     }
 
-    private GatewayRemovalPlan prepareGatewayRemoval(UUID id) {
+    private GatewayRemovalPlan prepareGatewayRemoval(UUID id, String actionName) {
         DataService service = requireServiceForUpdate(id);
         if (service.getStatus() != DataServiceStatus.ENABLED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已启用服务可以停用");
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已启用服务可以" + actionName);
         }
         DataServiceDeployment deployment = requireDeploymentForUpdate(id);
         if (deployment.getRevision() != service.getRevision()) {
@@ -293,6 +311,25 @@ public class DataServiceGatewayPublicationService {
             GatewayRemovalPlan plan,
             List<GatewayRemovalAttempt> attempts
     ) {
+        if (!completeGatewayRemoval(plan, attempts)) {
+            return Optional.empty();
+        }
+
+        DataServiceDeployment deployment = requireDeploymentForUpdate(plan.serviceId());
+        ServiceEngine engine = requireEngine(deployment.getEngineId());
+        deployment.beginRemoval();
+        deploymentRepository.saveAndFlush(deployment);
+        return Optional.of(new EngineDisablePreparation(
+                plan.serviceId(),
+                engine,
+                plan.revision()
+        ));
+    }
+
+    private boolean completeGatewayRemoval(
+            GatewayRemovalPlan plan,
+            List<GatewayRemovalAttempt> attempts
+    ) {
         DataService service = requireServiceForUpdate(plan.serviceId());
         if (service.getStatus() != DataServiceStatus.ENABLED || service.getRevision() != plan.revision()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务状态已发生变化");
@@ -323,17 +360,9 @@ public class DataServiceGatewayPublicationService {
         }
         bindingRepository.flush();
         if (failed || bindingRepository.existsByDataServiceId(plan.serviceId())) {
-            return Optional.empty();
+            return false;
         }
-
-        ServiceEngine engine = requireEngine(deployment.getEngineId());
-        deployment.beginRemoval();
-        deploymentRepository.saveAndFlush(deployment);
-        return Optional.of(new EngineDisablePreparation(
-                plan.serviceId(),
-                engine,
-                plan.revision()
-        ));
+        return true;
     }
 
     private void assertNoRecentOperation(List<GatewayServiceBinding> bindings) {
