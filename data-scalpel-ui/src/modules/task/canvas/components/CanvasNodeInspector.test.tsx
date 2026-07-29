@@ -73,7 +73,7 @@ const metadataFixtures = vi.hoisted(() => {
       id: distributionId,
       code: 'distribution_pg',
       name: '分发 PostgreSQL',
-      purposes: ['STORAGE'],
+      purposes: ['STORAGE', 'DISTRIBUTION'],
       type: 'POSTGRESQL',
       connectionKind: 'JDBC',
       enabled: true,
@@ -791,14 +791,14 @@ describe('CanvasNodeInspector', () => {
     fireEvent.mouseDown(screen.getByLabelText('目标数据源'));
     expect(vi.mocked(buildDataSourceSearch)).toHaveBeenCalledWith({
       keyword: '',
-      purpose: 'STORAGE',
+      purpose: 'DISTRIBUTION',
       enabled: true,
     });
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(false);
     });
     expect(onApply).not.toHaveBeenCalled();
-    expect(await screen.findByText('数据源不存在、已停用或不具有数据存储用途')).toBeInTheDocument();
+    expect(await screen.findByText('数据源不存在、已停用或不具有数据分发用途')).toBeInTheDocument();
   });
 
   it('switches the output inspector to editable explicit mappings', async () => {

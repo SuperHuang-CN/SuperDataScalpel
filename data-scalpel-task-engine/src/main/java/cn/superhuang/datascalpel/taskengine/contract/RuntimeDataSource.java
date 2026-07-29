@@ -17,7 +17,8 @@ public record RuntimeDataSource(
         RuntimeJdbcConnection connection,
         HttpApiContracts.RuntimeConnection httpApiConnection,
         List<HttpApiContracts.ResourceDefinition> apiResources,
-        RuntimeKafkaConnection kafkaConnection
+        RuntimeKafkaConnection kafkaConnection,
+        RuntimeS3Connection s3Connection
 ) {
     public RuntimeDataSource {
         purposes = purposes == null ? Set.of() : Set.copyOf(purposes);
@@ -30,7 +31,7 @@ public record RuntimeDataSource(
             Set<DataSourcePurpose> purposes,
             RuntimeJdbcConnection connection
     ) {
-        this(dataSourceId, ConnectionKind.JDBC, databaseType, purposes, connection, null, List.of(), null);
+        this(dataSourceId, ConnectionKind.JDBC, databaseType, purposes, connection, null, List.of(), null, null);
     }
 
     public RuntimeDataSource(
@@ -42,6 +43,21 @@ public record RuntimeDataSource(
             HttpApiContracts.RuntimeConnection httpApiConnection,
             List<HttpApiContracts.ResourceDefinition> apiResources
     ) {
-        this(dataSourceId, connectionKind, databaseType, purposes, connection, httpApiConnection, apiResources, null);
+        this(dataSourceId, connectionKind, databaseType, purposes, connection,
+                httpApiConnection, apiResources, null, null);
+    }
+
+    public RuntimeDataSource(
+            UUID dataSourceId,
+            ConnectionKind connectionKind,
+            RuntimeDatabaseType databaseType,
+            Set<DataSourcePurpose> purposes,
+            RuntimeJdbcConnection connection,
+            HttpApiContracts.RuntimeConnection httpApiConnection,
+            List<HttpApiContracts.ResourceDefinition> apiResources,
+            RuntimeKafkaConnection kafkaConnection
+    ) {
+        this(dataSourceId, connectionKind, databaseType, purposes, connection,
+                httpApiConnection, apiResources, kafkaConnection, null);
     }
 }

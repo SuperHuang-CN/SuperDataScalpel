@@ -55,7 +55,6 @@ class ComputeEngineReconfigurationIntegrationTests {
     @Test
     void drainsDeactivatesAppliesAndRegistersActiveEngine() {
         ComputeEngine engine = activeEngine();
-        long revision = engine.getConfigRevision();
         StubDispatcherClient client = new StubDispatcherClient(engine);
         ComputeEngineManagementService service = service(client);
 
@@ -64,16 +63,16 @@ class ComputeEngineReconfigurationIntegrationTests {
         assertThat(response.registrationState()).isEqualTo(ComputeEngineRegistrationState.ACTIVE);
         assertThat(response.dispatcherBaseUrl()).isEqualTo("http://127.0.0.1:28092");
         assertThat(response.commandTopic()).endsWith(".next");
-        assertThat(response.configRevision()).isEqualTo(revision + 1);
         assertThat(response.dispatcherInstanceId()).isEqualTo("dispatcher-next");
-        assertThat(client.calls).containsExactly("info", "drain", "deactivate", "info", "activate");
+        assertThat(client.calls).containsExactly(
+                "info", "registration", "drain", "registration", "deactivate", "info", "activate"
+        );
     }
 
     @Test
     void keepsOldConfigurationAndDrainingStateWhileExecutionsRemain() {
         ComputeEngine engine = activeEngine();
         String originalUrl = engine.getDispatcherBaseUrl();
-        long originalRevision = engine.getConfigRevision();
         StubDispatcherClient client = new StubDispatcherClient(engine);
         client.deactivationConflict = true;
 
@@ -87,7 +86,6 @@ class ComputeEngineReconfigurationIntegrationTests {
         assertThat(current.getRegistrationState()).isEqualTo(ComputeEngineRegistrationState.DRAINING);
         assertThat(current.getHealthState()).isEqualTo(ComputeEngineHealthState.UP);
         assertThat(current.getDispatcherBaseUrl()).isEqualTo(originalUrl);
-        assertThat(current.getConfigRevision()).isEqualTo(originalRevision);
     }
 
     @Test
@@ -100,7 +98,7 @@ class ComputeEngineReconfigurationIntegrationTests {
         var response = service(client).reconfigure(engine.getId(), changedRequest());
 
         assertThat(response.registrationState()).isEqualTo(ComputeEngineRegistrationState.ACTIVE);
-        assertThat(client.calls).containsExactly("info", "deactivate", "info", "activate");
+        assertThat(client.calls).containsExactly("info", "registration", "deactivate", "info", "activate");
     }
 
     @Test
@@ -151,6 +149,40 @@ class ComputeEngineReconfigurationIntegrationTests {
     }
 
     @Test
+    void refusesToDeactivateRegistrationOwnedByAnotherEngineBeforeSendingCommand() {
+        ComputeEngine engine = activeEngine();
+        StubDispatcherClient client = new StubDispatcherClient(engine);
+        client.remoteEngineId = UUID.randomUUID();
+
+        assertThatThrownBy(() -> service(client).deactivate(engine.getId(), false))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(exception.getReason()).contains("当前绑定的不是该计算引擎");
+                });
+
+        assertThat(repository.findById(engine.getId()).orElseThrow().getRegistrationState())
+                .isEqualTo(ComputeEngineRegistrationState.ACTIVE);
+        assertThat(client.calls).containsExactly("registration");
+    }
+
+    @Test
+    void refusesToDeactivateWhenRemoteConfigurationDiffersBeforeSendingCommand() {
+        ComputeEngine engine = activeEngine();
+        StubDispatcherClient client = new StubDispatcherClient(engine);
+        client.remoteConfigurationMismatch = true;
+
+        assertThatThrownBy(() -> service(client).deactivate(engine.getId(), false))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(exception.getReason()).contains("实际配置不一致");
+                });
+
+        assertThat(repository.findById(engine.getId()).orElseThrow().getRegistrationState())
+                .isEqualTo(ComputeEngineRegistrationState.ACTIVE);
+        assertThat(client.calls).containsExactly("registration");
+    }
+
+    @Test
     void rejectsAdminEventTopicThatThisAdminDoesNotListenToBeforeDraining() {
         ComputeEngine engine = activeEngine();
         StubDispatcherClient client = new StubDispatcherClient(engine);
@@ -192,7 +224,7 @@ class ComputeEngineReconfigurationIntegrationTests {
                 cipher.encrypt("old-secret"), ComputeBackendType.LOCAL_DOCKER,
                 "commands." + suffix, "runner." + suffix, "admin.events", 20, 2, 2
         );
-        engine.activate("dispatcher-old", 1, ComputeBackendType.LOCAL_DOCKER);
+        engine.activate("dispatcher-old", ComputeBackendType.LOCAL_DOCKER);
         return repository.saveAndFlush(engine);
     }
 
@@ -208,31 +240,31 @@ class ComputeEngineReconfigurationIntegrationTests {
     private static DispatcherRegistrationResponse registration(
             UUID engineId,
             String dispatcherInstanceId,
-            long revision,
             DispatcherRegistrationState state,
             DispatcherTopics topics,
             DispatcherAdmissionPolicy policy
     ) {
         return new DispatcherRegistrationResponse(
-                1, engineId, dispatcherInstanceId, ComputeBackendType.LOCAL_DOCKER,
-                revision, state, topics, policy, null
+                engineId, dispatcherInstanceId, ComputeBackendType.LOCAL_DOCKER,
+                state, topics, policy, null
         );
     }
 
     private static final class StubDispatcherClient extends ComputeEngineDispatcherClient {
         private final UUID engineId;
-        private final long oldRevision;
         private final DispatcherTopics oldTopics;
         private final DispatcherAdmissionPolicy oldPolicy;
         private final List<String> calls = new ArrayList<>();
+        private UUID remoteEngineId;
+        private DispatcherRegistrationState remoteState;
         private boolean deactivationConflict;
         private boolean infoFailure;
         private boolean activationFailure;
+        private boolean remoteConfigurationMismatch;
 
         private StubDispatcherClient(ComputeEngine engine) {
             super(new ComputeEngineProperties(null, Duration.ofSeconds(1), Duration.ofSeconds(1)));
             engineId = engine.getId();
-            oldRevision = engine.getConfigRevision();
             oldTopics = new DispatcherTopics(
                     engine.getCommandTopic(), engine.getRunnerEventTopic(), engine.getAdminEventTopic()
             );
@@ -240,6 +272,10 @@ class ComputeEngineReconfigurationIntegrationTests {
                     engine.getMaxQueuedExecutions(), engine.getMaxConcurrentSubmissions(),
                     engine.getMaxInFlightApplications()
             );
+            remoteEngineId = engineId;
+            remoteState = engine.getRegistrationState() == ComputeEngineRegistrationState.DRAINING
+                    ? DispatcherRegistrationState.DRAINING
+                    : DispatcherRegistrationState.ACTIVE;
         }
 
         @Override
@@ -247,16 +283,31 @@ class ComputeEngineReconfigurationIntegrationTests {
             calls.add("info");
             if (infoFailure) throw new IllegalStateException("candidate unavailable");
             return new DispatcherInfoResponse(
-                    1, baseUrl.contains("28092") ? "dispatcher-next" : "dispatcher-old",
+                    baseUrl.contains("28092") ? "dispatcher-next" : "dispatcher-old",
                     ComputeBackendType.LOCAL_DOCKER, "test",
                     new DispatcherCapabilities(true, true, true), List.of()
             );
         }
 
         @Override
+        public DispatcherRegistrationResponse registration(String baseUrl, String token) {
+            calls.add("registration");
+            return ComputeEngineReconfigurationIntegrationTests.registration(
+                    remoteEngineId, "dispatcher-old", remoteState, oldTopics,
+                    remoteConfigurationMismatch
+                            ? new DispatcherAdmissionPolicy(
+                                    oldPolicy.maxQueuedExecutions() + 1,
+                                    oldPolicy.maxConcurrentSubmissions(),
+                                    oldPolicy.maxInFlightApplications())
+                            : oldPolicy
+            );
+        }
+
+        @Override
         public DispatcherRegistrationResponse drain(String baseUrl, String token) {
             calls.add("drain");
-            return ComputeEngineReconfigurationIntegrationTests.registration(engineId, "dispatcher-old", oldRevision,
+            remoteState = DispatcherRegistrationState.DRAINING;
+            return ComputeEngineReconfigurationIntegrationTests.registration(engineId, "dispatcher-old",
                     DispatcherRegistrationState.DRAINING, oldTopics, oldPolicy);
         }
 
@@ -266,7 +317,8 @@ class ComputeEngineReconfigurationIntegrationTests {
             if (deactivationConflict) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "Dispatcher 仍有排队或活动执行");
             }
-            return ComputeEngineReconfigurationIntegrationTests.registration(engineId, "dispatcher-old", oldRevision,
+            remoteState = DispatcherRegistrationState.INACTIVE;
+            return ComputeEngineReconfigurationIntegrationTests.registration(engineId, "dispatcher-old",
                     DispatcherRegistrationState.INACTIVE, oldTopics, oldPolicy);
         }
 
@@ -278,7 +330,7 @@ class ComputeEngineReconfigurationIntegrationTests {
         ) {
             calls.add("activate");
             if (activationFailure) throw new IllegalStateException("activation failed");
-            return ComputeEngineReconfigurationIntegrationTests.registration(request.engineId(), "dispatcher-next", request.configRevision(),
+            return ComputeEngineReconfigurationIntegrationTests.registration(request.engineId(), "dispatcher-next",
                     DispatcherRegistrationState.ACTIVE, request.topics(), request.admissionPolicy());
         }
     }

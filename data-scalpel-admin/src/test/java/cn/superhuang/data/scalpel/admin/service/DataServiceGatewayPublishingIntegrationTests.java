@@ -451,11 +451,10 @@ class DataServiceGatewayPublishingIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"%s",
                                   "name":"网关发布 Engine",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
-                                  "managementToken":"engine-test-token",
+                                  "managementToken":"engine-test-token:%s",
                                   "enabled":true
                                 }
                                 """.formatted(code)))
@@ -667,6 +666,14 @@ class DataServiceGatewayPublishingIntegrationTests {
         FakeServiceEngineClient(ServiceEngineCredentialCipher credentialCipher, OperationRecorder recorder) {
             super(credentialCipher);
             this.recorder = recorder;
+        }
+
+        @Override
+        public ServiceEngineInfoResponse info(String adminUrl, String managementToken) {
+            return new ServiceEngineInfoResponse(
+                    managementToken.substring("engine-test-token:".length()),
+                    List.of("POSTGRESQL")
+            );
         }
 
         @Override

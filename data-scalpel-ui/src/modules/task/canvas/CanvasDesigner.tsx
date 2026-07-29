@@ -185,6 +185,25 @@ const emptyRuntimeData = (type: CanvasNodeType): CanvasNodeRuntimeData => {
           columnMappings: [],
         },
       };
+    case CanvasNodeType.FileOutput:
+      return {
+        type,
+        name,
+        configuration: {
+          sourceTableName: '',
+          dataSourceId: '',
+          targetPath: '',
+          conflictPolicy: 'FAIL_IF_EXISTS',
+          formatOptions: {
+            type: 'CSV',
+            header: true,
+            delimiter: ',',
+            quote: '"',
+            escape: '\\',
+            nullValue: '',
+          },
+        },
+      };
   }
 };
 
@@ -424,7 +443,8 @@ export const CanvasDesigner = ({
           if (targetData.type === CanvasNodeType.Rename && targetIncomingCount >= 1) return false;
           if ((targetData.type === CanvasNodeType.ModelOutput
             || targetData.type === CanvasNodeType.JdbcOutput
-            || targetData.type === CanvasNodeType.KafkaOutput) && targetIncomingCount >= 1) return false;
+            || targetData.type === CanvasNodeType.KafkaOutput
+            || targetData.type === CanvasNodeType.FileOutput) && targetIncomingCount >= 1) return false;
           return !createsCycle(current.edges, source.id, target.id);
         },
       },

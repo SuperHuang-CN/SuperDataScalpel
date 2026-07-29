@@ -14,13 +14,13 @@ Admin负责读取权威元数据、调用 Task Engine最终预检、生成不可
 
 ## 2. Manifest 边界
 
-manifest 当前严格固定为 `manifestVersion: 6`，v5 及更早版本不再兼容。顶层分为 `execution`、`task`、`metadataSnapshot`、`runtimeDataSources`、可空 `runtimeFileStorage` 和 `runtimeFileInputs`：
+manifest 当前写出 `manifestVersion: 7`；Runner 兼容读取 v6，v6 维持原有行为，v5 及更早版本不再兼容。顶层分为 `execution`、`task`、`metadataSnapshot`、`runtimeDataSources`、可空 `runtimeFileStorage` 和 `runtimeFileInputs`：
 
 - `task.definition` 是原始稳定 Canvas 定义，绝不追加连接字段。
 - `metadataSnapshot` 是 Admin 在发布、启用或运行时读取的权威表结构和模型快照；`models` 只服务 `MODEL_INPUT/MODEL_OUTPUT`，没有模型节点时必须是空数组。Kafka Value Schema 已内联在节点定义中，不进入模型快照。
 - `metadataSnapshot.fileDatasetTables` 只包含文件表 ID、稳定 code、展示名、数据集类型、表/文件状态和按顺序排列的平台字段 Schema。
 - `runtimeDataSources` 只包含当前定义实际引用的数据源，并以 `dataSourceId` 去重。
-- JDBC URL、Catalog、Schema、用户名、密码和白名单连接参数，以及 HTTP API 连接配置、运行凭据和被引用的 API 资源定义，仅位于 `runtimeDataSources`。
+- JDBC URL、Catalog、Schema、用户名、密码和白名单连接参数，HTTP API 连接配置、运行凭据和被引用的 API 资源定义，以及外部 S3 的 endpoint、region、bucket、rootPrefix、pathStyleAccess 和凭据，仅位于 `runtimeDataSources`。
 - 只有任务实际引用文件输入时才生成 `runtimeFileStorage`。`runtimeFileInputs` 按 Table ID 去重；表级保存数据集/表 ID、`schemaFingerprint`、权威 Schema 和强类型解析参数，每个输入再保存按当前顺序排列的来源列表。来源项保存稳定来源 ID、文件 ID、格式、压缩、存储形态、私有读取位置和来源键。
 
 manifest第一阶段为明文 JSON，存放于私有 Bucket，便于排查。生产环境的对象存储 Endpoint 和短期预签名 URL必须使用 TLS；Bucket不得开放匿名读取。Admin向 Dispatcher只发送对象 Key和 manifest SHA-256；Dispatcher在真正提交时生成短期预签名 URL。对象路径固定为：
@@ -80,11 +80,14 @@ Runner读取 launch描述、下载 manifest、校验 SHA-256、严格反序列�
 - `MODEL_OUTPUT`：目标和字段来自模型快照，APPEND 可写受管或外部模型，OVERWRITE 只允许受管模型。
 - `JDBC_OUTPUT`：BY_NAME/EXPLICIT 都由共享 Operator 使用 `select + alias + 显式 cast`；APPEND 使用 Spark JDBC append。
 - `KAFKA_OUTPUT`：目标字段来自节点内联 Value Schema，BY_NAME/EXPLICIT 与其他 Output 复用映射和 Cast；可选 Key 字段来自上游表。
+- `FILE_OUTPUT`：仅用于批任务，将来源表写到精确的 `s3a://{bucket}/{rootPrefix}/{targetPath}/`。CSV、JSON Lines 固定 UTF-8，Parquet 固定 Snappy；输出采用 Spark 目录数据集语义，允许多个 `part-*` 文件和 `_SUCCESS`。`FAIL_IF_EXISTS` 保留既有目录并失败，`OVERWRITE` 删除旧前缀后写入，且对象存储上的覆盖不是原子替换，失败时可能留下不完整目录。
 - `OVERWRITE`：使用 JDBC `TRUNCATE TABLE` 后 Spark append，不 drop/recreate。
 
 Join 等 Processor 的兼容性只以共享 Operator 建立的真实 Spark 表达式及 Analyzer 结果为准，不按平台字段类型另建兼容矩阵或风险警告；Analyzer 接受即通过，拒绝才阻止任务。Output 继续使用专用的轻量转换风险策略：安全转换自动 Cast 且不提示，Spark 支持但可能因实际值失败的转换产生预检警告并继续发布/执行，Analyzer 不支持的 Cast 才阻止任务。Runner 保持 ANSI 模式，风险转换遇到非法值、溢出或精度问题时明确失败，不静默转成 null。
 
-每个输出通过 `Dataset.observe` 在同一次 JDBC 写入计划中采集输出行数，不为日志或统计单独触发 `count()`。多个 Output 按稳定拓扑顺序执行，先前成功写入不会因后续失败回滚；不同目标表或不同数据源之间没有分布式事务。OVERWRITE 先执行 `TRUNCATE`，后续失败可能留下空表或部分数据，因此真实运行不自动重试，页面在提交真实运行前必须明确提示该风险。
+每个输出通过 `Dataset.observe` 在同一次写入计划中采集输出行数，不为日志或统计单独触发 `count()`。多个 Output 按稳定拓扑顺序执行，先前成功写入不会因后续失败回滚；不同目标表或不同数据源之间没有分布式事务。JDBC OVERWRITE 先执行 `TRUNCATE`；S3 OVERWRITE 删除旧前缀后写入。后续失败可能留下空目标或部分数据，因此真实运行不自动重试，页面在提交真实运行前必须明确提示该风险。
+
+外部 S3 使用 `fs.s3a.bucket.<bucket>.*` 的 bucket 级 Hadoop 配置，不读取或覆盖平台 Spark 的默认 S3 连接。相同 bucket 在单次任务中不得出现 endpoint、region、path-style 或凭据不同的配置，也不得与平台文件输入存储发生同 bucket 配置冲突。执行身份至少需要目标前缀的列举、写入、删除和分片上传权限。
 
 Runner 的 `result.json` 固定使用 `schemaVersion: 2`，Dispatcher拒绝 v1。所有 Input（包括 Kafka）、Processor 和 Output（包括 Kafka）分别以 `READ`、`PROCESS`、`WRITE` 阶段记录节点开始、成功或失败；失败结果保留此前已完成的节点，并让顶层错误与失败节点错误共享同一个诊断 ID。结构化错误包含稳定错误码、类别、可重试标记、节点身份、SQLState和诊断 ID，不包含异常堆栈。
 

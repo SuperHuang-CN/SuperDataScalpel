@@ -217,7 +217,7 @@ class DispatcherRunnerResultIntegrationTest {
         String commandTopic = "commands." + suffix;
         String runnerTopic = "runner." + suffix;
         registrationService.activate(new DispatcherRegistrationRequest(
-                1, engineId, 1,
+                engineId,
                 new DispatcherTopics(commandTopic, runnerTopic, "admin." + suffix),
                 new DispatcherAdmissionPolicy(20, 2, 2)));
         String prefix = "task-runs/" + runId + "/attempts/1/";

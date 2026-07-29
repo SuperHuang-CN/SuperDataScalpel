@@ -20,7 +20,7 @@ interface ControlledSelectProps {
 }
 
 interface CanvasJdbcDataSourceSelectProps extends ControlledSelectProps {
-  purpose: Extract<DataSourcePurpose, 'SOURCE' | 'STORAGE'>;
+  purpose: Extract<DataSourcePurpose, 'SOURCE' | 'STORAGE' | 'DISTRIBUTION'>;
   placeholder: string;
 }
 

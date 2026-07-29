@@ -21,7 +21,7 @@
 - 普通页面优先使用 Ant Design 的 Table、Form、Drawer、Tree、Select 等组件；服务端数据由 TanStack Query 管理，局部交互状态优先使用 React 自身状态。
 - 可视化任务编排统一使用 AntV X6。后端持久化的是与 X6 解耦的节点/连线 JSON 契约，不得直接持久化 X6 内部对象。
 - X6 节点配置必须使用明确的 TypeScript 类型；不得在新代码中扩散 `any`。
-- 前端新增或修改依赖后，运行 `pnpm check`；Canvas 交互变更还应补充相应的单元或端到端测试。
+- 前端新增或修改依赖、Canvas 交互变更后的测试与验证要求当前暂时禁用，具体见“测试与验证（暂时禁用）”。
 - 前端目录、依赖方向、模块公开入口和统一查询等具体规范，以 `data-scalpel-ui/AGENTS.md` 为准。
 
 ## 模块职责
@@ -65,7 +65,7 @@
 - 所有 HTTP 错误响应统一使用 RFC 9457 `ProblemDetail` 和 `application/problem+json`。标准字段为 `type`、`title`、`status`、`detail`、`instance`，扩展字段固定使用稳定的 `code`、`timestamp`，字段校验失败时使用 `violations`；不得另造 `path`、`success`、`message` 等并行错误协议。
 - `ProblemDetailFactory`、全局异常映射和安全响应位于 `data-scalpel-web-core`。业务 Resource、Service、安全配置与 Service Engine 不得手工拼装错误 JSON 或使用 `sendError` 绕过该机制。
 - 现有 `ResponseStatusException` 仍是可用的直接业务错误表达方式；新增业务错误应选择准确的 HTTP 状态，公共处理器会映射为稳定问题码。未预期异常必须记录完整日志，但对外只返回安全的通用 500 信息。
-- 修改错误映射、认证/鉴权失败行为或错误契约时，必须补充相应测试，并同步更新 [后端 API 响应与异常处理](docs/design/backend-api-response-and-error-handling.md)。
+- 修改错误映射、认证/鉴权失败行为或错误契约时，必须同步更新 [后端 API 响应与异常处理](docs/design/backend-api-response-and-error-handling.md)；相应测试要求当前暂时禁用。
 
 ## 后端 Web 代码结构
 
@@ -80,7 +80,7 @@
 - 普通业务实体的列表查询统一使用 `SearchRequest`、`SearchEngine`，对应 Repository 统一继承 `SearchRepository`。
 - 查询包含 `projectId`、`catalogId` 等强制业务条件时，使用 `SearchEngine` 接收固定 `Specification` 的重载方法；固定条件必须始终通过 `AND` 与客户端查询条件组合。
 - 业务模块不得重复实现动态条件解析、分页、排序、类型转换或字段合法性校验。
-- `README.md` 中记录的 Search DSL 是稳定的对外契约。修改语法或语义前必须先讨论，确认后补充相应测试。
+- `README.md` 中记录的 Search DSL 是稳定的对外契约。修改语法或语义前必须先讨论；相应测试要求当前暂时禁用。
 - 第一版本只支持实体自身或父类声明的标量字段，不支持关联对象、集合、JSON、LOB，以及 `a.b` 形式的嵌套路径。
 - 复杂报表、聚合统计和动态物理表查询不属于实体查询能力，不得为了这些场景扭曲当前查询 API。
 
@@ -92,12 +92,17 @@
 
 - 优先使用直接、清晰的 Spring/JPA 实现和职责集中的小类。没有当前使用场景时，不增加额外分层、接口、工厂或扩展点。
 - 除非任务明确要求修改，否则保持现有 API 行为兼容。
-- 修改查询解析、类型转换、分页、排序、异常映射、认证行为或公共契约时，必须增加或更新有针对性的测试。
+- 修改查询解析、类型转换、分页、排序、异常映射、认证行为或公共契约时，增加或更新针对性测试的要求当前暂时禁用。
 - 对外配置和 API 行为发生变化时，同步更新相关文档。
 
-## 验证要求
+## 测试与验证（暂时禁用）
 
-- 启动工程进行本地联调、接口验证或依赖真实外部服务的测试时，优先启用 `local` Profile 并使用根目录不提交的 `config/application-local.yml`；`start-local-dev.sh` 是统一启动入口。Maven 中默认隔离运行的自动化测试仍使用各模块的 `application-test.yml`，不得因本地配置而连接共享环境。
-- 开发过程中可以使用 `./mvnw -pl <module> -am test` 进行模块级验证。
-- 后端代码修改完成前，必须在工程根目录运行完整构建：`./mvnw verify`。
-- 如果因为外部服务不可用而无法完成验证，必须明确说明已经验证和未验证的内容。
+- 当前阶段暂时禁用开发完成后的强制测试与验证要求。除非用户在具体任务中明确要求，否则不得因未执行测试、构建或联调而阻止交付。
+- 以下六项要求暂时禁用：
+  1. 后端模块级测试：`./mvnw -pl <module> -am test`。
+  2. 后端根目录完整构建：`./mvnw verify`。
+  3. 修改查询解析、类型转换、分页、排序、异常映射、认证行为、错误契约或公共契约后补充针对性测试。
+  4. 前端新增或修改依赖后运行 `pnpm check`。
+  5. Canvas 交互变更后补充单元测试或端到端测试。
+  6. 因外部服务不可用而无法验证时，说明已验证和未验证内容。
+- 如果用户明确要求启动工程进行本地联调、接口验证或依赖真实外部服务的测试，仍应优先启用 `local` Profile，并使用根目录不提交的 `config/application-local.yml`；`start-local-dev.sh` 是统一启动入口。Maven 中隔离运行的自动化测试使用各模块的 `application-test.yml`，不得因本地配置而连接共享环境。

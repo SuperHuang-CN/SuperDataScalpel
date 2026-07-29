@@ -69,12 +69,6 @@ public class ComputeEngine extends BaseEntity {
     @Column(name = "dispatcher_instance_id", length = 100)
     private String dispatcherInstanceId;
 
-    @Column(name = "protocol_version")
-    private Integer protocolVersion;
-
-    @Column(name = "config_revision", nullable = false)
-    private long configRevision;
-
     @Column(name = "last_check_at")
     private Instant lastCheckAt;
 
@@ -106,7 +100,6 @@ public class ComputeEngine extends BaseEntity {
         ComputeEngine engine = new ComputeEngine();
         engine.registrationState = ComputeEngineRegistrationState.CREATED;
         engine.healthState = ComputeEngineHealthState.UNKNOWN;
-        engine.configRevision = 1;
         engine.applyConfiguration(
                 name, description, dispatcherBaseUrl, accessTokenCiphertext, expectedBackendType,
                 commandTopic, runnerEventTopic, adminEventTopic,
@@ -156,11 +149,9 @@ public class ComputeEngine extends BaseEntity {
                 maxQueuedExecutions, maxConcurrentSubmissions, maxInFlightApplications
         );
         if (changed) {
-            configRevision++;
             healthState = ComputeEngineHealthState.UNKNOWN;
             reportedBackendType = null;
             dispatcherInstanceId = null;
-            protocolVersion = null;
             lastCheckAt = null;
             lastError = null;
         }
@@ -215,19 +206,17 @@ public class ComputeEngine extends BaseEntity {
 
     public void markHealthy(
             String dispatcherInstanceId,
-            int protocolVersion,
             ComputeBackendType reportedBackendType
     ) {
         this.dispatcherInstanceId = required(dispatcherInstanceId, "Dispatcher 实例标识");
-        this.protocolVersion = protocolVersion;
         this.reportedBackendType = Objects.requireNonNull(reportedBackendType, "Dispatcher 后端类型不能为空");
         this.healthState = ComputeEngineHealthState.UP;
         this.lastCheckAt = Instant.now();
         this.lastError = null;
     }
 
-    public void activate(String dispatcherInstanceId, int protocolVersion, ComputeBackendType reportedBackendType) {
-        markHealthy(dispatcherInstanceId, protocolVersion, reportedBackendType);
+    public void activate(String dispatcherInstanceId, ComputeBackendType reportedBackendType) {
+        markHealthy(dispatcherInstanceId, reportedBackendType);
         registrationState = ComputeEngineRegistrationState.ACTIVE;
         detachedAt = null;
         detachReason = null;
@@ -255,7 +244,6 @@ public class ComputeEngine extends BaseEntity {
         healthState = ComputeEngineHealthState.DOWN;
         reportedBackendType = null;
         dispatcherInstanceId = null;
-        protocolVersion = null;
         detachedAt = Instant.now();
         detachReason = normalizedReason.substring(0, Math.min(500, normalizedReason.length()));
         lastCheckAt = detachedAt;
@@ -288,8 +276,6 @@ public class ComputeEngine extends BaseEntity {
     public int getMaxConcurrentSubmissions() { return maxConcurrentSubmissions; }
     public int getMaxInFlightApplications() { return maxInFlightApplications; }
     public String getDispatcherInstanceId() { return dispatcherInstanceId; }
-    public Integer getProtocolVersion() { return protocolVersion; }
-    public long getConfigRevision() { return configRevision; }
     public Instant getLastCheckAt() { return lastCheckAt; }
     public String getLastError() { return lastError; }
     public Instant getDetachedAt() { return detachedAt; }

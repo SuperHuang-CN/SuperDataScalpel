@@ -11,6 +11,10 @@ import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
+import cn.superhuang.data.scalpel.contract.task.FileOutputConfiguration;
+import cn.superhuang.data.scalpel.contract.task.FileOutputConflictPolicy;
+import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
+import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputConfiguration;
@@ -154,7 +158,7 @@ class CanvasTaskCompilerSparkTest {
                                 resourceId.toString(), DatabaseObjectType.API_RESOURCE, columns))),
                 new MetadataDataSource(
                         storageDataSourceId, true, ConnectionKind.JDBC,
-                        Set.of(DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.DISTRIBUTION),
                         List.of(new MetadataTable("orders_target", DatabaseObjectType.TABLE, columns)))
         ), List.of());
         AtomicInteger jobsStarted = new AtomicInteger();
@@ -259,10 +263,10 @@ class CanvasTaskCompilerSparkTest {
     }
 
     @Test
-    void rejectsDistributionOnlyDataSourcesForJdbcOutput() throws Exception {
-        String distributionOnlyJson = Files.readString(examplePath())
-                .replace("\"purposes\": [\"STORAGE\"]", "\"purposes\": [\"DISTRIBUTION\"]");
-        TaskCompilationRequest request = objectMapper.readValue(distributionOnlyJson, TaskCompilationRequest.class);
+    void rejectsStorageOnlyDataSourcesForJdbcOutput() throws Exception {
+        String storageOnlyJson = Files.readString(examplePath())
+                .replace("\"purposes\": [\"DISTRIBUTION\"]", "\"purposes\": [\"STORAGE\"]");
+        TaskCompilationRequest request = objectMapper.readValue(storageOnlyJson, TaskCompilationRequest.class);
 
         CanvasCompilation compilation = compile(request.task().definition(), request);
 
@@ -523,6 +527,64 @@ class CanvasTaskCompilerSparkTest {
 
         assertFalse(compilation.valid());
         assertIssue(compilation.nodeResults().get(2), "SPARK_ANALYSIS_ERROR");
+    }
+
+    @Test
+    void compilesBatchFileOutputForAnEnabledDistributionS3WithoutStartingAJob() throws Exception {
+        UUID inputDataSourceId = UUID.randomUUID();
+        UUID outputDataSourceId = UUID.randomUUID();
+        String inputNodeId = UUID.randomUUID().toString();
+        String outputNodeId = UUID.randomUUID().toString();
+        List<CanvasColumnSchema> columns = List.of(new CanvasColumnSchema(
+                "id", PlatformDataType.LONG, null, null, null,
+                false, null, false, false, "订单 ID"));
+        CanvasDefinition definition = new CanvasDefinition(1, 6, List.of(
+                new JdbcInputNodeDefinition(
+                        inputNodeId,
+                        "订单输入",
+                        new cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout(
+                                0.0, 0.0, 240.0, 120.0),
+                        new JdbcInputConfiguration(inputDataSourceId.toString(), "orders")
+                ),
+                new FileOutputNodeDefinition(
+                        outputNodeId,
+                        "订单文件输出",
+                        new cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout(
+                                320.0, 0.0, 240.0, 120.0),
+                        new FileOutputConfiguration(
+                                "orders",
+                                outputDataSourceId.toString(),
+                                "exports/orders",
+                                FileOutputConflictPolicy.FAIL_IF_EXISTS,
+                                new FileOutputFormatOptions.Csv(true, ",", "\"", "\\", "")
+                        )
+                )
+        ), List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), inputNodeId, outputNodeId)));
+        MetadataSnapshot metadata = new MetadataSnapshot(List.of(
+                new MetadataDataSource(
+                        inputDataSourceId, true, ConnectionKind.JDBC,
+                        Set.of(DataSourcePurpose.SOURCE),
+                        List.of(new MetadataTable("orders", DatabaseObjectType.TABLE, columns))),
+                new MetadataDataSource(
+                        outputDataSourceId, true, ConnectionKind.S3,
+                        Set.of(DataSourcePurpose.DISTRIBUTION), List.of())
+        ), List.of());
+        AtomicInteger jobsStarted = new AtomicInteger();
+        sparkSession.sparkContext().addSparkListener(new SparkListener() {
+            @Override
+            public void onJobStart(SparkListenerJobStart jobStart) {
+                jobsStarted.incrementAndGet();
+            }
+        });
+
+        CanvasCompilation compilation = compiler.compile(
+                definition, MetadataIndex.create(metadata), sparkSession.newSession(), new AtomicBoolean());
+        sparkSession.sparkContext().listenerBus().waitUntilEmpty(10_000);
+
+        assertTrue(compilation.valid());
+        assertEquals(2, compilation.nodeResults().size());
+        assertTrue(compilation.nodeResults().get(1).outputTables().isEmpty());
+        assertEquals(0, jobsStarted.get(), "FILE_OUTPUT compilation must not access S3 or execute Spark");
     }
 
     @Test

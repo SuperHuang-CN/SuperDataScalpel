@@ -109,7 +109,7 @@ Excel/GDB 整文件替换采用破坏性语义：新文件提交后立即删除�
 `409`，不得返回部分结果。
 
 状态为 `READY` 或 `SCHEMA_READY` 且存在来源的表可以作为 Canvas 输入。运行准备直接快照权威
-Schema、解析参数和有序 Object Key 列表，生成 Manifest v6：
+Schema、解析参数和有序 Object Key 列表，生成 Manifest v7：
 
 - 表输入保存数据集 ID、表 ID、Schema 指纹和目标 Schema；
 - 来源输入保存稳定来源 ID、文件 ID、格式、压缩、存储位置和来源键；

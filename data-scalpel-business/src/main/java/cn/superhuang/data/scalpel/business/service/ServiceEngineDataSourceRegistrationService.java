@@ -133,7 +133,7 @@ public class ServiceEngineDataSourceRegistrationService {
             EngineDataSourceTestResponse response = engineClient.testDataSource(
                     preparation.engine(), preparation.dataSourceId()
             );
-            if (response == null || !preparation.engine().getCode().equals(response.engineCode())
+            if (response == null || !preparation.engine().matchesCode(response.engineCode())
                     || !preparation.dataSourceId().equals(response.dataSourceId())) {
                 throw new IllegalStateException("服务引擎未确认数据源测试结果");
             }
@@ -207,7 +207,7 @@ public class ServiceEngineDataSourceRegistrationService {
                             preparation.dataSourceId(), preparation.revision(), preparation.snapshot()
                     )
             );
-            if (response == null || !preparation.engine().getCode().equals(response.engineCode())
+            if (response == null || !preparation.engine().matchesCode(response.engineCode())
                     || !preparation.dataSourceId().equals(response.dataSourceId())
                     || response.revision() != preparation.revision()
                     || response.status() != EngineDataSourceStatus.READY) {
@@ -335,7 +335,7 @@ public class ServiceEngineDataSourceRegistrationService {
 
     private void verifyEngineCapability(ServiceEngine engine, DataSource dataSource) {
         ServiceEngineInfoResponse info = engineClient.info(engine);
-        if (info == null || !engine.getCode().equals(info.code())) {
+        if (info == null || !engine.matchesCode(info.code())) {
             throw new IllegalStateException("服务引擎身份校验失败");
         }
         if (!info.databaseTypes().contains(dataSource.getType().name())) {

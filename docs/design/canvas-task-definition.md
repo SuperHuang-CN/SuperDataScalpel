@@ -15,6 +15,7 @@
 - `MODEL_OUTPUT`
 - `JDBC_OUTPUT`
 - `KAFKA_OUTPUT`
+- `FILE_OUTPUT`
 
 模型节点的配置、模型快照、引用投影和运行边界以 [Canvas ModelInput 与 ModelOutput 设计](canvas-model-nodes.md) 为准。
 
@@ -37,6 +38,7 @@ Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳
 - 一个 `MODEL_OUTPUT` 节点只描述一次向一个目标模型的写入。
 - 一个 `JDBC_OUTPUT` 节点只描述一次向一张目标表的写入。
 - 一个 `KAFKA_OUTPUT` 节点只描述一次向一个 Topic 的写入，并持有自己的 Value Schema。
+- 一个 `FILE_OUTPUT` 节点只描述一次向用户指定的外部存储目录写入。
 - 多张输入表、多次 Join 或多个输出目标使用多个图节点表达。
 
 这样可以让画布直接表达数据血缘，避免在节点内部再次维护 `items`、`actions`、`mappings` 等小型工作流。
@@ -77,7 +79,7 @@ Task Engine 的编译请求使用独立的 `metadataSnapshot` 携带本次分析
 
 ### 2.4 不保存数据源凭据
 
-Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 `fileDatasetTableId`，HTTP API 节点只保存 `dataSourceId/resourceId`，模型节点只保存 `modelId/targetModelId`，Kafka 节点只保存数据源 ID、Topic、节点自有 Value Schema 和映射配置。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
+Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 `fileDatasetTableId`，HTTP API 节点只保存 `dataSourceId/resourceId`，模型节点只保存 `modelId/targetModelId`，Kafka 节点只保存数据源 ID、Topic、节点自有 Value Schema 和映射配置，文件输出只保存数据源 ID 与相对目录。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
 
 `HTTP_API_INPUT.runtimeParameters` 会随 Canvas 定义明文持久化，只允许保存日期、业务筛选条件、初始游标等非敏感值。动态 Token 必须由 HTTP API 数据源的 OAuth2 或 Token Endpoint 鉴权在执行时生成，不能作为运行时参数绕过凭据边界。
 
@@ -88,7 +90,7 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 ```json
 {
   "schemaVersion": 1,
-  "schemaMinorVersion": 5,
+  "schemaMinorVersion": 6,
   "nodes": [],
   "edges": []
 }
@@ -97,11 +99,11 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `1` |
-| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；缺失时按 `0`，当前写出版本为 `5` |
+| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；缺失时按 `0`，当前写出版本为 `6` |
 | `nodes` | array | 节点定义，按照前端保存顺序持久化；业务逻辑不得依赖数组顺序 |
 | `edges` | array | 有向边定义，业务逻辑不得依赖数组顺序 |
 
-当前实现兼容读取 `1.0`～`1.5`，并把新保存、接口返回、Manifest 和导出统一规范化为 `1.5`。`MODEL_INPUT/MODEL_OUTPUT` 从 `1.1` 开始可用，`RENAME` 从 `1.2` 开始可用，`STREAM_JOIN` 从 `1.3` 开始可用，`FILE_DATASET_INPUT` 从 `1.4` 开始可用，使用内联 Value Schema 的 `KAFKA_INPUT/KAFKA_OUTPUT` 从 `1.5` 开始可用。低版本携带高版本节点时返回 `NODE_TYPE_REQUIRES_SCHEMA_VERSION`；同主版本但高于当前的小版本、其他大版本、负数小版本以及版本与节点能力不一致的定义必须拒绝。
+当前实现兼容读取 `1.0`～`1.6`，并把新保存、接口返回、Manifest 和导出统一规范化为 `1.6`。`MODEL_INPUT/MODEL_OUTPUT` 从 `1.1` 开始可用，`RENAME` 从 `1.2` 开始可用，`STREAM_JOIN` 从 `1.3` 开始可用，`FILE_DATASET_INPUT` 从 `1.4` 开始可用，使用内联 Value Schema 的 `KAFKA_INPUT/KAFKA_OUTPUT` 从 `1.5` 开始可用，`FILE_OUTPUT` 从 `1.6` 开始可用。低版本携带高版本节点时返回 `NODE_TYPE_REQUIRES_SCHEMA_VERSION`；同主版本但高于当前的小版本、其他大版本、负数小版本以及版本与节点能力不一致的定义必须拒绝。
 
 小版本通常用于新增节点类型、可选字段或其他不改变已有定义语义的能力；删除或重命名字段、改变已有节点语义、修改核心图规则等不兼容变化原则上升级大版本。本次 Kafka 节点尚无历史业务数据，按明确决策以 `1.5` 直接替换未投入使用的 `valueModelId` 草案，不升级 `2.0`，也不保留兼容分支。版本不得使用 JSON 小数表示，避免 `1.1`、`1.10` 的比较歧义。
 
@@ -447,7 +449,7 @@ interface JdbcOutputConfiguration {
 ### 8.5 校验
 
 - 上游 Map 中存在 `sourceTableName`。
-- `dataSourceId` 对应已启用的 JDBC 数据源，并具有 `STORAGE`（数据存储）用途。
+- `dataSourceId` 对应已启用的 JDBC 数据源，并具有 `DISTRIBUTION`（数据分发）用途。
 - 目标表存在且可读取元数据。
 - 目标对象必须是允许写入的物理表，不能是只读视图。
 - 写入模式、映射模式和字段配置一致。
@@ -525,7 +527,7 @@ orders INNER customers → order_customer
 表单顺序：
 
 1. 来源表：从直接上游 Map 中选择。
-2. 目标数据源：只列出已启用、JDBC 类型且具有 `STORAGE`（数据存储）用途的数据源。
+2. 目标数据源：只列出已启用、JDBC 类型且具有 `DISTRIBUTION`（数据分发）用途的数据源。
 3. 目标物理表：从目标数据源配置的数据库和 Schema 中加载。
 4. 写入模式。
 5. 字段映射模式。

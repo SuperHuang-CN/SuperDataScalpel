@@ -25,8 +25,6 @@ public record ComputeEngineResponse(
         int maxConcurrentSubmissions,
         int maxInFlightApplications,
         String dispatcherInstanceId,
-        Integer protocolVersion,
-        long configRevision,
         Instant lastCheckAt,
         String lastError,
         Instant detachedAt,
@@ -41,8 +39,8 @@ public record ComputeEngineResponse(
                 engine.getRegistrationState(), engine.getHealthState(), engine.getCommandTopic(),
                 engine.getRunnerEventTopic(), engine.getAdminEventTopic(), engine.getMaxQueuedExecutions(),
                 engine.getMaxConcurrentSubmissions(), engine.getMaxInFlightApplications(),
-                engine.getDispatcherInstanceId(), engine.getProtocolVersion(), engine.getConfigRevision(),
-                engine.getLastCheckAt(), engine.getLastError(), engine.getDetachedAt(), engine.getDetachReason(),
+                engine.getDispatcherInstanceId(), engine.getLastCheckAt(), engine.getLastError(),
+                engine.getDetachedAt(), engine.getDetachReason(),
                 engine.getCreatedAt(), engine.getUpdatedAt()
         );
     }

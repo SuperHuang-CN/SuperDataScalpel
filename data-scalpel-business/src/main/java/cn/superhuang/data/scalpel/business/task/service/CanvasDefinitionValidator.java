@@ -180,6 +180,53 @@ public class CanvasDefinitionValidator {
                 requireString(output.configuration().keyColumnName(), path + ".keyColumnName");
                 validateMappings(output.configuration().columnMappings(), path + ".columnMappings");
             }
+            case CanvasDefinition.FileOutputNodeDefinition output -> {
+                if (output.configuration() == null) invalid(path + " 不能为空");
+                requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
+                requireOptionalUuid(output.configuration().dataSourceId(), path + ".dataSourceId");
+                validateFileOutputTargetPath(output.configuration().targetPath(), path + ".targetPath");
+                if (output.configuration().conflictPolicy() == null) {
+                    invalid(path + ".conflictPolicy 不能为空");
+                }
+                if (output.configuration().formatOptions() == null) {
+                    invalid(path + ".formatOptions 不能为空");
+                }
+                switch (output.configuration().formatOptions()) {
+                    case CanvasDefinition.FileOutputFormatOptions.Csv csv -> {
+                        requireSingleCharacter(csv.delimiter(), path + ".formatOptions.delimiter");
+                        requireSingleCharacter(csv.quote(), path + ".formatOptions.quote");
+                        requireSingleCharacter(csv.escape(), path + ".formatOptions.escape");
+                        requireString(csv.nullValue(), path + ".formatOptions.nullValue");
+                    }
+                    case CanvasDefinition.FileOutputFormatOptions.JsonLines ignored -> {
+                    }
+                    case CanvasDefinition.FileOutputFormatOptions.Parquet ignored -> {
+                    }
+                    case null -> invalid(path + ".formatOptions 不能为空");
+                }
+            }
+        }
+    }
+
+    private static void requireSingleCharacter(String value, String path) {
+        if (value == null || value.codePointCount(0, value.length()) != 1
+                || value.indexOf('\r') >= 0 || value.indexOf('\n') >= 0) {
+            invalid(path + " 必须是一个非换行字符");
+        }
+    }
+
+    private static void validateFileOutputTargetPath(String value, String path) {
+        requireString(value, path);
+        if (value.isBlank() || value.length() > 1024
+                || value.startsWith("/") || value.contains("\\")
+                || value.contains("://") || value.contains("?") || value.contains("#")) {
+            invalid(path + " 必须是非空的 S3 相对路径");
+        }
+        for (String segment : value.split("/", -1)) {
+            if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)
+                    || "_temporary".equalsIgnoreCase(segment)) {
+                invalid(path + " 不能包含空段、.、.. 或 _temporary");
+            }
         }
     }
 

@@ -17,7 +17,7 @@ public record CanvasDefinition(
 ) {
 
     public static final int CURRENT_SCHEMA_VERSION = 1;
-    public static final int CURRENT_SCHEMA_MINOR_VERSION = 5;
+    public static final int CURRENT_SCHEMA_MINOR_VERSION = 6;
     public static final int LEGACY_SCHEMA_MINOR_VERSION = 0;
 
     public CanvasDefinition {
@@ -47,14 +47,15 @@ public record CanvasDefinition(
             @JsonSubTypes.Type(value = RenameNodeDefinition.class, name = "RENAME"),
             @JsonSubTypes.Type(value = ModelOutputNodeDefinition.class, name = "MODEL_OUTPUT"),
             @JsonSubTypes.Type(value = JdbcOutputNodeDefinition.class, name = "JDBC_OUTPUT"),
-            @JsonSubTypes.Type(value = KafkaOutputNodeDefinition.class, name = "KAFKA_OUTPUT")
+            @JsonSubTypes.Type(value = KafkaOutputNodeDefinition.class, name = "KAFKA_OUTPUT"),
+            @JsonSubTypes.Type(value = FileOutputNodeDefinition.class, name = "FILE_OUTPUT")
     })
     public sealed interface CanvasNodeDefinition
             permits ModelInputNodeDefinition, JdbcInputNodeDefinition, FileDatasetInputNodeDefinition,
                     HttpApiInputNodeDefinition,
                     KafkaInputNodeDefinition, JoinNodeDefinition, StreamJoinNodeDefinition,
                     RenameNodeDefinition, ModelOutputNodeDefinition, JdbcOutputNodeDefinition,
-                    KafkaOutputNodeDefinition {
+                    KafkaOutputNodeDefinition, FileOutputNodeDefinition {
 
         String id();
 
@@ -77,7 +78,8 @@ public record CanvasDefinition(
         RENAME,
         MODEL_OUTPUT,
         JDBC_OUTPUT,
-        KAFKA_OUTPUT
+        KAFKA_OUTPUT,
+        FILE_OUTPUT
     }
 
     public record ModelInputNodeDefinition(
@@ -209,6 +211,18 @@ public record CanvasDefinition(
         @Override
         public CanvasNodeType nodeType() {
             return CanvasNodeType.KAFKA_OUTPUT;
+        }
+    }
+
+    public record FileOutputNodeDefinition(
+            String id,
+            String name,
+            CanvasNodeLayout layout,
+            FileOutputConfiguration configuration
+    ) implements CanvasNodeDefinition {
+        @Override
+        public CanvasNodeType nodeType() {
+            return CanvasNodeType.FILE_OUTPUT;
         }
     }
 
@@ -344,6 +358,50 @@ public record CanvasDefinition(
             ColumnMappingMode columnMappingMode,
             List<JdbcColumnMapping> columnMappings
     ) {
+    }
+
+    public record FileOutputConfiguration(
+            String sourceTableName,
+            String dataSourceId,
+            String targetPath,
+            FileOutputConflictPolicy conflictPolicy,
+            FileOutputFormatOptions formatOptions
+    ) {
+        public FileOutputConfiguration {
+            targetPath = cn.superhuang.data.scalpel.contract.task.FileOutputPaths.normalize(targetPath);
+        }
+    }
+
+    public enum FileOutputConflictPolicy {
+        FAIL_IF_EXISTS,
+        OVERWRITE
+    }
+
+    @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "type")
+    @JsonSubTypes({
+            @JsonSubTypes.Type(value = FileOutputFormatOptions.Csv.class, name = "CSV"),
+            @JsonSubTypes.Type(value = FileOutputFormatOptions.JsonLines.class, name = "JSON_LINES"),
+            @JsonSubTypes.Type(value = FileOutputFormatOptions.Parquet.class, name = "PARQUET")
+    })
+    public sealed interface FileOutputFormatOptions permits
+            FileOutputFormatOptions.Csv,
+            FileOutputFormatOptions.JsonLines,
+            FileOutputFormatOptions.Parquet {
+
+        record Csv(
+                boolean header,
+                String delimiter,
+                String quote,
+                String escape,
+                String nullValue
+        ) implements FileOutputFormatOptions {
+        }
+
+        record JsonLines(boolean ignoreNullFields) implements FileOutputFormatOptions {
+        }
+
+        record Parquet() implements FileOutputFormatOptions {
+        }
     }
 
     public enum JdbcWriteMode {

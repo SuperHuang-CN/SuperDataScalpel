@@ -235,6 +235,13 @@ class CanvasTaskRunPreparationServiceTest {
     }
 
     @Test
+    void rejectsStorageOnlyDataSourceForJdbcOutput() {
+        assertThatThrownBy(() -> service.prepare(jdbcOutputDefinition(dataSource.getId())))
+                .isInstanceOf(ResponseStatusException.class)
+                .hasMessageContaining("输出数据源不具有 DISTRIBUTION 用途");
+    }
+
+    @Test
     void rejectsGeometryModelsBeforePhysicalInspectionOrCompilation() {
         DataModelField geometryField = DataModelField.create(
                 model.getId(),
@@ -569,6 +576,27 @@ class CanvasTaskRunPreparationServiceTest {
                         "订单模型输入",
                         new CanvasDefinition.CanvasNodeLayout(0, 0, 240, 120),
                         new CanvasDefinition.ModelInputConfiguration(model.getId().toString())
+                )),
+                List.of()
+        );
+    }
+
+    private static CanvasDefinition jdbcOutputDefinition(UUID dataSourceId) {
+        return new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(new CanvasDefinition.JdbcOutputNodeDefinition(
+                        UUID.randomUUID().toString(),
+                        "订单 JDBC 输出",
+                        new CanvasDefinition.CanvasNodeLayout(0, 0, 240, 120),
+                        new CanvasDefinition.JdbcOutputConfiguration(
+                                "orders",
+                                dataSourceId.toString(),
+                                "dwd_orders",
+                                CanvasDefinition.JdbcWriteMode.APPEND,
+                                CanvasDefinition.ColumnMappingMode.BY_NAME,
+                                List.of()
+                        )
                 )),
                 List.of()
         );

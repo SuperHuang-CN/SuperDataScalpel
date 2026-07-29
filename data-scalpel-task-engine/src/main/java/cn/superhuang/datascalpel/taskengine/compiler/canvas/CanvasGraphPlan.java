@@ -149,6 +149,13 @@ public final class CanvasGraphPlan {
                         "type"
                 );
             }
+            if (schemaMinorVersion < 6 && node.nodeType() == CanvasNodeType.FILE_OUTPUT) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "FILE_OUTPUT 从 Canvas 1.6 开始支持",
+                        "type"
+                );
+            }
             if (!nodeOperators.supports(node.nodeType(), executionMode)) {
                 entry.result().error(
                         "NODE_EXECUTION_MODE_NOT_SUPPORTED",
@@ -192,6 +199,7 @@ public final class CanvasGraphPlan {
             case cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition output -> output.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition output -> output.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition output -> output.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition output -> output.configuration() == null;
         };
         if (missingConfiguration) {
             entry.result().error("CONFIGURATION_REQUIRED", "节点配置不能为空", "configuration");
@@ -289,7 +297,7 @@ public final class CanvasGraphPlan {
                         incoming == 0 && outgoing >= 1;
                 case JOIN, STREAM_JOIN -> incoming == 2 && outgoing >= 1;
                 case RENAME -> incoming == 1 && outgoing >= 1;
-                case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT -> incoming == 1 && outgoing == 0;
+                case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT -> incoming == 1 && outgoing == 0;
             };
             if (!valid) {
                 String message = switch (type) {
@@ -304,6 +312,7 @@ public final class CanvasGraphPlan {
                     case MODEL_OUTPUT -> "模型输出节点必须有一条入边且不能有出边";
                     case JDBC_OUTPUT -> "JDBC 输出节点必须有一条入边且不能有出边";
                     case KAFKA_OUTPUT -> "Kafka 输出节点必须有一条入边且不能有出边";
+                    case FILE_OUTPUT -> "文件输出节点必须有一条入边且不能有出边";
                 };
                 entry.result().error("INVALID_NODE_DEGREE", message, "edges");
             }

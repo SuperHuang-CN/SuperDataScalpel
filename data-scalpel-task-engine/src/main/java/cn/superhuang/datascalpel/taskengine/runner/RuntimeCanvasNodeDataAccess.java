@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeDataAccess;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedKafkaOutput;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedFileOutput;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
@@ -14,9 +15,11 @@ import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeFileInput;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeFileStorage;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeKafkaConnection;
+import cn.superhuang.datascalpel.taskengine.contract.RuntimeS3Connection;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDataSource;
@@ -222,7 +225,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
                 node.configuration().dataSourceId(), "输出数据源 ID 无效", node.id());
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
-                runtimeSources, dataSourceId, DataSourcePurpose.STORAGE, node.id());
+                runtimeSources, dataSourceId, DataSourcePurpose.DISTRIBUTION, node.id());
         if (runtime.connectionKind() != ConnectionKind.JDBC) {
             throw new RunnerExecutionException(
                     "RUNTIME_DATA_SOURCE_UNAVAILABLE", "输出节点需要 JDBC 数据源", node.id());
@@ -299,6 +302,29 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     }
 
     @Override
+    public CanvasPreparedFileOutput prepareFileOutput(
+            FileOutputNodeDefinition node,
+            Dataset<Row> dataset
+    ) {
+        UUID dataSourceId = CanvasTaskExecutor.uuid(
+                node.configuration().dataSourceId(), "文件输出数据源 ID 无效", node.id());
+        RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
+                runtimeSources, dataSourceId, DataSourcePurpose.DISTRIBUTION, node.id());
+        RuntimeS3Connection connection = runtime.s3Connection();
+        if (runtime.connectionKind() != ConnectionKind.S3 || connection == null) {
+            throw new RunnerExecutionException(
+                    "RUNTIME_DATA_SOURCE_UNAVAILABLE", "文件输出节点需要 S3 数据源", node.id());
+        }
+        String targetKey = joinKey(connection.rootPrefix(), node.configuration().targetPath());
+        return new CanvasPreparedFileOutput(
+                node,
+                runtime,
+                "s3a://" + connection.bucket() + "/" + targetKey,
+                dataset
+        );
+    }
+
+    @Override
     public void close() {
         httpApiStagers.forEach(HttpApiBatchDatasetStager::close);
     }
@@ -320,5 +346,9 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
 
     private static String jaas(String value) {
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    private static String joinKey(String prefix, String path) {
+        return prefix == null || prefix.isBlank() ? path : prefix + "/" + path;
     }
 }

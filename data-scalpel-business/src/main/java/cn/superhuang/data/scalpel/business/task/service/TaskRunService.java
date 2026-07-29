@@ -57,6 +57,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.ArrayList;
@@ -290,7 +291,9 @@ public class TaskRunService {
         UUID runId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         Instant createdAt = Instant.now();
-        Instant deadline = Instant.now().plus(canvasProperties.timeout());
+        Instant deadline = Instant.now()
+                .plus(canvasProperties.timeout())
+                .truncatedTo(ChronoUnit.SECONDS);
         String base = "task-runs/%s/attempts/1/".formatted(runId);
         String manifestKey = base + "manifest.json";
         String resultKey = base + "result.json";

@@ -9,6 +9,6 @@ spring:
 
 data-scalpel:
   engine:
-    code: engine-test
+    code: engine_test
     management-token: engine-test-token
     encryption-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

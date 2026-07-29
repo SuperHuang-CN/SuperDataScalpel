@@ -40,7 +40,7 @@ describe('CanvasNodePalette', () => {
 
     expect(screen.getByRole('button', { name: '输入 4' })).toHaveAttribute('aria-expanded', 'false');
     expect(screen.getByRole('button', { name: '处理器 2' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '输出 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '输出 3' })).toBeInTheDocument();
     expect(screen.queryByLabelText('输入节点')).not.toBeInTheDocument();
   });
 
@@ -156,6 +156,6 @@ describe('CanvasNodePalette', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(screen.queryByLabelText('输出节点')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: '输出 2' })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: '输出 3' })).toHaveFocus());
   });
 });

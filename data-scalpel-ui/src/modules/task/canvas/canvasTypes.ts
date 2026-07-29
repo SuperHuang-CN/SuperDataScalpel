@@ -1,7 +1,7 @@
 import type { PlatformDataType } from '../../model';
 
 export const CANVAS_SCHEMA_VERSION = 1 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 5 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 6 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
 
 export const CanvasNodeType = {
@@ -16,6 +16,7 @@ export const CanvasNodeType = {
   ModelOutput: 'MODEL_OUTPUT',
   JdbcOutput: 'JDBC_OUTPUT',
   KafkaOutput: 'KAFKA_OUTPUT',
+  FileOutput: 'FILE_OUTPUT',
 } as const;
 
 export type CanvasNodeType = typeof CanvasNodeType[keyof typeof CanvasNodeType];
@@ -158,6 +159,37 @@ export interface KafkaOutputConfiguration {
   columnMappings: CanvasColumnMapping[];
 }
 
+export type FileOutputConflictPolicy = 'FAIL_IF_EXISTS' | 'OVERWRITE';
+
+export type FileOutputFormatOptions =
+  | {
+    type: 'CSV';
+    header: boolean;
+    delimiter: string;
+    quote: string;
+    escape: string;
+    nullValue: string;
+  }
+  | {
+    type: 'JSON_LINES';
+    ignoreNullFields: boolean;
+  }
+  | {
+    type: 'PARQUET';
+  };
+
+export interface FileOutputConfiguration {
+  sourceTableName: string;
+  dataSourceId: string;
+  targetPath: string;
+  conflictPolicy: FileOutputConflictPolicy;
+  formatOptions: FileOutputFormatOptions;
+}
+
+export const normalizeFileOutputPath = (value: string): string => (
+  value.trim().replace(/\/{2,}/g, '/').replace(/\/+$/, '')
+);
+
 interface CanvasNodeBase<T extends CanvasNodeType, C> {
   id: string;
   type: T;
@@ -215,6 +247,11 @@ export type KafkaOutputNodeDefinition = CanvasNodeBase<
   KafkaOutputConfiguration
 >;
 
+export type FileOutputNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.FileOutput,
+  FileOutputConfiguration
+>;
+
 export type CanvasNodeDefinition =
   | ModelInputNodeDefinition
   | JdbcInputNodeDefinition
@@ -226,7 +263,8 @@ export type CanvasNodeDefinition =
   | RenameNodeDefinition
   | ModelOutputNodeDefinition
   | JdbcOutputNodeDefinition
-  | KafkaOutputNodeDefinition;
+  | KafkaOutputNodeDefinition
+  | FileOutputNodeDefinition;
 
 export type CanvasNodeConfigurationUpdate =
   | Pick<ModelInputNodeDefinition, 'id' | 'type' | 'configuration'>
@@ -239,7 +277,8 @@ export type CanvasNodeConfigurationUpdate =
   | Pick<RenameNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<ModelOutputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JdbcOutputNodeDefinition, 'id' | 'type' | 'configuration'>
-  | Pick<KafkaOutputNodeDefinition, 'id' | 'type' | 'configuration'>;
+  | Pick<KafkaOutputNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<FileOutputNodeDefinition, 'id' | 'type' | 'configuration'>;
 
 export type CanvasNodeConfiguration = CanvasNodeDefinition['configuration'];
 
@@ -403,7 +442,8 @@ export type CanvasNodeRuntimeData =
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.Rename, RenameConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.ModelOutput, ModelOutputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.JdbcOutput, JdbcOutputConfiguration>
-  | CanvasNodeRuntimeBase<typeof CanvasNodeType.KafkaOutput, KafkaOutputConfiguration>;
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.KafkaOutput, KafkaOutputConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.FileOutput, FileOutputConfiguration>;
 
 export const emptyNodeConfiguration = (type: CanvasNodeType): CanvasNodeConfiguration => {
   switch (type) {
@@ -471,6 +511,21 @@ export const emptyNodeConfiguration = (type: CanvasNodeType): CanvasNodeConfigur
         keyColumnName: '',
         columnMappingMode: null,
         columnMappings: [],
+      };
+    case CanvasNodeType.FileOutput:
+      return {
+        sourceTableName: '',
+        dataSourceId: '',
+        targetPath: '',
+        conflictPolicy: 'FAIL_IF_EXISTS',
+        formatOptions: {
+          type: 'CSV',
+          header: true,
+          delimiter: ',',
+          quote: '"',
+          escape: '\\',
+          nullValue: '',
+        },
       };
   }
 };

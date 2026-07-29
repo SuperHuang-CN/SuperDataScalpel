@@ -39,7 +39,7 @@ const dataSourceId = '55859069-6387-4390-b850-104845ee5370';
 
 const definition: CanvasDefinition = {
   schemaVersion: 1,
-  schemaMinorVersion: 5,
+  schemaMinorVersion: 6,
   nodes: [
     {
       id: '4add70a7-4948-42a5-af66-e56dbaccad3e',
@@ -75,7 +75,7 @@ const dataSource: DataSource = {
   code: 'order-db',
   name: '订单数据库',
   directoryId: null,
-  purposes: ['SOURCE', 'STORAGE'],
+  purposes: ['SOURCE', 'STORAGE', 'DISTRIBUTION'],
   type: 'POSTGRESQL',
   connectionKind: 'JDBC',
   enabled: true,
@@ -228,7 +228,7 @@ const apiResource: ApiResource = {
 
 const httpApiDefinition: CanvasDefinition = {
   schemaVersion: 1,
-  schemaMinorVersion: 5,
+  schemaMinorVersion: 6,
   nodes: [{
     id: '16b03251-cff6-40f1-971c-79cf26430b30',
     type: 'HTTP_API_INPUT',
@@ -313,7 +313,7 @@ const modelDetail: DataModelDetail = {
 
 const modelDefinition: CanvasDefinition = {
   schemaVersion: 1,
-  schemaMinorVersion: 5,
+  schemaMinorVersion: 6,
   nodes: [{
     id: 'a73c1b85-afeb-46f4-9ce9-dd9082ed3757',
     type: 'MODEL_INPUT',
@@ -370,7 +370,7 @@ describe('useCanvasMetadataSnapshot', () => {
 
   afterEach(() => vi.clearAllMocks());
 
-  it('sends one complete table schema and preserves source/storage purposes for Task Engine', async () => {
+  it('sends one complete table schema and preserves source/storage/distribution purposes for Task Engine', async () => {
     vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
     vi.mocked(fetchTableMetadata).mockResolvedValue(tableMetadata);
 
@@ -385,7 +385,7 @@ describe('useCanvasMetadataSnapshot', () => {
       id: dataSourceId,
       enabled: true,
       connectionKind: 'JDBC',
-      purposes: ['SOURCE', 'STORAGE'],
+      purposes: ['DISTRIBUTION', 'SOURCE', 'STORAGE'],
       tables: [{
         tableName: 'orders',
         objectType: 'VIEW',
@@ -467,7 +467,7 @@ describe('useCanvasMetadataSnapshot', () => {
     };
     const kafkaDefinition: CanvasDefinition = {
       schemaVersion: 1,
-      schemaMinorVersion: 5,
+      schemaMinorVersion: 6,
       nodes: [{
         id: '49cc72e3-0b1e-4031-a71f-b8fa26045339',
         type: 'KAFKA_INPUT',
@@ -551,7 +551,7 @@ describe('useCanvasMetadataSnapshot', () => {
     const fileDatasetTableId = '4caa81d1-a92e-44b6-a5aa-5cd31635972c';
     const fileDefinition: CanvasDefinition = {
       schemaVersion: 1,
-      schemaMinorVersion: 5,
+      schemaMinorVersion: 6,
       nodes: [{
         id: '6762e8e3-6b76-4c29-8ac1-1db11d1fa57d',
         type: 'FILE_DATASET_INPUT',
@@ -682,7 +682,7 @@ describe('useCanvasMetadataSnapshot', () => {
     });
     expect(result.current.metadataSnapshot.dataSources).toEqual([expect.objectContaining({
       id: dataSourceId,
-      purposes: ['SOURCE', 'STORAGE'],
+      purposes: ['DISTRIBUTION', 'SOURCE', 'STORAGE'],
       tables: [],
     })]);
     expect(result.current.metadataSnapshot.models).toEqual([{

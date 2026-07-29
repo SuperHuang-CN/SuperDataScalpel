@@ -30,7 +30,7 @@ import type {
   TaskCompilationMetadataFileDatasetTable,
 } from './taskCompilationTypes';
 
-type CanvasMetadataRole = 'SOURCE' | 'STORAGE';
+type CanvasMetadataRole = 'SOURCE' | 'DISTRIBUTION';
 
 interface CanvasJdbcMetadataRequest {
   dataSourceId: string;
@@ -128,7 +128,7 @@ const jdbcMetadataRequests = (definition: CanvasDefinition): CanvasJdbcMetadataR
     if (node.type === CanvasNodeType.JdbcOutput) {
       const { dataSourceId, targetTableName } = node.configuration;
       return dataSourceId && targetTableName
-        ? [{ dataSourceId, tableName: targetTableName, role: 'STORAGE' }]
+        ? [{ dataSourceId, tableName: targetTableName, role: 'DISTRIBUTION' }]
         : [];
     }
     return [];
@@ -177,6 +177,14 @@ const kafkaDataSourceIds = (definition: CanvasDefinition) => [...new Set(
   definition.nodes.flatMap((node) => (
     (node.type === CanvasNodeType.KafkaInput || node.type === CanvasNodeType.KafkaOutput)
       && node.configuration.dataSourceId
+      ? [node.configuration.dataSourceId]
+      : []
+  )),
+)];
+
+const fileOutputDataSourceIds = (definition: CanvasDefinition) => [...new Set(
+  definition.nodes.flatMap((node) => (
+    node.type === CanvasNodeType.FileOutput && node.configuration.dataSourceId
       ? [node.configuration.dataSourceId]
       : []
   )),
@@ -255,6 +263,20 @@ const kafkaCompilationDataSource = (
     : null
 );
 
+const s3CompilationDataSource = (
+  dataSource: DataSource,
+): TaskCompilationMetadataDataSource | null => (
+  dataSource.connectionKind === 'S3' && dataSource.connection.kind === 'S3'
+    ? {
+      id: dataSource.id,
+      enabled: dataSource.enabled,
+      connectionKind: 'S3',
+      purposes: [...dataSource.purposes].sort(),
+      tables: [],
+    }
+    : null
+);
+
 export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   const jdbcRequests = jdbcMetadataRequests(definition);
   const apiRequests = apiMetadataRequests(definition);
@@ -262,6 +284,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   const physicalIds = physicalModelIds(definition);
   const physicalIdSet = new Set(physicalIds);
   const kafkaIds = kafkaDataSourceIds(definition);
+  const fileOutputIds = fileOutputDataSourceIds(definition);
   const referencedFileTableIds = fileDatasetTableIds(definition);
   const fileDatasetMetadataQuery = useQuery({
     queryKey: ['file-dataset-tables', 'canvas-metadata', referencedFileTableIds],
@@ -297,6 +320,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     ...jdbcRequests.map((request) => request.dataSourceId),
     ...apiRequests.map((request) => request.dataSourceId),
     ...kafkaIds,
+    ...fileOutputIds,
     ...physicalModelDetails.map((detail) => detail.model.storageDataSourceId),
   ])];
   const dataSourceQueries = useQueries({
@@ -405,7 +429,12 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       return;
     }
     const kafkaCompiled = kafkaCompilationDataSource(dataSource);
-    if (kafkaCompiled) compilationDataSources.set(dataSourceId, kafkaCompiled);
+    if (kafkaCompiled) {
+      compilationDataSources.set(dataSourceId, kafkaCompiled);
+      return;
+    }
+    const s3Compiled = s3CompilationDataSource(dataSource);
+    if (s3Compiled) compilationDataSources.set(dataSourceId, s3Compiled);
   });
 
   const compilationModels = modelDetails.flatMap((detail): TaskCompilationMetadataModel[] => {
@@ -544,7 +573,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   const dataSourceNodeIds = (dataSourceId: string) => definition.nodes.flatMap((node) => {
     if ((node.type === CanvasNodeType.JdbcInput || node.type === CanvasNodeType.JdbcOutput
         || node.type === CanvasNodeType.HttpApiInput || node.type === CanvasNodeType.KafkaInput
-        || node.type === CanvasNodeType.KafkaOutput)
+        || node.type === CanvasNodeType.KafkaOutput || node.type === CanvasNodeType.FileOutput)
         && node.configuration.dataSourceId === dataSourceId) return [node.id];
     if (node.type === CanvasNodeType.ModelInput || node.type === CanvasNodeType.ModelOutput) {
       const modelId = node.type === CanvasNodeType.ModelInput

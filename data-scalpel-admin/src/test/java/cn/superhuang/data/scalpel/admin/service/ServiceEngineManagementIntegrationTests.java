@@ -96,6 +96,7 @@ class ServiceEngineManagementIntegrationTests {
         assertThat(credentialCipher.decrypt(second.getManagementTokenCiphertext())).isEqualTo("token-b");
 
         String originalCiphertext = first.getManagementTokenCiphertext();
+        engineClient.reportedCode = first.getCode();
         mockMvc.perform(post("/api/v1/service-engines/{id}/actions/update", firstId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(updateRequest("Engine A", "http://engine-a.test:8081", "")))
@@ -105,6 +106,7 @@ class ServiceEngineManagementIntegrationTests {
         assertThat(repository.findById(firstUuid).orElseThrow().getManagementTokenCiphertext())
                 .isEqualTo(originalCiphertext);
 
+        engineClient.reportedCode = first.getCode();
         mockMvc.perform(post("/api/v1/service-engines/{id}/actions/update", firstId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(updateRequest("Engine A", "http://engine-a.test:8081", "token-a-rotated")))
@@ -113,6 +115,51 @@ class ServiceEngineManagementIntegrationTests {
         String rotatedCiphertext = repository.findById(firstUuid).orElseThrow().getManagementTokenCiphertext();
         assertThat(rotatedCiphertext).isNotEqualTo(originalCiphertext);
         assertThat(credentialCipher.decrypt(rotatedCiphertext)).isEqualTo("token-a-rotated");
+    }
+
+    @Test
+    void discoversCodeWhenCreatingOutsideTransactionsAndRejectsDuplicateOrInvalidCodes() throws Exception {
+        long countBefore = repository.count();
+        String code = "discovered_" + suffix();
+        String engineId = createEngine(code, "discovery-token");
+        UUID engineUuid = UUID.fromString(engineId);
+        engineIds.add(engineUuid);
+
+        assertThat(repository.findById(engineUuid).orElseThrow().getCode()).isEqualTo(code);
+        assertThat(engineClient.adminUrl).isEqualTo("http://engine.test:8081");
+        assertThat(engineClient.managementToken).isEqualTo("discovery-token");
+        assertFalse(engineClient.transactionActive);
+
+        engineClient.reportedCode = code;
+        mockMvc.perform(post("/api/v1/service-engines")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"重复 Engine",
+                                  "adminUrl":"http://duplicate.test:8081",
+                                  "publicUrl":"http://duplicate.test:8081",
+                                  "managementToken":"duplicate-token",
+                                  "enabled":true
+                                }
+                                """))
+                .andExpect(status().isConflict());
+
+        engineClient.reportedCode = "invalid-code";
+        mockMvc.perform(post("/api/v1/service-engines")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"非法 Engine",
+                                  "adminUrl":"http://invalid.test:8081",
+                                  "publicUrl":"http://invalid.test:8081",
+                                  "managementToken":"invalid-token",
+                                  "enabled":true
+                                }
+                                """))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.detail").value("Service Engine 返回的 Code 不符合编码规范"));
+
+        assertThat(repository.count()).isEqualTo(countBefore + 1);
     }
 
     @Test
@@ -125,11 +172,10 @@ class ServiceEngineManagementIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"%s",
                                   "adminUrl":"http://candidate.test:8081",
                                   "managementToken":"candidate-token"
                                 }
-                                """.formatted(candidateCode)))
+                                """))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.code").value(candidateCode))
                 .andExpect(jsonPath("$.databaseTypes[0]").value("POSTGRESQL"))
@@ -171,25 +217,58 @@ class ServiceEngineManagementIntegrationTests {
     }
 
     @Test
+    void validatesIdentityChangesBeforeSavingAndSkipsProbeForOrdinaryUpdates() throws Exception {
+        String code = "update_" + suffix();
+        String engineId = createEngine(code, "stored-token");
+        UUID engineUuid = UUID.fromString(engineId);
+        engineIds.add(engineUuid);
+        int callsAfterCreate = engineClient.infoCalls;
+
+        mockMvc.perform(post("/api/v1/service-engines/{id}/actions/update", engineId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateRequest("仅修改名称", "http://engine.test:8081", "")))
+                .andExpect(status().isOk());
+        assertThat(engineClient.infoCalls).isEqualTo(callsAfterCreate);
+
+        ServiceEngine beforeRejectedUpdate = repository.findById(engineUuid).orElseThrow();
+        String originalCiphertext = beforeRejectedUpdate.getManagementTokenCiphertext();
+        engineClient.reportedCode = "another_engine";
+        mockMvc.perform(post("/api/v1/service-engines/{id}/actions/update", engineId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(updateRequest("不应保存", "http://other.test:8081", "candidate-token")))
+                .andExpect(status().isBadGateway())
+                .andExpect(jsonPath("$.detail").value(
+                        "Service Engine Code 不一致，期望 %s，实际 another_engine".formatted(code)
+                ));
+
+        ServiceEngine afterRejectedUpdate = repository.findById(engineUuid).orElseThrow();
+        assertThat(afterRejectedUpdate.getName()).isEqualTo("仅修改名称");
+        assertThat(afterRejectedUpdate.getAdminUrl()).isEqualTo("http://engine.test:8081");
+        assertThat(afterRejectedUpdate.getManagementTokenCiphertext()).isEqualTo(originalCiphertext);
+        assertThat(engineClient.adminUrl).isEqualTo("http://other.test:8081");
+        assertThat(engineClient.managementToken).isEqualTo("candidate-token");
+        assertFalse(engineClient.transactionActive);
+    }
+
+    @Test
     void requiresTokenWhenCreatingAnEngine() throws Exception {
         mockMvc.perform(post("/api/v1/service-engines")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"missing_token_%s",
                                   "name":"缺少 Token",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
                                   "enabled":true
                                 }
-                                """.formatted(suffix())))
+                                """))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.violations[0].field").value("managementToken"));
     }
 
     @Test
     void reportsAuthenticationFailuresWithoutExposingRemoteBodies() throws Exception {
-        String code = "auth_" + suffix();
+        long countBefore = repository.count();
         engineClient.failure = HttpClientErrorException.create(
                 HttpStatus.UNAUTHORIZED,
                 "Unauthorized",
@@ -198,15 +277,17 @@ class ServiceEngineManagementIntegrationTests {
                 StandardCharsets.UTF_8
         );
 
-        mockMvc.perform(post("/api/v1/service-engines/actions/test")
+        mockMvc.perform(post("/api/v1/service-engines")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"%s",
+                                  "name":"认证失败 Engine",
                                   "adminUrl":"http://candidate.test:8081",
-                                  "managementToken":"wrong-token"
+                                  "publicUrl":"http://candidate.test:8081",
+                                  "managementToken":"wrong-token",
+                                  "enabled":true
                                 }
-                                """.formatted(code)))
+                                """))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.detail").value(
                         "Service Engine 拒绝访问，请检查 Management Token"
@@ -214,6 +295,7 @@ class ServiceEngineManagementIntegrationTests {
                 .andExpect(jsonPath("$.detail").value(
                         org.hamcrest.Matchers.not(org.hamcrest.Matchers.containsString("remote-secret-body"))
                 ));
+        assertThat(repository.count()).isEqualTo(countBefore);
 
         engineClient.failure = HttpServerErrorException.create(
                 HttpStatus.INTERNAL_SERVER_ERROR,
@@ -226,11 +308,10 @@ class ServiceEngineManagementIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"%s",
                                   "adminUrl":"http://candidate.test:8081",
                                   "managementToken":"candidate-token"
                                 }
-                                """.formatted(code)))
+                                """))
                 .andExpect(status().isBadGateway())
                 .andExpect(jsonPath("$.detail").value("Service Engine 返回异常状态：HTTP 500"))
                 .andExpect(jsonPath("$.detail").value(
@@ -239,19 +320,20 @@ class ServiceEngineManagementIntegrationTests {
     }
 
     private String createEngine(String code, String managementToken) throws Exception {
+        engineClient.reportedCode = code;
         String response = mockMvc.perform(post("/api/v1/service-engines")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"%s",
                                   "name":"测试 Engine",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
                                   "managementToken":"%s",
                                   "enabled":true
                                 }
-                                """.formatted(code, managementToken)))
+                                """.formatted(managementToken)))
                 .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.code").value(code))
                 .andExpect(jsonPath("$.managementTokenConfigured").value(true))
                 .andExpect(jsonPath("$.managementToken").doesNotExist())
                 .andReturn().getResponse().getContentAsString();
@@ -291,6 +373,7 @@ class ServiceEngineManagementIntegrationTests {
         private String managementToken;
         private boolean transactionActive;
         private RuntimeException failure;
+        private int infoCalls;
 
         RecordingServiceEngineClient(ServiceEngineCredentialCipher credentialCipher) {
             super(credentialCipher);
@@ -298,6 +381,7 @@ class ServiceEngineManagementIntegrationTests {
 
         @Override
         public ServiceEngineInfoResponse info(String adminUrl, String managementToken) {
+            infoCalls++;
             if (failure != null) {
                 throw failure;
             }
@@ -313,6 +397,7 @@ class ServiceEngineManagementIntegrationTests {
             managementToken = null;
             transactionActive = false;
             failure = null;
+            infoCalls = 0;
         }
     }
 }

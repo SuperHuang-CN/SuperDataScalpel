@@ -16,13 +16,15 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = RenameNodeDefinition.class, name = "RENAME"),
         @JsonSubTypes.Type(value = ModelOutputNodeDefinition.class, name = "MODEL_OUTPUT"),
         @JsonSubTypes.Type(value = JdbcOutputNodeDefinition.class, name = "JDBC_OUTPUT"),
-        @JsonSubTypes.Type(value = KafkaOutputNodeDefinition.class, name = "KAFKA_OUTPUT")
+        @JsonSubTypes.Type(value = KafkaOutputNodeDefinition.class, name = "KAFKA_OUTPUT"),
+        @JsonSubTypes.Type(value = FileOutputNodeDefinition.class, name = "FILE_OUTPUT")
 })
 public sealed interface CanvasNodeDefinition
         permits ModelInputNodeDefinition, JdbcInputNodeDefinition, FileDatasetInputNodeDefinition,
                 HttpApiInputNodeDefinition,
                 KafkaInputNodeDefinition, JoinNodeDefinition, StreamJoinNodeDefinition, RenameNodeDefinition,
-                ModelOutputNodeDefinition, JdbcOutputNodeDefinition, KafkaOutputNodeDefinition {
+                ModelOutputNodeDefinition, JdbcOutputNodeDefinition, KafkaOutputNodeDefinition,
+                FileOutputNodeDefinition {
     String id();
 
     String name();

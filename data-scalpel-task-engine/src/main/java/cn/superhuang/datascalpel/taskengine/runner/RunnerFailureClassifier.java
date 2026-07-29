@@ -125,6 +125,31 @@ final class RunnerFailureClassifier {
             }
         }
 
+        if ("FILE_OUTPUT".equals(context.nodeType())) {
+            String messages = causeMessages(throwable);
+            if (messages.contains("filealreadyexistsexception")
+                    || messages.contains("already exists")
+                    || messages.contains("path exists")) {
+                return failure("FILE_OUTPUT_TARGET_EXISTS", ExecutionErrorCategory.CONSTRAINT);
+            }
+            if (messages.contains("invalidaccesskeyid")
+                    || messages.contains("signaturedoesnotmatch")
+                    || messages.contains("invalid access key")) {
+                return failure("FILE_OUTPUT_AUTHENTICATION_FAILED", ExecutionErrorCategory.AUTHENTICATION);
+            }
+            if (messages.contains("accessdenied")
+                    || messages.contains("access denied")
+                    || messages.contains("status code: 403")) {
+                return failure("FILE_OUTPUT_PERMISSION_DENIED", ExecutionErrorCategory.PERMISSION);
+            }
+            if (hasCause(throwable, ConnectException.class)
+                    || hasCause(throwable, SocketException.class)
+                    || hasCause(throwable, IOException.class)) {
+                return retryable("FILE_OUTPUT_CONNECTION_FAILED", ExecutionErrorCategory.CONNECTION);
+            }
+            return failure("FILE_OUTPUT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM);
+        }
+
         if (hasCause(throwable, ConnectException.class) || hasCause(throwable, SocketException.class)) {
             return retryable("JDBC_CONNECTION_FAILED", ExecutionErrorCategory.CONNECTION);
         }
@@ -190,6 +215,11 @@ final class RunnerFailureClassifier {
             case "FILE_DATASET_INPUT_FAILED" -> "文件数据集输入节点执行失败";
             case "JDBC_OUTPUT_FAILED" -> "JDBC 输出节点执行失败";
             case "MODEL_OUTPUT_FAILED" -> "模型输出节点执行失败";
+            case "FILE_OUTPUT_TARGET_EXISTS" -> "File Output 目标目录已存在";
+            case "FILE_OUTPUT_AUTHENTICATION_FAILED" -> "File Output S3 认证失败";
+            case "FILE_OUTPUT_PERMISSION_DENIED" -> "File Output S3 权限不足";
+            case "FILE_OUTPUT_CONNECTION_FAILED" -> "File Output 无法连接 S3";
+            case "FILE_OUTPUT_FAILED" -> "File Output 写入失败";
             case "API_AUTHENTICATION_FAILED" -> "HTTP API 认证失败";
             case "API_TOKEN_MISSING", "API_TOKEN_REQUEST_FAILED" -> "HTTP API 运行时 Token 获取失败";
             case "API_NETWORK_ERROR" -> "无法连接 HTTP API";
@@ -231,6 +261,17 @@ final class RunnerFailureClassifier {
                     && message.toLowerCase(Locale.ROOT).contains("type")) return true;
         }
         return false;
+    }
+
+    private static String causeMessages(Throwable throwable) {
+        StringBuilder result = new StringBuilder();
+        for (Throwable current : causes(throwable)) {
+            result.append(current.getClass().getName()).append(' ');
+            if (current.getMessage() != null) {
+                result.append(current.getMessage()).append(' ');
+            }
+        }
+        return result.toString().toLowerCase(Locale.ROOT);
     }
 
     private static SQLException findSqlException(Throwable throwable) {

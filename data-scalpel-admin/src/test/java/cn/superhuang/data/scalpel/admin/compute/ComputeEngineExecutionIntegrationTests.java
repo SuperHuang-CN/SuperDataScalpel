@@ -39,17 +39,17 @@ class ComputeEngineExecutionIntegrationTests {
     @Autowired PlatformTransactionManager transactionManager;
 
     @Test
-    void rejectsRunWhenRemoteRegistrationIsNoLongerActive() {
+    void rejectsRunWhenRemoteRegistrationIsInactiveOrConfigurationDiffers() {
         ComputeEngine engine = ComputeEngine.create(
                 "engine-" + UUID.randomUUID(), null, "http://127.0.0.1:18092",
                 cipher.encrypt("secret"), ComputeBackendType.LOCAL_DOCKER,
                 "commands.active", "runner.active", "admin.events", 20, 2, 2);
-        engine.activate("dispatcher-1", 1, ComputeBackendType.LOCAL_DOCKER);
+        engine.activate("dispatcher-1", ComputeBackendType.LOCAL_DOCKER);
         repository.saveAndFlush(engine);
 
         StubDispatcherClient dispatcherClient = new StubDispatcherClient();
         dispatcherClient.info = new DispatcherInfoResponse(
-                1, "dispatcher-1", ComputeBackendType.LOCAL_DOCKER, "test",
+                "dispatcher-1", ComputeBackendType.LOCAL_DOCKER, "test",
                 new DispatcherCapabilities(true, true, true), List.of());
         dispatcherClient.registration = registration(engine, DispatcherRegistrationState.DRAINING);
         ComputeEngineExecutionService executionService = new ComputeEngineExecutionService(
@@ -63,6 +63,19 @@ class ComputeEngineExecutionIntegrationTests {
 
         dispatcherClient.registration = registration(engine, DispatcherRegistrationState.ACTIVE);
         assertThat(executionService.requireRunnable(engine.getId()).engineId()).isEqualTo(engine.getId());
+
+        dispatcherClient.registration = new DispatcherRegistrationResponse(
+                engine.getId(), "dispatcher-1", ComputeBackendType.LOCAL_DOCKER,
+                DispatcherRegistrationState.ACTIVE,
+                new DispatcherTopics(engine.getCommandTopic(), engine.getRunnerEventTopic(), engine.getAdminEventTopic()),
+                new DispatcherAdmissionPolicy(
+                        engine.getMaxQueuedExecutions() + 1, engine.getMaxConcurrentSubmissions(),
+                        engine.getMaxInFlightApplications()), null);
+        assertThatThrownBy(() -> executionService.requireRunnable(engine.getId()))
+                .isInstanceOfSatisfying(ResponseStatusException.class, exception -> {
+                    assertThat(exception.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
+                    assertThat(exception.getReason()).contains("远端注册状态");
+                });
     }
 
     private static DispatcherRegistrationResponse registration(
@@ -70,8 +83,7 @@ class ComputeEngineExecutionIntegrationTests {
             DispatcherRegistrationState state
     ) {
         return new DispatcherRegistrationResponse(
-                1, engine.getId(), "dispatcher-1", ComputeBackendType.LOCAL_DOCKER,
-                engine.getConfigRevision(), state,
+                engine.getId(), "dispatcher-1", ComputeBackendType.LOCAL_DOCKER, state,
                 new DispatcherTopics(engine.getCommandTopic(), engine.getRunnerEventTopic(), engine.getAdminEventTopic()),
                 new DispatcherAdmissionPolicy(
                         engine.getMaxQueuedExecutions(), engine.getMaxConcurrentSubmissions(),

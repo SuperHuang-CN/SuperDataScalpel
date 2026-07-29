@@ -90,10 +90,10 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
         if (dataSourceId != null && (dataSource == null
                 || !dataSource.metadata().enabled()
                 || dataSource.metadata().connectionKind() != ConnectionKind.JDBC
-                || !dataSource.metadata().purposes().contains(DataSourcePurpose.STORAGE))) {
+                || !dataSource.metadata().purposes().contains(DataSourcePurpose.DISTRIBUTION))) {
             issues.error(
                     "DATA_SOURCE_UNAVAILABLE",
-                    "目标数据源不存在、未启用或不具有 STORAGE 用途",
+                    "目标数据源不存在、未启用或不具有 DISTRIBUTION 用途",
                     "configuration.dataSourceId"
             );
         }

@@ -17,7 +17,7 @@ export interface TaskCompilationMetadataTable {
 export interface TaskCompilationMetadataDataSource {
   id: string;
   enabled: boolean;
-  connectionKind: 'JDBC' | 'HTTP_API' | 'KAFKA';
+  connectionKind: 'JDBC' | 'HTTP_API' | 'KAFKA' | 'S3';
   purposes: DataSourcePurpose[];
   tables: TaskCompilationMetadataTable[];
 }

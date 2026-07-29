@@ -60,9 +60,9 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 - launch 文件只读交付给 Runner，完成后由 Dispatcher/集群清理。
 - SASL 密码使用独立受限文件或环境变量引用，不直接放进 `spark-submit` 参数。
 
-## 4. Manifest v6
+## 4. Manifest v7
 
-Runner 当前只接受严格的 `manifestVersion: 6`：
+Admin 当前写出 `manifestVersion: 7`；Runner 兼容读取 v6，v6 任务保持原行为：
 
 ```text
 manifestVersion
@@ -78,7 +78,7 @@ runtimeFileInputs
 
 - `task.definition` 是纯 Canvas 定义。
 - `metadataSnapshot` 是权威编译元数据。
-- `runtimeDataSources` 是真实 JDBC 运行信息。
+- `runtimeDataSources` 是真实 JDBC、Kafka、HTTP API 和外部 S3 运行信息；外部 S3 凭据只存在于此私有 Manifest。
 - `runtimeFileStorage` 仅在引用文件 Input 时存在；`runtimeFileInputs` 按稳定逻辑表 ID 去重。表级保存
   `fileDatasetId/fileDatasetTableId/schemaFingerprint` 和统一解析参数；
   `sources` 按当前顺序保存来源 ID、文件 ID、格式、压缩方式、存储形态、私有对象

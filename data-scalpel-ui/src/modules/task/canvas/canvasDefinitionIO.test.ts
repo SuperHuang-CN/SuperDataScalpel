@@ -25,7 +25,7 @@ describe('canvas definition import and export', () => {
     if (parsed.success) expect(parsed.definition).toEqual(definition);
   });
 
-  it('reads legacy 1.0 definitions and normalizes them to the current 1.5 writer version', () => {
+  it('reads legacy 1.0 definitions and normalizes them to the current 1.6 writer version', () => {
     const legacy = JSON.parse(formatCanvasDefinition(exampleCanvasDefinition())) as Record<string, unknown>;
     delete legacy.schemaMinorVersion;
 
@@ -34,8 +34,8 @@ describe('canvas definition import and export', () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     expect(parsed.definition.schemaVersion).toBe(1);
-    expect(parsed.definition.schemaMinorVersion).toBe(5);
-    expect(formatCanvasDefinition(parsed.definition)).toContain('"schemaMinorVersion": 5');
+    expect(parsed.definition.schemaMinorVersion).toBe(6);
+    expect(formatCanvasDefinition(parsed.definition)).toContain('"schemaMinorVersion": 6');
   });
 
   it('normalizes legacy nested table identifiers to data-source-scoped table names', () => {
@@ -109,7 +109,7 @@ describe('canvas definition import and export', () => {
     const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(parsed).toEqual({
       success: true,
-      definition: { ...definition, schemaMinorVersion: 5 },
+      definition: { ...definition, schemaMinorVersion: 6 },
     });
 
     definition.nodes[0].configuration.modelId = 'not-a-uuid';
@@ -139,7 +139,7 @@ describe('canvas definition import and export', () => {
 
     expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
       success: true,
-      definition: { ...definition, schemaMinorVersion: 5 },
+      definition: { ...definition, schemaMinorVersion: 6 },
     });
 
     definition.nodes[0].configuration.runtimeParameters[0].name = 'invalid name';
@@ -177,7 +177,7 @@ describe('canvas definition import and export', () => {
     expect(parseCanvasDefinitionJson(JSON.stringify(unsupportedVersion)).success).toBe(false);
 
     unsupportedVersion.schemaVersion = 1;
-    unsupportedVersion.schemaMinorVersion = 6;
+    unsupportedVersion.schemaMinorVersion = 7;
     expect(parseCanvasDefinitionJson(JSON.stringify(unsupportedVersion)).success).toBe(false);
 
     const duplicateNode = exampleCanvasDefinition();
@@ -237,7 +237,7 @@ describe('canvas definition import and export', () => {
     const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.definition).toEqual({ ...definition, schemaMinorVersion: 5 });
+      expect(parsed.definition).toEqual({ ...definition, schemaMinorVersion: 6 });
     }
 
     definition.schemaMinorVersion = 1;
@@ -288,7 +288,7 @@ describe('canvas definition import and export', () => {
 
     expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
       success: true,
-      definition: { ...definition, schemaMinorVersion: 5 },
+      definition: { ...definition, schemaMinorVersion: 6 },
     });
 
     definition.schemaMinorVersion = 3;
@@ -297,6 +297,48 @@ describe('canvas definition import and export', () => {
     if (!incompatible.success) {
       expect(incompatible.errors).toContain('FILE_DATASET_INPUT 从 Canvas 1.4 开始支持');
     }
+  });
+
+  it('normalizes and round-trips a strict file output definition', () => {
+    const definition = {
+      schemaVersion: 1,
+      schemaMinorVersion: 6,
+      nodes: [{
+        id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
+        type: CanvasNodeType.FileOutput,
+        name: '订单文件输出',
+        layout: { x: 10, y: 20, width: 240, height: 120 },
+        configuration: {
+          sourceTableName: 'orders',
+          dataSourceId: '45a1f1bd-c381-45eb-a39b-924fc65122ac',
+          targetPath: 'exports//orders/',
+          conflictPolicy: 'FAIL_IF_EXISTS',
+          formatOptions: {
+            type: 'CSV',
+            header: true,
+            delimiter: ',',
+            quote: '"',
+            escape: '\\',
+            nullValue: '',
+          },
+        },
+      }],
+      edges: [],
+    };
+
+    const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
+
+    expect(parsed.success).toBe(true);
+    if (!parsed.success) return;
+    expect(parsed.definition.nodes[0]?.configuration).toMatchObject({
+      sourceTableName: 'orders',
+      targetPath: 'exports/orders',
+      conflictPolicy: 'FAIL_IF_EXISTS',
+      formatOptions: { type: 'CSV' },
+    });
+    const exported = formatCanvasDefinition(parsed.definition);
+    expect(exported).not.toContain('accessKey');
+    expect(exported).not.toContain('secretKey');
   });
 
   it('does not mutate the current definition when parsing fails', () => {

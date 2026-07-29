@@ -27,8 +27,6 @@ CREATE TABLE IF NOT EXISTS dispatcher_registration (
     version bigint NOT NULL,
     engine_id uuid NOT NULL,
     dispatcher_instance_id uuid NOT NULL,
-    protocol_version integer NOT NULL,
-    config_revision bigint NOT NULL,
     backend_type varchar(32) NOT NULL,
     state varchar(32) NOT NULL,
     command_topic varchar(249) NOT NULL,

@@ -80,7 +80,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   const test = async (engine: ComputeEngine) => {
     try {
       const result = await testMutation.mutateAsync(engine.id);
-      messageApi.success(`${engine.name} 连接正常：${computeBackendTypeLabels[result.backendType]} / 协议 v${result.protocolVersion}`);
+      messageApi.success(`${engine.name} 连接正常：${computeBackendTypeLabels[result.backendType]}`);
     } catch (error) { showError(error, '测试计算引擎失败'); }
   };
 
@@ -162,22 +162,24 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     { title: 'Dispatcher 地址', dataIndex: 'dispatcherBaseUrl', width: 260, ellipsis: true },
     { title: '命令 Topic', dataIndex: 'commandTopic', width: 245, ellipsis: true },
     { title: '实例', dataIndex: 'dispatcherInstanceId', width: 160, ellipsis: true, render: (value: string | null) => value ?? '—' },
-    { title: '配置版本', dataIndex: 'configRevision', width: 90, render: (value: number) => `r${value}` },
     { title: '最近检查', dataIndex: 'lastCheckAt', width: 170, render: formatDateTime },
     {
       title: '操作', key: 'actions', width: 135, fixed: 'right',
       render: (_, engine) => {
         const deletable = !['ACTIVE', 'DRAINING', 'REGISTERING'].includes(engine.registrationState);
         const reconfigurable = ['ACTIVE', 'DRAINING'].includes(engine.registrationState);
+        const hasRegisteredDispatcher = engine.dispatcherInstanceId !== null;
+        const remotelyManageable = ['ACTIVE', 'DRAINING'].includes(engine.registrationState)
+          || (engine.registrationState === 'ERROR' && hasRegisteredDispatcher);
         const editable = engine.registrationState !== 'REGISTERING'
           && canUpdate
           && (!reconfigurable || canManage);
         const items: NonNullable<MenuProps['items']> = [];
         if (canManage && ['CREATED', 'INACTIVE', 'DETACHED', 'ERROR'].includes(engine.registrationState)) items.push({ key: 'register', icon: <SendOutlined />, label: '注册并激活', onClick: () => register(engine) });
         if (canManage && engine.registrationState === 'ACTIVE') items.push({ key: 'drain', icon: <PauseCircleOutlined />, label: '开始排空', onClick: () => drain(engine) });
-        if (canManage && ['ACTIVE', 'DRAINING', 'ERROR'].includes(engine.registrationState)) items.push({ key: 'deactivate', icon: <StopOutlined />, label: '安全反注册', onClick: () => deactivate(engine, false) });
-        if (canManage && ['ACTIVE', 'DRAINING', 'ERROR'].includes(engine.registrationState)) items.push({ key: 'force-deactivate', danger: true, icon: <StopOutlined />, label: '强制反注册并取消任务', onClick: () => deactivate(engine, true) });
-        if (canManage && engine.healthState === 'DOWN' && ['ACTIVE', 'DRAINING', 'ERROR'].includes(engine.registrationState)) items.push({
+        if (canManage && remotelyManageable) items.push({ key: 'deactivate', icon: <StopOutlined />, label: '安全反注册', onClick: () => deactivate(engine, false) });
+        if (canManage && remotelyManageable) items.push({ key: 'force-deactivate', danger: true, icon: <StopOutlined />, label: '强制反注册并取消任务', onClick: () => deactivate(engine, true) });
+        if (canManage && hasRegisteredDispatcher && engine.healthState === 'DOWN' && ['ACTIVE', 'DRAINING', 'ERROR'].includes(engine.registrationState)) items.push({
           key: 'detach',
           danger: true,
           icon: <DisconnectOutlined />,

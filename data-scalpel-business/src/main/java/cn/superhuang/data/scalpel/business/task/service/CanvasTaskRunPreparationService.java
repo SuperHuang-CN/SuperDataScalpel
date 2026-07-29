@@ -41,6 +41,10 @@ import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetType;
+import cn.superhuang.data.scalpel.contract.task.FileOutputConfiguration;
+import cn.superhuang.data.scalpel.contract.task.FileOutputConflictPolicy;
+import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
+import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
@@ -235,6 +239,20 @@ public class CanvasTaskRunPreparationService {
                 runtimeSources.add(kafkaRuntimeDataSource(source, requested));
                 return;
             }
+            if (source.getType() == DataSourceType.S3) {
+                metadataSources.add(new MetadataDataSource(
+                        source.getId(),
+                        source.isEnabled(),
+                        ConnectionKind.S3,
+                        source.getPurposes().stream()
+                                .map(purpose -> cn.superhuang.data.scalpel.contract.task.DataSourcePurpose.valueOf(
+                                        purpose.name()))
+                                .collect(Collectors.toUnmodifiableSet()),
+                        List.of()
+                ));
+                runtimeSources.add(s3RuntimeDataSource(source, requested));
+                return;
+            }
             DatabaseDialect dialect = dialectRegistry.require(source.getType().name());
             List<MetadataTable> tables = requested.tableNames().stream()
                     .sorted()
@@ -252,6 +270,7 @@ public class CanvasTaskRunPreparationService {
             ));
             runtimeSources.add(runtimeDataSource(source, dialect, requested));
         });
+        validateS3BucketConfigurations(runtimeSources, fileDatasets.runtimeStorage());
 
         List<MetadataModel> metadataModels = models.values().stream()
                 .sorted(Comparator.comparing(DataModel::getId))
@@ -553,8 +572,77 @@ public class CanvasTaskRunPreparationService {
                         mechanism,
                         source.getConnection().getPrincipal(),
                         source.getConnection().secretValue()
+                ),
+                null
+        );
+    }
+
+    private static CanvasTaskRunManifest.RuntimeDataSource s3RuntimeDataSource(
+            DataSource source,
+            RequestedDataSource requested
+    ) {
+        Map<String, String> options = source.getConnection().getOptions();
+        return new CanvasTaskRunManifest.RuntimeDataSource(
+                source.getId(),
+                ConnectionKind.S3,
+                null,
+                executionPurposes(requested),
+                null,
+                null,
+                List.of(),
+                null,
+                new CanvasTaskRunManifest.RuntimeS3Connection(
+                        source.getConnection().getEndpoint(),
+                        options.getOrDefault("region", "us-east-1"),
+                        source.getConnection().getTarget(),
+                        source.getConnection().getNamespace(),
+                        Boolean.parseBoolean(options.getOrDefault("pathStyleAccess", "true")),
+                        source.getConnection().getPrincipal(),
+                        source.getConnection().secretValue()
                 )
         );
+    }
+
+    private static void validateS3BucketConfigurations(
+            List<CanvasTaskRunManifest.RuntimeDataSource> runtimeSources,
+            CanvasTaskRunManifest.RuntimeFileStorage runtimeFileStorage
+    ) {
+        Map<String, S3BucketConfiguration> buckets = new LinkedHashMap<>();
+        for (CanvasTaskRunManifest.RuntimeDataSource source : runtimeSources) {
+            CanvasTaskRunManifest.RuntimeS3Connection connection = source.s3Connection();
+            if (connection == null) continue;
+            requireCompatibleBucketConfiguration(
+                    buckets,
+                    connection.bucket(),
+                    new S3BucketConfiguration(
+                            connection.endpoint(), connection.region(), connection.pathStyleAccess(),
+                            connection.accessKey(), connection.secretKey())
+            );
+        }
+        if (runtimeFileStorage != null) {
+            requireCompatibleBucketConfiguration(
+                    buckets,
+                    runtimeFileStorage.bucket(),
+                    new S3BucketConfiguration(
+                            runtimeFileStorage.endpoint(), runtimeFileStorage.region(),
+                            runtimeFileStorage.pathStyleAccess(),
+                            runtimeFileStorage.accessKey(), runtimeFileStorage.secretKey())
+            );
+        }
+    }
+
+    private static void requireCompatibleBucketConfiguration(
+            Map<String, S3BucketConfiguration> buckets,
+            String bucket,
+            S3BucketConfiguration configuration
+    ) {
+        S3BucketConfiguration previous = buckets.putIfAbsent(bucket, configuration);
+        if (previous != null && !previous.equals(configuration)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "S3_BUCKET_CONFIGURATION_CONFLICT：同一任务中的 Bucket 运行连接配置不一致"
+            );
+        }
     }
 
     private static Set<cn.superhuang.data.scalpel.contract.task.DataSourcePurpose> executionPurposes(
@@ -565,7 +653,7 @@ public class CanvasTaskRunPreparationService {
         if (requested.source() || requested.modelRead()) {
             purposes.add(cn.superhuang.data.scalpel.contract.task.DataSourcePurpose.SOURCE);
         }
-        if (requested.storage() || requested.modelWrite()) {
+        if (requested.modelWrite()) {
             purposes.add(cn.superhuang.data.scalpel.contract.task.DataSourcePurpose.STORAGE);
         }
         if (requested.distribution()) {
@@ -817,11 +905,12 @@ public class CanvasTaskRunPreparationService {
         boolean jdbc = source.getType() == DataSourceType.POSTGRESQL || source.getType() == DataSourceType.MYSQL;
         boolean httpApi = source.getType() == DataSourceType.HTTP_API;
         boolean kafka = source.getType() == DataSourceType.KAFKA;
-        if (!jdbc && !httpApi && !kafka) {
+        boolean s3 = source.getType() == DataSourceType.S3;
+        if (!jdbc && !httpApi && !kafka && !s3) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Canvas 执行只支持 PostgreSQL、MySQL、HTTP API 和 Kafka");
+                    "Canvas 执行只支持 PostgreSQL、MySQL、HTTP API、Kafka 和 S3");
         }
-        if (httpApi && (requested.storage() || requested.modelRead() || requested.modelWrite()
+        if (httpApi && (requested.modelRead() || requested.modelWrite()
                 || requested.apiResourceIds().isEmpty())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "HTTP API 只能作为 API 输入节点的数据源");
         }
@@ -829,18 +918,23 @@ public class CanvasTaskRunPreparationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "HTTP API 输入节点引用了非 API 数据源");
         }
         if (kafka && (!requested.tableNames().isEmpty() || !requested.apiResourceIds().isEmpty()
-                || requested.storage() || requested.modelRead() || requested.modelWrite())) {
+                || requested.modelRead() || requested.modelWrite() || requested.fileOutput())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Kafka 只能用于 Kafka 输入或输出节点");
+        }
+        if (s3 && (!requested.fileOutput() || requested.source() || requested.modelRead()
+                || requested.modelWrite() || !requested.tableNames().isEmpty()
+                || !requested.apiResourceIds().isEmpty() || !requested.kafkaTopics().isEmpty())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "S3 数据源只能用于文件输出节点");
+        }
+        if (!s3 && requested.fileOutput()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "文件输出节点只能引用 S3 数据源");
         }
         if (requested.source() && !source.getPurposes().contains(DataSourcePurpose.SOURCE)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "输入数据源不具有 SOURCE 用途：" + source.getName());
         }
-        if (requested.storage() && !source.getPurposes().contains(DataSourcePurpose.STORAGE)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "输出数据源不具有 STORAGE 用途：" + source.getName());
-        }
         if (requested.distribution() && !source.getPurposes().contains(DataSourcePurpose.DISTRIBUTION)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Kafka 输出数据源不具有 DISTRIBUTION 用途：" + source.getName());
+                    "输出数据源不具有 DISTRIBUTION 用途：" + source.getName());
         }
         if (requested.modelRead()
                 && !source.getPurposes().contains(DataSourcePurpose.SOURCE)
@@ -873,11 +967,15 @@ public class CanvasTaskRunPreparationService {
             } else if (node instanceof CanvasDefinition.JdbcOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
-                        .storage(output.configuration().targetTableName());
+                        .distributionTable(output.configuration().targetTableName());
             } else if (node instanceof CanvasDefinition.KafkaOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .distribution(output.configuration().topic());
+            } else if (node instanceof CanvasDefinition.FileOutputNodeDefinition output) {
+                UUID id = uuid(output.configuration().dataSourceId(), output.name());
+                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
+                        .fileDistribution();
             }
         }
         return builders;
@@ -1043,6 +1141,16 @@ public class CanvasTaskRunPreparationService {
                             output.configuration().columnMappings().stream().map(mapping ->
                                     new JdbcColumnMapping(
                                             mapping.sourceColumnName(), mapping.targetColumnName())).toList()));
+            case CanvasDefinition.FileOutputNodeDefinition output -> new FileOutputNodeDefinition(
+                    output.id(), output.name(), layout(output.layout()),
+                    new FileOutputConfiguration(
+                            output.configuration().sourceTableName(),
+                            uuid(output.configuration().dataSourceId(), output.name()).toString(),
+                            output.configuration().targetPath(),
+                            output.configuration().conflictPolicy() == null ? null
+                                    : FileOutputConflictPolicy.valueOf(
+                                            output.configuration().conflictPolicy().name()),
+                            fileOutputFormatOptions(output.configuration().formatOptions())));
         }).toList();
         return new cn.superhuang.data.scalpel.contract.task.CanvasDefinition(
                 definition.schemaVersion(),
@@ -1073,6 +1181,21 @@ public class CanvasTaskRunPreparationService {
                                 column.comment()
                         ))
                         .toList());
+    }
+
+    private static FileOutputFormatOptions fileOutputFormatOptions(
+            CanvasDefinition.FileOutputFormatOptions options
+    ) {
+        if (options == null) return null;
+        return switch (options) {
+            case CanvasDefinition.FileOutputFormatOptions.Csv csv ->
+                    new FileOutputFormatOptions.Csv(
+                            csv.header(), csv.delimiter(), csv.quote(), csv.escape(), csv.nullValue());
+            case CanvasDefinition.FileOutputFormatOptions.JsonLines json ->
+                    new FileOutputFormatOptions.JsonLines(json.ignoreNullFields());
+            case CanvasDefinition.FileOutputFormatOptions.Parquet ignored ->
+                    new FileOutputFormatOptions.Parquet();
+        };
     }
 
     public record Preparation(
@@ -1126,10 +1249,10 @@ public class CanvasTaskRunPreparationService {
 
     private record RequestedDataSource(
             boolean source,
-            boolean storage,
             boolean modelRead,
             boolean modelWrite,
             boolean distribution,
+            boolean fileOutput,
             Set<String> tableNames,
             Set<UUID> apiResourceIds,
             Set<String> kafkaTopics
@@ -1138,22 +1261,16 @@ public class CanvasTaskRunPreparationService {
 
     private static final class RequestedDataSourceBuilder {
         private boolean source;
-        private boolean storage;
         private boolean modelRead;
         private boolean modelWrite;
         private boolean distribution;
+        private boolean fileOutput;
         private final Set<String> tables = new LinkedHashSet<>();
         private final Set<UUID> apiResources = new LinkedHashSet<>();
         private final Set<String> kafkaTopics = new LinkedHashSet<>();
 
         private RequestedDataSourceBuilder source(String table) {
             source = true;
-            tables.add(table);
-            return this;
-        }
-
-        private RequestedDataSourceBuilder storage(String table) {
-            storage = true;
             tables.add(table);
             return this;
         }
@@ -1186,11 +1303,32 @@ public class CanvasTaskRunPreparationService {
             return this;
         }
 
+        private RequestedDataSourceBuilder distributionTable(String table) {
+            distribution = true;
+            tables.add(table);
+            return this;
+        }
+
+        private RequestedDataSourceBuilder fileDistribution() {
+            distribution = true;
+            fileOutput = true;
+            return this;
+        }
+
         private RequestedDataSource build() {
             return new RequestedDataSource(
-                    source, storage, modelRead, modelWrite, distribution,
+                    source, modelRead, modelWrite, distribution, fileOutput,
                     Set.copyOf(tables), Set.copyOf(apiResources), Set.copyOf(kafkaTopics));
         }
+    }
+
+    private record S3BucketConfiguration(
+            String endpoint,
+            String region,
+            boolean pathStyleAccess,
+            String accessKey,
+            String secretKey
+    ) {
     }
 
     private record RequestedModel(boolean input, boolean output) {

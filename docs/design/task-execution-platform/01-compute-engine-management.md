@@ -96,8 +96,6 @@ data-scalpel-ui/src/modules/computeengine
 | `maxConcurrentSubmissions` | Integer | 同时执行外部提交命令的上限 |
 | `maxInFlightApplications` | Integer | 已提交但未终止的应用上限，0 表示不额外限制 |
 | `dispatcherInstanceId` | String | 注册后锁定的 Dispatcher 稳定身份 |
-| `protocolVersion` | Integer | 当前只接受 1 |
-| `configRevision` | long | 每次可影响注册的配置修改后递增 |
 | `lastCheckAt` | Instant | 最近主动检查时间 |
 | `lastError` | String | 脱敏后的最近错误，最长 2000 |
 | `detachedAt` | Instant | 离线解除绑定时间；普通生命周期中为空 |
@@ -160,7 +158,7 @@ DETACHED ──register──> REGISTERING
 - `LOCAL_SQL` 不使用该字段，保存时必须为 null。
 - `SPARK_CANVAS` 草稿阶段允许为空。
 - 发布、重新启用和真实运行时必须选择一个 `ACTIVE` 计算引擎。
-- 每次真实运行前同时读取 Dispatcher info 和 registration，严格比对 protocolVersion、engineId、dispatcherInstanceId、backendType、configRevision 和三个 Topic；远端已经进入 `DRAINING/INACTIVE` 时拒绝创建 Run。
+- 每次真实运行前同时读取 Dispatcher info 和 registration，严格比对 engineId、dispatcherInstanceId、backendType、全部 Topic 和准入策略；任一配置不一致或远端已经进入 `DRAINING/INACTIVE` 时拒绝创建 Run。
 - 任务停用后允许修改计算引擎。
 
 `TaskRun` 增加或确认以下快照字段：
@@ -235,7 +233,6 @@ Token 字段可选：
 
 - 缺失或空白表示保留当前 Token。
 - 显式传入新值表示替换并重新加密。
-- Topic、地址或准入策略发生变化时递增 `configRevision`。
 
 普通 `update` 只处理 `CREATED/INACTIVE/ERROR`。`ACTIVE/DRAINING` 使用 `reconfigure`，并同时要求更新和管理权限：
 
@@ -243,7 +240,7 @@ Token 字段可选：
 候选配置预检
 → ACTIVE 时 Drain
 → 使用旧配置非强制反注册
-→ 保存候选配置并递增 configRevision
+→ 保存候选配置
 → 使用新配置重新注册
 ```
 
@@ -256,6 +253,8 @@ Token 字段可选：
 1. **安全反注册**：调用 Dispatcher 的 `deactivate(force=false)`。Dispatcher 必须可访问且没有活动执行。
 2. **强制反注册并取消任务**：调用 Dispatcher 的 `deactivate(force=true)`。Dispatcher 必须可访问，由 Dispatcher 取消排队和运行任务并收敛本地执行账本。
 3. **离线解除绑定**：只修改 Admin，用于 Dispatcher 主机永久损坏且控制面不可达的灾难恢复。
+
+Admin 在调用 Drain 或任一远程反注册动作前，必须先读取 Dispatcher 当前 registration，并核对 `engineId`、已知的 `dispatcherInstanceId`、后端类型、全部 Topic 和准入策略。不一致时返回 HTTP 409，且不得向 Dispatcher 发送状态变更命令，防止错误记录排空或反注册其他计算引擎。未曾成功记录 Dispatcher 实例身份的 `ERROR` 记录只允许重试注册，不在页面展示远程反注册和离线解除绑定动作。
 
 离线解除绑定使用：
 
@@ -278,9 +277,9 @@ POST /api/v1/compute-engines/{id}/actions/detach
 - 不存在关联的 `QUEUED`、`RUNNING`、`CANCEL_REQUESTED`、`STOP_REQUESTED` TaskRun。
 - 不存在该引擎的 `PENDING`、`PUBLISHING` 或 `FAILED` 执行 Outbox 消息。
 
-Dispatcher 返回 HTTP 错误、认证失败、协议错误或业务错误时不允许离线解除绑定，因为这些情况说明控制面可能仍在运行。远程强制反注册失败时也不得自动转为离线解除绑定，避免短暂网络分区造成双 Dispatcher 消费的脑裂。
+Dispatcher 返回 HTTP 错误、认证失败或业务错误时不允许离线解除绑定，因为这些情况说明控制面可能仍在运行。远程强制反注册失败时也不得自动转为离线解除绑定，避免短暂网络分区造成双 Dispatcher 消费的脑裂。
 
-成功后清除 Admin 保存的 Dispatcher 实例身份、协议版本和上报后端，记录 `detachedAt` 与 `detachReason`。第一期不删除已有 TaskRun 和执行历史。
+成功后清除 Admin 保存的 Dispatcher 实例身份和上报后端，记录 `detachedAt` 与 `detachReason`。第一期不删除已有 TaskRun 和执行历史。
 
 ## 8. Dispatcher 控制面契约
 
@@ -305,9 +304,7 @@ Authorization: Bearer <dispatcher-token>
 
 ```json
 {
-  "protocolVersion": 1,
   "engineId": "uuid",
-  "configRevision": 3,
   "topics": {
     "commandTopic": "datascalpel.execution.command.local",
     "runnerEventTopic": "datascalpel.runner.event.local",
@@ -325,7 +322,6 @@ Authorization: Bearer <dispatcher-token>
 
 ```json
 {
-  "protocolVersion": 1,
   "dispatcherInstanceId": "stable-uuid",
   "backendType": "LOCAL_DOCKER",
   "version": "0.1.0-SNAPSHOT",
@@ -340,7 +336,6 @@ Authorization: Bearer <dispatcher-token>
 
 注册时必须校验：
 
-- protocolVersion 等于 1。
 - Dispatcher 上报后端与 `expectedBackendType` 一致。
 - 已保存的 `dispatcherInstanceId` 未发生异常变化。
 - Dispatcher readiness 为 UP。
@@ -361,7 +356,7 @@ HTTP 调用不能发生在管理数据库长事务中：
 ```text
 短事务读取引擎快照
 → 事务外调用 Dispatcher
-→ 短事务重新检查 configRevision 并提交状态
+→ 短事务直接比较配置快照并提交状态
 ```
 
 如果调用期间配置已经变化，本次响应不得覆盖新配置状态。
@@ -407,7 +402,7 @@ durationMs
 
 ## 12. 测试计划
 
-- 实体：默认状态、状态迁移、唯一名称、configRevision。
+- 实体：默认状态、状态迁移、唯一名称和配置变更后的健康状态重置。
 - Service：活动引擎禁止修改、删除引用保护、Token 替换语义。
 - HTTP Client：认证 Header、超时、安全错误映射、实例身份变化。
 - Resource：GET/POST 路径、权限、Bean Validation、Problem Detail。

@@ -18,7 +18,8 @@ public final class CanvasNodeOperators {
                     new RenameNodeOperator(),
                     new ModelOutputNodeOperator(),
                     new JdbcOutputNodeOperator(),
-                    new KafkaOutputNodeOperator()
+                    new KafkaOutputNodeOperator(),
+                    new FileOutputNodeOperator()
             ));
 
     private CanvasNodeOperators() {

@@ -318,7 +318,7 @@ class TaskIntegrationTests {
                 .andExpect(jsonPath("$.configured").value(false))
                 .andExpect(jsonPath("$.version").value(0))
                 .andExpect(jsonPath("$.definition.schemaVersion").value(1))
-                .andExpect(jsonPath("$.definition.schemaMinorVersion").value(5))
+                .andExpect(jsonPath("$.definition.schemaMinorVersion").value(6))
                 .andExpect(jsonPath("$.definition.nodes").isEmpty())
                 .andExpect(jsonPath("$.definition.edges").isEmpty());
         mockMvc.perform(get("/api/v1/tasks/{id}/model-relations", taskId))
@@ -336,13 +336,13 @@ class TaskIntegrationTests {
                 .andExpect(jsonPath("$.configured").value(true))
                 .andExpect(jsonPath("$.version").value(1))
                 .andExpect(jsonPath("$.definition.schemaVersion").value(1))
-                .andExpect(jsonPath("$.definition.schemaMinorVersion").value(5))
+                .andExpect(jsonPath("$.definition.schemaMinorVersion").value(6))
                 .andExpect(jsonPath("$.definition.nodes[0].type").value("JDBC_INPUT"))
                 .andExpect(jsonPath("$.definition.nodes[0].name").value("客户输入"));
         var persistedCanvas = canvasDefinitionRepository.findByTaskId(UUID.fromString(taskId)).orElseThrow();
         assertThat(persistedCanvas.getSchemaVersion()).isEqualTo(1);
-        assertThat(persistedCanvas.getSchemaMinorVersion()).isEqualTo(5);
-        assertThat(persistedCanvas.getDefinitionJson()).contains("\"schemaMinorVersion\":5");
+        assertThat(persistedCanvas.getSchemaMinorVersion()).isEqualTo(6);
+        assertThat(persistedCanvas.getDefinitionJson()).contains("\"schemaMinorVersion\":6");
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content(definition))
@@ -529,10 +529,10 @@ class TaskIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":6,"nodes":[],"edges":[]}}
+                                {"definition":{"schemaVersion":1,"schemaMinorVersion":7,"nodes":[],"edges":[]}}
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Canvas schemaMinorVersion 仅支持 0 到 5"));
+                .andExpect(jsonPath("$.detail").value("Canvas schemaMinorVersion 仅支持 0 到 6"));
 
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)

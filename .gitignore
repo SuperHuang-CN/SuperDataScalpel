@@ -23,3 +23,7 @@ application-local.yaml
 
 # Maven repository credentials are local-only. Copy the tracked example first.
 /settings-superhuang.xml
+
+# Local linux69 compute-engine deployment secrets and generated connection details.
+/deploy/compute-engine/deploy-local.env
+/deploy/compute-engine/connection-info.txt

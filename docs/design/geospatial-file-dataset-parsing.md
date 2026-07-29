@@ -51,7 +51,7 @@ Extent 和记录数不参与 Schema 一致性。SHP 支持表级追加、全量�
 SHP 预览按当前来源的 `sourceOrder` 读取，累计到 limit 后停止；任一来源不支持安全预览时整表
 返回 `409`。GDB 图层可以处于 `SCHEMA_READY`，此时允许作为 Canvas 输入但管理端不提供预览。
 
-Canvas Manifest v6 保存逻辑表 Schema、解析参数和有序来源的精确原归档/物化位置及来源键。
+Canvas Manifest v7 保存逻辑表 Schema、解析参数和有序来源的精确原归档/物化位置及来源键。
 Task Engine 不使用修订号，也不保护旧对象。覆盖或删除会立即移除旧对象，因此旧任务允许以文件
 不存在错误失败。
 

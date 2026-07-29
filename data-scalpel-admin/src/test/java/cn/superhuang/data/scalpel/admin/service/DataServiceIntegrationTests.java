@@ -451,11 +451,10 @@ class DataServiceIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"%s",
                                   "name":"SQL 测试 Engine",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
-                                  "managementToken":"engine-test-token",
+                                  "managementToken":"engine-test-token:%s",
                                   "enabled":true
                                 }
                                 """.formatted(code)))
@@ -550,6 +549,14 @@ class DataServiceIntegrationTests {
         @Primary
         ServiceEngineClient serviceEngineClient(ServiceEngineCredentialCipher credentialCipher) {
             return new ServiceEngineClient(credentialCipher) {
+                @Override
+                public ServiceEngineInfoResponse info(String adminUrl, String managementToken) {
+                    return new ServiceEngineInfoResponse(
+                            managementToken.substring("engine-test-token:".length()),
+                            List.of("POSTGRESQL", "MYSQL")
+                    );
+                }
+
                 @Override
                 public ServiceEngineInfoResponse info(ServiceEngine engine) {
                     return new ServiceEngineInfoResponse(engine.getCode(), List.of("POSTGRESQL", "MYSQL"));

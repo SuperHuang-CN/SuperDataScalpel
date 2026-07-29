@@ -5,7 +5,6 @@ import cn.superhuang.data.scalpel.business.compute.domain.ComputeBackendType;
 import java.util.List;
 
 public record DispatcherInfoResponse(
-        int protocolVersion,
         String dispatcherInstanceId,
         ComputeBackendType backendType,
         String version,

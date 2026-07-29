@@ -30,7 +30,7 @@ public record CanvasTaskRunManifest(
         RuntimeFileStorage runtimeFileStorage,
         List<RuntimeFileInput> runtimeFileInputs
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 6;
+    public static final int CURRENT_MANIFEST_VERSION = 7;
 
     public CanvasTaskRunManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);
@@ -99,7 +99,8 @@ public record CanvasTaskRunManifest(
             RuntimeJdbcConnection connection,
             HttpApiContracts.RuntimeConnection httpApiConnection,
             List<HttpApiContracts.ResourceDefinition> apiResources,
-            RuntimeKafkaConnection kafkaConnection
+            RuntimeKafkaConnection kafkaConnection,
+            RuntimeS3Connection s3Connection
     ) {
         public RuntimeDataSource {
             purposes = Set.copyOf(purposes);
@@ -116,7 +117,21 @@ public record CanvasTaskRunManifest(
                 List<HttpApiContracts.ResourceDefinition> apiResources
         ) {
             this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                    httpApiConnection, apiResources, null);
+                    httpApiConnection, apiResources, null, null);
+        }
+
+        public RuntimeDataSource(
+                UUID dataSourceId,
+                ConnectionKind connectionKind,
+                RuntimeDatabaseType databaseType,
+                Set<DataSourcePurpose> purposes,
+                RuntimeJdbcConnection connection,
+                HttpApiContracts.RuntimeConnection httpApiConnection,
+                List<HttpApiContracts.ResourceDefinition> apiResources,
+                RuntimeKafkaConnection kafkaConnection
+        ) {
+            this(dataSourceId, connectionKind, databaseType, purposes, connection,
+                    httpApiConnection, apiResources, kafkaConnection, null);
         }
     }
 
@@ -145,6 +160,17 @@ public record CanvasTaskRunManifest(
             String saslMechanism,
             String username,
             String password
+    ) {
+    }
+
+    public record RuntimeS3Connection(
+            String endpoint,
+            String region,
+            String bucket,
+            String rootPrefix,
+            boolean pathStyleAccess,
+            String accessKey,
+            String secretKey
     ) {
     }
 

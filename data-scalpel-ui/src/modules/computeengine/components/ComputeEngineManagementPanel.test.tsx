@@ -53,8 +53,6 @@ const engine = (
   maxConcurrentSubmissions: 2,
   maxInFlightApplications: 2,
   dispatcherInstanceId: registrationState === 'DETACHED' ? null : 'dispatcher-local',
-  protocolVersion: registrationState === 'DETACHED' ? null : 1,
-  configRevision: 1,
   lastCheckAt: '2026-07-24T00:00:00Z',
   lastError: healthState === 'DOWN' ? '连接失败' : null,
   detachedAt: registrationState === 'DETACHED' ? '2026-07-24T00:00:00Z' : null,
@@ -109,6 +107,7 @@ describe('ComputeEngineManagementPanel', () => {
     const user = userEvent.setup();
     renderPanel(engine());
 
+    expect(screen.queryByText('配置版本')).not.toBeInTheDocument();
     await user.click(await screen.findByLabelText('更多计算引擎操作：本地 Docker 计算引擎'));
 
     expect(await screen.findByText('安全反注册')).toBeInTheDocument();
@@ -129,6 +128,22 @@ describe('ComputeEngineManagementPanel', () => {
       force: true,
     }));
     expect(hooks.detach.mutateAsync).not.toHaveBeenCalled();
+  });
+
+  it('does not expose remote lifecycle actions for an error that never registered', async () => {
+    const user = userEvent.setup();
+    renderPanel({
+      ...engine('ERROR'),
+      dispatcherInstanceId: null,
+      reportedBackendType: null,
+    });
+
+    await user.click(await screen.findByLabelText('更多计算引擎操作：本地 Docker 计算引擎'));
+
+    expect(await screen.findByText('注册并激活')).toBeInTheDocument();
+    expect(screen.queryByText('安全反注册')).not.toBeInTheDocument();
+    expect(screen.queryByText('强制反注册并取消任务')).not.toBeInTheDocument();
+    expect(screen.queryByText('离线解除绑定')).not.toBeInTheDocument();
   });
 
   it('requires a reason and exact engine name before offline detach', async () => {

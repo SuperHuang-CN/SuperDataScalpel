@@ -23,7 +23,7 @@ const emptyMetadata: TaskCompilationMetadataSnapshot = {
 
 const inputDefinition = (tableName = ''): CanvasDefinition => ({
   schemaVersion: 1,
-  schemaMinorVersion: 5,
+  schemaMinorVersion: 6,
   nodes: [{
     id: '4add70a7-4948-42a5-af66-e56dbaccad3e',
     type: 'JDBC_INPUT',
@@ -36,7 +36,7 @@ const inputDefinition = (tableName = ''): CanvasDefinition => ({
 
 const outputDefinition = (columnMappingMode: 'BY_NAME' | 'EXPLICIT'): CanvasDefinition => ({
   schemaVersion: 1,
-  schemaMinorVersion: 5,
+  schemaMinorVersion: 6,
   nodes: [{
     id: 'd35adbfb-9a83-4d92-b229-d4af1a5049cf',
     type: 'JDBC_OUTPUT',

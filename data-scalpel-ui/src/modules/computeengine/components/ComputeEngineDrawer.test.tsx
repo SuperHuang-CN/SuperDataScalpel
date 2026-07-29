@@ -41,8 +41,6 @@ const engine = (registrationState: ComputeEngine['registrationState']): ComputeE
   maxConcurrentSubmissions: 2,
   maxInFlightApplications: 2,
   dispatcherInstanceId: 'dispatcher-local',
-  protocolVersion: 1,
-  configRevision: 1,
   lastCheckAt: '2026-07-19T00:00:00Z',
   lastError: null,
   detachedAt: null,

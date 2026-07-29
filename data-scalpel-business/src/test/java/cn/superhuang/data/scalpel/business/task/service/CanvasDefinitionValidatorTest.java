@@ -45,7 +45,7 @@ class CanvasDefinitionValidatorTest {
 
         assertEquals(0, legacy.schemaMinorVersion());
         assertEquals(1, upgraded.schemaVersion());
-        assertEquals(5, upgraded.schemaMinorVersion());
+        assertEquals(6, upgraded.schemaMinorVersion());
     }
 
     @Test
@@ -53,7 +53,7 @@ class CanvasDefinitionValidatorTest {
         CanvasDefinition current = definition(
                 UUID.randomUUID().toString(), UUID.randomUUID().toString(), "", "");
         CanvasDefinition legacyWithModels = new CanvasDefinition(1, 0, current.nodes(), current.edges());
-        CanvasDefinition futureMinor = new CanvasDefinition(1, 6, List.of(), List.of());
+        CanvasDefinition futureMinor = new CanvasDefinition(1, 7, List.of(), List.of());
         CanvasDefinition futureMajor = new CanvasDefinition(2, 0, List.of(), List.of());
 
         assertThrows(ResponseStatusException.class, () -> validator.validate(legacyWithModels));

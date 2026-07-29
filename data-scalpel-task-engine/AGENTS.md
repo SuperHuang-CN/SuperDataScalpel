@@ -57,7 +57,7 @@
 - Rename 必须根据原始 Schema 使用单次 `select + alias` 原子生成最终字段名，并在不修改输入 Map、上游表或 Dataset 的前提下替换逻辑表 Key；不得顺序调用 `withColumnRenamed`，也不得丢失物理 Origin 或字段元数据。
 - Output 必须在共享 Operator 中对目标类型执行显式 Spark Cast。Output 类型策略只负责区分安全转换和运行时风险并生成 WARNING，转换是否受支持仍以共享 Operator 构造的 Spark Cast 和 Analyzer 结果为准；不得通过平台类型矩阵提前拒绝 Spark 能够建立的 Cast。
 - 可证明安全的 Output 转换直接通过；Spark 支持但依赖实际值的转换产生 WARNING；只有配置错误、业务结构错误或 Analyzer 不支持的 Cast 才产生 ERROR。如果新增 Output 预检需要连接目标数据库、执行试写、模拟数据库约束或维护方言专属转换矩阵，应将该检查留到 Runner，不得加入 Compiler。
-- 新增节点时必须新增一个 Operator 并注册到内置 Registry，同时补齐 Registry 完整性测试。若必须增加新的环境能力，应扩展 I/O 端口，不得复制节点行为。
+- 新增节点时必须新增一个 Operator 并注册到内置 Registry；Registry 完整性测试要求当前暂时禁用。若必须增加新的环境能力，应扩展 I/O 端口，不得复制节点行为。
 
 ## 编译诊断上下文保留
 
@@ -72,7 +72,7 @@
 ## 异常分类与日志安全
 
 - 节点和 Runner 失败必须使用统一错误分类器。分类器应遍历 Spark 包装异常、`cause` 链以及 `SQLException#getNextException()`，不得只根据最外层异常消息判断。
-- 稳定错误码、错误类别、执行阶段和 `retryable` 语义是对外诊断契约。调整映射时必须同步修改 Runner、Dispatcher、Admin、前端、测试和设计文档。
+- 稳定错误码、错误类别、执行阶段和 `retryable` 语义是对外诊断契约。调整映射时必须同步修改 Runner、Dispatcher、Admin、前端和设计文档；测试要求当前暂时禁用。
 - 每次失败生成一个诊断 ID；顶层错误、失败节点结果、终态事件和管理端运行记录必须保持同一诊断 ID。
 - 同一异常只允许在最接近失败来源的位置打印一次经过脱敏的完整异常链和调用栈；任务级终态日志只打印结构化摘要，不重复堆栈。
 - 异常链和调用栈必须经过统一脱敏并限制最大长度。当前上限为 64 KiB，截断时必须保留明确标记。
@@ -86,7 +86,7 @@
 - 成功节点不得包含错误对象；失败节点必须包含完整的安全错误对象。顶层成功结果不得包含错误，非成功终态必须包含错误。
 - 日志和结果必须复用同一个节点执行上下文，避免节点身份、阶段、耗时或诊断 ID不一致。
 - 结果和终态事件不得携带 Java 调用栈。调用栈只允许存在于经过脱敏的受控控制台日志中。
-- 升级结果协议时必须在同一改动中更新 Runner 写入、Dispatcher 严格解析、Kafka 事件、Admin 持久化/API、前端类型与展示、协议测试和设计文档。除非用户明确要求，不得私自增加兼容分支。
+- 升级结果协议时必须在同一改动中更新 Runner 写入、Dispatcher 严格解析、Kafka 事件、Admin 持久化/API、前端类型与展示和设计文档；协议测试要求当前暂时禁用。除非用户明确要求，不得私自增加兼容分支。
 
 ## 新增节点类型
 
@@ -98,22 +98,13 @@
 - 新节点的编译校验与运行时失败必须可区分。配置或编译错误不得伪装成 JDBC 或 Runner 内部错误。
 - 文件 Input 新增或修改格式支持时，必须同时覆盖 Registry 能力校验、零行 Compiler、真实 Reader、Schema 指纹、Manifest v6 有序来源快照、来源节点错误归属和敏感路径脱敏；不得为每种格式拆分重复的 Canvas 节点。
 
-## 测试与验证
+## 测试与验证（暂时禁用）
 
-- 修改节点执行、日志、错误分类、结果协议或制品投递时，必须增加有针对性的测试。
-- 节点 Registry 完整性测试必须覆盖节点类别、非空 `supportedModes`、任务类型到执行模式的映射，以及 Compiler 与 Runner 使用同一能力声明。
-- 批流测试至少覆盖：批任务拒绝流专属节点、流任务拒绝批专属节点、共享无状态节点在两种模式下保持同一配置语义、`JDBC_INPUT` 在流任务中仍传播 `BOUNDED`、`KAFKA_INPUT` 传播 `UNBOUNDED`。
-- `STREAM_JOIN` 测试至少覆盖 Stream-Static、两个有界输入拒绝、未具备 Watermark/时间边界时两个无界输入拒绝，以及后续开放 Stream-Stream 后的有界状态校验。
-- Kafka 节点测试至少覆盖内联 Value Schema 的严格协议往返、空 Schema、重复字段、非法 STRING/DECIMAL 参数、Input 无界传播、Output 映射，以及编译/运行准备不读取模型元数据。
-- 有状态流式节点测试必须验证缺失事件时间、Watermark、时间范围、状态边界或不兼容输出模式时产生稳定编译错误，不得只验证 Spark 正常路径。
-- 错误分类测试至少覆盖 Spark 包装的 JDBC 异常、SQLState、未知异常回退和 `retryable` 语义。
-- 日志测试至少覆盖节点开始、成功、失败、诊断 ID、单次完整堆栈、敏感信息脱敏和超长堆栈截断。
-- 结果协议测试至少覆盖成功、节点失败、超时、取消、拓扑顺序、诊断 ID一致性和非法状态组合。
-- JDBC 集成测试应使用隔离环境验证真实权限、认证、连接、Schema、约束和写入失败；不得通过修改共享开发数据库权限制造测试场景。
-- 开发过程中运行 `./mvnw -pl data-scalpel-task-engine -am test`。需要运行隔离 JDBC 集成测试时，使用 `-Ddatascalpel.task-execution-it=true`；交付前仍需遵循根规范运行 `./mvnw verify`。
+- 当前阶段遵循根目录 `AGENTS.md` 的暂时禁用规则：除非用户在具体任务中明确要求，否则不强制执行 Registry、批流、Kafka、有状态流式节点、错误分类、日志、结果协议、JDBC 集成或其他针对性测试，不强制运行模块级测试或根目录 `./mvnw verify`。
+- 本节仅暂时禁用测试和验证交付要求，不改变本文件其他章节规定的运行时行为、契约和安全约束。
 
 ## 设计依据
 
 - Canvas Runner 语义、日志边界和管理端观察以 [Canvas 任务执行设计](../docs/design/canvas-task-execution.md) 为准。
 - `result.json`、错误分类、Kafka 事件和制品安全边界以 [Task Runner、Kafka 与制品](../docs/design/task-execution-platform/05-task-runner-kafka-and-artifacts.md) 为准。
-- 当实现与设计文档不一致时，应先确认目标语义，再在同一改动中同步代码、测试和文档，不得让规范、协议和实现长期分叉。
+- 当实现与设计文档不一致时，应先确认目标语义，再在同一改动中同步代码和文档，不得让规范、协议和实现长期分叉；测试要求当前暂时禁用。

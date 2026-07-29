@@ -22,7 +22,6 @@ interface ServiceEngineDrawerProps {
 }
 
 interface ServiceEngineFormValues {
-  code?: string;
   name: string;
   adminUrl: string;
   publicUrl: string;
@@ -45,12 +44,11 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
   const updateMutation = useUpdateServiceEngine();
   const testNewMutation = useTestNewServiceEngine();
   const testStoredMutation = useTestServiceEngine();
-  const watchedCode = Form.useWatch('code', form);
   const watchedAdminUrl = Form.useWatch('adminUrl', form);
   const watchedManagementToken = Form.useWatch('managementToken', form);
   const testFingerprint = JSON.stringify([
     engine?.id ?? null,
-    editing ? engine?.code : watchedCode?.trim().toLowerCase(),
+    editing ? engine?.code : null,
     watchedAdminUrl?.trim(),
     watchedManagementToken?.trim(),
   ]);
@@ -97,7 +95,6 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
       } else {
         await createMutation.mutateAsync({
           ...request,
-          code: values.code?.trim().toLowerCase() ?? '',
           managementToken: values.managementToken?.trim() ?? '',
         } satisfies CreateServiceEngineRequest);
         messageApi.success('Service Engine 已创建');
@@ -110,9 +107,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
 
   const testConnection = async () => {
     try {
-      const fields: (keyof ServiceEngineFormValues)[] = editing
-        ? ['adminUrl', 'managementToken']
-        : ['code', 'adminUrl', 'managementToken'];
+      const fields: (keyof ServiceEngineFormValues)[] = ['adminUrl', 'managementToken'];
       const values = await form.validateFields(fields);
       const result = engine
         ? await testStoredMutation.mutateAsync({
@@ -123,7 +118,6 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
           },
         })
         : await testNewMutation.mutateAsync({
-          code: values.code?.trim().toLowerCase() ?? '',
           adminUrl: values.adminUrl.trim(),
           managementToken: values.managementToken?.trim() ?? '',
         });
@@ -165,23 +159,9 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
       >
         <Form<ServiceEngineFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
           <Row gutter={12}>
-            {!editing && (
-              <Col span={12}>
-                <Form.Item
-                  label="Engine 编码"
-                  name="code"
-                  rules={[
-                    { required: true, whitespace: true, message: '请输入 Engine 编码' },
-                    { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '以字母开头，仅支持字母、数字和下划线，最长 64 位' },
-                  ]}
-                >
-                  <Input autoFocus placeholder="如：dev_engine_01" />
-                </Form.Item>
-              </Col>
-            )}
-            <Col span={12}>
+            <Col span={24}>
               <Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}>
-                <Input autoFocus={editing} />
+                <Input autoFocus />
               </Form.Item>
             </Col>
             <Col span={24}>

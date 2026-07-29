@@ -29,6 +29,7 @@
         <maven.compiler.parameters>true</maven.compiler.parameters>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+        <datascalpel.task-engine.skip-extra-artifacts>true</datascalpel.task-engine.skip-extra-artifacts>
     </properties>
 
     <dependencies>
@@ -241,6 +242,7 @@
                             <goal>shade</goal>
                         </goals>
                         <configuration>
+                            <skip>${datascalpel.task-engine.skip-extra-artifacts}</skip>
                             <shadedArtifactAttached>true</shadedArtifactAttached>
                             <shadedClassifierName>runner-cluster</shadedClassifierName>
                             <createDependencyReducedPom>false</createDependencyReducedPom>
@@ -302,6 +304,7 @@
                 <artifactId>maven-assembly-plugin</artifactId>
                 <version>3.7.1</version>
                 <configuration>
+                    <skipAssembly>${datascalpel.task-engine.skip-extra-artifacts}</skipAssembly>
                     <descriptors>
                         <descriptor>src/assembly/distribution.xml</descriptor>
                     </descriptors>
@@ -328,6 +331,7 @@
                             <goal>java</goal>
                         </goals>
                         <configuration>
+                            <skip>${datascalpel.task-engine.skip-extra-artifacts}</skip>
                             <classpathScope>test</classpathScope>
                             <mainClass>cn.superhuang.datascalpel.taskengine.build.RunnerClusterArtifactVerifier</mainClass>
                             <arguments>
@@ -341,6 +345,12 @@
     </build>
 
     <profiles>
+        <profile>
+            <id>task-engine-full-package</id>
+            <properties>
+                <datascalpel.task-engine.skip-extra-artifacts>false</datascalpel.task-engine.skip-extra-artifacts>
+            </properties>
+        </profile>
         <profile>
             <id>task-execution-it</id>
             <properties>

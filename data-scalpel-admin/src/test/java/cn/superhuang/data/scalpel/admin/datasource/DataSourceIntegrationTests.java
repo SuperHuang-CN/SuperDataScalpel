@@ -430,8 +430,9 @@ class DataSourceIntegrationTests {
 
         String s3Id = com.jayway.jsonpath.JsonPath.read(s3Response, "$.id");
         mockMvc.perform(post("/api/v1/data-sources/{id}/actions/test", s3Id))
-                .andExpect(status().isNotImplemented())
-                .andExpect(jsonPath("$.status").value(501));
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(false))
+                .andExpect(jsonPath("$.code").value("S3_CONNECTION_FAILED"));
 
         mockMvc.perform(post("/api/v1/data-sources")
                         .contentType(MediaType.APPLICATION_JSON)

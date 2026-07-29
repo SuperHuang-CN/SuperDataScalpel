@@ -37,6 +37,8 @@ export const runtimeDataFromDefinition = (node: CanvasNodeDefinition): CanvasNod
       return { type: node.type, name: node.name, configuration: clone(node.configuration) };
     case CanvasNodeType.KafkaOutput:
       return { type: node.type, name: node.name, configuration: clone(node.configuration) };
+    case CanvasNodeType.FileOutput:
+      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
   }
 };
 
@@ -90,6 +92,8 @@ const nodeDefinition = (node: SerializableCanvasNode): CanvasNodeDefinition => {
     case CanvasNodeType.JdbcOutput:
       return { ...common, type: data.type, configuration: clone(data.configuration) };
     case CanvasNodeType.KafkaOutput:
+      return { ...common, type: data.type, configuration: clone(data.configuration) };
+    case CanvasNodeType.FileOutput:
       return { ...common, type: data.type, configuration: clone(data.configuration) };
   }
 };

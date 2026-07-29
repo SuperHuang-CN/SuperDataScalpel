@@ -28,8 +28,6 @@ export interface ComputeEngine {
   maxConcurrentSubmissions: number;
   maxInFlightApplications: number;
   dispatcherInstanceId: string | null;
-  protocolVersion: number | null;
-  configRevision: number;
   lastCheckAt: string | null;
   lastError: string | null;
   detachedAt: string | null;
@@ -51,7 +49,6 @@ export interface DispatcherDependency {
 }
 
 export interface ComputeEngineTestResult {
-  protocolVersion: number;
   dispatcherInstanceId: string;
   backendType: ComputeBackendType;
   dispatcherVersion: string;

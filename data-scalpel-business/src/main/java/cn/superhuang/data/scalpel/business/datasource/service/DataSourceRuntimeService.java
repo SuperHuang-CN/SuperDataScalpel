@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepos
 import cn.superhuang.data.scalpel.business.datasource.web.request.DataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.JdbcDataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.KafkaDataSourceConnectionRequest;
+import cn.superhuang.data.scalpel.business.datasource.web.request.S3DataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.HttpApiDataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.TestDataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.response.ConnectionTestDiagnosticResponse;
@@ -38,11 +39,22 @@ import java.util.UUID;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
 import org.apache.kafka.common.config.SaslConfigs;
+import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
+import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
+import software.amazon.awssdk.core.sync.RequestBody;
+import software.amazon.awssdk.regions.Region;
+import software.amazon.awssdk.services.s3.S3Client;
+import software.amazon.awssdk.services.s3.S3Configuration;
+import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.services.s3.model.ListObjectsV2Request;
+import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 
 /** Executes short-lived, read-only operations against a registered external database. */
 @Service
@@ -101,6 +113,10 @@ public class DataSourceRuntimeService {
             validateKafka(kafka);
             return testKafka("draft", kafkaSettings(kafka));
         }
+        if (request.type().connectionKind() == DataSourceConnectionKind.S3
+                && request.connection() instanceof S3DataSourceConnectionRequest s3) {
+            return testS3("draft", s3Settings(s3));
+        }
         JdbcDataSourceConnectionRequest connection = requireJdbc(request.type(), request.connection());
         return testConnection("draft", request.type().name(), toConfig(connection));
     }
@@ -129,6 +145,9 @@ public class DataSourceRuntimeService {
         }
         if (dataSource.getType().connectionKind() == DataSourceConnectionKind.KAFKA) {
             return testKafka("dataSourceId=" + id, kafkaSettings(dataSource));
+        }
+        if (dataSource.getType().connectionKind() == DataSourceConnectionKind.S3) {
+            return testS3("dataSourceId=" + id, s3Settings(dataSource));
         }
         requireJdbc(dataSource);
         return testConnection(
@@ -328,6 +347,121 @@ public class DataSourceRuntimeService {
         }
     }
 
+    private ConnectionTestResponse testS3(String context, S3Settings settings) {
+        long startedAt = System.nanoTime();
+        String probeKey = joinKey(
+                settings.rootPrefix(),
+                ".datascalpel-connection-test/" + UUID.randomUUID()
+        );
+        boolean objectCreated = false;
+        try (S3Client client = s3Client(settings)) {
+            client.putObject(
+                    PutObjectRequest.builder().bucket(settings.bucket()).key(probeKey).build(),
+                    RequestBody.fromBytes("datascalpel".getBytes(StandardCharsets.UTF_8))
+            );
+            objectCreated = true;
+            boolean listed = client.listObjectsV2(ListObjectsV2Request.builder()
+                            .bucket(settings.bucket())
+                            .prefix(probeKey)
+                            .maxKeys(1)
+                            .build())
+                    .contents().stream()
+                    .anyMatch(object -> probeKey.equals(object.key()));
+            if (!listed) {
+                throw new IllegalStateException("S3 测试对象写入后不可见");
+            }
+            client.deleteObject(DeleteObjectRequest.builder()
+                    .bucket(settings.bucket()).key(probeKey).build());
+            objectCreated = false;
+            return new ConnectionTestResponse(
+                    true,
+                    "OK",
+                    "S3 连接成功",
+                    elapsedMs(startedAt),
+                    "S3 Compatible",
+                    settings.bucket(),
+                    "AWS SDK v2",
+                    null
+            );
+        } catch (Exception exception) {
+            ConnectionTestDiagnosticResponse diagnostic = ConnectionTestDiagnosticFactory.create(
+                    exception, settings.accessKey(), settings.secretKey());
+            LOGGER.warn(
+                    "S3 connection test failed: context={}, endpoint={}, bucket={}, code=S3_CONNECTION_FAILED, elapsedMs={}",
+                    context, settings.endpoint(), settings.bucket(), elapsedMs(startedAt));
+            return ConnectionTestResponse.failed(
+                    "S3_CONNECTION_FAILED",
+                    "S3 连接或读写权限测试失败",
+                    elapsedMs(startedAt),
+                    diagnostic
+            );
+        } finally {
+            if (objectCreated) {
+                try (S3Client client = s3Client(settings)) {
+                    client.deleteObject(DeleteObjectRequest.builder()
+                            .bucket(settings.bucket()).key(probeKey).build());
+                } catch (RuntimeException cleanupFailure) {
+                    LOGGER.warn(
+                            "S3 connection test cleanup failed: context={}, endpoint={}, bucket={}",
+                            context, settings.endpoint(), settings.bucket());
+                }
+            }
+        }
+    }
+
+    private static S3Client s3Client(S3Settings settings) {
+        return S3Client.builder()
+                .endpointOverride(URI.create(settings.endpoint()))
+                .region(Region.of(settings.region()))
+                .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(
+                        settings.accessKey(), settings.secretKey())))
+                .serviceConfiguration(S3Configuration.builder()
+                        .pathStyleAccessEnabled(settings.pathStyleAccess())
+                        .build())
+                .build();
+    }
+
+    private static S3Settings s3Settings(S3DataSourceConnectionRequest request) {
+        if (request.secretKey() == null || request.secretKey().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "S3 SecretKey 不能为空");
+        }
+        return new S3Settings(
+                request.endpoint().trim(),
+                defaultS3Region(request.region()),
+                request.bucket().trim(),
+                normalizeS3Prefix(request.rootPrefix()),
+                request.pathStyleAccess() == null || request.pathStyleAccess(),
+                request.accessKey().trim(),
+                request.secretKey()
+        );
+    }
+
+    private static S3Settings s3Settings(DataSource dataSource) {
+        Map<String, String> options = dataSource.getConnection().getOptions();
+        return new S3Settings(
+                dataSource.getConnection().getEndpoint(),
+                defaultS3Region(options.get("region")),
+                dataSource.getConnection().getTarget(),
+                normalizeS3Prefix(dataSource.getConnection().getNamespace()),
+                Boolean.parseBoolean(options.getOrDefault("pathStyleAccess", "true")),
+                dataSource.getConnection().getPrincipal(),
+                dataSource.getConnection().secretValue()
+        );
+    }
+
+    private static String defaultS3Region(String region) {
+        return region == null || region.isBlank() ? "us-east-1" : region.trim();
+    }
+
+    private static String normalizeS3Prefix(String prefix) {
+        if (prefix == null || prefix.isBlank()) return null;
+        return prefix.trim().replaceFirst("^/+", "").replaceFirst("/+$", "");
+    }
+
+    private static String joinKey(String prefix, String suffix) {
+        return prefix == null || prefix.isBlank() ? suffix : prefix + "/" + suffix;
+    }
+
     public HttpApiContracts.RuntimeConnection runtimeConnection(DataSource dataSource) {
         if (dataSource.getType().connectionKind() != DataSourceConnectionKind.HTTP_API) {
             throw unsupportedRuntime(dataSource.getType());
@@ -520,6 +654,17 @@ public class DataSourceRuntimeService {
             String saslMechanism,
             String username,
             String password
+    ) {
+    }
+
+    private record S3Settings(
+            String endpoint,
+            String region,
+            String bucket,
+            String rootPrefix,
+            boolean pathStyleAccess,
+            String accessKey,
+            String secretKey
     ) {
     }
 }

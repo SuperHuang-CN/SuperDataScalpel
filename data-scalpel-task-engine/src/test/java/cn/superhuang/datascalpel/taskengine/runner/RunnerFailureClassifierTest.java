@@ -7,6 +7,7 @@ import org.apache.spark.SparkException;
 import org.junit.jupiter.api.Test;
 
 import java.net.SocketTimeoutException;
+import java.nio.file.FileAlreadyExistsException;
 import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
 
@@ -93,6 +94,24 @@ class RunnerFailureClassifierTest {
         assertEquals(ExecutionErrorCategory.EXTERNAL_SYSTEM, outputFallback.category());
         assertEquals("JDBC_PERMISSION_DENIED", permission.code());
         assertEquals("42501", permission.sqlState());
+    }
+
+    @Test
+    void classifiesFileOutputFailuresWithoutReturningS3Credentials() {
+        RunnerFailureContext output = new RunnerFailureContext(
+                "b797597b-eb3e-428c-aaf5-186fa8d7fc28", "FILE_OUTPUT", "S3 文件输出",
+                ExecutionFailurePhase.WRITE, "s3a://exports/orders");
+
+        TaskExecutionError exists = classifier.classify(
+                new FileAlreadyExistsException("s3a://exports/orders"), output);
+        TaskExecutionError denied = classifier.classify(
+                new IllegalStateException("AccessDenied secretKey=should-not-leak"), output);
+
+        assertEquals("FILE_OUTPUT_TARGET_EXISTS", exists.code());
+        assertEquals(ExecutionErrorCategory.CONSTRAINT, exists.category());
+        assertEquals("FILE_OUTPUT_PERMISSION_DENIED", denied.code());
+        assertEquals(ExecutionErrorCategory.PERMISSION, denied.category());
+        assertFalse(denied.message().contains("should-not-leak"));
     }
 
     @Test

@@ -7,7 +7,6 @@ import cn.superhuang.data.scalpel.business.compute.domain.ComputeBackendType;
 import java.util.List;
 
 public record ComputeEngineTestResponse(
-        int protocolVersion,
         String dispatcherInstanceId,
         ComputeBackendType backendType,
         String dispatcherVersion,

@@ -155,6 +155,17 @@ export const canvasNodeTemplates: readonly CanvasNodeTemplate[] = [
     height: 120,
     supportedModes: ['STREAMING'],
   },
+  {
+    type: CanvasNodeType.FileOutput,
+    shape: 'datascalpel-file-output',
+    label: '文件输出',
+    description: '将处理结果写入外部 S3 目录',
+    searchKeywords: ['file', 's3', 'csv', 'json', 'parquet', '文件', '对象存储'],
+    category: CanvasNodeCategory.Output,
+    width: 240,
+    height: 120,
+    supportedModes: ['BATCH'],
+  },
 ];
 
 export const canvasNodeTemplate = (type: CanvasNodeType): CanvasNodeTemplate => {
@@ -256,6 +267,13 @@ const nodeSummary = (data: CanvasNodeRuntimeData): string => {
       return data.summary?.kind === 'KAFKA'
         ? `${sourceTableName} → ${data.summary.dataSourceName} · ${topic} · ${valueSchema.columns.length} 字段`
         : `${sourceTableName} → ${topic} · ${valueSchema.columns.length} 字段`;
+    }
+    case CanvasNodeType.FileOutput: {
+      const {
+        sourceTableName, dataSourceId, targetPath, conflictPolicy, formatOptions,
+      } = data.configuration;
+      if (!sourceTableName || !dataSourceId || !targetPath) return '请配置文件输出';
+      return `${sourceTableName} → ${formatOptions.type} · ${targetPath} (${conflictPolicy})`;
     }
   }
 };

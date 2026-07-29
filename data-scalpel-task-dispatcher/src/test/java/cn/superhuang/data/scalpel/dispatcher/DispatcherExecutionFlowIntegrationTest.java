@@ -42,7 +42,7 @@ class DispatcherExecutionFlowIntegrationTest {
     void deduplicatesCommandsAndCompletesFakeBackendLifecycle() throws Exception {
         UUID engineId = UUID.randomUUID();
         registrationService.activate(new DispatcherRegistrationRequest(
-                1, engineId, 1,
+                engineId,
                 new DispatcherTopics("commands.flow", "runner.flow", "admin.flow"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
         ));
@@ -95,7 +95,7 @@ class DispatcherExecutionFlowIntegrationTest {
     void rejectsConflictingFingerprintWithoutReplacingLedger() {
         UUID engineId = UUID.randomUUID();
         registrationService.activate(new DispatcherRegistrationRequest(
-                1, engineId, 2,
+                engineId,
                 new DispatcherTopics("commands.conflict", "runner.conflict", "admin.conflict"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
         ));
@@ -119,7 +119,7 @@ class DispatcherExecutionFlowIntegrationTest {
     void expiresQueuedExecutionBeforeSubmittingItToBackend() {
         UUID engineId = UUID.randomUUID();
         registrationService.activate(new DispatcherRegistrationRequest(
-                1, engineId, 3,
+                engineId,
                 new DispatcherTopics("commands.deadline", "runner.deadline", "admin.deadline"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
         ));
@@ -150,7 +150,7 @@ class DispatcherExecutionFlowIntegrationTest {
     void stopsStreamingExecutionThatNeverReachedTheDispatcherLedger() {
         UUID engineId = UUID.randomUUID();
         registrationService.activate(new DispatcherRegistrationRequest(
-                1, engineId, 4,
+                engineId,
                 new DispatcherTopics("commands.streaming-stop", "runner.streaming-stop", "admin.streaming-stop"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
         ));

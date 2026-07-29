@@ -57,23 +57,29 @@ class DispatcherManagementIntegrationTest {
 
         mockMvc.perform(get("/api/v1/dispatcher/info").header("Authorization", "Bearer test-dispatcher-token"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.protocolVersion").value(1))
+                .andExpect(jsonPath("$.protocolVersion").doesNotExist())
                 .andExpect(jsonPath("$.backendType").value("LOCAL_DOCKER"));
 
         UUID engineId = UUID.randomUUID();
-        String body = registration(engineId, 1);
+        String body = registration(engineId);
         mockMvc.perform(post("/api/v1/dispatcher/registration/actions/activate")
                         .header("Authorization", "Bearer test-dispatcher-token")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.engineId").value(engineId.toString()))
                 .andExpect(jsonPath("$.state").value("ACTIVE"))
+                .andExpect(jsonPath("$.protocolVersion").doesNotExist())
+                .andExpect(jsonPath("$.configRevision").doesNotExist())
                 .andExpect(jsonPath("$.effectiveAdmissionPolicy.maxQueuedExecutions").value(20));
         mockMvc.perform(post("/api/v1/dispatcher/registration/actions/activate")
                         .header("Authorization", "Bearer test-dispatcher-token")
                         .contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("ACTIVE"));
+        mockMvc.perform(post("/api/v1/dispatcher/registration/actions/activate")
+                        .header("Authorization", "Bearer test-dispatcher-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(registration(engineId, 21)))
+                .andExpect(status().isConflict());
         mockMvc.perform(get("/health/ready"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.kafka").value("UP"))
@@ -93,7 +99,7 @@ class DispatcherManagementIntegrationTest {
         UUID engineId = UUID.randomUUID();
         mockMvc.perform(post("/api/v1/dispatcher/registration/actions/activate")
                         .header("Authorization", "Bearer test-dispatcher-token")
-                        .contentType(MediaType.APPLICATION_JSON).content(registration(engineId, 2)))
+                        .contentType(MediaType.APPLICATION_JSON).content(registration(engineId)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("ACTIVE"));
 
@@ -120,23 +126,50 @@ class DispatcherManagementIntegrationTest {
                 .isEqualTo(DispatcherExecutionState.CANCELLED);
     }
 
-    private static String registration(UUID engineId, long revision) {
+    @Test
+    void inactiveDispatcherCanBeClaimedByDifferentEngine() throws Exception {
+        UUID previousEngineId = UUID.randomUUID();
+        mockMvc.perform(post("/api/v1/dispatcher/registration/actions/activate")
+                        .header("Authorization", "Bearer test-dispatcher-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(registration(previousEngineId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.engineId").value(previousEngineId.toString()))
+                .andExpect(jsonPath("$.state").value("ACTIVE"));
+
+        mockMvc.perform(post("/api/v1/dispatcher/registration/actions/deactivate")
+                        .header("Authorization", "Bearer test-dispatcher-token")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"force\":false}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("INACTIVE"));
+
+        UUID replacementEngineId = UUID.randomUUID();
+        mockMvc.perform(post("/api/v1/dispatcher/registration/actions/activate")
+                        .header("Authorization", "Bearer test-dispatcher-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(registration(replacementEngineId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.engineId").value(replacementEngineId.toString()))
+                .andExpect(jsonPath("$.state").value("ACTIVE"));
+    }
+
+    private static String registration(UUID engineId) {
+        return registration(engineId, 20);
+    }
+
+    private static String registration(UUID engineId, int maxQueuedExecutions) {
         return """
                 {
-                  "protocolVersion":1,
                   "engineId":"%s",
-                  "configRevision":%d,
                   "topics":{
                     "commandTopic":"commands.local",
                     "runnerEventTopic":"runner.local",
                     "adminEventTopic":"admin.events"
                   },
                   "admissionPolicy":{
-                    "maxQueuedExecutions":20,
+                    "maxQueuedExecutions":%d,
                     "maxConcurrentSubmissions":2,
                     "maxInFlightApplications":2
                   }
                 }
-                """.formatted(engineId, revision);
+                """.formatted(engineId, maxQueuedExecutions);
     }
 }

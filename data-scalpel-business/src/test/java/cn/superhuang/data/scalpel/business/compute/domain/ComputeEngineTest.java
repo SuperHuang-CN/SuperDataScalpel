@@ -10,12 +10,11 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class ComputeEngineTest {
 
     @Test
-    void ownsRegistrationLifecycleAndConfigurationRevision() {
+    void ownsRegistrationLifecycleAndResetsHealthWhenConfigurationChanges() {
         ComputeEngine engine = engine();
 
         assertEquals(ComputeEngineRegistrationState.CREATED, engine.getRegistrationState());
         assertEquals(ComputeEngineHealthState.UNKNOWN, engine.getHealthState());
-        assertEquals(1, engine.getConfigRevision());
         assertNull(engine.getDispatcherInstanceId());
 
         engine.update(
@@ -23,18 +22,16 @@ class ComputeEngineTest {
                 ComputeBackendType.LOCAL_DOCKER, "commands.local", "runner.local", "admin.events",
                 20, 2, 2
         );
-        assertEquals(1, engine.getConfigRevision(), "语义相同的配置不应递增版本");
 
         engine.update(
                 "本地计算引擎", "开发环境", "http://127.0.0.1:18092", "encrypted-token",
                 ComputeBackendType.LOCAL_DOCKER, "commands.local", "runner.local", "admin.events",
                 20, 2, 2
         );
-        assertEquals(2, engine.getConfigRevision());
 
         engine.beginRegistration();
         assertEquals(ComputeEngineRegistrationState.REGISTERING, engine.getRegistrationState());
-        engine.activate("dispatcher-local", 1, ComputeBackendType.LOCAL_DOCKER);
+        engine.activate("dispatcher-local", ComputeBackendType.LOCAL_DOCKER);
         assertEquals(ComputeEngineRegistrationState.ACTIVE, engine.getRegistrationState());
         assertEquals(ComputeEngineHealthState.UP, engine.getHealthState());
         engine.update(
@@ -43,7 +40,6 @@ class ComputeEngineTest {
                 20, 2, 2
         );
         assertNull(engine.getDispatcherInstanceId());
-        assertNull(engine.getProtocolVersion());
         assertNull(engine.getReportedBackendType());
         assertEquals(ComputeEngineHealthState.UNKNOWN, engine.getHealthState());
         engine.markDraining();
@@ -71,19 +67,18 @@ class ComputeEngineTest {
     @Test
     void recordsOfflineDetachAndClearsAuditAfterActivation() {
         ComputeEngine engine = engine();
-        engine.activate("dispatcher-old", 1, ComputeBackendType.LOCAL_DOCKER);
+        engine.activate("dispatcher-old", ComputeBackendType.LOCAL_DOCKER);
 
         engine.detach("原 Dispatcher 主机已永久下线");
 
         assertEquals(ComputeEngineRegistrationState.DETACHED, engine.getRegistrationState());
         assertEquals(ComputeEngineHealthState.DOWN, engine.getHealthState());
         assertNull(engine.getDispatcherInstanceId());
-        assertNull(engine.getProtocolVersion());
         assertNull(engine.getReportedBackendType());
         assertNotNull(engine.getDetachedAt());
         assertEquals("原 Dispatcher 主机已永久下线", engine.getDetachReason());
 
-        engine.activate("dispatcher-new", 1, ComputeBackendType.LOCAL_DOCKER);
+        engine.activate("dispatcher-new", ComputeBackendType.LOCAL_DOCKER);
         assertEquals(ComputeEngineRegistrationState.ACTIVE, engine.getRegistrationState());
         assertNull(engine.getDetachedAt());
         assertNull(engine.getDetachReason());

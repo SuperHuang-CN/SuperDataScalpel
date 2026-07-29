@@ -248,7 +248,7 @@ class FileDatasetInputNodeOperatorSparkTest {
                 targetDataSourceId(),
                 true,
                 ConnectionKind.JDBC,
-                Set.of(DataSourcePurpose.STORAGE),
+                Set.of(DataSourcePurpose.DISTRIBUTION),
                 List.of(new MetadataTable("orders_target", DatabaseObjectType.TABLE, COLUMNS))
         );
     }

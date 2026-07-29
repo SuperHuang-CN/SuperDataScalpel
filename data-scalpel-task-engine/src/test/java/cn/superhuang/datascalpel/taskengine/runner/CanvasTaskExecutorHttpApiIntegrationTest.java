@@ -188,7 +188,7 @@ class CanvasTaskExecutorHttpApiIntegrationTest {
                         storageDataSourceId,
                         true,
                         ConnectionKind.JDBC,
-                        Set.of(DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.DISTRIBUTION),
                         List.of(new MetadataTable("orders_target", DatabaseObjectType.TABLE, columns)))
         ), List.of());
         Instant now = Instant.now();
@@ -265,7 +265,7 @@ class CanvasTaskExecutorHttpApiIntegrationTest {
         return new RuntimeDataSource(
                 storageDataSourceId,
                 RuntimeDatabaseType.POSTGRESQL,
-                Set.of(DataSourcePurpose.STORAGE),
+                Set.of(DataSourcePurpose.DISTRIBUTION),
                 new RuntimeJdbcConnection(
                         "org.postgresql.Driver",
                         "jdbc:postgresql://127.0.0.1:1/unavailable?connectTimeout=1&socketTimeout=1",

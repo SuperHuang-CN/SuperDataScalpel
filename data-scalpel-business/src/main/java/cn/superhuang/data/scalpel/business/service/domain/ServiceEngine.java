@@ -8,6 +8,7 @@ import jakarta.persistence.UniqueConstraint;
 
 import java.net.URI;
 import java.util.Locale;
+import java.util.regex.Pattern;
 
 /** Registered remote runtime that receives service deployment snapshots. */
 @Entity
@@ -15,6 +16,8 @@ import java.util.Locale;
         name = "uk_ds_service_engine_code", columnNames = "code"
 ))
 public class ServiceEngine extends BaseEntity {
+
+    private static final Pattern CODE_PATTERN = Pattern.compile("[A-Za-z][A-Za-z0-9_]{0,63}");
 
     @Column(nullable = false, updatable = false, length = 64)
     private String code;
@@ -87,6 +90,14 @@ public class ServiceEngine extends BaseEntity {
         return code;
     }
 
+    public boolean matchesCode(String candidate) {
+        try {
+            return code.equals(normalizeCode(candidate));
+        } catch (IllegalArgumentException exception) {
+            return false;
+        }
+    }
+
     public String getName() {
         return name;
     }
@@ -111,8 +122,12 @@ public class ServiceEngine extends BaseEntity {
         return description;
     }
 
-    private static String normalizeCode(String value) {
-        return required(value, "编码").toLowerCase(Locale.ROOT);
+    public static String normalizeCode(String value) {
+        String normalized = required(value, "编码");
+        if (!CODE_PATTERN.matcher(normalized).matches()) {
+            throw new IllegalArgumentException("编码必须以字母开头，仅支持字母、数字和下划线，最长 64 位");
+        }
+        return normalized.toLowerCase(Locale.ROOT);
     }
 
     public static String normalizeAdminUrl(String value) {

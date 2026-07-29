@@ -31,6 +31,7 @@ export const canvasNodePorts = (type: CanvasNodeType): NonNullable<NodeMetadata[
     case CanvasNodeType.ModelOutput:
     case CanvasNodeType.JdbcOutput:
     case CanvasNodeType.KafkaOutput:
+    case CanvasNodeType.FileOutput:
       return { groups, items: [{ id: 'in', group: 'in' }] };
   }
 };

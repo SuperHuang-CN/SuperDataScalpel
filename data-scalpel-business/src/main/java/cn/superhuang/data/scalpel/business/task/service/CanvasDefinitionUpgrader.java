@@ -44,6 +44,11 @@ public class CanvasDefinitionUpgrader {
                 && definition.nodes().stream().anyMatch(CanvasDefinitionUpgrader::isKafkaNode)) {
             invalid("KAFKA_INPUT 和 KAFKA_OUTPUT 的内联 Value Schema 从 Canvas 1.5 开始支持");
         }
+        if (definition.schemaMinorVersion() < 6
+                && definition.nodes() != null
+                && definition.nodes().stream().anyMatch(CanvasDefinitionUpgrader::isFileOutputNode)) {
+            invalid("FILE_OUTPUT 从 Canvas 1.6 开始支持");
+        }
     }
 
     public CanvasDefinition upgradeToCurrent(CanvasDefinition definition) {
@@ -79,6 +84,10 @@ public class CanvasDefinitionUpgrader {
     private static boolean isKafkaNode(CanvasDefinition.CanvasNodeDefinition node) {
         return node instanceof CanvasDefinition.KafkaInputNodeDefinition
                 || node instanceof CanvasDefinition.KafkaOutputNodeDefinition;
+    }
+
+    private static boolean isFileOutputNode(CanvasDefinition.CanvasNodeDefinition node) {
+        return node instanceof CanvasDefinition.FileOutputNodeDefinition;
     }
 
     private static void invalid(String message) {

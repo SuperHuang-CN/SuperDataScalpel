@@ -119,7 +119,7 @@ class TaskExecutionContractTest {
                 TaskExecutionManifest.class
         );
 
-        assertEquals(6, restored.manifestVersion());
+        assertEquals(TaskExecutionManifest.CURRENT_MANIFEST_VERSION, restored.manifestVersion());
         RuntimeFileInput restoredInput = restored.runtimeFileInputs().getFirst();
         assertEquals(tableId, restoredInput.fileDatasetTableId());
         assertEquals(

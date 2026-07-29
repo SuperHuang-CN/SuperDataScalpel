@@ -10,7 +10,10 @@ import org.springframework.validation.annotation.Validated;
 @ConfigurationProperties(prefix = "data-scalpel.engine")
 public record EngineProperties(
         @NotBlank
-        @Pattern(regexp = "^(?!\\$\\{).+$", message = "必须配置为实际 Engine 编码，不能保留未解析占位符")
+        @Pattern(
+                regexp = "[A-Za-z][A-Za-z0-9_]{0,63}",
+                message = "必须以字母开头，仅支持字母、数字和下划线，最长 64 位"
+        )
         String code,
         @NotBlank String managementToken,
         @NotBlank String encryptionKey

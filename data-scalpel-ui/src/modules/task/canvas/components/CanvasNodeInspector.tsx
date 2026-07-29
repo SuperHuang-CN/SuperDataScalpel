@@ -31,6 +31,7 @@ import {
   type JdbcColumnMapping,
   type JdbcInputConfiguration,
   type FileDatasetInputConfiguration,
+  type FileOutputConfiguration,
   type HttpApiInputConfiguration,
   type JdbcOutputConfiguration,
   type JoinCondition,
@@ -42,12 +43,14 @@ import {
   type ModelOutputConfiguration,
   type RenameConfiguration,
   type StreamJoinConfiguration,
+  normalizeFileOutputPath,
 } from '../canvasTypes';
 import { CanvasJdbcDataSourceSelect, CanvasJdbcTableSelect } from './CanvasJdbcSelectors';
 import { CanvasHttpApiDataSourceSelect, CanvasHttpApiResourceSelect } from './CanvasHttpApiSelectors';
 import { CanvasModelSelect } from './CanvasModelSelect';
 import { CanvasKafkaDataSourceSelect, CanvasKafkaTopicSelect } from './CanvasKafkaSelectors';
 import { KafkaValueSchemaEditor } from './KafkaValueSchemaEditor';
+import { CanvasS3DataSourceSelect } from './CanvasS3DataSourceSelect';
 
 interface CanvasNodeInspectorProps {
   node: CanvasNodeDefinition | null;
@@ -177,7 +180,10 @@ const qualifiedPhysicalTableName = (dataSource: DataSource | undefined, tableNam
   return [dataSource.connection.databaseName, dataSource.connection.schemaName, tableName].filter(Boolean).join('.');
 };
 
-const dataSourceAvailable = (dataSource: DataSource | undefined, purpose: 'SOURCE' | 'STORAGE') => (
+const dataSourceAvailable = (
+  dataSource: DataSource | undefined,
+  purpose: 'SOURCE' | 'STORAGE' | 'DISTRIBUTION',
+) => (
   dataSource !== undefined
   && dataSource.enabled
   && dataSource.connectionKind === 'JDBC'
@@ -1311,7 +1317,7 @@ const JdbcOutputInspector = ({
     Boolean(selectedDataSourceId && selectedTableName),
   );
   const selectedDataSourceAvailable = selectedDataSourceQuery.data
-    ? dataSourceAvailable(selectedDataSourceQuery.data, 'STORAGE')
+    ? dataSourceAvailable(selectedDataSourceQuery.data, 'DISTRIBUTION')
     : selectedDataSourceQuery.isError ? false : undefined;
   const selectedTableAvailable = selectedTableQuery.data
     ? true
@@ -1346,7 +1352,7 @@ const JdbcOutputInspector = ({
             name: 'dataSourceId',
             errors: [selectedDataSourceQuery.isFetching
               ? '正在读取数据源信息，请稍候'
-              : '数据源不存在、已停用或不具有数据存储用途'],
+              : '数据源不存在、已停用或不具有数据分发用途'],
           }]);
           return false;
         }
@@ -1406,15 +1412,15 @@ const JdbcOutputInspector = ({
                   throw new Error('正在读取数据源信息，请稍候');
                 }
                 if (selectedDataSourceAvailable === false) {
-                  throw new Error('数据源不存在、已停用或不具有数据存储用途');
+                  throw new Error('数据源不存在、已停用或不具有数据分发用途');
                 }
               },
             },
           ]}
         >
           <CanvasJdbcDataSourceSelect
-            purpose="STORAGE"
-            placeholder="选择 JDBC 数据存储"
+            purpose="DISTRIBUTION"
+            placeholder="选择 JDBC 数据分发数据源"
           />
         </Form.Item>
         {selectedDataSourceId && selectedDataSourceQuery.isError && (
@@ -2144,6 +2150,251 @@ const ModelOutputInspector = ({
   );
 };
 
+interface FileOutputFormValues {
+  sourceTableName: string;
+  dataSourceId: string;
+  targetPath: string;
+  conflictPolicy: FileOutputConfiguration['conflictPolicy'];
+  formatType: FileOutputConfiguration['formatOptions']['type'];
+  header: boolean;
+  delimiter: string;
+  quote: string;
+  escape: string;
+  nullValue: string;
+  ignoreNullFields: boolean;
+}
+
+const fileOutputConfiguration = (values: Partial<FileOutputFormValues>): FileOutputConfiguration => {
+  const type = values.formatType ?? 'CSV';
+  const formatOptions: FileOutputConfiguration['formatOptions'] = type === 'CSV'
+    ? {
+      type,
+      header: values.header ?? true,
+      delimiter: values.delimiter ?? ',',
+      quote: values.quote ?? '"',
+      escape: values.escape ?? '\\',
+      nullValue: values.nullValue ?? '',
+    }
+    : type === 'JSON_LINES'
+      ? { type, ignoreNullFields: values.ignoreNullFields ?? false }
+      : { type: 'PARQUET' };
+  return {
+    sourceTableName: values.sourceTableName ?? '',
+    dataSourceId: values.dataSourceId ?? '',
+    targetPath: normalizeFileOutputPath(values.targetPath ?? ''),
+    conflictPolicy: values.conflictPolicy ?? 'FAIL_IF_EXISTS',
+    formatOptions,
+  };
+};
+
+const fileOutputInitialValues = (
+  configuration: FileOutputConfiguration,
+): FileOutputFormValues => ({
+  sourceTableName: configuration.sourceTableName,
+  dataSourceId: configuration.dataSourceId,
+  targetPath: configuration.targetPath,
+  conflictPolicy: configuration.conflictPolicy,
+  formatType: configuration.formatOptions.type,
+  header: configuration.formatOptions.type === 'CSV' ? configuration.formatOptions.header : true,
+  delimiter: configuration.formatOptions.type === 'CSV' ? configuration.formatOptions.delimiter : ',',
+  quote: configuration.formatOptions.type === 'CSV' ? configuration.formatOptions.quote : '"',
+  escape: configuration.formatOptions.type === 'CSV' ? configuration.formatOptions.escape : '\\',
+  nullValue: configuration.formatOptions.type === 'CSV' ? configuration.formatOptions.nullValue : '',
+  ignoreNullFields: configuration.formatOptions.type === 'JSON_LINES'
+    ? configuration.formatOptions.ignoreNullFields : false,
+});
+
+const validateFileOutputPath = async (_: unknown, value: string | undefined) => {
+  if (!value?.trim()) return;
+  const normalized = normalizeFileOutputPath(value);
+  if (normalized.length > 1024 || normalized.startsWith('/') || normalized.includes('\\')
+      || normalized.includes('://') || normalized.includes('?') || normalized.includes('#')) {
+    throw new Error('请输入合法的 S3 相对目录');
+  }
+  if (normalized.split('/').some((segment) => (
+    !segment || segment === '.' || segment === '..' || segment.toLowerCase() === '_temporary'
+  ))) {
+    throw new Error('目录不能包含空段、.、.. 或 _temporary');
+  }
+};
+
+const FileOutputInspector = ({
+  node,
+  validation,
+  validationUnavailableMessage,
+  onApply,
+  onDirtyChange,
+  inspectorRef,
+}: {
+  node: Extract<CanvasNodeDefinition, { type: 'FILE_OUTPUT' }>;
+  validation: CanvasNodeValidationResult | undefined;
+  validationUnavailableMessage: string | null;
+  onApply: CanvasNodeInspectorProps['onApply'];
+  onDirtyChange: CanvasNodeInspectorProps['onDirtyChange'];
+  inspectorRef: Ref<CanvasNodeInspectorHandle>;
+}) => {
+  const [form] = Form.useForm<FileOutputFormValues>();
+  const selectedDataSourceId = Form.useWatch('dataSourceId', form) ?? '';
+  const targetPath = Form.useWatch('targetPath', form) ?? '';
+  const formatType = Form.useWatch('formatType', form) ?? 'CSV';
+  const conflictPolicy = Form.useWatch('conflictPolicy', form) ?? 'FAIL_IF_EXISTS';
+  const selectedDataSourceQuery = useDataSource(
+    selectedDataSourceId || undefined,
+    Boolean(selectedDataSourceId),
+  );
+  const selectedDataSource = selectedDataSourceQuery.data;
+  const selectedAvailable = selectedDataSource
+    ? selectedDataSource.enabled
+      && selectedDataSource.connectionKind === 'S3'
+      && selectedDataSource.connection.kind === 'S3'
+      && selectedDataSource.purposes.includes('DISTRIBUTION')
+    : selectedDataSourceQuery.isError ? false : undefined;
+  const normalizedPath = normalizeFileOutputPath(targetPath);
+  const targetPreview = selectedDataSource?.connection.kind === 'S3' && normalizedPath
+    ? `s3a://${selectedDataSource.connection.bucket}/${
+      [selectedDataSource.connection.rootPrefix, normalizedPath].filter(Boolean).join('/')
+    }/`
+    : null;
+  const submit = (values: FileOutputFormValues) => {
+    onApply({ id: node.id, type: node.type, configuration: fileOutputConfiguration(values) });
+    onDirtyChange(false);
+  };
+
+  useImperativeHandle(inspectorRef, () => ({
+    apply: async () => {
+      try {
+        const values = await form.validateFields();
+        if (values.dataSourceId && selectedAvailable !== true) {
+          form.setFields([{
+            name: 'dataSourceId',
+            errors: [selectedDataSourceQuery.isFetching
+              ? '正在读取数据源信息，请稍候'
+              : '数据源不存在、已停用、不是 S3 或不具有数据分发用途'],
+          }]);
+          return false;
+        }
+        submit(values);
+        return true;
+      } catch (error) {
+        focusFirstInvalidField(form, error);
+        return false;
+      }
+    },
+  }));
+
+  return (
+    <Space orientation="vertical" size={12} className="canvas-inspector-content">
+      <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
+      <Form<FileOutputFormValues>
+        form={form}
+        layout="vertical"
+        initialValues={fileOutputInitialValues(node.configuration)}
+        onFinish={submit}
+        onValuesChange={(_changed, values) => {
+          onDirtyChange(
+            configurationFingerprint(fileOutputConfiguration(values))
+              !== configurationFingerprint(node.configuration),
+          );
+        }}
+      >
+        <Form.Item name="sourceTableName" label="来源表" rules={[{ required: true, message: '请选择来源表' }]}>
+          <Select
+            disabled={!validation}
+            placeholder={validation ? '选择上游表' : '等待 Task Engine 计算上游表'}
+            options={(validation?.inputTables ?? []).map((table) => ({
+              value: table.name,
+              label: table.name,
+            }))}
+          />
+        </Form.Item>
+        <Form.Item
+          name="dataSourceId"
+          label="目标数据源"
+          rules={[{ required: true, message: '请选择 S3 数据分发数据源' }]}
+        >
+          <CanvasS3DataSourceSelect placeholder="选择 S3 数据分发数据源" />
+        </Form.Item>
+        <Form.Item
+          name="targetPath"
+          label="目标目录"
+          extra="相对于数据源根目录；不会自动追加任务 ID 或运行 ID。"
+          rules={[
+            { required: true, message: '请输入目标目录' },
+            { validator: validateFileOutputPath },
+          ]}
+        >
+          <Input placeholder="例如 exports/users" maxLength={1024} />
+        </Form.Item>
+        {targetPreview && (
+          <Typography.Text type="secondary" code copyable>{targetPreview}</Typography.Text>
+        )}
+        <Form.Item name="conflictPolicy" label="目录冲突策略" rules={[{ required: true }]}>
+          <Select options={[
+            { value: 'FAIL_IF_EXISTS', label: 'FAIL_IF_EXISTS · 已存在则失败' },
+            { value: 'OVERWRITE', label: 'OVERWRITE · 删除旧目录后写入' },
+          ]} />
+        </Form.Item>
+        <Form.Item name="formatType" label="文件格式" rules={[{ required: true }]}>
+          <Select options={[
+            { value: 'CSV', label: 'CSV' },
+            { value: 'JSON_LINES', label: 'JSON Lines · 每行一个对象' },
+            { value: 'PARQUET', label: 'Parquet · Snappy' },
+          ]} />
+        </Form.Item>
+        {formatType === 'CSV' && (
+          <>
+            <Form.Item name="header" label="输出表头">
+              <Select options={[
+                { value: true, label: '是' },
+                { value: false, label: '否' },
+              ]} />
+            </Form.Item>
+            {([
+              ['delimiter', '分隔符'],
+              ['quote', '引用符'],
+              ['escape', '转义符'],
+            ] as const).map(([name, label]) => (
+              <Form.Item
+                key={name}
+                name={name}
+                label={label}
+                rules={[{
+                  validator: async (_, value: string | undefined) => {
+                    if (!value || [...value].length !== 1 || /[\r\n]/.test(value)) {
+                      throw new Error(`${label}必须是一个非换行字符`);
+                    }
+                  },
+                }]}
+              >
+                <Input maxLength={2} />
+              </Form.Item>
+            ))}
+            <Form.Item name="nullValue" label="空值文本">
+              <Input placeholder="默认输出为空字符串" />
+            </Form.Item>
+          </>
+        )}
+        {formatType === 'JSON_LINES' && (
+          <Form.Item name="ignoreNullFields" label="忽略空值字段">
+            <Select options={[
+              { value: false, label: '否 · 保留所有字段' },
+              { value: true, label: '是 · 省略 null 字段' },
+            ]} />
+          </Form.Item>
+        )}
+        {conflictPolicy === 'OVERWRITE' && (
+          <Alert
+            showIcon
+            type="warning"
+            title="S3 覆盖不是原子操作"
+            description="写入失败时目标目录可能处于不完整状态。"
+          />
+        )}
+      </Form>
+    </Space>
+  );
+};
+
 export const CanvasNodeInspector = forwardRef<CanvasNodeInspectorHandle, CanvasNodeInspectorProps>(({
   node,
   validation,
@@ -2281,6 +2532,18 @@ export const CanvasNodeInspector = forwardRef<CanvasNodeInspectorHandle, CanvasN
     case CanvasNodeType.KafkaOutput:
       return (
         <KafkaOutputInspector
+          key={key}
+          inspectorRef={ref}
+          node={node}
+          validation={validation}
+          validationUnavailableMessage={validationUnavailableMessage}
+          onApply={onApply}
+          onDirtyChange={onDirtyChange}
+        />
+      );
+    case CanvasNodeType.FileOutput:
+      return (
+        <FileOutputInspector
           key={key}
           inspectorRef={ref}
           node={node}

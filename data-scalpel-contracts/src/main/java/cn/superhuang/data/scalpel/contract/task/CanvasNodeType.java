@@ -11,5 +11,6 @@ public enum CanvasNodeType {
     RENAME,
     MODEL_OUTPUT,
     JDBC_OUTPUT,
-    KAFKA_OUTPUT
+    KAFKA_OUTPUT,
+    FILE_OUTPUT
 }

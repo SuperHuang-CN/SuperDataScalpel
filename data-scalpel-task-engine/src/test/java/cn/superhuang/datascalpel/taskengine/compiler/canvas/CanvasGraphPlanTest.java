@@ -73,8 +73,9 @@ class CanvasGraphPlanTest {
         CanvasGraphPlan previousRename = CanvasGraphPlan.create(new CanvasDefinition(1, 2, List.of(), List.of()));
         CanvasGraphPlan previousStreaming = CanvasGraphPlan.create(new CanvasDefinition(1, 3, List.of(), List.of()));
         CanvasGraphPlan previousFileInput = CanvasGraphPlan.create(new CanvasDefinition(1, 4, List.of(), List.of()));
-        CanvasGraphPlan current = CanvasGraphPlan.create(new CanvasDefinition(1, 5, List.of(), List.of()));
-        CanvasGraphPlan futureMinor = CanvasGraphPlan.create(new CanvasDefinition(1, 6, List.of(), List.of()));
+        CanvasGraphPlan previousKafka = CanvasGraphPlan.create(new CanvasDefinition(1, 5, List.of(), List.of()));
+        CanvasGraphPlan current = CanvasGraphPlan.create(new CanvasDefinition(1, 6, List.of(), List.of()));
+        CanvasGraphPlan futureMinor = CanvasGraphPlan.create(new CanvasDefinition(1, 7, List.of(), List.of()));
         CanvasGraphPlan futureMajor = CanvasGraphPlan.create(new CanvasDefinition(2, 0, List.of(), List.of()));
 
         assertFalse(hasCanvasIssue(legacy, "UNSUPPORTED_SCHEMA_VERSION"));
@@ -87,6 +88,7 @@ class CanvasGraphPlanTest {
         assertFalse(hasCanvasIssue(previousStreaming, "UNSUPPORTED_SCHEMA_MINOR_VERSION"));
         assertFalse(hasCanvasIssue(previousFileInput, "UNSUPPORTED_SCHEMA_VERSION"));
         assertFalse(hasCanvasIssue(previousFileInput, "UNSUPPORTED_SCHEMA_MINOR_VERSION"));
+        assertFalse(hasCanvasIssue(previousKafka, "UNSUPPORTED_SCHEMA_MINOR_VERSION"));
         assertFalse(hasCanvasIssue(current, "UNSUPPORTED_SCHEMA_VERSION"));
         assertFalse(hasCanvasIssue(current, "UNSUPPORTED_SCHEMA_MINOR_VERSION"));
         assertTrue(hasCanvasIssue(futureMinor, "UNSUPPORTED_SCHEMA_MINOR_VERSION"));

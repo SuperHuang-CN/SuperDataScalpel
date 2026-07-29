@@ -209,7 +209,7 @@ Engine 使用按数据源复用的连接池、read-only connection、语句超�
 | `DATASCALPEL_ENGINE_QUERY_MAXIMUM_OFFSET` | `100000` | 最大分页偏移 |
 | `DATASCALPEL_ENGINE_QUERY_TIMEOUT_SECONDS` | `30` | JDBC 查询超时 |
 
-其他必需配置包括 Engine 独立数据库连接、稳定 Engine 编码、Admin/Engine 共享管理 Token 和 AES 快照加密密钥。管理接口位于 `/internal/v1/**` 并要求 Bearer Token；公开调用统一从已发布的网关 Proxy 地址进入，网关发布细节见[数据服务启停与网关发布设计](data-service-gateway-publishing.md)。
+其他必需配置包括 Engine 独立数据库连接、稳定 Engine 编码、Admin/Engine 共享管理 Token 和 AES 快照加密密钥。Engine 编码由 Engine 自身配置，必须以字母开头且只包含字母、数字和下划线，最长 64 位；Admin 登记 Engine 时通过 `/internal/v1/info` 自动发现并保存为不可修改的内部指纹，不由用户手工录入。首次登记会校验编码唯一性，后续修改管理地址或 Management Token 时会重新读取并核对该指纹，连接失败或指纹不一致时拒绝保存。管理接口位于 `/internal/v1/**` 并要求 Bearer Token；公开调用统一从已发布的网关 Proxy 地址进入，网关发布细节见[数据服务启停与网关发布设计](data-service-gateway-publishing.md)。
 
 ## PostgreSQL 实库验收
 

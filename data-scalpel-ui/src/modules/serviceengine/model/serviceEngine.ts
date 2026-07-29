@@ -54,14 +54,12 @@ interface ServiceEngineWriteRequest {
 }
 
 export type CreateServiceEngineRequest = ServiceEngineWriteRequest & {
-  code: string;
   managementToken: string;
 };
 
 export type UpdateServiceEngineRequest = ServiceEngineWriteRequest & { enabled: boolean };
 
 export interface TestServiceEngineRequest {
-  code: string;
   adminUrl: string;
   managementToken: string;
 }

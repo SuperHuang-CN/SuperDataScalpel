@@ -22,8 +22,6 @@ import java.util.UUID;
 /** Creates and revalidates the immutable Dispatcher route used by one task run. */
 @Service
 public class ComputeEngineExecutionService {
-    private static final int PROTOCOL_VERSION = 1;
-
     private final ComputeEngineRepository repository;
     private final ComputeEngineCredentialCipher credentialCipher;
     private final ComputeEngineDispatcherClient dispatcherClient;
@@ -61,8 +59,7 @@ public class ComputeEngineExecutionService {
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Dispatcher 当前不可用，本次运行未创建", exception);
         }
-        if (info == null || info.protocolVersion() != PROTOCOL_VERSION
-                || !Objects.equals(snapshot.dispatcherInstanceId(), info.dispatcherInstanceId())
+        if (info == null || !Objects.equals(snapshot.dispatcherInstanceId(), info.dispatcherInstanceId())
                 || snapshot.backendType() != info.backendType()) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Dispatcher 身份或后端类型与计算引擎配置不一致");
         }
@@ -74,22 +71,17 @@ public class ComputeEngineExecutionService {
                     "计算引擎未上报 Streaming 或持久化 Checkpoint 能力");
         }
         if (registration == null
-                || registration.protocolVersion() != PROTOCOL_VERSION
                 || registration.state() != DispatcherRegistrationState.ACTIVE
                 || !snapshot.id().equals(registration.engineId())
-                || registration.configRevision() != snapshot.configRevision()
                 || !Objects.equals(snapshot.dispatcherInstanceId(), registration.dispatcherInstanceId())
-                || snapshot.backendType() != registration.backendType()
-                || registration.topics() == null
-                || !snapshot.commandTopic().equals(registration.topics().commandTopic())
-                || !snapshot.runnerEventTopic().equals(registration.topics().runnerEventTopic())
-                || !snapshot.adminEventTopic().equals(registration.topics().adminEventTopic())) {
+                || !sameRemoteConfiguration(snapshot, registration)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Dispatcher 远端注册状态不是当前计算引擎的 ACTIVE 配置");
         }
         return new ExecutionRoute(
-                snapshot.id(), snapshot.configRevision(), snapshot.commandTopic(), snapshot.adminEventTopic(),
-                snapshot.backendType(), snapshot.dispatcherBaseUrl(), snapshot.accessTokenCiphertext(),
-                snapshot.dispatcherInstanceId());
+                snapshot.id(), snapshot.commandTopic(), snapshot.runnerEventTopic(), snapshot.adminEventTopic(),
+                snapshot.maxQueuedExecutions(), snapshot.maxConcurrentSubmissions(),
+                snapshot.maxInFlightApplications(), snapshot.backendType(), snapshot.dispatcherBaseUrl(),
+                snapshot.accessTokenCiphertext(), snapshot.dispatcherInstanceId());
     }
 
     /** Must be invoked inside the final TaskRun/Outbox transaction. */
@@ -97,10 +89,15 @@ public class ComputeEngineExecutionService {
         ComputeEngine engine = repository.findByIdForUpdate(expected.engineId())
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "计算引擎已被删除，请重新运行"));
         requireRunnableState(engine);
-        if (engine.getConfigRevision() != expected.configRevision()
-                || !engine.getCommandTopic().equals(expected.commandTopic())
+        if (!engine.getCommandTopic().equals(expected.commandTopic())
+                || !engine.getRunnerEventTopic().equals(expected.runnerEventTopic())
                 || !engine.getAdminEventTopic().equals(expected.adminEventTopic())
+                || engine.getMaxQueuedExecutions() != expected.maxQueuedExecutions()
+                || engine.getMaxConcurrentSubmissions() != expected.maxConcurrentSubmissions()
+                || engine.getMaxInFlightApplications() != expected.maxInFlightApplications()
                 || engine.getExpectedBackendType() != expected.backendType()
+                || !Objects.equals(engine.getDispatcherBaseUrl(), expected.dispatcherBaseUrl())
+                || !Objects.equals(engine.getAccessTokenCiphertext(), expected.accessTokenCiphertext())
                 || !Objects.equals(engine.getDispatcherInstanceId(), expected.dispatcherInstanceId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "计算引擎配置已变化，请重新运行");
         }
@@ -134,9 +131,28 @@ public class ComputeEngineExecutionService {
         ComputeEngine engine = repository.findById(engineId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "计算引擎不存在"));
         return new EngineSnapshot(
-                engine.getId(), engine.getConfigRevision(), engine.getCommandTopic(), engine.getAdminEventTopic(),
-                engine.getRunnerEventTopic(), engine.getExpectedBackendType(), engine.getDispatcherBaseUrl(), engine.getAccessTokenCiphertext(),
-                engine.getDispatcherInstanceId());
+                engine.getId(), engine.getCommandTopic(), engine.getRunnerEventTopic(), engine.getAdminEventTopic(),
+                engine.getMaxQueuedExecutions(), engine.getMaxConcurrentSubmissions(),
+                engine.getMaxInFlightApplications(), engine.getExpectedBackendType(),
+                engine.getDispatcherBaseUrl(), engine.getAccessTokenCiphertext(), engine.getDispatcherInstanceId());
+    }
+
+    private static boolean sameRemoteConfiguration(
+            EngineSnapshot snapshot,
+            DispatcherRegistrationResponse registration
+    ) {
+        var topics = registration.topics();
+        var policy = registration.effectiveAdmissionPolicy();
+        return registration.backendType() == snapshot.backendType()
+                && topics != null
+                && Objects.equals(topics.commandTopic(), snapshot.commandTopic())
+                && Objects.equals(topics.runnerEventTopic(), snapshot.runnerEventTopic())
+                && Objects.equals(topics.adminEventTopic(), snapshot.adminEventTopic())
+                && Objects.equals(topics.runnerControlTopic(), snapshot.runnerEventTopic() + ".control")
+                && policy != null
+                && policy.maxQueuedExecutions() == snapshot.maxQueuedExecutions()
+                && policy.maxConcurrentSubmissions() == snapshot.maxConcurrentSubmissions()
+                && policy.maxInFlightApplications() == snapshot.maxInFlightApplications();
     }
 
     private static void requireRunnableState(ComputeEngine engine) {
@@ -154,9 +170,12 @@ public class ComputeEngineExecutionService {
 
     public record ExecutionRoute(
             UUID engineId,
-            long configRevision,
             String commandTopic,
+            String runnerEventTopic,
             String adminEventTopic,
+            int maxQueuedExecutions,
+            int maxConcurrentSubmissions,
+            int maxInFlightApplications,
             ComputeBackendType backendType,
             String dispatcherBaseUrl,
             String accessTokenCiphertext,
@@ -166,10 +185,12 @@ public class ComputeEngineExecutionService {
 
     private record EngineSnapshot(
             UUID id,
-            long configRevision,
             String commandTopic,
-            String adminEventTopic,
             String runnerEventTopic,
+            String adminEventTopic,
+            int maxQueuedExecutions,
+            int maxConcurrentSubmissions,
+            int maxInFlightApplications,
             ComputeBackendType backendType,
             String dispatcherBaseUrl,
             String accessTokenCiphertext,

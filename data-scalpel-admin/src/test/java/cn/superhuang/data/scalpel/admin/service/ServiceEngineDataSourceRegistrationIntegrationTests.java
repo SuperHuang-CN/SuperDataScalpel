@@ -202,11 +202,10 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
-                                  "code":"%s",
                                   "name":"测试 Engine",
                                   "adminUrl":"http://engine.test:8081",
                                   "publicUrl":"http://engine.test:8081",
-                                  "managementToken":"engine-test-token",
+                                  "managementToken":"engine-test-token:%s",
                                   "enabled":true
                                 }
                                 """.formatted(code)))
@@ -222,6 +221,15 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
         @Primary
         ServiceEngineClient serviceEngineClient(ServiceEngineCredentialCipher credentialCipher) {
             return new ServiceEngineClient(credentialCipher) {
+                @Override
+                public ServiceEngineInfoResponse info(String adminUrl, String managementToken) {
+                    assertNoManagementTransaction();
+                    return new ServiceEngineInfoResponse(
+                            managementToken.substring("engine-test-token:".length()),
+                            List.of("POSTGRESQL")
+                    );
+                }
+
                 @Override
                 public ServiceEngineInfoResponse info(ServiceEngine engine) {
                     assertNoManagementTransaction();

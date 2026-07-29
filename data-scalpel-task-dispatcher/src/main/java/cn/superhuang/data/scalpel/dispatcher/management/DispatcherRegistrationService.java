@@ -24,7 +24,6 @@ import java.util.concurrent.locks.LockSupport;
 
 @Service
 public class DispatcherRegistrationService {
-    private static final int PROTOCOL_VERSION = 1;
     private static final List<DispatcherExecutionState> ACTIVE_STATES = List.of(
             DispatcherExecutionState.QUEUED, DispatcherExecutionState.SUBMITTING,
             DispatcherExecutionState.SUBMITTED, DispatcherExecutionState.RUNNING,
@@ -80,7 +79,7 @@ public class DispatcherRegistrationService {
                 new DispatcherDependency("kafka-listeners", listenerManager.listenersRunning() ? "UP" : "DOWN", null)
         );
         return new DispatcherInfoResponse(
-                PROTOCOL_VERSION, instanceId.toString(), properties.backend(), "0.1.0-SNAPSHOT",
+                instanceId.toString(), properties.backend(), "0.1.0-SNAPSHOT",
                 new DispatcherCapabilities(
                         true, true, true,
                         streamingProperties.configured(),
@@ -95,9 +94,6 @@ public class DispatcherRegistrationService {
     }
 
     public DispatcherRegistrationResponse activate(DispatcherRegistrationRequest request) {
-        if (request.protocolVersion() != PROTOCOL_VERSION) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "Dispatcher 协议版本不兼容");
-        }
         if (backend.type() != properties.backend() || !backend.readiness().ready()) {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "执行 Backend 尚未就绪");
         }
@@ -120,30 +116,35 @@ public class DispatcherRegistrationService {
                     throw new ResponseStatusException(HttpStatus.CONFLICT, "Dispatcher 已绑定其他计算引擎");
                 }
                 if (existing.sameConfiguration(
-                        request.configRevision(), topics.commandTopic(), topics.runnerEventTopic(),
-                        topics.adminEventTopic(), topics.runnerControlTopic(),
+                        topics.commandTopic(), topics.runnerEventTopic(), topics.adminEventTopic(),
+                        topics.runnerControlTopic(),
                         policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications()
                 )) return existing;
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "活动注册不能直接替换配置，请先 Drain 并反注册");
             }
-            if (existing != null && request.configRevision() < existing.getConfigRevision()) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "注册配置版本早于当前版本");
-            }
             if (existing != null && !existing.getEngineId().equals(request.engineId())) {
+                if (existing.getState() != DispatcherRegistrationState.INACTIVE
+                        && existing.getState() != DispatcherRegistrationState.ERROR) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Dispatcher 已绑定其他计算引擎");
+                }
                 repository.delete(existing);
                 repository.flush();
                 existing = null;
             }
+            if (existing != null && existing.getState() != DispatcherRegistrationState.INACTIVE
+                    && existing.getState() != DispatcherRegistrationState.ERROR) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前 Dispatcher 注册不能重新激活");
+            }
             if (existing == null) {
                 existing = DispatcherRegistration.activate(
-                        request.engineId(), instanceId, PROTOCOL_VERSION, request.configRevision(), properties.backend(),
+                        request.engineId(), instanceId, properties.backend(),
                         topics.commandTopic(), topics.runnerEventTopic(), topics.adminEventTopic(),
                         topics.runnerControlTopic(),
                         policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications()
                 );
             } else {
                 existing.reactivate(
-                        PROTOCOL_VERSION, request.configRevision(), properties.backend(),
+                        properties.backend(),
                         topics.commandTopic(), topics.runnerEventTopic(), topics.adminEventTopic(),
                         topics.runnerControlTopic(),
                         policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications()

@@ -148,7 +148,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                         "read-denied-password"),
                 postgresRuntime(
                         postgresId,
-                        Set.of(DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.DISTRIBUTION),
                         POSTGRES.getUsername(),
                         POSTGRES.getPassword())));
 
@@ -174,7 +174,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                         POSTGRES.getPassword()),
                 postgresRuntime(
                         deniedOutputId,
-                        Set.of(DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.DISTRIBUTION),
                         "canvas_write_denied",
                         "write-denied-password")));
 
@@ -201,7 +201,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                         POSTGRES.getPassword()),
                 postgresRuntime(
                         deniedOutputId,
-                        Set.of(DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.DISTRIBUTION),
                         POSTGRES.getUsername(),
                         POSTGRES.getPassword()));
         MetadataSnapshot driftedMetadata = new MetadataSnapshot(List.of(
@@ -215,7 +215,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                         deniedOutputId,
                         true,
                         ConnectionKind.JDBC,
-                        Set.of(DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.DISTRIBUTION),
                         List.of(table("orders_copy", longColumn("order_id"), longColumn("customer_id"))))
         ), List.of());
         TaskExecutionManifest manifest = new TaskExecutionManifest(
@@ -360,7 +360,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                         outputDataSourceId,
                         true,
                         ConnectionKind.JDBC,
-                        Set.of(DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.DISTRIBUTION),
                         List.of(table("orders_copy", longColumn("order_id"), longColumn("customer_id"))))
         ), List.of());
         Instant now = Instant.now();
@@ -400,14 +400,14 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                         postgresId,
                         true,
                         ConnectionKind.JDBC,
-                        Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION),
                         List.of(
                                 table("short_source", integerColumn("value")),
                                 table("short_target", shortColumn("value"))))
         ), List.of());
         RuntimeDataSource runtime = postgresRuntime(
                 postgresId,
-                Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.STORAGE),
+                Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION),
                 POSTGRES.getUsername(),
                 POSTGRES.getPassword());
         Instant now = Instant.now();
@@ -478,7 +478,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
         MetadataSnapshot metadata = new MetadataSnapshot(List.of(
                 new MetadataDataSource(
                         postgresId, true, ConnectionKind.JDBC,
-                        Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.STORAGE),
+                        Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION),
                         List.of(
                                 table("orders", longColumn("order_id"), longColumn("customer_id")),
                                 table("dwd_order_customer", longColumn("order_id"), longColumn("customer_id"),
@@ -491,7 +491,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
         ), List.of());
         RuntimeDataSource postgres = new RuntimeDataSource(
                 postgresId, RuntimeDatabaseType.POSTGRESQL,
-                Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.STORAGE),
+                Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION),
                 new RuntimeJdbcConnection(
                         "org.postgresql.Driver", POSTGRES.getJdbcUrl(), POSTGRES.getDatabaseName(), "public",
                         POSTGRES.getUsername(), POSTGRES.getPassword(), Map.of()));

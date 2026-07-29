@@ -3,6 +3,7 @@ package cn.superhuang.datascalpel.taskengine.canvas;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
@@ -48,6 +49,11 @@ public interface CanvasNodeDataAccess extends AutoCloseable {
 
     CanvasPreparedKafkaOutput prepareKafkaOutput(
             KafkaOutputNodeDefinition node,
+            Dataset<Row> dataset
+    );
+
+    CanvasPreparedFileOutput prepareFileOutput(
+            FileOutputNodeDefinition node,
             Dataset<Row> dataset
     );
 

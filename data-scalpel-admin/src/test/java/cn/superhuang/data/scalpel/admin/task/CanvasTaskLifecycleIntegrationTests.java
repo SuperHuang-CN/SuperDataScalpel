@@ -39,6 +39,8 @@ import cn.superhuang.data.scalpel.business.task.service.DataTaskService;
 import cn.superhuang.data.scalpel.business.task.service.TaskCompilationService;
 import cn.superhuang.data.scalpel.business.task.service.TaskRunArtifactStorage;
 import cn.superhuang.data.scalpel.business.task.service.TaskRunService;
+import cn.superhuang.data.scalpel.business.task.service.CanvasTaskRunManifest;
+import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
@@ -89,6 +91,7 @@ class CanvasTaskLifecycleIntegrationTests {
     @Autowired private StubComputeEngineExecutionService executionService;
     @Autowired private StubCanvasTaskRunPreparationService preparationService;
     @Autowired private StubTaskRunArtifactStorage artifactStorage;
+    @Autowired private ObjectMapper objectMapper;
 
     @BeforeEach
     void setUp() {
@@ -162,12 +165,19 @@ class CanvasTaskLifecycleIntegrationTests {
         assertThat(run.getResultObjectKey()).endsWith("/attempts/1/result.json");
         assertThat(run.getLogObjectKey()).endsWith("/attempts/1/console.log");
         assertThat(artifactStorage.objects).containsKey(run.getManifestObjectKey());
+        CanvasTaskRunManifest manifest = objectMapper.readValue(
+                artifactStorage.objects.get(run.getManifestObjectKey()), CanvasTaskRunManifest.class);
         assertThat(outboxRepository.findAll()).singleElement()
                 .satisfies(message -> {
                     assertThat(message.getAggregateId()).isEqualTo(run.getExecutionRunId());
                     assertThat(message.getExecutionId()).isEqualTo(run.getExternalExecutionId());
                     assertThat(message.getMessageType()).isEqualTo("SUBMIT_EXECUTION");
                     assertThat(message.getTopic()).isEqualTo("commands.canvas");
+                    SubmitExecutionCommand command =
+                            objectMapper.readValue(message.getPayload(), SubmitExecutionCommand.class);
+                    assertThat(run.getDeadlineAt()).isEqualTo(manifest.execution().deadlineAt());
+                    assertThat(command.deadlineAt()).isEqualTo(manifest.execution().deadlineAt());
+                    assertThat(command.deadlineAt().getNano()).isZero();
                 });
     }
 
@@ -378,7 +388,8 @@ class CanvasTaskLifecycleIntegrationTests {
 
     private static ExecutionRoute route(UUID engineId) {
         return new ExecutionRoute(
-                engineId, 1, "commands.canvas", "admin.events", ComputeBackendType.LOCAL_DOCKER,
+                engineId, "commands.canvas", "runner.canvas", "admin.events", 20, 2, 2,
+                ComputeBackendType.LOCAL_DOCKER,
                 "http://127.0.0.1:18092", "encrypted-token", "dispatcher-test"
         );
     }

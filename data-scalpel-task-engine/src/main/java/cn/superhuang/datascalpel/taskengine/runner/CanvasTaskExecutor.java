@@ -5,6 +5,7 @@ import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationResult;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperatorRegistry;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperators;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedFileOutput;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
 import cn.superhuang.data.scalpel.contract.execution.RunnerSparkMode;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
@@ -20,6 +21,9 @@ import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
+import cn.superhuang.data.scalpel.contract.task.FileOutputConflictPolicy;
+import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
+import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
@@ -29,6 +33,7 @@ import cn.superhuang.datascalpel.taskengine.contract.NodeExecutionState;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDataSource;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeJdbcConnection;
+import cn.superhuang.datascalpel.taskengine.contract.RuntimeS3Connection;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionError;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionResult;
@@ -164,6 +169,12 @@ final class CanvasTaskExecutor {
                                 "OUTPUT_NOT_PREPARED", "输出节点未生成写入计划", node.id());
                     }
                     preparedOutputs.add(preparedOutput(operation.preparedOutput(), nodeStartedAt));
+                } else if (node instanceof FileOutputNodeDefinition) {
+                    if (operation.preparedFileOutput() == null) {
+                        throw new RunnerExecutionException(
+                                "OUTPUT_NOT_PREPARED", "文件输出节点未生成写入计划", node.id());
+                    }
+                    preparedOutputs.add(preparedFileOutput(operation.preparedFileOutput(), nodeStartedAt));
                 } else {
                     propagated.set(nodeIndex, operation.propagatedTables());
                     nodeResults.add(success(
@@ -194,10 +205,14 @@ final class CanvasTaskExecutor {
                         node.id(), output.dataset());
                 spark.sparkContext().setJobGroup(
                         jobGroup, "DataScalpel " + node.nodeType() + " " + node.id(), true);
-                if (output.writeMode() == JdbcWriteMode.OVERWRITE) {
-                    truncate(output.runtimeDataSource(), output.qualifiedTableName());
+                if (output.fileOutput() != null) {
+                    writeFile(spark, output.fileOutput(), observed.dataset());
+                } else {
+                    if (output.writeMode() == JdbcWriteMode.OVERWRITE) {
+                        truncate(output.runtimeDataSource(), output.qualifiedTableName());
+                    }
+                    write(output.runtimeDataSource(), output.qualifiedTableName(), observed.dataset());
                 }
-                write(output.runtimeDataSource(), output.qualifiedTableName(), observed.dataset());
                 SparkOutputMetricsCollector.OutputWriteMetrics metrics = metricsCollector.completeSuccess(observed);
                 Long previousAffectedRows = affectedRows;
                 affectedRows = addAffectedRows(affectedRows, metrics.rowsWritten());
@@ -281,8 +296,70 @@ final class CanvasTaskExecutor {
                 output.displayTarget(),
                 output.writeMode(),
                 output.dataset(),
+                null,
                 startedAt
         );
+    }
+
+    private static PreparedOutput preparedFileOutput(
+            CanvasPreparedFileOutput output,
+            Instant startedAt
+    ) {
+        return new PreparedOutput(
+                output.node(),
+                output.runtimeDataSource(),
+                null,
+                output.targetUri(),
+                null,
+                output.dataset(),
+                output,
+                startedAt
+        );
+    }
+
+    private static void writeFile(
+            SparkSession spark,
+            CanvasPreparedFileOutput output,
+            Dataset<Row> dataset
+    ) {
+        RuntimeS3Connection connection = output.runtimeDataSource().s3Connection();
+        configureBucketS3A(spark, connection);
+        var configuration = output.node().configuration();
+        DataFrameWriter<Row> writer = dataset.write().mode(
+                configuration.conflictPolicy() == FileOutputConflictPolicy.OVERWRITE
+                        ? SaveMode.Overwrite : SaveMode.ErrorIfExists);
+        switch (configuration.formatOptions()) {
+            case FileOutputFormatOptions.Csv csv -> writer.format("csv")
+                    .option("encoding", "UTF-8")
+                    .option("header", csv.header())
+                    .option("delimiter", csv.delimiter())
+                    .option("quote", csv.quote())
+                    .option("escape", csv.escape())
+                    .option("nullValue", csv.nullValue())
+                    .save(output.targetUri());
+            case FileOutputFormatOptions.JsonLines json -> writer.format("json")
+                    .option("encoding", "UTF-8")
+                    .option("ignoreNullFields", json.ignoreNullFields())
+                    .save(output.targetUri());
+            case FileOutputFormatOptions.Parquet ignored -> writer.format("parquet")
+                    .option("compression", "snappy")
+                    .save(output.targetUri());
+        }
+    }
+
+    private static void configureBucketS3A(SparkSession spark, RuntimeS3Connection connection) {
+        String prefix = "fs.s3a.bucket." + connection.bucket() + ".";
+        org.apache.hadoop.conf.Configuration configuration =
+                spark.sparkContext().hadoopConfiguration();
+        configuration.set(prefix + "endpoint", connection.endpoint());
+        configuration.set(prefix + "endpoint.region", connection.region());
+        configuration.set(prefix + "access.key", connection.accessKey());
+        configuration.set(prefix + "secret.key", connection.secretKey());
+        configuration.set(prefix + "aws.credentials.provider",
+                "org.apache.hadoop.fs.s3a.SimpleAWSCredentialsProvider");
+        configuration.setBoolean(prefix + "path.style.access", connection.pathStyleAccess());
+        configuration.setBoolean(prefix + "connection.ssl.enabled",
+                connection.endpoint().toLowerCase(java.util.Locale.ROOT).startsWith("https://"));
     }
 
     static DataFrameReader reader(SparkSession spark, RuntimeDataSource source) {
@@ -443,6 +520,17 @@ final class CanvasTaskExecutor {
             }
             return;
         }
+        if (source.connectionKind() == ConnectionKind.S3) {
+            RuntimeS3Connection connection = source.s3Connection();
+            if (source.databaseType() != null || source.connection() != null
+                    || source.httpApiConnection() != null || source.kafkaConnection() != null
+                    || connection == null || blank(connection.endpoint())
+                    || blank(connection.region()) || blank(connection.bucket())
+                    || blank(connection.accessKey()) || blank(connection.secretKey())) {
+                throw new RunnerExecutionException("INVALID_MANIFEST", "S3 运行连接无效", null);
+            }
+            return;
+        }
         if (source.databaseType() == null || source.connection() == null) {
             throw new RunnerExecutionException("INVALID_MANIFEST", "JDBC 运行连接无效", null);
         }
@@ -500,6 +588,7 @@ final class CanvasTaskExecutor {
     private static void validateManifest(TaskExecutionManifest manifest) {
         if (manifest == null || manifest.manifestVersion() == null
                 || manifest.manifestVersion() != TaskExecutionManifest.CURRENT_MANIFEST_VERSION
+                && manifest.manifestVersion() != TaskExecutionManifest.PREVIOUS_MANIFEST_VERSION
                 || manifest.execution() == null || manifest.execution().executionId() == null
                 || manifest.execution().runId() == null || manifest.execution().taskId() == null
                 || manifest.execution().attempt() == null || manifest.execution().attempt() != 1
@@ -625,7 +714,7 @@ final class CanvasTaskExecutor {
             case MODEL_INPUT, JDBC_INPUT, FILE_DATASET_INPUT, HTTP_API_INPUT, KAFKA_INPUT ->
                     ExecutionFailurePhase.READ;
             case JOIN, STREAM_JOIN, RENAME -> ExecutionFailurePhase.PROCESS;
-            case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT -> ExecutionFailurePhase.WRITE;
+            case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT -> ExecutionFailurePhase.WRITE;
         };
     }
 
@@ -658,6 +747,7 @@ final class CanvasTaskExecutor {
                     runtimeSources, output.configuration().dataSourceId(), output.configuration().targetTableName());
             case cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition output ->
                     output.configuration().topic();
+            case FileOutputNodeDefinition output -> output.configuration().targetPath();
         };
     }
 
@@ -764,6 +854,11 @@ final class CanvasTaskExecutor {
                     "sourceTable=" + safeLogValue(output.configuration().sourceTableName())
                             + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId().toString())
                             + " topic=" + safeLogValue(output.configuration().topic());
+            case FileOutputNodeDefinition output ->
+                    "sourceTable=" + safeLogValue(output.configuration().sourceTableName())
+                            + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId())
+                            + " format=" + output.configuration().formatOptions().getClass().getSimpleName()
+                            + " conflictPolicy=" + output.configuration().conflictPolicy();
         };
     }
 
@@ -777,7 +872,9 @@ final class CanvasTaskExecutor {
     }
 
     private static String outputSuccessMessage(CanvasNodeDefinition node, boolean metricAvailable) {
-        String prefix = node instanceof ModelOutputNodeDefinition ? "模型输出写入成功" : "JDBC 输出写入成功";
+        String prefix = node instanceof ModelOutputNodeDefinition
+                ? "模型输出写入成功"
+                : node instanceof FileOutputNodeDefinition ? "文件输出写入成功" : "JDBC 输出写入成功";
         return metricAvailable ? prefix : prefix + "，输出行数指标不可用";
     }
 
@@ -791,7 +888,7 @@ final class CanvasTaskExecutor {
             case JOIN -> "Join 已准备";
             case STREAM_JOIN -> "Stream Join 已准备";
             case RENAME -> "重命名已准备";
-            case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT ->
+            case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT ->
                     throw new IllegalArgumentException("Output success is recorded after writing");
         };
     }
@@ -873,6 +970,7 @@ final class CanvasTaskExecutor {
             String displayTarget,
             JdbcWriteMode writeMode,
             Dataset<Row> dataset,
+            CanvasPreparedFileOutput fileOutput,
             Instant startedAt
     ) {
     }

@@ -78,19 +78,39 @@ describe('ServiceEngineDrawer', () => {
     const user = userEvent.setup();
     renderDrawer(null);
 
-    await user.type(screen.getByLabelText('Engine 编码'), 'Engine_A');
+    expect(screen.queryByLabelText('Engine 编码')).not.toBeInTheDocument();
     await user.type(screen.getByLabelText('管理地址'), 'http://candidate.test:8081');
     await user.type(screen.getByLabelText('Management Token'), 'candidate-token');
     await user.click(screen.getByRole('button', { name: '测试连接' }));
 
     await waitFor(() => expect(mutations.testNew).toHaveBeenCalledWith({
-      code: 'engine_a',
       adminUrl: 'http://candidate.test:8081',
       managementToken: 'candidate-token',
     }));
     expect(await screen.findByText('连接测试成功')).toBeInTheDocument();
+    expect(screen.getByText('engine_a')).toBeInTheDocument();
     expect(screen.getByText('响应时间：12 ms')).toBeInTheDocument();
     expect(screen.getByText('支持数据库：POSTGRESQL')).toBeInTheDocument();
+  });
+
+  it('creates an engine without a client-supplied code', async () => {
+    const user = userEvent.setup();
+    renderDrawer(null);
+
+    await user.type(screen.getByLabelText('名称'), 'Engine A');
+    await user.type(screen.getByLabelText('管理地址'), 'http://candidate.test:8081');
+    await user.type(screen.getByLabelText('公共地址'), 'http://public.test:8081');
+    await user.type(screen.getByLabelText('Management Token'), 'candidate-token');
+    await user.click(screen.getByRole('button', { name: /创\s*建/ }));
+
+    await waitFor(() => expect(mutations.create).toHaveBeenCalledWith({
+      name: 'Engine A',
+      adminUrl: 'http://candidate.test:8081',
+      publicUrl: 'http://public.test:8081',
+      managementToken: 'candidate-token',
+      enabled: true,
+      description: undefined,
+    }));
   });
 
   it('does not refill the stored token and lets the backend reuse it for testing', async () => {

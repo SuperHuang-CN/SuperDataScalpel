@@ -7,7 +7,7 @@
 - Java 21、Spark 4.1.1、Scala 2.13。
 - 普通 Java Main 和 JDK `HttpServer`，不使用 Spring、Servlet、Thrift 或 gRPC。
 - 默认以 `local[*]` 长期运行，也可由未来的 `spark-submit --master yarn --deploy-mode client` 启动同一个 Main。
-- 兼容读取 Canvas `1.0`～`1.5` 并以 `1.5` 写出；`1.5` 的 `KAFKA_INPUT/KAFKA_OUTPUT` 使用节点内联 Value Schema，不再引用数据模型。
+- 兼容读取 Canvas `1.0`～`1.6` 并以 `1.6` 写出；`1.5` 的 `KAFKA_INPUT/KAFKA_OUTPUT` 使用节点内联 Value Schema，`1.6` 增加批任务 `FILE_OUTPUT`。
 - 根据请求携带的元数据快照创建零行 DataFrame，只构造并分析 Spark 逻辑计划。
 - 编译接口不连接 JDBC、不调用 Spark Action、不创建 `DataFrameWriter`。
 - Daemon不包含真实执行、Docker、Kafka、MinIO或回执职责；Runner第一阶段只连接 PostgreSQL/MySQL。
@@ -219,13 +219,17 @@ Processor 不维护平台类型兼容矩阵，也不按字段类型产生风险�
 
 ### 6.6 JDBC_OUTPUT
 
-检查 sourceTableName、启用且具有 `STORAGE`（数据存储）用途的 JDBC 数据源、TABLE 目标、APPEND/OVERWRITE 和 BY_NAME/EXPLICIT 映射。共享 Operator 使用 Spark `select/alias/cast` 构造映射计划并触发 Analyzer；预检 I/O 只接收零行 Dataset，不创建 Writer。
+检查 sourceTableName、启用且具有 `DISTRIBUTION`（数据分发）用途的 JDBC 数据源、TABLE 目标、APPEND/OVERWRITE 和 BY_NAME/EXPLICIT 映射。共享 Operator 使用 Spark `select/alias/cast` 构造映射计划并触发 Analyzer；预检 I/O 只接收零行 Dataset，不创建 Writer。
 
 Output 专用字段转换策略分为安全、风险和不支持三类：可证明无损的扩大转换自动 Cast 且不提示；Spark 支持但可能受实际值、nullable、STRING length 或 DECIMAL 精度影响的转换自动 Cast 并产生警告；Spark Analyzer 不支持的 Cast 才产生错误。BY_NAME 的额外来源字段产生警告，目标必填字段缺失和显式重复目标映射仍是错误。该策略不得供 Processor 判断字段类型兼容性。
 
 ### 6.7 KAFKA_OUTPUT
 
 检查来源无界表、启用且具有 `DISTRIBUTION` 用途的 Kafka 数据源、Topic、可选 Key 字段以及 BY_NAME/EXPLICIT 映射。目标字段直接取自节点内联 Value Schema，并与其他 Output 复用同一个字段映射和显式 Spark Cast 实现。Compiler 不查询模型、不建立 Kafka Writer；Runner 才使用 Manifest 中的 Kafka 连接信息准备真实流式输出。
+
+### 6.8 FILE_OUTPUT
+
+仅接受有界来源表，以及已启用、连接类型为 S3、用途包含 `DISTRIBUTION` 的数据源。检查用户指定的相对目录、`FAIL_IF_EXISTS/OVERWRITE` 冲突策略和 CSV、JSON Lines、Parquet 的判别式格式参数。Compiler 不连接 S3、不建立 Writer；Runner 才使用 Manifest 的外部 S3 连接，以 bucket 级 S3A 配置写入精确目标目录。
 
 ## 7. 配置与认证
 
@@ -252,10 +256,12 @@ Token 没有默认值且只允许从环境变量读取；为空时拒绝启动�
 
 ```bash
 ./mvnw -pl data-scalpel-task-engine test
-./mvnw -pl data-scalpel-task-engine package
+./mvnw -pl data-scalpel-task-engine -Ptask-engine-full-package package
 ```
 
-`package` 同时生成普通薄 JAR，以及目录、zip、tar.gz 三种分发结果。分发内容为：
+默认 `package` 只生成普通薄 JAR 和 Local Docker 所需的 `runner-local.jar`。
+显式启用 `task-engine-full-package` Profile 时，额外生成 `runner-cluster.jar`，
+以及目录、zip、tar.gz 三种分发结果。分发内容为：
 
 ```text
 data-scalpel-task-engine/

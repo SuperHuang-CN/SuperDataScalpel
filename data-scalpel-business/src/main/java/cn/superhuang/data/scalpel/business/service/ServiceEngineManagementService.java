@@ -16,12 +16,14 @@ import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
-import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 
 @Service
@@ -33,6 +35,7 @@ public class ServiceEngineManagementService {
     private final ServiceEngineClient client;
     private final ServiceEngineCredentialCipher credentialCipher;
     private final ServiceEngineDataSourceRegistrationService dataSourceRegistrationService;
+    private final TransactionTemplate transactionTemplate;
 
     public ServiceEngineManagementService(
             ServiceEngineRepository repository,
@@ -40,7 +43,8 @@ public class ServiceEngineManagementService {
             SearchEngine searchEngine,
             ServiceEngineClient client,
             ServiceEngineCredentialCipher credentialCipher,
-            ServiceEngineDataSourceRegistrationService dataSourceRegistrationService
+            ServiceEngineDataSourceRegistrationService dataSourceRegistrationService,
+            PlatformTransactionManager transactionManager
     ) {
         this.repository = repository;
         this.dataServiceRepository = dataServiceRepository;
@@ -48,6 +52,7 @@ public class ServiceEngineManagementService {
         this.client = client;
         this.credentialCipher = credentialCipher;
         this.dataSourceRegistrationService = dataSourceRegistrationService;
+        this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
     @Transactional(readOnly = true)
@@ -64,31 +69,49 @@ public class ServiceEngineManagementService {
         return ServiceEngineResponse.from(requireEngine(id));
     }
 
-    @Transactional
     public ServiceEngineResponse create(CreateServiceEngineRequest request) {
-        String code = request.code().trim().toLowerCase(Locale.ROOT);
-        if (repository.existsByCode(code)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎编码已存在");
-        }
-        ServiceEngine engine = ServiceEngine.create(
-                code, request.name(), request.adminUrl(), request.publicUrl(),
-                credentialCipher.encrypt(request.managementToken()),
-                request.enabled() == null || request.enabled(), request.description()
-        );
-        return ServiceEngineResponse.from(repository.saveAndFlush(engine));
+        String adminUrl = ServiceEngine.normalizeAdminUrl(request.adminUrl());
+        ServiceEngineTestResponse discovery = testConnection(null, adminUrl, request.managementToken());
+        return requireTransactionResult(transactionTemplate.execute(status -> {
+            if (repository.existsByCode(discovery.code())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎编码已存在");
+            }
+            ServiceEngine engine = ServiceEngine.create(
+                    discovery.code(), request.name(), adminUrl, request.publicUrl(),
+                    credentialCipher.encrypt(request.managementToken()),
+                    request.enabled() == null || request.enabled(), request.description()
+            );
+            return ServiceEngineResponse.from(repository.saveAndFlush(engine));
+        }));
     }
 
-    @Transactional
     public ServiceEngineResponse update(UUID id, UpdateServiceEngineRequest request) {
-        ServiceEngine engine = requireEngine(id);
-        String managementTokenCiphertext = request.managementToken() == null || request.managementToken().isBlank()
-                ? engine.getManagementTokenCiphertext()
-                : credentialCipher.encrypt(request.managementToken());
-        engine.update(
-                request.name(), request.adminUrl(), request.publicUrl(), managementTokenCiphertext,
-                request.enabled(), request.description()
-        );
-        return ServiceEngineResponse.from(repository.saveAndFlush(engine));
+        UpdatePreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
+            ServiceEngine engine = requireEngine(id);
+            String adminUrl = ServiceEngine.normalizeAdminUrl(request.adminUrl());
+            boolean tokenChanged = request.managementToken() != null && !request.managementToken().isBlank();
+            String managementToken = tokenChanged
+                    ? request.managementToken().trim()
+                    : credentialCipher.decrypt(engine.getManagementTokenCiphertext());
+            String managementTokenCiphertext = tokenChanged
+                    ? credentialCipher.encrypt(managementToken)
+                    : engine.getManagementTokenCiphertext();
+            boolean identityChanged = !engine.getAdminUrl().equals(adminUrl) || tokenChanged;
+            return new UpdatePreparation(
+                    engine.getCode(), adminUrl, managementToken, managementTokenCiphertext, identityChanged
+            );
+        }));
+        if (preparation.identityChanged()) {
+            testConnection(preparation.code(), preparation.adminUrl(), preparation.managementToken());
+        }
+        return requireTransactionResult(transactionTemplate.execute(status -> {
+            ServiceEngine engine = requireEngine(id);
+            engine.update(
+                    request.name(), preparation.adminUrl(), request.publicUrl(),
+                    preparation.managementTokenCiphertext(), request.enabled(), request.description()
+            );
+            return ServiceEngineResponse.from(repository.saveAndFlush(engine));
+        }));
     }
 
     @Transactional
@@ -102,7 +125,7 @@ public class ServiceEngineManagementService {
 
     public ServiceEngineTestResponse test(TestServiceEngineRequest request) {
         return testConnection(
-                request.code().trim().toLowerCase(Locale.ROOT),
+                null,
                 ServiceEngine.normalizeAdminUrl(request.adminUrl()),
                 request.managementToken()
         );
@@ -132,15 +155,25 @@ public class ServiceEngineManagementService {
         if (response == null || response.code() == null || response.code().isBlank()) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Service Engine 返回的身份信息不完整");
         }
-        if (!expectedCode.equals(response.code())) {
+        String actualCode;
+        try {
+            actualCode = ServiceEngine.normalizeCode(response.code());
+        } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY,
-                    "Service Engine Code 不一致，期望 %s，实际 %s".formatted(expectedCode, response.code())
+                    "Service Engine 返回的 Code 不符合编码规范",
+                    exception
+            );
+        }
+        if (expectedCode != null && !expectedCode.equals(actualCode)) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "Service Engine Code 不一致，期望 %s，实际 %s".formatted(expectedCode, actualCode)
             );
         }
         List<String> databaseTypes = response.databaseTypes() == null ? List.of() : response.databaseTypes();
         long elapsedMs = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
-        return new ServiceEngineTestResponse(response.code(), databaseTypes, elapsedMs);
+        return new ServiceEngineTestResponse(actualCode, databaseTypes, elapsedMs);
     }
 
     private static ResponseStatusException testFailure(RuntimeException exception) {
@@ -175,5 +208,18 @@ public class ServiceEngineManagementService {
     private static String safeMessage(Exception exception) {
         String message = exception.getMessage();
         return message == null || message.isBlank() ? "远程调用失败" : message.substring(0, Math.min(300, message.length()));
+    }
+
+    private static <T> T requireTransactionResult(T value) {
+        return Objects.requireNonNull(value, "Transaction result is required");
+    }
+
+    private record UpdatePreparation(
+            String code,
+            String adminUrl,
+            String managementToken,
+            String managementTokenCiphertext,
+            boolean identityChanged
+    ) {
     }
 }

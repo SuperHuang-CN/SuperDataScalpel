@@ -17,6 +17,7 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ComputeEngineDispatcherClientTest {
@@ -31,7 +32,6 @@ class ComputeEngineDispatcherClientTest {
         server = HttpServer.create(new InetSocketAddress(InetAddress.getLoopbackAddress(), 0), 0);
         server.createContext("/api/v1/dispatcher/info", exchange -> respond(exchange, """
                 {
-                  "protocolVersion":1,
                   "dispatcherInstanceId":"dispatcher-local",
                   "backendType":"LOCAL_DOCKER",
                   "version":"0.1.0-SNAPSHOT",
@@ -47,11 +47,9 @@ class ComputeEngineDispatcherClientTest {
                 """));
         server.createContext("/api/v1/dispatcher/registration/actions/activate", exchange -> respond(exchange, """
                 {
-                  "protocolVersion":1,
                   "engineId":"80f6dbd2-84a8-47d6-90ef-a9bcd4dd8928",
                   "dispatcherInstanceId":"dispatcher-local",
                   "backendType":"LOCAL_DOCKER",
-                  "configRevision":3,
                   "state":"ACTIVE",
                   "topics":{"commandTopic":"commands.local","runnerEventTopic":"runner.local","adminEventTopic":"admin.events"},
                   "effectiveAdmissionPolicy":{"maxQueuedExecutions":20,"maxConcurrentSubmissions":2,"maxInFlightApplications":2},
@@ -84,13 +82,14 @@ class ComputeEngineDispatcherClientTest {
 
         UUID engineId = UUID.fromString("80f6dbd2-84a8-47d6-90ef-a9bcd4dd8928");
         DispatcherRegistrationResponse response = client.activate(baseUrl, "secret-token", new DispatcherRegistrationRequest(
-                1, engineId, 3,
+                engineId,
                 new DispatcherTopics("commands.local", "runner.local", "admin.events"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
         ));
         assertEquals(DispatcherRegistrationState.ACTIVE, response.state());
         assertEquals(engineId, response.engineId());
-        assertTrue(requestBody.get().contains("\"configRevision\":3"));
+        assertFalse(requestBody.get().contains("configRevision"));
+        assertFalse(requestBody.get().contains("protocolVersion"));
         assertTrue(requestBody.get().contains("\"commandTopic\":\"commands.local\""));
     }
 

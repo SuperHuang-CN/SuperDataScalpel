@@ -15,6 +15,9 @@ import {
   type HttpApiRuntimeParameter,
   type KafkaValueColumn,
   type KafkaValueSchema,
+  type FileOutputConflictPolicy,
+  type FileOutputFormatOptions,
+  normalizeFileOutputPath,
 } from './canvasTypes';
 
 export type CanvasDefinitionParseResult =
@@ -115,6 +118,66 @@ const parseMappingMode = (value: unknown, path: string, errors: string[]): Colum
   if (value === 'BY_NAME' || value === 'EXPLICIT') return value;
   errors.push(`${path} 不是受支持的字段映射模式`);
   return null;
+};
+
+const parseFileOutputConflictPolicy = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): FileOutputConflictPolicy => {
+  if (value === 'FAIL_IF_EXISTS' || value === 'OVERWRITE') return value;
+  errors.push(`${path} 仅支持 FAIL_IF_EXISTS 或 OVERWRITE`);
+  return 'FAIL_IF_EXISTS';
+};
+
+const parseFileOutputFormatOptions = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): FileOutputFormatOptions => {
+  const fallback: FileOutputFormatOptions = {
+    type: 'CSV',
+    header: true,
+    delimiter: ',',
+    quote: '"',
+    escape: '\\',
+    nullValue: '',
+  };
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是文件格式配置对象`);
+    return fallback;
+  }
+  if (value.type === 'CSV') {
+    if (typeof value.header !== 'boolean') errors.push(`${path}.header 必须是布尔值`);
+    for (const field of ['delimiter', 'quote', 'escape'] as const) {
+      if (typeof value[field] !== 'string' || [...value[field]].length !== 1
+        || value[field].includes('\r') || value[field].includes('\n')) {
+        errors.push(`${path}.${field} 必须是一个非换行字符`);
+      }
+    }
+    if (typeof value.nullValue !== 'string') errors.push(`${path}.nullValue 必须是字符串`);
+    return {
+      type: 'CSV',
+      header: typeof value.header === 'boolean' ? value.header : true,
+      delimiter: typeof value.delimiter === 'string' ? value.delimiter : ',',
+      quote: typeof value.quote === 'string' ? value.quote : '"',
+      escape: typeof value.escape === 'string' ? value.escape : '\\',
+      nullValue: typeof value.nullValue === 'string' ? value.nullValue : '',
+    };
+  }
+  if (value.type === 'JSON_LINES') {
+    if (typeof value.ignoreNullFields !== 'boolean') {
+      errors.push(`${path}.ignoreNullFields 必须是布尔值`);
+    }
+    return {
+      type: 'JSON_LINES',
+      ignoreNullFields: typeof value.ignoreNullFields === 'boolean'
+        ? value.ignoreNullFields : false,
+    };
+  }
+  if (value.type === 'PARQUET') return { type: 'PARQUET' };
+  errors.push(`${path}.type 仅支持 CSV、JSON_LINES 或 PARQUET`);
+  return fallback;
 };
 
 const parseMappings = (value: unknown, path: string, errors: string[]): CanvasColumnMapping[] => {
@@ -473,6 +536,51 @@ const parseNode = (value: unknown, index: number, errors: string[]): CanvasNodeD
           ),
         },
       };
+    case CanvasNodeType.FileOutput: {
+      const rawTargetPath = stringValue(configuration.targetPath);
+      const targetPath = normalizeFileOutputPath(rawTargetPath);
+      const invalidSegment = targetPath.split('/').some(
+        (segment) => !segment || segment === '.' || segment === '..'
+          || segment.toLowerCase() === '_temporary',
+      );
+      if (
+        !targetPath
+        || targetPath.length > 1024
+        || rawTargetPath.trim().startsWith('/')
+        || targetPath.includes('\\')
+        || targetPath.includes('://')
+        || targetPath.includes('?')
+        || targetPath.includes('#')
+        || invalidSegment
+      ) {
+        errors.push(`${path}.configuration.targetPath 必须是合法的 S3 相对路径`);
+      }
+      return {
+        id,
+        type: value.type,
+        name,
+        layout,
+        configuration: {
+          sourceTableName: stringValue(configuration.sourceTableName),
+          dataSourceId: validateOptionalUuid(
+            stringValue(configuration.dataSourceId),
+            `${path}.configuration.dataSourceId`,
+            errors,
+          ),
+          targetPath,
+          conflictPolicy: parseFileOutputConflictPolicy(
+            configuration.conflictPolicy,
+            `${path}.configuration.conflictPolicy`,
+            errors,
+          ),
+          formatOptions: parseFileOutputFormatOptions(
+            configuration.formatOptions,
+            `${path}.configuration.formatOptions`,
+            errors,
+          ),
+        },
+      };
+    }
     default:
       errors.push(`${path}.type 不是受支持的节点类型`);
       return null;
@@ -550,6 +658,11 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
         || node.type === CanvasNodeType.KafkaOutput
       ))) {
     errors.push('KAFKA_INPUT 和 KAFKA_OUTPUT 的内联 Value Schema 从 Canvas 1.5 开始支持');
+  }
+  if (typeof sourceSchemaMinorVersion === 'number'
+      && sourceSchemaMinorVersion < 6
+      && nodes.some((node) => node.type === CanvasNodeType.FileOutput)) {
+    errors.push('FILE_OUTPUT 从 Canvas 1.6 开始支持');
   }
 
   const nodeIds = new Set<string>();

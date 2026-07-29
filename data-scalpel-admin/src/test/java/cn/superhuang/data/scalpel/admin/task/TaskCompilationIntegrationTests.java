@@ -110,7 +110,7 @@ class TaskCompilationIntegrationTests {
         assertThat(JsonPath.<String>read(engineRequestBody.get(), "$.task.definition.nodes[2].type"))
                 .isEqualTo("JDBC_OUTPUT");
         assertThat(JsonPath.<List<String>>read(engineRequestBody.get(), "$.metadataSnapshot.dataSources[0].purposes"))
-                .containsExactly("SOURCE", "STORAGE");
+                .containsExactly("SOURCE", "DISTRIBUTION");
         assertThat(JsonPath.<String>read(response, "$.canvasIssues[0].code")).isEqualTo("INVALID_NODE_DEGREE");
     }
 
@@ -239,7 +239,7 @@ class TaskCompilationIntegrationTests {
                      "writeMode":"APPEND","columnMappingMode":"BY_NAME","columnMappings":[]}}
                   ],"edges":[]}},
                   "metadataSnapshot":{"dataSources":[{"id":"%s","enabled":true,"connectionKind":"JDBC",
-                    "purposes":["SOURCE","STORAGE"],"tables":[{"tableName":"orders","objectType":"TABLE","columns":[
+                    "purposes":["SOURCE","DISTRIBUTION"],"tables":[{"tableName":"orders","objectType":"TABLE","columns":[
                       {"name":"order_id","fieldType":"LONG","length":null,"precision":null,"scale":null,"nullable":false,
                        "defaultValue":null,"autoIncrement":false,"generated":false,"comment":"订单ID"}
                     ]}]}],"models":[]}

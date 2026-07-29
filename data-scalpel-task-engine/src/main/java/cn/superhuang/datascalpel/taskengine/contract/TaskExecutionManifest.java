@@ -17,7 +17,8 @@ public record TaskExecutionManifest(
         RuntimeFileStorage runtimeFileStorage,
         List<RuntimeFileInput> runtimeFileInputs
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 6;
+    public static final int CURRENT_MANIFEST_VERSION = 7;
+    public static final int PREVIOUS_MANIFEST_VERSION = 6;
 
     public TaskExecutionManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);

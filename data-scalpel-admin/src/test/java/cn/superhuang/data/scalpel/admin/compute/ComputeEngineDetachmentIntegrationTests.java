@@ -81,7 +81,6 @@ class ComputeEngineDetachmentIntegrationTests {
         assertThat(response.registrationState()).isEqualTo(ComputeEngineRegistrationState.DETACHED);
         assertThat(response.healthState()).isEqualTo(ComputeEngineHealthState.DOWN);
         assertThat(response.dispatcherInstanceId()).isNull();
-        assertThat(response.protocolVersion()).isNull();
         assertThat(response.reportedBackendType()).isNull();
         assertThat(response.detachedAt()).isNotNull();
         assertThat(response.detachReason()).isEqualTo("原 Dispatcher 主机已永久下线");
@@ -235,7 +234,7 @@ class ComputeEngineDetachmentIntegrationTests {
                 cipher.encrypt("secret"), ComputeBackendType.LOCAL_DOCKER,
                 "commands." + suffix, "runner." + suffix, "admin.events", 20, 2, 2
         );
-        engine.activate("dispatcher-old", 1, ComputeBackendType.LOCAL_DOCKER);
+        engine.activate("dispatcher-old", ComputeBackendType.LOCAL_DOCKER);
         ComputeEngine saved = repository.saveAndFlush(engine);
         engineIds.add(saved.getId());
         return saved;
@@ -265,7 +264,7 @@ class ComputeEngineDetachmentIntegrationTests {
                 throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "访问令牌无效");
             }
             return new DispatcherInfoResponse(
-                    1, "dispatcher-replacement", ComputeBackendType.LOCAL_DOCKER, "test",
+                    "dispatcher-replacement", ComputeBackendType.LOCAL_DOCKER, "test",
                     new DispatcherCapabilities(true, true, true), List.of()
             );
         }
@@ -277,8 +276,8 @@ class ComputeEngineDetachmentIntegrationTests {
                 DispatcherRegistrationRequest request
         ) {
             return new DispatcherRegistrationResponse(
-                    1, request.engineId(), "dispatcher-replacement", ComputeBackendType.LOCAL_DOCKER,
-                    request.configRevision(), DispatcherRegistrationState.ACTIVE,
+                    request.engineId(), "dispatcher-replacement", ComputeBackendType.LOCAL_DOCKER,
+                    DispatcherRegistrationState.ACTIVE,
                     request.topics(), request.admissionPolicy(), null
             );
         }

@@ -3,6 +3,8 @@ package cn.superhuang.datascalpel.taskengine.contract;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
+import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
@@ -278,6 +280,50 @@ class TaskCompilationContractTest {
     }
 
     @Test
+    void readsAndWritesStrictFileOutputFormatsAsTheOneDotSixContract() throws Exception {
+        String json = """
+                {
+                  "schemaVersion": 1,
+                  "schemaMinorVersion": 6,
+                  "nodes": [{
+                    "id": "1c436443-4cc0-4fe8-b748-4c02143eb602",
+                    "type": "FILE_OUTPUT",
+                    "name": "订单文件输出",
+                    "layout": {"x": 10, "y": 20, "width": 240, "height": 120},
+                    "configuration": {
+                      "sourceTableName": "orders",
+                      "dataSourceId": "45a1f1bd-c381-45eb-a39b-924fc65122ac",
+                      "targetPath": "exports/orders",
+                      "conflictPolicy": "FAIL_IF_EXISTS",
+                      "formatOptions": {
+                        "type": "CSV",
+                        "header": true,
+                        "delimiter": ",",
+                        "quote": "\\\"",
+                        "escape": "\\\\",
+                        "nullValue": ""
+                      }
+                    }
+                  }],
+                  "edges": []
+                }
+                """;
+
+        CanvasDefinition definition = objectMapper.readValue(json, CanvasDefinition.class);
+
+        FileOutputNodeDefinition output = assertInstanceOf(
+                FileOutputNodeDefinition.class, definition.nodes().getFirst());
+        assertEquals("exports/orders", output.configuration().targetPath());
+        assertInstanceOf(FileOutputFormatOptions.Csv.class, output.configuration().formatOptions());
+        String roundTrip = objectMapper.writeValueAsString(definition);
+        assertTrue(roundTrip.contains("\"type\":\"FILE_OUTPUT\""));
+        assertTrue(roundTrip.contains("\"conflictPolicy\":\"FAIL_IF_EXISTS\""));
+        assertTrue(roundTrip.contains("\"type\":\"CSV\""));
+        assertTrue(!roundTrip.contains("accessKey"));
+        assertTrue(!roundTrip.contains("secretKey"));
+    }
+
+    @Test
     void readsAndWritesTheStrictModelMetadataSnapshot() throws Exception {
         String json = """
                 {
@@ -285,7 +331,7 @@ class TaskCompilationContractTest {
                     "id": "11111111-1111-4111-8111-111111111111",
                     "enabled": true,
                     "connectionKind": "JDBC",
-                    "purposes": ["SOURCE", "STORAGE"],
+                    "purposes": ["SOURCE", "DISTRIBUTION"],
                     "tables": []
                   }],
                   "models": [{

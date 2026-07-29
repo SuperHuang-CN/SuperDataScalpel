@@ -96,8 +96,6 @@ CREATE SCHEMA IF NOT EXISTS dispatcher;
 id UUID
 engineId UUID unique
 dispatcherInstanceId UUID
-protocolVersion int
-configRevision long
 backendType enum
 state INACTIVE/ACTIVE/DRAINING/ERROR
 commandTopic
@@ -320,9 +318,9 @@ GET  /api/v1/task-executions/{executionId}
 
 注册幂等：
 
-- 相同 engineId/configRevision/内容重复 Activate 返回当前注册。
-- 同一实例已 ACTIVE 但请求另一个 engineId，返回 409。
-- configRevision 比当前小，返回 409。
+- 相同 engineId 和相同配置重复 Activate 返回当前注册。
+- 同一实例已 ACTIVE 或 DRAINING 但请求另一个 engineId，返回 409。
+- 当前注册为 INACTIVE 或 ERROR 时，允许当前请求重新激活或由另一个 engineId 接管。
 - ACTIVE 状态不能直接替换 Topic 或策略，必须先 Drain/Deactivate。
 
 反注册：

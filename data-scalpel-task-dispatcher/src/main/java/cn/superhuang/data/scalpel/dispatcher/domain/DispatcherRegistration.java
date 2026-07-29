@@ -24,12 +24,6 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
     @Column(name = "dispatcher_instance_id", nullable = false, updatable = false)
     private UUID dispatcherInstanceId;
 
-    @Column(name = "protocol_version", nullable = false)
-    private int protocolVersion;
-
-    @Column(name = "config_revision", nullable = false)
-    private long configRevision;
-
     @Enumerated(EnumType.STRING)
     @Column(name = "backend_type", nullable = false, length = 32)
     private ExecutionBackendType backendType;
@@ -71,8 +65,6 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
     public static DispatcherRegistration activate(
             UUID engineId,
             UUID dispatcherInstanceId,
-            int protocolVersion,
-            long configRevision,
             ExecutionBackendType backendType,
             String commandTopic,
             String runnerEventTopic,
@@ -85,7 +77,7 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
         DispatcherRegistration registration = new DispatcherRegistration();
         registration.engineId = Objects.requireNonNull(engineId);
         registration.dispatcherInstanceId = Objects.requireNonNull(dispatcherInstanceId);
-        registration.apply(protocolVersion, configRevision, backendType, commandTopic, runnerEventTopic,
+        registration.apply(backendType, commandTopic, runnerEventTopic,
                 adminEventTopic, runnerControlTopic,
                 maxQueuedExecutions, maxConcurrentSubmissions, maxInFlightApplications);
         registration.state = DispatcherRegistrationState.ACTIVE;
@@ -94,8 +86,6 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
     }
 
     public void reactivate(
-            int protocolVersion,
-            long configRevision,
             ExecutionBackendType backendType,
             String commandTopic,
             String runnerEventTopic,
@@ -108,7 +98,7 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
         if (state != DispatcherRegistrationState.INACTIVE && state != DispatcherRegistrationState.ERROR) {
             throw new IllegalStateException("当前 Dispatcher 注册不能重新激活");
         }
-        apply(protocolVersion, configRevision, backendType, commandTopic, runnerEventTopic,
+        apply(backendType, commandTopic, runnerEventTopic,
                 adminEventTopic, runnerControlTopic,
                 maxQueuedExecutions, maxConcurrentSubmissions, maxInFlightApplications);
         state = DispatcherRegistrationState.ACTIVE;
@@ -117,8 +107,6 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
     }
 
     private void apply(
-            int protocolVersion,
-            long configRevision,
             ExecutionBackendType backendType,
             String commandTopic,
             String runnerEventTopic,
@@ -128,14 +116,11 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
             int maxConcurrentSubmissions,
             int maxInFlightApplications
     ) {
-        if (protocolVersion != 1 || configRevision < 1 || backendType == null
-                || blank(commandTopic) || blank(runnerEventTopic) || blank(adminEventTopic)
+        if (backendType == null || blank(commandTopic) || blank(runnerEventTopic) || blank(adminEventTopic)
                 || blank(runnerControlTopic)
                 || maxQueuedExecutions < 0 || maxConcurrentSubmissions < 1 || maxInFlightApplications < 0) {
             throw new IllegalArgumentException("Dispatcher 注册配置无效");
         }
-        this.protocolVersion = protocolVersion;
-        this.configRevision = configRevision;
         this.backendType = backendType;
         this.commandTopic = commandTopic.trim();
         this.runnerEventTopic = runnerEventTopic.trim();
@@ -147,7 +132,6 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
     }
 
     public boolean sameConfiguration(
-            long revision,
             String command,
             String runner,
             String admin,
@@ -156,7 +140,7 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
             int submissions,
             int inFlight
     ) {
-        return configRevision == revision && Objects.equals(commandTopic, command)
+        return Objects.equals(commandTopic, command)
                 && Objects.equals(runnerEventTopic, runner) && Objects.equals(adminEventTopic, admin)
                 && Objects.equals(getRunnerControlTopic(), control)
                 && maxQueuedExecutions == queued && maxConcurrentSubmissions == submissions
@@ -181,8 +165,6 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
 
     public UUID getEngineId() { return engineId; }
     public UUID getDispatcherInstanceId() { return dispatcherInstanceId; }
-    public int getProtocolVersion() { return protocolVersion; }
-    public long getConfigRevision() { return configRevision; }
     public ExecutionBackendType getBackendType() { return backendType; }
     public DispatcherRegistrationState getState() { return state; }
     public String getCommandTopic() { return commandTopic; }

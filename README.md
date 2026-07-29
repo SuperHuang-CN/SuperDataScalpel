@@ -192,7 +192,7 @@ java -jar data-scalpel-service-engine/target/data-scalpel-service-engine-0.1.0-S
 Task Engine 使用 Spark 4.1.1 和 JDK `HttpServer` 独立运行，不读取 Admin 数据库。构建分发包并设置独立 Bearer Token：
 
 ```bash
-./mvnw -pl data-scalpel-task-engine package
+./mvnw -pl data-scalpel-task-engine -Ptask-engine-full-package package
 export DATASCALPEL_TASK_ENGINE_TOKEN="<task-engine-token>"
 ./data-scalpel-task-engine/target/data-scalpel-task-engine-0.1.0-SNAPSHOT-distribution/data-scalpel-task-engine/bin/task-engine
 ```
@@ -205,6 +205,11 @@ export DATASCALPEL_TASK_DISPATCHER_TOKEN="<dispatcher-token>"
 export DATASCALPEL_TASK_DISPATCHER_RUNNER_JAR="$(pwd)/data-scalpel-task-engine/target/data-scalpel-task-engine-0.1.0-SNAPSHOT-runner-local.jar"
 java -jar data-scalpel-task-dispatcher/target/data-scalpel-task-dispatcher-0.1.0-SNAPSHOT.jar
 ```
+
+默认 `package` 只生成普通 Task Engine JAR 和 Local Docker 所需的
+`runner-local.jar`。只有 Yarn/Kubernetes Runner 或独立 Task Engine 分发包需要
+`-Ptask-engine-full-package`；该 Profile 额外生成 `runner-cluster.jar`、分发目录、
+ZIP 和 TAR.GZ。
 
 Task Engine默认监听 `8091`，Dispatcher本地默认监听 `18092`。两者健康检查均为 `GET /health/live`、`GET /health/ready`；Task Engine只保留 `POST /api/v1/task-compilations`。Admin使用同一个 `DATASCALPEL_TASK_ENGINE_TOKEN` 访问 Engine，并从系统设置 `task.engine.base-url` 动态读取地址；Canvas Designer只调用 Admin网关，不接触 Engine Token。完整契约见 [Task Engine Daemon 与 Canvas 编译设计](docs/design/task-engine-daemon-and-compilation.md)和[Canvas 真实执行设计](docs/design/canvas-task-execution.md)。
 
