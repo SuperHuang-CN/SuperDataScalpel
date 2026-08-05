@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.model.web.response;
 
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
+import cn.superhuang.data.scalpel.business.standard.web.response.StandardDictionarySummaryResponse;
 
 import java.util.List;
 
@@ -19,6 +20,8 @@ public record ModelMetadataImportFieldResponse(
         Boolean primaryKey,
         Integer sortOrder,
         String description,
+        String standardDictionaryCode,
+        StandardDictionarySummaryResponse standardDictionary,
         boolean importable,
         List<String> issues
 ) {

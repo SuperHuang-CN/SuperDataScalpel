@@ -81,7 +81,7 @@ export const SystemUserDrawer = ({ open, user, roles, onClose }: SystemUserDrawe
         destroyOnHidden
         footer={<Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button>}
       >
-        <Form form={form} layout="vertical" requiredMark={false} onFinish={submit}>
+        <Form autoComplete="off" form={form} layout="vertical" requiredMark={false} onFinish={submit}>
           <Form.Item
             name="username"
             label="用户名"
@@ -90,14 +90,14 @@ export const SystemUserDrawer = ({ open, user, roles, onClose }: SystemUserDrawe
               { pattern: /^[A-Za-z][A-Za-z0-9_.-]{2,63}$/, message: '以字母开头，可使用字母、数字、点、下划线和连字符' },
             ]}
           >
-            <Input disabled={isEditing} placeholder="如 data.operator" />
+            <Input name="managed-user-code" autoComplete="off" disabled={isEditing} placeholder="如 data.operator" />
           </Form.Item>
           <Form.Item name="displayName" label="显示名称" rules={[{ required: true, whitespace: true, message: '请输入显示名称' }]}>
             <Input maxLength={100} />
           </Form.Item>
           {!isEditing && (
             <Form.Item name="password" label="初始密码" rules={[{ required: true, min: 8, message: '密码至少 8 位' }]}>
-              <Input.Password autoComplete="new-password" />
+              <Input.Password name="managed-user-initial-secret" autoComplete="off" />
             </Form.Item>
           )}
           <Form.Item name="roleId" label="角色" rules={[{ required: true, message: '请选择角色' }]}>

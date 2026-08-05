@@ -698,7 +698,7 @@ public class DataTaskService {
             TaskStatus status,
             UUID computeEngineId,
             int definitionVersion,
-            cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition definition
+            cn.superhuang.data.scalpel.contract.task.CanvasDefinition definition
     ) {
     }
 

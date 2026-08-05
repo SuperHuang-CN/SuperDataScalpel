@@ -13,6 +13,7 @@ public record DataModelResponse(
         String code,
         String name,
         UUID directoryId,
+        ModelWarehouseLayerSummaryResponse warehouseLayer,
         UUID storageDataSourceId,
         String storageDataSourceName,
         String catalogName,
@@ -26,12 +27,21 @@ public record DataModelResponse(
         Instant createdAt,
         Instant updatedAt
 ) {
-    public static DataModelResponse from(DataModel model, String storageDataSourceName) {
+    public static DataModelResponse from(
+            DataModel model,
+            String storageDataSourceName,
+            ModelWarehouseLayerSummaryResponse warehouseLayer
+    ) {
         return new DataModelResponse(
                 model.getId(), model.getCode(), model.getName(), model.getDirectoryId(),
+                warehouseLayer,
                 model.getStorageDataSourceId(), storageDataSourceName, model.getCatalogName(), model.getSchemaName(),
                 model.getPhysicalTableName(), model.getPhysicalTableMode(), model.getClickHouseOrderByColumns(), model.getStatus(), model.getSchemaVersion(), model.getDescription(),
                 model.getCreatedAt(), model.getUpdatedAt()
         );
+    }
+
+    public static DataModelResponse from(DataModel model, String storageDataSourceName) {
+        return from(model, storageDataSourceName, null);
     }
 }

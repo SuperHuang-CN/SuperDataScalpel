@@ -67,7 +67,23 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
     );
     case 'PARQUET': return <Alert type="info" showIcon message="Parquet 自带字段类型和编码信息，无额外解析参数。" />;
     case 'AVRO': return <Alert type="info" showIcon message="Avro Object Container File 自带 Schema 和 codec，无额外解析参数。" />;
-    case 'GDB': return <Alert type="info" showIcon message="FileGDB 图层目录和空间元数据由系统自动发现，无额外解析参数。" />;
+    case 'GDB': return (
+      <>
+        <Alert
+          type="info"
+          showIcon
+          className="file-dataset-form-alert"
+          message="系统会优先读取各图层 WKT 中明确声明的 EPSG；无法识别时使用下面的回退 EPSG。"
+        />
+        <Form.Item
+          label="回退 EPSG code"
+          name="epsgCode"
+          extra="可选；仅在图层 WKT 没有明确 EPSG 标识时使用，不执行坐标转换。"
+        >
+          <InputNumber min={1} precision={0} placeholder="例如 4490" className="file-dataset-number-input" />
+        </Form.Item>
+      </>
+    );
     case 'SHP': return (
       <>
         <Alert
@@ -94,6 +110,15 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
               rules={[{ required: true, message: '请选择 DBF 回退编码' }]}
             >
               <Select showSearch options={charsetOptions} />
+            </Form.Item>
+          </Col>
+          <Col span={12}>
+            <Form.Item
+              label="回退 EPSG code"
+              name="epsgCode"
+              extra="可选；仅在 PRJ 没有明确 EPSG 标识时使用，不执行坐标转换。"
+            >
+              <InputNumber min={1} precision={0} placeholder="例如 4490" className="file-dataset-number-input" />
             </Form.Item>
           </Col>
         </Row>

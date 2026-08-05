@@ -218,7 +218,7 @@ export const LocalSqlTaskDefinitionPanel = ({
             </Typography.Paragraph>
             <MonacoSqlEditor value={sql} readOnly={!editable || !canUpdate} onChange={setSql} />
           </div>
-          <Form<DefinitionFormValues>
+          <Form<DefinitionFormValues> autoComplete="off"
             form={form}
             layout="vertical"
             disabled={!editable || !canUpdate}

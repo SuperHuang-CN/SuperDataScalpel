@@ -10,11 +10,15 @@ import {
   ReloadOutlined,
   SendOutlined,
   StopOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Alert, Button, Card, Dropdown, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Alert, Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementCode, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import {
   useComputeEngineCommand,
   useComputeEngines,
@@ -25,15 +29,10 @@ import {
 } from '../hooks/useComputeEngines';
 import {
   computeBackendTypeLabels,
-  computeEngineHealthStateColors,
   computeEngineHealthStateLabels,
-  computeEngineRegistrationStateColors,
   computeEngineRegistrationStateLabels,
-  type ComputeBackendType,
   type ComputeEngine,
   type ComputeEngineFilters,
-  type ComputeEngineHealthState,
-  type ComputeEngineRegistrationState,
 } from '../model/computeEngine';
 import { buildComputeEngineSearch } from '../model/computeEngineSearch';
 import { ComputeEngineDrawer } from './ComputeEngineDrawer';
@@ -51,12 +50,11 @@ interface DetachComputeEngineFormValues {
   confirmationName: string;
 }
 
-const formatDateTime = (value: string | null) => value ? new Intl.DateTimeFormat('zh-CN', {
-  dateStyle: 'short', timeStyle: 'medium', hour12: false,
-}).format(new Date(value)) : '—';
-
 export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, canTest, canManage }: ComputeEngineManagementPanelProps) => {
   const [filterForm] = Form.useForm<ComputeEngineFilters>();
+  const [advancedFilterForm] = Form.useForm<ComputeEngineFilters>();
+  const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<ComputeEngineFilters>({});
   const [filters, setFilters] = useState<ComputeEngineFilters>({});
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
@@ -69,11 +67,19 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     search: buildComputeEngineSearch(filters), page, size, sort: '-updatedAt,name',
   }), [filters, page, size]);
   const enginesQuery = useComputeEngines(request);
+  const advancedFilterCount = Number(advancedFilters.expectedBackendType !== undefined) + Number(advancedFilters.healthState !== undefined);
   const testMutation = useTestComputeEngine();
   const commandMutation = useComputeEngineCommand();
   const deactivateMutation = useDeactivateComputeEngine();
   const detachMutation = useDetachComputeEngine();
   const deleteMutation = useDeleteComputeEngine();
+
+  const registrationTone = (state: ComputeEngine['registrationState']): ManagementStatusTone => (
+    state === 'ACTIVE' ? 'success' : state === 'ERROR' ? 'error' : state === 'DRAINING' || state === 'REGISTERING' ? 'processing' : 'default'
+  );
+  const healthTone = (state: ComputeEngine['healthState']): ManagementStatusTone => (
+    state === 'UP' ? 'success' : state === 'DOWN' ? 'error' : 'default'
+  );
 
   const showError = (error: unknown, fallback: string) => messageApi.error(error instanceof ApiError ? error.message : fallback);
 
@@ -155,16 +161,13 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const columns: TableProps<ComputeEngine>['columns'] = [
-    { title: '名称', dataIndex: 'name', width: 180, ellipsis: true },
-    { title: '计算后端', dataIndex: 'expectedBackendType', width: 145, render: (value: ComputeBackendType) => computeBackendTypeLabels[value] },
-    { title: '注册状态', dataIndex: 'registrationState', width: 105, render: (value: ComputeEngineRegistrationState) => <Tag color={computeEngineRegistrationStateColors[value]}>{computeEngineRegistrationStateLabels[value]}</Tag> },
-    { title: '健康', dataIndex: 'healthState', width: 90, render: (value: ComputeEngineHealthState) => <Tag color={computeEngineHealthStateColors[value]}>{computeEngineHealthStateLabels[value]}</Tag> },
-    { title: 'Dispatcher 地址', dataIndex: 'dispatcherBaseUrl', width: 260, ellipsis: true },
-    { title: '命令 Topic', dataIndex: 'commandTopic', width: 245, ellipsis: true },
-    { title: '实例', dataIndex: 'dispatcherInstanceId', width: 160, ellipsis: true, render: (value: string | null) => value ?? '—' },
-    { title: '最近检查', dataIndex: 'lastCheckAt', width: 170, render: formatDateTime },
+    { title: '引擎', dataIndex: 'name', width: 220, render: (value: string, engine) => <ManagementListCell icon={<ThunderboltOutlined />} iconTone="violet" primary={value} secondary={computeBackendTypeLabels[engine.expectedBackendType]} /> },
+    { title: '注册 / 健康', width: 180, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={computeEngineRegistrationStateLabels[engine.registrationState]} tone={registrationTone(engine.registrationState)} />} secondary={<ManagementStatusIndicator label={computeEngineHealthStateLabels[engine.healthState]} tone={healthTone(engine.healthState)} />} /> },
+    { title: 'Dispatcher', width: 290, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.dispatcherBaseUrl} />} secondary={engine.dispatcherInstanceId || '尚未注册实例'} /> },
+    { title: '消息通道', width: 310, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.commandTopic} />} secondary={`Runner：${engine.runnerEventTopic} · Admin：${engine.adminEventTopic}`} /> },
+    { title: '容量 / 最近检查', width: 210, render: (_: unknown, engine) => <ManagementListCell primary={`队列 ${engine.maxQueuedExecutions} · 并发 ${engine.maxConcurrentSubmissions}`} secondary={formatManagementDateTime(engine.lastCheckAt)} /> },
     {
-      title: '操作', key: 'actions', width: 135, fixed: 'right',
+      title: '操作', key: 'actions', width: 110,
       render: (_, engine) => {
         const deletable = !['ACTIVE', 'DRAINING', 'REGISTERING'].includes(engine.registrationState);
         const reconfigurable = ['ACTIVE', 'DRAINING'].includes(engine.registrationState);
@@ -175,6 +178,8 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
           && canUpdate
           && (!reconfigurable || canManage);
         const items: NonNullable<MenuProps['items']> = [];
+        if (canTest) items.push({ key: 'test', icon: <ApiOutlined />, label: '测试连接', onClick: () => void test(engine) });
+        items.push({ key: 'configuration', icon: editable ? <EditOutlined /> : <EyeOutlined />, label: editable ? '修改配置' : '查看配置', onClick: () => setDrawerEngine(engine) });
         if (canManage && ['CREATED', 'INACTIVE', 'DETACHED', 'ERROR'].includes(engine.registrationState)) items.push({ key: 'register', icon: <SendOutlined />, label: '注册并激活', onClick: () => register(engine) });
         if (canManage && engine.registrationState === 'ACTIVE') items.push({ key: 'drain', icon: <PauseCircleOutlined />, label: '开始排空', onClick: () => drain(engine) });
         if (canManage && remotelyManageable) items.push({ key: 'deactivate', icon: <StopOutlined />, label: '安全反注册', onClick: () => deactivate(engine, false) });
@@ -190,48 +195,89 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
           if (items.length) items.push({ type: 'divider' });
           items.push({ key: 'delete', danger: true, icon: <DeleteOutlined />, label: '删除', onClick: () => remove(engine) });
         }
-        return <Space size={0}>
-          {canTest && <Tooltip title="测试连接"><Button type="text" size="small" aria-label={`测试${engine.name}`} icon={<ApiOutlined />} loading={testMutation.isPending && testMutation.variables === engine.id} onClick={() => void test(engine)} /></Tooltip>}
-          <Tooltip title={editable ? '修改配置' : '查看配置'}>
-            <Button
-              type="text"
-              size="small"
-              aria-label={`${editable ? '修改' : '查看'}${engine.name}`}
-              icon={editable ? <EditOutlined /> : <EyeOutlined />}
-              onClick={() => setDrawerEngine(engine)}
-            />
-          </Tooltip>
-          {items.length > 0 && <Dropdown menu={{ items }}><Button type="text" size="small" icon={<MoreOutlined />} aria-label={`更多计算引擎操作：${engine.name}`} /></Dropdown>}
-        </Space>;
+        return <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">
+            {canTest && <Tooltip title="测试连接"><Button type="text" size="small" aria-label={`测试${engine.name}`} icon={<ApiOutlined />} loading={testMutation.isPending && testMutation.variables === engine.id} onClick={() => void test(engine)} /></Tooltip>}
+            <Tooltip title={editable ? '修改配置' : '查看配置'}><Button type="text" size="small" aria-label={`${editable ? '修改' : '查看'}${engine.name}`} icon={editable ? <EditOutlined /> : <EyeOutlined />} onClick={() => setDrawerEngine(engine)} /></Tooltip>
+          </div>
+          <Dropdown menu={{ items }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" size="small" icon={<MoreOutlined />} aria-label={`${engine.name}的更多操作`} /></Tooltip></Dropdown>
+        </div>;
       },
     },
   ];
+  const applyDirect = (values: ComputeEngineFilters) => {
+    setFilters({
+      keyword: values.keyword,
+      registrationState: values.registrationState,
+      expectedBackendType: advancedFilters.expectedBackendType,
+      healthState: advancedFilters.healthState,
+    });
+    setPage(0);
+  };
+  const confirmAdvanced = () => {
+    const values = advancedFilterForm.getFieldsValue();
+    setAdvancedFilters({
+      expectedBackendType: values.expectedBackendType,
+      healthState: values.healthState,
+    });
+    setAdvancedFilterOpen(false);
+  };
+  const clearAdvanced = () => advancedFilterForm.resetFields();
+  const reset = () => {
+    filterForm.resetFields();
+    advancedFilterForm.resetFields();
+    setAdvancedFilters({});
+    setAdvancedFilterOpen(false);
+    setFilters({});
+    setPage(0);
+  };
 
   return <>
     {messageContext}{modalContext}
-    <Card className="management-card">
-      <div className="management-toolbar">
-        <Form<ComputeEngineFilters> form={filterForm} layout="inline" className="management-filter-form" onFinish={(values) => { setFilters(values); setPage(0); }}>
-          <Form.Item name="keyword" label="名称"><Input allowClear placeholder="计算引擎名称" /></Form.Item>
-          <Form.Item name="expectedBackendType" label="后端"><Select allowClear placeholder="全部" style={{ width: 145 }} options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-          <Form.Item name="registrationState" label="状态"><Select allowClear placeholder="全部" style={{ width: 120 }} options={Object.entries(computeEngineRegistrationStateLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-          <Form.Item name="healthState" label="健康"><Select allowClear placeholder="全部" style={{ width: 105 }} options={Object.entries(computeEngineHealthStateLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+    <section className="management-workbench">
+      <div className="management-filter-strip">
+        <Form<ComputeEngineFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={applyDirect}>
+          <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索计算引擎名称" /></Form.Item>
+          <Form.Item name="registrationState"><Select allowClear placeholder="全部注册状态" style={{ width: 130 }} options={Object.entries(computeEngineRegistrationStateLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+          <ManagementMoreFilters
+            count={advancedFilterCount}
+            open={advancedFilterOpen}
+            onOpenChange={(open) => {
+              setAdvancedFilterOpen(open);
+              if (open) {
+                advancedFilterForm.resetFields();
+                advancedFilterForm.setFieldsValue(advancedFilters);
+              }
+            }}
+            onClear={clearAdvanced}
+            onCancel={() => setAdvancedFilterOpen(false)}
+            onConfirm={confirmAdvanced}
+          >
+            <Form<ComputeEngineFilters> form={advancedFilterForm} layout="vertical" autoComplete="off">
+              <Form.Item name="expectedBackendType" label="后端"><Select allowClear placeholder="全部" className="advanced-filter-select" options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+              <Form.Item name="healthState" label="健康状态"><Select allowClear placeholder="全部" className="advanced-filter-select" options={Object.entries(computeEngineHealthStateLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+            </Form>
+          </ManagementMoreFilters>
         </Form>
-        <Space size={4} className="management-toolbar-actions">
-          <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-          <Button onClick={() => { filterForm.resetFields(); setFilters({}); setPage(0); }}>重置</Button>
-          <Button icon={<ReloadOutlined />} onClick={() => void enginesQuery.refetch()}>刷新</Button>
+        <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={enginesQuery.isFetching} onReset={reset} />
+      </div>
+      <div className="management-results-surface">
+        <div className="management-result-toolbar">
+        <div className="management-result-title">计算引擎 <span className="management-result-count">共 {enginesQuery.data?.totalElements ?? 0} 项</span></div>
+        <Space size={4} className="management-result-actions">
+          <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新计算引擎列表" onClick={() => void enginesQuery.refetch()} /></Tooltip>
           {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerEngine(null)}>新建</Button>}
         </Space>
-      </div>
-      <Table<ComputeEngine>
+        </div>
+        <Table<ComputeEngine>
         size="small" className="management-table" rowKey="id" columns={columns}
         dataSource={enginesQuery.data?.content ?? []} loading={enginesQuery.isFetching}
-        scroll={{ x: 1500, y: '100%' }}
+        scroll={{ y: '100%' }}
         pagination={{ current: page + 1, pageSize: size, total: enginesQuery.data?.totalElements ?? 0, showSizeChanger: true, showTotal: (total) => `共 ${total} 项`, position: ['bottomRight'], hideOnSinglePage: false }}
         onChange={(pagination) => { setPage((pagination.current ?? 1) - 1); setSize(pagination.pageSize ?? 20); }}
-      />
-    </Card>
+        />
+      </div>
+    </section>
     <ComputeEngineDrawer
       open={drawerEngine !== undefined}
       engine={drawerEngine ?? null}
@@ -257,7 +303,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         description="此操作只修改 Admin 状态，不会停止 Dispatcher 或其中的任务。请确认原 Dispatcher 进程已经永久停止，否则可能出现多个 Dispatcher 同时消费任务。"
         style={{ marginBottom: 16 }}
       />
-      <Form<DetachComputeEngineFormValues>
+      <Form<DetachComputeEngineFormValues> autoComplete="off"
         form={detachForm}
         layout="vertical"
         onFinish={(values) => void detach(values)}

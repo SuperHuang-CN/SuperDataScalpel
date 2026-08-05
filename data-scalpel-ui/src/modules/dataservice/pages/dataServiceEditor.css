@@ -72,6 +72,35 @@
   min-height: 0;
 }
 
+.data-service-script-workbench {
+  display: grid;
+  grid-template-columns: 340px minmax(0, 1fr);
+  gap: 12px;
+  height: 100%;
+  min-height: 650px;
+}
+
+.data-service-script-sidebar,
+.data-service-script-main {
+  min-height: 0;
+  overflow: auto;
+  background: #fff;
+  border: 1px solid #f0f0f0;
+  border-radius: 6px;
+}
+
+.data-service-script-sidebar {
+  padding: 12px;
+}
+
+.data-service-script-sidebar > .ant-typography {
+  margin-top: 0;
+}
+
+.data-service-script-main {
+  overflow: hidden;
+}
+
 .data-service-sql-sidebar,
 .data-service-sql-main {
   min-height: 0;
@@ -191,6 +220,16 @@
 
   .data-service-sql-main {
     margin-top: 12px;
+  }
+
+  .data-service-script-workbench {
+    display: block;
+    height: auto;
+  }
+
+  .data-service-script-main {
+    margin-top: 12px;
+    min-height: 650px;
   }
 }
 

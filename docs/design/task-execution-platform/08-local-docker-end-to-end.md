@@ -37,10 +37,10 @@ Service Engine 可以继续由 `start-local-dev.sh` 启动，但不参与 Canvas
 - 构建 `data-scalpel-task-dispatcher`。
 - 校验 Runner Local Uber JAR 存在且未过期。
 - 检查 Kafka Broker、MinIO、Docker和 PostgreSQL。
-- 确保 `dispatcher` Schema存在。
+- 使用 `DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA` 统一设置连接默认 Schema 和 Hibernate Schema，并由 Hibernate 创建缺失的命名空间。
 - 启动 Task Engine 时不再设置 execution/Docker参数。
 - 启动 Dispatcher，默认端口 18092。
-- 注入与 Admin 相同的数据库 URL、用户名和密码，Dispatcher URL追加 `currentSchema=dispatcher` 或设置 Hibernate default schema。
+- 注入 Dispatcher 独立数据库 URL、用户名、密码和 Schema；JDBC URL 不再携带 `currentSchema`。
 - 注入 Dispatcher Token、Kafka配置、MinIO配置和 Runner JAR路径。
 - 等待 Dispatcher `/health/ready`。
 - 创建或更新 Local ComputeEngine并执行 test/register。

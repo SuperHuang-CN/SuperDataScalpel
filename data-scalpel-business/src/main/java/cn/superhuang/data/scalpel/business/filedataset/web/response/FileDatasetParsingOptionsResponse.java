@@ -45,9 +45,9 @@ public sealed interface FileDatasetParsingOptionsResponse permits
             );
             case FileDatasetParsingOptionsRequest.Parquet ignored -> new Parquet();
             case FileDatasetParsingOptionsRequest.Avro ignored -> new Avro();
-            case FileDatasetParsingOptionsRequest.Gdb ignored -> new Gdb();
+            case FileDatasetParsingOptionsRequest.Gdb value -> new Gdb(value.epsgCode());
             case FileDatasetParsingOptionsRequest.Shp value -> new Shp(
-                    value.dbfCharsetOverride(), value.dbfFallbackCharset()
+                    value.dbfCharsetOverride(), value.dbfFallbackCharset(), value.epsgCode()
             );
         };
     }
@@ -108,7 +108,7 @@ public sealed interface FileDatasetParsingOptionsResponse permits
         }
     }
 
-    record Gdb() implements FileDatasetParsingOptionsResponse {
+    record Gdb(Integer epsgCode) implements FileDatasetParsingOptionsResponse {
         @Override
         public FileDatasetParsingOptionsKind kind() {
             return FileDatasetParsingOptionsKind.GDB;
@@ -117,7 +117,8 @@ public sealed interface FileDatasetParsingOptionsResponse permits
 
     record Shp(
             String dbfCharsetOverride,
-            String dbfFallbackCharset
+            String dbfFallbackCharset,
+            Integer epsgCode
     ) implements FileDatasetParsingOptionsResponse {
         @Override
         public FileDatasetParsingOptionsKind kind() {

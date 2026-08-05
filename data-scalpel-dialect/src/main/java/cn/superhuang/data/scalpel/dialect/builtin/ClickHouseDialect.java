@@ -1,5 +1,8 @@
 package cn.superhuang.data.scalpel.dialect.builtin;
 
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionChoice;
@@ -12,6 +15,9 @@ import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
+import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialMetadataStrength;
+import cn.superhuang.data.scalpel.dialect.model.SpatialStorageEncoding;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheck;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheckType;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
@@ -35,15 +41,14 @@ import cn.superhuang.data.scalpel.dialect.model.TableStorageMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableStructureDifference;
 import cn.superhuang.data.scalpel.dialect.model.TableStructureDifferenceType;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
+import cn.superhuang.data.scalpel.dialect.model.TypeMappingQuality;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
-import java.sql.Types;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -56,6 +61,9 @@ import java.util.stream.Collectors;
 
 /** Single-node MergeTree support. No replicated/distributed engine or free-form storage expression is accepted. */
 public final class ClickHouseDialect extends AbstractJdbcDialect {
+
+    private static final String WKB_MAPPING_MESSAGE =
+            "ClickHouse 使用 String 保存标准二维 WKB，空间语义由列 comment 声明";
 
     public ClickHouseDialect() {
         super(
@@ -131,6 +139,52 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
     }
 
     @Override
+    public List<ColumnMetadata> enrichColumnMetadata(
+            Connection connection,
+            TableIdentifier table,
+            List<ColumnMetadata> columns
+    ) throws SQLException {
+        if (table.catalog() == null || table.catalog().isBlank()) {
+            throw new SQLException("ClickHouse column metadata requires a database name");
+        }
+        String sql = "SELECT name, type, comment FROM system.columns "
+                + "WHERE database = ? AND table = ? ORDER BY position";
+        Map<String, ClickHouseColumnDetails> detailsByColumn = new HashMap<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setString(1, table.catalog());
+            statement.setString(2, table.table());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    String name = resultSet.getString("name");
+                    detailsByColumn.put(normalize(name), new ClickHouseColumnDetails(
+                            resultSet.getString("type"),
+                            resultSet.getString("comment")
+                    ));
+                }
+            }
+        }
+
+        List<ColumnMetadata> enriched = new ArrayList<>(columns.size());
+        for (ColumnMetadata column : columns) {
+            ClickHouseColumnDetails details = detailsByColumn.get(normalize(column.name()));
+            if (details == null) {
+                throw new SQLException("ClickHouse system.columns does not contain column: " + column.name());
+            }
+            ClickHouseWkbSpatialMarker.ParseResult marker = ClickHouseWkbSpatialMarker.parse(details.comment());
+            SpatialColumnMetadata spatial = marker.present()
+                    ? wkbSpatialMetadata(details.nativeType(), marker)
+                    : null;
+            enriched.add(column.withDialectDetails(
+                    details.nativeType(),
+                    isNullableType(details.nativeType()),
+                    marker.humanComment(),
+                    spatial
+            ));
+        }
+        return List.copyOf(enriched);
+    }
+
+    @Override
     public TableDefinition snapshotTableDefinition(TableMetadata actual) {
         TableStorageDefinition storage = storageDefinition(actual.storage());
         List<TableColumnDefinition> columns = actual.columns().stream().map(this::snapshotColumn).toList();
@@ -141,6 +195,9 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
     public TableChangePlan planTableChange(TableDefinition before, TableDefinition target, TableMetadata actual) {
         requireMergeTreeDefinition(before);
         requireMergeTreeDefinition(target);
+        if (containsGeometry(before) || containsGeometry(target)) {
+            throw new UnsupportedOperationException("ClickHouse Geometry 受管表第一版不支持物理结构变更");
+        }
         if (!compareTable(before, actual).compatible()) {
             throw new IllegalArgumentException("Physical ClickHouse table structure has drifted from the source definition");
         }
@@ -338,7 +395,7 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
             case TIMESTAMP, DATETIME -> type.startsWith("DateTime");
             case TIMESTAMP_NTZ -> false;
             case BINARY -> false;
-            case GEOMETRY -> false;
+            case GEOMETRY -> matchesWkbGeometry(expected, actual);
         };
     }
 
@@ -383,6 +440,22 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
     }
 
     private TableColumnDefinition snapshotColumn(ColumnMetadata actual) {
+        if (actual.spatial() != null && actual.spatial().storageEncoding() == SpatialStorageEncoding.WKB) {
+            TypeMappingResult<PlatformTypeDefinition> mapping = mapWkbToPlatform(actual.nativeType(), actual.spatial());
+            if (!mapping.acceptable()) {
+                throw new UnsupportedOperationException(mapping.message());
+            }
+            return new TableColumnDefinition(
+                    actual.name(),
+                    TableColumnType.GEOMETRY,
+                    null,
+                    null,
+                    null,
+                    actual.nullable(),
+                    null,
+                    mapping.definition().geometry()
+            );
+        }
         String nativeType = unwrapTypeWrappers(actual.nativeType()).toLowerCase(Locale.ROOT);
         TableColumnType type = switch (nativeType) {
             case "string" -> TableColumnType.TEXT;
@@ -413,6 +486,10 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
     protected Optional<TypeMappingResult<PlatformTypeDefinition>> mapDialectTypeToPlatform(
             JdbcTypeDescriptor physicalType
     ) {
+        if (physicalType.spatial() != null
+                && physicalType.spatial().storageEncoding() == SpatialStorageEncoding.WKB) {
+            return Optional.of(mapWkbToPlatform(physicalType.nativeTypeName(), physicalType.spatial()));
+        }
         String nativeType = unwrapTypeWrappers(physicalType.nativeTypeName()).toLowerCase(Locale.ROOT);
         if (nativeType.startsWith("decimal(")) {
             Integer precision = physicalType.precision();
@@ -475,6 +552,23 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
     protected TypeMappingResult<PhysicalTypeDefinition> mapPlatformTypeToPhysical(
             PlatformTypeDefinition platformType
     ) {
+        if (platformType.type() == PlatformDataType.GEOMETRY) {
+            String issue = SpatialTypeSupport.validateV1Geometry(platformType.geometry());
+            if (issue != null) {
+                return TypeMappingResult.unsupported(issue);
+            }
+            return new TypeMappingResult<>(
+                    new PhysicalTypeDefinition(
+                            TableColumnType.GEOMETRY,
+                            null,
+                            null,
+                            null,
+                            platformType.geometry()
+                    ),
+                    TypeMappingQuality.EXACT,
+                    WKB_MAPPING_MESSAGE
+            );
+        }
         if (platformType.type() == PlatformDataType.BINARY) {
             return TypeMappingResult.unsupported("ClickHouse 受控物理表暂不支持 BINARY 字段");
         }
@@ -628,7 +722,7 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
     private static TableColumnDefinition sameName(TableColumnDefinition source, TableColumnDefinition destination) {
         return new TableColumnDefinition(
                 destination.name(), source.type(), source.length(), source.precision(), source.scale(),
-                source.nullable(), source.columnId()
+                source.nullable(), source.columnId(), source.geometry()
         );
     }
 
@@ -674,9 +768,20 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
                 throw new IllegalArgumentException("ClickHouse managed tables do not support BINARY fields");
             }
         }
+        Map<String, TableColumnDefinition> columns = columnsByName(definition);
+        for (String orderByColumn : definition.storage().orderByColumns()) {
+            TableColumnDefinition column = columns.get(normalize(orderByColumn));
+            if (column != null && column.type() == TableColumnType.GEOMETRY) {
+                throw new IllegalArgumentException("ClickHouse Geometry 字段不能作为 MergeTree 排序键：" + orderByColumn);
+            }
+        }
     }
 
     private String clickHouseColumnType(TableColumnDefinition column) {
+        if (column.type() == TableColumnType.GEOMETRY) {
+            String physicalType = column.nullable() ? "Nullable(String)" : "String";
+            return physicalType + " COMMENT '" + ClickHouseWkbSpatialMarker.render(column.geometry()) + "'";
+        }
         String base = switch (column.type()) {
             case BYTE -> "Int8";
             case SHORT -> "Int16";
@@ -692,12 +797,111 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
             case TIMESTAMP_NTZ -> throw new IllegalArgumentException("ClickHouse managed tables do not support TIMESTAMP_NTZ fields");
             case DATETIME -> "DateTime";
             case BINARY -> throw new IllegalArgumentException("ClickHouse managed tables do not support BINARY fields");
-            case GEOMETRY -> throw new IllegalArgumentException("ClickHouse managed tables do not support GEOMETRY fields");
+            case GEOMETRY -> throw new IllegalStateException("Geometry is rendered before the scalar type switch");
         };
         return column.nullable() ? "Nullable(" + base + ")" : base;
     }
 
+    private static SpatialColumnMetadata wkbSpatialMetadata(
+            String nativeType,
+            ClickHouseWkbSpatialMarker.ParseResult marker
+    ) {
+        GeometryTypeDefinition geometry = marker.geometry();
+        String issue = marker.issue();
+        if (!isWkbStringType(nativeType)) {
+            issue = "ClickHouse WKB 空间声明只能用于 String 或 Nullable(String) 列";
+        }
+        return new SpatialColumnMetadata(
+                geometry == null ? null : geometry.kind().name(),
+                null,
+                geometry == null ? null : geometry.crs().authority(),
+                geometry == null ? null : geometry.crs().code(),
+                geometry == null ? null : geometry.dimension(),
+                false,
+                false,
+                SpatialStorageEncoding.WKB,
+                issue == null ? SpatialMetadataStrength.DECLARED : SpatialMetadataStrength.NONE,
+                issue
+        );
+    }
+
+    private static TypeMappingResult<PlatformTypeDefinition> mapWkbToPlatform(
+            String nativeType,
+            SpatialColumnMetadata spatial
+    ) {
+        if (spatial.issue() != null) {
+            return TypeMappingResult.unsupported(spatial.issue());
+        }
+        if (!isWkbStringType(nativeType)) {
+            return TypeMappingResult.unsupported(
+                    "ClickHouse WKB Geometry 必须使用 String 或 Nullable(String) 物理列"
+            );
+        }
+        if (spatial.metadataStrength() != SpatialMetadataStrength.DECLARED) {
+            return TypeMappingResult.unsupported("ClickHouse WKB Geometry 缺少完整的列 comment 空间声明");
+        }
+        GeometryTypeDefinition geometry = geometryDefinition(spatial);
+        if (geometry == null) {
+            return TypeMappingResult.unsupported("ClickHouse WKB Geometry 空间声明不完整");
+        }
+        String issue = SpatialTypeSupport.validateV1Geometry(geometry);
+        if (issue != null) {
+            return TypeMappingResult.unsupported(issue);
+        }
+        return new TypeMappingResult<>(
+                PlatformTypeDefinition.geometry(geometry),
+                TypeMappingQuality.EXACT,
+                WKB_MAPPING_MESSAGE
+        );
+    }
+
+    private static GeometryTypeDefinition geometryDefinition(SpatialColumnMetadata spatial) {
+        if (spatial.nativeGeometryKind() == null
+                || spatial.crsAuthority() == null
+                || spatial.crsCode() == null
+                || spatial.coordinateDimension() == null) {
+            return null;
+        }
+        try {
+            return new GeometryTypeDefinition(
+                    GeometryKind.valueOf(spatial.nativeGeometryKind()),
+                    new CrsReference(spatial.crsAuthority(), spatial.crsCode()),
+                    spatial.coordinateDimension()
+            );
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private static boolean matchesWkbGeometry(TableColumnDefinition expected, ColumnMetadata actual) {
+        SpatialColumnMetadata spatial = actual.spatial();
+        if (spatial == null || spatial.storageEncoding() != SpatialStorageEncoding.WKB) {
+            return false;
+        }
+        TypeMappingResult<PlatformTypeDefinition> mapping = mapWkbToPlatform(actual.nativeType(), spatial);
+        return mapping.acceptable() && expected.geometry().equals(mapping.definition().geometry());
+    }
+
+    private static boolean isWkbStringType(String nativeType) {
+        String value = nativeType == null ? "" : nativeType.trim();
+        return value.equalsIgnoreCase("String")
+                || (isNullableType(value) && unwrapNullable(value).equalsIgnoreCase("String"));
+    }
+
+    private static boolean isNullableType(String nativeType) {
+        String value = nativeType == null ? "" : nativeType.trim();
+        return value.regionMatches(true, 0, "Nullable(", 0, "Nullable(".length())
+                && value.endsWith(")");
+    }
+
+    private static boolean containsGeometry(TableDefinition definition) {
+        return definition.columns().stream().anyMatch(column -> column.type() == TableColumnType.GEOMETRY);
+    }
+
     private static String normalize(String value) {
         return value.trim().toLowerCase(Locale.ROOT);
+    }
+
+    private record ClickHouseColumnDetails(String nativeType, String comment) {
     }
 }

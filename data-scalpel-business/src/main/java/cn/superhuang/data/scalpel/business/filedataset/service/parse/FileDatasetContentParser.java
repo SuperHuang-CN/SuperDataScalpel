@@ -94,7 +94,7 @@ public class FileDatasetContentParser {
         }
         FileDatasetParser parser = requireParser(input.format());
         FileDatasetParsingConfiguration configuration = configuration(
-                readParsingOptions(input.parsingOptions()), input.sourceKey()
+                readParsingOptions(input.parsingOptions()), input.sourceKey(), input.epsgCodeOverride()
         );
         FileObjectStorage storage = requireStorage();
         if (parser.inputMode() == FileDatasetParserInputMode.FILE_GDB) {
@@ -176,7 +176,8 @@ public class FileDatasetContentParser {
 
     private static FileDatasetParsingConfiguration configuration(
             FileDatasetParsingOptionsResponse options,
-            String sourceKey
+            String sourceKey,
+            Integer epsgCodeOverride
     ) {
         return switch (options) {
             case FileDatasetParsingOptionsResponse.Csv value -> new FileDatasetParsingConfiguration.Csv(
@@ -198,9 +199,13 @@ public class FileDatasetContentParser {
                     );
             case FileDatasetParsingOptionsResponse.Parquet ignored -> new FileDatasetParsingConfiguration.Parquet();
             case FileDatasetParsingOptionsResponse.Avro ignored -> new FileDatasetParsingConfiguration.Avro();
-            case FileDatasetParsingOptionsResponse.Gdb ignored -> new FileDatasetParsingConfiguration.Gdb(sourceKey);
+            case FileDatasetParsingOptionsResponse.Gdb value ->
+                    new FileDatasetParsingConfiguration.Gdb(
+                            sourceKey, epsgCodeOverride == null ? value.epsgCode() : epsgCodeOverride
+                    );
             case FileDatasetParsingOptionsResponse.Shp value -> new FileDatasetParsingConfiguration.Shp(
-                    value.dbfCharsetOverride(), value.dbfFallbackCharset()
+                    value.dbfCharsetOverride(), value.dbfFallbackCharset(),
+                    epsgCodeOverride == null ? value.epsgCode() : epsgCodeOverride
             );
         };
     }
@@ -270,8 +275,20 @@ public class FileDatasetContentParser {
             String objectKey,
             long sizeBytes,
             String parsingOptions,
-            String sourceKey
+            String sourceKey,
+            Integer epsgCodeOverride
     ) {
+        public Input(
+                FileDatasetFormat format,
+                FileDatasetCompression compression,
+                String objectKey,
+                long sizeBytes,
+                String parsingOptions,
+                String sourceKey
+        ) {
+            this(format, compression, objectKey, sizeBytes, parsingOptions, sourceKey, null);
+        }
+
         public Input {
             Objects.requireNonNull(format, "文件格式不能为空");
             Objects.requireNonNull(compression, "文件压缩方式不能为空");

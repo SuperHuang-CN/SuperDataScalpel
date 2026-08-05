@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.dispatcher.artifact;
 
+import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendException;
 import cn.superhuang.data.scalpel.dispatcher.config.DispatcherArtifactProperties;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
@@ -11,20 +12,17 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.HexFormat;
 import java.util.HashSet;
+import java.util.Arrays;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 
 @Service
 public class DispatcherResultService {
-    private static final Set<String> SUPPORTED_NODE_TYPES = Set.of(
-            "MODEL_INPUT",
-            "JDBC_INPUT",
-            "HTTP_API_INPUT",
-            "JOIN",
-            "MODEL_OUTPUT",
-            "JDBC_OUTPUT"
-    );
+    private static final Set<String> SUPPORTED_NODE_TYPES = Arrays.stream(CanvasNodeType.values())
+            .map(Enum::name)
+            .collect(Collectors.toUnmodifiableSet());
 
     private final DispatcherArtifactService artifactService;
     private final DispatcherArtifactProperties properties;

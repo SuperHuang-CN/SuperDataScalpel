@@ -63,6 +63,9 @@ public class DynamicServiceRouteRegistry {
 
     public synchronized void register(StoredServiceDeployment deployment) {
         ServiceDeploymentRequest request = deployment.request();
+        if (request.definition().type() == DataServiceType.SCRIPT_API) {
+            throw new IllegalArgumentException("SCRIPT_API routes are owned by API Studio");
+        }
         String path = normalize(request.routePath());
         validate(request);
         UUID serviceId = request.serviceId();
@@ -132,6 +135,7 @@ public class DynamicServiceRouteRegistry {
         return switch (type) {
             case STANDARD_TABLE -> new HandlerBinding(standardHandlerProvider.getObject(), standardHandlerMethod);
             case SQL_QUERY -> new HandlerBinding(sqlHandlerProvider.getObject(), sqlHandlerMethod);
+            case SCRIPT_API -> throw new IllegalArgumentException("SCRIPT_API routes are owned by API Studio");
         };
     }
 

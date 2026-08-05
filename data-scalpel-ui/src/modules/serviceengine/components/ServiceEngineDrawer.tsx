@@ -157,7 +157,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
           </Space>
         )}
       >
-        <Form<ServiceEngineFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
+        <Form<ServiceEngineFormValues> autoComplete="off" form={form} layout="vertical" onFinish={(values) => void submit(values)}>
           <Row gutter={12}>
             <Col span={24}>
               <Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}>
@@ -186,7 +186,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
                     { max: 1000, message: 'Management Token 不能超过 1000 个字符' },
                   ]}
               >
-                <Input.Password autoComplete="new-password" />
+                <Input.Password name="service-engine-management-token" autoComplete="off" />
               </Form.Item>
             </Col>
             <Col span={12}>

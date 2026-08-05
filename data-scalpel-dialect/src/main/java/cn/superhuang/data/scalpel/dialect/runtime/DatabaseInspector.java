@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
+import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.ConnectionCheck;
 import cn.superhuang.data.scalpel.dialect.model.NamespaceInfo;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
@@ -72,6 +73,30 @@ public class DatabaseInspector {
     public TableMetadata readTable(String databaseType, JdbcConnectionConfig config, TableIdentifier table) {
         return execute(databaseType, config, (connection, dialect) ->
                 new JdbcMetadataReader(dialect).readTable(connection, table));
+    }
+
+    /**
+     * Reads one table through an already assembled, trusted runtime connection specification.
+     * This keeps task manifests from having to reverse-parse a JDBC URL back into host/port fields.
+     */
+    public TableMetadata readTable(String databaseType, JdbcConnectionSpec spec, TableIdentifier table) {
+        DatabaseDialect dialect = registry.require(databaseType);
+        try (Connection connection = connectionFactory.open(spec)) {
+            try {
+                connection.setReadOnly(true);
+            } catch (SQLException ignored) {
+                // Read-only mode is an optimization and is not supported by every JDBC driver.
+            }
+            return new JdbcMetadataReader(dialect).readTable(connection, table);
+        } catch (DatabaseAccessException exception) {
+            throw exception;
+        } catch (ClassNotFoundException | LinkageError exception) {
+            throw new DatabaseAccessException("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", exception);
+        } catch (IllegalArgumentException exception) {
+            throw new DatabaseAccessException("INVALID_CONNECTION_CONFIG", exception.getMessage(), exception);
+        } catch (SQLException exception) {
+            throw new DatabaseAccessException(errorCode(exception), safeMessage(exception), exception);
+        }
     }
 
     public TablePreview preview(String databaseType, JdbcConnectionConfig config, TableIdentifier table, int limit) {

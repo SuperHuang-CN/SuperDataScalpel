@@ -26,6 +26,7 @@ public record DataModelFieldInput(
         @NotNull Boolean nullable,
         @NotNull Boolean primaryKey,
         @Min(0) int sortOrder,
-        @Size(max = 500) String description
+        @Size(max = 500) String description,
+        UUID standardDictionaryId
 ) {
 }

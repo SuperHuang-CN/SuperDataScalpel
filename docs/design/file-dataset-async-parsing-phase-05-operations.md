@@ -26,8 +26,8 @@ MinIO Bucket 必须关闭版本管理和 Object Lock。Bucket 生命周期策略
 ## 部署
 
 升级前停止 Admin、Worker、Task Engine 和 Dispatcher，排空或取消旧 Manifest 任务，清空
-`data-scalpel/file-datasets/` 前缀并执行破坏性重建 SQL。Task Engine 与 Admin 同步升级并严格
-使用 Manifest v7。
+`data-scalpel/file-datasets/` 前缀并执行破坏性重建 SQL。Task Engine 与 Admin 同步升级并
+使用 Manifest v8。
 
 ## 监控
 

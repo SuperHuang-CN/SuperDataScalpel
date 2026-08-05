@@ -8,6 +8,7 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.datasource.repository.ApiResourceRepository;
+import cn.superhuang.data.scalpel.business.datasource.repository.SpatialFeatureResourceRepository;
 import cn.superhuang.data.scalpel.business.datasource.web.request.CreateDataSourceRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.DataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.JdbcDataSourceConnectionRequest;
@@ -23,10 +24,12 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.TableListResp
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadataResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TablePreviewResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.KafkaTopicResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.JdbcQueryInspectionResponse;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineDataSourceRegistrationService;
+import cn.superhuang.data.scalpel.business.service.repository.ScriptDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
@@ -56,8 +59,10 @@ public class DataSourceService {
     private final DataModelRepository dataModelRepository;
     private final ServiceEngineDataSourceRegistrationService engineDataSourceRegistrationService;
     private final SqlDataServiceDefinitionRepository sqlServiceDefinitionRepository;
+    private final ScriptDataServiceDefinitionRepository scriptServiceDefinitionRepository;
     private final DataSourceCredentialCipher credentialCipher;
     private final ApiResourceRepository apiResourceRepository;
+    private final SpatialFeatureResourceRepository spatialFeatureResourceRepository;
 
     public DataSourceService(
             DataSourceRepository repository,
@@ -67,8 +72,10 @@ public class DataSourceService {
             DataModelRepository dataModelRepository,
             ServiceEngineDataSourceRegistrationService engineDataSourceRegistrationService,
             SqlDataServiceDefinitionRepository sqlServiceDefinitionRepository,
+            ScriptDataServiceDefinitionRepository scriptServiceDefinitionRepository,
             DataSourceCredentialCipher credentialCipher,
-            ApiResourceRepository apiResourceRepository
+            ApiResourceRepository apiResourceRepository,
+            SpatialFeatureResourceRepository spatialFeatureResourceRepository
     ) {
         this.repository = repository;
         this.searchEngine = searchEngine;
@@ -77,8 +84,10 @@ public class DataSourceService {
         this.dataModelRepository = dataModelRepository;
         this.engineDataSourceRegistrationService = engineDataSourceRegistrationService;
         this.sqlServiceDefinitionRepository = sqlServiceDefinitionRepository;
+        this.scriptServiceDefinitionRepository = scriptServiceDefinitionRepository;
         this.credentialCipher = credentialCipher;
         this.apiResourceRepository = apiResourceRepository;
+        this.spatialFeatureResourceRepository = spatialFeatureResourceRepository;
     }
 
     @Transactional(readOnly = true)
@@ -149,11 +158,17 @@ public class DataSourceService {
         if (apiResourceRepository.existsByDataSourceId(id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源下存在 API 资源，不能删除");
         }
+        if (spatialFeatureResourceRepository.existsByDataSourceId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源下存在空间要素资源，不能删除");
+        }
         if (dataModelRepository.existsByStorageDataSourceId(id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源已被模型使用，不能删除");
         }
         if (sqlServiceDefinitionRepository.existsByDataSourceId(id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源已被 SQL 服务使用，不能删除");
+        }
+        if (scriptServiceDefinitionRepository.existsByDataSourceId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源已被脚本服务使用，不能删除");
         }
         repository.deleteById(id);
     }
@@ -186,6 +201,10 @@ public class DataSourceService {
 
     public TablePreviewResponse preview(UUID id, String catalog, String schema, String table, int limit) {
         return runtimeService.preview(id, catalog, schema, table, limit);
+    }
+
+    public JdbcQueryInspectionResponse inspectQuery(UUID id, String sql) {
+        return runtimeService.inspectQuery(id, sql);
     }
 
     public List<KafkaTopicResponse> listKafkaTopics(UUID id, String keyword) {

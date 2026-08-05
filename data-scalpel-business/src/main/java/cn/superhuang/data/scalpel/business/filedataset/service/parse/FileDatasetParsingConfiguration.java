@@ -49,16 +49,19 @@ public sealed interface FileDatasetParsingConfiguration permits
     record Avro() implements FileDatasetParsingConfiguration {
     }
 
-    record Gdb(String layerId) implements FileDatasetParsingConfiguration {
+    record Gdb(String layerId, Integer epsgCode) implements FileDatasetParsingConfiguration {
         public Gdb {
             if (layerId == null || layerId.isBlank()) {
                 throw new IllegalArgumentException("GDB 图层 ID 不能为空");
             }
             layerId = layerId.trim();
+            if (epsgCode != null && epsgCode < 1) {
+                throw new IllegalArgumentException("GDB EPSG code 必须为正整数");
+            }
         }
     }
 
-    record Shp(String dbfCharsetOverride, String dbfFallbackCharset)
+    record Shp(String dbfCharsetOverride, String dbfFallbackCharset, Integer epsgCode)
             implements FileDatasetParsingConfiguration {
         public Shp {
             dbfCharsetOverride = dbfCharsetOverride == null || dbfCharsetOverride.isBlank()
@@ -67,6 +70,9 @@ public sealed interface FileDatasetParsingConfiguration permits
                 throw new IllegalArgumentException("SHP DBF 回退编码不能为空");
             }
             dbfFallbackCharset = dbfFallbackCharset.trim();
+            if (epsgCode != null && epsgCode < 1) {
+                throw new IllegalArgumentException("SHP EPSG code 必须为正整数");
+            }
         }
     }
 }

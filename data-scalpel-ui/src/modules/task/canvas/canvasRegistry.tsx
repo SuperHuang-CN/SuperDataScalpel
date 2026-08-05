@@ -1,183 +1,70 @@
 /* eslint-disable react-refresh/only-export-components -- X6 consumes this module as a runtime node registry. */
-import {
-  BranchesOutlined,
-  CloudServerOutlined,
-  DatabaseOutlined,
-  DeleteOutlined,
-  FileTextOutlined,
-  SaveOutlined,
-  SwapOutlined,
-} from '@ant-design/icons';
+import { DeleteOutlined } from '@ant-design/icons';
 import type { Node } from '@antv/x6';
 import { register } from '@antv/x6-react-shape';
 import { Button, Tag, Tooltip } from 'antd';
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { requestCanvasNodeDeletion } from './canvasNodeDeletion';
+import { CanvasCategoryIcon, CanvasNodeIcon } from './components/CanvasNodeIcons';
 import {
-  CanvasNodeCategory,
-  CanvasNodeType,
   type CanvasExecutionMode,
+  type CanvasNodeCategory,
   type CanvasNodeRuntimeData,
   type CanvasNodeValidationStatus,
 } from './canvasTypes';
+import { canvasNodeRegistry } from './nodes/nodeRegistry';
+import {
+  CANVAS_RUNTIME_NODE_SHAPE,
+  type CanvasNodeIconKey as CanvasNodeIconKeyValue,
+} from './nodes/nodeSpec';
+import type { CanvasNodeGroup } from './nodes/nodeGroups';
 
 export interface CanvasNodeTemplate {
-  type: CanvasNodeType;
-  shape: string;
+  type: CanvasNodeRuntimeData['type'];
+  shape: typeof CANVAS_RUNTIME_NODE_SHAPE;
   label: string;
   description: string;
   searchKeywords: readonly string[];
   category: CanvasNodeCategory;
+  group: CanvasNodeGroup;
+  iconKey: CanvasNodeIconKeyValue;
+  order: number;
   width: number;
   height: number;
   supportedModes: readonly CanvasExecutionMode[];
 }
 
-export const canvasNodeTemplates: readonly CanvasNodeTemplate[] = [
-  {
-    type: CanvasNodeType.ModelInput,
-    shape: 'datascalpel-model-input',
-    label: '模型输入',
-    description: '从已发布模型读取结构化数据',
-    searchKeywords: ['model', '模型', '读取'],
-    category: CanvasNodeCategory.Input,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH'],
-  },
-  {
-    type: CanvasNodeType.JdbcInput,
-    shape: 'datascalpel-jdbc-input',
-    label: 'JDBC 输入',
-    description: '从 JDBC 数据源读取物理表',
-    searchKeywords: ['jdbc', '数据库', '数据源', '物理表'],
-    category: CanvasNodeCategory.Input,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH', 'STREAMING'],
-  },
-  {
-    type: CanvasNodeType.FileDatasetInput,
-    shape: 'datascalpel-file-dataset-input',
-    label: '文件数据集输入',
-    description: '从平台文件数据集读取表数据',
-    searchKeywords: ['file', 'dataset', '文件', '数据集'],
-    category: CanvasNodeCategory.Input,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH'],
-  },
-  {
-    type: CanvasNodeType.HttpApiInput,
-    shape: 'datascalpel-http-api-input',
-    label: 'HTTP API 输入',
-    description: '调用 HTTP API 生成数据表',
-    searchKeywords: ['http', 'api', '接口', '请求'],
-    category: CanvasNodeCategory.Input,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH'],
-  },
-  {
-    type: CanvasNodeType.KafkaInput,
-    shape: 'datascalpel-kafka-input',
-    label: 'Kafka 输入',
-    description: '持续消费 Kafka Topic 数据',
-    searchKeywords: ['kafka', 'topic', '消息', '流式'],
-    category: CanvasNodeCategory.Input,
-    width: 240,
-    height: 120,
-    supportedModes: ['STREAMING'],
-  },
-  {
-    type: CanvasNodeType.Join,
-    shape: 'datascalpel-join',
-    label: 'Join 处理器',
-    description: '按字段条件合并两张数据表',
-    searchKeywords: ['join', '关联', '连接', '合并'],
-    category: CanvasNodeCategory.Processor,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH'],
-  },
-  {
-    type: CanvasNodeType.StreamJoin,
-    shape: 'datascalpel-stream-join',
-    label: '流-维 Join',
-    description: '将实时数据流与静态维表关联',
-    searchKeywords: ['stream', 'join', '流', '维表', '关联'],
-    category: CanvasNodeCategory.Processor,
-    width: 240,
-    height: 120,
-    supportedModes: ['STREAMING'],
-  },
-  {
-    type: CanvasNodeType.Rename,
-    shape: 'datascalpel-rename',
-    label: '重命名',
-    description: '重命名数据表或字段',
-    searchKeywords: ['rename', '名称', '表名', '字段名'],
-    category: CanvasNodeCategory.Processor,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH', 'STREAMING'],
-  },
-  {
-    type: CanvasNodeType.ModelOutput,
-    shape: 'datascalpel-model-output',
-    label: '模型输出',
-    description: '将处理结果写入平台模型',
-    searchKeywords: ['model', '模型', '写入', '保存'],
-    category: CanvasNodeCategory.Output,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH'],
-  },
-  {
-    type: CanvasNodeType.JdbcOutput,
-    shape: 'datascalpel-jdbc-output',
-    label: 'JDBC 输出',
-    description: '将处理结果写入 JDBC 目标表',
-    searchKeywords: ['jdbc', '数据库', '目标表', '写入'],
-    category: CanvasNodeCategory.Output,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH', 'STREAMING'],
-  },
-  {
-    type: CanvasNodeType.KafkaOutput,
-    shape: 'datascalpel-kafka-output',
-    label: 'Kafka 输出',
-    description: '将处理结果发送到 Kafka Topic',
-    searchKeywords: ['kafka', 'topic', '消息', '发送'],
-    category: CanvasNodeCategory.Output,
-    width: 240,
-    height: 120,
-    supportedModes: ['STREAMING'],
-  },
-  {
-    type: CanvasNodeType.FileOutput,
-    shape: 'datascalpel-file-output',
-    label: '文件输出',
-    description: '将处理结果写入外部 S3 目录',
-    searchKeywords: ['file', 's3', 'csv', 'json', 'parquet', '文件', '对象存储'],
-    category: CanvasNodeCategory.Output,
-    width: 240,
-    height: 120,
-    supportedModes: ['BATCH'],
-  },
-];
+export const canvasNodeTemplates: readonly CanvasNodeTemplate[] = canvasNodeRegistry.all().map((spec) => ({
+  type: spec.type,
+  shape: CANVAS_RUNTIME_NODE_SHAPE,
+  label: spec.label,
+  description: spec.description,
+  searchKeywords: spec.searchKeywords,
+  category: spec.category,
+  group: spec.group,
+  iconKey: spec.iconKey,
+  order: spec.order,
+  width: spec.defaultSize.width,
+  height: spec.defaultSize.height,
+  supportedModes: spec.supportedModes,
+}));
 
-export const canvasNodeTemplate = (type: CanvasNodeType): CanvasNodeTemplate => {
-  const template = canvasNodeTemplates.find((candidate) => candidate.type === type);
-  if (!template) throw new Error(`未知 Canvas 节点类型：${type}`);
-  return template;
-};
-
-const categoryIcon: Record<CanvasNodeCategory, ReactNode> = {
-  [CanvasNodeCategory.Input]: <DatabaseOutlined />,
-  [CanvasNodeCategory.Processor]: <BranchesOutlined />,
-  [CanvasNodeCategory.Output]: <SaveOutlined />,
+export const canvasNodeTemplate = (type: CanvasNodeRuntimeData['type']): CanvasNodeTemplate => {
+  const spec = canvasNodeRegistry.require(type);
+  return {
+    type: spec.type,
+    shape: CANVAS_RUNTIME_NODE_SHAPE,
+    label: spec.label,
+    description: spec.description,
+    searchKeywords: spec.searchKeywords,
+    category: spec.category,
+    group: spec.group,
+    iconKey: spec.iconKey,
+    order: spec.order,
+    width: spec.defaultSize.width,
+    height: spec.defaultSize.height,
+    supportedModes: spec.supportedModes,
+  };
 };
 
 const validationLabel: Record<CanvasNodeValidationStatus, { color: string; label: string }> = {
@@ -186,96 +73,6 @@ const validationLabel: Record<CanvasNodeValidationStatus, { color: string; label
   VALID: { color: 'success', label: '有效' },
   WARNING: { color: 'warning', label: '有警告' },
   ERROR: { color: 'error', label: '有错误' },
-};
-
-const nodeSummary = (data: CanvasNodeRuntimeData): string => {
-  switch (data.type) {
-    case CanvasNodeType.ModelInput:
-      if (!data.configuration.modelId) return '请选择来源模型';
-      return data.summary?.kind === 'MODEL'
-        ? `${data.summary.modelName} · ${data.summary.modelCode} · v${data.summary.modelSchemaVersion}`
-        : `模型 ${data.configuration.modelId}`;
-    case CanvasNodeType.JdbcInput: {
-      if (!data.configuration.tableName) return '请选择来源表';
-      return data.summary?.kind === 'JDBC'
-        ? `${data.summary.dataSourceName} · ${data.summary.qualifiedTableName}`
-        : `未知数据源 · ${data.configuration.tableName}`;
-    }
-    case CanvasNodeType.FileDatasetInput: {
-      if (!data.configuration.fileDatasetTableId) return '请选择文件数据集表';
-      return data.summary?.kind === 'FILE_DATASET'
-        ? `${data.summary.fileDatasetName} · ${data.summary.tableName} (${data.summary.tableCode}) · ${data.summary.status}`
-        : `文件表 ${data.configuration.fileDatasetTableId}`;
-    }
-    case CanvasNodeType.HttpApiInput: {
-      const { dataSourceId, resourceId, outputTableName } = data.configuration;
-      if (!dataSourceId || !resourceId || !outputTableName) return '请选择 API 资源并设置输出表';
-      return data.summary?.kind === 'HTTP_API'
-        ? `${data.summary.dataSourceName} · ${data.summary.qualifiedTableName} → ${outputTableName}`
-        : `${resourceId} → ${outputTableName}`;
-    }
-    case CanvasNodeType.KafkaInput: {
-      const { dataSourceId, topic, valueSchema, outputTableName } = data.configuration;
-      if (!dataSourceId || !topic || valueSchema.columns.length === 0 || !outputTableName) {
-        return '请配置 Kafka 输入';
-      }
-      return data.summary?.kind === 'KAFKA'
-        ? `${data.summary.dataSourceName} · ${topic} → ${outputTableName} · ${valueSchema.columns.length} 字段`
-        : `${topic} → ${outputTableName} · ${valueSchema.columns.length} 字段`;
-    }
-    case CanvasNodeType.Join: {
-      const { leftTableName, rightTableName, outputTableName, joinType } = data.configuration;
-      if (!leftTableName || !rightTableName || !outputTableName || !joinType) return '请配置 Join';
-      return `${leftTableName} ${joinType} ${rightTableName} → ${outputTableName}`;
-    }
-    case CanvasNodeType.StreamJoin: {
-      const { leftTableName, rightTableName, outputTableName, joinType } = data.configuration;
-      if (!leftTableName || !rightTableName || !outputTableName || !joinType) return '请配置流-维 Join';
-      return `${leftTableName} ${joinType} ${rightTableName} → ${outputTableName}`;
-    }
-    case CanvasNodeType.Rename: {
-      const { sourceTableName, outputTableName, columnMappings } = data.configuration;
-      if (!sourceTableName || !outputTableName) return '请选择来源表并设置输出表名';
-      const tableSummary = sourceTableName === outputTableName
-        ? sourceTableName
-        : `${sourceTableName} → ${outputTableName}`;
-      return columnMappings.length > 0
-        ? `${tableSummary} · ${columnMappings.length} 个字段`
-        : tableSummary;
-    }
-    case CanvasNodeType.ModelOutput: {
-      const { sourceTableName, targetModelId, writeMode } = data.configuration;
-      if (!sourceTableName || !targetModelId || !writeMode) return '请选择输出模型';
-      const target = data.summary?.kind === 'MODEL'
-        ? `${data.summary.modelName} · ${data.summary.modelCode}`
-        : `模型 ${targetModelId}`;
-      return `${sourceTableName} → ${target} (${writeMode})`;
-    }
-    case CanvasNodeType.JdbcOutput: {
-      const { sourceTableName, dataSourceId, targetTableName, writeMode } = data.configuration;
-      if (!sourceTableName || !targetTableName || !writeMode) return '请选择输出目标';
-      const target = data.summary?.kind === 'JDBC'
-        ? data.summary.qualifiedTableName
-        : `${dataSourceId || '未知数据源'}.${targetTableName}`;
-      return `${sourceTableName} → ${target} (${writeMode})`;
-    }
-    case CanvasNodeType.KafkaOutput: {
-      const { sourceTableName, dataSourceId, topic, valueSchema } = data.configuration;
-      if (!sourceTableName || !dataSourceId || !topic || valueSchema.columns.length === 0) {
-        return '请配置 Kafka 输出';
-      }
-      return data.summary?.kind === 'KAFKA'
-        ? `${sourceTableName} → ${data.summary.dataSourceName} · ${topic} · ${valueSchema.columns.length} 字段`
-        : `${sourceTableName} → ${topic} · ${valueSchema.columns.length} 字段`;
-    }
-    case CanvasNodeType.FileOutput: {
-      const {
-        sourceTableName, dataSourceId, targetPath, conflictPolicy, formatOptions,
-      } = data.configuration;
-      if (!sourceTableName || !dataSourceId || !targetPath) return '请配置文件输出';
-      return `${sourceTableName} → ${formatOptions.type} · ${targetPath} (${conflictPolicy})`;
-    }
-  }
 };
 
 interface CanvasNodeViewProps {
@@ -299,6 +96,14 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
   }, [node]);
 
   useEffect(() => {
+    const refresh = () => setSize(node.getSize());
+    node.on('change:size', refresh);
+    return () => {
+      node.off('change:size', refresh);
+    };
+  }, [node]);
+
+  useEffect(() => {
     if (!editingName) return;
     nameInputRef.current?.focus();
     nameInputRef.current?.select();
@@ -317,9 +122,7 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
       setDraftName(data.name);
       return;
     }
-    if (nextName !== data.name) {
-      node.setData({ name: nextName }, { canvasNodeRename: true });
-    }
+    if (nextName !== data.name) node.setData({ name: nextName }, { canvasNodeRename: true });
   };
 
   const cancelNameEdit = () => {
@@ -328,25 +131,20 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
     setEditingName(false);
   };
 
-  useEffect(() => {
-    const refresh = () => setSize(node.getSize());
-    node.on('change:size', refresh);
-    return () => {
-      node.off('change:size', refresh);
-    };
-  }, [node]);
-
   const template = canvasNodeTemplate(data.type);
+  const summary = canvasNodeRegistry.summarize(data);
   const validation = data.validation ?? validationLabel.UNCHECKED;
   const validationPresentation = 'status' in validation ? validationLabel[validation.status] : validation;
 
   return (
     <div
-      className={`canvas-node canvas-node-${validationPresentation.color}`}
+      className={`canvas-node canvas-node-category-${template.category.toLowerCase()} canvas-node-${validationPresentation.color}`}
       style={{ width: size.width, height: size.height }}
     >
       <div className={`canvas-node-header canvas-node-header-${template.category.toLowerCase()}`}>
-        <span>{categoryIcon[template.category]}</span>
+        <span className="canvas-node-category-icon">
+          <CanvasCategoryIcon category={template.category} />
+        </span>
         {editingName ? (
           <input
             ref={nameInputRef}
@@ -382,7 +180,7 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
             role="button"
             tabIndex={0}
             aria-label={`重命名节点 ${data.name}`}
-            title={`${canvasNodeTemplate(data.type).label} · 双击重命名`}
+            title={`${template.label} · 双击重命名`}
             onDoubleClick={(event) => {
               event.stopPropagation();
               beginNameEdit();
@@ -415,12 +213,8 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
         </Tooltip>
       </div>
       <div className="canvas-node-body">
-        {data.type === CanvasNodeType.KafkaInput || data.type === CanvasNodeType.KafkaOutput
-          ? <CloudServerOutlined />
-          : data.type === CanvasNodeType.FileDatasetInput
-            ? <FileTextOutlined />
-            : <SwapOutlined />}
-        <span className="canvas-node-summary" title={nodeSummary(data)}>{nodeSummary(data)}</span>
+        <CanvasNodeIcon iconKey={template.iconKey} />
+        <span className="canvas-node-summary" title={summary}>{summary}</span>
       </div>
       <div className="canvas-node-status">
         <Tag color={validationPresentation.color}>{validationPresentation.label}</Tag>
@@ -434,16 +228,12 @@ let didRegisterCanvasNodes = false;
 
 export const registerCanvasNodes = () => {
   if (didRegisterCanvasNodes) return;
-
-  canvasNodeTemplates.forEach((template) => {
-    register({
-      shape: template.shape,
-      width: template.width,
-      height: template.height,
-      component: CanvasNodeView,
-      effect: ['data'],
-    });
+  register({
+    shape: CANVAS_RUNTIME_NODE_SHAPE,
+    width: 240,
+    height: 120,
+    component: CanvasNodeView,
+    effect: ['data'],
   });
-
   didRegisterCanvasNodes = true;
 };

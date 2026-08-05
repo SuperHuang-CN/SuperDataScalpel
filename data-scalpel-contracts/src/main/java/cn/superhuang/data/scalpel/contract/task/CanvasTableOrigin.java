@@ -15,12 +15,20 @@ public record CanvasTableOrigin(
         return new CanvasTableOrigin("JDBC", dataSourceId, tableName, null, null, null, null);
     }
 
+    public static CanvasTableOrigin jdbcQuery(UUID dataSourceId, String outputTableName) {
+        return new CanvasTableOrigin("JDBC_QUERY", dataSourceId, outputTableName, null, null, null, null);
+    }
+
     public static CanvasTableOrigin model(UUID modelId, String modelCode, int schemaVersion) {
         return new CanvasTableOrigin("MODEL", null, null, modelId, modelCode, schemaVersion, null);
     }
 
     public static CanvasTableOrigin httpApi(UUID dataSourceId, UUID resourceId) {
         return new CanvasTableOrigin("HTTP_API", dataSourceId, resourceId.toString(), null, null, null, null);
+    }
+
+    public static CanvasTableOrigin spatialService(UUID dataSourceId, UUID resourceId) {
+        return new CanvasTableOrigin("SPATIAL_SERVICE", dataSourceId, resourceId.toString(), null, null, null, null);
     }
 
     public static CanvasTableOrigin kafka(UUID dataSourceId, String topic) {

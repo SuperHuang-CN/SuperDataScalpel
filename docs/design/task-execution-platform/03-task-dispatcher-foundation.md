@@ -62,17 +62,19 @@ cn.superhuang.data.scalpel.dispatcher
 
 ## 4. 数据库和 Schema
 
-Dispatcher 使用与 Admin 相同的数据库连接账户，但 URL 固定当前 Schema：
+Dispatcher 使用与 Admin 相同的数据库连接账户，数据库 URL 和 Schema 独立配置：
 
 ```properties
-spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/data_scalpel?currentSchema=dispatcher
+spring.datasource.url=jdbc:postgresql://127.0.0.1:5432/data_scalpel
 spring.datasource.username=${与 Admin 相同}
 spring.datasource.password=${与 Admin 相同}
-spring.jpa.properties.hibernate.default_schema=dispatcher
+spring.datasource.hikari.schema=${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:dispatcher}
+spring.jpa.properties.hibernate.default_schema=${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:dispatcher}
+spring.jpa.properties.hibernate.hbm2ddl.create_namespaces=true
 spring.jpa.hibernate.ddl-auto=update
 ```
 
-部署前创建：
+数据库用户必须具有创建目标 Schema 的权限；也可以由运维提前创建：
 
 ```sql
 CREATE SCHEMA IF NOT EXISTS dispatcher;

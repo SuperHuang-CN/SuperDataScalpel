@@ -19,7 +19,12 @@ import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.NodeCompilationResult;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import org.apache.spark.scheduler.SparkListener;
 import org.apache.spark.scheduler.SparkListenerJobStart;
 import org.apache.spark.sql.SparkSession;
@@ -49,7 +54,7 @@ class CanvasModelNodeOperatorSparkTest {
 
     @BeforeAll
     void startSpark() {
-        sparkSession = SparkSession.builder()
+        sparkSession = SedonaSparkSupport.initialize(SedonaSparkSupport.builder()
                 .master("local[1]")
                 .appName("canvas-model-node-compiler-test")
                 .config("spark.ui.enabled", "false")
@@ -58,7 +63,7 @@ class CanvasModelNodeOperatorSparkTest {
                 .config("spark.sql.caseSensitive", "true")
                 .config("spark.sql.ansi.enabled", "true")
                 .config("spark.sql.session.timeZone", "UTC")
-                .getOrCreate();
+                .getOrCreate());
     }
 
     @AfterAll
@@ -117,32 +122,32 @@ class CanvasModelNodeOperatorSparkTest {
     }
 
     @Test
-    void rejectsGeometryModelsWithAStableSpatialError() {
-        List<MetadataModel> geometryInput = List.of(
+    void compilesGeometryModelsWithSedonaSchema() {
+        List<MetadataModel> geometryModels = List.of(
                 model(inputModelId, "orders_model", MetadataModelStatus.PUBLISHED,
                         MetadataModelPhysicalTableMode.MANAGED, true),
                 model(outputModelId, "orders_target", MetadataModelStatus.PUBLISHED,
-                        MetadataModelPhysicalTableMode.MANAGED)
-        );
-        CanvasCompilation inputCompilation = compile(
-                definition(inputModelId, outputModelId, JdbcWriteMode.APPEND),
-                metadata(geometryInput)
-        );
-        assertFalse(inputCompilation.valid());
-        assertIssue(inputCompilation.nodeResults().getFirst(), "SPATIAL_FIELD_UNSUPPORTED");
-
-        List<MetadataModel> geometryOutput = List.of(
-                model(inputModelId, "orders_model", MetadataModelStatus.PUBLISHED,
-                        MetadataModelPhysicalTableMode.MANAGED),
-                model(outputModelId, "orders_target", MetadataModelStatus.PUBLISHED,
                         MetadataModelPhysicalTableMode.MANAGED, true)
         );
-        CanvasCompilation outputCompilation = compile(
+        CanvasCompilation compilation = compile(
                 definition(inputModelId, outputModelId, JdbcWriteMode.APPEND),
-                metadata(geometryOutput)
+                metadata(geometryModels)
         );
-        assertFalse(outputCompilation.valid());
-        assertIssue(outputCompilation.nodeResults().get(1), "SPATIAL_FIELD_UNSUPPORTED");
+
+        assertTrue(compilation.valid(), () -> compilation.nodeResults().toString());
+        CanvasColumnSchema geometry = compilation.nodeResults().getFirst().outputTables().getFirst()
+                .columns().stream()
+                .filter(column -> column.fieldType() == PlatformDataType.GEOMETRY)
+                .findFirst()
+                .orElseThrow();
+        assertEquals(
+                new GeometryTypeDefinition(
+                        GeometryKind.POINT,
+                        new CrsReference("EPSG", 4326),
+                        CoordinateDimension.XY
+                ),
+                geometry.geometry()
+        );
     }
 
     @Test
@@ -197,7 +202,7 @@ class CanvasModelNodeOperatorSparkTest {
                                 inputNodeId,
                                 "模型输入",
                                 new CanvasNodeLayout(0d, 0d, 240d, 120d),
-                                new ModelInputConfiguration(sourceModelId)
+                                new ModelInputConfiguration(sourceModelId.toString())
                         ),
                         new ModelOutputNodeDefinition(
                                 outputNodeId,
@@ -205,7 +210,7 @@ class CanvasModelNodeOperatorSparkTest {
                                 new CanvasNodeLayout(320d, 0d, 240d, 120d),
                                 new ModelOutputConfiguration(
                                         "orders_model",
-                                        targetModelId,
+                                        targetModelId.toString(),
                                         writeMode,
                                         ColumnMappingMode.BY_NAME,
                                         List.of()
@@ -268,7 +273,12 @@ class CanvasModelNodeOperatorSparkTest {
                     null,
                     false,
                     false,
-                    null
+                    null,
+                    new GeometryTypeDefinition(
+                            GeometryKind.POINT,
+                            new CrsReference("EPSG", 4326),
+                            CoordinateDimension.XY
+                    )
             ));
         }
         return new MetadataModel(

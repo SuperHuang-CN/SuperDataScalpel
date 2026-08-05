@@ -41,9 +41,9 @@ export const SystemUserPasswordModal = ({ user, onClose }: SystemUserPasswordMod
         confirmLoading={resetMutation.isPending}
         destroyOnHidden
       >
-        <Form form={form} layout="vertical" requiredMark={false} onFinish={submit}>
+        <Form autoComplete="off" form={form} layout="vertical" requiredMark={false} onFinish={submit}>
           <Form.Item name="password" label="新密码" rules={[{ required: true, min: 8, message: '密码至少 8 位' }]}>
-            <Input.Password autoComplete="new-password" />
+            <Input.Password name="managed-user-reset-secret" autoComplete="off" />
           </Form.Item>
         </Form>
       </Modal>

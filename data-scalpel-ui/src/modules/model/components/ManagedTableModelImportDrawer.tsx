@@ -37,6 +37,7 @@ import {
   type ManagedDataModelDraftResult,
   useCreateManagedDataModelDrafts,
   useManagedImportPreviews,
+  useModelWarehouseLayers,
   usePlatformTypeCapabilities,
 } from '../hooks/useDataModels';
 import {
@@ -47,6 +48,8 @@ import {
 } from '../model/dataModel';
 import {
   applyManagedImportPreview,
+  applyManagedDraftWarehouseLayer,
+  clearDuplicateManagedDraftCodeCandidates,
   hasManagedTableDraftIssues,
   isManagedImportSourceSelectable,
   isManagedImportTargetSelectable,
@@ -81,6 +84,13 @@ const jdbcDataSourceRequest = {
   page: 0,
   size: 500,
   sort: 'code',
+} as const;
+
+const enabledWarehouseLayerRequest = {
+  search: 'enabled:"true"',
+  page: 0,
+  size: 500,
+  sort: 'sortOrder,code',
 } as const;
 
 const namespaceKey = (namespace: Pick<DataSourceNamespace, 'catalog' | 'schema'>): string => JSON.stringify([
@@ -192,7 +202,7 @@ const FieldEditor = ({
           className="managed-import-field-alert"
         />
       ) : null}
-      <Form<ManagedImportFieldDraft> form={form} layout="vertical">
+      <Form<ManagedImportFieldDraft> autoComplete="off" form={form} layout="vertical">
         <div className="managed-import-field-form-grid">
           <Form.Item
             label="字段编码"
@@ -305,6 +315,7 @@ export const ManagedTableModelImportDrawer = ({
     initialTargetStorageDataSourceId,
   );
   const [directoryId, setDirectoryId] = useState<string | undefined>(initialDirectoryId);
+  const [warehouseLayerId, setWarehouseLayerId] = useState<string>();
   const [keyword, setKeyword] = useState('');
   const [selectedTables, setSelectedTables] = useState<Map<string, DataSourceTable>>(new Map());
   const [drafts, setDrafts] = useState<ManagedTableModelDraft[]>([]);
@@ -312,6 +323,7 @@ export const ManagedTableModelImportDrawer = ({
   const [editingField, setEditingField] = useState<{ draftKey: string; fieldKey: string }>();
   const [modalApi, modalContext] = Modal.useModal();
   const dataSourcesQuery = useDataSources(jdbcDataSourceRequest, open);
+  const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
   const namespacesQuery = useDataSourceNamespaces(sourceDataSourceId, open && step === 0);
   const selectedNamespace = namespacesQuery.data?.find((namespace) => namespaceKey(namespace) === namespaceId)
@@ -358,6 +370,12 @@ export const ManagedTableModelImportDrawer = ({
     value: namespaceKey(namespace),
     label: namespace.displayName,
   })) ?? [];
+  const warehouseLayerOptions = warehouseLayersQuery.data?.content.map((layer) => ({
+    value: layer.id,
+    label: `${layer.code} · ${layer.name}${layer.modelCodePrefix ? `（${layer.modelCodePrefix}*）` : ''}`,
+  })) ?? [];
+  const warehouseLayerPrefix = (layerId?: string) => warehouseLayersQuery.data?.content
+    .find((layer) => layer.id === layerId)?.modelCodePrefix ?? undefined;
 
   const loadPreviews = async (
     targetId: string,
@@ -411,6 +429,8 @@ export const ManagedTableModelImportDrawer = ({
     const nextDrafts = mergeManagedTableModelDrafts(
       [...selectedTables.values()].sort((left, right) => managedTableLocation(left).localeCompare(managedTableLocation(right))),
       drafts,
+      warehouseLayerId,
+      warehouseLayerPrefix(warehouseLayerId),
     );
     const newDrafts = nextDrafts.filter((draft) => !drafts.some((current) => current.key === draft.key));
     setDrafts(nextDrafts);
@@ -459,8 +479,32 @@ export const ManagedTableModelImportDrawer = ({
     field: 'code' | 'name' | 'description' | 'physicalTableName',
     value: string,
   ) => setDrafts((current) => current.map((draft) => draft.key === key
-    ? { ...draft, [field]: value, modelValuesLocked: true }
+    ? {
+      ...draft,
+      [field]: value,
+      codeOverridden: draft.codeOverridden || field === 'code',
+      modelValuesLocked: true,
+    }
     : draft));
+
+  const selectBatchWarehouseLayer = (value?: string) => {
+    setWarehouseLayerId(value);
+    const prefix = warehouseLayerPrefix(value);
+    setDrafts((current) => clearDuplicateManagedDraftCodeCandidates(
+      current.map((draft) => draft.warehouseLayerOverridden
+        ? draft
+        : applyManagedDraftWarehouseLayer(draft, value, prefix, false)),
+    ));
+  };
+
+  const selectDraftWarehouseLayer = (key: string, value?: string) => {
+    const prefix = warehouseLayerPrefix(value);
+    setDrafts((current) => clearDuplicateManagedDraftCodeCandidates(
+      current.map((draft) => draft.key === key
+        ? applyManagedDraftWarehouseLayer(draft, value, prefix, true)
+        : draft),
+    ));
+  };
 
   const currentEditingField = editingField
     ? drafts.find((draft) => draft.key === editingField.draftKey)?.fields
@@ -606,6 +650,25 @@ export const ManagedTableModelImportDrawer = ({
           />
           {draftIssues.get(draft.key)?.name && <Typography.Text type="danger" className="managed-import-field-error">{draftIssues.get(draft.key)?.name}</Typography.Text>}
         </div>
+      ),
+    },
+    {
+      title: '数仓分层',
+      key: 'warehouseLayerId',
+      width: 190,
+      render: (_value, draft) => (
+        <Select
+          allowClear
+          showSearch
+          optionFilterProp="label"
+          value={draft.warehouseLayerId}
+          disabled={busy}
+          loading={warehouseLayersQuery.isFetching}
+          options={warehouseLayerOptions}
+          placeholder="未分层"
+          className="managed-import-target-select"
+          onChange={(value) => selectDraftWarehouseLayer(draft.key, value)}
+        />
       ),
     },
     {
@@ -844,6 +907,18 @@ export const ManagedTableModelImportDrawer = ({
                   onChange={setDirectoryId}
                 />
               )}
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                value={warehouseLayerId}
+                disabled={busy}
+                loading={warehouseLayersQuery.isFetching}
+                options={warehouseLayerOptions}
+                placeholder="批量数仓分层：未分层"
+                className="managed-import-target-select"
+                onChange={selectBatchWarehouseLayer}
+              />
               <Button
                 icon={<ReloadOutlined />}
                 loading={previewMutation.isPending}
@@ -868,7 +943,7 @@ export const ManagedTableModelImportDrawer = ({
               dataSource={drafts}
               loading={previewMutation.isPending}
               pagination={false}
-              scroll={{ x: 1200, y: 390 }}
+              scroll={{ x: 1390, y: 390 }}
               expandable={{
                 rowExpandable: (draft) => draft.fields.length > 0,
                 expandedRowRender: (draft) => (

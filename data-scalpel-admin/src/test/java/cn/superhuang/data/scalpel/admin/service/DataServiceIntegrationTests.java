@@ -568,7 +568,7 @@ class DataServiceIntegrationTests {
                         EngineDataSourceRegistrationRequest request
                 ) {
                     return new EngineDataSourceRegistrationResponse(
-                            engine.getCode(), request.dataSourceId(), request.revision(), EngineDataSourceStatus.READY, "已注册"
+                            engine.getCode(), request.dataSourceId(), EngineDataSourceStatus.READY, "已注册"
                     );
                 }
 

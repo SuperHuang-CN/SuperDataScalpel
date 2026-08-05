@@ -1,14 +1,21 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import type { SearchRequest } from '../../../shared/search';
 import { invalidateDirectoryTree } from '../../directory';
+import { invalidateStandardDictionaries } from '../../standard';
 import {
   createDataModel,
+  createModelFieldTemplate,
+  createModelWarehouseLayer,
   createManagedDataModelDraft,
   createPhysicalTableChangePlan,
   cancelPhysicalTableChangePlan,
   createPhysicalTable,
   deleteDataModel,
+  deleteModelFieldTemplate,
+  deleteModelWarehouseLayer,
   executeDataModelCommand,
+  executeModelFieldTemplateCommand,
+  executeModelWarehouseLayerCommand,
   executePhysicalTableChangePlan,
   downloadModelMetadataTemplate,
   exportModelMetadata,
@@ -16,6 +23,9 @@ import {
   fetchDataModel,
   fetchExternalTableImportPreview,
   fetchManagedImportPreview,
+  fetchModelFieldTemplate,
+  fetchModelFieldTemplates,
+  fetchModelWarehouseLayers,
   fetchDataModels,
   fetchPhysicalTableChangePlan,
   fetchPhysicalTableChangePlans,
@@ -24,8 +34,12 @@ import {
   previewModelMetadataImport,
   queryDataModelData,
   updateDataModel,
+  updateModelFieldTemplate,
   updateDataModelFields,
+  updateModelWarehouseLayer,
   type DataModelCommand,
+  type ModelFieldTemplateCommand,
+  type ModelWarehouseLayerCommand,
 } from '../api/dataModelApi';
 import type {
   CreateDataModelRequest,
@@ -35,6 +49,10 @@ import type {
   DataModelDataQueryRequest,
   ManagedImportPreview,
   ManagedImportPreviewRequest,
+  CreateModelFieldTemplateRequest,
+  UpdateModelFieldTemplateRequest,
+  CreateModelWarehouseLayerRequest,
+  UpdateModelWarehouseLayerRequest,
   UpdateDataModelFieldsRequest,
   UpdateDataModelRequest,
 } from '../model/dataModel';
@@ -61,6 +79,8 @@ export interface ManagedDataModelDraftResult extends ManagedDataModelDraftItem {
 }
 
 const dataModelsQueryKey = 'data-models';
+const modelWarehouseLayersQueryKey = 'model-warehouse-layers';
+const modelFieldTemplatesQueryKey = 'model-field-templates';
 const physicalTableChangePlansQueryKey = 'physical-table-change-plans';
 const taskModelRelationsQueryKey = 'task-model-relations';
 
@@ -73,6 +93,118 @@ const invalidateDataModels = async (queryClient: ReturnType<typeof useQueryClien
     queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey] }),
     invalidateDirectoryTree(queryClient, 'MODEL'),
   ]);
+};
+
+const invalidateModelWarehouseLayers = (
+  queryClient: ReturnType<typeof useQueryClient>,
+) => queryClient.invalidateQueries({ queryKey: [modelWarehouseLayersQueryKey] });
+
+const invalidateModelFieldTemplates = (
+  queryClient: ReturnType<typeof useQueryClient>,
+) => queryClient.invalidateQueries({ queryKey: [modelFieldTemplatesQueryKey] });
+
+export const useModelFieldTemplates = (request: SearchRequest, enabled = true) => useQuery({
+  queryKey: [modelFieldTemplatesQueryKey, 'list', request],
+  queryFn: () => fetchModelFieldTemplates(request),
+  enabled,
+});
+
+export const useModelFieldTemplate = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [modelFieldTemplatesQueryKey, 'detail', id],
+  queryFn: () => fetchModelFieldTemplate(id as string),
+  enabled: enabled && Boolean(id),
+});
+
+export const useCreateModelFieldTemplate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateModelFieldTemplateRequest) => createModelFieldTemplate(request),
+    onSuccess: () => Promise.all([
+      invalidateModelFieldTemplates(queryClient),
+      invalidateStandardDictionaries(queryClient),
+    ]),
+  });
+};
+
+export const useUpdateModelFieldTemplate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: UpdateModelFieldTemplateRequest }) => (
+      updateModelFieldTemplate(id, request)
+    ),
+    onSuccess: () => Promise.all([
+      invalidateModelFieldTemplates(queryClient),
+      invalidateStandardDictionaries(queryClient),
+    ]),
+  });
+};
+
+export const useModelFieldTemplateCommand = (command: ModelFieldTemplateCommand) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => executeModelFieldTemplateCommand(id, command),
+    onSuccess: () => invalidateModelFieldTemplates(queryClient),
+  });
+};
+
+export const useDeleteModelFieldTemplate = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteModelFieldTemplate,
+    onSuccess: () => Promise.all([
+      invalidateModelFieldTemplates(queryClient),
+      invalidateStandardDictionaries(queryClient),
+    ]),
+  });
+};
+
+export const useModelWarehouseLayers = (request: SearchRequest, enabled = true) => useQuery({
+  queryKey: [modelWarehouseLayersQueryKey, request],
+  queryFn: () => fetchModelWarehouseLayers(request),
+  enabled,
+});
+
+export const useCreateModelWarehouseLayer = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateModelWarehouseLayerRequest) => createModelWarehouseLayer(request),
+    onSuccess: () => invalidateModelWarehouseLayers(queryClient),
+  });
+};
+
+export const useUpdateModelWarehouseLayer = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: UpdateModelWarehouseLayerRequest }) => (
+      updateModelWarehouseLayer(id, request)
+    ),
+    onSuccess: () => Promise.all([
+      invalidateModelWarehouseLayers(queryClient),
+      queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey] }),
+    ]),
+  });
+};
+
+export const useModelWarehouseLayerCommand = (command: ModelWarehouseLayerCommand) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (id: string) => executeModelWarehouseLayerCommand(id, command),
+    onSuccess: () => Promise.all([
+      invalidateModelWarehouseLayers(queryClient),
+      queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey] }),
+    ]),
+  });
+};
+
+export const useDeleteModelWarehouseLayer = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: deleteModelWarehouseLayer,
+    onSuccess: () => Promise.all([
+      invalidateModelWarehouseLayers(queryClient),
+      queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey] }),
+    ]),
+  });
 };
 
 export const useDataModels = (request: SearchRequest, enabled = true) => useQuery({
@@ -138,7 +270,10 @@ export const useCreateDataModel = () => {
     mutationFn: (request: CreateDataModelRequest) => createDataModel(request),
     onSuccess: (detail) => {
       queryClient.setQueryData([dataModelsQueryKey, detail.model.id], detail);
-      return invalidateDataModels(queryClient);
+      return Promise.all([
+        invalidateDataModels(queryClient),
+        invalidateModelWarehouseLayers(queryClient),
+      ]);
     },
   });
 };
@@ -179,7 +314,11 @@ export const useCreateManagedDataModelDrafts = () => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: createManagedDataModelDrafts,
-    onSuccess: () => invalidateDataModels(queryClient),
+    onSuccess: () => Promise.all([
+      invalidateDataModels(queryClient),
+      invalidateModelWarehouseLayers(queryClient),
+      invalidateStandardDictionaries(queryClient),
+    ]),
   });
 };
 
@@ -191,7 +330,9 @@ export const useUpdateDataModel = () => {
       queryClient.setQueryData([dataModelsQueryKey, detail.model.id], detail);
       return Promise.all([
         invalidateDataModels(queryClient),
+        invalidateStandardDictionaries(queryClient),
         invalidateTaskModelRelations(queryClient),
+        invalidateModelWarehouseLayers(queryClient),
       ]);
     },
   });
@@ -205,6 +346,7 @@ export const useUpdateDataModelFields = () => {
       queryClient.setQueryData([dataModelsQueryKey, detail.model.id], detail);
       return Promise.all([
         invalidateDataModels(queryClient),
+        invalidateStandardDictionaries(queryClient),
         invalidateTaskModelRelations(queryClient),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, detail.model.id, 'physical-table'] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, detail.model.id, 'data-preview'] }),
@@ -258,6 +400,7 @@ export const useExecutePhysicalTableChangePlan = () => {
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, 'physical-table'] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, 'data-preview'] }),
         invalidateTaskModelRelations(queryClient),
+        invalidateStandardDictionaries(queryClient),
       ]);
     },
   });
@@ -272,6 +415,7 @@ export const useDataModelCommand = (command: DataModelCommand) => {
       return Promise.all([
         invalidateDataModels(queryClient),
         invalidateTaskModelRelations(queryClient),
+        invalidateStandardDictionaries(queryClient),
       ]);
     },
   });
@@ -295,6 +439,8 @@ export const useDeleteDataModel = () => {
     onSuccess: () => Promise.all([
       invalidateDataModels(queryClient),
       invalidateTaskModelRelations(queryClient),
+      invalidateModelWarehouseLayers(queryClient),
+      invalidateStandardDictionaries(queryClient),
     ]),
   });
 };

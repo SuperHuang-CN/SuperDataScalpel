@@ -9,6 +9,11 @@ import type {
   SqlServiceTestResponse,
   UpdateDataServiceRequest,
 } from '../model/dataService';
+import type {
+  ScriptCompletionData,
+  ScriptExecutionResult,
+  ScriptRunRequest,
+} from '@superhuang/super-api-studio-script-workbench';
 
 const DATA_SERVICE_PATH = '/v1/data-services';
 
@@ -38,6 +43,28 @@ export const testSqlDataService = (request: SqlServiceTestRequest): Promise<SqlS
     method: 'POST', body: JSON.stringify(request),
   })
 );
+
+export interface ExecuteScriptDraftRequest extends ScriptRunRequest {
+  engineId: string;
+  dataSourceId: string;
+  routePath: string;
+  script: string;
+}
+
+export const executeScriptDraft = (request: ExecuteScriptDraftRequest): Promise<ScriptExecutionResult> => (
+  requestJson<ScriptExecutionResult>(`${DATA_SERVICE_PATH}/actions/execute-script-draft`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  }, 60_000)
+);
+
+export const fetchScriptCompletion = (
+  engineId: string,
+  dataSourceId: string,
+): Promise<ScriptCompletionData> => {
+  const query = new URLSearchParams({ engineId, dataSourceId });
+  return requestJson<ScriptCompletionData>(`${DATA_SERVICE_PATH}/script-completion?${query.toString()}`, {}, 60_000);
+};
 
 export const enableDataService = (id: string): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/enable`, { method: 'POST' })

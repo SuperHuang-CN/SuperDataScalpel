@@ -17,6 +17,7 @@ public record DataServiceDetailResponse(
         DataServiceType type,
         StandardDataServiceDefinitionResponse standardDefinition,
         SqlDataServiceDefinitionResponse sqlDefinition,
+        ScriptDataServiceDefinitionResponse scriptDefinition,
         UUID engineId,
         String routePath,
         DataServiceAccessMode accessMode,

@@ -17,9 +17,15 @@ import type {
   TableQuery,
   TestDataSourceConnectionRequest,
   HttpApiRuntimeParameter,
+  JdbcQueryInspection,
   KafkaTopic,
   UpdateApiResourceRequest,
   UpdateDataSourceRequest,
+  CreateSpatialFeatureResourceRequest,
+  SpatialCatalogEntry,
+  SpatialFeaturePreview,
+  SpatialFeatureResource,
+  UpdateSpatialFeatureResourceRequest,
 } from '../model/dataSource';
 
 const DATA_SOURCE_PATH = '/v1/data-sources';
@@ -104,6 +110,48 @@ export const testApiResource = (
   60_000,
 );
 
+const spatialResourcePath = (dataSourceId: string) => `${DATA_SOURCE_PATH}/${dataSourceId}/spatial-resources`;
+
+export const fetchSpatialCatalog = (dataSourceId: string, parent?: string): Promise<SpatialCatalogEntry[]> => {
+  const suffix = parent ? `?${new URLSearchParams({ parent }).toString()}` : '';
+  return requestJson<SpatialCatalogEntry[]>(`${spatialResourcePath(dataSourceId)}/catalog${suffix}`);
+};
+
+export const fetchSpatialFeatureResources = (dataSourceId: string): Promise<SpatialFeatureResource[]> => (
+  requestJson<SpatialFeatureResource[]>(spatialResourcePath(dataSourceId))
+);
+
+export const createSpatialFeatureResource = (
+  dataSourceId: string,
+  request: CreateSpatialFeatureResourceRequest,
+): Promise<SpatialFeatureResource> => requestJson<SpatialFeatureResource>(spatialResourcePath(dataSourceId), {
+  method: 'POST', body: JSON.stringify(request),
+});
+
+export const updateSpatialFeatureResource = (
+  dataSourceId: string,
+  resourceId: string,
+  request: UpdateSpatialFeatureResourceRequest,
+): Promise<SpatialFeatureResource> => requestJson<SpatialFeatureResource>(
+  `${spatialResourcePath(dataSourceId)}/${resourceId}/actions/update`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export const refreshSpatialFeatureResourceSchema = (dataSourceId: string, resourceId: string): Promise<SpatialFeatureResource> => (
+  requestJson<SpatialFeatureResource>(`${spatialResourcePath(dataSourceId)}/${resourceId}/actions/refresh-schema`, { method: 'POST' })
+);
+
+export const deleteSpatialFeatureResource = (dataSourceId: string, resourceId: string): Promise<void> => (
+  requestJson<void>(`${spatialResourcePath(dataSourceId)}/${resourceId}/actions/delete`, { method: 'POST' })
+);
+
+export const previewSpatialFeatureResource = (
+  dataSourceId: string, resourceId: string, limit = 50,
+): Promise<SpatialFeaturePreview> => requestJson<SpatialFeaturePreview>(
+  `${spatialResourcePath(dataSourceId)}/${resourceId}/actions/query-preview?${new URLSearchParams({ limit: String(limit) })}`,
+  { method: 'POST' }, 60_000,
+);
+
 export const fetchDataSourceNamespaces = (id: string): Promise<DataSourceNamespace[]> => (
   requestJson<DataSourceNamespace[]>(`${DATA_SOURCE_PATH}/${id}/namespaces`)
 );
@@ -127,6 +175,13 @@ const tableSearchParams = (table: TableIdentifier) => {
 
 export const fetchTableMetadata = (id: string, table: TableIdentifier): Promise<TableMetadata> => (
   requestJson<TableMetadata>(`${DATA_SOURCE_PATH}/${id}/table-metadata?${tableSearchParams(table).toString()}`)
+);
+
+export const inspectJdbcQuery = (id: string, sql: string): Promise<JdbcQueryInspection> => (
+  requestJson<JdbcQueryInspection>(`${DATA_SOURCE_PATH}/${id}/actions/inspect-query`, {
+    method: 'POST',
+    body: JSON.stringify({ sql }),
+  }, 60_000)
 );
 
 export const fetchTablePreview = (id: string, table: TableIdentifier, limit = 50): Promise<TablePreview> => {

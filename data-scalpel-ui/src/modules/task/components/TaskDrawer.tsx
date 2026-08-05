@@ -15,12 +15,20 @@ export interface TaskDrawerValues {
 interface TaskDrawerProps {
   open: boolean;
   task: DataTask | null;
+  initialDirectoryId?: string;
   directories: DirectoryTreeNode[];
   onClose: () => void;
   onSubmit: (values: TaskDrawerValues) => Promise<void>;
 }
 
-export const TaskDrawer = ({ open, task, directories, onClose, onSubmit }: TaskDrawerProps) => {
+export const TaskDrawer = ({
+  open,
+  task,
+  initialDirectoryId,
+  directories,
+  onClose,
+  onSubmit,
+}: TaskDrawerProps) => {
   const [form] = Form.useForm<TaskDrawerValues>();
   const taskType = Form.useWatch('type', form);
   const canvasTask = taskType === 'SPARK_CANVAS' || taskType === 'SPARK_STREAMING_CANVAS';
@@ -37,8 +45,8 @@ export const TaskDrawer = ({ open, task, directories, onClose, onSubmit }: TaskD
       directoryId: task.directoryId ?? undefined,
       description: task.description ?? undefined,
       computeEngineId: task.computeEngineId ?? undefined,
-    } : { name: '', type: 'LOCAL_SQL', directoryId: undefined, description: '', computeEngineId: undefined });
-  }, [form, open, task]);
+    } : { name: '', type: 'LOCAL_SQL', directoryId: initialDirectoryId, description: '', computeEngineId: undefined });
+  }, [form, initialDirectoryId, open, task]);
 
   return (
     <Drawer
@@ -52,7 +60,7 @@ export const TaskDrawer = ({ open, task, directories, onClose, onSubmit }: TaskD
         <Button type="primary" onClick={() => void form.validateFields().then(onSubmit)}>{task ? '保存' : '创建'}</Button>
       </Space>}
     >
-      <Form form={form} layout="vertical">
+      <Form autoComplete="off" form={form} layout="vertical">
         {!task && <Form.Item name="type" label="任务类型" rules={[{ required: true, message: '请选择任务类型' }]}>
           <Select options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))} />
         </Form.Item>}

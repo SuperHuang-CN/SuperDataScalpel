@@ -2,7 +2,7 @@ package cn.superhuang.data.scalpel.business.task.service;
 
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetTable;
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableRepository;
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStatus;
@@ -110,8 +110,8 @@ public class CanvasFileDatasetReferenceService {
             validator.validate(definition);
             CanvasDefinition current = upgrader.upgradeToCurrent(definition);
             Set<UUID> ids = new LinkedHashSet<>();
-            for (CanvasDefinition.CanvasNodeDefinition node : current.nodes()) {
-                if (node instanceof CanvasDefinition.FileDatasetInputNodeDefinition input) {
+            for (CanvasNodeDefinition node : current.nodes()) {
+                if (node instanceof FileDatasetInputNodeDefinition input) {
                     ids.add(UUID.fromString(input.configuration().fileDatasetTableId()));
                 }
             }

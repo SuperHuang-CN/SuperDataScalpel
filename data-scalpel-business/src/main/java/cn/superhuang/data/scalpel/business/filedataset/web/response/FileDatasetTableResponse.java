@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.filedataset.web.response;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetParseStatus;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetTable;
 import cn.superhuang.data.scalpel.business.filedataset.service.FileDatasetParsedMetadata;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
 
 import java.time.Instant;
 import java.util.Map;
@@ -21,6 +22,7 @@ public record FileDatasetTableResponse(
         boolean truncated,
         boolean previewSupported,
         Map<String, Object> sourceMetadata,
+        CrsReference spatialReferenceOverride,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -35,7 +37,8 @@ public record FileDatasetTableResponse(
                 table.getParseStatus(), sourceCount, totalRowCount, table.getCurrentLoadJobId(),
                 metadata.sampledRecordCount(), metadata.truncated(),
                 table.getParseStatus() != FileDatasetParseStatus.SCHEMA_READY,
-                metadata.sourceMetadata(), table.getCreatedAt(), table.getUpdatedAt()
+                metadata.sourceMetadata(), table.getSpatialReferenceOverride(),
+                table.getCreatedAt(), table.getUpdatedAt()
         );
     }
 }

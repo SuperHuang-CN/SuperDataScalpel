@@ -15,7 +15,6 @@ public record EngineProperties(
                 message = "必须以字母开头，仅支持字母、数字和下划线，最长 64 位"
         )
         String code,
-        @NotBlank String managementToken,
-        @NotBlank String encryptionKey
+        @NotBlank String managementToken
 ) {
 }

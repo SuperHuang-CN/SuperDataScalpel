@@ -11,4 +11,3 @@ data-scalpel:
   engine:
     code: engine_test
     management-token: engine-test-token
-    encryption-key: AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=

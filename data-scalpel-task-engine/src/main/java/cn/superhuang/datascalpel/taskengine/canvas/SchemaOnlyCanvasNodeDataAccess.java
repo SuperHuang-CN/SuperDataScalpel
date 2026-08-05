@@ -5,7 +5,9 @@ import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
@@ -34,6 +36,14 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     }
 
     @Override
+    public Dataset<Row> readJdbcQueryInput(
+            JdbcQueryInputNodeDefinition node,
+            CanvasTableSchema expectedSchema
+    ) {
+        return empty(expectedSchema);
+    }
+
+    @Override
     public Dataset<Row> readFileDatasetInput(
             FileDatasetInputNodeDefinition node,
             MetadataIndex.FileDatasetTableEntry table,
@@ -44,6 +54,11 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
 
     @Override
     public Dataset<Row> readHttpApiInput(HttpApiInputNodeDefinition node, CanvasTableSchema expectedSchema) {
+        return empty(expectedSchema);
+    }
+
+    @Override
+    public Dataset<Row> readSpatialServiceInput(SpatialServiceInputNodeDefinition node, CanvasTableSchema expectedSchema) {
         return empty(expectedSchema);
     }
 
@@ -103,6 +118,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public CanvasPreparedFileOutput prepareFileOutput(
             FileOutputNodeDefinition node,
+            CanvasTableSchema sourceSchema,
             Dataset<Row> dataset
     ) {
         dataset.schema();

@@ -31,9 +31,15 @@ export const AppProviders = ({ children }: PropsWithChildren) => (
           bodyPaddingSM: 12,
         },
         Menu: {
-          itemHeight: 34,
-          itemMarginBlock: 2,
-          itemBorderRadius: 4,
+          darkItemBg: 'transparent',
+          darkSubMenuItemBg: 'rgba(4, 18, 61, 0.22)',
+          darkItemColor: 'rgba(235, 241, 255, 0.76)',
+          darkItemHoverBg: 'rgba(255, 255, 255, 0.10)',
+          darkItemSelectedBg: 'rgba(255, 255, 255, 0.17)',
+          darkItemSelectedColor: '#FFFFFF',
+          itemHeight: 38,
+          itemMarginBlock: 3,
+          itemBorderRadius: 10,
         },
         Table: {
           cellPaddingBlockSM: 6,

@@ -120,6 +120,11 @@ public class FileDatasetTableSource extends BaseEntity {
         this.sourceOrder = sourceOrder;
     }
 
+    public void replaceSchema(String schemaFingerprint, String sourceMetadata) {
+        this.schemaFingerprint = required(schemaFingerprint, "Schema 指纹不能为空");
+        this.sourceMetadata = required(sourceMetadata, "来源元数据不能为空");
+    }
+
     public UUID getFileDatasetTableId() { return fileDatasetTableId; }
     public UUID getSourceFileId() { return sourceFileId; }
     public String getSourceName() { return sourceName; }

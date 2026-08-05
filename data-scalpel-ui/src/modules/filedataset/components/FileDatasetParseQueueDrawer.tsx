@@ -227,7 +227,7 @@ export const FileDatasetParseQueueDrawer = ({ open, onClose }: FileDatasetParseQ
         </>
       )}
       <div className="management-toolbar">
-        <Form<FileDatasetParseJobFilters> form={form} layout="inline" onFinish={search}>
+        <Form<FileDatasetParseJobFilters> autoComplete="off" form={form} layout="inline" onFinish={search}>
           <Form.Item name="status" label="任务状态">
             <Select allowClear placeholder="全部" options={fileDatasetParseJobStatusOptions} style={{ width: 140 }} />
           </Form.Item>

@@ -47,11 +47,87 @@ describe('task canvas connection rules', () => {
       outputTableName: '',
       columnMappings: [],
     });
+    expect(emptyNodeConfiguration(CanvasNodeType.Filter)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      condition: { kind: 'GROUP', operator: 'AND', children: [] },
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.SelectColumns)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      columns: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.DeriveColumns)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      derivations: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.TypeCast)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      casts: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.Aggregate)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      groupByColumns: [],
+      aggregations: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.Union)).toEqual({
+      inputTableNames: [],
+      outputTableName: '',
+      mode: 'ALL',
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.Deduplicate)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      keyColumns: [],
+      keepStrategy: 'ANY',
+      orderBy: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.NullHandling)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      rules: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.ValueMapping)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      rules: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.MaskFields)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      fieldRules: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.JsonExtract)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      sourceColumnName: '',
+      extractions: [],
+      failureStrategy: 'ERROR',
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.Window)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      partitionByColumns: [],
+      orderBy: [],
+      functions: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.TopN)).toEqual({
+      sourceTableName: '',
+      outputTableName: '',
+      partitionByColumns: [],
+      orderBy: [],
+      limit: 10,
+      tieStrategy: 'EXACT',
+    });
     expect(emptyNodeConfiguration(CanvasNodeType.JdbcOutput)).toEqual({
       sourceTableName: '',
       dataSourceId: '',
       targetTableName: '',
       writeMode: null,
+      upsertKeyColumns: [],
       columnMappingMode: null,
       columnMappings: [],
     });

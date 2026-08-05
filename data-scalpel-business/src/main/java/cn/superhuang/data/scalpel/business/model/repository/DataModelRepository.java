@@ -17,6 +17,10 @@ public interface DataModelRepository extends SearchRepository<DataModel, UUID> {
 
     boolean existsByStorageDataSourceId(UUID storageDataSourceId);
 
+    boolean existsByWarehouseLayerId(UUID warehouseLayerId);
+
+    long countByWarehouseLayerId(UUID warehouseLayerId);
+
     List<DataModel> findAllByStorageDataSourceId(UUID storageDataSourceId);
 
     boolean existsByStorageDataSourceIdAndCatalogNameAndSchemaNameAndPhysicalTableName(
@@ -43,6 +47,20 @@ public interface DataModelRepository extends SearchRepository<DataModel, UUID> {
             """)
     List<DirectoryResourceCount> countByDirectoryIdIn(@Param("directoryIds") Collection<UUID> directoryIds);
 
+    @Query("""
+            select new cn.superhuang.data.scalpel.business.model.repository.DataModelRepository$WarehouseLayerModelCount(
+                    model.warehouseLayerId, count(model))
+            from DataModel model
+            where model.warehouseLayerId in :warehouseLayerIds
+            group by model.warehouseLayerId
+            """)
+    List<WarehouseLayerModelCount> countByWarehouseLayerIdIn(
+            @Param("warehouseLayerIds") Collection<UUID> warehouseLayerIds
+    );
+
     record DirectoryResourceCount(UUID directoryId, long resourceCount) {
+    }
+
+    record WarehouseLayerModelCount(UUID warehouseLayerId, long modelCount) {
     }
 }

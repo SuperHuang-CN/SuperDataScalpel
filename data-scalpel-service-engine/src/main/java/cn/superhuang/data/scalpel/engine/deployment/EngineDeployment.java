@@ -37,6 +37,7 @@ public class EngineDeployment {
     @Column(name = "service_id", nullable = false, updatable = false)
     private UUID serviceId;
 
+    /** Legacy storage column retained for ddl-auto compatibility; Engine ordering no longer uses it. */
     @Column(nullable = false)
     private long revision;
 
@@ -75,7 +76,6 @@ public class EngineDeployment {
     public static EngineDeployment create(
             String engineCode,
             UUID serviceId,
-            long revision,
             String serviceCode,
             String routePath,
             String definitionDigest,
@@ -85,19 +85,17 @@ public class EngineDeployment {
         EngineDeployment deployment = new EngineDeployment();
         deployment.engineCode = engineCode;
         deployment.serviceId = serviceId;
-        deployment.beginDeployment(revision, serviceCode, routePath, definitionDigest, definitionJson, dataSourceId);
+        deployment.beginDeployment(serviceCode, routePath, definitionDigest, definitionJson, dataSourceId);
         return deployment;
     }
 
     public void beginDeployment(
-            long revision,
             String serviceCode,
             String routePath,
             String definitionDigest,
             String definitionJson,
             UUID dataSourceId
     ) {
-        this.revision = revision;
         this.serviceCode = serviceCode;
         this.routePath = routePath;
         this.definitionDigest = definitionDigest;
@@ -120,15 +118,13 @@ public class EngineDeployment {
         this.updatedAt = Instant.now();
     }
 
-    public void beginRemoval(long revision) {
-        this.revision = revision;
+    public void beginRemoval() {
         this.status = EngineDeploymentRecordStatus.REMOVING;
         this.lastError = null;
         this.updatedAt = Instant.now();
     }
 
-    public void removed(long revision) {
-        this.revision = revision;
+    public void removed() {
         this.status = EngineDeploymentRecordStatus.REMOVED;
         this.lastError = null;
         this.updatedAt = Instant.now();
@@ -161,10 +157,6 @@ public class EngineDeployment {
 
     public UUID getServiceId() {
         return serviceId;
-    }
-
-    public long getRevision() {
-        return revision;
     }
 
     public String getServiceCode() {

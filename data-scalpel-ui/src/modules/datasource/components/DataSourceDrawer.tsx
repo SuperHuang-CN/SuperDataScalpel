@@ -1,5 +1,32 @@
-import { Button, Checkbox, Col, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, TreeSelect, message } from 'antd';
-import { useEffect, useState } from 'react';
+import {
+  ApiOutlined,
+  CopyOutlined,
+  DatabaseOutlined,
+  HddOutlined,
+  ShareAltOutlined,
+} from '@ant-design/icons';
+import {
+  Badge,
+  Button,
+  Card,
+  Checkbox,
+  Col,
+  Collapse,
+  Drawer,
+  Form,
+  Input,
+  InputNumber,
+  Row,
+  Select,
+  Space,
+  Switch,
+  Tag,
+  Tooltip,
+  TreeSelect,
+  Typography,
+  message,
+} from 'antd';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
 import {
@@ -37,6 +64,7 @@ import { HttpApiConnectionFields } from './HttpApiConnectionFields';
 interface DataSourceDrawerProps {
   dataSource: DataSource | null;
   open: boolean;
+  initialDirectoryId?: string;
   canViewDirectories: boolean;
   canTest: boolean;
   onClose: () => void;
@@ -46,6 +74,8 @@ interface ConnectionTestFailure {
   result: ConnectionTestResult;
   targetLabel: string;
 }
+
+type DataSourceFormSection = 'basic' | 'connection' | 'advanced';
 
 type KafkaSecurityProtocol = 'PLAINTEXT' | 'SSL' | 'SASL_PLAINTEXT' | 'SASL_SSL';
 
@@ -116,6 +146,11 @@ interface DataSourceFormValues {
 }
 
 const allPurposes: DataSourcePurpose[] = ['SOURCE', 'STORAGE', 'DISTRIBUTION'];
+const purposeDescriptions: Record<DataSourcePurpose, string> = {
+  SOURCE: '作为数据接入源',
+  STORAGE: '用于数据存储',
+  DISTRIBUTION: '用于数据分发',
+};
 const kafkaSecurityProtocolOptions: { value: KafkaSecurityProtocol; label: string }[] = [
   { value: 'PLAINTEXT', label: 'PLAINTEXT' },
   { value: 'SSL', label: 'SSL' },
@@ -126,9 +161,54 @@ const kafkaSecurityProtocolOptions: { value: KafkaSecurityProtocol; label: strin
 const connectionKindForType = (type: DataSourceType): DataSourceConnectionKind => {
   if (type === 'KAFKA') return 'KAFKA';
   if (type === 'S3') return 'S3';
-  if (type === 'HTTP_API') return 'HTTP_API';
+  if (type === 'HTTP_API' || type === 'ARCGIS_REST' || type === 'WFS') return 'HTTP_API';
   return 'JDBC';
 };
+
+const purposeIcon = (purpose: DataSourcePurpose) => {
+  switch (purpose) {
+    case 'SOURCE': return <DatabaseOutlined />;
+    case 'STORAGE': return <HddOutlined />;
+    case 'DISTRIBUTION': return <ShareAltOutlined />;
+  }
+};
+
+const jdbcUrlPreview = (
+  type: DataSourceType | undefined,
+  connection: DataSourceConnectionFormValues | undefined,
+): string => {
+  const hostValue = connection?.host?.trim();
+  const databaseName = connection?.databaseName?.trim();
+  const port = connection?.port;
+  if (!type || !hostValue || !port || !databaseName) return '';
+
+  const host = hostValue.includes(':') && !hostValue.startsWith('[') ? `[${hostValue}]` : hostValue;
+  const database = encodeURIComponent(databaseName);
+  switch (type) {
+    case 'MYSQL': return `jdbc:mysql://${host}:${port}/${database}`;
+    case 'POSTGRESQL': return `jdbc:postgresql://${host}:${port}/${database}`;
+    case 'ORACLE':
+      return connection?.options?.connectionMode?.toUpperCase() === 'SID'
+        ? `jdbc:oracle:thin:@${host}:${port}:${databaseName}`
+        : `jdbc:oracle:thin:@//${host}:${port}/${database}`;
+    case 'SQL_SERVER': return `jdbc:sqlserver://${host}:${port}`;
+    case 'CLICKHOUSE': {
+      const scheme = connection?.options?.ssl === 'true' ? 'https' : 'http';
+      return `jdbc:clickhouse:${scheme}://${host}:${port}/${database}`;
+    }
+    case 'DAMENG': return `jdbc:dm://${host}:${port}/${database}`;
+    case 'KINGBASE': return `jdbc:kingbase8://${host}:${port}/${database}`;
+    case 'OPENGAUSS': return `jdbc:opengauss://${host}:${port}/${database}`;
+    default: return '';
+  }
+};
+
+const FormSectionTitle = ({ title, description }: { title: string; description: string }) => (
+  <div className="data-source-section-title">
+    <span>{title}</span>
+    <Typography.Text type="secondary">{description}</Typography.Text>
+  </div>
+);
 
 const requiredText = (value: string | undefined, label: string): string => {
   const normalized = value?.trim();
@@ -332,14 +412,14 @@ const setEditingConnection = (
   }
 };
 
-const JdbcConnectionFields = ({ definition }: { definition?: DataSourceTypeDefinition }) => (
+const JdbcConnectionFields = ({ definition, editing }: { definition?: DataSourceTypeDefinition; editing: boolean }) => (
   <>
-    <Col span={16}>
+    <Col span={12}>
       <Form.Item label="主机" name={['connection', 'host']} rules={[{ required: true, whitespace: true, message: '请输入主机地址' }]}>
         <Input placeholder="如：192.168.1.10" />
       </Form.Item>
     </Col>
-    <Col span={8}>
+    <Col span={12}>
       <Form.Item label="端口" name={['connection', 'port']} rules={[{ required: true, message: '请输入端口' }]}>
         <InputNumber min={1} max={65535} precision={0} className="data-source-number-input" />
       </Form.Item>
@@ -358,12 +438,12 @@ const JdbcConnectionFields = ({ definition }: { definition?: DataSourceTypeDefin
     )}
     <Col span={12}>
       <Form.Item label="用户名" name={['connection', 'username']} rules={[{ required: true, whitespace: true, message: '请输入用户名' }]}>
-        <Input autoComplete="off" />
+        <Input name="jdbc-principal" autoComplete="off" />
       </Form.Item>
     </Col>
     <Col span={12}>
-      <Form.Item label="密码" name={['connection', 'password']} extra="修改时留空表示不修改已保存的密码。">
-        <Input.Password autoComplete="new-password" />
+      <Form.Item label="密码" name={['connection', 'password']}>
+        <Input.Password name="jdbc-secret" autoComplete="off" placeholder={editing ? '留空表示不修改' : '请输入数据库密码'} />
       </Form.Item>
     </Col>
   </>
@@ -388,12 +468,12 @@ const KafkaConnectionFields = () => (
     </Col>
     <Col span={12}>
       <Form.Item label="用户名" name={['connection', 'username']}>
-        <Input autoComplete="off" />
+        <Input name="kafka-principal" autoComplete="off" />
       </Form.Item>
     </Col>
     <Col span={12}>
       <Form.Item label="密码" name={['connection', 'password']} extra="修改时留空表示不修改已保存的密码。">
-        <Input.Password autoComplete="new-password" />
+        <Input.Password name="kafka-secret" autoComplete="off" />
       </Form.Item>
     </Col>
   </>
@@ -423,12 +503,12 @@ const S3ConnectionFields = () => (
     </Col>
     <Col span={12}>
       <Form.Item label="AccessKey" name={['connection', 'accessKey']} rules={[{ required: true, whitespace: true, message: '请输入 AccessKey' }]}>
-        <Input autoComplete="off" />
+        <Input name="s3-access-key" autoComplete="off" />
       </Form.Item>
     </Col>
     <Col span={12}>
       <Form.Item label="SecretKey" name={['connection', 'secretKey']} extra="修改时留空表示不修改已保存的 SecretKey。">
-        <Input.Password autoComplete="new-password" />
+        <Input.Password name="s3-secret-key" autoComplete="off" />
       </Form.Item>
     </Col>
     <Col span={12}>
@@ -439,10 +519,20 @@ const S3ConnectionFields = () => (
   </>
 );
 
-export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest, onClose }: DataSourceDrawerProps) => {
+export const DataSourceDrawer = ({
+  dataSource,
+  open,
+  initialDirectoryId,
+  canViewDirectories,
+  canTest,
+  onClose,
+}: DataSourceDrawerProps) => {
   const [form] = Form.useForm<DataSourceFormValues>();
   const [messageApi, messageContext] = message.useMessage();
   const [testFailure, setTestFailure] = useState<ConnectionTestFailure | null>(null);
+  const [lastTestResult, setLastTestResult] = useState<ConnectionTestResult | null>(null);
+  const [activeSection, setActiveSection] = useState<DataSourceFormSection>('basic');
+  const contentRef = useRef<HTMLDivElement>(null);
   const createMutation = useCreateDataSource();
   const updateMutation = useUpdateDataSource();
   const testMutation = useTestDraftDataSourceConnection();
@@ -450,6 +540,8 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
   const directoriesQuery = useDirectoryTree('DATA_SOURCE', open && canViewDirectories);
   const editing = Boolean(dataSource);
   const selectedType = Form.useWatch('type', form);
+  const selectedPurposes = Form.useWatch('purposes', form) ?? [];
+  const watchedConnection = Form.useWatch('connection', form);
   const authenticationType = Form.useWatch(['connection', 'authentication', 'type'], form) ?? 'NONE';
   const selectedDefinition = dataSourceTypesQuery.data?.find((definition) => definition.id === selectedType);
   const selectedKind = selectedDefinition?.connectionKind ?? (selectedType ? connectionKindForType(selectedType) : 'JDBC');
@@ -481,20 +573,24 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
     }
     const defaultType: DataSourceType = 'POSTGRESQL';
     form.setFieldsValue({
+      directoryId: initialDirectoryId,
       purposes: ['SOURCE'],
       type: defaultType,
       enabled: true,
       connection: defaultConnection(defaultType, dataSourceTypesQuery.data?.find((item) => item.id === defaultType)),
     });
-  }, [dataSource, dataSourceTypesQuery.data, form, open]);
+  }, [dataSource, dataSourceTypesQuery.data, form, initialDirectoryId, open]);
 
   const closeDrawer = () => {
     setTestFailure(null);
+    setLastTestResult(null);
+    setActiveSection('basic');
     onClose();
   };
 
   const changeType = (type: DataSourceType) => {
     setTestFailure(null);
+    setLastTestResult(null);
     const definition = dataSourceTypesQuery.data?.find((item) => item.id === type);
     const allowed = definition?.supportedPurposes ?? allPurposes;
     const currentPurposes = form.getFieldValue('purposes') ?? [];
@@ -532,9 +628,11 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
   const testConnection = async () => {
     try {
       setTestFailure(null);
-      const values = await form.validateFields();
+      setLastTestResult(null);
+      const values = await form.validateFields([['type'], ['connection']], { recursive: true });
       const connection = buildConnectionInput(values, selectedDefinition);
       const result = await testMutation.mutateAsync({ type: values.type, connection });
+      setLastTestResult(result);
       if (result.success) {
         const product = result.databaseProduct ? `（${result.databaseProduct} ${result.databaseVersion ?? ''}，${result.elapsedMs} ms）` : '';
         messageApi.success(`${result.message}${product}`);
@@ -544,7 +642,7 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
           result,
           targetLabel: connection.kind === 'JDBC'
             ? `${typeName} · ${connection.host}:${connection.port}/${connection.databaseName}`
-            : `${typeName} · ${connection.kind === 'HTTP_API' ? connection.baseUrl : values.name}`,
+            : `${typeName} · ${connection.kind === 'HTTP_API' ? connection.baseUrl : (form.getFieldValue('name') || '当前配置')}`,
         });
       }
     } catch (error) {
@@ -560,39 +658,205 @@ export const DataSourceDrawer = ({ dataSource, open, canViewDirectories, canTest
   const testAvailable = canTest
     && (selectedKind === 'JDBC' || selectedKind === 'HTTP_API')
     && Boolean(selectedDefinition?.connectionTestAvailable);
+  const jdbcPreview = selectedKind === 'JDBC' ? jdbcUrlPreview(selectedType, watchedConnection) : '';
+  const sections: { key: DataSourceFormSection; label: string }[] = [
+    { key: 'basic', label: '基本信息' },
+    { key: 'connection', label: '连接配置' },
+    ...(selectedKind === 'JDBC' ? [{ key: 'advanced' as const, label: '高级设置' }] : []),
+  ];
+
+  const scrollToSection = (section: DataSourceFormSection) => {
+    const target = contentRef.current?.querySelector<HTMLElement>(`#data-source-${section}`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveSection(section);
+  };
+
+  const updateActiveSection = () => {
+    const container = contentRef.current;
+    if (!container) return;
+    if (container.scrollTop + container.clientHeight >= container.scrollHeight - 8) {
+      setActiveSection(sections.at(-1)?.key ?? 'basic');
+      return;
+    }
+    const containerTop = container.getBoundingClientRect().top;
+    const visible = sections.filter(({ key }) => {
+      const target = container.querySelector<HTMLElement>(`#data-source-${key}`);
+      return target && target.getBoundingClientRect().top - containerTop <= 40;
+    });
+    setActiveSection(visible.at(-1)?.key ?? 'basic');
+  };
+
+  const copyJdbcPreview = async () => {
+    if (!jdbcPreview) return;
+    try {
+      await navigator.clipboard.writeText(jdbcPreview);
+      messageApi.success('JDBC 连接地址已复制');
+    } catch {
+      messageApi.error('复制失败，请手动选择连接地址');
+    }
+  };
+
+  const testStatus = (() => {
+    if (!testAvailable) return { status: 'default' as const, text: '该类型暂不支持连接测试' };
+    if (!lastTestResult) return { status: 'default' as const, text: '连接尚未测试' };
+    if (lastTestResult.success) return { status: 'success' as const, text: `连接成功 · ${lastTestResult.elapsedMs} ms` };
+    return { status: 'error' as const, text: `连接失败 · ${lastTestResult.elapsedMs} ms` };
+  })();
+
+  const headerStatus = !testAvailable
+    ? <Tag>暂不支持测试</Tag>
+    : lastTestResult?.success
+      ? <Tag color="success">连接成功</Tag>
+      : lastTestResult
+        ? <Tag color="error">连接失败</Tag>
+        : <Tag>未测试</Tag>;
 
   return (
     <>
       {messageContext}
       <Drawer
-        title={editing ? '修改数据源' : '新建数据源'}
+        title={(
+          <div className="data-source-drawer-title">
+            <span>{editing ? '编辑数据源' : '新建数据源'}</span>
+            <Typography.Text type="secondary">配置连接信息并验证可用性</Typography.Text>
+          </div>
+        )}
+        extra={headerStatus}
         open={open}
-        size="large"
+        size="min(1180px, 100vw)"
         className="data-source-drawer"
         onClose={closeDrawer}
         destroyOnHidden
-        footer={<Space>{testAvailable && <Button loading={testMutation.isPending} onClick={() => void testConnection()}>测试连接</Button>}<Button onClick={closeDrawer}>取消</Button><Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
+        footer={(
+          <div className="data-source-drawer-footer">
+            <Badge status={testStatus.status} text={lastTestResult?.success ? '连接配置已验证' : testStatus.text} />
+            <Space>
+              {testAvailable && <Button icon={<ApiOutlined />} loading={testMutation.isPending} onClick={() => void testConnection()}>测试连接</Button>}
+              <Button onClick={closeDrawer}>取消</Button>
+              <Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存数据源</Button>
+            </Space>
+          </div>
+        )}
       >
-        <Form<DataSourceFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
-          <Row gutter={12}>
-            <Col span={12}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}><Input placeholder="如：业务系统 PostgreSQL" /></Form.Item></Col>
-            <Col span={12}><Form.Item label="编码" name="code" rules={editing ? [] : [{ required: true, whitespace: true, message: '请输入编码' }, { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' }]}><Input disabled={editing} placeholder="如：business_postgresql" /></Form.Item></Col>
-            <Col span={12}><Form.Item label="用途" name="purposes" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个用途' }]}><Checkbox.Group options={purposeOptions} /></Form.Item></Col>
-            {canViewDirectories && <Col span={12}><Form.Item label="目录" name="directoryId"><TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} placeholder="未分类" /></Form.Item></Col>}
-            <Col span={12}><Form.Item label="连接类型" name="type" rules={[{ required: true, message: '请选择连接类型' }]}><Select options={typeOptions} onChange={changeType} /></Form.Item></Col>
-            <Col span={12}><Form.Item label="启用" name="enabled" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="停用" /></Form.Item></Col>
-            <Col span={12}><Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}><Input placeholder="可选" maxLength={1000} /></Form.Item></Col>
-          </Row>
-          <div className="data-source-form-section-title">连接配置</div>
-          <Row gutter={12}>
-            {selectedKind === 'JDBC' && <JdbcConnectionFields definition={selectedDefinition} />}
-            {selectedKind === 'KAFKA' && <KafkaConnectionFields />}
-            {selectedKind === 'S3' && <S3ConnectionFields />}
-            {selectedKind === 'HTTP_API' && <HttpApiConnectionFields authenticationType={authenticationType} />}
-          </Row>
-          {selectedKind === 'JDBC' && <JdbcConnectionOptionsFields definitions={selectedDefinition?.connectionOptions ?? []} />}
-          {(selectedKind === 'KAFKA' || selectedKind === 'S3') && <div className="data-source-form-section-title">连接器状态：Kafka、S3 的真实测试与资源读取将在下一阶段开放。</div>}
-        </Form>
+        <div className="data-source-drawer-layout">
+          <nav className="data-source-section-nav" aria-label="数据源配置分区">
+            {sections.map((section) => (
+              <Button
+                key={section.key}
+                type="text"
+                className={activeSection === section.key ? 'is-active' : undefined}
+                onClick={() => scrollToSection(section.key)}
+              >
+                {section.label}
+              </Button>
+            ))}
+          </nav>
+          <div className="data-source-form-scroll" ref={contentRef} onScroll={updateActiveSection}>
+            <Form<DataSourceFormValues>
+              autoComplete="off"
+              form={form}
+              layout="vertical"
+              onFinish={(values) => void submit(values)}
+              onValuesChange={(changedValues) => {
+                if ('type' in changedValues || 'connection' in changedValues) setLastTestResult(null);
+              }}
+            >
+              <Card
+                id="data-source-basic"
+                size="small"
+                className="data-source-section-card"
+                title={<FormSectionTitle title="基本信息" description="填写数据源的基本信息，便于识别与管理" />}
+              >
+                <Row gutter={12}>
+                  <Col span={12}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}><Input placeholder="如：业务系统 PostgreSQL" /></Form.Item></Col>
+                  <Col span={12}><Form.Item label="编码" name="code" rules={editing ? [] : [{ required: true, whitespace: true, message: '请输入编码' }, { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' }]}><Input disabled={editing} placeholder="如：business_postgresql" /></Form.Item></Col>
+                  <Col span={canViewDirectories ? 11 : 20}><Form.Item label="数据源类型" name="type" rules={[{ required: true, message: '请选择数据源类型' }]}><Select options={typeOptions} onChange={changeType} /></Form.Item></Col>
+                  {canViewDirectories && <Col span={9}><Form.Item label="目录" name="directoryId"><TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} placeholder="未分类" /></Form.Item></Col>}
+                  <Col span={4}><Form.Item className="data-source-enabled-field" label="启用" name="enabled" valuePropName="checked"><Switch /></Form.Item></Col>
+                  <Col span={24}>
+                    <Form.Item label="用途" name="purposes" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个用途' }]}>
+                      <Checkbox.Group className="data-source-purpose-options">
+                        {purposeOptions.map((option) => (
+                          <Checkbox
+                            key={option.value}
+                            value={option.value}
+                            disabled={option.disabled}
+                            className={selectedPurposes.includes(option.value) ? 'is-selected' : undefined}
+                          >
+                            <span className="data-source-purpose-icon">{purposeIcon(option.value)}</span>
+                            <span className="data-source-purpose-copy">
+                              <span>{option.label}</span>
+                              <Typography.Text type="secondary">{purposeDescriptions[option.value]}</Typography.Text>
+                            </span>
+                          </Checkbox>
+                        ))}
+                      </Checkbox.Group>
+                    </Form.Item>
+                  </Col>
+                  <Col span={24}><Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}><Input.TextArea placeholder="可选" maxLength={1000} autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item></Col>
+                </Row>
+              </Card>
+
+              <Card
+                id="data-source-connection"
+                size="small"
+                className="data-source-section-card"
+                title={<FormSectionTitle title="连接配置" description="填写连接信息并验证可用性" />}
+                extra={<Badge status={testStatus.status} text={testStatus.text} />}
+              >
+                <Row gutter={12}>
+                  {selectedKind === 'JDBC' && <JdbcConnectionFields definition={selectedDefinition} editing={editing} />}
+                  {selectedKind === 'KAFKA' && <KafkaConnectionFields />}
+                  {selectedKind === 'S3' && <S3ConnectionFields />}
+                  {selectedKind === 'HTTP_API' && <HttpApiConnectionFields authenticationType={authenticationType} />}
+                  {selectedKind === 'JDBC' && (
+                    <Col span={24}>
+                      <Form.Item label="JDBC 连接地址预览" className="data-source-jdbc-preview">
+                        <Input
+                          readOnly
+                          value={jdbcPreview}
+                          placeholder="填写主机、端口和数据库后自动生成"
+                          suffix={(
+                            <Tooltip title={jdbcPreview ? '复制连接地址' : undefined}>
+                              <Button
+                                type="text"
+                                size="small"
+                                icon={<CopyOutlined />}
+                                aria-label="复制 JDBC 连接地址"
+                                className={jdbcPreview ? undefined : 'data-source-jdbc-preview-copy-hidden'}
+                                disabled={!jdbcPreview}
+                                onClick={() => void copyJdbcPreview()}
+                              />
+                            </Tooltip>
+                          )}
+                        />
+                      </Form.Item>
+                      <Typography.Text type="secondary" className="data-source-credential-tip">
+                        密码将加密保存；编辑时留空表示不修改。高级参数由 JDBC 驱动以连接属性方式应用。
+                      </Typography.Text>
+                    </Col>
+                  )}
+                </Row>
+                {(selectedKind === 'KAFKA' || selectedKind === 'S3') && (
+                  <Typography.Text type="secondary">Kafka、S3 的真实测试与资源读取将在下一阶段开放。</Typography.Text>
+                )}
+              </Card>
+
+              {selectedKind === 'JDBC' && (
+                <div id="data-source-advanced" className="data-source-advanced-section">
+                  <Collapse
+                    defaultActiveKey={['advanced']}
+                    items={[{
+                      key: 'advanced',
+                      label: <FormSectionTitle title="高级设置" description="SSL、驱动参数与连接选项" />,
+                      children: <JdbcConnectionOptionsFields definitions={selectedDefinition?.connectionOptions ?? []} />,
+                    }]}
+                  />
+                </div>
+              )}
+            </Form>
+          </div>
+        </div>
       </Drawer>
       {testFailure && (
         <ConnectionTestResultModal

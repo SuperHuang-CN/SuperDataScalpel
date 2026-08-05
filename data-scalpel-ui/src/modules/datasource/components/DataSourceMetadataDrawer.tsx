@@ -60,6 +60,26 @@ const displayCell = (value: unknown) => {
   return typeof value === 'object' ? JSON.stringify(value) : String(value);
 };
 
+const platformTypeDefinitionLabel = (column: ColumnMetadata) => {
+  const definition = column.platformTypeDefinition;
+  if (!definition) {
+    return null;
+  }
+  if (definition.type === 'STRING' && definition.length !== null) {
+    return `STRING(${definition.length})`;
+  }
+  if (definition.type === 'DECIMAL') {
+    return `DECIMAL(${definition.precision ?? '?'},${definition.scale ?? '?'})`;
+  }
+  if (definition.type === 'GEOMETRY') {
+    const geometry = definition.geometry;
+    return geometry
+      ? `${geometry.kind}(${geometry.crs.authority}:${geometry.crs.code},${geometry.dimension})`
+      : 'GEOMETRY(?)';
+  }
+  return definition.type;
+};
+
 export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSourceMetadataDrawerProps) => {
   const [selectedNamespaceKey, setSelectedNamespaceKey] = useState<string>();
   const [keyword, setKeyword] = useState('');
@@ -96,7 +116,17 @@ export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSour
     { title: '#', dataIndex: 'ordinal', width: 48 },
     { title: '字段', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => <code>{value}</code> },
     { title: '数据库类型', dataIndex: 'nativeType', width: 140, ellipsis: true },
-    { title: '逻辑类型', dataIndex: 'logicalType', width: 100, render: (value: string) => <Tag>{value}</Tag> },
+    {
+      title: '平台类型',
+      key: 'platformTypeDefinition',
+      width: 210,
+      ellipsis: true,
+      render: (_: unknown, column: ColumnMetadata) => {
+        const label = platformTypeDefinitionLabel(column);
+        return label ? <Tag color="blue">{label}</Tag> : <Tag color="error">不可映射</Tag>;
+      },
+    },
+    { title: '方言逻辑类型', dataIndex: 'logicalType', width: 120, render: (value: string) => <Tag>{value}</Tag> },
     {
       title: '长度/精度',
       key: 'size',
@@ -171,7 +201,7 @@ export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSour
                 dataSource={metadataQuery.data?.columns ?? []}
                 loading={metadataQuery.isFetching}
                 pagination={false}
-                scroll={{ x: 1150, y: 'calc(100vh - 245px)' }}
+                scroll={{ x: 1380, y: 'calc(100vh - 245px)' }}
               />
             ),
           },

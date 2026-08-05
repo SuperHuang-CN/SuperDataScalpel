@@ -7,24 +7,25 @@ import {
   ReloadOutlined,
   SafetyCertificateOutlined,
   SyncOutlined,
+  UsergroupAddOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import {
   Alert,
   Button,
-  Card,
   Dropdown,
   Form,
-  Input,
   Modal,
   Space,
   Table,
-  Tag,
   Tooltip,
   message,
 } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import {
   useApiConsumers,
   useDeleteApiConsumer,
@@ -51,15 +52,7 @@ interface ApiConsumerManagementPanelProps {
   canConfigureAccess: boolean;
 }
 
-const formatDateTime = (value: string | null) => value
-  ? new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'medium',
-    timeStyle: 'medium',
-    hour12: false,
-  }).format(new Date(value))
-  : '—';
-
-const statusColors: Record<GatewayConsumerSyncStatus, string> = {
+const statusColors: Record<GatewayConsumerSyncStatus, ManagementStatusTone> = {
   SYNC_PENDING: 'processing',
   SYNCED: 'success',
   SYNC_FAILED: 'error',
@@ -68,14 +61,14 @@ const statusColors: Record<GatewayConsumerSyncStatus, string> = {
 };
 
 const bindingStatus = (binding: GatewayConsumerBinding) => (
-  <Space key={binding.id} size={[2, 2]} wrap>
-    <Tooltip title={binding.lastError || undefined}>
-      <Tag color={statusColors[binding.syncStatus]}>
-        {gatewayProviderLabels[binding.provider]} · {gatewayConsumerSyncStatusLabels[binding.syncStatus]}
-      </Tag>
-    </Tooltip>
+  <div key={binding.id} className="management-status-group">
+    <ManagementStatusIndicator
+      label={`${gatewayProviderLabels[binding.provider]} · ${gatewayConsumerSyncStatusLabels[binding.syncStatus]}`}
+      tone={statusColors[binding.syncStatus]}
+      title={binding.lastError || undefined}
+    />
     <GatewayReconciliationTag state={binding} />
-  </Space>
+  </div>
 );
 
 const errorMessage = (error: unknown, fallback: string) => (
@@ -173,79 +166,42 @@ export const ApiConsumerManagementPanel = ({
   };
 
   const columns: TableProps<ApiConsumer>['columns'] = [
-    { title: '名称', dataIndex: 'name', width: 180, ellipsis: true },
-    {
-      title: '编码',
-      dataIndex: 'code',
-      width: 180,
-      ellipsis: true,
-      render: (value: string) => <code>{value}</code>,
-    },
+    { title: '消费者', dataIndex: 'name', width: 270, render: (value: string, consumer) => <ManagementListCell icon={<UsergroupAddOutlined />} iconTone="orange" primary={value} secondary={<><ManagementCode value={consumer.code} /> {consumer.description || ''}</>} /> },
     {
       title: '网关状态',
       dataIndex: 'gatewayBindings',
       width: 280,
       render: (bindings: GatewayConsumerBinding[]) => (
-        bindings.length ? <Space size={[0, 4]} wrap>{bindings.map(bindingStatus)}</Space> : <Tag>未同步</Tag>
+        bindings.length ? <div className="management-status-group">{bindings.map(bindingStatus)}</div> : <ManagementStatusIndicator label="未同步" />
       ),
     },
     {
-      title: '同步版本',
-      key: 'syncedRevision',
-      width: 100,
+      title: '同步信息', width: 180,
       render: (_: unknown, consumer: ApiConsumer) => {
         if (!consumer.gatewayBindings.length) return '—';
-        return Math.min(...consumer.gatewayBindings.map((binding) => binding.syncedRevision)) === consumer.revision
+        const revision = Math.min(...consumer.gatewayBindings.map((binding) => binding.syncedRevision)) === consumer.revision
           ? `v${consumer.revision}`
           : `v${Math.min(...consumer.gatewayBindings.map((binding) => binding.syncedRevision))} / v${consumer.revision}`;
+        return <ManagementListCell primary={revision} secondary={formatManagementDateTime(consumer.gatewayBindings.map((binding) => binding.lastSyncedAt).filter((value): value is string => Boolean(value)).sort().at(-1) ?? null)} />;
       },
     },
-    {
-      title: '最近同步',
-      key: 'lastSyncedAt',
-      width: 180,
-      render: (_: unknown, consumer: ApiConsumer) => formatDateTime(
-        consumer.gatewayBindings
-          .map((binding) => binding.lastSyncedAt)
-          .filter((value): value is string => Boolean(value))
-          .sort()
-          .at(-1) ?? null,
-      ),
-    },
-    { title: '说明', dataIndex: 'description', width: 220, ellipsis: true, render: (value: string | null) => value || '—' },
-    { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: (value: string) => formatDateTime(value) },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
       title: '操作',
       key: 'action',
-      width: 126,
-      fixed: 'right',
+      width: 112,
       render: (_: unknown, consumer: ApiConsumer) => (
-        <Space size={2}>
-          <Tooltip title="访问配置">
-            <Button
-              type="text"
-              size="small"
-              aria-label={`配置${consumer.name}访问权限`}
-              icon={<SafetyCertificateOutlined />}
-              onClick={() => setAccessConsumer(consumer)}
-            />
-          </Tooltip>
-          {canManage && (
-          <Tooltip title="修改">
-            <Button
-              type="text"
-              size="small"
-              aria-label={`修改${consumer.name}`}
-              icon={<EditOutlined />}
-              onClick={() => setEditingConsumer(consumer)}
-            />
-          </Tooltip>
-          )}
-          {(canManage || canConfigureAccess) && (
+        <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">
+            <Tooltip title="访问配置"><Button type="text" size="small" aria-label={`配置${consumer.name}访问权限`} icon={<SafetyCertificateOutlined />} onClick={() => setAccessConsumer(consumer)} /></Tooltip>
+            {canManage && <Tooltip title="修改"><Button type="text" size="small" aria-label={`修改${consumer.name}`} icon={<EditOutlined />} onClick={() => setEditingConsumer(consumer)} /></Tooltip>}
+          </div>
             <Dropdown
               trigger={['click']}
               menu={{
                 items: [
+                  { key: 'access', label: '访问配置', icon: <SafetyCertificateOutlined /> },
+                  ...(canManage ? [{ key: 'edit', label: '修改', icon: <EditOutlined /> }] : []),
                   ...(canConfigureAccess ? [{
                     key: 'reconcile',
                     label: '对账网关状态',
@@ -258,14 +214,17 @@ export const ApiConsumerManagementPanel = ({
                   ] : []),
                 ],
                 onClick: ({ key }) => {
+                  if (key === 'access') setAccessConsumer(consumer);
+                  if (key === 'edit') setEditingConsumer(consumer);
                   if (key === 'reconcile') void reconcileGateway(consumer);
                   if (key === 'sync') void synchronize(consumer);
                   if (key === 'delete') confirmRemove(consumer);
                 },
               }}
             >
-              <Tooltip title="更多">
+              <Tooltip title="更多操作">
               <Button
+                className="management-row-actions-more"
                 type="text"
                 size="small"
                 aria-label={`更多${consumer.name}操作`}
@@ -276,8 +235,7 @@ export const ApiConsumerManagementPanel = ({
               />
               </Tooltip>
             </Dropdown>
-          )}
-        </Space>
+        </div>
       ),
     },
   ];
@@ -286,46 +244,49 @@ export const ApiConsumerManagementPanel = ({
     <>
       {messageContext}
       {modalContext}
-      <Card className="management-card">
-        <div className="management-toolbar">
-          <Form<ApiConsumerFilters>
+      <section className="management-workbench">
+        <div className="management-filter-strip">
+          <Form<ApiConsumerFilters> autoComplete="off"
             form={filterForm}
             layout="inline"
             className="management-filter-form"
             onFinish={search}
           >
-            <Form.Item name="keyword" label="名称/编码">
-              <Input allowClear placeholder="按名称或编码筛选" className="data-source-keyword-input" />
+            <Form.Item name="keyword">
+              <ManagementSearchInput allowClear placeholder="搜索消费者名称或编码" className="data-source-keyword-input" />
             </Form.Item>
           </Form>
-          <Space size={4} className="management-toolbar-actions">
-            <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-            <Button onClick={reset}>重置</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => void consumersQuery.refetch()}>刷新</Button>
+          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={consumersQuery.isFetching} onReset={reset} />
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <div className="management-result-title">消费者管理 <span className="management-result-count">共 {consumersQuery.data?.totalElements ?? 0} 项</span></div>
+          <Space size={4} className="management-result-actions">
+            <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新消费者列表" onClick={() => void consumersQuery.refetch()} /></Tooltip>
             {canManage && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>
                 新建
               </Button>
             )}
           </Space>
-        </div>
-        {consumersQuery.isError && (
-          <Alert
-            type="error"
-            showIcon
-            title="消费者列表加载失败"
-            description={errorMessage(consumersQuery.error, '请检查后台服务后重试')}
-            action={<Button size="small" onClick={() => void consumersQuery.refetch()}>重试</Button>}
-          />
-        )}
-        <Table<ApiConsumer>
+          </div>
+          {consumersQuery.isError && (
+            <Alert
+              type="error"
+              showIcon
+              title="消费者列表加载失败"
+              description={errorMessage(consumersQuery.error, '请检查后台服务后重试')}
+              action={<Button size="small" onClick={() => void consumersQuery.refetch()}>重试</Button>}
+            />
+          )}
+          <Table<ApiConsumer>
           size="small"
           className="management-table"
           rowKey="id"
           columns={columns}
           dataSource={consumersQuery.data?.content ?? []}
           loading={consumersQuery.isFetching}
-          scroll={{ x: 1380, y: '100%' }}
+          scroll={{ y: '100%' }}
           pagination={{
             current: page + 1,
             pageSize: size,
@@ -340,8 +301,9 @@ export const ApiConsumerManagementPanel = ({
             setPage((pagination.current ?? 1) - 1);
             setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
           }}
-        />
-      </Card>
+          />
+        </div>
+      </section>
       <ApiConsumerDrawer
         open={createDrawerOpen || Boolean(editingConsumer)}
         consumer={editingConsumer}

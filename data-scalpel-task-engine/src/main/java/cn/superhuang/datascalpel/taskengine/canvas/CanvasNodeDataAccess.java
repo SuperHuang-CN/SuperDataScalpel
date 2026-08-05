@@ -5,7 +5,9 @@ import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
@@ -18,6 +20,8 @@ public interface CanvasNodeDataAccess extends AutoCloseable {
 
     Dataset<Row> readJdbcInput(JdbcInputNodeDefinition node, CanvasTableSchema expectedSchema);
 
+    Dataset<Row> readJdbcQueryInput(JdbcQueryInputNodeDefinition node, CanvasTableSchema expectedSchema);
+
     Dataset<Row> readFileDatasetInput(
             FileDatasetInputNodeDefinition node,
             MetadataIndex.FileDatasetTableEntry table,
@@ -25,6 +29,8 @@ public interface CanvasNodeDataAccess extends AutoCloseable {
     );
 
     Dataset<Row> readHttpApiInput(HttpApiInputNodeDefinition node, CanvasTableSchema expectedSchema);
+
+    Dataset<Row> readSpatialServiceInput(SpatialServiceInputNodeDefinition node, CanvasTableSchema expectedSchema);
 
     Dataset<Row> readKafkaInput(KafkaInputNodeDefinition node, CanvasTableSchema expectedSchema);
 
@@ -54,6 +60,7 @@ public interface CanvasNodeDataAccess extends AutoCloseable {
 
     CanvasPreparedFileOutput prepareFileOutput(
             FileOutputNodeDefinition node,
+            CanvasTableSchema sourceSchema,
             Dataset<Row> dataset
     );
 

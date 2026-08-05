@@ -24,6 +24,7 @@ export const parseDataModelListRoute = (params: URLSearchParams): DataModelListR
       ...(params.get('keyword') ? { keyword: params.get('keyword') ?? undefined } : {}),
       ...(status && statuses.includes(status as DataModelStatus) ? { status: status as DataModelStatus } : {}),
       ...(params.get('storage') ? { storageDataSourceId: params.get('storage') ?? undefined } : {}),
+      ...(params.get('layer') ? { warehouseLayerId: params.get('layer') ?? undefined } : {}),
       ...(directorySelection === null ? { uncategorized: true } : {}),
     },
     directorySelection,
@@ -42,6 +43,7 @@ export const serializeDataModelListRoute = (
   if (filters.keyword?.trim()) params.set('keyword', filters.keyword.trim());
   if (filters.status) params.set('status', filters.status);
   if (filters.storageDataSourceId) params.set('storage', filters.storageDataSourceId);
+  if (filters.warehouseLayerId) params.set('layer', filters.warehouseLayerId);
   if (directorySelection === null) params.set('directory', 'uncategorized');
   else if (directorySelection) params.set('directory', directorySelection);
   if (page > 0) params.set('page', String(page + 1));

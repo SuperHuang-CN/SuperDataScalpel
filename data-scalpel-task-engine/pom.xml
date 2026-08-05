@@ -12,6 +12,9 @@
 
     <properties>
         <spark.version>4.1.1</spark.version>
+        <sedona.version>1.9.0</sedona.version>
+        <geotools.version>33.5</geotools.version>
+        <geotools.wrapper.version>1.9.0-${geotools.version}</geotools.wrapper.version>
         <scala.binary.version>2.13</scala.binary.version>
         <jackson.version>2.20.0</jackson.version>
         <junit.version>6.0.3</junit.version>
@@ -32,11 +35,50 @@
         <datascalpel.task-engine.skip-extra-artifacts>true</datascalpel.task-engine.skip-extra-artifacts>
     </properties>
 
+    <repositories>
+        <repository>
+            <id>osgeo-releases</id>
+            <url>https://repo.osgeo.org/repository/release/</url>
+            <releases>
+                <enabled>true</enabled>
+            </releases>
+            <snapshots>
+                <enabled>false</enabled>
+            </snapshots>
+        </repository>
+    </repositories>
+
     <dependencies>
         <dependency>
             <groupId>cn.superhuang</groupId>
             <artifactId>data-scalpel-contracts</artifactId>
             <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>cn.superhuang</groupId>
+            <artifactId>data-scalpel-dialect</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.sedona</groupId>
+            <artifactId>sedona-spark-shaded-4.1_${scala.binary.version}</artifactId>
+            <version>${sedona.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.datasyslab</groupId>
+            <artifactId>geotools-wrapper</artifactId>
+            <version>${geotools.wrapper.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.geotools</groupId>
+            <artifactId>gt-shapefile</artifactId>
+            <version>${geotools.version}</version>
+            <exclusions>
+                <exclusion>
+                    <groupId>org.geotools</groupId>
+                    <artifactId>gt-main</artifactId>
+                </exclusion>
+            </exclusions>
         </dependency>
         <dependency>
             <groupId>org.apache.spark</groupId>
@@ -163,6 +205,32 @@
                 <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>3.5.4</version>
+                <configuration>
+                    <argLine>
+                        -XX:+IgnoreUnrecognizedVMOptions
+                        --add-modules=jdk.incubator.vector
+                        --add-opens=java.base/java.lang=ALL-UNNAMED
+                        --add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+                        --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+                        --add-opens=java.base/java.io=ALL-UNNAMED
+                        --add-opens=java.base/java.net=ALL-UNNAMED
+                        --add-opens=java.base/java.nio=ALL-UNNAMED
+                        --add-opens=java.base/java.util=ALL-UNNAMED
+                        --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+                        --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+                        --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED
+                        --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+                        --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+                        --add-opens=java.base/sun.security.action=ALL-UNNAMED
+                        --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+                        --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED
+                        -Djdk.reflect.useDirectMethodHandle=false
+                        -Dio.netty.tryReflectionSetAccessible=true
+                        -Dio.netty.allocator.type=pooled
+                        -Dio.netty.handler.ssl.defaultEndpointVerificationAlgorithm=NONE
+                        --enable-native-access=ALL-UNNAMED
+                    </argLine>
+                </configuration>
             </plugin>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
@@ -182,6 +250,28 @@
                                         <include>software.amazon.awssdk:bundle</include>
                                     </includes>
                                 </dependencyConvergence>
+                            </rules>
+                        </configuration>
+                    </execution>
+                    <execution>
+                        <id>enforce-geotools-wrapper-ownership</id>
+                        <phase>validate</phase>
+                        <goals>
+                            <goal>enforce</goal>
+                        </goals>
+                        <configuration>
+                            <rules>
+                                <bannedDependencies>
+                                    <searchTransitive>true</searchTransitive>
+                                    <excludes>
+                                        <exclude>org.geotools:gt-main</exclude>
+                                        <exclude>org.geotools:gt-referencing</exclude>
+                                        <exclude>org.geotools:gt-metadata</exclude>
+                                        <exclude>org.geotools:gt-api</exclude>
+                                        <exclude>org.geotools:gt-epsg-*</exclude>
+                                    </excludes>
+                                    <message>GeoTools core classes must come from the Sedona geotools-wrapper.</message>
+                                </bannedDependencies>
                             </rules>
                         </configuration>
                     </execution>
@@ -253,6 +343,11 @@
                                      from leaking into the Driver classpath. -->
                                 <includes>
                                     <include>cn.superhuang:data-scalpel-contracts</include>
+                                    <include>cn.superhuang:data-scalpel-dialect</include>
+                                    <include>org.apache.sedona:sedona-spark-shaded-4.1_2.13</include>
+                                    <include>org.datasyslab:geotools-wrapper</include>
+                                    <include>org.geotools:gt-shapefile</include>
+                                    <include>commons-io:commons-io</include>
                                     <include>com.fasterxml.jackson.core:jackson-core</include>
                                     <include>com.fasterxml.jackson.core:jackson-annotations</include>
                                     <include>com.fasterxml.jackson.core:jackson-databind</include>
@@ -335,7 +430,9 @@
                             <classpathScope>test</classpathScope>
                             <mainClass>cn.superhuang.datascalpel.taskengine.build.RunnerClusterArtifactVerifier</mainClass>
                             <arguments>
+                                <argument>${project.build.directory}/${project.build.finalName}-runner-local.jar</argument>
                                 <argument>${project.build.directory}/${project.build.finalName}-runner-cluster.jar</argument>
+                                <argument>${project.build.directory}/${project.build.finalName}-distribution/data-scalpel-task-engine/lib</argument>
                             </arguments>
                         </configuration>
                     </execution>

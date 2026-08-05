@@ -2,7 +2,7 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cancelTaskCompilation, compileCanvasTask } from '../api/taskCompilationApi';
 import { emptyCanvasDefinition } from './defaultCanvas';
-import type { CanvasDefinition } from './canvasTypes';
+import { CANVAS_SCHEMA_MINOR_VERSION, type CanvasDefinition } from './canvasTypes';
 import type { TaskCompilationMetadataSnapshot, TaskCompilationResponse } from './taskCompilationTypes';
 import {
   canvasCompilationFingerprint,
@@ -23,7 +23,7 @@ const emptyMetadata: TaskCompilationMetadataSnapshot = {
 
 const inputDefinition = (tableName = ''): CanvasDefinition => ({
   schemaVersion: 1,
-  schemaMinorVersion: 6,
+  schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: '4add70a7-4948-42a5-af66-e56dbaccad3e',
     type: 'JDBC_INPUT',
@@ -36,7 +36,7 @@ const inputDefinition = (tableName = ''): CanvasDefinition => ({
 
 const outputDefinition = (columnMappingMode: 'BY_NAME' | 'EXPLICIT'): CanvasDefinition => ({
   schemaVersion: 1,
-  schemaMinorVersion: 6,
+  schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: 'd35adbfb-9a83-4d92-b229-d4af1a5049cf',
     type: 'JDBC_OUTPUT',
@@ -47,6 +47,7 @@ const outputDefinition = (columnMappingMode: 'BY_NAME' | 'EXPLICIT'): CanvasDefi
       dataSourceId: 'd050e292-1f48-43b9-9309-2980d8f92bc6',
       targetTableName: 'sys_user_copy',
       writeMode: 'OVERWRITE',
+      upsertKeyColumns: [],
       columnMappingMode,
       columnMappings: columnMappingMode === 'EXPLICIT'
         ? [{ sourceColumnName: 'id', targetColumnName: 'user_id' }]
@@ -83,6 +84,7 @@ describe('canvasCompilationFingerprint', () => {
           id: '55859069-6387-4390-b850-104845ee5370',
           enabled: true,
           connectionKind: 'JDBC',
+          jdbcDatabaseType: 'POSTGRESQL',
           purposes: ['SOURCE'],
           tables: [],
         }],
@@ -189,6 +191,7 @@ describe('useCanvasTaskCompilation', () => {
         dataSourceId: 'd050e292-1f48-43b9-9309-2980d8f92bc6',
         targetTableName: 'sys_user_copy',
         writeMode: 'OVERWRITE',
+        upsertKeyColumns: [],
         columnMappingMode: 'EXPLICIT',
         columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'user_id' }],
       });

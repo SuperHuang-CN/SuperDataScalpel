@@ -46,14 +46,56 @@ class CanvasNodeOperatorRegistryTest {
         }
         assertTrue(registry.supports(CanvasNodeType.JDBC_INPUT, CanvasExecutionMode.BATCH));
         assertTrue(registry.supports(CanvasNodeType.JDBC_INPUT, CanvasExecutionMode.STREAMING));
+        assertBatchAndStreaming(registry, CanvasNodeType.JDBC_QUERY_INPUT);
         assertTrue(registry.supports(CanvasNodeType.FILE_DATASET_INPUT, CanvasExecutionMode.BATCH));
         assertFalse(registry.supports(CanvasNodeType.FILE_DATASET_INPUT, CanvasExecutionMode.STREAMING));
         assertTrue(registry.supports(CanvasNodeType.KAFKA_INPUT, CanvasExecutionMode.STREAMING));
         assertFalse(registry.supports(CanvasNodeType.KAFKA_INPUT, CanvasExecutionMode.BATCH));
         assertTrue(registry.supports(CanvasNodeType.JOIN, CanvasExecutionMode.BATCH));
         assertFalse(registry.supports(CanvasNodeType.JOIN, CanvasExecutionMode.STREAMING));
+        assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_CONSTRUCT);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_TRANSFORM);
+        assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_VALIDATE);
+        assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_REPAIR);
+        assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_BUFFER);
+        assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_EXPLODE);
+        assertBatchAndStreaming(registry, CanvasNodeType.SPATIAL_MEASURE);
+        assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_SERIALIZE);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_CLIP);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_AGGREGATE);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_JOIN);
         assertTrue(registry.supports(CanvasNodeType.STREAM_JOIN, CanvasExecutionMode.STREAMING));
         assertFalse(registry.supports(CanvasNodeType.STREAM_JOIN, CanvasExecutionMode.BATCH));
+        assertBatchAndStreaming(registry, CanvasNodeType.RENAME);
+        assertBatchAndStreaming(registry, CanvasNodeType.FILTER);
+        assertBatchAndStreaming(registry, CanvasNodeType.SELECT_COLUMNS);
+        assertBatchAndStreaming(registry, CanvasNodeType.DERIVE_COLUMNS);
+        assertBatchAndStreaming(registry, CanvasNodeType.TYPE_CAST);
+        assertBatchOnly(registry, CanvasNodeType.AGGREGATE);
+        assertBatchAndStreaming(registry, CanvasNodeType.UNION);
+        assertBatchOnly(registry, CanvasNodeType.DEDUPLICATE);
+        assertBatchAndStreaming(registry, CanvasNodeType.NULL_HANDLING);
+        assertBatchAndStreaming(registry, CanvasNodeType.VALUE_MAPPING);
+        assertBatchAndStreaming(registry, CanvasNodeType.MASK_FIELDS);
+        assertBatchAndStreaming(registry, CanvasNodeType.JSON_EXTRACT);
+        assertBatchOnly(registry, CanvasNodeType.WINDOW);
+        assertBatchOnly(registry, CanvasNodeType.TOP_N);
+    }
+
+    private static void assertBatchAndStreaming(
+            CanvasNodeOperatorRegistry registry,
+            CanvasNodeType nodeType
+    ) {
+        assertTrue(registry.supports(nodeType, CanvasExecutionMode.BATCH));
+        assertTrue(registry.supports(nodeType, CanvasExecutionMode.STREAMING));
+    }
+
+    private static void assertBatchOnly(
+            CanvasNodeOperatorRegistry registry,
+            CanvasNodeType nodeType
+    ) {
+        assertTrue(registry.supports(nodeType, CanvasExecutionMode.BATCH));
+        assertFalse(registry.supports(nodeType, CanvasExecutionMode.STREAMING));
     }
 
     private static CanvasNodeOperator operator(CanvasNodeType nodeType) {

@@ -129,7 +129,7 @@ export const TaskRunsPanel = ({ task, canExecute }: TaskRunsPanelProps) => {
       {modalContext}
       <div className="task-detail-tab-toolbar">
         <Typography.Text strong>运行记录</Typography.Text>
-        <Form<TaskRunFilters>
+        <Form<TaskRunFilters> autoComplete="off"
           form={form}
           layout="inline"
           initialValues={filters}

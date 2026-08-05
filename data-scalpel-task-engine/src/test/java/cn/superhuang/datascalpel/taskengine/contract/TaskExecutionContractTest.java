@@ -72,7 +72,7 @@ class TaskExecutionContractTest {
     }
 
     @Test
-    void roundTripsManifestV6LogicalFileInputWithOrderedSources() throws Exception {
+    void roundTripsCurrentManifestLogicalFileInputWithOrderedSources() throws Exception {
         UUID tableId = UUID.randomUUID();
         UUID firstSourceId = UUID.randomUUID();
         UUID secondSourceId = UUID.randomUUID();

@@ -55,13 +55,19 @@
 | `DATE` | `date` | `DATE` | `Date` |
 | `TIMESTAMP` | `timestamp with time zone` | `TIMESTAMP WITH TIME ZONE` | `DateTime64(6,'UTC')` |
 | `TIMESTAMP_NTZ` | `timestamp` | `TIMESTAMP` | 暂不支持 |
-| `GEOMETRY` | PostGIS `geometry(KIND,localSrid)` | 暂不支持 | 暂不支持 |
+| `GEOMETRY` | PostGIS `geometry(KIND,localSrid)` | 暂不支持 | 原始 WKB `String` / `Nullable(String)` + comment marker |
 
 ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型归一：`UInt8 -> SHORT`、`UInt16 -> INTEGER`、`UInt32 -> LONG`、`UInt64 -> DECIMAL(20,0)`。
 
 MySQL 8 的 Geometry 写入使用 `KIND SRID localSrsId` 并强制 Geometry 受管表为 InnoDB；
 读取通过空间 catalog 还原 subtype、EPSG 和 XY。MySQL 5.7、MariaDB、无 SRID restriction
 的列及非二维空间列均为 `UNSUPPORTED`。
+
+单机 ClickHouse 的 Geometry 写入不使用原生 Geo 类型，而是把标准二维 OGC WKB 原始字节
+存入 `String` / `Nullable(String)`。kind、EPSG CRS 和 XY 由版本化列 comment marker
+声明；方言将这种“WKB 编码 + 完整声明”作为 Geometry 的精确物理表示，而不是普通
+STRING/BINARY 降级。无 marker 的 `String` 始终映射为普通 `STRING`，非法 marker 或
+放在非 String 列上的 marker 返回 `UNSUPPORTED`。平台不解析或校验每行 WKB 值。
 
 ## 接口与交互
 
@@ -82,7 +88,11 @@ DataType toSparkType(PlatformTypeDefinition type);
 PlatformTypeDefinition fromSparkType(DataType type);
 ```
 
-映射器使用 `org.apache.spark.sql.types.DataTypes`，但 `contracts`、`dialect`、`business` 和 `admin` 不增加 Spark 依赖。Geometry 在 V1 显式抛出 `SPATIAL_FIELD_UNSUPPORTED`，不得映射为 String/Binary。第一版不支持 `ARRAY`、`MAP`、`STRUCT` 等复杂模型字段；出现真实需求后再扩充平台契约和每个方言的能力测试。
+映射器使用 `org.apache.spark.sql.types.DataTypes`，但 `contracts`、`dialect`、`business` 和
+`admin` 不增加 Spark 依赖。Task Engine 通过 Apache Sedona 将 Geometry 显式映射为
+`GeometryUDT`，并在 Spark `StructField.Metadata` 中保存 kind、CRS 和 dimension；其他
+执行边界不得把 Geometry 降级为 String/Binary。第一版不支持 `ARRAY`、`MAP`、`STRUCT`
+等复杂模型字段；出现真实需求后再扩充平台契约和每个方言的能力测试。
 
 ## 验证要求
 

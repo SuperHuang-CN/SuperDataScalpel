@@ -21,6 +21,7 @@ import {
   Steps,
   Table,
   Tag,
+  Tooltip,
   TreeSelect,
   Typography,
   Upload,
@@ -32,9 +33,17 @@ import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useDataSources } from '../../datasource';
 import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
 import {
+  isStandardDictionaryTypeFamilyCompatible,
+  standardDictionaryValueTypeLabels,
+  useStandardDictionaries,
+  type StandardDictionarySummary,
+} from '../../standard';
+import { useCurrentUser } from '../../system';
+import {
   type ManagedDataModelDraftResult,
   useCreateManagedDataModelDrafts,
   useDownloadModelMetadataTemplate,
+  useModelWarehouseLayers,
   usePlatformTypeCapabilities,
   usePreviewModelMetadataImport,
 } from '../hooks/useDataModels';
@@ -67,6 +76,19 @@ const dataSourceRequest = {
   search: 'enabled:"true"', page: 0, size: 500, sort: 'code',
 } as const;
 
+const enabledWarehouseLayerRequest = {
+  search: 'enabled:"true"',
+  page: 0,
+  size: 500,
+  sort: 'sortOrder,code',
+} as const;
+
+const enabledStandardDictionaryRequest = {
+  page: 0,
+  size: 500,
+  sort: 'name,code',
+} as const;
+
 const errorMessage = (error: unknown, fallback: string): string => {
   if (error instanceof ApiError) return error.message;
   if (error instanceof Error) return error.message;
@@ -87,6 +109,13 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
   const [form] = Form.useForm<ModelMetadataFieldDraft>();
   const selectedType = Form.useWatch('fieldType', form);
   const primaryKey = Form.useWatch('primaryKey', form);
+  const selectedDictionaryId = Form.useWatch('standardDictionaryId', form);
+  const currentUser = useCurrentUser();
+  const canViewDictionaries = currentUser.data?.permissions.includes('standard.dictionary.view') ?? false;
+  const dictionariesQuery = useStandardDictionaries(
+    enabledStandardDictionaryRequest,
+    Boolean(field) && canViewDictionaries,
+  );
   const capabilitiesQuery = usePlatformTypeCapabilities(storageDataSourceId, Boolean(field));
   const capabilities = useMemo(() => new Map(
     (capabilitiesQuery.data ?? []).map((capability) => [capability.type, capability]),
@@ -102,10 +131,38 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
       ? selectedCapability.geometryKinds
       : (Object.keys(geometryKindLabels) as GeometryKind[])
   ).map((value) => ({ value, label: geometryKindLabels[value] }));
+  const dictionaryOptions = useMemo(() => {
+    const dictionaries = [...(dictionariesQuery.data?.content ?? [])];
+    if (field?.standardDictionary
+      && !dictionaries.some((dictionary) => dictionary.id === field.standardDictionary?.id)) {
+      dictionaries.push({
+        ...field.standardDictionary,
+        description: null,
+        createdAt: '',
+        updatedAt: '',
+      });
+    }
+    return dictionaries.map((dictionary) => ({
+      value: dictionary.id,
+      label: `${dictionary.code} · ${dictionary.name}${dictionary.enabled ? '' : '（已停用）'}`,
+      disabled: !dictionary.enabled
+        || !isStandardDictionaryTypeFamilyCompatible(selectedType, dictionary.valueType),
+      title: `${standardDictionaryValueTypeLabels[dictionary.valueType]} · v${dictionary.version}`,
+    }));
+  }, [dictionariesQuery.data, field, selectedType]);
 
   const submit = async () => {
     if (!field) return;
     const values = await form.validateFields();
+    const standardDictionary: StandardDictionarySummary | null = values.standardDictionaryId
+      ? dictionariesQuery.data?.content.find(
+        (dictionary) => dictionary.id === values.standardDictionaryId,
+      ) ?? (
+        field.standardDictionary?.id === values.standardDictionaryId
+          ? field.standardDictionary
+          : null
+      )
+      : null;
     onSave({
       ...field,
       code: values.code.trim(),
@@ -122,6 +179,10 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
       primaryKey: values.fieldType === 'GEOMETRY' ? false : values.primaryKey,
       sortOrder: values.sortOrder,
       description: values.description?.trim() ?? '',
+      standardDictionaryCode: standardDictionary?.code ?? '',
+      standardDictionaryId: values.standardDictionaryId,
+      standardDictionary,
+      standardDictionaryIssue: canViewDictionaries ? undefined : field.standardDictionaryIssue,
       serverIssues: [],
     });
   };
@@ -143,7 +204,17 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
       onOk={() => void submit()}
     >
       {field?.serverIssues.length ? <Alert showIcon type="warning" title={field.serverIssues.join('；')} /> : null}
-      <Form<ModelMetadataFieldDraft> form={form} layout="vertical" className="metadata-import-field-form">
+      {field?.standardDictionaryIssue ? (
+        <Alert
+          showIcon
+          type="warning"
+          title={field.standardDictionaryIssue}
+          description={canViewDictionaries
+            ? '请选择其他兼容码表，或清空绑定后保存。'
+            : '当前账号没有查看码表权限，无法在这里处理该问题。'}
+        />
+      ) : null}
+      <Form<ModelMetadataFieldDraft> autoComplete="off" form={form} layout="vertical" className="metadata-import-field-form">
         <div className="managed-import-field-form-grid">
           <Form.Item label="字段编码" name="code" rules={[
             { required: true, whitespace: true, message: '请输入字段编码' },
@@ -228,6 +299,27 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
               onChange={(checked: boolean) => checked && form.setFieldValue('nullable', false)}
             />
           </Form.Item>
+          <Form.Item
+            label="关联码表"
+            name="standardDictionaryId"
+            extra={!canViewDictionaries
+              ? '当前账号没有查看码表权限。'
+              : selectedDictionaryId && dictionaryOptions.find((option) => option.value === selectedDictionaryId)?.disabled
+                ? '当前码表已停用或与字段类型不兼容，请清空或更换。'
+                : 'Excel v4 使用码表编码匹配；物理字段仍保存节点编码。'}
+          >
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              disabled={!canViewDictionaries}
+              loading={dictionariesQuery.isFetching}
+              options={dictionaryOptions}
+              placeholder={field?.standardDictionaryCode
+                ? `Excel：${field.standardDictionaryCode}`
+                : '可选'}
+            />
+          </Form.Item>
           <Form.Item label="字段说明" name="description" className="managed-import-field-description" rules={[{ max: 500 }]}>
             <Input.TextArea rows={2} />
           </Form.Item>
@@ -256,6 +348,7 @@ export const ModelMetadataImportDrawer = ({
   const [modalApi, modalContext] = Modal.useModal();
   const [messageApi, messageContext] = message.useMessage();
   const dataSourcesQuery = useDataSources(dataSourceRequest, open);
+  const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
   const previewMutation = usePreviewModelMetadataImport();
   const templateMutation = useDownloadModelMetadataTemplate();
@@ -280,6 +373,10 @@ export const ModelMetadataImportDrawer = ({
   const targetOptions = dataSourcesQuery.data?.content
     .filter(isManagedImportTargetSelectable)
     .map((source) => ({ value: source.id, label: `${source.name}（${source.type}）` })) ?? [];
+  const warehouseLayerOptions = warehouseLayersQuery.data?.content.map((layer) => ({
+    value: layer.id,
+    label: `${layer.code} · ${layer.name}`,
+  })) ?? [];
   const actualFile = uploadFile?.originFileObj ?? (uploadFile as File | undefined);
 
   const requestClose = () => {
@@ -355,6 +452,16 @@ export const ModelMetadataImportDrawer = ({
     }
     : draft));
 
+  const updateWarehouseLayer = (key: string, value?: string) => {
+    const selectedLayer = warehouseLayersQuery.data?.content.find((layer) => layer.id === value);
+    setDrafts((current) => current.map((draft) => draft.key === key ? {
+      ...draft,
+      warehouseLayerId: value,
+      warehouseLayerCode: selectedLayer?.code ?? '',
+      warehouseLayerIssue: undefined,
+    } : draft));
+  };
+
   const currentField = editingField
     ? drafts.find((draft) => draft.key === editingField.draftKey)?.fields
       .find((field) => field.key === editingField.fieldKey) ?? null
@@ -405,6 +512,22 @@ export const ModelMetadataImportDrawer = ({
     { title: '主键', dataIndex: 'primaryKey', width: 64, render: (value: boolean | null) => value ? '是' : '—' },
     { title: '排序', dataIndex: 'sortOrder', width: 70 },
     {
+      title: '码表',
+      key: 'standardDictionary',
+      width: 210,
+      render: (_value, field) => field.standardDictionary
+        ? (
+          <Tooltip title={`${standardDictionaryValueTypeLabels[field.standardDictionary.valueType]} · v${field.standardDictionary.version}`}>
+            <Tag color={field.standardDictionary.enabled ? 'blue' : 'default'}>
+              {field.standardDictionary.code} · {field.standardDictionary.name}
+            </Tag>
+          </Tooltip>
+        )
+        : field.standardDictionaryCode
+          ? <Typography.Text type="danger">{field.standardDictionaryCode}（未解决）</Typography.Text>
+          : '—',
+    },
+    {
       title: '校验', key: 'issues', width: 260,
       render: (_value, field) => {
         const current = issues.get(draft.key)?.fieldIssues.get(field.key) ?? [];
@@ -429,6 +552,36 @@ export const ModelMetadataImportDrawer = ({
     {
       title: '模型名称', width: 200,
       render: (_value, draft) => <div><Input value={draft.name} status={issues.get(draft.key)?.name ? 'error' : undefined} onChange={(event) => updateDraft(draft.key, 'name', event.target.value)} />{issues.get(draft.key)?.name && <Typography.Text type="danger" className="managed-import-field-error">{issues.get(draft.key)?.name}</Typography.Text>}</div>,
+    },
+    {
+      title: '数仓分层', width: 220,
+      render: (_value, draft) => (
+        <div>
+          <Space.Compact block>
+            <Select
+              allowClear
+              showSearch
+              optionFilterProp="label"
+              value={draft.warehouseLayerId}
+              status={issues.get(draft.key)?.warehouseLayer ? 'error' : undefined}
+              loading={warehouseLayersQuery.isFetching}
+              options={warehouseLayerOptions}
+              placeholder={draft.warehouseLayerIssue
+                ? `Excel：${draft.warehouseLayerCode || '无效编码'}`
+                : '未分层'}
+              onChange={(value) => updateWarehouseLayer(draft.key, value)}
+            />
+            {draft.warehouseLayerIssue && (
+              <Button onClick={() => updateWarehouseLayer(draft.key, undefined)}>清空</Button>
+            )}
+          </Space.Compact>
+          {issues.get(draft.key)?.warehouseLayer && (
+            <Typography.Text type="danger" className="managed-import-field-error">
+              {issues.get(draft.key)?.warehouseLayer}
+            </Typography.Text>
+          )}
+        </div>
+      ),
     },
     {
       title: '目标物理表名', width: 210,
@@ -549,13 +702,13 @@ export const ModelMetadataImportDrawer = ({
               columns={modelColumns}
               dataSource={drafts}
               pagination={false}
-              scroll={{ x: 1300, y: 390 }}
+              scroll={{ x: 1520, y: 390 }}
               expandable={{
                 rowExpandable: (draft) => draft.fields.length > 0,
                 expandedRowRender: (draft) => (
                   <div className="managed-import-field-table-wrap">
                     {draft.warnings.length > 0 && <Alert showIcon type="warning" title={draft.warnings.join('；')} />}
-                    <Table<ModelMetadataFieldDraft> size="small" rowKey="key" columns={fieldColumns(draft)} dataSource={draft.fields} pagination={false} scroll={{ x: 1050 }} />
+                    <Table<ModelMetadataFieldDraft> size="small" rowKey="key" columns={fieldColumns(draft)} dataSource={draft.fields} pagination={false} scroll={{ x: 1260 }} />
                   </div>
                 ),
               }}

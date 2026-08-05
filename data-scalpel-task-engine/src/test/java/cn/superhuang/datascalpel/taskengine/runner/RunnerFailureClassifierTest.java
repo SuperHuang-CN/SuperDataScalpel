@@ -5,7 +5,11 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionError;
 import org.apache.spark.SparkException;
 import org.junit.jupiter.api.Test;
+import org.locationtech.jts.geom.TopologyException;
+import org.locationtech.jts.io.ParseException;
 
+import java.io.IOException;
+import java.net.ConnectException;
 import java.net.SocketTimeoutException;
 import java.nio.file.FileAlreadyExistsException;
 import java.sql.SQLException;
@@ -15,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RunnerFailureClassifierTest {
     private final RunnerFailureClassifier classifier = new RunnerFailureClassifier();
@@ -57,6 +62,14 @@ class RunnerFailureClassifierTest {
         assertEquals(ExecutionErrorCategory.SCHEMA, schema.category());
         assertNull(schema.sqlState());
 
+        TaskExecutionError spatialSchema = classifier.classify(
+                new RunnerExecutionException("SPATIAL_SCHEMA_DRIFT", "secret physical detail", input.nodeId()),
+                input
+        );
+        assertEquals("SPATIAL_SCHEMA_DRIFT", spatialSchema.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, spatialSchema.category());
+        assertEquals("运行时 Geometry Schema 与任务定义不一致", spatialSchema.message());
+
         RunnerFailureContext join = new RunnerFailureContext(
                 "e55c50d7-374d-4fe0-aede-e1648988af23", "JOIN", "订单客户 Join",
                 ExecutionFailurePhase.PROCESS, "order_customer");
@@ -70,6 +83,122 @@ class RunnerFailureClassifierTest {
         TaskExecutionError renameProcessor = classifier.classify(new IllegalStateException("boom"), rename);
         assertEquals("PROCESSOR_EXECUTION_FAILED", renameProcessor.code());
         assertEquals(ExecutionErrorCategory.INTERNAL, renameProcessor.category());
+    }
+
+    @Test
+    void classifiesAdvancedProcessorsAndValueMappingConstraintWithoutLeakingValues() {
+        for (String nodeType : new String[]{
+                "NULL_HANDLING", "VALUE_MAPPING", "MASK_FIELDS", "JSON_EXTRACT",
+                "WINDOW", "TOP_N"
+        }) {
+            RunnerFailureContext processor = new RunnerFailureContext(
+                    "63e9e935-91ed-49a8-a571-37518d9a76e7",
+                    nodeType,
+                    "处理器",
+                    ExecutionFailurePhase.PROCESS,
+                    "processed_orders"
+            );
+            TaskExecutionError fallback = classifier.classify(
+                    new IllegalStateException("boom"),
+                    processor
+            );
+            assertEquals("PROCESSOR_EXECUTION_FAILED", fallback.code());
+            assertEquals(ExecutionErrorCategory.INTERNAL, fallback.category());
+        }
+
+        RunnerFailureContext valueMapping = new RunnerFailureContext(
+                "4dd824bc-e921-47c0-a9b4-8d2e156bc6d3",
+                "VALUE_MAPPING",
+                "状态映射",
+                ExecutionFailurePhase.PROCESS,
+                "mapped_orders"
+        );
+        TaskExecutionError unmatched = classifier.classify(
+                new SparkException(
+                        "job failed",
+                        new IllegalStateException(
+                                "VALUE_MAPPING_UNMATCHED_VALUE column=status secret-value")
+                ),
+                valueMapping
+        );
+
+        assertEquals("VALUE_MAPPING_UNMATCHED_VALUE", unmatched.code());
+        assertEquals(ExecutionErrorCategory.CONSTRAINT, unmatched.category());
+        assertEquals("值映射遇到未配置的非 NULL 值", unmatched.message());
+        assertFalse(unmatched.retryable());
+        assertFalse(unmatched.message().contains("secret-value"));
+    }
+
+    @Test
+    void preservesGeometryConstructCodesWhenLazyFailureSurfacesAtOutput() {
+        RunnerFailureContext output = new RunnerFailureContext(
+                "b797597b-eb3e-428c-aaf5-186fa8d7fc28",
+                "JDBC_OUTPUT",
+                "空间结果输出",
+                ExecutionFailurePhase.WRITE,
+                "geometry_result"
+        );
+
+        TaskExecutionError parse = classifier.classify(
+                new SparkException(
+                        "write failed",
+                        new ParseException("secret malformed geometry")
+                ),
+                output
+        );
+        TaskExecutionError kind = classifier.classify(
+                new SparkException(
+                        "write failed",
+                        new IllegalStateException("GEOMETRY_CONSTRUCT_KIND_MISMATCH")
+                ),
+                output
+        );
+
+        assertEquals("GEOMETRY_CONSTRUCT_PARSE_FAILED", parse.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, parse.category());
+        assertEquals("Geometry 来源内容解析失败", parse.message());
+        assertFalse(parse.message().contains("secret"));
+        assertEquals("GEOMETRY_CONSTRUCT_KIND_MISMATCH", kind.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, kind.category());
+        assertEquals("Geometry 实际类型与目标类型不一致", kind.message());
+    }
+
+    @Test
+    void classifiesSpatialEnrichmentFailuresWithoutExposingGeometryValues() {
+        String[] nodeTypes = {
+                "GEOMETRY_REPAIR", "GEOMETRY_BUFFER", "GEOMETRY_EXPLODE",
+                "SPATIAL_CLIP", "SPATIAL_AGGREGATE"
+        };
+        String[] expectedCodes = {
+                "GEOMETRY_REPAIR_FAILED", "GEOMETRY_BUFFER_FAILED", "GEOMETRY_EXPLODE_FAILED",
+                "SPATIAL_CLIP_FAILED", "SPATIAL_AGGREGATE_FAILED"
+        };
+        String[] expectedMessages = {
+                "Geometry 修复失败", "Geometry Buffer 计算失败", "Geometry 拆分失败",
+                "空间裁剪失败", "空间聚合失败"
+        };
+
+        for (int index = 0; index < nodeTypes.length; index++) {
+            RunnerFailureContext context = new RunnerFailureContext(
+                    "55f4be36-adb6-4f59-ad10-0fb9b62b7a83",
+                    nodeTypes[index],
+                    "空间处理",
+                    ExecutionFailurePhase.PROCESS,
+                    "spatial_result"
+            );
+            TaskExecutionError error = classifier.classify(
+                    new SparkException(
+                            "wrapped",
+                            new TopologyException("POINT (secret-coordinate)")
+                    ),
+                    context
+            );
+
+            assertEquals(expectedCodes[index], error.code());
+            assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+            assertEquals(expectedMessages[index], error.message());
+            assertFalse(error.message().contains("secret-coordinate"));
+        }
     }
 
     @Test
@@ -106,12 +235,99 @@ class RunnerFailureClassifierTest {
                 new FileAlreadyExistsException("s3a://exports/orders"), output);
         TaskExecutionError denied = classifier.classify(
                 new IllegalStateException("AccessDenied secretKey=should-not-leak"), output);
+        TaskExecutionError invalidGeometry = classifier.classify(
+                new RunnerExecutionException(
+                        "SHAPEFILE_GEOMETRY_TYPE_MISMATCH",
+                        "row=2 geometry=POINT (120 30)",
+                        output.nodeId()),
+                output);
+        TaskExecutionError sizeLimit = classifier.classify(
+                new RunnerExecutionException(
+                        "SHAPEFILE_SIZE_LIMIT_EXCEEDED", "local=/tmp/private", output.nodeId()),
+                output);
+        TaskExecutionError upload = classifier.classify(
+                new RunnerExecutionException(
+                        "SHAPEFILE_UPLOAD_FAILED", "secretKey=should-not-leak", output.nodeId()),
+                output);
+        TaskExecutionError wrappedExists = classifier.classify(
+                new RunnerExecutionException(
+                        "FILE_OUTPUT_TARGET_EXISTS", "private target", output.nodeId()),
+                output);
+        TaskExecutionError wrappedDenied = classifier.classify(
+                new RunnerExecutionException(
+                        "SHAPEFILE_UPLOAD_FAILED", "upload failed", output.nodeId(),
+                        new IOException("AccessDenied secretKey=should-not-leak")),
+                output);
+        TaskExecutionError wrappedConnection = classifier.classify(
+                new RunnerExecutionException(
+                        "SHAPEFILE_UPLOAD_FAILED", "upload failed", output.nodeId(),
+                        new ConnectException("private endpoint")),
+                output);
+        TaskExecutionError geoParquetDenied = classifier.classify(
+                new RunnerExecutionException(
+                        "GEOPARQUET_WRITE_FAILED", "write failed", output.nodeId(),
+                        new IOException("AccessDenied secretKey=should-not-leak")),
+                output);
+        TaskExecutionError geoParquetConnection = classifier.classify(
+                new RunnerExecutionException(
+                        "GEOPARQUET_WRITE_FAILED", "write failed", output.nodeId(),
+                        new ConnectException("private endpoint")),
+                output);
+        TaskExecutionError geoParquetFormatFailure = classifier.classify(
+                new RunnerExecutionException(
+                        "GEOPARQUET_WRITE_FAILED", "geometry=POINT (secret-coordinate)",
+                        output.nodeId()),
+                output);
+        TaskExecutionError geoParquetWrappedIo = classifier.classify(
+                new RunnerExecutionException(
+                        "GEOPARQUET_WRITE_FAILED", "path=/private/output", output.nodeId(),
+                        new IOException("connection reset for secret object")),
+                output);
+        TaskExecutionError socketTimeout = classifier.classify(
+                new RuntimeException(
+                        "s3a://private-bucket/secret-object",
+                        new SocketTimeoutException("read timeout for secret object")),
+                output);
 
         assertEquals("FILE_OUTPUT_TARGET_EXISTS", exists.code());
         assertEquals(ExecutionErrorCategory.CONSTRAINT, exists.category());
         assertEquals("FILE_OUTPUT_PERMISSION_DENIED", denied.code());
         assertEquals(ExecutionErrorCategory.PERMISSION, denied.category());
         assertFalse(denied.message().contains("should-not-leak"));
+        assertEquals(ExecutionErrorCategory.SCHEMA, invalidGeometry.category());
+        assertEquals("Shapefile Geometry 与目标 Shape 类型不一致", invalidGeometry.message());
+        assertFalse(invalidGeometry.message().contains("POINT"));
+        assertEquals(ExecutionErrorCategory.RESOURCE, sizeLimit.category());
+        assertFalse(sizeLimit.retryable());
+        assertEquals(ExecutionErrorCategory.EXTERNAL_SYSTEM, upload.category());
+        assertEquals("Shapefile S3 制品提交失败", upload.message());
+        assertFalse(upload.message().contains("should-not-leak"));
+        assertEquals("FILE_OUTPUT_TARGET_EXISTS", wrappedExists.code());
+        assertEquals(ExecutionErrorCategory.CONSTRAINT, wrappedExists.category());
+        assertEquals("FILE_OUTPUT_PERMISSION_DENIED", wrappedDenied.code());
+        assertEquals(ExecutionErrorCategory.PERMISSION, wrappedDenied.category());
+        assertFalse(wrappedDenied.message().contains("should-not-leak"));
+        assertEquals("FILE_OUTPUT_CONNECTION_FAILED", wrappedConnection.code());
+        assertEquals(ExecutionErrorCategory.CONNECTION, wrappedConnection.category());
+        assertTrue(wrappedConnection.retryable());
+        assertEquals("FILE_OUTPUT_PERMISSION_DENIED", geoParquetDenied.code());
+        assertEquals(ExecutionErrorCategory.PERMISSION, geoParquetDenied.category());
+        assertFalse(geoParquetDenied.message().contains("should-not-leak"));
+        assertEquals("FILE_OUTPUT_CONNECTION_FAILED", geoParquetConnection.code());
+        assertEquals(ExecutionErrorCategory.CONNECTION, geoParquetConnection.category());
+        assertTrue(geoParquetConnection.retryable());
+        assertEquals("GEOPARQUET_WRITE_FAILED", geoParquetFormatFailure.code());
+        assertEquals(ExecutionErrorCategory.EXTERNAL_SYSTEM, geoParquetFormatFailure.category());
+        assertFalse(geoParquetFormatFailure.retryable());
+        assertFalse(geoParquetFormatFailure.message().contains("secret-coordinate"));
+        assertEquals("FILE_OUTPUT_CONNECTION_FAILED", geoParquetWrappedIo.code());
+        assertEquals(ExecutionErrorCategory.CONNECTION, geoParquetWrappedIo.category());
+        assertTrue(geoParquetWrappedIo.retryable());
+        assertFalse(geoParquetWrappedIo.message().contains("secret object"));
+        assertEquals("FILE_OUTPUT_CONNECTION_FAILED", socketTimeout.code());
+        assertEquals(ExecutionErrorCategory.CONNECTION, socketTimeout.category());
+        assertTrue(socketTimeout.retryable());
+        assertFalse(socketTimeout.message().contains("private-bucket"));
     }
 
     @Test
@@ -174,6 +390,39 @@ class RunnerFailureClassifierTest {
         assertEquals("FILE_DATASET_INPUT", error.nodeType());
         assertEquals("订单文件输入", error.nodeName());
         assertFalse(error.retryable());
+    }
+
+    @Test
+    void preservesSpatialSchemaDriftAndFileInputIdentityDuringLazyRead() {
+        String fileNodeId = "2ca10a7e-2030-4926-ad79-a9324c45c44c";
+        FileDatasetReadException readFailure = new FileDatasetReadException(
+                "SPATIAL_SCHEMA_DRIFT",
+                "文件 Geometry Schema 与任务定义不一致",
+                fileNodeId,
+                "行政区文件输入",
+                false,
+                new FileDatasetSpatialSchemaDriftException("secret object path")
+        );
+
+        TaskExecutionError error = classifier.classify(
+                new SparkException("write failed", readFailure),
+                new RunnerFailureContext(
+                        "784954f2-e203-4f28-b9f5-c05c551a7d36",
+                        "JDBC_OUTPUT",
+                        "空间结果输出",
+                        ExecutionFailurePhase.WRITE,
+                        "region_result"
+                )
+        );
+
+        assertEquals("SPATIAL_SCHEMA_DRIFT", error.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+        assertEquals(ExecutionFailurePhase.READ, error.phase());
+        assertEquals(fileNodeId, error.nodeId());
+        assertEquals("FILE_DATASET_INPUT", error.nodeType());
+        assertEquals("行政区文件输入", error.nodeName());
+        assertEquals("运行时 Geometry Schema 与任务定义不一致", error.message());
+        assertFalse(error.message().contains("secret"));
     }
 
     private void assertClassified(

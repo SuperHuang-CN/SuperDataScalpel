@@ -1,8 +1,9 @@
 import type { PlatformDataType } from '../../model';
 import type { GatewayProvider } from './apiConsumer';
 import type { GatewayReconciliationState } from './gatewayReconciliation';
+import type { ScriptRequestExample } from '@superhuang/super-api-studio-script-workbench';
 
-export type DataServiceType = 'STANDARD_TABLE' | 'SQL_QUERY';
+export type DataServiceType = 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API';
 
 export type DataServiceStatus = 'DRAFT' | 'ENABLED' | 'DISABLED';
 
@@ -65,6 +66,13 @@ export interface SqlDataServiceDefinition {
   version: number;
 }
 
+export interface ScriptDataServiceDefinition {
+  dataSourceId: string;
+  script: string;
+  examples: ScriptRequestExample[];
+  version: number;
+}
+
 interface DataServiceBase {
   id: string;
   code: string;
@@ -93,6 +101,7 @@ export interface DataServiceSummary extends DataServiceBase {
 export interface DataServiceDetail extends DataServiceBase {
   standardDefinition: StandardDataServiceDefinition | null;
   sqlDefinition: SqlDataServiceDefinition | null;
+  scriptDefinition: ScriptDataServiceDefinition | null;
 }
 
 export interface StandardDataServiceDefinitionRequest {
@@ -106,6 +115,12 @@ export interface SqlDataServiceDefinitionRequest {
   parameters: SqlServiceParameterDefinition[];
 }
 
+export interface ScriptDataServiceDefinitionRequest {
+  dataSourceId: string;
+  script: string;
+  examples: ScriptRequestExample[];
+}
+
 interface DataServiceWriteRequest {
   name: string;
   directoryId?: string;
@@ -115,6 +130,7 @@ interface DataServiceWriteRequest {
   type: DataServiceType;
   standardDefinition: StandardDataServiceDefinitionRequest | null;
   sqlDefinition: SqlDataServiceDefinitionRequest | null;
+  scriptDefinition: ScriptDataServiceDefinitionRequest | null;
   description?: string;
 }
 
@@ -162,6 +178,7 @@ export interface DataServiceFilters {
 export const dataServiceTypeLabels: Record<DataServiceType, string> = {
   STANDARD_TABLE: '标准单表',
   SQL_QUERY: 'SQL 查询',
+  SCRIPT_API: 'Groovy 脚本',
 };
 
 export const dataServiceStatusLabels: Record<DataServiceStatus, string> = {

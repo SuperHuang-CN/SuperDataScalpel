@@ -1,0 +1,15 @@
+.DS_Store
+.idea/
+*.iml
+*.log
+
+target/
+node_modules/
+dist/
+*.tsbuildinfo
+
+.env
+.env.*
+!.env.example
+
+config/application-local.yml

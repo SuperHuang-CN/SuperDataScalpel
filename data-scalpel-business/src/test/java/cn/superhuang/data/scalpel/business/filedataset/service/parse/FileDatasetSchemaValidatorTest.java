@@ -4,6 +4,10 @@ import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetField;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileRecordDelimiter;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import org.junit.jupiter.api.Test;
 
 import java.io.ByteArrayInputStream;
@@ -150,6 +154,18 @@ class FileDatasetSchemaValidatorTest {
         assertTrue(mismatch.getMessage().contains("Z 维度"));
     }
 
+    @Test
+    void includesTheCompleteGeometryDefinitionInCompatibilityAndFingerprinting() {
+        FileDatasetParser.ParseResult epsg4326 = geometryResult(4326, CoordinateDimension.XY);
+        FileDatasetParser.ParseResult epsg3857 = geometryResult(3857, CoordinateDimension.XY);
+        FileDatasetParser.ParseResult xyz = geometryResult(4326, CoordinateDimension.XYZ);
+
+        validator.requireCompatible(epsg4326, geometryResult(4326, CoordinateDimension.XY));
+        assertThrows(FileDatasetParsingException.class, () -> validator.requireCompatible(epsg4326, epsg3857));
+        assertNotEquals(validator.fingerprint(epsg4326.fields()), validator.fingerprint(epsg3857.fields()));
+        assertNotEquals(validator.fingerprint(epsg4326.fields()), validator.fingerprint(xyz.fields()));
+    }
+
     private static FileDatasetParser.ParseResult result(FileDatasetParser.Field... fields) {
         return new FileDatasetParser.ParseResult(List.of(fields), List.of(), false, true, Map.of(), 0);
     }
@@ -161,5 +177,18 @@ class FileDatasetSchemaValidatorTest {
             boolean nullable
     ) {
         return new FileDatasetParser.Field(name, order, PlatformTypeDefinition.of(type), nullable);
+    }
+
+    private static FileDatasetParser.ParseResult geometryResult(
+            int epsgCode,
+            CoordinateDimension dimension
+    ) {
+        PlatformTypeDefinition type = PlatformTypeDefinition.geometry(new GeometryTypeDefinition(
+                GeometryKind.MULTIPOLYGON, CrsReference.epsg(epsgCode), dimension
+        ));
+        return new FileDatasetParser.ParseResult(
+                List.of(new FileDatasetParser.Field("shape", 0, type, true)),
+                List.of(), false, true, Map.of(), 0
+        );
     }
 }

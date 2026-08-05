@@ -53,7 +53,7 @@ public final class CanvasTaskCompiler {
 
             try {
                 NodeCompileOutput output = compileNode(
-                        entry.node(), inputs, metadataIndex, sparkSession, result);
+                        entry.node(), inputs, executionMode, metadataIndex, sparkSession, result);
                 result.outputTables(output.displayedOutputTables());
                 if (!result.hasErrors()) propagated.set(entryIndex, output.propagatedTables());
             } catch (Exception exception) {
@@ -71,6 +71,7 @@ public final class CanvasTaskCompiler {
     private NodeCompileOutput compileNode(
             CanvasNodeDefinition node,
             Map<String, SparkCanvasTable> inputs,
+            CanvasExecutionMode executionMode,
             MetadataIndex metadataIndex,
             SparkSession sparkSession,
             MutableNodeCompilation result
@@ -82,7 +83,8 @@ public final class CanvasTaskCompiler {
                         sparkSession,
                         metadataIndex,
                         result,
-                        new SchemaOnlyCanvasNodeDataAccess(sparkSession)
+                        new SchemaOnlyCanvasNodeDataAccess(sparkSession),
+                        executionMode
                 )
         );
         return new NodeCompileOutput(output.propagatedTables(), output.displayedOutputTables());

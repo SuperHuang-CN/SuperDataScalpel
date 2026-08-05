@@ -2,7 +2,14 @@ import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import type { Node } from '@antv/x6';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { CanvasNodeView, canvasNodeTemplates } from './canvasRegistry';
-import { CanvasNodeType, type CanvasNodeRuntimeData } from './canvasTypes';
+import {
+  CANVAS_SCHEMA_MINOR_VERSION,
+  CanvasNodeType,
+  type CanvasNodeRuntimeData,
+} from './canvasTypes';
+import { canvasNodeRegistry } from './nodes/nodeRegistry';
+import { canvasNodeGroup } from './nodes/nodeGroups';
+import { CANVAS_RUNTIME_NODE_SHAPE } from './nodes/nodeSpec';
 
 vi.mock('@antv/x6-react-shape', () => ({ register: vi.fn() }));
 
@@ -84,12 +91,20 @@ describe('CanvasNodeView', () => {
         tableName: '七月订单',
         tableCode: 'orders_202607',
         status: 'READY',
+        geometry: {
+          fieldName: '_geometry',
+          kind: 'POINT',
+          crs: { authority: 'EPSG', code: 4326 },
+          dimension: 'XY',
+        },
       },
     });
 
     render(<CanvasNodeView node={node} />);
 
-    expect(screen.getByText('订单归档 · 七月订单 (orders_202607) · READY')).toBeInTheDocument();
+    expect(screen.getByText(
+      '订单归档 · 七月订单 (orders_202607) · READY · _geometry: POINT EPSG:4326 XY',
+    )).toBeInTheDocument();
   });
 
   it('renders the ModelOutput source, model identity and write mode', () => {
@@ -167,21 +182,38 @@ describe('CanvasNodeView', () => {
   });
 
   it('declares a non-empty execution mode set for every registered node', () => {
-    expect(canvasNodeTemplates).toHaveLength(12);
+    expect(canvasNodeTemplates).toHaveLength(37);
     expect(canvasNodeTemplates.every((template) => template.supportedModes.length > 0)).toBe(true);
     expect(canvasNodeTemplates.every((template) => template.description.length > 0)).toBe(true);
     expect(canvasNodeTemplates.every((template) => template.searchKeywords.length > 0)).toBe(true);
-    expect(canvasNodeTemplates
+    expect(new Set(canvasNodeTemplates
       .filter((template) => template.supportedModes.includes('STREAMING'))
-      .map((template) => template.type))
-      .toEqual([
+      .map((template) => template.type)))
+      .toEqual(new Set([
         CanvasNodeType.JdbcInput,
+        CanvasNodeType.JdbcQueryInput,
         CanvasNodeType.KafkaInput,
         CanvasNodeType.StreamJoin,
+        CanvasNodeType.GeometryConstruct,
+        CanvasNodeType.GeometryValidate,
+        CanvasNodeType.GeometryRepair,
+        CanvasNodeType.GeometryBuffer,
+        CanvasNodeType.GeometryExplode,
+        CanvasNodeType.SpatialMeasure,
+        CanvasNodeType.GeometrySerialize,
         CanvasNodeType.Rename,
+        CanvasNodeType.Filter,
+        CanvasNodeType.SelectColumns,
+        CanvasNodeType.DeriveColumns,
+        CanvasNodeType.TypeCast,
+        CanvasNodeType.Union,
+        CanvasNodeType.NullHandling,
+        CanvasNodeType.ValueMapping,
+        CanvasNodeType.MaskFields,
+        CanvasNodeType.JsonExtract,
         CanvasNodeType.JdbcOutput,
         CanvasNodeType.KafkaOutput,
-      ]);
+      ]));
     expect(canvasNodeTemplates
       .filter((template) => template.supportedModes.includes('BATCH'))
       .map((template) => template.type))
@@ -189,5 +221,24 @@ describe('CanvasNodeView', () => {
     expect(canvasNodeTemplates.find((template) => template.type === CanvasNodeType.FileDatasetInput)
       ?.supportedModes)
       .toEqual(['BATCH']);
+  });
+
+  it('registers every stable node exactly once with coherent extension metadata', () => {
+    const specs = canvasNodeRegistry.all();
+    expect(specs).toHaveLength(Object.values(CanvasNodeType).length);
+    expect(new Set(specs.map((spec) => spec.type)).size).toBe(specs.length);
+    specs.forEach((spec) => {
+      expect(canvasNodeGroup(spec.group).category).toBe(spec.category);
+      expect(spec.introducedInMinor).toBeGreaterThanOrEqual(0);
+      expect(spec.introducedInMinor).toBeLessThanOrEqual(CANVAS_SCHEMA_MINOR_VERSION);
+      expect(spec.supportedModes.length).toBeGreaterThan(0);
+      expect(spec.defaultSize.width).toBeGreaterThanOrEqual(180);
+      expect(spec.defaultSize.height).toBeGreaterThanOrEqual(96);
+      expect(spec.createDefaultConfiguration()).toEqual(
+        canvasNodeRegistry.createDefaultConfiguration(spec.type),
+      );
+    });
+    expect(new Set(canvasNodeTemplates.map((template) => template.shape)))
+      .toEqual(new Set([CANVAS_RUNTIME_NODE_SHAPE]));
   });
 });

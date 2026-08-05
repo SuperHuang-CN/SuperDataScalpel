@@ -1,5 +1,6 @@
 import type { NodeMetadata } from '@antv/x6';
-import { CanvasNodeType } from './canvasTypes';
+import type { CanvasNodeType } from './canvasTypes';
+import { canvasNodeRegistry } from './nodes/nodeRegistry';
 
 const groups = {
   in: {
@@ -17,21 +18,9 @@ const groups = {
 };
 
 export const canvasNodePorts = (type: CanvasNodeType): NonNullable<NodeMetadata['ports']> => {
-  switch (type) {
-    case CanvasNodeType.ModelInput:
-    case CanvasNodeType.JdbcInput:
-    case CanvasNodeType.FileDatasetInput:
-    case CanvasNodeType.HttpApiInput:
-    case CanvasNodeType.KafkaInput:
-      return { groups, items: [{ id: 'out', group: 'out' }] };
-    case CanvasNodeType.Join:
-    case CanvasNodeType.StreamJoin:
-    case CanvasNodeType.Rename:
-      return { groups, items: [{ id: 'in', group: 'in' }, { id: 'out', group: 'out' }] };
-    case CanvasNodeType.ModelOutput:
-    case CanvasNodeType.JdbcOutput:
-    case CanvasNodeType.KafkaOutput:
-    case CanvasNodeType.FileOutput:
-      return { groups, items: [{ id: 'in', group: 'in' }] };
-  }
+  const capability = canvasNodeRegistry.require(type).graph;
+  const items: Array<{ id: string; group: 'in' | 'out' }> = [];
+  if (capability.maxInputs !== 0) items.push({ id: 'in', group: 'in' });
+  if (capability.maxOutputs !== 0) items.push({ id: 'out', group: 'out' });
+  return { groups, items };
 };

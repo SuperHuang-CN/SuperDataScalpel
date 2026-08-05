@@ -8,6 +8,7 @@ spring:
     url: ${DATASCALPEL_ENGINE_DB_URL}
     username: ${DATASCALPEL_ENGINE_DB_USERNAME}
     password: ${DATASCALPEL_ENGINE_DB_PASSWORD}
+    driver-class-name: org.postgresql.Driver
   jpa:
     open-in-view: false
     hibernate:
@@ -16,12 +17,14 @@ spring:
       hibernate:
         jdbc:
           time_zone: UTC
+  super-api-studio:
+    embedded:
+      propagate-published-execution-errors: true
 
 data-scalpel:
   engine:
     code: ${DATASCALPEL_ENGINE_CODE}
     management-token: ${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN}
-    encryption-key: ${DATASCALPEL_ENGINE_ENCRYPTION_KEY}
     query:
       default-page-size: ${DATASCALPEL_ENGINE_QUERY_DEFAULT_PAGE_SIZE:20}
       maximum-page-size: ${DATASCALPEL_ENGINE_QUERY_MAXIMUM_PAGE_SIZE:100}

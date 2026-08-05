@@ -15,6 +15,12 @@ import type {
   ExternalTableImportPreview,
   ManagedImportPreview,
   ManagedImportPreviewRequest,
+  ModelFieldTemplate,
+  CreateModelFieldTemplateRequest,
+  UpdateModelFieldTemplateRequest,
+  ModelWarehouseLayer,
+  CreateModelWarehouseLayerRequest,
+  UpdateModelWarehouseLayerRequest,
   ModelMetadataImportPreview,
   PhysicalTableDdlPlan,
   PhysicalTableInspection,
@@ -24,6 +30,90 @@ import type {
 } from '../model/dataModel';
 
 const DATA_MODEL_PATH = '/v1/models';
+const MODEL_WAREHOUSE_LAYER_PATH = '/v1/model-warehouse-layers';
+const MODEL_FIELD_TEMPLATE_PATH = '/v1/model-field-templates';
+
+export const fetchModelFieldTemplates = async (
+  request: SearchRequest,
+): Promise<PageResponse<ModelFieldTemplate>> => {
+  const query = toSearchParams(request).toString();
+  return requestJson<PageResponse<ModelFieldTemplate>>(
+    query ? `${MODEL_FIELD_TEMPLATE_PATH}?${query}` : MODEL_FIELD_TEMPLATE_PATH,
+  );
+};
+
+export const fetchModelFieldTemplate = (id: string): Promise<ModelFieldTemplate> => (
+  requestJson<ModelFieldTemplate>(`${MODEL_FIELD_TEMPLATE_PATH}/${id}`)
+);
+
+export const createModelFieldTemplate = (
+  request: CreateModelFieldTemplateRequest,
+): Promise<ModelFieldTemplate> => requestJson<ModelFieldTemplate>(MODEL_FIELD_TEMPLATE_PATH, {
+  method: 'POST',
+  body: JSON.stringify(request),
+});
+
+export const updateModelFieldTemplate = (
+  id: string,
+  request: UpdateModelFieldTemplateRequest,
+): Promise<ModelFieldTemplate> => requestJson<ModelFieldTemplate>(
+  `${MODEL_FIELD_TEMPLATE_PATH}/${id}/actions/update`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export type ModelFieldTemplateCommand = 'enable' | 'disable';
+
+export const executeModelFieldTemplateCommand = (
+  id: string,
+  command: ModelFieldTemplateCommand,
+): Promise<ModelFieldTemplate> => requestJson<ModelFieldTemplate>(
+  `${MODEL_FIELD_TEMPLATE_PATH}/${id}/actions/${command}`,
+  { method: 'POST' },
+);
+
+export const deleteModelFieldTemplate = (id: string): Promise<void> => requestJson<void>(
+  `${MODEL_FIELD_TEMPLATE_PATH}/${id}/actions/delete`,
+  { method: 'POST' },
+);
+
+export const fetchModelWarehouseLayers = async (
+  request: SearchRequest,
+): Promise<PageResponse<ModelWarehouseLayer>> => {
+  const query = toSearchParams(request).toString();
+  return requestJson<PageResponse<ModelWarehouseLayer>>(
+    query ? `${MODEL_WAREHOUSE_LAYER_PATH}?${query}` : MODEL_WAREHOUSE_LAYER_PATH,
+  );
+};
+
+export const createModelWarehouseLayer = (
+  request: CreateModelWarehouseLayerRequest,
+): Promise<ModelWarehouseLayer> => requestJson<ModelWarehouseLayer>(MODEL_WAREHOUSE_LAYER_PATH, {
+  method: 'POST',
+  body: JSON.stringify(request),
+});
+
+export const updateModelWarehouseLayer = (
+  id: string,
+  request: UpdateModelWarehouseLayerRequest,
+): Promise<ModelWarehouseLayer> => requestJson<ModelWarehouseLayer>(
+  `${MODEL_WAREHOUSE_LAYER_PATH}/${id}/actions/update`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export type ModelWarehouseLayerCommand = 'enable' | 'disable';
+
+export const executeModelWarehouseLayerCommand = (
+  id: string,
+  command: ModelWarehouseLayerCommand,
+): Promise<ModelWarehouseLayer> => requestJson<ModelWarehouseLayer>(
+  `${MODEL_WAREHOUSE_LAYER_PATH}/${id}/actions/${command}`,
+  { method: 'POST' },
+);
+
+export const deleteModelWarehouseLayer = (id: string): Promise<void> => requestJson<void>(
+  `${MODEL_WAREHOUSE_LAYER_PATH}/${id}/actions/delete`,
+  { method: 'POST' },
+);
 
 export const fetchDataModels = async (request: SearchRequest): Promise<PageResponse<DataModel>> => {
   const query = toSearchParams(request).toString();

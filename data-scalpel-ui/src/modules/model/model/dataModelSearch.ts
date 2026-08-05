@@ -17,6 +17,7 @@ export const buildDataModelSearch = (filters: DataModelFilters): string | undefi
       : undefined,
     filters.status ? equals('status', filters.status) : undefined,
     filters.storageDataSourceId ? equals('storageDataSourceId', filters.storageDataSourceId) : undefined,
+    filters.warehouseLayerId ? equals('warehouseLayerId', filters.warehouseLayerId) : undefined,
     filters.directoryIds?.length ? anyEquals('directoryId', filters.directoryIds) : undefined,
     filters.uncategorized ? 'directoryId:null' : undefined,
   ].filter((condition): condition is string => Boolean(condition));

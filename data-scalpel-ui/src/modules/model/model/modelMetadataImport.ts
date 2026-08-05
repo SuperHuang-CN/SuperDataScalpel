@@ -4,6 +4,7 @@ import type {
   ModelMetadataImportPreview,
   PlatformDataType,
 } from './dataModel';
+import type { StandardDictionarySummary } from '../../standard';
 
 export interface ModelMetadataFieldDraft {
   key: string;
@@ -19,6 +20,10 @@ export interface ModelMetadataFieldDraft {
   primaryKey: boolean | null;
   sortOrder: number | null;
   description: string;
+  standardDictionaryCode: string;
+  standardDictionaryId?: string;
+  standardDictionary?: StandardDictionarySummary | null;
+  standardDictionaryIssue?: string;
   serverIssues: string[];
 }
 
@@ -27,6 +32,9 @@ export interface ModelMetadataDraft {
   rowNumber: number;
   code: string;
   name: string;
+  warehouseLayerCode: string;
+  warehouseLayerId?: string;
+  warehouseLayerIssue?: string;
   physicalTableName: string;
   clickHouseOrderByColumns: string[];
   description: string;
@@ -38,6 +46,7 @@ export interface ModelMetadataDraft {
 export interface ModelMetadataDraftIssue {
   code?: string;
   name?: string;
+  warehouseLayer?: string;
   physicalTableName?: string;
   description?: string;
   clickHouseOrderByColumns?: string;
@@ -56,34 +65,53 @@ const duplicates = (values: string[]): Set<string> => {
   return new Set([...counts].filter(([, count]) => count > 1).map(([value]) => value));
 };
 
+const isWarehouseLayerIssue = (issue: string): boolean => issue.startsWith('数仓分层');
+const isStandardDictionaryIssue = (issue: string): boolean => issue.includes('码表');
+
 export const modelMetadataDrafts = (preview: ModelMetadataImportPreview): ModelMetadataDraft[] => (
-  preview.models.map((model) => ({
-    key: model.key,
-    rowNumber: model.rowNumber,
-    code: model.code,
-    name: model.name,
-    physicalTableName: model.physicalTableName,
-    clickHouseOrderByColumns: model.clickHouseOrderByColumns,
-    description: model.description,
-    serverIssues: model.issues,
-    warnings: model.warnings,
-    fields: model.fields.map((field) => ({
-      key: field.key,
-      rowNumber: field.rowNumber,
-      code: field.code,
-      name: field.name,
-      fieldType: field.fieldType,
-      ...(field.length !== null ? { length: field.length } : {}),
-      ...(field.precision !== null ? { precision: field.precision } : {}),
-      ...(field.scale !== null ? { scale: field.scale } : {}),
-      ...(field.geometry != null ? { geometry: field.geometry } : {}),
-      nullable: field.nullable,
-      primaryKey: field.fieldType === 'GEOMETRY' ? false : field.primaryKey,
-      sortOrder: field.sortOrder,
-      description: field.description,
-      serverIssues: field.issues,
-    })),
-  }))
+  preview.models.map((model) => {
+    const warehouseLayerIssues = model.issues.filter(isWarehouseLayerIssue);
+    const resolvedLayer = model.warehouseLayer?.enabled ? model.warehouseLayer : null;
+    return {
+      key: model.key,
+      rowNumber: model.rowNumber,
+      code: model.code,
+      name: model.name,
+      warehouseLayerCode: model.warehouseLayerCode ?? '',
+      ...(resolvedLayer ? { warehouseLayerId: resolvedLayer.id } : {}),
+      ...(warehouseLayerIssues.length ? { warehouseLayerIssue: warehouseLayerIssues.join('；') } : {}),
+      physicalTableName: model.physicalTableName,
+      clickHouseOrderByColumns: model.clickHouseOrderByColumns,
+      description: model.description,
+      serverIssues: model.issues.filter((issue) => !isWarehouseLayerIssue(issue)),
+      warnings: model.warnings,
+      fields: model.fields.map((field) => {
+        const dictionaryIssues = field.issues.filter(isStandardDictionaryIssue);
+        return {
+          key: field.key,
+          rowNumber: field.rowNumber,
+          code: field.code,
+          name: field.name,
+          fieldType: field.fieldType,
+          ...(field.length !== null ? { length: field.length } : {}),
+          ...(field.precision !== null ? { precision: field.precision } : {}),
+          ...(field.scale !== null ? { scale: field.scale } : {}),
+          ...(field.geometry != null ? { geometry: field.geometry } : {}),
+          nullable: field.nullable,
+          primaryKey: field.fieldType === 'GEOMETRY' ? false : field.primaryKey,
+          sortOrder: field.sortOrder,
+          description: field.description,
+          standardDictionaryCode: field.standardDictionaryCode ?? '',
+          ...(field.standardDictionary ? {
+            standardDictionaryId: field.standardDictionary.id,
+            standardDictionary: field.standardDictionary,
+          } : {}),
+          ...(dictionaryIssues.length ? { standardDictionaryIssue: dictionaryIssues.join('；') } : {}),
+          serverIssues: field.issues.filter((issue) => !isStandardDictionaryIssue(issue)),
+        };
+      }),
+    };
+  })
 );
 
 const fieldIssues = (field: ModelMetadataFieldDraft, duplicateCodes: Set<string>): string[] => {
@@ -116,6 +144,7 @@ const fieldIssues = (field: ModelMetadataFieldDraft, duplicateCodes: Set<string>
     if (!field.geometry) issues.push('GEOMETRY 必须指定几何类型、EPSG CRS 和 XY 维度');
     if (field.primaryKey) issues.push('GEOMETRY 不能作为主键');
   }
+  if (field.standardDictionaryIssue) issues.push(field.standardDictionaryIssue);
   if (field.description.trim().length > 500) issues.push('字段说明不能超过 500 个字符');
   return [...new Set(issues)];
 };
@@ -134,6 +163,7 @@ export const modelMetadataDraftIssues = (
     else if (duplicateCodes.has(code.toLowerCase())) issue.code = '本次导入中模型编码重复';
     if (!draft.name.trim()) issue.name = '请填写模型名称';
     else if (draft.name.trim().length > 100) issue.name = '模型名称不能超过 100 个字符';
+    if (draft.warehouseLayerIssue) issue.warehouseLayer = draft.warehouseLayerIssue;
     const tableName = draft.physicalTableName.trim();
     if (!tableName) issue.physicalTableName = '请填写目标物理表名';
     else if (!TABLE_NAME.test(tableName)) issue.physicalTableName = '物理表名须以小写字母开头，只能包含小写字母、数字和下划线，最多 128 个字符';
@@ -152,6 +182,14 @@ export const modelMetadataDraftIssues = (
           !FIELD_CODE.test(item) || duplicateOrderBy.has(item) || !fieldCodes.has(item)
         ));
         if (invalid) issue.clickHouseOrderByColumns = `排序键字段无效、重复或不存在：${invalid}`;
+        else {
+          const geometryOrderBy = draft.clickHouseOrderByColumns.find((item) => (
+            draft.fields.find((field) => field.code.trim() === item)?.fieldType === 'GEOMETRY'
+          ));
+          if (geometryOrderBy) {
+            issue.clickHouseOrderByColumns = `ClickHouse Geometry 字段不能作为排序键：${geometryOrderBy}`;
+          }
+        }
       }
     }
     const duplicateFieldCodes = duplicates(draft.fields.map((field) => field.code.trim().toLowerCase()));
@@ -166,7 +204,7 @@ export const modelMetadataDraftIssues = (
 export const hasModelMetadataDraftIssues = (issues: Map<string, ModelMetadataDraftIssue>): boolean => (
   [...issues.values()].some((issue) => (
     Boolean(issue.code || issue.name || issue.physicalTableName || issue.description
-      || issue.clickHouseOrderByColumns || issue.fields || issue.server)
+      || issue.warehouseLayer || issue.clickHouseOrderByColumns || issue.fields || issue.server)
     || issue.fieldIssues.size > 0
   ))
 );
@@ -183,6 +221,7 @@ export const toManagedDraftRequest = (
     code: draft.code.trim(),
     name: draft.name.trim(),
     directoryId,
+    warehouseLayerId: draft.warehouseLayerId,
     storageDataSourceId,
     physicalTableName: draft.physicalTableName.trim(),
     clickHouseOrderByColumns: draft.clickHouseOrderByColumns,
@@ -200,6 +239,7 @@ export const toManagedDraftRequest = (
         primaryKey: field.fieldType === 'GEOMETRY' ? false : field.primaryKey,
         sortOrder: field.sortOrder,
         description: field.description.trim() || undefined,
+        standardDictionaryId: field.standardDictionaryId,
       }] : []),
   };
 };

@@ -32,10 +32,10 @@ export const LoginPage = () => {
         </Typography.Paragraph>
         <Form<LoginRequest> layout="vertical" requiredMark={false} onFinish={submit} autoComplete="on">
           <Form.Item name="username" label="用户名" rules={[{ required: true, whitespace: true, message: '请输入用户名' }]}>
-            <Input prefix={<UserOutlined />} autoFocus autoComplete="username" placeholder="请输入用户名" />
+            <Input name="username" prefix={<UserOutlined />} autoFocus autoComplete="username" placeholder="请输入用户名" />
           </Form.Item>
           <Form.Item name="password" label="密码" rules={[{ required: true, message: '请输入密码' }]}>
-            <Input.Password prefix={<LockOutlined />} autoComplete="current-password" placeholder="请输入密码" />
+            <Input.Password name="password" prefix={<LockOutlined />} autoComplete="current-password" placeholder="请输入密码" />
           </Form.Item>
           <Button type="primary" htmlType="submit" block loading={loginMutation.isPending}>
             登录

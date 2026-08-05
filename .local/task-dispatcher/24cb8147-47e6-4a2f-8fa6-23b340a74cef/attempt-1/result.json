@@ -1,0 +1,37 @@
+{
+  "schemaVersion" : 2,
+  "executionId" : "24cb8147-47e6-4a2f-8fa6-23b340a74cef",
+  "runId" : "3d0ebb74-424c-4191-b955-1f6ffb62fb9d",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-07-29T16:54:37.912572001Z",
+  "endedAt" : "2026-07-29T16:54:42.427683836Z",
+  "durationMs" : 4515,
+  "affectedRows" : 428,
+  "nodeResults" : [ {
+    "nodeId" : "11cfd899-f086-451a-9512-4fb268a0ebe1",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-07-29T16:54:40.088216460Z",
+    "endedAt" : "2026-07-29T16:54:40.394919627Z",
+    "durationMs" : 306,
+    "rowsWritten" : null,
+    "message" : "JDBC 输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "2c0579f5-f1cb-426c-bd17-5d3a1feaeb55",
+    "nodeType" : "MODEL_OUTPUT",
+    "nodeName" : "模型输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-07-29T16:54:40.395526293Z",
+    "endedAt" : "2026-07-29T16:54:42.427388419Z",
+    "durationMs" : 2031,
+    "rowsWritten" : 428,
+    "message" : "模型输出写入成功",
+    "error" : null
+  } ],
+  "error" : null
+}

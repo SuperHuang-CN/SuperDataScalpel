@@ -8,8 +8,20 @@ public enum SystemPermissionDefinition {
     SYSTEM_ROLE_VIEW("system.role.view", "系统管理", "查看角色", "查看角色及其权限", 30),
     SYSTEM_ROLE_MANAGE("system.role.manage", "系统管理", "管理角色", "新增、修改、授权和删除角色", 40),
     SYSTEM_PERMISSION_VIEW("system.permission.view", "系统管理", "查看权限", "查看由系统代码声明的权限目录", 50),
-    SYSTEM_CONFIGURATION_VIEW("system.configuration.view", "系统管理", "查看系统配置", "查看程序声明的系统配置", 60),
-    SYSTEM_CONFIGURATION_UPDATE("system.configuration.update", "系统管理", "修改系统配置", "修改系统配置当前值", 70),
+    SYSTEM_CONFIGURATION_VIEW(
+            "system.configuration.view",
+            "系统管理",
+            "查看系统配置",
+            "查看程序声明的系统配置和数仓分层配置",
+            60
+    ),
+    SYSTEM_CONFIGURATION_UPDATE(
+            "system.configuration.update",
+            "系统管理",
+            "修改系统配置",
+            "修改系统配置当前值并管理数仓分层",
+            70
+    ),
     DIRECTORY_VIEW("directory.view", "通用目录", "查看目录", "查看业务目录树", 100),
     DIRECTORY_MANAGE("directory.manage", "通用目录", "管理目录", "新增、修改和删除业务目录", 110),
     DATA_SOURCE_VIEW("datasource.view", "数据源管理", "查看数据源", "查询数据源及连接详情", 200),
@@ -22,9 +34,23 @@ public enum SystemPermissionDefinition {
     FILE_DATASET_CREATE("filedataset.create", "文件数据集", "新增文件数据集", "上传并新增文件数据集", 270),
     FILE_DATASET_UPDATE("filedataset.update", "文件数据集", "修改文件数据集", "修改信息、解析参数或替换内容", 280),
     FILE_DATASET_DELETE("filedataset.delete", "文件数据集", "删除文件数据集", "删除文件数据集及其存储内容", 290),
-    MODEL_VIEW("model.view", "模型管理", "查看模型", "查询模型及字段定义", 300),
+    STANDARD_DICTIONARY_VIEW(
+            "standard.dictionary.view",
+            "数据标准",
+            "查看码表",
+            "查询业务码表、树形码值及模型字段引用",
+            295
+    ),
+    STANDARD_DICTIONARY_MANAGE(
+            "standard.dictionary.manage",
+            "数据标准",
+            "管理码表",
+            "新增、修改、导入、启停和删除业务码表",
+            296
+    ),
+    MODEL_VIEW("model.view", "模型管理", "查看模型", "查询模型、字段定义和常用字段模板", 300),
     MODEL_CREATE("model.create", "模型管理", "新增模型", "新增模型元数据", 310),
-    MODEL_UPDATE("model.update", "模型管理", "修改模型", "修改模型元数据和字段定义", 320),
+    MODEL_UPDATE("model.update", "模型管理", "修改模型", "修改模型元数据和字段定义，并维护常用字段模板", 320),
     MODEL_DELETE("model.delete", "模型管理", "删除模型", "删除模型元数据", 330),
     MODEL_PUBLISH("model.publish", "模型管理", "发布模型", "发布、停用和启用模型元数据", 340),
     TASK_VIEW("task.view", "任务管理", "查看任务", "查询任务、定义和运行记录", 350),

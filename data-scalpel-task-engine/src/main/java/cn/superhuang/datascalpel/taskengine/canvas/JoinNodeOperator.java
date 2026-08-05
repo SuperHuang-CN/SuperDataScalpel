@@ -168,6 +168,18 @@ public final class JoinNodeOperator implements CanvasNodeOperator {
             if (!rightColumns.containsKey(condition.rightColumnName())) {
                 issues.error("COLUMN_NOT_FOUND", "右表字段不存在：" + condition.rightColumnName(), path);
             }
+            CanvasColumnSchema left = leftColumns.get(condition.leftColumnName());
+            CanvasColumnSchema right = rightColumns.get(condition.rightColumnName());
+            if ((left != null && left.fieldType()
+                    == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)
+                    || (right != null && right.fieldType()
+                    == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
+                issues.error(
+                        "GEOMETRY_FIELD_OPERATION_UNSUPPORTED",
+                        "普通 Join 不能使用 Geometry 条件，请使用空间连接节点",
+                        path
+                );
+            }
         }
     }
 

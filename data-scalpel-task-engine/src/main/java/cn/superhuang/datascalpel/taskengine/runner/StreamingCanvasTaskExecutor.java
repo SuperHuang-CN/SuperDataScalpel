@@ -24,11 +24,14 @@ import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CompilationSeverity;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeKafkaConnection;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
+import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.spark.storage.StorageLevel;
 import org.apache.spark.api.java.function.VoidFunction2;
@@ -76,7 +79,7 @@ final class StreamingCanvasTaskExecutor {
             RunnerEventPublisher publisher
     ) {
         validateManifest(manifest, launch);
-        SparkSession.Builder builder = SparkSession.builder()
+        SparkSession.Builder builder = SedonaSparkSupport.builder()
                 .appName("DataScalpel Streaming Task " + manifest.execution().executionId())
                 .config("spark.ui.enabled", "false")
                 .config("spark.sql.shuffle.partitions", "4")
@@ -86,7 +89,7 @@ final class StreamingCanvasTaskExecutor {
                 .config("spark.speculation", "false")
                 .config("spark.sql.streaming.stopTimeout", "60000");
         if (sparkMode == RunnerSparkMode.LOCAL) builder.master("local[*]");
-        SparkSession spark = builder.getOrCreate();
+        SparkSession spark = SedonaSparkSupport.initialize(builder.getOrCreate());
         List<Dataset<Row>> cachedDimensions = new ArrayList<>();
         List<QueryBinding> queries = new ArrayList<>();
         try (RuntimeCanvasNodeDataAccess dataAccess = new RuntimeCanvasNodeDataAccess(
@@ -100,7 +103,7 @@ final class StreamingCanvasTaskExecutor {
                     manifest.task().definition(),
                     CanvasExecutionMode.STREAMING,
                     metadata,
-                    spark.newSession(),
+                    SedonaSparkSupport.childSession(spark),
                     new AtomicBoolean()
             );
             requireValidCompilation(compilation);
@@ -146,9 +149,10 @@ final class StreamingCanvasTaskExecutor {
             CanvasNodeDefinition node = plan.nodeAt(nodeIndex);
             Instant startedAt = Instant.now();
             LOGGER.info(
-                    "event=NODE_START executionId={} runId={} attempt={} nodeId={} nodeType={} nodeName={}",
+                    "event=NODE_START executionId={} runId={} attempt={} nodeId={} nodeType={} nodeName={} summary={}",
                     manifest.execution().executionId(), manifest.execution().runId(),
-                    manifest.execution().attempt(), node.id(), node.nodeType(), node.name());
+                    manifest.execution().attempt(), node.id(), node.nodeType(), node.name(),
+                    CanvasTaskExecutor.nodeSummary(node, metadata));
             Map<String, SparkCanvasTable> inputs = CanvasTaskExecutor.mergeInputs(
                     plan.predecessorsOf(nodeIndex), propagated, node.id());
             CanvasNodeOperationResult operation = nodeOperators.apply(
@@ -158,10 +162,11 @@ final class StreamingCanvasTaskExecutor {
                             spark,
                             metadata,
                             new RunnerCanvasNodeIssueSink(node.id()),
-                            dataAccess
+                            dataAccess,
+                            CanvasExecutionMode.STREAMING
                     )
             );
-            if (node instanceof JdbcInputNodeDefinition) {
+            if (node instanceof JdbcInputNodeDefinition || node instanceof JdbcQueryInputNodeDefinition) {
                 operation.propagatedTables().values().forEach(table -> {
                     Dataset<Row> dimension = table.dataset().persist(StorageLevel.MEMORY_AND_DISK());
                     dimension.count();
@@ -203,6 +208,13 @@ final class StreamingCanvasTaskExecutor {
             CanvasPreparedOutput output,
             String checkpoint
     ) {
+        if (SpatialJdbcRuntimeSupport.requiresSpatialWriter(output)) {
+            throw new RunnerExecutionException(
+                    "SPATIAL_JDBC_UNSUPPORTED",
+                    "第一阶段不支持实时任务写入 Geometry",
+                    output.node().id()
+            );
+        }
         try {
             return output.dataset().writeStream()
                     .queryName(queryName(manifest, output.node().id()))
@@ -211,8 +223,7 @@ final class StreamingCanvasTaskExecutor {
                             manifest.streaming().triggerIntervalSeconds(), TimeUnit.SECONDS))
                     .option("checkpointLocation", checkpoint)
                     .foreachBatch((VoidFunction2<Dataset<Row>, Long>) (batch, batchId) ->
-                            CanvasTaskExecutor.write(
-                                    output.runtimeDataSource(), output.qualifiedTableName(), batch))
+                            writeJdbcBatch(output, batch))
                     .start();
         } catch (TimeoutException exception) {
             throw new RunnerExecutionException(
@@ -221,6 +232,20 @@ final class StreamingCanvasTaskExecutor {
                     output.node().id(),
                     exception
             );
+        }
+    }
+
+    private static void writeJdbcBatch(CanvasPreparedOutput output, Dataset<Row> batch) {
+        if (output.writeMode() != JdbcWriteMode.UPSERT) {
+            CanvasTaskExecutor.write(output.runtimeDataSource(), output.qualifiedTableName(), batch);
+            return;
+        }
+        Dataset<Row> cached = batch.persist(StorageLevel.MEMORY_AND_DISK());
+        try {
+            SpatialJdbcRuntimeSupport.validateUpsertKeys(output, cached);
+            SpatialJdbcRuntimeSupport.writeUpsert(output, cached);
+        } finally {
+            cached.unpersist();
         }
     }
 
@@ -408,10 +433,8 @@ final class StreamingCanvasTaskExecutor {
             TaskExecutionManifest manifest,
             TaskExecutionLaunchDescriptor launch
     ) {
-        if (manifest == null
-                || manifest.manifestVersion() == null
-                || manifest.manifestVersion() != TaskExecutionManifest.CURRENT_MANIFEST_VERSION
-                || manifest.execution() == null
+        ManifestVersionSupport.requireSupported(manifest);
+        if (manifest.execution() == null
                 || manifest.execution().executionId() == null
                 || manifest.execution().runId() == null
                 || manifest.execution().taskId() == null

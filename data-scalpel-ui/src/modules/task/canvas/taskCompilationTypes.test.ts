@@ -41,6 +41,7 @@ describe('taskCompilationValidation', () => {
             autoIncrement: false,
             generated: false,
             comment: '订单ID',
+            geometry: null,
           }],
           datasetKind: 'BOUNDED',
           eventTimeColumn: null,

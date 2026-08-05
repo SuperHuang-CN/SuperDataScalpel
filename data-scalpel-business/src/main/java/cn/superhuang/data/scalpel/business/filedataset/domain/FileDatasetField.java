@@ -3,6 +3,10 @@ package cn.superhuang.data.scalpel.business.filedataset.domain;
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -45,6 +49,20 @@ public class FileDatasetField extends BaseEntity {
     @Column
     private Integer scale;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "geometry_kind", length = 32)
+    private GeometryKind geometryKind;
+
+    @Column(name = "crs_authority", length = 16)
+    private String crsAuthority;
+
+    @Column(name = "crs_code")
+    private Integer crsCode;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "coordinate_dimension", length = 16)
+    private CoordinateDimension coordinateDimension;
+
     @Column(nullable = false)
     private boolean nullable;
 
@@ -77,6 +95,11 @@ public class FileDatasetField extends BaseEntity {
         this.length = type.length();
         this.precision = type.precision();
         this.scale = type.scale();
+        GeometryTypeDefinition geometry = type.geometry();
+        this.geometryKind = geometry == null ? null : geometry.kind();
+        this.crsAuthority = geometry == null ? null : geometry.crs().authority();
+        this.crsCode = geometry == null ? null : geometry.crs().code();
+        this.coordinateDimension = geometry == null ? null : geometry.dimension();
         this.nullable = nullable;
     }
 
@@ -119,7 +142,18 @@ public class FileDatasetField extends BaseEntity {
     }
 
     public PlatformTypeDefinition getTypeDefinition() {
-        return new PlatformTypeDefinition(fieldType, length, precision, scale);
+        GeometryTypeDefinition geometry = geometryKind == null
+                ? null
+                : new GeometryTypeDefinition(
+                        geometryKind,
+                        new CrsReference(crsAuthority, crsCode),
+                        coordinateDimension
+                );
+        return new PlatformTypeDefinition(fieldType, length, precision, scale, geometry);
+    }
+
+    public GeometryTypeDefinition getGeometry() {
+        return getTypeDefinition().geometry();
     }
 
     public boolean isNullable() {

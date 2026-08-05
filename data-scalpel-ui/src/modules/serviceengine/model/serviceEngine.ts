@@ -29,7 +29,6 @@ export interface ServiceEngineDataSourceRegistration {
   dataSourceName: string;
   databaseType: string | null;
   status: ServiceEngineDataSourceRegistrationStatus;
-  revision: number;
   synchronizedAt: string | null;
   lastError: string | null;
   createdAt: string;
@@ -40,7 +39,6 @@ export interface ServiceEngineDataSourceTestResult {
   registrationId: string;
   engineCode: string;
   dataSourceId: string;
-  revision: number;
   databaseType: string;
 }
 

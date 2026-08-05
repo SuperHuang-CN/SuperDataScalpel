@@ -44,4 +44,16 @@ public record ColumnMetadata(
                 defaultValue, autoIncrement, generated, comment, spatial
         );
     }
+
+    public ColumnMetadata withDialectDetails(
+            String nativeType,
+            boolean nullable,
+            String comment,
+            SpatialColumnMetadata spatial
+    ) {
+        return new ColumnMetadata(
+                name, ordinal, jdbcType, nativeType, logicalType, length, precision, scale, nullable,
+                defaultValue, autoIncrement, generated, comment, spatial
+        );
+    }
 }

@@ -62,7 +62,7 @@ export const SystemRoleDrawer = ({ open, role, onClose }: SystemRoleDrawerProps)
         destroyOnHidden
         footer={<Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button>}
       >
-        <Form form={form} layout="vertical" requiredMark={false} onFinish={submit}>
+        <Form autoComplete="off" form={form} layout="vertical" requiredMark={false} onFinish={submit}>
           <Form.Item
             name="code"
             label="角色编码"

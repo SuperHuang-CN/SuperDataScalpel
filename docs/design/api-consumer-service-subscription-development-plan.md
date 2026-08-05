@@ -155,6 +155,10 @@ public interface GatewaySubscriptionPort {
 
 Service、Consumer、Credential、Subscription 继续使用四个独立 Registry，不建立万能 Gateway Client。
 
+`DATASCALPEL` Provider 使用 Super API Gateway 的原生 Consumer、API Key 和
+Subscription，不把 Kong Plugin 或 ACL 概念带入通用 Port。完整契约见
+[Super API Gateway Provider 集成](super-api-gateway-provider-integration.md)。
+
 ## 6. Kong 映射
 
 ### 6.1 服务保护

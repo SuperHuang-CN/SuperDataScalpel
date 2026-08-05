@@ -9,8 +9,22 @@ public record CanvasDefinition(
         List<CanvasEdgeDefinition> edges
 ) {
     public static final int CURRENT_SCHEMA_VERSION = 1;
-    public static final int CURRENT_SCHEMA_MINOR_VERSION = 6;
+    public static final int CURRENT_SCHEMA_MINOR_VERSION = 26;
     public static final int LEGACY_SCHEMA_MINOR_VERSION = 0;
+
+    public CanvasDefinition {
+        nodes = nodes == null ? null : List.copyOf(nodes);
+        edges = edges == null ? null : List.copyOf(edges);
+    }
+
+    public static CanvasDefinition empty() {
+        return new CanvasDefinition(
+                CURRENT_SCHEMA_VERSION,
+                CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(),
+                List.of()
+        );
+    }
 
     public int effectiveSchemaMinorVersion() {
         return schemaMinorVersion == null ? LEGACY_SCHEMA_MINOR_VERSION : schemaMinorVersion;

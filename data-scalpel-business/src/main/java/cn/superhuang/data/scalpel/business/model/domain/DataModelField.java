@@ -11,6 +11,7 @@ import jakarta.persistence.Convert;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 
@@ -21,6 +22,10 @@ import java.util.UUID;
 @Entity
 @Table(
         name = "ds_data_model_field",
+        indexes = @Index(
+                name = "idx_ds_data_model_field_standard_dictionary",
+                columnList = "standard_dictionary_id"
+        ),
         uniqueConstraints = @UniqueConstraint(
                 name = "uk_ds_data_model_field_code",
                 columnNames = {"model_id", "code"}
@@ -75,6 +80,9 @@ public class DataModelField extends BaseEntity {
 
     @Column(length = 500)
     private String description;
+
+    @Column(name = "standard_dictionary_id")
+    private UUID standardDictionaryId;
 
     protected DataModelField() {
     }
@@ -237,6 +245,14 @@ public class DataModelField extends BaseEntity {
 
     public String getDescription() {
         return description;
+    }
+
+    public UUID getStandardDictionaryId() {
+        return standardDictionaryId;
+    }
+
+    public void assignStandardDictionary(UUID standardDictionaryId) {
+        this.standardDictionaryId = standardDictionaryId;
     }
 
     private static String normalizeRequired(String value) {

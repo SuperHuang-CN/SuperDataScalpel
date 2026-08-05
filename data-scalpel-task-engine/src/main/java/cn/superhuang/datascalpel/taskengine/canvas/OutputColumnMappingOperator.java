@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 
 final class OutputColumnMappingOperator {
@@ -210,6 +211,27 @@ final class OutputColumnMappingOperator {
             CanvasNodeIssueSink issues
     ) {
         Column sourceColumn = sourceTable.dataset().col(CanvasNodeSupport.quoteIdentifier(source.name()));
+        if (source.fieldType() == PlatformDataType.GEOMETRY
+                || target.fieldType() == PlatformDataType.GEOMETRY) {
+            if (source.fieldType() != PlatformDataType.GEOMETRY
+                    || target.fieldType() != PlatformDataType.GEOMETRY) {
+                issues.error(
+                        "GEOMETRY_FIELD_OPERATION_UNSUPPORTED",
+                        "Geometry 字段不能与标量字段互相映射",
+                        path
+                );
+                return null;
+            }
+            if (!Objects.equals(source.geometry(), target.geometry())) {
+                issues.error(
+                        "SPATIAL_SCHEMA_MISMATCH",
+                        "Geometry 来源与目标的类型、CRS 或维度不一致",
+                        path
+                );
+                return null;
+            }
+            return sourceColumn.as(target.name());
+        }
         Column converted = sourceColumn;
         if (OutputTypeConversionPolicy.needsSparkCast(source, target)) {
             converted = sourceColumn.cast(SparkTypeMapper.toDataType(target));

@@ -4,7 +4,7 @@ import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationR
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationResponse;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRemovalRequest;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceTestResponse;
-import cn.superhuang.data.scalpel.engine.datasource.EngineDataSourceStore;
+import cn.superhuang.data.scalpel.engine.datasource.EngineApiStudioDataSourceService;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -19,24 +19,24 @@ import java.util.UUID;
 @RequestMapping("/internal/v1/data-sources")
 public class EngineDataSourceResource {
 
-    private final EngineDataSourceStore store;
+    private final EngineApiStudioDataSourceService dataSourceService;
 
-    public EngineDataSourceResource(EngineDataSourceStore store) {
-        this.store = store;
+    public EngineDataSourceResource(EngineApiStudioDataSourceService dataSourceService) {
+        this.dataSourceService = dataSourceService;
     }
 
     @PostMapping
     public EngineDataSourceRegistrationResponse register(@Valid @RequestBody EngineDataSourceRegistrationRequest request) {
-        return store.register(request);
+        return dataSourceService.register(request);
     }
 
     @PostMapping("/{dataSourceId}/actions/test")
     public EngineDataSourceTestResponse test(@PathVariable UUID dataSourceId) {
-        return store.test(dataSourceId);
+        return dataSourceService.test(dataSourceId);
     }
 
     @PostMapping("/actions/remove")
     public EngineDataSourceRegistrationResponse remove(@Valid @RequestBody EngineDataSourceRemovalRequest request) {
-        return store.remove(request);
+        return dataSourceService.remove(request);
     }
 }

@@ -44,6 +44,7 @@ Excel 和 GDB 只支持整文件上传或替换。
 - `parse_status`：`QUEUED/PARSING/READY/SCHEMA_READY`；
 - `current_load_job_id`：当前唯一装载任务，非空时拒绝第二个装载；
 - `parsed_metadata`：当前来源组合的预览摘要和来源元数据。
+- `spatial_crs_authority/spatial_crs_code`：可空的表级源 CRS 回退确认，不表示坐标转换。
 
 初始解析最终失败时删除空逻辑表。已有数据的追加或覆盖失败只清理新临时文件，原表、Schema 和
 来源不变。
@@ -64,6 +65,10 @@ Excel 和 GDB 只支持整文件上传或替换。
 
 `ds_file_dataset_field` 是逻辑表的权威 Schema。初始校验成功时创建；后续追加和覆盖只校验并
 复用，不自动增列、拓宽类型或重建字段记录。
+
+Geometry 字段额外持久化 `geometry_kind/crs_authority/crs_code/coordinate_dimension`，并通过
+规范 `platformTypeDefinition` 返回管理端和 Canvas。Geometry 的完整定义参与来源 Schema 指纹，
+CRS、kind 或 dimension 变化都不允许静默兼容。
 
 `ds_file_dataset_parse_job` 是可重试的执行历史，不是业务版本。任务类型为：
 
@@ -109,15 +114,15 @@ Excel/GDB 整文件替换采用破坏性语义：新文件提交后立即删除�
 `409`，不得返回部分结果。
 
 状态为 `READY` 或 `SCHEMA_READY` 且存在来源的表可以作为 Canvas 输入。运行准备直接快照权威
-Schema、解析参数和有序 Object Key 列表，生成 Manifest v7：
+Schema、解析参数和有序 Object Key 列表，生成 Manifest v8：
 
 - 表输入保存数据集 ID、表 ID、Schema 指纹和目标 Schema；
 - 来源输入保存稳定来源 ID、文件 ID、格式、压缩、存储位置和来源键；
 - 不包含数据或解析修订号，也不建立旧对象读取保护。
 
 APPEND 不影响已经生成的 Manifest；覆盖、替换和删除会立即删除旧对象，已排队或运行任务允许
-因对象不存在而失败。Task Engine 严格只接受 v6，并对多个来源使用同一 Schema 和 FAILFAST
-Reader 后执行 `unionByName`。
+因对象不存在而失败。Task Engine 接受当前 v8，并兼容不包含空间节点或 Geometry Schema 的
+v7；多个来源使用同一 Schema 和 FAILFAST Reader 后执行 `unionByName`。
 
 ## 6. API 与管理端
 
@@ -128,6 +133,7 @@ Reader 后执行 `unionByName`。
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/replace-data` | 全量覆盖 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/replace` | 替换来源 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/delete` | 删除来源 |
+| `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/update-spatial-reference` | 确认 SHP/GDB 表的 EPSG 并重新解析 Schema |
 
 装载接口返回 `202 Accepted` 和 `jobId/file/table`，校验成功前不存在来源记录。初始上传响应增加
 `jobIds`。表响应使用 `sourceCount/totalRowCount/currentLoadJobId/previewSupported`。
@@ -135,6 +141,9 @@ Reader 后执行 `unionByName`。
 表级 `actions/parse`、来源 `actions/retry` 和文件 `actions/prepare` 不再提供。具体失败信息统一
 在解析队列抽屉查看。来源页签只展示当前来源及下载、替换和删除操作；危险确认明确提示不可恢复、
 旧对象立即删除以及旧 Canvas 任务可能失败。
+
+空间参考确认只接受 `EPSG` 和正整数 code。管理端会重新读取全部当前来源并在成功后刷新表、Schema、
+预览和 Canvas 元数据；文件 WKT 已明确声明不同 EPSG 时拒绝覆盖。
 
 ## 7. 破坏性重建
 

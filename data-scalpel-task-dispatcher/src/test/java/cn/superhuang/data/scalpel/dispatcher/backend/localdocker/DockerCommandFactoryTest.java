@@ -34,7 +34,17 @@ class DockerCommandFactoryTest {
                 "cn.superhuang.datascalpel.run-id=" + identity.runId(),
                 "cn.superhuang.datascalpel.attempt=1");
         assertThat(command).doesNotContain("sh", "bash", "-c", "--rm", "run");
-        assertThat(command).endsWith("eclipse-temurin:21-jdk", "java", "-jar", "/opt/datascalpel/task-runner.jar");
+        assertThat(command).containsSubsequence(
+                "eclipse-temurin:21-jdk", "java",
+                "-XX:+IgnoreUnrecognizedVMOptions",
+                "--add-modules=jdk.incubator.vector",
+                "--add-opens=java.base/java.lang.invoke=ALL-UNNAMED",
+                "--add-opens=java.base/java.nio=ALL-UNNAMED",
+                "--enable-native-access=ALL-UNNAMED",
+                "-jar", "/opt/datascalpel/task-runner.jar"
+        );
+        assertThat(command).endsWith(
+                "--enable-native-access=ALL-UNNAMED", "-jar", "/opt/datascalpel/task-runner.jar");
     }
 
     private static LocalDockerProperties properties() {

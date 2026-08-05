@@ -80,6 +80,7 @@ const table = (id: string, name: string): FileDatasetTable => ({
   truncated: false,
   previewSupported: true,
   sourceMetadata: {},
+  spatialReferenceOverride: null,
   createdAt: '2026-07-20T00:00:00Z',
   updatedAt: '2026-07-20T00:00:00Z',
 });

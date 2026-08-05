@@ -1,0 +1,19 @@
+# Copy to application-local.yml and fill local-only credentials.
+spring:
+  config:
+    activate:
+      on-profile: local
+  datasource:
+    url: jdbc:postgresql://localhost:5432/data_scalpel
+    username: postgres
+    password: postgres
+  kafka:
+    bootstrap-servers: 127.0.0.1:9092
+
+super-api-gateway:
+  public-base-url: http://localhost:19000
+  admin:
+    username: admin
+    password: change-me
+    jwt-secret: change-me-with-at-least-32-bytes
+    machine-token: change-me-machine-token

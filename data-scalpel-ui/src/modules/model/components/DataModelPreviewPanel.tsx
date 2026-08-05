@@ -237,7 +237,7 @@ export const DataModelPreviewPanel = ({ model, fields }: DataModelPreviewPanelPr
 
   const renderConditionalQuery = () => (
     <>
-      <Form<QueryFormValues>
+      <Form<QueryFormValues> autoComplete="off"
         form={form}
         size="small"
         initialValues={{ conditionType: 'AND', filters: [], orders: [] }}

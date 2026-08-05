@@ -8,7 +8,17 @@ public record MetadataDataSource(
         UUID id,
         boolean enabled,
         ConnectionKind connectionKind,
+        CanvasJdbcDatabaseType jdbcDatabaseType,
         Set<DataSourcePurpose> purposes,
         List<MetadataTable> tables
 ) {
+    public MetadataDataSource(
+            UUID id,
+            boolean enabled,
+            ConnectionKind connectionKind,
+            Set<DataSourcePurpose> purposes,
+            List<MetadataTable> tables
+    ) {
+        this(id, enabled, connectionKind, null, purposes, tables);
+    }
 }

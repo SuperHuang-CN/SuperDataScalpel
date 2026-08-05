@@ -49,7 +49,7 @@ export interface ApiConsumerFilters {
 export const gatewayProviderLabels: Record<GatewayProvider, string> = {
   KONG: 'Kong',
   APISIX: 'APISIX',
-  DATASCALPEL: 'DataScalpel',
+  DATASCALPEL: 'Super API Gateway',
 };
 
 export const gatewayConsumerSyncStatusLabels: Record<GatewayConsumerSyncStatus, string> = {

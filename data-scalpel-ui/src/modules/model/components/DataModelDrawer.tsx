@@ -1,6 +1,6 @@
 import type { TableProps } from 'antd';
 import { Alert, Button, Col, Drawer, Form, Input, Radio, Row, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {
   useDataSourceNamespaces,
@@ -8,7 +8,12 @@ import {
   useDataSources,
 } from '../../datasource';
 import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
-import { useCreateDataModel, useExternalTableImportPreview, useUpdateDataModel } from '../hooks/useDataModels';
+import {
+  useCreateDataModel,
+  useExternalTableImportPreview,
+  useModelWarehouseLayers,
+  useUpdateDataModel,
+} from '../hooks/useDataModels';
 import {
   dataModelFieldTypeLabels,
   type CreateDataModelRequest,
@@ -22,6 +27,7 @@ import { isModelDataSourceSelectable } from '../model/managedTableImport';
 interface DataModelDrawerProps {
   open: boolean;
   model: DataModel | null;
+  initialDirectoryId?: string;
   canViewDirectories: boolean;
   onClose: () => void;
   onSaved: (model: DataModel, created: boolean) => void;
@@ -31,6 +37,7 @@ interface DataModelFormValues {
   code?: string;
   name: string;
   directoryId?: string;
+  warehouseLayerId?: string;
   storageDataSourceId: string;
   physicalTableName: string;
   physicalTableMode: PhysicalTableMode;
@@ -42,6 +49,13 @@ const jdbcDataSourceRequest = {
   page: 0,
   size: 500,
   sort: 'code',
+} as const;
+
+const enabledWarehouseLayerRequest = {
+  search: 'enabled:"true"',
+  page: 0,
+  size: 500,
+  sort: 'sortOrder,code',
 } as const;
 
 const lowerIdentifier = (value: string, maxLength: number) => (
@@ -91,14 +105,23 @@ const externalColumnColumns: TableProps<ExternalTableImportColumn>['columns'] = 
   { title: '说明', dataIndex: 'comment', width: 220, ellipsis: true, render: (value: string | null) => value || '—' },
 ];
 
-export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSaved }: DataModelDrawerProps) => {
+export const DataModelDrawer = ({
+  open,
+  model,
+  initialDirectoryId,
+  canViewDirectories,
+  onClose,
+  onSaved,
+}: DataModelDrawerProps) => {
   const [form] = Form.useForm<DataModelFormValues>();
   const [messageApi, messageContext] = message.useMessage();
   const [externalTableKeyword, setExternalTableKeyword] = useState('');
+  const autoFilledModelCodeRef = useRef<string | null>(null);
   const createMutation = useCreateDataModel();
   const updateMutation = useUpdateDataModel();
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
   const dataSourcesQuery = useDataSources(jdbcDataSourceRequest, open);
+  const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
   const selectedStorageId = Form.useWatch('storageDataSourceId', form);
   const selectedPhysicalTableMode = Form.useWatch('physicalTableMode', form);
   const selectedPhysicalTableName = Form.useWatch('physicalTableName', form);
@@ -151,6 +174,28 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
       value: source.id,
       label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : source.type}）`,
     })) ?? [], [dataSourcesQuery.data, externalTableMode, model?.storageDataSourceId]);
+  const warehouseLayerOptions = useMemo(() => {
+    const layers = [...(warehouseLayersQuery.data?.content ?? [])];
+    if (model?.warehouseLayer && !layers.some((layer) => layer.id === model.warehouseLayer?.id)) {
+      layers.push({
+        ...model.warehouseLayer,
+        description: null,
+        sortOrder: Number.MAX_SAFE_INTEGER,
+        inputLayerPolicy: 'UNRESTRICTED',
+        allowedInputLayers: [],
+        referencedModelCount: 0,
+        referencedAsInputByLayerCount: 0,
+        deletable: false,
+        createdAt: '',
+        updatedAt: '',
+      });
+    }
+    return layers.map((layer) => ({
+      value: layer.id,
+      label: `${layer.code} · ${layer.name}${layer.modelCodePrefix ? `（${layer.modelCodePrefix}*）` : ''}${layer.enabled ? '' : '（已停用）'}`,
+      disabled: !layer.enabled && layer.id !== model?.warehouseLayer?.id,
+    }));
+  }, [model, warehouseLayersQuery.data]);
   const externalTableOptions = useMemo(() => tablesQuery.data?.tables.map((table) => ({
     value: table.identifier.table,
     label: table.comment ? `${table.identifier.table}（${table.comment}）` : table.identifier.table,
@@ -164,20 +209,24 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
 
   useEffect(() => {
     if (!open) return;
+    autoFilledModelCodeRef.current = null;
     form.resetFields();
     if (model) {
       form.setFieldsValue({
         code: model.code,
         name: model.name,
         directoryId: model.directoryId ?? undefined,
+        warehouseLayerId: model.warehouseLayer?.id,
         storageDataSourceId: model.storageDataSourceId,
         physicalTableName: model.physicalTableName,
         physicalTableMode: model.physicalTableMode,
         clickHouseOrderByColumns: model.clickHouseOrderByColumns,
         description: model.description ?? undefined,
       });
+    } else {
+      form.setFieldValue('directoryId', initialDirectoryId);
     }
-  }, [form, model, open]);
+  }, [form, initialDirectoryId, model, open]);
 
   const closeDrawer = () => {
     setExternalTableKeyword('');
@@ -189,6 +238,7 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
       const request: UpdateDataModelRequest = {
         name: values.name,
         directoryId: values.directoryId,
+        warehouseLayerId: values.warehouseLayerId,
         storageDataSourceId: values.storageDataSourceId,
         physicalTableName: values.physicalTableName,
         physicalTableMode: values.physicalTableMode,
@@ -217,6 +267,24 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
   const fillPhysicalTableName = () => {
     if (!editing && selectedPhysicalTableMode !== 'EXTERNAL' && !form.getFieldValue('physicalTableName')) {
       form.setFieldValue('physicalTableName', form.getFieldValue('code'));
+    }
+  };
+
+  const selectWarehouseLayer = (layerId?: string) => {
+    if (editing) return;
+    const nextPrefix = warehouseLayersQuery.data?.content
+      .find((layer) => layer.id === layerId)?.modelCodePrefix ?? null;
+    const currentCode = form.getFieldValue('code')?.trim() ?? '';
+    const previousAutoCode = autoFilledModelCodeRef.current;
+    if (!currentCode || (previousAutoCode !== null && currentCode === previousAutoCode)) {
+      form.setFieldValue('code', nextPrefix ?? undefined);
+      autoFilledModelCodeRef.current = nextPrefix;
+    }
+  };
+
+  const changeModelCode = (value: string) => {
+    if (autoFilledModelCodeRef.current !== null && value !== autoFilledModelCodeRef.current) {
+      autoFilledModelCodeRef.current = null;
     }
   };
 
@@ -274,7 +342,7 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
             ? '选择已有表后会读取并导入字段；发布前仍会实时校验，系统不会修改该表。'
             : '物理表会在发布前实时校验；已存在的受管物理表通过变更计划修改，不直接保存字段定义。'}
         />
-        <Form<DataModelFormValues>
+        <Form<DataModelFormValues> autoComplete="off"
           form={form}
           layout="vertical"
           initialValues={{ physicalTableMode: 'MANAGED' }}
@@ -299,7 +367,12 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
                   { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
                 ]}
               >
-                <Input disabled={editing} placeholder="如：order_fact" onBlur={fillPhysicalTableName} />
+                <Input
+                  disabled={editing}
+                  placeholder="如：order_fact"
+                  onChange={(event) => changeModelCode(event.target.value)}
+                  onBlur={fillPhysicalTableName}
+                />
               </Form.Item>
             </Col>
             {canViewDirectories && (
@@ -314,7 +387,26 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
                 </Form.Item>
               </Col>
             )}
-            <Col span={canViewDirectories ? 12 : 24}>
+            <Col span={12}>
+              <Form.Item
+                label="数仓分层"
+                name="warehouseLayerId"
+                extra={model?.warehouseLayer && !model.warehouseLayer.enabled
+                  ? '当前分层已停用，可以保留或改选其他启用分层。'
+                  : '可选；分层只表达业务组织，不影响物理表结构。'}
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  loading={warehouseLayersQuery.isFetching}
+                  options={warehouseLayerOptions}
+                  placeholder="未分层"
+                  onChange={selectWarehouseLayer}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={canViewDirectories ? 24 : 12}>
               <Form.Item
                 label={externalTableMode ? 'JDBC 数据源' : '数据存储'}
                 name="storageDataSourceId"
@@ -419,7 +511,7 @@ export const DataModelDrawer = ({ open, model, canViewDirectories, onClose, onSa
                 <Form.Item
                   label="ClickHouse 排序键"
                   name="clickHouseOrderByColumns"
-                  extra="按字段编码顺序输入；它决定单机 MergeTree 的 ORDER BY，不是关系型唯一主键。"
+                  extra="按字段编码顺序输入；它决定单机 MergeTree 的 ORDER BY，不是关系型唯一主键，Geometry 字段不可使用。"
                   rules={[
                     { max: 16, type: 'array', message: '最多配置 16 个排序键字段' },
                     {

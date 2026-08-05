@@ -9,7 +9,7 @@ export interface DataServiceListRouteState {
 }
 
 const statuses: DataServiceStatus[] = ['DRAFT', 'ENABLED', 'DISABLED'];
-const types: DataServiceType[] = ['STANDARD_TABLE', 'SQL_QUERY'];
+const types: DataServiceType[] = ['STANDARD_TABLE', 'SQL_QUERY', 'SCRIPT_API'];
 const pageSizes = [10, 20, 50, 100];
 
 const positiveNumber = (value: string | null, fallback: number) => {

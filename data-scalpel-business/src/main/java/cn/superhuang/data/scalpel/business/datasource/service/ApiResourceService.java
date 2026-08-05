@@ -106,7 +106,7 @@ public class ApiResourceService {
     private DataSource requireApiDataSource(UUID id) {
         DataSource source = dataSourceRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "数据源不存在"));
-        if (source.getType().connectionKind() != DataSourceConnectionKind.HTTP_API) {
+        if (source.getType() != cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType.HTTP_API) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "当前数据源不是 HTTP API");
         }
         return source;

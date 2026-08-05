@@ -1,6 +1,10 @@
 package cn.superhuang.datascalpel.taskengine.runner;
 
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.filegdb.FileGdbFeatureCursor;
 import cn.superhuang.data.scalpel.filegdb.FileGdbOpenOptions;
 import cn.superhuang.data.scalpel.filegdb.FileGdbReadLimits;
@@ -74,6 +78,8 @@ import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.Serial;
+import java.io.Serializable;
 import java.math.BigDecimal;
 import java.net.ConnectException;
 import java.net.SocketException;
@@ -235,14 +241,16 @@ final class FileDatasetBatchReaderRegistry {
             String nodeId,
             String nodeName
     ) {
+        List<RuntimeColumnSchema> runtimeColumns = runtimeColumns(columns);
         return singlePartition(spark, schema, ignored -> {
+            List<CanvasColumnSchema> executorColumns = canvasColumns(runtimeColumns);
             try (S3Client client = s3Client(storage);
                  InputStream raw = objectStream(client, storage, input, nodeId, nodeName);
                  InputStream content = decompress(raw, input.compression())) {
                 List<Map<String, Object>> records = input.format() == FileDatasetFormat.JSON
                         ? jsonRecords(content, input)
                         : jsonLinesRecords(content, input);
-                return records.stream().map(record -> row(record, columns)).iterator();
+                return records.stream().map(record -> row(record, executorColumns)).iterator();
             } catch (FileDatasetReadException exception) {
                 throw exception;
             } catch (RuntimeException | IOException exception) {
@@ -263,7 +271,9 @@ final class FileDatasetBatchReaderRegistry {
         if (!(input.parsingOptions() instanceof RuntimeFileParsingOptions.Spreadsheet options)) {
             throw parseFailure(nodeId, nodeName, "文件解析参数与 Excel 格式不匹配", null);
         }
+        List<RuntimeColumnSchema> runtimeColumns = runtimeColumns(columns);
         return singlePartition(spark, schema, ignored -> {
+            List<CanvasColumnSchema> executorColumns = canvasColumns(runtimeColumns);
             Path temporary = null;
             try (S3Client client = s3Client(storage)) {
                 temporary = Files.createTempFile("datascalpel-file-input-", input.format() == FileDatasetFormat.XLS
@@ -287,12 +297,12 @@ final class FileDatasetBatchReaderRegistry {
                         if (sourceRow == null) {
                             continue;
                         }
-                        Object[] values = new Object[columns.size()];
+                        Object[] values = new Object[executorColumns.size()];
                         boolean hasValue = false;
-                        for (int columnIndex = 0; columnIndex < columns.size(); columnIndex++) {
+                        for (int columnIndex = 0; columnIndex < executorColumns.size(); columnIndex++) {
                             Cell cell = sourceRow.getCell(columnIndex, MissingCellPolicy.RETURN_BLANK_AS_NULL);
                             Object value = spreadsheetValue(cell);
-                            values[columnIndex] = convert(value, columns.get(columnIndex));
+                            values[columnIndex] = convert(value, executorColumns.get(columnIndex));
                             hasValue |= value != null;
                         }
                         if (hasValue) {
@@ -330,7 +340,9 @@ final class FileDatasetBatchReaderRegistry {
             String nodeId,
             String nodeName
     ) {
+        List<RuntimeColumnSchema> runtimeColumns = runtimeColumns(columns);
         return singlePartition(spark, schema, ignored -> {
+            List<CanvasColumnSchema> executorColumns = canvasColumns(runtimeColumns);
             S3Client client = s3Client(storage);
             FileGeodatabase database = null;
             FileGdbFeatureCursor cursor = null;
@@ -344,11 +356,15 @@ final class FileDatasetBatchReaderRegistry {
                         fullGdbOptions()
                 );
                 FileGdbSchema sourceSchema = database.schema(input.sourceKey());
+                FileDatasetGeometryConverter.validateSchema(sourceSchema, executorColumns);
                 cursor = database.openCursor(input.sourceKey(), FileGdbReadOptions.limit(Integer.MAX_VALUE));
                 FileGeodatabase openedDatabase = database;
                 FileGdbFeatureCursor openedCursor = cursor;
                 registerClose(openedCursor, openedDatabase, client);
-                return mappingIterator(openedCursor, feature -> gdbRow(feature, sourceSchema, columns));
+                return mappingIterator(
+                        openedCursor,
+                        feature -> gdbRow(feature, sourceSchema, executorColumns)
+                );
             } catch (RuntimeException exception) {
                 closeQuietly(cursor, database, client);
                 throw normalizeFailure(nodeId, nodeName, exception);
@@ -368,7 +384,9 @@ final class FileDatasetBatchReaderRegistry {
         if (!(input.parsingOptions() instanceof RuntimeFileParsingOptions.Shp options)) {
             throw parseFailure(nodeId, nodeName, "文件解析参数与 Shapefile 格式不匹配", null);
         }
+        List<RuntimeColumnSchema> runtimeColumns = runtimeColumns(columns);
         return singlePartition(spark, schema, ignored -> {
+            List<CanvasColumnSchema> executorColumns = canvasColumns(runtimeColumns);
             S3Client client = s3Client(storage);
             ShapefileDataset dataset = null;
             ShapefileFeatureCursor cursor = null;
@@ -382,11 +400,12 @@ final class FileDatasetBatchReaderRegistry {
                         ),
                         fullShapefileOptions(options)
                 );
+                FileDatasetGeometryConverter.validateSchema(dataset.schema(), executorColumns);
                 cursor = dataset.openCursor(ShapefileReadOptions.limit(Integer.MAX_VALUE));
                 ShapefileDataset openedDataset = dataset;
                 ShapefileFeatureCursor openedCursor = cursor;
                 registerClose(openedCursor, openedDataset, client);
-                return mappingIterator(openedCursor, feature -> shapefileRow(feature, columns));
+                return mappingIterator(openedCursor, feature -> shapefileRow(feature, executorColumns));
             } catch (RuntimeException exception) {
                 closeQuietly(cursor, dataset, client);
                 throw normalizeFailure(nodeId, nodeName, exception);
@@ -567,7 +586,7 @@ final class FileDatasetBatchReaderRegistry {
             CanvasColumnSchema column = columns.get(index);
             FileGdbField field = fields.get(column.name());
             Object value = field != null && field.type() == FileGdbFieldType.SHAPE
-                    ? geometryJson(feature.geometry())
+                    ? FileDatasetGeometryConverter.convert(feature.geometry(), column.geometry())
                     : feature.attribute(column.name());
             values[index] = convert(value, column);
         }
@@ -580,21 +599,12 @@ final class FileDatasetBatchReaderRegistry {
             CanvasColumnSchema column = columns.get(index);
             Object value = feature.attributes().containsKey(column.name())
                     ? feature.attribute(column.name())
-                    : column.name().startsWith("_geometry") ? geometryJson(feature.geometry()) : null;
+                    : column.fieldType() == PlatformDataType.GEOMETRY
+                            ? FileDatasetGeometryConverter.convert(feature.geometry(), column.geometry())
+                            : null;
             values[index] = convert(value, column);
         }
         return RowFactory.create(values);
-    }
-
-    private static String geometryJson(Object geometry) {
-        if (geometry == null) {
-            return null;
-        }
-        try {
-            return OBJECT_MAPPER.writeValueAsString(geometry);
-        } catch (IOException exception) {
-            throw new IllegalArgumentException("Geometry cannot be serialized", exception);
-        }
     }
 
     private static Row row(Map<String, Object> values, List<CanvasColumnSchema> columns) {
@@ -632,10 +642,67 @@ final class FileDatasetBatchReaderRegistry {
             case TIMESTAMP_NTZ -> value instanceof LocalDateTime local ? local
                     : value instanceof Timestamp timestamp ? timestamp.toLocalDateTime()
                     : LocalDateTime.parse(text.replace(' ', 'T'));
-            case GEOMETRY -> throw new IllegalArgumentException(
-                    "SPATIAL_FIELD_UNSUPPORTED: 文件数据集 Canvas 输入不支持空间字段"
-            );
+            case GEOMETRY -> value instanceof org.locationtech.jts.geom.Geometry geometry
+                    ? geometry
+                    : throwGeometryValue();
         };
+    }
+
+    private static Object throwGeometryValue() {
+        throw new IllegalArgumentException("FILE_GEOMETRY_INVALID: 文件 Geometry 运行时值无效");
+    }
+
+    private static List<RuntimeColumnSchema> runtimeColumns(List<CanvasColumnSchema> columns) {
+        return columns.stream().map(RuntimeColumnSchema::from).toList();
+    }
+
+    private static List<CanvasColumnSchema> canvasColumns(List<RuntimeColumnSchema> columns) {
+        return columns.stream().map(RuntimeColumnSchema::toCanvas).toList();
+    }
+
+    /** Explicit Spark closure payload; stable Canvas contracts stay independent from Java serialization. */
+    private record RuntimeColumnSchema(
+            String name,
+            PlatformDataType fieldType,
+            Integer length,
+            Integer precision,
+            Integer scale,
+            boolean nullable,
+            String defaultValue,
+            boolean autoIncrement,
+            boolean generated,
+            String comment,
+            GeometryKind geometryKind,
+            String crsAuthority,
+            Integer crsCode,
+            CoordinateDimension coordinateDimension
+    ) implements Serializable {
+        @Serial
+        private static final long serialVersionUID = 1L;
+
+        private static RuntimeColumnSchema from(CanvasColumnSchema column) {
+            GeometryTypeDefinition geometry = column.geometry();
+            return new RuntimeColumnSchema(
+                    column.name(), column.fieldType(), column.length(), column.precision(), column.scale(),
+                    column.nullable(), column.defaultValue(), column.autoIncrement(), column.generated(),
+                    column.comment(), geometry == null ? null : geometry.kind(),
+                    geometry == null ? null : geometry.crs().authority(),
+                    geometry == null ? null : geometry.crs().code(),
+                    geometry == null ? null : geometry.dimension()
+            );
+        }
+
+        private CanvasColumnSchema toCanvas() {
+            GeometryTypeDefinition geometry = geometryKind == null ? null : new GeometryTypeDefinition(
+                    geometryKind,
+                    new CrsReference(crsAuthority, crsCode),
+                    coordinateDimension
+            );
+            return new CanvasColumnSchema(
+                    name, fieldType, length, precision, scale, nullable, defaultValue,
+                    autoIncrement, generated, comment, geometry
+            );
+        }
     }
 
     private static Object spreadsheetValue(Cell cell) {
@@ -820,7 +887,7 @@ final class FileDatasetBatchReaderRegistry {
         return prefix.endsWith("/") ? prefix + child : prefix + "/" + child;
     }
 
-    private static FileDatasetReadException normalizeFailure(
+    static FileDatasetReadException normalizeFailure(
             String nodeId,
             String nodeName,
             Throwable throwable
@@ -843,6 +910,16 @@ final class FileDatasetBatchReaderRegistry {
                 || findCause(throwable, FileNotFoundException.class) != null
                 || messageContains(throwable, "PATH_NOT_FOUND")) {
             return objectMissing(nodeId, nodeName, throwable);
+        }
+        if (findCause(throwable, FileDatasetSpatialSchemaDriftException.class) != null) {
+            return new FileDatasetReadException(
+                    "SPATIAL_SCHEMA_DRIFT",
+                    "文件 Geometry Schema 与任务定义不一致",
+                    nodeId,
+                    nodeName,
+                    false,
+                    throwable
+            );
         }
         S3Exception s3Exception = findCause(throwable, S3Exception.class);
         if (s3Exception != null) {

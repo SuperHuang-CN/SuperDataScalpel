@@ -18,6 +18,24 @@ public record UpdateDataServiceRequest(
         @NotNull DataServiceType type,
         @Valid StandardDataServiceDefinitionRequest standardDefinition,
         @Valid SqlDataServiceDefinitionRequest sqlDefinition,
+        @Valid ScriptDataServiceDefinitionRequest scriptDefinition,
         @Size(max = 1000) String description
 ) {
+
+    public UpdateDataServiceRequest(
+            String name,
+            UUID directoryId,
+            UUID engineId,
+            String routePath,
+            DataServiceAccessMode accessMode,
+            DataServiceType type,
+            StandardDataServiceDefinitionRequest standardDefinition,
+            SqlDataServiceDefinitionRequest sqlDefinition,
+            String description
+    ) {
+        this(
+                name, directoryId, engineId, routePath, accessMode, type,
+                standardDefinition, sqlDefinition, null, description
+        );
+    }
 }

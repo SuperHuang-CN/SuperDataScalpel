@@ -10,15 +10,25 @@ import {
   SendOutlined,
 } from '@ant-design/icons';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  useBlocker,
+  useLocation,
+  useNavigate,
+  useParams,
+  useSearchParams,
+  type BlockerFunction,
+} from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { DataModelBasicPanel } from '../components/DataModelBasicPanel';
 import { DataModelDrawer } from '../components/DataModelDrawer';
-import { DataModelFieldsPanel } from '../components/DataModelFieldsPanel';
+import {
+  DataModelFieldsPanel,
+  type DataModelFieldsPanelHandle,
+} from '../components/DataModelFieldsPanel';
 import { DataModelLineagePanel } from '../components/DataModelLineagePanel';
 import { DataModelPhysicalChangePanel } from '../components/DataModelPhysicalChangePanel';
 import { DataModelPreviewPanel } from '../components/DataModelPreviewPanel';
@@ -66,6 +76,9 @@ export const DataModelDetailPage = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState(false);
+  const [fieldsDirty, setFieldsDirty] = useState(false);
+  const fieldsPanelRef = useRef<DataModelFieldsPanelHandle>(null);
+  const allowNavigationRef = useRef(false);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const detailQuery = useDataModel(id, Boolean(id));
@@ -88,12 +101,32 @@ export const DataModelDetailPage = () => {
     ? 'basic'
     : requestedTab;
   const model = detailQuery.data?.model;
+  const blocker = useBlocker(useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation }) => !allowNavigationRef.current && fieldsDirty && (
+      currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search
+    ),
+    [fieldsDirty],
+  ));
 
   useEffect(() => {
     if (permissionsLoaded && requestedTab === 'tasks' && !canViewTasks) {
       setSearchParams({ tab: 'basic' }, { replace: true });
     }
   }, [canViewTasks, permissionsLoaded, requestedTab, setSearchParams]);
+
+  useEffect(() => {
+    const warn = (event: BeforeUnloadEvent) => {
+      if (!fieldsDirty) return;
+      event.preventDefault();
+      event.returnValue = '';
+    };
+    window.addEventListener('beforeunload', warn);
+    return () => window.removeEventListener('beforeunload', warn);
+  }, [fieldsDirty]);
+
+  useEffect(() => {
+    if (!fieldsDirty && blocker.state === 'blocked') blocker.reset();
+  }, [blocker, fieldsDirty]);
 
   const directoryNameById = useMemo(() => {
     const names = new Map<string, string>();
@@ -130,26 +163,50 @@ export const DataModelDetailPage = () => {
     if (target.status === 'DRAFT') {
       modalApi.confirm({
         title: '发布模型',
-        content: '发布前会实时检查物理表是否存在且与模型字段一致；发布后字段结构将变为只读。',
-        okText: '发布',
-        cancelText: '取消',
-        onOk: () => executeCommand(target, 'publish'),
+        content: fieldsDirty
+          ? '当前字段定义有未保存修改。发布只会使用最后保存的字段，成功后当前修改将被放弃。'
+          : '发布前会实时检查物理表是否存在且与模型字段一致；发布后字段结构将变为只读。',
+        okText: fieldsDirty ? '放弃修改并发布' : '发布',
+        okButtonProps: fieldsDirty ? { danger: true } : undefined,
+        cancelText: fieldsDirty ? '继续编辑' : '取消',
+        onOk: async () => {
+          await executeCommand(target, 'publish');
+          if (fieldsDirty) fieldsPanelRef.current?.discardChanges();
+        },
       });
       return;
     }
-    void executeCommand(target, target.status === 'PUBLISHED' ? 'disable' : 'enable');
+    const command = target.status === 'PUBLISHED' ? 'disable' : 'enable';
+    if (!fieldsDirty || command === 'disable') {
+      void executeCommand(target, command);
+      return;
+    }
+    modalApi.confirm({
+      title: '启用模型并放弃字段修改？',
+      content: '启用只会使用最后保存的字段定义，成功后当前修改将被放弃。',
+      okText: '放弃修改并启用',
+      okButtonProps: { danger: true },
+      cancelText: '继续编辑',
+      onOk: async () => {
+        await executeCommand(target, command);
+        fieldsPanelRef.current?.discardChanges();
+      },
+    });
   };
 
   const remove = (target: DataModel) => modalApi.confirm({
     title: '删除模型',
-    content: `确认删除“${target.name}”吗？只删除模型元数据，不操作物理表。`,
-    okText: '删除',
+    content: fieldsDirty
+      ? `“${target.name}”的字段定义还有未保存修改。删除后这些修改和模型元数据都会丢失，物理表不会被操作。`
+      : `确认删除“${target.name}”吗？只删除模型元数据，不操作物理表。`,
+    okText: fieldsDirty ? '放弃修改并删除' : '删除',
     okButtonProps: { danger: true },
     cancelText: '取消',
     onOk: async () => {
       try {
         await deleteMutation.mutateAsync(target.id);
         messageApi.success('模型已删除');
+        allowNavigationRef.current = true;
         navigate('/model', { replace: true });
       } catch (error) {
         messageApi.error(error instanceof ApiError ? error.message : '删除模型失败');
@@ -166,6 +223,24 @@ export const DataModelDetailPage = () => {
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '导出模型元数据失败');
     }
+  };
+
+  const refreshDetail = () => {
+    if (!fieldsDirty) {
+      void detailQuery.refetch();
+      return;
+    }
+    modalApi.confirm({
+      title: '放弃未保存的字段修改？',
+      content: '刷新模型详情会重新加载最后保存的字段定义，当前修改会丢失。',
+      okText: '放弃修改并刷新',
+      okButtonProps: { danger: true },
+      cancelText: '继续编辑',
+      onOk: () => {
+        fieldsPanelRef.current?.discardChanges();
+        void detailQuery.refetch();
+      },
+    });
   };
 
   if (!id) {
@@ -207,8 +282,20 @@ export const DataModelDetailPage = () => {
     },
     {
       key: 'fields',
-      label: `字段定义 ${detailQuery.data.fields.length}`,
-      children: <DataModelFieldsPanel model={model} canUpdate={canUpdate} />,
+      label: (
+        <Space size={4}>
+          <span>{`字段定义 ${detailQuery.data.fields.length}`}</span>
+          {fieldsDirty && <Tag color="processing">未保存</Tag>}
+        </Space>
+      ),
+      children: (
+        <DataModelFieldsPanel
+          ref={fieldsPanelRef}
+          model={model}
+          canUpdate={canUpdate}
+          onDirtyChange={setFieldsDirty}
+        />
+      ),
     },
     { key: 'changes', label: '物理变更', children: <DataModelPhysicalChangePanel model={model} canUpdate={canUpdate} /> },
     { key: 'data', label: '数据预览', children: <DataModelPreviewPanel model={model} fields={detailQuery.data.fields} /> },
@@ -244,7 +331,7 @@ export const DataModelDetailPage = () => {
             </Button>
           )}
           <Tooltip title="刷新模型">
-            <Button icon={<ReloadOutlined />} aria-label="刷新模型详情" onClick={() => void detailQuery.refetch()} />
+            <Button icon={<ReloadOutlined />} aria-label="刷新模型详情" onClick={refreshDetail} />
           </Tooltip>
           {canUpdate && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>修改</Button>}
           {canPublish && (
@@ -284,6 +371,22 @@ export const DataModelDetailPage = () => {
         onClose={() => setEditing(false)}
         onSaved={() => setEditing(false)}
       />
+      <Modal
+        open={blocker.state === 'blocked'}
+        title="离开未保存的字段定义？"
+        okText="放弃并离开"
+        okButtonProps={{ danger: true }}
+        cancelText="继续编辑"
+        closable={false}
+        mask={{ closable: false }}
+        onOk={() => {
+          fieldsPanelRef.current?.discardChanges();
+          blocker.proceed?.();
+        }}
+        onCancel={() => blocker.reset?.()}
+      >
+        当前字段定义尚未保存，离开后这些修改会丢失。
+      </Modal>
     </div>
   );
 };

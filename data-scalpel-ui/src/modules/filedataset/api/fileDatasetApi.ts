@@ -98,6 +98,19 @@ export const updateFileDatasetTable = (input: { datasetId: string; tableId: stri
   })
 );
 
+export const updateFileDatasetTableSpatialReference = (input: {
+  datasetId: string;
+  tableId: string;
+  epsgCode: number;
+}): Promise<FileDatasetTable> => requestJson<FileDatasetTable>(
+  `${FILE_DATASET_PATH}/${input.datasetId}/tables/${input.tableId}/actions/update-spatial-reference`,
+  {
+    method: 'POST',
+    body: JSON.stringify({ authority: 'EPSG', code: input.epsgCode }),
+  },
+  FILE_OPERATION_TIMEOUT,
+);
+
 export const fetchFileDatasetTableSources = (
   datasetId: string,
   tableId: string,

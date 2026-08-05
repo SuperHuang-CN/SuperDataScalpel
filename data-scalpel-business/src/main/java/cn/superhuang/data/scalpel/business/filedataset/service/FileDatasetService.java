@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDataset;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetCompression;
+import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetField;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFile;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFileStatus;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFormat;
@@ -26,6 +27,7 @@ import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDataset
 import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetParser;
 import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetParsingException;
 import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetParsingInfrastructureException;
+import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetSchemaValidator;
 import cn.superhuang.data.scalpel.business.filedataset.service.queue.FileDatasetParseJobSubmissionService;
 import cn.superhuang.data.scalpel.business.filedataset.storage.FileObjectStorage;
 import cn.superhuang.data.scalpel.business.filedataset.storage.FileStorageException;
@@ -34,6 +36,7 @@ import cn.superhuang.data.scalpel.business.filedataset.web.request.CreateFileDat
 import cn.superhuang.data.scalpel.business.filedataset.web.request.FileDatasetParsingOptionsRequest;
 import cn.superhuang.data.scalpel.business.filedataset.web.request.UpdateFileDatasetRequest;
 import cn.superhuang.data.scalpel.business.filedataset.web.request.UpdateFileDatasetTableRequest;
+import cn.superhuang.data.scalpel.business.filedataset.web.request.UpdateFileDatasetTableSpatialReferenceRequest;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetFieldResponse;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetCanvasMetadataResponse;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetCanvasTableMetadataResponse;
@@ -49,6 +52,8 @@ import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetU
 import cn.superhuang.data.scalpel.business.task.service.CanvasFileDatasetReferenceService;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -71,6 +76,7 @@ import java.io.InputStream;
 import java.nio.charset.Charset;
 import java.nio.charset.IllegalCharsetNameException;
 import java.nio.file.Path;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
@@ -103,6 +109,7 @@ public class FileDatasetService {
     private final FileDatasetTemporaryFileManager temporaryFileManager;
     private final FileDatasetContentParser contentParser;
     private final FileDatasetParseJobSubmissionService parseJobSubmissionService;
+    private final FileDatasetSchemaValidator schemaValidator;
     private final TransactionTemplate transactionTemplate;
     private final CanvasFileDatasetReferenceService canvasReferenceService;
 
@@ -121,6 +128,7 @@ public class FileDatasetService {
             FileDatasetTemporaryFileManager temporaryFileManager,
             FileDatasetContentParser contentParser,
             FileDatasetParseJobSubmissionService parseJobSubmissionService,
+            FileDatasetSchemaValidator schemaValidator,
             CanvasFileDatasetReferenceService canvasReferenceService,
             PlatformTransactionManager transactionManager
     ) {
@@ -138,6 +146,7 @@ public class FileDatasetService {
         this.temporaryFileManager = temporaryFileManager;
         this.contentParser = contentParser;
         this.parseJobSubmissionService = parseJobSubmissionService;
+        this.schemaValidator = schemaValidator;
         this.canvasReferenceService = canvasReferenceService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -447,6 +456,50 @@ public class FileDatasetService {
         return tableResponse(table);
     }
 
+    public FileDatasetTableResponse updateTableSpatialReference(
+            UUID datasetId,
+            UUID tableId,
+            UpdateFileDatasetTableSpatialReferenceRequest request
+    ) {
+        CrsReference spatialReference = new CrsReference(
+                request.authority().trim().toUpperCase(Locale.ROOT), request.code()
+        );
+        SpatialReferencePreparation preparation = requireTransactionResult(transactionTemplate.execute(status ->
+                prepareSpatialReferenceUpdate(datasetId, tableId)
+        ));
+        List<FileDatasetParser.ParseResult> parsedSources = new ArrayList<>(preparation.sources().size());
+        try {
+            for (SpatialSourceSnapshot source : preparation.sources()) {
+                FileDatasetParser.ParseResult parsed = contentParser.parse(
+                        source.input(spatialReference.code()), 1_000
+                );
+                if (parsed.fields().isEmpty()) {
+                    throw new FileDatasetParsingException("未识别到可用字段");
+                }
+                requireEffectiveSpatialReference(parsed, spatialReference);
+                if (!parsedSources.isEmpty()) {
+                    schemaValidator.requireCompatible(parsedSources.getFirst(), parsed);
+                }
+                parsedSources.add(parsed);
+            }
+        } catch (FileStorageObjectNotFoundException exception) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "文件内容不存在", exception);
+        } catch (FileStorageException exception) {
+            throw storageUnavailable(exception);
+        } catch (FileDatasetParsingInfrastructureException exception) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, exception.getMessage(), exception);
+        } catch (FileDatasetParsingException | IOException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "无法按指定空间参考重新解析表：" + safeParseError(exception),
+                    exception
+            );
+        }
+        return requireTransactionResult(transactionTemplate.execute(status -> applySpatialReferenceUpdate(
+                preparation, parsedSources, spatialReference
+        )));
+    }
+
     @Transactional(readOnly = true)
     public List<FileDatasetTableSourceResponse> tableSources(UUID datasetId, UUID tableId) {
         requireDataset(datasetId);
@@ -641,7 +694,11 @@ public class FileDatasetService {
             }
             return new PreviewPreparation(
                     sources.stream().map(source -> parseInput(
-                            dataset, requireFile(datasetId, source.getSourceFileId()), source
+                            dataset,
+                            requireFile(datasetId, source.getSourceFileId()),
+                            source,
+                            table.getSpatialReferenceOverride() == null
+                                    ? null : table.getSpatialReferenceOverride().code()
                     )).toList(),
                     parsedFields(tableId)
             );
@@ -1188,6 +1245,24 @@ public class FileDatasetService {
         }
     }
 
+    private String writeParsedMetadata(FileDatasetParser.ParseResult result) {
+        try {
+            return objectMapper.writeValueAsString(new FileDatasetParsedMetadata(
+                    result.rows().size(), result.truncated(), result.sourceMetadata()
+            ));
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("无法保存文件解析元数据", exception);
+        }
+    }
+
+    private String writeSourceMetadata(Map<String, Object> metadata) {
+        try {
+            return objectMapper.writeValueAsString(new LinkedHashMap<>(metadata));
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("无法保存文件来源元数据", exception);
+        }
+    }
+
     private FileObjectStorage requireStorage() {
         FileObjectStorage storage = storageProvider.getIfAvailable();
         if (storage == null) {
@@ -1347,13 +1422,148 @@ public class FileDatasetService {
             FileDatasetFile file,
             FileDatasetTableSource source
     ) {
+        return parseInput(dataset, file, source, null);
+    }
+
+    private static FileDatasetContentParser.Input parseInput(
+            FileDataset dataset,
+            FileDatasetFile file,
+            FileDatasetTableSource source,
+            Integer epsgCodeOverride
+    ) {
         return new FileDatasetContentParser.Input(
                 file.getFormat(), file.getCompression(),
                 file.getStorageKind() != FileDatasetStorageKind.SINGLE_OBJECT
                         ? file.getMaterializedPrefix() : file.getObjectKey(),
                 file.getSizeBytes(),
-                dataset.getParsingOptions(), source.getSourceKey()
+                dataset.getParsingOptions(), source.getSourceKey(), epsgCodeOverride
         );
+    }
+
+    private SpatialReferencePreparation prepareSpatialReferenceUpdate(UUID datasetId, UUID tableId) {
+        FileDataset dataset = requireDatasetLocked(datasetId);
+        if (dataset.getType() != FileDatasetType.GDB && dataset.getType() != FileDatasetType.SHP) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "只有 GDB 和 SHP 文件数据集支持确认空间参考"
+            );
+        }
+        FileDatasetTable table = tableRepository.findLockedByIdAndFileDatasetId(tableId, datasetId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文件数据集表不存在"));
+        if (!table.hasData()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已经就绪的逻辑表才能确认空间参考");
+        }
+        if (table.getCurrentLoadJobId() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "逻辑表正在装载，暂不能确认空间参考");
+        }
+        List<FileDatasetTableSource> sources = currentSources(tableId);
+        if (sources.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "逻辑表没有当前数据来源");
+        }
+        Map<UUID, FileDatasetFile> files = fileRepository.findAllById(
+                        sources.stream().map(FileDatasetTableSource::getSourceFileId).distinct().toList()
+                ).stream()
+                .collect(java.util.stream.Collectors.toMap(FileDatasetFile::getId, file -> file));
+        List<SpatialSourceSnapshot> snapshots = sources.stream().map(source -> {
+            FileDatasetFile file = files.get(source.getSourceFileId());
+            if (file == null || !datasetId.equals(file.getFileDatasetId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "逻辑表来源文件不存在");
+            }
+            if (file.getStatus() != FileDatasetFileStatus.READY) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "逻辑表来源文件尚未准备完成");
+            }
+            String effectiveObjectKey = file.getStorageKind() == FileDatasetStorageKind.SINGLE_OBJECT
+                    ? file.getObjectKey() : file.getMaterializedPrefix();
+            if (!hasText(effectiveObjectKey)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "逻辑表来源文件缺少可读取对象");
+            }
+            return new SpatialSourceSnapshot(
+                    source.getId(), source.getUpdatedAt(), source.getSourceFileId(),
+                    source.getSchemaFingerprint(), source.getSourceMetadata(),
+                    file.getUpdatedAt(), file.getStatus(), file.getStorageEtag(),
+                    file.getFormat(), file.getCompression(), effectiveObjectKey,
+                    file.getSizeBytes(), dataset.getParsingOptions(), source.getSourceKey()
+            );
+        }).toList();
+        return new SpatialReferencePreparation(
+                datasetId, dataset.getUpdatedAt(), dataset.getParsingOptions(),
+                tableId, table.getUpdatedAt(), snapshots
+        );
+    }
+
+    private FileDatasetTableResponse applySpatialReferenceUpdate(
+            SpatialReferencePreparation preparation,
+            List<FileDatasetParser.ParseResult> parsedSources,
+            CrsReference spatialReference
+    ) {
+        FileDataset dataset = requireDatasetLocked(preparation.datasetId());
+        FileDatasetTable table = tableRepository.findLockedByIdAndFileDatasetId(
+                        preparation.tableId(), preparation.datasetId()
+                )
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文件数据集表不存在"));
+        if (!Objects.equals(dataset.getUpdatedAt(), preparation.datasetUpdatedAt())
+                || !Objects.equals(dataset.getParsingOptions(), preparation.parsingOptions())
+                || !Objects.equals(table.getUpdatedAt(), preparation.tableUpdatedAt())
+                || table.getCurrentLoadJobId() != null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "重新解析期间文件数据集或逻辑表已经变化，请重试");
+        }
+        List<FileDatasetTableSource> current = currentSources(table.getId());
+        if (current.size() != preparation.sources().size() || parsedSources.size() != current.size()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "重新解析期间逻辑表的数据来源已经变化，请重试");
+        }
+        Map<UUID, FileDatasetFile> files = fileRepository.findAllById(
+                        current.stream().map(FileDatasetTableSource::getSourceFileId).distinct().toList()
+                ).stream()
+                .collect(java.util.stream.Collectors.toMap(FileDatasetFile::getId, file -> file));
+        for (int index = 0; index < current.size(); index++) {
+            FileDatasetTableSource source = current.get(index);
+            SpatialSourceSnapshot expected = preparation.sources().get(index);
+            FileDatasetFile file = files.get(source.getSourceFileId());
+            if (!expected.matches(source, file)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "重新解析期间逻辑表的数据来源已经变化，请重试");
+            }
+        }
+
+        fieldRepository.deleteByFileDatasetTableId(table.getId());
+        FileDatasetParser.ParseResult canonical = parsedSources.getFirst();
+        fieldRepository.saveAll(canonical.fields().stream().map(field -> FileDatasetField.create(
+                table.getId(), field.name(), field.sortOrder(), field.type(), field.nullable()
+        )).toList());
+        for (int index = 0; index < current.size(); index++) {
+            FileDatasetParser.ParseResult parsed = parsedSources.get(index);
+            current.get(index).replaceSchema(
+                    schemaValidator.fingerprint(parsed.fields()), writeSourceMetadata(parsed.sourceMetadata())
+            );
+        }
+        sourceRepository.saveAll(current);
+        boolean previewSupported = parsedSources.stream().allMatch(FileDatasetParser.ParseResult::previewSupported);
+        table.replaceSpatialSchema(writeParsedMetadata(canonical), previewSupported, spatialReference);
+        tableRepository.save(table);
+        fieldRepository.flush();
+        sourceRepository.flush();
+        tableRepository.flush();
+        return tableResponse(table);
+    }
+
+    private static void requireEffectiveSpatialReference(
+            FileDatasetParser.ParseResult parsed,
+            CrsReference expected
+    ) {
+        List<CrsReference> references = parsed.fields().stream()
+                .filter(field -> field.type().type() == PlatformDataType.GEOMETRY)
+                .map(field -> field.type().geometry().crs())
+                .distinct()
+                .toList();
+        if (references.isEmpty()) {
+            throw new FileDatasetParsingException("文件表未识别到 Geometry 字段");
+        }
+        if (references.size() != 1 || !references.getFirst().equals(expected)) {
+            throw new FileDatasetParsingException(
+                    "文件内声明的空间参考为 " + references.getFirst().authority() + ":"
+                            + references.getFirst().code() + "，不能覆盖为 "
+                            + expected.authority() + ":" + expected.code()
+            );
+        }
     }
 
     private List<FileDatasetTableSource> currentSources(UUID tableId) {
@@ -1407,5 +1617,59 @@ public class FileDatasetService {
             List<FileDatasetContentParser.Input> inputs,
             List<FileDatasetFieldResponse> fields
     ) { }
+    private record SpatialReferencePreparation(
+            UUID datasetId,
+            Instant datasetUpdatedAt,
+            String parsingOptions,
+            UUID tableId,
+            Instant tableUpdatedAt,
+            List<SpatialSourceSnapshot> sources
+    ) {
+        private SpatialReferencePreparation {
+            sources = List.copyOf(sources);
+        }
+    }
+    private record SpatialSourceSnapshot(
+            UUID sourceId,
+            Instant sourceUpdatedAt,
+            UUID sourceFileId,
+            String schemaFingerprint,
+            String sourceMetadata,
+            Instant fileUpdatedAt,
+            FileDatasetFileStatus fileStatus,
+            String storageEtag,
+            FileDatasetFormat format,
+            FileDatasetCompression compression,
+            String effectiveObjectKey,
+            long sizeBytes,
+            String parsingOptions,
+            String sourceKey
+    ) {
+        private FileDatasetContentParser.Input input(int epsgCodeOverride) {
+            return new FileDatasetContentParser.Input(
+                    format, compression, effectiveObjectKey, sizeBytes,
+                    parsingOptions, sourceKey, epsgCodeOverride
+            );
+        }
+
+        private boolean matches(FileDatasetTableSource source, FileDatasetFile file) {
+            if (file == null) {
+                return false;
+            }
+            String currentObjectKey = file.getStorageKind() == FileDatasetStorageKind.SINGLE_OBJECT
+                    ? file.getObjectKey() : file.getMaterializedPrefix();
+            return sourceId.equals(source.getId())
+                    && Objects.equals(sourceUpdatedAt, source.getUpdatedAt())
+                    && sourceFileId.equals(source.getSourceFileId())
+                    && Objects.equals(schemaFingerprint, source.getSchemaFingerprint())
+                    && Objects.equals(sourceMetadata, source.getSourceMetadata())
+                    && Objects.equals(fileUpdatedAt, file.getUpdatedAt())
+                    && fileStatus == file.getStatus()
+                    && Objects.equals(storageEtag, file.getStorageEtag())
+                    && format == file.getFormat()
+                    && compression == file.getCompression()
+                    && Objects.equals(effectiveObjectKey, currentObjectKey);
+        }
+    }
     private record ContentPreparation(String fileName, String objectKey, String contentType, long sizeBytes) { }
 }

@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceRuntimeService;
 import cn.superhuang.data.scalpel.business.datasource.service.ApiResourceService;
+import cn.superhuang.data.scalpel.business.datasource.service.SpatialFeatureResourceService;
 import cn.superhuang.data.scalpel.business.datasource.web.response.ColumnMetadataResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadataResponse;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
@@ -28,10 +29,14 @@ import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetRep
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableRepository;
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableSourceRepository;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetParsingOptionsResponse;
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
+import cn.superhuang.data.scalpel.contract.task.CanvasFieldPredicate;
+import cn.superhuang.data.scalpel.contract.task.CanvasFilterCondition;
+import cn.superhuang.data.scalpel.contract.task.CanvasFilterGroup;
+import cn.superhuang.data.scalpel.contract.task.CanvasLiteral;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
 import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
@@ -45,6 +50,41 @@ import cn.superhuang.data.scalpel.contract.task.FileOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.FileOutputConflictPolicy;
 import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FilterConfiguration;
+import cn.superhuang.data.scalpel.contract.task.FilterGroupOperator;
+import cn.superhuang.data.scalpel.contract.task.FilterNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FilterOperator;
+import cn.superhuang.data.scalpel.contract.task.SelectColumnsConfiguration;
+import cn.superhuang.data.scalpel.contract.task.SelectColumnsNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.BinaryExpression;
+import cn.superhuang.data.scalpel.contract.task.CanvasExpression;
+import cn.superhuang.data.scalpel.contract.task.CaseWhenBranch;
+import cn.superhuang.data.scalpel.contract.task.CaseWhenExpression;
+import cn.superhuang.data.scalpel.contract.task.ColumnDerivation;
+import cn.superhuang.data.scalpel.contract.task.ColumnExpression;
+import cn.superhuang.data.scalpel.contract.task.DeriveBinaryOperator;
+import cn.superhuang.data.scalpel.contract.task.DeriveColumnsConfiguration;
+import cn.superhuang.data.scalpel.contract.task.DeriveColumnsNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.DeriveFunction;
+import cn.superhuang.data.scalpel.contract.task.FunctionExpression;
+import cn.superhuang.data.scalpel.contract.task.LiteralExpression;
+import cn.superhuang.data.scalpel.contract.task.CastFailureStrategy;
+import cn.superhuang.data.scalpel.contract.task.ColumnTypeCast;
+import cn.superhuang.data.scalpel.contract.task.TypeCastConfiguration;
+import cn.superhuang.data.scalpel.contract.task.TypeCastNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.AggregateConfiguration;
+import cn.superhuang.data.scalpel.contract.task.AggregateFunction;
+import cn.superhuang.data.scalpel.contract.task.AggregateItem;
+import cn.superhuang.data.scalpel.contract.task.AggregateNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.UnionConfiguration;
+import cn.superhuang.data.scalpel.contract.task.UnionMode;
+import cn.superhuang.data.scalpel.contract.task.UnionNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.DeduplicateConfiguration;
+import cn.superhuang.data.scalpel.contract.task.DeduplicateKeepStrategy;
+import cn.superhuang.data.scalpel.contract.task.DeduplicateNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.NullOrdering;
+import cn.superhuang.data.scalpel.contract.task.SortDirection;
+import cn.superhuang.data.scalpel.contract.task.SortField;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
@@ -128,6 +168,7 @@ public class CanvasTaskRunPreparationService {
     private final DialectRegistry dialectRegistry;
     private final TaskCompilationService compilationService;
     private final ApiResourceService apiResourceService;
+    private final SpatialFeatureResourceService spatialFeatureResourceService;
     private final ModelPhysicalTablePort physicalTablePort;
     private final FileDatasetRepository fileDatasetRepository;
     private final FileDatasetTableRepository fileDatasetTableRepository;
@@ -145,6 +186,7 @@ public class CanvasTaskRunPreparationService {
             DialectRegistry dialectRegistry,
             TaskCompilationService compilationService,
             ApiResourceService apiResourceService,
+            SpatialFeatureResourceService spatialFeatureResourceService,
             ModelPhysicalTablePort physicalTablePort,
             FileDatasetRepository fileDatasetRepository,
             FileDatasetTableRepository fileDatasetTableRepository,
@@ -161,6 +203,7 @@ public class CanvasTaskRunPreparationService {
         this.dialectRegistry = dialectRegistry;
         this.compilationService = compilationService;
         this.apiResourceService = apiResourceService;
+        this.spatialFeatureResourceService = spatialFeatureResourceService;
         this.physicalTablePort = physicalTablePort;
         this.fileDatasetRepository = fileDatasetRepository;
         this.fileDatasetTableRepository = fileDatasetTableRepository;
@@ -196,6 +239,7 @@ public class CanvasTaskRunPreparationService {
         });
         Map<UUID, RequestedDataSource> requests = buildDataSourceRequests(requestBuilders);
         Map<UUID, DataSource> sources = loadDataSources(requests.keySet());
+        validateJdbcQuerySnapshots(definition, sources);
         List<MetadataDataSource> metadataSources = new ArrayList<>();
         List<CanvasTaskRunManifest.RuntimeDataSource> runtimeSources = new ArrayList<>();
 
@@ -222,6 +266,24 @@ public class CanvasTaskRunPreparationService {
                         resources.stream().map(CanvasTaskRunPreparationService::apiMetadataTable).toList()
                 ));
                 runtimeSources.add(httpApiRuntimeDataSource(source, requested, resources));
+                return;
+            }
+            if (source.getType() == DataSourceType.ARCGIS_REST || source.getType() == DataSourceType.WFS) {
+                List<SpatialServiceResourceDefinition> resources = requested.spatialResourceIds().stream()
+                        .sorted()
+                        .map(resourceId -> spatialFeatureResourceService.runtimeDefinition(source.getId(), resourceId))
+                        .toList();
+                if (resources.stream().anyMatch(resource -> !resource.enabled())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 引用的空间要素资源已停用");
+                }
+                metadataSources.add(new MetadataDataSource(
+                        source.getId(), source.isEnabled(), ConnectionKind.HTTP_API,
+                        source.getPurposes().stream()
+                                .map(purpose -> cn.superhuang.data.scalpel.contract.task.DataSourcePurpose.valueOf(purpose.name()))
+                                .collect(Collectors.toUnmodifiableSet()),
+                        resources.stream().map(CanvasTaskRunPreparationService::spatialMetadataTable).toList()
+                ));
+                runtimeSources.add(spatialRuntimeDataSource(source, requested, resources));
                 return;
             }
             if (source.getType() == DataSourceType.KAFKA) {
@@ -262,6 +324,7 @@ public class CanvasTaskRunPreparationService {
                     source.getId(),
                     source.isEnabled(),
                     ConnectionKind.JDBC,
+                    jdbcDatabaseType(source.getType()),
                     source.getPurposes().stream()
                             .map(purpose -> cn.superhuang.data.scalpel.contract.task.DataSourcePurpose.valueOf(
                                     purpose.name()))
@@ -291,7 +354,7 @@ public class CanvasTaskRunPreparationService {
                 UUID.randomUUID(),
                 new TaskDefinition(
                         TaskType.CANVAS,
-                        compilationDefinition(definition),
+                        definition,
                         executionMode
                 ),
                 metadata
@@ -339,8 +402,75 @@ public class CanvasTaskRunPreparationService {
                         ? DatabaseObjectType.VIEW
                         : DatabaseObjectType.TABLE,
                 metadata.columns().stream().sorted(Comparator.comparingInt(ColumnMetadataResponse::ordinal))
-                        .map(column -> columnSchema(dialect, column)).toList()
+                        .map(column -> columnSchema(dialect, column)).toList(),
+                metadata.uniqueKeys().stream().map(key -> new MetadataUniqueKey(
+                        key.name(),
+                        MetadataUniqueKeyType.valueOf(key.type()),
+                        key.columns()
+                )).toList()
         );
+    }
+
+    private static CanvasJdbcDatabaseType jdbcDatabaseType(DataSourceType type) {
+        return switch (type) {
+            case POSTGRESQL -> CanvasJdbcDatabaseType.POSTGRESQL;
+            case MYSQL -> CanvasJdbcDatabaseType.MYSQL;
+            default -> null;
+        };
+    }
+
+    private void validateJdbcQuerySnapshots(
+            CanvasDefinition definition,
+            Map<UUID, DataSource> sources
+    ) {
+        for (CanvasNodeDefinition definitionNode : definition.nodes()) {
+            if (!(definitionNode instanceof JdbcQueryInputNodeDefinition node)
+                    || node.configuration() == null) {
+                continue;
+            }
+            JdbcQueryInputConfiguration configuration = node.configuration();
+            UUID dataSourceId = uuid(configuration.dataSourceId(), node.name());
+            DataSource source = sources.get(dataSourceId);
+            if (source == null) {
+                continue;
+            }
+            var inspection = runtimeService.inspectQuery(dataSourceId, configuration.sql());
+            if (!inspection.analyzedSqlSha256().equals(configuration.analyzedSqlSha256())) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "JDBC_QUERY_SCHEMA_STALE：SQL 已修改，请重新分析并保存节点"
+                );
+            }
+            if (!sameQueryColumns(configuration.outputColumns(), inspection.columns())) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "JDBC_QUERY_SCHEMA_DRIFT：查询结果结构已变化，请重新分析并保存节点"
+                );
+            }
+        }
+    }
+
+    private static boolean sameQueryColumns(
+            List<CanvasColumnSchema> expected,
+            List<CanvasColumnSchema> actual
+    ) {
+        if (expected == null || actual == null || expected.size() != actual.size()) {
+            return false;
+        }
+        for (int index = 0; index < expected.size(); index++) {
+            CanvasColumnSchema left = expected.get(index);
+            CanvasColumnSchema right = actual.get(index);
+            if (left == null || right == null
+                    || !java.util.Objects.equals(left.name(), right.name())
+                    || left.fieldType() != right.fieldType()
+                    || !java.util.Objects.equals(left.length(), right.length())
+                    || !java.util.Objects.equals(left.precision(), right.precision())
+                    || !java.util.Objects.equals(left.scale(), right.scale())
+                    || left.nullable() != right.nullable()) {
+                return false;
+            }
+        }
+        return true;
     }
 
     private static MetadataTable apiMetadataTable(
@@ -364,18 +494,20 @@ public class CanvasTaskRunPreparationService {
         );
     }
 
+    private static MetadataTable spatialMetadataTable(SpatialServiceResourceDefinition resource) {
+        return new MetadataTable(
+                resource.id().toString(),
+                DatabaseObjectType.SPATIAL_FEATURE_RESOURCE,
+                resource.columns()
+        );
+    }
+
     private MetadataModel metadataModel(
             DataModel model,
             List<DataModelField> fields,
             DataSource source,
             DatabaseDialect dialect
     ) {
-        if (fields.stream().anyMatch(field -> field.getFieldType() == PlatformDataType.GEOMETRY)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "SPATIAL_FIELD_UNSUPPORTED：Canvas 第一版不支持包含空间字段的模型：" + model.getName()
-            );
-        }
         TableMetadata physical;
         try {
             physical = physicalTablePort.readExternalTable(source, model);
@@ -440,7 +572,8 @@ public class CanvasTaskRunPreparationService {
                 physical.defaultValue(),
                 physical.autoIncrement(),
                 physical.generated(),
-                field.getDescription()
+                field.getDescription(),
+                field.getGeometry()
         );
     }
 
@@ -455,13 +588,11 @@ public class CanvasTaskRunPreparationService {
             DatabaseDialect dialect,
             ColumnMetadataResponse column
     ) {
-        TypeMappingResult<PlatformTypeDefinition> mapping = dialect.mapToPlatformType(new JdbcTypeDescriptor(
-                column.jdbcType(), column.nativeType(), column.length(), column.precision(), column.scale(), null));
-        if (!mapping.acceptable()) {
+        PlatformTypeDefinition type = column.platformTypeDefinition();
+        if (type == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "字段无法无损映射到平台类型：" + column.name());
         }
-        PlatformTypeDefinition type = mapping.definition();
         return new CanvasColumnSchema(
                 column.name(),
                 type.type(),
@@ -472,7 +603,8 @@ public class CanvasTaskRunPreparationService {
                 column.defaultValue(),
                 column.autoIncrement(),
                 column.generated(),
-                column.comment()
+                column.comment(),
+                type.geometry()
         );
     }
 
@@ -496,7 +628,8 @@ public class CanvasTaskRunPreparationService {
                 column.defaultValue(),
                 column.autoIncrement(),
                 column.generated(),
-                column.comment()
+                column.comment(),
+                type.geometry()
         );
     }
 
@@ -546,6 +679,17 @@ public class CanvasTaskRunPreparationService {
                 null,
                 runtimeService.runtimeConnection(source),
                 resources
+        );
+    }
+
+    private CanvasTaskRunManifest.RuntimeDataSource spatialRuntimeDataSource(
+            DataSource source,
+            RequestedDataSource requested,
+            List<SpatialServiceResourceDefinition> resources
+    ) {
+        return new CanvasTaskRunManifest.RuntimeDataSource(
+                source.getId(), ConnectionKind.HTTP_API, null, executionPurposes(requested), null,
+                runtimeService.runtimeConnection(source), List.of(), null, null, resources
         );
     }
 
@@ -818,7 +962,8 @@ public class CanvasTaskRunPreparationService {
                         null,
                         false,
                         false,
-                        null
+                        null,
+                        field.getGeometry()
                 ))
                 .toList();
     }
@@ -886,8 +1031,8 @@ public class CanvasTaskRunPreparationService {
 
     private static Set<UUID> referencedFileDatasetTables(CanvasDefinition definition) {
         Set<UUID> ids = new LinkedHashSet<>();
-        for (CanvasDefinition.CanvasNodeDefinition node : definition.nodes()) {
-            if (node instanceof CanvasDefinition.FileDatasetInputNodeDefinition input) {
+        for (CanvasNodeDefinition node : definition.nodes()) {
+            if (node instanceof FileDatasetInputNodeDefinition input) {
                 try {
                     ids.add(UUID.fromString(input.configuration().fileDatasetTableId()));
                 } catch (RuntimeException ignored) {
@@ -904,26 +1049,31 @@ public class CanvasTaskRunPreparationService {
         }
         boolean jdbc = source.getType() == DataSourceType.POSTGRESQL || source.getType() == DataSourceType.MYSQL;
         boolean httpApi = source.getType() == DataSourceType.HTTP_API;
+        boolean spatialService = source.getType() == DataSourceType.ARCGIS_REST || source.getType() == DataSourceType.WFS;
         boolean kafka = source.getType() == DataSourceType.KAFKA;
         boolean s3 = source.getType() == DataSourceType.S3;
-        if (!jdbc && !httpApi && !kafka && !s3) {
+        if (!jdbc && !httpApi && !spatialService && !kafka && !s3) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Canvas 执行只支持 PostgreSQL、MySQL、HTTP API、Kafka 和 S3");
+                    "Canvas 执行只支持 PostgreSQL、MySQL、HTTP API、空间服务、Kafka 和 S3");
         }
         if (httpApi && (requested.modelRead() || requested.modelWrite()
                 || requested.apiResourceIds().isEmpty())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "HTTP API 只能作为 API 输入节点的数据源");
         }
-        if (jdbc && !requested.apiResourceIds().isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "HTTP API 输入节点引用了非 API 数据源");
+        if (spatialService && (requested.modelRead() || requested.modelWrite()
+                || requested.spatialResourceIds().isEmpty())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "空间服务只能作为空间服务输入节点的数据源");
         }
-        if (kafka && (!requested.tableNames().isEmpty() || !requested.apiResourceIds().isEmpty()
+        if (jdbc && (!requested.apiResourceIds().isEmpty() || !requested.spatialResourceIds().isEmpty())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "HTTP API 或空间服务输入节点引用了非对应数据源");
+        }
+        if (kafka && (!requested.tableNames().isEmpty() || !requested.apiResourceIds().isEmpty() || !requested.spatialResourceIds().isEmpty()
                 || requested.modelRead() || requested.modelWrite() || requested.fileOutput())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Kafka 只能用于 Kafka 输入或输出节点");
         }
         if (s3 && (!requested.fileOutput() || requested.source() || requested.modelRead()
                 || requested.modelWrite() || !requested.tableNames().isEmpty()
-                || !requested.apiResourceIds().isEmpty() || !requested.kafkaTopics().isEmpty())) {
+                || !requested.apiResourceIds().isEmpty() || !requested.spatialResourceIds().isEmpty() || !requested.kafkaTopics().isEmpty())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "S3 数据源只能用于文件输出节点");
         }
         if (!s3 && requested.fileOutput()) {
@@ -950,29 +1100,38 @@ public class CanvasTaskRunPreparationService {
 
     private static Map<UUID, RequestedDataSourceBuilder> referencedDataSourceBuilders(CanvasDefinition definition) {
         Map<UUID, RequestedDataSourceBuilder> builders = new LinkedHashMap<>();
-        for (CanvasDefinition.CanvasNodeDefinition node : definition.nodes()) {
-            if (node instanceof CanvasDefinition.JdbcInputNodeDefinition input) {
+        for (CanvasNodeDefinition node : definition.nodes()) {
+            if (node instanceof JdbcInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .source(input.configuration().tableName());
-            } else if (node instanceof CanvasDefinition.HttpApiInputNodeDefinition input) {
+            } else if (node instanceof JdbcQueryInputNodeDefinition input) {
+                UUID id = uuid(input.configuration().dataSourceId(), input.name());
+                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
+                        .querySource();
+            } else if (node instanceof HttpApiInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 UUID resourceId = uuid(input.configuration().resourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .apiResource(resourceId);
-            } else if (node instanceof CanvasDefinition.KafkaInputNodeDefinition input) {
+            } else if (node instanceof SpatialServiceInputNodeDefinition input) {
+                UUID id = uuid(input.configuration().dataSourceId(), input.name());
+                UUID resourceId = uuid(input.configuration().resourceId(), input.name());
+                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
+                        .spatialResource(resourceId);
+            } else if (node instanceof KafkaInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .kafkaSource(input.configuration().topic());
-            } else if (node instanceof CanvasDefinition.JdbcOutputNodeDefinition output) {
+            } else if (node instanceof JdbcOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .distributionTable(output.configuration().targetTableName());
-            } else if (node instanceof CanvasDefinition.KafkaOutputNodeDefinition output) {
+            } else if (node instanceof KafkaOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .distribution(output.configuration().topic());
-            } else if (node instanceof CanvasDefinition.FileOutputNodeDefinition output) {
+            } else if (node instanceof FileOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .fileDistribution();
@@ -991,11 +1150,11 @@ public class CanvasTaskRunPreparationService {
 
     private static Map<UUID, RequestedModel> referencedModels(CanvasDefinition definition) {
         Map<UUID, RequestedModelBuilder> builders = new LinkedHashMap<>();
-        for (CanvasDefinition.CanvasNodeDefinition node : definition.nodes()) {
-            if (node instanceof CanvasDefinition.ModelInputNodeDefinition input) {
+        for (CanvasNodeDefinition node : definition.nodes()) {
+            if (node instanceof ModelInputNodeDefinition input) {
                 UUID id = modelUuid(input.configuration().modelId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).input();
-            } else if (node instanceof CanvasDefinition.ModelOutputNodeDefinition output) {
+            } else if (node instanceof ModelOutputNodeDefinition output) {
                 UUID id = modelUuid(output.configuration().targetModelId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).output();
             }
@@ -1031,171 +1190,6 @@ public class CanvasTaskRunPreparationService {
                     exception
             );
         }
-    }
-
-    private static cn.superhuang.data.scalpel.contract.task.CanvasDefinition compilationDefinition(
-            CanvasDefinition definition
-    ) {
-        List<CanvasNodeDefinition> nodes = definition.nodes().stream()
-                .<CanvasNodeDefinition>map(node -> switch (node) {
-            case CanvasDefinition.ModelInputNodeDefinition input -> new ModelInputNodeDefinition(
-                    input.id(), input.name(), layout(input.layout()),
-                    new ModelInputConfiguration(
-                            modelUuid(input.configuration().modelId(), input.name())));
-            case CanvasDefinition.JdbcInputNodeDefinition input -> new JdbcInputNodeDefinition(
-                    input.id(), input.name(), layout(input.layout()),
-                    new JdbcInputConfiguration(
-                            uuid(input.configuration().dataSourceId(), input.name()).toString(),
-                            input.configuration().tableName()));
-            case CanvasDefinition.FileDatasetInputNodeDefinition input ->
-                    new FileDatasetInputNodeDefinition(
-                            input.id(),
-                            input.name(),
-                            layout(input.layout()),
-                            new FileDatasetInputConfiguration(
-                                    fileDatasetTableUuid(
-                                            input.configuration().fileDatasetTableId(),
-                                            input.name()
-                                    ).toString()
-                            )
-                    );
-            case CanvasDefinition.HttpApiInputNodeDefinition input -> new HttpApiInputNodeDefinition(
-                    input.id(), input.name(), layout(input.layout()),
-                    new HttpApiInputConfiguration(
-                            uuid(input.configuration().dataSourceId(), input.name()).toString(),
-                            uuid(input.configuration().resourceId(), input.name()).toString(),
-                            input.configuration().outputTableName(),
-                            input.configuration().runtimeParameters()));
-            case CanvasDefinition.KafkaInputNodeDefinition input -> new KafkaInputNodeDefinition(
-                    input.id(), input.name(), layout(input.layout()),
-                    new KafkaInputConfiguration(
-                            uuid(input.configuration().dataSourceId(), input.name()),
-                            input.configuration().topic(),
-                            kafkaValueSchema(input.configuration().valueSchema()),
-                            input.configuration().outputTableName(),
-                            KafkaStartingOffsets.valueOf(
-                                    input.configuration().startingOffsets().name())));
-            case CanvasDefinition.JoinNodeDefinition join -> new JoinNodeDefinition(
-                    join.id(), join.name(), layout(join.layout()),
-                    new JoinConfiguration(
-                            join.configuration().leftTableName(), join.configuration().rightTableName(),
-                            join.configuration().outputTableName(),
-                            JoinType.valueOf(join.configuration().joinType().name()),
-                            join.configuration().conditions().stream().map(condition -> new JoinCondition(
-                                    condition.leftColumnName(),
-                                    JoinOperator.valueOf(condition.operator().name()),
-                                    condition.rightColumnName())).toList()));
-            case CanvasDefinition.StreamJoinNodeDefinition join -> new StreamJoinNodeDefinition(
-                    join.id(), join.name(), layout(join.layout()),
-                    new StreamJoinConfiguration(
-                            join.configuration().leftTableName(),
-                            join.configuration().rightTableName(),
-                            join.configuration().outputTableName(),
-                            StreamJoinType.valueOf(join.configuration().joinType().name()),
-                            join.configuration().conditions().stream().map(condition ->
-                                    new JoinCondition(
-                                            condition.leftColumnName(),
-                                            JoinOperator.valueOf(condition.operator().name()),
-                                            condition.rightColumnName())).toList()));
-            case CanvasDefinition.RenameNodeDefinition rename -> new RenameNodeDefinition(
-                    rename.id(), rename.name(), layout(rename.layout()),
-                    new RenameConfiguration(
-                            rename.configuration().sourceTableName(),
-                            rename.configuration().outputTableName(),
-                            rename.configuration().columnMappings().stream()
-                                    .map(mapping -> new RenameColumnMapping(
-                                            mapping.sourceColumnName(),
-                                            mapping.targetColumnName()))
-                                    .toList()));
-            case CanvasDefinition.JdbcOutputNodeDefinition output -> new JdbcOutputNodeDefinition(
-                    output.id(), output.name(), layout(output.layout()),
-                    new JdbcOutputConfiguration(
-                            output.configuration().sourceTableName(),
-                            uuid(output.configuration().dataSourceId(), output.name()).toString(),
-                            output.configuration().targetTableName(),
-                            JdbcWriteMode.valueOf(output.configuration().writeMode().name()),
-                            ColumnMappingMode.valueOf(output.configuration().columnMappingMode().name()),
-                            output.configuration().columnMappings().stream().map(mapping ->
-                                    new JdbcColumnMapping(
-                                            mapping.sourceColumnName(), mapping.targetColumnName())).toList()));
-            case CanvasDefinition.ModelOutputNodeDefinition output -> new ModelOutputNodeDefinition(
-                    output.id(), output.name(), layout(output.layout()),
-                    new ModelOutputConfiguration(
-                            output.configuration().sourceTableName(),
-                            modelUuid(output.configuration().targetModelId(), output.name()),
-                            JdbcWriteMode.valueOf(output.configuration().writeMode().name()),
-                            ColumnMappingMode.valueOf(output.configuration().columnMappingMode().name()),
-                            output.configuration().columnMappings().stream().map(mapping ->
-                                    new JdbcColumnMapping(
-                                            mapping.sourceColumnName(), mapping.targetColumnName())).toList()));
-            case CanvasDefinition.KafkaOutputNodeDefinition output -> new KafkaOutputNodeDefinition(
-                    output.id(), output.name(), layout(output.layout()),
-                    new KafkaOutputConfiguration(
-                            output.configuration().sourceTableName(),
-                            uuid(output.configuration().dataSourceId(), output.name()),
-                            output.configuration().topic(),
-                            kafkaValueSchema(output.configuration().valueSchema()),
-                            output.configuration().keyColumnName(),
-                            ColumnMappingMode.valueOf(
-                                    output.configuration().columnMappingMode().name()),
-                            output.configuration().columnMappings().stream().map(mapping ->
-                                    new JdbcColumnMapping(
-                                            mapping.sourceColumnName(), mapping.targetColumnName())).toList()));
-            case CanvasDefinition.FileOutputNodeDefinition output -> new FileOutputNodeDefinition(
-                    output.id(), output.name(), layout(output.layout()),
-                    new FileOutputConfiguration(
-                            output.configuration().sourceTableName(),
-                            uuid(output.configuration().dataSourceId(), output.name()).toString(),
-                            output.configuration().targetPath(),
-                            output.configuration().conflictPolicy() == null ? null
-                                    : FileOutputConflictPolicy.valueOf(
-                                            output.configuration().conflictPolicy().name()),
-                            fileOutputFormatOptions(output.configuration().formatOptions())));
-        }).toList();
-        return new cn.superhuang.data.scalpel.contract.task.CanvasDefinition(
-                definition.schemaVersion(),
-                definition.schemaMinorVersion(),
-                nodes,
-                definition.edges().stream().map(edge -> new CanvasEdgeDefinition(
-                        edge.id(), edge.sourceNodeId(), edge.targetNodeId())).toList()
-        );
-    }
-
-    private static CanvasNodeLayout layout(CanvasDefinition.CanvasNodeLayout layout) {
-        return new CanvasNodeLayout(layout.x(), layout.y(), layout.width(), layout.height());
-    }
-
-    private static KafkaValueSchema kafkaValueSchema(
-            CanvasDefinition.KafkaValueSchema schema
-    ) {
-        return schema == null
-                ? null
-                : new KafkaValueSchema(schema.columns().stream()
-                        .map(column -> new KafkaValueColumn(
-                                column.name(),
-                                column.fieldType(),
-                                column.length(),
-                                column.precision(),
-                                column.scale(),
-                                column.nullable(),
-                                column.comment()
-                        ))
-                        .toList());
-    }
-
-    private static FileOutputFormatOptions fileOutputFormatOptions(
-            CanvasDefinition.FileOutputFormatOptions options
-    ) {
-        if (options == null) return null;
-        return switch (options) {
-            case CanvasDefinition.FileOutputFormatOptions.Csv csv ->
-                    new FileOutputFormatOptions.Csv(
-                            csv.header(), csv.delimiter(), csv.quote(), csv.escape(), csv.nullValue());
-            case CanvasDefinition.FileOutputFormatOptions.JsonLines json ->
-                    new FileOutputFormatOptions.JsonLines(json.ignoreNullFields());
-            case CanvasDefinition.FileOutputFormatOptions.Parquet ignored ->
-                    new FileOutputFormatOptions.Parquet();
-        };
     }
 
     public record Preparation(
@@ -1255,6 +1249,7 @@ public class CanvasTaskRunPreparationService {
             boolean fileOutput,
             Set<String> tableNames,
             Set<UUID> apiResourceIds,
+            Set<UUID> spatialResourceIds,
             Set<String> kafkaTopics
     ) {
     }
@@ -1267,11 +1262,17 @@ public class CanvasTaskRunPreparationService {
         private boolean fileOutput;
         private final Set<String> tables = new LinkedHashSet<>();
         private final Set<UUID> apiResources = new LinkedHashSet<>();
+        private final Set<UUID> spatialResources = new LinkedHashSet<>();
         private final Set<String> kafkaTopics = new LinkedHashSet<>();
 
         private RequestedDataSourceBuilder source(String table) {
             source = true;
             tables.add(table);
+            return this;
+        }
+
+        private RequestedDataSourceBuilder querySource() {
+            source = true;
             return this;
         }
 
@@ -1288,6 +1289,12 @@ public class CanvasTaskRunPreparationService {
         private RequestedDataSourceBuilder apiResource(UUID resourceId) {
             source = true;
             apiResources.add(resourceId);
+            return this;
+        }
+
+        private RequestedDataSourceBuilder spatialResource(UUID resourceId) {
+            source = true;
+            spatialResources.add(resourceId);
             return this;
         }
 
@@ -1318,7 +1325,7 @@ public class CanvasTaskRunPreparationService {
         private RequestedDataSource build() {
             return new RequestedDataSource(
                     source, modelRead, modelWrite, distribution, fileOutput,
-                    Set.copyOf(tables), Set.copyOf(apiResources), Set.copyOf(kafkaTopics));
+                    Set.copyOf(tables), Set.copyOf(apiResources), Set.copyOf(spatialResources), Set.copyOf(kafkaTopics));
         }
     }
 

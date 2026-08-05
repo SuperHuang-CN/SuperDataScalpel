@@ -49,6 +49,55 @@ final class RunnerFailureClassifier {
             String sqlState,
             RunnerFailureContext context
     ) {
+        if ("VALUE_MAPPING".equals(context.nodeType())
+                && causeMessages(throwable).contains("value_mapping_unmatched_value")) {
+            return failure(
+                    "VALUE_MAPPING_UNMATCHED_VALUE",
+                    ExecutionErrorCategory.CONSTRAINT
+            );
+        }
+        String causeText = causeMessages(throwable);
+        if (causeText.contains("geometry_construct_kind_mismatch")) {
+            return failure(
+                    "GEOMETRY_CONSTRUCT_KIND_MISMATCH",
+                    ExecutionErrorCategory.SCHEMA
+            );
+        }
+        if (causeText.contains("org.locationtech.jts.io.parseexception")
+                || causeText.contains("org.apache.sedona.common.utils.formatutils")
+                        && causeText.contains("parse")
+                || causeText.contains("invalid wkt")
+                || causeText.contains("invalid wkb")
+                || causeText.contains("invalid geojson")) {
+            return failure(
+                    "GEOMETRY_CONSTRUCT_PARSE_FAILED",
+                    ExecutionErrorCategory.SCHEMA
+            );
+        }
+        if ("GEOMETRY_REPAIR".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("GEOMETRY_REPAIR_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("GEOMETRY_BUFFER".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("GEOMETRY_BUFFER_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("GEOMETRY_EXPLODE".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("GEOMETRY_EXPLODE_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("SPATIAL_CLIP".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("SPATIAL_CLIP_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("SPATIAL_AGGREGATE".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("SPATIAL_AGGREGATE_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("FILE_OUTPUT".equals(context.nodeType())
+                && hasCause(throwable, SocketTimeoutException.class)) {
+            return retryable("FILE_OUTPUT_CONNECTION_FAILED", ExecutionErrorCategory.CONNECTION);
+        }
         if ("57014".equals(sqlState) || hasCause(throwable, SQLTimeoutException.class)
                 || hasCause(throwable, SocketTimeoutException.class)) {
             return retryable("JDBC_TIMEOUT", ExecutionErrorCategory.TIMEOUT);
@@ -70,7 +119,7 @@ final class RunnerFailureClassifier {
         if (fileFailure != null) {
             ExecutionErrorCategory category = switch (fileFailure.code()) {
                 case "FILE_DATASET_STORAGE_UNAVAILABLE" -> ExecutionErrorCategory.CONNECTION;
-                case "FILE_DATASET_PARSE_FAILED" -> ExecutionErrorCategory.SCHEMA;
+                case "FILE_DATASET_PARSE_FAILED", "SPATIAL_SCHEMA_DRIFT" -> ExecutionErrorCategory.SCHEMA;
                 default -> ExecutionErrorCategory.EXTERNAL_SYSTEM;
             };
             return new Classification(fileFailure.code(), category, fileFailure.retryable());
@@ -81,6 +130,15 @@ final class RunnerFailureClassifier {
             switch (runner.code()) {
                 case "RUNTIME_SCHEMA_MISMATCH" -> {
                     return failure("RUNTIME_SCHEMA_MISMATCH", ExecutionErrorCategory.SCHEMA);
+                }
+                case "SPATIAL_SCHEMA_DRIFT" -> {
+                    return failure("SPATIAL_SCHEMA_DRIFT", ExecutionErrorCategory.SCHEMA);
+                }
+                case "JDBC_QUERY_SCHEMA_DRIFT", "JDBC_QUERY_SCHEMA_STALE" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.SCHEMA);
+                }
+                case "UPSERT_KEY_NULL", "UPSERT_DUPLICATE_KEY" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.CONSTRAINT);
                 }
                 case "FILE_DATASET_INPUT_FAILED" -> {
                     return failure(runner.code(), ExecutionErrorCategory.CONFIGURATION);
@@ -108,6 +166,53 @@ final class RunnerFailureClassifier {
                 }
                 case "MANIFEST_DOWNLOAD_FAILED", "RESULT_UPLOAD_FAILED" -> {
                     return retryable(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
+                }
+                case "FILE_OUTPUT_TARGET_EXISTS" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.CONSTRAINT);
+                }
+                case "SHAPEFILE_GEOMETRY_TYPE_MISMATCH",
+                        "SHAPEFILE_EMPTY_GEOMETRY_UNSUPPORTED",
+                        "SHAPEFILE_ATTRIBUTE_VALUE_TOO_LONG",
+                        "SHAPEFILE_NUMERIC_OVERFLOW" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.SCHEMA);
+                }
+                case "SHAPEFILE_SIZE_LIMIT_EXCEEDED",
+                        "SHAPEFILE_LOCAL_STORAGE_EXHAUSTED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.RESOURCE);
+                }
+                case "GEOPARQUET_GEOMETRY_TYPE_MISMATCH",
+                        "GEOPARQUET_EMPTY_GEOMETRY_UNSUPPORTED",
+                        "GEOPARQUET_COORDINATE_INVALID",
+                        "GEOJSON_GEOMETRY_TYPE_MISMATCH",
+                        "GEOJSON_EMPTY_GEOMETRY_UNSUPPORTED",
+                        "GEOJSON_COORDINATE_INVALID",
+                        "GEOJSON_COORDINATE_OUT_OF_RANGE",
+                        "GEOJSON_NON_FINITE_NUMBER" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.SCHEMA);
+                }
+                case "GEOJSON_SIZE_LIMIT_EXCEEDED",
+                        "GEOJSON_LOCAL_STORAGE_EXHAUSTED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.RESOURCE);
+                }
+                case "SHAPEFILE_UPLOAD_FAILED", "GEOJSON_UPLOAD_FAILED" -> {
+                    Classification storageFailure = classifyFileOutputStorageFailure(
+                            throwable, causeText);
+                    return storageFailure == null
+                            ? retryable(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM)
+                            : storageFailure;
+                }
+                case "GEOPARQUET_WRITE_FAILED" -> {
+                    Classification storageFailure = classifyFileOutputStorageFailure(
+                            throwable, causeText);
+                    return storageFailure == null
+                            ? failure(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM)
+                            : storageFailure;
+                }
+                case "SHAPEFILE_WRITE_FAILED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
+                }
+                case "GEOJSON_WRITE_FAILED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
                 }
                 case "INVALID_LAUNCH", "INVALID_MANIFEST", "INVALID_WORK_DIRECTORY",
                         "MANIFEST_IDENTITY_MISMATCH", "MANIFEST_DIGEST_MISMATCH",
@@ -171,6 +276,9 @@ final class RunnerFailureClassifier {
         if ("JDBC_INPUT".equals(context.nodeType())) {
             return failure("JDBC_INPUT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM);
         }
+        if ("JDBC_QUERY_INPUT".equals(context.nodeType())) {
+            return failure("JDBC_QUERY_INPUT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM);
+        }
         if ("MODEL_INPUT".equals(context.nodeType())) {
             return failure("MODEL_INPUT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM);
         }
@@ -202,11 +310,25 @@ final class RunnerFailureClassifier {
             case "JDBC_CONSTRAINT_VIOLATION" -> "写入目标表时违反数据库约束";
             case "JDBC_UNSUPPORTED_TYPE" -> "数据源字段类型不受支持";
             case "RUNTIME_SCHEMA_MISMATCH" -> "运行时表结构与任务定义不一致";
+            case "SPATIAL_SCHEMA_DRIFT" -> "运行时 Geometry Schema 与任务定义不一致";
             case "JDBC_STATEMENT_FAILED" -> context.phase() == ExecutionFailurePhase.READ
                     ? withResource("读取数据源表失败", resource)
                     : withResource("写入目标表失败", resource);
             case "PROCESSOR_EXECUTION_FAILED" -> "处理器节点执行失败";
+            case "VALUE_MAPPING_UNMATCHED_VALUE" -> "值映射遇到未配置的非 NULL 值";
+            case "GEOMETRY_CONSTRUCT_PARSE_FAILED" -> "Geometry 来源内容解析失败";
+            case "GEOMETRY_CONSTRUCT_KIND_MISMATCH" -> "Geometry 实际类型与目标类型不一致";
+            case "GEOMETRY_REPAIR_FAILED" -> "Geometry 修复失败";
+            case "GEOMETRY_BUFFER_FAILED" -> "Geometry Buffer 计算失败";
+            case "GEOMETRY_EXPLODE_FAILED" -> "Geometry 拆分失败";
+            case "SPATIAL_CLIP_FAILED" -> "空间裁剪失败";
+            case "SPATIAL_AGGREGATE_FAILED" -> "空间聚合失败";
             case "JDBC_INPUT_FAILED" -> "JDBC 输入节点执行失败";
+            case "JDBC_QUERY_INPUT_FAILED" -> "JDBC 查询输入节点执行失败";
+            case "JDBC_QUERY_SCHEMA_DRIFT" -> "JDBC 查询结果结构已变化";
+            case "JDBC_QUERY_SCHEMA_STALE" -> "JDBC 查询 SQL 已修改，需要重新分析";
+            case "UPSERT_KEY_NULL" -> "UPSERT Key 不能包含 NULL";
+            case "UPSERT_DUPLICATE_KEY" -> "当前批次存在重复 UPSERT Key";
             case "MODEL_INPUT_FAILED" -> "模型输入节点执行失败";
             case "HTTP_API_INPUT_FAILED" -> "HTTP API 输入节点执行失败";
             case "FILE_DATASET_OBJECT_NOT_FOUND" -> "文件数据集对象不存在";
@@ -220,6 +342,27 @@ final class RunnerFailureClassifier {
             case "FILE_OUTPUT_PERMISSION_DENIED" -> "File Output S3 权限不足";
             case "FILE_OUTPUT_CONNECTION_FAILED" -> "File Output 无法连接 S3";
             case "FILE_OUTPUT_FAILED" -> "File Output 写入失败";
+            case "SHAPEFILE_GEOMETRY_TYPE_MISMATCH" -> "Shapefile Geometry 与目标 Shape 类型不一致";
+            case "SHAPEFILE_EMPTY_GEOMETRY_UNSUPPORTED" -> "Shapefile 不支持 Empty Geometry";
+            case "SHAPEFILE_ATTRIBUTE_VALUE_TOO_LONG" -> "Shapefile DBF 属性值超过字段宽度";
+            case "SHAPEFILE_NUMERIC_OVERFLOW" -> "Shapefile DBF 数值超过字段精度或宽度";
+            case "SHAPEFILE_SIZE_LIMIT_EXCEEDED" -> "Shapefile 制品达到 1.8GB 安全限制";
+            case "SHAPEFILE_LOCAL_STORAGE_EXHAUSTED" -> "Shapefile 本地暂存空间不足";
+            case "SHAPEFILE_WRITE_FAILED" -> "Shapefile 本地制品写入失败";
+            case "SHAPEFILE_UPLOAD_FAILED" -> "Shapefile S3 制品提交失败";
+            case "GEOPARQUET_GEOMETRY_TYPE_MISMATCH" -> "GeoParquet Geometry 类型与声明不一致";
+            case "GEOPARQUET_EMPTY_GEOMETRY_UNSUPPORTED" -> "GeoParquet 不支持 Empty Geometry";
+            case "GEOPARQUET_COORDINATE_INVALID" -> "GeoParquet Geometry 包含无效坐标";
+            case "GEOPARQUET_WRITE_FAILED" -> "GeoParquet 写出失败";
+            case "GEOJSON_GEOMETRY_TYPE_MISMATCH" -> "GeoJSON Geometry 类型与声明不一致";
+            case "GEOJSON_EMPTY_GEOMETRY_UNSUPPORTED" -> "GeoJSON 不支持 Empty Geometry";
+            case "GEOJSON_COORDINATE_INVALID" -> "GeoJSON Geometry 坐标结构无效";
+            case "GEOJSON_COORDINATE_OUT_OF_RANGE" -> "GeoJSON 坐标超出 WGS84 经纬度范围";
+            case "GEOJSON_NON_FINITE_NUMBER" -> "GeoJSON 包含 NaN 或 Infinity";
+            case "GEOJSON_SIZE_LIMIT_EXCEEDED" -> "GeoJSON 文件达到 1.8GB 安全限制";
+            case "GEOJSON_LOCAL_STORAGE_EXHAUSTED" -> "GeoJSON 本地暂存空间不足";
+            case "GEOJSON_WRITE_FAILED" -> "GeoJSON 本地制品写入失败";
+            case "GEOJSON_UPLOAD_FAILED" -> "GeoJSON S3 制品提交失败";
             case "API_AUTHENTICATION_FAILED" -> "HTTP API 认证失败";
             case "API_TOKEN_MISSING", "API_TOKEN_REQUEST_FAILED" -> "HTTP API 运行时 Token 获取失败";
             case "API_NETWORK_ERROR" -> "无法连接 HTTP API";
@@ -250,7 +393,68 @@ final class RunnerFailureClassifier {
     }
 
     private static boolean isProcessor(String nodeType) {
-        return "JOIN".equals(nodeType) || "RENAME".equals(nodeType);
+        return "JOIN".equals(nodeType)
+                || "GEOMETRY_CONSTRUCT".equals(nodeType)
+                || "SPATIAL_TRANSFORM".equals(nodeType)
+                || "GEOMETRY_VALIDATE".equals(nodeType)
+                || "GEOMETRY_REPAIR".equals(nodeType)
+                || "GEOMETRY_BUFFER".equals(nodeType)
+                || "GEOMETRY_EXPLODE".equals(nodeType)
+                || "SPATIAL_MEASURE".equals(nodeType)
+                || "GEOMETRY_SERIALIZE".equals(nodeType)
+                || "SPATIAL_CLIP".equals(nodeType)
+                || "SPATIAL_AGGREGATE".equals(nodeType)
+                || "SPATIAL_JOIN".equals(nodeType)
+                || "STREAM_JOIN".equals(nodeType)
+                || "RENAME".equals(nodeType)
+                || "FILTER".equals(nodeType)
+                || "SELECT_COLUMNS".equals(nodeType)
+                || "DERIVE_COLUMNS".equals(nodeType)
+                || "TYPE_CAST".equals(nodeType)
+                || "AGGREGATE".equals(nodeType)
+                || "UNION".equals(nodeType)
+                || "DEDUPLICATE".equals(nodeType)
+                || "NULL_HANDLING".equals(nodeType)
+                || "VALUE_MAPPING".equals(nodeType)
+                || "MASK_FIELDS".equals(nodeType)
+                || "JSON_EXTRACT".equals(nodeType)
+                || "WINDOW".equals(nodeType)
+                || "TOP_N".equals(nodeType);
+    }
+
+    private static boolean spatialLibraryFailure(String causeText) {
+        return causeText.contains("org.apache.sedona.")
+                || causeText.contains("org.locationtech.jts.");
+    }
+
+    private static Classification classifyFileOutputStorageFailure(
+            Throwable throwable,
+            String causeText
+    ) {
+        if (causeText.contains("filealreadyexistsexception")
+                || causeText.contains("already exists")
+                || causeText.contains("path exists")) {
+            return failure("FILE_OUTPUT_TARGET_EXISTS", ExecutionErrorCategory.CONSTRAINT);
+        }
+        if (causeText.contains("invalidaccesskeyid")
+                || causeText.contains("signaturedoesnotmatch")
+                || causeText.contains("invalid access key")) {
+            return failure(
+                    "FILE_OUTPUT_AUTHENTICATION_FAILED",
+                    ExecutionErrorCategory.AUTHENTICATION
+            );
+        }
+        if (causeText.contains("accessdenied")
+                || causeText.contains("access denied")
+                || causeText.contains("status code: 403")) {
+            return failure("FILE_OUTPUT_PERMISSION_DENIED", ExecutionErrorCategory.PERMISSION);
+        }
+        if (hasCause(throwable, ConnectException.class)
+                || hasCause(throwable, SocketException.class)
+                || hasCause(throwable, IOException.class)) {
+            return retryable("FILE_OUTPUT_CONNECTION_FAILED", ExecutionErrorCategory.CONNECTION);
+        }
+        return null;
     }
 
     private static boolean unsupportedType(Throwable throwable) {

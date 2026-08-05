@@ -34,7 +34,11 @@ export interface ManagedTableModelDraft {
   key: string;
   table: DataSourceTable;
   code: string;
+  modelCodePrefix?: string;
+  codeOverridden: boolean;
   name: string;
+  warehouseLayerId?: string;
+  warehouseLayerOverridden: boolean;
   description: string;
   physicalTableName: string;
   fields: ManagedImportFieldDraft[];
@@ -68,6 +72,19 @@ const FIELD_CODE = /^[a-z][a-z0-9_]{0,63}$/;
 const lowerIdentifier = (value: string | null | undefined, pattern: RegExp): string => {
   const normalized = value?.trim().toLowerCase() ?? '';
   return pattern.test(normalized) ? normalized : '';
+};
+
+const modelCodeCandidate = (
+  sourceName: string | null | undefined,
+  modelCodePrefix?: string,
+): string => {
+  const normalizedSource = lowerIdentifier(sourceName, MODEL_CODE);
+  if (!normalizedSource) return '';
+  const prefix = modelCodePrefix?.trim() ?? '';
+  const candidate = prefix && !normalizedSource.startsWith(prefix)
+    ? `${prefix}${normalizedSource}`
+    : normalizedSource;
+  return MODEL_CODE.test(candidate) ? candidate : '';
 };
 
 export const isModelDataSourceSelectable = (
@@ -129,8 +146,12 @@ export const runManagedImportTasks = async <TItem, TResult>(
   return results;
 };
 
-export const createManagedTableModelDrafts = (tables: DataSourceTable[]): ManagedTableModelDraft[] => {
-  const normalizedCodes = tables.map((table) => lowerIdentifier(table.identifier.table, MODEL_CODE));
+export const createManagedTableModelDrafts = (
+  tables: DataSourceTable[],
+  warehouseLayerId?: string,
+  modelCodePrefix?: string,
+): ManagedTableModelDraft[] => {
+  const normalizedCodes = tables.map((table) => modelCodeCandidate(table.identifier.table, modelCodePrefix));
   const duplicateCodes = duplicateValues(normalizedCodes);
   return tables.map((table, index) => {
     const tableName = table.identifier.table;
@@ -140,7 +161,11 @@ export const createManagedTableModelDrafts = (tables: DataSourceTable[]): Manage
       key: managedTableKey(table),
       table,
       code: duplicateCodes.has(code) ? '' : code,
+      modelCodePrefix,
+      codeOverridden: false,
       name: (comment || tableName).slice(0, 100),
+      warehouseLayerId,
+      warehouseLayerOverridden: false,
       description: comment.length > 100 ? comment.slice(0, 1000) : '',
       physicalTableName: lowerIdentifier(tableName, PHYSICAL_TABLE_NAME),
       fields: [],
@@ -156,9 +181,38 @@ export const createManagedTableModelDrafts = (tables: DataSourceTable[]): Manage
 export const mergeManagedTableModelDrafts = (
   tables: DataSourceTable[],
   currentDrafts: ManagedTableModelDraft[],
+  warehouseLayerId?: string,
+  modelCodePrefix?: string,
 ): ManagedTableModelDraft[] => {
   const existing = new Map(currentDrafts.map((draft) => [draft.key, draft]));
-  return createManagedTableModelDrafts(tables).map((draft) => existing.get(draft.key) ?? draft);
+  return createManagedTableModelDrafts(tables, warehouseLayerId, modelCodePrefix)
+    .map((draft) => existing.get(draft.key) ?? draft);
+};
+
+export const applyManagedDraftWarehouseLayer = (
+  draft: ManagedTableModelDraft,
+  warehouseLayerId: string | undefined,
+  modelCodePrefix: string | undefined,
+  warehouseLayerOverridden: boolean,
+): ManagedTableModelDraft => ({
+  ...draft,
+  code: draft.codeOverridden
+    ? draft.code
+    : modelCodeCandidate(draft.table.identifier.table, modelCodePrefix),
+  modelCodePrefix,
+  warehouseLayerId,
+  warehouseLayerOverridden,
+});
+
+export const clearDuplicateManagedDraftCodeCandidates = (
+  drafts: ManagedTableModelDraft[],
+): ManagedTableModelDraft[] => {
+  const duplicateCodes = duplicateValues(drafts.map((draft) => draft.code.trim().toLowerCase()));
+  return drafts.map((draft) => (
+    !draft.codeOverridden && duplicateCodes.has(draft.code.trim().toLowerCase())
+      ? { ...draft, code: '' }
+      : draft
+  ));
 };
 
 export const applyManagedImportPreview = (
@@ -193,9 +247,9 @@ export const applyManagedImportPreview = (
   });
   return {
     ...draft,
-    code: draft.modelValuesLocked || !draft.code
+    code: draft.codeOverridden || draft.modelValuesLocked || !draft.code
       ? draft.code
-      : lowerIdentifier(preview.suggestedCode ?? draft.code, MODEL_CODE),
+      : modelCodeCandidate(preview.suggestedCode ?? draft.code, draft.modelCodePrefix),
     name: draft.modelValuesLocked
       ? draft.name
       : (preview.suggestedName?.trim() || draft.name).slice(0, 100),
@@ -295,6 +349,7 @@ export const toManagedDataModelDraftRequest = (
     code: draft.code.trim(),
     name: draft.name.trim(),
     directoryId,
+    warehouseLayerId: draft.warehouseLayerId,
     storageDataSourceId,
     physicalTableName: draft.physicalTableName.trim(),
     clickHouseOrderByColumns: [],

@@ -32,6 +32,7 @@ public class ServiceEngineDataSourceRegistration extends BaseEntity {
     @Column(nullable = false, length = 16)
     private ServiceEngineDataSourceRegistrationStatus status;
 
+    /** Legacy non-null column retained for ddl-auto compatibility; Engine synchronization no longer uses revisions. */
     @Column(nullable = false)
     private long revision;
 
@@ -58,7 +59,6 @@ public class ServiceEngineDataSourceRegistration extends BaseEntity {
     }
 
     public void beginSync() {
-        revision++;
         status = ServiceEngineDataSourceRegistrationStatus.PENDING;
         lastError = null;
     }
@@ -93,10 +93,6 @@ public class ServiceEngineDataSourceRegistration extends BaseEntity {
 
     public ServiceEngineDataSourceRegistrationStatus getStatus() {
         return status;
-    }
-
-    public long getRevision() {
-        return revision;
     }
 
     public String getSyncedDigest() {

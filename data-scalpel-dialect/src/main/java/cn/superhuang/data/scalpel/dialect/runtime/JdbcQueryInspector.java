@@ -14,6 +14,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.ResultSetMetaData;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.time.Duration;
 import java.util.List;
 
@@ -69,6 +70,12 @@ public final class JdbcQueryInspector {
                     connection.setReadOnly(true);
                 } catch (SQLException ignored) {
                     // Read-only mode is advisory for some JDBC drivers; the query object is still prevalidated.
+                }
+                String initializationSql = dialect.readOnlySessionInitializationSql();
+                if (initializationSql != null && !initializationSql.isBlank()) {
+                    try (Statement initialization = connection.createStatement()) {
+                        initialization.execute(initializationSql);
+                    }
                 }
                 try (PreparedStatement statement = connection.prepareStatement(query.sql())) {
                     statement.setMaxRows(1);

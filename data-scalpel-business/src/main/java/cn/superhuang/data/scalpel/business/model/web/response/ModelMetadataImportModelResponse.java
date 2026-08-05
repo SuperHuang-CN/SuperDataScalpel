@@ -7,6 +7,8 @@ public record ModelMetadataImportModelResponse(
         int rowNumber,
         String code,
         String name,
+        String warehouseLayerCode,
+        ModelWarehouseLayerSummaryResponse warehouseLayer,
         String physicalTableName,
         List<String> clickHouseOrderByColumns,
         String description,

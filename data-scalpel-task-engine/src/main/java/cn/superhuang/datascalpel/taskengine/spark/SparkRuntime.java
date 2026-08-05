@@ -25,7 +25,10 @@ public final class SparkRuntime implements AutoCloseable {
                 sparkConf.set(key, value);
             }
         });
-        this.baseSession = SparkSession.builder().config(sparkConf).getOrCreate();
+        this.baseSession = SedonaSparkSupport.initialize(
+                SedonaSparkSupport.builder()
+                        .config(SedonaSparkSupport.configure(sparkConf))
+                        .getOrCreate());
         this.sparkContext = JavaSparkContext.fromSparkContext(baseSession.sparkContext());
         log.info("Spark runtime started: version={}, applicationId={}, master={}",
                 baseSession.version(), sparkContext.sc().applicationId(), sparkContext.master());
@@ -37,7 +40,7 @@ public final class SparkRuntime implements AutoCloseable {
         }
         String jobGroupId = jobGroupId(requestId);
         sparkContext.setJobGroup(jobGroupId, jobGroupId, true);
-        return new SparkCompilationScope(baseSession.newSession(), sparkContext);
+        return new SparkCompilationScope(SedonaSparkSupport.childSession(baseSession), sparkContext);
     }
 
     public void cancelCompilation(UUID requestId) {

@@ -122,7 +122,7 @@ export const ApiResourceListDrawer = ({
       okText="开始测试"
       confirmLoading={testMutation.isPending}
     >
-      <Form<RuntimeParameterFormValues> form={form} layout="vertical">
+      <Form<RuntimeParameterFormValues> autoComplete="off" form={form} layout="vertical">
         <Form.List name="runtimeParameters">
           {(fields, { add, remove }) => <Space orientation="vertical" size={6} className="http-api-named-values">
             {fields.map((field) => <Space key={field.key} align="baseline" className="http-api-named-value-row">

@@ -17,6 +17,7 @@ import { buildFileDatasetParsingOptions, parsingFormValues, type ParsingFormValu
 interface FileDatasetDrawerProps {
   open: boolean;
   fileDataset: FileDataset | null;
+  initialDirectoryId?: string;
   canViewDirectories: boolean;
   onClose: () => void;
 }
@@ -28,7 +29,13 @@ interface FileDatasetFormValues extends ParsingFormValues {
   description?: string;
 }
 
-export const FileDatasetDrawer = ({ open, fileDataset, canViewDirectories, onClose }: FileDatasetDrawerProps) => {
+export const FileDatasetDrawer = ({
+  open,
+  fileDataset,
+  initialDirectoryId,
+  canViewDirectories,
+  onClose,
+}: FileDatasetDrawerProps) => {
   const [form] = Form.useForm<FileDatasetFormValues>();
   const [messageApi, messageContext] = message.useMessage();
   const directoriesQuery = useDirectoryTree('FILE_DATASET', open && canViewDirectories);
@@ -43,12 +50,12 @@ export const FileDatasetDrawer = ({ open, fileDataset, canViewDirectories, onClo
     const options = fileDataset?.parsingOptions ?? defaultFileDatasetParsingOptions(type);
     form.setFieldsValue({
       name: fileDataset?.name,
-      directoryId: fileDataset?.directoryId ?? undefined,
+      directoryId: fileDataset ? fileDataset.directoryId ?? undefined : initialDirectoryId,
       type,
       description: fileDataset?.description ?? undefined,
       ...parsingFormValues(options),
     });
-  }, [fileDataset, form, open]);
+  }, [fileDataset, form, initialDirectoryId, open]);
 
   const close = () => {
     form.resetFields();
@@ -107,7 +114,7 @@ export const FileDatasetDrawer = ({ open, fileDataset, canViewDirectories, onClo
               : '同一数据集的所有表共享这套解析设置；首次上传后解析设置将锁定。'}
           />
         )}
-        <Form<FileDatasetFormValues>
+        <Form<FileDatasetFormValues> autoComplete="off"
           form={form}
           layout="vertical"
           onFinish={(values) => void submit(values)}

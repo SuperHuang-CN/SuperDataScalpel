@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.RunnerResultAvailableEvent;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
+import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultResolution;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultService;
@@ -208,6 +209,34 @@ class DispatcherRunnerResultIntegrationTest {
         artifactService.store(prepared.resultKey(), unknownNodeResult, "application/json");
         assertThat(resultService.verify(prepared.executionId(), sha256(unknownNodeResult)))
                 .isEqualTo(DispatcherResultResolution.ARTIFACT_INVALID);
+    }
+
+    @Test
+    void acceptsEveryNodeTypeDeclaredByTheStableCanvasContract() throws Exception {
+        Prepared prepared = prepare("all-canvas-node-types");
+        Instant now = Instant.now();
+        for (CanvasNodeType nodeType : CanvasNodeType.values()) {
+            String nodeId = UUID.randomUUID().toString();
+            byte[] result = ("""
+                    {
+                      "schemaVersion":2,"executionId":"%s","runId":"%s","attempt":1,
+                      "state":"SUCCESS","startedAt":"%s","endedAt":"%s","durationMs":1,
+                      "affectedRows":null,
+                      "nodeResults":[{"nodeId":"%s","nodeType":"%s","nodeName":"契约节点",
+                        "state":"SUCCESS","phase":"PROCESS","startedAt":"%s","endedAt":"%s",
+                        "durationMs":1,"rowsWritten":null,"message":"节点执行成功","error":null}],
+                      "error":null
+                    }
+                    """).formatted(
+                    prepared.executionId(), prepared.runId(), now.minusMillis(1), now,
+                    nodeId, nodeType.name(), now.minusMillis(1), now
+            ).getBytes(StandardCharsets.UTF_8);
+            artifactService.store(prepared.resultKey(), result, "application/json");
+
+            assertThat(resultService.verify(prepared.executionId(), sha256(result)))
+                    .as(nodeType.name())
+                    .isEqualTo(DispatcherResultResolution.VERIFIED);
+        }
     }
 
     private Prepared prepare(String suffix) {

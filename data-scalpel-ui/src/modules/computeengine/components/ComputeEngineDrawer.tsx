@@ -157,7 +157,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
         </Button>}
       </Space>}
     >
-      <Form<ComputeEngineFormValues> form={form} layout="vertical" onFinish={submit} disabled={!editingAllowed}>
+      <Form<ComputeEngineFormValues> autoComplete="off" form={form} layout="vertical" onFinish={submit} disabled={!editingAllowed}>
         {engine?.registrationState === 'DETACHED' && <Alert
           type="warning"
           showIcon
@@ -176,7 +176,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
           <Col span={12}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true }, { max: 100 }]}><Input autoFocus /></Form.Item></Col>
           <Col span={12}><Form.Item label="计算后端" name="expectedBackendType" rules={[{ required: true }]}><Select options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))} /></Form.Item></Col>
           <Col span={24}><Form.Item label="Dispatcher 地址" name="dispatcherBaseUrl" extra="Admin 仅通过该地址管理 Dispatcher 注册状态。" rules={[{ required: true, type: 'url', message: '请输入有效的 HTTP(S) 地址' }, { max: 500 }]}><Input placeholder="http://127.0.0.1:18092" /></Form.Item></Col>
-          <Col span={24}><Form.Item label={engine ? '访问 Token（留空保持不变）' : '访问 Token'} name="accessToken" rules={engine ? [{ max: 1000 }] : [{ required: true, whitespace: true }, { max: 1000 }]}><Input.Password autoComplete="new-password" /></Form.Item></Col>
+          <Col span={24}><Form.Item label={engine ? '访问 Token（留空保持不变）' : '访问 Token'} name="accessToken" rules={engine ? [{ max: 1000 }] : [{ required: true, whitespace: true }, { max: 1000 }]}><Input.Password name="compute-engine-access-token" autoComplete="off" /></Form.Item></Col>
           <Col span={24}><Form.Item label="命令 Topic" name="commandTopic" rules={[{ required: true, whitespace: true }, { max: 249 }]}><Input /></Form.Item></Col>
           <Col span={12}><Form.Item label="Runner 事件 Topic" name="runnerEventTopic" rules={[{ required: true, whitespace: true }, { max: 249 }]}><Input /></Form.Item></Col>
           <Col span={12}><Form.Item label="Admin 事件 Topic" name="adminEventTopic" rules={[{ required: true, whitespace: true }, { max: 249 }]}><Input /></Form.Item></Col>

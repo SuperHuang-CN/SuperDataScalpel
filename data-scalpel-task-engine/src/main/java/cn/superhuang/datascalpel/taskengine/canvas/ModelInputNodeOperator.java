@@ -51,9 +51,12 @@ public final class ModelInputNodeOperator implements CanvasNodeOperator {
             return CanvasNodeOperationResult.invalid(List.of());
         }
         CanvasNodeIssueSink issues = context.issues();
-        UUID modelId = configuration.modelId();
+        UUID modelId = CanvasNodeSupport.parseModelUuid(
+                configuration.modelId(),
+                "configuration.modelId",
+                issues
+        );
         if (modelId == null) {
-            issues.error("MODEL_ID_REQUIRED", "请选择输入模型", "configuration.modelId");
             return CanvasNodeOperationResult.invalid(List.of());
         }
         MetadataIndex.ModelEntry model = context.metadataIndex().model(modelId);
@@ -68,14 +71,6 @@ public final class ModelInputNodeOperator implements CanvasNodeOperator {
                     "configuration.modelId"
             );
         }
-        if (model.metadata().columns().stream()
-                .anyMatch(column -> column.fieldType() == PlatformDataType.GEOMETRY)) {
-            issues.error(
-                    "SPATIAL_FIELD_UNSUPPORTED",
-                    "模型输入第一版不支持空间字段：" + model.metadata().name(),
-                    "configuration.modelId"
-            );
-        }
         MetadataIndex.DataSourceEntry dataSource =
                 context.metadataIndex().dataSource(model.metadata().dataSourceId());
         if (!availableForRead(dataSource)) {
@@ -85,6 +80,11 @@ public final class ModelInputNodeOperator implements CanvasNodeOperator {
                     "configuration.modelId"
             );
         }
+        CanvasNodeSupport.validateSupportedGeometry(
+                model.tableSchema().columns(),
+                "configuration.modelId",
+                issues
+        );
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(List.of());
         }

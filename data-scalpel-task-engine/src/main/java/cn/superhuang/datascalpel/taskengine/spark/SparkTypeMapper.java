@@ -1,7 +1,13 @@
 package cn.superhuang.datascalpel.taskengine.spark;
 
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
+import org.apache.spark.sql.sedona_sql.UDT.GeometryUDT;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.DataTypes;
 import org.apache.spark.sql.types.DecimalType;
@@ -24,6 +30,10 @@ public final class SparkTypeMapper {
     private static final String AUTO_INCREMENT = "datascalpel.autoIncrement";
     private static final String GENERATED = "datascalpel.generated";
     private static final String COMMENT = "datascalpel.comment";
+    private static final String GEOMETRY_KIND = "geometryKind";
+    private static final String CRS_AUTHORITY = "crsAuthority";
+    private static final String CRS_CODE = "crsCode";
+    private static final String COORDINATE_DIMENSION = "coordinateDimension";
 
     private SparkTypeMapper() {
     }
@@ -35,6 +45,26 @@ public final class SparkTypeMapper {
 
     public static DataType toDataType(CanvasColumnSchema column) {
         return sparkType(column);
+    }
+
+    public static Metadata metadata(CanvasColumnSchema column) {
+        return toStructField(column).metadata();
+    }
+
+    public static DataType toDataType(PlatformTypeDefinition type) {
+        return sparkType(new CanvasColumnSchema(
+                "_cast_target",
+                type.type(),
+                type.length(),
+                type.precision(),
+                type.scale(),
+                true,
+                null,
+                false,
+                false,
+                null,
+                type.geometry()
+        ));
     }
 
     public static List<CanvasColumnSchema> fromStructType(
@@ -55,6 +85,9 @@ public final class SparkTypeMapper {
             Integer scale = type == PlatformDataType.DECIMAL
                     ? ((DecimalType) field.dataType()).scale()
                     : null;
+            GeometryTypeDefinition geometry = type == PlatformDataType.GEOMETRY
+                    ? geometry(metadata, prior)
+                    : null;
             columns.add(new CanvasColumnSchema(
                     field.name(),
                     type,
@@ -65,7 +98,8 @@ public final class SparkTypeMapper {
                     optionalString(metadata, DEFAULT_VALUE, prior == null ? null : prior.defaultValue()),
                     optionalBoolean(metadata, AUTO_INCREMENT, prior != null && prior.autoIncrement()),
                     optionalBoolean(metadata, GENERATED, prior != null && prior.generated()),
-                    optionalString(metadata, COMMENT, prior == null ? null : prior.comment())
+                    optionalString(metadata, COMMENT, prior == null ? null : prior.comment()),
+                    geometry
             ));
         }
         return List.copyOf(columns);
@@ -91,6 +125,12 @@ public final class SparkTypeMapper {
         if (column.comment() != null) {
             metadata.putString(COMMENT, column.comment());
         }
+        if (column.geometry() != null) {
+            metadata.putString(GEOMETRY_KIND, column.geometry().kind().name());
+            metadata.putString(CRS_AUTHORITY, column.geometry().crs().authority());
+            metadata.putLong(CRS_CODE, column.geometry().crs().code());
+            metadata.putString(COORDINATE_DIMENSION, column.geometry().dimension().name());
+        }
         return DataTypes.createStructField(column.name(), sparkType(column), column.nullable(), metadata.build());
     }
 
@@ -109,7 +149,10 @@ public final class SparkTypeMapper {
             case DATE -> DataTypes.DateType;
             case TIMESTAMP -> DataTypes.TimestampType;
             case TIMESTAMP_NTZ -> DataTypes.TimestampNTZType;
-            case GEOMETRY -> throw new IllegalArgumentException("SPATIAL_FIELD_UNSUPPORTED: Spark Canvas 不支持空间字段");
+            case GEOMETRY -> {
+                requireGeometry(column.geometry());
+                yield new GeometryUDT();
+            }
         };
     }
 
@@ -130,7 +173,44 @@ public final class SparkTypeMapper {
         if (dataType.equals(DataTypes.DateType)) return PlatformDataType.DATE;
         if (dataType.equals(DataTypes.TimestampType)) return PlatformDataType.TIMESTAMP;
         if (dataType.equals(DataTypes.TimestampNTZType)) return PlatformDataType.TIMESTAMP_NTZ;
+        if (dataType instanceof GeometryUDT) return PlatformDataType.GEOMETRY;
         throw new IllegalArgumentException("Unsupported Spark data type: " + dataType.typeName());
+    }
+
+    public static void requireGeometry(GeometryTypeDefinition geometry) {
+        if (geometry == null) {
+            throw new IllegalArgumentException("GEOMETRY_TYPE_DEFINITION_REQUIRED: 缺少 Geometry 类型定义");
+        }
+        if (!"EPSG".equals(geometry.crs().authority()) || geometry.crs().code() < 1) {
+            throw new IllegalArgumentException("UNSUPPORTED_GEOMETRY_CRS: 空间计算只支持 EPSG CRS");
+        }
+        if (geometry.dimension() != CoordinateDimension.XY) {
+            throw new IllegalArgumentException("UNSUPPORTED_GEOMETRY_DIMENSION: 空间计算只支持 XY 维度");
+        }
+    }
+
+    private static GeometryTypeDefinition geometry(
+            Metadata metadata,
+            CanvasColumnSchema fallback
+    ) {
+        if (metadata.contains(GEOMETRY_KIND)
+                && metadata.contains(CRS_AUTHORITY)
+                && metadata.contains(CRS_CODE)
+                && metadata.contains(COORDINATE_DIMENSION)) {
+            return new GeometryTypeDefinition(
+                    GeometryKind.valueOf(metadata.getString(GEOMETRY_KIND)),
+                    new CrsReference(
+                            metadata.getString(CRS_AUTHORITY),
+                            Math.toIntExact(metadata.getLong(CRS_CODE))
+                    ),
+                    CoordinateDimension.valueOf(metadata.getString(COORDINATE_DIMENSION))
+            );
+        }
+        if (fallback != null && fallback.geometry() != null) {
+            return fallback.geometry();
+        }
+        throw new IllegalArgumentException(
+                "GEOMETRY_TYPE_DEFINITION_REQUIRED: Spark Geometry 字段缺少稳定空间元数据");
     }
 
     private static Integer optionalInteger(Metadata metadata, String key, Integer fallback) {

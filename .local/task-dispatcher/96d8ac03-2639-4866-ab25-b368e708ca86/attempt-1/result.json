@@ -1,0 +1,37 @@
+{
+  "schemaVersion" : 2,
+  "executionId" : "96d8ac03-2639-4866-ab25-b368e708ca86",
+  "runId" : "ddc66cdc-578b-4f32-85b2-03af5278b8b4",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-01T03:35:13.696880292Z",
+  "endedAt" : "2026-08-01T03:35:17.419405085Z",
+  "durationMs" : 3722,
+  "affectedRows" : 1,
+  "nodeResults" : [ {
+    "nodeId" : "810ee3aa-a83d-4387-959f-faf750ee5098",
+    "nodeType" : "FILE_DATASET_INPUT",
+    "nodeName" : "读取 FileGDB MiamiExtent",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-08-01T03:35:15.588227126Z",
+    "endedAt" : "2026-08-01T03:35:15.642194168Z",
+    "durationMs" : 53,
+    "rowsWritten" : null,
+    "message" : "文件数据集输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "dff1f41a-0b22-4297-88d4-d1ca32936b9f",
+    "nodeType" : "JDBC_OUTPUT",
+    "nodeName" : "写入 MySQL MultiPolygon",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-08-01T03:35:15.642878335Z",
+    "endedAt" : "2026-08-01T03:35:17.419195710Z",
+    "durationMs" : 1776,
+    "rowsWritten" : 1,
+    "message" : "JDBC 输出写入成功",
+    "error" : null
+  } ],
+  "error" : null
+}

@@ -3,15 +3,17 @@ import {
   DashboardOutlined,
   EditOutlined,
   EllipsisOutlined,
-  FolderOpenOutlined,
+  FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Card, Dropdown, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Alert, Button, Dropdown, Form, Modal, Select, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type DirectorySelection } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { FileDatasetDrawer } from '../components/FileDatasetDrawer';
@@ -26,10 +28,6 @@ import {
 import { buildFileDatasetSearch } from '../model/fileDatasetSearch';
 
 const DEFAULT_PAGE_SIZE = 20;
-
-const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
-  dateStyle: 'medium', timeStyle: 'medium', hour12: false,
-}).format(new Date(value));
 
 export const FileDatasetPage = () => {
   const [filterForm] = Form.useForm<FileDatasetFilters>();
@@ -68,6 +66,10 @@ export const FileDatasetPage = () => {
     search({});
   };
 
+  const applyDirectFilters = (values: FileDatasetFilters) => {
+    search({ ...filters, keyword: values.keyword, type: values.type });
+  };
+
   const selectDirectory = (selection: DirectorySelection) => {
     setDirectorySelection(selection);
     if (selection === undefined) {
@@ -104,43 +106,31 @@ export const FileDatasetPage = () => {
 
   const columns: TableProps<FileDataset>['columns'] = [
     {
-      title: '数据集名称', dataIndex: 'name', width: 220, ellipsis: true,
+      title: '数据集', dataIndex: 'name', width: 280,
       render: (value: string, dataset: FileDataset) => (
-        <Button
-          type="link"
-          className="file-dataset-name-button"
-          onClick={() => navigate(`/file-dataset/${dataset.id}`, { state: { fromFileDatasetList: true } })}
-        >
-          {value}
-        </Button>
+        <ManagementListCell icon={<FileTextOutlined />} iconTone="cyan" primary={<Button type="link" className="file-dataset-name-button" onClick={() => navigate(`/file-dataset/${dataset.id}`, { state: { fromFileDatasetList: true } })}>{value}</Button>} secondary={dataset.description || '—'} />
       ),
     },
-    { title: '类型', dataIndex: 'type', width: 120, render: (value: FileDataset['type']) => <Tag>{fileDatasetTypeLabels[value]}</Tag> },
-    { title: '文件数', dataIndex: 'fileCount', width: 90, align: 'right' },
-    { title: '表数', dataIndex: 'tableCount', width: 90, align: 'right' },
+    { title: '类型', dataIndex: 'type', width: 120, render: (value: FileDataset['type']) => fileDatasetTypeLabels[value] },
+    { title: '数据规模', width: 130, align: 'right', render: (_value: unknown, dataset) => <ManagementListCell primary={`${dataset.fileCount} 个文件`} secondary={`${dataset.tableCount} 张表`} /> },
     {
       title: '表就绪情况',
       width: 140,
       render: (_value: unknown, dataset: FileDataset) => dataset.tableCount === 0
-        ? <Tag>尚未上传</Tag>
-        : <Tag color={dataset.readyTableCount === dataset.tableCount ? 'success' : 'processing'}>{dataset.readyTableCount} / {dataset.tableCount} 已就绪</Tag>,
+        ? <ManagementStatusIndicator label="尚未上传" />
+        : <ManagementStatusIndicator label={`${dataset.readyTableCount} / ${dataset.tableCount} 已就绪`} tone={dataset.readyTableCount === dataset.tableCount ? 'success' : 'processing'} />,
     },
-    { title: '说明', dataIndex: 'description', width: 260, ellipsis: true, render: (value: string | null) => value || '—' },
-    { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: formatDateTime },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
-      title: '操作', key: 'action', width: 110, fixed: 'right', render: (_value: unknown, dataset: FileDataset) => (
-        <Space size={2}>
-          <Tooltip title="查看详情"><Button type="text" icon={<FolderOpenOutlined />} aria-label={`查看${dataset.name}详情`} onClick={() => navigate(`/file-dataset/${dataset.id}`, { state: { fromFileDatasetList: true } })} /></Tooltip>
-          {canUpdate && <Tooltip title="修改数据集"><Button type="text" icon={<EditOutlined />} aria-label={`修改${dataset.name}`} onClick={() => setEditingFileDataset(dataset)} /></Tooltip>}
-          {canDelete && (
-            <Dropdown
-              trigger={['click']}
-              menu={{ items: [{ key: 'delete', danger: true, icon: <DeleteOutlined />, label: '删除' }], onClick: () => confirmDelete(dataset) }}
-            >
-              <Tooltip title="更多操作"><Button type="text" icon={<EllipsisOutlined />} aria-label={`${dataset.name}更多操作`} /></Tooltip>
-            </Dropdown>
-          )}
-        </Space>
+      title: '操作', key: 'action', width: 112, render: (_value: unknown, dataset: FileDataset) => (canUpdate || canDelete) && (
+        <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">{canUpdate && <Tooltip title="修改数据集"><Button type="text" icon={<EditOutlined />} aria-label={`修改${dataset.name}`} onClick={() => setEditingFileDataset(dataset)} /></Tooltip>}</div>
+          <Dropdown trigger={['click']} menu={{ items: [
+            ...(canUpdate ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setEditingFileDataset(dataset) }] : []),
+            ...(canUpdate && canDelete ? [{ type: 'divider' as const }] : []),
+            ...(canDelete ? [{ key: 'delete', danger: true, icon: <DeleteOutlined />, label: '删除', onClick: () => confirmDelete(dataset) }] : []),
+          ] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<EllipsisOutlined />} aria-label={`${dataset.name}的更多操作`} /></Tooltip></Dropdown>
+        </div>
       ),
     },
   ];
@@ -151,29 +141,28 @@ export const FileDatasetPage = () => {
       {modalContext}
       <div className={canViewDirectories ? 'directory-management-layout' : 'page-stack'}>
         {canViewDirectories && <DirectoryTreePanel scope="FILE_DATASET" tree={directoriesQuery.data ?? []} loading={directoriesQuery.isFetching} selection={directorySelection} canManage={canManageDirectories} onSelectionChange={selectDirectory} />}
-        <Card className="management-card">
-          <div className="management-toolbar">
-            <Form<FileDatasetFilters> form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
-              <Form.Item name="keyword" label="名称"><Input allowClear placeholder="按数据集名称筛选" className="file-dataset-keyword-input" /></Form.Item>
-              <Form.Item name="type" label="类型"><Select allowClear placeholder="全部" options={fileDatasetTypeOptions} className="file-dataset-format-select" /></Form.Item>
+        <section className="management-workbench">
+          <div className="management-filter-strip">
+            <Form<FileDatasetFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={applyDirectFilters}>
+              <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索数据集名称" className="file-dataset-keyword-input" /></Form.Item>
+              <Form.Item name="type"><Select allowClear placeholder="全部类型" options={fileDatasetTypeOptions} className="file-dataset-format-select" /></Form.Item>
             </Form>
-            <Space size={4} className="management-toolbar-actions">
-              <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-              <Button onClick={reset}>重置</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => void fileDatasetsQuery.refetch()}>刷新</Button>
-              <Button icon={<DashboardOutlined />} onClick={() => setParseQueueDrawerOpen(true)}>解析队列</Button>
-              {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
-            </Space>
+            <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={directorySelection !== undefined} loading={fileDatasetsQuery.isFetching} onReset={reset} />
           </div>
-          {fileDatasetsQuery.isError && <Alert type="error" showIcon className="management-query-error" message="文件数据集加载失败" action={<Button size="small" onClick={() => void fileDatasetsQuery.refetch()}>重试</Button>} />}
-          <Table<FileDataset>
+          <div className="management-results-surface">
+            <div className="management-result-toolbar">
+            <span className="management-result-title">文件数据集 <span className="management-result-count">共 {fileDatasetsQuery.data?.totalElements ?? 0} 项</span></span>
+            <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新文件数据集列表" onClick={() => void fileDatasetsQuery.refetch()} /></Tooltip><Button icon={<DashboardOutlined />} onClick={() => setParseQueueDrawerOpen(true)}>解析队列</Button>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}</div>
+            </div>
+            {fileDatasetsQuery.isError && <Alert type="error" showIcon className="management-query-error" message="文件数据集加载失败" action={<Button size="small" onClick={() => void fileDatasetsQuery.refetch()}>重试</Button>} />}
+            <Table<FileDataset>
             size="small"
             className="management-table"
             rowKey="id"
             columns={columns}
             dataSource={fileDatasetsQuery.data?.content ?? []}
             loading={fileDatasetsQuery.isFetching}
-            scroll={{ x: 1300, y: '100%' }}
+            scroll={{ y: '100%' }}
             pagination={{
               current: page + 1,
               pageSize: size,
@@ -188,12 +177,14 @@ export const FileDatasetPage = () => {
               setPage((pagination.current ?? 1) - 1);
               setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
             }}
-          />
-        </Card>
+            />
+          </div>
+        </section>
       </div>
       <FileDatasetDrawer
         open={createDrawerOpen || Boolean(editingFileDataset)}
         fileDataset={editingFileDataset}
+        initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
         canViewDirectories={canViewDirectories}
         onClose={() => { setCreateDrawerOpen(false); setEditingFileDataset(null); }}
       />

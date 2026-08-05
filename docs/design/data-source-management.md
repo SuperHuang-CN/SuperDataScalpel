@@ -7,7 +7,7 @@
 当前阶段提供：
 
 - 数据源 CRUD、统一 Search DSL 查询和目录筛选。
-- JDBC：已保存连接和未保存表单的真实连接测试、库/Schema、表和视图、表元数据与最多 100 行的只读预览。
+- JDBC：已保存连接和未保存表单的真实连接测试、库/Schema、表和视图、表元数据、安全唯一键、最多 100 行的只读预览，以及 PostgreSQL/MySQL 只读查询结果分析。
 - HTTP API：只作为输入使用，支持可复用连接、运行时 Token、请求签名、API 资源、分页/异步请求、资源测试和 Canvas 输入节点。
 - Kafka：登记一个 Kafka 集群；Topic 是任务阶段的资源，不属于数据源配置。
 - S3：登记一个固定 Bucket，可选配置根目录；对象 Key 位于该根目录之下。
@@ -23,7 +23,7 @@
 - 数据库类型和能力定义。
 - JDBC URL、驱动属性和连接规格。
 - 标识符引用、默认 Catalog/Schema 和预览 SQL 方言。
-- 统一的表、字段、主键、索引和预览数据模型。
+- 统一的表、字段、主键、安全唯一键、索引和预览数据模型。
 - 基于短连接的连接测试与只读元数据读取。
 - 连接感知的 PostGIS/MySQL 8 空间能力检查、整表空间元数据增强和 EPSG 到数据库本地空间参考 ID 的目录解析。
 
@@ -87,7 +87,8 @@ JDBC 连接同时支持方言预定义参数和少量自定义非敏感参数，
   不能证明每个未知参数都已被驱动采用。
 
 数据源参数变化继续计入 Service Engine 注册的运行时签名。修改任一预定义或自定义参数后，已有
-Engine 数据源快照会标记为过期，重新同步后 Engine 连接池以新 options 指纹重建。
+Engine 数据源注册会标记为过期；重新同步时使用 DataScalpel `dataSourceId` 直接覆盖 API Studio
+中的同 ID 配置，并由 `ApiDataSourceRegistry` 加载更新后的连接池。
 
 ### JDBC 连接测试诊断
 
@@ -138,7 +139,8 @@ Vendor Code、耗时和异常堆栈。响应与日志都会遮蔽当前连接密
 | `POST` | `/api/v1/data-sources/{id}/actions/test` | 测试已保存连接 |
 | `GET` | `/api/v1/data-sources/{id}/namespaces` | 查询 Catalog/Schema |
 | `GET` | `/api/v1/data-sources/{id}/tables` | 查询表和可选视图；最多返回 500 项 |
-| `GET` | `/api/v1/data-sources/{id}/table-metadata` | 查询字段、主键和索引 |
+| `GET` | `/api/v1/data-sources/{id}/table-metadata` | 查询字段、主键、安全唯一键和索引 |
+| `POST` | `/api/v1/data-sources/{id}/actions/inspect-query` | 分析 PostgreSQL/MySQL 单条只读查询的输出 Schema |
 | `GET` | `/api/v1/data-sources/{id}/table-preview` | 预览数据；默认 50 行、最多 100 行 |
 | `GET` | `/api/v1/data-sources/{id}/api-resources` | 查询 HTTP API 数据源下的 API 资源 |
 | `GET` | `/api/v1/data-sources/{id}/api-resources/{resourceId}` | 查询 API 资源详情 |
@@ -148,6 +150,44 @@ Vendor Code、耗时和异常堆栈。响应与日志都会遮蔽当前连接密
 | `POST` | `/api/v1/data-sources/{id}/api-resources/{resourceId}/actions/test` | 使用非敏感运行时参数测试 API 资源 |
 
 数据源创建/更新请求由 `type` 和带 `kind` 的 `connection` 组成。`type` 与 `connection.kind` 必须匹配：数据库使用 `JDBC`，HTTP API 使用 `HTTP_API`，Kafka 使用 `KAFKA`，S3 使用 `S3`。JDBC 元数据端点仅对 JDBC 类型可用；API 资源端点仅对 HTTP API 类型可用。
+
+表元数据响应除 `columns/primaryKey/indexes` 外还返回 `uniqueKeys`：
+
+```ts
+interface MetadataUniqueKey {
+  name: string | null;
+  type: 'PRIMARY_KEY' | 'UNIQUE_INDEX';
+  columns: string[];
+}
+```
+
+`uniqueKeys` 只暴露能安全用于 Canvas JDBC UPSERT 的字段组，并保留数据库返回的字段顺序。PostgreSQL 包含主键、普通唯一约束，以及无表达式且无条件谓词的唯一索引；MySQL 包含主键和元数据完整的字段型唯一索引。函数/表达式索引、PostgreSQL 部分索引和元数据不完整的索引全部排除；主键与索引字段组重复时只保留主键。普通 `indexes` 仍用于完整元数据展示，不能直接视为 UPSERT Key。
+
+### JDBC 只读查询分析
+
+`POST /api/v1/data-sources/{id}/actions/inspect-query` 使用 `datasource.metadata` 权限，请求与响应为：
+
+```json
+{
+  "sql": "SELECT order_id, amount FROM orders"
+}
+```
+
+```json
+{
+  "analyzedSqlSha256": "64位小写SHA-256",
+  "columns": []
+}
+```
+
+- 只接受已启用、具有 `SOURCE` 用途的 PostgreSQL/MySQL 数据源。
+- SQL 长度为 `1..100000`，只允许单条 `SELECT` 或 `WITH ... SELECT`；不支持模板变量、运行参数、Session 配置、DDL/DML 或多语句。
+- Hash 基于去除可选终止分号并 trim 后的 UTF-8 SQL；响应不回显 SQL，也不返回任何数据行。
+- 连接设置为只读，并执行方言提供的只读 Session 初始化语句。优先使用 PreparedStatement 元数据；驱动不提供时设置 `maxRows=1` 并最多执行一行作为 fallback。
+- 字段名称必须唯一，JDBC 类型必须能无损映射为平台类型；Geometry 首版拒绝。
+- 查询语法或字段不合法返回 RFC 9457 `ProblemDetail`；数据库/驱动访问失败沿用数据源元数据接口的安全远程访问错误，不返回 SQL、查询数据或凭据。
+
+该接口只为 `JDBC_QUERY_INPUT` 生成显式字段快照，不保存或修改数据源、Canvas 节点或任何数据库对象。任务发布、重新启用和运行准备会重新调用同一分析能力检测 Schema 漂移。
 
 物理表统一使用 `catalog + schema + table` 标识，不把可能带点号或空格的表名直接放入 URL Path。
 

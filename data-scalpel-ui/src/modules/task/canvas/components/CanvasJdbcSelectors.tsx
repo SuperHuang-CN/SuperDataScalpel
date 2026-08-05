@@ -22,6 +22,7 @@ interface ControlledSelectProps {
 interface CanvasJdbcDataSourceSelectProps extends ControlledSelectProps {
   purpose: Extract<DataSourcePurpose, 'SOURCE' | 'STORAGE' | 'DISTRIBUTION'>;
   placeholder: string;
+  allowedTypes?: readonly DataSource['type'][];
 }
 
 interface CanvasJdbcTableSelectProps extends ControlledSelectProps {
@@ -63,9 +64,11 @@ const isSelectableDataSource = (
   dataSource: DataSource,
   purpose: CanvasJdbcDataSourceSelectProps['purpose'],
   metadataTypeIds: Set<string> | null,
+  allowedTypes?: readonly DataSource['type'][],
 ) => dataSource.enabled
   && dataSource.connectionKind === 'JDBC'
   && dataSource.purposes.includes(purpose)
+  && (allowedTypes === undefined || allowedTypes.includes(dataSource.type))
   && (metadataTypeIds === null || metadataTypeIds.has(dataSource.type));
 
 const uniqueDataSources = (dataSources: DataSource[]) => (
@@ -79,6 +82,7 @@ export const CanvasJdbcDataSourceSelect = ({
   onBlur,
   purpose,
   placeholder,
+  allowedTypes,
 }: CanvasJdbcDataSourceSelectProps) => {
   const [open, setOpen] = useState(false);
   const { keyword, schedule } = useDelayedSearch();
@@ -100,12 +104,13 @@ export const CanvasJdbcDataSourceSelect = ({
     )).map((definition) => definition.id))
     : null;
   const selectable = (dataSourcesQuery.data?.content ?? []).filter((dataSource) => (
-    isSelectableDataSource(dataSource, purpose, metadataTypeIds)
+    isSelectableDataSource(dataSource, purpose, metadataTypeIds, allowedTypes)
   ));
   const selected = selectedQuery.data;
   const dataSources = uniqueDataSources(selected ? [selected, ...selectable] : selectable);
   const dataSourceById = new Map(dataSources.map((dataSource) => [dataSource.id, dataSource]));
-  const selectedUnavailable = selected !== undefined && !isSelectableDataSource(selected, purpose, metadataTypeIds);
+  const selectedUnavailable = selected !== undefined
+    && !isSelectableDataSource(selected, purpose, metadataTypeIds, allowedTypes);
 
   return (
     <Select<string>
@@ -123,7 +128,7 @@ export const CanvasJdbcDataSourceSelect = ({
       optionRender={(option) => {
         const dataSource = dataSourceById.get(String(option.value));
         if (!dataSource) return option.label;
-        const unavailable = !isSelectableDataSource(dataSource, purpose, metadataTypeIds);
+        const unavailable = !isSelectableDataSource(dataSource, purpose, metadataTypeIds, allowedTypes);
         return (
           <div className="canvas-metadata-option">
             <div className="canvas-metadata-option-title">

@@ -45,6 +45,9 @@
 ## 统一节点实现
 
 - 每个正式 Input、Processor、Output 节点类型只能有一个无状态 `CanvasNodeOperator` 实现。预检 Compiler 与 Runner 必须通过同一个内置 `CanvasNodeOperatorRegistry` 调用同一个 Operator，不得分别增加 `*NodeCompiler`、`execute*` 或字段映射副本。
+- 每种稳定 `CanvasNodeType` 必须恰好对应一个 Operator；Operator Registry 必须完整覆盖 Contracts 中全部稳定类型，并为每个节点声明非空运行模式集合。
+- Operator Registry 继续使用显式内置列表，不使用反射、Spring 扫描、ServiceLoader 或其他运行时插件发现机制。
+- Canvas 草稿中的字符串资源 ID 必须在 Operator 校验边界解析；空值和非法 UUID 必须分别返回稳定必填/格式问题，并保留当前节点已经能够安全取得的上游输入上下文。
 - Operator 统一负责配置规则、元数据定位、表 Map 语义、Spark Dataset 变换、字段映射和显式 Cast。预检与运行时的差异只能通过 `CanvasNodeDataAccess` 等外部 I/O 端口注入。
 - 预检 I/O 必须使用元数据 Schema 创建零行 Dataset，Output 只分析计划，不得读取 JDBC/HTTP、创建 Writer、TRUNCATE 或写入。Runner I/O 才允许真实读取、运行时 Schema 漂移检查和生成延迟写入计划。
 - 文件 Reader 必须以 Manifest 中的快照 Schema 为目标 Schema 并采用 FAILFAST 语义，不得根据运行文件重定义 Canvas Schema。Manifest 的文件存储配置、对象位置和解析参数属于受保护运行字段，不得回写 Canvas Definition、编译响应或前端状态。
@@ -96,7 +99,7 @@
 - 新节点必须接入统一生命周期包装和错误分类器，不得复制一套节点日志或异常处理逻辑。
 - Processor 不得记录参与计算的实际字段值；只允许记录表名、字段名、条件数量和操作类型等安全元数据。
 - 新节点的编译校验与运行时失败必须可区分。配置或编译错误不得伪装成 JDBC 或 Runner 内部错误。
-- 文件 Input 新增或修改格式支持时，必须同时覆盖 Registry 能力校验、零行 Compiler、真实 Reader、Schema 指纹、Manifest v6 有序来源快照、来源节点错误归属和敏感路径脱敏；不得为每种格式拆分重复的 Canvas 节点。
+- 文件 Input 新增或修改格式支持时，必须同时覆盖 Registry 能力校验、零行 Compiler、真实 Reader、Schema 指纹、当前 Manifest 有序来源快照、来源节点错误归属和敏感路径脱敏；不得为每种格式拆分重复的 Canvas 节点。
 
 ## 测试与验证（暂时禁用）
 

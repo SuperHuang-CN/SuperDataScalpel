@@ -2,6 +2,8 @@
 
 # 面向日常开发：只执行 compile，然后按 IDE Application Run Configuration 的方式
 # 以 target/classes 和 Maven 运行时依赖组成的 classpath 启动各个 main 方法。
+# Maven 编译默认按 CPU 核数并行；classpath 解析、服务启动和健康检查也会并发执行。
+# 可通过 --threads 4、--threads 1C 或 DATASCALPEL_MAVEN_THREADS 调整 Maven 并行度。
 #
 # Task Runner 是独立的 Uber JAR，由 Task Dispatcher 通过 Docker 启动。
 
@@ -9,10 +11,50 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREPARE_ONLY=false
-if [[ "${1:-}" == "--prepare" ]]; then
-  PREPARE_ONLY=true
-elif [[ $# -gt 0 ]]; then
-  echo "用法：$0 [--prepare]"
+MAVEN_THREADS="${DATASCALPEL_MAVEN_THREADS:-1C}"
+
+# 本地开发进程统一直连，不继承终端或代理软件注入的代理配置。
+unset http_proxy https_proxy all_proxy no_proxy
+unset HTTP_PROXY HTTPS_PROXY ALL_PROXY NO_PROXY
+unset npm_config_proxy npm_config_https_proxy
+DIRECT_JAVA_OPTIONS=(
+  "-Djava.net.useSystemProxies=false"
+  "-Djava.net.preferIPv4Stack=true"
+  "-Dhttp.nonProxyHosts=localhost|127.*|[::1]|10.*|*.superhuang.cn|*.superhuang.net"
+)
+DIRECT_JAVA_OPTIONS_TEXT="${DIRECT_JAVA_OPTIONS[*]}"
+export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }$DIRECT_JAVA_OPTIONS_TEXT"
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --prepare)
+      PREPARE_ONLY=true
+      shift
+      ;;
+    --threads)
+      if [[ $# -lt 2 || -z "$2" ]]; then
+        echo "--threads 需要提供 Maven 并行度，例如 4 或 1C。"
+        exit 1
+      fi
+      MAVEN_THREADS="$2"
+      shift 2
+      ;;
+    --threads=*)
+      MAVEN_THREADS="${1#*=}"
+      if [[ -z "$MAVEN_THREADS" ]]; then
+        echo "--threads 需要提供 Maven 并行度，例如 4 或 1C。"
+        exit 1
+      fi
+      shift
+      ;;
+    *)
+      echo "用法：$0 [--prepare] [--threads <线程数|每核线程数C>]"
+      exit 1
+      ;;
+  esac
+done
+if [[ ! "$MAVEN_THREADS" =~ ^([1-9][0-9]*|([1-9][0-9]*([.][0-9]+)?|0[.][0-9]*[1-9][0-9]*)C)$ ]]; then
+  echo "Maven 并行度无效：${MAVEN_THREADS}；请使用 4、1C 或 0.5C 这类格式。"
   exit 1
 fi
 
@@ -30,7 +72,6 @@ DISPATCHER_URL="http://127.0.0.1:$DISPATCHER_PORT"
 FRONTEND_PORT="${FRONTEND_PORT:-18887}"
 ENGINE_CODE="${DATASCALPEL_LOCAL_ENGINE_CODE:-local_engine}"
 ENGINE_MANAGEMENT_TOKEN="${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:-change-me-engine-management-token}"
-ENGINE_ENCRYPTION_KEY="${DATASCALPEL_ENGINE_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
 SERVICE_ENGINE_CREDENTIAL_KEY="${DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
 TASK_ENGINE_TOKEN="${DATASCALPEL_TASK_ENGINE_TOKEN:-change-me-task-engine-token}"
 DISPATCHER_TOKEN="${DATASCALPEL_TASK_DISPATCHER_TOKEN:-change-me-task-dispatcher-token}"
@@ -58,16 +99,7 @@ DEFAULT_DISPATCHER_DB_URL="$(
     | sed -E 's#(jdbc:postgresql://[^/]+/)[^?]+#\1datascalpel#'
 )"
 DISPATCHER_DB_URL="${DATASCALPEL_TASK_DISPATCHER_DB_URL:-$DEFAULT_DISPATCHER_DB_URL}"
-if [[ "$DISPATCHER_DB_URL" == *currentSchema=* ]]; then
-  DISPATCHER_DB_URL="$(
-    printf '%s' "$DISPATCHER_DB_URL" \
-      | sed -E 's/([?&])currentSchema=[^&]*/\1currentSchema=dispatcher/'
-  )"
-elif [[ "$DISPATCHER_DB_URL" == *\?* ]]; then
-  DISPATCHER_DB_URL="$DISPATCHER_DB_URL&currentSchema=dispatcher"
-else
-  DISPATCHER_DB_URL="$DISPATCHER_DB_URL?currentSchema=dispatcher"
-fi
+DISPATCHER_DB_SCHEMA="${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:-dispatcher}"
 TASK_RUNNER_JAR="${DATASCALPEL_TASK_RUNNER_JAR:-$ROOT_DIR/data-scalpel-task-engine/target/data-scalpel-task-engine-0.1.0-SNAPSHOT-runner-local.jar}"
 TASK_ENGINE_CONFIG="$ROOT_DIR/data-scalpel-task-engine/src/main/distribution/conf/task-engine.properties"
 TASK_ENGINE_LOG_CONFIG="$ROOT_DIR/data-scalpel-task-engine/src/main/distribution/conf/log4j2.properties"
@@ -80,6 +112,8 @@ DISPATCHER_PID=""
 FRONTEND_PID=""
 ADMIN_ACCESS_TOKEN=""
 STOPPED=false
+BACKGROUND_JOB_PIDS=()
+BACKGROUND_JOB_NAMES=()
 
 cleanup() {
   if [[ "$STOPPED" == true ]]; then
@@ -87,7 +121,8 @@ cleanup() {
   fi
   STOPPED=true
 
-  if [[ -z "$FRONTEND_PID" && -z "$BACKEND_PID" && -z "$ENGINE_PID" && -z "$TASK_ENGINE_PID" && -z "$DISPATCHER_PID" ]]; then
+  if [[ -z "$FRONTEND_PID" && -z "$BACKEND_PID" && -z "$ENGINE_PID" && -z "$TASK_ENGINE_PID" && -z "$DISPATCHER_PID" \
+    && ${#BACKGROUND_JOB_PIDS[@]} -eq 0 ]]; then
     return
   fi
 
@@ -98,11 +133,21 @@ cleanup() {
   [[ -n "$ENGINE_PID" ]] && kill "$ENGINE_PID" 2>/dev/null || true
   [[ -n "$DISPATCHER_PID" ]] && kill "$DISPATCHER_PID" 2>/dev/null || true
   [[ -n "$TASK_ENGINE_PID" ]] && kill "$TASK_ENGINE_PID" 2>/dev/null || true
+  if (( ${#BACKGROUND_JOB_PIDS[@]} > 0 )); then
+    for pid in "${BACKGROUND_JOB_PIDS[@]}"; do
+      kill "$pid" 2>/dev/null || true
+    done
+  fi
   [[ -n "$FRONTEND_PID" ]] && wait "$FRONTEND_PID" 2>/dev/null || true
   [[ -n "$BACKEND_PID" ]] && wait "$BACKEND_PID" 2>/dev/null || true
   [[ -n "$ENGINE_PID" ]] && wait "$ENGINE_PID" 2>/dev/null || true
   [[ -n "$DISPATCHER_PID" ]] && wait "$DISPATCHER_PID" 2>/dev/null || true
   [[ -n "$TASK_ENGINE_PID" ]] && wait "$TASK_ENGINE_PID" 2>/dev/null || true
+  if (( ${#BACKGROUND_JOB_PIDS[@]} > 0 )); then
+    for pid in "${BACKGROUND_JOB_PIDS[@]}"; do
+      wait "$pid" 2>/dev/null || true
+    done
+  fi
 }
 
 trap cleanup EXIT INT TERM
@@ -128,8 +173,8 @@ fi
 
 cd "$ROOT_DIR"
 
-echo "正在编译后端（不执行 package）…"
-./mvnw -q \
+echo "正在并行编译后端（Maven 线程：${MAVEN_THREADS}，不执行 package）…"
+./mvnw -q -T "$MAVEN_THREADS" \
   -pl data-scalpel-admin,data-scalpel-service-engine,data-scalpel-task-engine,data-scalpel-task-dispatcher \
   -am compile
 
@@ -145,7 +190,6 @@ runtime_classpath() {
   echo "正在解析 $application_module 的运行时 classpath…" >&2
   if ! ./mvnw -q -pl "$application_module" dependency:build-classpath \
     -DincludeScope=runtime \
-    -DexcludeGroupIds=cn.superhuang \
     -Dmdep.regenerateFile=true \
     -Dmdep.outputFile=target/dev-runtime-classpath.txt >&2; then
     echo "$application_module 的运行时 classpath 解析失败。" >&2
@@ -186,6 +230,7 @@ reactor_runtime_classpath() {
   local classpath
 
   echo "正在从 Maven Reactor 解析 $application_module 的运行时 classpath…" >&2
+  # exec:exec 会输出带边界标记的 classpath；这里保持单线程，避免并行 Reactor 日志插入标记内容。
   if ! reactor_output="$(./mvnw -q \
     -pl "$application_module" \
     -am \
@@ -213,7 +258,42 @@ reactor_runtime_classpath() {
   printf '%s' "$classpath"
 }
 
-ADMIN_CLASSPATH="$(runtime_classpath \
+start_classpath_job() {
+  local name="$1"
+  local output_file="$2"
+  local resolver="$3"
+  shift 3
+
+  "$resolver" "$@" >"$output_file" &
+  BACKGROUND_JOB_PIDS+=("$!")
+  BACKGROUND_JOB_NAMES+=("$name")
+}
+
+wait_for_background_jobs() {
+  local failed=false
+  local index
+  local pid
+
+  for ((index = 0; index < ${#BACKGROUND_JOB_PIDS[@]}; index++)); do
+    pid="${BACKGROUND_JOB_PIDS[$index]}"
+    if ! wait "$pid"; then
+      echo "${BACKGROUND_JOB_NAMES[$index]}失败。" >&2
+      failed=true
+    fi
+  done
+  BACKGROUND_JOB_PIDS=()
+  BACKGROUND_JOB_NAMES=()
+
+  [[ "$failed" == false ]]
+}
+
+ADMIN_CLASSPATH_FILE="$ROOT_DIR/data-scalpel-admin/target/dev-launch-classpath.txt"
+ENGINE_CLASSPATH_FILE="$ROOT_DIR/data-scalpel-service-engine/target/dev-launch-classpath.txt"
+TASK_ENGINE_CLASSPATH_FILE="$ROOT_DIR/data-scalpel-task-engine/target/dev-launch-classpath.txt"
+DISPATCHER_CLASSPATH_FILE="$ROOT_DIR/data-scalpel-task-dispatcher/target/dev-launch-classpath.txt"
+
+echo "正在并行解析各应用的运行时 classpath…"
+start_classpath_job "Admin 运行时 classpath 解析" "$ADMIN_CLASSPATH_FILE" runtime_classpath \
   data-scalpel-admin \
   data-scalpel-admin \
   data-scalpel-business \
@@ -223,20 +303,42 @@ ADMIN_CLASSPATH="$(runtime_classpath \
   data-scalpel-filegdb \
   data-scalpel-filegdb-s3 \
   data-scalpel-shapefile \
-  data-scalpel-shapefile-s3)"
-ENGINE_CLASSPATH="$(runtime_classpath \
+  data-scalpel-shapefile-s3
+start_classpath_job "Service Engine 运行时 classpath 解析" "$ENGINE_CLASSPATH_FILE" runtime_classpath \
   data-scalpel-service-engine \
   data-scalpel-service-engine \
   data-scalpel-web-core \
   data-scalpel-dialect \
-  data-scalpel-contracts)"
-TASK_ENGINE_CLASSPATH="$(reactor_runtime_classpath data-scalpel-task-engine)"
-DISPATCHER_CLASSPATH="$(runtime_classpath \
+  data-scalpel-contracts
+start_classpath_job "Task Engine 运行时 classpath 解析" "$TASK_ENGINE_CLASSPATH_FILE" \
+  reactor_runtime_classpath data-scalpel-task-engine
+start_classpath_job "Task Dispatcher 运行时 classpath 解析" "$DISPATCHER_CLASSPATH_FILE" runtime_classpath \
   data-scalpel-task-dispatcher \
   data-scalpel-task-dispatcher \
-  data-scalpel-contracts)"
+  data-scalpel-contracts
+
+load_runtime_classpaths() {
+  local file
+  for file in \
+    "$ADMIN_CLASSPATH_FILE" \
+    "$ENGINE_CLASSPATH_FILE" \
+    "$TASK_ENGINE_CLASSPATH_FILE" \
+    "$DISPATCHER_CLASSPATH_FILE"; do
+    if [[ ! -s "$file" ]]; then
+      echo "运行时 classpath 文件不存在或为空：$file" >&2
+      return 1
+    fi
+  done
+
+  ADMIN_CLASSPATH="$(<"$ADMIN_CLASSPATH_FILE")"
+  ENGINE_CLASSPATH="$(<"$ENGINE_CLASSPATH_FILE")"
+  TASK_ENGINE_CLASSPATH="$(<"$TASK_ENGINE_CLASSPATH_FILE")"
+  DISPATCHER_CLASSPATH="$(<"$DISPATCHER_CLASSPATH_FILE")"
+}
 
 if [[ "$PREPARE_ONLY" == true ]]; then
+  wait_for_background_jobs
+  load_runtime_classpaths
   echo "开发运行所需的 classpath 已准备完成；未启动任何进程。"
   exit 0
 fi
@@ -267,7 +369,7 @@ curl --fail --silent --show-error "$FILE_STORAGE_ENDPOINT/minio/health/live" >/d
 if [[ ! -f "$TASK_RUNNER_JAR" ]]; then
   echo "未找到 Task Runner Uber JAR：$TASK_RUNNER_JAR"
   echo "首次运行真实 Canvas 任务或修改 Runner 后，请单独执行："
-  echo "  ./mvnw -pl data-scalpel-task-engine package -DskipTests"
+  echo "  ./mvnw -pl data-scalpel-task-engine -am package -DskipTests"
   exit 1
 fi
 if [[ -n "$(find \
@@ -284,13 +386,16 @@ if [[ -n "$(find \
   -type f -newer "$TASK_RUNNER_JAR" -print -quit)" ]]; then
   echo "Task Runner Uber JAR 已过期：$TASK_RUNNER_JAR"
   echo "请先重新执行："
-  echo "  ./mvnw -pl data-scalpel-task-engine package -DskipTests"
+  echo "  ./mvnw -pl data-scalpel-task-engine -am package -DskipTests"
   exit 1
 fi
 mkdir -p "$DISPATCHER_WORK_DIR"
 
+# classpath 解析与 Docker、Kafka、MinIO、Runner 检查并行进行，到真正启动进程前再汇合。
+wait_for_background_jobs
+load_runtime_classpaths
+
 export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="$ENGINE_MANAGEMENT_TOKEN"
-export DATASCALPEL_ENGINE_ENCRYPTION_KEY="$ENGINE_ENCRYPTION_KEY"
 export DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY="$SERVICE_ENGINE_CREDENTIAL_KEY"
 export DATASCALPEL_TASK_ENGINE_TOKEN="$TASK_ENGINE_TOKEN"
 export DATASCALPEL_COMPUTE_ENGINE_CREDENTIAL_KEY="$COMPUTE_ENGINE_CREDENTIAL_KEY"
@@ -337,6 +442,16 @@ wait_for_health() {
 
   echo "$name 未能在约 60 秒内就绪：$health_url（最后 HTTP 状态：${http_status:-000}）"
   return 1
+}
+
+start_health_check() {
+  local name="$1"
+  local health_url="$2"
+  local pid="$3"
+
+  wait_for_health "$name" "$health_url" "$pid" &
+  BACKGROUND_JOB_PIDS+=("$!")
+  BACKGROUND_JOB_NAMES+=("$name 健康检查")
 }
 
 json_escape() {
@@ -582,7 +697,7 @@ ENGINE_ENV=("DATASCALPEL_ENGINE_CODE=$ENGINE_CODE")
   "DATASCALPEL_ENGINE_DB_PASSWORD=$DATASCALPEL_ENGINE_DB_PASSWORD"
   "SPRING_DATASOURCE_PASSWORD=$DATASCALPEL_ENGINE_DB_PASSWORD"
 )
-env "${ENGINE_ENV[@]}" java -cp "$ENGINE_CLASSPATH" \
+env "${ENGINE_ENV[@]}" java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$ENGINE_CLASSPATH" \
   cn.superhuang.data.scalpel.engine.DataScalpelServiceEngineApplication \
   "${SPRING_LOCAL_ARGUMENTS[@]}" --server.port="$ENGINE_PORT" &
 ENGINE_PID=$!
@@ -590,7 +705,7 @@ ENGINE_PID=$!
 echo "正在按 classpath 启动 Task Engine：$TASK_ENGINE_URL"
 DATASCALPEL_TASK_ENGINE_HOST="127.0.0.1" \
 DATASCALPEL_TASK_ENGINE_PORT="$TASK_ENGINE_PORT" \
-java -Dlog4j.configurationFile="$TASK_ENGINE_LOG_CONFIG" \
+java "${DIRECT_JAVA_OPTIONS[@]}" -Dlog4j.configurationFile="$TASK_ENGINE_LOG_CONFIG" \
   -cp "$TASK_ENGINE_CLASSPATH" \
   cn.superhuang.datascalpel.taskengine.TaskEngineDaemon "$TASK_ENGINE_CONFIG" &
 TASK_ENGINE_PID=$!
@@ -611,30 +726,35 @@ DATASCALPEL_FILE_STORAGE_ROOT_PREFIX="$FILE_STORAGE_ROOT_PREFIX" \
 DATASCALPEL_FILE_STORAGE_ACCESS_KEY="$FILE_STORAGE_ACCESS_KEY" \
 DATASCALPEL_FILE_STORAGE_SECRET_KEY="$FILE_STORAGE_SECRET_KEY" \
 DATASCALPEL_DB_URL="$DISPATCHER_DB_URL" \
+DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA="$DISPATCHER_DB_SCHEMA" \
 SPRING_DATASOURCE_URL="$DISPATCHER_DB_URL" \
 SPRING_DATASOURCE_USERNAME="$ADMIN_DB_USERNAME" \
 SPRING_DATASOURCE_PASSWORD="$ADMIN_DB_PASSWORD" \
-java -cp "$DISPATCHER_CLASSPATH" \
+java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$DISPATCHER_CLASSPATH" \
   cn.superhuang.data.scalpel.dispatcher.TaskDispatcherApplication \
   "${SPRING_LOCAL_ARGUMENTS[@]}" &
 DISPATCHER_PID=$!
 
 echo "正在按 classpath 启动后端：http://localhost:$BACKEND_PORT"
-java -cp "$ADMIN_CLASSPATH" \
+java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$ADMIN_CLASSPATH" \
   cn.superhuang.data.scalpel.admin.DataScalpelAdminApplication \
   "${SPRING_LOCAL_ARGUMENTS[@]}" --server.port="$BACKEND_PORT" &
 BACKEND_PID=$!
 
-wait_for_health "服务引擎" "http://localhost:$ENGINE_PORT/actuator/health" "$ENGINE_PID"
-wait_for_health "Task Engine" "$TASK_ENGINE_URL/health/ready" "$TASK_ENGINE_PID"
-wait_for_health "Task Dispatcher" "$DISPATCHER_URL/health/ready" "$DISPATCHER_PID"
-wait_for_health "后端" "http://localhost:$BACKEND_PORT/actuator/health" "$BACKEND_PID"
-register_local_engine
-register_local_compute_engine
-
 echo "正在启动前端：http://localhost:$FRONTEND_PORT"
 BACKEND_ORIGIN="http://localhost:$BACKEND_PORT" pnpm --dir "$ROOT_DIR/data-scalpel-ui" dev --port "$FRONTEND_PORT" &
 FRONTEND_PID=$!
+
+echo "正在并行等待各本地服务就绪…"
+start_health_check "服务引擎" "http://localhost:$ENGINE_PORT/actuator/health" "$ENGINE_PID"
+start_health_check "Task Engine" "$TASK_ENGINE_URL/health/ready" "$TASK_ENGINE_PID"
+start_health_check "Task Dispatcher" "$DISPATCHER_URL/health/ready" "$DISPATCHER_PID"
+start_health_check "后端" "http://localhost:$BACKEND_PORT/actuator/health" "$BACKEND_PID"
+start_health_check "前端" "http://localhost:$FRONTEND_PORT" "$FRONTEND_PID"
+wait_for_background_jobs
+
+register_local_engine
+register_local_compute_engine
 
 echo "DataScalpel 前后端、服务引擎、Task Engine 与 Dispatcher 已启动（Java 服务使用 classpath，未执行完整 package），按 Ctrl+C 一起停止。"
 wait "$ENGINE_PID" "$TASK_ENGINE_PID" "$DISPATCHER_PID" "$BACKEND_PID" "$FRONTEND_PID"

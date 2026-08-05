@@ -34,7 +34,8 @@ flowchart LR
 3. 新的“发布”只负责将已启用服务发布到当前网关；
 4. “取消发布”从所有历史网关撤回服务，但保留 Engine 运行态、revision、订阅和凭证；
 5. 提供职责单一的服务发布网关端口，支持后续接入 APISIX 和自研网关；
-6. 第一种实现使用 Kong OSS Admin API 创建、更新和删除 Kong Service 与 Route；
+6. 首个实现使用 Kong OSS Admin API；`DATASCALPEL` Provider 通过 Super API Gateway
+   管理 API 创建、更新、停用和删除 Service 与 Route；
 7. DataScalpel 保存网关发布主状态，网关对象可通过重试重新同步；
 8. 前端分别展示 Engine 运行状态和网关发布状态，访问 cURL 使用网关代理地址；
 9. 数据服务声明 `PUBLIC` 或 `SUBSCRIPTION_REQUIRED`，受保护服务发布时同步网关认证和 ACL。
@@ -62,6 +63,8 @@ Consumer、凭证和订阅由独立领域资源及专用网关端口管理，详
 | `DISABLED` | 曾经启用，现已从 Engine 移除 | 是 |
 
 原数据库中的 `PUBLISHED` 表示旧语义下“已部署到 Engine”，启动时一次性迁移为 `ENABLED`。迁移只修改状态值，不改变 Engine 部署记录和服务 revision。
+
+本文中的 revision 只指 DataScalpel 控制面为本地状态机和网关发布维护的 `DataService` revision。Service Engine 管理协议不再传递 revision：部署按 `serviceId` 覆盖，卸载按 `serviceId` 幂等删除。
 
 ### 3.2 Engine 部署状态
 
@@ -462,7 +465,10 @@ POST /api/v1/data-services/{id}/actions/cleanup-deployment
 
 ## 12. 配置
 
-继续复用：
+Super API Gateway 的资源映射、fail-closed 发布顺序、订阅锚点和切换流程见
+[Super API Gateway Provider 集成](super-api-gateway-provider-integration.md)。
+
+Kong 配置：
 
 ```yaml
 data-scalpel:
@@ -473,6 +479,22 @@ data-scalpel:
       proxy-url: http://10.0.0.5:8000
       connect-timeout: 3s
       request-timeout: 5s
+```
+
+Super API Gateway 配置：
+
+```yaml
+data-scalpel:
+  service-gateway:
+    provider: datascalpel
+    super-api-gateway:
+      admin-url: http://localhost:19000
+      proxy-url: http://localhost:19000
+      machine-token: ${DATASCALPEL_SUPER_API_GATEWAY_MACHINE_TOKEN:}
+      connect-timeout: 3s
+      request-timeout: 5s
+      upstream-connect-timeout: 3s
+      upstream-response-timeout: 35s
 ```
 
 `provider=none` 时：

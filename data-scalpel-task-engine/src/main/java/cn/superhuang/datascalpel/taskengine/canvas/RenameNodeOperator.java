@@ -208,7 +208,8 @@ public final class RenameNodeOperator implements CanvasNodeOperator {
                 source.defaultValue(),
                 source.autoIncrement(),
                 source.generated(),
-                source.comment()
+                source.comment(),
+                source.geometry()
         );
     }
 }

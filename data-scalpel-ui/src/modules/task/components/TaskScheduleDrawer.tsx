@@ -80,7 +80,7 @@ export const TaskScheduleDrawer = ({
         </div>
       )}
     >
-      <Form<TaskScheduleRequest> form={form} layout="vertical" requiredMark="optional">
+      <Form<TaskScheduleRequest> autoComplete="off" form={form} layout="vertical" requiredMark="optional">
         <Form.Item name="name" label="计划名称" rules={[
           { required: true, whitespace: true, message: '请输入计划名称' },
           { max: 100, message: '计划名称不能超过 100 个字符' },

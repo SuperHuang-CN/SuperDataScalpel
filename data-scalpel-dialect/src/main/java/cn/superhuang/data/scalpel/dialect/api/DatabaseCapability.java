@@ -11,5 +11,6 @@ public enum DatabaseCapability {
     QUERY_METADATA,
     INSERT_SELECT,
     OVERWRITE_INSERT_SELECT,
+    ROW_UPSERT,
     CREATE_TABLE
 }

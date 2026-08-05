@@ -18,16 +18,23 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.TableListResp
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadataResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TablePreviewResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.KafkaTopicResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.JdbcQueryInspectionResponse;
 import cn.superhuang.data.scalpel.business.datasource.service.http.ConnectionProbeResult;
 import cn.superhuang.data.scalpel.business.datasource.service.http.HttpApiConnectorRegistry;
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
+import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableQuery;
+import cn.superhuang.data.scalpel.dialect.query.QueryInspection;
+import cn.superhuang.data.scalpel.dialect.query.ReadOnlyQueryFingerprint;
+import cn.superhuang.data.scalpel.dialect.query.ReadOnlySelectQueryParser;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseAccessException;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseInspector;
+import cn.superhuang.data.scalpel.dialect.runtime.JdbcQueryInspector;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
@@ -39,8 +46,10 @@ import java.util.UUID;
 import java.util.Map;
 import java.util.Properties;
 import java.util.Set;
+import java.util.HashSet;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
@@ -71,21 +80,27 @@ public class DataSourceRuntimeService {
     private final DataSourceRepository repository;
     private final DialectRegistry registry;
     private final DatabaseInspector inspector;
+    private final JdbcQueryInspector queryInspector;
     private final DataSourceCredentialCipher credentialCipher;
     private final HttpApiConnectorRegistry httpApiConnectors;
+    private final SpatialServiceClient spatialServiceClient;
 
     public DataSourceRuntimeService(
             DataSourceRepository repository,
             DialectRegistry registry,
             DatabaseInspector inspector,
+            JdbcQueryInspector queryInspector,
             DataSourceCredentialCipher credentialCipher,
-            HttpApiConnectorRegistry httpApiConnectors
+            HttpApiConnectorRegistry httpApiConnectors,
+            SpatialServiceClient spatialServiceClient
     ) {
         this.repository = repository;
         this.registry = registry;
         this.inspector = inspector;
+        this.queryInspector = queryInspector;
         this.credentialCipher = credentialCipher;
         this.httpApiConnectors = httpApiConnectors;
+        this.spatialServiceClient = spatialServiceClient;
     }
 
     public List<DataSourceTypeResponse> dataSourceTypes() {
@@ -97,6 +112,8 @@ public class DataSourceRuntimeService {
         result.add(DataSourceTypeResponse.kafka());
         result.add(DataSourceTypeResponse.s3());
         result.add(DataSourceTypeResponse.httpApi());
+        result.add(DataSourceTypeResponse.arcgisRest());
+        result.add(DataSourceTypeResponse.wfs());
         return List.copyOf(result);
     }
 
@@ -106,7 +123,10 @@ public class DataSourceRuntimeService {
             cn.superhuang.data.scalpel.business.datasource.domain.DataSourceConnection connection =
                     DataSourceService.buildHttpApiConnection(
                             httpApi, null, request.type(), credentialCipher);
-            return testHttpApi("draft", runtimeConnection(connection));
+            HttpApiContracts.RuntimeConnection runtimeConnection = runtimeConnection(connection);
+            return isSpatial(request.type())
+                    ? testSpatialService("draft", request.type(), runtimeConnection)
+                    : testHttpApi("draft", runtimeConnection);
         }
         if (request.type().connectionKind() == DataSourceConnectionKind.KAFKA
                 && request.connection() instanceof KafkaDataSourceConnectionRequest kafka) {
@@ -141,7 +161,10 @@ public class DataSourceRuntimeService {
     public ConnectionTestResponse test(UUID id) {
         DataSource dataSource = requireDataSource(id);
         if (dataSource.getType().connectionKind() == DataSourceConnectionKind.HTTP_API) {
-            return testHttpApi("dataSourceId=" + id, runtimeConnection(dataSource.getConnection()));
+            HttpApiContracts.RuntimeConnection runtimeConnection = runtimeConnection(dataSource.getConnection());
+            return isSpatial(dataSource.getType())
+                    ? testSpatialService("dataSourceId=" + id, dataSource.getType(), runtimeConnection)
+                    : testHttpApi("dataSourceId=" + id, runtimeConnection);
         }
         if (dataSource.getType().connectionKind() == DataSourceConnectionKind.KAFKA) {
             return testKafka("dataSourceId=" + id, kafkaSettings(dataSource));
@@ -202,7 +225,7 @@ public class DataSourceRuntimeService {
                     dataSource.getType().name(),
                     config,
                     resolvedTable(dialect, config, catalog, schema, table)
-            ));
+            ), dialect);
         } catch (DatabaseAccessException exception) {
             throw remoteAccessException(exception);
         }
@@ -222,6 +245,76 @@ public class DataSourceRuntimeService {
             ));
         } catch (DatabaseAccessException exception) {
             throw remoteAccessException(exception);
+        }
+    }
+
+    public JdbcQueryInspectionResponse inspectQuery(UUID id, String sql) {
+        DataSource dataSource = requireDataSource(id);
+        if (!dataSource.isEnabled()
+                || !dataSource.getPurposes().contains(cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose.SOURCE)) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "查询输入数据源不存在、未启用或不具有 SOURCE 用途");
+        }
+        if (dataSource.getType() != DataSourceType.POSTGRESQL
+                && dataSource.getType() != DataSourceType.MYSQL) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "JDBC 查询输入只支持 PostgreSQL 和 MySQL");
+        }
+        if (sql == null || sql.isBlank() || sql.length() > 100_000) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SQL 长度必须为 1 到 100000 个字符");
+        }
+        var query = parseReadOnlyQuery(sql);
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        QueryInspection inspection;
+        try {
+            inspection = queryInspector.inspect(
+                    dataSource.getType().name(),
+                    dataSource.getConnection().toJdbcConnectionConfig(),
+                    query,
+                    Duration.ofSeconds(30)
+            );
+        } catch (DatabaseAccessException exception) {
+            throw remoteAccessException(exception);
+        }
+        Set<String> names = new HashSet<>();
+        List<CanvasColumnSchema> columns = inspection.columns().stream().map(column -> {
+            if (!names.add(column.label())) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "查询结果字段名重复：" + column.label());
+            }
+            var mapping = dialect.mapToPlatformType(column.jdbcTypeDescriptor());
+            if (!mapping.acceptable() || mapping.definition() == null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST, "查询结果字段无法无损映射为平台类型：" + column.label());
+            }
+            var type = mapping.definition();
+            if (type.type() == PlatformDataType.GEOMETRY) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "JDBC_QUERY_INPUT 第一版不支持 Geometry 查询字段：" + column.label());
+            }
+            return new CanvasColumnSchema(
+                    column.label(),
+                    type.type(),
+                    type.length(),
+                    type.precision(),
+                    type.scale(),
+                    column.nullable(),
+                    null,
+                    false,
+                    false,
+                    null,
+                    null
+            );
+        }).toList();
+        return new JdbcQueryInspectionResponse(ReadOnlyQueryFingerprint.sha256(query), columns);
+    }
+
+    private static cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery parseReadOnlyQuery(String sql) {
+        try {
+            return ReadOnlySelectQueryParser.parse(sql);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
         }
     }
 
@@ -515,6 +608,55 @@ public class DataSourceRuntimeService {
                     ConnectionTestDiagnosticFactory.sanitizedStackTrace(cause, sensitiveValues));
         }
         return ConnectionTestResponse.failed(result.code(), result.message(), result.elapsedMs(), diagnostic);
+    }
+
+    private ConnectionTestResponse testSpatialService(
+            String context,
+            DataSourceType type,
+            HttpApiContracts.RuntimeConnection connection
+    ) {
+        long startedAt = System.nanoTime();
+        String[] sensitiveValues = ConnectionTestDiagnosticFactory.httpSensitiveValues(connection);
+        try {
+            SpatialServiceClient.SpatialProbe probe = spatialServiceClient.probe(spatialProtocol(type), connection);
+            return new ConnectionTestResponse(
+                    true, "CONNECTION_SUCCESS", "连接成功", elapsedMs(startedAt),
+                    probe.product(), probe.version(), "Java HttpClient", null
+            );
+        } catch (RuntimeException exception) {
+            String code = "SPATIAL_SERVICE_CONNECTION_FAILED";
+            String message = exception.getMessage();
+            if (exception instanceof ResponseStatusException responseStatusException) {
+                message = responseStatusException.getReason();
+                Object problemCode = responseStatusException.getBody().getProperties() == null ? null
+                        : responseStatusException.getBody().getProperties().get("code");
+                if (problemCode instanceof String value && !value.isBlank()) {
+                    code = value;
+                }
+            }
+            LOGGER.warn(
+                    "Spatial service connection test failed: context={}, type={}, baseUrl={}, code={}, elapsedMs={}\\n{}",
+                    context, type, connection.configuration().baseUrl(), code, elapsedMs(startedAt),
+                    ConnectionTestDiagnosticFactory.sanitizedStackTrace(exception, sensitiveValues));
+            return ConnectionTestResponse.failed(
+                    code,
+                    ConnectionTestDiagnosticFactory.sanitizedText(message, sensitiveValues),
+                    elapsedMs(startedAt),
+                    ConnectionTestDiagnosticFactory.create(exception, sensitiveValues)
+            );
+        }
+    }
+
+    private static boolean isSpatial(DataSourceType type) {
+        return type == DataSourceType.ARCGIS_REST || type == DataSourceType.WFS;
+    }
+
+    private static cn.superhuang.data.scalpel.business.datasource.domain.SpatialServiceProtocol spatialProtocol(
+            DataSourceType type
+    ) {
+        return type == DataSourceType.ARCGIS_REST
+                ? cn.superhuang.data.scalpel.business.datasource.domain.SpatialServiceProtocol.ARCGIS_REST
+                : cn.superhuang.data.scalpel.business.datasource.domain.SpatialServiceProtocol.WFS;
     }
 
     private static long elapsedMs(long startedAt) {

@@ -17,7 +17,7 @@ import {
   type PhysicalTableInspection,
 } from '../../model';
 import { fetchFileDatasetCanvasMetadata } from '../../filedataset';
-import type { CanvasDefinition } from './canvasTypes';
+import { CANVAS_SCHEMA_MINOR_VERSION, type CanvasDefinition } from './canvasTypes';
 import { useCanvasMetadataSnapshot } from './useCanvasMetadataSnapshot';
 
 vi.mock('../../datasource', () => ({
@@ -39,7 +39,7 @@ const dataSourceId = '55859069-6387-4390-b850-104845ee5370';
 
 const definition: CanvasDefinition = {
   schemaVersion: 1,
-  schemaMinorVersion: 6,
+  schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [
     {
       id: '4add70a7-4948-42a5-af66-e56dbaccad3e',
@@ -58,6 +58,7 @@ const definition: CanvasDefinition = {
         dataSourceId,
         targetTableName: 'orders',
         writeMode: 'APPEND',
+        upsertKeyColumns: [],
         columnMappingMode: 'BY_NAME',
         columnMappings: [],
       },
@@ -106,6 +107,9 @@ const tableMetadata: TableMetadata = {
     jdbcType: -5,
     nativeType: 'int8',
     logicalType: 'LONG',
+    platformTypeDefinition: {
+      type: 'LONG', length: null, precision: null, scale: null, geometry: null,
+    },
     length: null,
     precision: 19,
     scale: 0,
@@ -120,6 +124,9 @@ const tableMetadata: TableMetadata = {
     jdbcType: 12,
     nativeType: 'varchar',
     logicalType: 'STRING',
+    platformTypeDefinition: {
+      type: 'STRING', length: 128, precision: null, scale: null, geometry: null,
+    },
     length: 128,
     precision: 128,
     scale: null,
@@ -134,6 +141,9 @@ const tableMetadata: TableMetadata = {
     jdbcType: 3,
     nativeType: 'decimal',
     logicalType: 'DECIMAL',
+    platformTypeDefinition: {
+      type: 'DECIMAL', length: null, precision: 12, scale: 2, geometry: null,
+    },
     length: 64,
     precision: 12,
     scale: 2,
@@ -145,6 +155,7 @@ const tableMetadata: TableMetadata = {
   }],
   primaryKey: null,
   indexes: [],
+  uniqueKeys: [],
 };
 
 const modelTableMetadata: TableMetadata = {
@@ -228,7 +239,7 @@ const apiResource: ApiResource = {
 
 const httpApiDefinition: CanvasDefinition = {
   schemaVersion: 1,
-  schemaMinorVersion: 6,
+  schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: '16b03251-cff6-40f1-971c-79cf26430b30',
     type: 'HTTP_API_INPUT',
@@ -313,7 +324,7 @@ const modelDetail: DataModelDetail = {
 
 const modelDefinition: CanvasDefinition = {
   schemaVersion: 1,
-  schemaMinorVersion: 6,
+  schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: 'a73c1b85-afeb-46f4-9ce9-dd9082ed3757',
     type: 'MODEL_INPUT',
@@ -385,6 +396,7 @@ describe('useCanvasMetadataSnapshot', () => {
       id: dataSourceId,
       enabled: true,
       connectionKind: 'JDBC',
+      jdbcDatabaseType: 'POSTGRESQL',
       purposes: ['DISTRIBUTION', 'SOURCE', 'STORAGE'],
       tables: [{
         tableName: 'orders',
@@ -400,6 +412,7 @@ describe('useCanvasMetadataSnapshot', () => {
           autoIncrement: false,
           generated: false,
           comment: '订单ID',
+          geometry: null,
         }, {
           name: 'description',
           fieldType: 'STRING',
@@ -411,6 +424,7 @@ describe('useCanvasMetadataSnapshot', () => {
           autoIncrement: false,
           generated: false,
           comment: '订单说明',
+          geometry: null,
         }, {
           name: 'amount',
           fieldType: 'DECIMAL',
@@ -422,7 +436,9 @@ describe('useCanvasMetadataSnapshot', () => {
           autoIncrement: false,
           generated: false,
           comment: '订单金额',
+          geometry: null,
         }],
+        uniqueKeys: [],
       }],
     }]);
     expect(result.current.metadataSnapshot.models).toEqual([]);
@@ -431,6 +447,91 @@ describe('useCanvasMetadataSnapshot', () => {
       dataSourceName: '订单数据库',
       qualifiedTableName: 'demo.public.orders',
     });
+  });
+
+  it('loads only the JDBC source for a query input and builds its safe summary', async () => {
+    const queryDefinition: CanvasDefinition = {
+      schemaVersion: 1,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: 'JDBC_QUERY_INPUT',
+        name: '订单查询输入',
+        layout: { x: 10, y: 10, width: 240, height: 120 },
+        configuration: {
+          dataSourceId,
+          sql: 'SELECT order_id FROM orders',
+          outputTableName: 'query_orders',
+          analyzedSqlSha256: 'a'.repeat(64),
+          outputColumns: [],
+        },
+      }],
+      edges: [],
+    };
+    vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
+
+    const { result } = renderHook(() => useCanvasMetadataSnapshot(queryDefinition), {
+      wrapper: createWrapper(),
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(fetchDataSource).toHaveBeenCalledWith(dataSourceId);
+    expect(fetchTableMetadata).not.toHaveBeenCalled();
+    expect(result.current.metadataSnapshot.dataSources).toEqual([{
+      id: dataSourceId,
+      enabled: true,
+      connectionKind: 'JDBC',
+      jdbcDatabaseType: 'POSTGRESQL',
+      purposes: ['DISTRIBUTION', 'SOURCE', 'STORAGE'],
+      tables: [],
+    }]);
+    expect(result.current.nodeSummaries.get(queryDefinition.nodes[0].id)).toEqual({
+      kind: 'JDBC',
+      dataSourceName: '订单数据库',
+      qualifiedTableName: 'query_orders',
+    });
+  });
+
+  it('preserves Geometry kind, CRS, and dimension in the Task Engine snapshot', async () => {
+    const geometry = {
+      kind: 'POINT' as const,
+      crs: { authority: 'EPSG', code: 4326 },
+      dimension: 'XY' as const,
+    };
+    vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
+    vi.mocked(fetchTableMetadata).mockResolvedValue({
+      ...tableMetadata,
+      columns: [{
+        ...tableMetadata.columns[0],
+        name: 'location',
+        jdbcType: 1111,
+        nativeType: 'geometry',
+        logicalType: 'GEOMETRY',
+        platformTypeDefinition: {
+          type: 'GEOMETRY',
+          length: null,
+          precision: null,
+          scale: null,
+          geometry,
+        },
+        length: null,
+        precision: null,
+        scale: null,
+      }],
+    });
+
+    const { result } = renderHook(() => useCanvasMetadataSnapshot(definition), {
+      wrapper: createWrapper(),
+    });
+    await waitFor(() => expect(result.current.loading).toBe(false));
+
+    expect(result.current.metadataSnapshot.dataSources[0]?.tables[0]?.columns[0])
+      .toEqual(expect.objectContaining({
+        name: 'location',
+        fieldType: 'GEOMETRY',
+        geometry,
+      }));
+    expect(result.current.error).toBe(false);
   });
 
   it('reports metadata read failures and never manufactures a partial table schema', async () => {
@@ -467,7 +568,7 @@ describe('useCanvasMetadataSnapshot', () => {
     };
     const kafkaDefinition: CanvasDefinition = {
       schemaVersion: 1,
-      schemaMinorVersion: 6,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '49cc72e3-0b1e-4031-a71f-b8fa26045339',
         type: 'KAFKA_INPUT',
@@ -536,6 +637,7 @@ describe('useCanvasMetadataSnapshot', () => {
       id: dataSourceId,
       enabled: true,
       connectionKind: 'KAFKA',
+      jdbcDatabaseType: null,
       purposes: ['DISTRIBUTION', 'SOURCE'],
       tables: [],
     }]);
@@ -551,7 +653,7 @@ describe('useCanvasMetadataSnapshot', () => {
     const fileDatasetTableId = '4caa81d1-a92e-44b6-a5aa-5cd31635972c';
     const fileDefinition: CanvasDefinition = {
       schemaVersion: 1,
-      schemaMinorVersion: 6,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '6762e8e3-6b76-4c29-8ac1-1db11d1fa57d',
         type: 'FILE_DATASET_INPUT',
@@ -566,20 +668,45 @@ describe('useCanvasMetadataSnapshot', () => {
         fileDatasetTableId,
         fileDatasetId: 'c2b31cf6-ee6b-44cc-81e7-19a85af8ef96',
         fileDatasetName: '订单归档',
-        datasetType: 'PARQUET',
+        datasetType: 'SHP',
         code: 'orders_202607',
         name: '七月订单',
         parseStatus: 'READY',
         fileStatus: 'READY',
-        fields: [{
-          name: 'order_id',
-          sortOrder: 0,
-          fieldType: 'LONG',
-          length: null,
-          precision: null,
-          scale: null,
-          nullable: false,
-        }],
+        fields: [
+          {
+            name: 'order_id',
+            sortOrder: 0,
+            fieldType: 'LONG',
+            length: null,
+            precision: null,
+            scale: null,
+            nullable: false,
+            platformTypeDefinition: {
+              type: 'LONG', length: null, precision: null, scale: null, geometry: null,
+            },
+          },
+          {
+            name: '_geometry',
+            sortOrder: 1,
+            fieldType: 'GEOMETRY',
+            length: null,
+            precision: null,
+            scale: null,
+            nullable: true,
+            platformTypeDefinition: {
+              type: 'GEOMETRY',
+              length: null,
+              precision: null,
+              scale: null,
+              geometry: {
+                kind: 'POINT',
+                crs: { authority: 'EPSG', code: 4326 },
+                dimension: 'XY',
+              },
+            },
+          },
+        ],
       }],
     });
 
@@ -593,21 +720,41 @@ describe('useCanvasMetadataSnapshot', () => {
       id: fileDatasetTableId,
       code: 'orders_202607',
       name: '七月订单',
-      datasetType: 'PARQUET',
+      datasetType: 'SHP',
       parseStatus: 'READY',
       fileStatus: 'READY',
-      columns: [{
-        name: 'order_id',
-        fieldType: 'LONG',
-        length: null,
-        precision: null,
-        scale: null,
-        nullable: false,
-        defaultValue: null,
-        autoIncrement: false,
-        generated: false,
-        comment: null,
-      }],
+      columns: [
+        {
+          name: 'order_id',
+          fieldType: 'LONG',
+          length: null,
+          precision: null,
+          scale: null,
+          nullable: false,
+          defaultValue: null,
+          autoIncrement: false,
+          generated: false,
+          comment: null,
+          geometry: null,
+        },
+        {
+          name: '_geometry',
+          fieldType: 'GEOMETRY',
+          length: null,
+          precision: null,
+          scale: null,
+          nullable: true,
+          defaultValue: null,
+          autoIncrement: false,
+          generated: false,
+          comment: null,
+          geometry: {
+            kind: 'POINT',
+            crs: { authority: 'EPSG', code: 4326 },
+            dimension: 'XY',
+          },
+        },
+      ],
     }]);
     expect(result.current.nodeSummaries.get(fileDefinition.nodes[0].id)).toEqual({
       kind: 'FILE_DATASET',
@@ -615,6 +762,12 @@ describe('useCanvasMetadataSnapshot', () => {
       tableName: '七月订单',
       tableCode: 'orders_202607',
       status: 'READY',
+      geometry: {
+        fieldName: '_geometry',
+        kind: 'POINT',
+        crs: { authority: 'EPSG', code: 4326 },
+        dimension: 'XY',
+      },
     });
     expect(result.current.error).toBe(false);
   });
@@ -634,6 +787,7 @@ describe('useCanvasMetadataSnapshot', () => {
       id: dataSourceId,
       enabled: true,
       connectionKind: 'HTTP_API',
+      jdbcDatabaseType: null,
       purposes: ['SOURCE'],
       tables: [{
         tableName: apiResourceId,
@@ -649,7 +803,9 @@ describe('useCanvasMetadataSnapshot', () => {
           autoIncrement: false,
           generated: false,
           comment: '订单 ID',
+          geometry: null,
         }],
+        uniqueKeys: [],
       }],
     }]);
     expect(result.current.nodeSummaries.get(httpApiDefinition.nodes[0].id)).toEqual({
@@ -707,6 +863,7 @@ describe('useCanvasMetadataSnapshot', () => {
         autoIncrement: true,
         generated: false,
         comment: '模型订单ID',
+        geometry: null,
       }, {
         name: 'description',
         fieldType: 'STRING',
@@ -718,6 +875,7 @@ describe('useCanvasMetadataSnapshot', () => {
         autoIncrement: false,
         generated: true,
         comment: '订单说明',
+        geometry: null,
       }, {
         name: 'amount',
         fieldType: 'DECIMAL',
@@ -729,6 +887,7 @@ describe('useCanvasMetadataSnapshot', () => {
         autoIncrement: false,
         generated: false,
         comment: '订单金额',
+        geometry: null,
       }],
     }]);
     modelDefinition.nodes.forEach((node) => {

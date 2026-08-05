@@ -1,6 +1,92 @@
+import type { StandardDictionarySummary } from '../../standard';
+
 export type DataModelStatus = 'DRAFT' | 'PUBLISHED' | 'DISABLED';
 
 export type PhysicalTableMode = 'MANAGED' | 'EXTERNAL';
+
+export type ModelWarehouseLayerInputPolicy = 'UNRESTRICTED' | 'ALLOW_LIST';
+
+export interface ModelWarehouseLayerSummary {
+  id: string;
+  code: string;
+  name: string;
+  color: string | null;
+  enabled: boolean;
+  modelCodePrefix: string | null;
+}
+
+export interface ModelWarehouseLayer extends ModelWarehouseLayerSummary {
+  description: string | null;
+  sortOrder: number;
+  inputLayerPolicy: ModelWarehouseLayerInputPolicy;
+  allowedInputLayers: ModelWarehouseLayerSummary[];
+  referencedModelCount: number;
+  referencedAsInputByLayerCount: number;
+  deletable: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateModelWarehouseLayerRequest {
+  code: string;
+  name: string;
+  description?: string;
+  color?: string;
+  sortOrder: number;
+  modelCodePrefix?: string;
+  inputLayerPolicy?: ModelWarehouseLayerInputPolicy;
+  allowedInputLayerIds?: string[];
+}
+
+export type UpdateModelWarehouseLayerRequest = CreateModelWarehouseLayerRequest;
+
+export interface ModelFieldTemplateField {
+  id: string;
+  code: string;
+  name: string;
+  fieldType: PlatformDataType;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
+  nullable: boolean;
+  primaryKey: boolean;
+  sortOrder: number;
+  description: string | null;
+  standardDictionary?: StandardDictionarySummary | null;
+}
+
+export interface ModelFieldTemplate {
+  id: string;
+  code: string;
+  name: string;
+  category: string | null;
+  description: string | null;
+  sortOrder: number;
+  enabled: boolean;
+  version: number;
+  fieldCount: number;
+  fields: ModelFieldTemplateField[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ModelFieldTemplateFieldInput extends DataModelFieldInput {
+  id?: string;
+}
+
+export interface CreateModelFieldTemplateRequest {
+  code: string;
+  name: string;
+  category?: string;
+  description?: string;
+  sortOrder: number;
+  fields: ModelFieldTemplateFieldInput[];
+}
+
+export interface UpdateModelFieldTemplateRequest extends CreateModelFieldTemplateRequest {
+  expectedVersion: number;
+}
 
 export type PhysicalTableState = 'NOT_FOUND' | 'MATCHED' | 'DRIFTED' | 'UNREACHABLE' | 'UNSUPPORTED';
 
@@ -115,6 +201,14 @@ export interface GeometryTypeDefinition {
   dimension: CoordinateDimension;
 }
 
+export interface PlatformTypeDefinition {
+  type: PlatformDataType;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
+}
+
 export type TypeMappingQuality = 'EXACT' | 'NORMALIZED' | 'LOSSY' | 'UNSUPPORTED';
 
 export type PhysicalTableColumnType =
@@ -223,6 +317,8 @@ export interface ModelMetadataImportFieldPreview {
   primaryKey: boolean | null;
   sortOrder: number | null;
   description: string;
+  standardDictionaryCode?: string;
+  standardDictionary?: StandardDictionarySummary | null;
   importable: boolean;
   issues: string[];
 }
@@ -232,6 +328,8 @@ export interface ModelMetadataImportModelPreview {
   rowNumber: number;
   code: string;
   name: string;
+  warehouseLayerCode?: string;
+  warehouseLayer?: ModelWarehouseLayerSummary | null;
   physicalTableName: string;
   clickHouseOrderByColumns: string[];
   description: string;
@@ -265,6 +363,7 @@ export interface DataModel {
   code: string;
   name: string;
   directoryId: string | null;
+  warehouseLayer?: ModelWarehouseLayerSummary | null;
   storageDataSourceId: string;
   storageDataSourceName: string;
   catalogName: string | null;
@@ -293,6 +392,7 @@ export interface DataModelField {
   primaryKey: boolean;
   sortOrder: number;
   description: string | null;
+  standardDictionary?: StandardDictionarySummary | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -306,6 +406,7 @@ export interface CreateDataModelRequest {
   code: string;
   name: string;
   directoryId?: string;
+  warehouseLayerId?: string;
   storageDataSourceId: string;
   physicalTableName: string;
   physicalTableMode?: PhysicalTableMode;
@@ -317,6 +418,7 @@ export interface CreateManagedDataModelDraftRequest {
   code: string;
   name: string;
   directoryId?: string;
+  warehouseLayerId?: string;
   storageDataSourceId: string;
   physicalTableName: string;
   clickHouseOrderByColumns: string[];
@@ -339,6 +441,7 @@ export interface DataModelFieldInput {
   primaryKey: boolean;
   sortOrder: number;
   description?: string;
+  standardDictionaryId?: string;
 }
 
 export interface UpdateDataModelFieldsRequest {
@@ -349,6 +452,7 @@ export interface DataModelFilters {
   keyword?: string;
   status?: DataModelStatus;
   storageDataSourceId?: string;
+  warehouseLayerId?: string;
   directoryIds?: string[];
   uncategorized?: boolean;
 }

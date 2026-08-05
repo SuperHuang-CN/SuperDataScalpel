@@ -1,6 +1,6 @@
 # DataScalpel
 
-DataScalpel 是面向内网部署的数据中台。当前已完成前后端基础框架、轻量 RBAC、系统配置、通用目录、数据源管理、文件数据集管理，以及可管理物理表的模型管理能力。
+DataScalpel 是面向内网部署的数据中台。当前已完成前后端基础框架、轻量 RBAC、系统配置、通用目录、数据源管理、文件数据集管理、树形码表管理，以及可管理物理表的模型管理能力。
 
 工程包含后端和独立的前端管理端：
 
@@ -28,7 +28,7 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 - `data-scalpel-dialect`：纯 Java/JDBC 的数据库方言、连接规格、元数据读取和受控建表内核。
 - `data-scalpel-business`：统一业务模块，内部按系统、数据源、模型、任务和数据服务等业务包组织。
 - `data-scalpel-admin`：控制面启动模块、运行配置、OpenAPI、Actuator 和安全配置。
-- `data-scalpel-service-engine`：可独立部署的数据服务运行面，保存部署快照、动态注册公共路由，并以 JDBC 执行受控标准查询或冻结的参数化 SQL 查询。
+- `data-scalpel-service-engine`：可独立部署的数据服务运行面，保存部署快照，通过自身路由执行受控标准查询和参数化 SQL 查询，并通过内嵌 API Studio 管理数据源与 Groovy 脚本路由。
 - `data-scalpel-task-engine`：不依赖控制面模块的 Spark Canvas 预检服务；Daemon 只做零行 Dataset 编译校验，同时构建一次性 Runner 制品，但不调度或监管真实任务。
 - `data-scalpel-task-dispatcher`：独立的持久化任务分发服务，通过 Kafka 接收提交/取消命令，并监管 Local Docker、YARN cluster 或 Kubernetes cluster 中的 Runner。
 - `data-scalpel-filegdb`：不依赖现有业务模块和原生运行时的纯 Java 只读 FileGDB 解析库，包含本地来源和随机访问 SPI。
@@ -40,7 +40,7 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 
 ## 当前业务能力：系统配置
 
-系统配置位于“系统管理 / 系统配置”，由程序声明配置键、类型和说明，管理页面仅允许修改配置值，不支持任意新增、删除或改名。
+系统配置位于“系统管理 / 系统配置”，由程序声明配置键、类型和说明，管理页面仅允许修改配置值，不支持任意新增、删除或改名。模型使用的数仓分层在“系统管理 / 数仓分层”独立动态维护，可配置推荐模型编码前缀和允许输入分层，不塞入字符串配置，也不扩展为通用字典框架。
 
 当前内置配置：
 
@@ -66,31 +66,37 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 
 ## 当前业务能力：目录、数据源与文件数据集
 
-目录按业务范围隔离。数据源使用 `DATA_SOURCE` 目录树，文件数据集使用 `FILE_DATASET` 目录树；业务实体只保存可选的 `directoryId` UUID，目录树会统计直属和子树累计数量。JDBC 数据源支持 PostgreSQL、MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓和 openGauss 的连接定义、真实连接测试、库/Schema、表、字段、主键、索引与数据预览。HTTP API 数据源支持运行时 Token、签名、四种分页、异步提交/轮询、API 资源测试及 Canvas `HTTP_API_INPUT`；Kafka 集群与固定 Bucket/根目录的 S3 对象存储已支持登记和管理，客户端接入留待后续阶段。
+目录按业务范围隔离。数据源使用 `DATA_SOURCE` 目录树，文件数据集使用 `FILE_DATASET` 目录树；业务实体只保存可选的 `directoryId` UUID，目录树会统计直属和子树累计数量。JDBC 数据源支持 PostgreSQL、MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓和 openGauss 的连接定义、真实连接测试、库/Schema、表、字段、主键、索引与数据预览。HTTP API 数据源支持运行时 Token、签名、四种分页、异步提交/轮询、API 资源测试及 Canvas `HTTP_API_INPUT`；ArcGIS REST 与 OGC WFS 数据源支持服务发现、空间要素资源登记、Schema/属性预览和 Canvas `SPATIAL_SERVICE_INPUT`。Kafka 集群与固定 Bucket/根目录的 S3 对象存储已支持登记和管理，客户端接入留待后续阶段。
 
-文件数据集支持上传、查询、修改、替换内容、下载、删除、格式专属解析参数和样本预览。原始文件存入系统私有的 S3 兼容对象存储，记录只保存内部 Object Key，不向 API 返回存储地址或凭证；当前可真实解析 CSV、TSV、TXT、JSON、JSONL、XLS、XLSX、Parquet、Avro、FileGDB 和 Shapefile。CSV、TSV、TXT、JSONL 可使用 GZIP 外层压缩，GZIP 是压缩属性而不是文件格式。FileGDB 和 Shapefile 使用 ZIP 作为上传容器，后台安全物化后通过 S3 Range Reader 生成独立表 Schema 与空间预览；一个 GDB ZIP 发现多张业务表，一个 SHP ZIP 固定生成一张表且同一 SHP 数据集可上传多个 ZIP。详细设计见 [通用目录管理](docs/design/directory-management.md)、[数据源管理](docs/design/data-source-management.md)、[文件数据集管理](docs/design/file-dataset-management.md)、[空间文件数据集解析](docs/design/geospatial-file-dataset-parsing.md)和 [TSV、GZIP 与 Avro 设计](docs/design/file-dataset-tsv-gzip-avro.md)。
+文件数据集支持上传、查询、修改、替换内容、下载、删除、格式专属解析参数和样本预览。原始文件存入系统私有的 S3 兼容对象存储，记录只保存内部 Object Key，不向 API 返回存储地址或凭证；当前可真实解析 CSV、TSV、TXT、JSON、JSONL、XLS、XLSX、Parquet、Avro、FileGDB 和 Shapefile。CSV、TSV、TXT、JSONL 可使用 GZIP 外层压缩，GZIP 是压缩属性而不是文件格式。FileGDB 和 Shapefile 使用 ZIP 作为上传容器，后台安全物化后通过 S3 Range Reader 生成独立表 Schema 与空间预览；一个 GDB ZIP 发现多张业务表，一个 SHP ZIP 固定生成一张表且同一 SHP 数据集可上传多个 ZIP。详细设计见 [通用目录管理](docs/design/directory-management.md)、[数据源管理](docs/design/data-source-management.md)、[空间服务数据源](docs/design/spatial-service-data-source.md)、[文件数据集管理](docs/design/file-dataset-management.md)、[空间文件数据集解析](docs/design/geospatial-file-dataset-parsing.md)和 [TSV、GZIP 与 Avro 设计](docs/design/file-dataset-tsv-gzip-avro.md)。
+
+## 当前业务能力：数据标准
+
+“数据标准 / 码表管理”用于动态维护业务枚举和分级代码。码表项直接采用多根、任意深度的树形结构，节点编码在整张码表内唯一；父节点也可以作为合法业务值，实际可用状态同时受码表、当前节点和全部祖先的启用状态约束。码表支持内容版本并发校验、树节点移动、Excel 多码表原子导入和前序导出，以及模型字段引用反查。
+
+模型字段和常用字段模板字段可以绑定一张兼容且已启用的码表，物理业务表仍保存节点编码，不保存节点 UUID。码表绑定只属于业务元数据，不进入 DDL、物理表指纹或物理变更计划；已停用码表保留历史绑定并显示警告。被模型字段或模板字段引用后，码表编码、取值类型、节点编码和节点删除受到保护。查询需要 `standard.dictionary.view`，维护需要 `standard.dictionary.manage`；真实模型字段引用明细还要求 `model.view`。详细规则和接口见[树形码表管理](docs/design/standard-dictionary-management.md)。
 
 ## 当前业务能力：模型管理
 
-模型管理维护可被后续任务和数据服务引用的结构契约。模型绑定具有“数据存储”用途的数据源，记录预期物理位置和稳定的字段 UUID，支持草稿、发布、停用和启用状态。
+模型管理维护可被后续任务和数据服务引用的结构契约。模型绑定具有“数据存储”用途的数据源，记录预期物理位置和稳定的字段 UUID，支持草稿、发布、停用和启用状态。模型可以选择全局动态定义的数仓分层，也可以保持未分层；目录负责资产归属和导航，分层负责表达 ODS、DWD 等加工阶段。系统仅首次初始化 `ODS/DIM/DWD/DWS/ADS`，之后可按实际规范增删改、排序和启停；分层还可配置推荐模型编码前缀，以及 `UNRESTRICTED/ALLOW_LIST` 输入分层规划。输入规则第一版只配置和展示，不读取或限制任务关系。停用分层保留已有引用但不能新分配，被模型或其他分层规范引用的分层不能删除。模型管理还提供全局常用字段模板，支持单字段和字段组、自由分类、启停及可选码表；选用时只复制字段快照，后续模板变化不传播到模型，也不触发 DDL。
 
-模型可选择“新建物理表”或“绑定已有表”。绑定已有表时会在管理数据库事务外读取并映射表元数据，再用短事务保存模型和导入字段；字段物理结构继续由数据库维护，平台只允许维护字段名称、说明和展示排序。模型、任务和数据服务统一使用平台类型契约，数据库双向映射只由方言实现，详见[模型平台数据类型设计](docs/design/model-data-type-system.md)。PostgreSQL、MySQL 与单机 ClickHouse `MergeTree` 支持根据字段定义生成受控建表 SQL；其中 Geometry 结构管理 V1 支持已安装 PostGIS 的 PostgreSQL 和 MySQL 8.x InnoDB，固定为 EPSG CRS 与 XY，且不创建空间索引。发布、重新启用和数据查询前都会实时校验物理表结构。模型详情提供固定 50 行的快速预览、字段白名单约束的筛选查询，以及基于任务最后保存定义的关联任务列表；Geometry 与二进制字段默认不返回，也不能参与查询。物理表修改统一先生成风险与前置检查明确的计划，再由技术用户确认执行；已创建且包含 Geometry 的受管表第一版整体禁用物理结构变更。具体数据库边界见[模型物理表演进设计](docs/design/model-physical-table-evolution.md)和[空间字段结构管理 V1](docs/design/spatial-field-structure-management-v1.md)。删除模型仍只删除元数据。详细交互见 [模型管理第一版](docs/design/model-management.md)。
+模型可选择“新建物理表”或“绑定已有表”。绑定已有表时会在管理数据库事务外读取并映射表元数据，再用短事务保存模型和导入字段；字段物理结构继续由数据库维护，平台允许维护字段名称、说明、展示排序和关联码表。从 JDBC 多表复制结构和 Excel v4 元数据导入都创建 `MANAGED + DRAFT` 草稿，可在校对页设置或修正数仓分层和字段码表，不绑定来源、不导入数据、也不自动建表；普通新建和 JDBC 结构导入会使用分层前缀生成可编辑编码候选，Excel 编码保持文件原值。Excel v1—v3 继续兼容，缺少数仓分层或码表列时按未配置处理。模型、任务和数据服务统一使用平台类型契约，数据库双向映射只由方言实现，详见[模型平台数据类型设计](docs/design/model-data-type-system.md)。PostgreSQL、MySQL 与单机 ClickHouse `MergeTree` 支持根据字段定义生成受控建表 SQL；Geometry 结构管理 V1 支持已安装 PostGIS 的 PostgreSQL、MySQL 8.x InnoDB，以及将原始二维 WKB 存入 `String` 并用列 comment marker 声明空间语义的单机 ClickHouse，固定为 EPSG CRS 与 XY，且不创建空间索引。发布、重新启用和数据查询前都会实时校验物理表结构。模型详情提供固定 50 行的快速预览、字段白名单约束的筛选查询，以及基于任务最后保存定义的关联任务列表；Geometry 与二进制字段默认不返回，也不能参与查询。物理表修改统一先生成风险与前置检查明确的计划，再由技术用户确认执行；已创建且包含 Geometry 的受管表第一版整体禁用物理结构变更。具体数据库边界见[模型物理表演进设计](docs/design/model-physical-table-evolution.md)和[空间字段结构管理 V1](docs/design/spatial-field-structure-management-v1.md)。删除模型仍只删除元数据。详细交互见 [模型管理第一版](docs/design/model-management.md)。
 
 ## 当前业务能力：任务管理
 
 任务创建时可选择 `LOCAL_SQL` 或 `SPARK_CANVAS`，类型创建后不可修改。`LOCAL_SQL` 任务声明至少一个输入模型、一个输出模型，以及同一 JDBC 数据存储中的一条 `SELECT` 或只读 `WITH ... SELECT`。平台校验查询只有一个只读语句、读取结果列元数据并按结果列顺序生成 `INSERT INTO ... SELECT`；用户不能提交完整 DML/DDL 脚本。
 
-任务定义支持草稿、发布和停用。发布或重新启用会检查输入/输出模型及物理表、查询输出字段别名和类型，并且不写入目标表。任务详情统一按最后保存的 Local SQL 或 Canvas 定义展示输入、输出模型；该关系是只读投影，不从 SQL 文本猜测，也不包含运行历史。Local SQL 和 Canvas 模型输入/输出第一版拒绝包含 Geometry 的模型并返回稳定的 `SPATIAL_FIELD_UNSUPPORTED`，不得把 Geometry 映射为 String/Binary。已发布任务可异步手动运行，运行记录保存不可变的无凭据快照、状态、耗时、影响行数和安全错误信息；每个任务同一时间只允许一个排队或运行实例。`OVERWRITE` 目前只对 PostgreSQL 开放事务性清空再写入，ClickHouse 第一阶段仅支持 `APPEND`。PostgreSQL 已有真实任务集成验收；其余方言当前仅验证 SQL 渲染。
+任务定义支持草稿、发布和停用。发布或重新启用会检查输入/输出模型及物理表、查询输出字段别名和类型，并且不写入目标表。任务详情统一按最后保存的 Local SQL 或 Canvas 定义展示输入、输出模型；该关系是只读投影，不从 SQL 文本猜测，也不包含运行历史。Local SQL 第一版仍拒绝包含 Geometry 的输入/输出模型并返回稳定的 `SPATIAL_FIELD_UNSUPPORTED`，不得把 Geometry 映射为 String/Binary；Spark Canvas 则通过 Sedona 支持 PostgreSQL/PostGIS 与 MySQL 8 Geometry。已发布任务可异步手动运行，运行记录保存不可变的无凭据快照、状态、耗时、影响行数和安全错误信息；每个任务同一时间只允许一个排队或运行实例。`OVERWRITE` 目前只对 PostgreSQL 开放事务性清空再写入，ClickHouse 第一阶段仅支持 `APPEND`。PostgreSQL 已有真实任务集成验收；其余方言当前仅验证 SQL 渲染。
 
-`SPARK_CANVAS` 任务使用统一定义路由进入图形化编辑器，定义保存到 `task_canvas_definition`，并继续通过 Task Engine 做设计期零行 Spark 编译校验。Canvas 支持按模型 UUID 配置 `MODEL_INPUT` 和 `MODEL_OUTPUT`：输入使用不可修改的模型 code 作为逻辑表名，输出从目标模型解析数据源和物理位置。Canvas 发布、重新启用和手动运行会由 Admin重新读取权威表结构；真实运行使用私有 MinIO明文 manifest和 Kafka可靠消息，由 Task Dispatcher提交一次性 Spark Runner。第一期支持 Local Docker，YARN/Kubernetes使用 cluster模式扩展；数据源支持 PostgreSQL、MySQL、APPEND与 `TRUNCATE + APPEND`语义的 OVERWRITE，仍不支持定时计划和自动重试。Canvas Definition 兼容读取 `1.0/1.1`，新增模型节点使用 `1.1`，新保存和导出统一规范化为 `1.1`；增加小版本列并回填模型引用时执行 [Admin PostgreSQL迁移脚本](docs/operations/spark-canvas-admin-postgresql.sql)，无需重建任务、运行记录或 Canvas 定义表。
+`SPARK_CANVAS` 任务使用统一定义路由进入图形化编辑器，定义保存到 `task_canvas_definition`，并继续通过 Task Engine 做设计期零行 Spark 编译校验。Canvas 支持按模型 UUID 配置 `MODEL_INPUT` 和 `MODEL_OUTPUT`：输入使用不可修改的模型 code 作为逻辑表名，输出从目标模型解析数据源和物理位置。Canvas 发布、重新启用和手动运行会由 Admin 重新读取权威表结构；真实运行使用私有 MinIO 明文 Manifest 和 Kafka 可靠消息，由 Task Dispatcher 提交一次性 Spark Runner。第一期支持 Local Docker，YARN/Kubernetes 使用 cluster 模式扩展；数据源支持 PostgreSQL、MySQL、APPEND 与 `TRUNCATE + APPEND` 语义的 OVERWRITE，仍不支持自动重试。Canvas Definition 兼容读取 `1.0`～`1.24`，新保存和导出统一规范化为 `1.24`；`1.20`～`1.23` 逐步引入空间转换、连接、构造、校验、测量、序列化、修复、缓冲、拆分、裁剪和聚合，`1.24` 增加 JDBC 查询输入、JDBC UPSERT 与 `FILE_OUTPUT` Shapefile。空间执行固定使用 EPSG、XY 和显式空间转换，Manifest 当前版本为 v8。
 
-主要接口包括：`/api/v1/tasks`、`/api/v1/tasks/{id}/definition`、`/api/v1/tasks/{id}/canvas-definition`、`/api/v1/tasks/{id}/model-relations`、`/api/v1/models/{id}/related-tasks`、定义更新 Action、生命周期 Action 和运行记录接口。详细约束见[本地 SQL 任务定义](docs/design/local-sql-task-definition.md)、[Canvas 任务定义](docs/design/canvas-task-definition.md)与[Canvas 真实执行设计](docs/design/canvas-task-execution.md)。
+任务管理下提供全局脱敏规则 CRUD 和 Canvas `MASK_FIELDS` Processor。全局规则没有启停、版本、历史或快照状态；选择规则时把当前执行定义复制进节点，保存、发布和运行均只依赖节点内嵌配置。再次编辑时使用普通规则详情接口辅助比较，规则修改或删除不会自动改变已有任务。主要接口包括：`/api/v1/tasks`、`/api/v1/tasks/{id}/definition`、`/api/v1/tasks/{id}/canvas-definition`、`/api/v1/tasks/{id}/model-relations`、`/api/v1/models/{id}/related-tasks`、`/api/v1/masking-rules`、定义更新 Action、生命周期 Action 和运行记录接口。详细约束见[本地 SQL 任务定义](docs/design/local-sql-task-definition.md)、[Canvas 任务定义](docs/design/canvas-task-definition.md)、[Canvas 真实执行设计](docs/design/canvas-task-execution.md)与[数据脱敏规则和字段脱敏节点](docs/design/data-masking-rules.md)。
 
 ## 当前业务能力：数据服务启停与网关发布
 
-数据服务支持 `STANDARD_TABLE` 和 `SQL_QUERY` 两种创建后不可切换的模式。标准模式启用一个已发布且物理结构已校验的模型；SQL 模式先选择 PostgreSQL JDBC 数据源，再关联该数据源下至少一个任意状态的模型，并在启用时冻结只读、命名参数化 SQL 模板。控制面管理 Service Engine 和数据服务定义；每个 Engine 是独立 JVM，使用独立 PostgreSQL 保存可恢复的部署快照，并在启用成功后动态注册实际的 `POST /open-api/v1/...` 路由。
+数据服务支持 `STANDARD_TABLE`、`SQL_QUERY` 和 `SCRIPT_API` 三种创建后不可切换的模式。标准模式启用一个已发布且物理结构已校验的模型；SQL 模式先选择 PostgreSQL JDBC 数据源，再关联该数据源下至少一个任意状态的模型，并在启用时冻结只读、命名参数化 SQL 模板；脚本模式绑定一个默认 JDBC 数据源，通过共享的 API Studio 简化工作台编辑和调试 Groovy，并在启用时由 Engine 内嵌的 API Studio 按服务 ID 保存或覆盖脚本、注册 `POST /open-api/v1/...` 路由。
 
-启用/停用管理 Engine 运行态；“发布/取消发布”独立管理已经启用的服务是否通过网关向调用方开放。第一阶段的 Kong OSS 适配器创建受 DataScalpel 标签保护的 Service 和 Route，调用方使用网关 Proxy 地址；取消发布会撤回全部历史网关绑定但保持 Engine 在线，停用则在安全撤回后继续移除 Engine，任一撤回失败时都不会停止 Engine。标准模式继续使用统一的分页、列选择、过滤、排序、分组和聚合协议；SQL 模式只接收启用快照声明的标量参数、分页和可选 count。详细设计见[数据服务定义、Engine 启用与查询运行设计](docs/design/data-service-publishing.md)和[数据服务启停与网关发布设计](docs/design/data-service-gateway-publishing.md)。
+启用/停用管理 Engine 运行态；“发布/取消发布”独立管理已经启用的服务是否通过网关向调用方开放。系统支持 Kong OSS 和独立的 Super API Gateway Provider，调用方使用当前 Provider 的 Proxy 地址；取消发布会撤回全部历史网关绑定但保持 Engine 在线，停用则在安全撤回后继续移除 Engine，任一撤回失败时都不会停止 Engine。标准模式继续使用统一的分页、列选择、过滤、排序、分组和聚合协议；SQL 模式只接收启用快照声明的标量参数、分页和可选 count；脚本模式第一版固定为可信 Groovy、POST、静态路径和一个默认数据源，保留 API Studio 的数据库访问、事务、日志与 SQL Trace 能力，暂不提供沙箱、超时中断或多语言。脚本补全和草稿调试由 Admin 代理到目标 Engine，浏览器不会直接访问 Engine 或持有 Management Token。详细设计见[数据服务定义、Engine 启用与查询运行设计](docs/design/data-service-publishing.md)、[数据服务启停与网关发布设计](docs/design/data-service-gateway-publishing.md)和[Super API Gateway Provider 集成](docs/design/super-api-gateway-provider-integration.md)。
 
 数据服务模块还提供与后台登录用户完全分离的 API Consumer 管理。Consumer 编码全局唯一且创建后不可修改；DataScalpel 保存 Consumer、API Key 和服务订阅主数据，通过职责单一的薄网关端口投影到当前网关。Kong 实现使用 `key-auth + acl`：API Key 只显示一次，Consumer 的全部有效 Key 共享服务订阅；受保护服务只有同时通过身份认证和服务 ACL 才能进入 Service Engine。当前不包含配额、限流和调用统计。详细设计见 [API 消费者、凭证与服务订阅管理](docs/design/api-consumer-management.md)和[API 消费者凭证与服务订阅开发计划](docs/design/api-consumer-service-subscription-development-plan.md)。
 
@@ -163,15 +169,16 @@ java -jar data-scalpel-admin/target/data-scalpel-admin-0.1.0-SNAPSHOT.jar --spri
 BACKEND_PORT=18080 FRONTEND_PORT=18887 ./start-local-dev.sh
 ```
 
-本地脚本中的 Dispatcher 数据库连接与 Admin 解耦：默认复用 Admin JDBC URL 的 PostgreSQL 主机和查询参数，但数据库名固定为 `datascalpel`，并强制使用 `dispatcher` Schema。需要覆盖时使用独立变量，不能通过 `DATASCALPEL_DB_URL` 间接改变 Dispatcher 数据库：
+本地脚本中的 Dispatcher 数据库连接与 Admin 解耦：默认复用 Admin JDBC URL 的 PostgreSQL 主机和查询参数，但数据库名固定为 `datascalpel`，Schema 默认使用 `dispatcher`。数据库 URL 与 Schema 分别通过独立变量覆盖，不能通过 `DATASCALPEL_DB_URL` 间接改变 Dispatcher 数据库：
 
 ```bash
-export DATASCALPEL_TASK_DISPATCHER_DB_URL="jdbc:postgresql://localhost:5432/datascalpel?currentSchema=dispatcher"
+export DATASCALPEL_TASK_DISPATCHER_DB_URL="jdbc:postgresql://localhost:5432/datascalpel"
+export DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA="dispatcher"
 ```
 
 ### 启动 Service Engine
 
-Service Engine 与 Admin 使用不同数据库。为 Engine 单独准备 PostgreSQL 库，再通过运行环境提供以下配置；不要把密码、管理 Token 或快照加密密钥提交到工程。
+Service Engine 与 Admin 使用不同数据库。为 Engine 单独准备 PostgreSQL 库，再通过运行环境提供以下配置；不要把密码或管理 Token 提交到工程。
 
 ```bash
 export DATASCALPEL_ENGINE_DB_URL="jdbc:postgresql://<engine-db-host>:5432/<engine-db-name>"
@@ -179,17 +186,17 @@ export DATASCALPEL_ENGINE_DB_USERNAME="<engine-db-user>"
 export DATASCALPEL_ENGINE_DB_PASSWORD="<engine-db-password>"
 export DATASCALPEL_ENGINE_CODE="dev-engine-01"
 export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="<this-engine-management-token>"
-export DATASCALPEL_ENGINE_ENCRYPTION_KEY="$(openssl rand -base64 32)"
 export DATASCALPEL_ENGINE_QUERY_MAXIMUM_OFFSET="100000"
 ./mvnw -pl data-scalpel-service-engine -am package
 java -jar data-scalpel-service-engine/target/data-scalpel-service-engine-0.1.0-SNAPSHOT.jar
 ```
 
-每台 Service Engine 独立配置 `DATASCALPEL_ENGINE_MANAGEMENT_TOKEN`。在 Admin 新建或修改该 Engine 时，填写与这台 Engine 相同的 Token；Admin 使用 `DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY` 加密保存它，不存在全局 Token 回退。`DATASCALPEL_ENGINE_ENCRYPTION_KEY` 用于加密 Engine 数据库中的数据源连接快照；更换它会导致既有快照无法恢复，因此需要按密钥轮换流程重新启用服务。Engine 健康检查为 `GET /actuator/health`，控制面接口位于 `/internal/v1/**`，公共数据接口位于 `/open-api/v1/**`。
+每台 Service Engine 独立配置 `DATASCALPEL_ENGINE_MANAGEMENT_TOKEN`。在 Admin 新建或修改该 Engine 时，填写与这台 Engine 相同的 Token；Admin 使用 `DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY` 加密保存它，不存在全局 Token 回退。Engine 数据源由内嵌 API Studio 统一保存和恢复，当前沿用 API Studio 的明文密码存储方式，不再使用独立的快照加密密钥。Engine 健康检查为 `GET /actuator/health`，控制面接口位于 `/internal/v1/**`，公共数据接口位于 `/open-api/v1/**`。
 
 ### 启动 Task Engine
 
-Task Engine 使用 Spark 4.1.1 和 JDK `HttpServer` 独立运行，不读取 Admin 数据库。构建分发包并设置独立 Bearer Token：
+Task Engine 使用 Spark 4.1.1、Apache Sedona 1.9.0 和 JDK `HttpServer` 独立运行，
+不读取 Admin 数据库。构建分发包并设置独立 Bearer Token：
 
 ```bash
 ./mvnw -pl data-scalpel-task-engine -Ptask-engine-full-package package
@@ -235,6 +242,8 @@ curl -X POST http://localhost:8080/api/v1/auth/login \
 - Swagger UI：`GET /swagger-ui.html`
 - 当前用户：`GET /api/v1/auth/me`，需要 Bearer Token
 - 系统配置：`GET /api/v1/system/configurations`，需要 `system.configuration.view`
+- 数仓分层：`GET /api/v1/model-warehouse-layers`，响应包含编码前缀、允许输入分层及双向引用计数；维护使用对应 `POST .../actions/*` 接口
+- 常用字段模板：`GET/POST /api/v1/model-field-templates`，详情和维护使用 `/{id}` 及对应 `POST .../actions/*`；选用只复制元数据快照
 
 ## 实体通用查询
 

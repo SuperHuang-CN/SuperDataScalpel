@@ -18,7 +18,9 @@ public enum DataSourceType {
     OPENGAUSS(DataSourceConnectionKind.JDBC, "openGauss", allPurposes()),
     KAFKA(DataSourceConnectionKind.KAFKA, "Kafka", EnumSet.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION)),
     S3(DataSourceConnectionKind.S3, "S3 兼容对象存储", EnumSet.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION)),
-    HTTP_API(DataSourceConnectionKind.HTTP_API, "HTTP API", EnumSet.of(DataSourcePurpose.SOURCE));
+    HTTP_API(DataSourceConnectionKind.HTTP_API, "HTTP API", EnumSet.of(DataSourcePurpose.SOURCE)),
+    ARCGIS_REST(DataSourceConnectionKind.HTTP_API, "ArcGIS REST", EnumSet.of(DataSourcePurpose.SOURCE)),
+    WFS(DataSourceConnectionKind.HTTP_API, "OGC WFS", EnumSet.of(DataSourcePurpose.SOURCE));
 
     private final DataSourceConnectionKind connectionKind;
     private final String displayName;

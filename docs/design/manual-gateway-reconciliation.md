@@ -101,6 +101,17 @@ Kong OSS 3.9 的 Service 插件列表可能忽略 `name` 查询参数，因此�
 
 检查 ACL membership 的所属 Consumer、DataScalpel owner 标签和按数据服务 ID 生成的 ACL group。是否期望远端存在由订阅 `desiredState` 决定，而不是由上一次网关操作状态推断。
 
+### 5.5 Super API Gateway
+
+- Service 对账检查 Service/Route 的外部引用、关联、上游、访问模式、超时、路径、
+  `POST`、order、strip 和启停状态；
+- 已撤回 Service 允许保留禁用的订阅锚点，但 Route 必须不可访问；
+- Consumer 对账检查外部引用、code、名称、说明和启用状态；
+- API Key 通过管理详情返回的 SHA-256 与本地摘要比较，不读取明文；
+- Subscription 检查外部引用、ACTIVE 状态及 Consumer/Service 关联。
+
+完整映射见 [Super API Gateway Provider 集成](super-api-gateway-provider-integration.md)。
+
 ## 6. 前端交互
 
 四类列表都同时展示业务操作状态和独立的对账 Tag。Tag 的 Tooltip 展示漂移原因、诊断信息和最近检查时间。

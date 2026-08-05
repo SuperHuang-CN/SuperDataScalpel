@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { DataSource, DataSourceTable } from '../../datasource';
 import type { ManagedImportPreview } from './dataModel';
 import {
+  applyManagedDraftWarehouseLayer,
   applyManagedImportPreview,
   createManagedTableModelDrafts,
   hasManagedTableDraftIssues,
@@ -216,6 +217,41 @@ describe('managed table model import', () => {
     });
     expect(request).not.toHaveProperty('physicalTableMode');
     expect(request).not.toHaveProperty('status');
+  });
+
+  it('initializes JDBC import drafts with the optional batch warehouse layer', () => {
+    const draft = applyManagedImportPreview(
+      createManagedTableModelDrafts([table('Fact_Order')], 'layer-id')[0],
+      preview(),
+    );
+
+    expect(draft.warehouseLayerId).toBe('layer-id');
+    expect(toManagedDataModelDraftRequest(draft, 'storage-id')).toMatchObject({
+      warehouseLayerId: 'layer-id',
+    });
+  });
+
+  it('uses the selected layer prefix without duplicating it and preserves manual model codes', () => {
+    const prefixed = createManagedTableModelDrafts(
+      [table('Fact_Order'), table('dwd_customer')],
+      'dwd-layer',
+      'dwd_',
+    );
+    expect(prefixed.map((draft) => draft.code)).toEqual(['dwd_fact_order', 'dwd_customer']);
+
+    const switched = applyManagedDraftWarehouseLayer(prefixed[0], 'dim-layer', 'dim_', true);
+    expect(switched).toMatchObject({
+      code: 'dim_fact_order',
+      warehouseLayerId: 'dim-layer',
+      warehouseLayerOverridden: true,
+    });
+
+    const manual = {
+      ...switched,
+      code: 'custom_order',
+      codeOverridden: true,
+    };
+    expect(applyManagedDraftWarehouseLayer(manual, 'ads-layer', 'ads_', true).code).toBe('custom_order');
   });
 
   it('preserves an exact Geometry definition and prevents a spatial primary key', () => {

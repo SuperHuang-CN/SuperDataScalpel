@@ -12,6 +12,7 @@ import java.util.List;
 public record UpdateDataModelRequest(
         @NotBlank @Size(max = 100) String name,
         UUID directoryId,
+        UUID warehouseLayerId,
         @NotNull UUID storageDataSourceId,
         @NotBlank
         @Pattern(regexp = "[A-Za-z][A-Za-z0-9_]{0,127}", message = "物理表名只能包含字母、数字和下划线，且必须以字母开头")

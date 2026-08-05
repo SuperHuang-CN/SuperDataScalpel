@@ -2,6 +2,7 @@ package cn.superhuang.datascalpel.taskengine.canvas;
 
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
+import cn.superhuang.data.scalpel.contract.task.CanvasJdbcDatabaseType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
@@ -12,6 +13,9 @@ import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.MetadataTable;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKey;
+import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -76,6 +80,16 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
         if (configuration.columnMappings() == null) {
             issues.error("REQUIRED_CONFIGURATION", "字段映射列表不能为空", "configuration.columnMappings");
         }
+        if (configuration.upsertKeyColumns() == null) {
+            issues.error("REQUIRED_CONFIGURATION", "UPSERT Key 必须是数组", "configuration.upsertKeyColumns");
+        } else if (configuration.writeMode() != JdbcWriteMode.UPSERT
+                && !configuration.upsertKeyColumns().isEmpty()) {
+            issues.error(
+                    "UPSERT_KEY_NOT_ALLOWED",
+                    "非 UPSERT 模式不能保存 UPSERT Key",
+                    "configuration.upsertKeyColumns"
+            );
+        }
 
         SparkCanvasTable source = inputs.get(configuration.sourceTableName());
         if (!CanvasNodeSupport.blank(configuration.sourceTableName()) && source == null) {
@@ -112,12 +126,33 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
                     "configuration.targetTableName"
             );
         }
+        if (configuration.writeMode() == JdbcWriteMode.UPSERT && target != null && dataSource != null) {
+            validateUpsertConfiguration(configuration, dataSource, target, issues);
+        }
         if (source == null || target == null || issues.hasErrors()) {
             return CanvasNodeOperationResult.outputOnly();
         }
 
         CanvasTableSchema targetSchema =
                 new CanvasTableSchema(target.tableName(), null, target.columns());
+        CanvasNodeSupport.validateSupportedGeometry(
+                targetSchema.columns(),
+                "configuration.targetTableName",
+                issues
+        );
+        if (context.executionMode() == CanvasExecutionMode.STREAMING
+                && targetSchema.columns().stream().anyMatch(column ->
+                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
+            issues.error(
+                    "SPATIAL_JDBC_UNSUPPORTED",
+                    "第一阶段不支持实时任务写入 Geometry",
+                    "configuration.targetTableName"
+            );
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (issues.hasErrors()) {
+            return CanvasNodeOperationResult.outputOnly();
+        }
         Dataset<Row> selected = mappingOperator.apply(
                 source,
                 targetSchema,
@@ -128,8 +163,80 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
         if (selected == null || issues.hasErrors()) {
             return CanvasNodeOperationResult.outputOnly();
         }
+        if (configuration.writeMode() == JdbcWriteMode.UPSERT) {
+            Set<String> projectedColumns = Set.of(selected.columns());
+            if (!projectedColumns.containsAll(configuration.upsertKeyColumns())) {
+                issues.error(
+                        "UPSERT_KEY_NOT_MAPPED",
+                        "UPSERT Key 必须全部映射到目标字段",
+                        "configuration.upsertKeyColumns"
+                );
+                return CanvasNodeOperationResult.outputOnly();
+            }
+        }
         CanvasPreparedOutput prepared =
                 context.dataAccess().prepareJdbcOutput(node, targetSchema, selected);
         return CanvasNodeOperationResult.output(prepared);
+    }
+
+    private static void validateUpsertConfiguration(
+            JdbcOutputConfiguration configuration,
+            MetadataIndex.DataSourceEntry dataSource,
+            MetadataTable target,
+            CanvasNodeIssueSink issues
+    ) {
+        if (dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.POSTGRESQL
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL) {
+            issues.error(
+                    "UPSERT_DATABASE_NOT_SUPPORTED",
+                    "UPSERT 只支持 PostgreSQL 和 MySQL",
+                    "configuration.dataSourceId"
+            );
+        }
+        List<String> keys = configuration.upsertKeyColumns();
+        if (keys == null || keys.isEmpty()) {
+            issues.error(
+                    "UPSERT_KEY_REQUIRED",
+                    "UPSERT 必须选择一组主键或唯一索引",
+                    "configuration.upsertKeyColumns"
+            );
+            return;
+        }
+        MetadataUniqueKey matched = target.uniqueKeys().stream()
+                .filter(key -> key.columns().equals(keys))
+                .findFirst()
+                .orElse(null);
+        if (matched == null) {
+            issues.error(
+                    "UPSERT_KEY_NOT_UNIQUE_CONSTRAINT",
+                    "UPSERT Key 必须完整匹配目标表的主键或安全唯一索引",
+                    "configuration.upsertKeyColumns"
+            );
+            return;
+        }
+        Map<String, cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema> columns =
+                target.columns().stream().collect(java.util.stream.Collectors.toMap(
+                        cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema::name,
+                        java.util.function.Function.identity()
+                ));
+        for (String key : keys) {
+            var column = columns.get(key);
+            if (column == null || column.autoIncrement() || column.generated()
+                    || column.fieldType() == PlatformDataType.GEOMETRY) {
+                issues.error(
+                        "UPSERT_KEY_COLUMN_NOT_ALLOWED",
+                        "UPSERT Key 不能是自增、生成或 Geometry 字段：" + key,
+                        "configuration.upsertKeyColumns"
+                );
+            }
+        }
+        if (dataSource.metadata().jdbcDatabaseType() == CanvasJdbcDatabaseType.MYSQL
+                && target.uniqueKeys().size() > 1) {
+            issues.warning(
+                    "MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS",
+                    "MySQL 会在任意唯一键冲突时触发更新，不仅限于已选 Key",
+                    "configuration.upsertKeyColumns"
+            );
+        }
     }
 }

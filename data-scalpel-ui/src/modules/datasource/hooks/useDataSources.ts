@@ -20,6 +20,13 @@ import {
   testSavedDataSourceConnection,
   updateApiResource,
   updateDataSource,
+  createSpatialFeatureResource,
+  deleteSpatialFeatureResource,
+  fetchSpatialCatalog,
+  fetchSpatialFeatureResources,
+  previewSpatialFeatureResource,
+  refreshSpatialFeatureResourceSchema,
+  updateSpatialFeatureResource,
 } from '../api/dataSourceApi';
 import type {
   CreateApiResourceRequest,
@@ -29,10 +36,13 @@ import type {
   TestDataSourceConnectionRequest,
   UpdateApiResourceRequest,
   UpdateDataSourceRequest,
+  CreateSpatialFeatureResourceRequest,
+  UpdateSpatialFeatureResourceRequest,
 } from '../model/dataSource';
 
 const dataSourcesQueryKey = 'data-sources';
 const apiResourcesQueryKey = 'api-resources';
+const spatialResourcesQueryKey = 'spatial-resources';
 
 export const useDataSourceTypes = () => useQuery({
   queryKey: ['data-source-types'],
@@ -143,6 +153,63 @@ export const useTestApiResource = (dataSourceId: string) => useMutation({
     resourceId: string;
     runtimeParameters: HttpApiRuntimeParameter[];
   }) => testApiResource(dataSourceId, resourceId, runtimeParameters),
+});
+
+export const useSpatialCatalog = (dataSourceId: string | undefined, parent: string | undefined, enabled = true) => useQuery({
+  queryKey: [spatialResourcesQueryKey, dataSourceId, 'catalog', parent],
+  queryFn: () => fetchSpatialCatalog(dataSourceId as string, parent),
+  enabled: enabled && Boolean(dataSourceId),
+});
+
+export const useSpatialFeatureResources = (dataSourceId: string | undefined, enabled = true) => useQuery({
+  queryKey: [spatialResourcesQueryKey, dataSourceId],
+  queryFn: () => fetchSpatialFeatureResources(dataSourceId as string),
+  enabled: enabled && Boolean(dataSourceId),
+});
+
+const invalidateSpatialResources = (queryClient: ReturnType<typeof useQueryClient>, dataSourceId: string) => (
+  queryClient.invalidateQueries({ queryKey: [spatialResourcesQueryKey, dataSourceId] })
+);
+
+export const useCreateSpatialFeatureResource = (dataSourceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: CreateSpatialFeatureResourceRequest) => createSpatialFeatureResource(dataSourceId, request),
+    onSuccess: () => invalidateSpatialResources(queryClient, dataSourceId),
+  });
+};
+
+export const useUpdateSpatialFeatureResource = (dataSourceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ resourceId, request }: { resourceId: string; request: UpdateSpatialFeatureResourceRequest }) => (
+      updateSpatialFeatureResource(dataSourceId, resourceId, request)
+    ),
+    onSuccess: () => invalidateSpatialResources(queryClient, dataSourceId),
+  });
+};
+
+export const useRefreshSpatialFeatureResourceSchema = (dataSourceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (resourceId: string) => refreshSpatialFeatureResourceSchema(dataSourceId, resourceId),
+    onSuccess: () => invalidateSpatialResources(queryClient, dataSourceId),
+  });
+};
+
+export const useDeleteSpatialFeatureResource = (dataSourceId: string) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (resourceId: string) => deleteSpatialFeatureResource(dataSourceId, resourceId),
+    onSuccess: () => invalidateSpatialResources(queryClient, dataSourceId),
+  });
+};
+
+export const useSpatialFeaturePreview = (dataSourceId: string, resourceId: string | undefined, enabled = true) => useQuery({
+  queryKey: [spatialResourcesQueryKey, dataSourceId, resourceId, 'preview', 50],
+  queryFn: () => previewSpatialFeatureResource(dataSourceId, resourceId as string),
+  enabled: enabled && Boolean(resourceId),
+  staleTime: 0,
 });
 
 export const useDataSourceNamespaces = (id: string | undefined, enabled: boolean) => useQuery({

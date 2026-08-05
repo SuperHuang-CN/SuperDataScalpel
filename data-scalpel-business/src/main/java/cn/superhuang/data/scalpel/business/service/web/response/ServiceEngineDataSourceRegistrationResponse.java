@@ -16,7 +16,6 @@ public record ServiceEngineDataSourceRegistrationResponse(
         String dataSourceName,
         String databaseType,
         ServiceEngineDataSourceRegistrationStatus status,
-        long revision,
         Instant synchronizedAt,
         String lastError,
         Instant createdAt,
@@ -34,7 +33,7 @@ public record ServiceEngineDataSourceRegistrationResponse(
         return new ServiceEngineDataSourceRegistrationResponse(
                 registration.getId(), registration.getEngineId(), engineCode, engineName,
                 registration.getDataSourceId(), dataSourceCode, dataSourceName, databaseType,
-                registration.getStatus(), registration.getRevision(), registration.getSynchronizedAt(), registration.getLastError(),
+                registration.getStatus(), registration.getSynchronizedAt(), registration.getLastError(),
                 registration.getCreatedAt(), registration.getUpdatedAt()
         );
     }

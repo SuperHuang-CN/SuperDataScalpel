@@ -18,14 +18,16 @@ public record ModelPhysicalTableChangeTargetField(
         boolean nullable,
         boolean primaryKey,
         int sortOrder,
-        String description
+        String description,
+        UUID standardDictionaryId
 ) {
     static ModelPhysicalTableChangeTargetField from(DataModelService.NormalizedField field) {
         return new ModelPhysicalTableChangeTargetField(
                 field.input().id(), field.code(), field.input().name(), field.input().fieldType(),
                 field.length(), field.precision(), field.scale(), field.geometry(),
                 field.input().nullable(), field.input().primaryKey(),
-                field.input().sortOrder(), field.input().description()
+                field.input().sortOrder(), field.input().description(),
+                field.input().standardDictionaryId()
         );
     }
 }

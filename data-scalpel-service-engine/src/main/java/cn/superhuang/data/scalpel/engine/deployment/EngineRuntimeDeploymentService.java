@@ -3,8 +3,9 @@ package cn.superhuang.data.scalpel.engine.deployment;
 import cn.superhuang.data.scalpel.contract.service.ServiceDeploymentRequest;
 import cn.superhuang.data.scalpel.contract.service.ServiceDeploymentResponse;
 import cn.superhuang.data.scalpel.contract.service.ServiceUndeploymentRequest;
-import cn.superhuang.data.scalpel.engine.datasource.EngineDataSourceStore;
+import cn.superhuang.data.scalpel.contract.service.DataServiceType;
 import cn.superhuang.data.scalpel.engine.route.DynamicServiceRouteRegistry;
+import cn.superhuang.data.scalpel.engine.script.EnginePublishedScriptService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -19,19 +20,19 @@ public class EngineRuntimeDeploymentService {
 
     private final EngineDeploymentStore store;
     private final EngineDeploymentValidator validator;
-    private final EngineDataSourceStore dataSourceStore;
     private final DynamicServiceRouteRegistry routeRegistry;
+    private final EnginePublishedScriptService scriptService;
 
     public EngineRuntimeDeploymentService(
             EngineDeploymentStore store,
             EngineDeploymentValidator validator,
-            EngineDataSourceStore dataSourceStore,
-            DynamicServiceRouteRegistry routeRegistry
+            DynamicServiceRouteRegistry routeRegistry,
+            EnginePublishedScriptService scriptService
     ) {
         this.store = store;
         this.validator = validator;
-        this.dataSourceStore = dataSourceStore;
         this.routeRegistry = routeRegistry;
+        this.scriptService = scriptService;
     }
 
     public ServiceDeploymentResponse deploy(ServiceDeploymentRequest request) {
@@ -42,11 +43,13 @@ public class EngineRuntimeDeploymentService {
             return preparation.completedResponse();
         }
         try {
-            routeRegistry.register(preparation.deployment());
-            return store.completeDeployment(request.serviceId(), request.revision());
+            publish(preparation.deployment());
+            return store.completeDeployment(request.serviceId());
         } catch (RuntimeException exception) {
-            routeRegistry.unregister(request.serviceId());
-            store.failDeployment(request.serviceId(), request.revision(), exception.getMessage());
+            if (!isScript(request)) {
+                routeRegistry.unregister(request.serviceId());
+            }
+            store.failDeployment(request.serviceId(), exception.getMessage());
             throw exception;
         }
     }
@@ -57,17 +60,16 @@ public class EngineRuntimeDeploymentService {
             return preparation.completedResponse();
         }
         try {
-            routeRegistry.unregister(request.serviceId());
-            return store.completeRemoval(request.serviceId(), request.revision());
+            removeRuntime(preparation.deployment());
+            return store.completeRemoval(request.serviceId());
         } catch (RuntimeException exception) {
-            store.failRemoval(request.serviceId(), request.revision(), exception.getMessage());
+            store.failRemoval(request.serviceId(), exception.getMessage());
             throw exception;
         }
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void restoreRoutes() {
-        dataSourceStore.restore();
         store.recoverableRemovals().forEach(this::recoverRemoval);
         store.recoverableDeployments().forEach(this::recoverDeployment);
     }
@@ -77,25 +79,45 @@ public class EngineRuntimeDeploymentService {
         try {
             validator.validate(request);
             routeRegistry.validate(request);
-            routeRegistry.register(deployment);
-            store.completeDeployment(request.serviceId(), request.revision());
+            publish(deployment);
+            store.completeDeployment(request.serviceId());
         } catch (RuntimeException exception) {
-            routeRegistry.unregister(request.serviceId());
-            store.failDeployment(request.serviceId(), request.revision(), exception.getMessage());
-            log.error("恢复数据服务部署失败，serviceId={}, revision={}",
-                    request.serviceId(), request.revision(), exception);
+            if (!isScript(request)) {
+                routeRegistry.unregister(request.serviceId());
+            }
+            store.failDeployment(request.serviceId(), exception.getMessage());
+            log.error("恢复数据服务部署失败，serviceId={}", request.serviceId(), exception);
         }
     }
 
     private void recoverRemoval(StoredServiceDeployment deployment) {
         ServiceDeploymentRequest request = deployment.request();
         try {
-            routeRegistry.unregister(request.serviceId());
-            store.completeRemoval(request.serviceId(), request.revision());
+            removeRuntime(deployment);
+            store.completeRemoval(request.serviceId());
         } catch (RuntimeException exception) {
-            store.failRemoval(request.serviceId(), request.revision(), exception.getMessage());
-            log.error("恢复数据服务移除失败，serviceId={}, revision={}",
-                    request.serviceId(), request.revision(), exception);
+            store.failRemoval(request.serviceId(), exception.getMessage());
+            log.error("恢复数据服务移除失败，serviceId={}", request.serviceId(), exception);
         }
+    }
+
+    private void publish(StoredServiceDeployment deployment) {
+        if (isScript(deployment.request())) {
+            scriptService.upsert(deployment);
+        } else {
+            routeRegistry.register(deployment);
+        }
+    }
+
+    private void removeRuntime(StoredServiceDeployment deployment) {
+        if (deployment != null && isScript(deployment.request())) {
+            scriptService.delete(deployment.request().serviceId());
+        } else if (deployment != null) {
+            routeRegistry.unregister(deployment.request().serviceId());
+        }
+    }
+
+    private boolean isScript(ServiceDeploymentRequest request) {
+        return request.definition().type() == DataServiceType.SCRIPT_API;
     }
 }

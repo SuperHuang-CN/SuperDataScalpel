@@ -9,6 +9,9 @@ import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRemovalReques
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceTestResponse;
 import cn.superhuang.data.scalpel.contract.service.ServiceEngineInfoResponse;
 import cn.superhuang.data.scalpel.contract.service.ServiceUndeploymentRequest;
+import cn.superhuang.data.scalpel.contract.service.ScriptCompletionResponse;
+import cn.superhuang.data.scalpel.contract.service.ScriptDraftExecutionRequest;
+import cn.superhuang.data.scalpel.contract.service.ScriptDraftExecutionResponse;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
@@ -63,6 +66,25 @@ public class ServiceEngineClient {
     ) {
         return client(engine).post().uri("/internal/v1/data-sources/actions/remove").body(request)
                 .retrieve().body(EngineDataSourceRegistrationResponse.class);
+    }
+
+    public ScriptDraftExecutionResponse executeScriptDraft(
+            ServiceEngine engine,
+            ScriptDraftExecutionRequest request
+    ) {
+        return client(engine).post().uri("/internal/v1/scripts/actions/execute-draft").body(request)
+                .retrieve().body(ScriptDraftExecutionResponse.class);
+    }
+
+    public ScriptCompletionResponse scriptCompletion(
+            ServiceEngine engine,
+            UUID dataSourceId
+    ) {
+        return client(engine).get()
+                .uri(builder -> builder.path("/internal/v1/scripts/completion")
+                        .queryParam("dataSourceId", dataSourceId)
+                        .build())
+                .retrieve().body(ScriptCompletionResponse.class);
     }
 
     private RestClient client(ServiceEngine engine) {

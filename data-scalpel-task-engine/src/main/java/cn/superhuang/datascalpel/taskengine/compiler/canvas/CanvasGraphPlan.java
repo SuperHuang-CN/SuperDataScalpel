@@ -156,6 +156,185 @@ public final class CanvasGraphPlan {
                         "type"
                 );
             }
+            if (schemaMinorVersion < 7 && node.nodeType() == CanvasNodeType.FILTER) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "FILTER 从 Canvas 1.7 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 8 && node.nodeType() == CanvasNodeType.SELECT_COLUMNS) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "SELECT_COLUMNS 从 Canvas 1.8 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 9 && node.nodeType() == CanvasNodeType.DERIVE_COLUMNS) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "DERIVE_COLUMNS 从 Canvas 1.9 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 10 && node.nodeType() == CanvasNodeType.TYPE_CAST) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "TYPE_CAST 从 Canvas 1.10 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 11 && node.nodeType() == CanvasNodeType.AGGREGATE) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "AGGREGATE 从 Canvas 1.11 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 12 && node.nodeType() == CanvasNodeType.UNION) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "UNION 从 Canvas 1.12 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 13 && node.nodeType() == CanvasNodeType.DEDUPLICATE) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "DEDUPLICATE 从 Canvas 1.13 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 14 && node.nodeType() == CanvasNodeType.NULL_HANDLING) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "NULL_HANDLING 从 Canvas 1.14 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 15 && node.nodeType() == CanvasNodeType.VALUE_MAPPING) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "VALUE_MAPPING 从 Canvas 1.15 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 16 && node.nodeType() == CanvasNodeType.WINDOW) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "WINDOW 从 Canvas 1.16 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 17 && node.nodeType() == CanvasNodeType.TOP_N) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "TOP_N 从 Canvas 1.17 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 18 && node.nodeType() == CanvasNodeType.MASK_FIELDS) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "MASK_FIELDS 从 Canvas 1.18 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 19 && node.nodeType() == CanvasNodeType.JSON_EXTRACT) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "JSON_EXTRACT 从 Canvas 1.19 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 20 && (node.nodeType() == CanvasNodeType.SPATIAL_TRANSFORM
+                    || node.nodeType() == CanvasNodeType.SPATIAL_JOIN)) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        node.nodeType() + " 从 Canvas 1.20 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 21 && (node.nodeType() == CanvasNodeType.GEOMETRY_CONSTRUCT
+                    || node.nodeType() == CanvasNodeType.GEOMETRY_VALIDATE
+                    || node.nodeType() == CanvasNodeType.SPATIAL_MEASURE
+                    || node.nodeType() == CanvasNodeType.GEOMETRY_SERIALIZE)) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        node.nodeType() + " 从 Canvas 1.21 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 22 && (node.nodeType() == CanvasNodeType.GEOMETRY_REPAIR
+                    || node.nodeType() == CanvasNodeType.GEOMETRY_BUFFER
+                    || node.nodeType() == CanvasNodeType.GEOMETRY_EXPLODE)) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        node.nodeType() + " 从 Canvas 1.22 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 23 && (node.nodeType() == CanvasNodeType.SPATIAL_CLIP
+                    || node.nodeType() == CanvasNodeType.SPATIAL_AGGREGATE)) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        node.nodeType() + " 从 Canvas 1.23 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 24
+                    && node instanceof cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition output
+                    && output.configuration() != null
+                    && output.configuration().formatOptions()
+                    instanceof cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions.Shapefile) {
+                entry.result().error(
+                        "FORMAT_OPTION_REQUIRES_SCHEMA_VERSION",
+                        "SHAPEFILE 文件输出从 Canvas 1.24 开始支持",
+                        "configuration.formatOptions.type"
+                );
+            }
+            if (schemaMinorVersion < 24 && node.nodeType() == CanvasNodeType.JDBC_QUERY_INPUT) {
+                entry.result().error(
+                        "NODE_TYPE_REQUIRES_SCHEMA_VERSION",
+                        "JDBC_QUERY_INPUT 从 Canvas 1.24 开始支持",
+                        "type"
+                );
+            }
+            if (schemaMinorVersion < 24
+                    && node instanceof cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition output
+                    && output.configuration() != null
+                    && output.configuration().writeMode()
+                    == cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.UPSERT) {
+                entry.result().error(
+                        "WRITE_MODE_REQUIRES_SCHEMA_VERSION",
+                        "JDBC_OUTPUT UPSERT 从 Canvas 1.24 开始支持",
+                        "configuration.writeMode"
+                );
+            }
+            if (schemaMinorVersion < 25
+                    && node instanceof cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition output
+                    && output.configuration() != null
+                    && (output.configuration().formatOptions()
+                    instanceof cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions.GeoParquet
+                    || output.configuration().formatOptions()
+                    instanceof cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions.GeoJson)) {
+                entry.result().error(
+                        "FORMAT_OPTION_REQUIRES_SCHEMA_VERSION",
+                        output.configuration().formatOptions()
+                                instanceof cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions.GeoParquet
+                                ? "GEOPARQUET 文件输出从 Canvas 1.25 开始支持"
+                                : "GEOJSON 文件输出从 Canvas 1.25 开始支持",
+                        "configuration.formatOptions.type"
+                );
+            }
+            if (schemaMinorVersion < 26
+                    && node.nodeType() == CanvasNodeType.SPATIAL_SERVICE_INPUT) {
+                entry.result().error(
+                        "NODE_REQUIRES_SCHEMA_VERSION",
+                        "SPATIAL_SERVICE_INPUT 从 Canvas 1.26 开始支持",
+                        "type"
+                );
+            }
             if (!nodeOperators.supports(node.nodeType(), executionMode)) {
                 entry.result().error(
                         "NODE_EXECUTION_MODE_NOT_SUPPORTED",
@@ -189,13 +368,64 @@ public final class CanvasGraphPlan {
         boolean missingConfiguration = switch (node) {
             case cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition input -> input.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition input -> input.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition input ->
+                    input.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition input ->
                     input.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition input -> input.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition input -> input.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition input -> input.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition join -> join.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.GeometryConstructNodeDefinition construct ->
+                    construct.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialTransformNodeDefinition transform ->
+                    transform.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.GeometryValidateNodeDefinition validate ->
+                    validate.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.GeometryRepairNodeDefinition repair ->
+                    repair.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
+                    buffer.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.GeometryExplodeNodeDefinition explode ->
+                    explode.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasureNodeDefinition measure ->
+                    measure.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.GeometrySerializeNodeDefinition serialize ->
+                    serialize.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialClipNodeDefinition clip ->
+                    clip.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition aggregate ->
+                    aggregate.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join ->
+                    join.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.StreamJoinNodeDefinition join -> join.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition rename -> rename.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.FilterNodeDefinition filter ->
+                    filter.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SelectColumnsNodeDefinition selectColumns ->
+                    selectColumns.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.DeriveColumnsNodeDefinition deriveColumns ->
+                    deriveColumns.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.TypeCastNodeDefinition typeCast ->
+                    typeCast.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.AggregateNodeDefinition aggregate ->
+                    aggregate.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.UnionNodeDefinition union ->
+                    union.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.DeduplicateNodeDefinition deduplicate ->
+                    deduplicate.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.NullHandlingNodeDefinition nullHandling ->
+                    nullHandling.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.ValueMappingNodeDefinition valueMapping ->
+                    valueMapping.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.MaskFieldsNodeDefinition maskFields ->
+                    maskFields.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.JsonExtractNodeDefinition jsonExtract ->
+                    jsonExtract.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.WindowNodeDefinition window ->
+                    window.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.TopNNodeDefinition topN ->
+                    topN.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition output -> output.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition output -> output.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition output -> output.configuration() == null;
@@ -293,22 +523,56 @@ public final class CanvasGraphPlan {
             int outgoing = successors.get(entry.index()).size();
             CanvasNodeType type = entry.node().nodeType();
             boolean valid = switch (type) {
-                case MODEL_INPUT, JDBC_INPUT, FILE_DATASET_INPUT, HTTP_API_INPUT, KAFKA_INPUT ->
+                case MODEL_INPUT, JDBC_INPUT, JDBC_QUERY_INPUT, FILE_DATASET_INPUT, HTTP_API_INPUT, SPATIAL_SERVICE_INPUT, KAFKA_INPUT ->
                         incoming == 0 && outgoing >= 1;
-                case JOIN, STREAM_JOIN -> incoming == 2 && outgoing >= 1;
-                case RENAME -> incoming == 1 && outgoing >= 1;
+                case JOIN, SPATIAL_CLIP, SPATIAL_JOIN, STREAM_JOIN ->
+                        incoming == 2 && outgoing >= 1;
+                case RENAME, FILTER, SELECT_COLUMNS, DERIVE_COLUMNS, TYPE_CAST, AGGREGATE,
+                        DEDUPLICATE, NULL_HANDLING, VALUE_MAPPING, JSON_EXTRACT, WINDOW, TOP_N,
+                        GEOMETRY_CONSTRUCT, SPATIAL_TRANSFORM, GEOMETRY_VALIDATE,
+                        GEOMETRY_REPAIR, GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
+                        SPATIAL_MEASURE, GEOMETRY_SERIALIZE, SPATIAL_AGGREGATE ->
+                        incoming == 1 && outgoing >= 1;
+                case MASK_FIELDS -> incoming == 1 && outgoing == 1;
+                case UNION -> incoming >= 1 && outgoing >= 1;
                 case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT -> incoming == 1 && outgoing == 0;
             };
             if (!valid) {
                 String message = switch (type) {
                     case MODEL_INPUT -> "模型输入节点不能有入边，且至少需要一条出边";
                     case JDBC_INPUT -> "JDBC 输入节点不能有入边，且至少需要一条出边";
+                    case JDBC_QUERY_INPUT -> "JDBC 查询输入节点不能有入边，且至少需要一条出边";
                     case FILE_DATASET_INPUT -> "文件数据集输入节点不能有入边，且至少需要一条出边";
                     case HTTP_API_INPUT -> "HTTP API 输入节点不能有入边，且至少需要一条出边";
+                    case SPATIAL_SERVICE_INPUT -> "空间服务输入节点不能有入边，且至少需要一条出边";
                     case KAFKA_INPUT -> "Kafka 输入节点不能有入边，且至少需要一条出边";
                     case JOIN -> "Join 节点必须有两条入边，且至少需要一条出边";
+                    case GEOMETRY_CONSTRUCT -> "Geometry 构造节点必须有一条入边，且至少需要一条出边";
+                    case SPATIAL_JOIN -> "空间连接节点必须有两条入边，且至少需要一条出边";
+                    case SPATIAL_TRANSFORM -> "空间转换节点必须有一条入边，且至少需要一条出边";
+                    case GEOMETRY_VALIDATE -> "Geometry 校验节点必须有一条入边，且至少需要一条出边";
+                    case GEOMETRY_REPAIR -> "Geometry 修复节点必须有一条入边，且至少需要一条出边";
+                    case GEOMETRY_BUFFER -> "Geometry Buffer 节点必须有一条入边，且至少需要一条出边";
+                    case GEOMETRY_EXPLODE -> "Geometry 拆分节点必须有一条入边，且至少需要一条出边";
+                    case SPATIAL_MEASURE -> "空间度量节点必须有一条入边，且至少需要一条出边";
+                    case GEOMETRY_SERIALIZE -> "Geometry 序列化节点必须有一条入边，且至少需要一条出边";
+                    case SPATIAL_CLIP -> "空间裁剪节点必须有两条入边，且至少需要一条出边";
+                    case SPATIAL_AGGREGATE -> "空间聚合节点必须有一条入边，且至少需要一条出边";
                     case STREAM_JOIN -> "Stream Join 节点必须有两条入边，且至少需要一条出边";
                     case RENAME -> "重命名节点必须有一条入边，且至少需要一条出边";
+                    case FILTER -> "筛选节点必须有一条入边，且至少需要一条出边";
+                    case SELECT_COLUMNS -> "选择字段节点必须有一条入边，且至少需要一条出边";
+                    case DERIVE_COLUMNS -> "派生字段节点必须有一条入边，且至少需要一条出边";
+                    case TYPE_CAST -> "类型转换节点必须有一条入边，且至少需要一条出边";
+                    case AGGREGATE -> "聚合节点必须有一条入边，且至少需要一条出边";
+                    case UNION -> "合并数据节点至少需要一条入边和一条出边";
+                    case DEDUPLICATE -> "去重节点必须有一条入边，且至少需要一条出边";
+                    case NULL_HANDLING -> "空值处理节点必须有一条入边，且至少需要一条出边";
+                    case VALUE_MAPPING -> "值映射节点必须有一条入边，且至少需要一条出边";
+                    case MASK_FIELDS -> "字段脱敏节点必须有一条入边和一条出边";
+                    case JSON_EXTRACT -> "JSON 提取节点必须有一条入边，且至少需要一条出边";
+                    case WINDOW -> "窗口计算节点必须有一条入边，且至少需要一条出边";
+                    case TOP_N -> "Top N 节点必须有一条入边，且至少需要一条出边";
                     case MODEL_OUTPUT -> "模型输出节点必须有一条入边且不能有出边";
                     case JDBC_OUTPUT -> "JDBC 输出节点必须有一条入边且不能有出边";
                     case KAFKA_OUTPUT -> "Kafka 输出节点必须有一条入边且不能有出边";
@@ -365,10 +629,10 @@ public final class CanvasGraphPlan {
                     && output.configuration() != null
                     && output.configuration().writeMode() != null
                     && output.configuration().writeMode()
-                    != cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.APPEND) {
+                    == cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.OVERWRITE) {
                 entry.result().error(
-                        "STREAMING_JDBC_OUTPUT_REQUIRES_APPEND",
-                        "实时 JDBC_OUTPUT 只支持 APPEND",
+                        "STREAMING_JDBC_OUTPUT_OVERWRITE_NOT_SUPPORTED",
+                        "实时 JDBC_OUTPUT 不支持 OVERWRITE",
                         "configuration.writeMode"
                 );
             }

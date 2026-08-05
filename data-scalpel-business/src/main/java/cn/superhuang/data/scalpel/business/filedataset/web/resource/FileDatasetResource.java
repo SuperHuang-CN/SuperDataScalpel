@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.business.filedataset.service.FileDatasetServic
 import cn.superhuang.data.scalpel.business.filedataset.web.request.CreateFileDatasetRequest;
 import cn.superhuang.data.scalpel.business.filedataset.web.request.UpdateFileDatasetRequest;
 import cn.superhuang.data.scalpel.business.filedataset.web.request.UpdateFileDatasetTableRequest;
+import cn.superhuang.data.scalpel.business.filedataset.web.request.UpdateFileDatasetTableSpatialReferenceRequest;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetFileResponse;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetPreviewResponse;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetResponse;
@@ -178,6 +179,17 @@ public class FileDatasetResource {
             @Valid @RequestBody UpdateFileDatasetTableRequest request
     ) {
         return service.updateTable(id, tableId, request);
+    }
+
+    @PostMapping("/{id}/tables/{tableId}/actions/update-spatial-reference")
+    @PreAuthorize("hasAuthority('filedataset.update')")
+    @Operation(summary = "确认空间表的 EPSG 并重新解析 Schema")
+    public FileDatasetTableResponse updateTableSpatialReference(
+            @PathVariable UUID id,
+            @PathVariable UUID tableId,
+            @Valid @RequestBody UpdateFileDatasetTableSpatialReferenceRequest request
+    ) {
+        return service.updateTableSpatialReference(id, tableId, request);
     }
 
     @GetMapping("/{id}/tables/{tableId}/sources")

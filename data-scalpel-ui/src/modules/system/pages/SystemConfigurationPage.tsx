@@ -1,7 +1,9 @@
-import { EditOutlined, ReloadOutlined } from '@ant-design/icons';
-import type { TableProps } from 'antd';
-import { Button, Card, Form, Input, Space, Table, Tag, Typography } from 'antd';
+import { EditOutlined, EllipsisOutlined, ReloadOutlined, SettingOutlined } from '@ant-design/icons';
+import type { MenuProps, TableProps } from 'antd';
+import { Button, Dropdown, Form, Input, Table, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
+import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { SystemConfigurationDrawer } from '../components/SystemConfigurationDrawer';
 import { useCurrentUser } from '../hooks/useSystemAccess';
 import { useSystemConfigurations } from '../hooks/useSystemConfigurations';
@@ -34,28 +36,35 @@ export const SystemConfigurationPage = () => {
   const configurationsQuery = useSystemConfigurations(request);
 
   const columns: TableProps<SystemConfiguration>['columns'] = [
-    { title: '名称', dataIndex: 'name', width: 160 },
-    { title: '配置键', dataIndex: 'configKey', width: 220, render: (value: string) => <Typography.Text code>{value}</Typography.Text> },
+    {
+      title: '配置项', dataIndex: 'name', width: 260,
+      render: (value: string, configuration) => <ManagementListCell icon={<SettingOutlined />} iconTone="violet" primary={value} secondary={configuration.description || '—'} />,
+    },
+    { title: '配置键', dataIndex: 'configKey', width: 230, render: (value: string) => <ManagementCode value={value} /> },
     {
       title: '当前值',
       dataIndex: 'configValue',
-      render: (value: string) => <Typography.Text ellipsis={{ tooltip: value }}>{value}</Typography.Text>,
+      width: 230,
+      render: (value: string) => <ManagementListCell primary={value} secondary="系统配置值" />,
     },
     {
-      title: '类型',
-      dataIndex: 'valueType',
-      width: 100,
-      render: (value: SystemConfiguration['valueType']) => <Tag>{valueTypeLabels[value]}</Tag>,
+      title: '类型 / 排序', width: 130,
+      render: (_value: unknown, configuration) => <ManagementListCell primary={valueTypeLabels[configuration.valueType]} secondary={`排序 ${configuration.sortOrder}`} />,
     },
-    { title: '说明', dataIndex: 'description', width: 280, render: (value: string | null) => value || '—' },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
       title: '操作',
       key: 'action',
-      width: 100,
+      width: 112,
       render: (_: unknown, configuration: SystemConfiguration) => canUpdate ? (
-        <Button type="link" icon={<EditOutlined />} onClick={() => setEditingConfiguration(configuration)}>
-          修改
-        </Button>
+        <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">
+            <Tooltip title="修改"><Button type="text" icon={<EditOutlined />} aria-label={`修改${configuration.name}`} onClick={() => setEditingConfiguration(configuration)} /></Tooltip>
+          </div>
+          <Dropdown menu={{ items: [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setEditingConfiguration(configuration) }] satisfies MenuProps['items'] }} trigger={['click']}>
+            <Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<EllipsisOutlined />} aria-label={`${configuration.name}的更多操作`} /></Tooltip>
+          </Dropdown>
+        </div>
       ) : '—',
     },
   ];
@@ -72,43 +81,34 @@ export const SystemConfigurationPage = () => {
 
   return (
     <>
-      <Card className="management-card">
-        <div className="management-toolbar">
-          <Form<SystemConfigurationFilters>
-            form={filterForm}
-            layout="inline"
-            className="management-filter-form"
-            onFinish={search}
-          >
-            <Form.Item name="name" label="名称">
-              <Input allowClear placeholder="按名称筛选" />
-            </Form.Item>
-            <Form.Item name="configKey" label="配置键">
-              <Input allowClear placeholder="如 platform.name" />
-            </Form.Item>
+      <section className="management-workbench">
+        <div className="management-filter-strip">
+          <Form<SystemConfigurationFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
+            <Form.Item name="name"><ManagementSearchInput allowClear placeholder="搜索配置名称" /></Form.Item>
+            <Form.Item name="configKey"><Input allowClear placeholder="配置键，如 platform.name" /></Form.Item>
           </Form>
-          <Space size={4} className="management-toolbar-actions">
-            <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-            <Button onClick={reset}>重置</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => void configurationsQuery.refetch()}>
-              刷新
-            </Button>
-          </Space>
+          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={configurationsQuery.isFetching} onReset={reset} />
         </div>
-        <Table<SystemConfiguration>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <span className="management-result-title">配置列表 <span className="management-result-count">共 {configurationsQuery.data?.totalElements ?? 0} 项</span></span>
+          <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新配置列表" onClick={() => void configurationsQuery.refetch()} /></Tooltip></div>
+          </div>
+          <Table<SystemConfiguration>
           size="small"
           className="management-table"
           rowKey="id"
           columns={columns}
           dataSource={configurationsQuery.data?.content ?? []}
           loading={configurationsQuery.isFetching}
-          scroll={{ x: 1040, y: '100%' }}
+          scroll={{ y: '100%' }}
           pagination={{
             current: page + 1,
             pageSize: size,
             total: configurationsQuery.data?.totalElements ?? 0,
             size: 'small',
             position: ['bottomRight'],
+            hideOnSinglePage: false,
             showSizeChanger: true,
             showTotal: (total) => `共 ${total} 项`,
           }}
@@ -116,8 +116,9 @@ export const SystemConfigurationPage = () => {
             setPage((pagination.current ?? 1) - 1);
             setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
           }}
-        />
-      </Card>
+          />
+        </div>
+      </section>
       <SystemConfigurationDrawer
         open={Boolean(editingConfiguration)}
         configuration={editingConfiguration}

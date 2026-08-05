@@ -60,9 +60,10 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 - launch 文件只读交付给 Runner，完成后由 Dispatcher/集群清理。
 - SASL 密码使用独立受限文件或环境变量引用，不直接放进 `spark-submit` 参数。
 
-## 4. Manifest v7
+## 4. Manifest v9
 
-Admin 当前写出 `manifestVersion: 7`；Runner 兼容读取 v6，v6 任务保持原行为：
+Admin 当前写出 `manifestVersion: 9`；Runner 兼容读取 v8，但 v8 不得携带
+`JDBC_QUERY_INPUT` 或 `JDBC_OUTPUT.writeMode=UPSERT`。v7 及更早版本不再兼容：
 
 ```text
 manifestVersion
@@ -85,7 +86,7 @@ runtimeFileInputs
   位置和来源键。Runner 对来源逐一使用 metadataSnapshot 中的同一权威 Schema 和 FAILFAST Reader，
   再按清单顺序执行 `unionByName`，语义固定为 `UNION ALL`。
 - Kafka、Dispatcher、Backend、预签名 URL不进入 manifest。
-- v5 及更早版本不兼容读取；Admin、Dispatcher 和 Task Engine 必须同步部署。升级前必须排空或取消旧任务。
+- v8 保持既有 JDBC/模型/文件/空间能力；新 Query Input 和 UPSERT 必须使用 v9。Admin、Dispatcher 和 Task Engine 必须同步部署，升级前必须排空或取消更早版本任务。
 - 第一阶段 manifest 保持明文并存放在私有 MinIO Bucket。文件存储凭据、对象 Key和物化前缀不得进入日志、Result、Kafka终态事件或管理端运行记录。
 
 ## 5. Runner 启动入口
@@ -327,9 +328,12 @@ data-scalpel-task-engine-*-runner-cluster.jar
 ```
 
 - Spark 和 Scala 使用 provided，由目标 Spark 4.1.1 集群提供。
-- 包含 Runner、共享执行契约、Jackson、Kafka Client、PostgreSQL/MySQL JDBC Driver及 Kafka 所需压缩库。
+- 包含 Runner、共享执行契约、Sedona 1.9.0、Jackson、Kafka Client、
+  PostgreSQL/MySQL JDBC Driver及 Kafka 所需压缩库。
 - 不包含 Spark、Scala、Hadoop、Netty；这些类由目标 Spark 4.1.1 集群提供。
 - 不允许把另一版本 Spark/Scala 打进 YARN/Kubernetes Driver classpath。
+- 构建验证必须确认 `SedonaContext` 和 `GeometryUDT` 存在，同时继续拒绝 Spark、
+  Scala、Hadoop核心类泄漏。
 
 两个制品运行相同 Main 和相同 manifest/launch/result 协议。
 

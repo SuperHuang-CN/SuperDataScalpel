@@ -86,4 +86,34 @@ describe('model metadata Excel import', () => {
     expect(toManagedDraftRequest(draft, 'storage-id')?.fields[0])
       .toMatchObject({ fieldType: 'GEOMETRY', geometry, primaryKey: false });
   });
+
+  it('resolves an enabled V3 warehouse layer and allows an invalid layer code to be cleared', () => {
+    const resolvedSource = preview();
+    resolvedSource.formatVersion = 3;
+    resolvedSource.models[0].warehouseLayerCode = 'DWD';
+    resolvedSource.models[0].warehouseLayer = {
+      id: 'layer-id',
+      code: 'DWD',
+      name: '明细数据层',
+      color: '#1677FF',
+      enabled: true,
+      modelCodePrefix: 'dwd_',
+    };
+    const resolvedDraft = modelMetadataDrafts(resolvedSource)[0];
+    expect(toManagedDraftRequest(resolvedDraft, 'storage-id')).toMatchObject({
+      warehouseLayerId: 'layer-id',
+    });
+
+    const invalidSource = preview();
+    invalidSource.formatVersion = 3;
+    invalidSource.models[0].warehouseLayerCode = 'UNKNOWN';
+    invalidSource.models[0].issues = ['数仓分层不存在：UNKNOWN'];
+    const invalidDraft = modelMetadataDrafts(invalidSource)[0];
+    expect(modelMetadataDraftIssues([invalidDraft], false).get(invalidDraft.key)?.warehouseLayer)
+      .toContain('不存在');
+
+    invalidDraft.warehouseLayerCode = '';
+    invalidDraft.warehouseLayerIssue = undefined;
+    expect(hasModelMetadataDraftIssues(modelMetadataDraftIssues([invalidDraft], false))).toBe(false);
+  });
 });

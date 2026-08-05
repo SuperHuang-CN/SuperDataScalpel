@@ -2,7 +2,7 @@ package cn.superhuang.data.scalpel.business.task.service;
 
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskDefinition;
@@ -302,7 +302,7 @@ public class TaskModelRelationQueryService {
         return canvasDefinitionService.deserialize(definition.getDefinitionJson()).nodes().stream()
                 .collect(Collectors.toMap(
                         node -> UUID.fromString(node.id()),
-                        CanvasDefinition.CanvasNodeDefinition::name
+                        CanvasNodeDefinition::name
                 ));
     }
 

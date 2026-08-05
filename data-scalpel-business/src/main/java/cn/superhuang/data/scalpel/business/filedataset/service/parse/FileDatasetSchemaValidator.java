@@ -35,6 +35,26 @@ public class FileDatasetSchemaValidator {
         requireShapefileMetadata(expectedSourceMetadata, actual.sourceMetadata());
     }
 
+    public void requireCompatible(
+            FileDatasetParser.ParseResult expected,
+            FileDatasetParser.ParseResult actual
+    ) {
+        List<FileDatasetParser.Field> expectedFields = expected.fields();
+        List<FileDatasetParser.Field> actualFields = actual.fields();
+        if (expectedFields.size() != actualFields.size()) {
+            throw mismatch("字段数量", expectedFields.size(), actualFields.size());
+        }
+        for (int index = 0; index < expectedFields.size(); index++) {
+            FileDatasetParser.Field expectedField = expectedFields.get(index);
+            FileDatasetParser.Field actualField = actualFields.get(index);
+            requireEqual(index, "名称", expectedField.name(), actualField.name());
+            requireEqual(index, "顺序", expectedField.sortOrder(), actualField.sortOrder());
+            requireEqual(index, "平台类型", expectedField.type(), actualField.type());
+            requireEqual(index, "nullable", expectedField.nullable(), actualField.nullable());
+        }
+        requireShapefileMetadata(expected.sourceMetadata(), actual.sourceMetadata());
+    }
+
     public String fingerprint(List<FileDatasetParser.Field> fields) {
         try {
             MessageDigest digest = MessageDigest.getInstance("SHA-256");
@@ -47,6 +67,11 @@ public class FileDatasetSchemaValidator {
                 update(digest, value(field.type().precision()));
                 update(digest, value(field.type().scale()));
                 update(digest, Boolean.toString(field.nullable()));
+                update(digest, field.type().geometry() == null ? "" : field.type().geometry().kind().name());
+                update(digest, field.type().geometry() == null ? "" : field.type().geometry().crs().authority());
+                update(digest, field.type().geometry() == null
+                        ? "" : Integer.toString(field.type().geometry().crs().code()));
+                update(digest, field.type().geometry() == null ? "" : field.type().geometry().dimension().name());
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {
@@ -65,6 +90,10 @@ public class FileDatasetSchemaValidator {
         requireMetadataEqual("Z 维度", expected, actual, "shapeHasZ");
         requireMetadataEqual("M 维度", expected, actual, "shapeHasM");
         requireMetadataEqual("Geometry 字段", expected, actual, "geometryField");
+        requireMetadataEqual("CRS authority", expected, actual, "crsAuthority");
+        requireMetadataEqual("CRS code", expected, actual, "crsCode");
+        requireMetadataEqual("坐标维度", expected, actual, "coordinateDimension");
+        requireMetadataEqual("Geometry kind", expected, actual, "geometryKind");
         Object expectedSpatialReference = expected.get("spatialReference");
         Object actualSpatialReference = actual.get("spatialReference");
         String expectedWkt = normalizedWkt(expectedSpatialReference);

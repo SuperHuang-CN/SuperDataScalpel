@@ -8,7 +8,7 @@ import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.query.ReadOnlySelectQueryParser;
 import cn.superhuang.data.scalpel.dialect.query.NamedParameterSqlCompiler;
-import cn.superhuang.data.scalpel.engine.datasource.EngineDataSourceStore;
+import cn.superhuang.data.scalpel.engine.datasource.EngineApiStudioDataSourceService;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
 import org.springframework.web.server.ResponseStatusException;
@@ -20,16 +20,19 @@ import java.util.Set;
 @Component
 public class EngineDeploymentValidator {
 
-    private final EngineDataSourceStore dataSourceStore;
+    private final EngineApiStudioDataSourceService dataSourceService;
     private final DialectRegistry dialectRegistry;
 
-    public EngineDeploymentValidator(EngineDataSourceStore dataSourceStore, DialectRegistry dialectRegistry) {
-        this.dataSourceStore = dataSourceStore;
+    public EngineDeploymentValidator(
+            EngineApiStudioDataSourceService dataSourceService,
+            DialectRegistry dialectRegistry
+    ) {
+        this.dataSourceService = dataSourceService;
         this.dialectRegistry = dialectRegistry;
     }
 
     public void validate(ServiceDeploymentRequest request) {
-        var dataSource = dataSourceStore.requireSnapshot(request.dataSourceId());
+        var dataSource = dataSourceService.resolve(request.dataSourceId());
         if (request.definition().type() != DataServiceType.SQL_QUERY) {
             return;
         }

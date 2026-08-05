@@ -369,7 +369,7 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
       onClose={onClose}
       footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
     >
-      <Form<ApiResourceFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
+      <Form<ApiResourceFormValues> autoComplete="off" form={form} layout="vertical" onFinish={(values) => void submit(values)}>
         <Row gutter={12}>
           <Col span={10}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true }]}><Input /></Form.Item></Col>
           <Col span={8}><Form.Item label="编码" name="code" rules={resource ? [] : [{ required: true }, { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/ }]}><Input disabled={Boolean(resource)} /></Form.Item></Col>

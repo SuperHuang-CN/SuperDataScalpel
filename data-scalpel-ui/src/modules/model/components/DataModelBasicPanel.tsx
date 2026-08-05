@@ -110,6 +110,21 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
           <Tag color={statusColor[model.status]}>{dataModelStatusLabels[model.status]}</Tag>
         </Descriptions.Item>
         <Descriptions.Item label="所属目录">{directoryName ?? (model.directoryId ? '—' : '未分类')}</Descriptions.Item>
+        <Descriptions.Item label="数仓分层">
+          {model.warehouseLayer ? (
+            <Space size={4}>
+              <Tag color={model.warehouseLayer.color ?? undefined}>
+                {model.warehouseLayer.code} · {model.warehouseLayer.name}
+              </Tag>
+              {!model.warehouseLayer.enabled && <Tag color="warning">已停用</Tag>}
+            </Space>
+          ) : <Typography.Text type="secondary">未分层</Typography.Text>}
+        </Descriptions.Item>
+        <Descriptions.Item label="分层编码规范">
+          {model.warehouseLayer?.modelCodePrefix
+            ? <code>{model.warehouseLayer.modelCodePrefix}*</code>
+            : <Typography.Text type="secondary">未配置</Typography.Text>}
+        </Descriptions.Item>
         <Descriptions.Item label="创建时间">{formatDateTime(model.createdAt)}</Descriptions.Item>
         <Descriptions.Item label="更新时间">{formatDateTime(model.updatedAt)}</Descriptions.Item>
       </Descriptions>

@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.filedataset.web.response;
 
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetField;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 
 import java.util.List;
 
@@ -12,7 +13,8 @@ public record FileDatasetFieldResponse(
         Integer length,
         Integer precision,
         Integer scale,
-        boolean nullable
+        boolean nullable,
+        PlatformTypeDefinition platformTypeDefinition
 ) {
 
     public static FileDatasetFieldResponse from(FileDatasetField field) {
@@ -23,7 +25,8 @@ public record FileDatasetFieldResponse(
                 field.getLength(),
                 field.getPrecision(),
                 field.getScale(),
-                field.isNullable()
+                field.isNullable(),
+                field.getTypeDefinition()
         );
     }
 

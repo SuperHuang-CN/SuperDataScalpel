@@ -18,12 +18,43 @@ public record SpatialColumnMetadata(
         Integer crsCode,
         CoordinateDimension coordinateDimension,
         boolean subtypeConstrained,
-        boolean crsConstrained
+        boolean crsConstrained,
+        SpatialStorageEncoding storageEncoding,
+        SpatialMetadataStrength metadataStrength,
+        String issue
 ) {
+
+    public SpatialColumnMetadata(
+            String nativeGeometryKind,
+            Integer spatialReferenceId,
+            String crsAuthority,
+            Integer crsCode,
+            CoordinateDimension coordinateDimension,
+            boolean subtypeConstrained,
+            boolean crsConstrained
+    ) {
+        this(
+                nativeGeometryKind,
+                spatialReferenceId,
+                crsAuthority,
+                crsCode,
+                coordinateDimension,
+                subtypeConstrained,
+                crsConstrained,
+                SpatialStorageEncoding.NATIVE,
+                subtypeConstrained && crsConstrained && coordinateDimension != null
+                        ? SpatialMetadataStrength.ENFORCED
+                        : SpatialMetadataStrength.NONE,
+                null
+        );
+    }
 
     public SpatialColumnMetadata {
         nativeGeometryKind = normalize(nativeGeometryKind);
         crsAuthority = normalize(crsAuthority);
+        storageEncoding = storageEncoding == null ? SpatialStorageEncoding.NATIVE : storageEncoding;
+        metadataStrength = metadataStrength == null ? SpatialMetadataStrength.NONE : metadataStrength;
+        issue = issue == null || issue.isBlank() ? null : issue.trim();
     }
 
     private static String normalize(String value) {

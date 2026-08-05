@@ -2,24 +2,30 @@ server:
   port: ${DATASCALPEL_TASK_DISPATCHER_PORT:18092}
   shutdown: graceful
 
+logging:
+  level:
+    org.apache.kafka.common.config: WARN
+
 spring:
   application:
     name: data-scalpel-task-dispatcher
   datasource:
-    url: ${DATASCALPEL_DB_URL:jdbc:postgresql://127.0.0.1:5432/data_scalpel?currentSchema=dispatcher}
+    url: ${DATASCALPEL_DB_URL:jdbc:postgresql://127.0.0.1:5432/data_scalpel}
     username: ${DATASCALPEL_DB_USERNAME:postgres}
     password: ${DATASCALPEL_DB_PASSWORD:postgres}
+    hikari:
+      schema: ${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:dispatcher}
   sql:
     init:
-      mode: always
-      schema-locations: classpath:dispatcher-schema.sql
+      mode: never
   jpa:
     open-in-view: false
     hibernate:
       ddl-auto: update
     properties:
       hibernate:
-        default_schema: dispatcher
+        default_schema: ${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:dispatcher}
+        hbm2ddl.create_namespaces: true
         jdbc.time_zone: UTC
   kafka:
     bootstrap-servers: ${DATASCALPEL_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}

@@ -1,7 +1,10 @@
-import { ReloadOutlined } from '@ant-design/icons';
+import { ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Card, Form, Input, Space, Table, Tag, Typography } from 'antd';
+import { Button, Form, Space, Table, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
+import { ManagementCode, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { useSystemPermissions } from '../hooks/useSystemAccess';
 import { groupSystemPermissions } from '../model/systemPermissionGrouping';
 import { buildSystemPermissionSearch } from '../model/systemAccessSearch';
@@ -47,52 +50,48 @@ export const SystemPermissionManagementPage = () => {
 
   const columns: TableProps<PermissionTableRow>['columns'] = [
     {
-      title: '权限名称', dataIndex: 'name', width: 240,
+      title: '权限', dataIndex: 'name', width: 360,
       render: (_: unknown, record) => record.kind === 'group' ? (
         <Space size={8}>
           <Typography.Text strong>{record.module}</Typography.Text>
-          <Tag>{record.permissionCount} 项</Tag>
+          <Typography.Text type="secondary">{record.permissionCount} 项</Typography.Text>
         </Space>
-      ) : record.name,
+      ) : <ManagementListCell icon={<SafetyCertificateOutlined />} iconTone="cyan" primary={record.name} secondary={<ManagementCode value={record.code} />} />,
     },
     {
-      title: '权限编码', dataIndex: 'code', width: 300,
-      render: (value: string | undefined, record) => record.kind === 'group' ? null : <Typography.Text code>{value}</Typography.Text>,
+      title: '说明', dataIndex: 'description',
+      render: (value: string | null | undefined, record) => record.kind === 'group' ? null : <ManagementListCell primary={value || '—'} secondary="权限用途说明" />,
     },
     {
-      title: '说明', dataIndex: 'description', ellipsis: true,
-      render: (value: string | null | undefined, record) => record.kind === 'group' ? null : value || '—',
-    },
-    {
-      title: '状态', dataIndex: 'active', width: 100,
-      render: (value: boolean | undefined, record) => record.kind === 'group' ? null : <Tag color={value ? 'success' : 'default'}>{value ? '有效' : '已停用'}</Tag>,
+      title: '状态 / 更新时间', width: 180,
+      render: (_value: unknown, record) => record.kind === 'group' ? null : <ManagementListCell primary={<ManagementStatusIndicator label={record.active ? '有效' : '已停用'} tone={record.active ? 'success' : 'default'} />} secondary={formatManagementDateTime(record.updatedAt)} />,
     },
   ];
 
   return (
-    <Card className="management-card">
-      <div className="management-toolbar">
-        <Form<KeywordFilter> form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
-          <Form.Item name="keyword" label="关键字"><Input allowClear placeholder="按模块、名称或权限编码筛选" className="data-source-keyword-input" /></Form.Item>
-        </Form>
-        <Space size={4} className="management-toolbar-actions">
-          <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-          <Button onClick={reset}>重置</Button>
-          <Button icon={<ReloadOutlined />} onClick={() => void permissionsQuery.refetch()}>刷新</Button>
-        </Space>
+    <section className="management-workbench">
+      <div className="management-filter-strip">
+        <Form<KeywordFilter> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}><Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索模块、名称或权限编码" className="data-source-keyword-input" /></Form.Item></Form>
+        <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={permissionsQuery.isFetching} onReset={reset} />
       </div>
-      <Table<PermissionTableRow>
+      <div className="management-results-surface">
+        <div className="management-result-toolbar">
+        <span className="management-result-title">权限列表 <span className="management-result-count">共 {permissionsQuery.data?.totalElements ?? 0} 项</span></span>
+        <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新权限列表" onClick={() => void permissionsQuery.refetch()} /></Tooltip></div>
+        </div>
+        <Table<PermissionTableRow>
         size="small" className="management-table" rowKey="id" columns={columns}
-        dataSource={tableData} loading={permissionsQuery.isFetching} scroll={{ x: 900, y: '100%' }}
+        dataSource={tableData} loading={permissionsQuery.isFetching} scroll={{ y: '100%' }}
         pagination={false}
         expandable={{ defaultExpandAllRows: true, expandRowByClick: true, rowExpandable: (record) => record.kind === 'group' }}
         rowClassName={(record) => record.kind === 'group' ? 'permission-group-row' : ''}
-      />
-      <div className="permission-group-summary">
-        {permissions.length === (permissionsQuery.data?.totalElements ?? 0)
-          ? `共 ${permissions.length} 项 · ${tableData.length} 个模块`
-          : `已展示 ${permissions.length} / ${permissionsQuery.data?.totalElements ?? 0} 项 · ${tableData.length} 个模块`}
+        />
+        <div className="permission-group-summary">
+          {permissions.length === (permissionsQuery.data?.totalElements ?? 0)
+            ? `共 ${permissions.length} 项 · ${tableData.length} 个模块`
+            : `已展示 ${permissions.length} / ${permissionsQuery.data?.totalElements ?? 0} 项 · ${tableData.length} 个模块`}
+        </div>
       </div>
-    </Card>
+    </section>
   );
 };

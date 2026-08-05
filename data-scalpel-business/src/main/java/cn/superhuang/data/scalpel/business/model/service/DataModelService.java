@@ -17,10 +17,12 @@ import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelPhysicalChange;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelPhysicalChangeStatus;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
+import cn.superhuang.data.scalpel.business.model.domain.ModelWarehouseLayer;
 import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelPhysicalChangeRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
+import cn.superhuang.data.scalpel.business.model.repository.ModelWarehouseLayerRepository;
 import cn.superhuang.data.scalpel.business.model.web.request.CreatePhysicalTableChangePlanRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.CreateDataModelRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.CreateManagedDraftRequest;
@@ -41,9 +43,12 @@ import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImpor
 import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImportPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportColumnResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportPreviewResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.ModelWarehouseLayerSummaryResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PlatformTypeCapabilityResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableDdlPlanResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableInspectionResponse;
+import cn.superhuang.data.scalpel.business.standard.service.StandardDictionaryValueSupport;
+import cn.superhuang.data.scalpel.business.standard.web.response.StandardDictionarySummaryResponse;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceModelReferenceRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskDefinitionRepository;
@@ -126,6 +131,7 @@ public class DataModelService {
     private final DataModelFieldRepository fieldRepository;
     private final DataModelPhysicalChangeRepository physicalChangeRepository;
     private final DataSourceRepository dataSourceRepository;
+    private final ModelWarehouseLayerRepository warehouseLayerRepository;
     private final DirectoryService directoryService;
     private final SearchEngine searchEngine;
     private final ModelPhysicalTablePort physicalTablePort;
@@ -137,12 +143,14 @@ public class DataModelService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
     private final DialectRegistry dialectRegistry;
+    private final StandardDictionaryValueSupport standardDictionaryValueSupport;
 
     public DataModelService(
             DataModelRepository repository,
             DataModelFieldRepository fieldRepository,
             DataModelPhysicalChangeRepository physicalChangeRepository,
             DataSourceRepository dataSourceRepository,
+            ModelWarehouseLayerRepository warehouseLayerRepository,
             DirectoryService directoryService,
             SearchEngine searchEngine,
             ModelPhysicalTablePort physicalTablePort,
@@ -153,12 +161,14 @@ public class DataModelService {
             TaskCanvasModelReferenceRepository canvasModelReferenceRepository,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
-            DialectRegistry dialectRegistry
+            DialectRegistry dialectRegistry,
+            StandardDictionaryValueSupport standardDictionaryValueSupport
     ) {
         this.repository = repository;
         this.fieldRepository = fieldRepository;
         this.physicalChangeRepository = physicalChangeRepository;
         this.dataSourceRepository = dataSourceRepository;
+        this.warehouseLayerRepository = warehouseLayerRepository;
         this.directoryService = directoryService;
         this.searchEngine = searchEngine;
         this.physicalTablePort = physicalTablePort;
@@ -170,15 +180,23 @@ public class DataModelService {
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.dialectRegistry = dialectRegistry;
+        this.standardDictionaryValueSupport = standardDictionaryValueSupport;
     }
 
     @Transactional(readOnly = true)
     public PageResponse<DataModelResponse> search(SearchRequest request) {
         Page<DataModel> result = searchEngine.search(request, DataModel.class, repository);
         Map<UUID, String> storageNames = storageNames(result.getContent());
+        Map<UUID, ModelWarehouseLayer> warehouseLayers = warehouseLayers(result.getContent());
         return new PageResponse<>(
                 result.getContent().stream()
-                        .map(model -> DataModelResponse.from(model, storageNames.get(model.getStorageDataSourceId())))
+                        .map(model -> DataModelResponse.from(
+                                model,
+                                storageNames.get(model.getStorageDataSourceId()),
+                                ModelWarehouseLayerSummaryResponse.from(
+                                        warehouseLayers.get(model.getWarehouseLayerId())
+                                )
+                        ))
                         .toList(),
                 result.getTotalElements(), result.getTotalPages(), result.getNumber(), result.getSize()
         );
@@ -363,6 +381,7 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型编码已存在");
         }
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
+        validateWarehouseLayerAssignment(request.warehouseLayerId(), null);
         DataSource storage = requireStorageDataSource(request.storageDataSourceId(), true);
         PhysicalNamespace namespace = resolvePhysicalNamespace(storage);
         String physicalTableName = normalizeCode(request.physicalTableName());
@@ -375,9 +394,10 @@ public class DataModelService {
         if (fields.stream().anyMatch(field -> field.input().id() != null)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新建受管模型草稿的字段不能携带 ID");
         }
+        validateStandardDictionaryAssignments(fields, Map.of());
         validatePhysicalTypeMappings(storage, fields);
         DataModel model = DataModel.create(
-                code, request.name(), request.directoryId(), request.storageDataSourceId(),
+                code, request.name(), request.directoryId(), request.warehouseLayerId(), request.storageDataSourceId(),
                 namespace.catalogName(), namespace.schemaName(), physicalTableName,
                 PhysicalTableMode.MANAGED, clickHouseOrderByColumns, request.description()
         );
@@ -398,6 +418,7 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型编码已存在");
         }
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
+        validateWarehouseLayerAssignment(request.warehouseLayerId(), null);
         requireStorageDataSource(request.storageDataSourceId(), true);
         validatePhysicalLocationAvailable(
                 request.storageDataSourceId(),
@@ -407,12 +428,17 @@ public class DataModelService {
                 null
         );
         DataModel saved = repository.saveAndFlush(preparation.model());
+        validateStandardDictionaryAssignments(preparation.fields(), Map.of());
         List<DataModelField> fields = preparation.fields().stream()
-                .map(field -> DataModelField.create(
-                        saved.getId(), field.code(), field.input().name(), field.input().fieldType(),
-                        field.length(), field.precision(), field.scale(), field.geometry(), field.input().nullable(),
-                        field.input().primaryKey(), field.input().sortOrder(), field.input().description()
-                ))
+                .map(field -> {
+                    DataModelField entity = DataModelField.create(
+                            saved.getId(), field.code(), field.input().name(), field.input().fieldType(),
+                            field.length(), field.precision(), field.scale(), field.geometry(), field.input().nullable(),
+                            field.input().primaryKey(), field.input().sortOrder(), field.input().description()
+                    );
+                    entity.assignStandardDictionary(field.input().standardDictionaryId());
+                    return entity;
+                })
                 .toList();
         fieldRepository.saveAllAndFlush(fields);
         return detail(saved);
@@ -498,6 +524,7 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型编码已存在");
         }
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
+        validateWarehouseLayerAssignment(request.warehouseLayerId(), null);
         PhysicalTableMode physicalTableMode = physicalTableMode(request.physicalTableMode());
         DataSource storage = requireModelDataSource(request.storageDataSourceId(), false, physicalTableMode);
 
@@ -511,7 +538,7 @@ public class DataModelService {
         );
 
         DataModel model = DataModel.create(
-                code, request.name(), request.directoryId(), request.storageDataSourceId(),
+                code, request.name(), request.directoryId(), request.warehouseLayerId(), request.storageDataSourceId(),
                 namespace.catalogName(), namespace.schemaName(), physicalTableName,
                 request.physicalTableMode(), clickHouseOrderByColumns, request.description()
         );
@@ -527,6 +554,7 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型编码已存在");
         }
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
+        validateWarehouseLayerAssignment(request.warehouseLayerId(), null);
         validatePhysicalLocationAvailable(
                 request.storageDataSourceId(), preparation.namespace().catalogName(), preparation.namespace().schemaName(),
                 preparation.physicalTableName(), null
@@ -555,7 +583,7 @@ public class DataModelService {
             }
         }
         preparation.model().update(
-                request.name(), request.directoryId(), request.storageDataSourceId(),
+                request.name(), request.directoryId(), request.warehouseLayerId(), request.storageDataSourceId(),
                 preparation.namespace().catalogName(), preparation.namespace().schemaName(),
                 preparation.physicalTableName(), request.physicalTableMode(), preparation.clickHouseOrderByColumns(),
                 request.description()
@@ -571,6 +599,7 @@ public class DataModelService {
     private UpdatePreparation prepareUpdate(UUID id, UpdateDataModelRequest request) {
         DataModel model = requireModel(id);
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
+        validateWarehouseLayerAssignment(request.warehouseLayerId(), model.getWarehouseLayerId());
 
         PhysicalTableMode physicalTableMode = physicalTableMode(request.physicalTableMode());
         boolean storageChanged = !Objects.equals(model.getStorageDataSourceId(), request.storageDataSourceId());
@@ -628,6 +657,7 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型定义已发生变化，请重新提交");
         }
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
+        validateWarehouseLayerAssignment(request.warehouseLayerId(), model.getWarehouseLayerId());
         if (preparation.physicalDefinitionChanged()) {
             requireNoActivePhysicalChange(id);
         }
@@ -638,7 +668,7 @@ public class DataModelService {
             );
         }
         model.update(
-                request.name(), request.directoryId(), request.storageDataSourceId(),
+                request.name(), request.directoryId(), request.warehouseLayerId(), request.storageDataSourceId(),
                 preparation.namespace().catalogName(), preparation.namespace().schemaName(),
                 preparation.physicalTableName(), request.physicalTableMode(), preparation.clickHouseOrderByColumns(),
                 request.description()
@@ -684,6 +714,10 @@ public class DataModelService {
                 normalizedFields.stream().map(field -> field.input().fieldType()).toList()
         );
         List<DataModelField> currentFields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(id);
+        validateStandardDictionaryAssignments(
+                normalizedFields,
+                currentFields.stream().collect(Collectors.toMap(DataModelField::getId, Function.identity()))
+        );
         return new UpdateFieldsPreparation(
                 model, model.getUpdatedAt(), storage, normalizedFields, currentFields
         );
@@ -700,6 +734,7 @@ public class DataModelService {
         List<DataModelField> currentFields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(id);
         Map<UUID, DataModelField> existingFields = currentFields.stream()
                 .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
+        validateStandardDictionaryAssignments(normalizedFields, existingFields);
         Set<UUID> retainedIds = new HashSet<>();
         List<DataModelField> fieldsToSave = new ArrayList<>();
 
@@ -728,6 +763,7 @@ public class DataModelService {
                         input.sortOrder(), input.description()
                 );
             }
+            field.assignStandardDictionary(input.standardDictionaryId());
             fieldsToSave.add(field);
         }
 
@@ -812,6 +848,7 @@ public class DataModelService {
         Map<UUID, DataModelField> existingFields = currentFields.stream()
                 .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
         validateTargetFieldIds(targetFields, existingFields);
+        validateStandardDictionaryAssignments(targetFields, existingFields);
         return new ChangePlanPreparation(
                 model, model.getUpdatedAt(), model.getSchemaVersion(), storage, currentFields, targetFields
         );
@@ -1002,9 +1039,53 @@ public class DataModelService {
         String storageName = dataSourceRepository.findById(model.getStorageDataSourceId())
                 .map(DataSource::getName)
                 .orElse("已删除的数据存储");
-        List<DataModelFieldResponse> fields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(model.getId())
-                .stream().map(DataModelFieldResponse::from).toList();
-        return new DataModelDetailResponse(DataModelResponse.from(model, storageName), fields);
+        ModelWarehouseLayerSummaryResponse warehouseLayer = model.getWarehouseLayerId() == null
+                ? null
+                : warehouseLayerRepository.findById(model.getWarehouseLayerId())
+                        .map(ModelWarehouseLayerSummaryResponse::from)
+                        .orElse(null);
+        List<DataModelField> modelFields =
+                fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(model.getId());
+        Map<UUID, StandardDictionarySummaryResponse> dictionaries = standardDictionaryValueSupport.summaries(
+                modelFields.stream()
+                        .map(DataModelField::getStandardDictionaryId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList()
+        );
+        List<DataModelFieldResponse> fields = modelFields.stream()
+                .map(field -> DataModelFieldResponse.from(
+                        field,
+                        field.getStandardDictionaryId() == null
+                                ? null
+                                : dictionaries.get(field.getStandardDictionaryId())
+                ))
+                .toList();
+        return new DataModelDetailResponse(DataModelResponse.from(model, storageName, warehouseLayer), fields);
+    }
+
+    private void validateWarehouseLayerAssignment(UUID requestedLayerId, UUID currentLayerId) {
+        if (requestedLayerId == null || Objects.equals(requestedLayerId, currentLayerId)) {
+            return;
+        }
+        ModelWarehouseLayer layer = warehouseLayerRepository.findById(requestedLayerId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "数仓分层不存在"));
+        if (!layer.isEnabled()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数仓分层已停用");
+        }
+    }
+
+    private Map<UUID, ModelWarehouseLayer> warehouseLayers(List<DataModel> models) {
+        List<UUID> layerIds = models.stream()
+                .map(DataModel::getWarehouseLayerId)
+                .filter(Objects::nonNull)
+                .distinct()
+                .toList();
+        if (layerIds.isEmpty()) {
+            return Map.of();
+        }
+        return warehouseLayerRepository.findAllById(layerIds).stream()
+                .collect(Collectors.toMap(ModelWarehouseLayer::getId, Function.identity()));
     }
 
     private void requireDirectFieldUpdateAllowed(
@@ -1432,6 +1513,7 @@ public class DataModelService {
                         target.geometry(), target.nullable(), target.primaryKey(), target.sortOrder(), target.description()
                 );
             }
+            field.assignStandardDictionary(target.standardDictionaryId());
             fieldsToSave.add(field);
         }
         List<DataModelField> removedFields = existingFields.values().stream()
@@ -1982,10 +2064,20 @@ public class DataModelService {
             }
             return;
         }
-        Set<String> codes = new HashSet<>(fieldCodes);
+        Map<String, PlatformDataType> fieldTypesByCode = new HashMap<>();
+        for (int index = 0; index < fieldCodes.size(); index++) {
+            fieldTypesByCode.put(fieldCodes.get(index), fieldTypes.get(index));
+        }
         for (String orderByColumn : model.getClickHouseOrderByColumns()) {
-            if (!codes.contains(orderByColumn)) {
+            PlatformDataType fieldType = fieldTypesByCode.get(orderByColumn);
+            if (fieldType == null) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ClickHouse 排序键字段不存在：" + orderByColumn);
+            }
+            if (fieldType == PlatformDataType.GEOMETRY) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "ClickHouse Geometry 字段不能作为排序键：" + orderByColumn
+                );
             }
         }
         if (fieldTypes.contains(PlatformDataType.BINARY)) {
@@ -2104,6 +2196,23 @@ public class DataModelService {
             normalized.add(new NormalizedField(input, code, length, precision, scale, geometry));
         }
         return normalized;
+    }
+
+    private void validateStandardDictionaryAssignments(
+            List<NormalizedField> fields,
+            Map<UUID, DataModelField> currentFields
+    ) {
+        for (NormalizedField field : fields) {
+            DataModelField current = field.input().id() == null ? null : currentFields.get(field.input().id());
+            standardDictionaryValueSupport.validateAssignment(
+                    field.input().standardDictionaryId(),
+                    current == null ? null : current.getStandardDictionaryId(),
+                    field.input().fieldType(),
+                    field.length(),
+                    field.precision(),
+                    field.scale()
+            );
+        }
     }
 
     private static String normalizeCode(String value) {

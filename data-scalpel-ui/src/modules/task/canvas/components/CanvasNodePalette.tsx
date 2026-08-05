@@ -1,13 +1,10 @@
 import {
-  BranchesOutlined,
   CloseOutlined,
-  DatabaseOutlined,
   HolderOutlined,
   PlusOutlined,
-  SaveOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
-import { Button, Empty, Input, Tooltip, Typography } from 'antd';
+import { Button, Empty, Input, Tag, Tooltip, Typography } from 'antd';
 import {
   forwardRef,
   useEffect,
@@ -18,11 +15,16 @@ import {
   type ReactNode,
 } from 'react';
 import type { CanvasNodeTemplate } from '../canvasRegistry';
+import { CanvasCategoryIcon, CanvasNodeIcon } from './CanvasNodeIcons';
 import {
   CanvasNodeCategory,
   CanvasNodeType,
   type CanvasExecutionMode,
 } from '../canvasTypes';
+import {
+  canvasNodeGroups,
+  type CanvasNodeGroup,
+} from '../nodes/nodeGroups';
 
 interface CategoryPresentation {
   label: string;
@@ -36,9 +38,18 @@ const categoryOrder: readonly CanvasNodeCategory[] = [
 ];
 
 const categoryPresentation: Record<CanvasNodeCategory, CategoryPresentation> = {
-  [CanvasNodeCategory.Input]: { label: '输入', icon: <DatabaseOutlined /> },
-  [CanvasNodeCategory.Processor]: { label: '处理器', icon: <BranchesOutlined /> },
-  [CanvasNodeCategory.Output]: { label: '输出', icon: <SaveOutlined /> },
+  [CanvasNodeCategory.Input]: {
+    label: '输入',
+    icon: <CanvasCategoryIcon category={CanvasNodeCategory.Input} />,
+  },
+  [CanvasNodeCategory.Processor]: {
+    label: '处理器',
+    icon: <CanvasCategoryIcon category={CanvasNodeCategory.Processor} />,
+  },
+  [CanvasNodeCategory.Output]: {
+    label: '输出',
+    icon: <CanvasCategoryIcon category={CanvasNodeCategory.Output} />,
+  },
 };
 
 const paletteNodeLabel = (
@@ -86,6 +97,7 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
   onBlockedDrag,
 }, forwardedRef) => {
   const [searchText, setSearchText] = useState('');
+  const [activeGroup, setActiveGroup] = useState<CanvasNodeGroup | 'ALL'>('ALL');
   const searchInputRef = useRef<React.ComponentRef<typeof Input>>(null);
   const categoryButtonRefs = useRef<Partial<Record<CanvasNodeCategory, HTMLElement>>>({});
   const previousCategoryRef = useRef<CanvasNodeCategory | null>(null);
@@ -102,19 +114,43 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
     [availableTemplates],
   );
   const normalizedQuery = searchText.trim().toLocaleLowerCase();
-  const visibleTemplates = useMemo(() => {
+  const activeGroups = useMemo(() => {
     if (!activeCategory) return [];
-    return availableTemplates
-      .filter((template) => template.category === activeCategory)
-      .filter((template) => matchesSearch(
-        template,
-        paletteNodeLabel(template, executionMode),
-        normalizedQuery,
-      ));
-  }, [activeCategory, availableTemplates, executionMode, normalizedQuery]);
+    return canvasNodeGroups.filter(
+      (group) => group.category === activeCategory
+        && availableTemplates.some((template) => template.group === group.id),
+    );
+  }, [activeCategory, availableTemplates]);
+  const visibleGroups = useMemo(() => {
+    if (!activeCategory) return [];
+    return activeGroups.flatMap((group) => {
+      if (!normalizedQuery && activeGroup !== 'ALL' && activeGroup !== group.id) return [];
+      const templatesInGroup = availableTemplates
+        .filter((template) => template.category === activeCategory && template.group === group.id)
+        .filter((template) => matchesSearch(
+          template,
+          paletteNodeLabel(template, executionMode),
+          normalizedQuery,
+        ))
+        .sort((left, right) => left.order - right.order || left.type.localeCompare(right.type));
+      return templatesInGroup.length > 0 ? [{ group, templates: templatesInGroup }] : [];
+    });
+  }, [
+    activeCategory,
+    activeGroup,
+    activeGroups,
+    availableTemplates,
+    executionMode,
+    normalizedQuery,
+  ]);
+  const visibleTemplateCount = visibleGroups.reduce(
+    (count, group) => count + group.templates.length,
+    0,
+  );
 
   useEffect(() => {
     setSearchText('');
+    setActiveGroup('ALL');
     if (activeCategory) {
       previousCategoryRef.current = activeCategory;
       requestAnimationFrame(() => searchInputRef.current?.focus());
@@ -206,58 +242,97 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
               onChange={(event) => setSearchText(event.target.value)}
             />
           </div>
+          <div className="canvas-node-palette-groups" role="tablist" aria-label="节点分组">
+            <Button
+              type="text"
+              size="small"
+              className={activeGroup === 'ALL' ? 'is-active' : ''}
+              aria-pressed={activeGroup === 'ALL'}
+              onClick={() => setActiveGroup('ALL')}
+            >
+              全部
+            </Button>
+            {activeGroups.map((group) => (
+              <Button
+                key={group.id}
+                type="text"
+                size="small"
+                className={activeGroup === group.id ? 'is-active' : ''}
+                aria-pressed={activeGroup === group.id}
+                onClick={() => setActiveGroup(group.id)}
+              >
+                {group.label}
+              </Button>
+            ))}
+          </div>
           <div className="canvas-node-palette-list">
-            {visibleTemplates.length === 0 ? (
+            {visibleTemplateCount === 0 ? (
               <Empty
                 image={Empty.PRESENTED_IMAGE_SIMPLE}
                 description="没有匹配的节点"
                 className="canvas-node-palette-empty"
               />
-            ) : visibleTemplates.map((template) => {
-              const label = paletteNodeLabel(template, executionMode);
-              return (
-                <div key={template.type} className="canvas-node-palette-item">
-                  <div
-                    className="canvas-node-palette-drag-area"
-                    role="button"
-                    tabIndex={0}
-                    aria-label={`拖拽${label}到画布`}
-                    title="按住拖动到画布"
-                    onMouseDown={(event) => {
-                      if (event.button !== 0) return;
-                      if (inspectorDirty) {
-                        event.preventDefault();
-                        onBlockedDrag();
-                        return;
-                      }
-                      onStartNodeDrag(event, template);
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key !== 'Enter' && event.key !== ' ') return;
-                      event.preventDefault();
-                      onAddNode(template);
-                    }}
-                  >
-                    <span className="canvas-node-palette-drag-handle"><HolderOutlined /></span>
-                    <span className="canvas-node-palette-item-icon">{activePresentation.icon}</span>
-                    <span className="canvas-node-palette-item-content">
-                      <span className="canvas-node-palette-item-title">{label}</span>
-                      <span className="canvas-node-palette-item-description">{template.description}</span>
-                    </span>
-                  </div>
-                  <Tooltip title="添加到画布中心">
-                    <Button
-                      type="text"
-                      className="canvas-node-palette-add"
-                      icon={<PlusOutlined />}
-                      aria-label={`添加${label}到画布中心`}
-                      onMouseDown={(event) => event.stopPropagation()}
-                      onClick={() => onAddNode(template)}
-                    />
-                  </Tooltip>
+            ) : visibleGroups.map(({ group, templates: groupTemplates }) => (
+              <section key={group.id} className="canvas-node-palette-group-section">
+                <div className="canvas-node-palette-group-title">
+                  <span>{group.label}</span>
+                  <span>{groupTemplates.length}</span>
                 </div>
-              );
-            })}
+                {groupTemplates.map((template) => {
+                  const label = paletteNodeLabel(template, executionMode);
+                  const modeLabel = template.supportedModes.length === 2
+                    ? '批/流'
+                    : template.supportedModes[0] === 'BATCH' ? '批' : '流';
+                  return (
+                    <div key={template.type} className="canvas-node-palette-item">
+                      <div
+                        className="canvas-node-palette-drag-area"
+                        role="button"
+                        tabIndex={0}
+                        aria-label={`拖拽${label}到画布`}
+                        title="按住拖动到画布"
+                        onMouseDown={(event) => {
+                          if (event.button !== 0) return;
+                          if (inspectorDirty) {
+                            event.preventDefault();
+                            onBlockedDrag();
+                            return;
+                          }
+                          onStartNodeDrag(event, template);
+                        }}
+                        onKeyDown={(event) => {
+                          if (event.key !== 'Enter' && event.key !== ' ') return;
+                          event.preventDefault();
+                          onAddNode(template);
+                        }}
+                      >
+                        <span className="canvas-node-palette-drag-handle"><HolderOutlined /></span>
+                        <span className="canvas-node-palette-item-icon">
+                          <CanvasNodeIcon iconKey={template.iconKey} />
+                        </span>
+                        <span className="canvas-node-palette-item-content">
+                          <span className="canvas-node-palette-item-title">
+                            {label}
+                            <Tag bordered={false} className="canvas-node-palette-mode">{modeLabel}</Tag>
+                          </span>
+                          <span className="canvas-node-palette-item-description">{template.description}</span>
+                        </span>
+                      </div>
+                      <Tooltip title="添加到画布中心">
+                        <Button
+                          type="text"
+                          className="canvas-node-palette-add"
+                          icon={<PlusOutlined />}
+                          aria-label={`添加${label}到画布中心`}
+                          onMouseDown={(event) => event.stopPropagation()}
+                          onClick={() => onAddNode(template)}
+                        />
+                      </Tooltip>
+                    </div>
+                  );
+                })}
+              </section>
+            ))}
           </div>
         </section>
       )}

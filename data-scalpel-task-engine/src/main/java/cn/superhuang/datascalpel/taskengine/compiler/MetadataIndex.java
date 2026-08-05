@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.contract.task.MetadataFileDatasetTable;
 import cn.superhuang.data.scalpel.contract.task.MetadataModel;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
 import cn.superhuang.data.scalpel.contract.task.MetadataTable;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKey;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableOrigin;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
@@ -49,6 +50,10 @@ public final class MetadataIndex {
             }
             if (dataSource.connectionKind() == null) {
                 throw invalid(path + ".connectionKind is required");
+            }
+            if (dataSource.connectionKind() != ConnectionKind.JDBC
+                    && dataSource.jdbcDatabaseType() != null) {
+                throw invalid(path + ".jdbcDatabaseType is only supported for JDBC data sources");
             }
             if (dataSource.purposes() == null) {
                 throw invalid(path + ".purposes is required");
@@ -233,6 +238,45 @@ public final class MetadataIndex {
             validateColumn(column, columnPath);
             if (!columnNames.add(column.name())) {
                 throw invalid(columnPath + ".name duplicates column " + column.name());
+            }
+        }
+        validateUniqueKeys(table, path, columnNames);
+    }
+
+    private static void validateUniqueKeys(
+            MetadataTable table,
+            String path,
+            Set<String> columnNames
+    ) {
+        if (table.uniqueKeys() == null) {
+            throw invalid(path + ".uniqueKeys is required");
+        }
+        Set<java.util.List<String>> uniqueKeyColumns = new HashSet<>();
+        for (int keyIndex = 0; keyIndex < table.uniqueKeys().size(); keyIndex++) {
+            MetadataUniqueKey key = table.uniqueKeys().get(keyIndex);
+            String keyPath = path + ".uniqueKeys[" + keyIndex + "]";
+            if (key == null || key.type() == null) {
+                throw invalid(keyPath + ".type is required");
+            }
+            if (key.name() != null && key.name().isBlank()) {
+                throw invalid(keyPath + ".name must be null or nonblank");
+            }
+            if (key.columns() == null || key.columns().isEmpty()) {
+                throw invalid(keyPath + ".columns must not be empty");
+            }
+            Set<String> keyColumnNames = new HashSet<>();
+            for (int columnIndex = 0; columnIndex < key.columns().size(); columnIndex++) {
+                String columnName = key.columns().get(columnIndex);
+                if (blank(columnName) || !columnNames.contains(columnName)) {
+                    throw invalid(keyPath + ".columns[" + columnIndex + "] references missing column "
+                            + columnName);
+                }
+                if (!keyColumnNames.add(columnName)) {
+                    throw invalid(keyPath + ".columns duplicates column " + columnName);
+                }
+            }
+            if (!uniqueKeyColumns.add(key.columns())) {
+                throw invalid(keyPath + ".columns duplicates another unique key");
             }
         }
     }

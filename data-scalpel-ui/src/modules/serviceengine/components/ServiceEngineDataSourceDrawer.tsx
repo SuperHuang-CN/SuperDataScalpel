@@ -127,7 +127,6 @@ export const ServiceEngineDataSourceDrawer = ({
     { title: '数据源', key: 'dataSource', width: 230, render: (_: unknown, item) => `${item.dataSourceName}（${item.dataSourceCode}）` },
     { title: '数据库', dataIndex: 'databaseType', width: 116, render: (value: string | null) => value ?? '—' },
     { title: '状态', dataIndex: 'status', width: 104, render: (value: ServiceEngineDataSourceRegistrationStatus) => <Tag color={statusColors[value]}>{statusLabels[value]}</Tag> },
-    { title: '版本', dataIndex: 'revision', width: 72, align: 'right' },
     { title: '最近同步', dataIndex: 'synchronizedAt', width: 180, render: formatDateTime },
     { title: '错误信息', dataIndex: 'lastError', width: 230, ellipsis: true, render: (value: string | null) => value ?? '—' },
     {
@@ -154,7 +153,7 @@ export const ServiceEngineDataSourceDrawer = ({
       >
         {!canViewDataSources && <Alert type="warning" showIcon message="没有数据源查看权限，不能新增 Engine 数据源注册。" />}
         {!engine?.enabled && <Alert className="file-dataset-form-alert" type="warning" showIcon message="当前 Engine 已停用，不能新增或同步数据源。" />}
-        <Form<RegistrationFormValues> form={form} layout="inline" onFinish={(values) => void register(values)} className="management-filter-form">
+        <Form<RegistrationFormValues> autoComplete="off" form={form} layout="inline" onFinish={(values) => void register(values)} className="management-filter-form">
           <Form.Item name="dataSourceId" label="注册数据源" rules={[{ required: true, message: '请选择 JDBC 数据存储' }]}>
             <Select
               showSearch

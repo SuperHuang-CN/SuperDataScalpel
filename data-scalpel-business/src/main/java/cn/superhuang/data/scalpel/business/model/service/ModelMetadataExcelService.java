@@ -6,13 +6,20 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.domain.ModelWarehouseLayer;
 import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
+import cn.superhuang.data.scalpel.business.model.repository.ModelWarehouseLayerRepository;
 import cn.superhuang.data.scalpel.business.model.web.request.ExportModelMetadataRequest;
 import cn.superhuang.data.scalpel.business.model.web.response.ModelMetadataImportFieldResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ModelMetadataImportModelResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ModelMetadataImportPreviewResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.ModelWarehouseLayerSummaryResponse;
+import cn.superhuang.data.scalpel.business.standard.domain.StandardDictionary;
+import cn.superhuang.data.scalpel.business.standard.repository.StandardDictionaryRepository;
+import cn.superhuang.data.scalpel.business.standard.service.StandardDictionaryValueSupport;
+import cn.superhuang.data.scalpel.business.standard.web.response.StandardDictionarySummaryResponse;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
@@ -75,49 +82,70 @@ public class ModelMetadataExcelService {
 
     private static final String CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String FILE_MARKER = "DATASCALPEL_MODEL_METADATA";
-    private static final int FORMAT_VERSION = 2;
+    private static final int FORMAT_VERSION = 4;
+    private static final int V3_FORMAT_VERSION = 3;
+    private static final int V2_FORMAT_VERSION = 2;
     private static final int LEGACY_FORMAT_VERSION = 1;
     private static final long MAX_FILE_SIZE = 10L * 1024 * 1024;
     private static final int MAX_MODELS = 200;
     private static final int MAX_FIELDS_PER_MODEL = 500;
     private static final int MAX_TOTAL_FIELDS = 20_000;
     private static final Pattern MODEL_CODE = Pattern.compile("[a-z][a-z0-9_]{0,63}");
+    private static final Pattern WAREHOUSE_LAYER_CODE = Pattern.compile("[A-Z][A-Z0-9_]{0,31}");
     private static final Pattern TABLE_NAME = Pattern.compile("[a-z][a-z0-9_]{0,127}");
     private static final Pattern FIELD_CODE = Pattern.compile("[a-z][a-z0-9_]{0,63}");
     private static final DateTimeFormatter FILE_TIMESTAMP = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss");
     private static final DataFormatter DATA_FORMATTER = new DataFormatter(Locale.ROOT);
 
-    private static final List<String> MODEL_HEADERS = List.of(
+    private static final List<String> LEGACY_MODEL_HEADERS = List.of(
             "模型编码*", "模型名称*", "目标物理表名*", "模型说明", "ClickHouse排序键"
+    );
+    private static final List<String> MODEL_HEADERS = List.of(
+            "模型编码*", "模型名称*", "数仓分层编码", "数仓分层名称",
+            "目标物理表名*", "模型说明", "ClickHouse排序键"
     );
     private static final List<String> V1_FIELD_HEADERS = List.of(
             "模型编码*", "字段编码*", "字段名称*", "平台字段类型*", "长度", "精度", "小数位",
             "是否可空*", "是否主键*", "排序值*", "字段说明"
     );
-    private static final List<String> FIELD_HEADERS = List.of(
+    private static final List<String> V2_V3_FIELD_HEADERS = List.of(
             "模型编码*", "字段编码*", "字段名称*", "平台字段类型*", "长度", "精度", "小数位",
             "几何类型", "CRS Authority", "CRS Code", "坐标维度",
             "是否可空*", "是否主键*", "排序值*", "字段说明"
     );
+    private static final List<String> FIELD_HEADERS = List.of(
+            "模型编码*", "字段编码*", "字段名称*", "平台字段类型*", "长度", "精度", "小数位",
+            "几何类型", "CRS Authority", "CRS Code", "坐标维度",
+            "是否可空*", "是否主键*", "排序值*", "字段说明", "码表编码"
+    );
 
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
+    private final ModelWarehouseLayerRepository warehouseLayerRepository;
     private final DataSourceRepository dataSourceRepository;
     private final DialectRegistry dialectRegistry;
     private final ModelPhysicalTablePort physicalTablePort;
+    private final StandardDictionaryRepository standardDictionaryRepository;
+    private final StandardDictionaryValueSupport standardDictionaryValueSupport;
 
     public ModelMetadataExcelService(
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
+            ModelWarehouseLayerRepository warehouseLayerRepository,
             DataSourceRepository dataSourceRepository,
             DialectRegistry dialectRegistry,
-            ModelPhysicalTablePort physicalTablePort
+            ModelPhysicalTablePort physicalTablePort,
+            StandardDictionaryRepository standardDictionaryRepository,
+            StandardDictionaryValueSupport standardDictionaryValueSupport
     ) {
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
+        this.warehouseLayerRepository = warehouseLayerRepository;
         this.dataSourceRepository = dataSourceRepository;
         this.dialectRegistry = dialectRegistry;
         this.physicalTablePort = physicalTablePort;
+        this.standardDictionaryRepository = standardDictionaryRepository;
+        this.standardDictionaryValueSupport = standardDictionaryValueSupport;
     }
 
     public String contentType() {
@@ -156,8 +184,24 @@ public class ModelMetadataExcelService {
                 .collect(Collectors.groupingBy(
                         DataModelField::getModelId, LinkedHashMap::new, Collectors.toList()
                 ));
+        Map<UUID, ModelWarehouseLayer> layersById = warehouseLayerRepository.findAllById(
+                models.stream().map(DataModel::getWarehouseLayerId).filter(Objects::nonNull).distinct().toList()
+        ).stream().collect(Collectors.toMap(ModelWarehouseLayer::getId, Function.identity()));
+        Map<UUID, StandardDictionary> dictionariesById = standardDictionaryRepository.findAllById(
+                fieldsByModel.values().stream()
+                        .flatMap(Collection::stream)
+                        .map(DataModelField::getStandardDictionaryId)
+                        .filter(Objects::nonNull)
+                        .distinct()
+                        .toList()
+        ).stream().collect(Collectors.toMap(StandardDictionary::getId, Function.identity()));
         List<ExportModel> exports = models.stream()
-                .map(model -> new ExportModel(model, fieldsByModel.getOrDefault(model.getId(), List.of())))
+                .map(model -> new ExportModel(
+                        model,
+                        layersById.get(model.getWarehouseLayerId()),
+                        fieldsByModel.getOrDefault(model.getId(), List.of()),
+                        dictionariesById
+                ))
                 .toList();
         String fileName = "DataScalpel-模型元数据-" + FILE_TIMESTAMP.format(LocalDateTime.now()) + ".xlsx";
         return new ModelMetadataExcelFile(fileName, writeWorkbook(exports));
@@ -181,10 +225,16 @@ public class ModelMetadataExcelService {
         try (XSSFWorkbook workbook = new XSSFWorkbook(); ByteArrayOutputStream output = new ByteArrayOutputStream()) {
             WorkbookStyles styles = styles(workbook);
             createInstructionsSheet(workbook, styles);
-            Sheet modelSheet = createDataSheet(workbook, "模型", MODEL_HEADERS, styles, new int[]{20, 24, 24, 42, 28});
+            Sheet modelSheet = createDataSheet(
+                    workbook,
+                    "模型",
+                    MODEL_HEADERS,
+                    styles,
+                    new int[]{20, 24, 18, 24, 24, 42, 28}
+            );
             Sheet fieldSheet = createDataSheet(
                     workbook, "字段", FIELD_HEADERS, styles,
-                    new int[]{20, 20, 24, 18, 12, 12, 12, 22, 18, 14, 14, 14, 14, 12, 42}
+                    new int[]{20, 20, 24, 18, 12, 12, 12, 22, 18, 14, 14, 14, 14, 12, 42, 22}
             );
             addListValidation(fieldSheet, 3, enumNames(PlatformDataType.values()));
             addListValidation(fieldSheet, 7, enumNames(GeometryKind.values()));
@@ -197,12 +247,15 @@ public class ModelMetadataExcelService {
             int fieldRowIndex = 1;
             for (ExportModel export : models) {
                 DataModel model = export.model();
+                ModelWarehouseLayer layer = export.warehouseLayer();
                 Row row = modelSheet.createRow(modelRowIndex++);
                 writeText(row, 0, model.getCode(), styles.text());
                 writeText(row, 1, model.getName(), styles.text());
-                writeText(row, 2, model.getPhysicalTableName(), styles.text());
-                writeText(row, 3, model.getDescription(), styles.text());
-                writeText(row, 4, String.join(",", model.getClickHouseOrderByColumns()), styles.text());
+                writeText(row, 2, layer == null ? null : layer.getCode(), styles.text());
+                writeText(row, 3, layer == null ? null : layer.getName(), styles.text());
+                writeText(row, 4, model.getPhysicalTableName(), styles.text());
+                writeText(row, 5, model.getDescription(), styles.text());
+                writeText(row, 6, String.join(",", model.getClickHouseOrderByColumns()), styles.text());
                 for (DataModelField field : export.fields()) {
                     Row fieldRow = fieldSheet.createRow(fieldRowIndex++);
                     writeText(fieldRow, 0, model.getCode(), styles.text());
@@ -221,6 +274,9 @@ public class ModelMetadataExcelService {
                     writeText(fieldRow, 12, field.isPrimaryKey() ? "是" : "否", styles.text());
                     writeInteger(fieldRow, 13, field.getSortOrder(), styles.integer());
                     writeText(fieldRow, 14, field.getDescription(), styles.text());
+                    StandardDictionary dictionary = export.dictionariesById()
+                            .get(field.getStandardDictionaryId());
+                    writeText(fieldRow, 15, dictionary == null ? null : dictionary.getCode(), styles.text());
                 }
             }
             workbook.write(output);
@@ -235,9 +291,11 @@ public class ModelMetadataExcelService {
         String[][] rows = {
                 {"文件标识", FILE_MARKER},
                 {"格式版本", String.valueOf(FORMAT_VERSION)},
-                {"用途", "仅导入导出模型与字段元数据，不包含数据源连接、目录、状态、UUID 或物理表数据。"},
+                {"用途", "仅导入导出模型、数仓分层编码和字段元数据，不包含数据源连接、目录、状态、UUID 或物理表数据。"},
                 {"导入结果", "所有模型固定创建为 MANAGED + DRAFT，不会自动创建物理表。"},
                 {"填写规则", "带 * 的列必填；编码只允许小写字母、数字和下划线，且必须以小写字母开头。"},
+                {"数仓分层", "按数仓分层编码匹配当前系统中的启用分层；名称仅用于导出展示，导入时不参与匹配。"},
+                {"码表", "字段可按码表编码绑定当前系统中的启用码表；码表必须与字段类型兼容，旧版文件缺少该列时按未绑定处理。"},
                 {"字段类型", String.join("、", enumNames(PlatformDataType.values()))},
                 {"STRING", "长度可选；填写时必须为正整数。"},
                 {"DECIMAL", "精度必填且为 1～38，小数位必填且为 0～精度。"},
@@ -290,10 +348,18 @@ public class ModelMetadataExcelService {
             int formatVersion = validateWorkbookMarker(workbook);
             Sheet modelSheet = requireSheet(workbook, "模型");
             Sheet fieldSheet = requireSheet(workbook, "字段");
-            requireHeaders(modelSheet, MODEL_HEADERS);
-            requireHeaders(fieldSheet, formatVersion == LEGACY_FORMAT_VERSION ? V1_FIELD_HEADERS : FIELD_HEADERS);
+            requireHeaders(
+                    modelSheet,
+                    formatVersion >= V3_FORMAT_VERSION ? MODEL_HEADERS : LEGACY_MODEL_HEADERS
+            );
+            requireHeaders(
+                    fieldSheet,
+                    formatVersion == FORMAT_VERSION
+                            ? FIELD_HEADERS
+                            : formatVersion == LEGACY_FORMAT_VERSION ? V1_FIELD_HEADERS : V2_V3_FIELD_HEADERS
+            );
             ParsedWorkbook parsed = new ParsedWorkbook(formatVersion);
-            readModels(modelSheet, parsed);
+            readModels(modelSheet, parsed, formatVersion);
             readFields(fieldSheet, parsed, formatVersion);
             associateFields(parsed);
             return parsed;
@@ -330,7 +396,10 @@ public class ModelMetadataExcelService {
         } catch (NumberFormatException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "暂不支持该 Excel 格式版本：" + version);
         }
-        if (parsedVersion != LEGACY_FORMAT_VERSION && parsedVersion != FORMAT_VERSION) {
+        if (parsedVersion != LEGACY_FORMAT_VERSION
+                && parsedVersion != V2_FORMAT_VERSION
+                && parsedVersion != V3_FORMAT_VERSION
+                && parsedVersion != FORMAT_VERSION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "暂不支持该 Excel 格式版本：" + version);
         }
         return parsedVersion;
@@ -357,10 +426,11 @@ public class ModelMetadataExcelService {
         }
     }
 
-    private static void readModels(Sheet sheet, ParsedWorkbook parsed) {
+    private static void readModels(Sheet sheet, ParsedWorkbook parsed, int formatVersion) {
+        int columnCount = formatVersion >= V3_FORMAT_VERSION ? MODEL_HEADERS.size() : LEGACY_MODEL_HEADERS.size();
         for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
-            if (blankRow(row, MODEL_HEADERS.size())) {
+            if (blankRow(row, columnCount)) {
                 continue;
             }
             if (parsed.models.size() >= MAX_MODELS) {
@@ -372,10 +442,33 @@ public class ModelMetadataExcelService {
             model.sourceCode = normalizedText(cellText(row, 0, model.issues, "模型", rowNumber));
             model.code = identifier(model.sourceCode, MODEL_CODE, "模型编码", model.issues);
             model.name = requiredText(cellText(row, 1, model.issues, "模型", rowNumber), "模型名称", 100, model.issues);
-            String physicalName = normalizedText(cellText(row, 2, model.issues, "模型", rowNumber));
+            int physicalTableColumn = 2;
+            int descriptionColumn = 3;
+            int orderByColumn = 4;
+            if (formatVersion >= V3_FORMAT_VERSION) {
+                model.warehouseLayerCode = normalizedWarehouseLayerCode(
+                        cellText(row, 2, model.issues, "模型", rowNumber),
+                        model.issues
+                );
+                cellText(row, 3, model.issues, "模型", rowNumber);
+                physicalTableColumn = 4;
+                descriptionColumn = 5;
+                orderByColumn = 6;
+            }
+            String physicalName = normalizedText(cellText(
+                    row, physicalTableColumn, model.issues, "模型", rowNumber
+            ));
             model.physicalTableName = identifier(physicalName, TABLE_NAME, "目标物理表名", model.issues);
-            model.description = optionalText(cellText(row, 3, model.issues, "模型", rowNumber), "模型说明", 1000, model.issues);
-            model.clickHouseOrderByColumns = parseOrderBy(cellText(row, 4, model.issues, "模型", rowNumber), model.issues);
+            model.description = optionalText(
+                    cellText(row, descriptionColumn, model.issues, "模型", rowNumber),
+                    "模型说明",
+                    1000,
+                    model.issues
+            );
+            model.clickHouseOrderByColumns = parseOrderBy(
+                    cellText(row, orderByColumn, model.issues, "模型", rowNumber),
+                    model.issues
+            );
             parsed.models.add(model);
         }
         if (parsed.models.isEmpty()) {
@@ -384,7 +477,9 @@ public class ModelMetadataExcelService {
     }
 
     private static void readFields(Sheet sheet, ParsedWorkbook parsed, int formatVersion) {
-        int columnCount = formatVersion == LEGACY_FORMAT_VERSION ? V1_FIELD_HEADERS.size() : FIELD_HEADERS.size();
+        int columnCount = formatVersion == FORMAT_VERSION
+                ? FIELD_HEADERS.size()
+                : formatVersion == LEGACY_FORMAT_VERSION ? V1_FIELD_HEADERS.size() : V2_V3_FIELD_HEADERS.size();
         for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (blankRow(row, columnCount)) {
@@ -409,7 +504,7 @@ public class ModelMetadataExcelService {
             field.length = integer(cellText(row, 4, field.issues, "字段", rowNumber), "长度", false, field.issues);
             field.precision = integer(cellText(row, 5, field.issues, "字段", rowNumber), "精度", false, field.issues);
             field.scale = integer(cellText(row, 6, field.issues, "字段", rowNumber), "小数位", false, field.issues);
-            if (formatVersion == FORMAT_VERSION) {
+            if (formatVersion >= V2_FORMAT_VERSION) {
                 String kind = cellText(row, 7, field.issues, "字段", rowNumber);
                 String authority = cellText(row, 8, field.issues, "字段", rowNumber);
                 String code = cellText(row, 9, field.issues, "字段", rowNumber);
@@ -421,6 +516,12 @@ public class ModelMetadataExcelService {
                 field.primaryKey = booleanValue(cellText(row, 12, field.issues, "字段", rowNumber), "是否主键", field.issues);
                 field.sortOrder = integer(cellText(row, 13, field.issues, "字段", rowNumber), "排序值", true, field.issues);
                 field.description = optionalText(cellText(row, 14, field.issues, "字段", rowNumber), "字段说明", 500, field.issues);
+                if (formatVersion == FORMAT_VERSION) {
+                    field.standardDictionaryCode = normalizedDictionaryCode(
+                            cellText(row, 15, field.issues, "字段", rowNumber),
+                            field.issues
+                    );
+                }
             } else {
                 field.nullable = booleanValue(cellText(row, 7, field.issues, "字段", rowNumber), "是否可空", field.issues);
                 field.primaryKey = booleanValue(cellText(row, 8, field.issues, "字段", rowNumber), "是否主键", field.issues);
@@ -463,8 +564,14 @@ public class ModelMetadataExcelService {
         Set<String> duplicatePhysicalNames = duplicateValues(
                 parsed.models.stream().map(model -> model.physicalTableName).toList()
         );
+        Map<String, ModelWarehouseLayer> layersByCode = warehouseLayerRepository.findAll().stream()
+                .collect(Collectors.toMap(ModelWarehouseLayer::getCode, Function.identity()));
+        Map<String, StandardDictionary> dictionariesByCode = standardDictionaryRepository.findAll().stream()
+                .collect(Collectors.toMap(StandardDictionary::getCode, Function.identity()));
         for (MutableModel model : parsed.models) {
+            resolveWarehouseLayer(model, layersByCode);
             validateModelFields(model, dialect);
+            resolveStandardDictionaries(model, dictionariesByCode);
             if (!model.code.isEmpty() && modelRepository.existsByCode(model.code)) {
                 model.issues.add("模型编码已存在：" + model.code);
             }
@@ -474,6 +581,56 @@ public class ModelMetadataExcelService {
             validateClickHouseOrderBy(model, target);
             if (!model.physicalTableName.isEmpty()) {
                 validateTargetLocation(model, target, catalog, schema);
+            }
+        }
+    }
+
+    private static void resolveWarehouseLayer(
+            MutableModel model,
+            Map<String, ModelWarehouseLayer> layersByCode
+    ) {
+        if (model.warehouseLayerCode.isEmpty()) {
+            return;
+        }
+        if (!WAREHOUSE_LAYER_CODE.matcher(model.warehouseLayerCode).matches()) {
+            return;
+        }
+        ModelWarehouseLayer layer = layersByCode.get(model.warehouseLayerCode);
+        if (layer == null) {
+            model.issues.add("数仓分层不存在：" + model.warehouseLayerCode);
+            return;
+        }
+        model.warehouseLayer = layer;
+        if (!layer.isEnabled()) {
+            model.issues.add("数仓分层已停用：" + model.warehouseLayerCode);
+        }
+    }
+
+    private void resolveStandardDictionaries(
+            MutableModel model,
+            Map<String, StandardDictionary> dictionariesByCode
+    ) {
+        for (MutableField field : model.fields) {
+            if (field.standardDictionaryCode.isEmpty()) {
+                continue;
+            }
+            StandardDictionary dictionary = dictionariesByCode.get(field.standardDictionaryCode);
+            if (dictionary == null) {
+                field.issues.add("码表不存在：" + field.standardDictionaryCode);
+                continue;
+            }
+            try {
+                standardDictionaryValueSupport.validateAssignment(
+                        dictionary.getId(),
+                        null,
+                        field.fieldType,
+                        field.length,
+                        field.precision,
+                        field.scale
+                );
+                field.standardDictionary = dictionary;
+            } catch (ResponseStatusException exception) {
+                field.issues.add(exception.getReason());
             }
         }
     }
@@ -584,16 +741,21 @@ public class ModelMetadataExcelService {
             model.clickHouseOrderByColumns = List.of();
             return;
         }
-        Set<String> fieldCodes = model.fields.stream()
-                .map(field -> field.code)
-                .filter(code -> !code.isEmpty())
-                .collect(Collectors.toSet());
+        Map<String, PlatformDataType> fieldTypesByCode = model.fields.stream()
+                .filter(field -> !field.code.isEmpty() && field.fieldType != null)
+                .collect(Collectors.toMap(
+                        field -> field.code,
+                        field -> field.fieldType,
+                        (first, ignored) -> first
+                ));
         Set<String> seen = new HashSet<>();
         for (String code : model.clickHouseOrderByColumns) {
             if (!seen.add(code)) {
                 model.issues.add("ClickHouse 排序键字段重复：" + code);
-            } else if (!fieldCodes.contains(code)) {
+            } else if (!fieldTypesByCode.containsKey(code)) {
                 model.issues.add("ClickHouse 排序键引用了不存在的字段：" + code);
+            } else if (fieldTypesByCode.get(code) == PlatformDataType.GEOMETRY) {
+                model.issues.add("ClickHouse Geometry 字段不能作为排序键：" + code);
             }
         }
     }
@@ -913,6 +1075,22 @@ public class ModelMetadataExcelService {
         return value == null || value.isBlank() ? "模型元数据.xlsx" : value.trim();
     }
 
+    private static String normalizedWarehouseLayerCode(String value, List<String> issues) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.isEmpty() && !WAREHOUSE_LAYER_CODE.matcher(normalized).matches()) {
+            issues.add("数仓分层编码只能包含字母、数字和下划线，且必须以字母开头，最多 32 个字符");
+        }
+        return normalized;
+    }
+
+    private static String normalizedDictionaryCode(String value, List<String> issues) {
+        String normalized = value == null ? "" : value.trim().toUpperCase(Locale.ROOT);
+        if (!normalized.isEmpty() && !Pattern.compile("[A-Z][A-Z0-9_]{0,63}").matcher(normalized).matches()) {
+            issues.add("码表编码只能包含字母、数字和下划线，且必须以字母开头，最多 64 个字符");
+        }
+        return normalized;
+    }
+
     private static WorkbookStyles styles(XSSFWorkbook workbook) {
         Font headerFont = workbook.createFont();
         headerFont.setBold(true);
@@ -970,7 +1148,12 @@ public class ModelMetadataExcelService {
     ) {
     }
 
-    private record ExportModel(DataModel model, List<DataModelField> fields) {
+    private record ExportModel(
+            DataModel model,
+            ModelWarehouseLayer warehouseLayer,
+            List<DataModelField> fields,
+            Map<UUID, StandardDictionary> dictionariesById
+    ) {
     }
 
     private static final class ParsedWorkbook {
@@ -990,6 +1173,8 @@ public class ModelMetadataExcelService {
         private String sourceCode = "";
         private String code = "";
         private String name = "";
+        private String warehouseLayerCode = "";
+        private ModelWarehouseLayer warehouseLayer;
         private String physicalTableName = "";
         private List<String> clickHouseOrderByColumns = List.of();
         private String description = "";
@@ -1009,7 +1194,9 @@ public class ModelMetadataExcelService {
             boolean importable = issues.isEmpty() && !fieldResponses.isEmpty()
                     && fieldResponses.stream().allMatch(ModelMetadataImportFieldResponse::importable);
             return new ModelMetadataImportModelResponse(
-                    key, rowNumber, code, name, physicalTableName, clickHouseOrderByColumns, description,
+                    key, rowNumber, code, name, warehouseLayerCode,
+                    ModelWarehouseLayerSummaryResponse.from(warehouseLayer),
+                    physicalTableName, clickHouseOrderByColumns, description,
                     importable, issues, warnings, fieldResponses
             );
         }
@@ -1031,6 +1218,8 @@ public class ModelMetadataExcelService {
         private Boolean primaryKey;
         private Integer sortOrder;
         private String description = "";
+        private String standardDictionaryCode = "";
+        private StandardDictionary standardDictionary;
         private final List<String> issues = new ArrayList<>();
 
         private MutableField(String key, int rowNumber) {
@@ -1041,7 +1230,9 @@ public class ModelMetadataExcelService {
         private ModelMetadataImportFieldResponse toResponse() {
             return new ModelMetadataImportFieldResponse(
                     key, rowNumber, code, name, fieldType, length, precision, scale, geometry, nullable, primaryKey,
-                    sortOrder, description, issues.isEmpty(), issues
+                    sortOrder, description, standardDictionaryCode,
+                    StandardDictionarySummaryResponse.from(standardDictionary),
+                    issues.isEmpty(), issues
             );
         }
     }

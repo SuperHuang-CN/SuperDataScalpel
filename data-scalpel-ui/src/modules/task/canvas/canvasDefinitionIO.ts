@@ -1,12 +1,37 @@
 import {
   CANVAS_LEGACY_SCHEMA_MINOR_VERSION,
+  CANVAS_FILTER_MAX_CONDITION_NODES,
+  CANVAS_FILTER_MAX_DEPTH,
+  CANVAS_FILTER_MAX_VALUES_PER_PREDICATE,
+  CANVAS_EXPRESSION_MAX_CASE_BRANCHES,
+  CANVAS_EXPRESSION_MAX_DEPTH,
+  CANVAS_EXPRESSION_MAX_DERIVATIONS,
+  CANVAS_EXPRESSION_MAX_NODES,
   CANVAS_SCHEMA_MINOR_VERSION,
   CANVAS_SCHEMA_VERSION,
   CanvasNodeType,
   type CanvasDefinition,
   type CanvasEdgeDefinition,
   type CanvasNodeDefinition,
+  type CanvasNodeType as CanvasNodeTypeValue,
   type CanvasColumnMapping,
+  type CanvasFilterCondition,
+  type CanvasLiteral,
+  type CanvasExpression,
+  type ColumnDerivation,
+  type ColumnTypeCast,
+  type CastFailureStrategy,
+  type AggregateFunction,
+  type AggregateItem,
+  type UnionMode,
+  type DeduplicateKeepStrategy,
+  type NullOrdering,
+  type SortDirection,
+  type SortField,
+  type PlatformTypeDefinition,
+  type DeriveBinaryOperator,
+  type DeriveFunction,
+  type FilterOperator,
   type ColumnMappingMode,
   type JdbcWriteMode,
   type JoinCondition,
@@ -17,8 +42,8 @@ import {
   type KafkaValueSchema,
   type FileOutputConflictPolicy,
   type FileOutputFormatOptions,
-  normalizeFileOutputPath,
 } from './canvasTypes';
+import { canvasNodeRegistry } from './nodes/nodeRegistry';
 
 export type CanvasDefinitionParseResult =
   | { success: true; definition: CanvasDefinition }
@@ -35,14 +60,13 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
   typeof value === 'object' && value !== null && !Array.isArray(value)
 );
 
-const stringValue = (value: unknown) => typeof value === 'string' ? value : '';
+export const stringValue = (value: unknown) => typeof value === 'string' ? value : '';
 
-const validateOptionalUuid = (value: string, path: string, errors: string[]) => {
+export const validateOptionalUuid = (value: string, path: string, errors: string[]) => {
   if (value && !uuidPattern.test(value)) errors.push(`${path} 必须是 UUID`);
   return value;
 };
-
-const legacyTableName = (value: unknown) => isRecord(value) ? stringValue(value.tableName) : '';
+export const legacyTableName = (value: unknown) => isRecord(value) ? stringValue(value.tableName) : '';
 
 const parseLayout = (value: unknown, path: string, errors: string[]) => {
   if (!isRecord(value)) {
@@ -66,14 +90,14 @@ const parseLayout = (value: unknown, path: string, errors: string[]) => {
   return { x, y, width, height };
 };
 
-const parseJoinType = (value: unknown, path: string, errors: string[]): JoinType | null => {
+export const parseJoinType = (value: unknown, path: string, errors: string[]): JoinType | null => {
   if (value === null || value === undefined || value === '') return null;
   if (value === 'INNER' || value === 'LEFT' || value === 'RIGHT' || value === 'FULL') return value;
   errors.push(`${path} 不是受支持的 Join 类型`);
   return null;
 };
 
-const parseStreamJoinType = (
+export const parseStreamJoinType = (
   value: unknown,
   path: string,
   errors: string[],
@@ -84,7 +108,7 @@ const parseStreamJoinType = (
   return null;
 };
 
-const parseJoinConditions = (value: unknown, path: string, errors: string[]): JoinCondition[] => {
+export const parseJoinConditions = (value: unknown, path: string, errors: string[]): JoinCondition[] => {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
     errors.push(`${path} 必须是数组`);
@@ -106,21 +130,21 @@ const parseJoinConditions = (value: unknown, path: string, errors: string[]): Jo
   });
 };
 
-const parseWriteMode = (value: unknown, path: string, errors: string[]): JdbcWriteMode | null => {
+export const parseWriteMode = (value: unknown, path: string, errors: string[]): JdbcWriteMode | null => {
   if (value === null || value === undefined || value === '') return null;
-  if (value === 'APPEND' || value === 'OVERWRITE') return value;
+  if (value === 'APPEND' || value === 'OVERWRITE' || value === 'UPSERT') return value;
   errors.push(`${path} 不是受支持的写入模式`);
   return null;
 };
 
-const parseMappingMode = (value: unknown, path: string, errors: string[]): ColumnMappingMode | null => {
+export const parseMappingMode = (value: unknown, path: string, errors: string[]): ColumnMappingMode | null => {
   if (value === null || value === undefined || value === '') return null;
   if (value === 'BY_NAME' || value === 'EXPLICIT') return value;
   errors.push(`${path} 不是受支持的字段映射模式`);
   return null;
 };
 
-const parseFileOutputConflictPolicy = (
+export const parseFileOutputConflictPolicy = (
   value: unknown,
   path: string,
   errors: string[],
@@ -130,7 +154,7 @@ const parseFileOutputConflictPolicy = (
   return 'FAIL_IF_EXISTS';
 };
 
-const parseFileOutputFormatOptions = (
+export const parseFileOutputFormatOptions = (
   value: unknown,
   path: string,
   errors: string[],
@@ -176,11 +200,110 @@ const parseFileOutputFormatOptions = (
     };
   }
   if (value.type === 'PARQUET') return { type: 'PARQUET' };
-  errors.push(`${path}.type 仅支持 CSV、JSON_LINES 或 PARQUET`);
+  if (value.type === 'SHAPEFILE') {
+    const packageMode = value.packageMode === 'ZIP' || value.packageMode === 'COMPONENT_DIRECTORY'
+      ? value.packageMode : 'ZIP';
+    if (value.packageMode !== 'ZIP' && value.packageMode !== 'COMPONENT_DIRECTORY') {
+      errors.push(`${path}.packageMode 仅支持 ZIP 或 COMPONENT_DIRECTORY`);
+    }
+    const targetShapeType = value.targetShapeType === 'POINT'
+      || value.targetShapeType === 'MULTIPOINT'
+      || value.targetShapeType === 'POLYLINE'
+      || value.targetShapeType === 'POLYGON'
+      ? value.targetShapeType : 'POINT';
+    if (!['POINT', 'MULTIPOINT', 'POLYLINE', 'POLYGON'].includes(String(value.targetShapeType))) {
+      errors.push(`${path}.targetShapeType 不是受支持的 Shape 类型`);
+    }
+    if (typeof value.baseName !== 'string') errors.push(`${path}.baseName 必须是字符串`);
+    if (typeof value.geometryColumnName !== 'string') {
+      errors.push(`${path}.geometryColumnName 必须是字符串`);
+    }
+    const attributeMappings = Array.isArray(value.attributeMappings)
+      ? value.attributeMappings.flatMap((item, index) => {
+        if (!isRecord(item)) {
+          errors.push(`${path}.attributeMappings[${index}] 必须是对象`);
+          return [];
+        }
+        if (typeof item.sourceColumnName !== 'string') {
+          errors.push(`${path}.attributeMappings[${index}].sourceColumnName 必须是字符串`);
+        }
+        if (typeof item.targetFieldName !== 'string') {
+          errors.push(`${path}.attributeMappings[${index}].targetFieldName 必须是字符串`);
+        }
+        if (item.targetStringByteLength !== null
+            && !Number.isInteger(item.targetStringByteLength)) {
+          errors.push(
+            `${path}.attributeMappings[${index}].targetStringByteLength 必须是 null 或整数`,
+          );
+        }
+        return [{
+          sourceColumnName: stringValue(item.sourceColumnName),
+          targetFieldName: stringValue(item.targetFieldName),
+          targetStringByteLength: Number.isInteger(item.targetStringByteLength)
+            ? Number(item.targetStringByteLength) : null,
+        }];
+      })
+      : [];
+    if (!Array.isArray(value.attributeMappings)) {
+      errors.push(`${path}.attributeMappings 必须是数组`);
+    }
+    return {
+      type: 'SHAPEFILE',
+      baseName: stringValue(value.baseName),
+      packageMode,
+      geometryColumnName: stringValue(value.geometryColumnName),
+      targetShapeType,
+      attributeMappings,
+    };
+  }
+  if (value.type === 'GEOPARQUET') {
+    const compression = value.compression === 'SNAPPY' || value.compression === 'ZSTD'
+      ? value.compression : 'SNAPPY';
+    const coveringMode = value.coveringMode === 'NONE' || value.coveringMode === 'ROW_BBOX'
+      ? value.coveringMode : 'ROW_BBOX';
+    if (typeof value.geometryColumnName !== 'string') {
+      errors.push(`${path}.geometryColumnName 必须是字符串`);
+    }
+    if (value.compression !== 'SNAPPY' && value.compression !== 'ZSTD') {
+      errors.push(`${path}.compression 仅支持 SNAPPY 或 ZSTD`);
+    }
+    if (value.coveringMode !== 'NONE' && value.coveringMode !== 'ROW_BBOX') {
+      errors.push(`${path}.coveringMode 仅支持 NONE 或 ROW_BBOX`);
+    }
+    return {
+      type: 'GEOPARQUET',
+      geometryColumnName: stringValue(value.geometryColumnName),
+      compression,
+      coveringMode,
+    };
+  }
+  if (value.type === 'GEOJSON') {
+    if (typeof value.baseName !== 'string') errors.push(`${path}.baseName 必须是字符串`);
+    if (typeof value.geometryColumnName !== 'string') {
+      errors.push(`${path}.geometryColumnName 必须是字符串`);
+    }
+    if (value.idColumnName !== null && typeof value.idColumnName !== 'string') {
+      errors.push(`${path}.idColumnName 必须是 null 或字符串`);
+    }
+    if (typeof value.ignoreNullProperties !== 'boolean') {
+      errors.push(`${path}.ignoreNullProperties 必须是布尔值`);
+    }
+    return {
+      type: 'GEOJSON',
+      baseName: stringValue(value.baseName),
+      geometryColumnName: stringValue(value.geometryColumnName),
+      idColumnName: value.idColumnName === null ? null : stringValue(value.idColumnName),
+      ignoreNullProperties: typeof value.ignoreNullProperties === 'boolean'
+        ? value.ignoreNullProperties : false,
+    };
+  }
+  errors.push(
+    `${path}.type 仅支持 CSV、JSON_LINES、PARQUET、SHAPEFILE、GEOPARQUET 或 GEOJSON`,
+  );
   return fallback;
 };
 
-const parseMappings = (value: unknown, path: string, errors: string[]): CanvasColumnMapping[] => {
+export const parseMappings = (value: unknown, path: string, errors: string[]): CanvasColumnMapping[] => {
   if (value === undefined || value === null) return [];
   if (!Array.isArray(value)) {
     errors.push(`${path} 必须是数组`);
@@ -198,7 +321,22 @@ const parseMappings = (value: unknown, path: string, errors: string[]): CanvasCo
   });
 };
 
-const parseRuntimeParameters = (
+export const parseStringArray = (value: unknown, path: string, errors: string[]): string[] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.map((item, index) => {
+    if (typeof item !== 'string') {
+      errors.push(`${path}[${index}] 必须是字符串`);
+      return '';
+    }
+    return item;
+  });
+};
+
+export const parseRuntimeParameters = (
   value: unknown,
   path: string,
   errors: string[],
@@ -241,6 +379,317 @@ const platformDataTypes = new Set([
   'TIMESTAMP_NTZ',
 ]);
 
+const filterLiteralDataTypes = new Set([...platformDataTypes, 'GEOMETRY']);
+
+const filterOperators = new Set<FilterOperator>([
+  'EQUALS',
+  'NOT_EQUALS',
+  'GREATER_THAN',
+  'GREATER_THAN_OR_EQUALS',
+  'LESS_THAN',
+  'LESS_THAN_OR_EQUALS',
+  'IN',
+  'NOT_IN',
+  'IS_NULL',
+  'IS_NOT_NULL',
+  'CONTAINS',
+  'STARTS_WITH',
+  'ENDS_WITH',
+]);
+
+const deriveBinaryOperators = new Set<DeriveBinaryOperator>([
+  'ADD',
+  'SUBTRACT',
+  'MULTIPLY',
+  'DIVIDE',
+  'MODULO',
+]);
+
+const deriveFunctions = new Set<DeriveFunction>([
+  'TRIM',
+  'LTRIM',
+  'RTRIM',
+  'LOWER',
+  'UPPER',
+  'REPLACE',
+  'SUBSTRING',
+  'COALESCE',
+  'CONCAT',
+  'DATE_FORMAT',
+  'DATE_ADD',
+  'DATE_SUB',
+]);
+
+export const parseCanvasLiteral = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): CanvasLiteral => {
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是 Literal 对象`);
+    return { dataType: 'STRING', value: null };
+  }
+  const dataType = stringValue(value.dataType);
+  if (!filterLiteralDataTypes.has(dataType)) {
+    errors.push(`${path}.dataType 不是平台数据类型`);
+  }
+  if (value.value !== null && typeof value.value !== 'string') {
+    errors.push(`${path}.value 必须是字符串或 null`);
+  }
+  return {
+    dataType: filterLiteralDataTypes.has(dataType)
+      ? dataType as CanvasLiteral['dataType']
+      : 'STRING',
+    value: typeof value.value === 'string' ? value.value : null,
+  };
+};
+
+export const parseFilterCondition = (
+  value: unknown,
+  path: string,
+  errors: string[],
+  depth = 1,
+  nodeCount: { value: number } = { value: 0 },
+): CanvasFilterCondition => {
+  const fallback: CanvasFilterCondition = { kind: 'GROUP', operator: 'AND', children: [] };
+  if (value === undefined || value === null) return fallback;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是筛选条件对象`);
+    return fallback;
+  }
+  nodeCount.value += 1;
+  if (depth > CANVAS_FILTER_MAX_DEPTH) {
+    errors.push(`${path} 超过最大嵌套深度 ${CANVAS_FILTER_MAX_DEPTH}`);
+    return fallback;
+  }
+  if (nodeCount.value > CANVAS_FILTER_MAX_CONDITION_NODES) {
+    errors.push(`筛选条件节点不能超过 ${CANVAS_FILTER_MAX_CONDITION_NODES}`);
+    return fallback;
+  }
+  if (value.kind === 'GROUP') {
+    if (value.operator !== 'AND' && value.operator !== 'OR') {
+      errors.push(`${path}.operator 仅支持 AND 或 OR`);
+    }
+    if (value.children !== undefined && value.children !== null && !Array.isArray(value.children)) {
+      errors.push(`${path}.children 必须是数组`);
+    }
+    const children = Array.isArray(value.children)
+      ? value.children.map((child, index) => parseFilterCondition(
+        child,
+        `${path}.children[${index}]`,
+        errors,
+        depth + 1,
+        nodeCount,
+      ))
+      : [];
+    return {
+      kind: 'GROUP',
+      operator: value.operator === 'OR' ? 'OR' : 'AND',
+      children,
+    };
+  }
+  if (value.kind === 'PREDICATE') {
+    const rawOperator = stringValue(value.operator);
+    if (!filterOperators.has(rawOperator as FilterOperator)) {
+      errors.push(`${path}.operator 不是受支持的筛选操作符`);
+    }
+    if (value.values !== undefined && value.values !== null && !Array.isArray(value.values)) {
+      errors.push(`${path}.values 必须是数组`);
+    }
+    const rawValues = Array.isArray(value.values) ? value.values : [];
+    if (rawValues.length > CANVAS_FILTER_MAX_VALUES_PER_PREDICATE) {
+      errors.push(`${path}.values 不能超过 ${CANVAS_FILTER_MAX_VALUES_PER_PREDICATE} 项`);
+    }
+    const values = rawValues.slice(0, CANVAS_FILTER_MAX_VALUES_PER_PREDICATE)
+      .map((item, index) => parseCanvasLiteral(
+        item,
+        `${path}.values[${index}]`,
+        errors,
+      ));
+    return {
+      kind: 'PREDICATE',
+      columnName: stringValue(value.columnName),
+      operator: filterOperators.has(rawOperator as FilterOperator)
+        ? rawOperator as FilterOperator
+        : 'EQUALS',
+      values,
+    };
+  }
+  errors.push(`${path}.kind 仅支持 GROUP 或 PREDICATE`);
+  return fallback;
+};
+
+const parseCanvasExpression = (
+  value: unknown,
+  path: string,
+  errors: string[],
+  depth = 1,
+  nodeCount: { value: number } = { value: 0 },
+): CanvasExpression => {
+  const fallback: CanvasExpression = { kind: 'COLUMN', columnName: '' };
+  if (value === undefined || value === null) return fallback;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是表达式对象`);
+    return fallback;
+  }
+  nodeCount.value += 1;
+  if (depth > CANVAS_EXPRESSION_MAX_DEPTH) {
+    errors.push(`${path} 超过最大嵌套深度 ${CANVAS_EXPRESSION_MAX_DEPTH}`);
+    return fallback;
+  }
+  if (nodeCount.value > CANVAS_EXPRESSION_MAX_NODES) {
+    errors.push(`派生表达式节点不能超过 ${CANVAS_EXPRESSION_MAX_NODES}`);
+    return fallback;
+  }
+  if (value.kind === 'COLUMN') {
+    return { kind: 'COLUMN', columnName: stringValue(value.columnName) };
+  }
+  if (value.kind === 'LITERAL') {
+    return {
+      kind: 'LITERAL',
+      literal: parseCanvasLiteral(value.literal, `${path}.literal`, errors),
+    };
+  }
+  if (value.kind === 'BINARY') {
+    const rawOperator = stringValue(value.operator);
+    if (!deriveBinaryOperators.has(rawOperator as DeriveBinaryOperator)) {
+      errors.push(`${path}.operator 不是受支持的二元操作符`);
+    }
+    return {
+      kind: 'BINARY',
+      operator: deriveBinaryOperators.has(rawOperator as DeriveBinaryOperator)
+        ? rawOperator as DeriveBinaryOperator
+        : 'ADD',
+      left: parseCanvasExpression(
+        value.left,
+        `${path}.left`,
+        errors,
+        depth + 1,
+        nodeCount,
+      ),
+      right: parseCanvasExpression(
+        value.right,
+        `${path}.right`,
+        errors,
+        depth + 1,
+        nodeCount,
+      ),
+    };
+  }
+  if (value.kind === 'FUNCTION') {
+    const rawFunction = stringValue(value.function);
+    if (!deriveFunctions.has(rawFunction as DeriveFunction)) {
+      errors.push(`${path}.function 不是受支持的表达式函数`);
+    }
+    if (value.arguments !== undefined
+      && value.arguments !== null
+      && !Array.isArray(value.arguments)) {
+      errors.push(`${path}.arguments 必须是数组`);
+    }
+    const rawArguments = Array.isArray(value.arguments) ? value.arguments : [];
+    return {
+      kind: 'FUNCTION',
+      function: deriveFunctions.has(rawFunction as DeriveFunction)
+        ? rawFunction as DeriveFunction
+        : 'TRIM',
+      arguments: rawArguments.map((argument, index) => parseCanvasExpression(
+        argument,
+        `${path}.arguments[${index}]`,
+        errors,
+        depth + 1,
+        nodeCount,
+      )),
+    };
+  }
+  if (value.kind === 'CASE_WHEN') {
+    if (value.branches !== undefined
+      && value.branches !== null
+      && !Array.isArray(value.branches)) {
+      errors.push(`${path}.branches 必须是数组`);
+    }
+    const rawBranches = Array.isArray(value.branches) ? value.branches : [];
+    if (rawBranches.length > CANVAS_EXPRESSION_MAX_CASE_BRANCHES) {
+      errors.push(`${path}.branches 不能超过 ${CANVAS_EXPRESSION_MAX_CASE_BRANCHES} 项`);
+    }
+    const branches = rawBranches.slice(0, CANVAS_EXPRESSION_MAX_CASE_BRANCHES)
+      .flatMap((branch, index) => {
+        const branchPath = `${path}.branches[${index}]`;
+        if (!isRecord(branch)) {
+          errors.push(`${branchPath} 必须是对象`);
+          return [];
+        }
+        return [{
+          condition: parseFilterCondition(
+            branch.condition,
+            `${branchPath}.condition`,
+            errors,
+          ),
+          result: parseCanvasExpression(
+            branch.result,
+            `${branchPath}.result`,
+            errors,
+            depth + 1,
+            nodeCount,
+          ),
+        }];
+      });
+    return {
+      kind: 'CASE_WHEN',
+      branches,
+      elseExpression: value.elseExpression === null || value.elseExpression === undefined
+        ? null
+        : parseCanvasExpression(
+          value.elseExpression,
+          `${path}.elseExpression`,
+          errors,
+          depth + 1,
+          nodeCount,
+        ),
+    };
+  }
+  errors.push(`${path}.kind 不是受支持的表达式类型`);
+  return fallback;
+};
+
+export const parseDerivations = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): ColumnDerivation[] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  if (value.length > CANVAS_EXPRESSION_MAX_DERIVATIONS) {
+    errors.push(`${path} 不能超过 ${CANVAS_EXPRESSION_MAX_DERIVATIONS} 项`);
+  }
+  const expressionNodes = { value: 0 };
+  return value.slice(0, CANVAS_EXPRESSION_MAX_DERIVATIONS)
+    .flatMap((item, index): ColumnDerivation[] => {
+      const itemPath = `${path}[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      if (item.replaceExisting !== undefined
+        && typeof item.replaceExisting !== 'boolean') {
+        errors.push(`${itemPath}.replaceExisting 必须是布尔值`);
+      }
+      return [{
+        targetColumnName: stringValue(item.targetColumnName),
+        expression: parseCanvasExpression(
+          item.expression,
+          `${itemPath}.expression`,
+          errors,
+          1,
+          expressionNodes,
+        ),
+        replaceExisting: item.replaceExisting === true,
+      }];
+    });
+};
+
 const optionalInteger = (value: unknown, path: string, errors: string[]) => {
   if (value === null || value === undefined) return null;
   if (typeof value !== 'number' || !Number.isInteger(value)) {
@@ -250,7 +699,211 @@ const optionalInteger = (value: unknown, path: string, errors: string[]) => {
   return value;
 };
 
-const parseKafkaValueSchema = (
+export const parsePlatformTypeDefinition = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): PlatformTypeDefinition => {
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是平台类型对象`);
+    return {
+      type: 'STRING',
+      length: null,
+      precision: null,
+      scale: null,
+      geometry: null,
+    };
+  }
+  const rawType = stringValue(value.type);
+  if (!platformDataTypes.has(rawType)) {
+    errors.push(`${path}.type 不是 Canvas 支持的平台标量类型`);
+  }
+  const type = platformDataTypes.has(rawType)
+    ? rawType as PlatformTypeDefinition['type']
+    : 'STRING';
+  const length = optionalInteger(value.length, `${path}.length`, errors);
+  const precision = optionalInteger(value.precision, `${path}.precision`, errors);
+  const scale = optionalInteger(value.scale, `${path}.scale`, errors);
+  if (type === 'STRING') {
+    if (length !== null && length < 1) errors.push(`${path}.length 必须为正整数`);
+    if (precision !== null || scale !== null) {
+      errors.push(`${path} 的 STRING 不能配置 precision/scale`);
+    }
+  } else if (type === 'DECIMAL') {
+    if (length !== null) errors.push(`${path} 的 DECIMAL 不能配置 length`);
+    if (precision === null || precision < 1 || precision > 38) {
+      errors.push(`${path}.precision 必须在 1..38`);
+    }
+    if (scale === null || scale < 0 || (precision !== null && scale > precision)) {
+      errors.push(`${path}.scale 必须在 0..precision`);
+    }
+  } else if (length !== null || precision !== null || scale !== null) {
+    errors.push(`${path} 的 ${type} 不能配置 length/precision/scale`);
+  }
+  if (value.geometry !== undefined && value.geometry !== null) {
+    errors.push(`${path}.geometry 在 Canvas 标量处理器中不受支持`);
+  }
+  return {
+    type,
+    length: type === 'STRING' ? length : null,
+    precision: type === 'DECIMAL' ? precision : null,
+    scale: type === 'DECIMAL' ? scale : null,
+    geometry: null,
+  };
+};
+
+export const parseTypeCasts = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): ColumnTypeCast[] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index): ColumnTypeCast[] => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${itemPath} 必须是对象`);
+      return [];
+    }
+    const failureStrategy = item.failureStrategy === 'FAIL'
+      || item.failureStrategy === 'SET_NULL'
+      ? item.failureStrategy as CastFailureStrategy
+      : null;
+    if (item.failureStrategy !== undefined
+      && item.failureStrategy !== null
+      && failureStrategy === null) {
+      errors.push(`${itemPath}.failureStrategy 仅支持 FAIL 或 SET_NULL`);
+    }
+    return [{
+      columnName: stringValue(item.columnName),
+      targetType: parsePlatformTypeDefinition(
+        item.targetType,
+        `${itemPath}.targetType`,
+        errors,
+      ),
+      failureStrategy,
+    }];
+  });
+};
+
+const aggregateFunctions = new Set<AggregateFunction>([
+  'COUNT',
+  'SUM',
+  'AVG',
+  'MIN',
+  'MAX',
+]);
+
+export const parseAggregations = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): AggregateItem[] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index): AggregateItem[] => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${itemPath} 必须是对象`);
+      return [];
+    }
+    const rawFunction = stringValue(item.function);
+    const aggregateFunction = aggregateFunctions.has(rawFunction as AggregateFunction)
+      ? rawFunction as AggregateFunction
+      : null;
+    if (item.function !== undefined
+      && item.function !== null
+      && aggregateFunction === null) {
+      errors.push(`${itemPath}.function 不是受支持的聚合函数`);
+    }
+    if (item.sourceColumnName !== undefined
+      && item.sourceColumnName !== null
+      && typeof item.sourceColumnName !== 'string') {
+      errors.push(`${itemPath}.sourceColumnName 必须是字符串或 null`);
+    }
+    if (item.distinct !== undefined && typeof item.distinct !== 'boolean') {
+      errors.push(`${itemPath}.distinct 必须是布尔值`);
+    }
+    return [{
+      function: aggregateFunction,
+      sourceColumnName: typeof item.sourceColumnName === 'string'
+        ? item.sourceColumnName
+        : null,
+      outputColumnName: stringValue(item.outputColumnName),
+      distinct: item.distinct === true,
+    }];
+  });
+};
+
+export const parseUnionMode = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): UnionMode | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (value === 'ALL' || value === 'DISTINCT') return value;
+  errors.push(`${path} 仅支持 ALL 或 DISTINCT`);
+  return null;
+};
+
+export const parseDeduplicateKeepStrategy = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): DeduplicateKeepStrategy | null => {
+  if (value === null || value === undefined || value === '') return null;
+  if (value === 'ANY' || value === 'FIRST' || value === 'LAST') return value;
+  errors.push(`${path} 仅支持 ANY、FIRST 或 LAST`);
+  return null;
+};
+
+export const parseSortFields = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SortField[] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index): SortField[] => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${itemPath} 必须是对象`);
+      return [];
+    }
+    const direction: SortDirection | null = item.direction === 'ASC'
+      || item.direction === 'DESC'
+      ? item.direction
+      : null;
+    const nullOrdering: NullOrdering | null = item.nullOrdering === 'FIRST'
+      || item.nullOrdering === 'LAST'
+      ? item.nullOrdering
+      : null;
+    if (item.direction !== undefined && item.direction !== null && direction === null) {
+      errors.push(`${itemPath}.direction 仅支持 ASC 或 DESC`);
+    }
+    if (item.nullOrdering !== undefined
+      && item.nullOrdering !== null
+      && nullOrdering === null) {
+      errors.push(`${itemPath}.nullOrdering 仅支持 FIRST 或 LAST`);
+    }
+    return [{
+      columnName: stringValue(item.columnName),
+      direction,
+      nullOrdering,
+    }];
+  });
+};
+
+export const parseKafkaValueSchema = (
   value: unknown,
   path: string,
   errors: string[],
@@ -292,6 +945,8 @@ const parseKafkaValueSchema = (
   };
 };
 
+const supportedNodeTypes = new Set<string>(Object.values(CanvasNodeType));
+
 const parseNode = (value: unknown, index: number, errors: string[]): CanvasNodeDefinition | null => {
   const path = `nodes[${index}]`;
   if (!isRecord(value)) {
@@ -303,288 +958,30 @@ const parseNode = (value: unknown, index: number, errors: string[]): CanvasNodeD
   if (typeof value.name !== 'string') errors.push(`${path}.name 必须是字符串`);
   const name = stringValue(value.name);
   const layout = parseLayout(value.layout, `${path}.layout`, errors);
-  const configuration = isRecord(value.configuration) ? value.configuration : {};
   if (!layout) return null;
 
-  switch (value.type) {
-    case CanvasNodeType.ModelInput:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          modelId: validateOptionalUuid(
-            stringValue(configuration.modelId),
-            `${path}.configuration.modelId`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.JdbcInput:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          dataSourceId: stringValue(configuration.dataSourceId),
-          tableName: stringValue(configuration.tableName) || legacyTableName(configuration.table),
-        },
-      };
-    case CanvasNodeType.FileDatasetInput:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          fileDatasetTableId: validateOptionalUuid(
-            stringValue(configuration.fileDatasetTableId),
-            `${path}.configuration.fileDatasetTableId`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.HttpApiInput:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          dataSourceId: validateOptionalUuid(
-            stringValue(configuration.dataSourceId),
-            `${path}.configuration.dataSourceId`,
-            errors,
-          ),
-          resourceId: validateOptionalUuid(
-            stringValue(configuration.resourceId),
-            `${path}.configuration.resourceId`,
-            errors,
-          ),
-          outputTableName: stringValue(configuration.outputTableName),
-          runtimeParameters: parseRuntimeParameters(
-            configuration.runtimeParameters,
-            `${path}.configuration.runtimeParameters`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.KafkaInput:
-      if (configuration.startingOffsets !== undefined
-        && configuration.startingOffsets !== null
-        && configuration.startingOffsets !== ''
-        && configuration.startingOffsets !== 'EARLIEST'
-        && configuration.startingOffsets !== 'LATEST') {
-        errors.push(`${path}.configuration.startingOffsets 仅支持 EARLIEST 或 LATEST`);
-      }
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          dataSourceId: validateOptionalUuid(
-            stringValue(configuration.dataSourceId),
-            `${path}.configuration.dataSourceId`,
-            errors,
-          ),
-          topic: stringValue(configuration.topic),
-          valueSchema: parseKafkaValueSchema(
-            configuration.valueSchema,
-            `${path}.configuration.valueSchema`,
-            errors,
-          ),
-          outputTableName: stringValue(configuration.outputTableName),
-          startingOffsets: configuration.startingOffsets === 'EARLIEST'
-            || configuration.startingOffsets === 'LATEST'
-            ? configuration.startingOffsets
-            : null,
-        },
-      };
-    case CanvasNodeType.Join:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          leftTableName: stringValue(configuration.leftTableName),
-          rightTableName: stringValue(configuration.rightTableName),
-          outputTableName: stringValue(configuration.outputTableName),
-          joinType: parseJoinType(configuration.joinType, `${path}.configuration.joinType`, errors),
-          conditions: parseJoinConditions(configuration.conditions, `${path}.configuration.conditions`, errors),
-        },
-      };
-    case CanvasNodeType.StreamJoin:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          leftTableName: stringValue(configuration.leftTableName),
-          rightTableName: stringValue(configuration.rightTableName),
-          outputTableName: stringValue(configuration.outputTableName),
-          joinType: parseStreamJoinType(
-            configuration.joinType,
-            `${path}.configuration.joinType`,
-            errors,
-          ),
-          conditions: parseJoinConditions(
-            configuration.conditions,
-            `${path}.configuration.conditions`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.Rename:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          sourceTableName: stringValue(configuration.sourceTableName),
-          outputTableName: stringValue(configuration.outputTableName),
-          columnMappings: parseMappings(
-            configuration.columnMappings,
-            `${path}.configuration.columnMappings`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.ModelOutput:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          sourceTableName: stringValue(configuration.sourceTableName),
-          targetModelId: validateOptionalUuid(
-            stringValue(configuration.targetModelId),
-            `${path}.configuration.targetModelId`,
-            errors,
-          ),
-          writeMode: parseWriteMode(configuration.writeMode, `${path}.configuration.writeMode`, errors),
-          columnMappingMode: parseMappingMode(
-            configuration.columnMappingMode,
-            `${path}.configuration.columnMappingMode`,
-            errors,
-          ),
-          columnMappings: parseMappings(
-            configuration.columnMappings,
-            `${path}.configuration.columnMappings`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.JdbcOutput:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          sourceTableName: stringValue(configuration.sourceTableName),
-          dataSourceId: stringValue(configuration.dataSourceId),
-          targetTableName: stringValue(configuration.targetTableName) || legacyTableName(configuration.targetTable),
-          writeMode: parseWriteMode(configuration.writeMode, `${path}.configuration.writeMode`, errors),
-          columnMappingMode: parseMappingMode(
-            configuration.columnMappingMode,
-            `${path}.configuration.columnMappingMode`,
-            errors,
-          ),
-          columnMappings: parseMappings(
-            configuration.columnMappings,
-            `${path}.configuration.columnMappings`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.KafkaOutput:
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          sourceTableName: stringValue(configuration.sourceTableName),
-          dataSourceId: validateOptionalUuid(
-            stringValue(configuration.dataSourceId),
-            `${path}.configuration.dataSourceId`,
-            errors,
-          ),
-          topic: stringValue(configuration.topic),
-          valueSchema: parseKafkaValueSchema(
-            configuration.valueSchema,
-            `${path}.configuration.valueSchema`,
-            errors,
-          ),
-          keyColumnName: stringValue(configuration.keyColumnName),
-          columnMappingMode: parseMappingMode(
-            configuration.columnMappingMode,
-            `${path}.configuration.columnMappingMode`,
-            errors,
-          ),
-          columnMappings: parseMappings(
-            configuration.columnMappings,
-            `${path}.configuration.columnMappings`,
-            errors,
-          ),
-        },
-      };
-    case CanvasNodeType.FileOutput: {
-      const rawTargetPath = stringValue(configuration.targetPath);
-      const targetPath = normalizeFileOutputPath(rawTargetPath);
-      const invalidSegment = targetPath.split('/').some(
-        (segment) => !segment || segment === '.' || segment === '..'
-          || segment.toLowerCase() === '_temporary',
-      );
-      if (
-        !targetPath
-        || targetPath.length > 1024
-        || rawTargetPath.trim().startsWith('/')
-        || targetPath.includes('\\')
-        || targetPath.includes('://')
-        || targetPath.includes('?')
-        || targetPath.includes('#')
-        || invalidSegment
-      ) {
-        errors.push(`${path}.configuration.targetPath 必须是合法的 S3 相对路径`);
-      }
-      return {
-        id,
-        type: value.type,
-        name,
-        layout,
-        configuration: {
-          sourceTableName: stringValue(configuration.sourceTableName),
-          dataSourceId: validateOptionalUuid(
-            stringValue(configuration.dataSourceId),
-            `${path}.configuration.dataSourceId`,
-            errors,
-          ),
-          targetPath,
-          conflictPolicy: parseFileOutputConflictPolicy(
-            configuration.conflictPolicy,
-            `${path}.configuration.conflictPolicy`,
-            errors,
-          ),
-          formatOptions: parseFileOutputFormatOptions(
-            configuration.formatOptions,
-            `${path}.configuration.formatOptions`,
-            errors,
-          ),
-        },
-      };
-    }
-    default:
-      errors.push(`${path}.type 不是受支持的节点类型`);
-      return null;
+  const rawType = stringValue(value.type);
+  if (!supportedNodeTypes.has(rawType)) {
+    errors.push(`${path}.type 不是受支持的节点类型`);
+    return null;
   }
+  const type = rawType as CanvasNodeTypeValue;
+  const parsedConfiguration = canvasNodeRegistry.require(type).parseConfiguration(
+    value.configuration,
+    `${path}.configuration`,
+  );
+  if (!parsedConfiguration.success) {
+    errors.push(...parsedConfiguration.errors);
+    return null;
+  }
+
+  return {
+    id,
+    type,
+    name,
+    layout,
+    configuration: parsedConfiguration.value,
+  } as CanvasNodeDefinition;
 };
 
 const parseEdge = (value: unknown, index: number, errors: string[]): CanvasEdgeDefinition | null => {
@@ -632,37 +1029,35 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
     return parsed ? [parsed] : [];
   });
 
-  if (sourceSchemaMinorVersion === CANVAS_LEGACY_SCHEMA_MINOR_VERSION
-      && nodes.some((node) => node.type === CanvasNodeType.ModelInput || node.type === CanvasNodeType.ModelOutput)) {
-    errors.push('MODEL_INPUT 和 MODEL_OUTPUT 从 Canvas 1.1 开始支持');
-  }
-  if (typeof sourceSchemaMinorVersion === 'number'
-      && sourceSchemaMinorVersion < 2
-      && nodes.some((node) => node.type === CanvasNodeType.Rename)) {
-    errors.push('RENAME 从 Canvas 1.2 开始支持');
-  }
-  if (typeof sourceSchemaMinorVersion === 'number'
-      && sourceSchemaMinorVersion < 3
-      && nodes.some((node) => node.type === CanvasNodeType.StreamJoin)) {
-    errors.push('STREAM_JOIN 从 Canvas 1.3 开始支持');
-  }
-  if (typeof sourceSchemaMinorVersion === 'number'
-      && sourceSchemaMinorVersion < 4
-      && nodes.some((node) => node.type === CanvasNodeType.FileDatasetInput)) {
-    errors.push('FILE_DATASET_INPUT 从 Canvas 1.4 开始支持');
-  }
-  if (typeof sourceSchemaMinorVersion === 'number'
-      && sourceSchemaMinorVersion < 5
-      && nodes.some((node) => (
-        node.type === CanvasNodeType.KafkaInput
-        || node.type === CanvasNodeType.KafkaOutput
-      ))) {
-    errors.push('KAFKA_INPUT 和 KAFKA_OUTPUT 的内联 Value Schema 从 Canvas 1.5 开始支持');
-  }
-  if (typeof sourceSchemaMinorVersion === 'number'
-      && sourceSchemaMinorVersion < 6
-      && nodes.some((node) => node.type === CanvasNodeType.FileOutput)) {
-    errors.push('FILE_OUTPUT 从 Canvas 1.6 开始支持');
+  if (typeof sourceSchemaMinorVersion === 'number') {
+    nodes.forEach((node) => {
+      const spec = canvasNodeRegistry.require(node.type);
+      if (sourceSchemaMinorVersion < spec.introducedInMinor) {
+        errors.push(
+          `${spec.type} 从 Canvas 1.${spec.introducedInMinor} 开始支持`,
+        );
+      }
+      if (sourceSchemaMinorVersion < 24
+          && node.type === CanvasNodeType.FileOutput
+          && node.configuration.formatOptions.type === 'SHAPEFILE') {
+        errors.push('SHAPEFILE 文件输出从 Canvas 1.24 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 24
+          && node.type === CanvasNodeType.JdbcOutput
+          && node.configuration.writeMode === 'UPSERT') {
+        errors.push('JDBC_OUTPUT UPSERT 从 Canvas 1.24 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 25
+          && node.type === CanvasNodeType.FileOutput
+          && node.configuration.formatOptions.type === 'GEOPARQUET') {
+        errors.push('GEOPARQUET 文件输出从 Canvas 1.25 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 25
+          && node.type === CanvasNodeType.FileOutput
+          && node.configuration.formatOptions.type === 'GEOJSON') {
+        errors.push('GEOJSON 文件输出从 Canvas 1.25 开始支持');
+      }
+    });
   }
 
   const nodeIds = new Set<string>();

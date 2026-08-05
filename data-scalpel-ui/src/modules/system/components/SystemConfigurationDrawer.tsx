@@ -67,7 +67,7 @@ export const SystemConfigurationDrawer = ({
         )}
       >
         {configuration && (
-          <Form form={form} layout="vertical" onFinish={submit}>
+          <Form autoComplete="off" form={form} layout="vertical" onFinish={submit}>
             <Descriptions column={1} size="small" bordered>
               <Descriptions.Item label="名称">{configuration.name}</Descriptions.Item>
               <Descriptions.Item label="配置键">{configuration.configKey}</Descriptions.Item>

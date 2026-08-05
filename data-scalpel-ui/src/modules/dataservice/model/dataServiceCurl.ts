@@ -44,7 +44,9 @@ export const buildDataServiceCurlCommand = (
       arguments: argumentsExample(service.sqlDefinition?.parameters ?? []),
       returnCount: false,
     }
-    : { pageNo: 1, pageSize: 20 };
+    : service?.type === 'SCRIPT_API'
+      ? {}
+      : { pageNo: 1, pageSize: 20 };
 
   const headers = [
     `  --header ${shellQuote('Content-Type: application/json')} \\`,

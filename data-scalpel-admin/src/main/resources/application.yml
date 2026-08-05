@@ -1,6 +1,10 @@
 server:
   port: ${DATASCALPEL_SERVER_PORT:8080}
 
+logging:
+  level:
+    org.apache.kafka.common.config: WARN
+
 spring:
   kafka:
     bootstrap-servers: ${DATASCALPEL_EXECUTION_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}
@@ -51,6 +55,20 @@ spring:
     wait-for-jobs-to-complete-on-shutdown: false
 
 data-scalpel:
+  gateway-access:
+    enabled: ${DATASCALPEL_GATEWAY_ACCESS_ENABLED:false}
+    topic: ${DATASCALPEL_GATEWAY_ACCESS_TOPIC:datascalpel.gateway.access.v1}
+    consumer-group: ${DATASCALPEL_GATEWAY_ACCESS_CONSUMER_GROUP:data-scalpel-admin-gateway-access-v1}
+    concurrency: ${DATASCALPEL_GATEWAY_ACCESS_CONCURRENCY:2}
+    max-poll-records: ${DATASCALPEL_GATEWAY_ACCESS_MAX_POLL_RECORDS:500}
+    raw-retention: ${DATASCALPEL_GATEWAY_ACCESS_RAW_RETENTION:7d}
+    hourly-retention: ${DATASCALPEL_GATEWAY_ACCESS_HOURLY_RETENTION:180d}
+    archive-max-hours: ${DATASCALPEL_GATEWAY_ACCESS_ARCHIVE_MAX_HOURS:24}
+    cleanup-batch-size: ${DATASCALPEL_GATEWAY_ACCESS_CLEANUP_BATCH_SIZE:10000}
+    cleanup-max-batches: ${DATASCALPEL_GATEWAY_ACCESS_CLEANUP_MAX_BATCHES:100}
+    archive-cron: ${DATASCALPEL_GATEWAY_ACCESS_ARCHIVE_CRON:0 5 * * * *}
+    raw-cleanup-cron: ${DATASCALPEL_GATEWAY_ACCESS_RAW_CLEANUP_CRON:0 25 * * * *}
+    hourly-cleanup-cron: ${DATASCALPEL_GATEWAY_ACCESS_HOURLY_CLEANUP_CRON:0 35 2 * * *}
   execution:
     kafka:
       consumer-group: ${DATASCALPEL_EXECUTION_KAFKA_CONSUMER_GROUP:data-scalpel-admin-execution-v1}
@@ -87,6 +105,14 @@ data-scalpel:
       proxy-url: ${DATASCALPEL_KONG_PROXY_URL:}
       connect-timeout: ${DATASCALPEL_KONG_CONNECT_TIMEOUT:3s}
       request-timeout: ${DATASCALPEL_KONG_REQUEST_TIMEOUT:5s}
+    super-api-gateway:
+      admin-url: ${DATASCALPEL_SUPER_API_GATEWAY_ADMIN_URL:}
+      proxy-url: ${DATASCALPEL_SUPER_API_GATEWAY_PROXY_URL:}
+      machine-token: ${DATASCALPEL_SUPER_API_GATEWAY_MACHINE_TOKEN:}
+      connect-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_CONNECT_TIMEOUT:3s}
+      request-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_REQUEST_TIMEOUT:5s}
+      upstream-connect-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_UPSTREAM_CONNECT_TIMEOUT:3s}
+      upstream-response-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_UPSTREAM_RESPONSE_TIMEOUT:35s}
   task-engine:
     token: ${DATASCALPEL_TASK_ENGINE_TOKEN:}
     connect-timeout: ${DATASCALPEL_TASK_ENGINE_CONNECT_TIMEOUT:3s}

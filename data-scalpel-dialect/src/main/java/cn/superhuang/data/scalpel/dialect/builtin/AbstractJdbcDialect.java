@@ -574,7 +574,8 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         return URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
     }
 
-    protected final String qualifiedName(TableIdentifier table) {
+    @Override
+    public final String qualifiedName(TableIdentifier table) {
         return switch (qualificationMode) {
             case CATALOG -> join(table.catalog(), table.table());
             case SCHEMA -> join(table.schema(), table.table());
@@ -751,7 +752,8 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
                 .collect(java.util.stream.Collectors.joining("."));
     }
 
-    protected final String quoteIdentifier(String identifier) {
+    @Override
+    public final String quoteIdentifier(String identifier) {
         return quoteStart + identifier.replace(quoteEnd, quoteEnd + quoteEnd) + quoteEnd;
     }
 
@@ -998,6 +1000,9 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         if ("POSTGRESQL".equals(id)) {
             capabilities.add(DatabaseCapability.SQL_SERVICE_QUERY);
             capabilities.add(DatabaseCapability.OVERWRITE_INSERT_SELECT);
+        }
+        if ("POSTGRESQL".equals(id) || "MYSQL".equals(id)) {
+            capabilities.add(DatabaseCapability.ROW_UPSERT);
         }
         if ("POSTGRESQL".equals(id) || "MYSQL".equals(id) || "CLICKHOUSE".equals(id)) {
             capabilities.add(DatabaseCapability.CREATE_TABLE);

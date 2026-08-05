@@ -25,6 +25,7 @@ vi.mock('../hooks/useFileDatasets', () => ({
   useDeleteFileDatasetTableSource: () => ({ isPending: false, mutateAsync: hooks.deleteSource }),
   useDownloadFileDatasetFile: () => ({ isPending: false, mutateAsync: hooks.download }),
   useUpdateFileDatasetTable: () => ({ isPending: false, mutateAsync: hooks.update }),
+  useUpdateFileDatasetTableSpatialReference: () => ({ isPending: false, mutateAsync: vi.fn() }),
 }));
 
 import { FileDatasetTableResultPanel } from './FileDatasetTableResultPanel';
@@ -65,6 +66,7 @@ const table = (parseStatus: FileDatasetParseStatus): FileDatasetTable => ({
   truncated: false,
   previewSupported: parseStatus !== 'SCHEMA_READY',
   sourceMetadata: {},
+  spatialReferenceOverride: null,
   createdAt: '2026-07-19T00:00:00Z',
   updatedAt: '2026-07-19T00:00:00Z',
 });

@@ -24,6 +24,10 @@ import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
 import cn.superhuang.data.scalpel.contract.task.MetadataTable;
 import cn.superhuang.data.scalpel.contract.task.NodeCompilationResult;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import org.apache.spark.scheduler.SparkListener;
 import org.apache.spark.scheduler.SparkListenerJobStart;
 import org.apache.spark.sql.SparkSession;
@@ -121,6 +125,46 @@ class FileDatasetInputNodeOperatorSparkTest {
         );
 
         assertTrue(compilation.valid(), () -> "Compilation issues: " + compilation.nodeResults());
+    }
+
+    @Test
+    void compilesShapefileGeometryWithoutDowngradingItToString() {
+        UUID tableId = UUID.randomUUID();
+        CanvasColumnSchema geometry = new CanvasColumnSchema(
+                "_geometry",
+                PlatformDataType.GEOMETRY,
+                null,
+                null,
+                null,
+                true,
+                null,
+                false,
+                false,
+                null,
+                new GeometryTypeDefinition(
+                        GeometryKind.POINT,
+                        CrsReference.epsg(4326),
+                        CoordinateDimension.XY
+                )
+        );
+
+        CanvasCompilation compilation = compile(
+                definition(20, tableId.toString()),
+                metadata(
+                        tableId,
+                        FileDatasetParseStatus.READY,
+                        FileDatasetFileStatus.READY,
+                        List.of(COLUMNS.getFirst(), geometry),
+                        FileDatasetType.SHP
+                ),
+                CanvasExecutionMode.BATCH
+        );
+
+        assertTrue(compilation.valid(), () -> "Compilation issues: " + compilation.nodeResults());
+        CanvasColumnSchema outputGeometry = compilation.nodeResults().getFirst().outputTables().getFirst()
+                .columns().get(1);
+        assertEquals(PlatformDataType.GEOMETRY, outputGeometry.fieldType());
+        assertEquals(geometry.geometry(), outputGeometry.geometry());
     }
 
     @Test
@@ -224,6 +268,16 @@ class FileDatasetInputNodeOperatorSparkTest {
             FileDatasetFileStatus fileStatus,
             List<CanvasColumnSchema> columns
     ) {
+        return metadata(tableId, parseStatus, fileStatus, columns, FileDatasetType.PARQUET);
+    }
+
+    private static MetadataSnapshot metadata(
+            UUID tableId,
+            FileDatasetParseStatus parseStatus,
+            FileDatasetFileStatus fileStatus,
+            List<CanvasColumnSchema> columns,
+            FileDatasetType datasetType
+    ) {
         return new MetadataSnapshot(
                 List.of(targetDataSource()),
                 List.of(),
@@ -231,7 +285,7 @@ class FileDatasetInputNodeOperatorSparkTest {
                         tableId,
                         TABLE_CODE,
                         "订单文件表",
-                        FileDatasetType.PARQUET,
+                        datasetType,
                         parseStatus,
                         fileStatus,
                         columns

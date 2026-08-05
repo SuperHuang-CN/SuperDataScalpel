@@ -104,7 +104,6 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                         .content("{\"engineId\":\"" + engineId + "\",\"dataSourceId\":\"" + dataSourceId + "\"}"))
                 .andExpect(status().isCreated())
                 .andExpect(jsonPath("$.status").value("READY"))
-                .andExpect(jsonPath("$.revision").value(1))
                 .andReturn().getResponse().getContentAsString();
         String registrationId = com.jayway.jsonpath.JsonPath.read(registration, "$.id");
         createdRegistrationId = registrationId;
@@ -141,8 +140,7 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("{}"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.status").value("READY"))
-                .andExpect(jsonPath("$.revision").value(2));
+                .andExpect(jsonPath("$.status").value("READY"));
 
         mockMvc.perform(post("/api/v1/service-engine-data-sources/{id}/actions/test", registrationId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -221,6 +219,8 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
         @Primary
         ServiceEngineClient serviceEngineClient(ServiceEngineCredentialCipher credentialCipher) {
             return new ServiceEngineClient(credentialCipher) {
+                private int registrationCount;
+
                 @Override
                 public ServiceEngineInfoResponse info(String adminUrl, String managementToken) {
                     assertNoManagementTransaction();
@@ -242,19 +242,19 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                         EngineDataSourceRegistrationRequest request
                 ) {
                     assertNoManagementTransaction();
-                    Map<String, String> expectedOptions = request.revision() == 1
+                    Map<String, String> expectedOptions = registrationCount++ == 0
                             ? Map.of("sslmode", "prefer", "tcpKeepAlive", "true")
                             : Map.of("sslmode", "require", "tcpKeepAlive", "false");
                     assertEquals(expectedOptions, request.dataSource().options());
                     return new EngineDataSourceRegistrationResponse(
-                            engine.getCode(), request.dataSourceId(), request.revision(), EngineDataSourceStatus.READY, "已注册"
+                            engine.getCode(), request.dataSourceId(), EngineDataSourceStatus.READY, "已注册"
                     );
                 }
 
                 @Override
                 public EngineDataSourceTestResponse testDataSource(ServiceEngine engine, UUID dataSourceId) {
                     assertNoManagementTransaction();
-                    return new EngineDataSourceTestResponse(engine.getCode(), dataSourceId, 2, "POSTGRESQL");
+                    return new EngineDataSourceTestResponse(engine.getCode(), dataSourceId, "POSTGRESQL");
                 }
 
                 @Override
@@ -264,7 +264,7 @@ class ServiceEngineDataSourceRegistrationIntegrationTests {
                 ) {
                     assertNoManagementTransaction();
                     return new EngineDataSourceRegistrationResponse(
-                            engine.getCode(), request.dataSourceId(), request.revision(), EngineDataSourceStatus.REMOVED, "已移除"
+                            engine.getCode(), request.dataSourceId(), EngineDataSourceStatus.REMOVED, "已移除"
                     );
                 }
 

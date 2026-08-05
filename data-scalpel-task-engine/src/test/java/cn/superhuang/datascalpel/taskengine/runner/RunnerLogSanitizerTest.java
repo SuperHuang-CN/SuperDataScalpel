@@ -1,6 +1,7 @@
 package cn.superhuang.datascalpel.taskengine.runner;
 
 import org.junit.jupiter.api.Test;
+import org.locationtech.jts.io.ParseException;
 
 import java.nio.charset.StandardCharsets;
 
@@ -33,7 +34,10 @@ class RunnerLogSanitizerTest {
                 "s3a://private-bucket/root/orders/part-000.parquet "
                         + "objectKey=root/orders/source.parquet "
                         + "materializedPrefix=root/materialized/abc "
-                        + "/tmp/datascalpel-file-input-123456.xlsx"
+                        + "/tmp/datascalpel-file-input-123456.xlsx "
+                        + "/private/tmp/datascalpel-geojson-123456/districts.geojson "
+                        + "/var/tmp/datascalpel-shapefile-654321/districts.shp "
+                        + "/private/var/folders/cache/spark-a3f3c1/_temporary/part-000.parquet"
         );
 
         String stack = RunnerLogSanitizer.stackTrace(failure);
@@ -42,8 +46,13 @@ class RunnerLogSanitizerTest {
         assertFalse(stack.contains("root/orders/source.parquet"));
         assertFalse(stack.contains("root/materialized/abc"));
         assertFalse(stack.contains("datascalpel-file-input-123456.xlsx"));
+        assertFalse(stack.contains("datascalpel-geojson-123456"));
+        assertFalse(stack.contains("datascalpel-shapefile-654321"));
+        assertFalse(stack.contains("spark-a3f3c1"));
         assertTrue(stack.contains("[redacted-object-uri]"));
         assertTrue(stack.contains("[redacted-file-input-temp-path]"));
+        assertTrue(stack.contains("[redacted-file-output-temp-path]"));
+        assertTrue(stack.contains("[redacted-spark-temp-path]"));
     }
 
     @Test
@@ -54,5 +63,21 @@ class RunnerLogSanitizerTest {
         assertTrue(stack.endsWith("...[STACK_TRUNCATED_AT_64_KIB]"));
         assertTrue(stack.getBytes(StandardCharsets.UTF_8).length <= RunnerLogSanitizer.MAX_STACK_BYTES);
         assertFalse(stack.contains("never-visible"));
+    }
+
+    @Test
+    void removesSpatialExceptionMessagesButKeepsDiagnosticStackFrames() {
+        RuntimeException failure = new RuntimeException(
+                "outer message includes POLYGON ((secret coordinates))",
+                new ParseException("inner message includes secret malformed WKT")
+        );
+
+        String stack = RunnerLogSanitizer.spatialSafeStackTrace(failure);
+
+        assertFalse(stack.contains("secret coordinates"));
+        assertFalse(stack.contains("secret malformed WKT"));
+        assertTrue(stack.contains("[spatial-message-redacted]"));
+        assertTrue(stack.contains("RunnerLogSanitizerTest"));
+        assertTrue(stack.contains(ParseException.class.getName()));
     }
 }

@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
+import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
@@ -38,6 +39,12 @@ public interface DatabaseDialect {
 
     String resolveSchema(JdbcConnectionConfig config, String requestedSchema);
 
+    /** Quotes one trusted metadata identifier for this database. */
+    String quoteIdentifier(String identifier);
+
+    /** Renders a trusted metadata table identifier with the database's namespace rules. */
+    String qualifiedName(TableIdentifier table);
+
     String validationQuery();
 
     String previewSql(TableIdentifier table, int rowLimit);
@@ -58,6 +65,20 @@ public interface DatabaseDialect {
 
     /** Renders the controlled cleanup step used by a dialect that supports transactional task overwrite. */
     String renderOverwriteCleanup(TableIdentifier target);
+
+    /** Renders one prepared row UPSERT from trusted target metadata. */
+    default String renderRowUpsert(
+            TableIdentifier target,
+            List<JdbcUpsertColumn> columns,
+            List<String> keyColumns
+    ) {
+        throw new UnsupportedOperationException(definition().displayName() + " does not support row UPSERT");
+    }
+
+    /** SQL executed by Spark JDBC after opening a query-input connection. */
+    default String readOnlySessionInitializationSql() {
+        return null;
+    }
 
     LogicalType logicalType(int jdbcType, String nativeTypeName);
 

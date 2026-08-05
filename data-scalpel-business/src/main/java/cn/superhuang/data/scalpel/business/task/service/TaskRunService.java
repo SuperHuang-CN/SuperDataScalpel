@@ -752,7 +752,7 @@ public class TaskRunService {
 
     private record CanvasRunSource(
             int definitionVersion,
-            cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition definition,
+            cn.superhuang.data.scalpel.contract.task.CanvasDefinition definition,
             UUID computeEngineId
     ) {
     }

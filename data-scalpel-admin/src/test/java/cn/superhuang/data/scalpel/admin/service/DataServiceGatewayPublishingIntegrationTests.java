@@ -689,7 +689,6 @@ class DataServiceGatewayPublishingIntegrationTests {
             return new EngineDataSourceRegistrationResponse(
                     engine.getCode(),
                     request.dataSourceId(),
-                    request.revision(),
                     EngineDataSourceStatus.READY,
                     "已注册"
             );
@@ -701,7 +700,6 @@ class DataServiceGatewayPublishingIntegrationTests {
             transactionStates.add(TransactionSynchronizationManager.isActualTransactionActive());
             return new ServiceDeploymentResponse(
                     request.serviceId(),
-                    request.revision(),
                     EngineDeploymentStatus.DEPLOYED,
                     "已启用"
             );
@@ -714,7 +712,6 @@ class DataServiceGatewayPublishingIntegrationTests {
             removeCount++;
             return new ServiceDeploymentResponse(
                     request.serviceId(),
-                    request.revision(),
                     EngineDeploymentStatus.REMOVED,
                     "已停用"
             );

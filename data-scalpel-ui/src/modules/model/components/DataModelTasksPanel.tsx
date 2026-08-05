@@ -188,7 +188,7 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
   return (
     <div className="model-detail-tab-panel">
       <div className="model-tab-toolbar">
-        <Form<TaskFilters>
+        <Form<TaskFilters> autoComplete="off"
           form={form}
           layout="inline"
           onFinish={(values) => {

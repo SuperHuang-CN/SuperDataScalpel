@@ -1,10 +1,11 @@
 import {
+  ApiOutlined,
   AuditOutlined,
   ClearOutlined,
   CopyOutlined,
   DeleteOutlined,
   DownOutlined,
-  FilterOutlined,
+  MoreOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
@@ -16,14 +17,10 @@ import {
 import type { MenuProps, TableProps } from 'antd';
 import {
   Alert,
-  Badge,
   Button,
-  Card,
   Dropdown,
   Form,
-  Input,
-  Popconfirm,
-  Popover,
+  Modal,
   Select,
   Space,
   Table,
@@ -35,6 +32,8 @@ import {
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementCode, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
 import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type DirectorySelection } from '../../directory';
 import { useServiceEngines } from '../../serviceengine';
 import { fetchDataService } from '../api/dataServiceApi';
@@ -53,14 +52,10 @@ import {
   dataServiceAccessModeLabels,
   dataServiceStatusLabels,
   dataServiceTypeLabels,
-  gatewayServicePublicationStatusLabels,
   type DataServiceDeploymentStatus,
-  type DataServiceAccessMode,
   type DataServiceFilters,
   type DataServiceStatus,
   type DataServiceSummary,
-  type DataServiceType,
-  type GatewayServicePublicationStatus,
 } from '../model/dataService';
 import { gatewayProviderLabels } from '../model/apiConsumer';
 import { buildDataServiceCurlCommand } from '../model/dataServiceCurl';
@@ -68,7 +63,6 @@ import { gatewayOperationError, publishedGatewayBinding } from '../model/dataSer
 import { parseDataServiceListRoute, serializeDataServiceListRoute } from '../model/dataServiceListRoute';
 import { buildDataServiceSearch } from '../model/dataServiceSearch';
 import { DataServiceSubscriptionsDrawer } from './DataServiceSubscriptionsDrawer';
-import { GatewayReconciliationTag } from './GatewayReconciliationTag';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -87,21 +81,13 @@ const formatDateTime = (value: string | null) => value ? new Intl.DateTimeFormat
   dateStyle: 'medium', timeStyle: 'medium', hour12: false,
 }).format(new Date(value)) : '—';
 
-const serviceStatusColors: Record<DataServiceStatus, string> = {
+const serviceStatusColors: Record<DataServiceStatus, ManagementStatusTone> = {
   DRAFT: 'default', ENABLED: 'success', DISABLED: 'warning',
 };
 
-const deploymentStatusColors: Record<DataServiceDeploymentStatus, string> = {
+const deploymentStatusColors: Record<DataServiceDeploymentStatus, ManagementStatusTone> = {
   PENDING: 'processing', DEPLOYED: 'success', FAILED: 'error', REMOVING: 'processing', REMOVED: 'default',
 };
-const gatewayStatusColors: Record<GatewayServicePublicationStatus, string> = {
-  PUBLISHING: 'processing',
-  PUBLISHED: 'success',
-  PUBLISH_FAILED: 'error',
-  REMOVING: 'processing',
-  REMOVE_FAILED: 'error',
-};
-
 const statusOptions = Object.entries(dataServiceStatusLabels).map(([value, label]) => ({ value, label }));
 const typeOptions = Object.entries(dataServiceTypeLabels).map(([value, label]) => ({ value, label }));
 
@@ -129,12 +115,17 @@ export const DataServiceListPanel = ({
   const [routeSearchParams, setRouteSearchParams] = useSearchParams();
   const [initialRouteState] = useState(() => parseDataServiceListRoute(routeSearchParams));
   const [filterForm] = Form.useForm<DataServiceFilters>();
-  const selectedEngineId = Form.useWatch('engineId', filterForm);
+  const [advancedFilterForm] = Form.useForm<DataServiceFilters>();
+  const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
+  const [advancedFilters, setAdvancedFilters] = useState<DataServiceFilters>({
+    engineId: initialRouteState.filters.engineId,
+  });
   const [filters, setFilters] = useState<DataServiceFilters>(initialRouteState.filters);
   const [directorySelection, setDirectorySelection] = useState<DirectorySelection>(initialRouteState.directorySelection);
   const [page, setPage] = useState(initialRouteState.page);
   const [size, setSize] = useState(initialRouteState.size);
   const [messageApi, messageContext] = message.useMessage();
+  const [modalApi, modalContext] = Modal.useModal();
   const [subscriptionService, setSubscriptionService] = useState<DataServiceSummary | null>(null);
   const directoriesQuery = useDirectoryTree('DATA_SERVICE', canViewDirectories);
   const enginesQuery = useServiceEngines({ page: 0, size: 500, sort: 'code' }, canViewEngines);
@@ -182,9 +173,33 @@ export const DataServiceListPanel = ({
 
   const reset = () => {
     filterForm.resetFields();
+    filterForm.setFieldsValue({
+      keyword: undefined,
+      status: undefined,
+      type: undefined,
+      engineId: undefined,
+    });
+    advancedFilterForm.resetFields();
+    setAdvancedFilters({});
+    setAdvancedFilterOpen(false);
     setDirectorySelection(undefined);
     search({}, undefined);
   };
+
+  const applyDirectFilters = (values: DataServiceFilters) => search({
+    ...filters,
+    keyword: values.keyword,
+    status: values.status,
+    type: values.type,
+    engineId: advancedFilters.engineId,
+  });
+
+  const confirmAdvancedFilters = () => {
+    setAdvancedFilters({ engineId: advancedFilterForm.getFieldValue('engineId') });
+    setAdvancedFilterOpen(false);
+  };
+
+  const clearAdvancedFilters = () => advancedFilterForm.resetFields();
 
   const selectDirectory = (selection: DirectorySelection) => {
     setDirectorySelection(selection);
@@ -195,7 +210,12 @@ export const DataServiceListPanel = ({
     }, selection);
   };
 
-  const openEditor = (path: string) => navigate(path, { state: { fromDataServiceList: true } });
+  const openEditor = (path: string) => navigate(path, {
+    state: {
+      fromDataServiceList: true,
+      initialDirectoryId: typeof directorySelection === 'string' ? directorySelection : undefined,
+    },
+  });
 
   const enable = async (dataService: DataServiceSummary) => {
     try {
@@ -295,6 +315,10 @@ export const DataServiceListPanel = ({
       messageApi.error(error instanceof ApiError ? error.problem?.detail ?? error.message : '删除数据服务失败');
     }
   };
+  const confirmRemove = (dataService: DataServiceSummary) => modalApi.confirm({
+    title: '删除数据服务', content: `确认删除“${dataService.name}”吗？`, okText: '删除', cancelText: '取消',
+    okButtonProps: { danger: true }, onOk: () => remove(dataService),
+  });
 
   const copyCurl = async (dataService: DataServiceSummary) => {
     const binding = publishedGatewayBinding(dataService);
@@ -317,63 +341,49 @@ export const DataServiceListPanel = ({
 
   const columns: TableProps<DataServiceSummary>['columns'] = [
     {
-      title: '名称', dataIndex: 'name', width: 170, ellipsis: true,
+      title: '服务', dataIndex: 'name', width: 240,
       render: (value: string, service: DataServiceSummary) => (
-        <Button type="link" size="small" className="data-service-name-button" onClick={() => openEditor(`/dataservice/${service.id}`)}>{value}</Button>
+        <ManagementListCell icon={<ApiOutlined />} iconTone="violet" primary={<Button type="link" size="small" className="data-service-name-button" onClick={() => openEditor(`/dataservice/${service.id}`)}>{value}</Button>} secondary={<><ManagementCode value={service.code} /> {service.description || ''}</>} />
       ),
     },
-    { title: '编码', dataIndex: 'code', width: 165, ellipsis: true, render: (value: string) => <code>{value}</code> },
-    { title: '类型', dataIndex: 'type', width: 105, render: (value: DataServiceType) => <Tag>{dataServiceTypeLabels[value]}</Tag> },
-    { title: '数据来源', dataIndex: 'sourceName', width: 180, ellipsis: true },
-    { title: 'Engine', dataIndex: 'engineId', width: 160, ellipsis: true, render: (value: string) => engineNames.get(value) ?? value },
-    { title: '公开路由', dataIndex: 'routePath', width: 235, ellipsis: true, render: (value: string) => <code>{value}</code> },
+    { title: '类型 / 来源', width: 180, render: (_: unknown, service) => <ManagementListCell primary={dataServiceTypeLabels[service.type]} secondary={service.sourceName} /> },
     {
-      title: '访问模式',
-      dataIndex: 'accessMode',
-      width: 105,
-      render: (value: DataServiceAccessMode) => (
-        <Tag color={value === 'SUBSCRIPTION_REQUIRED' ? 'purple' : 'default'}>
-          {dataServiceAccessModeLabels[value]}
-        </Tag>
-      ),
+      title: '路由 / 访问', width: 250,
+      render: (_: unknown, service) => <ManagementListCell primary={<ManagementCode value={service.routePath} />} secondary={dataServiceAccessModeLabels[service.accessMode]} />,
     },
     {
-      title: '服务状态', dataIndex: 'status', width: 100,
-      render: (value: DataServiceStatus) => <Tag color={serviceStatusColors[value]}>{dataServiceStatusLabels[value]}</Tag>,
+      title: '运行状态', width: 210,
+      render: (_: unknown, dataService: DataServiceSummary) => <ManagementListCell
+        primary={<ManagementStatusIndicator label={dataServiceStatusLabels[dataService.status]} tone={serviceStatusColors[dataService.status]} />}
+        secondary={<div className="management-status-group">
+          {dataService.deploymentStatus
+            ? <ManagementStatusIndicator label={dataServiceDeploymentStatusLabels[dataService.deploymentStatus]} tone={deploymentStatusColors[dataService.deploymentStatus]} title={dataService.deploymentError || undefined} />
+            : <ManagementStatusIndicator label="未部署" />}
+          <ManagementStatusIndicator label={dataService.gatewayBindings.length ? `网关 ${dataService.gatewayBindings.length}` : '未发布网关'} tone={dataService.gatewayBindings.length ? 'success' : 'default'} />
+        </div>}
+      />,
     },
+    { title: 'Engine / 版本', width: 190, render: (_: unknown, service) => <ManagementListCell primary={engineNames.get(service.engineId) ?? service.engineId} secondary={`v${service.revision} · ${formatDateTime(service.updatedAt)}`} /> },
     {
-      title: '部署状态', key: 'deploymentStatus', width: 118,
-      render: (_: unknown, dataService: DataServiceSummary) => dataService.deploymentStatus ? (
-        <Tooltip title={dataService.deploymentError || undefined}>
-          <Tag color={deploymentStatusColors[dataService.deploymentStatus]}>
-            {dataServiceDeploymentStatusLabels[dataService.deploymentStatus]}
-          </Tag>
-        </Tooltip>
-      ) : '—',
-    },
-    {
-      title: '网关发布', key: 'gatewayBindings', width: 245,
-      render: (_: unknown, dataService: DataServiceSummary) => dataService.gatewayBindings.length > 0 ? (
-        <Space size={[2, 2]} wrap>
-          {dataService.gatewayBindings.map((binding) => (
-            <Space key={binding.id} size={[2, 2]} wrap>
-              <Tooltip title={binding.lastError || binding.gatewayUrl || undefined}>
-                <Tag color={gatewayStatusColors[binding.publicationStatus]}>
-                  {gatewayProviderLabels[binding.provider]} · {gatewayServicePublicationStatusLabels[binding.publicationStatus]}
-                </Tag>
-              </Tooltip>
-              <GatewayReconciliationTag state={binding} />
-            </Space>
-          ))}
-        </Space>
-      ) : '—',
-    },
-    { title: '版本', dataIndex: 'revision', width: 74, align: 'right' },
-    { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: (value: string) => formatDateTime(value) },
-    {
-      title: '操作', key: 'action', width: 142, fixed: 'right',
-      render: (_: unknown, dataService: DataServiceSummary) => (
-        <Space size={2}>
+      title: '操作', key: 'action', width: 112,
+      render: (_: unknown, dataService: DataServiceSummary) => {
+        const moreItems: NonNullable<MenuProps['items']> = [
+          ...(dataService.accessMode === 'SUBSCRIPTION_REQUIRED' ? [{ key: 'subscriptions', label: '订阅消费者', icon: <TeamOutlined /> }] : []),
+          ...(canPublish && dataService.status !== 'ENABLED' ? [{ key: 'enable', label: dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING' ? '重试启用' : '启用', icon: <PlayCircleOutlined /> }] : []),
+          ...(canPublish && dataService.status === 'ENABLED' ? [{ key: 'disable', label: '停用', icon: <StopOutlined />, danger: true }] : []),
+          ...(publishedGatewayBinding(dataService) ? [{ key: 'curl', label: '复制网关访问 cURL', icon: <CopyOutlined /> }] : []),
+          ...(canPublish ? [{ key: 'reconcile', label: '对账网关状态', icon: <AuditOutlined /> }] : []),
+          ...(canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED'
+            ? [{ key: 'publish', label: publishedGatewayBinding(dataService) ? '重新发布到网关' : '发布到网关', icon: <UploadOutlined /> }] : []),
+          ...(canPublish && dataService.status === 'ENABLED' && dataService.gatewayBindings.length > 0
+            ? [{ key: 'unpublish', label: '取消发布到网关', icon: <RollbackOutlined />, danger: true }] : []),
+          ...(canPublish && dataService.status !== 'ENABLED' && (dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING')
+            ? [{ key: 'cleanup', label: '清理失败部署', icon: <ClearOutlined /> }] : []),
+          ...(canDelete && dataService.gatewayBindings.length === 0 && (!dataService.deploymentStatus || dataService.deploymentStatus === 'REMOVED')
+            ? [{ type: 'divider' as const }, { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
+        ];
+        return <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">
           {dataService.accessMode === 'SUBSCRIPTION_REQUIRED' && (
             <Tooltip title="订阅消费者">
               <Button
@@ -385,85 +395,33 @@ export const DataServiceListPanel = ({
               />
             </Tooltip>
           )}
-          {publishedGatewayBinding(dataService) && (
-            <Tooltip title="复制网关访问 cURL"><Button type="text" size="small" aria-label={`复制${dataService.name}的网关访问 cURL`} icon={<CopyOutlined />} onClick={() => void copyCurl(dataService)} /></Tooltip>
-          )}
-          {canPublish && dataService.gatewayBindings.length > 0 && (
-            <Tooltip title="立即对账网关状态">
-              <Button
-                type="text"
-                size="small"
-                aria-label={`对账${dataService.name}的网关状态`}
-                icon={<AuditOutlined />}
-                loading={reconcileMutation.isPending
-                  && reconcileMutation.variables === dataService.id}
-                onClick={() => void reconcileGateway(dataService)}
-              />
-            </Tooltip>
-          )}
-          {canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && (
-            <Tooltip title={publishedGatewayBinding(dataService) ? '重新发布到网关' : '发布到网关'}><Button type="text" size="small" aria-label={`发布${dataService.name}到网关`} icon={<UploadOutlined />} loading={publishMutation.isPending && publishMutation.variables === dataService.id} onClick={() => void publish(dataService)} /></Tooltip>
-          )}
-          {canPublish && dataService.status === 'ENABLED' && dataService.gatewayBindings.length > 0 && (
-            <Popconfirm
-              title="取消发布到网关？"
-              description={`取消后“${dataService.name}”将无法通过网关访问，Service Engine 保持运行。`}
-              okText="取消发布"
-              cancelText="返回"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => void unpublish(dataService)}
-            >
-              <Tooltip title="取消发布">
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  aria-label={`取消发布${dataService.name}`}
-                  icon={<RollbackOutlined />}
-                  loading={unpublishMutation.isPending
-                    && unpublishMutation.variables === dataService.id}
-                />
-              </Tooltip>
-            </Popconfirm>
-          )}
           {canPublish && dataService.status !== 'ENABLED' && (
             <Tooltip title={dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING' ? '重试启用' : '启用'}><Button type="text" size="small" aria-label={`启用${dataService.name}`} icon={<PlayCircleOutlined />} loading={enableMutation.isPending && enableMutation.variables === dataService.id} onClick={() => void enable(dataService)} /></Tooltip>
           )}
-          {canPublish && dataService.status !== 'ENABLED' && (dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING') && (
-            <Tooltip title="清理失败部署"><Button type="text" size="small" aria-label={`清理${dataService.name}的失败部署`} icon={<ClearOutlined />} loading={cleanupMutation.isPending && cleanupMutation.variables === dataService.id} onClick={() => void cleanup(dataService)} /></Tooltip>
-          )}
           {canPublish && dataService.status === 'ENABLED' && (
-            <Popconfirm
-              title="停用数据服务？"
-              description={`将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`}
-              okText="停用"
-              cancelText="返回"
-              okButtonProps={{ danger: true }}
-              onConfirm={() => void disable(dataService)}
-            >
-              <Tooltip title="停用">
-                <Button
-                  type="text"
-                  size="small"
-                  danger
-                  aria-label={`停用${dataService.name}`}
-                  icon={<StopOutlined />}
-                  loading={disableMutation.isPending
-                    && disableMutation.variables === dataService.id}
-                />
-              </Tooltip>
-            </Popconfirm>
+            <Tooltip title="停用"><Button type="text" size="small" danger aria-label={`停用${dataService.name}`} icon={<StopOutlined />} loading={disableMutation.isPending && disableMutation.variables === dataService.id} onClick={() => modalApi.confirm({ title: '停用数据服务？', content: `将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`, okText: '停用', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => disable(dataService) })} /></Tooltip>
           )}
-          {canDelete && dataService.gatewayBindings.length === 0 && (!dataService.deploymentStatus || dataService.deploymentStatus === 'REMOVED') && (
-            <Popconfirm title="删除数据服务" description={`确认删除“${dataService.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => remove(dataService)}><Tooltip title="删除"><Button type="text" size="small" danger aria-label={`删除${dataService.name}`} icon={<DeleteOutlined />} /></Tooltip></Popconfirm>
-          )}
-        </Space>
-      ),
+          </div>
+          {moreItems.length > 0 && <Dropdown trigger={['click']} menu={{ items: moreItems, onClick: ({ key }) => {
+            if (key === 'subscriptions') setSubscriptionService(dataService);
+            if (key === 'enable') void enable(dataService);
+            if (key === 'disable') modalApi.confirm({ title: '停用数据服务？', content: `将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`, okText: '停用', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => disable(dataService) });
+            if (key === 'curl') void copyCurl(dataService);
+            if (key === 'reconcile') void reconcileGateway(dataService);
+            if (key === 'publish') void publish(dataService);
+            if (key === 'unpublish') modalApi.confirm({ title: '取消发布到网关？', content: `取消后“${dataService.name}”将无法通过网关访问，Service Engine 保持运行。`, okText: '取消发布', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => unpublish(dataService) });
+            if (key === 'cleanup') void cleanup(dataService);
+            if (key === 'delete') confirmRemove(dataService);
+          } }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" size="small" aria-label={`${dataService.name}的更多操作`} icon={<MoreOutlined />} /></Tooltip></Dropdown>}
+        </div>;
+      },
     },
   ];
+  const advancedFilterCount = Number(Boolean(advancedFilters.engineId));
 
   const standardCreationDisabled = !canViewModels || !canViewEngines;
   const sqlCreationDisabled = standardCreationDisabled || !canViewDataSources;
+  const scriptCreationDisabled = !canViewDataSources || !canViewEngines;
   const creationItems: MenuProps['items'] = [
     {
       key: 'standard',
@@ -475,38 +433,52 @@ export const DataServiceListPanel = ({
       disabled: sqlCreationDisabled,
       label: creationLabel('SQL 查询服务', sqlCreationDisabled ? '需要数据源、模型和 Service Engine 查看权限' : '基于 PostgreSQL 数据源和多个模型编写只读 SQL'),
     },
-    { key: 'script', disabled: true, label: creationLabel('脚本服务', '通过脚本编排自定义服务逻辑', '规划中') },
+    {
+      key: 'script',
+      disabled: scriptCreationDisabled,
+      label: creationLabel(
+        'Groovy 脚本服务',
+        scriptCreationDisabled ? '需要数据源和 Service Engine 查看权限' : '在线编写脚本并发布复杂数据服务',
+      ),
+    },
   ];
 
   return (
     <>
       {messageContext}
+      {modalContext}
       <div className={canViewDirectories ? 'directory-management-layout' : 'page-stack'}>
         {canViewDirectories && <DirectoryTreePanel scope="DATA_SERVICE" tree={directoriesQuery.data ?? []} loading={directoriesQuery.isFetching} selection={directorySelection} canManage={canManageDirectories} onSelectionChange={selectDirectory} />}
-        <Card className="management-card">
-          <div className="management-toolbar">
-            <Form<DataServiceFilters> form={filterForm} initialValues={initialRouteState.filters} layout="inline" className="management-filter-form" onFinish={search}>
-              <Form.Item name="keyword" label="名称/编码"><Input allowClear placeholder="按名称或编码筛选" className="data-source-keyword-input" /></Form.Item>
-              <Form.Item name="status" label="服务状态"><Select allowClear placeholder="全部" options={statusOptions} className="data-source-filter-select" /></Form.Item>
-              <Form.Item name="type" label="类型"><Select allowClear placeholder="全部" options={typeOptions} className="data-source-filter-select" /></Form.Item>
-              <Popover
-                trigger="click"
-                placement="bottomLeft"
-                content={(
-                  <div className="advanced-filter-popover">
-                    <div className="advanced-filter-title">更多筛选</div>
-                    <Form.Item name="engineId" label="Service Engine"><Select allowClear showSearch optionFilterProp="label" options={(enginesQuery.data?.content ?? []).map((engine) => ({ value: engine.id, label: engine.name }))} className="advanced-filter-select" /></Form.Item>
-                    <div className="advanced-filter-actions"><Button type="link" size="small" htmlType="button" onClick={() => filterForm.setFieldsValue({ engineId: undefined })}>清空更多条件</Button></div>
-                  </div>
-                )}
+        <section className="management-workbench">
+          <div className="management-filter-strip">
+            <Form<DataServiceFilters> autoComplete="off" form={filterForm} initialValues={initialRouteState.filters} layout="inline" className="management-filter-form" onFinish={applyDirectFilters}>
+              <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索服务名称或编码" className="data-source-keyword-input" /></Form.Item>
+              <Form.Item name="status"><Select allowClear placeholder="全部服务状态" options={statusOptions} className="data-source-filter-select" /></Form.Item>
+              <Form.Item name="type"><Select allowClear placeholder="全部类型" options={typeOptions} className="data-source-filter-select" /></Form.Item>
+              <ManagementMoreFilters
+                count={advancedFilterCount}
+                open={advancedFilterOpen}
+                onOpenChange={(open) => {
+                  setAdvancedFilterOpen(open);
+                  if (open) {
+                    advancedFilterForm.resetFields();
+                    advancedFilterForm.setFieldsValue(advancedFilters);
+                  }
+                }}
+                onClear={clearAdvancedFilters}
+                onCancel={() => setAdvancedFilterOpen(false)}
+                onConfirm={confirmAdvancedFilters}
               >
-                <Badge count={Number(Boolean(selectedEngineId))} size="small" offset={[-2, 2]}><Button icon={<FilterOutlined />}>更多</Button></Badge>
-              </Popover>
+                <Form<DataServiceFilters> form={advancedFilterForm} layout="vertical" autoComplete="off"><Form.Item name="engineId" label="Service Engine"><Select allowClear showSearch optionFilterProp="label" options={(enginesQuery.data?.content ?? []).map((engine) => ({ value: engine.id, label: engine.name }))} className="advanced-filter-select" /></Form.Item></Form>
+              </ManagementMoreFilters>
             </Form>
-            <Space size={4} className="management-toolbar-actions">
-              <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-              <Button onClick={reset}>重置</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => void dataServicesQuery.refetch()}>刷新</Button>
+            <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0 || directorySelection !== undefined} loading={dataServicesQuery.isFetching} onReset={reset} />
+          </div>
+          <div className="management-results-surface">
+            <div className="management-result-toolbar">
+            <div className="management-result-title">数据服务 <span className="management-result-count">共 {dataServicesQuery.data?.totalElements ?? 0} 项</span></div>
+            <Space size={4} className="management-result-actions">
+              <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新数据服务列表" onClick={() => void dataServicesQuery.refetch()} /></Tooltip>
               {canCreate && (
                 <Dropdown
                   trigger={['click']}
@@ -515,6 +487,7 @@ export const DataServiceListPanel = ({
                     onClick: ({ key }) => {
                       if (key === 'standard') openEditor('/dataservice/new/standard');
                       if (key === 'sql') openEditor('/dataservice/new/sql');
+                      if (key === 'script') openEditor('/dataservice/new/script');
                     },
                   }}
                 >
@@ -522,12 +495,12 @@ export const DataServiceListPanel = ({
                 </Dropdown>
               )}
             </Space>
-          </div>
-          {dataServicesQuery.isError && <Alert type="error" showIcon message="数据服务列表加载失败" action={<Button onClick={() => void dataServicesQuery.refetch()}>重试</Button>} style={{ marginBottom: 12 }} />}
-          <Table<DataServiceSummary>
+            </div>
+            {dataServicesQuery.isError && <Alert type="error" showIcon message="数据服务列表加载失败" action={<Button onClick={() => void dataServicesQuery.refetch()}>重试</Button>} />}
+            <Table<DataServiceSummary>
             size="small" className="management-table" rowKey="id" columns={columns}
             dataSource={dataServicesQuery.data?.content ?? []} loading={dataServicesQuery.isFetching}
-            scroll={{ x: 1880, y: '100%' }}
+            scroll={{ y: '100%' }}
             pagination={{ current: page + 1, pageSize: size, total: dataServicesQuery.data?.totalElements ?? 0, size: 'small', position: ['bottomRight'], hideOnSinglePage: false, showSizeChanger: true, showTotal: (total) => `共 ${total} 项` }}
             onChange={(pagination) => {
               const nextSize = pagination.pageSize ?? DEFAULT_PAGE_SIZE;
@@ -536,8 +509,9 @@ export const DataServiceListPanel = ({
               setSize(nextSize);
               syncRoute(filters, directorySelection, nextPage, nextSize);
             }}
-          />
-        </Card>
+            />
+          </div>
+        </section>
       </div>
       <DataServiceSubscriptionsDrawer
         open={Boolean(subscriptionService)}

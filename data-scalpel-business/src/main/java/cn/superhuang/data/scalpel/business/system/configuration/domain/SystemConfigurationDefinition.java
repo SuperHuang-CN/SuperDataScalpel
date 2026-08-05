@@ -78,6 +78,24 @@ public enum SystemConfigurationDefinition {
             140,
             1,
             3_650
+    ),
+    MODEL_WAREHOUSE_LAYERS_DEFAULTS_INITIALIZED(
+            "model.warehouse-layers.defaults-initialized",
+            "数仓分层默认值初始化标记",
+            "false",
+            SystemConfigurationValueType.BOOLEAN,
+            "内部标记：默认数仓分层是否已完成一次性初始化。",
+            9_000,
+            true
+    ),
+    MODEL_WAREHOUSE_LAYER_RULES_INITIALIZED(
+            "model.warehouse-layers.rules-initialized",
+            "数仓分层建模规范初始化标记",
+            "false",
+            SystemConfigurationValueType.BOOLEAN,
+            "内部标记：默认数仓分层的编码前缀和允许输入规范是否已完成一次性初始化。",
+            9_010,
+            true
     );
 
     private final String configKey;
@@ -88,6 +106,7 @@ public enum SystemConfigurationDefinition {
     private final int sortOrder;
     private final Integer minimumValue;
     private final Integer maximumValue;
+    private final boolean internal;
 
     SystemConfigurationDefinition(
             String configKey,
@@ -97,7 +116,19 @@ public enum SystemConfigurationDefinition {
             String description,
             int sortOrder
     ) {
-        this(configKey, name, defaultValue, valueType, description, sortOrder, null, null);
+        this(configKey, name, defaultValue, valueType, description, sortOrder, null, null, false);
+    }
+
+    SystemConfigurationDefinition(
+            String configKey,
+            String name,
+            String defaultValue,
+            SystemConfigurationValueType valueType,
+            String description,
+            int sortOrder,
+            boolean internal
+    ) {
+        this(configKey, name, defaultValue, valueType, description, sortOrder, null, null, internal);
     }
 
     SystemConfigurationDefinition(
@@ -110,6 +141,23 @@ public enum SystemConfigurationDefinition {
             Integer minimumValue,
             Integer maximumValue
     ) {
+        this(
+                configKey, name, defaultValue, valueType, description,
+                sortOrder, minimumValue, maximumValue, false
+        );
+    }
+
+    SystemConfigurationDefinition(
+            String configKey,
+            String name,
+            String defaultValue,
+            SystemConfigurationValueType valueType,
+            String description,
+            int sortOrder,
+            Integer minimumValue,
+            Integer maximumValue,
+            boolean internal
+    ) {
         this.configKey = configKey;
         this.name = name;
         this.defaultValue = defaultValue;
@@ -118,6 +166,7 @@ public enum SystemConfigurationDefinition {
         this.sortOrder = sortOrder;
         this.minimumValue = minimumValue;
         this.maximumValue = maximumValue;
+        this.internal = internal;
     }
 
     public SystemConfiguration newEntity() {
@@ -130,6 +179,10 @@ public enum SystemConfigurationDefinition {
 
     public SystemConfigurationValueType getValueType() {
         return valueType;
+    }
+
+    public boolean isInternal() {
+        return internal;
     }
 
     public String normalizeValue(String rawValue) {

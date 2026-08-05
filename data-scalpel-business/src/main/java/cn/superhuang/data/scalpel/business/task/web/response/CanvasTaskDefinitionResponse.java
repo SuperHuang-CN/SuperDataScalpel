@@ -1,6 +1,6 @@
 package cn.superhuang.data.scalpel.business.task.web.response;
 
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,4 +17,3 @@ public record CanvasTaskDefinitionResponse(
         return new CanvasTaskDefinitionResponse(taskId, false, 0, CanvasDefinition.empty(), null);
     }
 }
-

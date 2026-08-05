@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.business.datasource.service.DataSourceService;
 import cn.superhuang.data.scalpel.business.datasource.web.request.CreateDataSourceRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.TestDataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.UpdateDataSourceRequest;
+import cn.superhuang.data.scalpel.business.datasource.web.request.InspectJdbcQueryRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.response.ConnectionTestResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.NamespaceResponse;
@@ -11,6 +12,7 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.TableListResp
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadataResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TablePreviewResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.KafkaTopicResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.JdbcQueryInspectionResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -124,6 +126,16 @@ public class DataSourceResource {
             @RequestParam String table
     ) {
         return service.readTable(id, catalog, schema, table);
+    }
+
+    @PostMapping("/{id}/actions/inspect-query")
+    @PreAuthorize("hasAuthority('datasource.metadata')")
+    @Operation(summary = "分析只读 JDBC 查询结果字段")
+    public JdbcQueryInspectionResponse inspectQuery(
+            @PathVariable UUID id,
+            @Valid @RequestBody InspectJdbcQueryRequest request
+    ) {
+        return service.inspectQuery(id, request.sql());
     }
 
     @GetMapping("/{id}/table-preview")

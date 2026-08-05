@@ -1,6 +1,6 @@
 package cn.superhuang.data.scalpel.business.task.service;
 
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStatus;
@@ -103,13 +103,13 @@ public class CanvasTaskDefinitionService {
 
     private void replaceModelReferences(UUID taskId, CanvasDefinition definition) {
         List<TaskCanvasModelReference> references = new ArrayList<>();
-        for (CanvasDefinition.CanvasNodeDefinition node : definition.nodes()) {
+        for (CanvasNodeDefinition node : definition.nodes()) {
             String modelId = null;
             TaskCanvasModelReferenceRole role = null;
-            if (node instanceof CanvasDefinition.ModelInputNodeDefinition input) {
+            if (node instanceof ModelInputNodeDefinition input) {
                 modelId = input.configuration().modelId();
                 role = TaskCanvasModelReferenceRole.INPUT;
-            } else if (node instanceof CanvasDefinition.ModelOutputNodeDefinition output) {
+            } else if (node instanceof ModelOutputNodeDefinition output) {
                 modelId = output.configuration().targetModelId();
                 role = TaskCanvasModelReferenceRole.OUTPUT;
             }

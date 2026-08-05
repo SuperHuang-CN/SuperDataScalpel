@@ -23,6 +23,7 @@ import {
   replaceFileDatasetTableSource,
   updateFileDataset,
   updateFileDatasetTable,
+  updateFileDatasetTableSpatialReference,
   uploadFileDatasetFiles,
 } from '../api/fileDatasetApi';
 import type { FileDatasetTableLoadSubmission, UpdateFileDatasetRequest } from '../model/fileDataset';
@@ -58,6 +59,7 @@ const invalidateTableLoad = async (
     queryClient.invalidateQueries({ queryKey: fileDatasetQueryKeys.sources(datasetId, tableId) }),
     queryClient.invalidateQueries({ queryKey: fileDatasetQueryKeys.schema(datasetId, tableId) }),
     queryClient.invalidateQueries({ queryKey: fileDatasetQueryKeys.preview(datasetId, tableId, 50) }),
+    queryClient.invalidateQueries({ queryKey: ['file-dataset-tables', 'canvas-metadata'] }),
   ]);
 };
 
@@ -171,6 +173,16 @@ export const useUpdateFileDatasetTable = () => {
   return useMutation({
     mutationFn: updateFileDatasetTable,
     onSuccess: (_response, input) => invalidateDatasetChildren(queryClient, input.datasetId),
+  });
+};
+
+export const useUpdateFileDatasetTableSpatialReference = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: updateFileDatasetTableSpatialReference,
+    onSuccess: async (_response, input) => {
+      await invalidateTableLoad(queryClient, input.datasetId, input.tableId);
+    },
   });
 };
 

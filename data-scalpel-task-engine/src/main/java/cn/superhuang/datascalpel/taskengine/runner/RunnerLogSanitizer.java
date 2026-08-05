@@ -20,6 +20,13 @@ final class RunnerLogSanitizer {
                     + "(\\s*[=:]\\s*)([\\\"']?)([^&\\s,;}\\\"']+)([\\\"']?)");
     private static final Pattern FILE_INPUT_TEMPORARY_PATH = Pattern.compile(
             "(?i)(?:[a-z]:)?[/\\\\][^\\s,;)}\\]]*datascalpel-file-input-[^\\s,;)}\\]]+");
+    private static final Pattern FILE_OUTPUT_TEMPORARY_PATH = Pattern.compile(
+            "(?i)(?:[a-z]:)?[/\\\\][^\\s,;)}\\]]*datascalpel-(?:shapefile|geojson)-[^\\s,;)}\\]]+");
+    private static final Pattern SPARK_TEMPORARY_PATH = Pattern.compile(
+            "(?i)(?:[a-z]:)?[/\\\\][^\\s,;)}\\]]*(?:spark|blockmgr)-[^\\s,;)}\\]]+");
+    private static final Pattern THROWABLE_MESSAGE_LINE = Pattern.compile(
+            "(?m)^(\\s*(?:(?:Caused by|Suppressed):\\s+)?"
+                    + "[A-Za-z_$][A-Za-z0-9_.$]*(?:Exception|Error))(?::.*)?$");
 
     private RunnerLogSanitizer() {
     }
@@ -31,13 +38,27 @@ final class RunnerLogSanitizer {
         safe = S3_OBJECT_URI.matcher(safe).replaceAll("[redacted-object-uri]");
         safe = FILE_STORAGE_LOCATION.matcher(safe).replaceAll("$1$2***");
         safe = FILE_INPUT_TEMPORARY_PATH.matcher(safe).replaceAll("[redacted-file-input-temp-path]");
+        safe = FILE_OUTPUT_TEMPORARY_PATH.matcher(safe).replaceAll("[redacted-file-output-temp-path]");
+        safe = SPARK_TEMPORARY_PATH.matcher(safe).replaceAll("[redacted-spark-temp-path]");
         return URL_USER_INFO.matcher(safe).replaceAll("$1***@");
     }
 
     static String stackTrace(Throwable throwable) {
+        return stackTrace(throwable, false);
+    }
+
+    static String spatialSafeStackTrace(Throwable throwable) {
+        return stackTrace(throwable, containsSpatialThrowable(throwable));
+    }
+
+    private static String stackTrace(Throwable throwable, boolean redactExceptionMessages) {
         StringWriter buffer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(buffer));
-        String safe = sanitize(buffer.toString());
+        String stack = buffer.toString();
+        if (redactExceptionMessages) {
+            stack = THROWABLE_MESSAGE_LINE.matcher(stack).replaceAll("$1: [spatial-message-redacted]");
+        }
+        String safe = sanitize(stack);
         if (safe.getBytes(StandardCharsets.UTF_8).length <= MAX_STACK_BYTES) return safe;
         int limit = MAX_STACK_BYTES - TRUNCATED.getBytes(StandardCharsets.UTF_8).length;
         int end = 0;
@@ -50,6 +71,30 @@ final class RunnerLogSanitizer {
             end += Character.charCount(codePoint);
         }
         return safe.substring(0, end) + TRUNCATED;
+    }
+
+    private static boolean containsSpatialThrowable(Throwable throwable) {
+        java.util.Set<Throwable> visited = java.util.Collections.newSetFromMap(
+                new java.util.IdentityHashMap<>());
+        java.util.ArrayDeque<Throwable> pending = new java.util.ArrayDeque<>();
+        pending.add(throwable);
+        while (!pending.isEmpty()) {
+            Throwable current = pending.removeFirst();
+            if (!visited.add(current)) continue;
+            String className = current.getClass().getName();
+            if (isSpatialClass(className)) return true;
+            for (StackTraceElement frame : current.getStackTrace()) {
+                if (isSpatialClass(frame.getClassName())) return true;
+            }
+            if (current.getCause() != null) pending.addLast(current.getCause());
+            for (Throwable suppressed : current.getSuppressed()) pending.addLast(suppressed);
+        }
+        return false;
+    }
+
+    private static boolean isSpatialClass(String className) {
+        return className.startsWith("org.apache.sedona.")
+                || className.startsWith("org.locationtech.jts.");
     }
 
     static String safeMessage(String value, String fallback) {

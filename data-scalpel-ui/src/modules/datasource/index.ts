@@ -8,12 +8,15 @@ export {
   useDataSourceTypes,
   useDataSources,
   useTableMetadata,
+  useSpatialFeatureResources,
 } from './hooks/useDataSources';
 export {
   fetchApiResource,
   fetchDataSource,
   fetchKafkaTopics,
   fetchTableMetadata,
+  inspectJdbcQuery,
+  fetchSpatialFeatureResources,
 } from './api/dataSourceApi';
 export { buildDataSourceSearch } from './model/dataSourceSearch';
 export type {
@@ -26,6 +29,9 @@ export type {
   DataSourceFilters,
   HttpApiRuntimeParameter,
   KafkaTopic,
+  JdbcQueryInspection,
+  JdbcQueryInspectionColumn,
+  MetadataUniqueKey,
   TableIdentifier,
   TableMetadata,
   TableQuery,

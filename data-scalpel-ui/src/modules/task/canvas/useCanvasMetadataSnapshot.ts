@@ -1,6 +1,7 @@
 import { useQueries, useQuery } from '@tanstack/react-query';
 import {
   fetchApiResource,
+  fetchSpatialFeatureResources,
   fetchDataSource,
   fetchTableMetadata,
   type DataSource,
@@ -22,6 +23,15 @@ import {
   type CanvasDefinition,
   type CanvasNodeRuntimeSummary,
 } from './canvasTypes';
+import { canvasNodeRegistry } from './nodes/nodeRegistry';
+import { canvasMetadataProviderRegistry } from './metadata/canvasMetadataProvider';
+import type {
+  CanvasMetadataReference,
+  JdbcTableMetadataReference,
+  JdbcQuerySourceMetadataReference,
+  HttpApiResourceMetadataReference,
+  SpatialServiceResourceMetadataReference,
+} from './nodes/metadataReferences';
 import type {
   TaskCompilationMetadataDataSource,
   TaskCompilationMetadataModel,
@@ -57,7 +67,8 @@ export type CanvasMetadataIssueCode =
   | 'FILE_DATASET_METADATA_READ_FAILED'
   | 'MODEL_PHYSICAL_INSPECTION_FAILED'
   | 'MODEL_PHYSICAL_SCHEMA_MISMATCH'
-  | 'MODEL_PHYSICAL_METADATA_INCOMPLETE';
+  | 'MODEL_PHYSICAL_METADATA_INCOMPLETE'
+  | 'COLUMN_TYPE_MAPPING_UNSUPPORTED';
 
 export interface CanvasMetadataIssue {
   code: CanvasMetadataIssueCode;
@@ -81,18 +92,23 @@ const jdbcTableIdentifier = (tableName: string): TableIdentifier => ({
 
 const canvasColumnSchema = (
   column: TableMetadata['columns'][number],
-): CanvasColumnSchema => ({
-  name: column.name,
-  fieldType: column.logicalType,
-  length: column.logicalType === 'STRING' ? column.length : null,
-  precision: column.logicalType === 'DECIMAL' ? column.precision : null,
-  scale: column.logicalType === 'DECIMAL' ? column.scale : null,
-  nullable: column.nullable,
-  defaultValue: column.defaultValue,
-  autoIncrement: column.autoIncrement,
-  generated: column.generated,
-  comment: column.comment,
-});
+): CanvasColumnSchema => {
+  const type = column.platformTypeDefinition;
+  if (!type) throw new Error(`字段 ${column.name} 无法无损映射为平台类型`);
+  return {
+    name: column.name,
+    fieldType: type.type,
+    length: type.length,
+    precision: type.precision,
+    scale: type.scale,
+    nullable: column.nullable,
+    defaultValue: column.defaultValue,
+    autoIncrement: column.autoIncrement,
+    generated: column.generated,
+    comment: column.comment,
+    geometry: type.geometry ?? null,
+  };
+};
 
 const modelColumnSchema = (
   field: DataModelField,
@@ -108,6 +124,7 @@ const modelColumnSchema = (
   autoIncrement: physicalColumn.autoIncrement,
   generated: physicalColumn.generated,
   comment: field.description ?? physicalColumn.comment,
+  geometry: field.geometry ?? null,
 });
 
 const requirePhysicalColumn = (
@@ -119,98 +136,29 @@ const requirePhysicalColumn = (
   return column;
 };
 
-const jdbcMetadataRequests = (definition: CanvasDefinition): CanvasJdbcMetadataRequest[] => {
-  const requests = definition.nodes.flatMap((node): CanvasJdbcMetadataRequest[] => {
-    if (node.type === CanvasNodeType.JdbcInput) {
-      const { dataSourceId, tableName } = node.configuration;
-      return dataSourceId && tableName ? [{ dataSourceId, tableName, role: 'SOURCE' }] : [];
-    }
-    if (node.type === CanvasNodeType.JdbcOutput) {
-      const { dataSourceId, targetTableName } = node.configuration;
-      return dataSourceId && targetTableName
-        ? [{ dataSourceId, tableName: targetTableName, role: 'DISTRIBUTION' }]
-        : [];
-    }
-    return [];
-  });
-  return [...new Map(requests.map((request) => [jdbcRequestKey(request), request])).values()];
-};
+const collectMetadataReferences = (definition: CanvasDefinition): CanvasMetadataReference[] => (
+  definition.nodes.flatMap((node) => canvasNodeRegistry.collectMetadataReferences(node))
+);
 
-const apiMetadataRequests = (definition: CanvasDefinition): CanvasApiMetadataRequest[] => {
-  const requests = definition.nodes.flatMap((node): CanvasApiMetadataRequest[] => (
-    node.type === CanvasNodeType.HttpApiInput
-      && node.configuration.dataSourceId
-      && node.configuration.resourceId
-      ? [{
-        dataSourceId: node.configuration.dataSourceId,
-        resourceId: node.configuration.resourceId,
-      }]
-      : []
-  ));
-  return [...new Map(requests.map((request) => [
-    `${request.dataSourceId}\u0000${request.resourceId}`,
-    request,
-  ])).values()];
-};
-
-const referencedModelIds = (definition: CanvasDefinition) => [...new Set(
-  definition.nodes.flatMap((node) => {
-    if (node.type === CanvasNodeType.ModelInput) return node.configuration.modelId ? [node.configuration.modelId] : [];
-    if (node.type === CanvasNodeType.ModelOutput) {
-      return node.configuration.targetModelId ? [node.configuration.targetModelId] : [];
-    }
-    return [];
-  }),
-)];
-
-const physicalModelIds = (definition: CanvasDefinition) => [...new Set(
-  definition.nodes.flatMap((node) => {
-    if (node.type === CanvasNodeType.ModelInput) return node.configuration.modelId ? [node.configuration.modelId] : [];
-    if (node.type === CanvasNodeType.ModelOutput) {
-      return node.configuration.targetModelId ? [node.configuration.targetModelId] : [];
-    }
-    return [];
-  }),
-)];
-
-const kafkaDataSourceIds = (definition: CanvasDefinition) => [...new Set(
-  definition.nodes.flatMap((node) => (
-    (node.type === CanvasNodeType.KafkaInput || node.type === CanvasNodeType.KafkaOutput)
-      && node.configuration.dataSourceId
-      ? [node.configuration.dataSourceId]
-      : []
-  )),
-)];
-
-const fileOutputDataSourceIds = (definition: CanvasDefinition) => [...new Set(
-  definition.nodes.flatMap((node) => (
-    node.type === CanvasNodeType.FileOutput && node.configuration.dataSourceId
-      ? [node.configuration.dataSourceId]
-      : []
-  )),
-)];
-
-const fileDatasetTableIds = (definition: CanvasDefinition) => [...new Set(
-  definition.nodes.flatMap((node) => (
-    node.type === CanvasNodeType.FileDatasetInput && node.configuration.fileDatasetTableId
-      ? [node.configuration.fileDatasetTableId]
-      : []
-  )),
-)].sort();
+const referenceNodeIds = (
+  references: readonly CanvasMetadataReference[],
+  predicate: (reference: CanvasMetadataReference) => boolean,
+) => [...new Set(references.filter(predicate).map((reference) => reference.nodeId))];
 
 const fileDatasetColumnSchema = (
   field: FileDatasetCanvasTableMetadata['fields'][number],
 ): CanvasColumnSchema => ({
   name: field.name,
-  fieldType: field.fieldType,
-  length: field.length,
-  precision: field.precision,
-  scale: field.scale,
+  fieldType: field.platformTypeDefinition.type,
+  length: field.platformTypeDefinition.length,
+  precision: field.platformTypeDefinition.precision,
+  scale: field.platformTypeDefinition.scale,
   nullable: field.nullable,
   defaultValue: null,
   autoIncrement: false,
   generated: false,
   comment: null,
+  geometry: field.platformTypeDefinition.geometry ?? null,
 });
 
 const queryFailureMessage = (prefix: string, error: unknown) => (
@@ -228,6 +176,8 @@ const compilationDataSource = (
       id: dataSource.id,
       enabled: dataSource.enabled,
       connectionKind: 'JDBC',
+      jdbcDatabaseType: dataSource.type === 'POSTGRESQL' || dataSource.type === 'MYSQL'
+        ? dataSource.type : null,
       purposes: [...dataSource.purposes].sort(),
       tables,
     }
@@ -243,6 +193,7 @@ const apiCompilationDataSource = (
       id: dataSource.id,
       enabled: dataSource.enabled,
       connectionKind: 'HTTP_API',
+      jdbcDatabaseType: null,
       purposes: [...dataSource.purposes].sort(),
       tables,
     }
@@ -257,6 +208,7 @@ const kafkaCompilationDataSource = (
       id: dataSource.id,
       enabled: dataSource.enabled,
       connectionKind: 'KAFKA',
+      jdbcDatabaseType: null,
       purposes: [...dataSource.purposes].sort(),
       tables: [],
     }
@@ -271,6 +223,7 @@ const s3CompilationDataSource = (
       id: dataSource.id,
       enabled: dataSource.enabled,
       connectionKind: 'S3',
+      jdbcDatabaseType: null,
       purposes: [...dataSource.purposes].sort(),
       tables: [],
     }
@@ -278,14 +231,56 @@ const s3CompilationDataSource = (
 );
 
 export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
-  const jdbcRequests = jdbcMetadataRequests(definition);
-  const apiRequests = apiMetadataRequests(definition);
-  const modelIds = referencedModelIds(definition);
-  const physicalIds = physicalModelIds(definition);
+  const metadataReferences = collectMetadataReferences(definition);
+  const resourceReferences = canvasMetadataProviderRegistry.deduplicate(metadataReferences);
+  const jdbcReferences = resourceReferences.filter(
+    (reference): reference is JdbcTableMetadataReference => reference.kind === 'JDBC_TABLE',
+  );
+  const jdbcQueryReferences = resourceReferences.filter(
+    (reference): reference is JdbcQuerySourceMetadataReference => (
+      reference.kind === 'JDBC_QUERY_SOURCE'
+    ),
+  );
+  const apiReferences = resourceReferences.filter(
+    (reference): reference is HttpApiResourceMetadataReference => reference.kind === 'HTTP_API_RESOURCE',
+  );
+  const spatialReferences = resourceReferences.filter(
+    (reference): reference is SpatialServiceResourceMetadataReference => reference.kind === 'SPATIAL_SERVICE_RESOURCE',
+  );
+  const jdbcRequests = [...new Map(jdbcReferences.map((reference) => {
+    const request: CanvasJdbcMetadataRequest = {
+      dataSourceId: reference.dataSourceId,
+      tableName: reference.tableName,
+      role: reference.role,
+    };
+    return [jdbcRequestKey(request), request];
+  })).values()];
+  const apiRequests = [...new Map(apiReferences.map((reference) => {
+    const request: CanvasApiMetadataRequest = {
+      dataSourceId: reference.dataSourceId,
+      resourceId: reference.resourceId,
+    };
+    return [`${request.dataSourceId}\u0000${request.resourceId}`, request];
+  })).values()];
+  const spatialRequests = [...new Map(spatialReferences.map((reference) => [
+    `${reference.dataSourceId}\u0000${reference.resourceId}`, reference,
+  ])).values()];
+  const modelIds = [...new Set(resourceReferences.flatMap(
+    (reference) => reference.kind === 'MODEL' ? [reference.modelId] : [],
+  ))];
+  const physicalIds = modelIds;
   const physicalIdSet = new Set(physicalIds);
-  const kafkaIds = kafkaDataSourceIds(definition);
-  const fileOutputIds = fileOutputDataSourceIds(definition);
-  const referencedFileTableIds = fileDatasetTableIds(definition);
+  const kafkaIds = [...new Set(resourceReferences.flatMap(
+    (reference) => reference.kind === 'KAFKA_TOPIC' ? [reference.dataSourceId] : [],
+  ))];
+  const fileOutputIds = [...new Set(resourceReferences.flatMap(
+    (reference) => reference.kind === 'S3_TARGET' ? [reference.dataSourceId] : [],
+  ))];
+  const referencedFileTableIds = [...new Set(resourceReferences.flatMap(
+    (reference) => reference.kind === 'FILE_DATASET_TABLE'
+      ? [reference.fileDatasetTableId]
+      : [],
+  ))].sort();
   const fileDatasetMetadataQuery = useQuery({
     queryKey: ['file-dataset-tables', 'canvas-metadata', referencedFileTableIds],
     queryFn: () => fetchFileDatasetCanvasMetadata(referencedFileTableIds),
@@ -318,7 +313,9 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   const physicalModelDetails = modelDetails.filter((detail) => physicalIdSet.has(detail.model.id));
   const dataSourceIds = [...new Set([
     ...jdbcRequests.map((request) => request.dataSourceId),
+    ...jdbcQueryReferences.map((reference) => reference.dataSourceId),
     ...apiRequests.map((request) => request.dataSourceId),
+    ...spatialRequests.map((request) => request.dataSourceId),
     ...kafkaIds,
     ...fileOutputIds,
     ...physicalModelDetails.map((detail) => detail.model.storageDataSourceId),
@@ -359,6 +356,18 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     `${request.dataSourceId}\u0000${request.resourceId}`,
     apiResourceQueries[index].data,
   ]));
+  const spatialResourceQueries = useQueries({
+    queries: [...new Set(spatialRequests.map((request) => request.dataSourceId))].map((dataSourceId) => ({
+      queryKey: ['spatial-resources', dataSourceId],
+      queryFn: () => fetchSpatialFeatureResources(dataSourceId),
+      staleTime: 60_000,
+    })),
+  });
+  const spatialResourceByKey = new Map(spatialRequests.map((request) => {
+    const sourceIndex = [...new Set(spatialRequests.map((item) => item.dataSourceId))].indexOf(request.dataSourceId);
+    const resource = spatialResourceQueries[sourceIndex].data?.find((item) => item.id === request.resourceId);
+    return [`${request.dataSourceId}\u0000${request.resourceId}`, resource];
+  }));
 
   const modelTableRequests: CanvasModelTableRequest[] = physicalModelDetails.map((detail) => ({
     modelId: detail.model.id,
@@ -391,10 +400,12 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         const metadata = jdbcTableByKey.get(
           tableRequestKey(request.dataSourceId, jdbcTableIdentifier(request.tableName)),
         );
+        if (metadata?.columns.some((column) => !column.platformTypeDefinition)) return [];
         return metadata ? [{
           tableName: request.tableName,
           objectType: metadata.table.type.toUpperCase() === 'VIEW' ? 'VIEW' : 'TABLE',
           columns: metadata.columns.map(canvasColumnSchema),
+          uniqueKeys: metadata.uniqueKeys,
         }] : [];
       });
     const compiled = compilationDataSource(dataSource, tables);
@@ -420,12 +431,25 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
             autoIncrement: false,
             generated: false,
             comment: field.comment,
+            geometry: null,
           })),
+          uniqueKeys: [],
         }] : [];
       });
     const apiCompiled = apiCompilationDataSource(dataSource, resources);
     if (apiCompiled) {
       compilationDataSources.set(dataSourceId, apiCompiled);
+      return;
+    }
+    const spatialResources = spatialRequests
+      .filter((request) => request.dataSourceId === dataSourceId)
+      .flatMap((request): TaskCompilationMetadataTable[] => {
+        const resource = spatialResourceByKey.get(`${request.dataSourceId}\u0000${request.resourceId}`);
+        return resource ? [{ tableName: resource.id, objectType: 'SPATIAL_FEATURE_RESOURCE', columns: resource.columns, uniqueKeys: [] }] : [];
+      });
+    const spatialCompiled = apiCompilationDataSource(dataSource, spatialResources);
+    if (spatialCompiled) {
+      compilationDataSources.set(dataSourceId, spatialCompiled);
       return;
     }
     const kafkaCompiled = kafkaCompilationDataSource(dataSource);
@@ -492,12 +516,23 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         (candidate) => candidate.fileDatasetTableId === node.configuration.fileDatasetTableId,
       );
       if (!table) return;
+      const geometryField = table.fields.find(
+        (field) => field.platformTypeDefinition.type === 'GEOMETRY'
+          && field.platformTypeDefinition.geometry,
+      );
+      const geometry = geometryField?.platformTypeDefinition.geometry;
       nodeSummaries.set(node.id, {
         kind: 'FILE_DATASET',
         fileDatasetName: table.fileDatasetName,
         tableName: table.name,
         tableCode: table.code,
         status: table.parseStatus,
+        geometry: geometryField && geometry ? {
+          fieldName: geometryField.name,
+          kind: geometry.kind,
+          crs: geometry.crs,
+          dimension: geometry.dimension,
+        } : null,
       });
       return;
     }
@@ -535,6 +570,13 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       });
       return;
     }
+    if (node.type === CanvasNodeType.SpatialServiceInput) {
+      const dataSource = dataSourceById.get(node.configuration.dataSourceId);
+      const resource = spatialResourceByKey.get(`${node.configuration.dataSourceId}\u0000${node.configuration.resourceId}`);
+      if (!dataSource || !resource) return;
+      nodeSummaries.set(node.id, { kind: 'HTTP_API', dataSourceName: dataSource.name, qualifiedTableName: resource.name });
+      return;
+    }
     if (node.type === CanvasNodeType.KafkaInput || node.type === CanvasNodeType.KafkaOutput) {
       const dataSource = dataSourceById.get(node.configuration.dataSourceId);
       if (!dataSource) return;
@@ -543,6 +585,16 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         dataSourceName: dataSource.name,
         qualifiedTableName: node.configuration.topic,
         fieldCount: node.configuration.valueSchema.columns.length,
+      });
+      return;
+    }
+    if (node.type === CanvasNodeType.JdbcQueryInput) {
+      const dataSource = dataSourceById.get(node.configuration.dataSourceId);
+      if (!dataSource) return;
+      nodeSummaries.set(node.id, {
+        kind: 'JDBC',
+        dataSourceName: dataSource.name,
+        qualifiedTableName: node.configuration.outputTableName,
       });
       return;
     }
@@ -564,50 +616,45 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     });
   });
 
-  const modelNodeIds = (modelId: string) => definition.nodes.flatMap((node) => (
-    (node.type === CanvasNodeType.ModelInput && node.configuration.modelId === modelId)
-      || (node.type === CanvasNodeType.ModelOutput && node.configuration.targetModelId === modelId)
-      ? [node.id]
-      : []
-  ));
-  const dataSourceNodeIds = (dataSourceId: string) => definition.nodes.flatMap((node) => {
-    if ((node.type === CanvasNodeType.JdbcInput || node.type === CanvasNodeType.JdbcOutput
-        || node.type === CanvasNodeType.HttpApiInput || node.type === CanvasNodeType.KafkaInput
-        || node.type === CanvasNodeType.KafkaOutput || node.type === CanvasNodeType.FileOutput)
-        && node.configuration.dataSourceId === dataSourceId) return [node.id];
-    if (node.type === CanvasNodeType.ModelInput || node.type === CanvasNodeType.ModelOutput) {
-      const modelId = node.type === CanvasNodeType.ModelInput
-        ? node.configuration.modelId
-        : node.configuration.targetModelId;
-      return modelById.get(modelId)?.model.storageDataSourceId === dataSourceId ? [node.id] : [];
-    }
-    return [];
-  });
-  const jdbcTableNodeIds = (request: CanvasJdbcMetadataRequest) => definition.nodes.flatMap((node) => {
-    if (node.type === CanvasNodeType.JdbcInput
-        && node.configuration.dataSourceId === request.dataSourceId
-        && node.configuration.tableName === request.tableName) return [node.id];
-    if (node.type === CanvasNodeType.JdbcOutput
-        && node.configuration.dataSourceId === request.dataSourceId
-        && node.configuration.targetTableName === request.tableName) return [node.id];
-    return [];
-  });
-  const apiResourceNodeIds = (request: CanvasApiMetadataRequest) => definition.nodes.flatMap((node) => (
-    node.type === CanvasNodeType.HttpApiInput
-      && node.configuration.dataSourceId === request.dataSourceId
-      && node.configuration.resourceId === request.resourceId
-      ? [node.id]
-      : []
-  ));
+  const modelNodeIds = (modelId: string) => referenceNodeIds(
+    metadataReferences,
+    (reference) => reference.kind === 'MODEL' && reference.modelId === modelId,
+  );
+  const dataSourceNodeIds = (dataSourceId: string) => {
+    const directNodeIds = referenceNodeIds(
+      metadataReferences,
+      (reference) => 'dataSourceId' in reference && reference.dataSourceId === dataSourceId,
+    );
+    const modelNodeIdsForDataSource = metadataReferences.flatMap((reference) => (
+      reference.kind === 'MODEL'
+        && modelById.get(reference.modelId)?.model.storageDataSourceId === dataSourceId
+        ? [reference.nodeId]
+        : []
+    ));
+    return [...new Set([...directNodeIds, ...modelNodeIdsForDataSource])];
+  };
+  const jdbcTableNodeIds = (request: CanvasJdbcMetadataRequest) => referenceNodeIds(
+    metadataReferences,
+    (reference) => reference.kind === 'JDBC_TABLE'
+      && reference.dataSourceId === request.dataSourceId
+      && reference.tableName === request.tableName,
+  );
+  const apiResourceNodeIds = (request: CanvasApiMetadataRequest) => referenceNodeIds(
+    metadataReferences,
+    (reference) => reference.kind === 'HTTP_API_RESOURCE'
+      && reference.dataSourceId === request.dataSourceId
+      && reference.resourceId === request.resourceId,
+  );
 
   const metadataIssues: CanvasMetadataIssue[] = [];
   if (fileDatasetMetadataQuery.isError) {
     metadataIssues.push({
       code: 'FILE_DATASET_METADATA_READ_FAILED',
       message: queryFailureMessage('读取文件数据集表元数据失败', fileDatasetMetadataQuery.error),
-      nodeIds: definition.nodes.flatMap((node) => (
-        node.type === CanvasNodeType.FileDatasetInput ? [node.id] : []
-      )),
+      nodeIds: referenceNodeIds(
+        metadataReferences,
+        (reference) => reference.kind === 'FILE_DATASET_TABLE',
+      ),
     });
   }
   modelQueries.forEach((query, index) => {
@@ -643,6 +690,18 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     metadataIssues.push({
       code: 'TABLE_METADATA_READ_FAILED',
       message: queryFailureMessage(`读取物理表 ${request.tableName} 元数据失败`, query.error),
+      nodeIds: jdbcTableNodeIds(request),
+    });
+  });
+  jdbcTableRequests.forEach((request) => {
+    const metadata = jdbcTableByKey.get(
+      tableRequestKey(request.dataSourceId, jdbcTableIdentifier(request.tableName)),
+    );
+    const unsupported = metadata?.columns.filter((column) => !column.platformTypeDefinition) ?? [];
+    if (unsupported.length === 0) return;
+    metadataIssues.push({
+      code: 'COLUMN_TYPE_MAPPING_UNSUPPORTED',
+      message: `物理表 ${request.tableName} 存在不能无损映射的平台字段：${unsupported.map((column) => column.name).join('、')}`,
       nodeIds: jdbcTableNodeIds(request),
     });
   });

@@ -6,7 +6,6 @@ public record ServiceEngineDataSourceTestResponse(
         UUID registrationId,
         String engineCode,
         UUID dataSourceId,
-        long revision,
         String databaseType
 ) {
 }

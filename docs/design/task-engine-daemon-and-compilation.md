@@ -4,15 +4,23 @@
 
 `data-scalpel-task-engine` 提供彼此隔离的长期预检 Daemon和一次性 Runner构建产物：
 
-- Java 21、Spark 4.1.1、Scala 2.13。
+- Java 21、Spark 4.1.1、Scala 2.13、Apache Sedona 1.9.0。
 - 普通 Java Main 和 JDK `HttpServer`，不使用 Spring、Servlet、Thrift 或 gRPC。
 - 默认以 `local[*]` 长期运行，也可由未来的 `spark-submit --master yarn --deploy-mode client` 启动同一个 Main。
-- 兼容读取 Canvas `1.0`～`1.6` 并以 `1.6` 写出；`1.5` 的 `KAFKA_INPUT/KAFKA_OUTPUT` 使用节点内联 Value Schema，`1.6` 增加批任务 `FILE_OUTPUT`。
+- 兼容读取 Canvas `1.0`～`1.24` 并以 `1.24` 写出；`1.20` 增加批处理
+  `SPATIAL_TRANSFORM/SPATIAL_JOIN`，`1.21` 增加批流共用的
+  `GEOMETRY_CONSTRUCT/GEOMETRY_VALIDATE/SPATIAL_MEASURE/GEOMETRY_SERIALIZE`，`1.22` 增加
+  `GEOMETRY_REPAIR/GEOMETRY_BUFFER/GEOMETRY_EXPLODE`，`1.23` 增加批处理
+  `SPATIAL_CLIP/SPATIAL_AGGREGATE`，`1.24` 增加 JDBC 查询输入、JDBC UPSERT 和
+  `FILE_OUTPUT.SHAPEFILE`。
 - 根据请求携带的元数据快照创建零行 DataFrame，只构造并分析 Spark 逻辑计划。
 - 编译接口不连接 JDBC、不调用 Spark Action、不创建 `DataFrameWriter`。
-- Daemon不包含真实执行、Docker、Kafka、MinIO或回执职责；Runner第一阶段只连接 PostgreSQL/MySQL。
+- Daemon不包含真实执行、Docker、Kafka、MinIO或回执职责；Runner连接 PostgreSQL/PostGIS
+  和 MySQL 8，并通过 WKB桥接 Sedona `GeometryUDT`。
 
-模块保留在根 Maven reactor 中，不继承 Spring Boot parent；只复用稳定 execution contracts，不依赖 dialect、business、admin 或 service-engine。这样可避免控制面依赖管理覆盖 Spark官方运行时依赖。
+模块保留在根 Maven reactor 中，不继承 Spring Boot parent；复用稳定 contracts 和
+`data-scalpel-dialect`，不依赖 business、admin 或 service-engine。方言依赖只用于真实
+Runner的标识符、空间目录和数据库本地 SRID 解析。
 
 ## 2. 结构与职责
 
@@ -30,6 +38,12 @@ TaskEngineDaemon
 │  ├─ HttpApiInputNodeOperator
 │  ├─ KafkaInputNodeOperator
 │  ├─ JoinNodeOperator
+│  ├─ SpatialTransformNodeOperator
+│  ├─ SpatialJoinNodeOperator
+│  ├─ GeometryConstructNodeOperator
+│  ├─ GeometryValidateNodeOperator
+│  ├─ SpatialMeasureNodeOperator
+│  ├─ GeometrySerializeNodeOperator
 │  ├─ StreamJoinNodeOperator
 │  ├─ RenameNodeOperator
 │  ├─ ModelOutputNodeOperator
@@ -57,11 +71,12 @@ TaskRunnerMain
 
 ## 3. Spark 生命周期与隔离
 
-进程启动时创建唯一基础 `SparkSession` 和共享 `SparkContext`。每次编译：
+进程在创建 SparkContext 前固定 Kryo serializer 和 `SedonaKryoRegistrator`，使用
+`SedonaContext.builder()` 创建唯一基础 `SparkSession` 和共享 `SparkContext`。每次编译：
 
 1. 取得公平 Semaphore 许可。
 2. 拒绝已经处于活动状态的相同 `requestId`。
-3. 在编译线程创建 `baseSession.newSession()`。
+3. 在编译线程创建 `baseSession.newSession()` 并调用 `SedonaContext.create(session)`。
 4. 设置 `task-compilation-{requestId}` Job Group。
 5. 按稳定拓扑序编译节点，并在节点之间检查取消和线程中断。
 6. 完成后清理 Job Group 和活动请求，不关闭 child session，也不清共享 CacheManager。
@@ -197,6 +212,14 @@ Map 按定义边顺序无覆盖合并。重复 Key 返回 `DUPLICATE_TABLE_NAME`
 
 按精确字符串在快照中查找启用的 JDBC SOURCE 数据源和物理表，将平台 Schema 显式转成 Spark `StructType`，再创建零行 DataFrame。输出 Map 只有物理 `tableName` 一个 Key。
 
+### 6.1.1 JDBC_QUERY_INPUT
+
+检查 PostgreSQL/MySQL SOURCE 数据源、单条只读 SQL、规范化 SQL SHA-256、非空字段快照和
+输出逻辑表名。字段名称必须唯一，类型参数必须合法，首版拒绝 Geometry。Compiler 只依据节点
+保存的 `outputColumns` 创建零行 BOUNDED Dataset，不访问数据库；输出 Origin 为 `JDBC_QUERY`。
+发布、重新启用和运行准备阶段由 Admin 重新分析查询并比较名称、顺序、平台类型、类型参数和
+nullable，不一致时拒绝但不自动修改 Canvas。实时任务把该结果作为启动时加载一次的静态维表。
+
 ### 6.2 MODEL_INPUT
 
 按模型 UUID 查找已发布模型快照，校验数据源可读和物理结构可用，将模型字段转成零行 DataFrame。输出 Map 只有模型不可修改 `code` 一个 Key；模型名称、物理表名和数据源不参与 Key。
@@ -213,23 +236,50 @@ Map 按定义边顺序无覆盖合并。重复 Key 返回 `DUPLICATE_TABLE_NAME`
 
 Processor 不维护平台类型兼容矩阵，也不按字段类型产生风险警告。Spark Analyzer 接受共享 Operator 建立的表达式时编译通过，Analyzer 拒绝时返回 `SPARK_ANALYSIS_ERROR`。
 
-### 6.5 MODEL_OUTPUT
+### 6.5 空间基础 Processor
+
+`GEOMETRY_CONSTRUCT` 从 WKT、WKB、GeoJSON 或 X/Y 普通字段构造带明确 EPSG、XY 维度和
+具体 GeometryKind 的 Sedona Geometry，并显式设置 SRID；非空畸形载荷或实际 kind 与声明
+不一致时由 Runner 失败。`GEOMETRY_VALIDATE` 通过 `ST_IsValid` 和可选的
+`ST_IsValidReason` 追加诊断字段，不删除、修复或拒绝无效 Geometry。
+
+`SPATIAL_MEASURE` 按配置顺序追加最多 32 个 DOUBLE 测量字段，支持面积、长度、周长、
+距离和 Point X/Y；平面模式使用原 CRS 单位，椭球模式只接受 EPSG:4326。
+`GEOMETRY_SERIALIZE` 将 Geometry 追加序列化为 WKT、WKB 或 GeoJSON，其中 GeoJSON 只
+允许 EPSG:4326，其他 CRS 必须先显式转换。
+
+四个节点均保留输入表 Map 并以新逻辑表名追加结果，支持 BATCH 和 STREAMING，继承来源
+表的有界性、事件时间与 Watermark，不引入流式状态。Compiler 只在零行 Dataset 上构造并
+分析 Sedona 表达式；日志、安全摘要、编译响应和异常不得包含 Geometry、坐标、序列化内容
+或测量结果等真实空间数据值。
+
+### 6.6 MODEL_OUTPUT
 
 检查来源逻辑表、目标模型、数据源 STORAGE 用途、物理模式、写入模式和字段映射。字段匹配使用模型字段 code，BY_NAME/EXPLICIT 与 JDBC_OUTPUT 复用同一个字段映射和显式 Spark Cast 实现。APPEND 可写受管或外部模型，OVERWRITE 只允许受管模型。
 
-### 6.6 JDBC_OUTPUT
+### 6.7 JDBC_OUTPUT
 
-检查 sourceTableName、启用且具有 `DISTRIBUTION`（数据分发）用途的 JDBC 数据源、TABLE 目标、APPEND/OVERWRITE 和 BY_NAME/EXPLICIT 映射。共享 Operator 使用 Spark `select/alias/cast` 构造映射计划并触发 Analyzer；预检 I/O 只接收零行 Dataset，不创建 Writer。
+检查 sourceTableName、启用且具有 `DISTRIBUTION`（数据分发）用途的 JDBC 数据源、TABLE 目标、APPEND/OVERWRITE/UPSERT 和 BY_NAME/EXPLICIT 映射。共享 Operator 使用 Spark `select/alias/cast` 构造映射计划并触发 Analyzer；预检 I/O 只接收零行 Dataset，不创建 Writer。
+
+UPSERT 只支持 PostgreSQL/MySQL，配置必须按数据库返回顺序完整匹配一组主键或安全唯一索引，
+且所有 Key 都必须进入映射后的目标字段；Key 不得是自增、生成或 Geometry 字段。冲突时仅更新
+已映射的非 Key 字段；仅 Key 映射时 PostgreSQL `DO NOTHING`，MySQL 执行无变化更新。MySQL
+目标存在多组唯一键时返回 `MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS` 警告。Streaming 允许 APPEND
+和 UPSERT，继续拒绝 OVERWRITE；运行时写入语义见 [JDBC_OUTPUT UPSERT 设计](canvas-jdbc-output-upsert-design.md)。
 
 Output 专用字段转换策略分为安全、风险和不支持三类：可证明无损的扩大转换自动 Cast 且不提示；Spark 支持但可能受实际值、nullable、STRING length 或 DECIMAL 精度影响的转换自动 Cast 并产生警告；Spark Analyzer 不支持的 Cast 才产生错误。BY_NAME 的额外来源字段产生警告，目标必填字段缺失和显式重复目标映射仍是错误。该策略不得供 Processor 判断字段类型兼容性。
 
-### 6.7 KAFKA_OUTPUT
+### 6.8 KAFKA_OUTPUT
 
 检查来源无界表、启用且具有 `DISTRIBUTION` 用途的 Kafka 数据源、Topic、可选 Key 字段以及 BY_NAME/EXPLICIT 映射。目标字段直接取自节点内联 Value Schema，并与其他 Output 复用同一个字段映射和显式 Spark Cast 实现。Compiler 不查询模型、不建立 Kafka Writer；Runner 才使用 Manifest 中的 Kafka 连接信息准备真实流式输出。
 
-### 6.8 FILE_OUTPUT
+### 6.9 FILE_OUTPUT
 
-仅接受有界来源表，以及已启用、连接类型为 S3、用途包含 `DISTRIBUTION` 的数据源。检查用户指定的相对目录、`FAIL_IF_EXISTS/OVERWRITE` 冲突策略和 CSV、JSON Lines、Parquet 的判别式格式参数。Compiler 不连接 S3、不建立 Writer；Runner 才使用 Manifest 的外部 S3 连接，以 bucket 级 S3A 配置写入精确目标目录。
+仅接受有界来源表，以及已启用、连接类型为 S3、用途包含 `DISTRIBUTION` 的数据源。检查用户指定的相对目录、`FAIL_IF_EXISTS/OVERWRITE` 冲突策略和 CSV、JSON Lines、Parquet、Shapefile 的判别式格式参数。
+
+Shapefile 从 Canvas `1.24` 开始可用。Compiler 额外检查 EPSG + XY Geometry、Shape 类型兼容、文件基础名和 `1..255` 个有序 DBF 属性映射，包括 10 位 ASCII 字段名、STRING UTF-8 字节宽度、数值宽度与受支持平台类型。Compiler 只使用零行 Dataset 和元数据 Schema，不读取 Geometry、不连接 S3、不建立 Writer。
+
+Runner 使用 Manifest 的外部 S3 连接和 bucket 级 S3A 配置。普通格式继续使用 Spark Writer；Shapefile 通过 Driver 本地 GeoTools 33.5 Writer 和 `Dataset.toLocalIterator()` 生成唯一一套 ZIP 或五组件制品，上传运行级临时前缀后提交精确目标目录，最后写 `_SUCCESS`。完整约束见 [FILE_OUTPUT Shapefile 输出设计](canvas-shapefile-output-design.md)。
 
 ## 7. 配置与认证
 

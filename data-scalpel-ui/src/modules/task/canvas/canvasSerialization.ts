@@ -4,7 +4,6 @@ import { canvasNodeTemplate } from './canvasRegistry';
 import {
   CANVAS_SCHEMA_MINOR_VERSION,
   CANVAS_SCHEMA_VERSION,
-  CanvasNodeType,
   type CanvasDefinition,
   type CanvasEdgeDefinition,
   type CanvasNodeDefinition,
@@ -14,32 +13,11 @@ import {
 const clone = <T,>(value: T): T => structuredClone(value);
 
 export const runtimeDataFromDefinition = (node: CanvasNodeDefinition): CanvasNodeRuntimeData => {
-  switch (node.type) {
-    case CanvasNodeType.ModelInput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.JdbcInput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.FileDatasetInput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.HttpApiInput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.KafkaInput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.Join:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.StreamJoin:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.Rename:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.ModelOutput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.JdbcOutput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.KafkaOutput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-    case CanvasNodeType.FileOutput:
-      return { type: node.type, name: node.name, configuration: clone(node.configuration) };
-  }
+  return {
+    type: node.type,
+    name: node.name,
+    configuration: clone(node.configuration),
+  } as CanvasNodeRuntimeData;
 };
 
 interface SerializableCanvasNode {
@@ -70,32 +48,11 @@ const nodeDefinition = (node: SerializableCanvasNode): CanvasNodeDefinition => {
     layout: { x: position.x, y: position.y, width: size.width, height: size.height },
   };
 
-  switch (data.type) {
-    case CanvasNodeType.ModelInput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.JdbcInput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.FileDatasetInput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.HttpApiInput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.KafkaInput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.Join:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.StreamJoin:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.Rename:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.ModelOutput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.JdbcOutput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.KafkaOutput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-    case CanvasNodeType.FileOutput:
-      return { ...common, type: data.type, configuration: clone(data.configuration) };
-  }
+  return {
+    ...common,
+    type: data.type,
+    configuration: clone(data.configuration),
+  } as CanvasNodeDefinition;
 };
 
 export const toCanvasDefinition = (graph: SerializableCanvasGraph): CanvasDefinition => ({

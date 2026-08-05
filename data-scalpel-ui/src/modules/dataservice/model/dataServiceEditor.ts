@@ -1,5 +1,9 @@
 import type { PlatformDataType } from '../../model';
 import type {
+  ScriptRequestExample,
+  ScriptRequestParameter,
+} from '@superhuang/super-api-studio-script-workbench';
+import type {
   CreateDataServiceRequest,
   DataServiceDetail,
   DataServiceAccessMode,
@@ -43,9 +47,82 @@ export interface DataServiceFormValues {
   engineId?: string;
   routePath?: string;
   sqlText?: string;
+  script?: string;
+  examples?: ScriptRequestExample[];
   parameters?: SqlParameterFormValue[];
   description?: string;
 }
+
+export const defaultScriptRequestExamples = (): ScriptRequestExample[] => ([{
+  id: 'default',
+  name: '默认示例',
+  bodyText: '{\n  \n}',
+  query: [],
+  headers: [{ id: 'default-content-type', key: 'Content-Type', value: 'application/json' }],
+}]);
+
+const duplicateParameterKey = (
+  parameters: ScriptRequestParameter[],
+  caseInsensitive: boolean,
+): string | undefined => {
+  const keys = new Set<string>();
+  for (const parameter of parameters) {
+    const key = parameter.key.trim();
+    if (!key) continue;
+    const comparisonKey = caseInsensitive ? key.toLowerCase() : key;
+    if (keys.has(comparisonKey)) return key;
+    keys.add(comparisonKey);
+  }
+  return undefined;
+};
+
+export const scriptRequestExamplesValidationMessage = (
+  examples: ScriptRequestExample[] | undefined,
+): string | undefined => {
+  if (!examples?.length) return '脚本服务至少需要一个 Example';
+  const ids = new Set<string>();
+  const names = new Set<string>();
+  for (const example of examples) {
+    const id = example.id.trim();
+    const name = example.name.trim();
+    if (!id) return 'Example ID 不能为空';
+    if (ids.has(id)) return `Example ID 不能重复：${id}`;
+    ids.add(id);
+    if (!name) return 'Example 名称不能为空';
+    if (names.has(name)) return `Example 名称不能重复：${name}`;
+    names.add(name);
+    try {
+      JSON.parse(example.bodyText.trim() || '{}');
+    } catch {
+      return `Example“${name}”的 Body 不是合法 JSON`;
+    }
+    const duplicateQuery = duplicateParameterKey(example.query, false);
+    if (duplicateQuery) return `Example“${name}”的 Query 参数名重复：${duplicateQuery}`;
+    const duplicateHeader = duplicateParameterKey(example.headers, true);
+    if (duplicateHeader) return `Example“${name}”的 Header 参数名重复：${duplicateHeader}`;
+  }
+  return undefined;
+};
+
+const normalizedExampleParameters = (parameters: ScriptRequestParameter[]): ScriptRequestParameter[] => (
+  parameters
+    .filter((parameter) => parameter.key.trim())
+    .map((parameter) => ({
+      id: parameter.id.trim(),
+      key: parameter.key.trim(),
+      value: parameter.value,
+    }))
+);
+
+const normalizedScriptRequestExamples = (examples: ScriptRequestExample[]): ScriptRequestExample[] => (
+  examples.map((example) => ({
+    id: example.id.trim(),
+    name: example.name.trim(),
+    bodyText: example.bodyText.trim() || '{}',
+    query: normalizedExampleParameters(example.query),
+    headers: normalizedExampleParameters(example.headers),
+  }))
+);
 
 export const routePathPattern = /^\/open-api\/v1\/[a-z0-9][a-z0-9/_-]*$/;
 export const parameterNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
@@ -87,12 +164,18 @@ export const toParameterFormValue = (parameter: SqlServiceParameterDefinition): 
   description: parameter.description ?? undefined,
 });
 
-export const initialDataServiceFormValues = (type: DataServiceType): DataServiceFormValues => ({
+export const initialDataServiceFormValues = (
+  type: DataServiceType,
+  directoryId?: string,
+): DataServiceFormValues => ({
+  directoryId,
   type,
   accessMode: 'PUBLIC',
   routePath: '/open-api/v1/',
   modelIds: [],
   sqlText: '',
+  script: 'return [message: "Hello DataScalpel"]',
+  examples: defaultScriptRequestExamples(),
   parameters: [],
 });
 
@@ -103,11 +186,15 @@ export const detailToDataServiceFormValues = (detail: DataServiceDetail): DataSe
   type: detail.type,
   accessMode: detail.accessMode,
   modelId: detail.standardDefinition?.modelId,
-  dataSourceId: detail.sqlDefinition?.dataSourceId,
+  dataSourceId: detail.sqlDefinition?.dataSourceId ?? detail.scriptDefinition?.dataSourceId,
   modelIds: detail.sqlDefinition?.modelIds ?? [],
   engineId: detail.engineId,
   routePath: detail.routePath,
   sqlText: detail.sqlDefinition?.sqlText ?? '',
+  script: detail.scriptDefinition?.script ?? '',
+  examples: detail.scriptDefinition?.examples?.length
+    ? detail.scriptDefinition.examples
+    : defaultScriptRequestExamples(),
   parameters: detail.sqlDefinition?.parameters.map(toParameterFormValue) ?? [],
   description: detail.description ?? undefined,
 });
@@ -127,16 +214,30 @@ export const buildDataServiceUpdateRequest = (values: DataServiceFormValues): Up
       ...common,
       standardDefinition: { modelId: values.modelId ?? '' },
       sqlDefinition: null,
+      scriptDefinition: null,
+    };
+  }
+  if (values.type === 'SQL_QUERY') {
+    return {
+      ...common,
+      standardDefinition: null,
+      sqlDefinition: {
+        dataSourceId: values.dataSourceId ?? '',
+        modelIds: values.modelIds ?? [],
+        sqlText: values.sqlText?.trim() ?? '',
+        parameters: (values.parameters ?? []).map(toParameterDefinition),
+      },
+      scriptDefinition: null,
     };
   }
   return {
     ...common,
     standardDefinition: null,
-    sqlDefinition: {
+    sqlDefinition: null,
+    scriptDefinition: {
       dataSourceId: values.dataSourceId ?? '',
-      modelIds: values.modelIds ?? [],
-      sqlText: values.sqlText?.trim() ?? '',
-      parameters: (values.parameters ?? []).map(toParameterDefinition),
+      script: values.script ?? '',
+      examples: normalizedScriptRequestExamples(values.examples ?? defaultScriptRequestExamples()),
     },
   };
 };

@@ -5,7 +5,7 @@ import cn.superhuang.data.scalpel.contract.service.SqlServiceDefinition;
 import cn.superhuang.data.scalpel.contract.service.SqlServiceQueryRequest;
 import cn.superhuang.data.scalpel.contract.service.SqlServiceResultFieldDefinition;
 import cn.superhuang.data.scalpel.engine.deployment.StoredServiceDeployment;
-import cn.superhuang.data.scalpel.engine.datasource.EngineDataSourceStore;
+import cn.superhuang.data.scalpel.engine.datasource.EngineApiStudioDataSourceService;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
@@ -31,29 +31,26 @@ public class SqlServiceQueryExecutor {
 
     private final SqlServiceRequestCompiler requestCompiler;
     private final DialectRegistry dialectRegistry;
-    private final DataSourcePoolRegistry poolRegistry;
-    private final EngineDataSourceStore dataSourceStore;
+    private final EngineApiStudioDataSourceService dataSourceService;
     private final EngineQueryProperties properties;
     private final JdbcSqlQueryExecutor jdbcExecutor = new JdbcSqlQueryExecutor();
 
     public SqlServiceQueryExecutor(
             SqlServiceRequestCompiler requestCompiler,
             DialectRegistry dialectRegistry,
-            DataSourcePoolRegistry poolRegistry,
-            EngineDataSourceStore dataSourceStore,
+            EngineApiStudioDataSourceService dataSourceService,
             EngineQueryProperties properties
     ) {
         this.requestCompiler = requestCompiler;
         this.dialectRegistry = dialectRegistry;
-        this.poolRegistry = poolRegistry;
-        this.dataSourceStore = dataSourceStore;
+        this.dataSourceService = dataSourceService;
         this.properties = properties;
     }
 
     public ServiceQueryResponse execute(StoredServiceDeployment deployment, SqlServiceQueryRequest request) {
         SqlServiceDefinition definition = deployment.request().definition().sqlDefinition();
         CompiledSqlServiceRequest compiled = requestCompiler.compile(definition, request);
-        var dataSource = dataSourceStore.requireSnapshot(deployment.request().dataSourceId());
+        var dataSource = dataSourceService.resolve(deployment.request().dataSourceId());
         DatabaseDialect dialect;
         try {
             dialect = dialectRegistry.require(dataSource.databaseType());
@@ -66,7 +63,7 @@ public class SqlServiceQueryExecutor {
         var query = dialect.compileSqlServiceQuery(
                 definition.jdbcSql(), compiled.parameters(), compiled.offset(), compiled.pageSize(), compiled.returnCount()
         );
-        try (Connection connection = poolRegistry.connection(dataSource)) {
+        try (Connection connection = dataSourceService.connection(dataSource)) {
             SqlQueryResult result = jdbcExecutor.execute(
                     connection, dialect, query, compiled.pageSize(), Duration.ofSeconds(properties.timeoutSeconds())
             );

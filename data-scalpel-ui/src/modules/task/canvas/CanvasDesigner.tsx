@@ -37,6 +37,7 @@ import {
 import { canvasNodePorts } from './canvasPorts';
 import { canvasNodeCenterPlacement } from './canvasNodePlacement';
 import { canvasNodeTemplate, canvasNodeTemplates, registerCanvasNodes, type CanvasNodeTemplate } from './canvasRegistry';
+import { canvasNodeRegistry } from './nodes/nodeRegistry';
 import {
   loadCanvasDefinition,
   replaceCanvasDefinition,
@@ -84,128 +85,9 @@ const allowCanvasKeyboardEvent = (event: KeyboardEvent) => {
   if (!(target instanceof HTMLElement)) return true;
   return !target.closest('input, textarea, select, [contenteditable="true"], [role="textbox"], .ant-select');
 };
-
-const emptyRuntimeData = (type: CanvasNodeType): CanvasNodeRuntimeData => {
-  const name = canvasNodeTemplate(type).label;
-  switch (type) {
-    case CanvasNodeType.ModelInput:
-      return { type, name, configuration: { modelId: '' } };
-    case CanvasNodeType.JdbcInput:
-      return { type, name, configuration: { dataSourceId: '', tableName: '' } };
-    case CanvasNodeType.FileDatasetInput:
-      return { type, name, configuration: { fileDatasetTableId: '' } };
-    case CanvasNodeType.HttpApiInput:
-      return {
-        type,
-        name,
-        configuration: { dataSourceId: '', resourceId: '', outputTableName: '', runtimeParameters: [] },
-      };
-    case CanvasNodeType.KafkaInput:
-      return {
-        type,
-        name,
-        configuration: {
-          dataSourceId: '',
-          topic: '',
-          valueSchema: { columns: [] },
-          outputTableName: '',
-          startingOffsets: null,
-        },
-      };
-    case CanvasNodeType.Join:
-      return {
-        type,
-        name,
-        configuration: {
-          leftTableName: '',
-          rightTableName: '',
-          outputTableName: '',
-          joinType: null,
-          conditions: [],
-        },
-      };
-    case CanvasNodeType.StreamJoin:
-      return {
-        type,
-        name,
-        configuration: {
-          leftTableName: '',
-          rightTableName: '',
-          outputTableName: '',
-          joinType: null,
-          conditions: [],
-        },
-      };
-    case CanvasNodeType.Rename:
-      return {
-        type,
-        name,
-        configuration: {
-          sourceTableName: '',
-          outputTableName: '',
-          columnMappings: [],
-        },
-      };
-    case CanvasNodeType.ModelOutput:
-      return {
-        type,
-        name,
-        configuration: {
-          sourceTableName: '',
-          targetModelId: '',
-          writeMode: null,
-          columnMappingMode: null,
-          columnMappings: [],
-        },
-      };
-    case CanvasNodeType.JdbcOutput:
-      return {
-        type,
-        name,
-        configuration: {
-          sourceTableName: '',
-          dataSourceId: '',
-          targetTableName: '',
-          writeMode: null,
-          columnMappingMode: null,
-          columnMappings: [],
-        },
-      };
-    case CanvasNodeType.KafkaOutput:
-      return {
-        type,
-        name,
-        configuration: {
-          sourceTableName: '',
-          dataSourceId: '',
-          topic: '',
-          valueSchema: { columns: [] },
-          keyColumnName: '',
-          columnMappingMode: null,
-          columnMappings: [],
-        },
-      };
-    case CanvasNodeType.FileOutput:
-      return {
-        type,
-        name,
-        configuration: {
-          sourceTableName: '',
-          dataSourceId: '',
-          targetPath: '',
-          conflictPolicy: 'FAIL_IF_EXISTS',
-          formatOptions: {
-            type: 'CSV',
-            header: true,
-            delimiter: ',',
-            quote: '"',
-            escape: '\\',
-            nullValue: '',
-          },
-        },
-      };
-  }
-};
+const emptyRuntimeData = (type: CanvasNodeType): CanvasNodeRuntimeData => (
+  canvasNodeRegistry.createRuntimeData(type)
+);
 
 const createNode = (graph: Graph, template: CanvasNodeTemplate) => graph.createNode({
   id: crypto.randomUUID(),
@@ -217,13 +99,9 @@ const createNode = (graph: Graph, template: CanvasNodeTemplate) => graph.createN
 });
 
 const canConnectNodeTypes = (sourceType: CanvasNodeType, targetType: CanvasNodeType) => {
-  const sourceCategory = canvasNodeTemplate(sourceType).category;
-  const targetCategory = canvasNodeTemplate(targetType).category;
-  if (sourceCategory === CanvasNodeCategory.Input) {
-    return targetCategory === CanvasNodeCategory.Processor || targetCategory === CanvasNodeCategory.Output;
-  }
-  return sourceCategory === CanvasNodeCategory.Processor
-    && (targetCategory === CanvasNodeCategory.Processor || targetCategory === CanvasNodeCategory.Output);
+  const sourceCapability = canvasNodeRegistry.require(sourceType).graph;
+  const targetCapability = canvasNodeRegistry.require(targetType).graph;
+  return sourceCapability.maxOutputs !== 0 && targetCapability.maxInputs !== 0;
 };
 
 const taskCompilationStatus = (
@@ -438,13 +316,11 @@ export const CanvasDesigner = ({
             return false;
           }
           const targetIncomingCount = current.edges.filter((edge) => edge.targetNodeId === target.id).length;
-          if ((targetData.type === CanvasNodeType.Join
-            || targetData.type === CanvasNodeType.StreamJoin) && targetIncomingCount >= 2) return false;
-          if (targetData.type === CanvasNodeType.Rename && targetIncomingCount >= 1) return false;
-          if ((targetData.type === CanvasNodeType.ModelOutput
-            || targetData.type === CanvasNodeType.JdbcOutput
-            || targetData.type === CanvasNodeType.KafkaOutput
-            || targetData.type === CanvasNodeType.FileOutput) && targetIncomingCount >= 1) return false;
+          const sourceOutgoingCount = current.edges.filter((edge) => edge.sourceNodeId === source.id).length;
+          const targetMaxInputs = canvasNodeRegistry.require(targetData.type).graph.maxInputs;
+          const sourceMaxOutputs = canvasNodeRegistry.require(sourceData.type).graph.maxOutputs;
+          if (targetMaxInputs !== null && targetIncomingCount >= targetMaxInputs) return false;
+          if (sourceMaxOutputs !== null && sourceOutgoingCount >= sourceMaxOutputs) return false;
           return !createsCycle(current.edges, source.id, target.id);
         },
       },

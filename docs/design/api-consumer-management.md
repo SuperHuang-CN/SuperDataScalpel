@@ -113,8 +113,9 @@ public interface GatewayConsumerPort {
 `GatewayConsumerPortRegistry` 根据 `data-scalpel.service-gateway.provider` 选择当前写入 Provider，并能根据历史 Binding 中保存的 Provider 找到对应删除适配器。
 
 凭证和订阅分别使用 `GatewayCredentialPort`、`GatewaySubscriptionPort`，服务发布使用
-`GatewayServicePort`。当前生产适配实现 `KONG`；枚举预留 `APISIX` 和 `DATASCALPEL`，
-但没有在缺少真实需求时提前实现它们。
+`GatewayServicePort`。当前适配实现 `KONG` 和 `DATASCALPEL`；`APISIX` 仍为预留值。
+`DATASCALPEL` 的 HTTP 契约、API Key 摘要和订阅生命周期见
+[Super API Gateway Provider 集成](super-api-gateway-provider-integration.md)。
 
 ## 5. Kong 映射和归属保护
 
@@ -235,9 +236,19 @@ data-scalpel:
       proxy-url: ${DATASCALPEL_KONG_PROXY_URL:}
       connect-timeout: ${DATASCALPEL_KONG_CONNECT_TIMEOUT:3s}
       request-timeout: ${DATASCALPEL_KONG_REQUEST_TIMEOUT:5s}
+    super-api-gateway:
+      admin-url: ${DATASCALPEL_SUPER_API_GATEWAY_ADMIN_URL:}
+      proxy-url: ${DATASCALPEL_SUPER_API_GATEWAY_PROXY_URL:}
+      machine-token: ${DATASCALPEL_SUPER_API_GATEWAY_MACHINE_TOKEN:}
+      connect-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_CONNECT_TIMEOUT:3s}
+      request-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_REQUEST_TIMEOUT:5s}
+      upstream-connect-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_UPSTREAM_CONNECT_TIMEOUT:3s}
+      upstream-response-timeout: ${DATASCALPEL_SUPER_API_GATEWAY_UPSTREAM_RESPONSE_TIMEOUT:35s}
 ```
 
-`provider=none` 时查询仍可使用；需要同步网关的命令返回 503。`proxy-url` 第一阶段不参与消费者控制面调用，为后续服务路由接入和调用地址展示保留。
+`provider=none` 时查询仍可使用；需要同步网关的命令返回 503。Super API Gateway 的
+资源映射与切换顺序见
+[Super API Gateway Provider 集成](super-api-gateway-provider-integration.md)。
 
 当前工作区的 `config/application-local.yml` 默认启用：
 

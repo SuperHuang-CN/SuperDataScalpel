@@ -25,6 +25,7 @@ const page = (...statuses: FileDatasetParseStatus[]): PageResponse<FileDatasetTa
     truncated: false,
     previewSupported: parseStatus !== 'SCHEMA_READY',
     sourceMetadata: {},
+    spatialReferenceOverride: null,
     createdAt: '2026-07-19T00:00:00Z',
     updatedAt: '2026-07-19T00:00:00Z',
   })),

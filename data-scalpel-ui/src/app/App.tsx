@@ -5,8 +5,9 @@ import { ComputeEnginePage } from '../modules/computeengine';
 import { DataSourcePage } from '../modules/datasource';
 import { ApiConsumerPage, DataServicePage } from '../modules/dataservice';
 import { FileDatasetPage } from '../modules/filedataset';
-import { DataModelPage } from '../modules/model';
+import { DataModelPage, ModelFieldTemplatePage, ModelWarehouseLayerPage } from '../modules/model';
 import { ServiceEnginePage } from '../modules/serviceengine';
+import { StandardDictionaryDetailPage, StandardDictionaryPage } from '../modules/standard';
 import {
   LoginPage,
   SystemConfigurationPage,
@@ -31,6 +32,11 @@ const TaskDetailPage = lazy(async () => {
   return { default: module.TaskDetailPage };
 });
 
+const MaskingRulePage = lazy(async () => {
+  const module = await import('../modules/task/pages/MaskingRulePage');
+  return { default: module.MaskingRulePage };
+});
+
 const DataModelDetailPage = lazy(async () => {
   const module = await import('../modules/model/pages/DataModelDetailPage');
   return { default: module.DataModelDetailPage };
@@ -46,6 +52,11 @@ const DataServiceEditorPage = lazy(async () => {
   return { default: module.DataServiceEditorPage };
 });
 
+const GatewayOperationsPage = lazy(async () => {
+  const module = await import('../modules/dataservice/pages/GatewayOperationsPage');
+  return { default: module.GatewayOperationsPage };
+});
+
 const LegacyTaskDefinitionRedirect = () => {
   const { taskId } = useParams<{ taskId: string }>();
   return <Navigate to={taskId ? `/task/${taskId}?tab=definition` : '/task'} replace />;
@@ -58,6 +69,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           <Route element={<AppShell />}>
             <Route index element={<DashboardPage />} />
             <Route path="system/configurations" element={<RequirePermission permission="system.configuration.view"><SystemConfigurationPage /></RequirePermission>} />
+            <Route path="system/model-warehouse-layers" element={<RequirePermission permission="system.configuration.view"><ModelWarehouseLayerPage /></RequirePermission>} />
             <Route path="system/users" element={<RequirePermission permission="system.user.view"><SystemUserManagementPage /></RequirePermission>} />
             <Route path="system/roles" element={<RequirePermission permission="system.role.view"><SystemRoleManagementPage /></RequirePermission>} />
             <Route path="system/permissions" element={<RequirePermission permission="system.permission.view"><SystemPermissionManagementPage /></RequirePermission>} />
@@ -74,7 +86,20 @@ const router = createBrowserRouter(createRoutesFromElements(
               )}
             />
             <Route path="file-dataset/*" element={<Navigate to="/file-dataset" replace />} />
+            <Route
+              path="standard/dictionaries"
+              element={<RequirePermission permission="standard.dictionary.view"><StandardDictionaryPage /></RequirePermission>}
+            />
+            <Route
+              path="standard/dictionaries/:id"
+              element={<RequirePermission permission="standard.dictionary.view"><StandardDictionaryDetailPage /></RequirePermission>}
+            />
+            <Route path="standard/*" element={<Navigate to="/standard/dictionaries" replace />} />
             <Route path="model" element={<RequirePermission permission="model.view"><DataModelPage /></RequirePermission>} />
+            <Route
+              path="model/field-templates"
+              element={<RequirePermission permission="model.view"><ModelFieldTemplatePage /></RequirePermission>}
+            />
             <Route
               path="model/:id"
               element={(
@@ -85,6 +110,14 @@ const router = createBrowserRouter(createRoutesFromElements(
             />
             <Route path="model/*" element={<Navigate to="/model" replace />} />
             <Route path="task" element={<RequirePermission permission="task.view"><TaskListPage /></RequirePermission>} />
+            <Route
+              path="task/masking-rules"
+              element={(
+                <RequirePermission permission="task.view">
+                  <Suspense fallback="正在加载脱敏规则…"><MaskingRulePage /></Suspense>
+                </RequirePermission>
+              )}
+            />
             <Route
               path="task/:taskId/definition"
               element={<LegacyTaskDefinitionRedirect />}
@@ -106,6 +139,14 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="dataservice" element={<RequirePermission permission="service.view"><DataServicePage /></RequirePermission>} />
             <Route path="dataservice/consumers" element={<RequirePermission permission="service.view"><ApiConsumerPage /></RequirePermission>} />
             <Route
+              path="dataservice/operations"
+              element={(
+                <RequirePermission permission="service.view">
+                  <Suspense fallback="正在加载网关调用统计…"><GatewayOperationsPage /></Suspense>
+                </RequirePermission>
+              )}
+            />
+            <Route
               path="dataservice/new/standard"
               element={(
                 <RequirePermission permission="service.create">
@@ -118,6 +159,14 @@ const router = createBrowserRouter(createRoutesFromElements(
               element={(
                 <RequirePermission permission="service.create">
                   <Suspense fallback="正在加载 SQL 服务工作台…"><DataServiceEditorPage /></Suspense>
+                </RequirePermission>
+              )}
+            />
+            <Route
+              path="dataservice/new/script"
+              element={(
+                <RequirePermission permission="service.create">
+                  <Suspense fallback="正在加载脚本服务工作台…"><DataServiceEditorPage /></Suspense>
                 </RequirePermission>
               )}
             />

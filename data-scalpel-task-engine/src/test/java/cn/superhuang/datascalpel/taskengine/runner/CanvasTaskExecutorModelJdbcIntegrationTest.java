@@ -120,7 +120,7 @@ class CanvasTaskExecutorModelJdbcIntegrationTest {
                         inputNodeId,
                         "订单模型输入",
                         layout(),
-                        new ModelInputConfiguration(sourceModelId)
+                        new ModelInputConfiguration(sourceModelId.toString())
                 ),
                 new ModelOutputNodeDefinition(
                         outputNodeId,
@@ -128,7 +128,7 @@ class CanvasTaskExecutorModelJdbcIntegrationTest {
                         layout(),
                         new ModelOutputConfiguration(
                                 SOURCE_CODE,
-                                targetModelId,
+                                targetModelId.toString(),
                                 JdbcWriteMode.OVERWRITE,
                                 ColumnMappingMode.BY_NAME,
                                 List.of()

@@ -38,8 +38,8 @@ describe('CanvasNodePalette', () => {
   it('starts collapsed and shows category counts for the current execution mode', () => {
     render(<PaletteHarness />);
 
-    expect(screen.getByRole('button', { name: '输入 4' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: '处理器 2' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '输入 5' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: '处理器 26' })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '输出 3' })).toBeInTheDocument();
     expect(screen.queryByLabelText('输入节点')).not.toBeInTheDocument();
   });
@@ -48,16 +48,16 @@ describe('CanvasNodePalette', () => {
     const user = userEvent.setup();
     render(<PaletteHarness />);
 
-    await user.click(screen.getByRole('button', { name: '输入 4' }));
+    await user.click(screen.getByRole('button', { name: '输入 5' }));
     expect(screen.getByLabelText('输入节点')).toBeInTheDocument();
     expect(screen.getByText('JDBC 输入')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '处理器 2' }));
+    await user.click(screen.getByRole('button', { name: '处理器 26' }));
     expect(screen.queryByLabelText('输入节点')).not.toBeInTheDocument();
     expect(screen.getByLabelText('处理器节点')).toBeInTheDocument();
     expect(screen.getByText('Join 处理器')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '处理器 2' }));
+    await user.click(screen.getByRole('button', { name: '处理器 26' }));
     expect(screen.queryByLabelText('处理器节点')).not.toBeInTheDocument();
   });
 
@@ -79,13 +79,26 @@ describe('CanvasNodePalette', () => {
     expect(screen.getByText('没有匹配的节点')).toBeInTheDocument();
   });
 
+  it('filters by second-level group and searches across all groups', async () => {
+    const user = userEvent.setup();
+    render(<PaletteHarness initialCategory={CanvasNodeCategory.Processor} />);
+
+    await user.click(screen.getByRole('button', { name: '字段处理' }));
+    expect(screen.getByText('选择字段')).toBeInTheDocument();
+    expect(screen.queryByText('Join 处理器')).not.toBeInTheDocument();
+
+    await user.type(screen.getByRole('textbox', { name: '搜索处理器节点' }), 'join');
+    expect(screen.getByText('Join 处理器')).toBeInTheDocument();
+  });
+
   it('uses streaming labels and filters out batch-only nodes', async () => {
     const user = userEvent.setup();
     render(<PaletteHarness executionMode="STREAMING" />);
 
-    expect(screen.getByRole('button', { name: '输入 2' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '输入 2' }));
+    expect(screen.getByRole('button', { name: '输入 3' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '输入 3' }));
     expect(screen.getByText('JDBC 静态维表')).toBeInTheDocument();
+    expect(screen.getByText('JDBC 查询输入')).toBeInTheDocument();
     expect(screen.getByText('Kafka 输入')).toBeInTheDocument();
     expect(screen.queryByText('模型输入')).not.toBeInTheDocument();
   });

@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.filedataset.domain;
 
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -42,6 +43,12 @@ public class FileDatasetTable extends BaseEntity {
 
     @Column(name = "current_load_job_id")
     private UUID currentLoadJobId;
+
+    @Column(name = "spatial_crs_authority", length = 16)
+    private String spatialCrsAuthority;
+
+    @Column(name = "spatial_crs_code")
+    private Integer spatialCrsCode;
 
     protected FileDatasetTable() {
     }
@@ -120,6 +127,24 @@ public class FileDatasetTable extends BaseEntity {
         this.currentLoadJobId = null;
     }
 
+    public void replaceSpatialSchema(
+            String parsedMetadata,
+            boolean previewSupported,
+            CrsReference spatialReference
+    ) {
+        if (!hasData()) {
+            throw new IllegalStateException("只有已经就绪的逻辑表才能重新确认空间 Schema");
+        }
+        if (currentLoadJobId != null) {
+            throw new IllegalStateException("逻辑表存在正在执行的数据装载");
+        }
+        this.parsedMetadata = required(parsedMetadata, "解析元数据不能为空");
+        this.parseStatus = previewSupported
+                ? FileDatasetParseStatus.READY : FileDatasetParseStatus.SCHEMA_READY;
+        this.spatialCrsAuthority = spatialReference.authority();
+        this.spatialCrsCode = spatialReference.code();
+    }
+
     public void handoffCurrentLoad(UUID currentJobId, UUID nextJobId) {
         requireCurrentLoad(currentJobId);
         if (nextJobId == null) {
@@ -153,6 +178,11 @@ public class FileDatasetTable extends BaseEntity {
 
     public UUID getCurrentLoadJobId() {
         return currentLoadJobId;
+    }
+
+    public CrsReference getSpatialReferenceOverride() {
+        return spatialCrsAuthority == null || spatialCrsCode == null
+                ? null : new CrsReference(spatialCrsAuthority, spatialCrsCode);
     }
 
     public boolean hasData() {

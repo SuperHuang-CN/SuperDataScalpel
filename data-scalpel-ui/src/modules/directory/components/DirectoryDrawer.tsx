@@ -64,7 +64,7 @@ export const DirectoryDrawer = ({ scope, open, directory, initialParentId, tree,
         destroyOnHidden
         footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
       >
-        <Form<DirectoryFormValues> form={form} layout="vertical" onFinish={(values) => void submit(values)}>
+        <Form<DirectoryFormValues> autoComplete="off" form={form} layout="vertical" onFinish={(values) => void submit(values)}>
           <Form.Item label="上级目录" name="parentId">
             <TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(tree)} placeholder="顶级目录" />
           </Form.Item>

@@ -1,7 +1,9 @@
-import { DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
-import type { TableProps } from 'antd';
-import { Button, Card, Form, Input, Popconfirm, Space, Table, Tag, Tooltip, message } from 'antd';
+import { DeleteOutlined, EditOutlined, EllipsisOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined, TeamOutlined } from '@ant-design/icons';
+import type { MenuProps, TableProps } from 'antd';
+import { Button, Dropdown, Form, Modal, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
+import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ApiError } from '../../../shared/api/http';
 import { SystemRoleDrawer } from '../components/SystemRoleDrawer';
 import { SystemRolePermissionsDrawer } from '../components/SystemRolePermissionsDrawer';
@@ -50,25 +52,26 @@ export const SystemRoleManagementPage = () => {
   };
 
   const columns: TableProps<SystemRole>['columns'] = [
-    { title: '角色名称', dataIndex: 'name', width: 200, ellipsis: true },
-    { title: '角色编码', dataIndex: 'code', width: 190, render: (value: string) => <code>{value}</code> },
-    { title: '说明', dataIndex: 'description', ellipsis: true, render: (value: string | null) => value || '—' },
-    { title: '权限数', dataIndex: 'permissionIds', width: 100, render: (value: string[]) => value.length },
-    { title: '类型', dataIndex: 'builtIn', width: 110, render: (value: boolean) => value ? <Tag color="gold">内置</Tag> : <Tag>自定义</Tag> },
+    { title: '角色', dataIndex: 'name', width: 260, render: (value: string, role) => <ManagementListCell icon={<TeamOutlined />} iconTone="violet" primary={value} secondary={<ManagementCode value={role.code} />} /> },
+    { title: '说明', dataIndex: 'description', width: 280, render: (value: string | null) => <ManagementListCell primary={value || '—'} secondary="角色说明" /> },
+    { title: '权限 / 类型', width: 150, render: (_value: unknown, role) => <ManagementListCell primary={`${role.permissionIds.length} 项权限`} secondary={role.builtIn ? '内置角色' : '自定义角色'} /> },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
-      title: '操作', key: 'actions', fixed: 'right', width: 132,
+      title: '操作', key: 'actions', width: 112,
       render: (_: unknown, role: SystemRole) => canManage ? (
-        <Space size={2}>
-          <Tooltip title="修改"><Button type="text" icon={<EditOutlined />} aria-label={`修改${role.name}`} onClick={() => setEditingRole(role)} /></Tooltip>
-          <Tooltip title={role.builtIn ? '内置角色的权限由系统维护' : '配置权限'}>
-            <Button type="text" disabled={role.builtIn || !canViewPermissions} icon={<SafetyCertificateOutlined />} aria-label={`配置${role.name}权限`} onClick={() => setPermissionRole(role)} />
-          </Tooltip>
-          {!role.builtIn && (
-            <Popconfirm title="删除角色" description={`确认删除“${role.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => void remove(role)}>
-              <Tooltip title="删除"><Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除${role.name}`} /></Tooltip>
-            </Popconfirm>
-          )}
-        </Space>
+        <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">
+            <Tooltip title="修改"><Button type="text" icon={<EditOutlined />} aria-label={`修改${role.name}`} onClick={() => setEditingRole(role)} /></Tooltip>
+            <Tooltip title={role.builtIn ? '内置角色的权限由系统维护' : '配置权限'}><Button type="text" disabled={role.builtIn || !canViewPermissions} icon={<SafetyCertificateOutlined />} aria-label={`配置${role.name}权限`} onClick={() => setPermissionRole(role)} /></Tooltip>
+          </div>
+          <Dropdown menu={{ items: [
+            { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setEditingRole(role) },
+            { key: 'permissions', icon: <SafetyCertificateOutlined />, label: role.builtIn ? '权限由系统维护' : '配置权限', disabled: role.builtIn || !canViewPermissions, onClick: () => setPermissionRole(role) },
+            ...(!role.builtIn ? [{ type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ title: '删除角色', content: `确认删除“${role.name}”吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(role) }) }] : []),
+          ] satisfies MenuProps['items'] }} trigger={['click']}>
+            <Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<EllipsisOutlined />} aria-label={`${role.name}的更多操作`} /></Tooltip>
+          </Dropdown>
+        </div>
       ) : '—',
     },
   ];
@@ -76,28 +79,27 @@ export const SystemRoleManagementPage = () => {
   return (
     <>
       {messageContext}
-      <Card className="management-card">
-        <div className="management-toolbar">
-          <Form<KeywordFilter> form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
-            <Form.Item name="keyword" label="名称/编码"><Input allowClear placeholder="按角色名称或编码筛选" className="data-source-keyword-input" /></Form.Item>
-          </Form>
-          <Space size={4} className="management-toolbar-actions">
-            <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-            <Button onClick={reset}>重置</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => void rolesQuery.refetch()}>刷新</Button>
-            {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
-          </Space>
+      <section className="management-workbench">
+        <div className="management-filter-strip">
+          <Form<KeywordFilter> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}><Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索角色名称或编码" className="data-source-keyword-input" /></Form.Item></Form>
+          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={rolesQuery.isFetching} onReset={reset} />
         </div>
-        <Table<SystemRole>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <span className="management-result-title">角色列表 <span className="management-result-count">共 {rolesQuery.data?.totalElements ?? 0} 项</span></span>
+          <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新角色列表" onClick={() => void rolesQuery.refetch()} /></Tooltip>{canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}</div>
+          </div>
+          <Table<SystemRole>
           size="small" className="management-table" rowKey="id" columns={columns}
-          dataSource={rolesQuery.data?.content ?? []} loading={rolesQuery.isFetching} scroll={{ x: 1010, y: '100%' }}
+          dataSource={rolesQuery.data?.content ?? []} loading={rolesQuery.isFetching} scroll={{ y: '100%' }}
           pagination={{
             current: page + 1, pageSize: size, total: rolesQuery.data?.totalElements ?? 0, size: 'small',
             position: ['bottomRight'], hideOnSinglePage: false, showSizeChanger: true, showTotal: (total) => `共 ${total} 项`,
           }}
           onChange={(pagination) => { setPage((pagination.current ?? 1) - 1); setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE); }}
-        />
-      </Card>
+          />
+        </div>
+      </section>
       <SystemRoleDrawer open={createDrawerOpen || Boolean(editingRole)} role={editingRole} onClose={() => { setCreateDrawerOpen(false); setEditingRole(null); }} />
       <SystemRolePermissionsDrawer
         open={Boolean(permissionRole)} role={permissionRole}

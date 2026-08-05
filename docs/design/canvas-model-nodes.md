@@ -239,11 +239,11 @@ Palette 在现有 HTTP API 输入节点之外增加“模型输入”和“模�
 
 ## 10. 版本与非目标
 
-- Canvas Definition 当前写出版本为 `1.5`；模型节点仍从 `1.1` 开始可用，缺少 `schemaMinorVersion` 的既有定义按 `1.0` 读取。
-- Execution manifest 当前版本升级为 `2`，`metadataSnapshot.models` 必填。
+- Canvas Definition 当前写出版本为 `1.22`；模型节点仍从 `1.1` 开始可用，缺少 `schemaMinorVersion` 的既有定义按 `1.0` 读取。
+- Execution manifest 当前版本为 `8`，`metadataSnapshot.models` 必填。
 - Runner `result.json` 保持版本 `2`。
-- 当前系统兼容读取 Canvas `1.0`～`1.6` 并在保存、返回、生成 Manifest 或导出时规范化为 `1.6`；模型节点仍从 `1.1` 开始可用，原有模型节点字段无需迁移。Kafka 节点的“从模型导入 Schema”只是前端一次性复制，不创建本节定义的模型引用。
-- `MODEL_INPUT` 和 `MODEL_OUTPUT` 仅允许出现在 `1.1`；版本声明为 `1.0` 但包含模型节点的定义必须拒绝。
+- 当前系统兼容读取 Canvas `1.0`～`1.22` 并在保存、返回、生成 Manifest 或导出时规范化为 `1.22`；模型节点仍从 `1.1` 开始可用，原有模型节点字段无需迁移。Kafka 节点的“从模型导入 Schema”只是前端一次性复制，不创建本节定义的模型引用。
+- `MODEL_INPUT` 和 `MODEL_OUTPUT` 从 `1.1` 开始允许；版本声明为 `1.0` 但包含模型节点的定义必须拒绝。
 - PostgreSQL 存量升级和模型引用回填使用
   [spark-canvas-admin-postgresql.sql](../operations/spark-canvas-admin-postgresql.sql)，不重建任务、运行记录或 Canvas 定义表。
 

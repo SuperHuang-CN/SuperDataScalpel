@@ -24,6 +24,7 @@ import { useCurrentUser } from '../../system';
 import { gatewayProviderLabels } from '../model/apiConsumer';
 import { StandardServiceEditor } from '../components/editor/StandardServiceEditor';
 import { SqlServiceEditor } from '../components/editor/SqlServiceEditor';
+import { ScriptServiceEditor } from '../components/editor/ScriptServiceEditor';
 import {
   useCleanupDataServiceDeployment,
   useCreateDataService,
@@ -78,6 +79,7 @@ const gatewayStatusColors: Record<GatewayServicePublicationStatus, string> = {
 const routeServiceType = (pathname: string): DataServiceType | undefined => {
   if (pathname === '/dataservice/new/standard') return 'STANDARD_TABLE';
   if (pathname === '/dataservice/new/sql') return 'SQL_QUERY';
+  if (pathname === '/dataservice/new/script') return 'SCRIPT_API';
   return undefined;
 };
 
@@ -88,9 +90,16 @@ const problemMessage = (error: unknown, fallback: string) => (
 const errorSection = (field: string | number | undefined) => {
   if (field === 'modelId' || field === 'dataSourceId' || field === 'modelIds' || field === 'engineId') return '来源与 Engine';
   if (field === 'sqlText') return 'SQL 模板';
+  if (field === 'script') return 'Groovy 脚本';
+  if (field === 'examples') return '请求 Example';
   if (field === 'parameters') return '参数定义';
   return '基本信息';
 };
+
+interface DataServiceEditorLocationState {
+  fromDataServiceList?: boolean;
+  initialDirectoryId?: string;
+}
 
 export const DataServiceEditorPage = () => {
   const navigate = useNavigate();
@@ -99,7 +108,9 @@ export const DataServiceEditorPage = () => {
   const creatingType = routeServiceType(location.pathname);
   const creating = Boolean(creatingType);
   const initializationKey = creatingType ? `new:${creatingType}` : `detail:${id ?? ''}`;
-  const fromList = Boolean((location.state as { fromDataServiceList?: boolean } | null)?.fromDataServiceList);
+  const locationState = location.state as DataServiceEditorLocationState | null;
+  const fromList = Boolean(locationState?.fromDataServiceList);
+  const initialDirectoryId = creating ? locationState?.initialDirectoryId : undefined;
   const [form] = Form.useForm<DataServiceFormValues>();
   const watchedValues = Form.useWatch([], form) as DataServiceFormValues | undefined;
   const [baselineFingerprint, setBaselineFingerprint] = useState<string | null>(null);
@@ -127,9 +138,13 @@ export const DataServiceEditorPage = () => {
   const definitionReadOnly = !definitionEditable || (!creating && !canUpdate);
   const dependencyUnavailable = !canViewEngines
     || serviceType === 'STANDARD_TABLE' && !canViewModels
-    || serviceType === 'SQL_QUERY' && (!canViewDataSources || !canViewModels);
+    || serviceType === 'SQL_QUERY' && (!canViewDataSources || !canViewModels)
+    || serviceType === 'SCRIPT_API' && !canViewDataSources;
   const canSave = definitionEditable && (creating ? canCreate : canUpdate) && !dependencyUnavailable;
   const canTest = serviceType === 'SQL_QUERY'
+    && (creating ? canCreate : canUpdate)
+    && !dependencyUnavailable;
+  const canRunScript = serviceType === 'SCRIPT_API'
     && (creating ? canCreate : canUpdate)
     && !dependencyUnavailable;
   const createMutation = useCreateDataService();
@@ -159,7 +174,7 @@ export const DataServiceEditorPage = () => {
   useEffect(() => {
     if (initializedKey === initializationKey) return;
     const initialValues = creatingType
-      ? initialDataServiceFormValues(creatingType)
+      ? initialDataServiceFormValues(creatingType, initialDirectoryId)
       : detail ? detailToDataServiceFormValues(detail) : undefined;
     if (!initialValues) return;
     const initialize = window.setTimeout(() => {
@@ -173,7 +188,7 @@ export const DataServiceEditorPage = () => {
       setErrorSummary([]);
     }, 0);
     return () => window.clearTimeout(initialize);
-  }, [creatingType, detail, form, initializationKey, initializedKey]);
+  }, [creatingType, detail, form, initialDirectoryId, initializationKey, initializedKey]);
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -410,7 +425,7 @@ export const DataServiceEditorPage = () => {
     : detail?.name ?? '服务详情';
 
   return (
-    <div className={`data-service-editor-page data-service-editor-${serviceType === 'SQL_QUERY' ? 'sql' : 'standard'}`}>
+    <div className={`data-service-editor-page data-service-editor-${serviceType === 'STANDARD_TABLE' ? 'standard' : serviceType === 'SQL_QUERY' ? 'sql' : 'script'}`}>
       {messageContext}
       <header className="data-service-editor-header">
         <div className="data-service-editor-heading">
@@ -474,7 +489,7 @@ export const DataServiceEditorPage = () => {
         {errorSummary.length > 0 && <Alert type="error" showIcon message="请修正表单错误" description={<ul>{errorSummary.map((error) => <li key={error}>{error}</li>)}</ul>} />}
       </div>
 
-      <Form<DataServiceFormValues>
+      <Form<DataServiceFormValues> autoComplete="off"
         form={form}
         layout="vertical"
         className="data-service-editor-form"
@@ -492,7 +507,7 @@ export const DataServiceEditorPage = () => {
             canViewModels={canViewModels}
             canViewEngines={canViewEngines}
           />
-        ) : (
+        ) : serviceType === 'SQL_QUERY' ? (
           <SqlServiceEditor
             form={form}
             creating={creating}
@@ -506,6 +521,16 @@ export const DataServiceEditorPage = () => {
             testResult={testResult}
             onTestValuesChange={setTestValues}
             onResetTest={() => setTestResult(null)}
+          />
+        ) : (
+          <ScriptServiceEditor
+            form={form}
+            creating={creating}
+            readOnly={definitionReadOnly}
+            canRun={canRunScript}
+            canViewDirectories={canViewDirectories}
+            canViewDataSources={canViewDataSources}
+            canViewEngines={canViewEngines}
           />
         )}
       </Form>

@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.business.system.configuration.repository.Syste
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.core.annotation.Order;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
@@ -12,6 +13,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class SystemConfigurationInitializer {
 
     @Bean
+    @Order(0)
     ApplicationRunner initializeSystemConfigurations(
             SystemConfigurationRepository repository,
             PlatformTransactionManager transactionManager

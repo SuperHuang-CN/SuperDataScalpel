@@ -104,7 +104,9 @@ public sealed interface FileDatasetParsingOptionsRequest permits
         }
     }
 
-    record Gdb() implements FileDatasetParsingOptionsRequest {
+    record Gdb(
+            @Min(1) Integer epsgCode
+    ) implements FileDatasetParsingOptionsRequest {
         @Override
         public FileDatasetParsingOptionsKind kind() {
             return FileDatasetParsingOptionsKind.GDB;
@@ -113,7 +115,8 @@ public sealed interface FileDatasetParsingOptionsRequest permits
 
     record Shp(
             @Size(max = 40) String dbfCharsetOverride,
-            @NotBlank @Size(max = 40) String dbfFallbackCharset
+            @NotBlank @Size(max = 40) String dbfFallbackCharset,
+            @Min(1) Integer epsgCode
     ) implements FileDatasetParsingOptionsRequest {
         @Override
         public FileDatasetParsingOptionsKind kind() {

@@ -60,12 +60,19 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
                 "configuration.sourceTableName",
                 issues
         );
-        UUID modelId = configuration.targetModelId();
-        if (modelId == null) {
-            issues.error("MODEL_ID_REQUIRED", "请选择目标模型", "configuration.targetModelId");
-        }
+        UUID modelId = CanvasNodeSupport.parseModelUuid(
+                configuration.targetModelId(),
+                "configuration.targetModelId",
+                issues
+        );
         if (configuration.writeMode() == null) {
             issues.error("REQUIRED_CONFIGURATION", "请选择写入模式", "configuration.writeMode");
+        } else if (configuration.writeMode() == JdbcWriteMode.UPSERT) {
+            issues.error(
+                    "MODEL_OUTPUT_UPSERT_NOT_SUPPORTED",
+                    "模型输出只支持 APPEND 和 OVERWRITE",
+                    "configuration.writeMode"
+            );
         }
         if (configuration.columnMappingMode() == null) {
             issues.error("REQUIRED_CONFIGURATION", "请选择字段映射模式", "configuration.columnMappingMode");
@@ -91,14 +98,6 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
             issues.error(
                     "MODEL_NOT_PUBLISHED",
                     "目标模型不是已发布状态：" + model.metadata().name(),
-                    "configuration.targetModelId"
-            );
-        }
-        if (model != null && model.metadata().columns().stream()
-                .anyMatch(column -> column.fieldType() == PlatformDataType.GEOMETRY)) {
-            issues.error(
-                    "SPATIAL_FIELD_UNSUPPORTED",
-                    "模型输出第一版不支持空间字段：" + model.metadata().name(),
                     "configuration.targetModelId"
             );
         }
@@ -130,6 +129,24 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
                 model.tableSchema().origin(),
                 model.metadata().columns()
         );
+        CanvasNodeSupport.validateSupportedGeometry(
+                targetSchema.columns(),
+                "configuration.targetModelId",
+                issues
+        );
+        if (context.executionMode() == CanvasExecutionMode.STREAMING
+                && targetSchema.columns().stream().anyMatch(column ->
+                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
+            issues.error(
+                    "SPATIAL_JDBC_UNSUPPORTED",
+                    "第一阶段不支持实时任务写入 Geometry",
+                    "configuration.targetModelId"
+            );
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (issues.hasErrors()) {
+            return CanvasNodeOperationResult.outputOnly();
+        }
         Dataset<Row> selected = mappingOperator.apply(
                 source,
                 targetSchema,

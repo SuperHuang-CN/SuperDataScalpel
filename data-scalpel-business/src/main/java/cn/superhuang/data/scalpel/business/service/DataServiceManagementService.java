@@ -20,6 +20,7 @@ import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentS
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceRoutePath;
+import cn.superhuang.data.scalpel.business.service.domain.ScriptDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceModelReference;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceParameter;
@@ -31,11 +32,15 @@ import cn.superhuang.data.scalpel.business.service.gateway.service.DataServiceGa
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceDeploymentRepository;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
+import cn.superhuang.data.scalpel.business.service.repository.ScriptDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceModelReferenceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceParameterRepository;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateDataServiceRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.ScriptDataServiceDefinitionRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.ScriptRequestExampleRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.ScriptRequestParameterRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.SqlDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.SqlServiceTestRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.StandardDataServiceDefinitionRequest;
@@ -43,6 +48,9 @@ import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataService
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceDetailResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceSummaryResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.GatewayServiceBindingResponse;
+import cn.superhuang.data.scalpel.business.service.web.response.ScriptDataServiceDefinitionResponse;
+import cn.superhuang.data.scalpel.business.service.web.response.ScriptRequestExampleResponse;
+import cn.superhuang.data.scalpel.business.service.web.response.ScriptRequestParameterResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.SqlDataServiceDefinitionResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.SqlServiceTestProblem;
 import cn.superhuang.data.scalpel.business.service.web.response.SqlServiceTestResponse;
@@ -56,6 +64,7 @@ import cn.superhuang.data.scalpel.contract.service.ServiceDeploymentRequest;
 import cn.superhuang.data.scalpel.contract.service.ServiceDeploymentResponse;
 import cn.superhuang.data.scalpel.contract.service.ServiceFieldDefinition;
 import cn.superhuang.data.scalpel.contract.service.ServiceUndeploymentRequest;
+import cn.superhuang.data.scalpel.contract.service.ScriptServiceDefinition;
 import cn.superhuang.data.scalpel.contract.service.SqlServiceDefinition;
 import cn.superhuang.data.scalpel.contract.service.SqlServiceParameterDefinition;
 import cn.superhuang.data.scalpel.contract.service.StandardServiceDefinition;
@@ -70,6 +79,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -90,7 +100,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Control-plane CRUD and deployment lifecycle for standard-table and SQL-query services. */
+/** Control-plane CRUD and deployment lifecycle for all three data service types. */
 @Service
 public class DataServiceManagementService {
 
@@ -100,6 +110,7 @@ public class DataServiceManagementService {
     private final ApiServiceSubscriptionRepository subscriptionRepository;
     private final StandardDataServiceDefinitionRepository standardDefinitionRepository;
     private final SqlDataServiceDefinitionRepository sqlDefinitionRepository;
+    private final ScriptDataServiceDefinitionRepository scriptDefinitionRepository;
     private final SqlDataServiceModelReferenceRepository sqlModelReferenceRepository;
     private final SqlDataServiceParameterRepository sqlParameterRepository;
     private final ServiceEngineRepository engineRepository;
@@ -125,6 +136,7 @@ public class DataServiceManagementService {
             ApiServiceSubscriptionRepository subscriptionRepository,
             StandardDataServiceDefinitionRepository standardDefinitionRepository,
             SqlDataServiceDefinitionRepository sqlDefinitionRepository,
+            ScriptDataServiceDefinitionRepository scriptDefinitionRepository,
             SqlDataServiceModelReferenceRepository sqlModelReferenceRepository,
             SqlDataServiceParameterRepository sqlParameterRepository,
             ServiceEngineRepository engineRepository,
@@ -148,6 +160,7 @@ public class DataServiceManagementService {
         this.subscriptionRepository = subscriptionRepository;
         this.standardDefinitionRepository = standardDefinitionRepository;
         this.sqlDefinitionRepository = sqlDefinitionRepository;
+        this.scriptDefinitionRepository = scriptDefinitionRepository;
         this.sqlModelReferenceRepository = sqlModelReferenceRepository;
         this.sqlParameterRepository = sqlParameterRepository;
         this.engineRepository = engineRepository;
@@ -197,21 +210,29 @@ public class DataServiceManagementService {
 
     @Transactional
     public DataServiceDetailResponse create(CreateDataServiceRequest request) {
-        validateDefinitionShape(request.type(), request.standardDefinition(), request.sqlDefinition());
+        validateDefinitionShape(
+                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+        );
         String code = request.code().trim().toLowerCase(Locale.ROOT);
         if (repository.existsByCode(code)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务编码已存在");
         }
         directoryService.validateAssignment(DirectoryScope.DATA_SERVICE, request.directoryId());
         requireEngine(request.engineId());
-        validateDefinitionSource(request.type(), request.standardDefinition(), request.sqlDefinition(), request.engineId());
+        validateDefinitionSource(
+                request.type(), request.standardDefinition(), request.sqlDefinition(),
+                request.scriptDefinition(), request.engineId()
+        );
         String routePath = normalizeRoutePath(request.routePath());
         requireRouteAvailable(routePath, null);
         DataService service = repository.saveAndFlush(DataService.create(
                 code, request.name(), request.directoryId(), request.type(), request.engineId(), routePath,
                 request.accessMode(), request.description()
         ));
-        saveNewDefinition(service.getId(), request.type(), request.standardDefinition(), request.sqlDefinition());
+        saveNewDefinition(
+                service.getId(), request.type(), request.standardDefinition(),
+                request.sqlDefinition(), request.scriptDefinition()
+        );
         return detail(service, null, List.of());
     }
 
@@ -233,17 +254,24 @@ public class DataServiceManagementService {
                     "数据服务仍有消费者订阅，请先撤回订阅后再改为公开访问"
             );
         }
-        validateDefinitionShape(request.type(), request.standardDefinition(), request.sqlDefinition());
+        validateDefinitionShape(
+                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+        );
         directoryService.validateAssignment(DirectoryScope.DATA_SERVICE, request.directoryId());
         requireEngine(request.engineId());
-        validateDefinitionSource(request.type(), request.standardDefinition(), request.sqlDefinition(), request.engineId());
+        validateDefinitionSource(
+                request.type(), request.standardDefinition(), request.sqlDefinition(),
+                request.scriptDefinition(), request.engineId()
+        );
         String routePath = normalizeRoutePath(request.routePath());
         requireRouteAvailable(routePath, id);
         service.update(
                 request.name(), request.directoryId(), request.engineId(), routePath,
                 request.accessMode(), request.description()
         );
-        updateDefinition(id, request.type(), request.standardDefinition(), request.sqlDefinition());
+        updateDefinition(
+                id, request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+        );
         return detail(
                 repository.saveAndFlush(service),
                 deploymentRepository.findByDataServiceId(id).orElse(null),
@@ -279,16 +307,15 @@ public class DataServiceManagementService {
         String failure = null;
         try {
             ServiceDeploymentResponse response = engineClient.deploy(command.engine(), command.request());
-            if (response == null || response.status() != EngineDeploymentStatus.DEPLOYED
-                    || response.revision() != command.request().revision()) {
-                throw new IllegalStateException("服务引擎未确认当前版本部署");
+            if (response == null || response.status() != EngineDeploymentStatus.DEPLOYED) {
+                throw new IllegalStateException("服务引擎未确认部署结果");
             }
         } catch (RuntimeException exception) {
             failure = safeMessage(exception);
         }
         String finalFailure = failure;
         return requireTransactionResult(transactionTemplate.execute(
-                status -> completeEnable(id, command.request().revision(), finalFailure)
+                status -> completeEnable(id, command.revision(), finalFailure)
         ));
     }
 
@@ -365,6 +392,7 @@ public class DataServiceManagementService {
         sqlModelReferenceRepository.deleteAllByDataServiceId(id);
         sqlParameterRepository.deleteAllByDataServiceId(id);
         sqlDefinitionRepository.deleteByDataServiceId(id);
+        scriptDefinitionRepository.deleteByDataServiceId(id);
         standardDefinitionRepository.deleteByDataServiceId(id);
         if (deployment != null) deploymentRepository.delete(deployment);
         repository.delete(service);
@@ -379,6 +407,7 @@ public class DataServiceManagementService {
         return switch (service.getType()) {
             case STANDARD_TABLE -> prepareStandardEnable(service, engine);
             case SQL_QUERY -> prepareSqlEnable(service, engine);
+            case SCRIPT_API -> prepareScriptEnable(service, engine);
         };
     }
 
@@ -419,6 +448,15 @@ public class DataServiceManagementService {
         );
     }
 
+    private EnablePreparation prepareScriptEnable(DataService service, ServiceEngine engine) {
+        ScriptDataServiceDefinition design = requireScriptDefinition(service.getId());
+        DataSource dataSource = requireScriptDataSource(design.getDataSourceId());
+        dataSourceRegistrationService.requireReadyRegistration(service.getEngineId(), dataSource.getId());
+        return EnablePreparation.script(
+                snapshot(service), engine, dataSource, design.getVersion(), design.getScript()
+        );
+    }
+
     private ServiceDefinitionSnapshot inspectForEnable(EnablePreparation preparation) {
         if (preparation.service().type() == DataServiceType.STANDARD_TABLE) {
             ModelPhysicalTableInspection inspection = physicalTablePort.inspect(
@@ -428,6 +466,9 @@ public class DataServiceManagementService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "模型物理表未就绪：" + inspection.message());
             }
             return ServiceDefinitionSnapshot.standard(preparation.standardDefinition());
+        }
+        if (preparation.service().type() == DataServiceType.SCRIPT_API) {
+            return ServiceDefinitionSnapshot.script(new ScriptServiceDefinition(preparation.script()));
         }
         SqlServiceInspection inspection = sqlInspector.inspect(
                 preparation.dataSource(), preparation.sqlText(), preparation.sqlParameters()
@@ -445,9 +486,11 @@ public class DataServiceManagementService {
         DataService service = requireService(preparation.service().id());
         verifyUnchanged(preparation, service);
         ServiceEngine engine = requireEnabledEngine(service.getEngineId());
-        DataSource dataSource = service.getType() == DataServiceType.STANDARD_TABLE
-                ? requireStorageDataSource(preparation.dataSource().getId())
-                : requireSqlDataSource(preparation.dataSource().getId());
+        DataSource dataSource = switch (service.getType()) {
+            case STANDARD_TABLE -> requireStorageDataSource(preparation.dataSource().getId());
+            case SQL_QUERY -> requireSqlDataSource(preparation.dataSource().getId());
+            case SCRIPT_API -> requireScriptDataSource(preparation.dataSource().getId());
+        };
         if (!Objects.equals(dataSource.getUpdatedAt(), preparation.dataSource().getUpdatedAt())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源定义已发生变化，请重新启用");
         }
@@ -487,9 +530,14 @@ public class DataServiceManagementService {
         }
         repository.saveAndFlush(service);
         deploymentRepository.saveAndFlush(deployment);
-        return new EnableCommand(engine, new ServiceDeploymentRequest(
-                service.getId(), revision, service.getCode(), service.getRoutePath(), definitionDigest, definition, dataSource.getId()
-        ));
+        return new EnableCommand(
+                engine,
+                new ServiceDeploymentRequest(
+                        service.getId(), service.getCode(), service.getRoutePath(),
+                        definitionDigest, definition, dataSource.getId()
+                ),
+                revision
+        );
     }
 
     private void verifyUnchanged(EnablePreparation preparation, DataService service) {
@@ -508,7 +556,7 @@ public class DataServiceManagementService {
                     || model.getStatus() != DataModelStatus.PUBLISHED) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "模型或标准服务定义已发生变化，请重新启用");
             }
-        } else {
+        } else if (service.getType() == DataServiceType.SQL_QUERY) {
             SqlDataServiceDefinition definition = requireSqlDefinition(service.getId());
             List<UUID> modelIds = sqlModelIds(service.getId());
             if (definition.getVersion() != preparation.definitionVersion()
@@ -516,6 +564,12 @@ public class DataServiceManagementService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "SQL 服务定义已发生变化，请重新启用");
             }
             requireSqlModels(definition.getDataSourceId(), modelIds);
+        } else {
+            ScriptDataServiceDefinition definition = requireScriptDefinition(service.getId());
+            if (definition.getVersion() != preparation.definitionVersion()
+                    || !Objects.equals(definition.getScript(), preparation.script())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "脚本服务定义已发生变化，请重新启用");
+            }
         }
     }
 
@@ -557,11 +611,10 @@ public class DataServiceManagementService {
         String failure = null;
         try {
             ServiceDeploymentResponse response = engineClient.remove(
-                    command.engine(), new ServiceUndeploymentRequest(command.serviceId(), command.revision())
+                    command.engine(), new ServiceUndeploymentRequest(command.serviceId())
             );
-            if (response == null || response.status() != EngineDeploymentStatus.REMOVED
-                    || response.revision() != command.revision()) {
-                throw new IllegalStateException("服务引擎未确认当前版本停用");
+            if (response == null || response.status() != EngineDeploymentStatus.REMOVED) {
+                throw new IllegalStateException("服务引擎未确认停用结果");
             }
         } catch (RuntimeException exception) {
             failure = safeMessage(exception);
@@ -594,14 +647,24 @@ public class DataServiceManagementService {
             UUID serviceId,
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
-            SqlDataServiceDefinitionRequest sql
+            SqlDataServiceDefinitionRequest sql,
+            ScriptDataServiceDefinitionRequest script
     ) {
         if (type == DataServiceType.STANDARD_TABLE) {
             standardDefinitionRepository.saveAndFlush(StandardDataServiceDefinition.create(serviceId, standard.modelId()));
-        } else {
+        } else if (type == DataServiceType.SQL_QUERY) {
             sqlDefinitionRepository.saveAndFlush(SqlDataServiceDefinition.create(serviceId, sql.dataSourceId(), sql.sqlText()));
             replaceModelReferences(serviceId, sql.modelIds());
             replaceParameters(serviceId, sql.parameters());
+        } else {
+            scriptDefinitionRepository.saveAndFlush(
+                    ScriptDataServiceDefinition.create(
+                            serviceId,
+                            script.dataSourceId(),
+                            script.script(),
+                            writeScriptExamples(normalizeScriptExamples(script.examples()))
+                    )
+            );
         }
     }
 
@@ -609,12 +672,23 @@ public class DataServiceManagementService {
             UUID serviceId,
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
-            SqlDataServiceDefinitionRequest sql
+            SqlDataServiceDefinitionRequest sql,
+            ScriptDataServiceDefinitionRequest script
     ) {
         if (type == DataServiceType.STANDARD_TABLE) {
             StandardDataServiceDefinition definition = requireStandardDefinition(serviceId);
             definition.update(standard.modelId());
             standardDefinitionRepository.saveAndFlush(definition);
+            return;
+        }
+        if (type == DataServiceType.SCRIPT_API) {
+            ScriptDataServiceDefinition definition = requireScriptDefinition(serviceId);
+            definition.update(
+                    script.dataSourceId(),
+                    script.script(),
+                    writeScriptExamples(normalizeScriptExamples(script.examples()))
+            );
+            scriptDefinitionRepository.saveAndFlush(definition);
             return;
         }
         SqlDataServiceDefinition definition = requireSqlDefinition(serviceId);
@@ -651,13 +725,16 @@ public class DataServiceManagementService {
     private void validateDefinitionShape(
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
-            SqlDataServiceDefinitionRequest sql
+            SqlDataServiceDefinitionRequest sql,
+            ScriptDataServiceDefinitionRequest script
     ) {
         boolean standardPresent = standard != null;
         boolean sqlPresent = sql != null;
-        if (standardPresent == sqlPresent
+        boolean scriptPresent = script != null;
+        if ((standardPresent ? 1 : 0) + (sqlPresent ? 1 : 0) + (scriptPresent ? 1 : 0) != 1
                 || type == DataServiceType.STANDARD_TABLE && !standardPresent
-                || type == DataServiceType.SQL_QUERY && !sqlPresent) {
+                || type == DataServiceType.SQL_QUERY && !sqlPresent
+                || type == DataServiceType.SCRIPT_API && !scriptPresent) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "数据服务类型与具体定义不匹配");
         }
     }
@@ -666,11 +743,17 @@ public class DataServiceManagementService {
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
             SqlDataServiceDefinitionRequest sql,
+            ScriptDataServiceDefinitionRequest script,
             UUID engineId
     ) {
         if (type == DataServiceType.STANDARD_TABLE) {
             DataModel model = requireModel(standard.modelId());
             dataSourceRegistrationService.requireRegistration(engineId, model.getStorageDataSourceId());
+            return;
+        }
+        if (type == DataServiceType.SCRIPT_API) {
+            DataSource dataSource = requireScriptDataSource(script.dataSourceId());
+            dataSourceRegistrationService.requireRegistration(engineId, dataSource.getId());
             return;
         }
         DataSource dataSource = requireSqlDataSource(sql.dataSourceId());
@@ -713,6 +796,15 @@ public class DataServiceManagementService {
         return dataSource;
     }
 
+    private DataSource requireScriptDataSource(UUID id) {
+        DataSource dataSource = dataSourceRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "脚本服务数据源不存在"));
+        if (!dataSource.isEnabled() || !dataSource.getType().isJdbc()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "脚本服务必须绑定已启用的 JDBC 数据源");
+        }
+        return dataSource;
+    }
+
     private void requireModifiable(DataService service) {
         if (service.getStatus() == DataServiceStatus.ENABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已启用服务请先停用后再修改");
@@ -730,19 +822,28 @@ public class DataServiceManagementService {
     ) {
         StandardDataServiceDefinitionResponse standard = null;
         SqlDataServiceDefinitionResponse sql = null;
+        ScriptDataServiceDefinitionResponse script = null;
         if (service.getType() == DataServiceType.STANDARD_TABLE) {
             StandardDataServiceDefinition definition = requireStandardDefinition(service.getId());
             standard = new StandardDataServiceDefinitionResponse(definition.getModelId(), definition.getVersion());
-        } else {
+        } else if (service.getType() == DataServiceType.SQL_QUERY) {
             SqlDataServiceDefinition definition = requireSqlDefinition(service.getId());
             sql = new SqlDataServiceDefinitionResponse(
                     definition.getDataSourceId(), sqlModelIds(service.getId()), definition.getSqlText(),
                     parameterDefinitions(service.getId()), definition.getVersion()
             );
+        } else {
+            ScriptDataServiceDefinition definition = requireScriptDefinition(service.getId());
+            script = new ScriptDataServiceDefinitionResponse(
+                    definition.getDataSourceId(),
+                    definition.getScript(),
+                    readScriptExamples(definition.getExamplesJson()),
+                    definition.getVersion()
+            );
         }
         return new DataServiceDetailResponse(
                 service.getId(), service.getCode(), service.getName(), service.getDirectoryId(), service.getType(),
-                standard, sql, service.getEngineId(), service.getRoutePath(), service.getAccessMode(),
+                standard, sql, script, service.getEngineId(), service.getRoutePath(), service.getAccessMode(),
                 service.getStatus(), service.getRevision(),
                 deployment == null ? null : deployment.getStatus(), deployment == null ? null : deployment.getLastError(),
                 deployment == null ? null : deployment.getDeployedAt(),
@@ -782,11 +883,16 @@ public class DataServiceManagementService {
         List<UUID> serviceIds = services.stream().map(DataService::getId).toList();
         List<StandardDataServiceDefinition> standards = standardDefinitionRepository.findAllByDataServiceIdIn(serviceIds);
         List<SqlDataServiceDefinition> sqlDefinitions = sqlDefinitionRepository.findAllByDataServiceIdIn(serviceIds);
+        List<ScriptDataServiceDefinition> scriptDefinitions =
+                scriptDefinitionRepository.findAllByDataServiceIdIn(serviceIds);
         Map<UUID, DataModel> models = modelRepository.findAllById(
                 standards.stream().map(StandardDataServiceDefinition::getModelId).toList()
         ).stream().collect(Collectors.toMap(DataModel::getId, Function.identity()));
         Map<UUID, DataSource> dataSources = dataSourceRepository.findAllById(
-                sqlDefinitions.stream().map(SqlDataServiceDefinition::getDataSourceId).toList()
+                java.util.stream.Stream.concat(
+                        sqlDefinitions.stream().map(SqlDataServiceDefinition::getDataSourceId),
+                        scriptDefinitions.stream().map(ScriptDataServiceDefinition::getDataSourceId)
+                ).distinct().toList()
         ).stream().collect(Collectors.toMap(DataSource::getId, Function.identity()));
         Map<UUID, SourceSummary> result = new HashMap<>();
         for (StandardDataServiceDefinition definition : standards) {
@@ -796,6 +902,12 @@ public class DataServiceManagementService {
             ));
         }
         for (SqlDataServiceDefinition definition : sqlDefinitions) {
+            DataSource dataSource = dataSources.get(definition.getDataSourceId());
+            result.put(definition.getDataServiceId(), new SourceSummary(
+                    definition.getDataSourceId(), dataSource == null ? "已删除" : dataSource.getName()
+            ));
+        }
+        for (ScriptDataServiceDefinition definition : scriptDefinitions) {
             DataSource dataSource = dataSources.get(definition.getDataSourceId());
             result.put(definition.getDataServiceId(), new SourceSummary(
                     definition.getDataSourceId(), dataSource == null ? "已删除" : dataSource.getName()
@@ -893,6 +1005,132 @@ public class DataServiceManagementService {
                 .orElseThrow(() -> new IllegalStateException("SQL 服务缺少具体定义"));
     }
 
+    private ScriptDataServiceDefinition requireScriptDefinition(UUID serviceId) {
+        return scriptDefinitionRepository.findByDataServiceId(serviceId)
+                .orElseThrow(() -> new IllegalStateException("脚本服务缺少具体定义"));
+    }
+
+    private List<ScriptRequestExampleRequest> normalizeScriptExamples(
+            List<ScriptRequestExampleRequest> examples
+    ) {
+        if (examples == null || examples.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "脚本服务至少需要一个 Example");
+        }
+        Set<String> ids = new LinkedHashSet<>();
+        Set<String> names = new LinkedHashSet<>();
+        List<ScriptRequestExampleRequest> normalized = new ArrayList<>(examples.size());
+        for (ScriptRequestExampleRequest example : examples) {
+            if (example == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "脚本服务 Example 不能为空");
+            }
+            String id = requireExampleText(example.id(), "Example ID");
+            String name = requireExampleText(example.name(), "Example 名称");
+            if (!ids.add(id)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Example ID 不能重复：" + id);
+            }
+            if (!names.add(name)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Example 名称不能重复：" + name);
+            }
+            String bodyText = example.bodyText() == null ? "" : example.bodyText().trim();
+            if (bodyText.isEmpty()) bodyText = "{}";
+            try {
+                objectMapper.readValue(bodyText, Object.class);
+            } catch (JacksonException exception) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "Example“" + name + "”的 Body 不是合法 JSON",
+                        exception
+                );
+            }
+            normalized.add(new ScriptRequestExampleRequest(
+                    id,
+                    name,
+                    bodyText,
+                    normalizeScriptParameters(example.query(), "Query", false),
+                    normalizeScriptParameters(example.headers(), "Header", true)
+            ));
+        }
+        return List.copyOf(normalized);
+    }
+
+    private List<ScriptRequestParameterRequest> normalizeScriptParameters(
+            List<ScriptRequestParameterRequest> parameters,
+            String label,
+            boolean caseInsensitive
+    ) {
+        if (parameters == null || parameters.isEmpty()) return List.of();
+        Set<String> ids = new LinkedHashSet<>();
+        Set<String> keys = new LinkedHashSet<>();
+        List<ScriptRequestParameterRequest> normalized = new ArrayList<>(parameters.size());
+        for (ScriptRequestParameterRequest parameter : parameters) {
+            if (parameter == null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " 参数不能为空");
+            }
+            String id = requireExampleText(parameter.id(), label + " 参数 ID");
+            String key = requireExampleText(parameter.key(), label + " 参数名");
+            String comparisonKey = caseInsensitive ? key.toLowerCase(Locale.ROOT) : key;
+            if (!ids.add(id)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " 参数 ID 不能重复：" + id);
+            }
+            if (!keys.add(comparisonKey)) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + " 参数名不能重复：" + key);
+            }
+            normalized.add(new ScriptRequestParameterRequest(
+                    id,
+                    key,
+                    parameter.value() == null ? "" : parameter.value()
+            ));
+        }
+        return List.copyOf(normalized);
+    }
+
+    private String writeScriptExamples(List<ScriptRequestExampleRequest> examples) {
+        try {
+            return objectMapper.writeValueAsString(examples);
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("无法序列化脚本服务 Example", exception);
+        }
+    }
+
+    private List<ScriptRequestExampleResponse> readScriptExamples(String examplesJson) {
+        List<ScriptRequestExampleRequest> examples;
+        if (examplesJson == null || examplesJson.isBlank()) {
+            examples = List.of(ScriptDataServiceDefinitionRequest.defaultExample());
+        } else {
+            try {
+                examples = objectMapper.readValue(
+                        examplesJson,
+                        new TypeReference<List<ScriptRequestExampleRequest>>() { }
+                );
+            } catch (JacksonException exception) {
+                throw new IllegalStateException("无法读取脚本服务 Example", exception);
+            }
+        }
+        return examples.stream().map(example -> new ScriptRequestExampleResponse(
+                example.id(),
+                example.name(),
+                example.bodyText(),
+                toScriptParameterResponses(example.query()),
+                toScriptParameterResponses(example.headers())
+        )).toList();
+    }
+
+    private static List<ScriptRequestParameterResponse> toScriptParameterResponses(
+            List<ScriptRequestParameterRequest> parameters
+    ) {
+        if (parameters == null) return List.of();
+        return parameters.stream().map(parameter -> new ScriptRequestParameterResponse(
+                parameter.id(), parameter.key(), parameter.value()
+        )).toList();
+    }
+
+    private static String requireExampleText(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + "不能为空");
+        }
+        return value.trim();
+    }
+
     private DataModel requireModel(UUID id) {
         return modelRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型不存在"));
@@ -973,7 +1211,8 @@ public class DataServiceManagementService {
             StandardServiceDefinition standardDefinition,
             String sqlText,
             List<UUID> sqlModelIds,
-            List<SqlServiceParameterDefinition> sqlParameters
+            List<SqlServiceParameterDefinition> sqlParameters,
+            String script
     ) {
         private static EnablePreparation standard(
                 ServiceSnapshot service,
@@ -987,7 +1226,7 @@ public class DataServiceManagementService {
         ) {
             return new EnablePreparation(
                     service, engine, dataSource, definitionVersion, modelUpdatedAt, model,
-                    List.copyOf(fields), definition, null, List.of(), List.of()
+                    List.copyOf(fields), definition, null, List.of(), List.of(), null
             );
         }
 
@@ -1002,12 +1241,25 @@ public class DataServiceManagementService {
         ) {
             return new EnablePreparation(
                     service, engine, dataSource, definitionVersion, null, null,
-                    List.of(), null, sqlText, List.copyOf(modelIds), List.copyOf(parameters)
+                    List.of(), null, sqlText, List.copyOf(modelIds), List.copyOf(parameters), null
+            );
+        }
+
+        private static EnablePreparation script(
+                ServiceSnapshot service,
+                ServiceEngine engine,
+                DataSource dataSource,
+                int definitionVersion,
+                String script
+        ) {
+            return new EnablePreparation(
+                    service, engine, dataSource, definitionVersion, null, null,
+                    List.of(), null, null, List.of(), List.of(), script
             );
         }
     }
 
-    private record EnableCommand(ServiceEngine engine, ServiceDeploymentRequest request) {
+    private record EnableCommand(ServiceEngine engine, ServiceDeploymentRequest request, long revision) {
     }
 
     private record RemovalCommand(

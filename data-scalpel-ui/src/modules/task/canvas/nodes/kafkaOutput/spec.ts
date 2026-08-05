@@ -1,0 +1,26 @@
+import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
+import { createKafkaOutputConfiguration } from '../nodeDefaults';
+import { collectKafkaOutputMetadataReferences } from '../nodeMetadataReferences';
+import { CanvasNodeGroup } from '../nodeGroups';
+import { CanvasNodeIconKey } from '../nodeSpec';
+import { summarizeKafkaOutput } from '../nodeSummaries';
+import { createCanvasNodeSpec } from '../specFactory';
+
+export const kafkaOutputSpec = createCanvasNodeSpec({
+  type: CanvasNodeType.KafkaOutput,
+  category: CanvasNodeCategory.Output,
+  group: CanvasNodeGroup.OutputStream,
+  label: 'Kafka 输出',
+  description: '将处理结果发送到 Kafka Topic',
+  searchKeywords: ['kafka', 'topic', '消息', '发送'],
+  iconKey: CanvasNodeIconKey.StreamOutput,
+  order: 10,
+  defaultSize: { width: 240, height: 120 },
+  supportedModes: ['STREAMING'],
+  introducedInMinor: 5,
+  graph: { minInputs: 1, maxInputs: 1, minOutputs: 0, maxOutputs: 0 },
+  createDefaultConfiguration: createKafkaOutputConfiguration,
+  summarize: summarizeKafkaOutput,
+  collectMetadataReferences: collectKafkaOutputMetadataReferences,
+  loadInspector: () => import('./inspector'),
+});

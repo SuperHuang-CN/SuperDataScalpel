@@ -1,18 +1,115 @@
-import type { PlatformDataType } from '../../model';
+import type {
+  CrsReference,
+  GeometryTypeDefinition,
+  PlatformDataType,
+  PlatformTypeDefinition,
+} from '../../model';
+import type { MaskingRuleDefinition } from '../model/maskingRule';
+import {
+  createAggregateConfiguration,
+  createDeduplicateConfiguration,
+  createDeriveColumnsConfiguration,
+  createFileDatasetInputConfiguration,
+  createFileOutputConfiguration,
+  createFilterConfiguration,
+  createGeometryConstructConfiguration,
+  createGeometryBufferConfiguration,
+  createGeometryExplodeConfiguration,
+  createGeometryRepairConfiguration,
+  createGeometrySerializeConfiguration,
+  createGeometryValidateConfiguration,
+  createHttpApiInputConfiguration,
+  createSpatialServiceInputConfiguration,
+  createJdbcInputConfiguration,
+  createJdbcQueryInputConfiguration,
+  createJdbcOutputConfiguration,
+  createJoinConfiguration,
+  createJsonExtractConfiguration,
+  createKafkaInputConfiguration,
+  createKafkaOutputConfiguration,
+  createModelInputConfiguration,
+  createModelOutputConfiguration,
+  createMaskFieldsConfiguration,
+  createNullHandlingConfiguration,
+  createRenameConfiguration,
+  createSelectColumnsConfiguration,
+  createSpatialJoinConfiguration,
+  createSpatialClipConfiguration,
+  createSpatialAggregateConfiguration,
+  createSpatialMeasureConfiguration,
+  createSpatialTransformConfiguration,
+  createStreamJoinConfiguration,
+  createTopNConfiguration,
+  createTypeCastConfiguration,
+  createUnionConfiguration,
+  createValueMappingConfiguration,
+  createWindowConfiguration,
+} from './nodes/nodeDefaults';
+export type { PlatformDataType, PlatformTypeDefinition } from '../../model';
+export type {
+  MaskingRuleDefinition,
+  MaskingStrategy,
+} from '../model/maskingRule';
 
 export const CANVAS_SCHEMA_VERSION = 1 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 6 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 26 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
+export const CANVAS_FILTER_MAX_DEPTH = 12 as const;
+export const CANVAS_FILTER_MAX_CONDITION_NODES = 256 as const;
+export const CANVAS_FILTER_MAX_VALUES_PER_PREDICATE = 100 as const;
+export const CANVAS_EXPRESSION_MAX_DEPTH = 16 as const;
+export const CANVAS_EXPRESSION_MAX_NODES = 512 as const;
+export const CANVAS_EXPRESSION_MAX_CASE_BRANCHES = 64 as const;
+export const CANVAS_EXPRESSION_MAX_DERIVATIONS = 100 as const;
+export const CANVAS_NULL_HANDLING_MAX_RULES = 100 as const;
+export const CANVAS_VALUE_MAPPING_MAX_RULES = 100 as const;
+export const CANVAS_VALUE_MAPPING_MAX_ENTRIES_PER_RULE = 200 as const;
+export const CANVAS_VALUE_MAPPING_MAX_TOTAL_ENTRIES = 2_000 as const;
+export const CANVAS_MASKING_MAX_FIELD_RULES = 100 as const;
+export const CANVAS_JSON_EXTRACT_MAX_EXTRACTIONS = 100 as const;
+export const CANVAS_JSON_EXTRACT_MAX_PATH_LENGTH = 512 as const;
+export const CANVAS_WINDOW_MAX_FUNCTIONS = 100 as const;
+export const CANVAS_WINDOW_MAX_OFFSET = 10_000 as const;
+export const CANVAS_WINDOW_MAX_FRAME_OFFSET = 1_000_000 as const;
+export const CANVAS_TOP_N_MAX_LIMIT = 1_000_000 as const;
+export const CANVAS_SPATIAL_MEASURE_MAX_MEASUREMENTS = 32 as const;
+export const CANVAS_SPATIAL_AGGREGATE_MAX_AGGREGATIONS = 32 as const;
 
 export const CanvasNodeType = {
   ModelInput: 'MODEL_INPUT',
   JdbcInput: 'JDBC_INPUT',
+  JdbcQueryInput: 'JDBC_QUERY_INPUT',
   FileDatasetInput: 'FILE_DATASET_INPUT',
   HttpApiInput: 'HTTP_API_INPUT',
+  SpatialServiceInput: 'SPATIAL_SERVICE_INPUT',
   KafkaInput: 'KAFKA_INPUT',
   Join: 'JOIN',
+  GeometryConstruct: 'GEOMETRY_CONSTRUCT',
+  SpatialTransform: 'SPATIAL_TRANSFORM',
+  GeometryValidate: 'GEOMETRY_VALIDATE',
+  GeometryRepair: 'GEOMETRY_REPAIR',
+  GeometryBuffer: 'GEOMETRY_BUFFER',
+  GeometryExplode: 'GEOMETRY_EXPLODE',
+  SpatialMeasure: 'SPATIAL_MEASURE',
+  GeometrySerialize: 'GEOMETRY_SERIALIZE',
+  SpatialClip: 'SPATIAL_CLIP',
+  SpatialAggregate: 'SPATIAL_AGGREGATE',
+  SpatialJoin: 'SPATIAL_JOIN',
   StreamJoin: 'STREAM_JOIN',
   Rename: 'RENAME',
+  Filter: 'FILTER',
+  SelectColumns: 'SELECT_COLUMNS',
+  DeriveColumns: 'DERIVE_COLUMNS',
+  TypeCast: 'TYPE_CAST',
+  Aggregate: 'AGGREGATE',
+  Union: 'UNION',
+  Deduplicate: 'DEDUPLICATE',
+  NullHandling: 'NULL_HANDLING',
+  ValueMapping: 'VALUE_MAPPING',
+  MaskFields: 'MASK_FIELDS',
+  JsonExtract: 'JSON_EXTRACT',
+  Window: 'WINDOW',
+  TopN: 'TOP_N',
   ModelOutput: 'MODEL_OUTPUT',
   JdbcOutput: 'JDBC_OUTPUT',
   KafkaOutput: 'KAFKA_OUTPUT',
@@ -45,6 +142,14 @@ export interface JdbcInputConfiguration {
   tableName: string;
 }
 
+export interface JdbcQueryInputConfiguration {
+  dataSourceId: string;
+  sql: string;
+  outputTableName: string;
+  analyzedSqlSha256: string;
+  outputColumns: CanvasColumnSchema[];
+}
+
 export interface FileDatasetInputConfiguration {
   fileDatasetTableId: string;
 }
@@ -63,6 +168,12 @@ export interface HttpApiInputConfiguration {
   resourceId: string;
   outputTableName: string;
   runtimeParameters: HttpApiRuntimeParameter[];
+}
+
+export interface SpatialServiceInputConfiguration {
+  dataSourceId: string;
+  resourceId: string;
+  outputTableName: string;
 }
 
 export type KafkaStartingOffsets = 'EARLIEST' | 'LATEST';
@@ -105,6 +216,159 @@ export interface JoinConfiguration {
   conditions: JoinCondition[];
 }
 
+export interface SpatialTransformConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  geometryColumnName: string;
+  targetCrs: CrsReference | null;
+}
+
+export type GeometryConstructSource =
+  | { kind: 'WKT'; columnName: string }
+  | { kind: 'WKB'; columnName: string }
+  | { kind: 'GEOJSON'; columnName: string }
+  | { kind: 'POINT_FROM_XY'; xColumnName: string; yColumnName: string };
+
+export interface GeometryConstructConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  outputColumnName: string;
+  source: GeometryConstructSource;
+  targetGeometry: GeometryTypeDefinition | null;
+}
+
+export interface GeometryValidateConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  geometryColumnName: string;
+  validColumnName: string;
+  reasonColumnName: string | null;
+}
+
+export interface GeometryRepairConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  geometryColumnName: string;
+  outputColumnName: string;
+}
+
+export interface GeometryBufferConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  geometryColumnName: string;
+  outputColumnName: string;
+  distance: number;
+  mode: SpatialMeasureMode;
+}
+
+export interface GeometryExplodeConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  geometryColumnName: string;
+  outputColumnName: string;
+  partIndexColumnName: string | null;
+}
+
+export type SpatialMeasureMode = 'PLANAR' | 'SPHEROID';
+
+export type SpatialMeasurement =
+  | {
+    kind: 'AREA';
+    geometryColumnName: string;
+    mode: SpatialMeasureMode;
+    outputColumnName: string;
+  }
+  | {
+    kind: 'LENGTH';
+    geometryColumnName: string;
+    mode: SpatialMeasureMode;
+    outputColumnName: string;
+  }
+  | {
+    kind: 'PERIMETER';
+    geometryColumnName: string;
+    mode: SpatialMeasureMode;
+    outputColumnName: string;
+  }
+  | {
+    kind: 'DISTANCE';
+    leftGeometryColumnName: string;
+    rightGeometryColumnName: string;
+    mode: SpatialMeasureMode;
+    outputColumnName: string;
+  }
+  | { kind: 'X'; geometryColumnName: string; outputColumnName: string }
+  | { kind: 'Y'; geometryColumnName: string; outputColumnName: string };
+
+export interface SpatialMeasureConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  measurements: SpatialMeasurement[];
+}
+
+export type GeometrySerializationFormat = 'WKT' | 'WKB' | 'GEOJSON';
+
+export interface GeometrySerializeConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  geometryColumnName: string;
+  outputColumnName: string;
+  format: GeometrySerializationFormat;
+}
+
+export interface SpatialClipConfiguration {
+  sourceTableName: string;
+  maskTableName: string;
+  outputTableName: string;
+  sourceGeometryColumnName: string;
+  maskGeometryColumnName: string;
+  outputColumnName: string;
+}
+
+export type SpatialAggregationKind =
+  | 'UNION'
+  | 'INTERSECTION'
+  | 'COLLECT'
+  | 'ENVELOPE';
+
+export interface SpatialAggregation {
+  kind: SpatialAggregationKind;
+  geometryColumnName: string;
+  outputColumnName: string;
+}
+
+export interface SpatialAggregateConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  groupByColumns: string[];
+  aggregations: SpatialAggregation[];
+}
+
+export type SpatialPredicate =
+  | 'INTERSECTS'
+  | 'CONTAINS'
+  | 'WITHIN'
+  | 'COVERS'
+  | 'COVERED_BY'
+  | 'TOUCHES'
+  | 'OVERLAPS'
+  | 'CROSSES'
+  | 'EQUALS';
+
+export interface SpatialJoinCondition {
+  leftGeometryColumnName: string;
+  predicate: SpatialPredicate | null;
+  rightGeometryColumnName: string;
+}
+
+export interface SpatialJoinConfiguration {
+  leftTableName: string;
+  rightTableName: string;
+  outputTableName: string;
+  joinType: 'INNER';
+  conditions: SpatialJoinCondition[];
+}
+
 export type StreamJoinType = 'INNER' | 'LEFT';
 
 export interface StreamJoinConfiguration {
@@ -121,7 +385,335 @@ export interface RenameConfiguration {
   columnMappings: CanvasColumnMapping[];
 }
 
-export type JdbcWriteMode = 'APPEND' | 'OVERWRITE';
+export type FilterGroupOperator = 'AND' | 'OR';
+
+export type FilterOperator =
+  | 'EQUALS'
+  | 'NOT_EQUALS'
+  | 'GREATER_THAN'
+  | 'GREATER_THAN_OR_EQUALS'
+  | 'LESS_THAN'
+  | 'LESS_THAN_OR_EQUALS'
+  | 'IN'
+  | 'NOT_IN'
+  | 'IS_NULL'
+  | 'IS_NOT_NULL'
+  | 'CONTAINS'
+  | 'STARTS_WITH'
+  | 'ENDS_WITH';
+
+export interface CanvasLiteral {
+  dataType: PlatformDataType;
+  value: string | null;
+}
+
+export type CanvasFilterCondition = CanvasFilterGroup | CanvasFieldPredicate;
+
+export interface CanvasFilterGroup {
+  kind: 'GROUP';
+  operator: FilterGroupOperator;
+  children: CanvasFilterCondition[];
+}
+
+export interface CanvasFieldPredicate {
+  kind: 'PREDICATE';
+  columnName: string;
+  operator: FilterOperator;
+  values: CanvasLiteral[];
+}
+
+export interface FilterConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  condition: CanvasFilterCondition;
+}
+
+export interface SelectColumnsConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  columns: string[];
+}
+
+export type DeriveBinaryOperator =
+  | 'ADD'
+  | 'SUBTRACT'
+  | 'MULTIPLY'
+  | 'DIVIDE'
+  | 'MODULO';
+
+export type DeriveFunction =
+  | 'TRIM'
+  | 'LTRIM'
+  | 'RTRIM'
+  | 'LOWER'
+  | 'UPPER'
+  | 'REPLACE'
+  | 'SUBSTRING'
+  | 'COALESCE'
+  | 'CONCAT'
+  | 'DATE_FORMAT'
+  | 'DATE_ADD'
+  | 'DATE_SUB';
+
+export type CanvasExpression =
+  | CanvasColumnExpression
+  | CanvasLiteralExpression
+  | CanvasBinaryExpression
+  | CanvasFunctionExpression
+  | CanvasCaseWhenExpression;
+
+export interface CanvasColumnExpression {
+  kind: 'COLUMN';
+  columnName: string;
+}
+
+export interface CanvasLiteralExpression {
+  kind: 'LITERAL';
+  literal: CanvasLiteral;
+}
+
+export interface CanvasBinaryExpression {
+  kind: 'BINARY';
+  operator: DeriveBinaryOperator;
+  left: CanvasExpression;
+  right: CanvasExpression;
+}
+
+export interface CanvasFunctionExpression {
+  kind: 'FUNCTION';
+  function: DeriveFunction;
+  arguments: CanvasExpression[];
+}
+
+export interface CanvasCaseWhenBranch {
+  condition: CanvasFilterCondition;
+  result: CanvasExpression;
+}
+
+export interface CanvasCaseWhenExpression {
+  kind: 'CASE_WHEN';
+  branches: CanvasCaseWhenBranch[];
+  elseExpression: CanvasExpression | null;
+}
+
+export interface ColumnDerivation {
+  targetColumnName: string;
+  expression: CanvasExpression;
+  replaceExisting: boolean;
+}
+
+export interface DeriveColumnsConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  derivations: ColumnDerivation[];
+}
+
+export type CastFailureStrategy = 'FAIL' | 'SET_NULL';
+
+export interface ColumnTypeCast {
+  columnName: string;
+  targetType: PlatformTypeDefinition;
+  failureStrategy: CastFailureStrategy | null;
+}
+
+export interface TypeCastConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  casts: ColumnTypeCast[];
+}
+
+export type AggregateFunction = 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
+
+export interface AggregateItem {
+  function: AggregateFunction | null;
+  sourceColumnName: string | null;
+  outputColumnName: string;
+  distinct: boolean;
+}
+
+export interface AggregateConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  groupByColumns: string[];
+  aggregations: AggregateItem[];
+}
+
+export type UnionMode = 'ALL' | 'DISTINCT';
+
+export interface UnionConfiguration {
+  inputTableNames: string[];
+  outputTableName: string;
+  mode: UnionMode | null;
+}
+
+export type DeduplicateKeepStrategy = 'ANY' | 'FIRST' | 'LAST';
+export type SortDirection = 'ASC' | 'DESC';
+export type NullOrdering = 'FIRST' | 'LAST';
+
+export interface SortField {
+  columnName: string;
+  direction: SortDirection | null;
+  nullOrdering: NullOrdering | null;
+}
+
+export interface DeduplicateConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  keyColumns: string[];
+  keepStrategy: DeduplicateKeepStrategy | null;
+  orderBy: SortField[];
+}
+
+export type NullMatchMode = 'ANY_NULL' | 'ALL_NULL';
+
+export type NullHandlingRule = DropNullRowsRule | FillNullLiteralRule;
+
+export interface DropNullRowsRule {
+  kind: 'DROP_ROW';
+  columnNames: string[];
+  matchMode: NullMatchMode;
+}
+
+export interface FillNullLiteralRule {
+  kind: 'FILL_LITERAL';
+  columnName: string;
+  value: CanvasLiteral;
+}
+
+export interface NullHandlingConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  rules: NullHandlingRule[];
+}
+
+export type ValueMappingUnmatchedStrategy =
+  | 'KEEP'
+  | 'SET_NULL'
+  | 'SET_LITERAL'
+  | 'ERROR';
+
+export interface ValueMappingEntry {
+  sourceValue: CanvasLiteral;
+  targetValue: CanvasLiteral | null;
+}
+
+export interface ValueMappingRule {
+  columnName: string;
+  entries: ValueMappingEntry[];
+  unmatchedStrategy: ValueMappingUnmatchedStrategy;
+  unmatchedValue: CanvasLiteral | null;
+}
+
+export interface ValueMappingConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  rules: ValueMappingRule[];
+}
+
+export type MaskingRuleSource = 'GLOBAL' | 'INLINE';
+
+export interface MaskingSourceRuleReference {
+  ruleId: string;
+  ruleCode: string;
+  ruleName: string;
+}
+
+export interface MaskFieldRule {
+  fieldName: string;
+  ruleSource: MaskingRuleSource;
+  sourceRuleRef: MaskingSourceRuleReference | null;
+  definition: MaskingRuleDefinition;
+}
+
+export interface MaskFieldsConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  fieldRules: MaskFieldRule[];
+}
+
+export type JsonExtractFailureStrategy = 'ERROR' | 'SET_NULL';
+
+export interface JsonExtraction {
+  jsonPath: string;
+  outputColumnName: string;
+  targetType: PlatformTypeDefinition;
+}
+
+export interface JsonExtractConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  sourceColumnName: string;
+  extractions: JsonExtraction[];
+  failureStrategy: JsonExtractFailureStrategy;
+}
+
+export type WindowFunctionItem =
+  | RankingWindowFunction
+  | OffsetWindowFunction
+  | AggregateWindowFunction
+  | ValueWindowFunction;
+
+export interface RankingWindowFunction {
+  kind: 'ROW_NUMBER' | 'RANK' | 'DENSE_RANK';
+  outputColumnName: string;
+}
+
+export interface OffsetWindowFunction {
+  kind: 'LAG' | 'LEAD';
+  sourceColumnName: string;
+  offset: number;
+  defaultValue: CanvasLiteral | null;
+  outputColumnName: string;
+}
+
+export interface AggregateWindowFunction {
+  kind: 'COUNT' | 'SUM' | 'AVG' | 'MIN' | 'MAX';
+  sourceColumnName: string | null;
+  outputColumnName: string;
+  frame: RowsWindowFrame;
+}
+
+export interface ValueWindowFunction {
+  kind: 'FIRST_VALUE' | 'LAST_VALUE';
+  sourceColumnName: string;
+  ignoreNulls: boolean;
+  outputColumnName: string;
+  frame: RowsWindowFrame;
+}
+
+export interface RowsWindowFrame {
+  type: 'ROWS';
+  start: RowsFrameBoundary;
+  end: RowsFrameBoundary;
+}
+
+export type RowsFrameBoundary =
+  | { kind: 'UNBOUNDED_PRECEDING' }
+  | { kind: 'PRECEDING'; offset: number }
+  | { kind: 'CURRENT_ROW' }
+  | { kind: 'FOLLOWING'; offset: number }
+  | { kind: 'UNBOUNDED_FOLLOWING' };
+
+export interface WindowConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  partitionByColumns: string[];
+  orderBy: SortField[];
+  functions: WindowFunctionItem[];
+}
+
+export type TopNTieStrategy = 'EXACT' | 'WITH_TIES';
+
+export interface TopNConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  partitionByColumns: string[];
+  orderBy: SortField[];
+  limit: number;
+  tieStrategy: TopNTieStrategy;
+}
+
+export type JdbcWriteMode = 'APPEND' | 'OVERWRITE' | 'UPSERT';
 
 export type ColumnMappingMode = 'BY_NAME' | 'EXPLICIT';
 
@@ -139,6 +731,7 @@ export interface JdbcOutputConfiguration {
   writeMode: JdbcWriteMode | null;
   columnMappingMode: ColumnMappingMode | null;
   columnMappings: CanvasColumnMapping[];
+  upsertKeyColumns: string[];
 }
 
 export interface ModelOutputConfiguration {
@@ -161,6 +754,20 @@ export interface KafkaOutputConfiguration {
 
 export type FileOutputConflictPolicy = 'FAIL_IF_EXISTS' | 'OVERWRITE';
 
+export type ShapefilePackageMode = 'ZIP' | 'COMPONENT_DIRECTORY';
+
+export type ShapefileShapeType = 'POINT' | 'MULTIPOINT' | 'POLYLINE' | 'POLYGON';
+
+export interface ShapefileAttributeMapping {
+  sourceColumnName: string;
+  targetFieldName: string;
+  targetStringByteLength: number | null;
+}
+
+export type GeoParquetCompressionCodec = 'SNAPPY' | 'ZSTD';
+
+export type GeoParquetCoveringMode = 'NONE' | 'ROW_BBOX';
+
 export type FileOutputFormatOptions =
   | {
     type: 'CSV';
@@ -176,6 +783,27 @@ export type FileOutputFormatOptions =
   }
   | {
     type: 'PARQUET';
+  }
+  | {
+    type: 'SHAPEFILE';
+    baseName: string;
+    packageMode: ShapefilePackageMode;
+    geometryColumnName: string;
+    targetShapeType: ShapefileShapeType;
+    attributeMappings: ShapefileAttributeMapping[];
+  }
+  | {
+    type: 'GEOPARQUET';
+    geometryColumnName: string;
+    compression: GeoParquetCompressionCodec;
+    coveringMode: GeoParquetCoveringMode;
+  }
+  | {
+    type: 'GEOJSON';
+    baseName: string;
+    geometryColumnName: string;
+    idColumnName: string | null;
+    ignoreNullProperties: boolean;
   };
 
 export interface FileOutputConfiguration {
@@ -208,6 +836,11 @@ export type JdbcInputNodeDefinition = CanvasNodeBase<
   JdbcInputConfiguration
 >;
 
+export type JdbcQueryInputNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.JdbcQueryInput,
+  JdbcQueryInputConfiguration
+>;
+
 export type FileDatasetInputNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.FileDatasetInput,
   FileDatasetInputConfiguration
@@ -218,6 +851,11 @@ export type HttpApiInputNodeDefinition = CanvasNodeBase<
   HttpApiInputConfiguration
 >;
 
+export type SpatialServiceInputNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialServiceInput,
+  SpatialServiceInputConfiguration
+>;
+
 export type KafkaInputNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.KafkaInput,
   KafkaInputConfiguration
@@ -225,12 +863,129 @@ export type KafkaInputNodeDefinition = CanvasNodeBase<
 
 export type JoinNodeDefinition = CanvasNodeBase<typeof CanvasNodeType.Join, JoinConfiguration>;
 
+export type GeometryConstructNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometryConstruct,
+  GeometryConstructConfiguration
+>;
+
+export type SpatialTransformNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialTransform,
+  SpatialTransformConfiguration
+>;
+
+export type GeometryValidateNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometryValidate,
+  GeometryValidateConfiguration
+>;
+
+export type GeometryRepairNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometryRepair,
+  GeometryRepairConfiguration
+>;
+
+export type GeometryBufferNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometryBuffer,
+  GeometryBufferConfiguration
+>;
+
+export type GeometryExplodeNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometryExplode,
+  GeometryExplodeConfiguration
+>;
+
+export type SpatialMeasureNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialMeasure,
+  SpatialMeasureConfiguration
+>;
+
+export type GeometrySerializeNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometrySerialize,
+  GeometrySerializeConfiguration
+>;
+
+export type SpatialClipNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialClip,
+  SpatialClipConfiguration
+>;
+
+export type SpatialAggregateNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialAggregate,
+  SpatialAggregateConfiguration
+>;
+
+export type SpatialJoinNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialJoin,
+  SpatialJoinConfiguration
+>;
+
 export type StreamJoinNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.StreamJoin,
   StreamJoinConfiguration
 >;
 
 export type RenameNodeDefinition = CanvasNodeBase<typeof CanvasNodeType.Rename, RenameConfiguration>;
+
+export type FilterNodeDefinition = CanvasNodeBase<typeof CanvasNodeType.Filter, FilterConfiguration>;
+
+export type SelectColumnsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SelectColumns,
+  SelectColumnsConfiguration
+>;
+
+export type DeriveColumnsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.DeriveColumns,
+  DeriveColumnsConfiguration
+>;
+
+export type TypeCastNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TypeCast,
+  TypeCastConfiguration
+>;
+
+export type AggregateNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.Aggregate,
+  AggregateConfiguration
+>;
+
+export type UnionNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.Union,
+  UnionConfiguration
+>;
+
+export type DeduplicateNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.Deduplicate,
+  DeduplicateConfiguration
+>;
+
+export type NullHandlingNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.NullHandling,
+  NullHandlingConfiguration
+>;
+
+export type ValueMappingNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.ValueMapping,
+  ValueMappingConfiguration
+>;
+
+export type MaskFieldsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.MaskFields,
+  MaskFieldsConfiguration
+>;
+
+export type JsonExtractNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.JsonExtract,
+  JsonExtractConfiguration
+>;
+
+export type WindowNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.Window,
+  WindowConfiguration
+>;
+
+export type TopNNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TopN,
+  TopNConfiguration
+>;
 
 export type JdbcOutputNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.JdbcOutput,
@@ -255,30 +1010,91 @@ export type FileOutputNodeDefinition = CanvasNodeBase<
 export type CanvasNodeDefinition =
   | ModelInputNodeDefinition
   | JdbcInputNodeDefinition
+  | JdbcQueryInputNodeDefinition
   | FileDatasetInputNodeDefinition
   | HttpApiInputNodeDefinition
   | KafkaInputNodeDefinition
   | JoinNodeDefinition
+  | GeometryConstructNodeDefinition
+  | SpatialTransformNodeDefinition
+  | GeometryValidateNodeDefinition
+  | GeometryRepairNodeDefinition
+  | GeometryBufferNodeDefinition
+  | GeometryExplodeNodeDefinition
+  | SpatialMeasureNodeDefinition
+  | GeometrySerializeNodeDefinition
+  | SpatialClipNodeDefinition
+  | SpatialAggregateNodeDefinition
+  | SpatialJoinNodeDefinition
   | StreamJoinNodeDefinition
   | RenameNodeDefinition
+  | FilterNodeDefinition
+  | SelectColumnsNodeDefinition
+  | DeriveColumnsNodeDefinition
+  | TypeCastNodeDefinition
+  | AggregateNodeDefinition
+  | UnionNodeDefinition
+  | DeduplicateNodeDefinition
+  | NullHandlingNodeDefinition
+  | ValueMappingNodeDefinition
+  | MaskFieldsNodeDefinition
+  | JsonExtractNodeDefinition
+  | WindowNodeDefinition
+  | TopNNodeDefinition
   | ModelOutputNodeDefinition
   | JdbcOutputNodeDefinition
   | KafkaOutputNodeDefinition
   | FileOutputNodeDefinition;
 
+export type CanvasNodeByType<T extends CanvasNodeType> =
+  Extract<CanvasNodeDefinition, { type: T }>;
+
+export type CanvasNodeConfigurationByType<T extends CanvasNodeType> =
+  CanvasNodeByType<T>['configuration'];
+
 export type CanvasNodeConfigurationUpdate =
   | Pick<ModelInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JdbcInputNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<JdbcQueryInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<FileDatasetInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<HttpApiInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<KafkaInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JoinNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometryConstructNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialTransformNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometryValidateNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometryRepairNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometryBufferNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometryExplodeNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialMeasureNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometrySerializeNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialClipNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialAggregateNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialJoinNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<StreamJoinNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<RenameNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<FilterNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SelectColumnsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<DeriveColumnsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TypeCastNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<AggregateNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<UnionNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<DeduplicateNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<NullHandlingNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<ValueMappingNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<MaskFieldsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<JsonExtractNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<WindowNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TopNNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<ModelOutputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JdbcOutputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<KafkaOutputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<FileOutputNodeDefinition, 'id' | 'type' | 'configuration'>;
+
+export type CanvasNodeConfigurationUpdateByType<T extends CanvasNodeType> =
+  T extends CanvasNodeType
+    ? Pick<CanvasNodeByType<T>, 'id' | 'type' | 'configuration'>
+    : never;
 
 export type CanvasNodeConfiguration = CanvasNodeDefinition['configuration'];
 
@@ -306,11 +1122,20 @@ export interface CanvasColumnSchema {
   autoIncrement: boolean;
   generated: boolean;
   comment: string | null;
+  geometry: GeometryTypeDefinition | null;
 }
 
 export type CanvasTableOrigin =
   | {
     kind: 'JDBC';
+    dataSourceId: string;
+    tableName: string;
+    modelId: null;
+    modelCode: null;
+    modelSchemaVersion: null;
+  }
+  | {
+    kind: 'JDBC_QUERY';
     dataSourceId: string;
     tableName: string;
     modelId: null;
@@ -421,6 +1246,12 @@ export type CanvasNodeRuntimeSummary =
     tableName: string;
     tableCode: string;
     status: string;
+    geometry: {
+      fieldName: string;
+      kind: GeometryTypeDefinition['kind'];
+      crs: GeometryTypeDefinition['crs'];
+      dimension: GeometryTypeDefinition['dimension'];
+    } | null;
   };
 
 interface CanvasNodeRuntimeBase<T extends CanvasNodeType, C> {
@@ -434,101 +1265,114 @@ interface CanvasNodeRuntimeBase<T extends CanvasNodeType, C> {
 export type CanvasNodeRuntimeData =
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.ModelInput, ModelInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.JdbcInput, JdbcInputConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.JdbcQueryInput, JdbcQueryInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.FileDatasetInput, FileDatasetInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.HttpApiInput, HttpApiInputConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SpatialServiceInput, SpatialServiceInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.KafkaInput, KafkaInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.Join, JoinConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometryConstruct,
+    GeometryConstructConfiguration
+  >
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SpatialTransform, SpatialTransformConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometryValidate,
+    GeometryValidateConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometryRepair,
+    GeometryRepairConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometryBuffer,
+    GeometryBufferConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometryExplode,
+    GeometryExplodeConfiguration
+  >
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SpatialMeasure, SpatialMeasureConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometrySerialize,
+    GeometrySerializeConfiguration
+  >
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SpatialClip, SpatialClipConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialAggregate,
+    SpatialAggregateConfiguration
+  >
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SpatialJoin, SpatialJoinConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.StreamJoin, StreamJoinConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.Rename, RenameConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.Filter, FilterConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SelectColumns, SelectColumnsConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.DeriveColumns, DeriveColumnsConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.TypeCast, TypeCastConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.Aggregate, AggregateConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.Union, UnionConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.Deduplicate, DeduplicateConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.NullHandling, NullHandlingConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.ValueMapping, ValueMappingConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.MaskFields, MaskFieldsConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.JsonExtract, JsonExtractConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.Window, WindowConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.TopN, TopNConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.ModelOutput, ModelOutputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.JdbcOutput, JdbcOutputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.KafkaOutput, KafkaOutputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.FileOutput, FileOutputConfiguration>;
 
-export const emptyNodeConfiguration = (type: CanvasNodeType): CanvasNodeConfiguration => {
-  switch (type) {
-    case CanvasNodeType.ModelInput:
-      return { modelId: '' };
-    case CanvasNodeType.JdbcInput:
-      return { dataSourceId: '', tableName: '' };
-    case CanvasNodeType.FileDatasetInput:
-      return { fileDatasetTableId: '' };
-    case CanvasNodeType.HttpApiInput:
-      return { dataSourceId: '', resourceId: '', outputTableName: '', runtimeParameters: [] };
-    case CanvasNodeType.KafkaInput:
-      return {
-        dataSourceId: '',
-        topic: '',
-        valueSchema: { columns: [] },
-        outputTableName: '',
-        startingOffsets: null,
-      };
-    case CanvasNodeType.Join:
-      return {
-        leftTableName: '',
-        rightTableName: '',
-        outputTableName: '',
-        joinType: null,
-        conditions: [],
-      };
-    case CanvasNodeType.StreamJoin:
-      return {
-        leftTableName: '',
-        rightTableName: '',
-        outputTableName: '',
-        joinType: null,
-        conditions: [],
-      };
-    case CanvasNodeType.Rename:
-      return {
-        sourceTableName: '',
-        outputTableName: '',
-        columnMappings: [],
-      };
-    case CanvasNodeType.ModelOutput:
-      return {
-        sourceTableName: '',
-        targetModelId: '',
-        writeMode: null,
-        columnMappingMode: null,
-        columnMappings: [],
-      };
-    case CanvasNodeType.JdbcOutput:
-      return {
-        sourceTableName: '',
-        dataSourceId: '',
-        targetTableName: '',
-        writeMode: null,
-        columnMappingMode: null,
-        columnMappings: [],
-      };
-    case CanvasNodeType.KafkaOutput:
-      return {
-        sourceTableName: '',
-        dataSourceId: '',
-        topic: '',
-        valueSchema: { columns: [] },
-        keyColumnName: '',
-        columnMappingMode: null,
-        columnMappings: [],
-      };
-    case CanvasNodeType.FileOutput:
-      return {
-        sourceTableName: '',
-        dataSourceId: '',
-        targetPath: '',
-        conflictPolicy: 'FAIL_IF_EXISTS',
-        formatOptions: {
-          type: 'CSV',
-          header: true,
-          delimiter: ',',
-          quote: '"',
-          escape: '\\',
-          nullValue: '',
-        },
-      };
-  }
+export type CanvasNodeRuntimeDataByType<T extends CanvasNodeType> =
+  Extract<CanvasNodeRuntimeData, { type: T }>;
+
+const emptyConfigurationFactories: Record<
+  CanvasNodeType,
+  () => CanvasNodeConfiguration
+> = {
+  [CanvasNodeType.ModelInput]: createModelInputConfiguration,
+  [CanvasNodeType.JdbcInput]: createJdbcInputConfiguration,
+  [CanvasNodeType.JdbcQueryInput]: createJdbcQueryInputConfiguration,
+  [CanvasNodeType.FileDatasetInput]: createFileDatasetInputConfiguration,
+  [CanvasNodeType.HttpApiInput]: createHttpApiInputConfiguration,
+  [CanvasNodeType.SpatialServiceInput]: createSpatialServiceInputConfiguration,
+  [CanvasNodeType.KafkaInput]: createKafkaInputConfiguration,
+  [CanvasNodeType.Join]: createJoinConfiguration,
+  [CanvasNodeType.GeometryConstruct]: createGeometryConstructConfiguration,
+  [CanvasNodeType.SpatialTransform]: createSpatialTransformConfiguration,
+  [CanvasNodeType.GeometryValidate]: createGeometryValidateConfiguration,
+  [CanvasNodeType.GeometryRepair]: createGeometryRepairConfiguration,
+  [CanvasNodeType.GeometryBuffer]: createGeometryBufferConfiguration,
+  [CanvasNodeType.GeometryExplode]: createGeometryExplodeConfiguration,
+  [CanvasNodeType.SpatialMeasure]: createSpatialMeasureConfiguration,
+  [CanvasNodeType.GeometrySerialize]: createGeometrySerializeConfiguration,
+  [CanvasNodeType.SpatialClip]: createSpatialClipConfiguration,
+  [CanvasNodeType.SpatialAggregate]: createSpatialAggregateConfiguration,
+  [CanvasNodeType.SpatialJoin]: createSpatialJoinConfiguration,
+  [CanvasNodeType.StreamJoin]: createStreamJoinConfiguration,
+  [CanvasNodeType.Rename]: createRenameConfiguration,
+  [CanvasNodeType.Filter]: createFilterConfiguration,
+  [CanvasNodeType.SelectColumns]: createSelectColumnsConfiguration,
+  [CanvasNodeType.DeriveColumns]: createDeriveColumnsConfiguration,
+  [CanvasNodeType.TypeCast]: createTypeCastConfiguration,
+  [CanvasNodeType.Aggregate]: createAggregateConfiguration,
+  [CanvasNodeType.Union]: createUnionConfiguration,
+  [CanvasNodeType.Deduplicate]: createDeduplicateConfiguration,
+  [CanvasNodeType.NullHandling]: createNullHandlingConfiguration,
+  [CanvasNodeType.ValueMapping]: createValueMappingConfiguration,
+  [CanvasNodeType.MaskFields]: createMaskFieldsConfiguration,
+  [CanvasNodeType.JsonExtract]: createJsonExtractConfiguration,
+  [CanvasNodeType.Window]: createWindowConfiguration,
+  [CanvasNodeType.TopN]: createTopNConfiguration,
+  [CanvasNodeType.ModelOutput]: createModelOutputConfiguration,
+  [CanvasNodeType.JdbcOutput]: createJdbcOutputConfiguration,
+  [CanvasNodeType.KafkaOutput]: createKafkaOutputConfiguration,
+  [CanvasNodeType.FileOutput]: createFileOutputConfiguration,
 };
+
+export const emptyNodeConfiguration = (type: CanvasNodeType): CanvasNodeConfiguration => (
+  emptyConfigurationFactories[type]()
+);
 
 export const createsCycle = (
   edges: CanvasEdgeDefinition[],

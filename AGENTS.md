@@ -34,6 +34,14 @@
 - `data-scalpel-task-engine`：负责 Canvas 任务编译和 Spark/JDBC 运行时执行。节点生命周期日志、错误分类、脱敏和执行结果必须遵循 [Task Engine 开发约定](data-scalpel-task-engine/AGENTS.md)。
 - 没有明确需求时，不新增模块，也不随意调整现有模块职责。
 
+## Super API Gateway 独立工程
+
+- 根目录 `super-api-gateway` 只是与 DataScalpel 同仓放置的独立工程，不属于 DataScalpel Maven Reactor，也不得加入根 `pom.xml`。
+- Super API Gateway 不得依赖任何 `data-scalpel-*` 模块，不得导入 DataScalpel Java、TypeScript、配置或运行时基础设施代码。
+- Super API Gateway 只允许访问 PostgreSQL 的 `super_api_gateway` schema，不得读取、修改或建立外键关联到 DataScalpel 的数据库对象。
+- DataScalpel 与 Super API Gateway 之间只允许通过公开 HTTP 契约集成；不得通过源码依赖、共享 JPA Entity、共享前端模块或共享配置文件形成耦合。
+- Super API Gateway 必须维护自己的 Maven Wrapper、依赖版本、前端工程、配置、启动脚本、设计文档和发布周期，具体约定以 `super-api-gateway/AGENTS.md` 为准。
+
 ## 实体约定
 
 - 业务实体继承 `data-scalpel-business` 中的 `BaseEntity`，统一使用 Java `UUID` 主键以及 `createdAt`、`updatedAt` 字段。
@@ -87,6 +95,10 @@
 ## 实现原则
 
 - 模型、任务和数据服务的稳定标量类型统一使用 `data-scalpel-contracts` 中的 `PlatformDataType` 和 `PlatformTypeDefinition`。不得在业务模块或前端重新定义数据库原生类型到平台类型的映射。
+- `data-scalpel-contracts` 是 Java Canvas Definition 的唯一稳定定义来源；Business、Task Engine 和 Manifest 不得复制第二套节点、配置、表达式或枚举模型，也不得保留整棵节点转换代码。
+- Canvas 未配置草稿中的资源引用 ID 使用字符串表达空值；UUID 解析必须发生在 Business 保存/发布或 Task Engine 编译等明确校验边界，非法值必须转换为稳定业务问题，不得抛出未分类解析异常。
+- 新增 Canvas 节点必须同时声明协议引入版本、批流模式、输入/处理器/输出分类、图度数规则、Schema 与有界性传播，以及不含数据值和凭据的安全摘要。
+- Canvas 内置节点使用显式编译期注册表。没有运行时第三方节点需求时，不得引入反射扫描、Spring 扫描、ServiceLoader、远程模块或其他动态插件框架。
 - 物理类型到平台类型、平台类型到物理类型的双向转换只能由 `data-scalpel-dialect` 实现；JDBC 类型只允许停留在元数据边界。映射存在 `LOSSY` 或 `UNSUPPORTED` 时必须阻止导入或建表，不得静默截断精度、长度、值域或时区语义。
 - Spark 类不得进入 JPA 实体、REST 契约或核心模块。实际接入 Spark 时，由执行模块使用 Java `DataTypes` 与 `PlatformTypeDefinition` 显式转换。
 

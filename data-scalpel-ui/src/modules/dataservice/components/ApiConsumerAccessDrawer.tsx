@@ -540,7 +540,7 @@ export const ApiConsumerAccessDrawer = ({
         }}
         destroyOnHidden
       >
-        <Form<CredentialFormValues>
+        <Form<CredentialFormValues> autoComplete="off"
           form={credentialForm}
           layout="vertical"
           onFinish={(values) => void createCredential(values)}

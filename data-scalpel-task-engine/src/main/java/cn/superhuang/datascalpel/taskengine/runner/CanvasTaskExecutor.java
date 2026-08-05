@@ -15,15 +15,45 @@ import cn.superhuang.datascalpel.taskengine.compiler.canvas.CanvasGraphPlan;
 import cn.superhuang.datascalpel.taskengine.compiler.canvas.CanvasTaskCompiler;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
+import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.CompilationSeverity;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.FileOutputConflictPolicy;
 import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.CanvasFieldPredicate;
+import cn.superhuang.data.scalpel.contract.task.CanvasFilterCondition;
+import cn.superhuang.data.scalpel.contract.task.CanvasFilterGroup;
+import cn.superhuang.data.scalpel.contract.task.FilterNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.SelectColumnsNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.BinaryExpression;
+import cn.superhuang.data.scalpel.contract.task.CanvasExpression;
+import cn.superhuang.data.scalpel.contract.task.CaseWhenExpression;
+import cn.superhuang.data.scalpel.contract.task.ColumnExpression;
+import cn.superhuang.data.scalpel.contract.task.DeriveColumnsNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FunctionExpression;
+import cn.superhuang.data.scalpel.contract.task.LiteralExpression;
+import cn.superhuang.data.scalpel.contract.task.TypeCastNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.AggregateNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.UnionNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.DeduplicateNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.DropNullRowsRule;
+import cn.superhuang.data.scalpel.contract.task.FillNullLiteralRule;
+import cn.superhuang.data.scalpel.contract.task.NullHandlingNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.RowsFrameBoundary;
+import cn.superhuang.data.scalpel.contract.task.TopNNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ValueMappingNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.MaskFieldsNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JsonExtractNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.MaskingRuleSource;
+import cn.superhuang.data.scalpel.contract.task.WindowFunctionItem;
+import cn.superhuang.data.scalpel.contract.task.WindowNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
@@ -40,6 +70,7 @@ import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionResult;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionState;
 import cn.superhuang.data.scalpel.contract.task.TaskType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
+import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.sql.DataFrameReader;
 import org.apache.spark.sql.DataFrameWriter;
@@ -47,6 +78,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SaveMode;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.storage.StorageLevel;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -85,7 +117,7 @@ final class CanvasTaskExecutor {
             throw new RunnerExecutionException("INVALID_LAUNCH", "Runner Spark 启动模式无效", null);
         }
         Instant startedAt = Instant.now();
-        SparkSession.Builder builder = SparkSession.builder()
+        SparkSession.Builder builder = SedonaSparkSupport.builder()
                 .appName("DataScalpel Task Runner " + manifest.execution().executionId())
                 .config("spark.ui.enabled", "false")
                 .config("spark.sql.shuffle.partitions", "4")
@@ -94,14 +126,14 @@ final class CanvasTaskExecutor {
                 .config("spark.sql.session.timeZone", "UTC")
                 .config("spark.speculation", "false");
         if (sparkMode == RunnerSparkMode.LOCAL) builder.master("local[*]");
-        SparkSession spark = builder.getOrCreate();
+        SparkSession spark = SedonaSparkSupport.initialize(builder.getOrCreate());
         try (SparkOutputMetricsCollector metricsCollector = new SparkOutputMetricsCollector(spark)) {
             sparkStarted.accept(spark.sparkContext().applicationId());
             MetadataIndex metadataIndex = MetadataIndex.create(manifest.metadataSnapshot());
             CanvasCompilation compilation = compiler.compile(
                     manifest.task().definition(),
                     metadataIndex,
-                    spark.newSession(),
+                    SedonaSparkSupport.childSession(spark),
                     new AtomicBoolean()
             );
             checkDeadline(manifest);
@@ -117,7 +149,8 @@ final class CanvasTaskExecutor {
                                 .findFirst().orElse("Canvas 编译失败"));
                 throw new RunnerExecutionException("CANVAS_COMPILATION_FAILED", message, null);
             }
-            return executeCompiled(manifest, metadataIndex, spark, metricsCollector, startedAt);
+            return executeCompiled(
+                    manifest, metadataIndex, compilation, spark, metricsCollector, startedAt);
         } catch (Throwable throwable) {
             TaskExecutionError error = failureClassifier.classify(
                     throwable, RunnerFailureContext.task(ExecutionFailurePhase.PREPARE));
@@ -131,6 +164,7 @@ final class CanvasTaskExecutor {
     private TaskExecutionResult executeCompiled(
             TaskExecutionManifest manifest,
             MetadataIndex metadataIndex,
+            CanvasCompilation compilation,
             SparkSession spark,
             SparkOutputMetricsCollector metricsCollector,
             Instant startedAt
@@ -155,7 +189,15 @@ final class CanvasTaskExecutor {
             RunnerFailureContext failureContext = RunnerFailureContext.node(
                     node, phase, resourceName(node, runtimeSources, metadataIndex));
             Instant nodeStartedAt = Instant.now();
-            logNodeStart(manifest, node, phase, nodeSummary(node, metadataIndex));
+            logNodeStart(
+                    manifest,
+                    node,
+                    phase,
+                    nodeSummary(
+                            node,
+                            metadataIndex,
+                            compilation.nodeResults().get(nodeIndex).inputTables())
+            );
             try {
                 checkDeadline(manifest);
                 Map<String, SparkCanvasTable> inputs = mergeInputs(
@@ -198,20 +240,39 @@ final class CanvasTaskExecutor {
             String jobGroup = "datascalpel:" + manifest.execution().executionId()
                     + ":" + manifest.execution().attempt() + ":" + node.id();
             SparkOutputMetricsCollector.ObservedOutput observed = null;
+            Dataset<Row> cachedUpsert = null;
             try {
                 checkDeadline(manifest);
+                Dataset<Row> writeDataset = output.dataset();
+                if (output.writeMode() == JdbcWriteMode.UPSERT) {
+                    cachedUpsert = writeDataset.persist(StorageLevel.MEMORY_AND_DISK());
+                    SpatialJdbcRuntimeSupport.validateUpsertKeys(output.jdbcOutput(), cachedUpsert);
+                    writeDataset = cachedUpsert;
+                }
                 observed = metricsCollector.observe(
                         manifest.execution().executionId(), manifest.execution().attempt(),
-                        node.id(), output.dataset());
+                        node.id(), writeDataset);
                 spark.sparkContext().setJobGroup(
                         jobGroup, "DataScalpel " + node.nodeType() + " " + node.id(), true);
                 if (output.fileOutput() != null) {
-                    writeFile(spark, output.fileOutput(), observed.dataset());
+                    writeFile(
+                            spark,
+                            output.fileOutput(),
+                            observed.dataset(),
+                            manifest.execution().executionId()
+                    );
                 } else {
                     if (output.writeMode() == JdbcWriteMode.OVERWRITE) {
                         truncate(output.runtimeDataSource(), output.qualifiedTableName());
                     }
-                    write(output.runtimeDataSource(), output.qualifiedTableName(), observed.dataset());
+                    if (output.writeMode() == JdbcWriteMode.UPSERT) {
+                        SpatialJdbcRuntimeSupport.writeUpsert(output.jdbcOutput(), observed.dataset());
+                    } else if (output.jdbcOutput() != null
+                            && SpatialJdbcRuntimeSupport.requiresSpatialWriter(output.jdbcOutput())) {
+                        SpatialJdbcRuntimeSupport.writeSpatial(output.jdbcOutput(), observed.dataset());
+                    } else {
+                        write(output.runtimeDataSource(), output.qualifiedTableName(), observed.dataset());
+                    }
                 }
                 SparkOutputMetricsCollector.OutputWriteMetrics metrics = metricsCollector.completeSuccess(observed);
                 Long previousAffectedRows = affectedRows;
@@ -234,6 +295,7 @@ final class CanvasTaskExecutor {
                         manifest, node, ExecutionFailurePhase.WRITE, output.startedAt(), error, throwable);
                 return failedResult(manifest, startedAt, orderedResults(plan, nodeResults), error);
             } finally {
+                if (cachedUpsert != null) cachedUpsert.unpersist();
                 spark.sparkContext().clearJobGroup();
             }
         }
@@ -280,7 +342,8 @@ final class CanvasTaskExecutor {
                         spark,
                         metadataIndex,
                         new RunnerCanvasNodeIssueSink(node.id()),
-                        dataAccess
+                        dataAccess,
+                        CanvasExecutionMode.BATCH
                 )
         );
     }
@@ -296,6 +359,7 @@ final class CanvasTaskExecutor {
                 output.displayTarget(),
                 output.writeMode(),
                 output.dataset(),
+                output,
                 null,
                 startedAt
         );
@@ -312,6 +376,7 @@ final class CanvasTaskExecutor {
                 output.targetUri(),
                 null,
                 output.dataset(),
+                null,
                 output,
                 startedAt
         );
@@ -320,16 +385,15 @@ final class CanvasTaskExecutor {
     private static void writeFile(
             SparkSession spark,
             CanvasPreparedFileOutput output,
-            Dataset<Row> dataset
+            Dataset<Row> dataset,
+            UUID executionId
     ) {
         RuntimeS3Connection connection = output.runtimeDataSource().s3Connection();
         configureBucketS3A(spark, connection);
         var configuration = output.node().configuration();
-        DataFrameWriter<Row> writer = dataset.write().mode(
-                configuration.conflictPolicy() == FileOutputConflictPolicy.OVERWRITE
-                        ? SaveMode.Overwrite : SaveMode.ErrorIfExists);
         switch (configuration.formatOptions()) {
-            case FileOutputFormatOptions.Csv csv -> writer.format("csv")
+            case FileOutputFormatOptions.Csv csv -> fileWriter(dataset, configuration.conflictPolicy())
+                    .format("csv")
                     .option("encoding", "UTF-8")
                     .option("header", csv.header())
                     .option("delimiter", csv.delimiter())
@@ -337,14 +401,31 @@ final class CanvasTaskExecutor {
                     .option("escape", csv.escape())
                     .option("nullValue", csv.nullValue())
                     .save(output.targetUri());
-            case FileOutputFormatOptions.JsonLines json -> writer.format("json")
+            case FileOutputFormatOptions.JsonLines json -> fileWriter(dataset, configuration.conflictPolicy())
+                    .format("json")
                     .option("encoding", "UTF-8")
                     .option("ignoreNullFields", json.ignoreNullFields())
                     .save(output.targetUri());
-            case FileOutputFormatOptions.Parquet ignored -> writer.format("parquet")
+            case FileOutputFormatOptions.Parquet ignored -> fileWriter(dataset, configuration.conflictPolicy())
+                    .format("parquet")
                     .option("compression", "snappy")
                     .save(output.targetUri());
+            case FileOutputFormatOptions.Shapefile ignored ->
+                    ShapefileFileOutputWriter.write(spark, output, dataset, executionId);
+            case FileOutputFormatOptions.GeoParquet ignored ->
+                    GeoParquetFileOutputWriter.write(output, dataset);
+            case FileOutputFormatOptions.GeoJson ignored ->
+                    GeoJsonFileOutputWriter.write(spark, output, dataset, executionId);
         }
+    }
+
+    private static DataFrameWriter<Row> fileWriter(
+            Dataset<Row> dataset,
+            FileOutputConflictPolicy conflictPolicy
+    ) {
+        return dataset.write().mode(
+                conflictPolicy == FileOutputConflictPolicy.OVERWRITE
+                        ? SaveMode.Overwrite : SaveMode.ErrorIfExists);
     }
 
     private static void configureBucketS3A(SparkSession spark, RuntimeS3Connection connection) {
@@ -469,6 +550,14 @@ final class CanvasTaskExecutor {
                 throw new RunnerExecutionException(
                         "RUNTIME_SCHEMA_MISMATCH", "物理表 Decimal 精度已变化：" + left.name(), nodeId);
             }
+            if (left.fieldType() == PlatformDataType.GEOMETRY
+                    && !java.util.Objects.equals(left.geometry(), right.geometry())) {
+                throw new RunnerExecutionException(
+                        "SPATIAL_SCHEMA_DRIFT",
+                        "Geometry 字段 kind、CRS 或 dimension 已变化：" + left.name(),
+                        nodeId
+                );
+            }
         }
     }
 
@@ -586,10 +675,8 @@ final class CanvasTaskExecutor {
     }
 
     private static void validateManifest(TaskExecutionManifest manifest) {
-        if (manifest == null || manifest.manifestVersion() == null
-                || manifest.manifestVersion() != TaskExecutionManifest.CURRENT_MANIFEST_VERSION
-                && manifest.manifestVersion() != TaskExecutionManifest.PREVIOUS_MANIFEST_VERSION
-                || manifest.execution() == null || manifest.execution().executionId() == null
+        ManifestVersionSupport.requireSupported(manifest);
+        if (manifest.execution() == null || manifest.execution().executionId() == null
                 || manifest.execution().runId() == null || manifest.execution().taskId() == null
                 || manifest.execution().attempt() == null || manifest.execution().attempt() != 1
                 || manifest.execution().definitionVersion() == null || manifest.execution().definitionVersion() < 1
@@ -711,9 +798,16 @@ final class CanvasTaskExecutor {
 
     private static ExecutionFailurePhase phase(CanvasNodeDefinition node) {
         return switch (node.nodeType()) {
-            case MODEL_INPUT, JDBC_INPUT, FILE_DATASET_INPUT, HTTP_API_INPUT, KAFKA_INPUT ->
+            case MODEL_INPUT, JDBC_INPUT, JDBC_QUERY_INPUT, FILE_DATASET_INPUT, HTTP_API_INPUT, SPATIAL_SERVICE_INPUT, KAFKA_INPUT ->
                     ExecutionFailurePhase.READ;
-            case JOIN, STREAM_JOIN, RENAME -> ExecutionFailurePhase.PROCESS;
+            case JOIN, GEOMETRY_CONSTRUCT, SPATIAL_TRANSFORM, GEOMETRY_VALIDATE,
+                    GEOMETRY_REPAIR, GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
+                    SPATIAL_MEASURE, GEOMETRY_SERIALIZE, SPATIAL_CLIP,
+                    SPATIAL_AGGREGATE, SPATIAL_JOIN, STREAM_JOIN,
+                    RENAME, FILTER, SELECT_COLUMNS, DERIVE_COLUMNS, TYPE_CAST,
+                    AGGREGATE, UNION, DEDUPLICATE, NULL_HANDLING, VALUE_MAPPING, MASK_FIELDS,
+                            JSON_EXTRACT, WINDOW, TOP_N ->
+                    ExecutionFailurePhase.PROCESS;
             case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT -> ExecutionFailurePhase.WRITE;
         };
     }
@@ -728,6 +822,7 @@ final class CanvasTaskExecutor {
                     runtimeSources, metadataIndex, input.configuration().modelId());
             case JdbcInputNodeDefinition input -> displayTable(
                     runtimeSources, input.configuration().dataSourceId(), input.configuration().tableName());
+            case JdbcQueryInputNodeDefinition input -> input.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition input -> {
                 MetadataIndex.FileDatasetTableEntry table = metadataIndex.fileDatasetTable(
                         UUID.fromString(input.configuration().fileDatasetTableId()));
@@ -735,12 +830,61 @@ final class CanvasTaskExecutor {
             }
             case cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition input ->
                     input.configuration().resourceId();
+            case cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition input ->
+                    input.configuration().resourceId();
             case cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition input ->
                     input.configuration().topic();
             case JoinNodeDefinition join -> join.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometryConstructNodeDefinition construct ->
+                    construct.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialTransformNodeDefinition transform ->
+                    transform.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometryValidateNodeDefinition validate ->
+                    validate.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometryRepairNodeDefinition repair ->
+                    repair.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
+                    buffer.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometryExplodeNodeDefinition explode ->
+                    explode.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasureNodeDefinition measure ->
+                    measure.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometrySerializeNodeDefinition serialize ->
+                    serialize.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialClipNodeDefinition clip ->
+                    clip.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition aggregate ->
+                    aggregate.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join ->
+                    join.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.StreamJoinNodeDefinition join ->
                     join.configuration().outputTableName();
             case RenameNodeDefinition rename -> rename.configuration().outputTableName();
+            case FilterNodeDefinition filter -> filter.configuration().outputTableName();
+            case SelectColumnsNodeDefinition selectColumns ->
+                    selectColumns.configuration().outputTableName();
+            case DeriveColumnsNodeDefinition deriveColumns ->
+                    deriveColumns.configuration().outputTableName();
+            case TypeCastNodeDefinition typeCast ->
+                    typeCast.configuration().outputTableName();
+            case AggregateNodeDefinition aggregate ->
+                    aggregate.configuration().outputTableName();
+            case UnionNodeDefinition union ->
+                    union.configuration().outputTableName();
+            case DeduplicateNodeDefinition deduplicate ->
+                    deduplicate.configuration().outputTableName();
+            case NullHandlingNodeDefinition nullHandling ->
+                    nullHandling.configuration().outputTableName();
+            case ValueMappingNodeDefinition valueMapping ->
+                    valueMapping.configuration().outputTableName();
+            case MaskFieldsNodeDefinition maskFields ->
+                    maskFields.configuration().outputTableName();
+            case JsonExtractNodeDefinition jsonExtract ->
+                    jsonExtract.configuration().outputTableName();
+            case WindowNodeDefinition window ->
+                    window.configuration().outputTableName();
+            case TopNNodeDefinition topN ->
+                    topN.configuration().outputTableName();
             case ModelOutputNodeDefinition output -> displayModelTable(
                     runtimeSources, metadataIndex, output.configuration().targetModelId());
             case JdbcOutputNodeDefinition output -> displayTable(
@@ -774,12 +918,21 @@ final class CanvasTaskExecutor {
     private static String displayModelTable(
             Map<UUID, RuntimeDataSource> runtimeSources,
             MetadataIndex metadataIndex,
-            UUID modelId
+            String modelId
     ) {
-        MetadataIndex.ModelEntry model = metadataIndex.model(modelId);
-        if (model == null) return modelId == null ? null : modelId.toString();
+        MetadataIndex.ModelEntry model = metadataModel(metadataIndex, modelId);
+        if (model == null) return modelId;
         RuntimeDataSource source = runtimeSources.get(model.metadata().dataSourceId());
         return source == null ? model.metadata().physicalTableName() : displayModelTable(source, model);
+    }
+
+    private static MetadataIndex.ModelEntry metadataModel(MetadataIndex metadataIndex, String modelId) {
+        if (modelId == null || modelId.isBlank()) return null;
+        try {
+            return metadataIndex.model(UUID.fromString(modelId));
+        } catch (IllegalArgumentException ignored) {
+            return null;
+        }
     }
 
     static String displayModelTable(
@@ -793,14 +946,27 @@ final class CanvasTaskExecutor {
                 : namespace + "." + model.metadata().physicalTableName();
     }
 
-    private static String nodeSummary(CanvasNodeDefinition node, MetadataIndex metadataIndex) {
+    static String nodeSummary(CanvasNodeDefinition node, MetadataIndex metadataIndex) {
+        return nodeSummary(node, metadataIndex, List.of());
+    }
+
+    static String nodeSummary(
+            CanvasNodeDefinition node,
+            MetadataIndex metadataIndex,
+            List<CanvasTableSchema> inputTables
+    ) {
         return switch (node) {
             case ModelInputNodeDefinition input -> modelSummary(
-                    "modelId=" + safeLogValue(input.configuration().modelId().toString()),
-                    metadataIndex.model(input.configuration().modelId()))
+                    "modelId=" + safeLogValue(input.configuration().modelId()),
+                    metadataModel(metadataIndex, input.configuration().modelId()))
                     + " runtimeSchemaValidation=true";
             case JdbcInputNodeDefinition input -> "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
                     + " table=" + safeLogValue(input.configuration().tableName())
+                    + " runtimeSchemaValidation=true";
+            case JdbcQueryInputNodeDefinition input -> "dataSourceId="
+                    + safeLogValue(input.configuration().dataSourceId())
+                    + " outputTable=" + safeLogValue(input.configuration().outputTableName())
+                    + " fieldCount=" + input.configuration().outputColumns().size()
                     + " runtimeSchemaValidation=true";
             case cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition input -> {
                 MetadataIndex.FileDatasetTableEntry table = metadataIndex.fileDatasetTable(
@@ -817,8 +983,12 @@ final class CanvasTaskExecutor {
                             + " resourceId=" + safeLogValue(input.configuration().resourceId())
                             + " outputTable=" + safeLogValue(input.configuration().outputTableName())
                             + " runtimeParameterCount=" + input.configuration().runtimeParameters().size();
+            case cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition input ->
+                    "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
+                            + " resourceId=" + safeLogValue(input.configuration().resourceId())
+                            + " outputTable=" + safeLogValue(input.configuration().outputTableName());
             case cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition input ->
-                    "dataSourceId=" + safeLogValue(input.configuration().dataSourceId().toString())
+                    "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
                             + " topic=" + safeLogValue(input.configuration().topic())
                             + " outputTable=" + safeLogValue(input.configuration().outputTableName());
             case JoinNodeDefinition join -> "leftTable=" + safeLogValue(join.configuration().leftTableName())
@@ -826,6 +996,115 @@ final class CanvasTaskExecutor {
                     + " joinType=" + join.configuration().joinType()
                     + " conditionCount=" + join.configuration().conditions().size()
                     + " outputTable=" + safeLogValue(join.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.GeometryConstructNodeDefinition construct -> {
+                String sourceSummary = switch (construct.configuration().source()) {
+                    case cn.superhuang.data.scalpel.contract.task.GeometryConstructSource.Wkt source ->
+                            "sourceKind=WKT sourceColumn=" + safeLogValue(source.columnName());
+                    case cn.superhuang.data.scalpel.contract.task.GeometryConstructSource.Wkb source ->
+                            "sourceKind=WKB sourceColumn=" + safeLogValue(source.columnName());
+                    case cn.superhuang.data.scalpel.contract.task.GeometryConstructSource.GeoJson source ->
+                            "sourceKind=GEOJSON sourceColumn=" + safeLogValue(source.columnName());
+                    case cn.superhuang.data.scalpel.contract.task.GeometryConstructSource.PointFromXy source ->
+                            "sourceKind=POINT_FROM_XY xColumn=" + safeLogValue(source.xColumnName())
+                                    + " yColumn=" + safeLogValue(source.yColumnName());
+                };
+                yield "sourceTable=" + safeLogValue(construct.configuration().sourceTableName())
+                        + " outputTable=" + safeLogValue(construct.configuration().outputTableName())
+                        + " outputColumn=" + safeLogValue(construct.configuration().outputColumnName())
+                        + " " + sourceSummary
+                        + " targetKind=" + construct.configuration().targetGeometry().kind()
+                        + " targetCrs=" + construct.configuration().targetGeometry().crs()
+                        + " dimension=" + construct.configuration().targetGeometry().dimension();
+            }
+            case cn.superhuang.data.scalpel.contract.task.SpatialTransformNodeDefinition transform ->
+                    "sourceTable=" + safeLogValue(transform.configuration().sourceTableName())
+                            + " geometryColumn="
+                            + safeLogValue(transform.configuration().geometryColumnName())
+                            + " targetCrs=" + transform.configuration().targetCrs()
+                            + " outputTable="
+                            + safeLogValue(transform.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.GeometryValidateNodeDefinition validate ->
+                    "sourceTable=" + safeLogValue(validate.configuration().sourceTableName())
+                            + " outputTable=" + safeLogValue(validate.configuration().outputTableName())
+                            + " geometryColumn="
+                            + safeLogValue(validate.configuration().geometryColumnName())
+                            + " validColumn=" + safeLogValue(validate.configuration().validColumnName())
+                            + " reasonColumn=" + safeLogValue(validate.configuration().reasonColumnName());
+            case cn.superhuang.data.scalpel.contract.task.GeometryRepairNodeDefinition repair ->
+                    "sourceTable=" + safeLogValue(repair.configuration().sourceTableName())
+                            + " outputTable=" + safeLogValue(repair.configuration().outputTableName())
+                            + " geometryColumn="
+                            + safeLogValue(repair.configuration().geometryColumnName())
+                            + " outputColumn="
+                            + safeLogValue(repair.configuration().outputColumnName());
+            case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
+                    "sourceTable=" + safeLogValue(buffer.configuration().sourceTableName())
+                            + " outputTable=" + safeLogValue(buffer.configuration().outputTableName())
+                            + " geometryColumn="
+                            + safeLogValue(buffer.configuration().geometryColumnName())
+                            + " outputColumn="
+                            + safeLogValue(buffer.configuration().outputColumnName())
+                            + " distance=" + buffer.configuration().distance()
+                            + " mode=" + buffer.configuration().mode();
+            case cn.superhuang.data.scalpel.contract.task.GeometryExplodeNodeDefinition explode ->
+                    "sourceTable=" + safeLogValue(explode.configuration().sourceTableName())
+                            + " outputTable=" + safeLogValue(explode.configuration().outputTableName())
+                            + " geometryColumn="
+                            + safeLogValue(explode.configuration().geometryColumnName())
+                            + " outputColumn="
+                            + safeLogValue(explode.configuration().outputColumnName())
+                            + " partIndexColumn="
+                            + safeLogValue(explode.configuration().partIndexColumnName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasureNodeDefinition measure -> {
+                String measurements = measure.configuration().measurements().stream()
+                        .map(CanvasTaskExecutor::spatialMeasurementSummary)
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable=" + safeLogValue(measure.configuration().sourceTableName())
+                        + " outputTable=" + safeLogValue(measure.configuration().outputTableName())
+                        + " measurementCount=" + measure.configuration().measurements().size()
+                        + " measurements=" + safeLogValue(measurements);
+            }
+            case cn.superhuang.data.scalpel.contract.task.GeometrySerializeNodeDefinition serialize ->
+                    "sourceTable=" + safeLogValue(serialize.configuration().sourceTableName())
+                            + " outputTable=" + safeLogValue(serialize.configuration().outputTableName())
+                            + " geometryColumn="
+                            + safeLogValue(serialize.configuration().geometryColumnName())
+                            + " outputColumn="
+                            + safeLogValue(serialize.configuration().outputColumnName())
+                            + " format=" + serialize.configuration().format();
+            case cn.superhuang.data.scalpel.contract.task.SpatialClipNodeDefinition clip ->
+                    "sourceTable=" + safeLogValue(clip.configuration().sourceTableName())
+                            + " sourceGeometryColumn="
+                            + safeLogValue(clip.configuration().sourceGeometryColumnName())
+                            + " maskTable=" + safeLogValue(clip.configuration().maskTableName())
+                            + " maskGeometryColumn="
+                            + safeLogValue(clip.configuration().maskGeometryColumnName())
+                            + " outputTable="
+                            + safeLogValue(clip.configuration().outputTableName())
+                            + " outputColumn="
+                            + safeLogValue(clip.configuration().outputColumnName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition aggregate -> {
+                String aggregations = aggregate.configuration().aggregations().stream()
+                        .map(item -> item.kind() + ":" + item.geometryColumnName()
+                                + ":" + item.outputColumnName())
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(aggregate.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(aggregate.configuration().outputTableName())
+                        + " groupByCount=" + aggregate.configuration().groupByColumns().size()
+                        + " groupBy="
+                        + safeLogValue(String.join(",", aggregate.configuration().groupByColumns()))
+                        + " aggregationCount=" + aggregate.configuration().aggregations().size()
+                        + " aggregations=" + safeLogValue(aggregations);
+            }
+            case cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join ->
+                    "leftTable=" + safeLogValue(join.configuration().leftTableName())
+                            + " rightTable=" + safeLogValue(join.configuration().rightTableName())
+                            + " joinType=" + join.configuration().joinType()
+                            + " conditionCount=" + join.configuration().conditions().size()
+                            + " outputTable="
+                            + safeLogValue(join.configuration().outputTableName());
             case cn.superhuang.data.scalpel.contract.task.StreamJoinNodeDefinition join ->
                     "leftStream=" + safeLogValue(join.configuration().leftTableName())
                             + " rightStatic=" + safeLogValue(join.configuration().rightTableName())
@@ -835,11 +1114,215 @@ final class CanvasTaskExecutor {
                     + safeLogValue(rename.configuration().sourceTableName())
                     + " outputTable=" + safeLogValue(rename.configuration().outputTableName())
                     + " mappingCount=" + rename.configuration().columnMappings().size();
+            case FilterNodeDefinition filter -> {
+                FilterSummary summary = filterSummary(filter.configuration().condition());
+                yield "sourceTable=" + safeLogValue(filter.configuration().sourceTableName())
+                        + " outputTable=" + safeLogValue(filter.configuration().outputTableName())
+                        + " predicateCount=" + summary.predicates()
+                        + " groupCount=" + summary.groups()
+                        + " operators=" + safeLogValue(String.join(",", summary.operators()));
+            }
+            case SelectColumnsNodeDefinition selectColumns ->
+                    "sourceTable="
+                            + safeLogValue(selectColumns.configuration().sourceTableName())
+                            + " outputTable="
+                            + safeLogValue(selectColumns.configuration().outputTableName())
+                            + " columnCount="
+                            + selectColumns.configuration().columns().size()
+                            + " columns="
+                            + safeLogValue(String.join(",", selectColumns.configuration().columns()));
+            case DeriveColumnsNodeDefinition deriveColumns -> {
+                DeriveSummary summary = deriveSummary(deriveColumns);
+                yield "sourceTable="
+                        + safeLogValue(deriveColumns.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(deriveColumns.configuration().outputTableName())
+                        + " derivationCount=" + deriveColumns.configuration().derivations().size()
+                        + " replaceCount=" + summary.replaceCount()
+                        + " targets=" + safeLogValue(String.join(",", summary.targets()))
+                        + " expressionKinds="
+                        + safeLogValue(String.join(",", summary.expressionKinds()))
+                        + " functions=" + safeLogValue(String.join(",", summary.functions()));
+            }
+            case TypeCastNodeDefinition typeCast -> {
+                long setNullCount = typeCast.configuration().casts().stream()
+                        .filter(cast -> cast.failureStrategy()
+                                == cn.superhuang.data.scalpel.contract.task.CastFailureStrategy.SET_NULL)
+                        .count();
+                String castSummary = typeCast.configuration().casts().stream()
+                        .map(cast -> cast.columnName()
+                                + ":" + cast.targetType().type()
+                                + ":" + cast.failureStrategy())
+                        .sorted()
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(typeCast.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(typeCast.configuration().outputTableName())
+                        + " castCount=" + typeCast.configuration().casts().size()
+                        + " failCount="
+                        + (typeCast.configuration().casts().size() - setNullCount)
+                        + " setNullCount=" + setNullCount
+                        + " casts=" + safeLogValue(castSummary);
+            }
+            case AggregateNodeDefinition aggregate -> {
+                String aggregationSummary = aggregate.configuration().aggregations().stream()
+                        .map(item -> item.function()
+                                + ":" + (item.sourceColumnName() == null
+                                ? "*" : item.sourceColumnName())
+                                + ":" + item.outputColumnName()
+                                + ":" + item.distinct())
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(aggregate.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(aggregate.configuration().outputTableName())
+                        + " groupByCount=" + aggregate.configuration().groupByColumns().size()
+                        + " groupBy="
+                        + safeLogValue(String.join(",", aggregate.configuration().groupByColumns()))
+                        + " aggregationCount="
+                        + aggregate.configuration().aggregations().size()
+                        + " aggregations=" + safeLogValue(aggregationSummary);
+            }
+            case UnionNodeDefinition union ->
+                    "inputCount=" + union.configuration().inputTableNames().size()
+                            + " inputs="
+                            + safeLogValue(String.join(",", union.configuration().inputTableNames()))
+                            + " outputTable="
+                            + safeLogValue(union.configuration().outputTableName())
+                            + " mode=" + union.configuration().mode();
+            case DeduplicateNodeDefinition deduplicate -> {
+                String sortSummary = deduplicate.configuration().orderBy().stream()
+                        .map(sort -> sort.columnName()
+                                + ":" + sort.direction()
+                                + ":NULLS_" + sort.nullOrdering())
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(deduplicate.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(deduplicate.configuration().outputTableName())
+                        + " keyCount=" + deduplicate.configuration().keyColumns().size()
+                        + " keys="
+                        + safeLogValue(String.join(",", deduplicate.configuration().keyColumns()))
+                        + " keepStrategy=" + deduplicate.configuration().keepStrategy()
+                        + " orderBy=" + safeLogValue(sortSummary);
+            }
+            case NullHandlingNodeDefinition nullHandling -> {
+                long dropCount = nullHandling.configuration().rules().stream()
+                        .filter(DropNullRowsRule.class::isInstance)
+                        .count();
+                String ruleSummary = nullHandling.configuration().rules().stream()
+                        .map(rule -> switch (rule) {
+                            case DropNullRowsRule drop ->
+                                    "DROP_ROW:" + String.join(",", drop.columnNames())
+                                            + ":" + drop.matchMode();
+                            case FillNullLiteralRule fill ->
+                                    "FILL_LITERAL:" + fill.columnName()
+                                            + ":" + fill.value().dataType();
+                        })
+                        .collect(java.util.stream.Collectors.joining(";"));
+                yield "sourceTable="
+                        + safeLogValue(nullHandling.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(nullHandling.configuration().outputTableName())
+                        + " ruleCount=" + nullHandling.configuration().rules().size()
+                        + " dropCount=" + dropCount
+                        + " fillCount="
+                        + (nullHandling.configuration().rules().size() - dropCount)
+                        + " rules=" + safeLogValue(ruleSummary);
+            }
+            case ValueMappingNodeDefinition valueMapping -> {
+                int entryCount = valueMapping.configuration().rules().stream()
+                        .mapToInt(rule -> rule.entries().size())
+                        .sum();
+                String ruleSummary = valueMapping.configuration().rules().stream()
+                        .map(rule -> rule.columnName()
+                                + ":" + rule.entries().size()
+                                + ":" + rule.unmatchedStrategy()
+                                + ":mapsToNull="
+                                + rule.entries().stream()
+                                        .anyMatch(entry -> entry.targetValue() == null))
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(valueMapping.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(valueMapping.configuration().outputTableName())
+                        + " ruleCount=" + valueMapping.configuration().rules().size()
+                        + " entryCount=" + entryCount
+                        + " rules=" + safeLogValue(ruleSummary);
+            }
+            case MaskFieldsNodeDefinition maskFields -> {
+                long globalCount = maskFields.configuration().fieldRules().stream()
+                        .filter(rule -> rule.ruleSource() == MaskingRuleSource.GLOBAL)
+                        .count();
+                String strategies = maskFields.configuration().fieldRules().stream()
+                        .map(rule -> rule.definition().strategy().name())
+                        .distinct()
+                        .sorted()
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "fieldCount=" + maskFields.configuration().fieldRules().size()
+                        + " globalRuleCount=" + globalCount
+                        + " inlineRuleCount="
+                        + (maskFields.configuration().fieldRules().size() - globalCount)
+                        + " strategies=" + safeLogValue(strategies);
+            }
+            case JsonExtractNodeDefinition jsonExtract -> {
+                String targetTypes = jsonExtract.configuration().extractions().stream()
+                        .map(extraction -> extraction.targetType().type().name())
+                        .distinct()
+                        .sorted()
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(jsonExtract.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(jsonExtract.configuration().outputTableName())
+                        + " sourceColumn="
+                        + safeLogValue(jsonExtract.configuration().sourceColumnName())
+                        + " extractionCount="
+                        + jsonExtract.configuration().extractions().size()
+                        + " targetTypes=" + safeLogValue(targetTypes)
+                        + " failureStrategy="
+                        + jsonExtract.configuration().failureStrategy();
+            }
+            case WindowNodeDefinition window -> {
+                String sortSummary = window.configuration().orderBy().stream()
+                        .map(sort -> sort.columnName()
+                                + ":" + sort.direction()
+                                + ":NULLS_" + sort.nullOrdering())
+                        .collect(java.util.stream.Collectors.joining(","));
+                String functionSummary = window.configuration().functions().stream()
+                        .map(CanvasTaskExecutor::windowFunctionSummary)
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(window.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(window.configuration().outputTableName())
+                        + " partitions="
+                        + safeLogValue(String.join(",", window.configuration().partitionByColumns()))
+                        + " orderBy=" + safeLogValue(sortSummary)
+                        + " functions=" + safeLogValue(functionSummary);
+            }
+            case TopNNodeDefinition topN -> {
+                String sortSummary = topN.configuration().orderBy().stream()
+                        .map(sort -> sort.columnName()
+                                + ":" + sort.direction()
+                                + ":NULLS_" + sort.nullOrdering())
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable="
+                        + safeLogValue(topN.configuration().sourceTableName())
+                        + " outputTable="
+                        + safeLogValue(topN.configuration().outputTableName())
+                        + " partitions="
+                        + safeLogValue(String.join(",", topN.configuration().partitionByColumns()))
+                        + " orderBy=" + safeLogValue(sortSummary)
+                        + " limit=" + topN.configuration().limit()
+                        + " tieStrategy=" + topN.configuration().tieStrategy();
+            }
             case ModelOutputNodeDefinition output -> "sourceTable="
                     + safeLogValue(output.configuration().sourceTableName())
                     + " " + modelSummary(
-                    "targetModelId=" + safeLogValue(output.configuration().targetModelId().toString()),
-                    metadataIndex.model(output.configuration().targetModelId()))
+                    "targetModelId=" + safeLogValue(output.configuration().targetModelId()),
+                    metadataModel(metadataIndex, output.configuration().targetModelId()))
                     + " writeMode=" + output.configuration().writeMode()
                     + " mappingMode=" + output.configuration().columnMappingMode()
                     + " mappingCount=" + output.configuration().columnMappings().size()
@@ -852,14 +1335,74 @@ final class CanvasTaskExecutor {
                     + " stages=TARGET_SCHEMA,MATERIALIZE,TRUNCATE_IF_REQUIRED,WRITE";
             case cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition output ->
                     "sourceTable=" + safeLogValue(output.configuration().sourceTableName())
-                            + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId().toString())
-                            + " topic=" + safeLogValue(output.configuration().topic());
-            case FileOutputNodeDefinition output ->
-                    "sourceTable=" + safeLogValue(output.configuration().sourceTableName())
                             + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId())
-                            + " format=" + output.configuration().formatOptions().getClass().getSimpleName()
-                            + " conflictPolicy=" + output.configuration().conflictPolicy();
+                            + " topic=" + safeLogValue(output.configuration().topic());
+            case FileOutputNodeDefinition output -> fileOutputSummary(output, inputTables);
         };
+    }
+
+    private static String fileOutputSummary(
+            FileOutputNodeDefinition output,
+            List<CanvasTableSchema> inputTables
+    ) {
+        String summary = "sourceTable=" + safeLogValue(output.configuration().sourceTableName())
+                + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId())
+                + " targetPath=" + safeLogValue(output.configuration().targetPath())
+                + " format=" + output.configuration().formatOptions().getClass().getSimpleName()
+                + " conflictPolicy=" + output.configuration().conflictPolicy()
+                + spatialFileSchemaSummary(output, inputTables);
+        if (output.configuration().formatOptions() instanceof FileOutputFormatOptions.Shapefile shapefile) {
+            String fields = shapefile.attributeMappings() == null ? "" : shapefile.attributeMappings().stream()
+                    .map(cn.superhuang.data.scalpel.contract.task.ShapefileAttributeMapping::targetFieldName)
+                    .collect(java.util.stream.Collectors.joining(","));
+            return summary
+                    + " packageMode=" + shapefile.packageMode()
+                    + " geometryColumn=" + safeLogValue(shapefile.geometryColumnName())
+                    + " targetShapeType=" + shapefile.targetShapeType()
+                    + " attributeCount=" + (shapefile.attributeMappings() == null
+                    ? 0 : shapefile.attributeMappings().size())
+                    + " attributeFields=" + safeLogValue(fields);
+        }
+        if (output.configuration().formatOptions() instanceof FileOutputFormatOptions.GeoParquet geoParquet) {
+            return summary
+                    + " geometryColumn=" + safeLogValue(geoParquet.geometryColumnName())
+                    + " compression=" + geoParquet.compression()
+                    + " coveringMode=" + geoParquet.coveringMode();
+        }
+        if (output.configuration().formatOptions() instanceof FileOutputFormatOptions.GeoJson geoJson) {
+            return summary
+                    + " baseName=" + safeLogValue(geoJson.baseName())
+                    + " geometryColumn=" + safeLogValue(geoJson.geometryColumnName())
+                    + " featureIdConfigured=" + (geoJson.idColumnName() != null)
+                    + " ignoreNullProperties=" + geoJson.ignoreNullProperties();
+        }
+        return summary;
+    }
+
+    private static String spatialFileSchemaSummary(
+            FileOutputNodeDefinition output,
+            List<CanvasTableSchema> inputTables
+    ) {
+        String geometryColumnName = switch (output.configuration().formatOptions()) {
+            case FileOutputFormatOptions.Shapefile shapefile -> shapefile.geometryColumnName();
+            case FileOutputFormatOptions.GeoParquet geoParquet -> geoParquet.geometryColumnName();
+            case FileOutputFormatOptions.GeoJson geoJson -> geoJson.geometryColumnName();
+            default -> null;
+        };
+        if (geometryColumnName == null) return "";
+        CanvasColumnSchema geometryColumn = inputTables.stream()
+                .filter(table -> table.name().equals(output.configuration().sourceTableName()))
+                .flatMap(table -> table.columns().stream())
+                .filter(column -> column.name().equals(geometryColumnName))
+                .filter(column -> column.geometry() != null)
+                .findFirst()
+                .orElse(null);
+        if (geometryColumn == null) return "";
+        return " geometryKind=" + geometryColumn.geometry().kind()
+                + " crs=" + safeLogValue(
+                geometryColumn.geometry().crs().authority()
+                        + ":" + geometryColumn.geometry().crs().code())
+                + " dimension=" + geometryColumn.geometry().dimension();
     }
 
     private static String modelSummary(String prefix, MetadataIndex.ModelEntry model) {
@@ -882,15 +1425,214 @@ final class CanvasTaskExecutor {
         return switch (node.nodeType()) {
             case MODEL_INPUT -> "模型输入已准备";
             case JDBC_INPUT -> "JDBC 输入已准备";
+            case JDBC_QUERY_INPUT -> "JDBC 查询输入已准备";
             case FILE_DATASET_INPUT -> "文件数据集输入已准备";
             case HTTP_API_INPUT -> "HTTP API 输入已读取";
+            case SPATIAL_SERVICE_INPUT -> "空间服务输入已读取";
             case KAFKA_INPUT -> "Kafka 输入已准备";
             case JOIN -> "Join 已准备";
+            case GEOMETRY_CONSTRUCT -> "Geometry 构造已准备";
+            case SPATIAL_TRANSFORM -> "空间转换已准备";
+            case GEOMETRY_VALIDATE -> "Geometry 校验已准备";
+            case GEOMETRY_REPAIR -> "Geometry 修复已准备";
+            case GEOMETRY_BUFFER -> "Geometry Buffer 已准备";
+            case GEOMETRY_EXPLODE -> "Geometry 拆分已准备";
+            case SPATIAL_MEASURE -> "空间测量已准备";
+            case GEOMETRY_SERIALIZE -> "Geometry 序列化已准备";
+            case SPATIAL_CLIP -> "空间裁剪已准备";
+            case SPATIAL_AGGREGATE -> "空间聚合已准备";
+            case SPATIAL_JOIN -> "空间连接已准备";
             case STREAM_JOIN -> "Stream Join 已准备";
             case RENAME -> "重命名已准备";
+            case FILTER -> "筛选已准备";
+            case SELECT_COLUMNS -> "字段选择已准备";
+            case DERIVE_COLUMNS -> "派生字段已准备";
+            case TYPE_CAST -> "类型转换已准备";
+            case AGGREGATE -> "聚合已准备";
+            case UNION -> "数据合并已准备";
+            case DEDUPLICATE -> "去重已准备";
+            case NULL_HANDLING -> "空值处理已准备";
+            case VALUE_MAPPING -> "值映射已准备";
+            case MASK_FIELDS -> "字段脱敏已准备";
+            case JSON_EXTRACT -> "JSON 提取已准备";
+            case WINDOW -> "窗口计算已准备";
+            case TOP_N -> "Top N 已准备";
             case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT ->
                     throw new IllegalArgumentException("Output success is recorded after writing");
         };
+    }
+
+    private static String spatialMeasurementSummary(
+            cn.superhuang.data.scalpel.contract.task.SpatialMeasurement measurement
+    ) {
+        return switch (measurement) {
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Area item ->
+                    "AREA:" + item.geometryColumnName() + ":" + item.mode()
+                            + "->" + item.outputColumnName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Length item ->
+                    "LENGTH:" + item.geometryColumnName() + ":" + item.mode()
+                            + "->" + item.outputColumnName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Perimeter item ->
+                    "PERIMETER:" + item.geometryColumnName() + ":" + item.mode()
+                            + "->" + item.outputColumnName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Distance item ->
+                    "DISTANCE:" + item.leftGeometryColumnName() + ":"
+                            + item.rightGeometryColumnName() + ":" + item.mode()
+                            + "->" + item.outputColumnName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.X item ->
+                    "X:" + item.geometryColumnName() + "->" + item.outputColumnName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Y item ->
+                    "Y:" + item.geometryColumnName() + "->" + item.outputColumnName();
+        };
+    }
+
+    private static FilterSummary filterSummary(CanvasFilterCondition condition) {
+        return switch (condition) {
+            case CanvasFilterGroup group -> {
+                int predicates = 0;
+                int groups = 1;
+                java.util.Set<String> operators = new java.util.TreeSet<>();
+                operators.add(group.operator().name());
+                for (CanvasFilterCondition child : group.children()) {
+                    FilterSummary childSummary = filterSummary(child);
+                    predicates += childSummary.predicates();
+                    groups += childSummary.groups();
+                    operators.addAll(childSummary.operators());
+                }
+                yield new FilterSummary(predicates, groups, operators);
+            }
+            case CanvasFieldPredicate predicate -> new FilterSummary(
+                    1,
+                    0,
+                    java.util.Set.of(predicate.operator().name())
+            );
+        };
+    }
+
+    private static String windowFunctionSummary(WindowFunctionItem item) {
+        return switch (item) {
+            case WindowFunctionItem.RowNumber rowNumber ->
+                    "ROW_NUMBER:" + rowNumber.outputColumnName();
+            case WindowFunctionItem.Rank rank ->
+                    "RANK:" + rank.outputColumnName();
+            case WindowFunctionItem.DenseRank denseRank ->
+                    "DENSE_RANK:" + denseRank.outputColumnName();
+            case WindowFunctionItem.Lag lag ->
+                    "LAG:" + lag.sourceColumnName() + ":" + lag.offset()
+                            + ":" + lag.outputColumnName();
+            case WindowFunctionItem.Lead lead ->
+                    "LEAD:" + lead.sourceColumnName() + ":" + lead.offset()
+                            + ":" + lead.outputColumnName();
+            case WindowFunctionItem.Count count ->
+                    "COUNT:" + (count.sourceColumnName() == null
+                            ? "*" : count.sourceColumnName())
+                            + ":" + count.outputColumnName()
+                            + ":" + frameSummary(count.frame());
+            case WindowFunctionItem.Sum sum ->
+                    "SUM:" + sum.sourceColumnName() + ":" + sum.outputColumnName()
+                            + ":" + frameSummary(sum.frame());
+            case WindowFunctionItem.Avg avg ->
+                    "AVG:" + avg.sourceColumnName() + ":" + avg.outputColumnName()
+                            + ":" + frameSummary(avg.frame());
+            case WindowFunctionItem.Min min ->
+                    "MIN:" + min.sourceColumnName() + ":" + min.outputColumnName()
+                            + ":" + frameSummary(min.frame());
+            case WindowFunctionItem.Max max ->
+                    "MAX:" + max.sourceColumnName() + ":" + max.outputColumnName()
+                            + ":" + frameSummary(max.frame());
+            case WindowFunctionItem.FirstValue first ->
+                    "FIRST_VALUE:" + first.sourceColumnName()
+                            + ":ignoreNulls=" + first.ignoreNulls()
+                            + ":" + first.outputColumnName()
+                            + ":" + frameSummary(first.frame());
+            case WindowFunctionItem.LastValue last ->
+                    "LAST_VALUE:" + last.sourceColumnName()
+                            + ":ignoreNulls=" + last.ignoreNulls()
+                            + ":" + last.outputColumnName()
+                            + ":" + frameSummary(last.frame());
+        };
+    }
+
+    private static String frameSummary(
+            cn.superhuang.data.scalpel.contract.task.RowsWindowFrame frame
+    ) {
+        return frame.type() + ":" + frameBoundarySummary(frame.start())
+                + ":" + frameBoundarySummary(frame.end());
+    }
+
+    private static String frameBoundarySummary(RowsFrameBoundary boundary) {
+        return switch (boundary) {
+            case RowsFrameBoundary.UnboundedPreceding ignored ->
+                    "UNBOUNDED_PRECEDING";
+            case RowsFrameBoundary.Preceding preceding ->
+                    "PRECEDING(" + preceding.offset() + ")";
+            case RowsFrameBoundary.CurrentRow ignored -> "CURRENT_ROW";
+            case RowsFrameBoundary.Following following ->
+                    "FOLLOWING(" + following.offset() + ")";
+            case RowsFrameBoundary.UnboundedFollowing ignored ->
+                    "UNBOUNDED_FOLLOWING";
+        };
+    }
+
+    private record FilterSummary(int predicates, int groups, java.util.Set<String> operators) {
+    }
+
+    private static DeriveSummary deriveSummary(DeriveColumnsNodeDefinition node) {
+        int replaceCount = 0;
+        java.util.Set<String> targets = new java.util.TreeSet<>();
+        java.util.Set<String> expressionKinds = new java.util.TreeSet<>();
+        java.util.Set<String> functions = new java.util.TreeSet<>();
+        for (cn.superhuang.data.scalpel.contract.task.ColumnDerivation derivation
+                : node.configuration().derivations()) {
+            if (derivation.replaceExisting()) replaceCount++;
+            targets.add(derivation.targetColumnName());
+            collectExpressionSummary(
+                    derivation.expression(),
+                    expressionKinds,
+                    functions
+            );
+        }
+        return new DeriveSummary(replaceCount, targets, expressionKinds, functions);
+    }
+
+    private static void collectExpressionSummary(
+            CanvasExpression expression,
+            java.util.Set<String> kinds,
+            java.util.Set<String> functions
+    ) {
+        switch (expression) {
+            case ColumnExpression ignored -> kinds.add("COLUMN");
+            case LiteralExpression ignored -> kinds.add("LITERAL");
+            case BinaryExpression binary -> {
+                kinds.add("BINARY");
+                collectExpressionSummary(binary.left(), kinds, functions);
+                collectExpressionSummary(binary.right(), kinds, functions);
+            }
+            case FunctionExpression function -> {
+                kinds.add("FUNCTION");
+                functions.add(function.function().name());
+                function.arguments().forEach(
+                        argument -> collectExpressionSummary(argument, kinds, functions)
+                );
+            }
+            case CaseWhenExpression caseWhen -> {
+                kinds.add("CASE_WHEN");
+                caseWhen.branches().forEach(
+                        branch -> collectExpressionSummary(branch.result(), kinds, functions)
+                );
+                if (caseWhen.elseExpression() != null) {
+                    collectExpressionSummary(caseWhen.elseExpression(), kinds, functions);
+                }
+            }
+        }
+    }
+
+    private record DeriveSummary(
+            int replaceCount,
+            java.util.Set<String> targets,
+            java.util.Set<String> expressionKinds,
+            java.util.Set<String> functions
+    ) {
     }
 
     private static void logNodeStart(
@@ -932,7 +1674,8 @@ final class CanvasTaskExecutor {
                 manifest.execution().executionId(), manifest.execution().runId(), manifest.execution().attempt(),
                 safeLogValue(node.id()), node.nodeType(), safeLogValue(node.name()), phase,
                 elapsedMillis(startedAt, Instant.now()), error.code(), error.category(), error.retryable(),
-                error.sqlState(), error.diagnosticId(), RunnerLogSanitizer.stackTrace(throwable));
+                error.sqlState(), error.diagnosticId(),
+                RunnerLogSanitizer.spatialSafeStackTrace(throwable));
     }
 
     private static void logTaskFailureDetail(
@@ -947,7 +1690,7 @@ final class CanvasTaskExecutor {
                 + " category=" + error.category()
                 + " phase=" + error.phase()
                 + " diagnosticId=" + error.diagnosticId();
-        LOGGER.error("{}\n{}", summary, RunnerLogSanitizer.stackTrace(throwable));
+        LOGGER.error("{}\n{}", summary, RunnerLogSanitizer.spatialSafeStackTrace(throwable));
     }
 
     private static String safeLogValue(String value) {
@@ -970,6 +1713,7 @@ final class CanvasTaskExecutor {
             String displayTarget,
             JdbcWriteMode writeMode,
             Dataset<Row> dataset,
+            CanvasPreparedOutput jdbcOutput,
             CanvasPreparedFileOutput fileOutput,
             Instant startedAt
     ) {

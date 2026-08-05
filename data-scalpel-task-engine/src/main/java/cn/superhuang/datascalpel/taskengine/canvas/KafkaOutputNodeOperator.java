@@ -18,6 +18,7 @@ import org.apache.spark.sql.Row;
 
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
     private final OutputColumnMappingOperator mappingOperator = new OutputColumnMappingOperator();
@@ -52,9 +53,11 @@ public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
         CanvasNodeSupport.required(configuration.sourceTableName(), "请选择来源流表",
                 "configuration.sourceTableName", issues);
         CanvasNodeSupport.required(configuration.topic(), "请输入 Kafka Topic", "configuration.topic", issues);
-        if (configuration.dataSourceId() == null) {
-            issues.error("REQUIRED_CONFIGURATION", "请选择 Kafka 数据源", "configuration.dataSourceId");
-        }
+        UUID dataSourceId = CanvasNodeSupport.parseUuid(
+                configuration.dataSourceId(),
+                "configuration.dataSourceId",
+                issues
+        );
         var valueColumns = KafkaValueSchemaSupport.columns(
                 configuration.valueSchema(), issues, "configuration.valueSchema");
         if (configuration.columnMappingMode() == null || configuration.columnMappings() == null) {
@@ -67,18 +70,18 @@ public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
             issues.error("KAFKA_OUTPUT_REQUIRES_UNBOUNDED", "Kafka Output 只能消费无界流",
                     "configuration.sourceTableName");
         }
-        MetadataIndex.DataSourceEntry dataSource = configuration.dataSourceId() == null
-                ? null : context.metadataIndex().dataSource(configuration.dataSourceId());
-        if (dataSource == null || !dataSource.metadata().enabled()
+        MetadataIndex.DataSourceEntry dataSource = dataSourceId == null
+                ? null : context.metadataIndex().dataSource(dataSourceId);
+        if (dataSourceId != null && (dataSource == null || !dataSource.metadata().enabled()
                 || dataSource.metadata().connectionKind() != ConnectionKind.KAFKA
-                || !dataSource.metadata().purposes().contains(DataSourcePurpose.DISTRIBUTION)) {
+                || !dataSource.metadata().purposes().contains(DataSourcePurpose.DISTRIBUTION))) {
             issues.error("DATA_SOURCE_UNAVAILABLE",
                     "Kafka 数据源不存在、未启用或不具有 DISTRIBUTION 用途", "configuration.dataSourceId");
         }
         if (source == null || issues.hasErrors()) return CanvasNodeOperationResult.outputOnly();
         CanvasTableSchema target = new CanvasTableSchema(
                 configuration.topic(),
-                CanvasTableOrigin.kafka(configuration.dataSourceId(), configuration.topic()),
+                CanvasTableOrigin.kafka(dataSourceId, configuration.topic()),
                 valueColumns
         );
         String keyColumn = configuration.keyColumnName();

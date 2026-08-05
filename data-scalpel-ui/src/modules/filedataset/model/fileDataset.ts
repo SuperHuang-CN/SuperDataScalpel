@@ -1,3 +1,5 @@
+import type { CrsReference, PlatformDataType, PlatformTypeDefinition } from '../../model';
+
 export type FileDatasetType = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'PARQUET' | 'AVRO' | 'EXCEL' | 'GDB' | 'SHP';
 
 export type FileDatasetFormat = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'XLS' | 'XLSX' | 'PARQUET' | 'AVRO' | 'GDB' | 'SHP';
@@ -22,8 +24,8 @@ export type FileDatasetParsingOptions =
   | { kind: 'SPREADSHEET'; headerRowIndex: number; dataStartRowIndex: number }
   | { kind: 'PARQUET' }
   | { kind: 'AVRO' }
-  | { kind: 'GDB' }
-  | { kind: 'SHP'; dbfCharsetOverride?: string; dbfFallbackCharset: string };
+  | { kind: 'GDB'; epsgCode?: number }
+  | { kind: 'SHP'; dbfCharsetOverride?: string; dbfFallbackCharset: string; epsgCode?: number };
 
 export interface FileDatasetField {
   name: string;
@@ -33,6 +35,7 @@ export interface FileDatasetField {
   precision: number | null;
   scale: number | null;
   nullable: boolean;
+  platformTypeDefinition: PlatformTypeDefinition;
 }
 
 export interface FileDatasetCanvasTableMetadata {
@@ -96,6 +99,7 @@ export interface FileDatasetTable {
   truncated: boolean;
   previewSupported: boolean;
   sourceMetadata: Record<string, unknown>;
+  spatialReferenceOverride: CrsReference | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -261,4 +265,3 @@ export const formatFileSize = (sizeBytes: number): string => {
   }
   return `${value >= 10 ? value.toFixed(1) : value.toFixed(2)} ${units[unitIndex]}`;
 };
-import type { PlatformDataType } from '../../model';

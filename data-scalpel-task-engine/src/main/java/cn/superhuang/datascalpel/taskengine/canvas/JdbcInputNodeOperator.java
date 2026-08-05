@@ -87,6 +87,14 @@ public final class JdbcInputNodeOperator implements CanvasNodeOperator {
                 CanvasTableOrigin.jdbc(dataSourceId, configuration.tableName()),
                 table.columns()
         );
+        CanvasNodeSupport.validateSupportedGeometry(
+                schema.columns(),
+                "configuration.tableName",
+                issues
+        );
+        if (issues.hasErrors()) {
+            return CanvasNodeOperationResult.invalid(List.of());
+        }
         Dataset<Row> dataset = context.dataAccess().readJdbcInput(node, schema);
         Map<String, SparkCanvasTable> output = Map.of(
                 schema.name(),

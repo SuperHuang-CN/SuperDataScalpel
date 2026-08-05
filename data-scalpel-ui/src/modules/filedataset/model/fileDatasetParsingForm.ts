@@ -12,6 +12,7 @@ export interface ParsingFormValues {
   dataStartRowIndex?: number;
   dbfCharsetOverride?: string;
   dbfFallbackCharset?: string;
+  epsgCode?: number;
 }
 
 export const parsingFormValues = (options: FileDatasetParsingOptions): ParsingFormValues => {
@@ -32,11 +33,12 @@ export const parsingFormValues = (options: FileDatasetParsingOptions): ParsingFo
       dataStartRowIndex: options.dataStartRowIndex,
     };
     case 'PARQUET':
-    case 'AVRO':
-    case 'GDB': return {};
+    case 'AVRO': return {};
+    case 'GDB': return { epsgCode: options.epsgCode };
     case 'SHP': return {
       dbfCharsetOverride: options.dbfCharsetOverride,
       dbfFallbackCharset: options.dbfFallbackCharset,
+      epsgCode: options.epsgCode,
     };
   }
 };
@@ -66,11 +68,12 @@ export const buildFileDatasetParsingOptions = (
     };
     case 'PARQUET': return { kind: 'PARQUET' };
     case 'AVRO': return { kind: 'AVRO' };
-    case 'GDB': return { kind: 'GDB' };
+    case 'GDB': return { kind: 'GDB', epsgCode: values.epsgCode };
     case 'SHP': return {
       kind: 'SHP',
       dbfCharsetOverride: values.dbfCharsetOverride || undefined,
       dbfFallbackCharset: values.dbfFallbackCharset as string,
+      epsgCode: values.epsgCode,
     };
   }
 };

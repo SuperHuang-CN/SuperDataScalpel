@@ -1,8 +1,10 @@
-import { ApiOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ApiOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Card, Form, Input, Popconfirm, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ServiceEngineDrawer } from './ServiceEngineDrawer';
 import { ServiceEngineDataSourceDrawer } from './ServiceEngineDataSourceDrawer';
 import { useDeleteServiceEngine, useServiceEngines, useTestServiceEngine } from '../hooks/useServiceEngines';
@@ -18,10 +20,6 @@ interface ServiceEngineManagementPanelProps {
   canTest: boolean;
   canViewDataSources: boolean;
 }
-
-const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
-  dateStyle: 'medium', timeStyle: 'medium', hour12: false,
-}).format(new Date(value));
 
 export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, canTest, canViewDataSources }: ServiceEngineManagementPanelProps) => {
   const [filterForm] = Form.useForm<ServiceEngineFilters>();
@@ -69,23 +67,37 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
       messageApi.error(error instanceof ApiError ? error.message : '删除 Service Engine 失败');
     }
   };
+  const confirmRemove = (engine: ServiceEngine) => Modal.confirm({
+    title: '删除 Service Engine',
+    content: `确认删除“${engine.name}”吗？`,
+    okText: '删除',
+    cancelText: '取消',
+    okButtonProps: { danger: true },
+    onOk: () => remove(engine),
+  });
 
   const columns: TableProps<ServiceEngine>['columns'] = [
-    { title: '名称', dataIndex: 'name', width: 190, ellipsis: true },
-    { title: '编码', dataIndex: 'code', width: 160, ellipsis: true, render: (value: string) => <code>{value}</code> },
-    { title: '管理地址', dataIndex: 'adminUrl', width: 275, ellipsis: true },
-    { title: '公共地址', dataIndex: 'publicUrl', width: 275, ellipsis: true },
-    { title: '使用状态', dataIndex: 'enabled', width: 100, render: (value: boolean) => <Tag color={value ? 'success' : 'default'}>{value ? '启用' : '停用'}</Tag> },
-    { title: '更新时间', dataIndex: 'updatedAt', width: 180, render: (value: string) => formatDateTime(value) },
+    { title: '引擎', dataIndex: 'name', width: 260, render: (value: string, engine) => <ManagementListCell icon={<ApiOutlined />} iconTone="cyan" primary={value} secondary={<><ManagementCode value={engine.code} /> {engine.description || ''}</>} /> },
+    { title: '访问地址', width: 390, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.adminUrl} title="管理地址" />} secondary={<ManagementCode value={engine.publicUrl} title="公共地址" />} /> },
+    { title: '状态 / 凭据', width: 170, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={engine.enabled ? '启用' : '停用'} tone={engine.enabled ? 'success' : 'default'} />} secondary={engine.managementTokenConfigured ? '管理 Token 已配置' : '未配置管理 Token'} /> },
+    { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
-      title: '操作', key: 'action', width: 156, fixed: 'right',
+      title: '操作', key: 'action', width: 112,
       render: (_: unknown, engine: ServiceEngine) => (
-        <Space size={2}>
-          <Tooltip title="管理数据源"><Button type="text" size="small" aria-label={`管理${engine.name}数据源`} icon={<DatabaseOutlined />} onClick={() => setDataSourceEngine(engine)} /></Tooltip>
-          {canUpdate && <Tooltip title="修改"><Button type="text" size="small" aria-label={`修改${engine.name}`} icon={<EditOutlined />} onClick={() => setEditingEngine(engine)} /></Tooltip>}
-          {canTest && <Tooltip title="测试连接"><Button type="text" size="small" aria-label={`测试${engine.name}`} icon={<ApiOutlined />} loading={testMutation.isPending && testMutation.variables?.id === engine.id} onClick={() => void test(engine)} /></Tooltip>}
-          {canDelete && <Popconfirm title="删除 Service Engine" description={`确认删除“${engine.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => remove(engine)}><Tooltip title="删除"><Button type="text" size="small" danger aria-label={`删除${engine.name}`} icon={<DeleteOutlined />} /></Tooltip></Popconfirm>}
-        </Space>
+        <div className="management-row-actions">
+          <div className="management-row-actions-shortcuts">
+            <Tooltip title="管理数据源"><Button type="text" size="small" aria-label={`管理${engine.name}数据源`} icon={<DatabaseOutlined />} onClick={() => setDataSourceEngine(engine)} /></Tooltip>
+            {canUpdate && <Tooltip title="修改"><Button type="text" size="small" aria-label={`修改${engine.name}`} icon={<EditOutlined />} onClick={() => setEditingEngine(engine)} /></Tooltip>}
+          </div>
+          <Dropdown trigger={['click']} menu={{ items: [
+            { key: 'datasources', label: '管理数据源', icon: <DatabaseOutlined /> },
+            ...(canUpdate ? [{ key: 'edit', label: '修改', icon: <EditOutlined /> }] : []),
+            ...(canTest ? [{ key: 'test', label: '测试连接', icon: <ApiOutlined /> }] : []),
+            ...(canDelete ? [{ type: 'divider' as const }, { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
+          ], onClick: ({ key }) => { if (key === 'datasources') setDataSourceEngine(engine); if (key === 'edit') setEditingEngine(engine); if (key === 'test') void test(engine); if (key === 'delete') confirmRemove(engine); } }}>
+            <Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" size="small" aria-label={`${engine.name}的更多操作`} icon={<MoreOutlined />} loading={testMutation.isPending && testMutation.variables?.id === engine.id} /></Tooltip>
+          </Dropdown>
+        </div>
       ),
     },
   ];
@@ -93,27 +105,31 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   return (
     <>
       {messageContext}
-      <Card className="management-card">
-        <div className="management-toolbar">
-          <Form<ServiceEngineFilters> form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
-            <Form.Item name="keyword" label="名称/编码"><Input allowClear placeholder="按名称或编码筛选" className="data-source-keyword-input" /></Form.Item>
-            <Form.Item name="enabled" label="使用状态"><Select allowClear placeholder="全部" className="data-source-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
+      <section className="management-workbench">
+        <div className="management-filter-strip">
+          <Form<ServiceEngineFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
+            <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索引擎名称或编码" className="data-source-keyword-input" /></Form.Item>
+            <Form.Item name="enabled"><Select allowClear placeholder="全部状态" className="data-source-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
           </Form>
-          <Space size={4} className="management-toolbar-actions">
-            <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-            <Button onClick={reset}>重置</Button>
-            <Button icon={<ReloadOutlined />} onClick={() => void enginesQuery.refetch()}>刷新</Button>
+          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={enginesQuery.isFetching} onReset={reset} />
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <div className="management-result-title">服务引擎 <span className="management-result-count">共 {enginesQuery.data?.totalElements ?? 0} 项</span></div>
+          <Space size={4} className="management-result-actions">
+            <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新服务引擎列表" onClick={() => void enginesQuery.refetch()} /></Tooltip>
             {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
           </Space>
-        </div>
-        <Table<ServiceEngine>
+          </div>
+          <Table<ServiceEngine>
           size="small" className="management-table" rowKey="id" columns={columns}
           dataSource={enginesQuery.data?.content ?? []} loading={enginesQuery.isFetching}
-          scroll={{ x: 1330, y: '100%' }}
+          scroll={{ y: '100%' }}
           pagination={{ current: page + 1, pageSize: size, total: enginesQuery.data?.totalElements ?? 0, size: 'small', position: ['bottomRight'], hideOnSinglePage: false, showSizeChanger: true, showTotal: (total) => `共 ${total} 项` }}
           onChange={(pagination) => { setPage((pagination.current ?? 1) - 1); setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE); }}
-        />
-      </Card>
+          />
+        </div>
+      </section>
       <ServiceEngineDrawer open={createDrawerOpen || Boolean(editingEngine)} engine={editingEngine} canTest={canTest} onClose={closeDrawer} />
       <ServiceEngineDataSourceDrawer open={Boolean(dataSourceEngine)} engine={dataSourceEngine} canUpdate={canUpdate} canTest={canTest} canViewDataSources={canViewDataSources} onClose={() => setDataSourceEngine(null)} />
     </>

@@ -1,6 +1,6 @@
 package cn.superhuang.data.scalpel.business.task.service;
 
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
@@ -30,7 +30,7 @@ public record CanvasTaskRunManifest(
         RuntimeFileStorage runtimeFileStorage,
         List<RuntimeFileInput> runtimeFileInputs
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 7;
+    public static final int CURRENT_MANIFEST_VERSION = 10;
 
     public CanvasTaskRunManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);
@@ -100,11 +100,13 @@ public record CanvasTaskRunManifest(
             HttpApiContracts.RuntimeConnection httpApiConnection,
             List<HttpApiContracts.ResourceDefinition> apiResources,
             RuntimeKafkaConnection kafkaConnection,
-            RuntimeS3Connection s3Connection
+            RuntimeS3Connection s3Connection,
+            List<SpatialServiceResourceDefinition> spatialResources
     ) {
         public RuntimeDataSource {
             purposes = Set.copyOf(purposes);
             apiResources = apiResources == null ? List.of() : List.copyOf(apiResources);
+            spatialResources = spatialResources == null ? List.of() : List.copyOf(spatialResources);
         }
 
         public RuntimeDataSource(
@@ -117,7 +119,7 @@ public record CanvasTaskRunManifest(
                 List<HttpApiContracts.ResourceDefinition> apiResources
         ) {
             this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                    httpApiConnection, apiResources, null, null);
+                    httpApiConnection, apiResources, null, null, List.of());
         }
 
         public RuntimeDataSource(
@@ -131,7 +133,22 @@ public record CanvasTaskRunManifest(
                 RuntimeKafkaConnection kafkaConnection
         ) {
             this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                    httpApiConnection, apiResources, kafkaConnection, null);
+                    httpApiConnection, apiResources, kafkaConnection, null, List.of());
+        }
+
+        public RuntimeDataSource(
+                UUID dataSourceId,
+                ConnectionKind connectionKind,
+                RuntimeDatabaseType databaseType,
+                Set<DataSourcePurpose> purposes,
+                RuntimeJdbcConnection connection,
+                HttpApiContracts.RuntimeConnection httpApiConnection,
+                List<HttpApiContracts.ResourceDefinition> apiResources,
+                RuntimeKafkaConnection kafkaConnection,
+                RuntimeS3Connection s3Connection
+        ) {
+            this(dataSourceId, connectionKind, databaseType, purposes, connection,
+                    httpApiConnection, apiResources, kafkaConnection, s3Connection, List.of());
         }
     }
 

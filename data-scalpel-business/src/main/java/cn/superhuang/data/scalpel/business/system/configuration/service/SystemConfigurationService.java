@@ -10,6 +10,7 @@ import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -30,7 +31,19 @@ public class SystemConfigurationService {
 
     @Transactional(readOnly = true)
     public PageResponse<SystemConfigurationResponse> search(SearchRequest request) {
-        Page<SystemConfiguration> result = searchEngine.search(request, SystemConfiguration.class, repository);
+        Specification<SystemConfiguration> publicConfigurations = (root, query, builder) ->
+                builder.not(root.get("configKey").in(
+                        java.util.Arrays.stream(SystemConfigurationDefinition.values())
+                                .filter(SystemConfigurationDefinition::isInternal)
+                                .map(SystemConfigurationDefinition::getConfigKey)
+                                .toList()
+                ));
+        Page<SystemConfiguration> result = searchEngine.search(
+                request,
+                SystemConfiguration.class,
+                repository,
+                publicConfigurations
+        );
         return new PageResponse<>(
                 result.getContent().stream().map(SystemConfigurationResponse::from).toList(),
                 result.getTotalElements(),
@@ -67,9 +80,15 @@ public class SystemConfigurationService {
         SystemConfiguration configuration = repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "系统配置不存在"));
         try {
-            String normalizedValue = SystemConfigurationDefinition.findByConfigKey(configuration.getConfigKey())
-                    .map(definition -> definition.normalizeValue(request.configValue()))
-                    .orElse(request.configValue());
+            SystemConfigurationDefinition definition = SystemConfigurationDefinition
+                    .findByConfigKey(configuration.getConfigKey())
+                    .orElse(null);
+            if (definition != null && definition.isInternal()) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "系统配置不存在");
+            }
+            String normalizedValue = definition == null
+                    ? request.configValue()
+                    : definition.normalizeValue(request.configValue());
             configuration.updateValue(normalizedValue);
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);

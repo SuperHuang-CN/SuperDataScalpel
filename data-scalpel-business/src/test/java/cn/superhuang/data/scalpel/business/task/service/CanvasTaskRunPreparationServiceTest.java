@@ -28,7 +28,7 @@ import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTableInspection;
 import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTablePort;
 import cn.superhuang.data.scalpel.business.model.service.PhysicalTableState;
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
@@ -64,6 +64,7 @@ import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.builtin.PostgreSqlDialect;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
+import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableSummary;
@@ -242,7 +243,7 @@ class CanvasTaskRunPreparationServiceTest {
     }
 
     @Test
-    void rejectsGeometryModelsBeforePhysicalInspectionOrCompilation() {
+    void carriesGeometryModelDefinitionIntoAuthoritativeSnapshot() {
         DataModelField geometryField = DataModelField.create(
                 model.getId(),
                 "shape",
@@ -264,12 +265,18 @@ class CanvasTaskRunPreparationServiceTest {
         setIdentity(geometryField, UUID.randomUUID());
         when(fieldRepository.findAllByModelIdInOrderByModelAndSort(any()))
                 .thenReturn(List.of(field, geometryField));
+        when(physicalTablePort.readExternalTable(dataSource, model)).thenReturn(geometryTable());
 
-        assertThatThrownBy(() -> service.prepare(definition()))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("SPATIAL_FIELD_UNSUPPORTED");
-        verify(physicalTablePort, never()).readExternalTable(eq(dataSource), eq(model));
-        verify(compilationService, never()).compile(any());
+        CanvasTaskRunPreparationService.Preparation preparation = service.prepare(definition());
+
+        assertThat(preparation.metadataSnapshot().models()).singleElement().satisfies(snapshot ->
+                assertThat(snapshot.columns()).filteredOn(column ->
+                        column.fieldType() == PlatformDataType.GEOMETRY)
+                        .singleElement()
+                        .satisfies(column -> assertThat(column.geometry())
+                                .isEqualTo(geometryField.getGeometry())));
+        verify(physicalTablePort).readExternalTable(dataSource, model);
+        verify(compilationService).compile(any());
     }
 
     @Test
@@ -296,15 +303,15 @@ class CanvasTaskRunPreparationServiceTest {
         CanvasDefinition definition = new CanvasDefinition(
                 CanvasDefinition.CURRENT_SCHEMA_VERSION,
                 CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
-                List.of(new CanvasDefinition.KafkaInputNodeDefinition(
+                List.of(new KafkaInputNodeDefinition(
                         UUID.randomUUID().toString(),
                         "事件输入",
-                        new CanvasDefinition.CanvasNodeLayout(0, 0, 240, 120),
-                        new CanvasDefinition.KafkaInputConfiguration(
+                        new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                        new KafkaInputConfiguration(
                                 kafka.getId().toString(),
                                 "order-events",
-                                new CanvasDefinition.KafkaValueSchema(List.of(
-                                        new CanvasDefinition.KafkaValueColumn(
+                                new KafkaValueSchema(List.of(
+                                        new KafkaValueColumn(
                                                 "event_id",
                                                 PlatformDataType.LONG,
                                                 null,
@@ -315,7 +322,7 @@ class CanvasTaskRunPreparationServiceTest {
                                         )
                                 )),
                                 "order_events",
-                                CanvasDefinition.KafkaStartingOffsets.LATEST
+                                KafkaStartingOffsets.LATEST
                         )
                 )),
                 List.of()
@@ -421,24 +428,24 @@ class CanvasTaskRunPreparationServiceTest {
                 1,
                 2,
                 List.of(
-                        new CanvasDefinition.ModelInputNodeDefinition(
+                        new ModelInputNodeDefinition(
                                 inputId,
                                 "订单模型输入",
-                                new CanvasDefinition.CanvasNodeLayout(0, 0, 240, 120),
-                                new CanvasDefinition.ModelInputConfiguration(model.getId().toString())
+                                new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                                new ModelInputConfiguration(model.getId().toString())
                         ),
-                        new CanvasDefinition.RenameNodeDefinition(
+                        new RenameNodeDefinition(
                                 renameId,
                                 "订单重命名",
-                                new CanvasDefinition.CanvasNodeLayout(320, 0, 240, 120),
-                                new CanvasDefinition.RenameConfiguration(
+                                new CanvasNodeLayout(320d, 0d, 240d, 120d),
+                                new RenameConfiguration(
                                         "orders_model",
                                         "source_orders",
-                                        List.of(new CanvasDefinition.RenameColumnMapping("id", "order_id"))
+                                        List.of(new RenameColumnMapping("id", "order_id"))
                                 )
                         )
                 ),
-                List.of(new CanvasDefinition.CanvasEdgeDefinition(
+                List.of(new CanvasEdgeDefinition(
                         UUID.randomUUID().toString(),
                         inputId,
                         renameId
@@ -571,11 +578,11 @@ class CanvasTaskRunPreparationServiceTest {
         return new CanvasDefinition(
                 CanvasDefinition.CURRENT_SCHEMA_VERSION,
                 CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
-                List.of(new CanvasDefinition.ModelInputNodeDefinition(
+                List.of(new ModelInputNodeDefinition(
                         UUID.randomUUID().toString(),
                         "订单模型输入",
-                        new CanvasDefinition.CanvasNodeLayout(0, 0, 240, 120),
-                        new CanvasDefinition.ModelInputConfiguration(model.getId().toString())
+                        new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                        new ModelInputConfiguration(model.getId().toString())
                 )),
                 List.of()
         );
@@ -585,16 +592,16 @@ class CanvasTaskRunPreparationServiceTest {
         return new CanvasDefinition(
                 CanvasDefinition.CURRENT_SCHEMA_VERSION,
                 CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
-                List.of(new CanvasDefinition.JdbcOutputNodeDefinition(
+                List.of(new JdbcOutputNodeDefinition(
                         UUID.randomUUID().toString(),
                         "订单 JDBC 输出",
-                        new CanvasDefinition.CanvasNodeLayout(0, 0, 240, 120),
-                        new CanvasDefinition.JdbcOutputConfiguration(
+                        new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                        new JdbcOutputConfiguration(
                                 "orders",
                                 dataSourceId.toString(),
                                 "dwd_orders",
-                                CanvasDefinition.JdbcWriteMode.APPEND,
-                                CanvasDefinition.ColumnMappingMode.BY_NAME,
+                                JdbcWriteMode.APPEND,
+                                ColumnMappingMode.BY_NAME,
                                 List.of()
                         )
                 )),
@@ -606,11 +613,11 @@ class CanvasTaskRunPreparationServiceTest {
         return new CanvasDefinition(
                 CanvasDefinition.CURRENT_SCHEMA_VERSION,
                 CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
-                List.of(new CanvasDefinition.FileDatasetInputNodeDefinition(
+                List.of(new FileDatasetInputNodeDefinition(
                         UUID.randomUUID().toString(),
                         "订单文件输入",
-                        new CanvasDefinition.CanvasNodeLayout(0, 0, 240, 120),
-                        new CanvasDefinition.FileDatasetInputConfiguration(tableId.toString())
+                        new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                        new FileDatasetInputConfiguration(tableId.toString())
                 )),
                 List.of()
         );
@@ -636,6 +643,37 @@ class CanvasTaskRunPreparationServiceTest {
                         "id", 1, jdbcType, nativeType, logicalType, length, null, null,
                         nullable, defaultValue, autoIncrement, false, "物理注释"
                 )),
+                null,
+                List.of()
+        );
+    }
+
+    private static TableMetadata geometryTable() {
+        return new TableMetadata(
+                new TableSummary(
+                        new TableIdentifier("warehouse", "public", "dwd_orders"),
+                        "TABLE",
+                        null
+                ),
+                List.of(
+                        new ColumnMetadata(
+                                "id", 1, java.sql.Types.BIGINT, "int8", LogicalType.INTEGER,
+                                null, null, null, false, null, false, false, "订单主键"
+                        ),
+                        new ColumnMetadata(
+                                "shape", 2, java.sql.Types.OTHER, "geometry", LogicalType.OTHER,
+                                null, null, null, true, null, false, false, "空间位置",
+                                new SpatialColumnMetadata(
+                                        "POINT",
+                                        4326,
+                                        "EPSG",
+                                        4326,
+                                        CoordinateDimension.XY,
+                                        true,
+                                        true
+                                )
+                        )
+                ),
                 null,
                 List.of()
         );

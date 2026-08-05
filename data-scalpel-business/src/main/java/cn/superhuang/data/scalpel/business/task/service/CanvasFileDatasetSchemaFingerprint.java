@@ -26,6 +26,10 @@ final class CanvasFileDatasetSchemaFingerprint {
                 update(digest, value(column.precision()));
                 update(digest, value(column.scale()));
                 update(digest, Boolean.toString(column.nullable()));
+                update(digest, column.geometry() == null ? "" : column.geometry().kind().name());
+                update(digest, column.geometry() == null ? "" : column.geometry().crs().authority());
+                update(digest, column.geometry() == null ? "" : Integer.toString(column.geometry().crs().code()));
+                update(digest, column.geometry() == null ? "" : column.geometry().dimension().name());
             }
             return HexFormat.of().formatHex(digest.digest());
         } catch (NoSuchAlgorithmException exception) {

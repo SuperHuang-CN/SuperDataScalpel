@@ -5,6 +5,7 @@ import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.ColumnDefault;
@@ -19,6 +20,10 @@ import java.util.UUID;
 @Entity
 @Table(
         name = "ds_data_model",
+        indexes = @Index(
+                name = "idx_ds_data_model_warehouse_layer",
+                columnList = "warehouse_layer_id"
+        ),
         uniqueConstraints = {
                 @UniqueConstraint(name = "uk_ds_data_model_code", columnNames = "code"),
                 @UniqueConstraint(
@@ -37,6 +42,9 @@ public class DataModel extends BaseEntity {
 
     @Column(name = "directory_id")
     private UUID directoryId;
+
+    @Column(name = "warehouse_layer_id")
+    private UUID warehouseLayerId;
 
     @Column(name = "storage_data_source_id", nullable = false)
     private UUID storageDataSourceId;
@@ -77,6 +85,7 @@ public class DataModel extends BaseEntity {
             String code,
             String name,
             UUID directoryId,
+            UUID warehouseLayerId,
             UUID storageDataSourceId,
             String catalogName,
             String schemaName,
@@ -88,7 +97,26 @@ public class DataModel extends BaseEntity {
         this.code = normalizeCode(code);
         this.status = DataModelStatus.DRAFT;
         update(
-                name, directoryId, storageDataSourceId, catalogName, schemaName, physicalTableName,
+                name, directoryId, warehouseLayerId, storageDataSourceId, catalogName, schemaName, physicalTableName,
+                physicalTableMode, clickHouseOrderByColumns, description
+        );
+    }
+
+    public static DataModel create(
+            String code,
+            String name,
+            UUID directoryId,
+            UUID warehouseLayerId,
+            UUID storageDataSourceId,
+            String catalogName,
+            String schemaName,
+            String physicalTableName,
+            PhysicalTableMode physicalTableMode,
+            List<String> clickHouseOrderByColumns,
+            String description
+    ) {
+        return new DataModel(
+                code, name, directoryId, warehouseLayerId, storageDataSourceId, catalogName, schemaName, physicalTableName,
                 physicalTableMode, clickHouseOrderByColumns, description
         );
     }
@@ -105,9 +133,27 @@ public class DataModel extends BaseEntity {
             List<String> clickHouseOrderByColumns,
             String description
     ) {
-        return new DataModel(
-                code, name, directoryId, storageDataSourceId, catalogName, schemaName, physicalTableName,
-                physicalTableMode, clickHouseOrderByColumns, description
+        return create(
+                code, name, directoryId, null, storageDataSourceId, catalogName, schemaName,
+                physicalTableName, physicalTableMode, clickHouseOrderByColumns, description
+        );
+    }
+
+    public static DataModel create(
+            String code,
+            String name,
+            UUID directoryId,
+            UUID warehouseLayerId,
+            UUID storageDataSourceId,
+            String catalogName,
+            String schemaName,
+            String physicalTableName,
+            PhysicalTableMode physicalTableMode,
+            String description
+    ) {
+        return create(
+                code, name, directoryId, warehouseLayerId, storageDataSourceId, catalogName, schemaName, physicalTableName,
+                physicalTableMode, List.of(), description
         );
     }
 
@@ -123,14 +169,15 @@ public class DataModel extends BaseEntity {
             String description
     ) {
         return create(
-                code, name, directoryId, storageDataSourceId, catalogName, schemaName, physicalTableName,
-                physicalTableMode, List.of(), description
+                code, name, directoryId, null, storageDataSourceId, catalogName, schemaName,
+                physicalTableName, physicalTableMode, List.of(), description
         );
     }
 
     public void update(
             String name,
             UUID directoryId,
+            UUID warehouseLayerId,
             UUID storageDataSourceId,
             String catalogName,
             String schemaName,
@@ -141,6 +188,7 @@ public class DataModel extends BaseEntity {
     ) {
         this.name = normalizeRequired(name);
         this.directoryId = directoryId;
+        this.warehouseLayerId = warehouseLayerId;
         this.storageDataSourceId = storageDataSourceId;
         this.catalogName = normalizeOptional(catalogName);
         this.schemaName = normalizeOptional(schemaName);
@@ -158,11 +206,45 @@ public class DataModel extends BaseEntity {
             String schemaName,
             String physicalTableName,
             PhysicalTableMode physicalTableMode,
+            List<String> clickHouseOrderByColumns,
             String description
     ) {
         update(
-                name, directoryId, storageDataSourceId, catalogName, schemaName, physicalTableName,
+                name, directoryId, warehouseLayerId, storageDataSourceId, catalogName, schemaName,
+                physicalTableName, physicalTableMode, clickHouseOrderByColumns, description
+        );
+    }
+
+    public void update(
+            String name,
+            UUID directoryId,
+            UUID warehouseLayerId,
+            UUID storageDataSourceId,
+            String catalogName,
+            String schemaName,
+            String physicalTableName,
+            PhysicalTableMode physicalTableMode,
+            String description
+    ) {
+        update(
+                name, directoryId, warehouseLayerId, storageDataSourceId, catalogName, schemaName, physicalTableName,
                 physicalTableMode, getClickHouseOrderByColumns(), description
+        );
+    }
+
+    public void update(
+            String name,
+            UUID directoryId,
+            UUID storageDataSourceId,
+            String catalogName,
+            String schemaName,
+            String physicalTableName,
+            PhysicalTableMode physicalTableMode,
+            String description
+    ) {
+        update(
+                name, directoryId, warehouseLayerId, storageDataSourceId, catalogName, schemaName,
+                physicalTableName, physicalTableMode, getClickHouseOrderByColumns(), description
         );
     }
 
@@ -191,6 +273,10 @@ public class DataModel extends BaseEntity {
 
     public UUID getDirectoryId() {
         return directoryId;
+    }
+
+    public UUID getWarehouseLayerId() {
+        return warehouseLayerId;
     }
 
     public UUID getStorageDataSourceId() {

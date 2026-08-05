@@ -7,13 +7,16 @@ import {
   deleteDataService,
   disableDataService,
   enableDataService,
+  executeScriptDraft,
   fetchDataServices,
   fetchDataService,
+  fetchScriptCompletion,
   publishDataService,
   reconcileDataServiceGateway,
   testSqlDataService,
   unpublishDataService,
   updateDataService,
+  type ExecuteScriptDraftRequest,
 } from '../api/dataServiceApi';
 import type {
   CreateDataServiceRequest,
@@ -99,6 +102,21 @@ export const useDisableDataService = () => {
 
 export const useTestSqlDataService = () => useMutation({
   mutationFn: (request: SqlServiceTestRequest) => testSqlDataService(request),
+});
+
+export const useExecuteScriptDraft = () => useMutation({
+  mutationFn: (request: ExecuteScriptDraftRequest) => executeScriptDraft(request),
+});
+
+export const useScriptCompletion = (
+  engineId: string | undefined,
+  dataSourceId: string | undefined,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataServicesQueryKey, 'script-completion', engineId, dataSourceId],
+  queryFn: () => fetchScriptCompletion(engineId as string, dataSourceId as string),
+  enabled: enabled && Boolean(engineId) && Boolean(dataSourceId),
+  staleTime: 5 * 60 * 1000,
 });
 
 export const useCleanupDataServiceDeployment = () => {

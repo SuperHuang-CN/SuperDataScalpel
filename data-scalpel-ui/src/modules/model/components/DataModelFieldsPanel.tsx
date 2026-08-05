@@ -1,4 +1,4 @@
-import { DeleteOutlined, EditOutlined, FileSearchOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { CopyOutlined, DeleteOutlined, EditOutlined, FileSearchOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import {
   Alert,
@@ -18,9 +18,20 @@ import {
   Tooltip,
   message,
 } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { useCurrentUser } from '../../system';
+import {
+  isStandardDictionaryTypeFamilyCompatible,
+  standardDictionaryValueTypeLabels,
+  useStandardDictionaries,
+  type StandardDictionarySummary,
+} from '../../standard';
 import { DataModelPhysicalChangeDrawer } from './DataModelPhysicalChangeDrawer';
+import {
+  ModelFieldTemplatePickerModal,
+  type ModelFieldTemplateCopyField,
+} from './ModelFieldTemplatePickerModal';
 import {
   useCreatePhysicalTableChangePlan,
   useDataModel,
@@ -46,10 +57,16 @@ import {
 interface DataModelFieldsPanelProps {
   model: DataModel;
   canUpdate: boolean;
+  onDirtyChange?: (dirty: boolean) => void;
+}
+
+export interface DataModelFieldsPanelHandle {
+  discardChanges: () => void;
 }
 
 interface EditableField extends DataModelFieldInput {
   rowKey: string;
+  standardDictionary?: StandardDictionarySummary | null;
 }
 
 interface FieldFilters {
@@ -62,8 +79,10 @@ interface FieldEditorModalProps {
   field: EditableField | null;
   nextSortOrder: number;
   structuralLocked: boolean;
+  geometryTypeDisabled: boolean;
   storageDataSourceId: string;
   onCancel: () => void;
+  onDirtyChange: (dirty: boolean) => void;
   onSave: (field: EditableField) => void;
 }
 
@@ -86,6 +105,10 @@ const toEditableFields = (fields: DataModelField[]): EditableField[] => (
     primaryKey: field.primaryKey,
     sortOrder: field.sortOrder,
     ...(field.description ? { description: field.description } : {}),
+    ...(field.standardDictionary ? {
+      standardDictionaryId: field.standardDictionary.id,
+      standardDictionary: field.standardDictionary,
+    } : {}),
     rowKey: field.id,
   }))
 );
@@ -103,6 +126,7 @@ const toFieldInput = (field: EditableField): DataModelFieldInput => ({
   primaryKey: field.primaryKey,
   sortOrder: field.sortOrder,
   ...(field.description ? { description: field.description } : {}),
+  ...(field.standardDictionaryId ? { standardDictionaryId: field.standardDictionaryId } : {}),
 });
 
 const fieldTypeDescription = (field: EditableField) => {
@@ -123,13 +147,22 @@ const FieldEditorModal = ({
   field,
   nextSortOrder,
   structuralLocked,
+  geometryTypeDisabled,
   storageDataSourceId,
   onCancel,
+  onDirtyChange,
   onSave,
 }: FieldEditorModalProps) => {
   const [form] = Form.useForm<DataModelFieldInput>();
   const selectedType = Form.useWatch('fieldType', form);
   const selectedPrimaryKey = Form.useWatch('primaryKey', form);
+  const selectedDictionaryId = Form.useWatch('standardDictionaryId', form);
+  const currentUser = useCurrentUser();
+  const canViewDictionaries = currentUser.data?.permissions.includes('standard.dictionary.view') ?? false;
+  const dictionariesQuery = useStandardDictionaries(
+    { page: 0, size: 500, sort: 'name,code' },
+    open && canViewDictionaries,
+  );
   const capabilitiesQuery = usePlatformTypeCapabilities(storageDataSourceId, open && !structuralLocked);
   const capabilities = useMemo(() => new Map(
     (capabilitiesQuery.data ?? []).map((capability) => [capability.type, capability]),
@@ -141,8 +174,11 @@ const FieldEditorModal = ({
     const capability = capabilities.get(option.value);
     return {
       ...option,
-      disabled: capability ? !capability.supported : false,
-      title: capability?.message ?? undefined,
+      disabled: (capability ? !capability.supported : false)
+        || (option.value === 'GEOMETRY' && geometryTypeDisabled),
+      title: option.value === 'GEOMETRY' && geometryTypeDisabled
+        ? 'ClickHouse 排序键字段不能改为空间类型'
+        : capability?.message ?? undefined,
     };
   });
   const geometryKindOptions = (
@@ -150,8 +186,28 @@ const FieldEditorModal = ({
       ? selectedCapability.geometryKinds
       : (Object.keys(geometryKindLabels) as GeometryKind[])
   ).map((value) => ({ value, label: geometryKindLabels[value] }));
+  const dictionaryOptions = useMemo(() => {
+    const dictionaries = [...(dictionariesQuery.data?.content ?? [])];
+    if (field?.standardDictionary
+      && !dictionaries.some((dictionary) => dictionary.id === field.standardDictionary?.id)) {
+      dictionaries.push({
+        ...field.standardDictionary,
+        description: null,
+        createdAt: '',
+        updatedAt: '',
+      });
+    }
+    return dictionaries.map((dictionary) => ({
+      value: dictionary.id,
+      label: `${dictionary.code} · ${dictionary.name}${dictionary.enabled ? '' : '（已停用）'}`,
+      disabled: !dictionary.enabled
+        || !isStandardDictionaryTypeFamilyCompatible(selectedType, dictionary.valueType),
+      title: `${standardDictionaryValueTypeLabels[dictionary.valueType]} · v${dictionary.version}`,
+    }));
+  }, [dictionariesQuery.data, field, selectedType]);
 
   useEffect(() => {
+    onDirtyChange(false);
     if (!open) return;
     form.resetFields();
     form.setFieldsValue(field ?? {
@@ -160,7 +216,7 @@ const FieldEditorModal = ({
       primaryKey: false,
       sortOrder: nextSortOrder,
     });
-  }, [field, form, nextSortOrder, open]);
+  }, [field, form, nextSortOrder, onDirtyChange, open]);
 
   useEffect(() => {
     if (open && selectedType === 'STRING' && selectedCapability?.lengthParameterSupported === false) {
@@ -188,15 +244,28 @@ const FieldEditorModal = ({
 
   const submit = async () => {
     const values = await form.validateFields();
+    const standardDictionary = values.standardDictionaryId
+      ? dictionariesQuery.data?.content.find(
+        (dictionary) => dictionary.id === values.standardDictionaryId,
+      ) ?? (
+        field?.standardDictionary?.id === values.standardDictionaryId
+          ? field.standardDictionary
+          : null
+      )
+      : null;
     if (structuralLocked && field) {
+      onDirtyChange(false);
       onSave({
         ...field,
         name: values.name.trim(),
         sortOrder: values.sortOrder,
         description: values.description?.trim() || undefined,
+        standardDictionaryId: values.standardDictionaryId,
+        standardDictionary,
       });
       return;
     }
+    onDirtyChange(false);
     onSave({
       ...(field?.id ? { id: field.id } : {}),
       code: values.code.trim(),
@@ -209,6 +278,8 @@ const FieldEditorModal = ({
       primaryKey: values.fieldType === 'GEOMETRY' ? false : values.primaryKey,
       sortOrder: values.sortOrder,
       ...(values.description?.trim() ? { description: values.description.trim() } : {}),
+      ...(values.standardDictionaryId ? { standardDictionaryId: values.standardDictionaryId } : {}),
+      standardDictionary,
       rowKey: field?.rowKey ?? newRowKey(),
     });
   };
@@ -224,7 +295,12 @@ const FieldEditorModal = ({
       okText="确定"
       cancelText="取消"
     >
-      <Form<DataModelFieldInput> form={form} layout="vertical">
+      <Form<DataModelFieldInput>
+        autoComplete="off"
+        form={form}
+        layout="vertical"
+        onValuesChange={() => onDirtyChange(true)}
+      >
         <Row gutter={12}>
           <Col span={12}>
             <Form.Item
@@ -308,6 +384,27 @@ const FieldEditorModal = ({
               <Switch disabled={structuralLocked || selectedPrimaryKey} />
             </Form.Item>
           </Col>
+          <Col span={24}>
+            <Form.Item
+              label="关联码表"
+              name="standardDictionaryId"
+              extra={!canViewDictionaries
+                ? '当前账号没有查看码表权限，已有绑定会保持不变。'
+                : selectedDictionaryId && dictionaryOptions.find((option) => option.value === selectedDictionaryId)?.disabled
+                  ? '当前码表已停用或与字段类型不兼容，请清空或更换后保存。'
+                  : '物理表仍保存码表编码；该绑定仅作为字段业务元数据。'}
+            >
+              <Select
+                allowClear
+                showSearch
+                optionFilterProp="label"
+                disabled={!canViewDictionaries}
+                loading={dictionariesQuery.isFetching}
+                options={dictionaryOptions}
+                placeholder="可选"
+              />
+            </Form.Item>
+          </Col>
           <Col span={8}>
             <Form.Item label="主键" name="primaryKey" valuePropName="checked">
               <Switch
@@ -332,16 +429,23 @@ const FieldEditorModal = ({
   );
 };
 
-export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelProps) => {
+export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataModelFieldsPanelProps>(({
+  model,
+  canUpdate,
+  onDirtyChange,
+}, ref) => {
   const [filterForm] = Form.useForm<FieldFilters>();
   const [filters, setFilters] = useState<FieldFilters>({});
   const [localFields, setLocalFields] = useState<EditableField[] | null>(null);
   const [editingField, setEditingField] = useState<EditableField | null>(null);
   const [editorOpen, setEditorOpen] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
+  const [templatePickerOpen, setTemplatePickerOpen] = useState(false);
   const [selectedChange, setSelectedChange] = useState<DataModelPhysicalChange | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
   const [messageApi, messageContext] = message.useMessage();
+  const [modalApi, modalContext] = Modal.useModal();
   const detailQuery = useDataModel(model.id, true);
   const updateMutation = useUpdateDataModelFields();
   const createPlanMutation = useCreatePhysicalTableChangePlan();
@@ -354,7 +458,16 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
     detailModel.physicalTableMode === 'MANAGED' && serverFields.length > 0,
   );
   const fields = localFields ?? serverFields;
-  const dirty = localFields !== null;
+  const serverFieldsFingerprint = useMemo(
+    () => JSON.stringify(serverFields.map(toFieldInput)),
+    [serverFields],
+  );
+  const currentFieldsFingerprint = useMemo(
+    () => JSON.stringify(fields.map(toFieldInput)),
+    [fields],
+  );
+  const dirty = localFields !== null && currentFieldsFingerprint !== serverFieldsFingerprint;
+  const hasUnsavedChanges = dirty || editorDirty;
   const metadataOnlyChange = dirty && isMetadataOnlyFieldUpdate(serverFields, fields);
   const physicalTableState = inspectionQuery.data?.state;
   const geometryModel = serverFields.some((field) => field.fieldType === 'GEOMETRY');
@@ -373,6 +486,41 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
     && Boolean(inspectionQuery.data)
     && !directSaveAllowed
     && !requiresPhysicalChangePlan;
+
+  const discardChanges = useCallback(() => {
+    setLocalFields(null);
+    setEditorDirty(false);
+    setEditorOpen(false);
+    setEditingField(null);
+    setTemplatePickerOpen(false);
+  }, []);
+
+  const cancelFieldEditor = () => {
+    if (!editorDirty) {
+      setEditorOpen(false);
+      setEditingField(null);
+      return;
+    }
+    modalApi.confirm({
+      title: '放弃当前字段修改？',
+      content: '字段编辑弹窗中的修改尚未应用，关闭后会丢失。',
+      okText: '放弃修改',
+      okButtonProps: { danger: true },
+      cancelText: '继续编辑',
+      onOk: () => {
+        setEditorDirty(false);
+        setEditorOpen(false);
+        setEditingField(null);
+      },
+    });
+  };
+
+  useImperativeHandle(ref, () => ({ discardChanges }), [discardChanges]);
+
+  useEffect(() => {
+    onDirtyChange?.(hasUnsavedChanges);
+    return () => onDirtyChange?.(false);
+  }, [hasUnsavedChanges, onDirtyChange]);
 
   const visibleFields = useMemo(() => {
     const keyword = filters.keyword?.trim().toLowerCase();
@@ -398,6 +546,44 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
     setEditingField(null);
   };
 
+  const addTemplateFields = (
+    copiedFields: ModelFieldTemplateCopyField[],
+    skippedIssues: string[],
+  ) => {
+    setLocalFields((current) => {
+      const source = current ?? serverFields;
+      let sortOrder = source.length ? Math.max(...source.map((field) => field.sortOrder)) : 0;
+      const appended = copiedFields.map((field): EditableField => {
+        sortOrder += 10;
+        return {
+          code: field.code,
+          name: field.name,
+          fieldType: field.fieldType,
+          ...(field.length !== undefined ? { length: field.length } : {}),
+          ...(field.precision !== undefined ? { precision: field.precision } : {}),
+          ...(field.scale !== undefined ? { scale: field.scale } : {}),
+          ...(field.geometry ? { geometry: field.geometry } : {}),
+          nullable: field.nullable,
+          primaryKey: field.primaryKey,
+          sortOrder,
+          ...(field.description ? { description: field.description } : {}),
+          ...(field.standardDictionary ? {
+            standardDictionaryId: field.standardDictionary.id,
+            standardDictionary: field.standardDictionary,
+          } : {}),
+          rowKey: newRowKey(),
+        };
+      });
+      return [...source, ...appended];
+    });
+    setTemplatePickerOpen(false);
+    if (skippedIssues.length > 0) {
+      messageApi.warning(`已添加 ${copiedFields.length} 个字段，另有 ${skippedIssues.length} 项未原样带入`);
+    } else {
+      messageApi.success(`已从模板添加 ${copiedFields.length} 个字段，请检查后保存`);
+    }
+  };
+
   const saveAll = async () => {
     try {
       const detail = await updateMutation.mutateAsync({
@@ -409,6 +595,24 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '保存模型字段失败');
     }
+  };
+
+  const refreshFields = () => {
+    if (!hasUnsavedChanges) {
+      void detailQuery.refetch();
+      return;
+    }
+    modalApi.confirm({
+      title: '放弃未保存的字段修改？',
+      content: '刷新后将重新加载最后保存的字段定义，当前修改会丢失。',
+      okText: '放弃修改并刷新',
+      okButtonProps: { danger: true },
+      cancelText: '继续编辑',
+      onOk: () => {
+        discardChanges();
+        void detailQuery.refetch();
+      },
+    });
   };
 
   const createPlan = async () => {
@@ -431,6 +635,21 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
     { title: '主键', dataIndex: 'primaryKey', width: 72, render: (value: boolean) => value ? <Tag color="blue">是</Tag> : '—' },
     { title: '允许为空', dataIndex: 'nullable', width: 90, render: (value: boolean) => value ? '是' : '否' },
     { title: '排序', dataIndex: 'sortOrder', width: 72 },
+    {
+      title: '关联码表',
+      key: 'standardDictionary',
+      width: 200,
+      ellipsis: true,
+      render: (_value, field) => field.standardDictionary
+        ? (
+          <Tooltip title={`${standardDictionaryValueTypeLabels[field.standardDictionary.valueType]} · v${field.standardDictionary.version}`}>
+            <Tag color={field.standardDictionary.enabled ? 'blue' : 'default'}>
+              {field.standardDictionary.code} · {field.standardDictionary.name}
+            </Tag>
+          </Tooltip>
+        )
+        : '—',
+    },
     { title: '说明', dataIndex: 'description', width: 260, ellipsis: true, render: (value?: string) => value || '—' },
     ...(!readOnly ? [{
       title: '操作',
@@ -470,6 +689,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
   return (
     <div className="model-detail-tab-panel model-fields-panel">
       {messageContext}
+      {modalContext}
       {readOnly && (
         <Alert
           banner
@@ -491,7 +711,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
           banner
           type="info"
           showIcon
-          title="外部表字段结构由数据库维护；此处仅可修改字段名称、说明和展示排序。"
+          title="外部表字段结构由数据库维护；此处仅可修改字段名称、说明、展示排序和关联码表。"
         />
       )}
       {!readOnly && geometryPhysicalLocked && (
@@ -499,7 +719,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
           banner
           type="info"
           showIcon
-          title="包含空间字段的受管物理表已创建；第一版仅可修改字段名称、说明和展示排序，不支持物理结构变更。"
+          title="包含空间字段的受管物理表已创建；第一版仅可修改字段名称、说明、展示排序和关联码表，不支持物理结构变更。"
         />
       )}
       {detailQuery.error && (
@@ -517,7 +737,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         <Alert
           showIcon
           type="error"
-          title="无法确认受管物理表状态，当前只能保存字段名称、说明和展示排序。"
+          title="无法确认受管物理表状态，当前只能保存字段名称、说明、展示排序和关联码表。"
           description={inspectionQuery.error instanceof Error ? inspectionQuery.error.message : '请检查数据存储连接后重试；物理结构修改暂不可用。'}
           action={<Button size="small" onClick={() => void inspectionQuery.refetch()}>重试</Button>}
         />
@@ -526,7 +746,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         <Alert
           showIcon
           type="info"
-          title="物理表结构已匹配：字段名称、说明和展示排序可直接保存；物理结构修改需生成并执行变更计划。"
+          title="物理表结构已匹配：字段名称、说明、展示排序和关联码表可直接保存；物理结构修改需生成并执行变更计划。"
         />
       )}
       {!readOnly && physicalChangeBlocked && (
@@ -534,11 +754,11 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
           showIcon
           type="warning"
           title="受管物理表未处于可规划状态，物理结构修改暂不可用。"
-          description="字段名称、说明和展示排序仍可直接保存；请先修复物理表状态，再调整字段结构。"
+          description="字段名称、说明、展示排序和关联码表仍可直接保存；请先修复物理表状态，再调整字段结构。"
         />
       )}
       <div className="model-tab-toolbar">
-        <Form<FieldFilters>
+        <Form<FieldFilters> autoComplete="off"
           form={filterForm}
           layout="inline"
           initialValues={filters}
@@ -552,9 +772,10 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
           </Form.Item>
         </Form>
         <Space size={4}>
+          {hasUnsavedChanges && <Tag color="processing">有未保存修改</Tag>}
           <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
           <Button onClick={() => { filterForm.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
-          <Button icon={<ReloadOutlined />} onClick={() => { setLocalFields(null); void detailQuery.refetch(); }}>刷新</Button>
+          <Button icon={<ReloadOutlined />} onClick={refreshFields}>刷新</Button>
           {!readOnly && directSaveAllowed && (
             <Button icon={<SaveOutlined />} disabled={!dirty} loading={updateMutation.isPending} onClick={() => void saveAll()}>
               保存字段
@@ -563,6 +784,11 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
           {!readOnly && requiresPhysicalChangePlan && !metadataOnlyChange && (
             <Button type="primary" icon={<FileSearchOutlined />} disabled={!dirty} loading={createPlanMutation.isPending} onClick={() => void createPlan()}>
               生成变更计划
+            </Button>
+          )}
+          {!readOnly && !externalModel && !geometryPhysicalLocked && (
+            <Button icon={<CopyOutlined />} onClick={() => setTemplatePickerOpen(true)}>
+              从模板添加
             </Button>
           )}
           {!readOnly && !externalModel && !geometryPhysicalLocked && (
@@ -579,7 +805,7 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         columns={columns}
         dataSource={visibleFields}
         loading={detailQuery.isFetching}
-        scroll={{ x: 1050, y: '100%' }}
+        scroll={{ x: 1240, y: '100%' }}
         pagination={{
           current: effectivePage,
           pageSize,
@@ -599,8 +825,12 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         field={editingField}
         nextSortOrder={nextSortOrder}
         structuralLocked={externalModel || geometryPhysicalLocked}
+        geometryTypeDisabled={Boolean(
+          editingField && detailModel.clickHouseOrderByColumns.includes(editingField.code),
+        )}
         storageDataSourceId={detailModel.storageDataSourceId}
-        onCancel={() => { setEditorOpen(false); setEditingField(null); }}
+        onCancel={cancelFieldEditor}
+        onDirtyChange={setEditorDirty}
         onSave={saveField}
       />
       <DataModelPhysicalChangeDrawer
@@ -610,6 +840,17 @@ export const DataModelFieldsPanel = ({ model, canUpdate }: DataModelFieldsPanelP
         canUpdate={canUpdate}
         onClose={() => setSelectedChange(null)}
       />
+      {templatePickerOpen && (
+        <ModelFieldTemplatePickerModal
+          open
+          storageDataSourceId={detailModel.storageDataSourceId}
+          existingFieldCodes={fields.map((field) => field.code)}
+          onCancel={() => setTemplatePickerOpen(false)}
+          onApply={addTemplateFields}
+        />
+      )}
     </div>
   );
-};
+});
+
+DataModelFieldsPanel.displayName = 'DataModelFieldsPanel';

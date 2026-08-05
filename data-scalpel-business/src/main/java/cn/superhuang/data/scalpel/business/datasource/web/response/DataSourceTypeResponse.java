@@ -52,6 +52,21 @@ public record DataSourceTypeResponse(
         );
     }
 
+    public static DataSourceTypeResponse arcgisRest() {
+        return httpBacked(DataSourceType.ARCGIS_REST);
+    }
+
+    public static DataSourceTypeResponse wfs() {
+        return httpBacked(DataSourceType.WFS);
+    }
+
+    private static DataSourceTypeResponse httpBacked(DataSourceType type) {
+        return new DataSourceTypeResponse(
+                type.name(), type.displayName(), type.connectionKind().name(), purposes(type),
+                true, true, null, null, null, null, null, Set.of(), List.of(), true
+        );
+    }
+
     private static DataSourceTypeResponse nonJdbc(DataSourceType type) {
         return new DataSourceTypeResponse(
                 type.name(), type.displayName(), type.connectionKind().name(), purposes(type),

@@ -10,14 +10,22 @@ import type {
 
 export interface TaskCompilationMetadataTable {
   tableName: string;
-  objectType: 'TABLE' | 'VIEW' | 'API_RESOURCE';
+  objectType: 'TABLE' | 'VIEW' | 'API_RESOURCE' | 'SPATIAL_FEATURE_RESOURCE';
   columns: CanvasColumnSchema[];
+  uniqueKeys: TaskCompilationMetadataUniqueKey[];
+}
+
+export interface TaskCompilationMetadataUniqueKey {
+  name: string | null;
+  type: 'PRIMARY_KEY' | 'UNIQUE_INDEX';
+  columns: string[];
 }
 
 export interface TaskCompilationMetadataDataSource {
   id: string;
   enabled: boolean;
   connectionKind: 'JDBC' | 'HTTP_API' | 'KAFKA' | 'S3';
+  jdbcDatabaseType: 'POSTGRESQL' | 'MYSQL' | null;
   purposes: DataSourcePurpose[];
   tables: TaskCompilationMetadataTable[];
 }

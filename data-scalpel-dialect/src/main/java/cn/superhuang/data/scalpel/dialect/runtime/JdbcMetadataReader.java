@@ -244,6 +244,8 @@ final class JdbcMetadataReader {
             private final String name;
             private final boolean unique;
             private final Map<Short, String> columns = new java.util.TreeMap<>();
+            private boolean expression;
+            private boolean filtered;
 
             private IndexBuilder(String name, boolean unique) {
                 this.name = name;
@@ -259,18 +261,28 @@ final class JdbcMetadataReader {
                 }
                 String name = resultSet.getString("INDEX_NAME");
                 String column = resultSet.getString("COLUMN_NAME");
-                if (name == null || column == null) {
+                if (name == null) {
                     continue;
                 }
                 IndexBuilder builder = indexes.computeIfAbsent(
                         name,
                         ignored -> new IndexBuilder(name, !resultSetBoolean(resultSet, "NON_UNIQUE"))
                 );
-                builder.columns.put(resultSet.getShort("ORDINAL_POSITION"), column);
+                if (column == null) {
+                    builder.expression = true;
+                } else {
+                    builder.columns.put(resultSet.getShort("ORDINAL_POSITION"), column);
+                }
+                builder.filtered |= readOptional(resultSet, "FILTER_CONDITION") != null;
             }
         }
         return indexes.values().stream()
-                .map(index -> new IndexMetadata(index.name, index.unique, List.copyOf(index.columns.values())))
+                .map(index -> new IndexMetadata(
+                        index.name,
+                        index.unique,
+                        List.copyOf(index.columns.values()),
+                        index.unique && !index.expression && !index.filtered && !index.columns.isEmpty()
+                ))
                 .sorted(Comparator.comparing(IndexMetadata::name, String.CASE_INSENSITIVE_ORDER))
                 .toList();
     }

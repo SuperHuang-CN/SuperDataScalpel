@@ -15,6 +15,7 @@ import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
+import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
@@ -78,6 +79,51 @@ public final class MySqlDialect extends AbstractJdbcDialect {
     @Override
     public String resolveSchema(JdbcConnectionConfig config, String requestedSchema) {
         return null;
+    }
+
+    @Override
+    public String readOnlySessionInitializationSql() {
+        return "SET SESSION TRANSACTION READ ONLY";
+    }
+
+    @Override
+    public String renderRowUpsert(
+            TableIdentifier target,
+            List<JdbcUpsertColumn> columns,
+            List<String> keyColumns
+    ) {
+        validateUpsert(columns, keyColumns);
+        String names = columns.stream().map(column -> quoteIdentifier(column.name()))
+                .collect(java.util.stream.Collectors.joining(", "));
+        String values = columns.stream().map(MySqlDialect::upsertValue)
+                .collect(java.util.stream.Collectors.joining(", "));
+        Set<String> keySet = Set.copyOf(keyColumns);
+        List<JdbcUpsertColumn> updates = columns.stream()
+                .filter(column -> !keySet.contains(column.name())).toList();
+        String update = updates.isEmpty()
+                ? quoteIdentifier(keyColumns.getFirst()) + " = " + quoteIdentifier(keyColumns.getFirst())
+                : updates.stream()
+                .map(column -> quoteIdentifier(column.name()) + " = VALUES(" + quoteIdentifier(column.name()) + ")")
+                .collect(java.util.stream.Collectors.joining(", "));
+        return "INSERT INTO " + qualifiedName(target) + " (" + names + ") VALUES (" + values
+                + ") ON DUPLICATE KEY UPDATE " + update;
+    }
+
+    private static String upsertValue(JdbcUpsertColumn column) {
+        return column.geometrySpatialReferenceId() == null
+                ? "?"
+                : "ST_GeomFromWKB(?, " + column.geometrySpatialReferenceId() + ")";
+    }
+
+    private static void validateUpsert(List<JdbcUpsertColumn> columns, List<String> keyColumns) {
+        if (columns == null || columns.isEmpty() || keyColumns == null || keyColumns.isEmpty()) {
+            throw new IllegalArgumentException("UPSERT columns and key columns are required");
+        }
+        Set<String> names = columns.stream().map(JdbcUpsertColumn::name)
+                .collect(java.util.stream.Collectors.toUnmodifiableSet());
+        if (!names.containsAll(keyColumns)) {
+            throw new IllegalArgumentException("UPSERT key columns must be inserted");
+        }
     }
 
     private static ConnectionOptionDefinition booleanOption(String key, String label, String defaultValue) {

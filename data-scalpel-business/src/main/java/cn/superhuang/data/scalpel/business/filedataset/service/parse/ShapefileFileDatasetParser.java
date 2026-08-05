@@ -3,6 +3,10 @@ package cn.superhuang.data.scalpel.business.filedataset.service.parse;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFormat;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.shapefile.ShapefileDataset;
 import cn.superhuang.data.scalpel.shapefile.ShapefileErrorCode;
@@ -65,13 +69,14 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
             FileDatasetParsingConfiguration configuration,
             int recordLimit
     ) {
-        if (!(configuration instanceof FileDatasetParsingConfiguration.Shp)) {
+        if (!(configuration instanceof FileDatasetParsingConfiguration.Shp shpConfiguration)) {
             throw new FileDatasetParsingException("SHP 解析参数类型不匹配");
         }
         ShapefileDataset dataset = FileDatasetParseSource.requireShapefile(source);
         ShapefileSchema schema = dataset.schema();
         String geometryField = geometryField(schema.fields());
-        List<Field> fields = fields(schema, geometryField);
+        CrsReference crs = requireCrs(schema, shpConfiguration.epsgCode());
+        List<Field> fields = fields(schema, geometryField, crs);
         List<Map<String, Object>> rows = new ArrayList<>();
         boolean truncated = false;
         long sampledGeometryPointCount = 0;
@@ -86,7 +91,7 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
                     }
                     long featurePointCount = geometryPointCount(feature.geometry());
                     if (featurePointCount > maxPreviewTotalGeometryPoints - sampledGeometryPointCount) {
-                        return schemaOnlyResult(schema, geometryField, fields);
+                        return schemaOnlyResult(schema, geometryField, fields, crs);
                     }
                     sampledGeometryPointCount += featurePointCount;
                     rows.add(row(schema, feature, geometryField));
@@ -94,11 +99,11 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
             }
         } catch (ShapefileException exception) {
             if (exception.errorCode() == ShapefileErrorCode.LIMIT_EXCEEDED) {
-                return schemaOnlyResult(schema, geometryField, fields);
+                return schemaOnlyResult(schema, geometryField, fields, crs);
             }
             throw exception;
         }
-        Map<String, Object> metadata = sourceMetadata(schema, geometryField, true);
+        Map<String, Object> metadata = sourceMetadata(schema, geometryField, true, crs);
         metadata.put("sampledGeometryPointCount", sampledGeometryPointCount);
         return new ParseResult(fields, rows, truncated, true, metadata);
     }
@@ -109,13 +114,14 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
             FileDatasetParsingConfiguration configuration,
             int previewLimit
     ) {
-        if (!(configuration instanceof FileDatasetParsingConfiguration.Shp)) {
+        if (!(configuration instanceof FileDatasetParsingConfiguration.Shp shpConfiguration)) {
             throw new FileDatasetParsingException("SHP 解析参数类型不匹配");
         }
         ShapefileDataset dataset = FileDatasetParseSource.requireShapefile(source);
         ShapefileSchema schema = dataset.schema();
         String geometryField = geometryField(schema.fields());
-        List<Field> fields = fields(schema, geometryField);
+        CrsReference crs = requireCrs(schema, shpConfiguration.epsgCode());
+        List<Field> fields = fields(schema, geometryField, crs);
         List<Map<String, Object>> rows = new ArrayList<>();
         long scanned = 0;
         long previewGeometryPoints = 0;
@@ -143,7 +149,7 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
                 }
             }
         }
-        Map<String, Object> metadata = sourceMetadata(schema, geometryField, previewSupported);
+        Map<String, Object> metadata = sourceMetadata(schema, geometryField, previewSupported, crs);
         metadata.put("shapeHasZ", schema.shapeType().hasZ());
         metadata.put("shapeHasM", schema.shapeType().hasM());
         metadata.put("sampledGeometryPointCount", previewGeometryPoints);
@@ -159,22 +165,34 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
     private ParseResult schemaOnlyResult(
             ShapefileSchema schema,
             String geometryField,
-            List<Field> fields
+            List<Field> fields,
+            CrsReference crs
     ) {
-        Map<String, Object> metadata = sourceMetadata(schema, geometryField, false);
+        Map<String, Object> metadata = sourceMetadata(schema, geometryField, false, crs);
         metadata.put("previewUnavailableReason", PREVIEW_LIMIT_REASON);
         metadata.put("maxPreviewTotalGeometryPoints", maxPreviewTotalGeometryPoints);
         return new ParseResult(fields, List.of(), false, false, metadata);
     }
 
-    private static List<Field> fields(ShapefileSchema schema, String geometryField) {
+    private static List<Field> fields(
+            ShapefileSchema schema,
+            String geometryField,
+            CrsReference crs
+    ) {
         List<Field> result = new ArrayList<>(schema.fields().size() + 1);
         for (ShapefileField field : schema.fields()) {
             result.add(new Field(
                     field.name(), field.sortOrder(), typeDefinition(field), field.nullable()
             ));
         }
-        result.add(new Field(geometryField, result.size(), PlatformTypeDefinition.string(null), true));
+        result.add(new Field(
+                geometryField,
+                result.size(),
+                PlatformTypeDefinition.geometry(new GeometryTypeDefinition(
+                        geometryKind(schema), crs, coordinateDimension(schema)
+                )),
+                true
+        ));
         return List.copyOf(result);
     }
 
@@ -225,7 +243,8 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
     private static Map<String, Object> sourceMetadata(
             ShapefileSchema schema,
             String geometryField,
-            boolean previewSupported
+            boolean previewSupported,
+            CrsReference crs
     ) {
         LinkedHashMap<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("shapeType", schema.shapeType().name());
@@ -237,6 +256,10 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
         metadata.put("geometryField", geometryField);
         metadata.put("previewSupported", previewSupported);
         metadata.put("extent", envelope(schema.envelope()));
+        metadata.put("crsAuthority", crs.authority());
+        metadata.put("crsCode", crs.code());
+        metadata.put("coordinateDimension", coordinateDimension(schema).name());
+        metadata.put("geometryKind", geometryKind(schema).name());
         if (schema.spatialReference() != null) {
             metadata.put("spatialReference", Map.of(
                     "wkt", schema.spatialReference().wkt(),
@@ -244,6 +267,38 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
             ));
         }
         return metadata;
+    }
+
+    private static CrsReference requireCrs(ShapefileSchema schema, Integer configuredEpsgCode) {
+        String wkt = schema.spatialReference() == null ? null : schema.spatialReference().wkt();
+        return FileDatasetCrsResolver.requireEpsg(wkt, configuredEpsgCode, "SHP 空间参考");
+    }
+
+    private static GeometryKind geometryKind(ShapefileSchema schema) {
+        String shapeType = schema.shapeType().name();
+        if (shapeType.startsWith("POINT") && !shapeType.startsWith("MULTIPOINT")) {
+            return GeometryKind.POINT;
+        }
+        if (shapeType.startsWith("MULTIPOINT")) {
+            return GeometryKind.MULTIPOINT;
+        }
+        if (shapeType.startsWith("POLYLINE")) {
+            return GeometryKind.MULTILINESTRING;
+        }
+        if (shapeType.startsWith("POLYGON")) {
+            return GeometryKind.MULTIPOLYGON;
+        }
+        return GeometryKind.GEOMETRY;
+    }
+
+    private static CoordinateDimension coordinateDimension(ShapefileSchema schema) {
+        if (schema.shapeType().hasZ() && schema.shapeType().hasM()) {
+            return CoordinateDimension.XYZM;
+        }
+        if (schema.shapeType().hasZ()) {
+            return CoordinateDimension.XYZ;
+        }
+        return schema.shapeType().hasM() ? CoordinateDimension.XYM : CoordinateDimension.XY;
     }
 
     private static String normalizeWkt(String wkt) {

@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
+import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
 import cn.superhuang.data.scalpel.dialect.model.PrimaryKeyMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
@@ -151,6 +152,43 @@ class BuiltInDialectsTest {
                 registry.require("MYSQL").planCreateTable(definition).statements().getFirst()
         );
         assertThrows(UnsupportedOperationException.class, () -> registry.require("ORACLE").planCreateTable(definition));
+    }
+
+    @Test
+    void rendersControlledPostgresAndMySqlRowUpsertSql() {
+        TableIdentifier table = new TableIdentifier("warehouse", "public", "order_fact");
+        var columns = java.util.List.of(
+                new JdbcUpsertColumn("tenant_id", null),
+                new JdbcUpsertColumn("order_no", null),
+                new JdbcUpsertColumn("amount", null)
+        );
+        var keys = java.util.List.of("tenant_id", "order_no");
+
+        assertEquals(
+                "INSERT INTO \"public\".\"order_fact\" (\"tenant_id\", \"order_no\", \"amount\") "
+                        + "VALUES (?, ?, ?) ON CONFLICT (\"tenant_id\", \"order_no\") "
+                        + "DO UPDATE SET \"amount\" = EXCLUDED.\"amount\"",
+                registry.require("POSTGRESQL").renderRowUpsert(table, columns, keys)
+        );
+        assertEquals(
+                "INSERT INTO `warehouse`.`order_fact` (`tenant_id`, `order_no`, `amount`) "
+                        + "VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `amount` = VALUES(`amount`)",
+                registry.require("MYSQL").renderRowUpsert(table, columns, keys)
+        );
+        assertEquals(
+                "INSERT INTO \"public\".\"order_fact\" (\"tenant_id\", \"order_no\") "
+                        + "VALUES (?, ?) ON CONFLICT (\"tenant_id\", \"order_no\") DO NOTHING",
+                registry.require("POSTGRESQL").renderRowUpsert(table, columns.subList(0, 2), keys)
+        );
+        assertEquals(
+                "INSERT INTO `warehouse`.`order_fact` (`tenant_id`, `order_no`) VALUES (?, ?) "
+                        + "ON DUPLICATE KEY UPDATE `tenant_id` = `tenant_id`",
+                registry.require("MYSQL").renderRowUpsert(table, columns.subList(0, 2), keys)
+        );
+        assertThrows(
+                UnsupportedOperationException.class,
+                () -> registry.require("ORACLE").renderRowUpsert(table, columns, keys)
+        );
     }
 
     @Test

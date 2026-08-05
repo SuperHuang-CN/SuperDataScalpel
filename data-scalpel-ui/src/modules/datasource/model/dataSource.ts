@@ -1,4 +1,7 @@
-import type { PlatformDataType } from '../../model';
+import type {
+  PlatformDataType,
+  PlatformTypeDefinition as StablePlatformTypeDefinition,
+} from '../../model';
 
 export type DataSourcePurpose = 'SOURCE' | 'STORAGE' | 'DISTRIBUTION';
 
@@ -15,7 +18,9 @@ export type DataSourceType =
   | 'OPENGAUSS'
   | 'KAFKA'
   | 'S3'
-  | 'HTTP_API';
+  | 'HTTP_API'
+  | 'ARCGIS_REST'
+  | 'WFS';
 
 export type HttpApiValueLocation = 'HEADER' | 'QUERY' | 'BODY';
 export type HttpApiMethod = 'GET' | 'POST';
@@ -408,6 +413,71 @@ export interface ApiResource {
   updatedAt: string;
 }
 
+export type SpatialServiceProtocol = 'ARCGIS_REST' | 'WFS';
+
+export interface SpatialCatalogEntry {
+  protocol: SpatialServiceProtocol;
+  remoteIdentifier: string;
+  name: string;
+  title: string;
+  kind: string;
+  selectable: boolean;
+  epsgCode: number | null;
+}
+
+export interface SpatialColumnSchema {
+  name: string;
+  fieldType: PlatformDataType;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  nullable: boolean;
+  defaultValue: string | null;
+  autoIncrement: boolean;
+  generated: boolean;
+  comment: string | null;
+  geometry: StablePlatformTypeDefinition['geometry'] | null;
+}
+
+export interface SpatialFeatureResource {
+  id: string;
+  dataSourceId: string;
+  code: string;
+  name: string;
+  protocol: SpatialServiceProtocol;
+  remoteIdentifier: string;
+  enabled: boolean;
+  serviceTitle: string;
+  geometryFieldName: string | null;
+  epsgCode: number | null;
+  objectIdFieldName: string | null;
+  wfsVersion: string | null;
+  outputFormat: string;
+  axisOrder: string;
+  columns: SpatialColumnSchema[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CreateSpatialFeatureResourceRequest {
+  code: string;
+  name: string;
+  remoteIdentifier: string;
+  outputEpsgCode?: number;
+}
+
+export interface UpdateSpatialFeatureResourceRequest {
+  name: string;
+  enabled: boolean;
+}
+
+export interface SpatialFeaturePreview {
+  columns: SpatialColumnSchema[];
+  rows: Record<string, unknown>[];
+  limit: number;
+  truncated: boolean;
+}
+
 export interface ApiResourceWriteRequest {
   name: string;
   connectorType?: string;
@@ -525,7 +595,8 @@ export interface ColumnMetadata {
   ordinal: number;
   jdbcType: number;
   nativeType: string;
-  logicalType: PlatformDataType;
+  logicalType: string;
+  platformTypeDefinition: StablePlatformTypeDefinition | null;
   length: number | null;
   precision: number | null;
   scale: number | null;
@@ -545,6 +616,13 @@ export interface IndexMetadata {
   name: string;
   unique: boolean;
   columns: string[];
+  usableAsUniqueKey: boolean;
+}
+
+export interface MetadataUniqueKey {
+  name: string | null;
+  type: 'PRIMARY_KEY' | 'UNIQUE_INDEX';
+  columns: string[];
 }
 
 export interface TableMetadata {
@@ -552,6 +630,26 @@ export interface TableMetadata {
   columns: ColumnMetadata[];
   primaryKey: PrimaryKeyMetadata | null;
   indexes: IndexMetadata[];
+  uniqueKeys: MetadataUniqueKey[];
+}
+
+export interface JdbcQueryInspectionColumn {
+  name: string;
+  fieldType: PlatformDataType;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  nullable: boolean;
+  defaultValue: string | null;
+  autoIncrement: boolean;
+  generated: boolean;
+  comment: string | null;
+  geometry: StablePlatformTypeDefinition['geometry'] | null;
+}
+
+export interface JdbcQueryInspection {
+  analyzedSqlSha256: string;
+  columns: JdbcQueryInspectionColumn[];
 }
 
 export interface PreviewColumn {
@@ -598,6 +696,8 @@ export const dataSourceTypeLabels: Record<DataSourceType, string> = {
   KAFKA: 'Kafka',
   S3: 'S3 兼容对象存储',
   HTTP_API: 'HTTP API',
+  ARCGIS_REST: 'ArcGIS REST',
+  WFS: 'OGC WFS',
 };
 
 export const dataSourcePurposeLabels: Record<DataSourcePurpose, string> = {

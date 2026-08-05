@@ -10,11 +10,13 @@ import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineDataSourceRegistration;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineDataSourceRegistrationStatus;
+import cn.superhuang.data.scalpel.business.service.domain.ScriptDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.StandardDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineDataSourceRegistrationRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
+import cn.superhuang.data.scalpel.business.service.repository.ScriptDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateServiceEngineDataSourceRegistrationRequest;
@@ -60,6 +62,7 @@ public class ServiceEngineDataSourceRegistrationService {
     private final DataServiceRepository dataServiceRepository;
     private final StandardDataServiceDefinitionRepository standardDefinitionRepository;
     private final SqlDataServiceDefinitionRepository sqlDefinitionRepository;
+    private final ScriptDataServiceDefinitionRepository scriptDefinitionRepository;
     private final DialectRegistry dialectRegistry;
     private final ServiceEngineClient engineClient;
     private final SearchEngine searchEngine;
@@ -73,6 +76,7 @@ public class ServiceEngineDataSourceRegistrationService {
             DataServiceRepository dataServiceRepository,
             StandardDataServiceDefinitionRepository standardDefinitionRepository,
             SqlDataServiceDefinitionRepository sqlDefinitionRepository,
+            ScriptDataServiceDefinitionRepository scriptDefinitionRepository,
             DialectRegistry dialectRegistry,
             ServiceEngineClient engineClient,
             SearchEngine searchEngine,
@@ -85,6 +89,7 @@ public class ServiceEngineDataSourceRegistrationService {
         this.dataServiceRepository = dataServiceRepository;
         this.standardDefinitionRepository = standardDefinitionRepository;
         this.sqlDefinitionRepository = sqlDefinitionRepository;
+        this.scriptDefinitionRepository = scriptDefinitionRepository;
         this.dialectRegistry = dialectRegistry;
         this.engineClient = engineClient;
         this.searchEngine = searchEngine;
@@ -139,7 +144,7 @@ public class ServiceEngineDataSourceRegistrationService {
             }
             return new ServiceEngineDataSourceTestResponse(
                     preparation.registrationId(), response.engineCode(), response.dataSourceId(),
-                    response.revision(), response.databaseType()
+                    response.databaseType()
             );
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Engine 数据源测试失败：" + safeMessage(exception), exception);
@@ -163,7 +168,7 @@ public class ServiceEngineDataSourceRegistrationService {
         try {
             EngineDataSourceRegistrationResponse response = engineClient.removeDataSource(
                     preparation.engine(),
-                    new EngineDataSourceRemovalRequest(preparation.dataSourceId(), preparation.revision())
+                    new EngineDataSourceRemovalRequest(preparation.dataSourceId())
             );
             if (response == null || response.status() != EngineDataSourceStatus.REMOVED
                     || !preparation.dataSourceId().equals(response.dataSourceId())) {
@@ -180,15 +185,12 @@ public class ServiceEngineDataSourceRegistrationService {
         assertNoEnabledService(registration.getEngineId(), registration.getDataSourceId());
         return new DeletePreparation(
                 registration.getId(), requireEngine(registration.getEngineId()),
-                registration.getDataSourceId(), registration.getRevision()
+                registration.getDataSourceId()
         );
     }
 
     private void completeDelete(DeletePreparation preparation) {
         ServiceEngineDataSourceRegistration registration = requireRegistration(preparation.registrationId());
-        if (registration.getRevision() != preparation.revision()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源注册版本已发生变化，请重新删除");
-        }
         assertNoEnabledService(registration.getEngineId(), registration.getDataSourceId());
         repository.delete(registration);
     }
@@ -204,14 +206,13 @@ public class ServiceEngineDataSourceRegistrationService {
             EngineDataSourceRegistrationResponse response = engineClient.registerDataSource(
                     preparation.engine(),
                     new EngineDataSourceRegistrationRequest(
-                            preparation.dataSourceId(), preparation.revision(), preparation.snapshot()
+                            preparation.dataSourceId(), preparation.snapshot()
                     )
             );
             if (response == null || !preparation.engine().matchesCode(response.engineCode())
                     || !preparation.dataSourceId().equals(response.dataSourceId())
-                    || response.revision() != preparation.revision()
                     || response.status() != EngineDataSourceStatus.READY) {
-                throw new IllegalStateException("服务引擎未确认当前数据源版本");
+                throw new IllegalStateException("服务引擎未确认数据源同步结果");
             }
             snapshotDigest = digest(preparation.snapshot());
         } catch (RuntimeException exception) {
@@ -232,7 +233,7 @@ public class ServiceEngineDataSourceRegistrationService {
         DataSource dataSource = requireRuntimeDataSource(registration.getDataSourceId());
         JdbcDataSourceSnapshot snapshot = snapshot(dataSource);
         return new SyncPreparation(
-                registration.getId(), engine, dataSource, registration.getDataSourceId(), registration.getRevision(), snapshot
+                registration.getId(), engine, dataSource, registration.getDataSourceId(), snapshot
         );
     }
 
@@ -242,9 +243,6 @@ public class ServiceEngineDataSourceRegistrationService {
             String failure
     ) {
         ServiceEngineDataSourceRegistration registration = requireRegistration(preparation.registrationId());
-        if (registration.getRevision() != preparation.revision()) {
-            return response(registration);
-        }
         if (failure == null) {
             registration.ready(snapshotDigest);
         } else {
@@ -369,6 +367,7 @@ public class ServiceEngineDataSourceRegistrationService {
     private List<UUID> serviceIdsForDataSource(UUID dataSourceId) {
         LinkedHashSet<UUID> serviceIds = new LinkedHashSet<>(standardServiceIdsForDataSource(dataSourceId));
         serviceIds.addAll(sqlServiceIdsForDataSource(dataSourceId));
+        serviceIds.addAll(scriptServiceIdsForDataSource(dataSourceId));
         return List.copyOf(serviceIds);
     }
 
@@ -387,6 +386,12 @@ public class ServiceEngineDataSourceRegistrationService {
     private List<UUID> sqlServiceIdsForDataSource(UUID dataSourceId) {
         return sqlDefinitionRepository.findAllByDataSourceId(dataSourceId).stream()
                 .map(SqlDataServiceDefinition::getDataServiceId)
+                .toList();
+    }
+
+    private List<UUID> scriptServiceIdsForDataSource(UUID dataSourceId) {
+        return scriptDefinitionRepository.findAllByDataSourceId(dataSourceId).stream()
+                .map(ScriptDataServiceDefinition::getDataServiceId)
                 .toList();
     }
 
@@ -472,7 +477,6 @@ public class ServiceEngineDataSourceRegistrationService {
             ServiceEngine engine,
             DataSource dataSource,
             UUID dataSourceId,
-            long revision,
             JdbcDataSourceSnapshot snapshot
     ) {
     }
@@ -483,8 +487,7 @@ public class ServiceEngineDataSourceRegistrationService {
     private record DeletePreparation(
             UUID registrationId,
             ServiceEngine engine,
-            UUID dataSourceId,
-            long revision
+            UUID dataSourceId
     ) {
     }
 }

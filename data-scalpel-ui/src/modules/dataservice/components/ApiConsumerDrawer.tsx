@@ -99,7 +99,7 @@ export const ApiConsumerDrawer = ({ open, consumer, onClose }: ApiConsumerDrawer
           </Space>
         )}
       >
-        <Form<ApiConsumerFormValues>
+        <Form<ApiConsumerFormValues> autoComplete="off"
           form={form}
           layout="vertical"
           onFinish={(values) => void submit(values)}

@@ -33,7 +33,6 @@ export const JdbcConnectionOptionsFields = ({ definitions }: JdbcConnectionOptio
 
   return (
     <>
-      <div className="data-source-form-section-title">高级连接参数</div>
       {definitions.length > 0 && <Row gutter={12}>{definitions.map((definition) => (
         <DefinedOptionField definition={definition} key={definition.key} />
       ))}</Row>}
@@ -101,7 +100,7 @@ export const JdbcConnectionOptionsFields = ({ definitions }: JdbcConnectionOptio
             ))}
             <Button
               type="dashed"
-              block
+              className="jdbc-add-option-button"
               icon={<PlusOutlined />}
               disabled={fields.length >= MAX_JDBC_CONNECTION_OPTIONS}
               onClick={() => add({ key: '', value: '' })}

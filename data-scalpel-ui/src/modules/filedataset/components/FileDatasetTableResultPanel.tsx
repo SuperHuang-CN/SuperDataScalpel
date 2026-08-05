@@ -2,6 +2,7 @@ import {
   DeleteOutlined,
   DownloadOutlined,
   EditOutlined,
+  GlobalOutlined,
   ReloadOutlined,
   SwapOutlined,
   UploadOutlined,
@@ -13,6 +14,7 @@ import {
   Descriptions,
   Empty,
   Input,
+  InputNumber,
   Modal,
   Space,
   Table,
@@ -34,6 +36,7 @@ import {
   useReplaceFileDatasetTableData,
   useReplaceFileDatasetTableSource,
   useUpdateFileDatasetTable,
+  useUpdateFileDatasetTableSpatialReference,
 } from '../hooks/useFileDatasets';
 import {
   fileDatasetAccept,
@@ -75,6 +78,10 @@ const formatFieldType = (field: FileDatasetField): string => {
   if (field.fieldType === 'DECIMAL' && field.precision !== null && field.scale !== null) {
     return `DECIMAL(${field.precision}, ${field.scale})`;
   }
+  if (field.fieldType === 'GEOMETRY' && field.platformTypeDefinition.geometry) {
+    const geometry = field.platformTypeDefinition.geometry;
+    return `${geometry.kind} · ${geometry.crs.authority}:${geometry.crs.code} · ${geometry.dimension}`;
+  }
   return field.fieldType;
 };
 
@@ -111,6 +118,7 @@ export const FileDatasetTableResultPanel = ({
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const updateMutation = useUpdateFileDatasetTable();
+  const spatialReferenceMutation = useUpdateFileDatasetTableSpatialReference();
   const appendMutation = useAppendFileDatasetTable();
   const replaceDataMutation = useReplaceFileDatasetTableData();
   const replaceSourceMutation = useReplaceFileDatasetTableSource();
@@ -124,6 +132,9 @@ export const FileDatasetTableResultPanel = ({
   const previewQuery = useFileDatasetPreview(dataset.id, table?.id, Boolean(ready && table?.previewSupported));
   const sourcesQuery = useFileDatasetTableSources(dataset.id, table?.id, Boolean(table));
   const sources = sourcesQuery.data ?? [];
+  const fields = schemaQuery.data?.fields ?? previewQuery.data?.fields ?? [];
+  const geometryField = fields.find((field) => field.fieldType === 'GEOMETRY');
+  const spatialDataset = dataset.type === 'GDB' || dataset.type === 'SHP';
 
   if (!table) {
     return (
@@ -162,6 +173,55 @@ export const FileDatasetTableResultPanel = ({
           messageApi.success('表名称已更新');
         } catch (error) {
           messageApi.error(errorMessage(error, '修改表名称失败'));
+          throw error;
+        }
+      },
+    });
+  };
+
+  const confirmSpatialReference = () => {
+    const effectiveCrs = geometryField?.platformTypeDefinition.geometry?.crs;
+    let epsgCode = table.spatialReferenceOverride?.code ?? effectiveCrs?.code ?? null;
+    modalApi.confirm({
+      title: '确认源数据空间参考',
+      width: 520,
+      content: (
+        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+          <Alert
+            type="info"
+            showIcon
+            message="该操作声明源坐标的 CRS，不会转换坐标值"
+            description="系统会在事务外重新读取所有当前来源，确认 Schema 一致后更新 Geometry 元数据并刷新 Canvas 预检。文件中已经明确声明的 EPSG 不能被覆盖。"
+          />
+          <div>
+            当前有效 CRS：{effectiveCrs ? `${effectiveCrs.authority}:${effectiveCrs.code}` : '尚未识别'}
+          </div>
+          <InputNumber<number>
+            min={1}
+            precision={0}
+            style={{ width: '100%' }}
+            addonBefore="EPSG"
+            defaultValue={epsgCode ?? undefined}
+            placeholder="例如 4326"
+            onChange={(value) => { epsgCode = typeof value === 'number' ? value : null; }}
+          />
+        </Space>
+      ),
+      okText: '确认并重新解析',
+      cancelText: '取消',
+      onOk: async () => {
+        if (epsgCode === null || !Number.isInteger(epsgCode) || epsgCode < 1) {
+          throw new Error('请输入有效的 EPSG code');
+        }
+        try {
+          await spatialReferenceMutation.mutateAsync({
+            datasetId: dataset.id,
+            tableId: table.id,
+            epsgCode,
+          });
+          messageApi.success('空间参考已确认，Schema 已重新解析');
+        } catch (error) {
+          messageApi.error(errorMessage(error, '确认空间参考失败'));
           throw error;
         }
       },
@@ -257,7 +317,6 @@ export const FileDatasetTableResultPanel = ({
     }
   };
 
-  const fields = schemaQuery.data?.fields ?? previewQuery.data?.fields ?? [];
   const rows: PreviewRow[] = (previewQuery.data?.rows ?? []).map((values, index) => ({
     key: index,
     values,
@@ -272,6 +331,13 @@ export const FileDatasetTableResultPanel = ({
       label: '装载状态',
       children: table.currentLoadJobId ? `处理中（${table.currentLoadJobId}）` : '空闲',
     },
+    ...(spatialDataset ? [{
+      key: 'spatialReference',
+      label: '空间参考',
+      children: geometryField?.platformTypeDefinition.geometry
+        ? `${geometryField.platformTypeDefinition.geometry.crs.authority}:${geometryField.platformTypeDefinition.geometry.crs.code}`
+        : '尚未识别',
+    }] : []),
   ];
   const schemaColumns: TableProps<FileDatasetField>['columns'] = [
     { title: '序号', dataIndex: 'sortOrder', width: 70, align: 'right', render: (value: number) => value + 1 },
@@ -444,6 +510,16 @@ export const FileDatasetTableResultPanel = ({
             />
           </Tooltip>
           {canUpdate && <Button icon={<EditOutlined />} onClick={rename}>修改名称</Button>}
+          {canUpdate && spatialDataset && schemaAvailable && (
+            <Button
+              icon={<GlobalOutlined />}
+              loading={spatialReferenceMutation.isPending}
+              disabled={Boolean(table.currentLoadJobId)}
+              onClick={confirmSpatialReference}
+            >
+              确认 CRS
+            </Button>
+          )}
           {canUpdate && tableLoadSupported && schemaAvailable && (
             <>
               <Upload

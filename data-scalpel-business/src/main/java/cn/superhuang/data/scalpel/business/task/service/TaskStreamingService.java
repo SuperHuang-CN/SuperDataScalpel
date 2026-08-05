@@ -2,7 +2,7 @@ package cn.superhuang.data.scalpel.business.task.service;
 
 import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutionService;
 import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutionService.ExecutionRoute;
-import cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState;
@@ -330,13 +330,13 @@ public class TaskStreamingService {
             TaskStreamingDeployment deployment
     ) {
         return definition.nodes().stream().filter(node ->
-                        node instanceof CanvasDefinition.KafkaOutputNodeDefinition
-                                || node instanceof CanvasDefinition.JdbcOutputNodeDefinition)
+                        node instanceof KafkaOutputNodeDefinition
+                                || node instanceof JdbcOutputNodeDefinition)
                 .map(node -> TaskStreamingQuery.create(
                         deployment.getId(),
                         UUID.fromString(node.id()),
                         node.name(),
-                        node instanceof CanvasDefinition.KafkaOutputNodeDefinition
+                        node instanceof KafkaOutputNodeDefinition
                                 ? StreamingSinkType.KAFKA : StreamingSinkType.JDBC,
                         deployment.getCheckpointKeyPrefix() + "/outputs/" + node.id()
                 )).toList();

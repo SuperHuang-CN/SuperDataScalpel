@@ -1,8 +1,13 @@
 package cn.superhuang.data.scalpel.engine;
 
-import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
-import cn.superhuang.data.scalpel.engine.datasource.EngineDataSourceStore;
-import cn.superhuang.data.scalpel.engine.query.DataSourcePoolRegistry;
+import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationRequest;
+import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationResponse;
+import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRemovalRequest;
+import cn.superhuang.data.scalpel.contract.service.EngineDataSourceStatus;
+import cn.superhuang.data.scalpel.contract.service.EngineDataSourceTestResponse;
+import cn.superhuang.data.scalpel.contract.service.JdbcDataSourceSnapshot;
+import cn.superhuang.data.scalpel.engine.config.EngineProperties;
+import cn.superhuang.data.scalpel.engine.datasource.EngineApiStudioDataSourceService;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
@@ -10,16 +15,19 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.http.HttpStatus;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.web.context.WebApplicationContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.web.server.ResponseStatusException;
 
-import java.util.UUID;
 import java.sql.Connection;
 import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.util.Map;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
@@ -37,7 +45,7 @@ class DataScalpelServiceEngineApplicationTests {
     private WebApplicationContext applicationContext;
 
     @Autowired
-    private EngineDataSourceStore dataSourceStore;
+    private TestApiStudioDataSourceService dataSourceService;
 
     private MockMvc mockMvc;
 
@@ -91,7 +99,7 @@ class DataScalpelServiceEngineApplicationTests {
         mockMvc.perform(post("/internal/v1/deployments/actions/remove")
                         .header("Authorization", "Bearer engine-test-token")
                         .contentType("application/json")
-                        .content("{\"serviceId\":\"" + serviceId + "\",\"revision\":1}"))
+                        .content("{\"serviceId\":\"" + serviceId + "\"}"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("REMOVED"));
 
@@ -144,7 +152,7 @@ class DataScalpelServiceEngineApplicationTests {
         mockMvc.perform(post("/internal/v1/deployments/actions/remove")
                         .header("Authorization", "Bearer engine-test-token")
                         .contentType("application/json")
-                        .content("{\"serviceId\":\"" + serviceId + "\",\"revision\":1}"))
+                        .content("{\"serviceId\":\"" + serviceId + "\"}"))
                 .andExpect(status().isOk());
     }
 
@@ -157,21 +165,21 @@ class DataScalpelServiceEngineApplicationTests {
                         .contentType("application/json")
                         .content(dataSourceRegistrationRequest(dataSourceId)))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value(1));
+                .andExpect(jsonPath("$.status").value("READY"));
         assertEquals(
                 Map.of("sslmode", "prefer", "tcpKeepAlive", "true"),
-                dataSourceStore.requireSnapshot(dataSourceId).options()
+                dataSourceService.requireSnapshot(dataSourceId).options()
         );
 
         mockMvc.perform(post("/internal/v1/data-sources")
                         .header("Authorization", "Bearer engine-test-token")
                         .contentType("application/json")
-                        .content(dataSourceRegistrationRequest(dataSourceId, 2, "false")))
+                        .content(dataSourceRegistrationRequest(dataSourceId, "false")))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.revision").value(2));
+                .andExpect(jsonPath("$.status").value("READY"));
         assertEquals(
                 Map.of("sslmode", "prefer", "tcpKeepAlive", "false"),
-                dataSourceStore.requireSnapshot(dataSourceId).options()
+                dataSourceService.requireSnapshot(dataSourceId).options()
         );
     }
 
@@ -179,7 +187,6 @@ class DataScalpelServiceEngineApplicationTests {
         return """
                 {
                   "serviceId":"%s",
-                  "revision":1,
                   "serviceCode":"orders",
                   "routePath":"%s",
                   "definitionDigest":"test-digest",
@@ -202,14 +209,13 @@ class DataScalpelServiceEngineApplicationTests {
     }
 
     private static String dataSourceRegistrationRequest(UUID dataSourceId) {
-        return dataSourceRegistrationRequest(dataSourceId, 1, "true");
+        return dataSourceRegistrationRequest(dataSourceId, "true");
     }
 
-    private static String dataSourceRegistrationRequest(UUID dataSourceId, long revision, String tcpKeepAlive) {
+    private static String dataSourceRegistrationRequest(UUID dataSourceId, String tcpKeepAlive) {
         return """
                 {
                   "dataSourceId":"%s",
-                  "revision":%d,
                   "dataSource":{
                     "dataSourceId":"%s",
                     "databaseType":"POSTGRESQL",
@@ -221,14 +227,13 @@ class DataScalpelServiceEngineApplicationTests {
                     "options":{"sslmode":"prefer","tcpKeepAlive":"%s"}
                   }
                 }
-                """.formatted(dataSourceId, revision, dataSourceId, tcpKeepAlive);
+                """.formatted(dataSourceId, dataSourceId, tcpKeepAlive);
     }
 
     private static String sqlDeploymentRequest(UUID serviceId, UUID dataSourceId, String routePath) {
         return """
                 {
                   "serviceId":"%s",
-                  "revision":1,
                   "serviceCode":"customer_query",
                   "routePath":"%s",
                   "definitionDigest":"sql-test-digest",
@@ -259,33 +264,70 @@ class DataScalpelServiceEngineApplicationTests {
 
         @Bean
         @Primary
-        DataSourcePoolRegistry testDataSourcePoolRegistry(DialectRegistry dialectRegistry) {
-            return new DataSourcePoolRegistry(dialectRegistry) {
-                private boolean initialized;
+        TestApiStudioDataSourceService testApiStudioDataSourceService() {
+            return new TestApiStudioDataSourceService();
+        }
+    }
 
-                @Override
-                public void test(cn.superhuang.data.scalpel.contract.service.JdbcDataSourceSnapshot snapshot) {
-                    // Engine registration behavior is tested without requiring an external PostgreSQL process.
-                }
+    static class TestApiStudioDataSourceService extends EngineApiStudioDataSourceService {
 
-                @Override
-                public synchronized Connection connection(
-                        cn.superhuang.data.scalpel.contract.service.JdbcDataSourceSnapshot snapshot
-                ) throws SQLException {
-                    Connection connection = DriverManager.getConnection(
-                            "jdbc:h2:mem:engine_query;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""
-                    );
-                    if (!initialized) {
-                        try (var statement = connection.createStatement()) {
-                            statement.execute("CREATE TABLE customer (id BIGINT NOT NULL, name VARCHAR(100), department_id BIGINT NOT NULL)");
-                            statement.execute("INSERT INTO customer VALUES (1, 'Alice', 1001), (2, 'Bob', 1001), (3, 'Carol', 1002)");
-                        }
-                        initialized = true;
-                    }
-                    connection.setReadOnly(true);
-                    return connection;
+        private final Map<UUID, JdbcDataSourceSnapshot> snapshots = new ConcurrentHashMap<>();
+        private boolean initialized;
+
+        TestApiStudioDataSourceService() {
+            super(null, null, null, null, new EngineProperties("engine_test", "engine-test-token"));
+        }
+
+        @Override
+        public EngineDataSourceRegistrationResponse register(EngineDataSourceRegistrationRequest request) {
+            snapshots.put(request.dataSourceId(), request.dataSource());
+            return new EngineDataSourceRegistrationResponse(
+                    "engine_test", request.dataSourceId(), EngineDataSourceStatus.READY, "数据源已注册"
+            );
+        }
+
+        @Override
+        public EngineDataSourceTestResponse test(UUID dataSourceId) {
+            requireSnapshot(dataSourceId);
+            return new EngineDataSourceTestResponse("engine_test", dataSourceId, "POSTGRESQL");
+        }
+
+        @Override
+        public EngineDataSourceRegistrationResponse remove(EngineDataSourceRemovalRequest request) {
+            snapshots.remove(request.dataSourceId());
+            return new EngineDataSourceRegistrationResponse(
+                    "engine_test", request.dataSourceId(), EngineDataSourceStatus.REMOVED, "数据源已移除"
+            );
+        }
+
+        @Override
+        public RuntimeDataSource resolve(UUID dataSourceId) {
+            requireSnapshot(dataSourceId);
+            return new RuntimeDataSource("POSTGRESQL", null);
+        }
+
+        @Override
+        public synchronized Connection connection(RuntimeDataSource runtimeDataSource) throws SQLException {
+            Connection connection = DriverManager.getConnection(
+                    "jdbc:h2:mem:engine_query;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE;DB_CLOSE_DELAY=-1", "sa", ""
+            );
+            if (!initialized) {
+                try (var statement = connection.createStatement()) {
+                    statement.execute("CREATE TABLE customer (id BIGINT NOT NULL, name VARCHAR(100), department_id BIGINT NOT NULL)");
+                    statement.execute("INSERT INTO customer VALUES (1, 'Alice', 1001), (2, 'Bob', 1001), (3, 'Carol', 1002)");
                 }
-            };
+                initialized = true;
+            }
+            connection.setReadOnly(true);
+            return connection;
+        }
+
+        JdbcDataSourceSnapshot requireSnapshot(UUID dataSourceId) {
+            JdbcDataSourceSnapshot snapshot = snapshots.get(dataSourceId);
+            if (snapshot == null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "测试数据源尚未注册");
+            }
+            return snapshot;
         }
     }
 }
