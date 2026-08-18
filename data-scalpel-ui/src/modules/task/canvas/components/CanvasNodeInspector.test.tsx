@@ -367,23 +367,6 @@ vi.mock('../../../model', () => ({
       isFetching: false,
     };
   }),
-  usePhysicalTableInspection: vi.fn((id: string | undefined) => ({
-    data: id ? {
-      mode: modelFixtures.details.find((detail) => detail.model.id === id)?.model.physicalTableMode ?? 'MANAGED',
-      state: 'MATCHED',
-      catalogName: 'demo',
-      schemaName: 'dw',
-      tableName: modelFixtures.details.find((detail) => detail.model.id === id)?.model.code ?? '',
-      exists: true,
-      compatible: true,
-      createSupported: true,
-      message: '物理表结构与模型一致',
-      differences: [],
-    } : undefined,
-    isError: false,
-    isFetching: false,
-    refetch: vi.fn(),
-  })),
 }));
 
 const modelInputNode = (modelId: string): Extract<CanvasNodeDefinition, { type: 'MODEL_INPUT' }> => ({
@@ -405,7 +388,6 @@ const modelOutputNode = (
     sourceTableName: 'order_customer',
     targetModelId,
     writeMode: 'APPEND',
-    columnMappingMode: 'EXPLICIT',
     columnMappings: [],
   },
 });
@@ -501,6 +483,8 @@ describe('CanvasNodeInspector', () => {
     await waitForInspector();
 
     expect(screen.getByText('order_id')).toBeInTheDocument();
+    expect(screen.getByText('字段 · orders')).toBeInTheDocument();
+    expect(screen.queryByText('demo.public.orders')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('节点名称')).not.toBeInTheDocument();
     await selectAntOption('物理表', 'payments');
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
@@ -522,7 +506,7 @@ describe('CanvasNodeInspector', () => {
     });
   });
 
-  it('keeps invalid values unapplied and reports validation failure through the handle', async () => {
+  it('applies an incomplete draft while keeping validation errors visible', async () => {
     const definition = exampleCanvasDefinition();
     const validation = engineValidationFixture(definition);
     const input = definition.nodes.find((node) => node.type === CanvasNodeType.JdbcInput);
@@ -547,8 +531,12 @@ describe('CanvasNodeInspector', () => {
       applied = await inspectorRef.current?.apply();
     });
 
-    expect(applied).toBe(false);
-    expect(onApply).not.toHaveBeenCalled();
+    expect(applied).toBe(true);
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({
+      id: input.id,
+      type: CanvasNodeType.JdbcInput,
+      configuration: { dataSourceId: '', tableName: '' },
+    }));
   });
 
   it('rejects sensitive HTTP API runtime parameter names before applying the node', async () => {
@@ -586,7 +574,7 @@ describe('CanvasNodeInspector', () => {
     expect(await screen.findByText('运行时参数不能用于密码、Token、API Key、Secret 或签名')).toBeInTheDocument();
   });
 
-  it('keeps the selected table visible when the data source changes and blocks an invalid combination', async () => {
+  it('keeps and applies an invalid table selection so upstream configuration can be fixed first', async () => {
     const definition = exampleCanvasDefinition();
     const validation = engineValidationFixture(definition);
     const input = definition.nodes.find(
@@ -615,9 +603,9 @@ describe('CanvasNodeInspector', () => {
     });
     expect(screen.getByLabelText('物理表').closest('.ant-select-content')).toHaveAttribute('title', 'orders');
     await act(async () => {
-      expect(await inspectorRef.current?.apply()).toBe(false);
+      expect(await inspectorRef.current?.apply()).toBe(true);
     });
-    expect(onApply).not.toHaveBeenCalled();
+    expect(onApply).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('该物理表不存在或不属于当前数据源')).toBeInTheDocument();
   });
 
@@ -639,7 +627,7 @@ describe('CanvasNodeInspector', () => {
     await waitForInspector();
 
     fireEvent.mouseDown(screen.getByLabelText('物理表'));
-    expect(await screen.findByText('结果超过 500 项，请输入表名继续筛选')).toBeInTheDocument();
+    expect(await screen.findByText('结果超过 500 项，请输入名称继续筛选')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '刷新物理表' })).toBeInTheDocument();
   });
 
@@ -780,7 +768,7 @@ describe('CanvasNodeInspector', () => {
     expect(screen.getByRole('button', { name: '收起问题详情' })).toHaveAttribute('aria-expanded', 'true');
   });
 
-  it('delegates BY_NAME output mapping validation to Task Engine', async () => {
+  it('renders JDBC output mappings as fixed target-driven rows', async () => {
     const definition = exampleCanvasDefinition();
     const validation = engineValidationFixture(definition);
     const output = definition.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
@@ -790,11 +778,13 @@ describe('CanvasNodeInspector', () => {
     render(<CanvasNodeInspector node={output} validation={validation.nodeResults.get(output.id)} onApply={vi.fn()} onDirtyChange={vi.fn()} />);
     await waitForInspector();
 
-    expect(screen.getByText('BY_NAME 映射由 Task Engine 校验')).toBeInTheDocument();
-    expect(screen.getByText(/Task Engine 会按照同名字段生成映射/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /自动匹配空白字段/ })).toBeInTheDocument();
+    expect(screen.getByLabelText('目标字段 order_id 的来源字段')).toBeInTheDocument();
+    expect(screen.queryByLabelText('字段映射模式')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /添加字段映射/ })).not.toBeInTheDocument();
   });
 
-  it('only accepts data-storage data sources for JDBC output', async () => {
+  it('reports an invalid JDBC output data source but still applies the draft', async () => {
     const definition = exampleCanvasDefinition();
     const validation = engineValidationFixture(definition);
     const output = definition.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
@@ -821,13 +811,13 @@ describe('CanvasNodeInspector', () => {
       enabled: true,
     });
     await act(async () => {
-      expect(await inspectorRef.current?.apply()).toBe(false);
+      expect(await inspectorRef.current?.apply()).toBe(true);
     });
-    expect(onApply).not.toHaveBeenCalled();
+    expect(onApply).toHaveBeenCalledTimes(1);
     expect(await screen.findByText('数据源不存在、已停用或不具有数据分发用途')).toBeInTheDocument();
   });
 
-  it('switches the output inspector to editable explicit mappings', async () => {
+  it('does not expose add or delete actions for target-driven mappings', async () => {
     const definition = exampleCanvasDefinition();
     const validation = engineValidationFixture(definition);
     const output = definition.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
@@ -837,12 +827,9 @@ describe('CanvasNodeInspector', () => {
     render(<CanvasNodeInspector node={output} validation={validation.nodeResults.get(output.id)} onApply={vi.fn()} onDirtyChange={vi.fn()} />);
     await waitForInspector();
 
-    await selectAntOption('字段映射模式', 'EXPLICIT · 显式映射');
-    const addMapping = await screen.findByRole('button', { name: /添加字段映射/ });
-    fireEvent.click(addMapping);
-    expect(screen.getByText('字段映射 1')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '删除字段映射 1' }));
-    expect(screen.queryByText('字段映射 1')).not.toBeInTheDocument();
+    expect(screen.getByText('字段映射')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /添加字段映射/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /删除字段映射/ })).not.toBeInTheDocument();
   });
 
   it('shows published model metadata and applies only the ModelInput reference', async () => {
@@ -863,8 +850,8 @@ describe('CanvasNodeInspector', () => {
     await waitForInspector();
 
     expect(screen.getByText('模型详情 · 订单客户模型')).toBeInTheDocument();
-    expect(screen.getByText('order_customer_model')).toBeInTheDocument();
-    expect(screen.getByText('demo.dw.order_customer_model')).toBeInTheDocument();
+    expect(screen.getAllByText('order_customer_model').length).toBeGreaterThan(0);
+    expect(screen.queryByText('demo.dw.order_customer_model')).not.toBeInTheDocument();
     expect(screen.getByText('订单ID')).toBeInTheDocument();
 
     await act(async () => {
@@ -878,7 +865,7 @@ describe('CanvasNodeInspector', () => {
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
 
-  it('retains a disabled ModelInput selection and blocks applying it', async () => {
+  it('retains and applies a disabled ModelInput selection as an invalid draft', async () => {
     const node = modelInputNode(modelFixtures.disabledId);
     const inspectorRef = createRef<CanvasNodeInspectorHandle>();
     const onApply = vi.fn();
@@ -897,15 +884,14 @@ describe('CanvasNodeInspector', () => {
     expect(screen.getByText(/模型当前状态为已停用/)).toBeInTheDocument();
     expect(screen.getByText(/已停用订单模型（disabled_order_model）/)).toBeInTheDocument();
     await act(async () => {
-      expect(await inspectorRef.current?.apply()).toBe(false);
+      expect(await inspectorRef.current?.apply()).toBe(true);
     });
-    expect(onApply).not.toHaveBeenCalled();
+    expect(onApply).toHaveBeenCalledTimes(1);
   });
 
-  it('blocks OVERWRITE for an EXTERNAL target model without rewriting the old value', async () => {
+  it('keeps and applies invalid EXTERNAL OVERWRITE as a draft without rewriting it', async () => {
     const node = modelOutputNode(modelFixtures.externalId);
     node.configuration.writeMode = 'OVERWRITE';
-    node.configuration.columnMappingMode = 'BY_NAME';
     const validation = modelOutputValidation(node.id);
     const inspectorRef = createRef<CanvasNodeInspectorHandle>();
     const onApply = vi.fn();
@@ -925,12 +911,49 @@ describe('CanvasNodeInspector', () => {
     expect(screen.getByLabelText('写入模式').closest('.ant-select-content'))
       .toHaveAttribute('title', 'OVERWRITE · EXTERNAL 模型不可用');
     await act(async () => {
-      expect(await inspectorRef.current?.apply()).toBe(false);
+      expect(await inspectorRef.current?.apply()).toBe(true);
     });
-    expect(onApply).not.toHaveBeenCalled();
+    expect(onApply).toHaveBeenCalledTimes(1);
   });
 
-  it('builds explicit mappings using exact field-code equality only', async () => {
+  it('offers model-primary-key UPSERT in batch and streaming modes', async () => {
+    const batchNode = modelOutputNode(modelFixtures.managedId);
+    batchNode.configuration.writeMode = 'UPSERT';
+    const { unmount } = render(
+      <CanvasNodeInspector
+        node={batchNode}
+        executionMode="BATCH"
+        validation={modelOutputValidation(batchNode.id)}
+        onApply={vi.fn()}
+        onDirtyChange={vi.fn()}
+      />,
+    );
+    await waitForInspector();
+
+    expect(screen.getByText('模型主键：')).toBeInTheDocument();
+    expect(screen.getAllByText('order_id').length).toBeGreaterThan(0);
+    expect(screen.getByLabelText('写入模式').closest('.ant-select-content'))
+      .toHaveAttribute('title', 'UPSERT · 按模型主键插入或更新');
+    unmount();
+
+    const streamingNode = modelOutputNode(modelFixtures.managedId);
+    streamingNode.configuration.writeMode = 'OVERWRITE';
+    render(
+      <CanvasNodeInspector
+        node={streamingNode}
+        executionMode="STREAMING"
+        validation={modelOutputValidation(streamingNode.id)}
+        onApply={vi.fn()}
+        onDirtyChange={vi.fn()}
+      />,
+    );
+    await waitForInspector();
+
+    expect(screen.getByLabelText('写入模式').closest('.ant-select-content'))
+      .toHaveAttribute('title', 'OVERWRITE · 实时模式不支持');
+  });
+
+  it('auto-matches exact and camel-snake-equivalent model fields', async () => {
     const node = modelOutputNode(modelFixtures.managedId);
     const validation = modelOutputValidation(node.id);
     const inspectorRef = createRef<CanvasNodeInspectorHandle>();
@@ -948,10 +971,10 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    fireEvent.click(screen.getByRole('button', { name: '精确同名匹配' }));
-    expect(await screen.findByText('字段映射 1')).toBeInTheDocument();
-    expect(screen.queryByText('字段映射 2')).not.toBeInTheDocument();
-    expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    fireEvent.click(screen.getByRole('button', { name: /自动匹配空白字段/ }));
+    await waitFor(() => {
+      expect(onDirtyChange).toHaveBeenLastCalledWith(true);
+    });
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
@@ -962,8 +985,11 @@ describe('CanvasNodeInspector', () => {
         sourceTableName: 'order_customer',
         targetModelId: modelFixtures.managedId,
         writeMode: 'APPEND',
-        columnMappingMode: 'EXPLICIT',
-        columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
+        columnMappings: [
+          { sourceColumnName: 'order_id', targetColumnName: 'order_id' },
+          { sourceColumnName: 'customer_name', targetColumnName: 'customername' },
+          { sourceColumnName: 'ordered_at', targetColumnName: 'orderedat' },
+        ],
       },
     });
   });
@@ -987,10 +1013,10 @@ describe('CanvasNodeInspector', () => {
     await waitForInspector();
 
     expect(screen.getByText('archived_orders（上游已不可用）')).toBeInTheDocument();
-    expect(screen.getByLabelText('来源字段映射 1').closest('.ant-select-content'))
-      .toHaveAttribute('title', 'removed_source（来源字段已不可用）');
-    expect(screen.getByLabelText('目标字段映射 1').closest('.ant-select-content'))
-      .toHaveAttribute('title', 'removed_target（目标字段已不可用）');
+    expect(screen.getByText('目标字段已不存在')).toBeInTheDocument();
+    expect(screen.getByText('removed_target')).toBeInTheDocument();
+    expect(screen.getByText('removed_source')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '清除失效映射' })).toBeInTheDocument();
   });
 
   it('loads and applies an ordered NULL_HANDLING rule set', async () => {
@@ -1219,8 +1245,8 @@ describe('CanvasNodeInspector', () => {
     );
     expect(await screen.findByText('Top N 仅支持批处理')).toBeInTheDocument();
     await act(async () => {
-      expect(await inspectorRef.current?.apply()).toBe(false);
+      expect(await inspectorRef.current?.apply()).toBe(true);
     });
-    expect(onApply).not.toHaveBeenCalled();
+    expect(onApply).toHaveBeenCalledTimes(1);
   });
 });

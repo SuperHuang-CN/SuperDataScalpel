@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeDeduplicate } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { deduplicateCanvasView } from './canvasView';
 
 export const deduplicateSpec = createCanvasNodeSpec({
   type: CanvasNodeType.Deduplicate,
@@ -15,9 +16,9 @@ export const deduplicateSpec = createCanvasNodeSpec({
   searchKeywords: ['deduplicate', 'distinct', '去重', '重复', '第一条', '最后一条'],
   iconKey: CanvasNodeIconKey.Deduplicate,
   order: 20,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: deduplicateCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 13,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createDeduplicateConfiguration,
   summarize: summarizeDeduplicate,

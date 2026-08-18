@@ -21,6 +21,7 @@ import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
 import cn.superhuang.data.scalpel.dialect.model.TableStorageDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableStructureComparison;
 import cn.superhuang.data.scalpel.dialect.model.TableStructureDifference;
@@ -29,6 +30,12 @@ import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseAccessException;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseInspector;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseStandardQueryExecutor;
+import cn.superhuang.data.scalpel.dialect.runtime.DatabaseSpatialPreviewExecutor;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewColumn;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewData;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewLimits;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewViewport;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseTableOperator;
 import cn.superhuang.data.scalpel.dialect.query.StandardQuery;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryResult;
@@ -51,17 +58,20 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
     private final DatabaseInspector inspector;
     private final DatabaseTableOperator tableOperator;
     private final DatabaseStandardQueryExecutor queryExecutor;
+    private final DatabaseSpatialPreviewExecutor spatialPreviewExecutor;
 
     public JdbcModelPhysicalTablePort(
             DialectRegistry registry,
             DatabaseInspector inspector,
             DatabaseTableOperator tableOperator,
-            DatabaseStandardQueryExecutor queryExecutor
+            DatabaseStandardQueryExecutor queryExecutor,
+            DatabaseSpatialPreviewExecutor spatialPreviewExecutor
     ) {
         this.registry = registry;
         this.inspector = inspector;
         this.tableOperator = tableOperator;
         this.queryExecutor = queryExecutor;
+        this.spatialPreviewExecutor = spatialPreviewExecutor;
     }
 
     @Override
@@ -91,6 +101,32 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
                 return new ModelPhysicalTableInspection(table, PhysicalTableState.NOT_FOUND, createSupported, "物理表不存在", List.of());
             }
             return new ModelPhysicalTableInspection(table, PhysicalTableState.UNREACHABLE, createSupported, exception.getMessage(), List.of());
+        }
+    }
+
+    @Override
+    public TablePhysicalStatistics readStatistics(DataSource dataSource, DataModel model, Duration timeout) {
+        if (!dataSource.getType().isJdbc()) {
+            return TablePhysicalStatistics.unsupported("当前数据源类型不支持物理表统计");
+        }
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        if (!dialect.definition().capabilities().contains(DatabaseCapability.READ_TABLE_STATISTICS)) {
+            return TablePhysicalStatistics.unsupported("当前数据库方言不支持物理表统计");
+        }
+        try {
+            JdbcConnectionConfig connectionConfig = dataSource.getConnection().toJdbcConnectionConfig();
+            TableIdentifier table = new TableIdentifier(
+                    dialect.resolveCatalog(connectionConfig, model.getCatalogName()),
+                    dialect.resolveSchema(connectionConfig, model.getSchemaName()),
+                    model.getPhysicalTableName()
+            );
+            return inspector.readTablePhysicalStatistics(
+                    dataSource.getType().name(), connectionConfig, table, timeout
+            );
+        } catch (DatabaseAccessException exception) {
+            throw exception;
+        } catch (IllegalArgumentException exception) {
+            throw new DatabaseAccessException("INVALID_CONNECTION_CONFIG", "数据源连接配置无效", exception);
         }
     }
 
@@ -234,6 +270,42 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
         }
         return queryExecutor.execute(
                 dataSource.getType().name(), dataSource.getConnection().toJdbcConnectionConfig(), query, maximumRows, timeout
+        );
+    }
+
+    @Override
+    public SpatialPreviewMetadata inspectSpatialPreview(
+            DataSource dataSource,
+            DataModel model,
+            List<SpatialPreviewColumn> columns,
+            Duration timeout
+    ) {
+        if (dataSource.getType() != DataSourceType.POSTGRESQL) {
+            return SpatialPreviewMetadata.unsupported("当前仅支持 PostgreSQL/PostGIS 动态空间预览");
+        }
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        return spatialPreviewExecutor.inspect(
+                dataSource.getType().name(), dataSource.getConnection().toJdbcConnectionConfig(),
+                tableIdentifier(dialect, dataSource, model), columns, timeout
+        );
+    }
+
+    @Override
+    public SpatialPreviewData readSpatialPreview(
+            DataSource dataSource,
+            DataModel model,
+            SpatialPreviewColumn column,
+            SpatialPreviewViewport viewport,
+            SpatialPreviewLimits limits,
+            Duration timeout
+    ) {
+        if (dataSource.getType() != DataSourceType.POSTGRESQL) {
+            throw new UnsupportedOperationException("当前仅支持 PostgreSQL/PostGIS 动态空间预览");
+        }
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        return spatialPreviewExecutor.read(
+                dataSource.getType().name(), dataSource.getConnection().toJdbcConnectionConfig(),
+                tableIdentifier(dialect, dataSource, model), column, viewport, limits, timeout
         );
     }
 

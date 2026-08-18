@@ -34,6 +34,7 @@ export const useStandardFormLeaveGuard = ({
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
     const confirmation = Modal.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '放弃未保存修改？',
       content,
       okText: '放弃修改',
@@ -53,6 +54,7 @@ export const useStandardFormLeaveGuard = ({
       return;
     }
     Modal.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '放弃未保存修改？',
       content,
       okText: '放弃修改',

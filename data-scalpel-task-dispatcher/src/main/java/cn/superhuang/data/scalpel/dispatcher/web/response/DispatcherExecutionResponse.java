@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
 
 import java.time.Instant;
 import java.util.UUID;
+import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
 
 public record DispatcherExecutionResponse(
         UUID executionId,
@@ -23,6 +24,7 @@ public record DispatcherExecutionResponse(
         Instant startedAt,
         Instant endedAt,
         Long affectedRows,
+        QualitySummary qualitySummary,
         String errorCode,
         String errorMessage,
         SafeExecutionError executionError
@@ -33,7 +35,8 @@ public record DispatcherExecutionResponse(
                 execution.getBackendType(), execution.getState(), execution.getExternalExecutionId(),
                 execution.getTrackingUrl(), execution.getEventSequence(), execution.getDeadlineAt(),
                 execution.getQueuedAt(), execution.getStartedAt(), execution.getEndedAt(),
-                execution.getAffectedRows(), execution.getSafeErrorCode(), execution.getSafeErrorMessage(),
+                execution.getAffectedRows(), execution.getQualitySummary(),
+                execution.getSafeErrorCode(), execution.getSafeErrorMessage(),
                 execution.getSafeExecutionError()
         );
     }

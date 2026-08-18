@@ -14,9 +14,16 @@ import jakarta.persistence.Enumerated;
 import jakarta.persistence.Index;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
+import cn.superhuang.data.scalpel.contract.quality.QualityConclusion;
+import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
+import cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry;
 
 @Entity
 @Table(name = "dispatcher_task_execution", uniqueConstraints = {
@@ -44,6 +51,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     private int definitionVersion;
     @Column(name = "streaming_deployment_id", updatable = false)
     private UUID streamingDeploymentId;
+    @Column(name = "checkpoint_key_prefix", length = 500, updatable = false)
+    private String checkpointKeyPrefix;
     @Column(name = "request_fingerprint", nullable = false, length = 64, updatable = false)
     private String requestFingerprint;
     @Enumerated(EnumType.STRING)
@@ -64,6 +73,20 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     private String resultKey;
     @Column(name = "log_key", nullable = false, length = 500, updatable = false)
     private String logKey;
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "quality_sample_rule_ids", updatable = false)
+    private String qualitySampleRuleIds;
+    @Column(name = "quality_sample_limit", updatable = false)
+    private Integer qualitySampleLimit;
+    @Column(name = "user_jar_object_key", length = 500, updatable = false)
+    private String userJarObjectKey;
+    @Column(name = "user_jar_sha256", length = 64, updatable = false)
+    private String userJarSha256;
+    @Column(name = "user_jar_size_bytes", updatable = false)
+    private Long userJarSizeBytes;
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "spark_conf", updatable = false)
+    private String sparkConf;
     @Column(name = "deadline_at", updatable = false)
     private Instant deadlineAt;
     @Column(name = "cancel_requested", nullable = false)
@@ -98,6 +121,19 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     private UUID safeErrorDiagnosticId;
     @Column(name = "affected_rows")
     private Long affectedRows;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "quality_conclusion", length = 16)
+    private QualityConclusion qualityConclusion;
+    @Column(name = "quality_total_rules")
+    private Long qualityTotalRules;
+    @Column(name = "quality_passed_rules")
+    private Long qualityPassedRules;
+    @Column(name = "quality_failed_rules")
+    private Long qualityFailedRules;
+    @Column(name = "quality_skipped_rules")
+    private Long qualitySkippedRules;
+    @Column(name = "quality_checked_rows")
+    private Long qualityCheckedRows;
     @Column(name = "queued_at", nullable = false, updatable = false)
     private Instant queuedAt;
     @Column(name = "submission_started_at")
@@ -142,6 +178,15 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
         execution.manifestSha256 = command.artifacts().manifestSha256();
         execution.resultKey = command.artifacts().resultKey();
         execution.logKey = command.artifacts().logKey();
+        execution.qualitySampleRuleIds = command.qualitySampleRuleIds().stream()
+                .map(UUID::toString).collect(java.util.stream.Collectors.joining(","));
+        execution.qualitySampleLimit = command.qualitySampleLimit();
+        if (command.userJar() != null) {
+            execution.userJarObjectKey = command.userJar().objectKey();
+            execution.userJarSha256 = command.userJar().sha256();
+            execution.userJarSizeBytes = command.userJar().sizeBytes();
+        }
+        execution.sparkConf = encodeSparkConf(command.sparkConf());
         execution.deadlineAt = command.deadlineAt();
         execution.queuedAt = Instant.now();
         return execution;
@@ -158,9 +203,10 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
         execution.runId = command.runId();
         execution.taskId = command.taskId();
         execution.attempt = command.attempt();
-        execution.taskType = ExecutionTaskType.SPARK_STREAMING_CANVAS;
+        execution.taskType = command.taskType();
         execution.definitionVersion = command.definitionVersion();
         execution.streamingDeploymentId = command.deploymentId();
+        execution.checkpointKeyPrefix = command.checkpointKeyPrefix();
         execution.requestFingerprint = fingerprint;
         execution.backendType = backendType;
         execution.state = DispatcherExecutionState.QUEUED;
@@ -168,6 +214,12 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
         execution.manifestSha256 = command.artifacts().manifestSha256();
         execution.resultKey = command.artifacts().resultKey();
         execution.logKey = command.artifacts().logKey();
+        if (command.userJar() != null) {
+            execution.userJarObjectKey = command.userJar().objectKey();
+            execution.userJarSha256 = command.userJar().sha256();
+            execution.userJarSizeBytes = command.userJar().sizeBytes();
+        }
+        execution.sparkConf = encodeSparkConf(command.sparkConf());
         execution.deadlineAt = null;
         execution.queuedAt = Instant.now();
         return execution;
@@ -208,7 +260,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     }
 
     public void requestStreamingStop(int gracePeriodSeconds) {
-        if (taskType != ExecutionTaskType.SPARK_STREAMING_CANVAS
+        if ((taskType != ExecutionTaskType.SPARK_STREAMING_CANVAS
+                && taskType != ExecutionTaskType.SPARK_STREAMING_JAR)
                 || gracePeriodSeconds < 1 || gracePeriodSeconds > 600) {
             throw new IllegalArgumentException("实时停止参数无效");
         }
@@ -221,6 +274,23 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
                 || state == DispatcherExecutionState.RUNNING) {
             state = DispatcherExecutionState.CANCEL_REQUESTED;
         }
+    }
+
+    private static String encodeSparkConf(List<SparkConfigurationEntry> values) {
+        if (values == null || values.isEmpty()) return null;
+        return values.stream().map(entry -> entry.name() + "="
+                        + java.util.Base64.getEncoder().encodeToString(entry.value().getBytes(java.nio.charset.StandardCharsets.UTF_8)))
+                .collect(java.util.stream.Collectors.joining("\n"));
+    }
+
+    private static List<SparkConfigurationEntry> decodeSparkConf(String value) {
+        if (value == null || value.isBlank()) return List.of();
+        return value.lines().map(line -> {
+            int split = line.indexOf('=');
+            return new SparkConfigurationEntry(line.substring(0, split), new String(
+                    java.util.Base64.getDecoder().decode(line.substring(split + 1)),
+                    java.nio.charset.StandardCharsets.UTF_8));
+        }).toList();
     }
 
     public void succeed() { terminal(DispatcherExecutionState.SUCCESS, (String) null, null); }
@@ -249,6 +319,24 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
         if (resultStartedAt != null) startedAt = resultStartedAt;
         affectedRows = resultAffectedRows;
         terminal(target, error, resultEndedAt);
+    }
+
+    public void applyQualitySummary(QualitySummary summary) {
+        if (summary == null) return;
+        qualityConclusion = summary.conclusion();
+        qualityTotalRules = summary.totalRules();
+        qualityPassedRules = summary.passedRules();
+        qualityFailedRules = summary.failedRules();
+        qualitySkippedRules = summary.skippedRules();
+        qualityCheckedRows = summary.checkedRows();
+        affectedRows = null;
+    }
+
+    public QualitySummary getQualitySummary() {
+        if (qualityConclusion == null) return null;
+        return new QualitySummary(
+                qualityConclusion, qualityTotalRules, qualityPassedRules, qualityFailedRules,
+                qualitySkippedRules, qualityCheckedRows);
     }
 
     public void awaitingResult(Instant at) {
@@ -327,6 +415,7 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     public ExecutionTaskType getTaskType() { return taskType; }
     public int getDefinitionVersion() { return definitionVersion; }
     public UUID getStreamingDeploymentId() { return streamingDeploymentId; }
+    public String getCheckpointKeyPrefix() { return checkpointKeyPrefix; }
     public String getRequestFingerprint() { return requestFingerprint; }
     public ExecutionBackendType getBackendType() { return backendType; }
     public DispatcherExecutionState getState() { return state; }
@@ -336,6 +425,16 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     public String getManifestSha256() { return manifestSha256; }
     public String getResultKey() { return resultKey; }
     public String getLogKey() { return logKey; }
+    public List<UUID> getQualitySampleRuleIds() {
+        return qualitySampleRuleIds == null || qualitySampleRuleIds.isBlank() ? List.of()
+                : java.util.Arrays.stream(qualitySampleRuleIds.split(",")).map(UUID::fromString).toList();
+    }
+    public int getQualitySampleLimit() { return qualitySampleLimit == null ? 0 : qualitySampleLimit; }
+    public ExecutionUserJarArtifact getUserJar() {
+        return userJarObjectKey == null ? null
+                : new ExecutionUserJarArtifact(userJarObjectKey, userJarSha256, userJarSizeBytes);
+    }
+    public List<SparkConfigurationEntry> getSparkConf() { return decodeSparkConf(sparkConf); }
     public Instant getDeadlineAt() { return deadlineAt; }
     public boolean isCancelRequested() { return cancelRequested; }
     public boolean isStreamingStopRequested() { return streamingStopRequestedAt != null; }

@@ -146,53 +146,54 @@ export const DeduplicateProcessorInspector = ({
     apply: async () => {
       if (executionMode !== 'BATCH') {
         setDraftError('DEDUPLICATE 仅支持批处理任务');
-        return false;
+
       }
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (!keepStrategy) {
           setDraftError('请选择保留策略');
-          return false;
+
         }
         const effectiveKeys = keyMode === 'ALL_COLUMNS' ? [] : keyColumns;
         if (keyMode === 'BUSINESS_KEYS' && effectiveKeys.length === 0) {
           setDraftError('至少选择一个业务键字段');
-          return false;
+
         }
         if (new Set(effectiveKeys).size !== effectiveKeys.length) {
           setDraftError('去重键字段不能重复');
-          return false;
+
         }
         if (effectiveKeys.length === 0 && keepStrategy !== 'ANY') {
           setDraftError('按全部字段去重只支持任意保留策略');
-          return false;
+
         }
         if (keepStrategy === 'ANY' && orderBy.length > 0) {
           setDraftError('任意保留策略不能配置排序规则，请显式清空');
-          return false;
+
         }
         if (keepStrategy !== 'ANY' && orderBy.length === 0) {
           setDraftError('保留第一条或最后一条时至少配置一个排序字段');
-          return false;
+
         }
         const sortNames = new Set<string>();
         for (const sortField of orderBy) {
           if (!sortField.columnName) {
             setDraftError('排序项中存在未选择字段');
-            return false;
+
           }
           if (!sortNames.add(sortField.columnName)) {
             setDraftError(`排序字段重复：${sortField.columnName}`);
-            return false;
+
           }
           if (!sortField.direction || !sortField.nullOrdering) {
             setDraftError(`${sortField.columnName}：排序方向和 NULL 位置不能为空`);
-            return false;
+
           }
         }
         const configuration: DeduplicateConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           keyColumns: [...effectiveKeys],
           keepStrategy,
           orderBy: structuredClone(orderBy),

@@ -102,6 +102,12 @@
             <version>${opengauss-jdbc.version}</version>
             <scope>runtime</scope>
         </dependency>
+        <dependency>
+            <groupId>com.taosdata.jdbc</groupId>
+            <artifactId>taos-jdbcdriver</artifactId>
+            <version>${tdengine-jdbc.version}</version>
+            <scope>runtime</scope>
+        </dependency>
 
         <dependency>
             <groupId>org.springframework.boot</groupId>

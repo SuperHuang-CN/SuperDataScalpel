@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeValueMapping } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { valueMappingCanvasView } from './canvasView';
 
 export const valueMappingSpec = createCanvasNodeSpec({
   type: CanvasNodeType.ValueMapping,
@@ -15,9 +16,9 @@ export const valueMappingSpec = createCanvasNodeSpec({
   searchKeywords: ['mapping', 'map', '值映射', '枚举', '标准化', '字典'],
   iconKey: CanvasNodeIconKey.ValueMapping,
   order: 40,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: valueMappingCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 15,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createValueMappingConfiguration,
   summarize: summarizeValueMapping,

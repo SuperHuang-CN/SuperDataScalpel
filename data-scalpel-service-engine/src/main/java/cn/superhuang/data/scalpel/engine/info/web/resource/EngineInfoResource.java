@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.engine.info.web.resource;
 
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
+import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.contract.service.ServiceEngineInfoResponse;
 import cn.superhuang.data.scalpel.engine.config.EngineProperties;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -23,7 +24,11 @@ public class EngineInfoResource {
     public ServiceEngineInfoResponse info() {
         return new ServiceEngineInfoResponse(
                 properties.code(),
-                dialectRegistry.all().stream().map(dialect -> dialect.definition().id()).toList()
+                dialectRegistry.all().stream()
+                        .filter(dialect -> dialect.definition().capabilities()
+                                .contains(DatabaseCapability.SQL_SERVICE_QUERY))
+                        .map(dialect -> dialect.definition().id())
+                        .toList()
         );
     }
 }

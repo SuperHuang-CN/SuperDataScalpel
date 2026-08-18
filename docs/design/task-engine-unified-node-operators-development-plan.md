@@ -63,7 +63,7 @@ Issue Collector         Runtime Exception
 环境端口只负责：
 
 - Input Dataset 从空 Schema 还是外部系统产生。
-- 运行时物理 Schema 漂移检查。
+- 逻辑 Schema 驱动的真实读取与解析；不执行物理 Schema 相等检查。
 - Output 最终是无副作用预检还是实际 JDBC 写入。
 - HTTP API 暂存资源生命周期。
 
@@ -199,14 +199,14 @@ Join 不再因为左右平台类型不完全相同而直接失败，也不维护
 
 - 迁移 JDBC、HTTP API、Model Input 到统一 Operator。
 - 预检 Input Port 依据 MetadataSnapshot 创建空 Dataset。
-- Runner Input Port 执行真实读取和运行时 Schema 漂移检查。
+- Runner Input Port 执行真实读取，实际不可读取、解析或转换时按真实错误失败。
 - HTTP API 暂存资源继续在一次运行结束时可靠关闭。
 
 测试：
 
 - 同一 Operator 在预检和运行上下文产生相同表名、Origin 和预期 Schema。
 - 预检不访问 JDBC/HTTP。
-- Runner 仍能识别物理 Schema 漂移、禁用资源和运行连接错误。
+- Runner 仍能识别禁用资源、运行连接错误和真实读取/解析失败。
 
 完成标准：
 
@@ -228,7 +228,7 @@ Join 不再因为左右平台类型不完全相同而直接失败，也不维护
 - INTEGER -> SHORT 自动 Cast、预检有效且产生 WARNING。
 - nullable -> non-null、字符串长度和 Decimal 风险产生独立警告。
 - Spark 不支持的 Cast 产生 ERROR。
-- BY_NAME、EXPLICIT、必填目标字段、重复目标映射规则回归。
+- 统一显式映射、必填目标字段、重复目标映射规则回归。
 - 预检绝不调用 truncate/write。
 - Runner 实际写入 Dataset 的字段类型与目标 Spark Schema 一致。
 
@@ -298,7 +298,7 @@ Join 不再因为左右平台类型不完全相同而直接失败，也不维护
 - `SchemaOnlyCanvasNodeDataAccess` 只从元数据创建零行 Dataset，Output 只触发 Schema 分析。
 - `RuntimeCanvasNodeDataAccess` 承担真实 JDBC/HTTP/Model Input、运行时 Schema 检查和延迟 Output 计划。
 - `JoinNodeOperator` 是唯一 Join 表达式和 Join 输出 Schema 实现。
-- `OutputColumnMappingOperator` 是唯一 BY_NAME、EXPLICIT、alias、Cast 和目标 Schema 分析实现。
+- `OutputColumnMappingOperator` 是唯一显式映射、alias、Cast 和目标 Schema 分析实现。
 - 旧的 `*NodeCompiler`、Runner 节点私有执行副本及 Output 映射副本已经删除。
 
 自动化验收覆盖：
@@ -308,7 +308,7 @@ Join 不再因为左右平台类型不完全相同而直接失败，也不维护
 - 预检不启动 Spark Job，也不访问 HTTP/JDBC 或执行 Output 副作用。
 - Spark 接受的 Join 类型转换不产生平台类型警告，Analyzer 拒绝的不支持比较产生错误。
 - JDBC、HTTP API、Model Input 的真实运行路径、禁用 API 资源和运行时 Schema 漂移。
-- BY_NAME/EXPLICIT 映射、必填目标字段、重复目标映射和额外来源字段。
+- 显式映射、必填目标字段、重复目标映射和未映射来源字段忽略。
 - INTEGER 到 LONG/FLOAT 到 DOUBLE 的安全转换，以及 INTEGER 到 SHORT、nullable、字符串长度和 Decimal 的风险警告。
 - INTEGER 到 SHORT 合法值的显式 Cast 写入，以及溢出值在 ANSI 模式下形成结构化 Output 节点失败。
 - PostgreSQL/MySQL 跨库 Join、JDBC/Model Output、多个 Output 顺序、TRUNCATE、写入指标和权限失败分类。

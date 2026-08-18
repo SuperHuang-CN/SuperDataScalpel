@@ -132,34 +132,35 @@ export const TypeCastProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (casts.length === 0) {
           setDraftError('至少配置一个字段类型转换');
-          return false;
+
         }
         const names = new Set<string>();
         for (const cast of casts) {
           if (!cast.columnName) {
             setDraftError('类型转换项中存在未选择字段');
-            return false;
+
           }
           if (!names.add(cast.columnName)) {
             setDraftError(`字段重复配置转换：${cast.columnName}`);
-            return false;
+
           }
           const typeIssue = validateTargetType(cast.targetType);
           if (typeIssue) {
             setDraftError(`${cast.columnName}：${typeIssue}`);
-            return false;
+
           }
           if (!cast.failureStrategy) {
             setDraftError(`${cast.columnName}：请选择转换失败策略`);
-            return false;
+
           }
         }
         const configuration: TypeCastConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           casts: structuredClone(casts),
         };
         onApply({

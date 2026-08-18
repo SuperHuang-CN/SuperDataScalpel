@@ -13,8 +13,11 @@ import java.util.Optional;
 import java.util.UUID;
 
 public interface TaskStreamingDeploymentRepository extends JpaRepository<TaskStreamingDeployment, UUID> {
-    Optional<TaskStreamingDeployment> findByTaskIdAndDefinitionVersion(UUID taskId, int definitionVersion);
-    Optional<TaskStreamingDeployment> findFirstByTaskIdOrderByDefinitionVersionDesc(UUID taskId);
+    Optional<TaskStreamingDeployment> findFirstByTaskIdAndDefinitionVersionOrderByCheckpointGenerationDesc(
+            UUID taskId, int definitionVersion);
+    Optional<TaskStreamingDeployment> findFirstByTaskIdOrderByDefinitionVersionDescCheckpointGenerationDesc(UUID taskId);
+    Optional<TaskStreamingDeployment> findFirstByTaskIdAndDefinitionVersionLessThanOrderByDefinitionVersionDescCheckpointGenerationDesc(
+            UUID taskId, int definitionVersion);
     boolean existsByTaskIdAndActualStateIn(UUID taskId, Collection<StreamingDeploymentActualState> states);
     List<TaskStreamingDeployment> findAllByActualStateIn(Collection<StreamingDeploymentActualState> states);
 
@@ -26,6 +29,8 @@ public interface TaskStreamingDeploymentRepository extends JpaRepository<TaskStr
     @Query("""
             select deployment from TaskStreamingDeployment deployment
             where deployment.taskId = :taskId and deployment.definitionVersion = :definitionVersion
+              and deployment.checkpointGeneration = :checkpointGeneration
             """)
-    Optional<TaskStreamingDeployment> findByTaskIdAndDefinitionVersionForUpdate(UUID taskId, int definitionVersion);
+    Optional<TaskStreamingDeployment> findByTaskIdAndDefinitionVersionAndCheckpointGenerationForUpdate(
+            UUID taskId, int definitionVersion, int checkpointGeneration);
 }

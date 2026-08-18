@@ -87,7 +87,7 @@ class TaskRunnerApplicationTest {
         assertEquals(1, code);
         assertTrue(artifacts.uploaded);
         TaskExecutionResult result = OBJECT_MAPPER.readValue(artifacts.uploadedContent, TaskExecutionResult.class);
-        assertEquals(2, result.schemaVersion());
+        assertEquals(TaskExecutionResult.CURRENT_SCHEMA_VERSION, result.schemaVersion());
         assertEquals(TaskExecutionState.FAILED, result.state());
         assertEquals("MANIFEST_DIGEST_MISMATCH", result.error().code());
         assertTrue(events.getLast() instanceof RunnerResultAvailableEvent);

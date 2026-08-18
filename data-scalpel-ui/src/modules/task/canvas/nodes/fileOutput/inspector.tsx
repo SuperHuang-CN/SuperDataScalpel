@@ -1,6 +1,7 @@
 import {
   DeleteOutlined,
   DownOutlined,
+  EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
   UpOutlined,
@@ -8,14 +9,14 @@ import {
 import {
   Alert,
   Button,
-  Card,
   Form,
   Input,
   InputNumber,
+  Modal,
   Popconfirm,
   Select,
   Space,
-  Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { useImperativeHandle, useState } from 'react';
@@ -35,6 +36,7 @@ import {
 } from '../../canvasTypes';
 import { CanvasS3DataSourceSelect } from '../../components/CanvasS3DataSourceSelect';
 import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
+import { CanvasInspectorFieldLabel } from '../../components/CanvasInspectorFieldLabel';
 import type {
   CanvasNodeInspectorComponentProps,
   CanvasNodeInspectorHandle,
@@ -77,6 +79,49 @@ const GEOJSON_ID_TYPES = new Set<CanvasColumnSchema['fieldType']>([
 const isSpatialFileFormat = (type: FileOutputFormatType): boolean => (
   type === 'SHAPEFILE' || type === 'GEOPARQUET' || type === 'GEOJSON'
 );
+
+const fileFormatHelp = (
+  type: FileOutputFormatType,
+  geometryColumnName: string,
+): { title: string; description: string } => {
+  switch (type) {
+    case 'CSV':
+      return {
+        title: 'CSV 输出',
+        description: '输出为分区文件目录；可配置表头、分隔符、引用符、转义符和 NULL 文本。',
+      };
+    case 'JSON_LINES':
+      return {
+        title: 'JSON Lines 输出',
+        description: '每行输出一个 JSON 对象，可选择是否省略值为 null 的字段。',
+      };
+    case 'PARQUET':
+      return {
+        title: 'Parquet 输出',
+        description: '使用 Snappy 压缩并输出为可并行读取的 part-*.parquet 文件目录。',
+      };
+    case 'SHAPEFILE':
+      return {
+        title: 'Shapefile 兼容性约束',
+        description: '输出包含 SHP、SHX、DBF、PRJ、CPG；DBF 字段名最多 10 位 ASCII，STRING 宽度按 UTF-8 字节计算，NULL 与空字符串可能无法区分。文件由 Driver 串行生成，单个组件及 ZIP 达到 1.8GB 时失败。',
+      };
+    case 'GEOPARQUET':
+      return {
+        title: 'GeoParquet 1.1 分布式输出',
+        description: `Geometry 使用 WKB，并从上游 EPSG 元数据生成显式 PROJJSON。仅支持一个 EPSG + XY Geometry；ROW_BBOX 会增加 ${geometryColumnName || '<Geometry 字段>'}_bbox 物理字段。输出为 part-*.parquet 目录，不保证 part 数量和记录顺序，Empty Geometry 会在运行时失败。`,
+      };
+    case 'GEOJSON':
+      return {
+        title: 'GeoJSON · RFC 7946',
+        description: '仅支持一个 EPSG:4326 + XY Geometry；Geometry 写入 Feature geometry，其余字段写入 properties。NULL Geometry 可以输出，Empty Geometry 不支持。LONG Feature ID 在部分 JavaScript 消费端可能丢失精度。文件由 Driver 串行生成，达到 1.8GB 时失败，大规模空间数据请使用 GeoParquet。',
+      };
+    default:
+      return {
+        title: '文件输出',
+        description: '按当前文件格式生成输出制品。',
+      };
+  }
+};
 
 const fingerprint = (value: FileOutputConfiguration): string => JSON.stringify(value);
 
@@ -329,6 +374,8 @@ const FileOutputInspector = ({
       ? node.configuration.formatOptions.attributeMappings : [],
   );
   const [mappingErrors, setMappingErrors] = useState<Map<number, string[]>>(new Map());
+  const [pathPreviewOpen, setPathPreviewOpen] = useState(false);
+  const [formatHelpOpen, setFormatHelpOpen] = useState(false);
   const sourceTableName = Form.useWatch('sourceTableName', form) ?? node.configuration.sourceTableName;
   const dataSourceId = Form.useWatch('dataSourceId', form) ?? node.configuration.dataSourceId;
   const targetPath = Form.useWatch('targetPath', form) ?? node.configuration.targetPath;
@@ -424,14 +471,10 @@ const FileOutputInspector = ({
           ? '正在读取数据源信息，请稍候'
           : '数据源不存在、已停用、不是 S3 或不具有数据分发用途'],
       }]);
-      return false;
     }
     if (values.formatType === 'SHAPEFILE') {
       const errors = mappingProblems(attributeMappings, sourceTable, Boolean(validation));
       setMappingErrors(errors);
-      if (attributeMappings.length < 1 || attributeMappings.length > 255 || errors.size > 0) {
-        return false;
-      }
     }
     onApply({
       id: node.id,
@@ -447,7 +490,8 @@ const FileOutputInspector = ({
     () => ({
       apply: async () => {
         try {
-          return submit(await form.validateFields());
+          void form.validateFields().catch(() => undefined);
+          return submit(form.getFieldsValue(true));
         } catch {
           return false;
         }
@@ -470,9 +514,18 @@ const FileOutputInspector = ({
       : targetRoot && formatType === 'GEOPARQUET'
         ? `${targetRoot}/part-*.parquet + ${targetRoot}/_SUCCESS`
         : targetRoot ? `${targetRoot}/` : null;
+  const formatHelp = fileFormatHelp(formatType, geometryColumnName);
+  const selectedGeometry = geometryColumn?.geometry;
+  const geoJsonGeometryIncompatible = formatType === 'GEOJSON'
+    && selectedGeometry !== null
+    && selectedGeometry !== undefined
+    && (selectedGeometry.crs.authority !== 'EPSG'
+      || selectedGeometry.crs.code !== 4326
+      || selectedGeometry.dimension !== 'XY');
 
   return (
-    <Space orientation="vertical" size={12} className="canvas-inspector-content">
+    <>
+      <Space orientation="vertical" size={12} className="canvas-inspector-content">
       <CanvasNodeValidationIssues
         validation={validation}
         unavailableMessage={validationUnavailableMessage}
@@ -515,25 +568,53 @@ const FileOutputInspector = ({
         </Form.Item>
         <Form.Item
           name="targetPath"
-          label="目标目录"
-          extra="相对于数据源根目录；目录由当前输出独占。"
+          label={(
+            <CanvasInspectorFieldLabel
+              label="目标目录"
+              tooltip="相对于数据源根目录；目录由当前输出独占。"
+            />
+          )}
           rules={[
             { required: true, message: '请输入目标目录' },
             { validator: validateFileOutputPath },
           ]}
         >
-          <Input placeholder="例如 exports/district-orders" maxLength={1024} />
+          <Input
+            placeholder="例如 exports/district-orders"
+            maxLength={1024}
+            suffix={(
+              <Tooltip title={artifactPreview ? '查看计算后的物理路径' : '选择数据源并填写目标目录后可查看'}>
+                <Button
+                  type="text"
+                  size="small"
+                  className="canvas-file-output-path-action"
+                  icon={<EyeOutlined />}
+                  disabled={!artifactPreview}
+                  aria-label="查看文件输出物理路径"
+                  onClick={() => setPathPreviewOpen(true)}
+                />
+              </Tooltip>
+            )}
+          />
         </Form.Item>
-        {artifactPreview && (
-          <Typography.Text type="secondary" code copyable>{artifactPreview}</Typography.Text>
-        )}
         <Form.Item name="conflictPolicy" label="目录冲突策略" rules={[{ required: true }]}>
           <Select options={[
             { value: 'FAIL_IF_EXISTS', label: 'FAIL_IF_EXISTS · 已存在则失败' },
             { value: 'OVERWRITE', label: 'OVERWRITE · 完成暂存后覆盖' },
           ]} />
         </Form.Item>
-        <Form.Item name="formatType" label="文件格式" rules={[{ required: true }]}>
+        <Form.Item
+          name="formatType"
+          label={(
+            <CanvasInspectorFieldLabel
+              label="文件格式"
+              tooltip="查看当前格式的输出形态和兼容性约束"
+              actionLabel="查看文件格式说明"
+              onClick={() => setFormatHelpOpen(true)}
+            />
+          )}
+          rules={[{ required: true }]}
+        >
           <Select
             options={[
               { value: 'CSV', label: 'CSV' },
@@ -595,9 +676,13 @@ const FileOutputInspector = ({
             {(formatType === 'SHAPEFILE' || formatType === 'GEOJSON') && (
               <Form.Item
                 name="baseName"
-                label="文件基础名"
-                extra={formatType === 'SHAPEFILE'
-                  ? '不包含 .shp 或 .zip 扩展名。' : '不包含 .geojson 扩展名。'}
+                label={(
+                  <CanvasInspectorFieldLabel
+                    label="文件基础名"
+                    tooltip={formatType === 'SHAPEFILE'
+                      ? '不包含 .shp 或 .zip 扩展名。' : '不包含 .geojson 扩展名。'}
+                  />
+                )}
                 rules={[
                   { required: true, whitespace: true, message: '请输入文件基础名' },
                   {
@@ -611,7 +696,14 @@ const FileOutputInspector = ({
             )}
             <Form.Item
               name="geometryColumnName"
-              label="Geometry 字段"
+              label={(
+                <CanvasInspectorFieldLabel
+                  label="Geometry 字段"
+                  tooltip={selectedGeometry
+                    ? `${selectedGeometry.kind} · ${selectedGeometry.crs.authority}:${selectedGeometry.crs.code} · ${selectedGeometry.dimension}`
+                    : '选择一个 Geometry 字段作为空间文件的几何来源。'}
+                />
+              )}
               rules={[{ required: true, message: '请选择 Geometry 字段' }]}
               validateStatus={geometryColumnName && !geometryColumn ? 'error' : undefined}
               help={geometryColumnName && !geometryColumn ? '原 Geometry 字段已失效。' : undefined}
@@ -641,13 +733,6 @@ const FileOutputInspector = ({
                 }}
               />
             </Form.Item>
-            {geometryColumn?.geometry && (
-              <Space size={6} wrap className="canvas-spatial-metadata-row">
-                <Tag color="blue">{geometryColumn.geometry.kind}</Tag>
-                <Tag>{`${geometryColumn.geometry.crs.authority}:${geometryColumn.geometry.crs.code}`}</Tag>
-                <Tag>{geometryColumn.geometry.dimension}</Tag>
-              </Space>
-            )}
             {formatType === 'SHAPEFILE' && (
               <>
                 <Form.Item name="packageMode" label="输出形态" rules={[{ required: true }]}>
@@ -684,10 +769,15 @@ const FileOutputInspector = ({
                 </Form.Item>
                 <Form.Item
                   name="geoParquetCoveringMode"
-                  label="空间 Covering"
+                  label={(
+                    <CanvasInspectorFieldLabel
+                      label="空间 Covering"
+                      tooltip={geometryColumnName
+                        ? `ROW_BBOX 会增加 ${geometryColumnName}_bbox 物理字段。`
+                        : 'ROW_BBOX 会增加一个以 Geometry 字段命名的 bbox 物理字段。'}
+                    />
+                  )}
                   rules={[{ required: true }]}
-                  extra={geometryColumnName
-                    ? `ROW_BBOX 将增加 ${geometryColumnName}_bbox 物理字段。` : undefined}
                 >
                   <Select options={[
                     { value: 'ROW_BBOX', label: '生成逐行 bbox · 推荐，利于空间过滤' },
@@ -700,8 +790,12 @@ const FileOutputInspector = ({
               <>
                 <Form.Item
                   name="idColumnName"
-                  label="Feature ID 字段"
-                  extra="可选；ID 字段仍会保留在 properties 中。"
+                  label={(
+                    <CanvasInspectorFieldLabel
+                      label="Feature ID 字段"
+                      tooltip="可选；选中的 ID 字段仍会同时保留在 properties 中。"
+                    />
+                  )}
                   validateStatus={idColumnName && !idColumnValid ? 'error' : undefined}
                   help={idColumnName && !idColumnValid
                     ? '原 Feature ID 字段已失效或类型不再受支持。' : undefined}
@@ -783,7 +877,14 @@ const FileOutputInspector = ({
           {attributeMappings.length === 0 && (
             <Alert showIcon type="error" title="至少配置一个 DBF 属性字段" />
           )}
-          <div className="canvas-processor-rule-list">
+          <div className="canvas-file-dbf-mapping-list">
+            <div className="canvas-file-dbf-mapping-header" aria-hidden="true">
+              <span>#</span>
+              <span>来源字段</span>
+              <span>DBF 字段</span>
+              <span>STRING 字节</span>
+              <span>操作</span>
+            </div>
             {attributeMappings.map((mapping, index) => {
               const column = sourceTable?.columns.find(
                 (candidate) => candidate.name === mapping.sourceColumnName,
@@ -805,19 +906,75 @@ const FileOutputInspector = ({
                   })),
               ];
               return (
-                <Card
-                  size="small"
+                <div
                   key={index}
-                  className={`canvas-processor-rule-card${errors.length > 0 ? ' is-invalid' : ''}`}
-                  title={(
-                    <Space size={6}>
-                      <Tag color="green">{index + 1}</Tag>
-                      <span>{mapping.targetFieldName || '未命名字段'}</span>
-                      {errors.length > 0 && <Tag color="error">存在问题</Tag>}
-                    </Space>
+                  className={`canvas-file-dbf-mapping-row${errors.length > 0 ? ' is-invalid' : ''}`}
+                >
+                  <span className="canvas-file-dbf-mapping-index">{index + 1}</span>
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    value={mapping.sourceColumnName || undefined}
+                    status={!column ? 'error' : undefined}
+                    options={columnOptions}
+                    placeholder="来源字段"
+                    aria-label={`DBF 字段 ${index + 1} 的来源字段`}
+                    onChange={(sourceColumnName) => {
+                      const nextColumn = sourceTable?.columns.find(
+                        (candidate) => candidate.name === sourceColumnName,
+                      );
+                      updateMapping(index, {
+                        ...mapping,
+                        sourceColumnName,
+                        targetStringByteLength: nextColumn?.fieldType === 'STRING'
+                          ? Math.min((nextColumn.length ?? 64) * 4, 254) : null,
+                      });
+                    }}
+                  />
+                  <Input
+                    value={mapping.targetFieldName}
+                    status={!/^[A-Za-z_][A-Za-z0-9_]{0,9}$/.test(mapping.targetFieldName)
+                      ? 'error' : undefined}
+                    maxLength={10}
+                    placeholder="目标字段"
+                    aria-label={`DBF 字段 ${index + 1} 的目标名称`}
+                    onChange={(event) => updateMapping(index, {
+                      ...mapping,
+                      targetFieldName: event.target.value,
+                    })}
+                  />
+                  {column?.fieldType === 'STRING' ? (
+                    <InputNumber
+                      min={1}
+                      max={254}
+                      precision={0}
+                      className="canvas-file-dbf-byte-input"
+                      placeholder="字节"
+                      value={mapping.targetStringByteLength}
+                      aria-label={`DBF 字段 ${index + 1} 的 UTF-8 字节宽度`}
+                      onChange={(value) => updateMapping(index, {
+                        ...mapping,
+                        targetStringByteLength: value,
+                      })}
+                    />
+                  ) : column && mapping.targetStringByteLength !== null ? (
+                    <Button
+                      type="link"
+                      size="small"
+                      danger
+                      className="canvas-file-dbf-clear-width"
+                      onClick={() => updateMapping(index, {
+                        ...mapping,
+                        targetStringByteLength: null,
+                      })}
+                    >
+                      清除宽度
+                    </Button>
+                  ) : (
+                    <Typography.Text type="secondary" className="canvas-file-dbf-not-applicable">—</Typography.Text>
                   )}
-                  extra={(
-                    <Space size={0}>
+                  <Space size={0} className="canvas-file-dbf-mapping-actions">
+                    <Tooltip title="上移">
                       <Button
                         type="text"
                         size="small"
@@ -826,6 +983,8 @@ const FileOutputInspector = ({
                         aria-label={`上移 DBF 字段 ${index + 1}`}
                         onClick={() => moveMapping(index, index - 1)}
                       />
+                    </Tooltip>
+                    <Tooltip title="下移">
                       <Button
                         type="text"
                         size="small"
@@ -834,6 +993,8 @@ const FileOutputInspector = ({
                         aria-label={`下移 DBF 字段 ${index + 1}`}
                         onClick={() => moveMapping(index, index + 1)}
                       />
+                    </Tooltip>
+                    <Tooltip title="删除">
                       <Button
                         type="text"
                         danger
@@ -844,111 +1005,60 @@ const FileOutputInspector = ({
                           attributeMappings.filter((_, candidateIndex) => candidateIndex !== index),
                         )}
                       />
-                    </Space>
-                  )}
-                >
-                  <Space orientation="vertical" size={8} className="canvas-full-width">
-                    <Select
-                      showSearch
-                      optionFilterProp="label"
-                      value={mapping.sourceColumnName || undefined}
-                      status={!column ? 'error' : undefined}
-                      options={columnOptions}
-                      placeholder="来源字段"
-                      onChange={(sourceColumnName) => {
-                        const nextColumn = sourceTable?.columns.find(
-                          (candidate) => candidate.name === sourceColumnName,
-                        );
-                        updateMapping(index, {
-                          ...mapping,
-                          sourceColumnName,
-                          targetStringByteLength: nextColumn?.fieldType === 'STRING'
-                            ? Math.min((nextColumn.length ?? 64) * 4, 254) : null,
-                        });
-                      }}
-                    />
-                    <Input
-                      value={mapping.targetFieldName}
-                      status={!/^[A-Za-z_][A-Za-z0-9_]{0,9}$/.test(mapping.targetFieldName)
-                        ? 'error' : undefined}
-                      maxLength={10}
-                      placeholder="DBF 目标字段名"
-                      onChange={(event) => updateMapping(index, {
-                        ...mapping,
-                        targetFieldName: event.target.value,
-                      })}
-                    />
-                    {column?.fieldType === 'STRING' && (
-                      <InputNumber
-                        min={1}
-                        max={254}
-                        precision={0}
-                        className="canvas-full-width"
-                        addonAfter="UTF-8 字节"
-                        value={mapping.targetStringByteLength}
-                        onChange={(value) => updateMapping(index, {
-                          ...mapping,
-                          targetStringByteLength: value,
-                        })}
-                      />
-                    )}
-                    {column && column.fieldType !== 'STRING'
-                      && mapping.targetStringByteLength !== null && (
-                      <Button
-                        size="small"
-                        danger
-                        onClick={() => updateMapping(index, {
-                          ...mapping,
-                          targetStringByteLength: null,
-                        })}
-                      >
-                        清除遗留 STRING 字节宽度
-                      </Button>
-                    )}
-                    {errors.map((error) => (
-                      <Typography.Text type="danger" key={error}>{error}</Typography.Text>
-                    ))}
+                    </Tooltip>
                   </Space>
-                </Card>
+                  {errors.length > 0 && (
+                    <Typography.Text type="danger" className="canvas-file-dbf-mapping-errors">
+                      {errors.join('；')}
+                    </Typography.Text>
+                  )}
+                </div>
               );
             })}
           </div>
-          <Alert
-            showIcon
-            type="info"
-            title="Shapefile 兼容性约束"
-            description="输出包含 SHP、SHX、DBF、PRJ、CPG；DBF 字段名最多 10 位 ASCII，STRING 宽度按 UTF-8 字节计算，NULL 与空字符串可能无法区分。文件由 Driver 串行生成，单个组件及 ZIP 达到 1.8GB 时失败。"
-          />
         </>
       )}
-      {formatType === 'GEOPARQUET' && (
+      {geoJsonGeometryIncompatible && (
         <Alert
           showIcon
-          type="info"
-          title="GeoParquet 1.1 分布式输出"
-          description={`这不是普通 Parquet：Geometry 使用 WKB，并从上游 EPSG 元数据生成显式 PROJJSON。首版只支持一个 EPSG + XY Geometry；ROW_BBOX 会增加 ${geometryColumnName || '<Geometry 字段>'}_bbox 物理字段。输出是可并行的 part-*.parquet 目录，不保证 part 数量和记录顺序，Empty Geometry 会在运行时失败。`}
-        />
-      )}
-      {formatType === 'GEOJSON' && (
-        <Alert
-          showIcon
-          type={geometryColumn?.geometry
-            && (geometryColumn.geometry.crs.authority !== 'EPSG'
-              || geometryColumn.geometry.crs.code !== 4326
-              || geometryColumn.geometry.dimension !== 'XY') ? 'warning' : 'info'}
-          title="RFC 7946 单文件 FeatureCollection"
-          description="仅支持一个 EPSG:4326 + XY Geometry；Geometry 写入 Feature geometry，其余字段写入 properties。NULL Geometry 可以输出，Empty Geometry 不支持。LONG Feature ID 在部分 JavaScript 消费端可能丢失精度。文件由 Driver 串行生成，达到 1.8GB 时失败，大规模空间数据请使用 GeoParquet。"
+          type="warning"
+          className="canvas-compact-risk-alert"
+          title="GeoJSON 要求 EPSG:4326 + XY，当前 Geometry 元数据不兼容。"
         />
       )}
       {conflictPolicy === 'OVERWRITE' && (
         <Alert
           showIcon
           type="warning"
-          title="S3 覆盖不是原子操作"
-          description="系统会先完成临时制品，再替换目标目录；提交中断时可能留下没有 _SUCCESS 的不完整目录。"
+          className="canvas-compact-risk-alert"
+          title="S3 覆盖不是原子操作；提交中断时可能留下没有 _SUCCESS 的不完整目录。"
         />
       )}
-    </Space>
+      </Space>
+      <Modal
+        open={pathPreviewOpen && Boolean(artifactPreview)}
+        title="文件输出物理路径"
+        width={620}
+        destroyOnHidden
+        onCancel={() => setPathPreviewOpen(false)}
+        footer={<Button onClick={() => setPathPreviewOpen(false)}>关闭</Button>}
+      >
+        <Typography.Paragraph type="secondary">
+          根据当前 S3 数据源、根目录、目标目录和文件格式计算，不写入任务定义。
+        </Typography.Paragraph>
+        {artifactPreview && <Typography.Text code copyable>{artifactPreview}</Typography.Text>}
+      </Modal>
+      <Modal
+        open={formatHelpOpen}
+        title={formatHelp.title}
+        width={620}
+        destroyOnHidden
+        onCancel={() => setFormatHelpOpen(false)}
+        footer={<Button onClick={() => setFormatHelpOpen(false)}>关闭</Button>}
+      >
+        <Typography.Paragraph>{formatHelp.description}</Typography.Paragraph>
+      </Modal>
+    </>
   );
 };
 

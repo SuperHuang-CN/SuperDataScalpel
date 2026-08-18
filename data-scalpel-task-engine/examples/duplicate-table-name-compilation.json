@@ -3,8 +3,8 @@
   "task": {
     "type": "CANVAS",
     "definition": {
-      "schemaVersion": 1,
-      "schemaMinorVersion": 1,
+      "schemaVersion": 2,
+      "schemaMinorVersion": 0,
       "nodes": [
         {
           "id": "10000000-0000-4000-8000-000000000001",
@@ -51,8 +51,9 @@
             "dataSourceId": "22222222-2222-4222-8222-222222222222",
             "targetTableName": "joined_orders",
             "writeMode": "APPEND",
-            "columnMappingMode": "BY_NAME",
-            "columnMappings": []
+            "columnMappings": [
+              { "sourceColumnName": "id", "targetColumnName": "id" }
+            ]
           }
         }
       ],

@@ -15,7 +15,7 @@ import {
   Typography,
   message,
 } from 'antd';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useBlocker, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { MonacoSqlEditor } from '../../../shared/components/MonacoSqlEditor';
@@ -43,7 +43,8 @@ interface LocalSqlTaskDefinitionPanelProps {
   task: DataTask;
   canUpdate: boolean;
   canValidate: boolean;
-  onDirtyChange: (dirty: boolean) => void;
+  toolbarContext?: ReactNode;
+  onDirtyChange?: (dirty: boolean) => void;
   protectNavigation?: boolean;
 }
 
@@ -53,6 +54,7 @@ export const LocalSqlTaskDefinitionPanel = ({
   task,
   canUpdate,
   canValidate,
+  toolbarContext,
   onDirtyChange,
   protectNavigation = true,
 }: LocalSqlTaskDefinitionPanelProps) => {
@@ -116,8 +118,8 @@ export const LocalSqlTaskDefinitionPanel = ({
   }, [definition, form, initialized]);
 
   useEffect(() => {
-    onDirtyChange(dirty);
-    return () => onDirtyChange(false);
+    onDirtyChange?.(dirty);
+    return () => onDirtyChange?.(false);
   }, [dirty, onDirtyChange]);
 
   useEffect(() => {
@@ -173,8 +175,8 @@ export const LocalSqlTaskDefinitionPanel = ({
     <div className="task-detail-tab-panel task-local-sql-definition-panel">
       {messageContext}
       <div className="task-detail-tab-toolbar">
-        <Space size={8}>
-          <Typography.Text strong>SQL 定义</Typography.Text>
+        <Space size={8} wrap>
+          {toolbarContext ?? <Typography.Text strong>SQL 定义</Typography.Text>}
           <Tag color={definition.configured ? 'success' : 'default'}>
             {definition.configured ? `v${definition.version}` : '未配置'}
           </Tag>
@@ -216,96 +218,118 @@ export const LocalSqlTaskDefinitionPanel = ({
             <Typography.Paragraph type="secondary">
               仅支持一条 <code>SELECT</code> 或只读 <code>WITH ... SELECT</code>。查询结果可以是输出模型字段的子集，但必须包含全部主键字段；输出别名必须等于字段编码。
             </Typography.Paragraph>
-            <MonacoSqlEditor value={sql} readOnly={!editable || !canUpdate} onChange={setSql} />
+            <MonacoSqlEditor
+              className="task-local-sql-editor"
+              value={sql}
+              readOnly={!editable || !canUpdate}
+              height="100%"
+              onChange={setSql}
+            />
           </div>
-          <Form<DefinitionFormValues> autoComplete="off"
-            form={form}
-            layout="vertical"
-            disabled={!editable || !canUpdate}
-            onValuesChange={() => setValidation(null)}
-          >
-            <Form.Item name="outputModelId" label="输出模型" rules={[{ required: true, message: '请选择输出模型' }]}>
-              <Select
-                showSearch
-                optionFilterProp="label"
-                options={candidateModels.map((model) => ({
-                  value: model.id,
-                  label: `${model.name} (${model.code}) · ${model.storageDataSourceName}`,
-                }))}
-              />
-            </Form.Item>
-            <Form.Item name="inputModelIds" label="输入模型" rules={[{ required: true, message: '至少选择一个输入模型' }]}>
-              <Select
-                mode="multiple"
-                showSearch
-                optionFilterProp="label"
-                options={sameStorageModels
-                  .filter((model) => model.id !== selectedOutputId)
-                  .map((model) => ({ value: model.id, label: `${model.name} (${model.code})` }))}
-              />
-            </Form.Item>
-            {selectedOutput && (
-              <Alert type="info" showIcon message={`当前数据存储：${selectedOutput.storageDataSourceName}`} />
-            )}
-            <Form.Item name="writeMode" label="写入方式" rules={[{ required: true }]}>
-              <Select options={[
-                { value: 'APPEND', label: 'APPEND：追加写入' },
-                { value: 'OVERWRITE', label: 'OVERWRITE：清空后重写（仅 PostgreSQL）' },
-              ]} />
-            </Form.Item>
-            <Form.Item name="timeoutSeconds" label="超时（秒）" rules={[{ required: true }]}>
-              <InputNumber min={1} max={3600} className="task-timeout-input" />
-            </Form.Item>
-            {outputDetailQuery.data && (
-              <>
-                <Divider titlePlacement="start">输出字段</Divider>
-                <List<DataModelField>
-                  size="small"
-                  bordered
-                  dataSource={outputDetailQuery.data.fields}
-                  renderItem={(field) => (
-                    <List.Item>
-                      <code>{field.code}</code>&nbsp; {field.fieldType}
-                      {field.primaryKey && <Tag color="blue" className="task-primary-key-tag">主键</Tag>}
-                    </List.Item>
-                  )}
+          <div className="task-local-sql-configuration-column">
+            <Form<DefinitionFormValues>
+              autoComplete="off"
+              form={form}
+              layout="vertical"
+              disabled={!editable || !canUpdate}
+              onValuesChange={() => setValidation(null)}
+            >
+              <Form.Item name="outputModelId" label="输出模型" rules={[{ required: true, message: '请选择输出模型' }]}>
+                <Select
+                  showSearch
+                  optionFilterProp="label"
+                  options={candidateModels.map((model) => ({
+                    value: model.id,
+                    label: `${model.name} (${model.code}) · ${model.storageDataSourceName}`,
+                  }))}
                 />
-              </>
-            )}
-          </Form>
-        </div>
+              </Form.Item>
+              <Form.Item name="inputModelIds" label="输入模型" rules={[{ required: true, message: '至少选择一个输入模型' }]}>
+                <Select
+                  mode="multiple"
+                  showSearch
+                  optionFilterProp="label"
+                  options={sameStorageModels
+                    .filter((model) => model.id !== selectedOutputId)
+                    .map((model) => ({ value: model.id, label: `${model.name} (${model.code})` }))}
+                />
+              </Form.Item>
+              {selectedOutput && (
+                <Alert type="info" showIcon message={`当前数据存储：${selectedOutput.storageDataSourceName}`} />
+              )}
+              <Form.Item name="writeMode" label="写入方式" rules={[{ required: true }]}>
+                <Select options={[
+                  { value: 'APPEND', label: 'APPEND：追加写入' },
+                  { value: 'OVERWRITE', label: 'OVERWRITE：清空后重写（仅 PostgreSQL）' },
+                ]} />
+              </Form.Item>
+              <Form.Item name="timeoutSeconds" label="超时（秒）" rules={[{ required: true }]}>
+                <InputNumber min={1} max={3600} className="task-timeout-input" />
+              </Form.Item>
+              {outputDetailQuery.data && (
+                <>
+                  <Divider titlePlacement="start">输出字段</Divider>
+                  <List<DataModelField>
+                    size="small"
+                    bordered
+                    dataSource={outputDetailQuery.data.fields}
+                    renderItem={(field) => (
+                      <List.Item>
+                        <code>{field.code}</code>&nbsp; {field.fieldType}
+                        {field.primaryKey && <Tag color="blue" className="task-primary-key-tag">主键</Tag>}
+                      </List.Item>
+                    )}
+                  />
+                </>
+              )}
+            </Form>
 
-      {validation && (
-          <section className="task-definition-validation">
-            <div className="task-basic-section-title">{validation.valid ? '校验通过' : '校验问题'}</div>
-            {!validation.valid && (
-              <List
-                bordered
-                dataSource={validation.problems}
-                renderItem={(problem) => (
-                  <List.Item><Tag color="error">{problem.code}</Tag>{problem.message}</List.Item>
+            {validation && (
+              <section className="task-definition-validation">
+                <div className="task-basic-section-title">{validation.valid ? '校验通过' : '校验问题'}</div>
+                <Alert
+                  showIcon
+                  type={validation.lineageCoverage === 'FIELD_COMPLETE' ? 'success' : 'warning'}
+                  message={validation.lineageCoverage === 'FIELD_COMPLETE'
+                    ? '预计生成完整字段血缘'
+                    : validation.lineageAnalysisStatus === 'UNAVAILABLE'
+                      ? 'SQL AST 不可用，将按实际写入字段生成部分血缘'
+                      : '预计生成部分字段血缘'}
+                  description={validation.lineageWarnings.length > 0
+                    ? validation.lineageWarnings.map((warning) => warning.message).join('；')
+                    : undefined}
+                />
+                {!validation.valid && (
+                  <List
+                    bordered
+                    dataSource={validation.problems}
+                    renderItem={(problem) => (
+                      <List.Item><Tag color="error">{problem.code}</Tag>{problem.message}</List.Item>
+                    )}
+                  />
                 )}
-              />
+                {validation.columns.length > 0 && (
+                  <Table
+                    size="small"
+                    rowKey="ordinal"
+                    pagination={false}
+                    dataSource={validation.columns}
+                    columns={[
+                      { title: '#', dataIndex: 'ordinal', width: 60 },
+                      { title: '查询列', dataIndex: 'label' },
+                      { title: '类型', dataIndex: 'logicalType' },
+                      { title: '匹配输出字段', dataIndex: 'matchedOutputFieldCode' },
+                    ]}
+                  />
+                )}
+              </section>
             )}
-            {validation.columns.length > 0 && (
-              <Table
-                size="small"
-                rowKey="ordinal"
-                pagination={false}
-                dataSource={validation.columns}
-                columns={[
-                  { title: '#', dataIndex: 'ordinal', width: 60 },
-                  { title: '查询列', dataIndex: 'label' },
-                  { title: '类型', dataIndex: 'logicalType' },
-                  { title: '匹配输出字段', dataIndex: 'matchedOutputFieldCode' },
-                ]}
-              />
-            )}
-          </section>
-        )}
+          </div>
+        </div>
       </div>
 
       <Modal
+        rootClassName="business-overlay business-modal-overlay"
         open={blocker.state === 'blocked'}
         title="离开未保存的任务定义？"
         okText="放弃并离开"

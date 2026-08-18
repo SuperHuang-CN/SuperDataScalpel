@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeHttpApiInput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { httpApiInputCanvasView } from './canvasView';
 
 export const httpApiInputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.HttpApiInput,
@@ -15,7 +16,7 @@ export const httpApiInputSpec = createCanvasNodeSpec({
   searchKeywords: ['http', 'api', '接口', '请求'],
   iconKey: CanvasNodeIconKey.Api,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: httpApiInputCanvasView,
   supportedModes: ['BATCH'],
   introducedInMinor: 0,
   graph: { minInputs: 0, maxInputs: 0, minOutputs: 1, maxOutputs: null },

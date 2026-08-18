@@ -97,6 +97,7 @@ export const FileDatasetFilesPanel = ({
   };
 
   const remove = (file: FileDatasetFile) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除物理文件',
     content: `确认删除“${file.originalFileName}”及其全部来源表吗？`,
     okText: '删除',

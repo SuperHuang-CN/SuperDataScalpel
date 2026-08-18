@@ -165,6 +165,7 @@ export const GatewayAccessLogDetailDrawer = ({
 
   return (
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay"
       title="网关调用详情"
       width={720}
       open={open}

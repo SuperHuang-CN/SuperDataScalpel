@@ -133,6 +133,7 @@ export const MaskingRuleDrawer = ({
     <>
       {contextHolder}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         open={open}
         width={560}
         title={rule

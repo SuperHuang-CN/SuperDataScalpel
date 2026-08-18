@@ -56,6 +56,7 @@ export const SystemRoleDrawer = ({ open, role, onClose }: SystemRoleDrawerProps)
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={isEditing ? '修改角色' : '新建角色'}
         open={open}
         onClose={onClose}

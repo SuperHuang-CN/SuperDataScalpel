@@ -19,6 +19,8 @@ import type {
   HttpApiRuntimeParameter,
   JdbcQueryInspection,
   KafkaTopic,
+  TdEngineTmqTopic,
+  TdEngineTmqTopicDetail,
   UpdateApiResourceRequest,
   UpdateDataSourceRequest,
   CreateSpatialFeatureResourceRequest,
@@ -26,6 +28,11 @@ import type {
   SpatialFeaturePreview,
   SpatialFeatureResource,
   UpdateSpatialFeatureResourceRequest,
+  DataSourceRelationKind,
+  DataSourceTaskRelationRole,
+  DataSourceRelatedModel,
+  DataSourceRelatedTask,
+  DataSourceRelatedService,
 } from '../model/dataSource';
 
 const DATA_SOURCE_PATH = '/v1/data-sources';
@@ -43,6 +50,42 @@ export const fetchDataSources = async (request: SearchRequest): Promise<PageResp
 export const fetchDataSource = (id: string): Promise<DataSource> => (
   requestJson<DataSource>(`${DATA_SOURCE_PATH}/${id}`)
 );
+
+export const fetchDataSourceRelatedModels = async (
+  id: string,
+  request: SearchRequest,
+): Promise<PageResponse<DataSourceRelatedModel>> => {
+  const query = toSearchParams(request).toString();
+  return requestJson<PageResponse<DataSourceRelatedModel>>(
+    `${DATA_SOURCE_PATH}/${id}/related-models${query ? `?${query}` : ''}`,
+  );
+};
+
+export const fetchDataSourceRelatedTasks = async (
+  id: string,
+  role: DataSourceTaskRelationRole | undefined,
+  relationKind: DataSourceRelationKind | undefined,
+  request: SearchRequest,
+): Promise<PageResponse<DataSourceRelatedTask>> => {
+  const query = toSearchParams(request);
+  if (role) query.set('role', role);
+  if (relationKind) query.set('relationKind', relationKind);
+  return requestJson<PageResponse<DataSourceRelatedTask>>(
+    `${DATA_SOURCE_PATH}/${id}/related-tasks${query.size ? `?${query.toString()}` : ''}`,
+  );
+};
+
+export const fetchDataSourceRelatedServices = async (
+  id: string,
+  relationKind: DataSourceRelationKind | undefined,
+  request: SearchRequest,
+): Promise<PageResponse<DataSourceRelatedService>> => {
+  const query = toSearchParams(request);
+  if (relationKind) query.set('relationKind', relationKind);
+  return requestJson<PageResponse<DataSourceRelatedService>>(
+    `${DATA_SOURCE_PATH}/${id}/related-services${query.size ? `?${query.toString()}` : ''}`,
+  );
+};
 
 export const createDataSource = (request: CreateDataSourceRequest): Promise<DataSource> => (
   requestJson<DataSource>(DATA_SOURCE_PATH, { method: 'POST', body: JSON.stringify(request) })
@@ -190,9 +233,33 @@ export const fetchTablePreview = (id: string, table: TableIdentifier, limit = 50
   return requestJson<TablePreview>(`${DATA_SOURCE_PATH}/${id}/table-preview?${searchParams.toString()}`);
 };
 
-export const fetchKafkaTopics = (id: string, keyword?: string): Promise<KafkaTopic[]> => {
+export const fetchKafkaTopics = (
+  id: string,
+  keyword?: string,
+  includeInternal = false,
+): Promise<KafkaTopic[]> => {
+  const searchParams = new URLSearchParams();
+  if (keyword?.trim()) searchParams.set('keyword', keyword.trim());
+  if (includeInternal) searchParams.set('includeInternal', 'true');
+  const suffix = searchParams.size ? `?${searchParams.toString()}` : '';
+  return requestJson<KafkaTopic[]>(`${DATA_SOURCE_PATH}/${id}/kafka-topics${suffix}`, {}, 60_000);
+};
+
+export const fetchTdEngineTmqTopics = (
+  id: string,
+  keyword?: string,
+): Promise<TdEngineTmqTopic[]> => {
   const searchParams = new URLSearchParams();
   if (keyword?.trim()) searchParams.set('keyword', keyword.trim());
   const suffix = searchParams.size ? `?${searchParams.toString()}` : '';
-  return requestJson<KafkaTopic[]>(`${DATA_SOURCE_PATH}/${id}/kafka-topics${suffix}`);
+  return requestJson<TdEngineTmqTopic[]>(`${DATA_SOURCE_PATH}/${id}/tmq-topics${suffix}`, {}, 60_000);
 };
+
+export const fetchTdEngineTmqTopic = (
+  id: string,
+  topic: string,
+): Promise<TdEngineTmqTopicDetail> => requestJson<TdEngineTmqTopicDetail>(
+  `${DATA_SOURCE_PATH}/${id}/tmq-topic?${new URLSearchParams({ topic }).toString()}`,
+  {},
+  60_000,
+);

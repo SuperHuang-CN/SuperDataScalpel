@@ -6,6 +6,7 @@ import { directoryTreeSelectData, type DirectoryScope, type DirectoryTreeNode } 
 
 interface DirectoryDrawerProps {
   scope: DirectoryScope;
+  label?: string;
   open: boolean;
   directory: DirectoryTreeNode | null;
   initialParentId?: string;
@@ -20,7 +21,7 @@ interface DirectoryFormValues {
   description?: string;
 }
 
-export const DirectoryDrawer = ({ scope, open, directory, initialParentId, tree, onClose }: DirectoryDrawerProps) => {
+export const DirectoryDrawer = ({ scope, label = '目录', open, directory, initialParentId, tree, onClose }: DirectoryDrawerProps) => {
   const [form] = Form.useForm<DirectoryFormValues>();
   const [messageApi, messageContext] = message.useMessage();
   const createMutation = useCreateDirectory(scope);
@@ -42,10 +43,10 @@ export const DirectoryDrawer = ({ scope, open, directory, initialParentId, tree,
     try {
       if (directory) {
         await updateMutation.mutateAsync({ id: directory.id, request: values });
-        messageApi.success('目录已保存');
+        messageApi.success(`${label}已保存`);
       } else {
         await createMutation.mutateAsync({ ...values, scope });
-        messageApi.success('目录已创建');
+        messageApi.success(`${label}已创建`);
       }
       onClose();
     } catch (error) {
@@ -57,7 +58,8 @@ export const DirectoryDrawer = ({ scope, open, directory, initialParentId, tree,
     <>
       {messageContext}
       <Drawer
-        title={editing ? '修改目录' : '新建目录'}
+        rootClassName="business-overlay business-drawer-overlay"
+        title={editing ? `修改${label}` : `新建${label}`}
         open={open}
         size={420}
         onClose={onClose}
@@ -65,8 +67,8 @@ export const DirectoryDrawer = ({ scope, open, directory, initialParentId, tree,
         footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
       >
         <Form<DirectoryFormValues> autoComplete="off" form={form} layout="vertical" onFinish={(values) => void submit(values)}>
-          <Form.Item label="上级目录" name="parentId">
-            <TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(tree)} placeholder="顶级目录" />
+          <Form.Item label={`上级${label}`} name="parentId">
+            <TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(tree)} placeholder={`顶级${label}`} />
           </Form.Item>
           <Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入目录名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}>
             <Input autoFocus />

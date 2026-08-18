@@ -1,4 +1,4 @@
-import { Alert, Empty, Space, Table, Tag, Typography } from 'antd';
+import { Alert, Empty, Table, Tag } from 'antd';
 import type { SqlServiceTestResponse } from '../../model/dataService';
 import { typeDescription } from '../../model/dataServiceEditor';
 
@@ -7,59 +7,55 @@ interface SqlTestPanelProps {
 }
 
 export const SqlTestPanel = ({ result }: SqlTestPanelProps) => {
-  if (!result) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未执行 SQL 测试" />;
+  if (!result) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请点击顶部“测试 SQL”执行查询" />;
 
   const previewColumns = result.resultFields.map((field) => ({
-    title: field.name,
+    title: (
+      <span className="data-service-preview-column-title">
+        <span>{field.name}</span>
+        <span>{typeDescription(field.typeDefinition)} · {field.nullable ? '可空' : '非空'}</span>
+      </span>
+    ),
     dataIndex: field.name,
     key: field.name,
+    width: 180,
     ellipsis: true,
     render: (value: unknown) => value === null || value === undefined ? '—' : String(value),
   }));
+  const previewRows = result.preview?.resultList ?? [];
 
   return (
-    <Space orientation="vertical" size={12} className="data-service-test-result">
-      {result.valid ? (
-        <Alert type="success" showIcon message={`SQL 测试通过，耗时 ${result.elapsedMs} ms`} />
-      ) : (
+    <div className="data-service-test-result">
+      {!result.valid && (
         <Alert
           type="error"
           showIcon
           message="SQL 测试未通过"
           description={result.problems.map((problem) => (
-            <div key={`${problem.code}-${problem.subject ?? ''}`}><Tag color="error">{problem.code}</Tag>{problem.message}</div>
+            <div key={`${problem.code}-${problem.subject ?? ''}`}>
+              <Tag color="error">{problem.code}</Tag>
+              {problem.message}
+            </div>
           ))}
         />
       )}
       {result.resultFields.length > 0 && (
-        <>
-          <Typography.Text strong>输出字段</Typography.Text>
-          <Table
-            size="small"
-            pagination={false}
-            rowKey="name"
-            dataSource={result.resultFields}
-            columns={[
-              { title: '输出字段', dataIndex: 'name' },
-              { title: '平台类型', render: (_, field) => typeDescription(field.typeDefinition) },
-              { title: '可空', dataIndex: 'nullable', render: (value: boolean) => value ? '是' : '否' },
-            ]}
-          />
-        </>
+        <Table
+          className="data-service-preview-table"
+          size="small"
+          rowKey={(record) => String(previewRows.indexOf(record))}
+          dataSource={previewRows}
+          columns={previewColumns}
+          pagination={false}
+          locale={{
+            emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="查询成功，暂无预览数据" />,
+          }}
+          scroll={{ x: 'max-content', y: '100%' }}
+        />
       )}
-      {result.preview && (
-        <>
-          <Typography.Text strong>预览数据</Typography.Text>
-          <Table
-            size="small"
-            rowKey={(_, index) => String(index)}
-            dataSource={result.preview.resultList}
-            columns={previewColumns}
-            pagination={false}
-            scroll={{ x: 'max-content', y: 280 }}
-          />
-        </>
+      {result.valid && result.resultFields.length === 0 && (
+        <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="测试通过，但未返回输出字段" />
       )}
-    </Space>
+    </div>
   );
 };

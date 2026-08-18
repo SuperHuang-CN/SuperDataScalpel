@@ -126,27 +126,28 @@ export const UnionProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (inputTableNames.length < 2) {
           setDraftError('至少选择两张输入表');
-          return false;
+
         }
         const uniqueNames = new Set(inputTableNames);
         if (uniqueNames.size !== inputTableNames.length) {
           setDraftError('输入表不能重复');
-          return false;
+
         }
         if (!mode) {
           setDraftError('请选择 Union 模式');
-          return false;
+
         }
         if (hasUnboundedInput && mode === 'DISTINCT') {
           setDraftError('无界输入不支持 UNION DISTINCT');
-          return false;
+
         }
         const configuration: UnionConfiguration = {
           inputTableNames: [...inputTableNames],
-          outputTableName: values.outputTableName.trim(),
+          outputTableName: (values.outputTableName ?? '').trim(),
           mode,
         };
         onApply({

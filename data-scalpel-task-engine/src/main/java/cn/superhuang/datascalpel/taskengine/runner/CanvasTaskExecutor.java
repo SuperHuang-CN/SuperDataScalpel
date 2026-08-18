@@ -5,6 +5,7 @@ import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationResult;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperatorRegistry;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperators;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedSnapshotSyncOutput;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedFileOutput;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
 import cn.superhuang.data.scalpel.contract.execution.RunnerSparkMode;
@@ -23,6 +24,7 @@ import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.FileOutputConflictPolicy;
 import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
@@ -58,20 +60,26 @@ import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelSnapshotSyncOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition;
+import cn.superhuang.datascalpel.taskengine.contract.NodeExecutionMetrics;
 import cn.superhuang.datascalpel.taskengine.contract.NodeExecutionResult;
 import cn.superhuang.datascalpel.taskengine.contract.NodeExecutionState;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDataSource;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeJdbcConnection;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeS3Connection;
+import cn.superhuang.datascalpel.taskengine.contract.SnapshotSyncMetrics;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionError;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionResult;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionState;
 import cn.superhuang.data.scalpel.contract.task.TaskType;
+import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
+import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
+import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
-import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.sql.DataFrameReader;
 import org.apache.spark.sql.DataFrameWriter;
 import org.apache.spark.sql.Dataset;
@@ -99,9 +107,11 @@ import java.util.function.Consumer;
 
 final class CanvasTaskExecutor {
     private static final Logger LOGGER = LoggerFactory.getLogger(CanvasTaskExecutor.class);
+    private static final DialectRegistry JDBC_DIALECTS = BuiltInDialects.registry();
     private final CanvasTaskCompiler compiler = new CanvasTaskCompiler();
     private final CanvasNodeOperatorRegistry nodeOperators = CanvasNodeOperators.builtInRegistry();
     private final RunnerFailureClassifier failureClassifier = new RunnerFailureClassifier();
+    private final JdbcSnapshotSyncExecutor snapshotSyncExecutor = new JdbcSnapshotSyncExecutor();
 
     TaskExecutionResult execute(TaskExecutionManifest manifest) {
         return execute(manifest, RunnerSparkMode.LOCAL, ignored -> { });
@@ -179,7 +189,12 @@ final class CanvasTaskExecutor {
                 spark,
                 runtimeSources,
                 manifest.runtimeFileStorage(),
-                manifest.runtimeFileInputs()
+                manifest.runtimeFileInputs(),
+                manifest.execution().executionId().toString(),
+                manifest.execution().attempt(),
+                null,
+                null,
+                null
         );
 
         try {
@@ -211,6 +226,14 @@ final class CanvasTaskExecutor {
                                 "OUTPUT_NOT_PREPARED", "输出节点未生成写入计划", node.id());
                     }
                     preparedOutputs.add(preparedOutput(operation.preparedOutput(), nodeStartedAt));
+                } else if (node instanceof ModelSnapshotSyncOutputNodeDefinition
+                        || node instanceof JdbcSnapshotSyncOutputNodeDefinition) {
+                    if (operation.preparedSnapshotSyncOutput() == null) {
+                        throw new RunnerExecutionException(
+                                "OUTPUT_NOT_PREPARED", "快照同步节点未生成写入计划", node.id());
+                    }
+                    preparedOutputs.add(preparedSnapshotSyncOutput(
+                            operation.preparedSnapshotSyncOutput(), nodeStartedAt));
                 } else if (node instanceof FileOutputNodeDefinition) {
                     if (operation.preparedFileOutput() == null) {
                         throw new RunnerExecutionException(
@@ -243,6 +266,23 @@ final class CanvasTaskExecutor {
             Dataset<Row> cachedUpsert = null;
             try {
                 checkDeadline(manifest);
+                spark.sparkContext().setJobGroup(
+                        jobGroup, "DataScalpel " + node.nodeType() + " " + node.id(), true);
+                if (output.snapshotSyncOutput() != null) {
+                    SnapshotSyncMetrics metrics = snapshotSyncExecutor.execute(
+                            output.snapshotSyncOutput(), manifest.snapshotSyncLimits());
+                    long rowsWritten = metrics.rowsWritten();
+                    affectedRows = addAffectedRows(affectedRows, rowsWritten);
+                    String message = node instanceof ModelSnapshotSyncOutputNodeDefinition
+                            ? "模型快照同步完成" : "JDBC 快照同步完成";
+                    nodeResults.add(success(
+                            node, ExecutionFailurePhase.WRITE, output.startedAt(),
+                            rowsWritten, metrics, message));
+                    logNodeSuccess(
+                            manifest, node, ExecutionFailurePhase.WRITE,
+                            output.startedAt(), rowsWritten);
+                    continue;
+                }
                 Dataset<Row> writeDataset = output.dataset();
                 if (output.writeMode() == JdbcWriteMode.UPSERT) {
                     cachedUpsert = writeDataset.persist(StorageLevel.MEMORY_AND_DISK());
@@ -252,8 +292,6 @@ final class CanvasTaskExecutor {
                 observed = metricsCollector.observe(
                         manifest.execution().executionId(), manifest.execution().attempt(),
                         node.id(), writeDataset);
-                spark.sparkContext().setJobGroup(
-                        jobGroup, "DataScalpel " + node.nodeType() + " " + node.id(), true);
                 if (output.fileOutput() != null) {
                     writeFile(
                             spark,
@@ -263,6 +301,7 @@ final class CanvasTaskExecutor {
                     );
                 } else {
                     if (output.writeMode() == JdbcWriteMode.OVERWRITE) {
+                        requireOverwriteSupported(output.runtimeDataSource());
                         truncate(output.runtimeDataSource(), output.qualifiedTableName());
                     }
                     if (output.writeMode() == JdbcWriteMode.UPSERT) {
@@ -361,6 +400,7 @@ final class CanvasTaskExecutor {
                 output.dataset(),
                 output,
                 null,
+                null,
                 startedAt
         );
     }
@@ -376,6 +416,25 @@ final class CanvasTaskExecutor {
                 output.targetUri(),
                 null,
                 output.dataset(),
+                null,
+                output,
+                null,
+                startedAt
+        );
+    }
+
+    private static PreparedOutput preparedSnapshotSyncOutput(
+            CanvasPreparedSnapshotSyncOutput output,
+            Instant startedAt
+    ) {
+        return new PreparedOutput(
+                output.node(),
+                output.runtimeDataSource(),
+                null,
+                output.displayTarget(),
+                null,
+                output.dataset(),
+                null,
                 null,
                 output,
                 startedAt
@@ -467,7 +526,7 @@ final class CanvasTaskExecutor {
         writer.save();
     }
 
-    private static void truncate(RuntimeDataSource source, String qualifiedTableName) throws Exception {
+    static void truncate(RuntimeDataSource source, String qualifiedTableName) throws Exception {
         RuntimeJdbcConnection runtime = source.connection();
         Class.forName(runtime.driverClassName());
         Properties properties = new Properties();
@@ -477,6 +536,19 @@ final class CanvasTaskExecutor {
         try (Connection connection = DriverManager.getConnection(runtime.jdbcUrl(), properties);
              Statement statement = connection.createStatement()) {
             statement.executeUpdate("TRUNCATE TABLE " + qualifiedTableName);
+        }
+    }
+
+    static void requireOverwriteSupported(RuntimeDataSource source) {
+        switch (source.databaseType()) {
+            case POSTGRESQL, MYSQL, OPENGAUSS, KINGBASE -> {
+                return;
+            }
+            default -> throw new RunnerExecutionException(
+                    "OVERWRITE_DATABASE_NOT_SUPPORTED",
+                    "当前数据库暂不支持 OVERWRITE，请使用 APPEND",
+                    null
+            );
         }
     }
 
@@ -502,63 +574,19 @@ final class CanvasTaskExecutor {
         );
     }
 
-    private static String qualifiedTable(
+    static String qualifiedTable(
             RuntimeDataSource source,
             String catalogName,
             String schemaName,
             String tableName
     ) {
-        return switch (source.databaseType()) {
-            case POSTGRESQL -> {
-                yield schemaName == null || schemaName.isBlank()
-                        ? quote(source.databaseType(), tableName)
-                        : quote(source.databaseType(), schemaName) + "." + quote(source.databaseType(), tableName);
-            }
-            case MYSQL -> {
-                yield catalogName == null || catalogName.isBlank()
-                        ? quote(source.databaseType(), tableName)
-                        : quote(source.databaseType(), catalogName) + "." + quote(source.databaseType(), tableName);
-            }
-        };
+        return JDBC_DIALECTS.require(source.databaseType().name()).qualifiedName(
+                new TableIdentifier(catalogName, schemaName, tableName)
+        );
     }
 
     private static String quote(RuntimeDatabaseType type, String value) {
-        return switch (type) {
-            case POSTGRESQL -> "\"" + value.replace("\"", "\"\"") + "\"";
-            case MYSQL -> "`" + value.replace("`", "``") + "`";
-        };
-    }
-
-    static void validateRuntimeSchema(
-            List<CanvasColumnSchema> expected,
-            Dataset<Row> actual,
-            String nodeId
-    ) {
-        List<CanvasColumnSchema> actualColumns = SparkTypeMapper.fromStructType(actual.schema(), expected);
-        if (expected.size() != actualColumns.size()) {
-            throw new RunnerExecutionException("RUNTIME_SCHEMA_MISMATCH", "物理表字段数量已变化", nodeId);
-        }
-        for (int index = 0; index < expected.size(); index++) {
-            CanvasColumnSchema left = expected.get(index);
-            CanvasColumnSchema right = actualColumns.get(index);
-            if (!left.name().equals(right.name()) || left.fieldType() != right.fieldType()) {
-                throw new RunnerExecutionException(
-                        "RUNTIME_SCHEMA_MISMATCH", "物理表字段已变化：" + left.name(), nodeId);
-            }
-            if (left.fieldType() == PlatformDataType.DECIMAL
-                    && (!left.precision().equals(right.precision()) || !left.scale().equals(right.scale()))) {
-                throw new RunnerExecutionException(
-                        "RUNTIME_SCHEMA_MISMATCH", "物理表 Decimal 精度已变化：" + left.name(), nodeId);
-            }
-            if (left.fieldType() == PlatformDataType.GEOMETRY
-                    && !java.util.Objects.equals(left.geometry(), right.geometry())) {
-                throw new RunnerExecutionException(
-                        "SPATIAL_SCHEMA_DRIFT",
-                        "Geometry 字段 kind、CRS 或 dimension 已变化：" + left.name(),
-                        nodeId
-                );
-            }
-        }
+        return JDBC_DIALECTS.require(type.name()).quoteIdentifier(value);
     }
 
     static Map<String, SparkCanvasTable> mergeInputs(
@@ -624,10 +652,8 @@ final class CanvasTaskExecutor {
             throw new RunnerExecutionException("INVALID_MANIFEST", "JDBC 运行连接无效", null);
         }
         RuntimeJdbcConnection connection = source.connection();
-        String expectedDriver = source.databaseType() == RuntimeDatabaseType.POSTGRESQL
-                ? "org.postgresql.Driver" : "com.mysql.cj.jdbc.Driver";
-        String expectedPrefix = source.databaseType() == RuntimeDatabaseType.POSTGRESQL
-                ? "jdbc:postgresql://" : "jdbc:mysql://";
+        String expectedDriver = JDBC_DIALECTS.require(source.databaseType().name()).driverClassName();
+        String expectedPrefix = source.databaseType().jdbcUrlPrefix();
         if (!expectedDriver.equals(connection.driverClassName())
                 || connection.jdbcUrl() == null || !connection.jdbcUrl().startsWith(expectedPrefix)
                 || blank(connection.username())) {
@@ -681,12 +707,15 @@ final class CanvasTaskExecutor {
                 || manifest.execution().attempt() == null || manifest.execution().attempt() != 1
                 || manifest.execution().definitionVersion() == null || manifest.execution().definitionVersion() < 1
                 || manifest.execution().createdAt() == null || manifest.execution().deadlineAt() == null
+                || manifest.executionTaskType() != cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_CANVAS
+                || manifest.modelQuality() != null
                 || manifest.task() == null || manifest.task().type() != TaskType.CANVAS
                 || manifest.task().definition() == null || manifest.metadataSnapshot() == null
                 || manifest.metadataSnapshot().models() == null
                 || manifest.metadataSnapshot().fileDatasetTables() == null
                 || manifest.runtimeDataSources() == null
                 || manifest.runtimeFileInputs() == null
+                || manifest.snapshotSyncLimits() == null
                 || !manifest.runtimeFileInputs().isEmpty() && manifest.runtimeFileStorage() == null) {
             throw new RunnerExecutionException("INVALID_MANIFEST", "任务运行 manifest 不完整", null);
         }
@@ -709,10 +738,21 @@ final class CanvasTaskExecutor {
             Long rowsWritten,
             String message
     ) {
+        return success(node, phase, startedAt, rowsWritten, null, message);
+    }
+
+    private static NodeExecutionResult success(
+            CanvasNodeDefinition node,
+            ExecutionFailurePhase phase,
+            Instant startedAt,
+            Long rowsWritten,
+            NodeExecutionMetrics metrics,
+            String message
+    ) {
         Instant endedAt = Instant.now();
         return new NodeExecutionResult(
                 node.id(), node.nodeType().name(), node.name(), NodeExecutionState.SUCCESS, phase,
-                startedAt, endedAt, elapsedMillis(startedAt, endedAt), rowsWritten, message, null);
+                startedAt, endedAt, elapsedMillis(startedAt, endedAt), rowsWritten, metrics, message, null);
     }
 
     private static NodeExecutionResult failed(
@@ -798,7 +838,9 @@ final class CanvasTaskExecutor {
 
     private static ExecutionFailurePhase phase(CanvasNodeDefinition node) {
         return switch (node.nodeType()) {
-            case MODEL_INPUT, JDBC_INPUT, JDBC_QUERY_INPUT, FILE_DATASET_INPUT, HTTP_API_INPUT, SPATIAL_SERVICE_INPUT, KAFKA_INPUT ->
+            case MODEL_INPUT, JDBC_INPUT, JDBC_INCREMENTAL_INPUT, JDBC_QUERY_INPUT,
+                    FILE_DATASET_INPUT, HTTP_API_INPUT,
+                    SPATIAL_SERVICE_INPUT, KAFKA_INPUT, TDENGINE_TMQ_INPUT ->
                     ExecutionFailurePhase.READ;
             case JOIN, GEOMETRY_CONSTRUCT, SPATIAL_TRANSFORM, GEOMETRY_VALIDATE,
                     GEOMETRY_REPAIR, GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
@@ -808,7 +850,9 @@ final class CanvasTaskExecutor {
                     AGGREGATE, UNION, DEDUPLICATE, NULL_HANDLING, VALUE_MAPPING, MASK_FIELDS,
                             JSON_EXTRACT, WINDOW, TOP_N ->
                     ExecutionFailurePhase.PROCESS;
-            case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT -> ExecutionFailurePhase.WRITE;
+            case MODEL_OUTPUT, MODEL_SNAPSHOT_SYNC_OUTPUT,
+                    JDBC_OUTPUT, JDBC_SNAPSHOT_SYNC_OUTPUT,
+                    KAFKA_OUTPUT, FILE_OUTPUT -> ExecutionFailurePhase.WRITE;
         };
     }
 
@@ -822,6 +866,8 @@ final class CanvasTaskExecutor {
                     runtimeSources, metadataIndex, input.configuration().modelId());
             case JdbcInputNodeDefinition input -> displayTable(
                     runtimeSources, input.configuration().dataSourceId(), input.configuration().tableName());
+            case cn.superhuang.data.scalpel.contract.task.JdbcIncrementalInputNodeDefinition input -> displayTable(
+                    runtimeSources, input.configuration().dataSourceId(), input.configuration().tableName());
             case JdbcQueryInputNodeDefinition input -> input.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition input -> {
                 MetadataIndex.FileDatasetTableEntry table = metadataIndex.fileDatasetTable(
@@ -834,6 +880,7 @@ final class CanvasTaskExecutor {
                     input.configuration().resourceId();
             case cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition input ->
                     input.configuration().topic();
+            case TdEngineTmqInputNodeDefinition input -> input.configuration().topicName();
             case JoinNodeDefinition join -> join.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.GeometryConstructNodeDefinition construct ->
                     construct.configuration().outputTableName();
@@ -887,7 +934,11 @@ final class CanvasTaskExecutor {
                     topN.configuration().outputTableName();
             case ModelOutputNodeDefinition output -> displayModelTable(
                     runtimeSources, metadataIndex, output.configuration().targetModelId());
+            case ModelSnapshotSyncOutputNodeDefinition output -> displayModelTable(
+                    runtimeSources, metadataIndex, output.configuration().targetModelId());
             case JdbcOutputNodeDefinition output -> displayTable(
+                    runtimeSources, output.configuration().dataSourceId(), output.configuration().targetTableName());
+            case JdbcSnapshotSyncOutputNodeDefinition output -> displayTable(
                     runtimeSources, output.configuration().dataSourceId(), output.configuration().targetTableName());
             case cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition output ->
                     output.configuration().topic();
@@ -910,8 +961,11 @@ final class CanvasTaskExecutor {
 
     static String displayTable(RuntimeDataSource source, String tableName) {
         if (source.connection() == null) return tableName;
-        String namespace = source.databaseType() == RuntimeDatabaseType.POSTGRESQL
-                ? source.connection().schemaName() : source.connection().catalogName();
+        String namespace = displayNamespace(
+                source,
+                source.connection().catalogName(),
+                source.connection().schemaName()
+        );
         return namespace == null || namespace.isBlank() ? tableName : namespace + "." + tableName;
     }
 
@@ -939,11 +993,30 @@ final class CanvasTaskExecutor {
             RuntimeDataSource source,
             MetadataIndex.ModelEntry model
     ) {
-        String namespace = source.databaseType() == RuntimeDatabaseType.POSTGRESQL
-                ? model.metadata().schemaName() : model.metadata().catalogName();
+        String namespace = displayNamespace(
+                source,
+                model.metadata().catalogName(),
+                model.metadata().schemaName()
+        );
         return namespace == null || namespace.isBlank()
                 ? model.metadata().physicalTableName()
                 : namespace + "." + model.metadata().physicalTableName();
+    }
+
+    private static String displayNamespace(
+            RuntimeDataSource source,
+            String catalogName,
+            String schemaName
+    ) {
+        return switch (JDBC_DIALECTS.require(source.databaseType().name()).definition().namespaceMode()) {
+            case CATALOG -> catalogName;
+            case SCHEMA -> schemaName;
+            case CATALOG_AND_SCHEMA -> {
+                if (catalogName == null || catalogName.isBlank()) yield schemaName;
+                if (schemaName == null || schemaName.isBlank()) yield catalogName;
+                yield catalogName + "." + schemaName;
+            }
+        };
     }
 
     static String nodeSummary(CanvasNodeDefinition node, MetadataIndex metadataIndex) {
@@ -963,6 +1036,13 @@ final class CanvasTaskExecutor {
             case JdbcInputNodeDefinition input -> "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
                     + " table=" + safeLogValue(input.configuration().tableName())
                     + " runtimeSchemaValidation=true";
+            case cn.superhuang.data.scalpel.contract.task.JdbcIncrementalInputNodeDefinition input ->
+                    "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
+                            + " table=" + safeLogValue(input.configuration().tableName())
+                            + " cursorColumn=" + safeLogValue(input.configuration().incrementalTimeColumn())
+                            + " triggerIntervalSeconds=" + input.configuration().triggerIntervalSeconds()
+                            + " visibilityDelaySeconds=" + input.configuration().visibilityDelaySeconds()
+                            + " runtimeSchemaValidation=true";
             case JdbcQueryInputNodeDefinition input -> "dataSourceId="
                     + safeLogValue(input.configuration().dataSourceId())
                     + " outputTable=" + safeLogValue(input.configuration().outputTableName())
@@ -991,6 +1071,15 @@ final class CanvasTaskExecutor {
                     "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
                             + " topic=" + safeLogValue(input.configuration().topic())
                             + " outputTable=" + safeLogValue(input.configuration().outputTableName());
+            case TdEngineTmqInputNodeDefinition input ->
+                    "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
+                            + " topic=" + safeLogValue(input.configuration().topicName())
+                            + " supertable=" + safeLogValue(input.configuration().supertableName())
+                            + " startingOffsets=" + input.configuration().startingOffsets()
+                            + " fieldCount=" + java.util.Optional.ofNullable(
+                                    metadataIndex.dataSource(UUID.fromString(input.configuration().dataSourceId())))
+                            .map(source -> source.tdEngineTmqTopic(input.configuration().topicName()))
+                            .map(topic -> topic.columns().size()).orElse(0);
             case JoinNodeDefinition join -> "leftTable=" + safeLogValue(join.configuration().leftTableName())
                     + " rightTable=" + safeLogValue(join.configuration().rightTableName())
                     + " joinType=" + join.configuration().joinType()
@@ -1324,15 +1413,35 @@ final class CanvasTaskExecutor {
                     "targetModelId=" + safeLogValue(output.configuration().targetModelId()),
                     metadataModel(metadataIndex, output.configuration().targetModelId()))
                     + " writeMode=" + output.configuration().writeMode()
-                    + " mappingMode=" + output.configuration().columnMappingMode()
                     + " mappingCount=" + output.configuration().columnMappings().size()
                     + " stages=TARGET_SCHEMA,MATERIALIZE,TRUNCATE_IF_REQUIRED,WRITE";
+            case ModelSnapshotSyncOutputNodeDefinition output -> "sourceTable="
+                    + safeLogValue(output.configuration().sourceTableName())
+                    + " " + modelSummary(
+                    "targetModelId=" + safeLogValue(output.configuration().targetModelId()),
+                    metadataModel(metadataIndex, output.configuration().targetModelId()))
+                    + " keyColumns=" + safeLogValue(String.join(",", output.configuration().keyColumns()))
+                    + " mappingCount=" + output.configuration().columnMappings().size()
+                    + " deleteAction=" + output.configuration().deletePolicy().action()
+                    + " deleteRowsLimit=" + output.configuration().deletePolicy().maxDeleteRows()
+                    + " deleteRatioLimit=" + output.configuration().deletePolicy().maxDeleteRatio()
+                    + " stages=TARGET_SCHEMA,MATERIALIZE,LOCK,COMPARE,WRITE";
             case JdbcOutputNodeDefinition output -> "sourceTable="
                     + safeLogValue(output.configuration().sourceTableName())
                     + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId())
                     + " targetTable=" + safeLogValue(output.configuration().targetTableName())
                     + " writeMode=" + output.configuration().writeMode()
                     + " stages=TARGET_SCHEMA,MATERIALIZE,TRUNCATE_IF_REQUIRED,WRITE";
+            case JdbcSnapshotSyncOutputNodeDefinition output -> "sourceTable="
+                    + safeLogValue(output.configuration().sourceTableName())
+                    + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId())
+                    + " targetTable=" + safeLogValue(output.configuration().targetTableName())
+                    + " keyColumns=" + safeLogValue(String.join(",", output.configuration().keyColumns()))
+                    + " mappingCount=" + output.configuration().columnMappings().size()
+                    + " deleteAction=" + output.configuration().deletePolicy().action()
+                    + " deleteRowsLimit=" + output.configuration().deletePolicy().maxDeleteRows()
+                    + " deleteRatioLimit=" + output.configuration().deletePolicy().maxDeleteRatio()
+                    + " stages=TARGET_SCHEMA,MATERIALIZE,LOCK,COMPARE,WRITE";
             case cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition output ->
                     "sourceTable=" + safeLogValue(output.configuration().sourceTableName())
                             + " dataSourceId=" + safeLogValue(output.configuration().dataSourceId())
@@ -1425,11 +1534,13 @@ final class CanvasTaskExecutor {
         return switch (node.nodeType()) {
             case MODEL_INPUT -> "模型输入已准备";
             case JDBC_INPUT -> "JDBC 输入已准备";
+            case JDBC_INCREMENTAL_INPUT -> "JDBC 增量输入已准备";
             case JDBC_QUERY_INPUT -> "JDBC 查询输入已准备";
             case FILE_DATASET_INPUT -> "文件数据集输入已准备";
             case HTTP_API_INPUT -> "HTTP API 输入已读取";
             case SPATIAL_SERVICE_INPUT -> "空间服务输入已读取";
             case KAFKA_INPUT -> "Kafka 输入已准备";
+            case TDENGINE_TMQ_INPUT -> "TDengine TMQ 输入已准备";
             case JOIN -> "Join 已准备";
             case GEOMETRY_CONSTRUCT -> "Geometry 构造已准备";
             case SPATIAL_TRANSFORM -> "空间转换已准备";
@@ -1457,7 +1568,9 @@ final class CanvasTaskExecutor {
             case JSON_EXTRACT -> "JSON 提取已准备";
             case WINDOW -> "窗口计算已准备";
             case TOP_N -> "Top N 已准备";
-            case MODEL_OUTPUT, JDBC_OUTPUT, KAFKA_OUTPUT, FILE_OUTPUT ->
+            case MODEL_OUTPUT, MODEL_SNAPSHOT_SYNC_OUTPUT,
+                    JDBC_OUTPUT, JDBC_SNAPSHOT_SYNC_OUTPUT,
+                    KAFKA_OUTPUT, FILE_OUTPUT ->
                     throw new IllegalArgumentException("Output success is recorded after writing");
         };
     }
@@ -1715,6 +1828,7 @@ final class CanvasTaskExecutor {
             Dataset<Row> dataset,
             CanvasPreparedOutput jdbcOutput,
             CanvasPreparedFileOutput fileOutput,
+            CanvasPreparedSnapshotSyncOutput snapshotSyncOutput,
             Instant startedAt
     ) {
     }

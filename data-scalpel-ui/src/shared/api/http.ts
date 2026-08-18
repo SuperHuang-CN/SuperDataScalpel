@@ -100,9 +100,31 @@ export const requestBlob = async (
   init: JsonRequestInit = {},
   timeoutMs = DEFAULT_TIMEOUT_MS,
 ): Promise<Blob> => {
+  const response = await requestBlobResponse(path, init, timeoutMs);
+  return response.blob;
+};
+
+export interface BlobResponse {
+  blob: Blob;
+  headers: Headers;
+}
+
+export const requestBlobResponse = async (
+  path: string,
+  init: JsonRequestInit = {},
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+): Promise<BlobResponse> => {
   const { skipAuthentication = false, ...requestInit } = init;
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  const callerSignal = requestInit.signal;
+  const abortFromCaller = () => controller.abort();
+  if (callerSignal?.aborted) controller.abort();
+  else callerSignal?.addEventListener('abort', abortFromCaller, { once: true });
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   try {
     const response = await fetch(`${API_BASE_URL}${path}`, {
@@ -116,9 +138,15 @@ export const requestBlob = async (
     if (!response.ok) {
       throw toApiError(await response.text(), response.status);
     }
-    return response.blob();
+    return { blob: await response.blob(), headers: response.headers };
+  } catch (error: unknown) {
+    if (timedOut && error instanceof DOMException && error.name === 'AbortError') {
+      throw new ApiError('请求超时，请稍后重试');
+    }
+    throw error;
   } finally {
     window.clearTimeout(timeout);
+    callerSignal?.removeEventListener('abort', abortFromCaller);
   }
 };
 

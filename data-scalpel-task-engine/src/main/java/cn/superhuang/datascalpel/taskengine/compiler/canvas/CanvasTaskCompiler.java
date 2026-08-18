@@ -4,12 +4,17 @@ import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationContext;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationResult;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperatorRegistry;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperators;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasLineageOutputCandidate;
 import cn.superhuang.datascalpel.taskengine.canvas.SchemaOnlyCanvasNodeDataAccess;
 import cn.superhuang.datascalpel.taskengine.compiler.CompilationCancelledException;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation;
+import cn.superhuang.datascalpel.taskengine.compiler.lineage.CanvasCatalystLineageAnalyzer;
+import cn.superhuang.datascalpel.taskengine.compiler.lineage.CanvasLineageMetadata;
+import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.SparkSession;
 
@@ -40,6 +45,7 @@ public final class CanvasTaskCompiler {
     ) {
         CanvasGraphPlan plan = CanvasGraphPlan.create(definition, executionMode);
         List<Map<String, SparkCanvasTable>> propagated = new ArrayList<>();
+        List<CanvasLineageOutputCandidate> lineageOutputs = new ArrayList<>();
         for (int index = 0; index < plan.entries().size(); index++) propagated.add(Map.of());
 
         for (int entryIndex : plan.topologicalOrder()) {
@@ -55,17 +61,29 @@ public final class CanvasTaskCompiler {
                 NodeCompileOutput output = compileNode(
                         entry.node(), inputs, executionMode, metadataIndex, sparkSession, result);
                 result.outputTables(output.displayedOutputTables());
-                if (!result.hasErrors()) propagated.set(entryIndex, output.propagatedTables());
+                if (!result.hasErrors()) {
+                    propagated.set(entryIndex, output.propagatedTables());
+                    if (output.lineageOutputCandidate() != null) {
+                        lineageOutputs.add(output.lineageOutputCandidate());
+                    }
+                }
             } catch (Exception exception) {
                 result.error("SPARK_ANALYSIS_ERROR", safeMessage(exception), "configuration");
             }
         }
 
         checkCancelled(cancelled);
-        return CanvasCompilation.of(
+        CanvasCompilation compilation = CanvasCompilation.of(
                 plan.canvasIssues(),
                 plan.entries().stream().map(entry -> entry.result().result()).toList()
         );
+        if (!compilation.valid()) {
+            return compilation.withLineage(CanvasLineageCompilation.unavailable(List.of(
+                    new CanvasLineageCompilation.Warning(
+                            "CANVAS_INVALID", "Canvas 编译未通过，未生成血缘预览", null, null, null)
+            )));
+        }
+        return compilation.withLineage(new CanvasCatalystLineageAnalyzer().analyze(lineageOutputs));
     }
 
     private NodeCompileOutput compileNode(
@@ -87,7 +105,31 @@ public final class CanvasTaskCompiler {
                         executionMode
                 )
         );
-        return new NodeCompileOutput(output.propagatedTables(), output.displayedOutputTables());
+        Map<String, SparkCanvasTable> marked = markLineageBoundaries(
+                node, inputs, output.propagatedTables(), metadataIndex);
+        return new NodeCompileOutput(
+                marked, output.displayedOutputTables(), output.lineageOutputCandidate());
+    }
+
+    private Map<String, SparkCanvasTable> markLineageBoundaries(
+            CanvasNodeDefinition node,
+            Map<String, SparkCanvasTable> inputs,
+            Map<String, SparkCanvasTable> outputs,
+            MetadataIndex metadataIndex
+    ) {
+        if (outputs.isEmpty()) return outputs;
+        CanvasNodeCategory category = nodeOperators.require(node.nodeType()).category();
+        if (category == CanvasNodeCategory.OUTPUT) return outputs;
+        Map<String, SparkCanvasTable> marked = new LinkedHashMap<>(outputs);
+        outputs.forEach((name, table) -> {
+            SparkCanvasTable input = inputs.get(name);
+            boolean produced = input == null || input != table;
+            if (!produced) return;
+            marked.put(name, category == CanvasNodeCategory.INPUT
+                    ? CanvasLineageMetadata.markInput(node, table, metadataIndex)
+                    : CanvasLineageMetadata.markBoundary(node, table));
+        });
+        return marked;
     }
 
     private static Map<String, SparkCanvasTable> mergeInputs(

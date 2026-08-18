@@ -4,15 +4,18 @@ import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
+import cn.superhuang.data.scalpel.contract.task.CanvasJdbcDatabaseType;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
+import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.MetadataDataSource;
 import cn.superhuang.data.scalpel.contract.task.MetadataModel;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelPhysicalTableMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelStatus;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKey;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKeyType;
 import cn.superhuang.data.scalpel.contract.task.ModelInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputConfiguration;
@@ -74,11 +77,12 @@ class CanvasTaskExecutorModelJdbcIntegrationTest {
             statement.execute("create table " + MODEL_SCHEMA + "." + SOURCE_TABLE
                     + " (order_id integer not null, customer_name varchar(100) not null)");
             statement.execute("create table " + MODEL_SCHEMA + "." + TARGET_TABLE
-                    + " (order_id bigint not null, customer_name varchar(100) not null)");
+                    + " (order_id bigint primary key, customer_name varchar(100) not null,"
+                    + " audit_note varchar(100) not null default 'created')");
             statement.execute("insert into " + MODEL_SCHEMA + "." + SOURCE_TABLE
                     + " values (1, 'Alice'), (2, 'Bob')");
             statement.execute("insert into " + MODEL_SCHEMA + "." + TARGET_TABLE
-                    + " values (-1, 'stale')");
+                    + " values (-1, 'untouched', 'keep-minus-one'), (1, 'stale', 'keep-one')");
         }
     }
 
@@ -112,34 +116,73 @@ class CanvasTaskExecutorModelJdbcIntegrationTest {
         }
     }
 
+    @Test
+    void upsertsModelsUsingTheModelPrimaryKey() throws Exception {
+        TaskExecutionResult result = new CanvasTaskExecutor().execute(manifest(JdbcWriteMode.UPSERT));
+
+        assertEquals(TaskExecutionState.SUCCESS, result.state());
+        try (var connection = DriverManager.getConnection(
+                POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+             var statement = connection.createStatement();
+             var rows = statement.executeQuery(
+                     "select order_id, customer_name, audit_note from " + MODEL_SCHEMA + "." + TARGET_TABLE
+                             + " order by order_id")) {
+            rows.next();
+            assertEquals(-1L, rows.getLong(1));
+            assertEquals("untouched", rows.getString(2));
+            assertEquals("keep-minus-one", rows.getString(3));
+            rows.next();
+            assertEquals(1L, rows.getLong(1));
+            assertEquals("Alice", rows.getString(2));
+            assertEquals("keep-one", rows.getString(3));
+            rows.next();
+            assertEquals(2L, rows.getLong(1));
+            assertEquals("Bob", rows.getString(2));
+            assertEquals("created", rows.getString(3));
+            assertEquals(false, rows.next());
+        }
+    }
+
     private TaskExecutionManifest manifest() {
+        return manifest(JdbcWriteMode.OVERWRITE);
+    }
+
+    private TaskExecutionManifest manifest(JdbcWriteMode writeMode) {
         String inputNodeId = "312dddfd-60ca-4c40-8c08-91a99a3d5c1b";
         String outputNodeId = "129818e4-87dd-4687-8cae-701c3a7ba9c1";
-        CanvasDefinition definition = new CanvasDefinition(1, 1, List.of(
-                new ModelInputNodeDefinition(
-                        inputNodeId,
-                        "订单模型输入",
-                        layout(),
-                        new ModelInputConfiguration(sourceModelId.toString())
-                ),
-                new ModelOutputNodeDefinition(
-                        outputNodeId,
-                        "订单模型输出",
-                        layout(),
-                        new ModelOutputConfiguration(
-                                SOURCE_CODE,
-                                targetModelId.toString(),
-                                JdbcWriteMode.OVERWRITE,
-                                ColumnMappingMode.BY_NAME,
-                                List.of()
+        CanvasDefinition definition = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
+                        new ModelInputNodeDefinition(
+                                inputNodeId,
+                                "订单模型输入",
+                                layout(),
+                                new ModelInputConfiguration(sourceModelId.toString())
+                        ),
+                        new ModelOutputNodeDefinition(
+                                outputNodeId,
+                                "订单模型输出",
+                                layout(),
+                                new ModelOutputConfiguration(
+                                        SOURCE_CODE,
+                                        targetModelId.toString(),
+                                        writeMode,
+                                        List.of(
+                                                new JdbcColumnMapping("order_id", "order_id"),
+                                                new JdbcColumnMapping("customer_name", "customer_name")
+                                        )
+                                )
                         )
-                )
-        ), List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), inputNodeId, outputNodeId)));
+                ),
+                List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), inputNodeId, outputNodeId))
+        );
         MetadataSnapshot metadata = new MetadataSnapshot(
                 List.of(new MetadataDataSource(
                         dataSourceId,
                         true,
                         ConnectionKind.JDBC,
+                        CanvasJdbcDatabaseType.POSTGRESQL,
                         Set.of(DataSourcePurpose.STORAGE),
                         List.of()
                 )),
@@ -187,12 +230,18 @@ class CanvasTaskExecutorModelJdbcIntegrationTest {
                 POSTGRES.getDatabaseName(),
                 MODEL_SCHEMA,
                 physicalTableName,
-                List.of(
+                java.util.stream.Stream.of(
                         id.equals(sourceModelId)
                                 ? integerColumn("order_id")
                                 : longColumn("order_id"),
-                        stringColumn("customer_name")
-                )
+                        stringColumn("customer_name"),
+                        id.equals(targetModelId) ? nullableStringColumn("audit_note") : null
+                ).filter(java.util.Objects::nonNull).toList(),
+                List.of(new MetadataUniqueKey(
+                        "MODEL_PRIMARY_KEY",
+                        MetadataUniqueKeyType.PRIMARY_KEY,
+                        List.of("order_id")
+                ))
         );
     }
 
@@ -218,6 +267,13 @@ class CanvasTaskExecutorModelJdbcIntegrationTest {
         return new CanvasColumnSchema(
                 name, PlatformDataType.STRING, 100, null, null,
                 false, null, false, false, null
+        );
+    }
+
+    private static CanvasColumnSchema nullableStringColumn(String name) {
+        return new CanvasColumnSchema(
+                name, PlatformDataType.STRING, 100, null, null,
+                true, null, false, false, null
         );
     }
 }

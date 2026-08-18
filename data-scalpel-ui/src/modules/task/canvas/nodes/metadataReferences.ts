@@ -47,6 +47,13 @@ export interface KafkaTopicMetadataReference {
   topic: string;
 }
 
+export interface TdEngineTmqTopicMetadataReference {
+  kind: 'TDENGINE_TMQ_TOPIC';
+  nodeId: string;
+  dataSourceId: string;
+  topicName: string;
+}
+
 export interface S3TargetMetadataReference {
   kind: 'S3_TARGET';
   nodeId: string;
@@ -61,4 +68,5 @@ export type CanvasMetadataReference =
   | HttpApiResourceMetadataReference
   | SpatialServiceResourceMetadataReference
   | KafkaTopicMetadataReference
+  | TdEngineTmqTopicMetadataReference
   | S3TargetMetadataReference;

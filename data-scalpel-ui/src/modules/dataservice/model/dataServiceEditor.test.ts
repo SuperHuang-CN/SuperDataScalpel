@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ScriptRequestExample } from '@superhuang/super-api-studio-script-workbench';
 import {
   buildDataServiceCreateRequest,
+  buildDataServiceDefinitionRequest,
   buildSqlServiceTestRequest,
   dataServiceEditorMode,
   dataServiceFormFingerprint,
@@ -29,6 +30,11 @@ describe('data-service editor model', () => {
       code: 'customer_query',
       type: 'SQL_QUERY',
       accessMode: 'SUBSCRIPTION_REQUIRED',
+      standardDefinition: null,
+      scriptDefinition: null,
+      sqlDefinition: null,
+    });
+    expect(buildDataServiceDefinitionRequest(sqlValues)).toMatchObject({
       standardDefinition: null,
       scriptDefinition: null,
       sqlDefinition: {
@@ -68,8 +74,7 @@ describe('data-service editor model', () => {
       }],
     };
 
-    expect(buildDataServiceCreateRequest(values)).toMatchObject({
-      code: 'customer_script',
+    expect(buildDataServiceDefinitionRequest(values)).toMatchObject({
       standardDefinition: null,
       sqlDefinition: null,
       scriptDefinition: {
@@ -113,6 +118,7 @@ describe('data-service editor model', () => {
     const detail = (status: DataServiceStatus, deploymentStatus: DataServiceDeploymentStatus | null): DataServiceDetail => ({
       id: 'service-1', code: 'customer_query', name: '客户查询', directoryId: null,
       type: 'SQL_QUERY', engineId: 'engine-1', routePath: '/open-api/v1/customers',
+      definitionConfigured: true, definitionVersion: 1,
       accessMode: 'PUBLIC',
       status, revision: 1, deploymentStatus, deploymentError: null, deployedAt: null,
       gatewayBindings: [],

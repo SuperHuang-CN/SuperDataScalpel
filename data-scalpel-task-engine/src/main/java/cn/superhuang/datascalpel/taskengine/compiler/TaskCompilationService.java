@@ -147,7 +147,8 @@ public final class TaskCompilationService implements AutoCloseable {
                     TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos),
                     sparkRuntime.applicationId(),
                     compilation.canvasIssues(),
-                    compilation.nodeResults()
+                    compilation.nodeResults(),
+                    compilation.lineage()
             );
         }
     }

@@ -6,12 +6,14 @@ import type { DataServiceSummary } from '../model/dataService';
 
 const dataServiceMocks = vi.hoisted(() => ({
   content: [] as DataServiceSummary[],
+  create: vi.fn(),
   unpublish: vi.fn(),
   disable: vi.fn(),
 }));
 
 vi.mock('../../directory', () => ({
   DirectoryTreePanel: () => null,
+  directoryTreeSelectData: () => [],
   findDirectoryDescendantIds: () => [],
   useDirectoryTree: () => ({ data: [], isFetching: false }),
 }));
@@ -30,6 +32,7 @@ vi.mock('../hooks/useDataServices', () => ({
     refetch: vi.fn(),
   }),
   useCleanupDataServiceDeployment: () => ({ isPending: false, mutateAsync: vi.fn() }),
+  useCreateDataService: () => ({ isPending: false, mutateAsync: dataServiceMocks.create }),
   useDeleteDataService: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useDisableDataService: () => ({ isPending: false, variables: undefined, mutateAsync: dataServiceMocks.disable }),
   useEnableDataService: () => ({ isPending: false, mutateAsync: vi.fn() }),
@@ -63,6 +66,7 @@ const renderPanel = (canViewDataSources = true, canPublish = false) => render(
   <MemoryRouter initialEntries={['/dataservice?type=SQL_QUERY&page=2']}>
     <DataServiceListPanel
       canCreate
+      canUpdate
       canDelete={false}
       canPublish={canPublish}
       canViewDirectories={false}
@@ -80,6 +84,7 @@ describe('DataServiceListPanel creation menu', () => {
 
   beforeEach(() => {
     dataServiceMocks.content = [];
+    dataServiceMocks.create.mockReset();
     dataServiceMocks.unpublish.mockReset();
     dataServiceMocks.disable.mockReset();
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
@@ -92,16 +97,17 @@ describe('DataServiceListPanel creation menu', () => {
     });
   });
 
-  it('shows standard, SQL and disabled script choices and opens the SQL page', async () => {
+  it('shows all service choices and opens the SQL basic-information drawer without leaving the list', async () => {
     const user = userEvent.setup();
     renderPanel();
     await user.click(screen.getByRole('button', { name: /新建服务/ }));
     expect(await screen.findByText('标准单表服务')).toBeInTheDocument();
     expect(screen.getByText('SQL 查询服务')).toBeInTheDocument();
-    const script = screen.getByText('脚本服务').closest('.ant-dropdown-menu-item');
-    expect(script).toHaveClass('ant-dropdown-menu-item-disabled');
+    expect(screen.getByText('Groovy 脚本服务')).toBeInTheDocument();
     await user.click(screen.getByText('SQL 查询服务'));
-    expect(screen.getByTestId('location')).toHaveTextContent('/dataservice/new/sql');
+    expect(await screen.findByText('新建SQL 查询服务')).toBeInTheDocument();
+    expect(screen.getByLabelText('服务编码')).toBeInTheDocument();
+    expect(screen.getByTestId('location')).toHaveTextContent('/dataservice?type=SQL_QUERY&page=2');
   });
 
   it('disables SQL creation when data-source view permission is missing', async () => {
@@ -120,6 +126,8 @@ describe('DataServiceListPanel creation menu', () => {
       name: '用户服务',
       directoryId: null,
       type: 'STANDARD_TABLE',
+      definitionConfigured: true,
+      definitionVersion: 1,
       engineId: 'engine-1',
       routePath: '/open-api/v1/users',
       accessMode: 'PUBLIC',

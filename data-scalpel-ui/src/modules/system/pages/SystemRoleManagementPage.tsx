@@ -67,7 +67,7 @@ export const SystemRoleManagementPage = () => {
           <Dropdown menu={{ items: [
             { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setEditingRole(role) },
             { key: 'permissions', icon: <SafetyCertificateOutlined />, label: role.builtIn ? '权限由系统维护' : '配置权限', disabled: role.builtIn || !canViewPermissions, onClick: () => setPermissionRole(role) },
-            ...(!role.builtIn ? [{ type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ title: '删除角色', content: `确认删除“${role.name}”吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(role) }) }] : []),
+            ...(!role.builtIn ? [{ type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '删除角色', content: `确认删除“${role.name}”吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(role) }) }] : []),
           ] satisfies MenuProps['items'] }} trigger={['click']}>
             <Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<EllipsisOutlined />} aria-label={`${role.name}的更多操作`} /></Tooltip>
           </Dropdown>

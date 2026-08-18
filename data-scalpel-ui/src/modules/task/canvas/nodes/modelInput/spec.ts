@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeModelInput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { modelInputCanvasView } from './canvasView';
 
 export const modelInputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.ModelInput,
@@ -15,9 +16,9 @@ export const modelInputSpec = createCanvasNodeSpec({
   searchKeywords: ['model', '模型', '读取'],
   iconKey: CanvasNodeIconKey.Model,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: modelInputCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 1,
+  introducedInMinor: 0,
   graph: { minInputs: 0, maxInputs: 0, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createModelInputConfiguration,
   summarize: summarizeModelInput,

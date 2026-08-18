@@ -19,7 +19,8 @@ public record ColumnMetadataResponse(
         String defaultValue,
         boolean autoIncrement,
         boolean generated,
-        String comment
+        String comment,
+        String role
 ) {
     static ColumnMetadataResponse from(ColumnMetadata column, DatabaseDialect dialect) {
         var mapping = dialect.mapToPlatformType(JdbcTypeDescriptor.from(column));
@@ -27,7 +28,7 @@ public record ColumnMetadataResponse(
                 column.name(), column.ordinal(), column.jdbcType(), column.nativeType(), column.logicalType().name(),
                 mapping.acceptable() ? mapping.definition() : null,
                 column.length(), column.precision(), column.scale(), column.nullable(), column.defaultValue(),
-                column.autoIncrement(), column.generated(), column.comment()
+                column.autoIncrement(), column.generated(), column.comment(), column.role().name()
         );
     }
 }

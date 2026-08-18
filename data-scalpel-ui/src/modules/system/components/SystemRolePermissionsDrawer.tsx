@@ -58,6 +58,7 @@ const RolePermissionsEditor = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={`配置权限：${role.name}`}
         open={open}
         onClose={onClose}

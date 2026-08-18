@@ -19,17 +19,29 @@ import { TaskRunDetailDrawer } from './TaskRunDetailDrawer';
 interface TaskRunsPanelProps {
   task: DataTask;
   canExecute: boolean;
+  detailRunId: string | null;
+  onDetailRunChange: (runId: string | null) => void;
 }
 
-const cancellable = (run: TaskRun) => run.taskType === 'SPARK_CANVAS'
+const cancellable = (run: TaskRun) => (run.taskType === 'SPARK_CANVAS'
+  || run.taskType === 'SPARK_MODEL_QUALITY' || run.taskType === 'SPARK_JAR')
   && (run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'CANCEL_REQUESTED');
 
-export const TaskRunsPanel = ({ task, canExecute }: TaskRunsPanelProps) => {
+const qualityConclusion = (value: TaskRun['qualityConclusion']) => {
+  if (!value) return '—';
+  return <Tag color={value === 'PASSED' ? 'success' : 'error'}>{value === 'PASSED' ? '通过' : '不通过'}</Tag>;
+};
+
+export const TaskRunsPanel = ({
+  task,
+  canExecute,
+  detailRunId,
+  onDetailRunChange,
+}: TaskRunsPanelProps) => {
   const [form] = Form.useForm<TaskRunFilters>();
   const [filters, setFilters] = useState<TaskRunFilters>({});
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
-  const [detailRunId, setDetailRunId] = useState<string | null>(null);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
@@ -43,6 +55,7 @@ export const TaskRunsPanel = ({ task, canExecute }: TaskRunsPanelProps) => {
   const runsQuery = useTaskRuns(task.id, request, true);
 
   const cancel = (run: TaskRun) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '取消任务运行',
     content: `确认取消运行“${run.id}”吗？已开始的 Spark 应用将被停止。`,
     okText: '取消运行',
@@ -84,11 +97,18 @@ export const TaskRunsPanel = ({ task, canExecute }: TaskRunsPanelProps) => {
     { title: '结束时间', dataIndex: 'endedAt', width: 175, render: formatTaskRunDateTime },
     { title: '耗时', key: 'duration', width: 105, render: (_, run) => formatTaskRunDuration(run) },
     {
-      title: '影响行数', dataIndex: 'affectedRows', width: 100, align: 'right',
+      title: task.type === 'SPARK_MODEL_QUALITY' ? '检查行数' : '影响行数',
+      dataIndex: task.type === 'SPARK_MODEL_QUALITY' ? 'qualityCheckedRows' : 'affectedRows',
+      width: 100,
+      align: 'right',
       render: (value: number | null) => value === null
-        ? <span aria-label="影响行数未知">—</span>
+        ? <span aria-label={`${task.type === 'SPARK_MODEL_QUALITY' ? '检查行数' : '影响行数'}未知`}>—</span>
         : value,
     },
+    ...(task.type === 'SPARK_MODEL_QUALITY' ? [{
+      title: '质量结论', dataIndex: 'qualityConclusion', width: 100,
+      render: qualityConclusion,
+    }] : []),
     {
       title: '结果', dataIndex: 'message', width: 260, ellipsis: true,
       render: (value: string | null, run) => value ?? run.errorDetail ?? '—',
@@ -102,7 +122,7 @@ export const TaskRunsPanel = ({ task, canExecute }: TaskRunsPanelProps) => {
               type="text"
               icon={<EyeOutlined />}
               aria-label={`查看运行 ${run.id}`}
-              onClick={() => setDetailRunId(run.id)}
+              onClick={() => onDetailRunChange(run.id)}
             />
           </Tooltip>
           {canExecute && cancellable(run) && (
@@ -186,7 +206,7 @@ export const TaskRunsPanel = ({ task, canExecute }: TaskRunsPanelProps) => {
         loading={runsQuery.isLoading}
         columns={columns}
         dataSource={runsQuery.data?.content ?? []}
-        scroll={{ x: 1_660, y: 'calc(100vh - 330px)' }}
+        scroll={{ x: task.type === 'SPARK_MODEL_QUALITY' ? 1_760 : 1_660, y: 'calc(100vh - 330px)' }}
         pagination={{
           current: page + 1,
           pageSize: size,
@@ -204,7 +224,7 @@ export const TaskRunsPanel = ({ task, canExecute }: TaskRunsPanelProps) => {
         runId={detailRunId}
         canExecute={canExecute}
         cancelLoading={cancellingRunId === detailRunId}
-        onClose={() => setDetailRunId(null)}
+        onClose={() => onDetailRunChange(null)}
         onCancel={cancel}
       />
     </div>

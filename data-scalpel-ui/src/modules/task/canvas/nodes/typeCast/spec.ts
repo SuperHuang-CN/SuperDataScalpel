@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeTypeCast } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { typeCastCanvasView } from './canvasView';
 
 export const typeCastSpec = createCanvasNodeSpec({
   type: CanvasNodeType.TypeCast,
@@ -15,9 +16,9 @@ export const typeCastSpec = createCanvasNodeSpec({
   searchKeywords: ['cast', 'convert', '类型转换', '字段类型', 'try cast'],
   iconKey: CanvasNodeIconKey.Cast,
   order: 40,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: typeCastCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 10,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createTypeCastConfiguration,
   summarize: summarizeTypeCast,

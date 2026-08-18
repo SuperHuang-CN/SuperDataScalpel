@@ -14,6 +14,7 @@ X6 Shape、Palette 分组、图标和校验结果不属于持久化协议。
 - `FILE_DATASET_INPUT`
 - `HTTP_API_INPUT`
 - `KAFKA_INPUT`
+- `TDENGINE_TMQ_INPUT`
 - `JOIN`
 - `GEOMETRY_CONSTRUCT`
 - `SPATIAL_TRANSFORM`
@@ -40,6 +41,8 @@ X6 Shape、Palette 分组、图标和校验结果不属于持久化协议。
 - `TOP_N`
 - `MODEL_OUTPUT`
 - `JDBC_OUTPUT`
+- `JDBC_SNAPSHOT_SYNC_OUTPUT`
+- `MODEL_SNAPSHOT_SYNC_OUTPUT`
 - `KAFKA_OUTPUT`
 - `FILE_OUTPUT`
 
@@ -59,6 +62,7 @@ Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳
 - 一个 `HTTP_API_INPUT` 节点只读取一个已声明 Schema 的 API 资源。
 - 一个 `MODEL_INPUT` 节点只读取一个数据模型。
 - 一个 `KAFKA_INPUT` 节点只读取一个 Topic，并持有自己的 Value Schema。
+- 一个 `TDENGINE_TMQ_INPUT` 节点只订阅一个由外部系统管理的完整超级表 TMQ Topic。
 - 一个 `JOIN` 节点只执行一次两表连接。
 - 一个 `GEOMETRY_CONSTRUCT` 节点只从普通字段构造一个明确 kind/CRS/dimension 的 Geometry 字段。
 - 一个 `SPATIAL_TRANSFORM` 节点只显式转换一张表中的一个 Geometry 字段 CRS。
@@ -86,6 +90,8 @@ Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳
 - 一个 `TOP_N` 节点只按明确排序选择全局或各分组的前 N 行。
 - 一个 `MODEL_OUTPUT` 节点只描述一次向一个目标模型的写入。
 - 一个 `JDBC_OUTPUT` 节点只描述一次向一张目标表的写入。
+- 一个 `JDBC_SNAPSHOT_SYNC_OUTPUT` 节点只对比并同步一张 JDBC 目标表的完整实体快照。
+- 一个 `MODEL_SNAPSHOT_SYNC_OUTPUT` 节点只对比并同步一个 MANAGED 模型的完整实体快照。
 - 一个 `KAFKA_OUTPUT` 节点只描述一次向一个 Topic 的写入，并持有自己的 Value Schema。
 - 一个 `FILE_OUTPUT` 节点只描述一次向用户指定的外部存储目录写入。
 - 多张输入表、多次 Join 或多个输出目标使用多个图节点表达。
@@ -137,17 +143,21 @@ Map<tableName, CanvasTable>
 
 Canvas 定义只保存数据源 UUID、模型 UUID、文件数据集表 UUID、API 资源 UUID、表名和显式节点配置，不保存数据源中已有的数据库、Schema、模型名称、模型字段、文件路径/格式/解析参数、JDBC 原生类型、API 输出字段列表或预览数据。`JDBC_QUERY_INPUT.outputColumns` 是查询 SQL 的已分析结果快照，属于该节点的稳定契约，是这一规则的明确例外。
 
-`JDBC_QUERY_INPUT` 保存规范化 SQL 的 SHA-256 和完整输出字段快照。Compiler 只使用该快照构造零行计划，不在编译期连接外部数据库；发布、重新启用和运行准备必须重新分析并严格比较字段名称、顺序、平台类型、类型参数和 nullable。快照不能替代运行前漂移检查，也不得由后端静默更新。
+`JDBC_QUERY_INPUT` 保存规范化 SQL 的 SHA-256 和完整输出字段快照。Compiler 只使用该快照构造
+零行计划，不在编译期连接外部数据库；发布、重新启用和运行准备不重新分析或比较查询结果结构。
+快照是逻辑规划依据，SQL 文本变化仍必须重新分析和保存，且不得由后端静默更新。
 
 Kafka Value Schema 是消息反序列化和序列化契约，归 `KAFKA_INPUT/KAFKA_OUTPUT` 节点自身所有，因此必须以内联 `valueSchema.columns` 保存。设计器可以把某个已发布模型的当前字段一次性复制进节点，也允许手工编辑或粘贴扁平 JSON Schema；复制完成后不保存模型 ID，后续模型修改不会自动改变 Kafka 节点。
 
-设计器通过现有数据源接口读取最新的真实数据源、物理表和字段 Schema，用于配置和组装单次编译的 `metadataSnapshot`，不进入导出的 Canvas 定义。数据源名称、数据库、Schema、字段列表和元数据读取状态都属于设计时运行数据。
+设计器通过现有接口读取数据源、普通 JDBC 表元数据和已保存模型字段，用于配置和组装单次编译
+的 `metadataSnapshot`，不进入导出的 Canvas 定义。数据源名称、数据库、Schema、字段列表和元数据
+读取状态都属于设计时运行数据。
 
 Task Engine 的编译请求使用独立的 `metadataSnapshot` 携带本次分析所需 Schema。该快照和后续不可变运行快照都不属于本文定义的 Canvas JSON，不得在导入导出时混入定义。
 
 ### 2.4 不保存数据源凭据
 
-Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 `fileDatasetTableId`，HTTP API 节点只保存 `dataSourceId/resourceId`，模型节点只保存 `modelId/targetModelId`，Kafka 节点只保存数据源 ID、Topic、节点自有 Value Schema 和映射配置，文件输出只保存数据源 ID 与相对目录。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
+Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 `fileDatasetTableId`，HTTP API 节点只保存 `dataSourceId/resourceId`，模型节点只保存 `modelId/targetModelId`，Kafka 节点只保存数据源 ID、Topic、节点自有 Value Schema 和映射配置，TMQ 节点只保存数据源 ID、Topic、数据库、超级表和定义指纹，文件输出只保存数据源 ID 与相对目录。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
 
 `HTTP_API_INPUT.runtimeParameters` 会随 Canvas 定义明文持久化，只允许保存日期、业务筛选条件、初始游标等非敏感值。动态 Token 必须由 HTTP API 数据源的 OAuth2 或 Token Endpoint 鉴权在执行时生成，不能作为运行时参数绕过凭据边界。
 
@@ -157,8 +167,8 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 
 ```json
 {
-  "schemaVersion": 1,
-  "schemaMinorVersion": 25,
+  "schemaVersion": 2,
+  "schemaMinorVersion": 3,
   "nodes": [],
   "edges": []
 }
@@ -166,14 +176,15 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `1` |
-| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；缺失时按 `0`，当前写出版本为 `25` |
+| `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `2` |
+| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；缺失时按 `0`，当前写出版本为 `3` |
 | `nodes` | array | 节点定义，按照前端保存顺序持久化；业务逻辑不得依赖数组顺序 |
 | `edges` | array | 有向边定义，业务逻辑不得依赖数组顺序 |
 
-当前实现兼容读取 `1.0`～`1.25`，并把新保存、接口返回、Manifest 和导出统一规范化为 `1.25`。`MODEL_INPUT/MODEL_OUTPUT` 从 `1.1` 开始可用，`RENAME` 从 `1.2` 开始可用，`STREAM_JOIN` 从 `1.3` 开始可用，`FILE_DATASET_INPUT` 从 `1.4` 开始可用，使用内联 Value Schema 的 `KAFKA_INPUT/KAFKA_OUTPUT` 从 `1.5` 开始可用，`FILE_OUTPUT` 从 `1.6` 开始可用，`FILTER` 从 `1.7` 开始可用，`SELECT_COLUMNS` 从 `1.8` 开始可用，`DERIVE_COLUMNS` 从 `1.9` 开始可用，`TYPE_CAST` 从 `1.10` 开始可用，`AGGREGATE` 从 `1.11` 开始可用，`UNION` 从 `1.12` 开始可用，`DEDUPLICATE` 从 `1.13` 开始可用，`NULL_HANDLING` 从 `1.14` 开始可用，`VALUE_MAPPING` 从 `1.15` 开始可用，`WINDOW` 从 `1.16` 开始可用，`TOP_N` 从 `1.17` 开始可用，`MASK_FIELDS` 从 `1.18` 开始可用，`JSON_EXTRACT` 从 `1.19` 开始可用，`SPATIAL_TRANSFORM/SPATIAL_JOIN` 从 `1.20` 开始可用，`GEOMETRY_CONSTRUCT/GEOMETRY_VALIDATE/SPATIAL_MEASURE/GEOMETRY_SERIALIZE` 从 `1.21` 开始可用，`GEOMETRY_REPAIR/GEOMETRY_BUFFER/GEOMETRY_EXPLODE` 从 `1.22` 开始可用，`SPATIAL_CLIP/SPATIAL_AGGREGATE` 从 `1.23` 开始可用。Canvas `1.24` 增加 `JDBC_QUERY_INPUT`、`JDBC_OUTPUT UPSERT` 和 `FILE_OUTPUT.SHAPEFILE`，Canvas `1.25` 增加 `FILE_OUTPUT.GEOPARQUET/GEOJSON`；低版本使用这些能力时分别返回稳定的版本门槛错误。低版本携带高版本节点时返回 `NODE_TYPE_REQUIRES_SCHEMA_VERSION`；同主版本但高于当前的小版本、其他大版本、负数小版本以及版本与节点能力不一致的定义必须拒绝。
+当前写出版本统一为 `2.3`。`2.0/2.1/2.2` 定义仍可读取，保存和导出时规范化为 `2.3`；
+`TDENGINE_TMQ_INPUT` 从小版本 1 开始可用，`JDBC_INCREMENTAL_INPUT` 从小版本 2 开始可用，`MODEL_OUTPUT` 的 UPSERT 从小版本 3 开始可用。Canvas `1.x` 与 `2.x` 不兼容：后端必须先读取持久化的协议版本，再决定是否反序列化定义；发现旧大版本时返回明确的不兼容状态，定义内容置空，由用户选择从空白 Canvas `2.3` 重新配置。重新配置只在用户保存后覆盖旧 JSON，不进行跨大版本自动迁移。
 
-小版本通常用于新增节点类型、可选字段或其他不改变已有定义语义的能力；删除或重命名字段、改变已有节点语义、修改核心图规则等不兼容变化原则上升级大版本。本次 Kafka 节点尚无历史业务数据，按明确决策以 `1.5` 直接替换未投入使用的 `valueModelId` 草案，不升级 `2.0`，也不保留兼容分支。版本不得使用 JSON 小数表示，避免 `1.1`、`1.10` 的比较歧义。
+同一大版本内，小版本只允许新增节点类型、可选字段或其他不改变已有定义语义的能力，并必须向下兼容；读取受支持的较低小版本后，保存和导出统一规范化为当前小版本。高于当前实现的小版本必须拒绝。删除或重命名字段、改变已有字段或节点语义、修改核心图规则等不兼容变化必须升级大版本，并将小版本重置为 `0`。版本不得使用 JSON 小数表示，避免 `2.1`、`2.10` 的比较歧义。
 
 实体中的 `definitionVersion` 与 JSON 中的协议版本含义不同：
 
@@ -190,8 +201,8 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
   "layout": {
     "x": 120,
     "y": 160,
-    "width": 240,
-    "height": 120
+    "width": 300,
+    "height": 164
   },
   "configuration": {}
 }
@@ -205,9 +216,13 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 | `layout` | object | 与 X6 解耦的画布布局信息 |
 | `configuration` | object | 由 `type` 决定的强类型配置 |
 
-`type` 决定节点类别、默认尺寸、端口规则、配置组件和 Schema 处理器，因此不持久化客户端传入的 `category`、`shape` 或节点组件名称。
+`type` 决定节点类别、语义化展示、尺寸派生规则、端口规则、配置组件和 Schema 处理器，因此不持久化客户端传入的 `category`、`shape` 或节点组件名称。
 
-布局坐标和尺寸必须是有限数值。第一版建议限制：
+`layout.x/y` 是稳定的画布位置。`layout.width/height` 只是在定义写出时记录的语义节点基础尺寸快照，不是用户可编辑配置，也不是加载时的权威尺寸。编辑器加载新旧定义时必须保留 `x/y`，忽略已保存的 `width/height`，再通过对应节点 Spec 的 `canvasView.resolveSize(configuration)` 重新计算基础尺寸；用户不能自由拉伸节点。保存、导出和定义指纹比较均使用重新计算后的基础尺寸，因此仅打开包含旧尺寸的定义不会产生未保存修改。
+
+节点主资源未选择时使用紧凑占位尺寸；部分或完整配置按节点专属结构展开。字段、条件、映射和函数列表最多预览前两条，预览数量、节点专属只读内容、Task Engine 返回的 `inputTables/outputTables`、元数据名称和校验状态均不属于稳定任务语义。警告或错误可在运行时临时增加 28px 摘要条，但该增量不得写入 `layout.height`。
+
+布局坐标和写出的基础尺寸必须是有限数值。第一版建议限制：
 
 - `x`、`y`：`-100000..100000`
 - `width`：`180..1000`
@@ -354,9 +369,11 @@ SQL 最大 100,000 字符，只接受 PostgreSQL/MySQL 的单条 `SELECT` 或 `W
 - 用户必须通过查询分析接口显式生成 Hash 与字段快照；编辑 SQL 不自动访问数据库。
 - `outputColumns` 至少一项，字段名称精确匹配且不重复；类型参数必须完整合法。
 - 当前 SQL Hash 与 `analyzedSqlSha256` 不一致时返回 `JDBC_QUERY_SCHEMA_STALE`。
-- 发布、重新启用和运行准备重新分析查询；字段名称、顺序、平台类型、类型参数或 nullable 变化时返回 `JDBC_QUERY_SCHEMA_DRIFT`，不自动更新定义。
+- 发布、重新启用和运行准备不重新分析或比较查询结果结构；保存的 `outputColumns` 只作为逻辑
+  Schema。SQL 文本变化仍返回 `JDBC_QUERY_SCHEMA_STALE`，真实结果能否使用由 Spark 实际执行判断。
 - 查询列必须能无损映射为平台类型；首版拒绝 Geometry。需要空间字段时先让 SQL 输出 WKT/WKB，再连接 `GEOMETRY_CONSTRUCT`。
-- Runner 再次校验只读语法、Hash 和运行时结构；日志、生命周期摘要和错误不得包含 SQL、SQL 字面量、查询数据或凭据。
+- Runner 再次校验只读语法和 Hash，不比较运行时结果结构；日志、生命周期摘要和错误不得包含
+  SQL、SQL 字面量、查询数据或凭据。
 
 查询分析接口、只读连接和元数据错误边界见 [数据源管理](data-source-management.md)，完整设计见 [JDBC_QUERY_INPUT 设计](canvas-jdbc-query-input-design.md)。
 
@@ -676,7 +693,6 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
   "dataSourceId": "a406e119-fbd2-4173-84ee-c92c69231168",
   "targetTableName": "dwd_order_customer",
   "writeMode": "APPEND",
-  "columnMappingMode": "EXPLICIT",
   "columnMappings": [
     {
       "sourceColumnName": "order_id",
@@ -695,7 +711,6 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 
 ```ts
 type JdbcWriteMode = 'APPEND' | 'OVERWRITE' | 'UPSERT';
-type ColumnMappingMode = 'BY_NAME' | 'EXPLICIT';
 
 interface JdbcColumnMapping {
   sourceColumnName: string;
@@ -707,7 +722,6 @@ interface JdbcOutputConfiguration {
   dataSourceId: string;
   targetTableName: string;
   writeMode: JdbcWriteMode | null;
-  columnMappingMode: ColumnMappingMode | null;
   columnMappings: JdbcColumnMapping[];
   upsertKeyColumns: string[];
 }
@@ -722,24 +736,19 @@ interface JdbcOutputConfiguration {
 - 输出节点不产生下游表 Map。
 - 定义校验和预运行只检查配置及 Schema，不执行任何写入。
 
-### 8.3 字段映射模式
-
-`BY_NAME`：
-
-- `columnMappings` 必须为空。
-- 按精确字段名自动映射源字段和目标字段。
-- 目标表中非空、无默认值且非自动生成的可写字段必须存在同名源字段。
-- 源表中目标表不存在的额外字段不会写入，校验结果返回警告但不失败。
-- 同名字段使用显式 Spark Cast 写入目标类型；安全转换直接通过，风险转换返回警告，Analyzer 不支持时校验失败。
-
-`EXPLICIT`：
+### 8.3 统一字段映射
 
 - `columnMappings` 至少包含一项。
 - 每个源字段和目标字段都必须存在。
 - 同一个目标字段只能被映射一次。
 - 相同的源字段可以按明确配置映射到多个目标字段。
 - 目标表必填可写字段必须全部被覆盖。
+- 自增和生成字段不能配置映射；可空或具有数据库默认值的目标字段允许不映射。
+- 未映射来源字段直接忽略，不产生额外字段警告。
+- 映射按目标 Schema 顺序保存；目标字段失效时保留失效项，直到用户手工清除或重新选择目标资源。
 - 映射字段使用显式 Spark Cast。风险转换保留为警告并允许继续，Analyzer 不支持的转换校验失败。
+
+设计器固定按“目标字段 ← 来源字段”展示，并可自动填充空白映射。自动匹配依次尝试完全同名、忽略大小写、转小写并移除下划线；任一层级存在多个来源候选时不自动选择。自动匹配只发生在设计时，结果直接保存为普通 `columnMappings`，Task Engine 运行时不再动态按名称匹配。
 
 ### 8.4 写入模式
 
@@ -749,7 +758,7 @@ interface JdbcOutputConfiguration {
 
 非 `UPSERT` 模式下 `upsertKeyColumns` 必须为空；旧定义缺少该字段时规范化为空数组。`UPSERT` 必须一次选择目标元数据 `uniqueKeys` 中完整且顺序一致的一项，不能逐字段拼接。Key 必须全部被输出映射覆盖，并且不能是自增字段、生成字段或 Geometry；冲突时只更新已映射的非 Key 字段。只有 Key 而没有非 Key 字段时，PostgreSQL 使用 `DO NOTHING`，MySQL 执行无变化更新。
 
-Batch 支持三种模式；Streaming 支持 `APPEND/UPSERT`，继续拒绝 `OVERWRITE`。Streaming JDBC 输出继续拒绝 Geometry；Batch UPSERT 可以更新非 Key Geometry 字段。`MODEL_OUTPUT` 即使复用 `JdbcWriteMode` 类型也只能使用 `APPEND/OVERWRITE`。
+`JDBC_OUTPUT` 的 Batch 支持三种模式，Streaming 支持 `APPEND/UPSERT` 并拒绝 `OVERWRITE`；Streaming JDBC 输出继续拒绝 Geometry，Batch UPSERT 可以更新非 Key Geometry 字段。`MODEL_OUTPUT` 从 Canvas `2.3` 起同样在 Batch 支持 `APPEND/OVERWRITE/UPSERT`、在 Streaming 支持 `APPEND/UPSERT`；其 UPSERT Key 固定取目标模型完整主键，不写入节点配置，也不检查物理表唯一约束。
 
 UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSERT_KEY_NULL`，批内重复返回 `UPSERT_DUPLICATE_KEY`，错误不得包含实际 Key 值。每个 Spark 分区使用独立 JDBC 事务，不提供跨分区全局事务；Streaming 是至少一次交付，micro-batch 重放只保证键级收敛，不宣称 Exactly Once。完整运行规则见 [JDBC_OUTPUT UPSERT 设计](canvas-jdbc-output-upsert-design.md)。
 
@@ -759,7 +768,7 @@ UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSE
 - `dataSourceId` 对应已启用的 JDBC 数据源，并具有 `DISTRIBUTION`（数据分发）用途。
 - 目标表存在且可读取元数据。
 - 目标对象必须是允许写入的物理表，不能是只读视图。
-- 写入模式、映射模式和字段配置一致。
+- 写入模式和字段映射配置完整。
 - 字段映射满足目标表必填字段和平台类型兼容要求。
 - UPSERT Key 与目标表当前 `uniqueKeys` 中的一整组字段精确匹配，并满足可写、映射和类型限制。
 - PostgreSQL/MySQL 以外的数据库不得使用 UPSERT；MySQL 目标存在多组唯一键时返回 `MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS` Warning。
@@ -942,10 +951,9 @@ orders INNER customers → order_customer
 3. 目标物理表：从目标数据源配置的数据库和 Schema 中加载。
 4. 写入模式。
 5. UPSERT Key 约束；仅在 `UPSERT` 时显示。
-6. 字段映射模式。
-7. 显式字段映射表；仅在 `EXPLICIT` 时显示。
+6. 固定字段映射表：左侧按真实目标表 Schema 顺序展示目标字段，右侧选择 Engine 上游 Schema 中的来源字段。
 
-选择 `BY_NAME` 时，面板说明映射由 Task Engine 按同名字段完成；应用配置后，通过 Engine 问题展示缺少的目标必填字段、字段转换风险、不支持的 Cast 和被忽略的额外源字段，不在前端重复计算匹配结果。选择 `EXPLICIT` 时，来源字段选项取自 Engine 的上游 Schema，目标字段选项取自真实目标表元数据。
+面板提供“自动匹配空白字段”，支持完全同名、忽略大小写和驼峰/下划线等价匹配；不会覆盖手工值或失效值。自增和生成字段显示为“数据库生成”且不可选择来源。来源或目标元数据变化后保留失效值并标红，不静默清空。
 
 UPSERT Key 以完整约束为单选项展示，例如“主键：id”或“唯一索引 uk_order：tenant_id, order_no”，配置只保存有序目标字段名，不保存约束名称。Key 中含自增、生成或 Geometry 字段的约束禁用。元数据变化导致已保存字段组失效时保留原值并标红，不静默换成其他约束。MySQL 目标存在多组唯一键时持续显示紧凑提示，说明原生冲突范围不限于用户选择的 Key。
 
@@ -977,8 +985,8 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
 
 ```json
 {
-  "schemaVersion": 1,
-  "schemaMinorVersion": 25,
+  "schemaVersion": 2,
+  "schemaMinorVersion": 3,
   "nodes": [
     {
       "id": "878f22f4-86cf-4487-b697-5bc34eccb169",
@@ -1029,8 +1037,12 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
         "dataSourceId": "04d11960-1ee1-4282-8963-6fb52a21ab0c",
         "targetTableName": "dwd_order_customer",
         "writeMode": "APPEND",
-        "columnMappingMode": "BY_NAME",
-        "columnMappings": [],
+        "columnMappings": [
+          { "sourceColumnName": "order_id", "targetColumnName": "order_id" },
+          { "sourceColumnName": "customer_id", "targetColumnName": "customer_id" },
+          { "sourceColumnName": "customer_key", "targetColumnName": "customer_key" },
+          { "sourceColumnName": "customer_name", "targetColumnName": "customer_name" }
+        ],
         "upsertKeyColumns": []
       }
     }
@@ -1090,7 +1102,7 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
 
 Task Engine 中的 Schema 校验按拓扑顺序执行：
 
-1. `JDBC_INPUT` 从数据源读取最新表元数据；`JDBC_QUERY_INPUT` 校验 SQL Hash，并从节点保存的字段快照生成以 `outputTableName` 为 Key 的有界表；`FILE_DATASET_INPUT` 从文件表元数据生成以稳定 code 为 Key 的有界表，`HTTP_API_INPUT` 从资源声明的输出 Schema 生成以 `outputTableName` 为 Key 的表，`MODEL_INPUT` 从模型快照生成以模型 code 为 Key 的表，`KAFKA_INPUT` 直接使用节点内联 Value Schema 生成以 `outputTableName` 为 Key 的无界表。
+1. `JDBC_INPUT` 从数据源读取最新表元数据；`JDBC_QUERY_INPUT` 校验 SQL Hash，并从节点保存的字段快照生成以 `outputTableName` 为 Key 的有界表；`FILE_DATASET_INPUT` 从文件表元数据生成以稳定 code 为 Key 的有界表，`HTTP_API_INPUT` 从资源声明的输出 Schema 生成以 `outputTableName` 为 Key 的表，`MODEL_INPUT` 从模型快照生成以模型 code 为 Key 的表，`KAFKA_INPUT` 直接使用节点内联 Value Schema 生成无界表，`TDENGINE_TMQ_INPUT` 使用 TMQ Topic 元数据快照中的完整超级表字段生成无界表。
 2. 节点接收所有直接上游的输出 Map，并执行无覆盖合并。
 3. `JOIN` 检查左右表、条件和字段类型，追加结果表。
 4. `RENAME` 替换选中表的 Map Key，并使用共享 Spark 投影原子生成新字段 Schema。
@@ -1257,13 +1269,14 @@ Task Engine 中的 Schema 校验按拓扑顺序执行：
 | `JDBC_QUERY_NOT_READ_ONLY` | JDBC Query SQL 不是单条只读 SELECT/CTE |
 | `JDBC_QUERY_SCHEMA_REQUIRED` | JDBC Query 缺少已分析字段快照 |
 | `JDBC_QUERY_SCHEMA_STALE` | 当前 SQL Hash 与已分析 Hash 不一致 |
-| `JDBC_QUERY_SCHEMA_DRIFT` | 运行准备或运行时查询结果结构与保存快照不一致 |
 | `JDBC_QUERY_GEOMETRY_NOT_SUPPORTED` | JDBC Query 首版不支持 Geometry 结果字段 |
 | `UPSERT_KEY_REQUIRED` | UPSERT 未选择完整唯一键 |
 | `UPSERT_KEY_NOT_UNIQUE_CONSTRAINT` | UPSERT Key 与目标表安全唯一键不匹配 |
 | `UPSERT_KEY_NOT_MAPPED` | UPSERT Key 未全部进入目标字段映射 |
 | `UPSERT_KEY_NULL` | 当前批次存在 NULL UPSERT Key |
 | `UPSERT_DUPLICATE_KEY` | 当前批次内存在重复 UPSERT Key |
+| `UPSERT_KEY_COLUMN_NOT_ALLOWED` | UPSERT Key 字段不存在、自动生成或为 Geometry |
+| `STREAMING_MODEL_OUTPUT_OVERWRITE_NOT_SUPPORTED` | 实时模型输出不支持 OVERWRITE |
 | `MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS` | MySQL 目标存在多组唯一键，原生冲突范围更宽（Warning） |
 | `API_RESOURCE_NOT_FOUND` | HTTP API 输入引用的资源不存在或不属于该数据源 |
 | `KAFKA_VALUE_SCHEMA_REQUIRED` | Kafka 节点缺少内联 Value Schema |
@@ -1282,6 +1295,7 @@ type CanvasNodeDefinition =
   | CanvasNodeBase<'FILE_DATASET_INPUT', FileDatasetInputConfiguration>
   | CanvasNodeBase<'HTTP_API_INPUT', HttpApiInputConfiguration>
   | CanvasNodeBase<'KAFKA_INPUT', KafkaInputConfiguration>
+  | CanvasNodeBase<'TDENGINE_TMQ_INPUT', TdEngineTmqInputConfiguration>
   | CanvasNodeBase<'JOIN', JoinConfiguration>
   | CanvasNodeBase<'STREAM_JOIN', StreamJoinConfiguration>
   | CanvasNodeBase<'RENAME', RenameConfiguration>
@@ -1300,6 +1314,8 @@ type CanvasNodeDefinition =
   | CanvasNodeBase<'TOP_N', TopNConfiguration>
   | CanvasNodeBase<'MODEL_OUTPUT', ModelOutputConfiguration>
   | CanvasNodeBase<'JDBC_OUTPUT', JdbcOutputConfiguration>
+  | CanvasNodeBase<'JDBC_SNAPSHOT_SYNC_OUTPUT', JdbcSnapshotSyncOutputConfiguration>
+  | CanvasNodeBase<'MODEL_SNAPSHOT_SYNC_OUTPUT', ModelSnapshotSyncOutputConfiguration>
   | CanvasNodeBase<'KAFKA_OUTPUT', KafkaOutputConfiguration>;
 ```
 
@@ -1308,8 +1324,8 @@ type CanvasNodeDefinition =
 前端节点注册表只维护展示和编辑能力：
 
 - 节点类别
-- 默认尺寸
-- X6 Shape 与配置面板
+- 按强类型配置派生的语义基础尺寸和专属只读 Body
+- X6 Shape、专属 SVG 图标与配置面板
 - 入边和出边规则
 - 配置 DTO 类型
 
@@ -1327,9 +1343,11 @@ Canvas 定义接口为：
 - `GET /api/v1/tasks/{id}/model-relations`
 - `POST /api/v1/tasks/{id}/actions/update-canvas-definition`
 
-后端只拒绝无法安全加载的协议结构，例如版本不支持、未知节点类型、重复 ID、非法布局和缺失边端点。节点尚未配置、图度数不满足、环路或字段冲突等业务无效草稿允许保存，并继续由 Task Engine 展示设计期问题。相同规范化定义重复保存不增加定义版本。
+定义查询响应使用 `loadStatus: UNCONFIGURED | LOADED | INCOMPATIBLE` 明确区分未配置、已加载和协议不兼容。响应同时返回持久化定义的 `schemaVersion/schemaMinorVersion`；`INCOMPATIBLE` 时保留任务定义版本和更新时间，但 `definition=null`，保证后端不会为了展示错误而反序列化旧大版本 JSON。发布、启用、批运行和实时启动读取到不兼容定义时统一返回 `409 Conflict`，要求先重新配置。
 
-`model-relations` 只读取最后保存定义同步维护的 `task_canvas_model_reference`，按模型 UUID 聚合 `MODEL_INPUT/MODEL_OUTPUT` 的 `INPUT/OUTPUT` 角色，并从 Canvas 定义 JSON 按节点 ID 补充节点名称。JDBC、Kafka、文件和 HTTP 节点不进入模型关系。关系索引与 Canvas 定义在同一事务替换，保存失败时一起回滚；未保存的前端修改、运行历史和临时表不进入查询。模型侧的 `/api/v1/models/{id}/related-tasks` 使用相同事实来源反查并按任务去重。
+保存新定义时，后端只拒绝无法安全加载的协议结构，例如版本不支持、未知节点类型、重复 ID、非法布局和缺失边端点。节点尚未配置、图度数不满足、环路或字段冲突等业务无效草稿允许保存，并继续由 Task Engine 展示设计期问题。相同规范化定义重复保存不增加定义版本。
+
+`model-relations` 只读取最后保存定义同步维护的 `task_canvas_model_reference`，按模型 UUID 聚合 `MODEL_INPUT/MODEL_OUTPUT/MODEL_SNAPSHOT_SYNC_OUTPUT` 的 `INPUT/OUTPUT` 角色，并从 Canvas 定义 JSON 按节点 ID 补充节点名称。JDBC、Kafka、文件和 HTTP 节点不进入模型关系。关系索引与 Canvas 定义在同一事务替换，保存失败时一起回滚；未保存的前端修改、运行历史和临时表不进入查询。模型侧的 `/api/v1/models/{id}/related-tasks` 使用相同事实来源反查并按任务去重。
 
 独立 `/task/orchestration` 页面仍不读取任务 ID，页面状态只存在内存中，刷新即清空；用户通过 JSON 复制、下载或导入转移定义。
 
@@ -1441,7 +1459,7 @@ Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Ins
 }
 ```
 
-`KAFKA_OUTPUT` 使用相同的 `valueSchema` 结构，并额外配置 `sourceTableName`、可选 `keyColumnName`、`columnMappingMode` 和 `columnMappings`。Value Schema 至少包含一个字段，字段名必须唯一；`STRING` 可设置正整数 `length`，`DECIMAL` 必须设置 `precision: 1..38` 和 `scale: 0..precision`，其他类型不得携带这三个参数。
+`KAFKA_OUTPUT` 使用相同的 `valueSchema` 结构，并额外配置 `sourceTableName`、可选 `keyColumnName` 和 `columnMappings`。Value Schema 至少包含一个字段，字段名必须唯一；`STRING` 可设置正整数 `length`，`DECIMAL` 必须设置 `precision: 1..38` 和 `scale: 0..precision`，其他类型不得携带这三个参数。
 
 配置中不再存在 `valueModelId`。Kafka 节点不是模型节点，不创建任务模型引用，也不会在发布、编译或运行准备时查询模型。没有历史 Kafka 定义需要迁移，因此 `1.4` 及更低版本携带 Kafka 节点时直接拒绝，不保留旧字段兼容分支。
 
@@ -1453,6 +1471,58 @@ Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Ins
 - `KAFKA_INPUT` Operator 直接把内联列转为 Spark Schema，并输出 `UNBOUNDED` 表；Compiler 和 Runner 不需要模型元数据。
 - `KAFKA_OUTPUT` Operator 直接把内联列作为目标 Schema，与 JDBC/模型 Output 复用字段映射和显式 Spark Cast。
 - Schema 缺失、空字段、重复字段、非法类型参数属于 Compiler `ERROR`；模型是否仍存在、是否变更与节点有效性无关。
+
+## 16A. `TDENGINE_TMQ_INPUT`
+
+该节点从 Canvas `2.1` 开始提供，只支持 `STREAMING`：
+
+```json
+{
+  "dataSourceId": "bd6c3996-5e96-4714-ae65-f35b015f3cd1",
+  "topicName": "meters_topic",
+  "catalogName": "power",
+  "supertableName": "meters",
+  "topicDefinitionFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "outputTableName": "meter_events",
+  "startingOffsets": "EARLIEST",
+  "maxOffsetsPerVGroupPerTrigger": 10000
+}
+```
+
+- 只能引用已启用、具有 `SOURCE` 用途和 `TMQ_SUBSCRIBE` 能力的 `TDENGINE_WEBSOCKET` 数据源。
+- Topic 必须是单一超级表、完整 `*` 投影的纯数据 Topic；RESTful、数据库 Topic、子表、投影、过滤、
+  JOIN、聚合和 `WITH META` 均不支持。
+- Topic 选择时保存数据库、超级表和 SHA-256 定义指纹；保存草稿不连接 TDengine，发布、重新启用和
+  运行准备时重新校验 Topic、指纹和最新超级表 Schema。
+- `startingOffsets` 只接受 `EARLIEST/LATEST`，且只在没有 Spark Checkpoint 的新部署生效。
+- `maxOffsetsPerVGroupPerTrigger` 默认 `10000`，范围 `1..1000000`，表示 TMQ 消息块 Offset 跨度，
+  不承诺等于行数。
+- `triggerIntervalSeconds` 默认 `10`，范围 `1..300`；实时任务的触发间隔只从唯一无界输入节点读取。
+- 节点入边为 0、出边至少 1，产生以 `outputTableName` 为 Key 的 `UNBOUNDED` 表；Schema 来自超级表
+  字段与 TAG，不增加 Topic、子表、VGroup 或 Offset 技术列。
+- Consumer Group、Client ID、自动提交和任意 TMQ Properties 均不是用户配置；完整运行及 Offset
+  语义见 [TDengine TMQ 输入](tdengine-tmq-input-development-plan.md)。
+
+## 16B. `JDBC_INCREMENTAL_INPUT`
+
+该节点从 Canvas `2.2` 开始提供，只支持 `STREAMING`。它按固定间隔读取普通 JDBC 物理表的完整时间窗口：
+
+```sql
+WHERE incremental_time > :fromTime
+  AND incremental_time <= :toTime
+```
+
+`toTime` 为源数据库当前时间减去可见性延迟。配置包含 `dataSourceId`、`tableName`、
+`outputTableName`、`incrementalTimeColumn`、`startPosition: LATEST | EARLIEST | AT_TIME`、
+可选 `startTime`、`cursorTimeZone`、`visibilityDelaySeconds` 和 `triggerIntervalSeconds`。
+第一版只支持 PostgreSQL、MySQL、openGauss 和 Kingbase 的普通表，以及非空
+`TIMESTAMP/TIMESTAMP_NTZ` 增量字段；不支持视图、TDengine 超级表、Geometry、删除捕获、分页、
+行数截断、自定义增量 SQL 或复合游标。节点输出 `UNBOUNDED` 表，但不会自动设置事件时间或 Watermark。
+
+实时定义必须且只能有一个 Kafka、TMQ 或 JDBC 增量无界输入。JDBC 增量输入第一版只允许连接一个
+终端输出，避免多个 Spark Streaming Query 重复轮询源表。Spark Checkpoint 保存版本化时间 Offset，
+提供至少一次语义；同版本优先使用 Checkpoint，跨定义版本仅在来源签名一致时使用管理库的最近提交
+Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LIMIT`、分页或 `ORDER BY`。
 
 ## 17. `FILTER` 处理器
 
@@ -2186,3 +2256,44 @@ ASCII 目标字段名以及 STRING 专用的 UTF-8 字节宽度；属性顺序�
 - 两种空间格式都要求唯一 Geometry 和 `BOUNDED` 来源，不隐式转换 CRS、降维或
   修复 Geometry。完整规则见 [GeoParquet 输出设计](canvas-geoparquet-output-design.md)
   和 [GeoJSON 输出设计](canvas-geojson-output-design.md)。
+
+## 31. 快照同步 Output
+
+### 31.1 稳定配置
+
+`JDBC_SNAPSHOT_SYNC_OUTPUT` 与 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是 Canvas `2.0` 的正式节点，使用统一的显式字段映射配置：
+
+```json
+{
+  "sourceTableName": "reservoir_snapshot",
+  "keyColumns": ["reservoir_code"],
+  "columnMappings": [
+    { "sourceColumnName": "reservoir_code", "targetColumnName": "reservoir_code" }
+  ],
+  "deletePolicy": {
+    "action": "DELETE",
+    "maxDeleteRows": 1000,
+    "maxDeleteRatio": 0.2
+  }
+}
+```
+
+JDBC 节点额外保存 `dataSourceId + targetTableName`；模型节点额外保存 `targetModelId`。
+Key 固定保存 `1..32` 个目标字段名，由用户显式指定，不强制等于数据库唯一约束。`KEEP` 时
+两个删除阈值必须为 null；`DELETE` 时最大删除行数必须为正整数，最大删除比例必须位于
+`(0, 1]`。
+
+### 31.2 图、编译与执行语义
+
+- 两个节点均为 BATCH Output，恰好一条入边且无出边，只接受 BOUNDED 来源。
+- JDBC 目标必须是具有 DISTRIBUTION 用途的 PostgreSQL/MySQL 普通表；模型目标必须是已发布
+  MANAGED 模型，其存储数据源具有 STORAGE 用途且为 PostgreSQL/MySQL。
+- 来源字段完成显式映射并 Cast 为目标平台类型后，才参与 Key 校验和比较。
+- 来源与目标 Key 必须非 NULL 且各自唯一；Key 不匹配数据库唯一约束只产生 Warning。
+- 标量按目标类型精确比较，Geometry 使用 kind/CRS/dimension 一致前提下的拓扑相等。
+- 目标独有行默认 KEEP；DELETE 时空来源禁止删除，且候选删除数量和比例必须同时通过阈值。
+- Runner 在单条 JDBC 连接和严格表锁内读取目标，并在一个事务中按
+  `DELETE → UPDATE → INSERT` 执行；任一步失败整体回滚。
+- 运行规模由 Manifest v12 的 `snapshotSyncLimits` 控制，Canvas 定义不保存部署限制。
+- 完整规则见 [JDBC 快照同步 Output](canvas-jdbc-snapshot-sync-output-design.md) 和
+  [模型快照同步 Output](canvas-model-snapshot-sync-output-design.md)。

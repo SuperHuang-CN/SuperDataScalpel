@@ -3,7 +3,6 @@ import type { TableProps } from 'antd';
 import { Alert, Button, Descriptions, Modal, Space, Table, Tag, Typography, message } from 'antd';
 import {
   dataModelStatusLabels,
-  physicalLocation,
   physicalTableModeLabels,
   physicalTableStateColors,
   physicalTableStateLabels,
@@ -77,10 +76,11 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
         </div>
       );
       if (!forCreate) {
-        modalApi.info({ title: '建表 SQL', content, width: 820, okText: '关闭' });
+        modalApi.info({ rootClassName: 'business-overlay business-modal-overlay', title: '建表 SQL', content, width: 820, okText: '关闭' });
         return;
       }
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '创建物理表',
         content,
         width: 820,
@@ -131,12 +131,9 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
     </div>
     <div className="model-basic-section">
       <div className="model-basic-section-title">存储位置</div>
-      <Descriptions size="small" bordered column={3}>
+      <Descriptions size="small" bordered column={2}>
         <Descriptions.Item label="JDBC 数据源">{model.storageDataSourceName}</Descriptions.Item>
-        <Descriptions.Item label="数据库/Catalog">{model.catalogName || '—'}</Descriptions.Item>
-        <Descriptions.Item label="Schema">{model.schemaName || '—'}</Descriptions.Item>
         <Descriptions.Item label="物理表名"><code>{model.physicalTableName}</code></Descriptions.Item>
-        <Descriptions.Item label="完整位置" span={2}><code>{physicalLocation(model)}</code></Descriptions.Item>
       </Descriptions>
     </div>
     <div className="model-basic-section physical-table-section">

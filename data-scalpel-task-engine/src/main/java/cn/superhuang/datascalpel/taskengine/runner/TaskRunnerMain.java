@@ -20,7 +20,8 @@ public final class TaskRunnerMain {
                 new RunnerArtifactClient(),
                 launch -> new KafkaRunnerEventPublisher(launch.runnerEvent(), OBJECT_MAPPER),
                 new CanvasTaskExecutor()::execute,
-                new StreamingCanvasTaskExecutor(OBJECT_MAPPER)::execute
+                new StreamingCanvasTaskExecutor(OBJECT_MAPPER)::execute,
+                new ModelQualityTaskExecutor()::execute
         );
         return application.run(environment);
     }

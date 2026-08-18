@@ -3,6 +3,7 @@ import {
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
+  ProfileOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   ReloadOutlined,
@@ -14,6 +15,7 @@ import {
   Button,
   Dropdown,
   Modal,
+  Radio,
   Result,
   Skeleton,
   Space,
@@ -21,26 +23,26 @@ import {
   Tag,
   Tooltip,
   message,
+  Typography,
 } from 'antd';
-import { useCallback, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  useBlocker,
   useNavigate,
   useParams,
   useSearchParams,
-  type BlockerFunction,
 } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { useCurrentUser } from '../../system';
-import { CanvasTaskDefinitionPanel } from '../components/CanvasTaskDefinitionPanel';
-import { LocalSqlTaskDefinitionPanel } from '../components/LocalSqlTaskDefinitionPanel';
 import { TaskBasicPanel } from '../components/TaskBasicPanel';
+import { TaskDefinitionOverview } from '../components/TaskDefinitionOverview';
 import { TaskModelsPanel } from '../components/TaskModelsPanel';
+import { TaskLineagePanel } from '../components/TaskLineagePanel';
 import { TaskDrawer, type TaskDrawerValues } from '../components/TaskDrawer';
 import { TaskRunsPanel } from '../components/TaskRunsPanel';
 import { TaskSchedulesPanel } from '../components/TaskSchedulesPanel';
 import { TaskStreamingRuntimePanel } from '../components/TaskStreamingRuntimePanel';
+import { ModelQualityTaskDefinitionPanel } from '../components/ModelQualityTaskDefinitionPanel';
 import {
   useDeleteTask,
   useRunTask,
@@ -56,6 +58,8 @@ import {
   taskTypeColors,
   taskTypeLabels,
   type DataTask,
+  type StreamingCheckpointMode,
+  type TaskStreamingDeployment,
 } from '../model/task';
 import { normalizeTaskDetailTab, type TaskDetailTabKey } from '../model/taskDetail';
 
@@ -71,12 +75,68 @@ const lifecycleIcon = (task: DataTask) => {
   return <PlayCircleOutlined />;
 };
 
+const isStreamingTask = (task: DataTask) => (
+  task.type === 'SPARK_STREAMING_CANVAS' || task.type === 'SPARK_STREAMING_JAR'
+);
+
+const isJarTask = (task: DataTask) => (
+  task.type === 'SPARK_JAR' || task.type === 'SPARK_STREAMING_JAR'
+);
+
+const CheckpointStartChoice = ({
+  deployment,
+  definitionVersion,
+  initialMode,
+  onChange,
+}: {
+  deployment: TaskStreamingDeployment | null;
+  definitionVersion: number | null;
+  initialMode: StreamingCheckpointMode;
+  onChange: (mode: StreamingCheckpointMode) => void;
+}) => {
+  const [mode, setMode] = useState<StreamingCheckpointMode>(initialMode);
+  const crossVersionContinue = mode === 'CONTINUE'
+    && deployment !== null
+    && definitionVersion !== null
+    && deployment.definitionVersion !== definitionVersion;
+  return (
+    <Space orientation="vertical" size={12}>
+      <Typography.Text>
+        用户代码控制 Trigger 与处理逻辑；所有查询使用平台分配的独立 Checkpoint。
+      </Typography.Text>
+      <Radio.Group
+        value={mode}
+        onChange={(event) => {
+          const next = event.target.value as StreamingCheckpointMode;
+          setMode(next);
+          onChange(next);
+        }}
+      >
+        <Space orientation="vertical">
+          <Radio value="CONTINUE" disabled={!deployment}>
+            继续最近 Checkpoint
+          </Radio>
+          <Radio value="FRESH">全新启动（创建新的 Checkpoint 世代）</Radio>
+        </Space>
+      </Radio.Group>
+      {!deployment && <Alert type="info" showIcon message="尚无历史部署，首次启动只能选择全新启动。" />}
+      {crossVersionContinue && (
+        <Alert
+          type="warning"
+          showIcon
+          message="正在跨定义版本继续 Checkpoint"
+          description="代码、查询集合和状态 Schema 的兼容性由实施人员负责；平台不会分析或转换历史状态。"
+        />
+      )}
+    </Space>
+  );
+};
+
 export const TaskDetailPage = () => {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState(false);
-  const [definitionDirty, setDefinitionDirty] = useState(false);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const taskQuery = useTask(taskId);
@@ -98,21 +158,24 @@ export const TaskDetailPage = () => {
   const startStreamingMutation = useTaskStreamingCommand('start');
   const stopStreamingMutation = useTaskStreamingCommand('stop');
   const activeTab = normalizeTaskDetailTab(searchParams.get('tab'));
-  const definitionLeaveBlocker = useBlocker(useCallback<BlockerFunction>(
-    ({ currentLocation, nextLocation }) => definitionDirty && (
-      currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search
-    ),
-    [definitionDirty],
-  ));
+  const detailRunId = activeTab === 'runs' ? searchParams.get('runId') : null;
   const task = taskQuery.data;
   const streamingStatusQuery = useTaskStreamingStatus(
     taskId,
-    task?.type === 'SPARK_STREAMING_CANVAS',
+    task?.type === 'SPARK_STREAMING_CANVAS' || task?.type === 'SPARK_STREAMING_JAR',
   );
   const streamingState = streamingStatusQuery.data?.deployment?.actualState;
   const streamingActive = streamingState === 'STARTING'
     || streamingState === 'RUNNING'
     || streamingState === 'STOPPING';
+
+  const changeDetailRun = (runId: string | null) => {
+    const next = new URLSearchParams(searchParams);
+    next.set('tab', 'runs');
+    if (runId) next.set('runId', runId);
+    else next.delete('runId');
+    setSearchParams(next, { replace: true });
+  };
 
   const directoryNameById = useMemo(() => {
     const names = new Map<string, string>();
@@ -123,10 +186,6 @@ export const TaskDetailPage = () => {
     collect(directoriesQuery.data ?? []);
     return names;
   }, [directoriesQuery.data]);
-
-  const handleDefinitionDirtyChange = useCallback((dirty: boolean) => {
-    setDefinitionDirty(dirty);
-  }, []);
 
   const executeCommand = async (target: DataTask, command: 'publish' | 'disable' | 'enable') => {
     try {
@@ -144,14 +203,15 @@ export const TaskDetailPage = () => {
   };
 
   const transition = (target: DataTask) => {
-    if (definitionDirty && target.status !== 'PUBLISHED') {
-      messageApi.warning('请先保存或放弃当前任务定义修改');
-      return;
-    }
     if (target.status === 'DRAFT') {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '发布任务',
-        content: target.type === 'SPARK_CANVAS' || target.type === 'SPARK_STREAMING_CANVAS'
+        content: target.type === 'SPARK_MODEL_QUALITY'
+          ? '发布会校验目标模型、计算引擎和当前可执行规则，不会读取模型物理表。'
+          : isJarTask(target)
+            ? '发布会校验当前 JAR、资源绑定和计算引擎，不会加载用户类或读写业务数据。'
+          : target.type === 'SPARK_CANVAS' || target.type === 'SPARK_STREAMING_CANVAS'
           ? '发布会读取当前数据源元数据并完成 Canvas 编译预检，预检不会读写业务数据。'
           : '发布会检查模型物理表、SQL 输出字段和类型，并且不会写入目标表。',
         okText: '发布',
@@ -160,7 +220,7 @@ export const TaskDetailPage = () => {
       });
       return;
     }
-    if (target.type === 'SPARK_STREAMING_CANVAS'
+    if (isStreamingTask(target)
       && target.status === 'PUBLISHED'
       && streamingActive) {
       messageApi.warning('请先正常停止实时任务，再停用任务');
@@ -172,10 +232,14 @@ export const TaskDetailPage = () => {
   const executeStreamingCommand = async (
     target: DataTask,
     command: 'start' | 'stop',
+    checkpointMode?: StreamingCheckpointMode,
   ) => {
     try {
-      const mutation = command === 'start' ? startStreamingMutation : stopStreamingMutation;
-      await mutation.mutateAsync(target.id);
+      if (command === 'start') {
+        await startStreamingMutation.mutateAsync({ id: target.id, checkpointMode });
+      } else {
+        await stopStreamingMutation.mutateAsync(target.id);
+      }
       messageApi.success(command === 'start' ? '实时任务启动请求已提交' : '实时任务停止请求已提交');
       setSearchParams({ tab: 'streaming' }, { replace: true });
     } catch (error) {
@@ -190,11 +254,29 @@ export const TaskDetailPage = () => {
       messageApi.warning('任务定义缺失，无法启动');
       return;
     }
-    if (definitionDirty) {
-      messageApi.warning('请先保存或放弃当前任务定义修改');
+    if (target.type === 'SPARK_STREAMING_JAR') {
+      const deployment = streamingStatusQuery.data?.deployment ?? null;
+      let checkpointMode: StreamingCheckpointMode = deployment ? 'CONTINUE' : 'FRESH';
+      modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
+        title: deployment ? '启动 Spark 实时 JAR 任务' : '首次启动 Spark 实时 JAR 任务',
+        width: 560,
+        content: (
+          <CheckpointStartChoice
+            deployment={deployment}
+            definitionVersion={target.definitionVersion}
+            initialMode={checkpointMode}
+            onChange={(mode) => { checkpointMode = mode; }}
+          />
+        ),
+        okText: '确认启动',
+        cancelText: '取消',
+        onOk: () => executeStreamingCommand(target, 'start', checkpointMode),
+      });
       return;
     }
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: streamingState === 'FAILED' || streamingState === 'STOPPED'
         ? '恢复 Spark 实时任务'
         : '启动 Spark 实时任务',
@@ -206,6 +288,7 @@ export const TaskDetailPage = () => {
   };
 
   const stopStreaming = (target: DataTask) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '正常停止 Spark 实时任务',
     content: '系统会通知 Runner 停止全部 StreamingQuery 并保留 Checkpoint，后续可从原位置恢复。',
     okText: '停止',
@@ -217,7 +300,7 @@ export const TaskDetailPage = () => {
   const submitRun = async (target: DataTask) => {
     try {
       await runMutation.mutateAsync(target.id);
-      messageApi.success(target.type === 'SPARK_CANVAS'
+      messageApi.success(target.type === 'SPARK_CANVAS' || target.type === 'SPARK_MODEL_QUALITY' || target.type === 'SPARK_JAR'
         ? '任务已提交，等待计算引擎调度'
         : '任务已进入执行队列');
       setSearchParams({ tab: 'runs' }, { replace: true });
@@ -231,14 +314,33 @@ export const TaskDetailPage = () => {
       messageApi.warning('任务定义缺失，无法运行，请先停用后重新配置');
       return;
     }
-    if (definitionDirty) {
-      messageApi.warning('请先保存或放弃当前任务定义修改');
-      return;
-    }
     if (target.type === 'SPARK_CANVAS') {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '运行 Spark Canvas 任务',
         content: '本次运行会真实访问输入数据源并写入 JDBC_OUTPUT 目标表。APPEND 会追加数据，OVERWRITE 会清空目标表后写入；多个输出之间不提供跨表事务回滚。',
+        okText: '确认运行',
+        cancelText: '取消',
+        onOk: () => submitRun(target),
+      });
+      return;
+    }
+    if (target.type === 'SPARK_MODEL_QUALITY') {
+      modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
+        title: '运行 Spark 模型质检任务',
+        content: '本次运行会完整扫描目标模型，并使用当前启用且有效的质量规则。质量不通过不会改变数据，也不会影响其他任务状态。',
+        okText: '确认运行',
+        cancelText: '取消',
+        onOk: () => submitRun(target),
+      });
+      return;
+    }
+    if (target.type === 'SPARK_JAR') {
+      modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
+        title: '运行 Spark JAR 任务',
+        content: '本次运行会加载已上传的用户作业并真实访问声明绑定的资源。多个 SDK 写操作之间不提供跨目标事务回滚。',
         okText: '确认运行',
         cancelText: '取消',
         onOk: () => submitRun(target),
@@ -249,6 +351,7 @@ export const TaskDetailPage = () => {
   };
 
   const remove = (target: DataTask) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除任务',
     content: `确认删除“${target.name}”吗？已有运行记录的任务不能删除。`,
     okText: '删除',
@@ -275,7 +378,7 @@ export const TaskDetailPage = () => {
           name: values.name,
           directoryId: values.directoryId,
           description: values.description,
-          computeEngineId: task.type === 'SPARK_CANVAS' || task.type === 'SPARK_STREAMING_CANVAS'
+          computeEngineId: task.type !== 'LOCAL_SQL'
             ? values.computeEngineId
             : undefined,
         },
@@ -317,14 +420,13 @@ export const TaskDetailPage = () => {
   const subtitleResource = task.type === 'LOCAL_SQL'
     ? '本地 JDBC 执行'
     : task.computeEngineName ?? (task.computeEngineId ? '计算引擎已删除' : '未绑定计算引擎');
-  const lifecycleBlockedByDirty = definitionDirty && task.status !== 'PUBLISHED';
-  const lifecycleBlockedByStreaming = task.type === 'SPARK_STREAMING_CANVAS'
+  const lifecycleBlockedByStreaming = isStreamingTask(task)
     && task.status === 'PUBLISHED'
     && streamingActive;
   const runDisabledReason = !task.definitionConfigured
     ? '任务定义缺失，无法运行，请先停用后重新配置'
-    : definitionDirty ? '请先保存或放弃当前任务定义修改' : undefined;
-  const tabItems = [
+    : undefined;
+  const standardTabItems = [
     {
       key: 'basic',
       label: '基本信息',
@@ -333,31 +435,25 @@ export const TaskDetailPage = () => {
     {
       key: 'definition',
       label: '任务定义',
-      children: task.type === 'SPARK_CANVAS' || task.type === 'SPARK_STREAMING_CANVAS'
-        ? (
-          <CanvasTaskDefinitionPanel
-            task={task}
-            canUpdate={canUpdate}
-            onDirtyChange={handleDefinitionDirtyChange}
-            protectNavigation={false}
-          />
-        )
-        : (
-          <LocalSqlTaskDefinitionPanel
-            task={task}
-            canUpdate={canUpdate}
-            canValidate={canPublish}
-            onDirtyChange={handleDefinitionDirtyChange}
-            protectNavigation={false}
-          />
-        ),
+      children: (
+        <TaskDefinitionOverview
+          task={task}
+          canUpdate={canUpdate}
+          streamingActive={streamingActive}
+        />
+      ),
     },
     {
       key: 'models',
       label: '关联模型',
       children: <TaskModelsPanel taskId={task.id} canViewModels={canViewModels} />,
     },
-    ...(task.type === 'SPARK_STREAMING_CANVAS' ? [{
+    {
+      key: 'lineage',
+      label: '数据血缘',
+      children: <TaskLineagePanel taskId={task.id} />,
+    },
+    ...(isStreamingTask(task) ? [{
       key: 'streaming',
       label: '实时运行',
       children: <TaskStreamingRuntimePanel task={task} />,
@@ -376,23 +472,42 @@ export const TaskDetailPage = () => {
     {
       key: 'runs',
       label: '运行记录',
-      children: <TaskRunsPanel task={task} canExecute={canExecute} />,
+      children: (
+        <TaskRunsPanel
+          task={task}
+          canExecute={canExecute}
+          detailRunId={detailRunId}
+          onDetailRunChange={changeDetailRun}
+        />
+      ),
     },
   ];
+  const tabItems = task.type === 'SPARK_MODEL_QUALITY' ? [
+    standardTabItems[0],
+    {
+      key: 'quality',
+      label: '质检定义',
+      children: <ModelQualityTaskDefinitionPanel task={task} canUpdate={canUpdate} />,
+    },
+    standardTabItems.find((item) => item.key === 'schedules')!,
+    standardTabItems.find((item) => item.key === 'runs')!,
+  ] : isJarTask(task)
+    ? standardTabItems.filter((item) => item.key !== 'lineage')
+    : standardTabItems;
 
   return (
-    <div className="task-detail-page">
+    <div className="task-detail-page business-detail-page">
       {messageContext}
       {modalContext}
-      <div className="task-detail-header">
+      <div className="task-detail-header business-detail-header">
         <div className="task-detail-identity">
           <div className="task-detail-title-row">
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/task')}>返回列表</Button>
+            <span className="business-detail-resource-icon business-detail-resource-icon-blue"><ProfileOutlined /></span>
             <span className="task-detail-title">{task.name}</span>
             <Tag color={taskTypeColors[task.type]}>{taskTypeLabels[task.type]}</Tag>
             <Tag color={taskStatusColors[task.status]}>{taskStatusLabels[task.status]}</Tag>
             <Tag>{task.definitionConfigured ? `定义 v${task.definitionVersion}` : '定义未配置'}</Tag>
-            {definitionDirty && <Tag color="processing">定义有未保存修改</Tag>}
           </div>
           <div className="task-detail-subtitle">
             <span>{directoryName ?? (task.directoryId ? '目录已删除' : '未分类')}</span>
@@ -411,21 +526,19 @@ export const TaskDetailPage = () => {
           </Tooltip>
           {canUpdate && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>修改</Button>}
           {canPublish && (
-            <Tooltip title={lifecycleBlockedByDirty
-              ? '请先保存或放弃当前任务定义修改'
-              : lifecycleBlockedByStreaming ? '请先正常停止实时任务' : undefined}>
+            <Tooltip title={lifecycleBlockedByStreaming ? '请先正常停止实时任务' : undefined}>
               <Button
                 type={task.status === 'DRAFT' ? 'primary' : 'default'}
                 icon={lifecycleIcon(task)}
                 loading={commandLoading}
-                disabled={lifecycleBlockedByDirty || lifecycleBlockedByStreaming}
+                disabled={lifecycleBlockedByStreaming}
                 onClick={() => transition(task)}
               >
                 {lifecycleLabel(task)}
               </Button>
             </Tooltip>
           )}
-          {canExecute && task.status === 'PUBLISHED' && task.type !== 'SPARK_STREAMING_CANVAS' && (
+          {canExecute && task.status === 'PUBLISHED' && !isStreamingTask(task) && (
             <Tooltip title={runDisabledReason}>
               <Button
                 type="primary"
@@ -438,7 +551,7 @@ export const TaskDetailPage = () => {
               </Button>
             </Tooltip>
           )}
-          {canExecute && task.status === 'PUBLISHED' && task.type === 'SPARK_STREAMING_CANVAS' && (
+          {canExecute && task.status === 'PUBLISHED' && isStreamingTask(task) && (
             streamingActive ? (
               <Tooltip title={streamingState === 'STOPPING' ? '正在停止' : undefined}>
                 <Button
@@ -452,12 +565,12 @@ export const TaskDetailPage = () => {
                 </Button>
               </Tooltip>
             ) : (
-              <Tooltip title={runDisabledReason}>
+              <Tooltip title={streamingStatusQuery.isPending ? '正在加载最近 Checkpoint 状态' : runDisabledReason}>
                 <Button
                   type="primary"
                   icon={<PlayCircleOutlined />}
-                  loading={startStreamingMutation.isPending}
-                  disabled={Boolean(runDisabledReason)}
+                  loading={startStreamingMutation.isPending || streamingStatusQuery.isPending}
+                  disabled={Boolean(runDisabledReason) || streamingStatusQuery.isPending}
                   onClick={() => startStreaming(task)}
                 >
                   {streamingState === 'FAILED' || streamingState === 'STOPPED' ? '恢复运行' : '启动'}
@@ -488,27 +601,11 @@ export const TaskDetailPage = () => {
       )}
       <Tabs
         activeKey={activeTab}
-        className={`task-detail-tabs task-detail-tabs-${activeTab}`}
+        className={`task-detail-tabs business-detail-tabs task-detail-tabs-${activeTab}`}
         destroyOnHidden
         items={tabItems}
         onChange={(key) => setSearchParams({ tab: key as TaskDetailTabKey }, { replace: true })}
       />
-      <Modal
-        open={definitionLeaveBlocker.state === 'blocked'}
-        title="放弃未保存的任务定义修改？"
-        okText="放弃修改"
-        okButtonProps={{ danger: true }}
-        cancelText="继续编辑"
-        closable={false}
-        mask={{ closable: false }}
-        onOk={() => {
-          setDefinitionDirty(false);
-          definitionLeaveBlocker.proceed?.();
-        }}
-        onCancel={() => definitionLeaveBlocker.reset?.()}
-      >
-        离开任务定义后，当前尚未保存的修改将丢失。
-      </Modal>
       <TaskDrawer
         open={editing}
         task={task}

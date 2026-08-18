@@ -3,7 +3,6 @@ import {
   DashboardOutlined,
   EditOutlined,
   EllipsisOutlined,
-  FileTextOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
@@ -18,6 +17,8 @@ import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type 
 import { useCurrentUser } from '../../system';
 import { FileDatasetDrawer } from '../components/FileDatasetDrawer';
 import { FileDatasetParseQueueDrawer } from '../components/FileDatasetParseQueueDrawer';
+import { FileDatasetTypeIcon } from '../components/FileDatasetTypeIcon';
+import { fileDatasetTypeIconTones } from '../components/fileDatasetTypeIconTone';
 import { useDeleteFileDataset, useFileDatasets } from '../hooks/useFileDatasets';
 import {
   fileDatasetTypeLabels,
@@ -87,6 +88,7 @@ export const FileDatasetPage = () => {
 
   const confirmDelete = (fileDataset: FileDataset) => {
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '删除文件数据集',
       content: `确认删除“${fileDataset.name}”及其 ${fileDataset.fileCount} 个文件、${fileDataset.tableCount} 张表吗？`,
       okText: '删除',
@@ -108,10 +110,15 @@ export const FileDatasetPage = () => {
     {
       title: '数据集', dataIndex: 'name', width: 280,
       render: (value: string, dataset: FileDataset) => (
-        <ManagementListCell icon={<FileTextOutlined />} iconTone="cyan" primary={<Button type="link" className="file-dataset-name-button" onClick={() => navigate(`/file-dataset/${dataset.id}`, { state: { fromFileDatasetList: true } })}>{value}</Button>} secondary={dataset.description || '—'} />
+        <ManagementListCell
+          icon={<FileDatasetTypeIcon type={dataset.type} />}
+          iconLabel={`文件数据集类型：${fileDatasetTypeLabels[dataset.type]}`}
+          iconTone={fileDatasetTypeIconTones[dataset.type]}
+          primary={<Button type="link" className="file-dataset-name-button" onClick={() => navigate(`/file-dataset/${dataset.id}`, { state: { fromFileDatasetList: true } })}>{value}</Button>}
+          secondary={dataset.description || '—'}
+        />
       ),
     },
-    { title: '类型', dataIndex: 'type', width: 120, render: (value: FileDataset['type']) => fileDatasetTypeLabels[value] },
     { title: '数据规模', width: 130, align: 'right', render: (_value: unknown, dataset) => <ManagementListCell primary={`${dataset.fileCount} 个文件`} secondary={`${dataset.tableCount} 张表`} /> },
     {
       title: '表就绪情况',

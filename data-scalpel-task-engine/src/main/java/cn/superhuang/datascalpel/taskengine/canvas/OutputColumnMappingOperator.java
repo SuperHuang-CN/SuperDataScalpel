@@ -2,7 +2,6 @@ package cn.superhuang.datascalpel.taskengine.canvas;
 
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -23,17 +22,15 @@ final class OutputColumnMappingOperator {
     Dataset<Row> apply(
             SparkCanvasTable source,
             CanvasTableSchema target,
-            ColumnMappingMode mode,
             List<JdbcColumnMapping> mappings,
             CanvasNodeIssueSink issues
     ) {
-        return apply(source, target, mode, mappings, null, null, issues);
+        return apply(source, target, mappings, null, null, issues);
     }
 
     Dataset<Row> applyPreserving(
             SparkCanvasTable source,
             CanvasTableSchema target,
-            ColumnMappingMode mode,
             List<JdbcColumnMapping> mappings,
             String preservedSourceColumn,
             String preservedAlias,
@@ -42,95 +39,22 @@ final class OutputColumnMappingOperator {
         if (CanvasNodeSupport.blank(preservedSourceColumn) || CanvasNodeSupport.blank(preservedAlias)) {
             throw new IllegalArgumentException("保留字段和别名不能为空");
         }
-        return apply(source, target, mode, mappings, preservedSourceColumn, preservedAlias, issues);
+        return apply(source, target, mappings, preservedSourceColumn, preservedAlias, issues);
     }
 
     private static Dataset<Row> apply(
             SparkCanvasTable source,
             CanvasTableSchema target,
-            ColumnMappingMode mode,
             List<JdbcColumnMapping> mappings,
             String preservedSourceColumn,
             String preservedAlias,
             CanvasNodeIssueSink issues
     ) {
-        if (mode == ColumnMappingMode.BY_NAME) {
-            return byName(source, target, mappings, preservedSourceColumn, preservedAlias, issues);
-        }
-        if (mode == ColumnMappingMode.EXPLICIT) {
-            return explicit(source, target, mappings, preservedSourceColumn, preservedAlias, issues);
-        }
-        return null;
-    }
-
-    private static Dataset<Row> byName(
-            SparkCanvasTable source,
-            CanvasTableSchema target,
-            List<JdbcColumnMapping> mappings,
-            String preservedSourceColumn,
-            String preservedAlias,
-            CanvasNodeIssueSink issues
-    ) {
-        if (!mappings.isEmpty()) {
-            issues.error(
-                    "INVALID_COLUMN_MAPPING",
-                    "BY_NAME 模式下字段映射列表必须为空",
-                    "configuration.columnMappings"
-            );
-        }
-        Map<String, CanvasColumnSchema> sourceColumns = CanvasNodeSupport.columns(source.schema());
-        Map<String, CanvasColumnSchema> targetColumns = CanvasNodeSupport.columns(target);
-        List<Column> selections = new ArrayList<>();
-        for (CanvasColumnSchema targetColumn : writableColumns(target)) {
-            CanvasColumnSchema sourceColumn = sourceColumns.get(targetColumn.name());
-            if (sourceColumn != null) {
-                Column mapped = mappedColumn(
-                        source,
-                        sourceColumn,
-                        targetColumn,
-                        "configuration.target." + targetColumn.name(),
-                        issues
-                );
-                if (mapped != null) {
-                    selections.add(mapped);
-                }
-            }
-        }
-        for (CanvasColumnSchema targetColumn : requiredColumns(target)) {
-            if (!sourceColumns.containsKey(targetColumn.name())) {
-                issues.error(
-                        "REQUIRED_TARGET_COLUMN_MISSING",
-                        "目标必填字段没有同名来源字段：" + targetColumn.name(),
-                        "configuration.columnMappings"
-                );
-            }
-        }
-        for (CanvasColumnSchema sourceColumn : source.schema().columns()) {
-            if (!targetColumns.containsKey(sourceColumn.name())
-                    && !sourceColumn.name().equals(preservedSourceColumn)) {
-                issues.warning(
-                        "SOURCE_COLUMN_IGNORED",
-                        "来源字段在目标中不存在，将被忽略：" + sourceColumn.name(),
-                        "configuration.sourceTableName"
-                );
-            }
-        }
-        addPreservedSelection(source, preservedSourceColumn, preservedAlias, selections, issues);
-        return select(source, selections, issues);
-    }
-
-    private static Dataset<Row> explicit(
-            SparkCanvasTable source,
-            CanvasTableSchema target,
-            List<JdbcColumnMapping> mappings,
-            String preservedSourceColumn,
-            String preservedAlias,
-            CanvasNodeIssueSink issues
-    ) {
+        mappings = mappings == null ? List.of() : mappings;
         if (mappings.isEmpty()) {
             issues.error(
                     "REQUIRED_CONFIGURATION",
-                    "EXPLICIT 模式至少需要一个字段映射",
+                    "至少需要配置一个字段映射",
                     "configuration.columnMappings"
             );
             return null;
@@ -138,7 +62,7 @@ final class OutputColumnMappingOperator {
         Map<String, CanvasColumnSchema> sourceColumns = CanvasNodeSupport.columns(source.schema());
         Map<String, CanvasColumnSchema> targetColumns = CanvasNodeSupport.columns(target);
         Set<String> mappedTargets = new HashSet<>();
-        List<Column> selections = new ArrayList<>();
+        Map<String, Column> selectionsByTarget = new java.util.LinkedHashMap<>();
         for (int index = 0; index < mappings.size(); index++) {
             JdbcColumnMapping mapping = mappings.get(index);
             String path = "configuration.columnMappings[" + index + "]";
@@ -162,11 +86,18 @@ final class OutputColumnMappingOperator {
             }
             if (targetColumn == null) {
                 issues.error("COLUMN_NOT_FOUND", "目标字段不存在：" + mapping.targetColumnName(), path);
+            } else if (targetColumn.autoIncrement() || targetColumn.generated()) {
+                issues.error(
+                        "TARGET_COLUMN_NOT_WRITABLE",
+                        "自增或生成字段不能配置映射：" + mapping.targetColumnName(),
+                        path
+                );
             }
-            if (sourceColumn != null && targetColumn != null) {
+            if (sourceColumn != null && targetColumn != null
+                    && !targetColumn.autoIncrement() && !targetColumn.generated()) {
                 Column mapped = mappedColumn(source, sourceColumn, targetColumn, path, issues);
                 if (mapped != null) {
-                    selections.add(mapped);
+                    selectionsByTarget.putIfAbsent(targetColumn.name(), mapped);
                 }
             }
         }
@@ -179,6 +110,10 @@ final class OutputColumnMappingOperator {
                 );
             }
         }
+        List<Column> selections = target.columns().stream()
+                .map(column -> selectionsByTarget.get(column.name()))
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.toCollection(ArrayList::new));
         addPreservedSelection(source, preservedSourceColumn, preservedAlias, selections, issues);
         return select(source, selections, issues);
     }

@@ -18,7 +18,9 @@ public final class BuiltInDialects {
                 new ClickHouseDialect(),
                 new DamengDialect(),
                 new KingbaseDialect(),
-                new OpenGaussDialect()
+                new OpenGaussDialect(),
+                new TdEngineDialect(TdEngineJdbcTransport.WEBSOCKET),
+                new TdEngineDialect(TdEngineJdbcTransport.RESTFUL)
         ));
     }
 }

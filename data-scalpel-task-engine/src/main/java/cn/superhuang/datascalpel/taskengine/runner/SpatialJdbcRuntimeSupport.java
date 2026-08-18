@@ -3,19 +3,16 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
-import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
-import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
 import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
-import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseAccessException;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseInspector;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
@@ -41,11 +38,12 @@ import java.sql.DriverManager;
 import java.sql.PreparedStatement;
 import java.sql.SQLException;
 import java.util.ArrayList;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 
 /**
  * Controlled PostgreSQL/PostGIS and MySQL 8 Geometry bridge.
@@ -81,24 +79,22 @@ final class SpatialJdbcRuntimeSupport {
             SparkSession spark,
             RuntimeDataSource source,
             TableIdentifier table,
-            CanvasTableSchema expectedSchema,
+            CanvasTableSchema logicalSchema,
             String nodeId
     ) {
-        boolean containsGeometry = containsGeometry(expectedSchema);
+        validateSourceTableBoundary(source, table, nodeId);
+        boolean containsGeometry = containsGeometry(logicalSchema);
         if (!containsGeometry) {
-            Dataset<Row> dataset = CanvasTaskExecutor.reader(spark, source)
+            return CanvasTaskExecutor.reader(spark, source)
                     .option("dbtable", qualifiedTable(source, table))
                     .load();
-            CanvasTaskExecutor.validateRuntimeSchema(expectedSchema.columns(), dataset, nodeId);
-            return dataset;
         }
 
-        validatePhysicalSchema(source, table, expectedSchema, nodeId);
         DatabaseDialect dialect = dialect(source);
         List<String> selectExpressions = new ArrayList<>();
         Map<String, String> wkbAliases = new LinkedHashMap<>();
         int geometryIndex = 0;
-        for (CanvasColumnSchema column : expectedSchema.columns()) {
+        for (CanvasColumnSchema column : logicalSchema.columns()) {
             String quotedColumn = dialect.quoteIdentifier(column.name());
             if (column.fieldType() == PlatformDataType.GEOMETRY) {
                 String alias = "__datascalpel_wkb_" + geometryIndex++;
@@ -115,7 +111,7 @@ final class SpatialJdbcRuntimeSupport {
         Dataset<Row> raw = CanvasTaskExecutor.reader(spark, source)
                 .option("dbtable", query)
                 .load();
-        Column[] projected = expectedSchema.columns().stream().map(column -> {
+        Column[] projected = logicalSchema.columns().stream().map(column -> {
             if (column.fieldType() != PlatformDataType.GEOMETRY) {
                 return sparkColumn(column.name());
             }
@@ -127,18 +123,88 @@ final class SpatialJdbcRuntimeSupport {
                     functions.lit(column.geometry().crs().code())
             ).as(column.name(), SparkTypeMapper.metadata(column));
         }).toArray(Column[]::new);
-        Dataset<Row> dataset = raw.select(projected);
-        CanvasTaskExecutor.validateRuntimeSchema(expectedSchema.columns(), dataset, nodeId);
-        return dataset;
+        return raw.select(projected);
     }
 
-    static Map<String, Integer> validateTarget(
+    private static void validateSourceTableBoundary(
             RuntimeDataSource source,
             TableIdentifier table,
-            CanvasTableSchema expectedSchema,
             String nodeId
     ) {
-        return validatePhysicalSchema(source, table, expectedSchema, nodeId);
+        if (source.databaseType() != RuntimeDatabaseType.TDENGINE_WEBSOCKET
+                && source.databaseType() != RuntimeDatabaseType.TDENGINE_RESTFUL) {
+            return;
+        }
+        try {
+            TableMetadata metadata = INSPECTOR.readTable(
+                    source.databaseType().name(),
+                    jdbcSpec(source.connection()),
+                    table
+            );
+            if (!"SUPERTABLE".equalsIgnoreCase(metadata.table().type())) {
+                throw new RunnerExecutionException(
+                        "TDENGINE_SUPERTABLE_REQUIRED",
+                        "TDengine 输入对象不是超级表；子表不在 DataScalpel 支持范围内",
+                        nodeId
+                );
+            }
+        } catch (DatabaseAccessException exception) {
+            throw new RunnerExecutionException(
+                    "TDENGINE_SUPERTABLE_METADATA_UNAVAILABLE",
+                    "无法确认 TDengine 输入对象为超级表：" + exception.getMessage(),
+                    nodeId,
+                    exception
+            );
+        }
+    }
+
+    static Map<String, Integer> resolveGeometryLocalSrids(
+            RuntimeDataSource source,
+            TableIdentifier table,
+            CanvasTableSchema logicalSchema,
+            String[] requiredColumnNames,
+            String nodeId
+    ) {
+        Set<String> requiredColumns = new HashSet<>(List.of(requiredColumnNames));
+        List<CanvasColumnSchema> geometryColumns = logicalSchema.columns().stream()
+                .filter(column -> column.fieldType() == PlatformDataType.GEOMETRY)
+                .filter(column -> requiredColumns.contains(column.name()))
+                .toList();
+        if (geometryColumns.isEmpty()) {
+            return Map.of();
+        }
+        TableMetadata actual;
+        try {
+            actual = INSPECTOR.readTable(
+                    source.databaseType().name(),
+                    jdbcSpec(source.connection()),
+                    table
+            );
+        } catch (DatabaseAccessException exception) {
+            throw new RunnerExecutionException(
+                    "SPATIAL_TARGET_METADATA_UNAVAILABLE",
+                    "无法读取目标表 Geometry 元数据",
+                    nodeId,
+                    exception
+            );
+        }
+        Map<String, ColumnMetadata> physicalColumns = new LinkedHashMap<>();
+        actual.columns().forEach(column -> physicalColumns.put(column.name(), column));
+        Map<String, Integer> localSrids = new LinkedHashMap<>();
+        for (CanvasColumnSchema geometryColumn : geometryColumns) {
+            ColumnMetadata physical = physicalColumns.get(geometryColumn.name());
+            SpatialColumnMetadata spatial = physical == null ? null : physical.spatial();
+            Integer localSrid = spatial == null ? null : spatial.spatialReferenceId();
+            if (localSrid == null || localSrid < 1) {
+                throw new RunnerExecutionException(
+                        "SPATIAL_TARGET_METADATA_UNAVAILABLE",
+                        "目标 Geometry 字段缺少数据库本地 SRID：" + geometryColumn.name(),
+                        nodeId
+                );
+            }
+            localSrids.put(geometryColumn.name(), localSrid);
+        }
+        return Map.copyOf(localSrids);
     }
 
     static boolean requiresSpatialWriter(CanvasPreparedOutput output) {
@@ -179,7 +245,7 @@ final class SpatialJdbcRuntimeSupport {
             CanvasColumnSchema column = targetSchemaColumns.get(field.name());
             if (column == null) {
                 throw new RunnerExecutionException(
-                        "RUNTIME_SCHEMA_MISMATCH",
+                        "OUTPUT_MAPPING_INVALID",
                         "输出数据包含目标表中不存在的字段：" + field.name(),
                         output.node().id()
                 );
@@ -188,7 +254,7 @@ final class SpatialJdbcRuntimeSupport {
             Integer localSrid = geometry ? output.geometryLocalSrids().get(column.name()) : null;
             if (geometry && (localSrid == null || localSrid < 1)) {
                 throw new RunnerExecutionException(
-                        "SPATIAL_SCHEMA_DRIFT",
+                        "SPATIAL_TARGET_METADATA_UNAVAILABLE",
                         "目标 Geometry 字段缺少数据库本地 SRID：" + column.name(),
                         output.node().id()
                 );
@@ -263,7 +329,7 @@ final class SpatialJdbcRuntimeSupport {
             CanvasColumnSchema column = targetSchemaColumns.get(field.name());
             if (column == null) {
                 throw new RunnerExecutionException(
-                        "RUNTIME_SCHEMA_MISMATCH",
+                        "OUTPUT_MAPPING_INVALID",
                         "输出数据包含目标表中不存在的字段：" + field.name(),
                         output.node().id()
                 );
@@ -272,7 +338,7 @@ final class SpatialJdbcRuntimeSupport {
             Integer localSrid = geometry ? output.geometryLocalSrids().get(column.name()) : null;
             if (geometry && (localSrid == null || localSrid < 1)) {
                 throw new RunnerExecutionException(
-                        "SPATIAL_SCHEMA_DRIFT",
+                        "SPATIAL_TARGET_METADATA_UNAVAILABLE",
                         "目标 Geometry 字段缺少数据库本地 SRID：" + column.name(),
                         output.node().id()
                 );
@@ -284,7 +350,7 @@ final class SpatialJdbcRuntimeSupport {
                     : sparkColumn(column.name()));
         }
         String sql = dialect.renderRowUpsert(
-                tableIdentifier(source, output.targetSchema().name()),
+                output.targetTable(),
                 upsertColumns,
                 output.upsertKeyColumns()
         );
@@ -298,81 +364,6 @@ final class SpatialJdbcRuntimeSupport {
         );
         dataset.select(writableColumns.toArray(Column[]::new))
                 .foreachPartition((ForeachPartitionFunction<Row>) writeSpec::write);
-    }
-
-    private static Map<String, Integer> validatePhysicalSchema(
-            RuntimeDataSource source,
-            TableIdentifier table,
-            CanvasTableSchema expectedSchema,
-            String nodeId
-    ) {
-        TableMetadata actual;
-        try {
-            actual = INSPECTOR.readTable(
-                    source.databaseType().name(),
-                    jdbcSpec(source.connection()),
-                    table
-            );
-        } catch (DatabaseAccessException exception) {
-            throw new RunnerExecutionException(
-                    "SPATIAL_SCHEMA_DRIFT",
-                    "无法读取物理表空间结构",
-                    nodeId,
-                    exception
-            );
-        }
-        if (actual.columns().size() != expectedSchema.columns().size()) {
-            throw new RunnerExecutionException(
-                    "RUNTIME_SCHEMA_MISMATCH",
-                    "物理表字段数量已变化",
-                    nodeId
-            );
-        }
-        DatabaseDialect dialect = dialect(source);
-        Map<String, Integer> localSrids = new HashMap<>();
-        for (int index = 0; index < expectedSchema.columns().size(); index++) {
-            CanvasColumnSchema expected = expectedSchema.columns().get(index);
-            ColumnMetadata physical = actual.columns().get(index);
-            if (!expected.name().equals(physical.name())) {
-                throw schemaMismatch(expected, nodeId);
-            }
-            TypeMappingResult<PlatformTypeDefinition> mapping =
-                    dialect.mapToPlatformType(JdbcTypeDescriptor.from(physical));
-            if (!mapping.acceptable() || mapping.definition() == null
-                    || mapping.definition().type() != expected.fieldType()) {
-                throw schemaMismatch(expected, nodeId);
-            }
-            PlatformTypeDefinition actualType = mapping.definition();
-            if (expected.fieldType() == PlatformDataType.DECIMAL
-                    && (!expected.precision().equals(actualType.precision())
-                    || !expected.scale().equals(actualType.scale()))) {
-                throw schemaMismatch(expected, nodeId);
-            }
-            if (expected.fieldType() == PlatformDataType.GEOMETRY) {
-                SpatialColumnMetadata spatial = physical.spatial();
-                if (!expected.geometry().equals(actualType.geometry())
-                        || spatial == null
-                        || spatial.spatialReferenceId() == null
-                        || spatial.spatialReferenceId() < 1) {
-                    throw new RunnerExecutionException(
-                            "SPATIAL_SCHEMA_DRIFT",
-                            "Geometry 字段 kind、CRS 或 dimension 已变化：" + expected.name(),
-                            nodeId
-                    );
-                }
-                localSrids.put(expected.name(), spatial.spatialReferenceId());
-            }
-        }
-        return Map.copyOf(localSrids);
-    }
-
-    private static RunnerExecutionException schemaMismatch(
-            CanvasColumnSchema expected,
-            String nodeId
-    ) {
-        String code = expected.fieldType() == PlatformDataType.GEOMETRY
-                ? "SPATIAL_SCHEMA_DRIFT" : "RUNTIME_SCHEMA_MISMATCH";
-        return new RunnerExecutionException(code, "物理表字段已变化：" + expected.name(), nodeId);
     }
 
     static DatabaseDialect dialect(RuntimeDataSource source) {
@@ -395,7 +386,7 @@ final class SpatialJdbcRuntimeSupport {
         );
     }
 
-    private static Properties jdbcProperties(RuntimeJdbcConnection connection) {
+    static Properties jdbcProperties(RuntimeJdbcConnection connection) {
         Properties properties = new Properties();
         properties.putAll(connection.properties());
         properties.setProperty("user", connection.username());

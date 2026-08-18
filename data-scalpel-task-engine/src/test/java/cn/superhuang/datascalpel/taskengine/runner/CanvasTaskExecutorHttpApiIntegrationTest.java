@@ -7,7 +7,6 @@ import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
@@ -15,6 +14,7 @@ import cn.superhuang.data.scalpel.contract.task.HttpApiInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataDataSource;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
@@ -146,7 +146,7 @@ class CanvasTaskExecutorHttpApiIntegrationTest {
     private TaskExecutionManifest manifest() {
         String inputNodeId = "5f0d16fc-6404-453b-82b0-94bd17b26a78";
         String outputNodeId = "ec1c08b8-a93c-448c-9791-f452885a88d3";
-        CanvasDefinition definition = new CanvasDefinition(1, 1, List.of(
+        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
                 new HttpApiInputNodeDefinition(
                         inputNodeId,
                         "订单 HTTP API 输入",
@@ -165,7 +165,10 @@ class CanvasTaskExecutorHttpApiIntegrationTest {
                                 storageDataSourceId.toString(),
                                 "orders_target",
                                 JdbcWriteMode.APPEND,
-                                ColumnMappingMode.BY_NAME,
+                                List.of(
+                                        new JdbcColumnMapping("id", "id"),
+                                        new JdbcColumnMapping("name", "name")
+                                ),
                                 List.of()))
         ), List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), inputNodeId, outputNodeId)));
         List<CanvasColumnSchema> columns = List.of(

@@ -441,6 +441,7 @@ export const ApiConsumerAccessDrawer = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={consumer ? `${consumer.name} · 访问配置` : '访问配置'}
         open={open}
         width={860}
@@ -528,6 +529,7 @@ export const ApiConsumerAccessDrawer = ({
       </Drawer>
 
       <Modal
+        rootClassName="business-overlay business-modal-overlay"
         title="新建 API Key"
         open={createCredentialOpen}
         okText="创建"
@@ -559,6 +561,7 @@ export const ApiConsumerAccessDrawer = ({
       </Modal>
 
       <Modal
+        rootClassName="business-overlay business-modal-overlay"
         title="请立即保存 API Key"
         open={Boolean(oneTimeSecret)}
         footer={<Button type="primary" onClick={() => setOneTimeSecret(null)}>我已保存</Button>}

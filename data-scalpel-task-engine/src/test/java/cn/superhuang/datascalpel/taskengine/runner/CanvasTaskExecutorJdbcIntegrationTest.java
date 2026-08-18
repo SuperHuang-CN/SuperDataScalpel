@@ -4,12 +4,12 @@ import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
@@ -118,7 +118,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
         TaskExecutionResult result = new CanvasTaskExecutor().execute(manifest);
 
         assertEquals(TaskExecutionState.SUCCESS, result.state());
-        assertEquals(2, result.schemaVersion());
+        assertEquals(TaskExecutionResult.CURRENT_SCHEMA_VERSION, result.schemaVersion());
         assertEquals(4L, result.affectedRows());
         assertNull(result.error());
         assertEquals(5, result.nodeResults().size());
@@ -186,7 +186,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
     }
 
     @Test
-    void reportsRuntimeSchemaDriftBeforeReadingInputData() {
+    void allowsRuntimeInputTypeDifferenceAndReportsTheActualWriteFailure() {
         String inputNodeId = "f12de4fa-3bb4-4ba0-a98c-8fd39b273601";
         String outputNodeId = "179377d4-e2cf-47c0-8c7f-bac03e4430cf";
         TaskExecutionManifest base = transferManifest(
@@ -202,8 +202,8 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                 postgresRuntime(
                         deniedOutputId,
                         Set.of(DataSourcePurpose.DISTRIBUTION),
-                        POSTGRES.getUsername(),
-                        POSTGRES.getPassword()));
+                        "canvas_write_denied",
+                        "write-denied-password"));
         MetadataSnapshot driftedMetadata = new MetadataSnapshot(List.of(
                 new MetadataDataSource(
                         postgresId,
@@ -229,15 +229,10 @@ class CanvasTaskExecutorJdbcIntegrationTest {
         TaskExecutionResult result = new CanvasTaskExecutor().execute(manifest);
 
         assertEquals(TaskExecutionState.FAILED, result.state());
-        assertEquals(1, result.nodeResults().size());
-        assertEquals(NodeExecutionState.FAILED, result.nodeResults().getFirst().state());
-        assertEquals("RUNTIME_SCHEMA_MISMATCH", result.error().code());
-        assertEquals(ExecutionErrorCategory.SCHEMA, result.error().category());
-        assertFalse(result.error().retryable());
-        assertEquals(inputNodeId, result.error().nodeId());
-        assertEquals("JDBC_INPUT", result.error().nodeType());
-        assertEquals(ExecutionFailurePhase.READ, result.error().phase());
-        assertEquals(result.error(), result.nodeResults().getFirst().error());
+        assertEquals(2, result.nodeResults().size());
+        assertEquals(NodeExecutionState.SUCCESS, result.nodeResults().getFirst().state());
+        assertEquals(NodeExecutionState.FAILED, result.nodeResults().get(1).state());
+        assertPermissionFailure(result, outputNodeId, "JDBC_OUTPUT", ExecutionFailurePhase.WRITE);
     }
 
     @Test
@@ -331,7 +326,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
             RuntimeDataSource inputRuntime,
             RuntimeDataSource outputRuntime
     ) {
-        CanvasDefinition definition = new CanvasDefinition(1, 1, List.of(
+        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
                 new JdbcInputNodeDefinition(
                         inputNodeId,
                         "订单输入",
@@ -346,7 +341,10 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                                 outputDataSourceId.toString(),
                                 "orders_copy",
                                 JdbcWriteMode.OVERWRITE,
-                                ColumnMappingMode.BY_NAME,
+                                List.of(
+                                        new JdbcColumnMapping("order_id", "order_id"),
+                                        new JdbcColumnMapping("customer_id", "customer_id")
+                                ),
                                 List.of()))
         ), List.of(edge(inputNodeId, outputNodeId)));
         MetadataSnapshot metadata = new MetadataSnapshot(List.of(
@@ -377,7 +375,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
             String inputNodeId,
             String outputNodeId
     ) {
-        CanvasDefinition definition = new CanvasDefinition(1, 1, List.of(
+        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
                 new JdbcInputNodeDefinition(
                         inputNodeId,
                         "整数输入",
@@ -392,7 +390,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                                 postgresId.toString(),
                                 "short_target",
                                 JdbcWriteMode.APPEND,
-                                ColumnMappingMode.BY_NAME,
+                                List.of(new JdbcColumnMapping("value", "value")),
                                 List.of()))
         ), List.of(edge(inputNodeId, outputNodeId)));
         MetadataSnapshot metadata = new MetadataSnapshot(List.of(
@@ -447,7 +445,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
         String joinNode = "e55c50d7-374d-4fe0-aede-e1648988af23";
         String outputNode = "79d6f66b-a007-4984-8042-a612cb38ba82";
         String archiveOutputNode = "502d88d2-1683-4c9f-916d-9a7778b0dd6f";
-        CanvasDefinition definition = new CanvasDefinition(1, 1, List.of(
+        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
                 new JdbcInputNodeDefinition(
                         ordersNode, "订单输入", layout(),
                         new JdbcInputConfiguration(postgresId.toString(), "orders")),
@@ -463,12 +461,12 @@ class CanvasTaskExecutorJdbcIntegrationTest {
                         outputNode, "结果输出", layout(),
                         new JdbcOutputConfiguration(
                                 "order_customer", postgresId.toString(), "dwd_order_customer",
-                                JdbcWriteMode.OVERWRITE, ColumnMappingMode.BY_NAME, List.of())),
+                                JdbcWriteMode.OVERWRITE, orderCustomerMappings(), List.of())),
                 new JdbcOutputNodeDefinition(
                         archiveOutputNode, "归档输出", layout(),
                         new JdbcOutputConfiguration(
                                 "order_customer", postgresId.toString(), "dwd_order_customer_archive",
-                                JdbcWriteMode.OVERWRITE, ColumnMappingMode.BY_NAME, List.of()))
+                                JdbcWriteMode.OVERWRITE, orderCustomerMappings(), List.of()))
         ), List.of(
                 edge(ordersNode, joinNode),
                 edge(customersNode, joinNode),
@@ -512,6 +510,15 @@ class CanvasTaskExecutorJdbcIntegrationTest {
 
     private static CanvasNodeLayout layout() {
         return new CanvasNodeLayout(0.0, 0.0, 240.0, 120.0);
+    }
+
+    private static List<JdbcColumnMapping> orderCustomerMappings() {
+        return List.of(
+                new JdbcColumnMapping("order_id", "order_id"),
+                new JdbcColumnMapping("customer_id", "customer_id"),
+                new JdbcColumnMapping("customer_key", "customer_key"),
+                new JdbcColumnMapping("customer_name", "customer_name")
+        );
     }
 
     private static CanvasEdgeDefinition edge(String source, String target) {

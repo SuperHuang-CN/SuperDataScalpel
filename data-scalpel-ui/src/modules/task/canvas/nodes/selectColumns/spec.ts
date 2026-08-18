@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeSelectColumns } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { selectColumnsCanvasView } from './canvasView';
 
 export const selectColumnsSpec = createCanvasNodeSpec({
   type: CanvasNodeType.SelectColumns,
@@ -15,9 +16,9 @@ export const selectColumnsSpec = createCanvasNodeSpec({
   searchKeywords: ['select', 'columns', 'project', '选择字段', '字段裁剪', '投影'],
   iconKey: CanvasNodeIconKey.Columns,
   order: 20,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: selectColumnsCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 8,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createSelectColumnsConfiguration,
   summarize: summarizeSelectColumns,

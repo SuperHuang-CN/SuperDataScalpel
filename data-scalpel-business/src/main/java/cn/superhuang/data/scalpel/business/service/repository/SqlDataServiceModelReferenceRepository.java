@@ -15,6 +15,10 @@ public interface SqlDataServiceModelReferenceRepository extends JpaRepository<Sq
             Collection<UUID> dataServiceIds
     );
 
+    List<SqlDataServiceModelReference> findAllByModelIdIn(Collection<UUID> modelIds);
+
+    List<SqlDataServiceModelReference> findAllByModelIdOrderByDataServiceIdAscSortOrderAsc(UUID modelId);
+
     boolean existsByModelId(UUID modelId);
 
     void deleteAllByDataServiceId(UUID dataServiceId);

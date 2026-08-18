@@ -1,16 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { canvasResizeOptions, isCanvasZoomWheel } from './canvasInteraction';
-
-describe('canvas resize controls', () => {
-  it('uses only corner handles so side ports remain unobstructed', () => {
-    expect(canvasResizeOptions).toEqual({
-      enabled: true,
-      orthogonal: false,
-      minWidth: 180,
-      minHeight: 96,
-    });
-  });
-});
+import { isCanvasZoomWheel } from './canvasInteraction';
 
 describe('canvas wheel gestures', () => {
   it('uses vertical wheel gestures for zooming', () => {

@@ -108,18 +108,19 @@ export const SelectColumnsProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (columns.length === 0) {
           setSelectionError('至少选择一个字段');
-          return false;
+
         }
         if (duplicateNames.size > 0) {
           setSelectionError(`字段被重复选择：${[...duplicateNames].join('、')}`);
-          return false;
+
         }
         const configuration: SelectColumnsConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           columns: [...columns],
         };
         onApply({

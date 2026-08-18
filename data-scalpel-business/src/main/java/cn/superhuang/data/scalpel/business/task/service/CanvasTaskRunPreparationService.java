@@ -9,13 +9,12 @@ import cn.superhuang.data.scalpel.business.datasource.service.ApiResourceService
 import cn.superhuang.data.scalpel.business.datasource.service.SpatialFeatureResourceService;
 import cn.superhuang.data.scalpel.business.datasource.web.response.ColumnMetadataResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadataResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTopicDetailResponse;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
-import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTableInspection;
-import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTablePort;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDataset;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetField;
 import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFile;
@@ -39,7 +38,6 @@ import cn.superhuang.data.scalpel.contract.task.CanvasFilterGroup;
 import cn.superhuang.data.scalpel.contract.task.CanvasLiteral;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.CompilationSeverity;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
@@ -126,18 +124,13 @@ import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationResponse;
 import cn.superhuang.data.scalpel.contract.task.TaskDefinition;
 import cn.superhuang.data.scalpel.contract.task.TaskType;
-import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
+import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
-import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
-import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
-import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
-import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
-import cn.superhuang.data.scalpel.dialect.runtime.DatabaseAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -169,7 +162,6 @@ public class CanvasTaskRunPreparationService {
     private final TaskCompilationService compilationService;
     private final ApiResourceService apiResourceService;
     private final SpatialFeatureResourceService spatialFeatureResourceService;
-    private final ModelPhysicalTablePort physicalTablePort;
     private final FileDatasetRepository fileDatasetRepository;
     private final FileDatasetTableRepository fileDatasetTableRepository;
     private final FileDatasetFileRepository fileDatasetFileRepository;
@@ -187,7 +179,6 @@ public class CanvasTaskRunPreparationService {
             TaskCompilationService compilationService,
             ApiResourceService apiResourceService,
             SpatialFeatureResourceService spatialFeatureResourceService,
-            ModelPhysicalTablePort physicalTablePort,
             FileDatasetRepository fileDatasetRepository,
             FileDatasetTableRepository fileDatasetTableRepository,
             FileDatasetFileRepository fileDatasetFileRepository,
@@ -204,7 +195,6 @@ public class CanvasTaskRunPreparationService {
         this.compilationService = compilationService;
         this.apiResourceService = apiResourceService;
         this.spatialFeatureResourceService = spatialFeatureResourceService;
-        this.physicalTablePort = physicalTablePort;
         this.fileDatasetRepository = fileDatasetRepository;
         this.fileDatasetTableRepository = fileDatasetTableRepository;
         this.fileDatasetFileRepository = fileDatasetFileRepository;
@@ -239,7 +229,6 @@ public class CanvasTaskRunPreparationService {
         });
         Map<UUID, RequestedDataSource> requests = buildDataSourceRequests(requestBuilders);
         Map<UUID, DataSource> sources = loadDataSources(requests.keySet());
-        validateJdbcQuerySnapshots(definition, sources);
         List<MetadataDataSource> metadataSources = new ArrayList<>();
         List<CanvasTaskRunManifest.RuntimeDataSource> runtimeSources = new ArrayList<>();
 
@@ -318,8 +307,19 @@ public class CanvasTaskRunPreparationService {
             DatabaseDialect dialect = dialectRegistry.require(source.getType().name());
             List<MetadataTable> tables = requested.tableNames().stream()
                     .sorted()
-                    .map(table -> metadataTable(source, dialect, table))
+                    .map(table -> metadataTable(source, table))
                     .toList();
+            List<MetadataTdEngineTmqTopic> tmqTopics = requested.tdEngineTmqTopics().stream()
+                    .sorted(Comparator.comparing(RequestedTdEngineTmqTopic::topicName))
+                    .map(topic -> tdEngineTmqMetadata(source, topic))
+                    .toList();
+            if (source.getType().isTdEngine() && requested.modelRead()) {
+                models.entrySet().stream()
+                        .filter(model -> modelRequests.get(model.getKey()).input())
+                        .map(Map.Entry::getValue)
+                        .filter(model -> source.getId().equals(model.getStorageDataSourceId()))
+                        .forEach(model -> validateTdEngineModelInput(source, model));
+            }
             metadataSources.add(new MetadataDataSource(
                     source.getId(),
                     source.isEnabled(),
@@ -329,7 +329,8 @@ public class CanvasTaskRunPreparationService {
                             .map(purpose -> cn.superhuang.data.scalpel.contract.task.DataSourcePurpose.valueOf(
                                     purpose.name()))
                             .collect(Collectors.toUnmodifiableSet()),
-                    tables
+                    tables,
+                    tmqTopics
             ));
             runtimeSources.add(runtimeDataSource(source, dialect, requested));
         });
@@ -339,9 +340,7 @@ public class CanvasTaskRunPreparationService {
                 .sorted(Comparator.comparing(DataModel::getId))
                 .map(model -> metadataModel(
                         model,
-                        modelFields.getOrDefault(model.getId(), List.of()),
-                        sources.get(model.getStorageDataSourceId()),
-                        dialectRegistry.require(sources.get(model.getStorageDataSourceId()).getType().name())
+                        modelFields.getOrDefault(model.getId(), List.of())
                 ))
                 .toList();
 
@@ -388,7 +387,6 @@ public class CanvasTaskRunPreparationService {
 
     private MetadataTable metadataTable(
             DataSource source,
-            DatabaseDialect dialect,
             String tableName
     ) {
         TableMetadataResponse metadata = runtimeService.readTable(source.getId(), null, null, tableName);
@@ -398,79 +396,99 @@ public class CanvasTaskRunPreparationService {
         }
         return new MetadataTable(
                 tableName,
-                "VIEW".equalsIgnoreCase(metadata.table().type())
-                        ? DatabaseObjectType.VIEW
-                        : DatabaseObjectType.TABLE,
+                switch (metadata.table().type().toUpperCase(java.util.Locale.ROOT)) {
+                    case "VIEW" -> DatabaseObjectType.VIEW;
+                    case "SUPERTABLE" -> DatabaseObjectType.SUPERTABLE;
+                    default -> DatabaseObjectType.TABLE;
+                },
                 metadata.columns().stream().sorted(Comparator.comparingInt(ColumnMetadataResponse::ordinal))
-                        .map(column -> columnSchema(dialect, column)).toList(),
+                        .map(CanvasTaskRunPreparationService::columnSchema).toList(),
                 metadata.uniqueKeys().stream().map(key -> new MetadataUniqueKey(
                         key.name(),
                         MetadataUniqueKeyType.valueOf(key.type()),
                         key.columns()
-                )).toList()
+                )).toList(),
+                metadata.indexes().stream().flatMap(index -> index.columns().stream())
+                        .collect(Collectors.toUnmodifiableSet()),
+                metadata.table().identifier().catalog(),
+                metadata.table().identifier().schema(),
+                metadata.table().identifier().table()
+        );
+    }
+
+    private void validateTdEngineModelInput(DataSource source, DataModel model) {
+        if (model.getPhysicalTableMode() != cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode.EXTERNAL) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDengine 模型输入只能读取绑定已有超级表的外部模型：" + model.getName()
+            );
+        }
+        TableMetadataResponse metadata = runtimeService.readTable(
+                source.getId(),
+                model.getCatalogName(),
+                model.getSchemaName(),
+                model.getPhysicalTableName()
+        );
+        if (!"SUPERTABLE".equalsIgnoreCase(metadata.table().type())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDengine 模型绑定对象不是超级表：" + model.getName()
+            );
+        }
+    }
+
+    private MetadataTdEngineTmqTopic tdEngineTmqMetadata(
+            DataSource source,
+            RequestedTdEngineTmqTopic requested
+    ) {
+        TdEngineTmqTopicDetailResponse topic = runtimeService.readTdEngineTmqTopic(
+                source.getId(), requested.topicName());
+        if (!topic.supported()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDENGINE_TMQ_TOPIC_UNSUPPORTED：" + topic.unsupportedReason()
+            );
+        }
+        if (!requested.definitionFingerprint().equals(topic.definitionFingerprint())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDENGINE_TMQ_TOPIC_CHANGED：Topic 定义已变化，请重新选择 Topic"
+            );
+        }
+        if (!requested.catalogName().equals(topic.databaseName())
+                || !requested.supertableName().equals(topic.supertableName())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDENGINE_TMQ_TOPIC_CHANGED：Topic 来源数据库或超级表已变化"
+            );
+        }
+        if (topic.columns().isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDENGINE_TMQ_SCHEMA_MISMATCH：Topic 超级表结构为空"
+            );
+        }
+        return new MetadataTdEngineTmqTopic(
+                topic.topicName(), topic.databaseName(), topic.supertableName(),
+                topic.definitionFingerprint(), topic.timePrecision(),
+                topic.columns().stream()
+                        .sorted(Comparator.comparingInt(ColumnMetadataResponse::ordinal))
+                        .map(CanvasTaskRunPreparationService::columnSchema)
+                        .toList()
         );
     }
 
     private static CanvasJdbcDatabaseType jdbcDatabaseType(DataSourceType type) {
-        return switch (type) {
-            case POSTGRESQL -> CanvasJdbcDatabaseType.POSTGRESQL;
-            case MYSQL -> CanvasJdbcDatabaseType.MYSQL;
-            default -> null;
-        };
-    }
-
-    private void validateJdbcQuerySnapshots(
-            CanvasDefinition definition,
-            Map<UUID, DataSource> sources
-    ) {
-        for (CanvasNodeDefinition definitionNode : definition.nodes()) {
-            if (!(definitionNode instanceof JdbcQueryInputNodeDefinition node)
-                    || node.configuration() == null) {
-                continue;
-            }
-            JdbcQueryInputConfiguration configuration = node.configuration();
-            UUID dataSourceId = uuid(configuration.dataSourceId(), node.name());
-            DataSource source = sources.get(dataSourceId);
-            if (source == null) {
-                continue;
-            }
-            var inspection = runtimeService.inspectQuery(dataSourceId, configuration.sql());
-            if (!inspection.analyzedSqlSha256().equals(configuration.analyzedSqlSha256())) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "JDBC_QUERY_SCHEMA_STALE：SQL 已修改，请重新分析并保存节点"
-                );
-            }
-            if (!sameQueryColumns(configuration.outputColumns(), inspection.columns())) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "JDBC_QUERY_SCHEMA_DRIFT：查询结果结构已变化，请重新分析并保存节点"
-                );
-            }
+        if (!type.isJdbc()) return null;
+        try {
+            return CanvasJdbcDatabaseType.valueOf(type.name());
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "当前 Canvas Runner 尚不支持 JDBC 类型：" + type.displayName(),
+                    exception
+            );
         }
-    }
-
-    private static boolean sameQueryColumns(
-            List<CanvasColumnSchema> expected,
-            List<CanvasColumnSchema> actual
-    ) {
-        if (expected == null || actual == null || expected.size() != actual.size()) {
-            return false;
-        }
-        for (int index = 0; index < expected.size(); index++) {
-            CanvasColumnSchema left = expected.get(index);
-            CanvasColumnSchema right = actual.get(index);
-            if (left == null || right == null
-                    || !java.util.Objects.equals(left.name(), right.name())
-                    || left.fieldType() != right.fieldType()
-                    || !java.util.Objects.equals(left.length(), right.length())
-                    || !java.util.Objects.equals(left.precision(), right.precision())
-                    || !java.util.Objects.equals(left.scale(), right.scale())
-                    || left.nullable() != right.nullable()) {
-                return false;
-            }
-        }
-        return true;
     }
 
     private static MetadataTable apiMetadataTable(
@@ -504,40 +522,24 @@ public class CanvasTaskRunPreparationService {
 
     private MetadataModel metadataModel(
             DataModel model,
-            List<DataModelField> fields,
-            DataSource source,
-            DatabaseDialect dialect
+            List<DataModelField> fields
     ) {
-        TableMetadata physical;
-        try {
-            physical = physicalTablePort.readExternalTable(source, model);
-        } catch (DatabaseAccessException exception) {
-            physicalSchemaMismatch(model, exception.getMessage());
-            throw exception;
-        }
-        ModelPhysicalTableInspection inspection = physicalTablePort.inspect(source, model, fields, physical);
-        if (!inspection.compatible()) {
-            physicalSchemaMismatch(model, inspection.message());
-        }
-        if (!model.getPhysicalTableName().equals(physical.table().identifier().table())
-                || !"TABLE".equalsIgnoreCase(physical.table().type())) {
-            physicalSchemaMismatch(model, "目标不是同名物理表");
-        }
-        Map<String, CanvasColumnSchema> physicalColumns = new LinkedHashMap<>();
-        physical.columns().stream()
-                .sorted(Comparator.comparingInt(ColumnMetadata::ordinal))
-                .forEach(column -> {
-                    CanvasColumnSchema schema = columnSchema(dialect, column);
-                    if (physicalColumns.putIfAbsent(schema.name(), schema) != null) {
-                        physicalSchemaMismatch(model, "物理表存在重复字段 " + schema.name());
-                    }
-                });
-        if (fields.isEmpty() || physicalColumns.size() != fields.size()) {
-            physicalSchemaMismatch(model, "字段数量不一致");
-        }
         List<CanvasColumnSchema> columns = fields.stream()
-                .map(field -> modelColumn(model, field, physicalColumns.get(field.getCode())))
+                .sorted(Comparator.comparingInt(DataModelField::getSortOrder))
+                .map(CanvasTaskRunPreparationService::modelColumn)
                 .toList();
+        List<String> primaryKeyColumns = fields.stream()
+                .filter(DataModelField::isPrimaryKey)
+                .sorted(Comparator.comparingInt(DataModelField::getSortOrder))
+                .map(DataModelField::getCode)
+                .toList();
+        List<MetadataUniqueKey> uniqueKeys = primaryKeyColumns.isEmpty()
+                ? List.of()
+                : List.of(new MetadataUniqueKey(
+                        "MODEL_PRIMARY_KEY",
+                        MetadataUniqueKeyType.PRIMARY_KEY,
+                        primaryKeyColumns
+                ));
         return new MetadataModel(
                 model.getId(),
                 model.getCode(),
@@ -549,75 +551,38 @@ public class CanvasTaskRunPreparationService {
                 model.getCatalogName(),
                 model.getSchemaName(),
                 model.getPhysicalTableName(),
-                columns
+                columns,
+                uniqueKeys,
+                fields.stream()
+                        .sorted(Comparator.comparingInt(DataModelField::getSortOrder))
+                        .map(field -> new MetadataModelField(
+                                field.getId(), field.getCode(), field.getName(), field.getSortOrder()
+                        )).toList()
         );
     }
 
-    private static CanvasColumnSchema modelColumn(
-            DataModel model,
-            DataModelField field,
-            CanvasColumnSchema physical
-    ) {
-        if (physical == null) {
-            physicalSchemaMismatch(model, "缺少字段 " + field.getCode());
-        }
-        PlatformDataType expectedType = field.getFieldType();
+    private static CanvasColumnSchema modelColumn(DataModelField field) {
         return new CanvasColumnSchema(
                 field.getCode(),
-                expectedType,
+                field.getFieldType(),
                 field.getLength(),
                 field.getPrecision(),
                 field.getScale(),
                 field.isNullable(),
-                physical.defaultValue(),
-                physical.autoIncrement(),
-                physical.generated(),
+                null,
+                false,
+                false,
                 field.getDescription(),
                 field.getGeometry()
         );
     }
 
-    private static void physicalSchemaMismatch(DataModel model, String detail) {
-        throw new ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "MODEL_PHYSICAL_SCHEMA_MISMATCH：模型 %s 的物理结构不一致（%s）".formatted(model.getName(), detail)
-        );
-    }
-
-    private static CanvasColumnSchema columnSchema(
-            DatabaseDialect dialect,
-            ColumnMetadataResponse column
-    ) {
+    private static CanvasColumnSchema columnSchema(ColumnMetadataResponse column) {
         PlatformTypeDefinition type = column.platformTypeDefinition();
         if (type == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "字段无法无损映射到平台类型：" + column.name());
         }
-        return new CanvasColumnSchema(
-                column.name(),
-                type.type(),
-                type.length(),
-                type.precision(),
-                type.scale(),
-                column.nullable(),
-                column.defaultValue(),
-                column.autoIncrement(),
-                column.generated(),
-                column.comment(),
-                type.geometry()
-        );
-    }
-
-    private static CanvasColumnSchema columnSchema(
-            DatabaseDialect dialect,
-            ColumnMetadata column
-    ) {
-        TypeMappingResult<PlatformTypeDefinition> mapping = dialect.mapToPlatformType(JdbcTypeDescriptor.from(column));
-        if (!mapping.acceptable()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "字段无法无损映射到平台类型：" + column.name());
-        }
-        PlatformTypeDefinition type = mapping.definition();
         return new CanvasColumnSchema(
                 column.name(),
                 type.type(),
@@ -662,7 +627,22 @@ public class CanvasTaskRunPreparationService {
                         properties
                 ),
                 null,
-                List.of()
+                List.of(),
+                null,
+                null,
+                List.of(),
+                requested.tdEngineTmqTopics().isEmpty()
+                        ? null
+                        : tdEngineTmqConnection(source)
+        );
+    }
+
+    private static CanvasTaskRunManifest.RuntimeTdEngineTmqConnection tdEngineTmqConnection(DataSource source) {
+        return new CanvasTaskRunManifest.RuntimeTdEngineTmqConnection(
+                source.getConnection().getHost() + ":" + source.getConnection().getPort(),
+                source.getConnection().getUsername(),
+                source.getConnection().secretValue(),
+                Boolean.parseBoolean(source.getConnection().getOptions().getOrDefault("useSSL", "false"))
         );
     }
 
@@ -1043,18 +1023,18 @@ public class CanvasTaskRunPreparationService {
         return Set.copyOf(ids);
     }
 
-    private static void validateSource(DataSource source, RequestedDataSource requested) {
+    private void validateSource(DataSource source, RequestedDataSource requested) {
         if (!source.isEnabled()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 引用的数据源已停用：" + source.getName());
         }
-        boolean jdbc = source.getType() == DataSourceType.POSTGRESQL || source.getType() == DataSourceType.MYSQL;
+        boolean jdbc = source.getType().isJdbc();
         boolean httpApi = source.getType() == DataSourceType.HTTP_API;
         boolean spatialService = source.getType() == DataSourceType.ARCGIS_REST || source.getType() == DataSourceType.WFS;
         boolean kafka = source.getType() == DataSourceType.KAFKA;
         boolean s3 = source.getType() == DataSourceType.S3;
         if (!jdbc && !httpApi && !spatialService && !kafka && !s3) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
-                    "Canvas 执行只支持 PostgreSQL、MySQL、HTTP API、空间服务、Kafka 和 S3");
+                    "Canvas 执行只支持 JDBC、HTTP API、空间服务、Kafka 和 S3 数据源");
         }
         if (httpApi && (requested.modelRead() || requested.modelWrite()
                 || requested.apiResourceIds().isEmpty())) {
@@ -1067,17 +1047,42 @@ public class CanvasTaskRunPreparationService {
         if (jdbc && (!requested.apiResourceIds().isEmpty() || !requested.spatialResourceIds().isEmpty())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "HTTP API 或空间服务输入节点引用了非对应数据源");
         }
+        if (!requested.tdEngineTmqTopics().isEmpty()) {
+            if (source.getType() != DataSourceType.TDENGINE_WEBSOCKET) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "TDengine TMQ 输入只能引用 TDENGINE_WEBSOCKET 数据源"
+                );
+            }
+            if (!dialectRegistry.require(source.getType().name()).definition().capabilities()
+                    .contains(DatabaseCapability.TMQ_SUBSCRIBE)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源不具备 TMQ_SUBSCRIBE 能力");
+            }
+        }
+        if (requested.incrementalSource()
+                && !dialectRegistry.require(source.getType().name()).definition().capabilities()
+                .contains(DatabaseCapability.JDBC_INCREMENTAL_READ)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源不具备 JDBC_INCREMENTAL_READ 能力");
+        }
         if (kafka && (!requested.tableNames().isEmpty() || !requested.apiResourceIds().isEmpty() || !requested.spatialResourceIds().isEmpty()
+                || !requested.tdEngineTmqTopics().isEmpty()
                 || requested.modelRead() || requested.modelWrite() || requested.fileOutput())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Kafka 只能用于 Kafka 输入或输出节点");
         }
         if (s3 && (!requested.fileOutput() || requested.source() || requested.modelRead()
                 || requested.modelWrite() || !requested.tableNames().isEmpty()
-                || !requested.apiResourceIds().isEmpty() || !requested.spatialResourceIds().isEmpty() || !requested.kafkaTopics().isEmpty())) {
+                || !requested.apiResourceIds().isEmpty() || !requested.spatialResourceIds().isEmpty()
+                || !requested.kafkaTopics().isEmpty() || !requested.tdEngineTmqTopics().isEmpty())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "S3 数据源只能用于文件输出节点");
         }
         if (!s3 && requested.fileOutput()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "文件输出节点只能引用 S3 数据源");
+        }
+        if (source.getType().isTdEngine() && requested.querySource()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDengine 第一版只允许 JDBC 表输入节点读取超级表，不开放自定义 SQL 查询输入"
+            );
         }
         if (requested.source() && !source.getPurposes().contains(DataSourcePurpose.SOURCE)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "输入数据源不具有 SOURCE 用途：" + source.getName());
@@ -1105,6 +1110,10 @@ public class CanvasTaskRunPreparationService {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .source(input.configuration().tableName());
+            } else if (node instanceof JdbcIncrementalInputNodeDefinition input) {
+                UUID id = uuid(input.configuration().dataSourceId(), input.name());
+                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
+                        .incrementalSource(input.configuration().tableName());
             } else if (node instanceof JdbcQueryInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
@@ -1123,7 +1132,20 @@ public class CanvasTaskRunPreparationService {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .kafkaSource(input.configuration().topic());
+            } else if (node instanceof TdEngineTmqInputNodeDefinition input) {
+                UUID id = uuid(input.configuration().dataSourceId(), input.name());
+                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
+                        .tdEngineTmqSource(new RequestedTdEngineTmqTopic(
+                                input.configuration().topicName(),
+                                input.configuration().catalogName(),
+                                input.configuration().supertableName(),
+                                input.configuration().topicDefinitionFingerprint()
+                        ));
             } else if (node instanceof JdbcOutputNodeDefinition output) {
+                UUID id = uuid(output.configuration().dataSourceId(), output.name());
+                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
+                        .distributionTable(output.configuration().targetTableName());
+            } else if (node instanceof JdbcSnapshotSyncOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .distributionTable(output.configuration().targetTableName());
@@ -1155,6 +1177,9 @@ public class CanvasTaskRunPreparationService {
                 UUID id = modelUuid(input.configuration().modelId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).input();
             } else if (node instanceof ModelOutputNodeDefinition output) {
+                UUID id = modelUuid(output.configuration().targetModelId(), output.name());
+                builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).output();
+            } else if (node instanceof ModelSnapshotSyncOutputNodeDefinition output) {
                 UUID id = modelUuid(output.configuration().targetModelId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).output();
             }
@@ -1247,10 +1272,21 @@ public class CanvasTaskRunPreparationService {
             boolean modelWrite,
             boolean distribution,
             boolean fileOutput,
+            boolean querySource,
+            boolean incrementalSource,
             Set<String> tableNames,
             Set<UUID> apiResourceIds,
             Set<UUID> spatialResourceIds,
-            Set<String> kafkaTopics
+            Set<String> kafkaTopics,
+            Set<RequestedTdEngineTmqTopic> tdEngineTmqTopics
+    ) {
+    }
+
+    private record RequestedTdEngineTmqTopic(
+            String topicName,
+            String catalogName,
+            String supertableName,
+            String definitionFingerprint
     ) {
     }
 
@@ -1260,10 +1296,13 @@ public class CanvasTaskRunPreparationService {
         private boolean modelWrite;
         private boolean distribution;
         private boolean fileOutput;
+        private boolean querySource;
+        private boolean incrementalSource;
         private final Set<String> tables = new LinkedHashSet<>();
         private final Set<UUID> apiResources = new LinkedHashSet<>();
         private final Set<UUID> spatialResources = new LinkedHashSet<>();
         private final Set<String> kafkaTopics = new LinkedHashSet<>();
+        private final Set<RequestedTdEngineTmqTopic> tdEngineTmqTopics = new LinkedHashSet<>();
 
         private RequestedDataSourceBuilder source(String table) {
             source = true;
@@ -1273,6 +1312,14 @@ public class CanvasTaskRunPreparationService {
 
         private RequestedDataSourceBuilder querySource() {
             source = true;
+            querySource = true;
+            return this;
+        }
+
+        private RequestedDataSourceBuilder incrementalSource(String table) {
+            source = true;
+            incrementalSource = true;
+            tables.add(table);
             return this;
         }
 
@@ -1304,6 +1351,12 @@ public class CanvasTaskRunPreparationService {
             return this;
         }
 
+        private RequestedDataSourceBuilder tdEngineTmqSource(RequestedTdEngineTmqTopic topic) {
+            source = true;
+            tdEngineTmqTopics.add(topic);
+            return this;
+        }
+
         private RequestedDataSourceBuilder distribution(String topic) {
             distribution = true;
             kafkaTopics.add(topic);
@@ -1324,8 +1377,9 @@ public class CanvasTaskRunPreparationService {
 
         private RequestedDataSource build() {
             return new RequestedDataSource(
-                    source, modelRead, modelWrite, distribution, fileOutput,
-                    Set.copyOf(tables), Set.copyOf(apiResources), Set.copyOf(spatialResources), Set.copyOf(kafkaTopics));
+                    source, modelRead, modelWrite, distribution, fileOutput, querySource, incrementalSource,
+                    Set.copyOf(tables), Set.copyOf(apiResources), Set.copyOf(spatialResources),
+                    Set.copyOf(kafkaTopics), Set.copyOf(tdEngineTmqTopics));
         }
     }
 

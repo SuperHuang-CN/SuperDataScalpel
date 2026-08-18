@@ -1,6 +1,5 @@
 import {
   CheckCircleOutlined,
-  CloseCircleOutlined,
   DownloadOutlined,
   EditOutlined,
   FileExcelOutlined,
@@ -22,7 +21,6 @@ import {
   Table,
   Tag,
   Tooltip,
-  TreeSelect,
   Typography,
   Upload,
   message,
@@ -31,7 +29,6 @@ import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useDataSources } from '../../datasource';
-import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
 import {
   isStandardDictionaryTypeFamilyCompatible,
   standardDictionaryValueTypeLabels,
@@ -40,9 +37,8 @@ import {
 } from '../../standard';
 import { useCurrentUser } from '../../system';
 import {
-  type ManagedDataModelDraftResult,
-  useCreateManagedDataModelDrafts,
   useDownloadModelMetadataTemplate,
+  useImportModelMetadata,
   useModelWarehouseLayers,
   usePlatformTypeCapabilities,
   usePreviewModelMetadataImport,
@@ -51,13 +47,15 @@ import {
   dataModelFieldTypeLabels,
   geometryKindLabels,
   type GeometryKind,
+  type ImportedModelMetadata,
+  type ModelMetadataImportResult,
   type PlatformDataType,
 } from '../model/dataModel';
 import {
   hasModelMetadataDraftIssues,
   modelMetadataDraftIssues,
   modelMetadataDrafts,
-  toManagedDraftRequest,
+  toModelMetadataImportRequest,
   type ModelMetadataDraft,
   type ModelMetadataFieldDraft,
 } from '../model/modelMetadataImport';
@@ -65,8 +63,6 @@ import { isManagedImportTargetSelectable } from '../model/managedTableImport';
 
 interface ModelMetadataImportDrawerProps {
   open: boolean;
-  canViewDirectories: boolean;
-  initialDirectoryId?: string;
   initialTargetStorageDataSourceId?: string;
   onClose: () => void;
   onAdjustFields: (modelId: string) => void;
@@ -189,6 +185,7 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
 
   return (
     <Modal
+      rootClassName="business-overlay business-modal-overlay"
       title={field ? `调整 Excel 字段：${field.code || `第 ${field.rowNumber} 行`}` : '调整字段'}
       open={Boolean(field)}
       width={680}
@@ -306,7 +303,7 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
               ? '当前账号没有查看码表权限。'
               : selectedDictionaryId && dictionaryOptions.find((option) => option.value === selectedDictionaryId)?.disabled
                 ? '当前码表已停用或与字段类型不兼容，请清空或更换。'
-                : 'Excel v4 使用码表编码匹配；物理字段仍保存节点编码。'}
+                : 'Excel V4/V5 使用码表编码匹配；物理字段仍保存节点编码。'}
           >
             <Select
               allowClear
@@ -331,8 +328,6 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
 
 export const ModelMetadataImportDrawer = ({
   open,
-  canViewDirectories,
-  initialDirectoryId,
   initialTargetStorageDataSourceId,
   onClose,
   onAdjustFields,
@@ -340,35 +335,25 @@ export const ModelMetadataImportDrawer = ({
   const [step, setStep] = useState(0);
   const [uploadFile, setUploadFile] = useState<UploadFile>();
   const [targetStorageDataSourceId, setTargetStorageDataSourceId] = useState(initialTargetStorageDataSourceId);
-  const [directoryId, setDirectoryId] = useState(initialDirectoryId);
   const [fileIssues, setFileIssues] = useState<string[]>([]);
   const [drafts, setDrafts] = useState<ModelMetadataDraft[]>([]);
-  const [results, setResults] = useState<ManagedDataModelDraftResult[]>([]);
+  const [result, setResult] = useState<ModelMetadataImportResult>();
+  const [submitError, setSubmitError] = useState<string>();
   const [editingField, setEditingField] = useState<{ draftKey: string; fieldKey: string }>();
   const [modalApi, modalContext] = Modal.useModal();
   const [messageApi, messageContext] = message.useMessage();
   const dataSourcesQuery = useDataSources(dataSourceRequest, open);
   const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
-  const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
   const previewMutation = usePreviewModelMetadataImport();
   const templateMutation = useDownloadModelMetadataTemplate();
-  const createMutation = useCreateManagedDataModelDrafts();
+  const createMutation = useImportModelMetadata();
   const selectedTarget = dataSourcesQuery.data?.content.find((source) => (
     source.id === targetStorageDataSourceId && isManagedImportTargetSelectable(source)
   ));
   const targetIsClickHouse = selectedTarget?.type === 'CLICKHOUSE';
   const issues = useMemo(() => modelMetadataDraftIssues(drafts, targetIsClickHouse), [drafts, targetIsClickHouse]);
   const hasDraftIssues = hasModelMetadataDraftIssues(issues) || fileIssues.length > 0;
-  const failedKeys = useMemo(() => new Set(
-    results.filter((result) => !result.detail).map((result) => result.key),
-  ), [results]);
-  const lastFailureByKey = useMemo(() => new Map(
-    results
-      .filter((result) => !result.detail)
-      .map((result) => [result.key, errorMessage(result.error, '创建失败')]),
-  ), [results]);
   const busy = previewMutation.isPending || templateMutation.isPending || createMutation.isPending;
-  const successCount = results.length - failedKeys.size;
 
   const targetOptions = dataSourcesQuery.data?.content
     .filter(isManagedImportTargetSelectable)
@@ -381,12 +366,11 @@ export const ModelMetadataImportDrawer = ({
 
   const requestClose = () => {
     if (busy) return;
-    if ((step < 2 && (uploadFile || drafts.length > 0)) || (step === 2 && failedKeys.size > 0)) {
+    if (step < 2 && (uploadFile || drafts.length > 0)) {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '放弃本次 Excel 导入？',
-        content: step === 2
-          ? `仍有 ${failedKeys.size} 个模型创建失败，关闭后将丢失失败项及其调整内容。`
-          : '已上传或调整的模型结构尚未创建，离开后不会保留。',
+        content: '已上传或调整的模型结构尚未创建，离开后不会保留。',
         okText: '放弃并关闭',
         okButtonProps: { danger: true },
         cancelText: '继续编辑',
@@ -417,7 +401,8 @@ export const ModelMetadataImportDrawer = ({
         });
         setFileIssues(preview.issues);
         setDrafts(modelMetadataDrafts(preview));
-        setResults([]);
+        setResult(undefined);
+        setSubmitError(undefined);
         setStep(1);
       } catch (error) {
         messageApi.error(errorMessage(error, '解析 Excel 失败'));
@@ -425,6 +410,7 @@ export const ModelMetadataImportDrawer = ({
     };
     if (drafts.length) {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '重新解析 Excel',
         content: '重新解析会覆盖当前模型和字段调整，确认继续吗？',
         okText: '重新解析',
@@ -478,18 +464,21 @@ export const ModelMetadataImportDrawer = ({
 
   const submit = async () => {
     if (!selectedTarget || hasDraftIssues) return;
-    const items = drafts.flatMap((draft) => {
-      const request = toManagedDraftRequest(draft, selectedTarget.id, directoryId);
-      return request ? [{ key: draft.key, request }] : [];
+    const models = drafts.flatMap((draft) => {
+      const request = toModelMetadataImportRequest(draft);
+      return request ? [request] : [];
     });
-    if (items.length !== drafts.length) return;
-    setResults(await createMutation.mutateAsync(items));
-    setStep(2);
-  };
-
-  const editFailures = () => {
-    setDrafts((current) => current.filter((draft) => failedKeys.has(draft.key)));
-    setStep(1);
+    if (models.length !== drafts.length) return;
+    setSubmitError(undefined);
+    try {
+      setResult(await createMutation.mutateAsync({
+        targetStorageDataSourceId: selectedTarget.id,
+        models,
+      }));
+      setStep(2);
+    } catch (error) {
+      setSubmitError(errorMessage(error, '整批创建失败，未保存任何模型'));
+    }
   };
 
   const fieldColumns = (draft: ModelMetadataDraft): TableProps<ModelMetadataFieldDraft>['columns'] => [
@@ -554,6 +543,21 @@ export const ModelMetadataImportDrawer = ({
       render: (_value, draft) => <div><Input value={draft.name} status={issues.get(draft.key)?.name ? 'error' : undefined} onChange={(event) => updateDraft(draft.key, 'name', event.target.value)} />{issues.get(draft.key)?.name && <Typography.Text type="danger" className="managed-import-field-error">{issues.get(draft.key)?.name}</Typography.Text>}</div>,
     },
     {
+      title: '模型目录', width: 220,
+      render: (_value, draft) => (
+        <div>
+          <Typography.Text ellipsis={{ tooltip: draft.directoryPath || '未分类' }}>
+            {draft.directoryPath || '未分类'}
+          </Typography.Text>
+          {issues.get(draft.key)?.directoryPath && (
+            <Typography.Text type="danger" className="managed-import-field-error">
+              {issues.get(draft.key)?.directoryPath}
+            </Typography.Text>
+          )}
+        </div>
+      ),
+    },
+    {
       title: '数仓分层', width: 220,
       render: (_value, draft) => (
         <div>
@@ -602,26 +606,24 @@ export const ModelMetadataImportDrawer = ({
         if (current?.server) return <Typography.Text type="danger">{current.server}</Typography.Text>;
         if (current?.fields) return <Typography.Text type="danger">{current.fields}</Typography.Text>;
         if (current?.fieldIssues.size) return <Typography.Text type="danger">{current.fieldIssues.size} 个字段待处理</Typography.Text>;
-        const lastFailure = lastFailureByKey.get(draft.key);
-        if (lastFailure) return <Typography.Text type="warning">上次创建失败：{lastFailure}</Typography.Text>;
         return <Tag color="success">{draft.fields.length} 个已就绪</Tag>;
       },
     },
   ];
 
-  const resultColumns: TableProps<ManagedDataModelDraftResult>['columns'] = [
-    { title: '模型编码', dataIndex: ['request', 'code'], width: 180, render: (value: string) => <code>{value}</code> },
-    { title: '模型名称', dataIndex: ['request', 'name'], width: 200 },
+  const resultColumns: TableProps<ImportedModelMetadata>['columns'] = [
+    { title: '模型编码', dataIndex: 'code', width: 180, render: (value: string) => <code>{value}</code> },
+    { title: '模型名称', dataIndex: 'name', width: 200 },
     {
-      title: '结果', render: (_value, result) => result.detail
-        ? <Space><CheckCircleOutlined className="managed-import-success" />已创建 MANAGED 草稿</Space>
-        : <Space><CloseCircleOutlined className="managed-import-failure" /><Typography.Text type="danger">{errorMessage(result.error, '创建失败')}</Typography.Text></Space>,
+      title: '结果', render: () => (
+        <Space><CheckCircleOutlined className="managed-import-success" />已创建 MANAGED 草稿</Space>
+      ),
     },
     {
       title: '操作', width: 100, fixed: 'right',
-      render: (_value, result) => result.detail ? (
-        <Button type="link" size="small" disabled={failedKeys.size > 0} onClick={() => onAdjustFields(result.detail?.model.id ?? '')}>调整字段</Button>
-      ) : '—',
+      render: (_value, imported) => (
+        <Button type="link" size="small" onClick={() => onAdjustFields(imported.id)}>调整字段</Button>
+      ),
     },
   ];
 
@@ -641,7 +643,6 @@ export const ModelMetadataImportDrawer = ({
     </Space>
   ) : (
     <Space>
-      {failedKeys.size > 0 && <Button onClick={editFailures}>修改并重试失败项</Button>}
       <Button type="primary" onClick={onClose}>完成</Button>
     </Space>
   );
@@ -651,6 +652,7 @@ export const ModelMetadataImportDrawer = ({
       {modalContext}
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title="从 Excel 导入模型元数据"
         open={open}
         size="large"
@@ -664,18 +666,17 @@ export const ModelMetadataImportDrawer = ({
         <Steps size="small" current={step} items={[{ title: '上传 Excel' }, { title: '校对表结构' }, { title: '创建结果' }]} />
         {step === 0 && (
           <div className="managed-import-step-content metadata-import-upload-step">
-            <Alert showIcon type="info" title="只导入模型和字段元数据，结果固定为 MANAGED + DRAFT，不绑定来源，也不会创建物理表。" />
+            <Alert showIcon type="info" title="模型目录由 Excel 每行定义并匹配已有目录；整份文件原子创建为 MANAGED + DRAFT，不会创建物理表。" />
             <Space>
               <Select showSearch optionFilterProp="label" value={selectedTarget?.id} loading={dataSourcesQuery.isFetching} options={targetOptions} placeholder="选择目标 STORAGE JDBC" className="managed-import-target-select" onChange={setTargetStorageDataSourceId} />
-              {canViewDirectories && <TreeSelect allowClear treeDefaultExpandAll value={directoryId} treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} placeholder="模型目录：未分类" className="managed-import-directory-select" onChange={setDirectoryId} />}
               <Button icon={<DownloadOutlined />} loading={templateMutation.isPending} onClick={() => void downloadTemplate()}>下载空白模板</Button>
             </Space>
             <Upload.Dragger
               accept=".xlsx"
               maxCount={1}
               fileList={uploadFile ? [uploadFile] : []}
-              beforeUpload={(file) => { setUploadFile(file); setDrafts([]); setFileIssues([]); return false; }}
-              onRemove={() => { setUploadFile(undefined); setDrafts([]); setFileIssues([]); }}
+              beforeUpload={(file) => { setUploadFile(file); setDrafts([]); setFileIssues([]); setResult(undefined); setSubmitError(undefined); return false; }}
+              onRemove={() => { setUploadFile(undefined); setDrafts([]); setFileIssues([]); setResult(undefined); setSubmitError(undefined); }}
             >
               <p className="ant-upload-drag-icon"><InboxOutlined /></p>
               <p className="ant-upload-text">拖拽或点击选择 DataScalpel 模型元数据 Excel</p>
@@ -688,9 +689,10 @@ export const ModelMetadataImportDrawer = ({
             <Alert
               showIcon
               type={hasDraftIssues ? 'warning' : 'success'}
-              title={hasDraftIssues ? '请处理标红内容；文件结构级问题需要修改 Excel 后重新上传。' : `${drafts.length} 个模型已就绪，创建草稿不会执行 DDL。`}
+              title={hasDraftIssues ? '请处理标红内容；目录问题需要先维护目录或修改 Excel 后重新上传。' : `${drafts.length} 个模型已就绪，将整批创建且不会执行 DDL。`}
               description={fileIssues.length ? fileIssues.join('；') : undefined}
             />
+            {submitError && <Alert showIcon type="error" title={submitError} description="本次整批操作已回滚，没有保存任何模型。" />}
             <Space>
               <Tag icon={<FileExcelOutlined />}>{uploadFile?.name}</Tag>
               <Tag>{selectedTarget?.name}</Tag>
@@ -702,7 +704,7 @@ export const ModelMetadataImportDrawer = ({
               columns={modelColumns}
               dataSource={drafts}
               pagination={false}
-              scroll={{ x: 1520, y: 390 }}
+              scroll={{ x: 1740, y: 390 }}
               expandable={{
                 rowExpandable: (draft) => draft.fields.length > 0,
                 expandedRowRender: (draft) => (
@@ -713,18 +715,18 @@ export const ModelMetadataImportDrawer = ({
                 ),
               }}
             />
-            {createMutation.isPending && <Alert showIcon icon={<LoadingOutlined />} type="info" title={`正在创建 ${drafts.length} 个草稿，最多同时处理 3 个…`} />}
+            {createMutation.isPending && <Alert showIcon icon={<LoadingOutlined />} type="info" title={`正在重新校验并原子创建 ${drafts.length} 个草稿，任意失败都会整批回滚…`} />}
           </div>
         )}
         {step === 2 && (
           <div className="managed-import-step-content">
             <Alert
               showIcon
-              type={failedKeys.size === 0 ? 'success' : successCount > 0 ? 'warning' : 'error'}
-              title={`成功 ${successCount} 个，失败 ${failedKeys.size} 个`}
-              description="成功模型不会回滚；物理表仍需在模型详情中显式创建。"
+              type="success"
+              title={`已原子创建 ${result?.modelCount ?? 0} 个模型、${result?.fieldCount ?? 0} 个字段`}
+              description="全部模型均为 MANAGED + DRAFT；物理表仍需在模型详情中显式创建。"
             />
-            <Table<ManagedDataModelDraftResult> size="small" rowKey="key" columns={resultColumns} dataSource={results} pagination={false} />
+            <Table<ImportedModelMetadata> size="small" rowKey="id" columns={resultColumns} dataSource={result?.models ?? []} pagination={false} />
           </div>
         )}
       </Drawer>

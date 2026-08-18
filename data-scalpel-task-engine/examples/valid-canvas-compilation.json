@@ -3,8 +3,8 @@
   "task": {
     "type": "CANVAS",
     "definition": {
-      "schemaVersion": 1,
-      "schemaMinorVersion": 1,
+      "schemaVersion": 2,
+      "schemaMinorVersion": 0,
       "nodes": [
         {
           "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa1",
@@ -55,8 +55,12 @@
             "dataSourceId": "22222222-2222-4222-8222-222222222222",
             "targetTableName": "dwd_order_customer",
             "writeMode": "APPEND",
-            "columnMappingMode": "BY_NAME",
-            "columnMappings": []
+            "columnMappings": [
+              { "sourceColumnName": "order_id", "targetColumnName": "order_id" },
+              { "sourceColumnName": "customer_id", "targetColumnName": "customer_id" },
+              { "sourceColumnName": "customer_key", "targetColumnName": "customer_key" },
+              { "sourceColumnName": "customer_name", "targetColumnName": "customer_name" }
+            ]
           }
         }
       ],

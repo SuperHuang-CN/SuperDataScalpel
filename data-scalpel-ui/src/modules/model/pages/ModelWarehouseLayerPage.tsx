@@ -1,5 +1,4 @@
 import {
-  ApartmentOutlined,
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
@@ -40,6 +39,7 @@ import {
   useModelWarehouseLayers,
   useUpdateModelWarehouseLayer,
 } from '../hooks/useDataModels';
+import { ModelWarehouseLayerIcon } from '../components/ModelWarehouseLayerIcon';
 import type {
   CreateModelWarehouseLayerRequest,
   ModelWarehouseLayer,
@@ -145,6 +145,7 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={layer ? '修改数仓分层' : '新建数仓分层'}
         open={open}
         width={560}
@@ -334,6 +335,7 @@ export const ModelWarehouseLayerPage = () => {
 
   const remove = (layer: ModelWarehouseLayer) => {
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '删除数仓分层',
       content: `确认删除“${layer.name}（${layer.code}）”吗？删除后不会自动恢复。`,
       okText: '删除',
@@ -365,7 +367,15 @@ export const ModelWarehouseLayerPage = () => {
   const columns: TableProps<ModelWarehouseLayer>['columns'] = [
     {
       title: '分层', dataIndex: 'name', width: 280,
-      render: (value: string, layer) => <ManagementListCell icon={<ApartmentOutlined />} iconTone="violet" primary={<Space size={6}><span aria-hidden style={{ width: 10, height: 10, borderRadius: 2, background: layer.color ?? '#BFBFBF' }} />{value}</Space>} secondary={<><ManagementCode value={layer.code} /> {layer.description || ''}</>} />,
+      render: (value: string, layer) => (
+        <ManagementListCell
+          icon={<ModelWarehouseLayerIcon code={layer.code} color={layer.color} />}
+          iconLabel={`数仓分层：${layer.code}`}
+          iconTone="slate"
+          primary={value}
+          secondary={<><ManagementCode value={layer.code} /> {layer.description || ''}</>}
+        />
+      ),
     },
     {
       title: '规范 / 排序', width: 150,

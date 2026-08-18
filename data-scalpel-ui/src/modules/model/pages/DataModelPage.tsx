@@ -18,11 +18,12 @@ import {
   Dropdown,
   Form,
   Modal,
+  Alert,
   Select,
   Space,
   Table,
-  Tag,
   Tooltip,
+  Typography,
   message,
 } from 'antd';
 import { useMemo, useState } from 'react';
@@ -40,26 +41,33 @@ import {
 } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { DataModelDrawer } from '../components/DataModelDrawer';
+import { DataModelPhysicalStatisticsCell } from '../components/DataModelPhysicalStatisticsCell';
+import { DataModelReferenceModalContent } from '../components/DataModelReferenceModalContent';
 import { ManagedTableModelImportDrawer } from '../components/ManagedTableModelImportDrawer';
 import { ModelMetadataImportDrawer } from '../components/ModelMetadataImportDrawer';
+import { ModelWarehouseLayerIcon } from '../components/ModelWarehouseLayerIcon';
 import {
   useDataModelCommand,
   useDataModels,
+  useDataModelReferences,
   useDeleteDataModel,
   useExportModelMetadata,
   useModelWarehouseLayers,
+  useRefreshDataModelPhysicalStatistics,
 } from '../hooks/useDataModels';
 import {
   dataModelStatusLabels,
-  physicalLocation,
   type DataModel,
   type DataModelFilters,
+  type DataModelPhysicalStatistics,
   type DataModelStatus,
 } from '../model/dataModel';
 import { buildDataModelSearch } from '../model/dataModelSearch';
 import { parseDataModelListRoute, serializeDataModelListRoute } from '../model/dataModelListRoute';
 
 const DEFAULT_PAGE_SIZE = 20;
+const MAX_STATISTICS_REFRESH_COUNT = 20;
+const STATISTICS_REFRESH_CONCURRENCY = 3;
 
 const jdbcDataSourceRequest = {
   page: 0,
@@ -92,7 +100,11 @@ export const DataModelPage = () => {
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
   const [metadataImportDrawerOpen, setMetadataImportDrawerOpen] = useState(false);
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
+  const [selectedModelsById, setSelectedModelsById] = useState<Record<string, DataModel>>({});
+  const [refreshingModelIds, setRefreshingModelIds] = useState<Set<string>>(() => new Set());
+  const [batchRefreshingStatistics, setBatchRefreshingStatistics] = useState(false);
   const [editingModel, setEditingModel] = useState<DataModel | null>(null);
+  const [referenceModel, setReferenceModel] = useState<DataModel | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const currentUserQuery = useCurrentUser();
@@ -130,9 +142,11 @@ export const DataModelPage = () => {
   const modelsQuery = useDataModels(request);
   const deleteMutation = useDeleteDataModel();
   const exportMutation = useExportModelMetadata();
+  const refreshStatisticsMutation = useRefreshDataModelPhysicalStatistics();
   const publishMutation = useDataModelCommand('publish');
   const disableMutation = useDataModelCommand('disable');
   const enableMutation = useDataModelCommand('enable');
+  const referencesQuery = useDataModelReferences(referenceModel?.id, Boolean(referenceModel));
   const dataSourceOptions = dataSourcesQuery.data?.content
     .filter((source) => source.connection.kind === 'JDBC')
     .map((source) => ({ value: source.id, label: source.name })) ?? [];
@@ -141,6 +155,11 @@ export const DataModelPage = () => {
     label: `${layer.code} · ${layer.name}${layer.enabled ? '' : '（已停用）'}`,
   })) ?? [];
   const advancedFilterCount = Number(Boolean(advancedFilters.storageDataSourceId)) + Number(Boolean(advancedFilters.warehouseLayerId));
+  const visibleModelsById = new Map((modelsQuery.data?.content ?? []).map((model) => [model.id, model]));
+  const selectedModels = selectedModelIds
+    .map((id) => visibleModelsById.get(id) ?? selectedModelsById[id])
+    .filter((model): model is DataModel => Boolean(model));
+  const selectedIncludesExternal = selectedModels.some((model) => model.physicalTableMode === 'EXTERNAL');
   const syncRoute = (
     nextFilters: DataModelFilters,
     nextDirectorySelection: DirectorySelection,
@@ -159,6 +178,7 @@ export const DataModelPage = () => {
     setFilters(nextFilters);
     setPage(0);
     setSelectedModelIds([]);
+    setSelectedModelsById({});
     syncRoute(nextFilters, nextDirectorySelection, 0, size);
   };
 
@@ -226,6 +246,7 @@ export const DataModelPage = () => {
   const transition = (model: DataModel) => {
     if (model.status === 'DRAFT') {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '发布模型',
         content: '发布前会实时检查物理表是否存在且与模型字段一致；发布后字段结构将变为只读。',
         okText: '发布',
@@ -238,22 +259,18 @@ export const DataModelPage = () => {
   };
 
   const remove = (model: DataModel) => {
-    modalApi.confirm({
-      title: '删除模型',
-      content: `确认删除“${model.name}”吗？只删除模型元数据，不操作物理表。`,
-      okText: '删除',
-      okButtonProps: { danger: true },
-      cancelText: '取消',
-      onOk: async () => {
-        try {
-          await deleteMutation.mutateAsync(model.id);
-          messageApi.success('模型已删除');
-        } catch (error) {
-          messageApi.error(error instanceof ApiError ? error.message : '删除模型失败');
-          throw error;
-        }
-      },
-    });
+    setReferenceModel(model);
+  };
+
+  const confirmRemove = async (model: DataModel) => {
+    try {
+      await deleteMutation.mutateAsync(model.id);
+      messageApi.success('模型已删除');
+      setReferenceModel(null);
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '删除模型失败');
+      throw error;
+    }
   };
 
   const exportModels = async (modelIds: string[]) => {
@@ -263,6 +280,121 @@ export const DataModelPage = () => {
       messageApi.success('模型元数据导出已开始');
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '导出模型元数据失败');
+    }
+  };
+
+  const updateSelection: NonNullable<
+    NonNullable<TableProps<DataModel>['rowSelection']>['onChange']
+  > = (keys, rows) => {
+    const modelIds = keys.map(String);
+    const retainedIds = new Set(modelIds);
+    setSelectedModelIds(modelIds);
+    setSelectedModelsById((current) => {
+      const next = Object.fromEntries(
+        Object.entries(current).filter(([id]) => retainedIds.has(id)),
+      ) as Record<string, DataModel>;
+      rows.forEach((model) => {
+        next[model.id] = model;
+      });
+      return next;
+    });
+  };
+
+  const markStatisticsRefreshing = (modelIds: string[], refreshing: boolean) => {
+    setRefreshingModelIds((current) => {
+      const next = new Set(current);
+      modelIds.forEach((modelId) => {
+        if (refreshing) next.add(modelId);
+        else next.delete(modelId);
+      });
+      return next;
+    });
+  };
+
+  const showStatisticsRefreshResult = (statistics: DataModelPhysicalStatistics) => {
+    const detail = statistics.message ? `：${statistics.message}` : '';
+    switch (statistics.lastRefreshStatus) {
+      case 'SUCCESS':
+        messageApi.success('数据统计刷新成功');
+        break;
+      case 'PARTIAL':
+        messageApi.warning(`仅获取到部分数据统计${detail}`);
+        break;
+      case 'NOT_FOUND':
+        messageApi.warning(`物理表未创建或不存在${detail}`);
+        break;
+      case 'UNSUPPORTED':
+        messageApi.warning(`当前数据库或物理对象无法提供统计${detail}`);
+        break;
+      case 'FAILED':
+        messageApi.error(`数据统计刷新失败${detail}`);
+        break;
+    }
+  };
+
+  const refreshModelStatistics = async (model: DataModel) => {
+    if (refreshingModelIds.has(model.id)) return;
+    markStatisticsRefreshing([model.id], true);
+    try {
+      const statistics = await refreshStatisticsMutation.mutateAsync(model.id);
+      await modelsQuery.refetch();
+      showStatisticsRefreshResult(statistics);
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '数据统计刷新失败');
+    } finally {
+      markStatisticsRefreshing([model.id], false);
+    }
+  };
+
+  const refreshSelectedStatistics = async () => {
+    if (selectedModelIds.length === 0) return;
+    if (selectedModelIds.length > MAX_STATISTICS_REFRESH_COUNT) {
+      messageApi.warning(`一次最多刷新 ${MAX_STATISTICS_REFRESH_COUNT} 个模型的数据统计`);
+      return;
+    }
+
+    const modelIds = [...selectedModelIds];
+    const results: Array<DataModelPhysicalStatistics | Error | undefined> = new Array(modelIds.length);
+    let nextIndex = 0;
+    setBatchRefreshingStatistics(true);
+    markStatisticsRefreshing(modelIds, true);
+    try {
+      const workers = Array.from(
+        { length: Math.min(STATISTICS_REFRESH_CONCURRENCY, modelIds.length) },
+        async () => {
+          while (nextIndex < modelIds.length) {
+            const index = nextIndex;
+            nextIndex += 1;
+            try {
+              results[index] = await refreshStatisticsMutation.mutateAsync(modelIds[index]);
+            } catch (error) {
+              results[index] = error instanceof Error ? error : new Error('数据统计刷新失败');
+            }
+          }
+        },
+      );
+      await Promise.all(workers);
+      await modelsQuery.refetch();
+
+      const successCount = results.filter((result) => (
+        result && !(result instanceof Error) && result.lastRefreshStatus === 'SUCCESS'
+      )).length;
+      const partialCount = results.filter((result) => (
+        result && !(result instanceof Error) && result.lastRefreshStatus === 'PARTIAL'
+      )).length;
+      const unavailableCount = modelIds.length - successCount - partialCount;
+      if (successCount === modelIds.length) {
+        messageApi.success(`已刷新 ${successCount} 个模型的数据统计`);
+      } else if (successCount + partialCount > 0) {
+        messageApi.warning(
+          `统计刷新完成：成功 ${successCount} 个，部分获取 ${partialCount} 个，未获取 ${unavailableCount} 个`,
+        );
+      } else {
+        messageApi.error(`所选 ${modelIds.length} 个模型均未能获取数据统计`);
+      }
+    } finally {
+      markStatisticsRefreshing(modelIds, false);
+      setBatchRefreshingStatistics(false);
     }
   };
 
@@ -290,26 +422,43 @@ export const DataModelPage = () => {
       dataIndex: 'name',
       width: 245,
       render: (value: string, model: DataModel) => (
-        <ManagementListCell icon={<TableOutlined />} iconTone="violet" primary={<Button type="link" size="small" className="data-model-name-button" onClick={() => openDetail(model)}>{value}</Button>} secondary={<><ManagementCode value={model.code} /> {model.description || ''}</>} />
+        <ManagementListCell
+          icon={model.warehouseLayer
+            ? <ModelWarehouseLayerIcon code={model.warehouseLayer.code} color={model.warehouseLayer.color} />
+            : <TableOutlined />}
+          iconLabel={model.warehouseLayer
+            ? `${model.name}所属数仓分层：${model.warehouseLayer.code}`
+            : `${model.name}尚未设置数仓分层`}
+          iconTone="slate"
+          primary={<Button type="link" size="small" className="data-model-name-button" onClick={() => openDetail(model)}>{value}</Button>}
+          secondary={<><ManagementCode value={model.code} /> {model.description || ''}</>}
+        />
       ),
     },
     {
-      title: '分层 / 状态', width: 180,
-      render: (_value, model) => <ManagementListCell primary={model.warehouseLayer ? (
-        <Tooltip title={model.warehouseLayer.enabled ? undefined : '该分层已停用，现有模型仍保留该分层'}>
-          <Tag color={model.warehouseLayer.enabled ? model.warehouseLayer.color ?? undefined : 'warning'}>
-            {model.warehouseLayer.code} · {model.warehouseLayer.name}
-          </Tag>
-        </Tooltip>
-      ) : '未分层'} secondary={<ManagementStatusIndicator label={dataModelStatusLabels[model.status]} tone={statusColor[model.status]} />} />,
+      title: '状态', width: 100,
+      render: (_value, model) => (
+        <ManagementStatusIndicator
+          label={dataModelStatusLabels[model.status]}
+          tone={statusColor[model.status]}
+        />
+      ),
     },
     {
       title: '存储位置', width: 310,
-      render: (_value, model) => <ManagementListCell primary={model.storageDataSourceName} secondary={<ManagementCode value={physicalLocation(model)} />} />,
+      render: (_value, model) => <ManagementListCell primary={model.storageDataSourceName} secondary={<ManagementCode value={model.physicalTableName} />} />,
     },
     {
       title: '模式 / 版本', width: 120,
       render: (_value, model) => <ManagementListCell primary={model.physicalTableMode === 'MANAGED' ? '托管表' : '外部表'} secondary={`Schema v${model.schemaVersion}`} />,
+    },
+    {
+      title: '数据统计',
+      width: 180,
+      align: 'right',
+      render: (_value, model) => (
+        <DataModelPhysicalStatisticsCell statistics={model.physicalStatistics} />
+      ),
     },
     { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
@@ -326,6 +475,7 @@ export const DataModelPage = () => {
                 size="small"
                 icon={<TableOutlined />}
                 aria-label={`${model.status === 'DRAFT' ? '管理' : '查看'}${model.name}字段`}
+                disabled={refreshingModelIds.has(model.id)}
                 onClick={() => openDetail(model, 'fields')}
               />
             </Tooltip>
@@ -337,37 +487,50 @@ export const DataModelPage = () => {
                 size="small"
                 icon={<EditOutlined />}
                 aria-label={`修改${model.name}`}
+                disabled={refreshingModelIds.has(model.id)}
                 onClick={() => setEditingModel(model)}
               />
             </Tooltip>
           )}
           </div>
-          {(canUpdate || canPublish || model.physicalTableMode === 'MANAGED' || canDelete) && (
-            <Dropdown
-              trigger={['click']}
-              menu={{
-                items: [
-                  ...(canUpdate ? [{ key: 'fields', label: model.status === 'DRAFT' ? '字段管理' : '查看字段', icon: <TableOutlined /> }, { key: 'edit', label: '修改模型', icon: <EditOutlined /> }] : []),
-                  ...(canPublish ? [{ key: 'lifecycle', label: lifecycleLabel(model.status), icon: lifecycleIcon(model.status) }] : []),
-                  ...(model.physicalTableMode === 'MANAGED'
-                    ? [{ key: 'export', label: '导出 Excel 结构', icon: <DownloadOutlined /> }]
-                    : []),
-                  ...(canDelete ? [{ key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
-                ],
-                onClick: ({ key }) => {
-                  if (key === 'fields') openDetail(model, 'fields');
-                  if (key === 'edit') setEditingModel(model);
-                  if (key === 'lifecycle') void transition(model);
-                  if (key === 'export') void exportModels([model.id]);
-                  if (key === 'delete') remove(model);
+          <Dropdown
+            trigger={['click']}
+            menu={{
+              items: [
+                {
+                  key: 'refresh-statistics',
+                  label: refreshingModelIds.has(model.id) ? '刷新统计中…' : '刷新统计',
+                  icon: <ReloadOutlined />,
+                  disabled: refreshingModelIds.has(model.id),
                 },
-              }}
-            >
-              <Tooltip title="更多操作">
-                <Button className="management-row-actions-more" type="text" size="small" icon={<MoreOutlined />} aria-label={`${model.name}的更多操作`} loading={lifecycleLoading(model)} />
-              </Tooltip>
-            </Dropdown>
-          )}
+                ...(canUpdate ? [{ key: 'fields', label: model.status === 'DRAFT' ? '字段管理' : '查看字段', icon: <TableOutlined /> }, { key: 'edit', label: '修改模型', icon: <EditOutlined /> }] : []),
+                ...(canPublish ? [{ key: 'lifecycle', label: lifecycleLabel(model.status), icon: lifecycleIcon(model.status) }] : []),
+                ...(model.physicalTableMode === 'MANAGED'
+                  ? [{ key: 'export', label: '导出 Excel 结构', icon: <DownloadOutlined /> }]
+                  : []),
+                ...(canDelete ? [{ key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
+              ],
+              onClick: ({ key }) => {
+                if (key === 'refresh-statistics') void refreshModelStatistics(model);
+                if (key === 'fields') openDetail(model, 'fields');
+                if (key === 'edit') setEditingModel(model);
+                if (key === 'lifecycle') void transition(model);
+                if (key === 'export') void exportModels([model.id]);
+                if (key === 'delete') remove(model);
+              },
+            }}
+          >
+            <Tooltip title="更多操作">
+              <Button
+                className="management-row-actions-more"
+                type="text"
+                size="small"
+                icon={<MoreOutlined />}
+                aria-label={`${model.name}的更多操作`}
+                loading={lifecycleLoading(model) || refreshingModelIds.has(model.id)}
+              />
+            </Tooltip>
+          </Dropdown>
         </div>
       ),
     },
@@ -377,6 +540,41 @@ export const DataModelPage = () => {
     <>
       {messageContext}
       {modalContext}
+      <Modal
+        rootClassName="business-overlay business-modal-overlay"
+        open={Boolean(referenceModel)}
+        title={referenceModel ? `删除模型：${referenceModel.name}` : '删除模型'}
+        width={760}
+        okText="确认删除"
+        okButtonProps={{
+          danger: true,
+          disabled: referencesQuery.isPending || referencesQuery.isError || !referencesQuery.data?.deletable,
+          loading: deleteMutation.isPending,
+        }}
+        cancelText="取消"
+        onCancel={() => setReferenceModel(null)}
+        onOk={() => referenceModel && confirmRemove(referenceModel)}
+      >
+        {referencesQuery.data?.deletable && referenceModel && (
+          <Alert
+            type="warning"
+            showIcon
+            message={`确认删除“${referenceModel.name}”吗？`}
+            description="只删除模型元数据，不操作物理表。"
+          />
+        )}
+        {referencesQuery.isPending && <Typography.Text>正在检查模型引用…</Typography.Text>}
+        {referencesQuery.isError && (
+          <Alert
+            type="error"
+            showIcon
+            message="模型引用检查失败"
+            description={referencesQuery.error instanceof ApiError ? referencesQuery.error.message : '请稍后重试。'}
+            action={<Button size="small" onClick={() => void referencesQuery.refetch()}>重试</Button>}
+          />
+        )}
+        {referencesQuery.data && <DataModelReferenceModalContent references={referencesQuery.data} />}
+      </Modal>
       <div className={canViewDirectories ? 'directory-management-layout' : 'page-stack'}>
         {canViewDirectories && (
           <DirectoryTreePanel
@@ -456,6 +654,28 @@ export const DataModelPage = () => {
             <div className="management-result-title">模型列表 <span className="management-result-count">共 {modelsQuery.data?.totalElements ?? 0} 项</span></div>
             <Space size={4} className="management-result-actions">
               <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新模型列表" onClick={() => void modelsQuery.refetch()} /></Tooltip>
+              <Tooltip title={
+                selectedModelIds.length === 0
+                  ? '请先选择模型'
+                  : selectedModelIds.length > MAX_STATISTICS_REFRESH_COUNT
+                    ? `一次最多刷新 ${MAX_STATISTICS_REFRESH_COUNT} 个模型`
+                    : refreshingModelIds.size > 0 ? '数据统计正在刷新' : '从目标数据库快速刷新统计快照'
+              }>
+                <span>
+                  <Button
+                    icon={<ReloadOutlined />}
+                    loading={batchRefreshingStatistics}
+                    disabled={
+                      selectedModelIds.length === 0
+                      || selectedModelIds.length > MAX_STATISTICS_REFRESH_COUNT
+                      || refreshingModelIds.size > 0
+                    }
+                    onClick={() => void refreshSelectedStatistics()}
+                  >
+                    刷新统计{selectedModelIds.length ? `（${selectedModelIds.length}）` : ''}
+                  </Button>
+                </span>
+              </Tooltip>
               {canCreate && canViewDataSources && canReadDataSourceMetadata && (
                 <Button icon={<DatabaseOutlined />} onClick={() => setImportDrawerOpen(true)}>
                   从数据源导入
@@ -466,14 +686,22 @@ export const DataModelPage = () => {
                   导入 Excel
                 </Button>
               )}
-              <Button
-                icon={<DownloadOutlined />}
-                loading={exportMutation.isPending}
-                disabled={selectedModelIds.length === 0}
-                onClick={() => void exportModels(selectedModelIds)}
-              >
-                导出结构{selectedModelIds.length ? `（${selectedModelIds.length}）` : ''}
-              </Button>
+              <Tooltip title={
+                selectedIncludesExternal
+                  ? '只能导出受管模型，当前选择中包含外部模型'
+                  : selectedModelIds.length === 0 ? '请先选择受管模型' : '导出所选模型结构'
+              }>
+                <span>
+                  <Button
+                    icon={<DownloadOutlined />}
+                    loading={exportMutation.isPending}
+                    disabled={selectedModelIds.length === 0 || selectedIncludesExternal}
+                    onClick={() => void exportModels(selectedModelIds)}
+                  >
+                    导出结构{selectedModelIds.length ? `（${selectedModelIds.length}）` : ''}
+                  </Button>
+                </span>
+              </Tooltip>
               {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
             </Space>
             </div>
@@ -483,15 +711,11 @@ export const DataModelPage = () => {
             rowKey="id"
             columns={columns}
             dataSource={modelsQuery.data?.content ?? []}
-            loading={modelsQuery.isFetching}
+            loading={modelsQuery.isFetching && refreshingModelIds.size === 0}
             rowSelection={{
               preserveSelectedRowKeys: true,
               selectedRowKeys: selectedModelIds,
-              onChange: (keys) => setSelectedModelIds(keys.map(String)),
-              getCheckboxProps: (model) => ({
-                disabled: model.physicalTableMode === 'EXTERNAL',
-                title: model.physicalTableMode === 'EXTERNAL' ? 'EXTERNAL 模型暂不支持导出' : undefined,
-              }),
+              onChange: updateSelection,
             }}
             scroll={{ y: '100%' }}
             pagination={{
@@ -539,8 +763,6 @@ export const DataModelPage = () => {
       {metadataImportDrawerOpen && (
         <ModelMetadataImportDrawer
           open
-          canViewDirectories={canViewDirectories}
-          initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
           initialTargetStorageDataSourceId={filters.storageDataSourceId}
           onClose={() => setMetadataImportDrawerOpen(false)}
           onAdjustFields={(modelId) => {

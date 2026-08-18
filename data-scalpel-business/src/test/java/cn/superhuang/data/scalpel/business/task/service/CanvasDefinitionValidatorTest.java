@@ -39,39 +39,68 @@ class CanvasDefinitionValidatorTest {
     }
 
     @Test
-    void acceptsLegacyOneDotZeroAndNormalizesItToTheCurrentWriterVersion() {
-        CanvasDefinition legacy = new ObjectMapper().readValue(
-                "{\"schemaVersion\":1,\"nodes\":[],\"edges\":[]}",
+    void acceptsCurrentMajorWithMissingMinorAndNormalizesItToTheCurrentWriterVersion() {
+        CanvasDefinition source = new ObjectMapper().readValue(
+                "{\"schemaVersion\":2,\"nodes\":[],\"edges\":[]}",
                 CanvasDefinition.class
         );
 
-        assertDoesNotThrow(() -> validator.validate(legacy));
-        CanvasDefinition upgraded = upgrader.upgradeToCurrent(legacy);
+        assertDoesNotThrow(() -> validator.validate(source));
+        CanvasDefinition upgraded = upgrader.upgradeToCurrent(source);
 
-        assertEquals(0, legacy.effectiveSchemaMinorVersion());
-        assertEquals(1, upgraded.schemaVersion());
+        assertEquals(0, source.effectiveSchemaMinorVersion());
+        assertEquals(CanvasDefinition.CURRENT_SCHEMA_VERSION, upgraded.schemaVersion());
         assertEquals(CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION, upgraded.schemaMinorVersion());
     }
 
     @Test
-    void rejectsFutureVersionsAndModelNodesDeclaredAsOneDotZero() {
+    void acceptsCurrentTwoDotZeroAndRejectsOtherMajorsAndFutureMinors() {
         CanvasDefinition current = definition(
                 UUID.randomUUID().toString(), UUID.randomUUID().toString(), "", "");
-        CanvasDefinition legacyWithModels = new CanvasDefinition(1, 0, current.nodes(), current.edges());
+        CanvasDefinition previousMajor = new CanvasDefinition(1, 28, current.nodes(), current.edges());
         CanvasDefinition futureMinor = new CanvasDefinition(
-                1, CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION + 1, List.of(), List.of());
-        CanvasDefinition futureMajor = new CanvasDefinition(2, 0, List.of(), List.of());
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION + 1,
+                List.of(),
+                List.of());
+        CanvasDefinition futureMajor = new CanvasDefinition(3, 0, List.of(), List.of());
 
-        assertThrows(ResponseStatusException.class, () -> validator.validate(legacyWithModels));
+        assertDoesNotThrow(() -> validator.validate(current));
+        assertThrows(ResponseStatusException.class, () -> validator.validate(previousMajor));
         assertThrows(ResponseStatusException.class, () -> validator.validate(futureMinor));
         assertThrows(ResponseStatusException.class, () -> validator.validate(futureMajor));
     }
 
     @Test
-    void acceptsRenameInOneDotTwoAndRejectsItFromOlderCapabilitySets() {
+    void requiresTwoDotThreeForModelOutputUpsertBeforeNormalization() {
+        ModelOutputNodeDefinition output = new ModelOutputNodeDefinition(
+                UUID.randomUUID().toString(),
+                "模型 UPSERT",
+                layout(),
+                new ModelOutputConfiguration(
+                        "orders",
+                        UUID.randomUUID().toString(),
+                        JdbcWriteMode.UPSERT,
+                        List.of(new JdbcColumnMapping("id", "id"))
+                )
+        );
+        CanvasDefinition previous = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION, 2, List.of(output), List.of());
         CanvasDefinition current = new CanvasDefinition(
-                1,
-                2,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(output),
+                List.of());
+
+        assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(previous));
+        assertDoesNotThrow(() -> validator.validate(current));
+    }
+
+    @Test
+    void acceptsRenameInTwoDotZeroAndRejectsThePreviousMajor() {
+        CanvasDefinition current = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(new RenameNodeDefinition(
                         UUID.randomUUID().toString(),
                         "重命名",
@@ -84,17 +113,17 @@ class CanvasDefinitionValidatorTest {
                 )),
                 List.of()
         );
-        CanvasDefinition previous = new CanvasDefinition(1, 1, current.nodes(), current.edges());
+        CanvasDefinition previous = new CanvasDefinition(1, 28, current.nodes(), current.edges());
 
         assertDoesNotThrow(() -> validator.validate(current));
         assertThrows(ResponseStatusException.class, () -> validator.validate(previous));
     }
 
     @Test
-    void acceptsKafkaInlineSchemaInOneDotFiveWithoutPersistingAModelReference() {
+    void acceptsKafkaInlineSchemaInTwoDotZeroWithoutPersistingAModelReference() {
         CanvasDefinition current = new CanvasDefinition(
-                1,
-                5,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(new KafkaInputNodeDefinition(
                         UUID.randomUUID().toString(),
                         "事件输入",
@@ -123,7 +152,7 @@ class CanvasDefinitionValidatorTest {
         assertDoesNotThrow(() -> validator.validate(current));
         assertThrows(
                 ResponseStatusException.class,
-                () -> validator.validate(new CanvasDefinition(1, 4, current.nodes(), current.edges()))
+                () -> validator.validate(new CanvasDefinition(1, 28, current.nodes(), current.edges()))
         );
         String serialized = new ObjectMapper().writeValueAsString(current);
         assertFalse(serialized.contains("valueModelId"));
@@ -419,7 +448,7 @@ class CanvasDefinitionValidatorTest {
     }
 
     @Test
-    void acceptsShapefileOutputInOneDotTwentyFourAndRejectsOlderDefinitions() {
+    void acceptsShapefileOutputInTwoDotZeroAndRejectsThePreviousMajor() {
         FileOutputNodeDefinition shapefileOutput = new FileOutputNodeDefinition(
                 UUID.randomUUID().toString(),
                 "行政区 Shapefile 输出",
@@ -442,28 +471,57 @@ class CanvasDefinitionValidatorTest {
         );
 
         assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
-                1, 24, List.of(shapefileOutput), List.of())));
+                2, 0, List.of(shapefileOutput), List.of())));
         assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
-                1, 23, List.of(shapefileOutput), List.of())));
+                1, 24, List.of(shapefileOutput), List.of())));
     }
 
     @Test
-    void gatesGeoParquetAndGeoJsonOutputAtOneDotTwentyFive() {
+    void acceptsGeoParquetAndGeoJsonOutputInTwoDotZero() {
         FileOutputNodeDefinition geoParquet = fileOutput(new FileOutputFormatOptions.GeoParquet(
                 "geom", GeoParquetCompressionCodec.SNAPPY, GeoParquetCoveringMode.ROW_BBOX));
         FileOutputNodeDefinition geoJson = fileOutput(new FileOutputFormatOptions.GeoJson(
                 "districts", "geom", "district_id", false));
 
         assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
-                1, 25, List.of(geoParquet, geoJson), List.of())));
+                2, 0, List.of(geoParquet, geoJson), List.of())));
         assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
-                1, 24, List.of(geoParquet), List.of())));
+                1, 25, List.of(geoParquet), List.of())));
         assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
-                1, 24, List.of(geoJson), List.of())));
+                1, 25, List.of(geoJson), List.of())));
     }
 
     @Test
-    void gatesJdbcQueryInputAndJdbcOutputUpsertAtOneDotTwentyFour() {
+    void requiresCanvasTwoForSnapshotSyncOutputMappingProtocol() {
+        SnapshotDeletePolicy keep = new SnapshotDeletePolicy(
+                SnapshotTargetOnlyAction.KEEP, null, null);
+        JdbcSnapshotSyncOutputNodeDefinition jdbc = new JdbcSnapshotSyncOutputNodeDefinition(
+                UUID.randomUUID().toString(),
+                "JDBC 快照同步",
+                layout(),
+                new JdbcSnapshotSyncOutputConfiguration(
+                        "source", "", "target", List.of("id"),
+                        List.of(new JdbcColumnMapping("id", "id")), keep)
+        );
+        ModelSnapshotSyncOutputNodeDefinition model = new ModelSnapshotSyncOutputNodeDefinition(
+                UUID.randomUUID().toString(),
+                "模型快照同步",
+                layout(),
+                new ModelSnapshotSyncOutputConfiguration(
+                        "source", "", List.of("id"),
+                        List.of(new JdbcColumnMapping("id", "id")), keep)
+        );
+
+        assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
+                1, 27, List.of(jdbc), List.of())));
+        assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
+                1, 27, List.of(model), List.of())));
+        assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
+                2, 0, List.of(jdbc, model), List.of())));
+    }
+
+    @Test
+    void acceptsJdbcQueryInputAndExplicitOutputMappingInCanvasTwo() {
         CanvasColumnSchema orderId = new CanvasColumnSchema(
                 "order_id", PlatformDataType.LONG, null, null, null,
                 false, null, false, false, "订单 ID"
@@ -489,26 +547,27 @@ class CanvasDefinitionValidatorTest {
                         UUID.randomUUID().toString(),
                         "orders",
                         JdbcWriteMode.UPSERT,
-                        ColumnMappingMode.BY_NAME,
-                        List.of(),
+                        List.of(new JdbcColumnMapping("order_id", "order_id")),
                         List.of("order_id")
                 )
         );
 
         assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
-                1, 24, List.of(queryInput, upsertOutput), List.of())));
+                2, 0, List.of(queryInput), List.of())));
+        assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
+                2, 0, List.of(queryInput, upsertOutput), List.of())));
         assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
                 1, 23, List.of(queryInput), List.of())));
         assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
-                1, 23, List.of(upsertOutput), List.of())));
+                1, 27, List.of(upsertOutput), List.of())));
     }
 
     @Test
-    void normalizesMissingJdbcOutputUpsertKeysToAnEmptyList() {
+    void rejectsPreOneDotTwentyEightJdbcOutputDefinitions() {
         String json = """
                 {
                   "schemaVersion": 1,
-                  "schemaMinorVersion": 24,
+                  "schemaMinorVersion": 27,
                   "nodes": [{
                     "id": "11111111-1111-4111-8111-111111111111",
                     "type": "JDBC_OUTPUT",
@@ -519,8 +578,10 @@ class CanvasDefinitionValidatorTest {
                       "dataSourceId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
                       "targetTableName": "orders",
                       "writeMode": "APPEND",
-                      "columnMappingMode": "BY_NAME",
-                      "columnMappings": []
+                      "columnMappings": [{
+                        "sourceColumnName": "order_id",
+                        "targetColumnName": "order_id"
+                      }]
                     }
                   }],
                   "edges": []
@@ -531,7 +592,7 @@ class CanvasDefinitionValidatorTest {
         JdbcOutputNodeDefinition output = (JdbcOutputNodeDefinition) parsed.nodes().getFirst();
 
         assertEquals(List.of(), output.configuration().upsertKeyColumns());
-        assertDoesNotThrow(() -> validator.validate(parsed));
+        assertThrows(ResponseStatusException.class, () -> validator.validate(parsed));
     }
 
     private static FileOutputNodeDefinition fileOutput(FileOutputFormatOptions formatOptions) {
@@ -551,14 +612,14 @@ class CanvasDefinitionValidatorTest {
 
     private void assertIntroducedAt(CanvasNodeDefinition node, int schemaMinorVersion) {
         CanvasDefinition introduced = new CanvasDefinition(
-                1,
-                schemaMinorVersion,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(node),
                 List.of()
         );
         CanvasDefinition previous = new CanvasDefinition(
                 1,
-                schemaMinorVersion - 1,
+                schemaMinorVersion,
                 List.of(node),
                 List.of()
         );
@@ -594,7 +655,6 @@ class CanvasDefinitionValidatorTest {
                                 new ModelOutputConfiguration(
                                         "orders",
                                         outputModelId,
-                                        null,
                                         null,
                                         List.of()
                                 )

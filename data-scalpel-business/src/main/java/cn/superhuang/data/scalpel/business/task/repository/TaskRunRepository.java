@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.task.repository;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskType;
+import cn.superhuang.data.scalpel.business.task.domain.TaskRunJarCleanupStatus;
 import cn.superhuang.data.scalpel.search.SearchRepository;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
@@ -29,6 +30,20 @@ public interface TaskRunRepository extends SearchRepository<TaskRun, UUID> {
     List<TaskRun> findAllByStatusIn(Collection<TaskRunStatus> statuses);
 
     List<TaskRun> findAllByTaskTypeAndStatusIn(TaskType taskType, Collection<TaskRunStatus> statuses);
+
+    List<TaskRun> findAllByTaskTypeAndUserJarCleanupStatusAndStatusIn(
+            TaskType taskType, TaskRunJarCleanupStatus cleanupStatus, Collection<TaskRunStatus> statuses);
+
+    List<TaskRun> findAllByTaskTypeInAndUserJarCleanupStatusAndStatusIn(
+            Collection<TaskType> taskTypes, TaskRunJarCleanupStatus cleanupStatus,
+            Collection<TaskRunStatus> statuses);
+
+    Optional<TaskRun> findFirstByQualityTargetModelIdOrderByQueuedAtDesc(UUID modelId);
+
+    Optional<TaskRun> findFirstByQualityTargetModelIdAndStatusAndQualityConclusionIsNotNullAndQualityRuleSnapshotAtIsNotNullOrderByEndedAtDesc(
+            UUID modelId,
+            TaskRunStatus status
+    );
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select run from TaskRun run where run.id = :id")

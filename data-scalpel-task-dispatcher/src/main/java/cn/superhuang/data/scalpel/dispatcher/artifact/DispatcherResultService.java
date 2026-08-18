@@ -17,6 +17,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
+import cn.superhuang.data.scalpel.contract.quality.ModelQualityRuleType;
+import cn.superhuang.data.scalpel.contract.quality.ViolationMetric;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 
 @Service
 public class DispatcherResultService {
@@ -80,9 +85,12 @@ public class DispatcherResultService {
         return DispatcherResultResolution.APPLIED;
     }
 
-    private static void validate(DispatcherTaskExecution execution, DispatcherTaskResult result)
+    private void validate(DispatcherTaskExecution execution, DispatcherTaskResult result)
             throws BackendException {
-        if (result == null || result.schemaVersion() == null || result.schemaVersion() != 2
+        if (result == null || result.schemaVersion() == null
+                || result.schemaVersion() != 2 && result.schemaVersion() != 3
+                && result.schemaVersion() != 4 && result.schemaVersion() != 5
+                && result.schemaVersion() != 6
                 || !execution.getExecutionId().equals(result.executionId())
                 || !execution.getRunId().equals(result.runId())
                 || result.attempt() == null || execution.getAttempt() != result.attempt()
@@ -101,6 +109,38 @@ public class DispatcherResultService {
             throw new BackendException("INVALID_RUNNER_RESULT", "失败结果必须包含安全错误");
         }
         if (result.error() != null) validateError(result.error());
+
+        if (result.schemaVersion() >= 4 && result.taskType() == null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner v4 结果缺少任务类型");
+        }
+        if (result.schemaVersion() < 6 && result.userJobObservability() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner v2～v5 结果不能包含用户作业观测载荷");
+        }
+        ExecutionTaskType resultType = result.taskType() == null
+                ? ExecutionTaskType.SPARK_CANVAS : result.taskType();
+        if (resultType != execution.getTaskType()) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 结果任务类型与执行账本不一致");
+        }
+        if (resultType == ExecutionTaskType.SPARK_MODEL_QUALITY) {
+            if (result.userJobObservability() != null) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "模型质检结果不能包含用户作业观测载荷");
+            }
+            if (result.state() == DispatcherTaskResult.State.SUCCESS) {
+                validateQuality(execution, result);
+            } else {
+                validateQualityFailure(execution, result);
+            }
+            return;
+        }
+        if (result.qualityResult() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "非质检结果不能包含质量结果");
+        }
+        if (resultType == ExecutionTaskType.SPARK_JAR && !result.nodeResults().isEmpty()) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Spark JAR 结果不能包含 Canvas 节点结果");
+        }
+        if (result.userJobObservability() != null && resultType != ExecutionTaskType.SPARK_JAR) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "用户作业观测载荷只能属于 Spark JAR 批任务");
+        }
 
         Set<String> nodeIds = new HashSet<>();
         DispatcherTaskResult.NodeResult failedNode = null;
@@ -121,6 +161,7 @@ public class DispatcherResultService {
             if (node.state() == DispatcherTaskResult.NodeState.SUCCESS && node.error() != null) {
                 throw new BackendException("INVALID_RUNNER_RESULT", "成功节点不能包含错误");
             }
+            validateMetrics(result.schemaVersion(), node);
             if (node.state() == DispatcherTaskResult.NodeState.FAILED) {
                 if (node.error() == null || failedNode != null) {
                     throw new BackendException("INVALID_RUNNER_RESULT", "失败节点结果无效");
@@ -145,6 +186,275 @@ public class DispatcherResultService {
         }
         if (result.error() != null && result.error().nodeId() != null && failedNode == null) {
             throw new BackendException("INVALID_RUNNER_RESULT", "顶层节点错误缺少失败节点结果");
+        }
+    }
+
+    private void validateQuality(DispatcherTaskExecution execution, DispatcherTaskResult result) throws BackendException {
+        DispatcherTaskResult.QualityResult quality = result.qualityResult();
+        if (result.schemaVersion() != 4 && result.schemaVersion() != 5 && result.schemaVersion() != 6
+                || result.state() != DispatcherTaskResult.State.SUCCESS
+                || quality == null || !result.nodeResults().isEmpty() || result.affectedRows() != null
+                || quality.conclusion() == null || quality.technicalFailure() != null
+                || quality.totalRules() == null || quality.passedRules() == null
+                || quality.failedRules() == null || quality.skippedRules() == null
+                || quality.checkedRows() == null || quality.totalRules() < 1
+                || quality.passedRules() < 0 || quality.failedRules() < 0 || quality.skippedRules() < 0
+                || quality.checkedRows() < 0
+                || quality.totalRules() != quality.passedRules() + quality.failedRules() + quality.skippedRules()
+                || quality.ruleResults().size() != quality.passedRules() + quality.failedRules()
+                || quality.skippedRuleResults().size() != quality.skippedRules()
+                || quality.passedRules() + quality.failedRules() == 0
+                || quality.conclusion() == cn.superhuang.data.scalpel.contract.quality.QualityConclusion.PASSED
+                && quality.failedRules() != 0
+                || quality.conclusion() == cn.superhuang.data.scalpel.contract.quality.QualityConclusion.FAILED
+                && quality.failedRules() == 0) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量结果汇总无效");
+        }
+        Set<UUID> ruleIds = new HashSet<>();
+        long passedRules = 0;
+        long failedRules = 0;
+        long totalSampleBytes = 0;
+        for (DispatcherTaskResult.QualityRuleResult rule : quality.ruleResults()) {
+            if (rule == null || rule.ruleId() == null || !ruleIds.add(rule.ruleId())
+                    || blank(rule.ruleName()) || rule.ruleType() == null || rule.severity() == null
+                    || rule.ruleName().length() > 100 || rule.state() == null
+                    || rule.durationMs() < 0 || rule.metric() == null) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量规则结果字段无效");
+            }
+            validateQualityMetric(rule, quality.checkedRows());
+            totalSampleBytes += validateQualitySample(execution, result, rule);
+            if (rule.state() == DispatcherTaskResult.QualityRuleState.PASSED) passedRules++;
+            else failedRules++;
+        }
+        if (passedRules != quality.passedRules() || failedRules != quality.failedRules()) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量规则状态与汇总不一致");
+        }
+        if (totalSampleBytes > 100L * 1024 * 1024) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质检样本总大小超过安全上限");
+        }
+        for (cn.superhuang.data.scalpel.contract.quality.ModelQualityExecutionPayload.SkippedQualityRuleSnapshot skipped
+                : quality.skippedRuleResults()) {
+            if (skipped == null || skipped.id() == null || !ruleIds.add(skipped.id())
+                    || blank(skipped.name()) || skipped.name().length() > 100 || skipped.type() == null
+                    || blank(skipped.reasonCode()) || !skipped.reasonCode().matches("[A-Z][A-Z0-9_]{0,99}")
+                    || blank(skipped.reason()) || skipped.reason().length() > 1000) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量跳过规则字段无效");
+            }
+        }
+    }
+
+    private void validateQualityFailure(DispatcherTaskExecution execution, DispatcherTaskResult result)
+            throws BackendException {
+        DispatcherTaskResult.QualityResult quality = result.qualityResult();
+        if (result.schemaVersion() != 4 && result.schemaVersion() != 5 && result.schemaVersion() != 6
+                || quality == null || !result.nodeResults().isEmpty()
+                || result.affectedRows() != null || quality.conclusion() != null
+                || quality.totalRules() != null || quality.passedRules() != null
+                || quality.failedRules() != null || quality.skippedRules() != null
+                || quality.checkedRows() != null && quality.checkedRows() < 0) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质检技术失败结果无效");
+        }
+        Set<UUID> ruleIds = new HashSet<>();
+        long totalSampleBytes = 0;
+        for (DispatcherTaskResult.QualityRuleResult rule : quality.ruleResults()) {
+            if (rule == null || rule.ruleId() == null || !ruleIds.add(rule.ruleId())
+                    || blank(rule.ruleName()) || rule.ruleName().length() > 100 || rule.ruleType() == null
+                    || rule.severity() == null || rule.state() == null || rule.durationMs() < 0
+                    || rule.metric() == null || quality.checkedRows() == null) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 已完成质量规则结果无效");
+            }
+            validateQualityMetric(rule, quality.checkedRows());
+            if (result.schemaVersion() >= 5 && rule.sample() == null) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 已完成规则缺少样本状态");
+            }
+            totalSampleBytes += validateQualitySample(execution, result, rule);
+        }
+        for (cn.superhuang.data.scalpel.contract.quality.ModelQualityExecutionPayload.SkippedQualityRuleSnapshot skipped
+                : quality.skippedRuleResults()) {
+            if (skipped == null || skipped.id() == null || !ruleIds.add(skipped.id())
+                    || blank(skipped.name()) || skipped.name().length() > 100 || skipped.type() == null
+                    || blank(skipped.reasonCode()) || !skipped.reasonCode().matches("[A-Z][A-Z0-9_]{0,99}")
+                    || blank(skipped.reason()) || skipped.reason().length() > 1000) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量跳过规则字段无效");
+            }
+        }
+        DispatcherTaskResult.QualityRuleTechnicalFailure failure = quality.technicalFailure();
+        if (!quality.ruleResults().isEmpty() && failure == null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 已完成规则缺少质检失败规则上下文");
+        }
+        if (failure != null && (failure.ruleId() == null || !ruleIds.add(failure.ruleId())
+                || blank(failure.ruleName()) || failure.ruleName().length() > 100
+                || failure.ruleType() == null || failure.severity() == null || failure.durationMs() < 0
+                || failure.diagnosticId() == null || result.error() == null
+                || !failure.diagnosticId().equals(result.error().diagnosticId()))) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质检失败规则上下文无效");
+        }
+        if (totalSampleBytes > 100L * 1024 * 1024) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质检样本总大小超过安全上限");
+        }
+    }
+
+    private long validateQualitySample(
+            DispatcherTaskExecution execution,
+            DispatcherTaskResult result,
+            DispatcherTaskResult.QualityRuleResult rule
+    ) throws BackendException {
+        if (result.schemaVersion() == 4) {
+            if (rule.sample() != null) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner v4 质量规则不能包含样本结果");
+            }
+            return 0;
+        }
+        DispatcherTaskResult.QualitySample sample = rule.sample();
+        if (sample == null || sample.status() == null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner v5 质量规则缺少样本状态");
+        }
+        boolean rowLevel = rule.ruleType() != ModelQualityRuleType.ROW_COUNT
+                && rule.ruleType() != ModelQualityRuleType.FRESHNESS;
+        boolean requested = execution.getQualitySampleRuleIds().contains(rule.ruleId());
+        if (rowLevel && execution.getQualitySampleLimit() > 0 && !requested) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质检规则不在失败样本执行清单中");
+        }
+        if (rule.state() == DispatcherTaskResult.QualityRuleState.PASSED) {
+            requireEmptySample(sample, DispatcherTaskResult.QualitySampleStatus.NOT_FAILED);
+            return 0;
+        }
+        if (!rowLevel) {
+            requireEmptySample(sample, DispatcherTaskResult.QualitySampleStatus.NOT_APPLICABLE);
+            return 0;
+        }
+        if (!requested) {
+            requireEmptySample(sample, DispatcherTaskResult.QualitySampleStatus.DISABLED);
+            return 0;
+        }
+        if (sample.status() != DispatcherTaskResult.QualitySampleStatus.AVAILABLE
+                || sample.sampledRows() == null || sample.sampledRows() < 1
+                || sample.sampledRows() > execution.getQualitySampleLimit()
+                || sample.violationRows() == null || sample.violationRows() < sample.sampledRows()
+                || sample.sampledRows() != Math.min(sample.violationRows(), execution.getQualitySampleLimit())
+                || !(rule.metric() instanceof DispatcherTaskResult.ViolationMetricResult metric)
+                || metric.violationCount() != sample.violationRows()
+                || sample.truncated() == null || sample.truncated() != (sample.sampledRows() < sample.violationRows())
+                || sample.sizeBytes() == null || sample.sizeBytes() < 8
+                || sample.sizeBytes() > 20L * 1024 * 1024
+                || sample.sha256() == null || !sample.sha256().matches("[0-9a-f]{64}")
+                || sample.rowLocatable() == null || sample.columns().isEmpty()
+                || sample.columns().stream().anyMatch(column -> column == null || blank(column.code())
+                || column.code().length() > 200 || blank(column.name()) || column.name().length() > 200
+                || column.type() == null || column.diagnostic() != (column.fieldId() == null)
+                || column.diagnostic() && column.primaryKey())
+                || sample.columns().stream().map(DispatcherTaskResult.QualitySampleColumn::code).distinct().count()
+                != sample.columns().size()) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质检样本描述无效");
+        }
+        String objectKey = "task-runs/%s/attempts/%d/quality/samples/%s.parquet".formatted(
+                execution.getRunId(), execution.getAttempt(), rule.ruleId());
+        byte[] content = artifactService.readIfPresent(objectKey, 20 * 1024 * 1024)
+                .orElseThrow(() -> new BackendException("QUALITY_SAMPLE_MISSING", "质检样本制品不存在"));
+        if (content.length != sample.sizeBytes() || content.length < 8
+                || content[0] != 'P' || content[1] != 'A' || content[2] != 'R' || content[3] != '1'
+                || content[content.length - 4] != 'P' || content[content.length - 3] != 'A'
+                || content[content.length - 2] != 'R' || content[content.length - 1] != '1'
+                || !MessageDigest.isEqual(sha256(content).getBytes(StandardCharsets.US_ASCII),
+                sample.sha256().getBytes(StandardCharsets.US_ASCII))) {
+            throw new BackendException("QUALITY_SAMPLE_INVALID", "质检样本制品完整性校验失败");
+        }
+        return content.length;
+    }
+
+    private static void requireEmptySample(
+            DispatcherTaskResult.QualitySample sample,
+            DispatcherTaskResult.QualitySampleStatus expected
+    ) throws BackendException {
+        if (sample.status() != expected || sample.sampledRows() != null || sample.violationRows() != null
+                || sample.truncated() != null || sample.sizeBytes() != null || sample.sha256() != null
+                || sample.rowLocatable() != null || !sample.columns().isEmpty()) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质检样本状态与规则结果不一致");
+        }
+    }
+
+    private static void validateQualityMetric(
+            DispatcherTaskResult.QualityRuleResult rule,
+            long checkedRows
+    ) throws BackendException {
+        boolean passed;
+        if (rule.metric() instanceof DispatcherTaskResult.ViolationMetricResult metric) {
+            if (rule.ruleType() == ModelQualityRuleType.ROW_COUNT
+                    || rule.ruleType() == ModelQualityRuleType.FRESHNESS
+                    || metric.violationCount() < 0 || metric.violationCount() > checkedRows
+                    || metric.violationPercent() == null || metric.violationPercent().signum() < 0
+                    || metric.violationPercent().compareTo(BigDecimal.valueOf(100)) > 0
+                    || metric.toleranceMetric() == null || metric.toleranceValue() == null
+                    || metric.toleranceValue().signum() < 0
+                    || metric.toleranceMetric() == ViolationMetric.COUNT
+                    && metric.toleranceValue().stripTrailingZeros().scale() > 0
+                    || metric.toleranceMetric() == ViolationMetric.PERCENT
+                    && metric.toleranceValue().compareTo(BigDecimal.valueOf(100)) > 0) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量异常指标无效");
+            }
+            BigDecimal expectedPercent = checkedRows == 0 ? BigDecimal.ZERO
+                    : BigDecimal.valueOf(metric.violationCount()).multiply(BigDecimal.valueOf(100))
+                    .divide(BigDecimal.valueOf(checkedRows), 6, RoundingMode.HALF_UP).stripTrailingZeros();
+            if (metric.violationPercent().compareTo(expectedPercent) != 0) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量异常比例与行数不一致");
+            }
+            passed = metric.toleranceMetric() == ViolationMetric.COUNT
+                    ? BigDecimal.valueOf(metric.violationCount()).compareTo(metric.toleranceValue()) <= 0
+                    : BigDecimal.valueOf(metric.violationCount()).multiply(BigDecimal.valueOf(100))
+                    .compareTo(metric.toleranceValue().multiply(BigDecimal.valueOf(checkedRows))) <= 0;
+        } else if (rule.metric() instanceof DispatcherTaskResult.RowCountMetricResult metric) {
+            if (rule.ruleType() != ModelQualityRuleType.ROW_COUNT
+                    || metric.actualRows() != checkedRows || metric.minimumRows() < 1) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 行数质量指标无效");
+            }
+            passed = metric.actualRows() >= metric.minimumRows();
+        } else if (rule.metric() instanceof DispatcherTaskResult.FreshnessMetricResult metric) {
+            if (rule.ruleType() != ModelQualityRuleType.FRESHNESS || metric.maximumDelayMinutes() < 1
+                    || metric.actualDelayMinutes() != null && metric.actualDelayMinutes() < 0
+                    || (metric.maximumValue() == null) != (metric.actualDelayMinutes() == null)) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 新鲜度质量指标无效");
+            }
+            passed = metric.maximumValue() != null
+                    && metric.actualDelayMinutes() <= metric.maximumDelayMinutes();
+        } else {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量指标类型无效");
+        }
+        if (passed != (rule.state() == DispatcherTaskResult.QualityRuleState.PASSED)) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 质量规则状态与指标不一致");
+        }
+    }
+
+    private static void validateMetrics(
+            int schemaVersion,
+            DispatcherTaskResult.NodeResult node
+    ) throws BackendException {
+        boolean snapshotNode = "JDBC_SNAPSHOT_SYNC_OUTPUT".equals(node.nodeType())
+                || "MODEL_SNAPSHOT_SYNC_OUTPUT".equals(node.nodeType());
+        if (schemaVersion == 2 && node.metrics() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "result.json v2 不能包含节点指标");
+        }
+        if (node.state() == DispatcherTaskResult.NodeState.FAILED && node.metrics() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "失败节点不能包含成功指标");
+        }
+        if (schemaVersion >= 3 && node.state() == DispatcherTaskResult.NodeState.SUCCESS
+                && snapshotNode && node.metrics() == null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "快照同步成功节点必须包含指标");
+        }
+        if (!snapshotNode && node.metrics() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "非快照同步节点不能包含快照指标");
+        }
+        if (!(node.metrics() instanceof DispatcherTaskResult.SnapshotSyncMetrics metrics)) return;
+        if (metrics.sourceRows() < 0 || metrics.targetRows() < 0
+                || metrics.insertedRows() < 0 || metrics.updatedRows() < 0
+                || metrics.deletedRows() < 0 || metrics.unchangedRows() < 0
+                || metrics.retainedTargetOnlyRows() < 0
+                || metrics.sourceRows() != metrics.insertedRows()
+                + metrics.updatedRows() + metrics.unchangedRows()
+                || metrics.targetRows() != metrics.deletedRows()
+                + metrics.retainedTargetOnlyRows() + metrics.updatedRows() + metrics.unchangedRows()
+                || node.rowsWritten() == null
+                || node.rowsWritten().longValue() != metrics.rowsWritten()) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "快照同步节点指标不一致");
         }
     }
 

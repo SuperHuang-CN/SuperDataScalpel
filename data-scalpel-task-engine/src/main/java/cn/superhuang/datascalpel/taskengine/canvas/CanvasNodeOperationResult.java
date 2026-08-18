@@ -11,7 +11,9 @@ import java.util.Map;
 public record CanvasNodeOperationResult(
         Map<String, SparkCanvasTable> propagatedTables,
         List<CanvasTableSchema> displayedOutputTables,
+        CanvasLineageOutputCandidate lineageOutputCandidate,
         CanvasPreparedOutput preparedOutput,
+        CanvasPreparedSnapshotSyncOutput preparedSnapshotSyncOutput,
         CanvasPreparedKafkaOutput preparedKafkaOutput,
         CanvasPreparedFileOutput preparedFileOutput
 ) {
@@ -24,23 +26,61 @@ public record CanvasNodeOperationResult(
             Map<String, SparkCanvasTable> tables,
             List<CanvasTableSchema> displayedOutputTables
     ) {
-        return new CanvasNodeOperationResult(tables, displayedOutputTables, null, null, null);
+        return new CanvasNodeOperationResult(tables, displayedOutputTables, null, null, null, null, null);
     }
 
     public static CanvasNodeOperationResult invalid(List<CanvasTableSchema> displayedOutputTables) {
-        return new CanvasNodeOperationResult(Map.of(), displayedOutputTables, null, null, null);
+        return new CanvasNodeOperationResult(Map.of(), displayedOutputTables, null, null, null, null, null);
     }
 
     public static CanvasNodeOperationResult output(CanvasPreparedOutput preparedOutput) {
-        return new CanvasNodeOperationResult(Map.of(), List.of(), preparedOutput, null, null);
+        return new CanvasNodeOperationResult(Map.of(), List.of(), null, preparedOutput, null, null, null);
+    }
+
+    public static CanvasNodeOperationResult output(
+            CanvasPreparedOutput preparedOutput,
+            CanvasLineageOutputCandidate lineageOutputCandidate
+    ) {
+        return new CanvasNodeOperationResult(
+                Map.of(), List.of(), lineageOutputCandidate, preparedOutput, null, null, null);
+    }
+
+    public static CanvasNodeOperationResult snapshotSyncOutput(
+            CanvasPreparedSnapshotSyncOutput preparedOutput
+    ) {
+        return new CanvasNodeOperationResult(Map.of(), List.of(), null, null, preparedOutput, null, null);
+    }
+
+    public static CanvasNodeOperationResult snapshotSyncOutput(
+            CanvasPreparedSnapshotSyncOutput preparedOutput,
+            CanvasLineageOutputCandidate lineageOutputCandidate
+    ) {
+        return new CanvasNodeOperationResult(
+                Map.of(), List.of(), lineageOutputCandidate, null, preparedOutput, null, null);
     }
 
     public static CanvasNodeOperationResult kafkaOutput(CanvasPreparedKafkaOutput preparedOutput) {
-        return new CanvasNodeOperationResult(Map.of(), List.of(), null, preparedOutput, null);
+        return new CanvasNodeOperationResult(Map.of(), List.of(), null, null, null, preparedOutput, null);
+    }
+
+    public static CanvasNodeOperationResult kafkaOutput(
+            CanvasPreparedKafkaOutput preparedOutput,
+            CanvasLineageOutputCandidate lineageOutputCandidate
+    ) {
+        return new CanvasNodeOperationResult(
+                Map.of(), List.of(), lineageOutputCandidate, null, null, preparedOutput, null);
     }
 
     public static CanvasNodeOperationResult fileOutput(CanvasPreparedFileOutput preparedOutput) {
-        return new CanvasNodeOperationResult(Map.of(), List.of(), null, null, preparedOutput);
+        return new CanvasNodeOperationResult(Map.of(), List.of(), null, null, null, null, preparedOutput);
+    }
+
+    public static CanvasNodeOperationResult fileOutput(
+            CanvasPreparedFileOutput preparedOutput,
+            CanvasLineageOutputCandidate lineageOutputCandidate
+    ) {
+        return new CanvasNodeOperationResult(
+                Map.of(), List.of(), lineageOutputCandidate, null, null, null, preparedOutput);
     }
 
     public static CanvasNodeOperationResult outputOnly() {

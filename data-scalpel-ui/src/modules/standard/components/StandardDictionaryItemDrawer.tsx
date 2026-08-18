@@ -102,6 +102,7 @@ export const StandardDictionaryItemDrawer = ({
     <>
       {contextHolder}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={item ? '修改码表节点' : parent ? `新增“${parent.name}”的子节点` : '新增根节点'}
         open={open}
         width={520}

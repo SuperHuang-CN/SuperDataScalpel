@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeStreamJoin } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { streamJoinCanvasView } from './canvasView';
 
 export const streamJoinSpec = createCanvasNodeSpec({
   type: CanvasNodeType.StreamJoin,
@@ -15,9 +16,9 @@ export const streamJoinSpec = createCanvasNodeSpec({
   searchKeywords: ['stream', 'join', '流', '维表', '关联'],
   iconKey: CanvasNodeIconKey.StreamJoin,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: streamJoinCanvasView,
   supportedModes: ['STREAMING'],
-  introducedInMinor: 3,
+  introducedInMinor: 0,
   graph: { minInputs: 2, maxInputs: 2, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createStreamJoinConfiguration,
   summarize: summarizeStreamJoin,

@@ -1,0 +1,158 @@
+.asset-domain-management-page {
+  width: 100%;
+}
+
+.asset-domain-detail-surface {
+  flex: 1;
+  min-width: 0;
+}
+
+.asset-domain-detail-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  padding: 16px;
+  overflow: auto;
+}
+
+.asset-domain-detail-body > .ant-empty,
+.asset-domain-detail-body > .ant-alert {
+  align-self: center;
+  width: min(520px, 100%);
+  margin: auto;
+}
+
+.asset-domain-detail-content {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+}
+
+.asset-domain-detail-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 4px 2px;
+}
+
+.asset-domain-detail-icon {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  justify-content: center;
+  width: 42px;
+  height: 42px;
+  color: #5268ca;
+  font-size: 19px;
+  background: linear-gradient(135deg, rgb(78 117 224 / 14%), rgb(123 82 220 / 12%));
+  border: 1px solid rgb(82 104 202 / 12%);
+  border-radius: 10px;
+}
+
+.asset-domain-detail-identity > div {
+  min-width: 0;
+}
+
+.asset-domain-detail-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.asset-domain-detail-title-row .ant-typography {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-domain-detail-title-row .ant-tag {
+  flex: none;
+  margin-inline-end: 0;
+}
+
+.asset-domain-descriptions .ant-descriptions-item-label {
+  width: 120px;
+  color: #59647a;
+  background: rgb(240 243 255 / 72%);
+}
+
+.asset-domain-children-section {
+  min-height: 180px;
+  padding: 14px;
+  background: rgb(248 250 255 / 68%);
+  border: 1px solid rgb(77 96 166 / 12%);
+  border-radius: 12px;
+}
+
+.asset-domain-section-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.asset-domain-section-heading > span:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  color: #293653;
+  font-weight: 600;
+}
+
+.asset-domain-section-heading .anticon {
+  color: #5268ca;
+}
+
+.asset-domain-child-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+}
+
+.asset-domain-child-list .ant-btn {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 8px;
+  height: 42px;
+  padding: 0 10px;
+  text-align: left;
+  background: rgb(255 255 255 / 84%);
+  border: 1px solid rgb(77 96 166 / 10%);
+  border-radius: 9px;
+}
+
+.asset-domain-child-list .ant-btn:hover {
+  background: #fff;
+  border-color: rgb(82 104 202 / 28%);
+}
+
+.asset-domain-child-list .ant-btn > span:first-child {
+  color: #6479c8;
+}
+
+.asset-domain-child-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: #26324b;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.asset-domain-child-list .ant-typography {
+  flex: none;
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .asset-domain-descriptions .ant-descriptions-item-label {
+    width: auto;
+  }
+}

@@ -15,6 +15,7 @@ import { FileDatasetDrawer } from '../components/FileDatasetDrawer';
 import { FileDatasetFilesPanel } from '../components/FileDatasetFilesPanel';
 import { FileDatasetOverviewPanel } from '../components/FileDatasetOverviewPanel';
 import { FileDatasetTablesPanel } from '../components/FileDatasetTablesPanel';
+import { FileDatasetTypeIcon } from '../components/FileDatasetTypeIcon';
 import { useDeleteFileDataset, useFileDataset, useFileDatasetTables } from '../hooks/useFileDatasets';
 import {
   fileDatasetTypeLabels,
@@ -30,6 +31,13 @@ import {
 interface FileDatasetDetailLocationState {
   fromFileDatasetList?: boolean;
 }
+
+const FileDatasetDetailTabLabel = ({ label, count }: { label: string; count: number }) => (
+  <span className="file-dataset-detail-tab-label" aria-label={`${label} ${count}`}>
+    <span>{label}</span>{' '}
+    <span className="file-dataset-detail-tab-count" aria-hidden="true">{count}</span>
+  </span>
+);
 
 export const FileDatasetDetailPage = () => {
   const { id } = useParams<{ id: string }>();
@@ -107,6 +115,7 @@ export const FileDatasetDetailPage = () => {
   };
 
   const remove = (target: FileDataset) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除文件数据集',
     content: `确认删除“${target.name}”及其 ${target.fileCount} 个文件、${target.tableCount} 张表吗？`,
     okText: '删除',
@@ -167,7 +176,7 @@ export const FileDatasetDetailPage = () => {
     },
     {
       key: 'files',
-      label: `文件 ${dataset.fileCount}`,
+      label: <FileDatasetDetailTabLabel label="文件" count={dataset.fileCount} />,
       children: (
         <FileDatasetFilesPanel
           dataset={dataset}
@@ -178,7 +187,7 @@ export const FileDatasetDetailPage = () => {
     },
     {
       key: 'tables',
-      label: `数据表 ${dataset.tableCount}`,
+      label: <FileDatasetDetailTabLabel label="数据表" count={dataset.tableCount} />,
       children: (
         <FileDatasetTablesPanel
           dataset={dataset}
@@ -195,13 +204,16 @@ export const FileDatasetDetailPage = () => {
   ];
 
   return (
-    <div className="file-dataset-detail-page">
+    <div className="file-dataset-detail-page business-detail-page">
       {messageContext}
       {modalContext}
-      <div className="file-dataset-detail-header">
+      <div className="file-dataset-detail-header business-detail-header">
         <div className="file-dataset-detail-identity">
           <div className="file-dataset-detail-title-row">
             <Button type="text" icon={<ArrowLeftOutlined />} onClick={backToList}>返回列表</Button>
+            <span className="business-detail-resource-icon business-detail-resource-icon-cyan">
+              <FileDatasetTypeIcon type={dataset.type} />
+            </span>
             <span className="file-dataset-detail-title">{dataset.name}</span>
             <Tag>{fileDatasetTypeLabels[dataset.type]}</Tag>
             <Tag color={readyTagColor}>{dataset.readyTableCount} / {dataset.tableCount} 表已就绪</Tag>
@@ -239,7 +251,7 @@ export const FileDatasetDetailPage = () => {
       </div>
       <Tabs
         activeKey={activeTab}
-        className="file-dataset-detail-tabs"
+        className="file-dataset-detail-tabs business-detail-tabs"
         destroyOnHidden
         items={tabItems}
         onChange={(key) => selectTab(key as FileDatasetDetailTabKey)}

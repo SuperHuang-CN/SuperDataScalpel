@@ -8,6 +8,7 @@ export const DataServicePage = () => {
   return (
     <DataServiceListPanel
       canCreate={permissions.has('service.create')}
+      canUpdate={permissions.has('service.update')}
       canDelete={permissions.has('service.delete')}
       canPublish={permissions.has('service.publish')}
       canViewDirectories={permissions.has('directory.view')}

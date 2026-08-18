@@ -190,7 +190,7 @@ YARN Driver和 Executor至少需要访问：
 
 - manifest/result所用 MinIO Runner Endpoint。
 - Kafka Broker地址。
-- Input/Output PostgreSQL/MySQL。
+- 任务实际引用的 JDBC 数据库；普通标量读取和 APPEND 的支持范围以 Canvas JDBC 能力矩阵为准。
 
 不要求访问 Admin或 Dispatcher HTTP。
 

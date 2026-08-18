@@ -135,6 +135,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={editing ? '修改 Service Engine' : '新建 Service Engine'}
         open={open}
         size={640}

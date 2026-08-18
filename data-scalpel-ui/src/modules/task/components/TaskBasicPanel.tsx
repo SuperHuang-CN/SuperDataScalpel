@@ -60,7 +60,9 @@ export const TaskBasicPanel = ({ task, directoryName }: TaskBasicPanelProps) => 
         ) : (
           <>
             <Descriptions.Item label="执行方式">
-              {task.type === 'SPARK_STREAMING_CANVAS' ? 'Spark Structured Streaming' : 'Spark 批处理'}
+              {task.type === 'SPARK_STREAMING_CANVAS' || task.type === 'SPARK_STREAMING_JAR'
+                ? 'Spark Structured Streaming'
+                : 'Spark 批处理'}
             </Descriptions.Item>
             <Descriptions.Item label="计算引擎" span={2}>
               {task.computeEngineName ?? (task.computeEngineId ? '已删除计算引擎' : '未选择')}

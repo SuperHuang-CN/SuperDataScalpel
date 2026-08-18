@@ -24,6 +24,12 @@ import {
   deleteSpatialFeatureResource,
   fetchSpatialCatalog,
   fetchSpatialFeatureResources,
+  fetchDataSourceRelatedModels,
+  fetchDataSourceRelatedTasks,
+  fetchDataSourceRelatedServices,
+  fetchKafkaTopics,
+  fetchTdEngineTmqTopic,
+  fetchTdEngineTmqTopics,
   previewSpatialFeatureResource,
   refreshSpatialFeatureResourceSchema,
   updateSpatialFeatureResource,
@@ -38,6 +44,8 @@ import type {
   UpdateDataSourceRequest,
   CreateSpatialFeatureResourceRequest,
   UpdateSpatialFeatureResourceRequest,
+  DataSourceRelationKind,
+  DataSourceTaskRelationRole,
 } from '../model/dataSource';
 
 const dataSourcesQueryKey = 'data-sources';
@@ -67,6 +75,70 @@ export const useDataSource = (id: string | undefined, enabled = true) => useQuer
   queryKey: [dataSourcesQueryKey, id],
   queryFn: () => fetchDataSource(id as string),
   enabled: enabled && Boolean(id),
+});
+
+export const useDataSourceRelatedModels = (
+  id: string | undefined,
+  request: SearchRequest,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataSourcesQueryKey, id, 'related-models', request],
+  queryFn: () => fetchDataSourceRelatedModels(id as string, request),
+  enabled: enabled && Boolean(id),
+});
+
+export const useDataSourceRelatedTasks = (
+  id: string | undefined,
+  role: DataSourceTaskRelationRole | undefined,
+  relationKind: DataSourceRelationKind | undefined,
+  request: SearchRequest,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataSourcesQueryKey, id, 'related-tasks', role, relationKind, request],
+  queryFn: () => fetchDataSourceRelatedTasks(id as string, role, relationKind, request),
+  enabled: enabled && Boolean(id),
+});
+
+export const useDataSourceRelatedServices = (
+  id: string | undefined,
+  relationKind: DataSourceRelationKind | undefined,
+  request: SearchRequest,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataSourcesQueryKey, id, 'related-services', relationKind, request],
+  queryFn: () => fetchDataSourceRelatedServices(id as string, relationKind, request),
+  enabled: enabled && Boolean(id),
+});
+
+export const useKafkaTopics = (
+  id: string | undefined,
+  keyword: string | undefined,
+  includeInternal = false,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataSourcesQueryKey, id, 'kafka-topics', keyword, includeInternal],
+  queryFn: () => fetchKafkaTopics(id as string, keyword, includeInternal),
+  enabled: enabled && Boolean(id),
+});
+
+export const useTdEngineTmqTopics = (
+  id: string | undefined,
+  keyword: string | undefined,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataSourcesQueryKey, id, 'tdengine-tmq-topics', keyword],
+  queryFn: () => fetchTdEngineTmqTopics(id as string, keyword),
+  enabled: enabled && Boolean(id),
+});
+
+export const useTdEngineTmqTopic = (
+  id: string | undefined,
+  topic: string | undefined,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataSourcesQueryKey, id, 'tdengine-tmq-topic', topic],
+  queryFn: () => fetchTdEngineTmqTopic(id as string, topic as string),
+  enabled: enabled && Boolean(id) && Boolean(topic),
 });
 
 export const useCreateDataSource = () => {

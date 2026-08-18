@@ -15,6 +15,8 @@ public record DataServiceSummaryResponse(
         String name,
         UUID directoryId,
         DataServiceType type,
+        boolean definitionConfigured,
+        Integer definitionVersion,
         UUID sourceId,
         String sourceName,
         UUID engineId,

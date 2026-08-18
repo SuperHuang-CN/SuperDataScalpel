@@ -6,13 +6,17 @@ interface ManagementListCellProps {
   secondary?: ReactNode;
   className?: string;
   icon?: ReactNode;
+  iconLabel?: string;
   iconTone?: 'blue' | 'violet' | 'cyan' | 'green' | 'orange' | 'rose' | 'slate';
 }
 
-export const ManagementListCell = ({ primary, secondary, className, icon, iconTone = 'blue' }: ManagementListCellProps) => (
+export const ManagementListCell = ({ primary, secondary, className, icon, iconLabel, iconTone = 'blue' }: ManagementListCellProps) => (
   <div className={['management-list-cell', icon ? 'management-list-cell-has-icon' : null, className].filter(Boolean).join(' ')}>
     {icon && (
-      <span className={`management-list-cell-icon management-list-cell-icon-${iconTone}`} aria-hidden>
+      <span
+        className={`management-list-cell-icon management-list-cell-icon-${iconTone}`}
+        {...(iconLabel ? { role: 'img', 'aria-label': iconLabel } : { 'aria-hidden': true })}
+      >
         {icon}
       </span>
     )}

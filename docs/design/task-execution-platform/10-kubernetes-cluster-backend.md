@@ -29,7 +29,7 @@ registry.internal/datascalpel/spark-runner:4.1.1-0.1.0
 - Scala 2.13。
 - Java 21。
 - Task Runner cluster JAR。
-- PostgreSQL/MySQL JDBC Driver。
+- PostgreSQL、MySQL、openGauss、Kingbase、Oracle、SQL Server、ClickHouse、达梦和 TDengine JDBC Driver。
 - Kafka Client及必要依赖。
 - 非 root运行用户。
 

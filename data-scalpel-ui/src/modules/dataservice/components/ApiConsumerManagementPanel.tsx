@@ -156,6 +156,7 @@ export const ApiConsumerManagementPanel = ({
 
   const confirmRemove = (consumer: ApiConsumer) => {
     modal.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '删除 API 消费者',
       content: `确认从网关和 DataScalpel 删除“${consumer.name}”吗？`,
       okText: '删除',

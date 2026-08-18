@@ -4,7 +4,7 @@
 
 - 状态：已实施。
 - 适用范围：Canvas 设计器、Canvas 稳定定义、Business 保存与发布准备、Task Engine 编译与运行。
-- 当前协议：`schemaVersion: 1`、`schemaMinorVersion: 13`。
+- 当前协议：`schemaVersion: 2`、`schemaMinorVersion: 3`。
 - 实施门禁：本文档已完成评审确认，生产代码按本文约束迁移。
 
 本文定义 DataScalpel 内置 Canvas 节点的扩展架构。目标不是提供运行时第三方插件，而是让新增内置 `INPUT`、`PROCESSOR`、`OUTPUT` 时，展示、配置、导入、图规则、元数据依赖和执行能力通过明确的编译期注册机制接入。
@@ -88,7 +88,7 @@ flowchart LR
 
 ### 5.1 核心类型
 
-`CanvasNodeSpec` 位于纯 TypeScript 模块中，不直接导入 React 组件或 Ant Design 图标：
+`CanvasNodeSpec` 位于强类型 TypeScript 模块中。它可以通过 `ComponentType` 类型引用声明节点的 Canvas Body，但 Spec 模块本身不得渲染 UI、加载 Ant Design 组件或执行浏览器副作用：
 
 ```ts
 type CanvasNodeByType<T extends CanvasNodeType> =
@@ -107,6 +107,15 @@ interface CanvasNodeGraphCapability {
   maxOutputs: number | null;
 }
 
+interface CanvasNodeCanvasView<T extends CanvasNodeType> {
+  resolveSize(
+    configuration: CanvasNodeConfigurationByType<T>,
+  ): Readonly<{ width: number; height: number }>;
+  Body: ComponentType<{
+    data: CanvasNodeRuntimeDataByType<T>;
+  }>;
+}
+
 interface CanvasNodeSpec<T extends CanvasNodeType> {
   type: T;
   category: CanvasNodeCategory;
@@ -116,7 +125,7 @@ interface CanvasNodeSpec<T extends CanvasNodeType> {
   searchKeywords: readonly string[];
   iconKey: CanvasNodeIconKey;
   order: number;
-  defaultSize: Readonly<{ width: number; height: number }>;
+  canvasView: CanvasNodeCanvasView<T>;
   supportedModes: readonly CanvasExecutionMode[];
   introducedInMinor: number;
   graph: CanvasNodeGraphCapability;
@@ -140,6 +149,8 @@ interface CanvasNodeSpec<T extends CanvasNodeType> {
 
 - `loadInspector` 必须使用动态 `import()`；Spec 模块加载时不能执行 Inspector 模块。
 - `iconKey` 是稳定的前端内部枚举，由 UI 层映射为 Ant Design Icon。
+- `canvasView.Body` 是只读语义展示，节点目录必须自行声明；公共 Shape 不得增加节点类型 `switch`。
+- `canvasView.resolveSize` 只依赖稳定配置并返回基础尺寸；校验摘要条和运行时元数据不得影响该结果。
 - `introducedInMinor` 只表示该节点类型可出现的最小协议小版本。
 - `graph` 表示节点度数和可视端口约束，不表达 Schema 或 Spark 执行语义。
 - `parseConfiguration` 只负责安全加载稳定 JSON 结构，不进行上游表、字段或元数据业务校验。
@@ -183,6 +194,10 @@ interface CanvasNodeRegistry {
     category: CanvasNodeCategory,
     mode: CanvasExecutionMode,
   ): readonly CanvasNodeSpec<CanvasNodeType>[];
+  resolveSize(data: CanvasNodeRuntimeData): CanvasNodeSize;
+  canvasBody(type: CanvasNodeType): ComponentType<{
+    data: CanvasNodeRuntimeData;
+  }>;
 }
 ```
 
@@ -194,7 +209,7 @@ interface CanvasNodeRegistry {
 - `introducedInMinor` 位于 `0..CANVAS_SCHEMA_MINOR_VERSION`。
 - `group` 的大类与 `category` 一致。
 - `order` 是非负有限整数。
-- 默认尺寸符合现有 Canvas 布局范围。
+- 默认配置经 `canvasView.resolveSize` 派生的尺寸符合 Canvas 布局范围。
 - 输入和输出度数满足 `0 <= min <= max`；`max=null` 表示不设上限。
 
 Registry 错误属于开发错误，模块初始化时直接抛出，不转换为用户业务提示。
@@ -217,9 +232,11 @@ src/modules/task/canvas/
 │   │   └── CanvasNodeValidationIssues.tsx
 │   ├── jdbc-input/
 │   │   ├── spec.ts
+│   │   ├── canvasView.tsx
 │   │   └── JdbcInputInspector.tsx
 │   ├── filter/
 │   │   ├── spec.ts
+│   │   ├── canvasView.tsx
 │   │   ├── FilterInspector.tsx
 │   │   └── filterConditionDraft.ts
 │   └── ...
@@ -233,7 +250,7 @@ src/modules/task/canvas/
     └── CanvasNodePalette.tsx
 ```
 
-每种节点必须拥有独立目录。节点私有的编辑器、选项、校验草稿函数和测试放在本节点目录。真正跨节点复用的组件进入 `nodes/common`。
+每种节点必须拥有独立目录。节点私有的语义 Body、尺寸解析器、编辑器、选项、校验草稿函数和测试放在本节点目录。真正被多个现有节点复用的只读视觉原语保持窄职责，不得演变为配置驱动的万能卡片。
 
 ### 5.4 JSON 导入与默认配置
 
@@ -343,7 +360,7 @@ Inspector 加载失败不修改节点配置；面板显示持续错误和重试�
 | `JDBC_OUTPUT` | OUTPUT | `output.database` | BATCH, STREAMING | 0 | 1 | 0 |
 | `FILE_OUTPUT` | OUTPUT | `output.file` | BATCH | 6 | 1 | 0 |
 | `KAFKA_OUTPUT` | OUTPUT | `output.stream` | STREAMING | 5 | 1 | 0 |
-| `MODEL_OUTPUT` | OUTPUT | `output.model` | BATCH | 1 | 1 | 0 |
+| `MODEL_OUTPUT` | OUTPUT | `output.model` | BATCH, STREAMING | 0 | 1 | 0 |
 
 说明：
 
@@ -392,8 +409,8 @@ Inspector 加载失败不修改节点配置；面板显示持续错误和重试�
 ### 7.4 `CanvasColumnMappingEditor`
 
 - 服务 JDBC、Model、Kafka Output。
-- 支持 `BY_NAME/EXPLICIT` 外层模式，但不自行推导兼容性。
-- 显式映射保留失效源字段和目标字段。
+- 固定按目标字段展示显式映射，并保留失效源字段和目标字段。
+- 自动匹配只在设计时填充空白映射，运行时不推导字段名称。
 
 ### 7.5 `CanvasSortFieldEditor`
 
@@ -508,13 +525,12 @@ Provider 不调用 React Hook。统一 Hook 收集并去重 Reference 后，通�
   - `TABLE_METADATA_READ_FAILED`
   - `API_RESOURCE_READ_FAILED`
   - `FILE_DATASET_METADATA_READ_FAILED`
-  - 现有模型物理检查问题码
 - Provider 不制造部分表 Schema；任何必需元数据缺失都形成持续问题。
 
 ### 8.4 现有 API 边界
 
 - JDBC Provider 复用数据源详情和表元数据 API。
-- Model Provider 复用模型详情、物理检查和物理表元数据 API。
+- Model Provider 复用模型详情和已保存模型字段，不执行物理表结构相等检查。
 - File Dataset Provider 复用 Canvas 文件表元数据 API。
 - HTTP API Provider 复用数据源与 API Resource 详情。
 - Kafka Provider 使用数据源/Topic 元数据和节点内联 Value Schema。
@@ -606,7 +622,7 @@ Task Engine 继续显式注册内置 Operator。每个 `CanvasNodeType`：
 ### 10.1 兼容
 
 - Canvas JSON 字段、节点类型和配置语义不变。
-- `schemaMinorVersion` 保持 13。
+- Registry 架构重构本身不单独占用协议版本；当前写出版本统一为 Canvas `2.3`。
 - HTTP API 路径、请求和响应 JSON 不变。
 - 数据库表和已保存 JSON 不迁移。
 - X6 Shape 变化属于内存实现，不影响持久化。

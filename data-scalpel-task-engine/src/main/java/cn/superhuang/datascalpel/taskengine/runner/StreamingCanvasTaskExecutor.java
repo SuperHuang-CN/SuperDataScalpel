@@ -9,6 +9,7 @@ import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingStartedEvent
 import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingStoppedEvent;
 import cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.StreamingQueryProgress;
+import cn.superhuang.data.scalpel.contract.execution.StreamingSourceProgress;
 import cn.superhuang.data.scalpel.contract.execution.TaskExecutionLaunchDescriptor;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationContext;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationResult;
@@ -28,8 +29,10 @@ import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeKafkaConnection;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
+import cn.superhuang.datascalpel.taskengine.jdbc.incremental.JdbcIncrementalOffset;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -88,12 +91,26 @@ final class StreamingCanvasTaskExecutor {
                 .config("spark.sql.session.timeZone", "UTC")
                 .config("spark.speculation", "false")
                 .config("spark.sql.streaming.stopTimeout", "60000");
+        builder.config(
+                        "spark.redaction.regex",
+                        "(?i)secret|password|passwd|token|credential|api[-_.]?key|access[-_.]?key|tdengine.*pass")
+                .config(
+                        "spark.sql.redaction.options.regex",
+                        "(?i)secret|password|passwd|token|credential|api[-_.]?key|access[-_.]?key|tdengine.*pass");
         if (sparkMode == RunnerSparkMode.LOCAL) builder.master("local[*]");
         SparkSession spark = SedonaSparkSupport.initialize(builder.getOrCreate());
         List<Dataset<Row>> cachedDimensions = new ArrayList<>();
         List<QueryBinding> queries = new ArrayList<>();
         try (RuntimeCanvasNodeDataAccess dataAccess = new RuntimeCanvasNodeDataAccess(
-                spark, CanvasTaskExecutor.runtimeSources(manifest.runtimeDataSources()));
+                spark,
+                CanvasTaskExecutor.runtimeSources(manifest.runtimeDataSources()),
+                null,
+                List.of(),
+                manifest.execution().executionId().toString(),
+                manifest.execution().attempt(),
+                manifest.streaming().sourceNodeId(),
+                manifest.streaming().sourceSignature(),
+                manifest.streaming().initialSourceOffset());
              StreamingStopController stopController = new StreamingStopController(
                      launch.runnerControl(), objectMapper,
                      launch.engineId(), launch.executionId(), launch.runId(),
@@ -173,10 +190,10 @@ final class StreamingCanvasTaskExecutor {
                     cachedDimensions.add(dimension);
                 });
             }
-            if (node instanceof JdbcOutputNodeDefinition) {
+            if (node instanceof JdbcOutputNodeDefinition || node instanceof ModelOutputNodeDefinition) {
                 if (operation.preparedOutput() == null) {
                     throw new RunnerExecutionException(
-                            "OUTPUT_NOT_PREPARED", "JDBC 输出节点未生成流式写入计划", node.id());
+                            "OUTPUT_NOT_PREPARED", "JDBC 或模型输出节点未生成流式写入计划", node.id());
                 }
                 StreamingQuery query = startJdbcQuery(
                         manifest, operation.preparedOutput(), checkpoint(checkpointUriPrefix, node.id()));
@@ -342,10 +359,10 @@ final class StreamingCanvasTaskExecutor {
                     );
                 }
             }
-            List<StreamingQueryProgress> progress = latestProgress(queries);
-            long signature = progress.stream()
+            ProgressSnapshot progress = latestProgress(manifest, queries);
+            long signature = progress.queries().stream()
                     .mapToLong(value -> 31L * value.outputNodeId().hashCode() + value.batchId())
-                    .sum();
+                    .sum() + (progress.source() == null ? 0 : progress.source().committedOffset().hashCode());
             Instant now = Instant.now();
             boolean changed = signature != lastProgressSignature;
             if ((changed && !lastPublished.plus(PROGRESS_INTERVAL).isAfter(now))
@@ -360,7 +377,8 @@ final class StreamingCanvasTaskExecutor {
                         manifest.execution().runId(),
                         manifest.execution().attempt(),
                         manifest.execution().deploymentId(),
-                        progress
+                        progress.queries(),
+                        progress.source()
                 ));
                 lastPublished = now;
                 lastProgressSignature = signature;
@@ -368,8 +386,12 @@ final class StreamingCanvasTaskExecutor {
         }
     }
 
-    private static List<StreamingQueryProgress> latestProgress(List<QueryBinding> queries) {
+    private static ProgressSnapshot latestProgress(
+            TaskExecutionManifest manifest,
+            List<QueryBinding> queries
+    ) {
         List<StreamingQueryProgress> result = new ArrayList<>();
+        StreamingSourceProgress sourceProgress = null;
         for (QueryBinding binding : queries) {
             org.apache.spark.sql.streaming.StreamingQueryProgress progress = binding.query().lastProgress();
             if (progress == null) {
@@ -386,8 +408,47 @@ final class StreamingCanvasTaskExecutor {
                     Math.max(0L, progress.batchDuration()),
                     parseTimestamp(progress.timestamp())
             ));
+            if (sourceProgress == null) {
+                sourceProgress = jdbcIncrementalSourceProgress(manifest, progress);
+            }
         }
-        return List.copyOf(result);
+        return new ProgressSnapshot(List.copyOf(result), sourceProgress);
+    }
+
+    private static StreamingSourceProgress jdbcIncrementalSourceProgress(
+            TaskExecutionManifest manifest,
+            org.apache.spark.sql.streaming.StreamingQueryProgress progress
+    ) {
+        if (manifest.streaming().sourceNodeId() == null
+                || manifest.streaming().sourceSignature() == null) return null;
+        Instant pollTime = parseTimestamp(progress.timestamp());
+        for (org.apache.spark.sql.streaming.SourceProgress source : progress.sources()) {
+            if (source.endOffset() == null || source.endOffset().isBlank()) continue;
+            try {
+                JdbcIncrementalOffset end = JdbcIncrementalOffset.parse(source.endOffset());
+                if (!manifest.streaming().sourceSignature().equals(end.sourceSignature())
+                        || end.lowerUnbounded() || end.endTime() == null) continue;
+                Instant windowStart = null;
+                if (source.startOffset() != null && !source.startOffset().isBlank()) {
+                    JdbcIncrementalOffset start = JdbcIncrementalOffset.parse(source.startOffset());
+                    if (!start.lowerUnbounded()) windowStart = start.endTime();
+                }
+                return new StreamingSourceProgress(
+                        manifest.streaming().sourceNodeId(),
+                        end.sourceSignature(),
+                        end.json(),
+                        windowStart,
+                        end.endTime(),
+                        source.numInputRows(),
+                        Math.max(0L, progress.batchDuration()),
+                        pollTime,
+                        Math.max(0L, Duration.between(end.endTime(), pollTime).toMillis())
+                );
+            } catch (RuntimeException ignored) {
+                // Only the sanitized, versioned JDBC incremental offset is allowed to cross this boundary.
+            }
+        }
+        return null;
     }
 
     private static Instant parseTimestamp(String timestamp) {
@@ -446,6 +507,8 @@ final class StreamingCanvasTaskExecutor {
                 || manifest.execution().deadlineAt() != null
                 || manifest.execution().deploymentId() == null
                 || manifest.task() == null
+                || manifest.executionTaskType() != cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_STREAMING_CANVAS
+                || manifest.modelQuality() != null
                 || manifest.task().executionMode() != CanvasExecutionMode.STREAMING
                 || manifest.task().definition() == null
                 || manifest.metadataSnapshot() == null
@@ -453,6 +516,10 @@ final class StreamingCanvasTaskExecutor {
                 || manifest.streaming() == null
                 || manifest.streaming().triggerIntervalSeconds() < 1
                 || manifest.streaming().triggerIntervalSeconds() > 300
+                || (manifest.streaming().sourceNodeId() == null)
+                        != (manifest.streaming().sourceSignature() == null)
+                || manifest.streaming().initialSourceOffset() != null
+                        && manifest.streaming().sourceSignature() == null
                 || launch == null
                 || launch.deadlineAt() != null
                 || launch.checkpointUriPrefix() == null
@@ -511,5 +578,11 @@ final class StreamingCanvasTaskExecutor {
     }
 
     private record QueryBinding(String outputNodeId, StreamingQuery query) {
+    }
+
+    private record ProgressSnapshot(
+            List<StreamingQueryProgress> queries,
+            StreamingSourceProgress source
+    ) {
     }
 }

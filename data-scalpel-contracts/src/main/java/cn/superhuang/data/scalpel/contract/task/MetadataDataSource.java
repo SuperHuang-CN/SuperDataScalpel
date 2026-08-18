@@ -10,8 +10,24 @@ public record MetadataDataSource(
         ConnectionKind connectionKind,
         CanvasJdbcDatabaseType jdbcDatabaseType,
         Set<DataSourcePurpose> purposes,
-        List<MetadataTable> tables
+        List<MetadataTable> tables,
+        List<MetadataTdEngineTmqTopic> tdEngineTmqTopics
 ) {
+    public MetadataDataSource {
+        tdEngineTmqTopics = tdEngineTmqTopics == null ? List.of() : List.copyOf(tdEngineTmqTopics);
+    }
+
+    public MetadataDataSource(
+            UUID id,
+            boolean enabled,
+            ConnectionKind connectionKind,
+            CanvasJdbcDatabaseType jdbcDatabaseType,
+            Set<DataSourcePurpose> purposes,
+            List<MetadataTable> tables
+    ) {
+        this(id, enabled, connectionKind, jdbcDatabaseType, purposes, tables, List.of());
+    }
+
     public MetadataDataSource(
             UUID id,
             boolean enabled,
@@ -19,6 +35,6 @@ public record MetadataDataSource(
             Set<DataSourcePurpose> purposes,
             List<MetadataTable> tables
     ) {
-        this(id, enabled, connectionKind, null, purposes, tables);
+        this(id, enabled, connectionKind, null, purposes, tables, List.of());
     }
 }

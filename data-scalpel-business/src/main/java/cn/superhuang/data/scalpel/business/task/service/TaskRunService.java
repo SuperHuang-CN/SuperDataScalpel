@@ -13,6 +13,8 @@ import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskInput;
+import cn.superhuang.data.scalpel.business.task.domain.ModelQualityTaskDefinition;
+import cn.superhuang.data.scalpel.business.task.domain.SparkJarTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskOverlapPolicy;
@@ -24,6 +26,8 @@ import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import cn.superhuang.data.scalpel.business.task.repository.CanvasTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskInputRepository;
+import cn.superhuang.data.scalpel.business.task.repository.ModelQualityTaskDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskScheduleRepository;
 import cn.superhuang.data.scalpel.business.task.execution.service.TaskExecutionOutboxService;
@@ -34,6 +38,8 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarExecutionPayload;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
@@ -64,6 +70,7 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
@@ -82,6 +89,8 @@ public class TaskRunService {
     private final DataTaskRepository taskRepository;
     private final LocalSqlTaskDefinitionRepository definitionRepository;
     private final CanvasTaskDefinitionRepository canvasDefinitionRepository;
+    private final ModelQualityTaskDefinitionRepository modelQualityDefinitionRepository;
+    private final SparkJarTaskDefinitionRepository sparkJarDefinitionRepository;
     private final LocalSqlTaskInputRepository inputRepository;
     private final TaskRunRepository runRepository;
     private final TaskScheduleRepository scheduleRepository;
@@ -96,10 +105,15 @@ public class TaskRunService {
     private final SearchEngine searchEngine;
     private final CanvasTaskDefinitionService canvasDefinitionService;
     private final CanvasTaskRunPreparationService canvasPreparationService;
+    private final ModelQualityTaskRunPreparationService modelQualityPreparationService;
+    private final SparkJarTaskRunPreparationService sparkJarPreparationService;
+    private final SparkJarTaskDefinitionService sparkJarDefinitionService;
     private final ComputeEngineExecutionService computeEngineExecutionService;
     private final TaskExecutionOutboxService executionOutboxService;
     private final ObjectProvider<TaskRunArtifactStorage> artifactStorageProvider;
     private final CanvasTaskRunProperties canvasProperties;
+    private final ModelQualityTaskRunProperties modelQualityProperties;
+    private final SnapshotSyncProperties snapshotSyncProperties;
     private final TransactionTemplate readTransactionTemplate;
     private final TransactionTemplate transactionTemplate;
 
@@ -107,6 +121,8 @@ public class TaskRunService {
             DataTaskRepository taskRepository,
             LocalSqlTaskDefinitionRepository definitionRepository,
             CanvasTaskDefinitionRepository canvasDefinitionRepository,
+            ModelQualityTaskDefinitionRepository modelQualityDefinitionRepository,
+            SparkJarTaskDefinitionRepository sparkJarDefinitionRepository,
             LocalSqlTaskInputRepository inputRepository,
             TaskRunRepository runRepository,
             TaskScheduleRepository scheduleRepository,
@@ -121,15 +137,22 @@ public class TaskRunService {
             SearchEngine searchEngine,
             CanvasTaskDefinitionService canvasDefinitionService,
             CanvasTaskRunPreparationService canvasPreparationService,
+            ModelQualityTaskRunPreparationService modelQualityPreparationService,
+            SparkJarTaskRunPreparationService sparkJarPreparationService,
+            SparkJarTaskDefinitionService sparkJarDefinitionService,
             ComputeEngineExecutionService computeEngineExecutionService,
             TaskExecutionOutboxService executionOutboxService,
             ObjectProvider<TaskRunArtifactStorage> artifactStorageProvider,
             CanvasTaskRunProperties canvasProperties,
+            ModelQualityTaskRunProperties modelQualityProperties,
+            SnapshotSyncProperties snapshotSyncProperties,
             PlatformTransactionManager transactionManager
     ) {
         this.taskRepository = taskRepository;
         this.definitionRepository = definitionRepository;
         this.canvasDefinitionRepository = canvasDefinitionRepository;
+        this.modelQualityDefinitionRepository = modelQualityDefinitionRepository;
+        this.sparkJarDefinitionRepository = sparkJarDefinitionRepository;
         this.inputRepository = inputRepository;
         this.runRepository = runRepository;
         this.scheduleRepository = scheduleRepository;
@@ -144,10 +167,15 @@ public class TaskRunService {
         this.searchEngine = searchEngine;
         this.canvasDefinitionService = canvasDefinitionService;
         this.canvasPreparationService = canvasPreparationService;
+        this.modelQualityPreparationService = modelQualityPreparationService;
+        this.sparkJarPreparationService = sparkJarPreparationService;
+        this.sparkJarDefinitionService = sparkJarDefinitionService;
         this.computeEngineExecutionService = computeEngineExecutionService;
         this.executionOutboxService = executionOutboxService;
         this.artifactStorageProvider = artifactStorageProvider;
         this.canvasProperties = canvasProperties;
+        this.modelQualityProperties = modelQualityProperties;
+        this.snapshotSyncProperties = snapshotSyncProperties;
         this.readTransactionTemplate = new TransactionTemplate(transactionManager);
         this.readTransactionTemplate.setReadOnly(true);
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -155,8 +183,18 @@ public class TaskRunService {
 
     public TaskRunResponse run(UUID taskId) {
         TaskType type = requireTransactionResult(readTransactionTemplate.execute(status -> requireTask(taskId).getType()));
+        if (type.isStreaming()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Spark 实时任务请使用 Start/Stop 操作，不支持立即运行");
+        }
         if (type == TaskType.SPARK_CANVAS) {
             return runCanvas(taskId);
+        }
+        if (type == TaskType.SPARK_MODEL_QUALITY) {
+            return runModelQuality(taskId);
+        }
+        if (type == TaskType.SPARK_JAR) {
+            return runSparkJar(taskId);
         }
         RunPreparation preparation = readPreparation(taskId);
         LocalSqlDefinitionInspection inspection = inspectionPort.inspect(preparation.inspectionRequest());
@@ -185,12 +223,19 @@ public class TaskRunService {
             return;
         }
         try {
-            submitCanvas(canvasRequest.taskId(), canvasRequest.trigger());
+            if (canvasRequest.taskType() == TaskType.SPARK_MODEL_QUALITY) {
+                submitModelQuality(canvasRequest.taskId(), canvasRequest.trigger());
+            } else if (canvasRequest.taskType() == TaskType.SPARK_JAR) {
+                submitSparkJar(canvasRequest.taskId(), canvasRequest.trigger());
+            } else {
+                submitCanvas(canvasRequest.taskId(), canvasRequest.trigger());
+            }
         } catch (RuntimeException exception) {
             transactionTemplate.executeWithoutResult(status -> recordScheduledCanvasSubmissionFailure(
                     canvasRequest, exception));
             log.warn(
-                    "Spark Canvas scheduled submission failed: taskId={} scheduleId={} scheduledFireAt={}",
+                    "Spark scheduled submission failed: taskType={} taskId={} scheduleId={} scheduledFireAt={}",
+                    canvasRequest.taskType(),
                     canvasRequest.taskId(), canvasRequest.trigger().scheduleId(),
                     canvasRequest.trigger().scheduledFireAt(), exception);
         }
@@ -227,7 +272,10 @@ public class TaskRunService {
     public TaskRunResponse cancel(UUID runId) {
         return requireTransactionResult(transactionTemplate.execute(status -> {
             TaskRun run = requireRunForUpdate(runId);
-            if (run.getTaskType() != TaskType.SPARK_CANVAS || run.getExternalExecutionId() == null) {
+            if (run.getTaskType() != TaskType.SPARK_CANVAS
+                    && run.getTaskType() != TaskType.SPARK_MODEL_QUALITY
+                    && run.getTaskType() != TaskType.SPARK_JAR
+                    || run.getExternalExecutionId() == null) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务运行不支持外部取消");
             }
             if (run.getStatus() == TaskRunStatus.CANCEL_REQUESTED) {
@@ -267,6 +315,317 @@ public class TaskRunService {
         return response;
     }
 
+    private TaskRunResponse runModelQuality(UUID taskId) {
+        TaskRunResponse response = submitModelQuality(taskId, CanvasRunTrigger.manual());
+        if (response == null) throw new IllegalStateException("手动质检运行未创建任务实例");
+        return response;
+    }
+
+    private TaskRunResponse runSparkJar(UUID taskId) {
+        TaskRunResponse response = submitSparkJar(taskId, CanvasRunTrigger.manual());
+        if (response == null) throw new IllegalStateException("手动 Spark JAR 运行未创建任务实例");
+        return response;
+    }
+
+    private TaskRunResponse submitSparkJar(UUID taskId, CanvasRunTrigger trigger) {
+        SparkJarRunSource source = requireTransactionResult(readTransactionTemplate.execute(status -> {
+            DataTask task = requireTask(taskId);
+            if (task.getType() != TaskType.SPARK_JAR)
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务不是 Spark JAR 任务");
+            if (task.getStatus() != TaskStatus.PUBLISHED)
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已发布 Spark JAR 任务可以运行");
+            if (!trigger.scheduled() && runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES))
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+            SparkJarTaskDefinition definition = sparkJarDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR 任务定义不存在"));
+            if (!definition.hasJar()) throw new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR 尚未上传");
+            return new SparkJarRunSource(definition.getVersion(), task.getComputeEngineId(), definition);
+        }));
+        sparkJarDefinitionService.validatePublishable(taskId);
+        ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
+        SparkJarTaskRunPreparationService.Preparation preparation = sparkJarPreparationService.prepare(
+                source.definition(), trigger.scheduled() ? SparkJarExecutionPayload.TriggerType.SCHEDULED
+                        : SparkJarExecutionPayload.TriggerType.MANUAL,
+                trigger.scheduleId(), trigger.scheduledFireAt());
+        TaskRunArtifactStorage storage = requireArtifactStorage();
+        byte[] userJar = storage.readIfPresent(source.definition().getJarObjectKey(),
+                        (int) SparkJarTaskDefinitionService.MAX_JAR_BYTES)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "当前用户 JAR 制品不存在，请重新上传"));
+        if (userJar.length != source.definition().getJarSizeBytes()
+                || !sha256(userJar).equals(source.definition().getJarSha256())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前用户 JAR 制品摘要不一致，请重新上传");
+        }
+        UUID runId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        Instant deadline = createdAt.plusSeconds(source.definition().getTimeoutSeconds()).truncatedTo(ChronoUnit.SECONDS);
+        String base = "task-runs/%s/attempts/1/".formatted(runId);
+        String manifestKey = base + "manifest.json";
+        String runJarKey = base + "user-job.jar";
+        String resultKey = base + "result.json";
+        String logKey = base + "console.log";
+        CanvasTaskRunManifest manifest = new CanvasTaskRunManifest(
+                CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
+                new CanvasTaskRunManifest.Execution(executionId, runId, taskId, 1,
+                        source.definitionVersion(), createdAt, deadline),
+                null, preparation.metadataSnapshot(), preparation.runtimeDataSources(),
+                null, null, List.of(), CanvasTaskRunManifest.SnapshotSyncLimits.defaults(),
+                ExecutionTaskType.SPARK_JAR, null, preparation.payload(), null);
+        byte[] manifestBytes = writeBytes(manifest);
+        String manifestSha = sha256(manifestBytes);
+        try {
+            storage.store(runJarKey, userJar, "application/java-archive");
+            storage.store(manifestKey, manifestBytes, "application/json");
+        } catch (RuntimeException exception) {
+            deleteUnusedManifest(storage, runJarKey);
+            deleteUnusedManifest(storage, manifestKey);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "任务制品存储当前不可用", exception);
+        }
+        String snapshot = writeSnapshot(new SparkJarRunSnapshotReference(
+                1, executionId, 1, source.definitionVersion(), route.engineId(),
+                source.definition().getJarFileName(), source.definition().getJarSha256(),
+                source.definition().getJarSizeBytes(), source.definition().getJobClass(),
+                source.definition().getJobApiVersion(), preparation.payload().parameters(),
+                preparation.payload().sparkConf(), preparation.payload().resourceBindings(),
+                source.definition().getTimeoutSeconds()));
+        try {
+            CanvasQueueResult result = requireTransactionResult(transactionTemplate.execute(status -> queueSparkJarRun(
+                    runId, taskId, source, snapshot, executionId, deadline, route,
+                    manifestKey, manifestSha, runJarKey, resultKey, logKey, preparation, trigger)));
+            if (!result.dispatched()) {
+                deleteUnusedManifest(storage, manifestKey);
+                deleteUnusedManifest(storage, runJarKey);
+            }
+            return result.run() == null ? null : TaskRunResponse.from(result.run());
+        } catch (RuntimeException exception) {
+            deleteOrphanManifest(storage, manifestKey, exception);
+            deleteOrphanManifest(storage, runJarKey, exception);
+            throw exception;
+        }
+    }
+
+    private CanvasQueueResult queueSparkJarRun(
+            UUID runId, UUID taskId, SparkJarRunSource source, String snapshot, UUID executionId,
+            Instant deadline, ExecutionRoute route, String manifestKey, String manifestSha,
+            String runJarKey, String resultKey, String logKey,
+            SparkJarTaskRunPreparationService.Preparation preparation, CanvasRunTrigger trigger
+    ) {
+        if (trigger.scheduled()) {
+            TaskRun existing = runRepository.findByScheduleIdAndScheduledFireAt(
+                    trigger.scheduleId(), trigger.scheduledFireAt()).orElse(null);
+            if (existing != null) return CanvasQueueResult.notDispatched(existing);
+            TaskSchedule schedule = scheduleRepository.findByIdForUpdate(trigger.scheduleId()).orElse(null);
+            if (schedule == null || !schedule.getTaskId().equals(taskId)) return CanvasQueueResult.notDispatched(null);
+            if (schedule.getStatus() != TaskScheduleStatus.ENABLED) {
+                TaskRun skipped = TaskRun.scheduledSparkJarSkipped(taskId, trigger.scheduleId(),
+                        source.definitionVersion(), snapshot, trigger.scheduledFireAt(),
+                        "定时触发已跳过：运行计划已停用");
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+        }
+        DataTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+        SparkJarTaskDefinition current = sparkJarDefinitionRepository.findByTaskId(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR 任务定义不存在"));
+        if (task.getType() != TaskType.SPARK_JAR || task.getStatus() != TaskStatus.PUBLISHED
+                || current.getVersion() != source.definitionVersion()
+                || !Objects.equals(current.getJarSha256(), source.definition().getJarSha256())) {
+            if (trigger.scheduled()) {
+                TaskRun skipped = TaskRun.scheduledSparkJarSkipped(taskId, trigger.scheduleId(),
+                        source.definitionVersion(), snapshot, trigger.scheduledFireAt(),
+                        "定时触发已跳过：任务或 JAR 定义已变化");
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR 任务或定义已变化，请重新运行");
+        }
+        if ((!trigger.scheduled() || trigger.overlapPolicy() == TaskOverlapPolicy.FORBID)
+                && runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+            if (trigger.scheduled()) {
+                TaskRun skipped = TaskRun.scheduledSparkJarSkipped(taskId, trigger.scheduleId(),
+                        source.definitionVersion(), snapshot, trigger.scheduledFireAt(),
+                        "定时触发已跳过：当前任务存在正在执行的实例");
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+        }
+        if (!route.engineId().equals(task.getComputeEngineId()))
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新运行");
+        computeEngineExecutionService.assertUnchanged(route);
+        sparkJarPreparationService.assertUnchanged(preparation);
+        TaskRun run = trigger.scheduled()
+                ? TaskRun.queueScheduledDispatchedSparkJar(runId, taskId, trigger.scheduleId(), trigger.scheduledFireAt(),
+                source.definitionVersion(), snapshot, executionId, 1, deadline, route.engineId(), route.commandTopic())
+                : TaskRun.queueDispatchedSparkJar(runId, taskId, source.definitionVersion(), snapshot,
+                executionId, 1, deadline, route.engineId(), route.commandTopic());
+        run.attachUserJar(current.getJarFileName(), current.getJarSha256(), current.getJarSizeBytes(), runJarKey);
+        run.attachArtifacts(manifestKey, resultKey, logKey);
+        TaskRun saved = runRepository.saveAndFlush(run);
+        executionOutboxService.enqueue(route.commandTopic(), new SubmitExecutionCommand(
+                1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, Instant.now(), route.engineId(),
+                executionId, runId, 1, taskId, ExecutionTaskType.SPARK_JAR, source.definitionVersion(), deadline,
+                new ExecutionArtifactLocation(manifestKey, manifestSha, resultKey, logKey), List.of(), 0,
+                new ExecutionUserJarArtifact(runJarKey, current.getJarSha256(), current.getJarSizeBytes()),
+                preparation.payload().sparkConf()));
+        return CanvasQueueResult.dispatched(saved);
+    }
+
+    private TaskRunResponse submitModelQuality(UUID taskId, CanvasRunTrigger trigger) {
+        QualityRunSource source = requireTransactionResult(readTransactionTemplate.execute(status -> {
+            DataTask task = requireTask(taskId);
+            if (task.getType() != TaskType.SPARK_MODEL_QUALITY) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务不是 Spark 模型质检任务");
+            }
+            if (task.getStatus() != TaskStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已发布质检任务可以运行");
+            }
+            if (!trigger.scheduled() && runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前质检任务已有正在执行的实例");
+            }
+            ModelQualityTaskDefinition definition = modelQualityDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "质检任务定义不存在"));
+            return new QualityRunSource(
+                    definition.getVersion(), definition.getModelId(), task.getComputeEngineId(),
+                    definition.getFailureSampleLimit());
+        }));
+        ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
+        ModelQualityTaskRunPreparationService.Preparation preparation =
+                modelQualityPreparationService.prepare(source.modelId(), source.failureSampleLimit());
+        if (preparation.payload().rules().isEmpty()) {
+            if (!trigger.scheduled()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "目标模型当前没有可执行的质量规则");
+            }
+            return requireTransactionResult(transactionTemplate.execute(status -> {
+                String snapshot = writeSnapshot(new QualityRunSnapshotReference(
+                        1, null, 1, source.definitionVersion(), route.engineId(), null, null,
+                        preparation.payload().skippedRules().size()));
+                TaskRun skipped = TaskRun.scheduledModelQualitySkipped(
+                        taskId, trigger.scheduleId(), source.definitionVersion(), snapshot,
+                        trigger.scheduledFireAt(), "定时质检已跳过：当前没有可执行规则");
+                skipped.captureModelQualityContext(source.modelId(), preparation.ruleSnapshotAt());
+                return TaskRunResponse.from(runRepository.saveAndFlush(skipped));
+            }));
+        }
+        TaskRunArtifactStorage storage = requireArtifactStorage();
+        UUID runId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        Instant deadline = createdAt.plus(modelQualityProperties.timeout()).truncatedTo(ChronoUnit.SECONDS);
+        String base = "task-runs/%s/attempts/1/".formatted(runId);
+        String manifestKey = base + "manifest.json";
+        String resultKey = base + "result.json";
+        String logKey = base + "console.log";
+        CanvasTaskRunManifest manifest = new CanvasTaskRunManifest(
+                CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
+                new CanvasTaskRunManifest.Execution(
+                        executionId, runId, taskId, 1, source.definitionVersion(), createdAt, deadline),
+                null, null, preparation.runtimeDataSources(), null, null, List.of(),
+                CanvasTaskRunManifest.SnapshotSyncLimits.defaults(),
+                ExecutionTaskType.SPARK_MODEL_QUALITY, preparation.payload());
+        byte[] manifestBytes = writeBytes(manifest);
+        String digest = sha256(manifestBytes);
+        try {
+            storage.store(manifestKey, manifestBytes, "application/json");
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "任务制品存储当前不可用", exception);
+        }
+        String snapshot = writeSnapshot(new QualityRunSnapshotReference(
+                1, executionId, 1, source.definitionVersion(), route.engineId(), manifestKey, digest,
+                preparation.payload().skippedRules().size()));
+        try {
+            CanvasQueueResult queued = requireTransactionResult(transactionTemplate.execute(status ->
+                    queueModelQualityRun(runId, taskId, source, snapshot, executionId, deadline, route,
+                            manifestKey, digest, resultKey, logKey, preparation, trigger)));
+            if (!queued.dispatched()) deleteUnusedManifest(storage, manifestKey);
+            return queued.run() == null ? null : TaskRunResponse.from(queued.run());
+        } catch (RuntimeException exception) {
+            deleteOrphanManifest(storage, manifestKey, exception);
+            throw exception;
+        }
+    }
+
+    private CanvasQueueResult queueModelQualityRun(
+            UUID runId,
+            UUID taskId,
+            QualityRunSource source,
+            String snapshot,
+            UUID executionId,
+            Instant deadline,
+            ExecutionRoute route,
+            String manifestKey,
+            String manifestSha256,
+            String resultKey,
+            String logKey,
+            ModelQualityTaskRunPreparationService.Preparation preparation,
+            CanvasRunTrigger trigger
+    ) {
+        if (trigger.scheduled()) {
+            TaskRun existing = runRepository.findByScheduleIdAndScheduledFireAt(
+                    trigger.scheduleId(), trigger.scheduledFireAt()).orElse(null);
+            if (existing != null) return CanvasQueueResult.notDispatched(existing);
+            TaskSchedule schedule = scheduleRepository.findByIdForUpdate(trigger.scheduleId()).orElse(null);
+            if (schedule == null || schedule.getStatus() != TaskScheduleStatus.ENABLED) {
+                TaskRun skipped = TaskRun.scheduledModelQualitySkipped(
+                        taskId, trigger.scheduleId(), source.definitionVersion(), snapshot,
+                        trigger.scheduledFireAt(), "定时质检已跳过：运行计划已停用");
+                skipped.captureModelQualityContext(source.modelId(), preparation.ruleSnapshotAt());
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+        }
+        DataTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+        ModelQualityTaskDefinition definition = modelQualityDefinitionRepository.findByTaskId(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "质检任务定义不存在"));
+        if (task.getType() != TaskType.SPARK_MODEL_QUALITY || task.getStatus() != TaskStatus.PUBLISHED
+                || definition.getVersion() != source.definitionVersion()) {
+            if (trigger.scheduled()) {
+                TaskRun skipped = TaskRun.scheduledModelQualitySkipped(
+                        taskId, trigger.scheduleId(), source.definitionVersion(), snapshot,
+                        trigger.scheduledFireAt(), "定时质检已跳过：任务或定义已变化");
+                skipped.captureModelQualityContext(source.modelId(), preparation.ruleSnapshotAt());
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "质检任务或定义已变化，请重新运行");
+        }
+        if ((!trigger.scheduled() || trigger.overlapPolicy() == TaskOverlapPolicy.FORBID)
+                && runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+            if (trigger.scheduled()) {
+                TaskRun skipped = TaskRun.scheduledModelQualitySkipped(
+                        taskId, trigger.scheduleId(), source.definitionVersion(), snapshot,
+                        trigger.scheduledFireAt(), "定时质检已跳过：当前任务存在正在执行的实例");
+                skipped.captureModelQualityContext(source.modelId(), preparation.ruleSnapshotAt());
+                return CanvasQueueResult.notDispatched(runRepository.saveAndFlush(skipped));
+            }
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前质检任务已有正在执行的实例");
+        }
+        if (!route.engineId().equals(task.getComputeEngineId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新运行");
+        }
+        computeEngineExecutionService.assertUnchanged(route);
+        modelQualityPreparationService.assertUnchanged(preparation);
+        TaskRun run = trigger.scheduled()
+                ? TaskRun.queueScheduledDispatchedModelQuality(
+                runId, taskId, trigger.scheduleId(), trigger.scheduledFireAt(), source.definitionVersion(),
+                snapshot, executionId, 1, deadline, route.engineId(), route.commandTopic())
+                : TaskRun.queueDispatchedModelQuality(
+                runId, taskId, source.definitionVersion(), snapshot, executionId, 1, deadline,
+                route.engineId(), route.commandTopic());
+        run.captureModelQualityContext(source.modelId(), preparation.ruleSnapshotAt());
+        run.attachArtifacts(manifestKey, resultKey, logKey);
+        TaskRun saved = runRepository.saveAndFlush(run);
+        executionOutboxService.enqueue(route.commandTopic(), new SubmitExecutionCommand(
+                1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, Instant.now(),
+                route.engineId(), executionId, runId, 1, taskId, ExecutionTaskType.SPARK_MODEL_QUALITY,
+                source.definitionVersion(), deadline,
+                new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey),
+                preparation.payload().failureSampleLimit() == 0 ? List.of()
+                        : preparation.payload().rules().stream()
+                        .filter(rule -> rule.type() != cn.superhuang.data.scalpel.contract.quality.ModelQualityRuleType.ROW_COUNT
+                                && rule.type() != cn.superhuang.data.scalpel.contract.quality.ModelQualityRuleType.FRESHNESS)
+                        .map(cn.superhuang.data.scalpel.contract.quality.ModelQualityExecutionPayload.QualityRuleSnapshot::id)
+                        .toList(), preparation.payload().failureSampleLimit()));
+        return CanvasQueueResult.dispatched(saved);
+    }
+
     private TaskRunResponse submitCanvas(UUID taskId, CanvasRunTrigger trigger) {
         CanvasRunSource source = requireTransactionResult(readTransactionTemplate.execute(status -> {
             DataTask task = requireTask(taskId);
@@ -282,7 +641,7 @@ public class TaskRunService {
             CanvasTaskDefinition definition = canvasDefinitionRepository.findByTaskId(taskId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 任务定义不存在"));
             return new CanvasRunSource(
-                    definition.getVersion(), canvasDefinitionService.deserialize(definition.getDefinitionJson()),
+                    definition.getVersion(), canvasDefinitionService.requireReadable(definition),
                     task.getComputeEngineId());
         }));
         ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
@@ -309,7 +668,8 @@ public class TaskRunService {
                 preparation.runtimeDataSources(),
                 null,
                 preparation.runtimeFileStorage(),
-                preparation.runtimeFileInputs()
+                preparation.runtimeFileInputs(),
+                snapshotSyncProperties.toManifestLimits()
         );
         byte[] manifestBytes = writeBytes(manifest);
         String manifestSha256 = sha256(manifestBytes);
@@ -500,6 +860,48 @@ public class TaskRunService {
         if (task.getType() == TaskType.SPARK_CANVAS) {
             return prepareScheduledCanvasRun(task, schedule, scheduledFireAt);
         }
+        if (task.getType() == TaskType.SPARK_MODEL_QUALITY) {
+            ModelQualityTaskDefinition definition = modelQualityDefinitionRepository
+                    .findByTaskId(task.getId()).orElse(null);
+            int version = definition == null ? 0 : definition.getVersion();
+            if (definition == null) {
+                String snapshot = writeSnapshot(new ScheduledCanvasSubmissionSnapshot(1, 0, null));
+                TaskRun skipped = TaskRun.scheduledModelQualitySkipped(
+                        task.getId(), schedule.getId(), version, snapshot, scheduledFireAt,
+                        "定时质检已跳过：质检任务定义不存在");
+                runRepository.saveAndFlush(skipped);
+                return null;
+            }
+            return new ScheduledCanvasRequest(
+                    task.getId(),
+                    CanvasRunTrigger.scheduled(schedule.getId(), scheduledFireAt, schedule.getOverlapPolicy()),
+                    version,
+                    writeSnapshot(new ScheduledCanvasSubmissionSnapshot(1, version, definition.getModelId().toString())),
+                    TaskType.SPARK_MODEL_QUALITY,
+                    definition.getModelId());
+        }
+        if (task.getType() == TaskType.SPARK_JAR) {
+            SparkJarTaskDefinition definition = sparkJarDefinitionRepository.findByTaskId(task.getId()).orElse(null);
+            int version = definition == null ? 0 : definition.getVersion();
+            String snapshot = writeSnapshot(new ScheduledCanvasSubmissionSnapshot(
+                    1, version, definition == null ? null : definition.getJarSha256()));
+            if (definition == null || !definition.hasJar()) {
+                TaskRun skipped = TaskRun.scheduledSparkJarSkipped(task.getId(), schedule.getId(), version,
+                        snapshot, scheduledFireAt, "定时触发已跳过：Spark JAR 任务定义不存在或未上传 JAR");
+                runRepository.saveAndFlush(skipped);
+                return null;
+            }
+            if (schedule.getOverlapPolicy() == TaskOverlapPolicy.FORBID
+                    && runRepository.existsByTaskIdAndStatusIn(task.getId(), ACTIVE_STATUSES)) {
+                TaskRun skipped = TaskRun.scheduledSparkJarSkipped(task.getId(), schedule.getId(), version,
+                        snapshot, scheduledFireAt, "定时触发已跳过：当前任务存在正在执行的实例");
+                runRepository.saveAndFlush(skipped);
+                return null;
+            }
+            return new ScheduledCanvasRequest(task.getId(), CanvasRunTrigger.scheduled(
+                    schedule.getId(), scheduledFireAt, schedule.getOverlapPolicy()), version,
+                    snapshot, TaskType.SPARK_JAR, null);
+        }
         if (task.getType() != TaskType.LOCAL_SQL) {
             return null;
         }
@@ -550,7 +952,9 @@ public class TaskRunService {
                 task.getId(),
                 CanvasRunTrigger.scheduled(schedule.getId(), scheduledFireAt, schedule.getOverlapPolicy()),
                 definitionVersion,
-                snapshot
+                snapshot,
+                TaskType.SPARK_CANVAS,
+                null
         );
     }
 
@@ -566,16 +970,29 @@ public class TaskRunService {
         if (!taskRepository.existsById(request.taskId())) {
             return;
         }
+        boolean quality = request.taskType() == TaskType.SPARK_MODEL_QUALITY;
+        boolean sparkJar = request.taskType() == TaskType.SPARK_JAR;
         String message = exception instanceof ResponseStatusException responseStatusException
                 && responseStatusException.getReason() != null
                 && !responseStatusException.getReason().isBlank()
                 ? responseStatusException.getReason()
-                : "Spark Canvas 定时提交失败";
+                : quality ? "Spark 模型质检定时提交失败"
+                : sparkJar ? "Spark JAR 定时提交失败" : "Spark Canvas 定时提交失败";
         TaskRun failed = TaskRun.failedScheduledCanvasSubmission(
                 request.taskId(), scheduleId, request.definitionVersion(), request.failureSnapshot(),
                 scheduledFireAt,
-                new SafeExecutionError("CANVAS_SCHEDULE_SUBMISSION_FAILED", message)
+                new SafeExecutionError(
+                        quality ? "MODEL_QUALITY_SCHEDULE_SUBMISSION_FAILED"
+                                : sparkJar ? "SPARK_JAR_SCHEDULE_SUBMISSION_FAILED" : "CANVAS_SCHEDULE_SUBMISSION_FAILED",
+                        message)
         );
+        if (quality) {
+            failed.useTaskType(TaskType.SPARK_MODEL_QUALITY);
+            if (request.qualityTargetModelId() != null) {
+                failed.captureModelQualityContext(request.qualityTargetModelId(), null);
+            }
+        }
+        if (sparkJar) failed.useTaskType(TaskType.SPARK_JAR);
         runRepository.saveAndFlush(failed);
     }
 
@@ -646,8 +1063,8 @@ public class TaskRunService {
     private TaskRunArtifact readArtifact(UUID runId, ArtifactKind kind) {
         ArtifactReference reference = requireTransactionResult(readTransactionTemplate.execute(status -> {
             TaskRun run = requireRun(runId);
-            if (run.getTaskType() != TaskType.SPARK_CANVAS) {
-                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务运行没有 Canvas 执行制品");
+            if (run.getTaskType() == TaskType.LOCAL_SQL) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务运行没有 Spark 执行制品");
             }
             String objectKey = kind == ArtifactKind.RESULT ? run.getResultObjectKey() : run.getLogObjectKey();
             if (objectKey == null || objectKey.isBlank()) {
@@ -757,6 +1174,20 @@ public class TaskRunService {
     ) {
     }
 
+    private record QualityRunSource(
+            int definitionVersion,
+            UUID modelId,
+            UUID computeEngineId,
+            int failureSampleLimit
+    ) {
+    }
+
+    private record SparkJarRunSource(
+            int definitionVersion,
+            UUID computeEngineId,
+            SparkJarTaskDefinition definition
+    ) {}
+
     private record CanvasRunTrigger(
             UUID scheduleId,
             Instant scheduledFireAt,
@@ -786,7 +1217,9 @@ public class TaskRunService {
             UUID taskId,
             CanvasRunTrigger trigger,
             int definitionVersion,
-            String failureSnapshot
+            String failureSnapshot,
+            TaskType taskType,
+            UUID qualityTargetModelId
     ) {
     }
 
@@ -853,4 +1286,33 @@ public class TaskRunService {
             String manifestSha256
     ) {
     }
+
+    private record QualityRunSnapshotReference(
+            int schemaVersion,
+            UUID executionId,
+            int attempt,
+            int definitionVersion,
+            UUID computeEngineId,
+            String manifestObjectKey,
+            String manifestSha256,
+            int skippedRules
+    ) {
+    }
+
+    private record SparkJarRunSnapshotReference(
+            int schemaVersion,
+            UUID executionId,
+            int attempt,
+            int definitionVersion,
+            UUID computeEngineId,
+            String jarFileName,
+            String jarSha256,
+            long jarSizeBytes,
+            String jobClass,
+            int jobApiVersion,
+            List<SparkJarExecutionPayload.Parameter> parameters,
+            List<cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry> sparkConf,
+            List<SparkJarExecutionPayload.ResourceBinding> resourceBindings,
+            int timeoutSeconds
+    ) {}
 }

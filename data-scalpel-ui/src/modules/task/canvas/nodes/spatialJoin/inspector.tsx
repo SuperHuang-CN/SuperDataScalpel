@@ -83,7 +83,8 @@ const SpatialJoinInspector = ({
     () => ({
       apply: async () => {
         try {
-          submit(await form.validateFields());
+          void form.validateFields().catch(() => undefined);
+          submit(form.getFieldsValue(true));
           return true;
         } catch {
           return false;

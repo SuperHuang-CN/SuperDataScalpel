@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeGeometrySerialize } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { geometrySerializeCanvasView } from './canvasView';
 
 export const geometrySerializeSpec = createCanvasNodeSpec({
   type: CanvasNodeType.GeometrySerialize,
@@ -15,9 +16,9 @@ export const geometrySerializeSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'serialize', 'wkt', 'wkb', 'geojson', '序列化'],
   iconKey: CanvasNodeIconKey.GeometrySerialize,
   order: 80,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: geometrySerializeCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 21,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createGeometrySerializeConfiguration,
   summarize: summarizeGeometrySerialize,

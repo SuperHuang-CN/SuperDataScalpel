@@ -1,6 +1,7 @@
 import type { Edge, Graph } from '@antv/x6';
 import { canvasNodePorts } from './canvasPorts';
 import { canvasNodeTemplate } from './canvasRegistry';
+import { canvasNodeRegistry } from './nodes/nodeRegistry';
 import {
   CANVAS_SCHEMA_MINOR_VERSION,
   CANVAS_SCHEMA_VERSION,
@@ -12,18 +13,25 @@ import {
 
 const clone = <T,>(value: T): T => structuredClone(value);
 
-export const runtimeDataFromDefinition = (node: CanvasNodeDefinition): CanvasNodeRuntimeData => {
+interface CanvasDefinitionLoadOptions {
+  readOnly?: boolean;
+}
+
+export const runtimeDataFromDefinition = (
+  node: CanvasNodeDefinition,
+  options: CanvasDefinitionLoadOptions = {},
+): CanvasNodeRuntimeData => {
   return {
     type: node.type,
     name: node.name,
     configuration: clone(node.configuration),
+    readOnly: options.readOnly,
   } as CanvasNodeRuntimeData;
 };
 
 interface SerializableCanvasNode {
   id: string;
   getPosition: () => { x: number; y: number };
-  getSize: () => { width: number; height: number };
   getData: <T>() => T;
 }
 
@@ -40,8 +48,8 @@ interface SerializableCanvasGraph {
 
 const nodeDefinition = (node: SerializableCanvasNode): CanvasNodeDefinition => {
   const position = node.getPosition();
-  const size = node.getSize();
   const data = node.getData<CanvasNodeRuntimeData>();
+  const size = canvasNodeRegistry.resolveSize(data);
   const common = {
     id: node.id,
     name: data.name,
@@ -67,6 +75,31 @@ export const toCanvasDefinition = (graph: SerializableCanvasGraph): CanvasDefini
   }),
 });
 
+const canonicalJsonValue = (value: unknown): unknown => {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (value === null || typeof value !== 'object') return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, child]) => [key, canonicalJsonValue(child)]),
+  );
+};
+
+export const canvasDefinitionFingerprint = (
+  definition: CanvasDefinition | null | undefined,
+): string | null => {
+  if (!definition) return null;
+  const canonicalDefinition: CanvasDefinition = {
+    ...definition,
+    nodes: definition.nodes.map((node) => {
+      const size = canvasNodeRegistry.resolveSize(runtimeDataFromDefinition(node));
+      return { ...node, layout: { ...node.layout, width: size.width, height: size.height } };
+    }).sort((left, right) => left.id.localeCompare(right.id)),
+    edges: [...definition.edges].sort((left, right) => left.id.localeCompare(right.id)),
+  };
+  return JSON.stringify(canonicalJsonValue(canonicalDefinition));
+};
+
 const edgeAttrs = {
   line: {
     stroke: '#1677ff',
@@ -75,17 +108,23 @@ const edgeAttrs = {
   },
 };
 
-export const loadCanvasDefinition = (graph: Graph, definition: CanvasDefinition) => {
+export const loadCanvasDefinition = (
+  graph: Graph,
+  definition: CanvasDefinition,
+  options: CanvasDefinitionLoadOptions = {},
+) => {
   definition.nodes.forEach((node) => {
     const template = canvasNodeTemplate(node.type);
+    const data = runtimeDataFromDefinition(node, options);
+    const size = canvasNodeRegistry.resolveSize(data);
     graph.addNode({
       id: node.id,
       shape: template.shape,
       x: node.layout.x,
       y: node.layout.y,
-      width: node.layout.width,
-      height: node.layout.height,
-      data: runtimeDataFromDefinition(node),
+      width: size.width,
+      height: size.height,
+      data,
       ports: canvasNodePorts(node.type),
     });
   });

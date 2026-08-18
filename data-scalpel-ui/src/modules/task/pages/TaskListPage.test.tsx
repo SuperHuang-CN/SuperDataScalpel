@@ -86,11 +86,13 @@ describe('TaskListPage', () => {
 
   afterEach(() => cleanup());
 
-  it('shows the Spark Canvas type and definition summary', async () => {
+  it('shows the Spark Canvas type icon, status and definition summary', async () => {
     render(<MemoryRouter><TaskListPage /></MemoryRouter>);
 
     expect(await screen.findByText('客户编排')).toBeInTheDocument();
-    expect(screen.getByText('Spark 编排')).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: '任务类型：Spark 编排' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '状态' })).toBeInTheDocument();
+    expect(screen.queryByRole('columnheader', { name: '类型 / 状态' })).not.toBeInTheDocument();
     expect(screen.getByText('v3 · Canvas 定义')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: '编码' })).not.toBeInTheDocument();
   });

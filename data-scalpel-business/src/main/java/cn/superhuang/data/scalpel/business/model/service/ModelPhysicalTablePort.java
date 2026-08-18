@@ -9,6 +9,12 @@ import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewColumn;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewData;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewLimits;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewViewport;
 import cn.superhuang.data.scalpel.dialect.query.StandardQuery;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryResult;
 
@@ -22,6 +28,11 @@ import java.util.List;
 public interface ModelPhysicalTablePort {
 
     ModelPhysicalTableInspection inspect(DataSource dataSource, DataModel model, List<DataModelField> fields);
+
+    /** Reads fast database-maintained statistics without scanning model data. */
+    default TablePhysicalStatistics readStatistics(DataSource dataSource, DataModel model, Duration timeout) {
+        return TablePhysicalStatistics.unsupported("当前物理表实现不支持快速统计");
+    }
 
     /** Applies the same model-compatibility rules to metadata that was already read by a caller. */
     ModelPhysicalTableInspection inspect(
@@ -70,5 +81,25 @@ public interface ModelPhysicalTablePort {
             Duration timeout
     ) {
         throw new UnsupportedOperationException("当前物理表实现不支持标准数据查询");
+    }
+
+    default SpatialPreviewMetadata inspectSpatialPreview(
+            DataSource dataSource,
+            DataModel model,
+            List<SpatialPreviewColumn> columns,
+            Duration timeout
+    ) {
+        return SpatialPreviewMetadata.unsupported("当前物理表实现不支持动态空间预览");
+    }
+
+    default SpatialPreviewData readSpatialPreview(
+            DataSource dataSource,
+            DataModel model,
+            SpatialPreviewColumn column,
+            SpatialPreviewViewport viewport,
+            SpatialPreviewLimits limits,
+            Duration timeout
+    ) {
+        throw new UnsupportedOperationException("当前物理表实现不支持动态空间预览");
     }
 }

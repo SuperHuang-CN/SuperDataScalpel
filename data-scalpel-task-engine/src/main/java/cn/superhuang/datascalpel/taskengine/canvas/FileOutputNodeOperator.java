@@ -103,7 +103,12 @@ public final class FileOutputNodeOperator implements CanvasNodeOperator {
         }
         if (source == null || issues.hasErrors()) return CanvasNodeOperationResult.outputOnly();
         return CanvasNodeOperationResult.fileOutput(
-                context.dataAccess().prepareFileOutput(node, source.schema(), source.dataset()));
+                context.dataAccess().prepareFileOutput(node, source.schema(), source.dataset()),
+                CanvasLineageOutputCandidate.file(
+                        node, source.dataset(), dataSourceId, configuration.targetPath(),
+                        configuration.conflictPolicy(), source.schema()
+                )
+        );
     }
 
     private static void validateTargetPath(String path, CanvasNodeIssueSink issues) {

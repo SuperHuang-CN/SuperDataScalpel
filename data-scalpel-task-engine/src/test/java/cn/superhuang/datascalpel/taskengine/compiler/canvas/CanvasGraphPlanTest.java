@@ -5,7 +5,6 @@ import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.FileOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.FileOutputConflictPolicy;
 import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
@@ -25,6 +24,7 @@ import cn.superhuang.data.scalpel.contract.task.SpatialAggregateConfiguration;
 import cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
@@ -64,8 +64,8 @@ class CanvasGraphPlanTest {
         String inputId = UUID.randomUUID().toString();
         String outputId = UUID.randomUUID().toString();
         CanvasDefinition validTopology = new CanvasDefinition(
-                1,
-                1,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(
                         new ModelInputNodeDefinition(
                                 inputId,
@@ -78,7 +78,7 @@ class CanvasGraphPlanTest {
                                 "模型输出",
                                 new CanvasNodeLayout(320d, 0d, 240d, 120d),
                                 new ModelOutputConfiguration(
-                                        "orders", UUID.randomUUID().toString(), null, null, List.of())
+                                        "orders", UUID.randomUUID().toString(), null, List.of())
                         )
                 ),
                 List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), inputId, outputId))
@@ -89,8 +89,8 @@ class CanvasGraphPlanTest {
         assertFalse(hasDegreeIssue(validPlan, 1));
 
         CanvasGraphPlan invalidPlan = CanvasGraphPlan.create(new CanvasDefinition(
-                1,
-                1,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 validTopology.nodes(),
                 List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), outputId, inputId))
         ));
@@ -248,16 +248,22 @@ class CanvasGraphPlanTest {
                 new CanvasNodeLayout(0d, 0d, 240d, 120d),
                 new JdbcOutputConfiguration(
                         "orders", "", "orders", JdbcWriteMode.UPSERT,
-                        ColumnMappingMode.BY_NAME, List.of(), List.of("order_id"))
+                        List.of(new JdbcColumnMapping("order_id", "order_id")), List.of("order_id"))
         );
         CanvasGraphPlan upsertOnOneDotTwentyThree = CanvasGraphPlan.create(
                 new CanvasDefinition(1, 23, List.of(upsertOutput), List.of()));
         CanvasGraphPlan upsertOnOneDotTwentyFour = CanvasGraphPlan.create(
                 new CanvasDefinition(1, 24, List.of(upsertOutput), List.of()));
+        CanvasGraphPlan upsertOnOneDotTwentyEight = CanvasGraphPlan.create(
+                new CanvasDefinition(1, 28, List.of(upsertOutput), List.of()));
         assertTrue(hasNodeIssue(
                 upsertOnOneDotTwentyThree, 0, "WRITE_MODE_REQUIRES_SCHEMA_VERSION"));
         assertFalse(hasNodeIssue(
                 upsertOnOneDotTwentyFour, 0, "WRITE_MODE_REQUIRES_SCHEMA_VERSION"));
+        assertTrue(hasNodeIssue(
+                upsertOnOneDotTwentyFour, 0, "NODE_REQUIRES_SCHEMA_VERSION"));
+        assertFalse(hasNodeIssue(
+                upsertOnOneDotTwentyEight, 0, "NODE_REQUIRES_SCHEMA_VERSION"));
 
         assertRequiresSchemaMinor(
                 new NullHandlingNodeDefinition(
@@ -350,8 +356,8 @@ class CanvasGraphPlanTest {
         String clipId = UUID.randomUUID().toString();
         String clipOutputId = UUID.randomUUID().toString();
         CanvasDefinition clipDefinition = new CanvasDefinition(
-                1,
-                23,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(
                         modelInput(leftInputId, "来源输入"),
                         modelInput(rightInputId, "Mask 输入"),
@@ -374,15 +380,18 @@ class CanvasGraphPlanTest {
         CanvasGraphPlan validClip = CanvasGraphPlan.create(clipDefinition);
         assertFalse(hasDegreeIssue(validClip, 2));
         CanvasGraphPlan invalidClip = CanvasGraphPlan.create(new CanvasDefinition(
-                1, 23, clipDefinition.nodes(), clipDefinition.edges().subList(0, 2)));
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                clipDefinition.nodes(),
+                clipDefinition.edges().subList(0, 2)));
         assertTrue(hasDegreeIssue(invalidClip, 2));
 
         String aggregateInputId = UUID.randomUUID().toString();
         String aggregateId = UUID.randomUUID().toString();
         String aggregateOutputId = UUID.randomUUID().toString();
         CanvasDefinition aggregateDefinition = new CanvasDefinition(
-                1,
-                23,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(
                         modelInput(aggregateInputId, "来源输入"),
                         new SpatialAggregateNodeDefinition(
@@ -411,8 +420,8 @@ class CanvasGraphPlanTest {
         String renameId = UUID.randomUUID().toString();
         String outputId = UUID.randomUUID().toString();
         CanvasDefinition definition = new CanvasDefinition(
-                1,
-                2,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(
                         new ModelInputNodeDefinition(
                                 inputId,
@@ -433,7 +442,6 @@ class CanvasGraphPlanTest {
                                 new ModelOutputConfiguration(
                                         "source_orders",
                                         UUID.randomUUID().toString(),
-                                        null,
                                         null,
                                         List.of())
                         )
@@ -460,13 +468,66 @@ class CanvasGraphPlanTest {
         assertFalse(hasNodeIssue(upsert, 1, "STREAMING_JDBC_OUTPUT_OVERWRITE_NOT_SUPPORTED"));
     }
 
+    @Test
+    void gatesModelOutputUpsertAtTwoDotThreeAndTreatsItAsAStreamingOutput() {
+        String inputId = UUID.randomUUID().toString();
+        String outputId = UUID.randomUUID().toString();
+        ModelOutputNodeDefinition output = new ModelOutputNodeDefinition(
+                outputId,
+                "模型输出",
+                new CanvasNodeLayout(320d, 0d, 240d, 120d),
+                new ModelOutputConfiguration(
+                        "order_events",
+                        UUID.randomUUID().toString(),
+                        JdbcWriteMode.UPSERT,
+                        List.of(new JdbcColumnMapping("id", "id"))
+                )
+        );
+        CanvasDefinition current = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
+                        new KafkaInputNodeDefinition(
+                                inputId,
+                                "Kafka 输入",
+                                new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                                new KafkaInputConfiguration(
+                                        UUID.randomUUID().toString(),
+                                        "order-events",
+                                        new KafkaValueSchema(List.of()),
+                                        "order_events",
+                                        KafkaStartingOffsets.LATEST
+                                )
+                        ),
+                        output
+                ),
+                List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), inputId, outputId))
+        );
+        CanvasGraphPlan previous = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION, 2, current.nodes(), current.edges()));
+        CanvasGraphPlan streaming = CanvasGraphPlan.create(current, CanvasExecutionMode.STREAMING);
+
+        assertTrue(hasNodeIssue(previous, 1, "WRITE_MODE_REQUIRES_SCHEMA_VERSION"));
+        assertFalse(hasNodeIssue(streaming, 1, "NODE_EXECUTION_MODE_NOT_SUPPORTED"));
+        assertFalse(hasCanvasIssue(streaming, "STREAMING_OUTPUT_REQUIRED"));
+    }
+
+    @Test
+    void rejectsModelOverwriteButAllowsModelUpsertInStreamingMode() {
+        CanvasGraphPlan overwrite = streamingModelOutputPlan(JdbcWriteMode.OVERWRITE);
+        CanvasGraphPlan upsert = streamingModelOutputPlan(JdbcWriteMode.UPSERT);
+
+        assertTrue(hasNodeIssue(overwrite, 1, "STREAMING_MODEL_OUTPUT_OVERWRITE_NOT_SUPPORTED"));
+        assertFalse(hasNodeIssue(upsert, 1, "STREAMING_MODEL_OUTPUT_OVERWRITE_NOT_SUPPORTED"));
+    }
+
     private static CanvasGraphPlan streamingJdbcOutputPlan(JdbcWriteMode writeMode) {
         String inputId = UUID.randomUUID().toString();
         String outputId = UUID.randomUUID().toString();
         return CanvasGraphPlan.create(
                 new CanvasDefinition(
-                        1,
-                        5,
+                        CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                        CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                         List.of(
                                 new KafkaInputNodeDefinition(
                                         inputId,
@@ -489,7 +550,45 @@ class CanvasGraphPlanTest {
                                                 UUID.randomUUID().toString(),
                                                 "order_events",
                                                 writeMode,
-                                                ColumnMappingMode.BY_NAME,
+                                                List.of(),
+                                                List.of()
+                                        )
+                                )
+                        ),
+                        List.of(new CanvasEdgeDefinition(UUID.randomUUID().toString(), inputId, outputId))
+                ),
+                CanvasExecutionMode.STREAMING
+        );
+    }
+
+    private static CanvasGraphPlan streamingModelOutputPlan(JdbcWriteMode writeMode) {
+        String inputId = UUID.randomUUID().toString();
+        String outputId = UUID.randomUUID().toString();
+        return CanvasGraphPlan.create(
+                new CanvasDefinition(
+                        CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                        CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                        List.of(
+                                new KafkaInputNodeDefinition(
+                                        inputId,
+                                        "Kafka 输入",
+                                        new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                                        new KafkaInputConfiguration(
+                                                UUID.randomUUID().toString(),
+                                                "order-events",
+                                                new KafkaValueSchema(List.of()),
+                                                "order_events",
+                                                KafkaStartingOffsets.LATEST
+                                        )
+                                ),
+                                new ModelOutputNodeDefinition(
+                                        outputId,
+                                        "模型输出",
+                                        new CanvasNodeLayout(320d, 0d, 240d, 120d),
+                                        new ModelOutputConfiguration(
+                                                "order_events",
+                                                UUID.randomUUID().toString(),
+                                                writeMode,
                                                 List.of()
                                         )
                                 )
@@ -521,7 +620,6 @@ class CanvasGraphPlanTest {
                 new ModelOutputConfiguration(
                         sourceTableName,
                         UUID.randomUUID().toString(),
-                        null,
                         null,
                         List.of()
                 )

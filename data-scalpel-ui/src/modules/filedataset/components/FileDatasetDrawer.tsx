@@ -95,6 +95,7 @@ export const FileDatasetDrawer = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={editing ? '修改文件数据集' : '新建文件数据集'}
         open={open}
         size={620}

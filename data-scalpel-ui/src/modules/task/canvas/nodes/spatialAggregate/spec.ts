@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeSpatialAggregate } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { spatialAggregateCanvasView } from './canvasView';
 
 export const spatialAggregateSpec = createCanvasNodeSpec({
   type: CanvasNodeType.SpatialAggregate,
@@ -18,9 +19,9 @@ export const spatialAggregateSpec = createCanvasNodeSpec({
   ],
   iconKey: CanvasNodeIconKey.SpatialAggregate,
   order: 100,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: spatialAggregateCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 23,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createSpatialAggregateConfiguration,
   summarize: summarizeSpatialAggregate,

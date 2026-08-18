@@ -202,6 +202,7 @@ export const ModelFieldTemplatePickerModal = ({
 
   return (
     <Modal
+      rootClassName="business-overlay business-modal-overlay"
       title="从常用字段模板添加"
       open={open}
       width={900}

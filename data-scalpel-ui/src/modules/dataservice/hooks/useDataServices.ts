@@ -10,19 +10,26 @@ import {
   executeScriptDraft,
   fetchDataServices,
   fetchDataService,
+  fetchDataServiceFieldLineage,
+  fetchDataServiceTableLineage,
   fetchScriptCompletion,
+  fetchStandardDataServiceModelCandidates,
   publishDataService,
   reconcileDataServiceGateway,
   testSqlDataService,
   unpublishDataService,
   updateDataService,
+  updateDataServiceDefinition,
   type ExecuteScriptDraftRequest,
 } from '../api/dataServiceApi';
 import type {
   CreateDataServiceRequest,
   SqlServiceTestRequest,
+  UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
 } from '../model/dataService';
+import type { LineageGranularity } from '../../model';
+import { invalidateDataModelLineage } from '../../model';
 
 const dataServicesQueryKey = 'data-services';
 
@@ -30,6 +37,7 @@ const invalidateDataServices = async (queryClient: ReturnType<typeof useQueryCli
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: [dataServicesQueryKey] }),
     invalidateDirectoryTree(queryClient, 'DATA_SERVICE'),
+    invalidateDataModelLineage(queryClient),
   ]);
 };
 
@@ -42,6 +50,20 @@ export const useDataService = (id: string | undefined, enabled = true) => useQue
   queryKey: [dataServicesQueryKey, id],
   queryFn: () => fetchDataService(id as string),
   enabled: enabled && Boolean(id),
+});
+
+export const useDataServiceLineage = (
+  serviceId: string,
+  granularity: LineageGranularity,
+  fieldId: string | undefined,
+  depth: 1 | 2,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataServicesQueryKey, serviceId, 'lineage', granularity, fieldId ?? null, depth],
+  queryFn: () => granularity === 'TABLE'
+    ? fetchDataServiceTableLineage(serviceId, depth)
+    : fetchDataServiceFieldLineage(serviceId, fieldId as string, depth),
+  enabled: enabled && (granularity === 'TABLE' || Boolean(fieldId)),
 });
 
 export const useCreateDataService = () => {
@@ -59,6 +81,28 @@ export const useUpdateDataService = () => {
     onSuccess: () => invalidateDataServices(queryClient),
   });
 };
+
+export const useUpdateDataServiceDefinition = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: UpdateDataServiceDefinitionRequest }) => (
+      updateDataServiceDefinition(id, request)
+    ),
+    onSuccess: () => invalidateDataServices(queryClient),
+  });
+};
+
+export const useStandardDataServiceModelCandidates = (
+  id: string | undefined,
+  request: SearchRequest,
+  includeUnavailable: boolean,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataServicesQueryKey, id, 'standard-model-candidates', request, includeUnavailable],
+  queryFn: () => fetchStandardDataServiceModelCandidates(id as string, request, includeUnavailable),
+  enabled: enabled && Boolean(id),
+  placeholderData: (previous) => previous,
+});
 
 export const usePublishDataService = () => {
   const queryClient = useQueryClient();

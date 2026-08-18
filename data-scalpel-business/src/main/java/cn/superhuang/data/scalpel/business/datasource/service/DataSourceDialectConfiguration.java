@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseInspector;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseStandardQueryExecutor;
+import cn.superhuang.data.scalpel.dialect.runtime.DatabaseSpatialPreviewExecutor;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseTableOperator;
 import cn.superhuang.data.scalpel.dialect.runtime.JdbcInsertSelectExecutor;
 import cn.superhuang.data.scalpel.dialect.runtime.JdbcQueryInspector;
@@ -35,6 +36,14 @@ public class DataSourceDialectConfiguration {
             JdbcConnectionFactory connectionFactory
     ) {
         return new DatabaseStandardQueryExecutor(registry, connectionFactory);
+    }
+
+    @Bean
+    DatabaseSpatialPreviewExecutor databaseSpatialPreviewExecutor(
+            DialectRegistry registry,
+            JdbcConnectionFactory connectionFactory
+    ) {
+        return new DatabaseSpatialPreviewExecutor(registry, connectionFactory);
     }
 
     @Bean

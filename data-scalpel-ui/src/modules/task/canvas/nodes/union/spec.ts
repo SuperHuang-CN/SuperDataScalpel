@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeUnion } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { unionCanvasView } from './canvasView';
 
 export const unionSpec = createCanvasNodeSpec({
   type: CanvasNodeType.Union,
@@ -15,9 +16,9 @@ export const unionSpec = createCanvasNodeSpec({
   searchKeywords: ['union', '合并', '纵向', '追加', 'all', 'distinct'],
   iconKey: CanvasNodeIconKey.Union,
   order: 20,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: unionCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 12,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: null, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createUnionConfiguration,
   summarize: summarizeUnion,

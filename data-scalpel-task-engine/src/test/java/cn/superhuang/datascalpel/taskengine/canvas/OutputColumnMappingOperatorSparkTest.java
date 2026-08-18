@@ -2,7 +2,6 @@ package cn.superhuang.datascalpel.taskengine.canvas;
 
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -154,8 +153,7 @@ class OutputColumnMappingOperatorSparkTest {
         Dataset<Row> selected = operator.apply(
                 source(sourceColumns),
                 new CanvasTableSchema("target", null, targetColumns),
-                ColumnMappingMode.BY_NAME,
-                List.of(),
+                identityMappings(sourceColumns),
                 issues
         );
 
@@ -187,7 +185,6 @@ class OutputColumnMappingOperatorSparkTest {
         Dataset<Row> selected = operator.apply(
                 source,
                 target,
-                ColumnMappingMode.EXPLICIT,
                 List.of(
                         new JdbcColumnMapping("source_id", "id"),
                         new JdbcColumnMapping("description", "description")
@@ -215,7 +212,6 @@ class OutputColumnMappingOperatorSparkTest {
         Dataset<Row> selected = operator.applyPreserving(
                 source,
                 target,
-                ColumnMappingMode.EXPLICIT,
                 List.of(new JdbcColumnMapping("source_name", "name")),
                 "business_key",
                 "__datascalpel_kafka_key",
@@ -231,7 +227,50 @@ class OutputColumnMappingOperatorSparkTest {
     }
 
     @Test
-    void validatesByNameAndExplicitMappingBusinessRules() {
+    void ordersTheProjectionByTargetSchemaAndAllowsSourceReuse() {
+        SparkCanvasTable source = source(column("value", PlatformDataType.STRING, false));
+        CanvasTableSchema target = new CanvasTableSchema("target", null, List.of(
+                column("first", PlatformDataType.STRING, false),
+                column("second", PlatformDataType.STRING, false)
+        ));
+        RecordingIssueSink issues = new RecordingIssueSink();
+
+        Dataset<Row> selected = operator.apply(
+                source,
+                target,
+                List.of(
+                        new JdbcColumnMapping("value", "second"),
+                        new JdbcColumnMapping("value", "first")
+                ),
+                issues
+        );
+
+        assertFalse(issues.hasErrors());
+        assertEquals(List.of("first", "second"), List.of(selected.columns()));
+    }
+
+    @Test
+    void rejectsMappingsToDatabaseGeneratedTargets() {
+        SparkCanvasTable source = source(column("id", PlatformDataType.LONG, false));
+        CanvasColumnSchema generatedTarget = new CanvasColumnSchema(
+                "id", PlatformDataType.LONG, null, null, null,
+                false, null, true, false, null
+        );
+        RecordingIssueSink issues = new RecordingIssueSink();
+
+        Dataset<Row> selected = operator.apply(
+                source,
+                new CanvasTableSchema("target", null, List.of(generatedTarget)),
+                List.of(new JdbcColumnMapping("id", "id")),
+                issues
+        );
+
+        assertNull(selected);
+        assertEquals(List.of("TARGET_COLUMN_NOT_WRITABLE"), issues.codes);
+    }
+
+    @Test
+    void validatesUnifiedMappingBusinessRules() {
         SparkCanvasTable source = source(List.of(
                 column("id", PlatformDataType.LONG, false),
                 column("extra", PlatformDataType.STRING, true)
@@ -241,26 +280,22 @@ class OutputColumnMappingOperatorSparkTest {
                 column("required_name", PlatformDataType.STRING, false)
         ));
 
-        RecordingIssueSink byNameIssues = new RecordingIssueSink();
-        Dataset<Row> byName = operator.apply(
+        RecordingIssueSink emptyMappingIssues = new RecordingIssueSink();
+        Dataset<Row> emptyMapping = operator.apply(
                 source,
                 target,
-                ColumnMappingMode.BY_NAME,
-                List.of(new JdbcColumnMapping("id", "id")),
-                byNameIssues
+                List.of(),
+                emptyMappingIssues
         );
 
-        assertNull(byName);
-        assertTrue(byNameIssues.hasErrors());
-        assertTrue(byNameIssues.codes.contains("INVALID_COLUMN_MAPPING"));
-        assertTrue(byNameIssues.codes.contains("REQUIRED_TARGET_COLUMN_MISSING"));
-        assertTrue(byNameIssues.codes.contains("SOURCE_COLUMN_IGNORED"));
+        assertNull(emptyMapping);
+        assertTrue(emptyMappingIssues.hasErrors());
+        assertEquals(List.of("REQUIRED_CONFIGURATION"), emptyMappingIssues.codes);
 
         RecordingIssueSink explicitIssues = new RecordingIssueSink();
         Dataset<Row> explicit = operator.apply(
                 source,
                 target,
-                ColumnMappingMode.EXPLICIT,
                 List.of(
                         new JdbcColumnMapping("id", "id"),
                         new JdbcColumnMapping("id", "id")
@@ -282,10 +317,15 @@ class OutputColumnMappingOperatorSparkTest {
         return operator.apply(
                 source,
                 new CanvasTableSchema("target", null, List.of(targetColumn)),
-                ColumnMappingMode.BY_NAME,
-                List.of(),
+                List.of(new JdbcColumnMapping("value", targetColumn.name())),
                 issues
         );
+    }
+
+    private static List<JdbcColumnMapping> identityMappings(List<CanvasColumnSchema> columns) {
+        return columns.stream()
+                .map(column -> new JdbcColumnMapping(column.name(), column.name()))
+                .toList();
     }
 
     private SparkCanvasTable source(CanvasColumnSchema column) {

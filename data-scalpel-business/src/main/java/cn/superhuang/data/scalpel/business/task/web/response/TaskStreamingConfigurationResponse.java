@@ -19,4 +19,14 @@ public record TaskStreamingConfigurationResponse(
                 configuration.getUpdatedAt()
         );
     }
+
+    public static TaskStreamingConfigurationResponse fromDefinition(
+            UUID taskId,
+            int triggerIntervalSeconds,
+            Instant createdAt,
+            Instant updatedAt
+    ) {
+        return new TaskStreamingConfigurationResponse(
+                taskId, triggerIntervalSeconds, createdAt, updatedAt);
+    }
 }

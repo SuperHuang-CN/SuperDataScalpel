@@ -55,6 +55,16 @@ spring:
     wait-for-jobs-to-complete-on-shutdown: false
 
 data-scalpel:
+  assistant:
+    credential-key: ${DATASCALPEL_ASSISTANT_CREDENTIAL_KEY:}
+    connect-timeout: ${DATASCALPEL_ASSISTANT_CONNECT_TIMEOUT:5s}
+    request-timeout: ${DATASCALPEL_ASSISTANT_REQUEST_TIMEOUT:90s}
+    stale-run-timeout: ${DATASCALPEL_ASSISTANT_STALE_RUN_TIMEOUT:2m}
+    max-output-tokens: ${DATASCALPEL_ASSISTANT_MAX_OUTPUT_TOKENS:4096}
+    temperature: ${DATASCALPEL_ASSISTANT_TEMPERATURE:0.1}
+    max-tool-rounds: 4
+    max-tool-calls-per-turn: 8
+    max-directory-operations: 100
   gateway-access:
     enabled: ${DATASCALPEL_GATEWAY_ACCESS_ENABLED:false}
     topic: ${DATASCALPEL_GATEWAY_ACCESS_TOPIC:datascalpel.gateway.access.v1}
@@ -134,9 +144,16 @@ data-scalpel:
     canvas:
       timeout: ${DATASCALPEL_CANVAS_TASK_TIMEOUT:1h}
       recovery-grace: ${DATASCALPEL_CANVAS_RECOVERY_GRACE:1m}
+    model-quality:
+      timeout: ${DATASCALPEL_MODEL_QUALITY_TASK_TIMEOUT:1h}
     executor:
       concurrency: ${DATASCALPEL_TASK_RUN_CONCURRENCY:4}
       queue-capacity: ${DATASCALPEL_TASK_RUN_QUEUE_CAPACITY:100}
+  task:
+    snapshot-sync:
+      max-rows-per-side: ${DATASCALPEL_SNAPSHOT_SYNC_MAX_ROWS_PER_SIDE:100000}
+      max-estimated-bytes: ${DATASCALPEL_SNAPSHOT_SYNC_MAX_ESTIMATED_BYTES:268435456}
+      lock-timeout-seconds: ${DATASCALPEL_SNAPSHOT_SYNC_LOCK_TIMEOUT_SECONDS:30}
   security:
     admin:
       username: ${DATASCALPEL_ADMIN_USERNAME:admin}

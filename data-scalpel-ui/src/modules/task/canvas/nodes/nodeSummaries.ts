@@ -38,8 +38,17 @@ export const summarizeJdbcInput = (
 ) => {
   if (!data.configuration.tableName) return '请选择来源表';
   return data.summary?.kind === 'JDBC'
-    ? `${data.summary.dataSourceName} · ${data.summary.qualifiedTableName}`
+    ? `${data.summary.dataSourceName} · ${data.configuration.tableName}`
     : `未知数据源 · ${data.configuration.tableName}`;
+};
+
+export const summarizeJdbcIncrementalInput = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.JdbcIncrementalInput>,
+) => {
+  const { tableName, incrementalTimeColumn, outputTableName, triggerIntervalSeconds } = data.configuration;
+  if (!tableName || !incrementalTimeColumn || !outputTableName) return '请配置 JDBC 增量输入';
+  const source = data.summary?.kind === 'JDBC' ? data.summary.dataSourceName : '未知数据源';
+  return `${source} · ${tableName}.${incrementalTimeColumn} → ${outputTableName} · ${triggerIntervalSeconds ?? 60}s`;
 };
 
 export const summarizeJdbcQueryInput = (
@@ -94,6 +103,16 @@ export const summarizeKafkaInput = (
   return data.summary?.kind === 'KAFKA'
     ? `${data.summary.dataSourceName} · ${topic} → ${outputTableName} · ${valueSchema.columns.length} 字段`
     : `${topic} → ${outputTableName} · ${valueSchema.columns.length} 字段`;
+};
+
+export const summarizeTdEngineTmqInput = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TdEngineTmqInput>,
+) => {
+  const { dataSourceId, topicName, supertableName, outputTableName } = data.configuration;
+  if (!dataSourceId || !topicName || !supertableName || !outputTableName) return '请配置 TDengine TMQ 输入';
+  return data.summary?.kind === 'TDENGINE_TMQ'
+    ? `${data.summary.dataSourceName} · ${topicName} · ${supertableName} → ${outputTableName}`
+    : `${topicName} · ${supertableName} → ${outputTableName}`;
 };
 
 export const summarizeJoin = (
@@ -457,12 +476,42 @@ export const summarizeModelOutput = (
 export const summarizeJdbcOutput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.JdbcOutput>,
 ) => {
-  const { sourceTableName, dataSourceId, targetTableName, writeMode } = data.configuration;
+  const { sourceTableName, targetTableName, writeMode } = data.configuration;
   if (!sourceTableName || !targetTableName || !writeMode) return '请选择输出目标';
   const target = data.summary?.kind === 'JDBC'
     ? data.summary.qualifiedTableName
-    : `${dataSourceId || '未知数据源'}.${targetTableName}`;
+    : targetTableName;
   return `${sourceTableName} → ${target} (${writeMode})`;
+};
+
+const snapshotDeleteSummary = (action: 'KEEP' | 'DELETE') => (
+  action === 'DELETE' ? '删除目标独有行' : '保留目标独有行'
+);
+
+export const summarizeJdbcSnapshotSyncOutput = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.JdbcSnapshotSyncOutput>,
+) => {
+  const { sourceTableName, dataSourceId, targetTableName, keyColumns, deletePolicy } = data.configuration;
+  if (!sourceTableName || !dataSourceId || !targetTableName || keyColumns.length === 0) {
+    return '请选择同步目标并配置 Key';
+  }
+  const target = data.summary?.kind === 'JDBC'
+    ? `${data.summary.dataSourceName} · ${data.summary.qualifiedTableName}`
+    : `未知数据源 · ${targetTableName}`;
+  return `${sourceTableName} ⇄ ${target} · ${keyColumns.length} 个 Key · ${snapshotDeleteSummary(deletePolicy.action)}`;
+};
+
+export const summarizeModelSnapshotSyncOutput = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.ModelSnapshotSyncOutput>,
+) => {
+  const { sourceTableName, targetModelId, keyColumns, deletePolicy } = data.configuration;
+  if (!sourceTableName || !targetModelId || keyColumns.length === 0) {
+    return '请选择目标模型并配置 Key';
+  }
+  const target = data.summary?.kind === 'MODEL'
+    ? `${data.summary.modelName} · ${data.summary.modelCode}`
+    : `模型 ${targetModelId}`;
+  return `${sourceTableName} ⇄ ${target} · ${keyColumns.length} 个 Key · ${snapshotDeleteSummary(deletePolicy.action)}`;
 };
 
 export const summarizeKafkaOutput = (

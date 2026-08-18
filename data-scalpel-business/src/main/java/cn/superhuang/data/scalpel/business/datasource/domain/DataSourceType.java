@@ -16,6 +16,16 @@ public enum DataSourceType {
     DAMENG(DataSourceConnectionKind.JDBC, "达梦", allPurposes()),
     KINGBASE(DataSourceConnectionKind.JDBC, "人大金仓", allPurposes()),
     OPENGAUSS(DataSourceConnectionKind.JDBC, "openGauss", allPurposes()),
+    TDENGINE_WEBSOCKET(
+            DataSourceConnectionKind.JDBC,
+            "TDengine WebSocket JDBC",
+            EnumSet.of(DataSourcePurpose.SOURCE)
+    ),
+    TDENGINE_RESTFUL(
+            DataSourceConnectionKind.JDBC,
+            "TDengine RESTful JDBC",
+            EnumSet.of(DataSourcePurpose.SOURCE)
+    ),
     KAFKA(DataSourceConnectionKind.KAFKA, "Kafka", EnumSet.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION)),
     S3(DataSourceConnectionKind.S3, "S3 兼容对象存储", EnumSet.of(DataSourcePurpose.SOURCE, DataSourcePurpose.DISTRIBUTION)),
     HTTP_API(DataSourceConnectionKind.HTTP_API, "HTTP API", EnumSet.of(DataSourcePurpose.SOURCE)),
@@ -50,6 +60,10 @@ public enum DataSourceType {
 
     public boolean isJdbc() {
         return connectionKind == DataSourceConnectionKind.JDBC;
+    }
+
+    public boolean isTdEngine() {
+        return this == TDENGINE_WEBSOCKET || this == TDENGINE_RESTFUL;
     }
 
     private static Set<DataSourcePurpose> allPurposes() {

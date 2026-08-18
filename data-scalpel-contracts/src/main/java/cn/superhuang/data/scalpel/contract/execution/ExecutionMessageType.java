@@ -11,6 +11,7 @@ public enum ExecutionMessageType {
     RUNNER_STREAMING_STARTED,
     RUNNER_STREAMING_PROGRESS,
     RUNNER_STREAMING_STOPPED,
+    RUNNER_USER_OBSERVABILITY,
     EXECUTION_ACCEPTED,
     EXECUTION_REJECTED,
     EXECUTION_SUBMITTED,
@@ -20,6 +21,7 @@ public enum ExecutionMessageType {
     EXECUTION_TIMED_OUT,
     EXECUTION_CANCELLED,
     STREAMING_PROGRESS,
+    USER_OBSERVABILITY,
     EXECUTION_STOPPED,
     EXECUTION_LOST;
 
@@ -34,6 +36,7 @@ public enum ExecutionMessageType {
                  EXECUTION_TIMED_OUT,
                  EXECUTION_CANCELLED,
                  STREAMING_PROGRESS,
+                 USER_OBSERVABILITY,
                  EXECUTION_STOPPED,
                  EXECUTION_LOST -> true;
             case SUBMIT_EXECUTION,
@@ -45,7 +48,8 @@ public enum ExecutionMessageType {
                  RUNNER_FAILED,
                  RUNNER_STREAMING_STARTED,
                  RUNNER_STREAMING_PROGRESS,
-                 RUNNER_STREAMING_STOPPED -> false;
+                 RUNNER_STREAMING_STOPPED,
+                 RUNNER_USER_OBSERVABILITY -> false;
         };
     }
 }

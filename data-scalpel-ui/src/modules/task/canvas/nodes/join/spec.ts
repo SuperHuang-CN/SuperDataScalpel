@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeJoin } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { joinCanvasView } from './canvasView';
 
 export const joinSpec = createCanvasNodeSpec({
   type: CanvasNodeType.Join,
@@ -15,7 +16,7 @@ export const joinSpec = createCanvasNodeSpec({
   searchKeywords: ['join', '关联', '连接', '合并'],
   iconKey: CanvasNodeIconKey.Join,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: joinCanvasView,
   supportedModes: ['BATCH'],
   introducedInMinor: 0,
   graph: { minInputs: 2, maxInputs: 2, minOutputs: 1, maxOutputs: null },

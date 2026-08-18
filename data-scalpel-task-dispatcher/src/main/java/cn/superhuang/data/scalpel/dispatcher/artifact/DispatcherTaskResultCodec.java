@@ -20,7 +20,10 @@ public class DispatcherTaskResultCodec {
     public DispatcherTaskResult read(byte[] content) throws BackendException {
         try {
             DispatcherTaskResult result = objectMapper.readValue(content, DispatcherTaskResult.class);
-            if (result == null || result.schemaVersion() == null || result.schemaVersion() != 2) {
+            if (result == null || result.schemaVersion() == null
+                    || result.schemaVersion() != 2 && result.schemaVersion() != 3
+                    && result.schemaVersion() != 4 && result.schemaVersion() != 5
+                    && result.schemaVersion() != 6) {
                 throw new IllegalArgumentException("Runner result.json 版本不受支持");
             }
             return result;

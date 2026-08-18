@@ -11,6 +11,8 @@ import java.util.UUID;
 
 public interface DataModelFieldRepository extends SearchRepository<DataModelField, UUID> {
 
+    boolean existsByModelId(UUID modelId);
+
     List<DataModelField> findAllByModelIdOrderBySortOrderAscCodeAsc(UUID modelId);
 
     @Query("""
@@ -23,6 +25,15 @@ public interface DataModelFieldRepository extends SearchRepository<DataModelFiel
             @Param("modelIds") Collection<UUID> modelIds
     );
 
+    @Query("""
+            select new cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository$ModelFieldCount(
+                    field.modelId, count(field))
+            from DataModelField field
+            where field.modelId in :modelIds
+            group by field.modelId
+            """)
+    List<ModelFieldCount> countByModelIdIn(@Param("modelIds") Collection<UUID> modelIds);
+
     void deleteAllByModelId(UUID modelId);
 
     List<DataModelField> findAllByStandardDictionaryId(UUID standardDictionaryId);
@@ -30,4 +41,7 @@ public interface DataModelFieldRepository extends SearchRepository<DataModelFiel
     long countByStandardDictionaryId(UUID standardDictionaryId);
 
     boolean existsByStandardDictionaryId(UUID standardDictionaryId);
+
+    record ModelFieldCount(UUID modelId, long fieldCount) {
+    }
 }

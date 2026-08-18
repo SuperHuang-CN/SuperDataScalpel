@@ -41,6 +41,7 @@ export const ReplaceFileDatasetContentDrawer = ({ fileDataset, file, open, onClo
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={`替换文件 · ${file?.originalFileName ?? ''}`}
         open={open}
         size={520}

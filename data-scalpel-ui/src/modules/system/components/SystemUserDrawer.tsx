@@ -75,6 +75,7 @@ export const SystemUserDrawer = ({ open, user, roles, onClose }: SystemUserDrawe
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={isEditing ? '修改用户' : '新建用户'}
         open={open}
         onClose={onClose}

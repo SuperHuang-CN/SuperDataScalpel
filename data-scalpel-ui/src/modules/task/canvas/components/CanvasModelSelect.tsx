@@ -8,6 +8,7 @@ import {
   useDataModel,
   useDataModels,
   type DataModel,
+  type PhysicalTableMode,
 } from '../../../model';
 
 interface CanvasModelSelectProps {
@@ -17,6 +18,7 @@ interface CanvasModelSelectProps {
   onBlur?: () => void;
   placeholder: string;
   presentation?: 'MODEL' | 'SCHEMA';
+  physicalTableModes?: readonly PhysicalTableMode[];
 }
 
 const SEARCH_DELAY_MS = 300;
@@ -29,7 +31,6 @@ const uniqueModels = (models: DataModel[]) => (
 const modelContext = (model: DataModel) => [
   model.code,
   model.storageDataSourceName,
-  model.schemaName,
   model.physicalTableName,
 ].filter(Boolean).join(' · ');
 
@@ -40,17 +41,24 @@ export const CanvasModelSelect = ({
   onBlur,
   placeholder,
   presentation = 'MODEL',
+  physicalTableModes,
 }: CanvasModelSelectProps) => {
   const [open, setOpen] = useState(false);
   const [keyword, setKeyword] = useState('');
   const timerRef = useRef<number | null>(null);
   const selectedQuery = useDataModel(value, Boolean(value));
   const request = useMemo(() => ({
-    search: buildDataModelSearch({ keyword, status: 'PUBLISHED' }),
+    search: buildDataModelSearch({
+      keyword,
+      status: 'PUBLISHED',
+      ...(physicalTableModes?.length
+        ? { physicalTableModes: [...physicalTableModes] }
+        : {}),
+    }),
     page: 0,
     size: MODEL_PAGE_SIZE,
     sort: 'code',
-  }), [keyword]);
+  }), [keyword, physicalTableModes]);
   const modelsQuery = useDataModels(request, open);
 
   useEffect(() => () => {
@@ -65,11 +73,17 @@ export const CanvasModelSelect = ({
     }, SEARCH_DELAY_MS);
   };
 
+  const allowsPhysicalTableMode = (model: DataModel) => (
+    !physicalTableModes?.length || physicalTableModes.includes(model.physicalTableMode)
+  );
   const selected = selectedQuery.data?.model;
-  const published = (modelsQuery.data?.content ?? []).filter((model) => model.status === 'PUBLISHED');
+  const published = (modelsQuery.data?.content ?? []).filter((model) => (
+    model.status === 'PUBLISHED' && allowsPhysicalTableMode(model)
+  ));
   const models = uniqueModels(selected ? [selected, ...published] : published);
   const modelById = new Map(models.map((model) => [model.id, model]));
-  const selectedUnavailable = selected !== undefined && selected.status !== 'PUBLISHED';
+  const selectedUnavailable = selected !== undefined
+    && (selected.status !== 'PUBLISHED' || !allowsPhysicalTableMode(selected));
   const fallbackOption = value && !modelById.has(value)
     ? [{ value, label: `不可用模型 · ${value}`, disabled: true }]
     : [];
@@ -77,7 +91,7 @@ export const CanvasModelSelect = ({
     ...models.map((model) => ({
       value: model.id,
       label: `${model.name}（${model.code}）`,
-      disabled: model.status !== 'PUBLISHED',
+      disabled: model.status !== 'PUBLISHED' || !allowsPhysicalTableMode(model),
     })),
     ...fallbackOption,
   ];
@@ -122,7 +136,14 @@ export const CanvasModelSelect = ({
       }}
       notFoundContent={modelsQuery.isFetching
         ? <Spin size="small" />
-        : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有可用的已发布模型" />}
+        : (
+          <Empty
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+            description={physicalTableModes?.length
+              ? '没有符合物理模式要求的已发布模型'
+              : '没有可用的已发布模型'}
+          />
+        )}
       popupRender={(menu) => (
         <>
           {menu}

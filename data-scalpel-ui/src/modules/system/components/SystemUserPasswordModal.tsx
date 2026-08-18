@@ -33,6 +33,7 @@ export const SystemUserPasswordModal = ({ user, onClose }: SystemUserPasswordMod
     <>
       {messageContext}
       <Modal
+        rootClassName="business-overlay business-modal-overlay"
         title={`重置密码：${user?.displayName ?? ''}`}
         open={Boolean(user)}
         onCancel={onClose}

@@ -11,6 +11,18 @@ public record TaskCompilationResponse(
         long durationMs,
         String sparkApplicationId,
         List<CompilationIssue> canvasIssues,
-        List<NodeCompilationResult> nodeResults
+        List<NodeCompilationResult> nodeResults,
+        CanvasLineageCompilation lineage
 ) {
+    public TaskCompilationResponse(
+            UUID requestId,
+            TaskType taskType,
+            boolean valid,
+            long durationMs,
+            String sparkApplicationId,
+            List<CompilationIssue> canvasIssues,
+            List<NodeCompilationResult> nodeResults
+    ) {
+        this(requestId, taskType, valid, durationMs, sparkApplicationId, canvasIssues, nodeResults, null);
+    }
 }

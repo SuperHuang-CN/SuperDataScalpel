@@ -20,7 +20,8 @@ public record RuntimeDataSource(
         List<HttpApiContracts.ResourceDefinition> apiResources,
         RuntimeKafkaConnection kafkaConnection,
         RuntimeS3Connection s3Connection,
-        List<SpatialServiceResourceDefinition> spatialResources
+        List<SpatialServiceResourceDefinition> spatialResources,
+        RuntimeTdEngineTmqConnection tdEngineTmqConnection
 ) {
     public RuntimeDataSource {
         purposes = purposes == null ? Set.of() : Set.copyOf(purposes);
@@ -30,11 +31,29 @@ public record RuntimeDataSource(
 
     public RuntimeDataSource(
             UUID dataSourceId,
+            ConnectionKind connectionKind,
+            RuntimeDatabaseType databaseType,
+            Set<DataSourcePurpose> purposes,
+            RuntimeJdbcConnection connection,
+            HttpApiContracts.RuntimeConnection httpApiConnection,
+            List<HttpApiContracts.ResourceDefinition> apiResources,
+            RuntimeKafkaConnection kafkaConnection,
+            RuntimeS3Connection s3Connection,
+            List<SpatialServiceResourceDefinition> spatialResources
+    ) {
+        this(dataSourceId, connectionKind, databaseType, purposes, connection,
+                httpApiConnection, apiResources, kafkaConnection, s3Connection,
+                spatialResources, null);
+    }
+
+    public RuntimeDataSource(
+            UUID dataSourceId,
             RuntimeDatabaseType databaseType,
             Set<DataSourcePurpose> purposes,
             RuntimeJdbcConnection connection
     ) {
-        this(dataSourceId, ConnectionKind.JDBC, databaseType, purposes, connection, null, List.of(), null, null, List.of());
+        this(dataSourceId, ConnectionKind.JDBC, databaseType, purposes, connection,
+                null, List.of(), null, null, List.of(), null);
     }
 
     public RuntimeDataSource(
@@ -47,7 +66,7 @@ public record RuntimeDataSource(
             List<HttpApiContracts.ResourceDefinition> apiResources
     ) {
         this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                httpApiConnection, apiResources, null, null, List.of());
+                httpApiConnection, apiResources, null, null, List.of(), null);
     }
 
     public RuntimeDataSource(
@@ -61,7 +80,7 @@ public record RuntimeDataSource(
             RuntimeKafkaConnection kafkaConnection
     ) {
         this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                httpApiConnection, apiResources, kafkaConnection, null, List.of());
+                httpApiConnection, apiResources, kafkaConnection, null, List.of(), null);
     }
 
     public RuntimeDataSource(
@@ -76,6 +95,6 @@ public record RuntimeDataSource(
             RuntimeS3Connection s3Connection
     ) {
         this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                httpApiConnection, apiResources, kafkaConnection, s3Connection, List.of());
+                httpApiConnection, apiResources, kafkaConnection, s3Connection, List.of(), null);
     }
 }

@@ -1,11 +1,19 @@
 /* eslint-disable react-refresh/only-export-components -- X6 consumes this module as a runtime node registry. */
-import { DeleteOutlined } from '@ant-design/icons';
+import {
+  CheckCircleFilled,
+  ClockCircleOutlined,
+  CloseCircleFilled,
+  DeleteOutlined,
+  LockOutlined,
+  SettingOutlined,
+  WarningFilled,
+} from '@ant-design/icons';
 import type { Node } from '@antv/x6';
 import { register } from '@antv/x6-react-shape';
-import { Button, Tag, Tooltip } from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { Button, Tooltip } from 'antd';
+import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { requestCanvasNodeDeletion } from './canvasNodeDeletion';
-import { CanvasCategoryIcon, CanvasNodeIcon } from './components/CanvasNodeIcons';
+import { CanvasNodeIcon } from './components/CanvasNodeIcons';
 import {
   type CanvasExecutionMode,
   type CanvasNodeCategory,
@@ -34,23 +42,13 @@ export interface CanvasNodeTemplate {
   supportedModes: readonly CanvasExecutionMode[];
 }
 
-export const canvasNodeTemplates: readonly CanvasNodeTemplate[] = canvasNodeRegistry.all().map((spec) => ({
-  type: spec.type,
-  shape: CANVAS_RUNTIME_NODE_SHAPE,
-  label: spec.label,
-  description: spec.description,
-  searchKeywords: spec.searchKeywords,
-  category: spec.category,
-  group: spec.group,
-  iconKey: spec.iconKey,
-  order: spec.order,
-  width: spec.defaultSize.width,
-  height: spec.defaultSize.height,
-  supportedModes: spec.supportedModes,
-}));
+type CanvasNodeTemplateSource = Omit<
+  CanvasNodeTemplate,
+  'shape' | 'width' | 'height'
+>;
 
-export const canvasNodeTemplate = (type: CanvasNodeRuntimeData['type']): CanvasNodeTemplate => {
-  const spec = canvasNodeRegistry.require(type);
+const canvasTemplateFromSpec = (spec: CanvasNodeTemplateSource): CanvasNodeTemplate => {
+  const size = canvasNodeRegistry.resolveSize(canvasNodeRegistry.createRuntimeData(spec.type));
   return {
     type: spec.type,
     shape: CANVAS_RUNTIME_NODE_SHAPE,
@@ -61,10 +59,17 @@ export const canvasNodeTemplate = (type: CanvasNodeRuntimeData['type']): CanvasN
     group: spec.group,
     iconKey: spec.iconKey,
     order: spec.order,
-    width: spec.defaultSize.width,
-    height: spec.defaultSize.height,
+    width: size.width,
+    height: size.height,
     supportedModes: spec.supportedModes,
   };
+};
+
+export const canvasNodeTemplates: readonly CanvasNodeTemplate[] = canvasNodeRegistry.all().map(canvasTemplateFromSpec);
+
+export const canvasNodeTemplate = (type: CanvasNodeRuntimeData['type']): CanvasNodeTemplate => {
+  const spec = canvasNodeRegistry.require(type);
+  return canvasTemplateFromSpec(spec);
 };
 
 const validationLabel: Record<CanvasNodeValidationStatus, { color: string; label: string }> = {
@@ -73,6 +78,14 @@ const validationLabel: Record<CanvasNodeValidationStatus, { color: string; label
   VALID: { color: 'success', label: '有效' },
   WARNING: { color: 'warning', label: '有警告' },
   ERROR: { color: 'error', label: '有错误' },
+};
+
+const validationIcon: Record<CanvasNodeValidationStatus, ReactNode> = {
+  UNCHECKED: <ClockCircleOutlined />,
+  UNCONFIGURED: <SettingOutlined />,
+  VALID: <CheckCircleFilled />,
+  WARNING: <WarningFilled />,
+  ERROR: <CloseCircleFilled />,
 };
 
 interface CanvasNodeViewProps {
@@ -110,6 +123,7 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
   }, [editingName]);
 
   const beginNameEdit = () => {
+    if (data.readOnly) return;
     cancelBlurRef.current = false;
     setDraftName(data.name);
     setEditingName(true);
@@ -132,20 +146,37 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
   };
 
   const template = canvasNodeTemplate(data.type);
-  const summary = canvasNodeRegistry.summarize(data);
   const validation = data.validation ?? validationLabel.UNCHECKED;
-  const validationPresentation = 'status' in validation ? validationLabel[validation.status] : validation;
+  const validationPresentation = 'status' in validation
+    ? validationLabel[validation.status]
+    : validation;
+  const validationStatus = 'status' in validation ? validation.status : 'UNCHECKED';
+  const hasIssueBar = validationStatus === 'WARNING' || validationStatus === 'ERROR';
+  const resolvedSize = useMemo(() => {
+    const base = canvasNodeRegistry.resolveSize(data);
+    return { width: base.width, height: base.height + (hasIssueBar ? 28 : 0) };
+  }, [data, hasIssueBar]);
+  const body = useMemo(
+    () => createElement(canvasNodeRegistry.canvasBody(data.type), { data }),
+    [data],
+  );
+
+  useEffect(() => {
+    const current = node.getSize();
+    if (current.width === resolvedSize.width && current.height === resolvedSize.height) return;
+    node.resize(resolvedSize.width, resolvedSize.height, { canvasPresentationUpdate: true });
+  }, [node, resolvedSize.height, resolvedSize.width]);
 
   return (
     <div
-      className={`canvas-node canvas-node-category-${template.category.toLowerCase()} canvas-node-${validationPresentation.color}`}
+      className={`canvas-node canvas-node-category-${template.category.toLowerCase()} canvas-node-type-${data.type.toLowerCase().replaceAll('_', '-')} canvas-node-${validationPresentation.color}${data.readOnly ? ' canvas-node-readonly' : ''}`}
       style={{ width: size.width, height: size.height }}
     >
       <div className={`canvas-node-header canvas-node-header-${template.category.toLowerCase()}`}>
         <span className="canvas-node-category-icon">
-          <CanvasCategoryIcon category={template.category} />
+          <CanvasNodeIcon iconKey={template.iconKey} />
         </span>
-        {editingName ? (
+        {editingName && !data.readOnly ? (
           <input
             ref={nameInputRef}
             className="canvas-node-title-input"
@@ -174,6 +205,8 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
               }
             }}
           />
+        ) : data.readOnly ? (
+          <span className="canvas-node-title" title={template.label}>{data.name}</span>
         ) : (
           <span
             className="canvas-node-title"
@@ -195,31 +228,38 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
             {data.name}
           </span>
         )}
-        <Tooltip title="删除节点">
-          <Button
-            type="text"
-            danger
-            size="small"
-            className="canvas-node-delete"
-            aria-label={`删除节点 ${data.name}`}
-            icon={<DeleteOutlined />}
-            onMouseDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              const graph = node.model?.graph;
-              if (graph) requestCanvasNodeDeletion(graph, [node]);
-            }}
-          />
+        {!data.readOnly && (
+          <Tooltip title="删除节点">
+            <Button
+              type="text"
+              danger
+              size="small"
+              className="canvas-node-delete"
+              aria-label={`删除节点 ${data.name}`}
+              icon={<DeleteOutlined />}
+              onMouseDown={(event) => event.stopPropagation()}
+              onClick={(event) => {
+                event.stopPropagation();
+                const graph = node.model?.graph;
+                if (graph) requestCanvasNodeDeletion(graph, [node]);
+              }}
+            />
+          </Tooltip>
+        )}
+        <Tooltip title={`${data.readOnly ? '只读 · ' : ''}${validationPresentation.label}${data.validation?.message ? `：${data.validation.message}` : ''}`}>
+          <span
+            className={`canvas-node-validation-icon is-${validationPresentation.color}${data.readOnly ? ' is-readonly' : ''}`}
+            aria-label={`${data.readOnly ? '只读，' : ''}${validationPresentation.label}`}
+          >
+            {data.readOnly && <LockOutlined className="canvas-node-readonly-icon" />}
+            {validationIcon[validationStatus]}
+          </span>
         </Tooltip>
       </div>
       <div className="canvas-node-body">
-        <CanvasNodeIcon iconKey={template.iconKey} />
-        <span className="canvas-node-summary" title={summary}>{summary}</span>
+        {body}
       </div>
-      <div className="canvas-node-status">
-        <Tag color={validationPresentation.color}>{validationPresentation.label}</Tag>
-        {data.validation?.message && <span title={data.validation.message}>{data.validation.message}</span>}
-      </div>
+      {hasIssueBar && <div className={`canvas-node-issue is-${validationStatus?.toLowerCase()}`} title={data.validation?.message}>{data.validation?.message || validationPresentation.label}</div>}
     </div>
   );
 };

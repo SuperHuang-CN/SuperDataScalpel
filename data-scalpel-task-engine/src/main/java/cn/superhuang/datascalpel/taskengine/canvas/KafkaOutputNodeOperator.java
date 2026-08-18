@@ -60,7 +60,7 @@ public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
         );
         var valueColumns = KafkaValueSchemaSupport.columns(
                 configuration.valueSchema(), issues, "configuration.valueSchema");
-        if (configuration.columnMappingMode() == null || configuration.columnMappings() == null) {
+        if (configuration.columnMappings() == null) {
             issues.error("REQUIRED_CONFIGURATION", "字段映射配置不完整", "configuration.columnMappings");
         }
         SparkCanvasTable source = inputs.get(configuration.sourceTableName());
@@ -96,21 +96,22 @@ public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
                 ? mappingOperator.apply(
                         source,
                         target,
-                        configuration.columnMappingMode(),
                         configuration.columnMappings(),
                         issues
                 )
                 : mappingOperator.applyPreserving(
                         source,
                         target,
-                        configuration.columnMappingMode(),
                         configuration.columnMappings(),
                         keyColumn,
-                    "__datascalpel_kafka_key",
+                        "__datascalpel_kafka_key",
                         issues
                 );
         if (mapped == null || issues.hasErrors()) return CanvasNodeOperationResult.outputOnly();
         CanvasPreparedKafkaOutput prepared = context.dataAccess().prepareKafkaOutput(node, mapped);
-        return CanvasNodeOperationResult.kafkaOutput(prepared);
+        return CanvasNodeOperationResult.kafkaOutput(
+                prepared,
+                CanvasLineageOutputCandidate.kafka(node, mapped, dataSourceId, configuration.topic(), target)
+        );
     }
 }

@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeFilter } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { filterCanvasView } from './canvasView';
 
 export const filterSpec = createCanvasNodeSpec({
   type: CanvasNodeType.Filter,
@@ -15,9 +16,9 @@ export const filterSpec = createCanvasNodeSpec({
   searchKeywords: ['filter', 'where', '筛选', '过滤', '条件'],
   iconKey: CanvasNodeIconKey.Filter,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: filterCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 7,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createFilterConfiguration,
   summarize: summarizeFilter,

@@ -14,14 +14,18 @@ import type {
   HttpApiInputConfiguration,
   SpatialServiceInputConfiguration,
   JdbcInputConfiguration,
+  JdbcIncrementalInputConfiguration,
   JdbcQueryInputConfiguration,
   JdbcOutputConfiguration,
+  JdbcSnapshotSyncOutputConfiguration,
   JoinConfiguration,
   JsonExtractConfiguration,
   KafkaInputConfiguration,
+  TdEngineTmqInputConfiguration,
   KafkaOutputConfiguration,
   ModelInputConfiguration,
   ModelOutputConfiguration,
+  ModelSnapshotSyncOutputConfiguration,
   MaskFieldsConfiguration,
   NullHandlingConfiguration,
   RenameConfiguration,
@@ -44,6 +48,18 @@ export const createModelInputConfiguration = (): ModelInputConfiguration => ({ m
 export const createJdbcInputConfiguration = (): JdbcInputConfiguration => ({
   dataSourceId: '',
   tableName: '',
+});
+
+export const createJdbcIncrementalInputConfiguration = (): JdbcIncrementalInputConfiguration => ({
+  dataSourceId: '',
+  tableName: '',
+  outputTableName: '',
+  incrementalTimeColumn: '',
+  startPosition: 'LATEST',
+  startTime: null,
+  cursorTimeZone: 'UTC',
+  visibilityDelaySeconds: 30,
+  triggerIntervalSeconds: 60,
 });
 
 export const createJdbcQueryInputConfiguration = (): JdbcQueryInputConfiguration => ({
@@ -75,6 +91,19 @@ export const createKafkaInputConfiguration = (): KafkaInputConfiguration => ({
   valueSchema: { columns: [] },
   outputTableName: '',
   startingOffsets: null,
+  triggerIntervalSeconds: 10,
+});
+
+export const createTdEngineTmqInputConfiguration = (): TdEngineTmqInputConfiguration => ({
+  dataSourceId: '',
+  topicName: '',
+  catalogName: '',
+  supertableName: '',
+  topicDefinitionFingerprint: '',
+  outputTableName: '',
+  startingOffsets: 'EARLIEST',
+  maxOffsetsPerVGroupPerTrigger: 10_000,
+  triggerIntervalSeconds: 10,
 });
 
 export const createJoinConfiguration = (): JoinConfiguration => ({
@@ -276,7 +305,6 @@ export const createModelOutputConfiguration = (): ModelOutputConfiguration => ({
   sourceTableName: '',
   targetModelId: '',
   writeMode: null,
-  columnMappingMode: null,
   columnMappings: [],
 });
 
@@ -285,9 +313,33 @@ export const createJdbcOutputConfiguration = (): JdbcOutputConfiguration => ({
   dataSourceId: '',
   targetTableName: '',
   writeMode: null,
-  columnMappingMode: null,
   columnMappings: [],
   upsertKeyColumns: [],
+});
+
+const createSnapshotDeletePolicy = () => ({
+  action: 'KEEP' as const,
+  maxDeleteRows: null,
+  maxDeleteRatio: null,
+});
+
+export const createJdbcSnapshotSyncOutputConfiguration = (
+): JdbcSnapshotSyncOutputConfiguration => ({
+  sourceTableName: '',
+  dataSourceId: '',
+  targetTableName: '',
+  keyColumns: [],
+  columnMappings: [],
+  deletePolicy: createSnapshotDeletePolicy(),
+});
+
+export const createModelSnapshotSyncOutputConfiguration = (
+): ModelSnapshotSyncOutputConfiguration => ({
+  sourceTableName: '',
+  targetModelId: '',
+  keyColumns: [],
+  columnMappings: [],
+  deletePolicy: createSnapshotDeletePolicy(),
 });
 
 export const createKafkaOutputConfiguration = (): KafkaOutputConfiguration => ({
@@ -296,7 +348,6 @@ export const createKafkaOutputConfiguration = (): KafkaOutputConfiguration => ({
   topic: '',
   valueSchema: { columns: [] },
   keyColumnName: '',
-  columnMappingMode: null,
   columnMappings: [],
 });
 

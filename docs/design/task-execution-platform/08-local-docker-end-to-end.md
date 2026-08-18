@@ -164,7 +164,7 @@ JDBC_INPUT customers┘
 
 - Join：`orders.customer_id = customers.customer_id`。
 - Join Type：INNER。
-- Output：BY_NAME，APPEND。
+- Output：显式同名字段映射，APPEND。
 - 第二次独立验收改为 OVERWRITE，确认使用 TRUNCATE + append。
 
 执行前必须看到 Canvas Designer通过 Engine预检；真实运行时 Admin再重建权威快照并预检一次。

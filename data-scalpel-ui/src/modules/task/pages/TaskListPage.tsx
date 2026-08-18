@@ -1,6 +1,10 @@
 import {
+  ApartmentOutlined,
+  ConsoleSqlOutlined,
+  CodeSandboxOutlined,
   DeleteOutlined,
   EditOutlined,
+  FileZipOutlined,
   MoreOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
@@ -8,10 +12,11 @@ import {
   ProfileOutlined,
   ReloadOutlined,
   SendOutlined,
+  ThunderboltOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Select, Table, Tooltip, message } from 'antd';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
@@ -37,12 +42,33 @@ import {
   taskTypeLabels,
   type DataTask,
   type TaskFilters,
+  type TaskType,
 } from '../model/task';
 import { buildTaskSearch } from '../model/taskSearch';
+
+const taskTypeVisuals: Record<TaskType, {
+  icon: ReactNode;
+  tone: 'cyan' | 'violet' | 'orange';
+}> = {
+  LOCAL_SQL: { icon: <ConsoleSqlOutlined />, tone: 'cyan' },
+  SPARK_CANVAS: { icon: <ApartmentOutlined />, tone: 'violet' },
+  SPARK_STREAMING_CANVAS: { icon: <ThunderboltOutlined />, tone: 'orange' },
+  SPARK_MODEL_QUALITY: { icon: <ProfileOutlined />, tone: 'cyan' },
+  SPARK_JAR: { icon: <FileZipOutlined />, tone: 'violet' },
+  SPARK_STREAMING_JAR: { icon: <CodeSandboxOutlined />, tone: 'orange' },
+};
 
 const isCanvasTask = (task: DataTask) => (
   task.type === 'SPARK_CANVAS' || task.type === 'SPARK_STREAMING_CANVAS'
 );
+
+const requiresComputeEngine = (type: TaskType) => type !== 'LOCAL_SQL';
+
+const isStreamingTask = (task: DataTask) => (
+  task.type === 'SPARK_STREAMING_CANVAS' || task.type === 'SPARK_STREAMING_JAR'
+);
+
+const definitionTab = (task: DataTask) => task.type === 'SPARK_MODEL_QUALITY' ? 'quality' : 'definition';
 
 export const TaskListPage = () => {
   const navigate = useNavigate();
@@ -95,7 +121,7 @@ export const TaskListPage = () => {
   const triggerRun = async (task: DataTask) => {
     try {
       await runMutation.mutateAsync(task.id);
-      messageApi.success(task.type === 'SPARK_CANVAS'
+      messageApi.success(task.type === 'SPARK_CANVAS' || task.type === 'SPARK_MODEL_QUALITY' || task.type === 'SPARK_JAR'
         ? '任务已提交，等待计算引擎调度'
         : '任务已进入执行队列');
     } catch (error) {
@@ -104,6 +130,7 @@ export const TaskListPage = () => {
   };
 
   const remove = (task: DataTask) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除任务',
     content: `确认删除“${task.name}”吗？已有运行记录的任务不能删除。`,
     okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
@@ -121,8 +148,13 @@ export const TaskListPage = () => {
   const lifecycle = (task: DataTask) => {
     if (task.status === 'DRAFT') {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '发布任务',
-        content: isCanvasTask(task)
+        content: task.type === 'SPARK_MODEL_QUALITY'
+          ? '发布会校验目标模型、计算引擎和当前可执行规则，不会读取模型物理表。'
+          : task.type === 'SPARK_JAR' || task.type === 'SPARK_STREAMING_JAR'
+            ? '发布会校验当前 JAR、资源绑定和计算引擎，不会加载用户类或读写业务数据。'
+          : isCanvasTask(task)
           ? '发布会读取当前真实数据源元数据，并通过 Task Engine 完成 Canvas 编译预检；预检不会读写业务数据。'
           : '发布会检查模型物理表、SQL 输出字段和类型，并且不会写入目标表。',
         okText: '发布', cancelText: '取消', onOk: () => runCommand(task, 'publish'),
@@ -134,21 +166,53 @@ export const TaskListPage = () => {
 
   const columns: TableProps<DataTask>['columns'] = [
     {
-      title: '任务', dataIndex: 'name', width: 260,
-      render: (name: string, task) => <ManagementListCell icon={<ProfileOutlined />} primary={<Button type="link" size="small" onClick={() => navigate(`/task/${task.id}`)}>{name}</Button>} secondary={task.description || '—'} />,
+      title: '任务', dataIndex: 'name', width: 310,
+      render: (name: string, task) => {
+        const typeLabel = taskTypeLabels[task.type];
+        const visual = taskTypeVisuals[task.type];
+        return (
+          <ManagementListCell
+            icon={<Tooltip title={typeLabel}>{visual.icon}</Tooltip>}
+            iconLabel={`任务类型：${typeLabel}`}
+            iconTone={visual.tone}
+            primary={<Button type="link" size="small" onClick={() => navigate(`/task/${task.id}`)}>{name}</Button>}
+            secondary={task.description || '—'}
+          />
+        );
+      },
     },
-    { title: '类型 / 状态', width: 170, render: (_: unknown, task) => <ManagementListCell primary={taskTypeLabels[task.type]} secondary={<ManagementStatusIndicator label={taskStatusLabels[task.status]} tone={task.status === 'PUBLISHED' ? 'success' : task.status === 'DISABLED' ? 'default' : 'processing'} />} /> },
-    { title: '执行定义', width: 300, render: (_: unknown, task) => <ManagementListCell primary={isCanvasTask(task) ? task.computeEngineName ?? '未选择计算引擎' : '本地 SQL'} secondary={task.definitionConfigured ? (isCanvasTask(task) ? `v${task.definitionVersion} · Canvas 定义` : `v${task.definitionVersion} · ${task.outputModelName ?? '输出模型已删除'}`) : '尚未配置'} /> },
+    { title: '状态', width: 120, render: (_: unknown, task) => <ManagementStatusIndicator label={taskStatusLabels[task.status]} tone={task.status === 'PUBLISHED' ? 'success' : task.status === 'DISABLED' ? 'default' : 'processing'} /> },
+    {
+      title: '执行定义', width: 300,
+      render: (_: unknown, task) => (
+        <ManagementListCell
+          primary={task.type === 'LOCAL_SQL' ? '本地 SQL' : task.computeEngineName ?? '未选择计算引擎'}
+          secondary={!task.definitionConfigured
+            ? '尚未配置'
+            : task.type === 'SPARK_MODEL_QUALITY'
+              ? `v${task.definitionVersion} · ${task.qualityTargetModelName ?? '目标模型已删除'}`
+              : task.type === 'SPARK_JAR' || task.type === 'SPARK_STREAMING_JAR'
+                ? `v${task.definitionVersion} · 用户作业 JAR`
+              : isCanvasTask(task)
+                ? `v${task.definitionVersion} · Canvas 定义`
+                : `v${task.definitionVersion} · ${task.outputModelName ?? '输出模型已删除'}`}
+        />
+      ),
+    },
     { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
       title: '操作', width: 112,
       render: (_, task) => {
         const lifecycleIcon = task.status === 'DRAFT' ? <SendOutlined /> : task.status === 'PUBLISHED' ? <PauseCircleOutlined /> : <PlayCircleOutlined />;
         const lifecycleLabel = task.status === 'DRAFT' ? '发布' : task.status === 'PUBLISHED' ? '停用' : '启用';
-        const items: NonNullable<MenuProps['items']> = [{ key: 'definition', label: '字段与定义', onClick: () => navigate(`/task/${task.id}?tab=definition`) }];
+        const items: NonNullable<MenuProps['items']> = [{
+          key: 'definition',
+          label: task.type === 'SPARK_MODEL_QUALITY' ? '质检定义' : '字段与定义',
+          onClick: () => navigate(`/task/${task.id}?tab=${definitionTab(task)}`),
+        }];
         if (canUpdate) items.push({ key: 'edit', icon: <EditOutlined />, label: '修改基本信息', onClick: () => setDrawerTask(task) });
         if (canPublish) items.push({ key: 'lifecycle', icon: lifecycleIcon, label: lifecycleLabel, onClick: () => lifecycle(task) });
-        if (canExecute && task.status === 'PUBLISHED' && task.type !== 'SPARK_STREAMING_CANVAS') {
+        if (canExecute && task.status === 'PUBLISHED' && !isStreamingTask(task)) {
           items.push({
             key: 'run',
             icon: <PlayCircleOutlined />,
@@ -160,7 +224,14 @@ export const TaskListPage = () => {
         if (canDelete) items.push({ key: 'delete', danger: true, icon: <DeleteOutlined />, label: '删除', onClick: () => remove(task) });
         return <div className="management-row-actions">
           <div className="management-row-actions-shortcuts">
-            <Tooltip title="字段与定义"><Button type="text" icon={<ProfileOutlined />} aria-label={`查看${task.name}的字段与定义`} onClick={() => navigate(`/task/${task.id}?tab=definition`)} /></Tooltip>
+            <Tooltip title={task.type === 'SPARK_MODEL_QUALITY' ? '质检定义' : '字段与定义'}>
+              <Button
+                type="text"
+                icon={<ProfileOutlined />}
+                aria-label={`查看${task.name}的${task.type === 'SPARK_MODEL_QUALITY' ? '质检定义' : '字段与定义'}`}
+                onClick={() => navigate(`/task/${task.id}?tab=${definitionTab(task)}`)}
+              />
+            </Tooltip>
             {canPublish && <Tooltip title={lifecycleLabel}><Button type="text" icon={lifecycleIcon} aria-label={`${lifecycleLabel}${task.name}`} onClick={() => lifecycle(task)} /></Tooltip>}
           </div>
           <Dropdown menu={{ items }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${task.name}的更多操作`} /></Tooltip></Dropdown>
@@ -211,7 +282,7 @@ export const TaskListPage = () => {
                   name: values.name,
                   directoryId: values.directoryId,
                   description: values.description,
-                  computeEngineId: isCanvasTask(drawerTask) ? values.computeEngineId : undefined,
+                  computeEngineId: requiresComputeEngine(drawerTask.type) ? values.computeEngineId : undefined,
                 },
               });
             } else {
@@ -220,10 +291,7 @@ export const TaskListPage = () => {
                 type: values.type,
                 directoryId: values.directoryId,
                 description: values.description,
-                computeEngineId: values.type === 'SPARK_CANVAS'
-                  || values.type === 'SPARK_STREAMING_CANVAS'
-                  ? values.computeEngineId
-                  : undefined,
+                computeEngineId: requiresComputeEngine(values.type) ? values.computeEngineId : undefined,
               });
             }
             messageApi.success(drawerTask ? '任务已更新' : '任务已创建');

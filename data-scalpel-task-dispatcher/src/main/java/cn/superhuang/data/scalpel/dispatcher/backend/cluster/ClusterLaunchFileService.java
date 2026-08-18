@@ -54,7 +54,7 @@ public class ClusterLaunchFileService {
                     new LaunchArtifactDownload(
                             access.manifestGetUrl(), launch.manifestSha256(), access.maximumManifestBytes()),
                     new LaunchArtifactUpload(access.resultPutUrl(), launch.resultKey()), launch.runnerEvent(),
-                    launch.checkpointUriPrefix(), launch.runnerControl());
+                    launch.checkpointUriPrefix(), launch.runnerControl(), access.qualitySamples(), access.userJar());
             Files.write(file, objectMapper.writeValueAsBytes(descriptor), StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
             secureFile(file);

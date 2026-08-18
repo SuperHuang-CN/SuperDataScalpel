@@ -94,36 +94,37 @@ export const TopNProcessorInspector = ({
     apply: async () => {
       if (executionMode !== 'BATCH') {
         setDraftError('TOP_N 仅支持批处理任务');
-        return false;
+
       }
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         const effectivePartitions = scope === 'GLOBAL' ? [] : partitionByColumns;
         if (scope === 'PARTITIONED' && effectivePartitions.length === 0) {
           setDraftError('每组前 N 至少需要一个分组字段');
-          return false;
+
         }
         if (new Set(effectivePartitions).size !== effectivePartitions.length) {
           setDraftError('分组字段不能重复');
-          return false;
+
         }
         if (orderBy.length === 0) {
           setDraftError('至少配置一个排序字段');
-          return false;
+
         }
         const sortNames = orderBy.map((field) => field.columnName);
         if (sortNames.some((name) => !name)
           || new Set(sortNames).size !== sortNames.length) {
           setDraftError('排序字段不能为空或重复');
-          return false;
+
         }
         if (!Number.isInteger(limit) || limit < 1 || limit > CANVAS_TOP_N_MAX_LIMIT) {
           setDraftError(`N 必须是 1..${CANVAS_TOP_N_MAX_LIMIT} 的整数`);
-          return false;
+
         }
         const configuration: TopNConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           partitionByColumns: [...effectivePartitions],
           orderBy: structuredClone(orderBy),
           limit,

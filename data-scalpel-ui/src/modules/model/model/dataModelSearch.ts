@@ -16,6 +16,9 @@ export const buildDataModelSearch = (filters: DataModelFilters): string | undefi
       ? `(${contains('name', filters.keyword.trim())} OR ${contains('code', filters.keyword.trim())})`
       : undefined,
     filters.status ? equals('status', filters.status) : undefined,
+    filters.physicalTableModes?.length
+      ? anyEquals('physicalTableMode', filters.physicalTableModes)
+      : undefined,
     filters.storageDataSourceId ? equals('storageDataSourceId', filters.storageDataSourceId) : undefined,
     filters.warehouseLayerId ? equals('warehouseLayerId', filters.warehouseLayerId) : undefined,
     filters.directoryIds?.length ? anyEquals('directoryId', filters.directoryIds) : undefined,

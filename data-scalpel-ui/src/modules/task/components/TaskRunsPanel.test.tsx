@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { useState } from 'react';
 import type { DataTask, TaskRun } from '../model/task';
 
 const state = vi.hoisted(() => ({
@@ -28,6 +29,9 @@ const run: TaskRun = {
   endedAt: null,
   deadlineAt: '2026-07-21T02:00:00Z',
   affectedRows: null,
+  userJarFileName: null,
+  userJarSha256: null,
+  userJarSizeBytes: null,
   message: null,
   errorDetail: null,
   executionError: null,
@@ -69,6 +73,18 @@ vi.mock('./TaskRunDetailDrawer', () => ({
 
 import { TaskRunsPanel } from './TaskRunsPanel';
 
+const TestPanel = () => {
+  const [detailRunId, setDetailRunId] = useState<string | null>(null);
+  return (
+    <TaskRunsPanel
+      task={task}
+      canExecute
+      detailRunId={detailRunId}
+      onDetailRunChange={setDetailRunId}
+    />
+  );
+};
+
 class ResizeObserverStub {
   observe() {}
   unobserve() {}
@@ -95,7 +111,7 @@ describe('TaskRunsPanel', () => {
 
   it('opens run details and confirms cancellation for an active Canvas run', async () => {
     const user = userEvent.setup();
-    render(<TaskRunsPanel task={task} canExecute />);
+    render(<TestPanel />);
 
     expect(await screen.findByLabelText('影响行数未知')).toHaveTextContent('—');
     await user.click(await screen.findByLabelText(`查看运行 ${run.id}`));

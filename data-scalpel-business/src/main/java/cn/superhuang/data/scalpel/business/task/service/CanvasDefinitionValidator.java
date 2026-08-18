@@ -12,6 +12,8 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.time.ZoneId;
+import java.time.DateTimeException;
 import java.util.regex.Pattern;
 
 /** Validates only the stable structure needed to persist and safely reload an incomplete Canvas draft. */
@@ -51,6 +53,20 @@ public class CanvasDefinitionValidator {
             }
             requireName(node.name(), path + ".name");
             validateLayout(node.layout(), path + ".layout");
+            if (node.nodeType() == CanvasNodeType.TDENGINE_TMQ_INPUT
+                    && definition.effectiveSchemaMinorVersion() < 1) {
+                invalid(path + ".type 的 TDENGINE_TMQ_INPUT 从 Canvas 2.1 开始支持");
+            }
+            if (node.nodeType() == CanvasNodeType.JDBC_INCREMENTAL_INPUT
+                    && definition.effectiveSchemaMinorVersion() < 2) {
+                invalid(path + ".type 的 JDBC_INCREMENTAL_INPUT 从 Canvas 2.2 开始支持");
+            }
+            if (node instanceof ModelOutputNodeDefinition output
+                    && output.configuration() != null
+                    && output.configuration().writeMode() == JdbcWriteMode.UPSERT
+                    && definition.effectiveSchemaMinorVersion() < 3) {
+                invalid(path + ".configuration.writeMode 的 MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持");
+            }
             validateConfiguration(node, path + ".configuration");
         }
 
@@ -83,6 +99,33 @@ public class CanvasDefinitionValidator {
                 if (input.configuration() == null) invalid(path + " 不能为空");
                 requireString(input.configuration().tableName(), path + ".tableName");
                 requireOptionalUuid(input.configuration().dataSourceId(), path + ".dataSourceId");
+            }
+            case JdbcIncrementalInputNodeDefinition input -> {
+                JdbcIncrementalInputConfiguration configuration = input.configuration();
+                if (configuration == null) invalid(path + " 不能为空");
+                requireOptionalUuid(configuration.dataSourceId(), path + ".dataSourceId");
+                requireString(configuration.tableName(), path + ".tableName");
+                requireString(configuration.outputTableName(), path + ".outputTableName");
+                requireString(configuration.incrementalTimeColumn(), path + ".incrementalTimeColumn");
+                if (configuration.startPosition() == null) {
+                    invalid(path + ".startPosition 不能为空");
+                }
+                if (configuration.startPosition() == JdbcIncrementalStartPosition.AT_TIME
+                        && configuration.startTime() == null) {
+                    invalid(path + ".startTime 在 AT_TIME 模式下不能为空");
+                }
+                requireString(configuration.cursorTimeZone(), path + ".cursorTimeZone");
+                try {
+                    ZoneId.of(configuration.cursorTimeZone());
+                } catch (DateTimeException exception) {
+                    invalid(path + ".cursorTimeZone 不是有效时区");
+                }
+                if (configuration.visibilityDelaySeconds() == null
+                        || configuration.visibilityDelaySeconds() < 0
+                        || configuration.visibilityDelaySeconds() > 3600) {
+                    invalid(path + ".visibilityDelaySeconds 必须在 0 到 3600 之间");
+                }
+                validateTriggerInterval(configuration.triggerIntervalSeconds(), path + ".triggerIntervalSeconds");
             }
             case JdbcQueryInputNodeDefinition input -> {
                 JdbcQueryInputConfiguration configuration = input.configuration();
@@ -151,6 +194,36 @@ public class CanvasDefinitionValidator {
                 requireString(input.configuration().topic(), path + ".topic");
                 validateKafkaValueSchema(input.configuration().valueSchema(), path + ".valueSchema");
                 requireString(input.configuration().outputTableName(), path + ".outputTableName");
+                validateTriggerInterval(
+                        input.configuration().triggerIntervalSeconds(),
+                        path + ".triggerIntervalSeconds"
+                );
+            }
+            case TdEngineTmqInputNodeDefinition input -> {
+                TdEngineTmqInputConfiguration configuration = input.configuration();
+                if (configuration == null) invalid(path + " 不能为空");
+                requireOptionalUuid(configuration.dataSourceId(), path + ".dataSourceId");
+                requireString(configuration.topicName(), path + ".topicName");
+                requireString(configuration.catalogName(), path + ".catalogName");
+                requireString(configuration.supertableName(), path + ".supertableName");
+                requireString(configuration.topicDefinitionFingerprint(), path + ".topicDefinitionFingerprint");
+                if (!SHA_256.matcher(configuration.topicDefinitionFingerprint()).matches()) {
+                    invalid(path + ".topicDefinitionFingerprint 必须是 64 位小写 SHA-256");
+                }
+                requireString(configuration.outputTableName(), path + ".outputTableName");
+                if (configuration.startingOffsets() == null) {
+                    invalid(path + ".startingOffsets 不能为空");
+                }
+                if (configuration.maxOffsetsPerVGroupPerTrigger() == null
+                        || configuration.maxOffsetsPerVGroupPerTrigger() < 1
+                        || configuration.maxOffsetsPerVGroupPerTrigger()
+                        > TdEngineTmqInputConfiguration.MAX_OFFSETS_PER_VGROUP_PER_TRIGGER) {
+                    invalid(path + ".maxOffsetsPerVGroupPerTrigger 必须在 1 到 1000000 之间");
+                }
+                validateTriggerInterval(
+                        configuration.triggerIntervalSeconds(),
+                        path + ".triggerIntervalSeconds"
+                );
             }
             case JoinNodeDefinition join -> {
                 if (join.configuration() == null) invalid(path + " 不能为空");
@@ -506,6 +579,19 @@ public class CanvasDefinitionValidator {
                 requireOptionalUuid(output.configuration().targetModelId(), path + ".targetModelId");
                 validateMappings(output.configuration().columnMappings(), path + ".columnMappings");
             }
+            case JdbcSnapshotSyncOutputNodeDefinition output -> {
+                if (output.configuration() == null) invalid(path + " 不能为空");
+                requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
+                requireOptionalUuid(output.configuration().dataSourceId(), path + ".dataSourceId");
+                requireString(output.configuration().targetTableName(), path + ".targetTableName");
+                validateSnapshotSyncConfiguration(output.configuration(), path);
+            }
+            case ModelSnapshotSyncOutputNodeDefinition output -> {
+                if (output.configuration() == null) invalid(path + " 不能为空");
+                requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
+                requireOptionalUuid(output.configuration().targetModelId(), path + ".targetModelId");
+                validateSnapshotSyncConfiguration(output.configuration(), path);
+            }
             case KafkaOutputNodeDefinition output -> {
                 if (output.configuration() == null) invalid(path + " 不能为空");
                 requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
@@ -564,6 +650,12 @@ public class CanvasDefinitionValidator {
                     case null -> invalid(path + ".formatOptions 不能为空");
                 }
             }
+        }
+    }
+
+    private static void validateTriggerInterval(Integer value, String path) {
+        if (value == null || value < 1 || value > 300) {
+            invalid(path + " 必须在 1 到 300 之间");
         }
     }
 
@@ -1200,6 +1292,20 @@ public class CanvasDefinitionValidator {
             if (mapping == null) invalid(path + "[" + index + "] 不能为空");
             requireString(mapping.sourceColumnName(), path + "[" + index + "].sourceColumnName");
             requireString(mapping.targetColumnName(), path + "[" + index + "].targetColumnName");
+        }
+    }
+
+    private static void validateSnapshotSyncConfiguration(
+            SnapshotSyncConfiguration configuration,
+            String path
+    ) {
+        validateStringArray(configuration.keyColumns(), path + ".keyColumns");
+        if (configuration.keyColumns().size() > 32) {
+            invalid(path + ".keyColumns 不能超过 32 项");
+        }
+        validateMappings(configuration.columnMappings(), path + ".columnMappings");
+        if (configuration.deletePolicy() == null) {
+            invalid(path + ".deletePolicy 不能为空");
         }
     }
 

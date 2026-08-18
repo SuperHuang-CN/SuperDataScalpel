@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceRuntimeService;
 import cn.superhuang.data.scalpel.business.datasource.service.ApiResourceService;
+import cn.superhuang.data.scalpel.business.datasource.service.SpatialFeatureResourceService;
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetFieldRepository;
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetFileRepository;
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetRepository;
@@ -25,9 +26,6 @@ import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
-import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTableInspection;
-import cn.superhuang.data.scalpel.business.model.service.ModelPhysicalTablePort;
-import cn.superhuang.data.scalpel.business.model.service.PhysicalTableState;
 import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
@@ -62,12 +60,6 @@ import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.builtin.PostgreSqlDialect;
-import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
-import cn.superhuang.data.scalpel.dialect.model.LogicalType;
-import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
-import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
-import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
-import cn.superhuang.data.scalpel.dialect.model.TableSummary;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -86,7 +78,6 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -99,7 +90,8 @@ class CanvasTaskRunPreparationServiceTest {
     private final DataModelFieldRepository fieldRepository = mock(DataModelFieldRepository.class);
     private final TaskCompilationService compilationService = mock(TaskCompilationService.class);
     private final ApiResourceService apiResourceService = mock(ApiResourceService.class);
-    private final ModelPhysicalTablePort physicalTablePort = mock(ModelPhysicalTablePort.class);
+    private final SpatialFeatureResourceService spatialFeatureResourceService =
+            mock(SpatialFeatureResourceService.class);
     private final FileDatasetRepository fileDatasetRepository = mock(FileDatasetRepository.class);
     private final FileDatasetTableRepository fileDatasetTableRepository = mock(FileDatasetTableRepository.class);
     private final FileDatasetFileRepository fileDatasetFileRepository = mock(FileDatasetFileRepository.class);
@@ -127,7 +119,7 @@ class CanvasTaskRunPreparationServiceTest {
                 dialectRegistry,
                 compilationService,
                 apiResourceService,
-                physicalTablePort,
+                spatialFeatureResourceService,
                 fileDatasetRepository,
                 fileDatasetTableRepository,
                 fileDatasetFileRepository,
@@ -185,13 +177,6 @@ class CanvasTaskRunPreparationServiceTest {
         );
         when(fileStorageRuntimeProvider.resolveObjectKey(anyString()))
                 .thenAnswer(invocation -> "root/" + invocation.getArgument(0, String.class));
-        when(physicalTablePort.inspect(eq(dataSource), eq(model), any(), any())).thenReturn(new ModelPhysicalTableInspection(
-                new TableIdentifier("warehouse", "public", "dwd_orders"),
-                PhysicalTableState.MATCHED,
-                true,
-                "物理表结构与模型字段一致",
-                List.of()
-        ));
         when(compilationService.compile(any())).thenReturn(new TaskCompilationResponse(
                 UUID.randomUUID(),
                 TaskType.CANVAS,
@@ -204,10 +189,7 @@ class CanvasTaskRunPreparationServiceTest {
     }
 
     @Test
-    void buildsOrderedModelSnapshotAndAddsPhysicalWriteAttributes() {
-        when(physicalTablePort.readExternalTable(dataSource, model))
-                .thenReturn(table(PlatformDataType.LONG, false, "nextval('orders_id_seq')", true));
-
+    void buildsOrderedLogicalModelSnapshotAndPrimaryKey() {
         CanvasTaskRunPreparationService.Preparation preparation = service.prepare(definition());
 
         MetadataModel snapshot = preparation.metadataSnapshot().models().getFirst();
@@ -218,9 +200,15 @@ class CanvasTaskRunPreparationServiceTest {
         assertThat(snapshot.columns()).singleElement().satisfies(column -> {
             assertThat(column.name()).isEqualTo("id");
             assertThat(column.fieldType()).isEqualTo(PlatformDataType.LONG);
-            assertThat(column.defaultValue()).isEqualTo("nextval('orders_id_seq')");
-            assertThat(column.autoIncrement()).isTrue();
+            assertThat(column.defaultValue()).isNull();
+            assertThat(column.autoIncrement()).isFalse();
+            assertThat(column.generated()).isFalse();
             assertThat(column.comment()).isEqualTo("订单主键");
+        });
+        assertThat(snapshot.uniqueKeys()).singleElement().satisfies(key -> {
+            assertThat(key.name()).isEqualTo("MODEL_PRIMARY_KEY");
+            assertThat(key.type()).isEqualTo(MetadataUniqueKeyType.PRIMARY_KEY);
+            assertThat(key.columns()).containsExactly("id");
         });
         assertThat(preparation.metadataSnapshot().dataSources()).singleElement()
                 .satisfies(source -> assertThat(source.tables()).isEmpty());
@@ -265,8 +253,6 @@ class CanvasTaskRunPreparationServiceTest {
         setIdentity(geometryField, UUID.randomUUID());
         when(fieldRepository.findAllByModelIdInOrderByModelAndSort(any()))
                 .thenReturn(List.of(field, geometryField));
-        when(physicalTablePort.readExternalTable(dataSource, model)).thenReturn(geometryTable());
-
         CanvasTaskRunPreparationService.Preparation preparation = service.prepare(definition());
 
         assertThat(preparation.metadataSnapshot().models()).singleElement().satisfies(snapshot ->
@@ -275,7 +261,6 @@ class CanvasTaskRunPreparationServiceTest {
                         .singleElement()
                         .satisfies(column -> assertThat(column.geometry())
                                 .isEqualTo(geometryField.getGeometry())));
-        verify(physicalTablePort).readExternalTable(dataSource, model);
         verify(compilationService).compile(any());
     }
 
@@ -354,29 +339,7 @@ class CanvasTaskRunPreparationServiceTest {
     }
 
     @Test
-    void rejectsPhysicalSchemaDriftReportedBySharedModelInspectionBeforeCallingTaskEngine() {
-        TableMetadata physical = table(PlatformDataType.STRING, false, null, false);
-        when(physicalTablePort.readExternalTable(dataSource, model)).thenReturn(physical);
-        when(physicalTablePort.inspect(eq(dataSource), eq(model), any(), eq(physical)))
-                .thenReturn(new ModelPhysicalTableInspection(
-                        new TableIdentifier("warehouse", "public", "dwd_orders"),
-                        PhysicalTableState.DRIFTED,
-                        true,
-                        "物理表结构与模型字段不一致",
-                        List.of()
-                ));
-
-        assertThatThrownBy(() -> service.prepare(definition()))
-                .isInstanceOf(ResponseStatusException.class)
-                .hasMessageContaining("MODEL_PHYSICAL_SCHEMA_MISMATCH")
-                .hasMessageContaining("物理表结构与模型字段不一致");
-        verify(compilationService, never()).compile(any());
-    }
-
-    @Test
     void allowsPreparationWhenCompilerReportsWarningsOnly() {
-        when(physicalTablePort.readExternalTable(dataSource, model))
-                .thenReturn(table(PlatformDataType.LONG, false, null, false));
         when(compilationService.compile(any())).thenReturn(compilation(
                 true,
                 new CompilationIssue(
@@ -399,8 +362,6 @@ class CanvasTaskRunPreparationServiceTest {
 
     @Test
     void rejectsPreparationWhenCompilerReportsAnError() {
-        when(physicalTablePort.readExternalTable(dataSource, model))
-                .thenReturn(table(PlatformDataType.LONG, false, null, false));
         when(compilationService.compile(any())).thenReturn(compilation(
                 false,
                 new CompilationIssue(
@@ -419,9 +380,6 @@ class CanvasTaskRunPreparationServiceTest {
 
     @Test
     void preservesRenameConfigurationInTheTaskEngineCompilationContract() {
-        when(physicalTablePort.readExternalTable(dataSource, model))
-                .thenReturn(table(PlatformDataType.LONG, false, null, false));
-
         String inputId = UUID.randomUUID().toString();
         String renameId = UUID.randomUUID().toString();
         CanvasDefinition renameDefinition = new CanvasDefinition(
@@ -601,7 +559,7 @@ class CanvasTaskRunPreparationServiceTest {
                                 dataSourceId.toString(),
                                 "dwd_orders",
                                 JdbcWriteMode.APPEND,
-                                ColumnMappingMode.BY_NAME,
+                                List.of(new JdbcColumnMapping("order_id", "order_id")),
                                 List.of()
                         )
                 )),
@@ -619,62 +577,6 @@ class CanvasTaskRunPreparationServiceTest {
                         new CanvasNodeLayout(0d, 0d, 240d, 120d),
                         new FileDatasetInputConfiguration(tableId.toString())
                 )),
-                List.of()
-        );
-    }
-
-    private static TableMetadata table(
-            PlatformDataType type,
-            boolean nullable,
-            String defaultValue,
-            boolean autoIncrement
-    ) {
-        int jdbcType = type == PlatformDataType.LONG ? java.sql.Types.BIGINT : java.sql.Types.VARCHAR;
-        String nativeType = type == PlatformDataType.LONG ? "int8" : "varchar";
-        Integer length = type == PlatformDataType.STRING ? 100 : null;
-        LogicalType logicalType = type == PlatformDataType.STRING ? LogicalType.STRING : LogicalType.INTEGER;
-        return new TableMetadata(
-                new TableSummary(
-                        new TableIdentifier("warehouse", "public", "dwd_orders"),
-                        "TABLE",
-                        null
-                ),
-                List.of(new ColumnMetadata(
-                        "id", 1, jdbcType, nativeType, logicalType, length, null, null,
-                        nullable, defaultValue, autoIncrement, false, "物理注释"
-                )),
-                null,
-                List.of()
-        );
-    }
-
-    private static TableMetadata geometryTable() {
-        return new TableMetadata(
-                new TableSummary(
-                        new TableIdentifier("warehouse", "public", "dwd_orders"),
-                        "TABLE",
-                        null
-                ),
-                List.of(
-                        new ColumnMetadata(
-                                "id", 1, java.sql.Types.BIGINT, "int8", LogicalType.INTEGER,
-                                null, null, null, false, null, false, false, "订单主键"
-                        ),
-                        new ColumnMetadata(
-                                "shape", 2, java.sql.Types.OTHER, "geometry", LogicalType.OTHER,
-                                null, null, null, true, null, false, false, "空间位置",
-                                new SpatialColumnMetadata(
-                                        "POINT",
-                                        4326,
-                                        "EPSG",
-                                        4326,
-                                        CoordinateDimension.XY,
-                                        true,
-                                        true
-                                )
-                        )
-                ),
-                null,
                 List.of()
         );
     }

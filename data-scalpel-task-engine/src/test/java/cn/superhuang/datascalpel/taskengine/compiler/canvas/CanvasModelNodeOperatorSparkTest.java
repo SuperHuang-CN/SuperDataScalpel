@@ -4,16 +4,19 @@ import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
+import cn.superhuang.data.scalpel.contract.task.CanvasJdbcDatabaseType;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
+import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.MetadataDataSource;
 import cn.superhuang.data.scalpel.contract.task.MetadataModel;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelPhysicalTableMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelStatus;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKey;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKeyType;
 import cn.superhuang.data.scalpel.contract.task.ModelInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputConfiguration;
@@ -122,6 +125,55 @@ class CanvasModelNodeOperatorSparkTest {
     }
 
     @Test
+    void compilesModelOutputUpsertWithModelPrimaryKeyAndRejectsMissingKeyMapping() {
+        CanvasCompilation valid = compile(
+                definition(inputModelId, outputModelId, JdbcWriteMode.UPSERT),
+                metadata(models())
+        );
+        assertTrue(valid.valid(), () -> valid.nodeResults().toString());
+
+        CanvasDefinition base = definition(inputModelId, outputModelId, JdbcWriteMode.UPSERT);
+        ModelOutputNodeDefinition output = (ModelOutputNodeDefinition) base.nodes().getLast();
+        ModelOutputNodeDefinition missingKey = new ModelOutputNodeDefinition(
+                output.id(), output.name(), output.layout(),
+                new ModelOutputConfiguration(
+                        output.configuration().sourceTableName(),
+                        output.configuration().targetModelId(),
+                        JdbcWriteMode.UPSERT,
+                        List.of(new JdbcColumnMapping("description", "description"))
+                )
+        );
+        CanvasCompilation invalid = compile(
+                new CanvasDefinition(
+                        CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                        CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                        List.of(base.nodes().getFirst(), missingKey),
+                        base.edges()),
+                metadata(models())
+        );
+
+        assertFalse(invalid.valid());
+        assertIssue(invalid.nodeResults().getLast(), "UPSERT_KEY_NOT_MAPPED");
+    }
+
+    @Test
+    void rejectsModelOutputUpsertWhenModelHasNoPrimaryKey() {
+        List<MetadataModel> withoutPrimaryKey = List.of(
+                model(inputModelId, "orders_model", MetadataModelStatus.PUBLISHED,
+                        MetadataModelPhysicalTableMode.MANAGED),
+                model(outputModelId, "orders_target", MetadataModelStatus.PUBLISHED,
+                        MetadataModelPhysicalTableMode.MANAGED, false, false)
+        );
+        CanvasCompilation compilation = compile(
+                definition(inputModelId, outputModelId, JdbcWriteMode.UPSERT),
+                metadata(withoutPrimaryKey)
+        );
+
+        assertFalse(compilation.valid());
+        assertIssue(compilation.nodeResults().getLast(), "UPSERT_KEY_REQUIRED");
+    }
+
+    @Test
     void compilesGeometryModelsWithSedonaSchema() {
         List<MetadataModel> geometryModels = List.of(
                 model(inputModelId, "orders_model", MetadataModelStatus.PUBLISHED,
@@ -170,7 +222,7 @@ class CanvasModelNodeOperatorSparkTest {
                 secondOutput.id()
         ));
         CanvasCompilation duplicate = compile(
-                new CanvasDefinition(1, 1, duplicateNodes, duplicateEdges),
+                new CanvasDefinition(2, 0, duplicateNodes, duplicateEdges),
                 metadata(models())
         );
         assertTrue(duplicate.valid());
@@ -195,8 +247,8 @@ class CanvasModelNodeOperatorSparkTest {
         String inputNodeId = UUID.randomUUID().toString();
         String outputNodeId = UUID.randomUUID().toString();
         return new CanvasDefinition(
-                1,
-                1,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(
                         new ModelInputNodeDefinition(
                                 inputNodeId,
@@ -212,8 +264,10 @@ class CanvasModelNodeOperatorSparkTest {
                                         "orders_model",
                                         targetModelId.toString(),
                                         writeMode,
-                                        ColumnMappingMode.BY_NAME,
-                                        List.of()
+                                        List.of(
+                                                new JdbcColumnMapping("id", "id"),
+                                                new JdbcColumnMapping("description", "description")
+                                        )
                                 )
                         )
                 ),
@@ -227,6 +281,7 @@ class CanvasModelNodeOperatorSparkTest {
                         dataSourceId,
                         true,
                         ConnectionKind.JDBC,
+                        CanvasJdbcDatabaseType.POSTGRESQL,
                         Set.of(DataSourcePurpose.SOURCE, DataSourcePurpose.STORAGE),
                         List.of()
                 )),
@@ -249,7 +304,7 @@ class CanvasModelNodeOperatorSparkTest {
             MetadataModelStatus status,
             MetadataModelPhysicalTableMode physicalTableMode
     ) {
-        return model(id, code, status, physicalTableMode, false);
+        return model(id, code, status, physicalTableMode, false, true);
     }
 
     private MetadataModel model(
@@ -258,6 +313,17 @@ class CanvasModelNodeOperatorSparkTest {
             MetadataModelStatus status,
             MetadataModelPhysicalTableMode physicalTableMode,
             boolean includeGeometry
+    ) {
+        return model(id, code, status, physicalTableMode, includeGeometry, true);
+    }
+
+    private MetadataModel model(
+            UUID id,
+            String code,
+            MetadataModelStatus status,
+            MetadataModelPhysicalTableMode physicalTableMode,
+            boolean includeGeometry,
+            boolean includePrimaryKey
     ) {
         List<CanvasColumnSchema> columns = new ArrayList<>(
                 List.of(column("id", false), column("description", true))
@@ -292,7 +358,11 @@ class CanvasModelNodeOperatorSparkTest {
                 "warehouse",
                 "public",
                 "dwd_" + code,
-                columns
+                columns,
+                includePrimaryKey
+                        ? List.of(new MetadataUniqueKey(
+                        "MODEL_PRIMARY_KEY", MetadataUniqueKeyType.PRIMARY_KEY, List.of("id")))
+                        : List.of()
         );
     }
 

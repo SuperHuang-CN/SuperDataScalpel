@@ -1,3 +1,4 @@
+import type { ComponentType } from 'react';
 import {
   CANVAS_SCHEMA_MINOR_VERSION,
   CanvasNodeCategory,
@@ -24,18 +25,23 @@ import { geometryValidateSpec } from './geometryValidate/spec';
 import { httpApiInputSpec } from './httpApiInput/spec';
 import { spatialServiceInputSpec } from './spatialServiceInput/spec';
 import { jdbcInputSpec } from './jdbcInput/spec';
+import { jdbcIncrementalInputSpec } from './jdbcIncrementalInput/spec';
 import { jdbcQueryInputSpec } from './jdbcQueryInput/spec';
 import { jdbcOutputSpec } from './jdbcOutput/spec';
+import { jdbcSnapshotSyncOutputSpec } from './jdbcSnapshotSyncOutput/spec';
 import { joinSpec } from './join/spec';
 import { jsonExtractSpec } from './jsonExtract/spec';
 import { kafkaInputSpec } from './kafkaInput/spec';
+import { tdEngineTmqInputSpec } from './tdEngineTmqInput/spec';
 import { kafkaOutputSpec } from './kafkaOutput/spec';
 import { modelInputSpec } from './modelInput/spec';
 import { modelOutputSpec } from './modelOutput/spec';
+import { modelSnapshotSyncOutputSpec } from './modelSnapshotSyncOutput/spec';
 import { maskFieldsSpec } from './maskFields/spec';
 import { nullHandlingSpec } from './nullHandling/spec';
 import { canvasNodeGroup } from './nodeGroups';
 import type { CanvasNodeSpec } from './nodeSpec';
+import type { CanvasNodeSize } from './nodeSpec';
 import type { CanvasMetadataReference } from './metadataReferences';
 import { renameSpec } from './rename/spec';
 import { selectColumnsSpec } from './selectColumns/spec';
@@ -58,11 +64,13 @@ export type AnyCanvasNodeSpec = {
 const builtinSpecs = [
   modelInputSpec,
   jdbcInputSpec,
+  jdbcIncrementalInputSpec,
   jdbcQueryInputSpec,
   fileDatasetInputSpec,
   httpApiInputSpec,
   spatialServiceInputSpec,
   kafkaInputSpec,
+  tdEngineTmqInputSpec,
   filterSpec,
   deduplicateSpec,
   nullHandlingSpec,
@@ -92,6 +100,8 @@ const builtinSpecs = [
   streamJoinSpec,
   modelOutputSpec,
   jdbcOutputSpec,
+  modelSnapshotSyncOutputSpec,
+  jdbcSnapshotSyncOutputSpec,
   kafkaOutputSpec,
   fileOutputSpec,
 ] as const satisfies readonly AnyCanvasNodeSpec[];
@@ -102,6 +112,8 @@ export interface CanvasNodeRegistry {
   createDefaultConfiguration(type: CanvasNodeTypeValue): CanvasNodeConfiguration;
   createRuntimeData(type: CanvasNodeTypeValue, name?: string): CanvasNodeRuntimeData;
   summarize(data: CanvasNodeRuntimeData): string;
+  resolveSize(data: CanvasNodeRuntimeData): CanvasNodeSize;
+  canvasBody(type: CanvasNodeTypeValue): ComponentType<{ data: CanvasNodeRuntimeData }>;
   collectMetadataReferences(node: CanvasNodeDefinition): readonly CanvasMetadataReference[];
   forCategory(
     category: CanvasNodeCategoryValue,
@@ -155,11 +167,15 @@ export const createCanvasNodeRegistry = (
       || spec.introducedInMinor > CANVAS_SCHEMA_MINOR_VERSION) {
       throw new Error(`Canvas 节点 ${spec.type} 的协议引入版本无效`);
     }
-    if (!Number.isFinite(spec.defaultSize.width)
-      || !Number.isFinite(spec.defaultSize.height)
-      || spec.defaultSize.width < 180
-      || spec.defaultSize.height < 96) {
-      throw new Error(`Canvas 节点 ${spec.type} 的默认尺寸无效`);
+    const defaultConfiguration = spec.createDefaultConfiguration();
+    const baseSize = (spec.canvasView.resolveSize as (
+      configuration: CanvasNodeConfiguration,
+    ) => CanvasNodeSize)(defaultConfiguration);
+    if (!Number.isFinite(baseSize.width)
+      || !Number.isFinite(baseSize.height)
+      || baseSize.width < 180
+      || baseSize.height < 96) {
+      throw new Error(`Canvas 节点 ${spec.type} 的语义基础尺寸无效`);
     }
     if (!Number.isInteger(spec.order) || spec.order < 0) {
       throw new Error(`Canvas 节点 ${spec.type} 的排序值无效`);
@@ -203,6 +219,18 @@ export const createCanvasNodeRegistry = (
       const spec = byType.get(data.type);
       if (!spec) throw new Error(`未知 Canvas 节点类型：${data.type}`);
       return (spec.summarize as (runtimeData: CanvasNodeRuntimeData) => string)(data);
+    },
+    resolveSize: (data) => {
+      const spec = byType.get(data.type);
+      if (!spec) throw new Error(`未知 Canvas 节点类型：${data.type}`);
+      return (spec.canvasView.resolveSize as (
+        configuration: CanvasNodeConfiguration,
+      ) => CanvasNodeSize)(data.configuration);
+    },
+    canvasBody: (type) => {
+      const spec = byType.get(type);
+      if (!spec) throw new Error(`未知 Canvas 节点类型：${type}`);
+      return spec.canvasView.Body as unknown as ComponentType<{ data: CanvasNodeRuntimeData }>;
     },
     collectMetadataReferences: (node) => {
       const spec = byType.get(node.type);

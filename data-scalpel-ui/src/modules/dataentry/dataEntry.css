@@ -1,0 +1,10 @@
+.data-entry-submit-form { padding: 16px; }
+.data-entry-field-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 20px; }
+.data-entry-health-alert { margin: 12px 0; }
+.data-entry-config-toolbar, .data-entry-data-toolbar { display: flex; justify-content: flex-end; padding: 0 0 12px; }
+.data-entry-import-toolbar { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 16px 0; }
+.data-entry-log-payload { margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.data-entry-detail-title-row, .data-entry-detail-subtitle { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.data-entry-detail-title { overflow: hidden; font-size: 17px; font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.data-entry-detail-subtitle { margin: 3px 0 0 88px; color: #74809f; font-size: 12px; }
+@media (max-width: 1000px) { .data-entry-field-grid { grid-template-columns: 1fr; } }

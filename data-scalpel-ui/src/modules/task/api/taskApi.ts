@@ -7,6 +7,9 @@ import type {
   DataTask,
   LocalSqlDefinitionValidation,
   LocalSqlTaskDefinition,
+  ModelQualityTaskDefinition,
+  SparkJarTaskDefinition,
+  StreamingCheckpointMode,
   ModelRelatedTask,
   ModelTaskRelationRole,
   TaskRun,
@@ -17,9 +20,13 @@ import type {
   TaskModelRelations,
   UpdateDataTaskRequest,
   UpdateLocalSqlTaskDefinitionRequest,
+  UpdateSparkJarTaskDefinitionRequest,
   UpdateTaskStreamingConfigurationRequest,
 } from '../model/task';
 import type { CanvasDefinition } from '../canvas/canvasTypes';
+import { parseTaskExecutionResultArtifact, type TaskExecutionResultArtifact } from '../model/taskExecutionResult';
+import type { TaskLineageGraph } from '../model/taskLineage';
+import type { PlatformTypeDefinition } from '../../model';
 
 const TASK_PATH = '/v1/tasks';
 
@@ -38,9 +45,70 @@ export const fetchCanvasTaskDefinition = (id: string): Promise<CanvasTaskDefinit
   requestJson<CanvasTaskDefinition>(`${TASK_PATH}/${id}/canvas-definition`)
 );
 
+export const fetchModelQualityTaskDefinition = (id: string): Promise<ModelQualityTaskDefinition> => (
+  requestJson<ModelQualityTaskDefinition>(`${TASK_PATH}/${id}/model-quality-definition`)
+);
+
+export const fetchSparkJarTaskDefinition = (id: string): Promise<SparkJarTaskDefinition> => (
+  requestJson<SparkJarTaskDefinition>(`${TASK_PATH}/${id}/spark-jar-definition`)
+);
+
+export const updateSparkJarTaskDefinition = (
+  id: string,
+  request: UpdateSparkJarTaskDefinitionRequest,
+): Promise<SparkJarTaskDefinition> => requestJson<SparkJarTaskDefinition>(
+  `${TASK_PATH}/${id}/actions/update-spark-jar-definition`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export const uploadSparkJar = (id: string, file: File): Promise<SparkJarTaskDefinition> => {
+  const body = new FormData();
+  body.append('file', file);
+  return requestJson<SparkJarTaskDefinition>(
+    `${TASK_PATH}/${id}/actions/upload-spark-jar`,
+    { method: 'POST', body },
+    120_000,
+  );
+};
+
+export const downloadSparkJarTemplate = (id: string): Promise<Blob> => (
+  requestBlob(`${TASK_PATH}/${id}/spark-jar-template`, {}, 60_000)
+);
+
+export const updateModelQualityTaskDefinition = (
+  id: string,
+  modelId: string,
+  failureSampleLimit: number,
+): Promise<ModelQualityTaskDefinition> => requestJson<ModelQualityTaskDefinition>(
+  `${TASK_PATH}/${id}/actions/update-model-quality-definition`,
+  { method: 'POST', body: JSON.stringify({ modelId, failureSampleLimit }) },
+);
+
 export const fetchTaskModelRelations = (id: string): Promise<TaskModelRelations> => (
   requestJson<TaskModelRelations>(`${TASK_PATH}/${id}/model-relations`)
 );
+
+export const fetchTaskTableLineage = (
+  id: string,
+  flowKey?: string,
+): Promise<TaskLineageGraph> => {
+  const query = new URLSearchParams();
+  if (flowKey) query.set('flowKey', flowKey);
+  const suffix = query.toString();
+  return requestJson<TaskLineageGraph>(`${TASK_PATH}/${id}/lineage/table${suffix ? `?${suffix}` : ''}`);
+};
+
+export const fetchTaskFieldLineage = (
+  id: string,
+  flowKey?: string,
+  outputFieldKey?: string,
+): Promise<TaskLineageGraph> => {
+  const query = new URLSearchParams();
+  if (flowKey) query.set('flowKey', flowKey);
+  if (outputFieldKey) query.set('outputFieldKey', outputFieldKey);
+  const suffix = query.toString();
+  return requestJson<TaskLineageGraph>(`${TASK_PATH}/${id}/lineage/fields${suffix ? `?${suffix}` : ''}`);
+};
 
 export const fetchModelRelatedTasks = async (
   modelId: string,
@@ -123,8 +191,14 @@ export type TaskStreamingCommand = 'start' | 'stop';
 export const executeTaskStreamingCommand = (
   id: string,
   command: TaskStreamingCommand,
+  checkpointMode?: StreamingCheckpointMode,
 ): Promise<TaskStreamingStatus> => (
-  requestJson<TaskStreamingStatus>(`${TASK_PATH}/${id}/actions/${command}`, { method: 'POST' }, 60_000)
+  requestJson<TaskStreamingStatus>(`${TASK_PATH}/${id}/actions/${command}`, {
+    method: 'POST',
+    body: command === 'start' && checkpointMode
+      ? JSON.stringify({ checkpointMode })
+      : undefined,
+  }, 60_000)
 );
 
 export const fetchTaskRuns = async (id: string, request: SearchRequest): Promise<PageResponse<TaskRun>> => {
@@ -145,6 +219,54 @@ export const downloadTaskRunArtifact = (
   runId: string,
   kind: TaskRunArtifactKind,
 ): Promise<Blob> => requestBlob(`/v1/task-runs/${runId}/artifacts/${kind}`, {}, 60_000);
+
+export const fetchTaskRunResultArtifact = async (
+  runId: string,
+): Promise<TaskExecutionResultArtifact> => {
+  const blob = await downloadTaskRunArtifact(runId, 'result');
+  const text = await blob.text();
+  let value: unknown;
+  try {
+    value = JSON.parse(text);
+  } catch {
+    throw new Error('执行结果制品不是有效 JSON');
+  }
+  return parseTaskExecutionResultArtifact(value);
+};
+
+export interface QualityFailureSampleColumn {
+  fieldId: string | null;
+  code: string;
+  name: string;
+  type: PlatformTypeDefinition;
+  primaryKey: boolean;
+  diagnostic: boolean;
+}
+
+export interface QualityFailureSampleResponse {
+  ruleId: string;
+  ruleName: string;
+  sampledRows: number;
+  violationRows: number;
+  truncated: boolean;
+  rowLocatable: boolean;
+  columns: QualityFailureSampleColumn[];
+  rows: Array<Record<string, unknown>>;
+}
+
+export const fetchQualityFailureSamples = (
+  runId: string,
+  ruleId: string,
+): Promise<QualityFailureSampleResponse> => requestJson<QualityFailureSampleResponse>(
+  `/v1/task-runs/${runId}/quality-rules/${ruleId}/samples`, {}, 60_000,
+);
+
+export const downloadQualityFailureSamples = (
+  runId: string,
+  ruleId: string,
+): Promise<Blob> => requestBlob(
+  `/v1/task-runs/${runId}/quality-rules/${ruleId}/samples/download`, {}, 60_000,
+);
 
 export const fetchTaskSchedules = (taskId: string): Promise<TaskSchedule[]> => (
   requestJson<TaskSchedule[]>(`${TASK_PATH}/${taskId}/schedules`)

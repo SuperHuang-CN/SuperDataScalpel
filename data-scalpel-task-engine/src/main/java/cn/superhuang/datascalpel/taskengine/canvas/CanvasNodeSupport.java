@@ -1,7 +1,9 @@
 package cn.superhuang.datascalpel.taskengine.canvas;
 
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
+import cn.superhuang.data.scalpel.contract.task.CanvasJdbcDatabaseType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
+import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -131,6 +133,47 @@ final class CanvasNodeSupport {
                 );
             }
         }
+    }
+
+    static void validateJdbcGeometryDatabase(
+            List<CanvasColumnSchema> columns,
+            CanvasJdbcDatabaseType databaseType,
+            String path,
+            CanvasNodeIssueSink issues
+    ) {
+        if (columns.stream().noneMatch(column -> column.fieldType() == PlatformDataType.GEOMETRY)
+                || databaseType == CanvasJdbcDatabaseType.POSTGRESQL
+                || databaseType == CanvasJdbcDatabaseType.MYSQL) {
+            return;
+        }
+        issues.error(
+                "SPATIAL_JDBC_UNSUPPORTED",
+                "Geometry JDBC 读写只支持 PostgreSQL/PostGIS 和 MySQL 8",
+                path
+        );
+    }
+
+    static void validateJdbcWriteMode(
+            JdbcWriteMode writeMode,
+            CanvasJdbcDatabaseType databaseType,
+            String path,
+            CanvasNodeIssueSink issues
+    ) {
+        if (writeMode != JdbcWriteMode.OVERWRITE || supportsOverwrite(databaseType)) {
+            return;
+        }
+        issues.error(
+                "OVERWRITE_DATABASE_NOT_SUPPORTED",
+                "当前数据库暂不支持 OVERWRITE，请使用 APPEND",
+                path
+        );
+    }
+
+    private static boolean supportsOverwrite(CanvasJdbcDatabaseType databaseType) {
+        return databaseType == CanvasJdbcDatabaseType.POSTGRESQL
+                || databaseType == CanvasJdbcDatabaseType.MYSQL
+                || databaseType == CanvasJdbcDatabaseType.OPENGAUSS
+                || databaseType == CanvasJdbcDatabaseType.KINGBASE;
     }
 
     static String quoteIdentifier(String value) {

@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeGeometryRepair } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { geometryRepairCanvasView } from './canvasView';
 
 export const geometryRepairSpec = createCanvasNodeSpec({
   type: CanvasNodeType.GeometryRepair,
@@ -15,9 +16,9 @@ export const geometryRepairSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'repair', 'make valid', '修复', '拓扑'],
   iconKey: CanvasNodeIconKey.GeometryRepair,
   order: 40,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: geometryRepairCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 22,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createGeometryRepairConfiguration,
   summarize: summarizeGeometryRepair,

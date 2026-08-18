@@ -2,7 +2,55 @@ import type { StandardDictionarySummary } from '../../standard';
 
 export type DataModelStatus = 'DRAFT' | 'PUBLISHED' | 'DISABLED';
 
+export interface DataModelReferenceTask {
+  id: string;
+  name: string;
+  type: 'LOCAL_SQL' | 'SPARK_CANVAS' | 'SPARK_STREAMING_CANVAS' | 'SPARK_MODEL_QUALITY' | 'SPARK_JAR' | 'SPARK_STREAMING_JAR';
+  status: 'DRAFT' | 'PUBLISHED' | 'DISABLED';
+  role: 'INPUT' | 'OUTPUT';
+  referenceType: 'LOCAL_SQL_INPUT' | 'LOCAL_SQL_OUTPUT' | 'CANVAS_NODE' | 'MODEL_QUALITY_TARGET' | 'SPARK_JAR_RESOURCE_BINDING' | 'CURRENT_LINEAGE';
+  nodeId: string | null;
+  nodeName: string | null;
+}
+
+export interface DataModelReferenceService {
+  id: string;
+  name: string;
+  type: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API';
+  status: 'DRAFT' | 'ENABLED' | 'DISABLED';
+  role: 'PRIMARY' | 'REFERENCE';
+  ordinal: number | null;
+}
+
+export interface DataModelReferences {
+  modelId: string;
+  deletable: boolean;
+  tasks: DataModelReferenceTask[];
+  services: DataModelReferenceService[];
+}
+
 export type PhysicalTableMode = 'MANAGED' | 'EXTERNAL';
+
+export type PhysicalStatisticQuality = 'EXACT' | 'ESTIMATED' | 'UNAVAILABLE';
+
+export type PhysicalStatisticsRefreshStatus =
+  | 'SUCCESS'
+  | 'PARTIAL'
+  | 'FAILED'
+  | 'NOT_FOUND'
+  | 'UNSUPPORTED';
+
+export interface DataModelPhysicalStatistics {
+  modelId: string;
+  rowCount: number | null;
+  rowCountQuality: PhysicalStatisticQuality;
+  storageBytes: number | null;
+  storageQuality: PhysicalStatisticQuality;
+  collectedAt: string | null;
+  lastRefreshAt: string;
+  lastRefreshStatus: PhysicalStatisticsRefreshStatus;
+  message: string | null;
+}
 
 export type ModelWarehouseLayerInputPolicy = 'UNRESTRICTED' | 'ALLOW_LIST';
 
@@ -243,6 +291,7 @@ export interface ExternalTableImportColumn {
   message: string | null;
   importable: boolean;
   comment: string | null;
+  physicalColumnRole?: 'REGULAR' | 'TIME_KEY' | 'TAG';
 }
 
 export interface ExternalTableImportPreview {
@@ -328,6 +377,7 @@ export interface ModelMetadataImportModelPreview {
   rowNumber: number;
   code: string;
   name: string;
+  directoryPath: string;
   warehouseLayerCode?: string;
   warehouseLayer?: ModelWarehouseLayerSummary | null;
   physicalTableName: string;
@@ -373,6 +423,7 @@ export interface DataModel {
   clickHouseOrderByColumns: string[];
   status: DataModelStatus;
   schemaVersion: number;
+  physicalStatistics?: DataModelPhysicalStatistics | null;
   description: string | null;
   createdAt: string;
   updatedAt: string;
@@ -392,6 +443,7 @@ export interface DataModelField {
   primaryKey: boolean;
   sortOrder: number;
   description: string | null;
+  physicalColumnRole?: 'REGULAR' | 'TIME_KEY' | 'TAG';
   standardDictionary?: StandardDictionarySummary | null;
   createdAt: string;
   updatedAt: string;
@@ -400,6 +452,74 @@ export interface DataModelField {
 export interface DataModelDetail {
   model: DataModel;
   fields: DataModelField[];
+}
+
+export type LineageDirection = 'UPSTREAM' | 'DOWNSTREAM' | 'BOTH';
+export type LineageGranularity = 'TABLE' | 'FIELD';
+export type LineageCoverage = 'MODEL_ONLY' | 'FIELD_PARTIAL' | 'FIELD_COMPLETE';
+export type LineageGraphNodeKind = 'MODEL' | 'JDBC_TABLE' | 'EXTERNAL_RESOURCE' | 'TASK' | 'FIELD' | 'DATA_SERVICE';
+export type LineageGraphNodeSide = 'UPSTREAM' | 'CURRENT' | 'DOWNSTREAM';
+export type LineageGraphEdgeType = 'READS' | 'WRITES' | 'DERIVES' | 'FIELD_EFFECT' | 'EXPOSES';
+export type LineageWriteMode = 'APPEND' | 'FULL_OVERWRITE' | 'UPSERT' | 'PARTITION_OVERWRITE' | 'SNAPSHOT_SYNC' | 'CREATE_NEW';
+export type LineageExternalResourceType =
+  | 'KAFKA_TOPIC'
+  | 'FILE_DATASET_TABLE'
+  | 'HTTP_API_RESOURCE'
+  | 'SPATIAL_SERVICE_RESOURCE'
+  | 'OBJECT_STORAGE_PATH'
+  | 'JDBC_QUERY_RESULT';
+export type LineageOutputFieldEffect =
+  | 'DERIVED'
+  | 'WRITTEN_UNKNOWN_SOURCE'
+  | 'CONSTANT'
+  | 'DEFAULT_VALUE'
+  | 'NULL_FILLED'
+  | 'PRESERVED'
+  | 'NOT_WRITTEN';
+export type LineageFieldDerivationType = 'DIRECT' | 'CALCULATED' | 'AGGREGATED';
+export type LineageFieldUsageType = 'JOIN_KEY' | 'FILTER_CONDITION' | 'GROUP_KEY' | 'SORT_KEY' | 'PARTITION_KEY';
+
+export interface LineageGraphNode {
+  id: string;
+  kind: LineageGraphNodeKind;
+  side: LineageGraphNodeSide;
+  depth: number;
+  label: string;
+  subtitle: string;
+  modelId: string | null;
+  modelFieldId: string | null;
+  taskId: string | null;
+  dataSourceId: string | null;
+  taskStatus: DataModelStatus | null;
+  definitionVersion: number | null;
+  writeMode: LineageWriteMode | null;
+  stale: boolean;
+  externalResourceType: LineageExternalResourceType | null;
+  resourceId: string | null;
+  dataServiceId: string | null;
+  dataServiceType: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API' | null;
+  dataServiceStatus: 'DRAFT' | 'ENABLED' | 'DISABLED' | null;
+  routePath: string | null;
+}
+
+export interface LineageGraphEdge {
+  id: string;
+  source: string;
+  target: string;
+  type: LineageGraphEdgeType;
+  derivationType: LineageFieldDerivationType | null;
+  outputEffect: LineageOutputFieldEffect | null;
+  usages: LineageFieldUsageType[];
+}
+
+export interface LineageGraph {
+  rootNodeId: string;
+  granularity: LineageGranularity;
+  coverage: LineageCoverage | null;
+  truncated: boolean;
+  warnings: string[];
+  nodes: LineageGraphNode[];
+  edges: LineageGraphEdge[];
 }
 
 export interface CreateDataModelRequest {
@@ -424,6 +544,35 @@ export interface CreateManagedDataModelDraftRequest {
   clickHouseOrderByColumns: string[];
   description?: string;
   fields: DataModelFieldInput[];
+}
+
+export interface ImportModelMetadataModelRequest {
+  code: string;
+  name: string;
+  directoryPath?: string;
+  warehouseLayerId?: string;
+  physicalTableName: string;
+  clickHouseOrderByColumns: string[];
+  description?: string;
+  fields: DataModelFieldInput[];
+}
+
+export interface ImportModelMetadataRequest {
+  targetStorageDataSourceId: string;
+  models: ImportModelMetadataModelRequest[];
+}
+
+export interface ImportedModelMetadata {
+  id: string;
+  code: string;
+  name: string;
+  directoryId?: string | null;
+}
+
+export interface ModelMetadataImportResult {
+  modelCount: number;
+  fieldCount: number;
+  models: ImportedModelMetadata[];
 }
 
 export type UpdateDataModelRequest = Omit<CreateDataModelRequest, 'code'>;
@@ -451,6 +600,7 @@ export interface UpdateDataModelFieldsRequest {
 export interface DataModelFilters {
   keyword?: string;
   status?: DataModelStatus;
+  physicalTableModes?: PhysicalTableMode[];
   storageDataSourceId?: string;
   warehouseLayerId?: string;
   directoryIds?: string[];
@@ -735,6 +885,41 @@ export interface DataModelPreview {
   truncated: boolean;
 }
 
+export interface DataModelSpatialPreviewGeometryField {
+  code: string;
+  name: string;
+  kind: GeometryKind;
+  sourceCrs: CrsReference;
+  spatialIndexAvailable: boolean;
+  estimatedRowCount: number | null;
+  previewAllowed: boolean;
+  message: string | null;
+}
+
+export interface DataModelSpatialPreview {
+  supported: boolean;
+  message: string | null;
+  geometryFields: DataModelSpatialPreviewGeometryField[];
+  displayCrs: 'EPSG:3857';
+  initialBounds: [number, number, number, number];
+  limits: {
+    minimumWidth: number;
+    maximumWidth: number;
+    minimumHeight: number;
+    maximumHeight: number;
+    maximumFeatures: number;
+    maximumCoordinates: number;
+    maximumWkbBytes: number;
+  };
+}
+
+export interface DataModelSpatialPreviewMap {
+  blob: Blob;
+  featureCount: number;
+  skippedCount: number;
+  truncated: boolean;
+}
+
 export type DataModelDataQueryConditionType = 'AND' | 'OR';
 
 export type DataModelDataQuerySortDirection = 'ASC' | 'DESC';
@@ -823,7 +1008,3 @@ export const geometryKindLabels: Record<GeometryKind, string> = {
   MULTIPOLYGON: 'MultiPolygon',
   GEOMETRYCOLLECTION: 'GeometryCollection',
 };
-
-export const physicalLocation = (model: Pick<DataModel, 'catalogName' | 'schemaName' | 'physicalTableName'>) => (
-  [model.catalogName, model.schemaName, model.physicalTableName].filter(Boolean).join('.')
-);

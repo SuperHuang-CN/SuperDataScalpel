@@ -105,6 +105,29 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
             QualificationMode qualificationMode,
             PreviewStyle previewStyle
     ) {
+        this(
+                id, displayName, defaultPort, databaseNameLabel, schemaNameLabel, defaultSchema,
+                namespaceMode, capabilitiesFor(id), connectionOptions, driverClassName, quoteStart,
+                quoteEnd, qualificationMode, previewStyle
+        );
+    }
+
+    protected AbstractJdbcDialect(
+            String id,
+            String displayName,
+            int defaultPort,
+            String databaseNameLabel,
+            String schemaNameLabel,
+            String defaultSchema,
+            NamespaceMode namespaceMode,
+            Set<DatabaseCapability> capabilities,
+            List<ConnectionOptionDefinition> connectionOptions,
+            String driverClassName,
+            String quoteStart,
+            String quoteEnd,
+            QualificationMode qualificationMode,
+            PreviewStyle previewStyle
+    ) {
         this.definition = new DatabaseDefinition(
                 id,
                 displayName,
@@ -113,7 +136,7 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
                 schemaNameLabel,
                 defaultSchema,
                 namespaceMode,
-                capabilitiesFor(id),
+                capabilities,
                 connectionOptions
         );
         this.driverClassName = driverClassName;
@@ -992,6 +1015,7 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
                 DatabaseCapability.LIST_NAMESPACES,
                 DatabaseCapability.LIST_TABLES,
                 DatabaseCapability.READ_TABLE_METADATA,
+                DatabaseCapability.READ_TABLE_STATISTICS,
                 DatabaseCapability.PREVIEW_DATA,
                 DatabaseCapability.STANDARD_QUERY,
                 DatabaseCapability.QUERY_METADATA,
@@ -1003,6 +1027,10 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         }
         if ("POSTGRESQL".equals(id) || "MYSQL".equals(id)) {
             capabilities.add(DatabaseCapability.ROW_UPSERT);
+        }
+        if ("POSTGRESQL".equals(id) || "MYSQL".equals(id)
+                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id)) {
+            capabilities.add(DatabaseCapability.JDBC_INCREMENTAL_READ);
         }
         if ("POSTGRESQL".equals(id) || "MYSQL".equals(id) || "CLICKHOUSE".equals(id)) {
             capabilities.add(DatabaseCapability.CREATE_TABLE);

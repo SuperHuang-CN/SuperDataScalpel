@@ -53,14 +53,22 @@ describe('useUpdateCanvasTaskDefinition', () => {
       taskId,
       configured: false,
       version: 0,
+      loadStatus: 'UNCONFIGURED',
+      schemaVersion: definition.schemaVersion,
+      schemaMinorVersion: definition.schemaMinorVersion,
       definition,
+      message: null,
       updatedAt: null,
     };
     const saved: CanvasTaskDefinition = {
       taskId,
       configured: true,
       version: 1,
+      loadStatus: 'LOADED',
+      schemaVersion: definition.schemaVersion,
+      schemaMinorVersion: definition.schemaMinorVersion,
       definition,
+      message: null,
       updatedAt: '2026-07-17T00:00:00Z',
     };
     queryClient.setQueryData(['tasks', taskId, 'canvas-definition'], previous);
@@ -112,6 +120,9 @@ describe('useCancelTaskRun', () => {
       endedAt: null,
       deadlineAt: '2026-07-21T02:00:00Z',
       affectedRows: null,
+      userJarFileName: null,
+      userJarSha256: null,
+      userJarSizeBytes: null,
       message: null,
       errorDetail: null,
       executionError: null,

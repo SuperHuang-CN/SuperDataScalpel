@@ -128,15 +128,28 @@ describe('task canvas connection rules', () => {
       targetTableName: '',
       writeMode: null,
       upsertKeyColumns: [],
-      columnMappingMode: null,
       columnMappings: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.ModelOutput)).toEqual({
       sourceTableName: '',
       targetModelId: '',
       writeMode: null,
-      columnMappingMode: null,
       columnMappings: [],
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.JdbcSnapshotSyncOutput)).toEqual({
+      sourceTableName: '',
+      dataSourceId: '',
+      targetTableName: '',
+      keyColumns: [],
+      columnMappings: [],
+      deletePolicy: { action: 'KEEP', maxDeleteRows: null, maxDeleteRatio: null },
+    });
+    expect(emptyNodeConfiguration(CanvasNodeType.ModelSnapshotSyncOutput)).toEqual({
+      sourceTableName: '',
+      targetModelId: '',
+      keyColumns: [],
+      columnMappings: [],
+      deletePolicy: { action: 'KEEP', maxDeleteRows: null, maxDeleteRatio: null },
     });
   });
 

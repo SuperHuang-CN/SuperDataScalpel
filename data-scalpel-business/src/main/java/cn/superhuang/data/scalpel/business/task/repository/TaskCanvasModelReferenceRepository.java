@@ -19,6 +19,10 @@ public interface TaskCanvasModelReferenceRepository extends JpaRepository<TaskCa
             UUID modelId
     );
 
+    List<TaskCanvasModelReference> findAllByTaskIdInOrderByTaskIdAscNodeIdAsc(Collection<UUID> taskIds);
+
+    List<TaskCanvasModelReference> findAllByModelIdOrderByTaskIdAscNodeIdAsc(UUID modelId);
+
     boolean existsByModelId(UUID modelId);
 
     @Modifying

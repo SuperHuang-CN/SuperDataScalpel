@@ -1,10 +1,11 @@
 # Canvas JDBC_OUTPUT UPSERT 设计
 
-状态：Canvas 1.24 已实现；针对性协议、方言、Compiler、Runner 和前端测试已通过。
+状态：JDBC_OUTPUT UPSERT 的历史引入版本为 Canvas 1.24；当前 Canvas 2.3 已同时支持
+JDBC_OUTPUT 与 MODEL_OUTPUT 的批流 UPSERT。
 
 ## 定义
 
-`JDBC_OUTPUT.writeMode` 从 Canvas `1.24` 增加 `UPSERT`，并新增目标字段名数组 `upsertKeyColumns`。非 UPSERT 模式该数组必须为空；UPSERT 必须选择目标表的一整组主键或安全唯一索引字段。
+`JDBC_OUTPUT.writeMode` 支持 `UPSERT`，并使用目标字段名数组 `upsertKeyColumns`。非 UPSERT 模式该数组必须为空；UPSERT 必须选择目标表的一整组主键或安全唯一索引字段。
 
 ```ts
 type JdbcWriteMode = 'APPEND' | 'OVERWRITE' | 'UPSERT';
@@ -14,13 +15,13 @@ interface JdbcOutputConfiguration {
   dataSourceId: string;
   targetTableName: string;
   writeMode: JdbcWriteMode | null;
-  columnMappingMode: ColumnMappingMode | null;
   columnMappings: JdbcColumnMapping[];
   upsertKeyColumns: string[];
 }
 ```
 
-旧定义缺少 `upsertKeyColumns` 时统一规范化为空数组。低于 Canvas `1.24` 使用 UPSERT 返回 `WRITE_MODE_REQUIRES_SCHEMA_VERSION`。
+Canvas `2.x` 的 JDBC_OUTPUT 从基础版本开始支持该配置。Canvas `1.x` 属于不兼容大版本，
+不再读取或自动迁移。
 
 UPSERT 支持批处理和实时 micro-batch。实时任务继续禁止 `OVERWRITE` 和 Geometry 输出；批处理允许更新非 Key Geometry 字段。Key 必须已映射、可写、非 Geometry，冲突时只更新已映射的非 Key 字段。只有 Key 时 PostgreSQL 使用 `DO NOTHING`，MySQL 使用无变化更新。
 
@@ -38,11 +39,11 @@ PostgreSQL/MySQL 元数据都保留约束字段顺序；主键与索引字段组
 
 检查使用 `MEMORY_AND_DISK` 缓存，成功后复用同一 Dataset。写入使用每 Spark 分区一个 JDBC 事务、PreparedStatement 和 500 行批次；Geometry 继续使用 WKB 桥接。跨分区不提供全局事务，Streaming 仍是至少一次交付，不宣称 Exactly Once。
 
-`MODEL_OUTPUT` 不支持 UPSERT。Manifest v9 才允许携带 UPSERT；v8 只兼容原有 APPEND/OVERWRITE。
+Canvas `2.3` 起 `MODEL_OUTPUT` 同时支持批处理和实时 UPSERT。模型节点不保存 `upsertKeyColumns`，固定从模型元数据快照取得按字段顺序排列的完整主键；模型无主键、Key 不可写或未全部映射时编译失败。平台不访问物理表验证唯一约束，最终由数据库真实 UPSERT 结果判断。实时模型输出继续禁止 OVERWRITE 和 Geometry，并复用同一 `foreachBatch`、NULL/重复 Key 校验及至少一次语义。
 
 ## 已实现范围
 
-- Contracts、旧定义默认值、Canvas `1.24` 与 Manifest v9 门槛。
+- Contracts、Canvas `2.x` 定义、方言和 Manifest 写入契约。
 - PostgreSQL/MySQL 安全唯一键读取、方言能力和受控 SQL 渲染。
 - Compiler 的完整约束匹配、Key 映射/字段限制、批流模式与 MySQL 多唯一键警告。
 - Batch 和 Streaming `foreachBatch` 的缓存、NULL/重复 Key 检查、分区事务和写入指标。

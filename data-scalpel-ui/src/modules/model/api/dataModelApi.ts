@@ -1,4 +1,4 @@
-import { requestBlob, requestJson } from '../../../shared/api/http';
+import { requestBlob, requestBlobResponse, requestJson } from '../../../shared/api/http';
 import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
@@ -6,15 +6,21 @@ import type {
   CreateManagedDataModelDraftRequest,
   CreatePhysicalTableChangePlanRequest,
   DataModel,
+  DataModelReferences,
+  DataModelPhysicalStatistics,
   DataModelDataQueryRequest,
   DataModelDataQueryResponse,
   DataModelDetail,
   DataModelPhysicalChange,
   DataModelPreview,
+  DataModelSpatialPreview,
+  DataModelSpatialPreviewMap,
   ExecutePhysicalTableChangePlanRequest,
   ExternalTableImportPreview,
   ManagedImportPreview,
   ManagedImportPreviewRequest,
+  LineageDirection,
+  LineageGraph,
   ModelFieldTemplate,
   CreateModelFieldTemplateRequest,
   UpdateModelFieldTemplateRequest,
@@ -22,6 +28,8 @@ import type {
   CreateModelWarehouseLayerRequest,
   UpdateModelWarehouseLayerRequest,
   ModelMetadataImportPreview,
+  ImportModelMetadataRequest,
+  ModelMetadataImportResult,
   PhysicalTableDdlPlan,
   PhysicalTableInspection,
   PlatformTypeCapability,
@@ -124,6 +132,32 @@ export const fetchDataModel = (id: string): Promise<DataModelDetail> => (
   requestJson<DataModelDetail>(`${DATA_MODEL_PATH}/${id}`)
 );
 
+export const fetchDataModelTableLineage = (
+  id: string,
+  direction: LineageDirection,
+  depth: 1 | 2,
+): Promise<LineageGraph> => {
+  const query = new URLSearchParams({ direction, depth: String(depth) });
+  return requestJson<LineageGraph>(`${DATA_MODEL_PATH}/${id}/lineage/table?${query.toString()}`);
+};
+
+export const fetchDataModelFieldLineage = (
+  id: string,
+  fieldId: string,
+  direction: LineageDirection,
+  depth: 1 | 2,
+): Promise<LineageGraph> => {
+  const query = new URLSearchParams({ direction, depth: String(depth) });
+  return requestJson<LineageGraph>(`${DATA_MODEL_PATH}/${id}/lineage/fields/${fieldId}?${query.toString()}`);
+};
+
+export const refreshDataModelPhysicalStatistics = (
+  id: string,
+): Promise<DataModelPhysicalStatistics> => requestJson<DataModelPhysicalStatistics>(
+  `${DATA_MODEL_PATH}/${id}/actions/refresh-physical-statistics`,
+  { method: 'POST' },
+);
+
 export const fetchExternalTableImportPreview = (
   storageDataSourceId: string,
   physicalTableName: string,
@@ -139,6 +173,10 @@ export const fetchPlatformTypeCapabilities = (storageDataSourceId: string): Prom
 
 export const fetchPhysicalTableInspection = (id: string): Promise<PhysicalTableInspection> => (
   requestJson<PhysicalTableInspection>(`${DATA_MODEL_PATH}/${id}/physical-table`)
+);
+
+export const fetchDataModelReferences = (id: string): Promise<DataModelReferences> => (
+  requestJson<DataModelReferences>(`${DATA_MODEL_PATH}/${id}/references`)
 );
 
 export const fetchManagedImportPreview = (
@@ -178,6 +216,18 @@ export const previewModelMetadataImport = (
 
 export const fetchPhysicalTableDdlPlan = (id: string): Promise<PhysicalTableDdlPlan> => (
   requestJson<PhysicalTableDdlPlan>(`${DATA_MODEL_PATH}/${id}/physical-table/ddl`)
+);
+
+export const importModelMetadata = (
+  request: ImportModelMetadataRequest,
+): Promise<ModelMetadataImportResult> => requestJson<ModelMetadataImportResult>(
+  `${DATA_MODEL_PATH}/actions/import-metadata`,
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  },
+  120_000,
 );
 
 export const fetchPhysicalTableChangePlans = async (
@@ -227,6 +277,37 @@ export const createPhysicalTable = (id: string): Promise<PhysicalTableInspection
 export const fetchDataModelPreview = (id: string): Promise<DataModelPreview> => (
   requestJson<DataModelPreview>(`${DATA_MODEL_PATH}/${id}/data-preview`)
 );
+
+export const fetchDataModelSpatialPreview = (id: string): Promise<DataModelSpatialPreview> => (
+  requestJson<DataModelSpatialPreview>(`${DATA_MODEL_PATH}/${id}/spatial-preview`)
+);
+
+export const fetchDataModelSpatialPreviewMap = async (
+  id: string,
+  geometryField: string,
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+  signal: AbortSignal,
+): Promise<DataModelSpatialPreviewMap> => {
+  const query = new URLSearchParams({
+    geometryField,
+    bbox: bbox.join(','),
+    width: String(width),
+    height: String(height),
+  });
+  const response = await requestBlobResponse(
+    `${DATA_MODEL_PATH}/${id}/spatial-preview/map?${query.toString()}`,
+    { signal },
+    10_000,
+  );
+  return {
+    blob: response.blob,
+    featureCount: Number(response.headers.get('X-Spatial-Feature-Count') ?? 0),
+    skippedCount: Number(response.headers.get('X-Spatial-Skipped-Count') ?? 0),
+    truncated: response.headers.get('X-Spatial-Truncated') === 'true',
+  };
+};
 
 export const queryDataModelData = (
   id: string,

@@ -6,7 +6,9 @@ public record ModelOutputConfiguration(
         String sourceTableName,
         String targetModelId,
         JdbcWriteMode writeMode,
-        ColumnMappingMode columnMappingMode,
         List<JdbcColumnMapping> columnMappings
 ) {
+    public ModelOutputConfiguration {
+        columnMappings = columnMappings == null ? List.of() : List.copyOf(columnMappings);
+    }
 }

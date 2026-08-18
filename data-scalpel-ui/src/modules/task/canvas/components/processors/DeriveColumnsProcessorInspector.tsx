@@ -566,30 +566,31 @@ export const DeriveColumnsProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (derivations.length === 0) {
           setDraftError('至少配置一个派生字段');
-          return false;
+
         }
         const targets = new Set<string>();
         for (const derivation of derivations) {
           if (!derivation.targetColumnName.trim()) {
             setDraftError('派生字段中存在未填写的目标字段名');
-            return false;
+
           }
           if (!targets.add(derivation.targetColumnName.trim())) {
             setDraftError(`目标字段重复配置：${derivation.targetColumnName.trim()}`);
-            return false;
+
           }
           const expressionIssue = validateExpressionDraft(derivation.expression);
           if (expressionIssue) {
             setDraftError(expressionIssue);
-            return false;
+
           }
         }
         const configuration: DeriveColumnsConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           derivations: structuredClone(derivations),
         };
         onApply({

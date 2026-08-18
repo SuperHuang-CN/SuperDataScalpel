@@ -30,6 +30,8 @@ public interface DataServiceRepository extends SearchRepository<DataService, UUI
 
     boolean existsByEngineIdAndIdInAndStatus(UUID engineId, Collection<UUID> ids, DataServiceStatus status);
 
+    List<DataService> findAllByIdIn(Collection<UUID> ids);
+
     @Query("""
             select new cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository$DirectoryResourceCount(
                     service.directoryId, count(service))

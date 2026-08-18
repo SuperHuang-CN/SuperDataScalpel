@@ -10,7 +10,6 @@ import {
   parseJoinConditions,
   parseJoinType,
   parseKafkaValueSchema,
-  parseMappingMode,
   parseMappings,
   parsePlatformTypeDefinition,
   parseRuntimeParameters,
@@ -78,6 +77,33 @@ const parseConfiguration = <T>(
   return errors.length > 0
     ? { success: false, errors }
     : { success: true, value: parsed };
+};
+
+const parseSnapshotDeletePolicy = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): Configuration<'JDBC_SNAPSHOT_SYNC_OUTPUT'>['deletePolicy'] => {
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是删除策略对象`);
+    return { action: 'KEEP', maxDeleteRows: null, maxDeleteRatio: null };
+  }
+  if (value.action !== 'KEEP' && value.action !== 'DELETE') {
+    errors.push(`${path}.action 仅支持 KEEP 或 DELETE`);
+  }
+  const parseNullableNumber = (raw: unknown, fieldPath: string): number | null => {
+    if (raw === null || raw === undefined) return null;
+    if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+      errors.push(`${fieldPath} 必须是有限数值或 null`);
+      return null;
+    }
+    return raw;
+  };
+  return {
+    action: value.action === 'DELETE' ? 'DELETE' : 'KEEP',
+    maxDeleteRows: parseNullableNumber(value.maxDeleteRows, `${path}.maxDeleteRows`),
+    maxDeleteRatio: parseNullableNumber(value.maxDeleteRatio, `${path}.maxDeleteRatio`),
+  };
 };
 
 const parseJdbcQueryOutputColumns = (
@@ -763,6 +789,48 @@ const configurationParsers = {
       tableName: stringValue(configuration.tableName) || legacyTableName(configuration.table),
     }))
   ),
+  [CanvasNodeType.JdbcIncrementalInput]: (value, path) => (
+    parseConfiguration<Configuration<'JDBC_INCREMENTAL_INPUT'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        const startPosition = configuration.startPosition === 'EARLIEST'
+          || configuration.startPosition === 'AT_TIME'
+          ? configuration.startPosition
+          : 'LATEST';
+        const startTime = typeof configuration.startTime === 'string'
+          && configuration.startTime.trim() ? configuration.startTime.trim() : null;
+        if (startPosition === 'AT_TIME' && !startTime) {
+          errors.push(`${path}.startTime 在 AT_TIME 模式下不能为空`);
+        }
+        const visibilityDelaySeconds = typeof configuration.visibilityDelaySeconds === 'number'
+          ? configuration.visibilityDelaySeconds : 30;
+        const triggerIntervalSeconds = typeof configuration.triggerIntervalSeconds === 'number'
+          ? configuration.triggerIntervalSeconds : 60;
+        if (!Number.isInteger(visibilityDelaySeconds)
+          || visibilityDelaySeconds < 0 || visibilityDelaySeconds > 3600) {
+          errors.push(`${path}.visibilityDelaySeconds 必须是 0 到 3600 的整数`);
+        }
+        if (!Number.isInteger(triggerIntervalSeconds)
+          || triggerIntervalSeconds < 1 || triggerIntervalSeconds > 300) {
+          errors.push(`${path}.triggerIntervalSeconds 必须是 1 到 300 的整数`);
+        }
+        return {
+          dataSourceId: validateOptionalUuid(
+            stringValue(configuration.dataSourceId), `${path}.dataSourceId`, errors,
+          ),
+          tableName: stringValue(configuration.tableName),
+          outputTableName: stringValue(configuration.outputTableName),
+          incrementalTimeColumn: stringValue(configuration.incrementalTimeColumn),
+          startPosition,
+          startTime: startPosition === 'AT_TIME' ? startTime : null,
+          cursorTimeZone: stringValue(configuration.cursorTimeZone) || 'UTC',
+          visibilityDelaySeconds,
+          triggerIntervalSeconds,
+        };
+      },
+    )
+  ),
   [CanvasNodeType.JdbcQueryInput]: (value, path) => (
     parseConfiguration<Configuration<'JDBC_QUERY_INPUT'>>(value, path, (configuration, errors) => {
       const sql = stringValue(configuration.sql);
@@ -854,6 +922,34 @@ const configurationParsers = {
           || configuration.startingOffsets === 'LATEST'
           ? configuration.startingOffsets
           : null,
+        triggerIntervalSeconds: typeof configuration.triggerIntervalSeconds === 'number'
+          ? configuration.triggerIntervalSeconds : 10,
+      };
+    })
+  ),
+  [CanvasNodeType.TdEngineTmqInput]: (value, path) => (
+    parseConfiguration<Configuration<'TDENGINE_TMQ_INPUT'>>(value, path, (configuration, errors) => {
+      const fingerprint = stringValue(configuration.topicDefinitionFingerprint);
+      if (fingerprint && !/^[0-9a-f]{64}$/.test(fingerprint)) {
+        errors.push(`${path}.topicDefinitionFingerprint 必须是 64 位小写 SHA-256`);
+      }
+      const maximum = typeof configuration.maxOffsetsPerVGroupPerTrigger === 'number'
+        ? configuration.maxOffsetsPerVGroupPerTrigger
+        : 10_000;
+      if (!Number.isInteger(maximum) || maximum < 1 || maximum > 1_000_000) {
+        errors.push(`${path}.maxOffsetsPerVGroupPerTrigger 必须是 1 到 1000000 的整数`);
+      }
+      return {
+        dataSourceId: validateOptionalUuid(stringValue(configuration.dataSourceId), `${path}.dataSourceId`, errors),
+        topicName: stringValue(configuration.topicName),
+        catalogName: stringValue(configuration.catalogName),
+        supertableName: stringValue(configuration.supertableName),
+        topicDefinitionFingerprint: fingerprint,
+        outputTableName: stringValue(configuration.outputTableName),
+        startingOffsets: configuration.startingOffsets === 'LATEST' ? 'LATEST' : 'EARLIEST',
+        maxOffsetsPerVGroupPerTrigger: maximum,
+        triggerIntervalSeconds: typeof configuration.triggerIntervalSeconds === 'number'
+          ? configuration.triggerIntervalSeconds : 10,
       };
     })
   ),
@@ -1305,11 +1401,6 @@ const configurationParsers = {
         errors,
       ),
       writeMode: parseWriteMode(configuration.writeMode, `${path}.writeMode`, errors),
-      columnMappingMode: parseMappingMode(
-        configuration.columnMappingMode,
-        `${path}.columnMappingMode`,
-        errors,
-      ),
       columnMappings: parseMappings(
         configuration.columnMappings,
         `${path}.columnMappings`,
@@ -1324,11 +1415,6 @@ const configurationParsers = {
       targetTableName: stringValue(configuration.targetTableName)
         || legacyTableName(configuration.targetTable),
       writeMode: parseWriteMode(configuration.writeMode, `${path}.writeMode`, errors),
-      columnMappingMode: parseMappingMode(
-        configuration.columnMappingMode,
-        `${path}.columnMappingMode`,
-        errors,
-      ),
       columnMappings: parseMappings(
         configuration.columnMappings,
         `${path}.columnMappings`,
@@ -1340,6 +1426,61 @@ const configurationParsers = {
         errors,
       ),
     }))
+  ),
+  [CanvasNodeType.JdbcSnapshotSyncOutput]: (value, path) => (
+    parseConfiguration<Configuration<'JDBC_SNAPSHOT_SYNC_OUTPUT'>>(
+      value,
+      path,
+      (configuration, errors) => ({
+        sourceTableName: stringValue(configuration.sourceTableName),
+        dataSourceId: stringValue(configuration.dataSourceId),
+        targetTableName: stringValue(configuration.targetTableName),
+        keyColumns: parseStringArray(
+          configuration.keyColumns,
+          `${path}.keyColumns`,
+          errors,
+        ),
+        columnMappings: parseMappings(
+          configuration.columnMappings,
+          `${path}.columnMappings`,
+          errors,
+        ),
+        deletePolicy: parseSnapshotDeletePolicy(
+          configuration.deletePolicy,
+          `${path}.deletePolicy`,
+          errors,
+        ),
+      }),
+    )
+  ),
+  [CanvasNodeType.ModelSnapshotSyncOutput]: (value, path) => (
+    parseConfiguration<Configuration<'MODEL_SNAPSHOT_SYNC_OUTPUT'>>(
+      value,
+      path,
+      (configuration, errors) => ({
+        sourceTableName: stringValue(configuration.sourceTableName),
+        targetModelId: validateOptionalUuid(
+          stringValue(configuration.targetModelId),
+          `${path}.targetModelId`,
+          errors,
+        ),
+        keyColumns: parseStringArray(
+          configuration.keyColumns,
+          `${path}.keyColumns`,
+          errors,
+        ),
+        columnMappings: parseMappings(
+          configuration.columnMappings,
+          `${path}.columnMappings`,
+          errors,
+        ),
+        deletePolicy: parseSnapshotDeletePolicy(
+          configuration.deletePolicy,
+          `${path}.deletePolicy`,
+          errors,
+        ),
+      }),
+    )
   ),
   [CanvasNodeType.KafkaOutput]: (value, path) => (
     parseConfiguration<Configuration<'KAFKA_OUTPUT'>>(value, path, (configuration, errors) => ({
@@ -1356,11 +1497,6 @@ const configurationParsers = {
         errors,
       ),
       keyColumnName: stringValue(configuration.keyColumnName),
-      columnMappingMode: parseMappingMode(
-        configuration.columnMappingMode,
-        `${path}.columnMappingMode`,
-        errors,
-      ),
       columnMappings: parseMappings(
         configuration.columnMappings,
         `${path}.columnMappings`,

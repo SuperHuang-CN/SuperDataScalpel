@@ -13,13 +13,13 @@ import type { MenuProps, TableProps, TabsProps } from 'antd';
 import {
   Alert,
   Button,
-  Card,
   Descriptions,
   Dropdown,
   Form,
   Input,
   Modal,
   Space,
+  Skeleton,
   Table,
   Tabs,
   Tag,
@@ -34,6 +34,7 @@ import { useCurrentUser } from '../../system';
 import { MoveStandardDictionaryItemModal } from '../components/MoveStandardDictionaryItemModal';
 import { StandardDictionaryDrawer } from '../components/StandardDictionaryDrawer';
 import { StandardDictionaryItemDrawer } from '../components/StandardDictionaryItemDrawer';
+import { StandardDictionaryValueTypeIcon } from '../components/StandardDictionaryValueTypeIcon';
 import {
   useStandardDictionary,
   useStandardDictionaryFieldReferences,
@@ -123,6 +124,7 @@ export const StandardDictionaryDetailPage = () => {
           : '删除节点',
       onClick: () => {
         modalApi.confirm({
+          rootClassName: 'business-overlay business-modal-overlay',
           title: '删除码表节点',
           content: `确认删除“${item.name}”吗？`,
           okText: '删除',
@@ -243,7 +245,7 @@ export const StandardDictionaryDetailPage = () => {
   ];
 
   if (!dictionary && detailQuery.isPending) {
-    return <Card loading className="management-card" />;
+    return <div className="business-detail-loading"><Skeleton active paragraph={{ rows: 8 }} /></div>;
   }
 
   if (!dictionary) {
@@ -263,7 +265,7 @@ export const StandardDictionaryDetailPage = () => {
       key: 'basic',
       label: '基本信息',
       children: (
-        <Card className="management-card">
+        <div className="standard-dictionary-detail-panel standard-dictionary-basic-panel">
           <Descriptions size="small" bordered column={2}>
             <Descriptions.Item label="码表编码"><code>{dictionary.code}</code></Descriptions.Item>
             <Descriptions.Item label="码表名称">{dictionary.name}</Descriptions.Item>
@@ -277,14 +279,14 @@ export const StandardDictionaryDetailPage = () => {
             <Descriptions.Item label="模板字段引用">{detail.templateFieldReferenceCount}</Descriptions.Item>
             <Descriptions.Item label="说明" span={2}>{dictionary.description || '—'}</Descriptions.Item>
           </Descriptions>
-        </Card>
+        </div>
       ),
     },
     {
       key: 'items',
       label: `码表项（${detail.itemCount}）`,
       children: (
-        <Card className="management-card" styles={{ body: { display: 'flex', flexDirection: 'column', height: '100%' } }}>
+        <div className="standard-dictionary-detail-panel standard-dictionary-table-panel">
           <div className="management-toolbar">
             <Alert
               showIcon
@@ -327,14 +329,14 @@ export const StandardDictionaryDetailPage = () => {
             pagination={false}
             scroll={{ x: 1100, y: '100%' }}
           />
-        </Card>
+        </div>
       ),
     },
     ...(canViewModels ? [{
       key: 'references',
       label: `引用字段（${detail.fieldReferenceCount}）`,
       children: (
-        <Card className="management-card" styles={{ body: { display: 'flex', flexDirection: 'column', height: '100%' } }}>
+        <div className="standard-dictionary-detail-panel standard-dictionary-table-panel">
           <div className="management-toolbar">
             <Form<ReferenceFilters>
               autoComplete="off"
@@ -388,27 +390,50 @@ export const StandardDictionaryDetailPage = () => {
               setReferencePageSize(pagination.pageSize ?? 20);
             }}
           />
-        </Card>
+        </div>
       ),
     }] : []),
   ];
 
   return (
-    <div className="management-page">
+    <div className="standard-dictionary-detail-page business-detail-page">
       {contextHolder}
       {modalContext}
-      <div className="management-toolbar">
-        <Space>
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate('/standard/dictionaries')}>返回</Button>
-          <strong>{dictionary.name}</strong>
-          <code>{dictionary.code}</code>
-          {!dictionary.enabled && <Tag>已停用</Tag>}
+      <header className="standard-dictionary-detail-header business-detail-header">
+        <div className="standard-dictionary-detail-identity">
+          <div className="standard-dictionary-detail-title-row">
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/standard/dictionaries')}>返回列表</Button>
+            <span className="business-detail-resource-icon business-detail-resource-icon-purple">
+              <StandardDictionaryValueTypeIcon valueType={dictionary.valueType} />
+            </span>
+            <span className="standard-dictionary-detail-title">{dictionary.name}</span>
+            <Tag color={dictionary.enabled ? 'success' : 'default'}>{dictionary.enabled ? '启用' : '停用'}</Tag>
+          </div>
+          <div className="standard-dictionary-detail-subtitle">
+            <code>{dictionary.code}</code>
+            <span>·</span>
+            <span>{standardDictionaryValueTypeLabels[dictionary.valueType]}</span>
+            <span>·</span>
+            <span>内容版本 v{dictionary.version}</span>
+          </div>
+        </div>
+        <Space size={4}>
+          <Tooltip title="刷新码表">
+            <Button
+              icon={<ReloadOutlined />}
+              aria-label="刷新码表详情"
+              loading={detailQuery.isFetching || treeQuery.isFetching}
+              onClick={() => void Promise.all([
+                detailQuery.refetch(),
+                treeQuery.refetch(),
+                ...(canViewModels ? [referencesQuery.refetch()] : []),
+              ])}
+            />
+          </Tooltip>
+          {canManage && <Button icon={<EditOutlined />} onClick={() => setDictionaryDrawerOpen(true)}>修改</Button>}
         </Space>
-        {canManage && (
-          <Button icon={<EditOutlined />} onClick={() => setDictionaryDrawerOpen(true)}>修改基本信息</Button>
-        )}
-      </div>
-      <Tabs className="management-tabs" items={tabItems} defaultActiveKey="items" />
+      </header>
+      <Tabs className="standard-dictionary-detail-tabs business-detail-tabs" items={tabItems} defaultActiveKey="items" />
       <StandardDictionaryDrawer
         open={dictionaryDrawerOpen}
         dictionary={dictionary}

@@ -152,6 +152,7 @@ export const FileDatasetTableResultPanel = ({
   const rename = () => {
     let name = table.name;
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '修改表名称',
       content: (
         <Input
@@ -183,6 +184,7 @@ export const FileDatasetTableResultPanel = ({
     const effectiveCrs = geometryField?.platformTypeDefinition.geometry?.crs;
     let epsgCode = table.spatialReferenceOverride?.code ?? effectiveCrs?.code ?? null;
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '确认源数据空间参考',
       width: 520,
       content: (
@@ -242,6 +244,7 @@ export const FileDatasetTableResultPanel = ({
   };
 
   const replaceAll = (file: File) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '全量覆盖表数据',
     content: `文件“${file.name}”校验成功后将替代当前全部来源，并立即删除旧文件和对象，操作不可恢复。已排队或运行的 Canvas 任务可能因旧对象消失而失败；校验期间当前数据仍可使用。`,
     okText: '确认覆盖',
@@ -263,6 +266,7 @@ export const FileDatasetTableResultPanel = ({
   });
 
   const replaceSource = (source: FileDatasetTableSource, file: File) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '替换当前数据来源',
     content: `文件“${file.name}”校验成功后将替换“${source.sourceName}”，并立即删除旧文件和对象。操作不可恢复，已排队或运行的 Canvas 任务可能失败。`,
     okText: '确认替换',
@@ -285,6 +289,7 @@ export const FileDatasetTableResultPanel = ({
   });
 
   const deleteSource = (source: FileDatasetTableSource) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除当前数据来源',
     content: `确认删除“${source.sourceName}”吗？对象会立即删除且不可恢复；如果这是最后一个来源，逻辑表也会被删除。已排队或运行的 Canvas 任务可能失败。`,
     okText: '删除',

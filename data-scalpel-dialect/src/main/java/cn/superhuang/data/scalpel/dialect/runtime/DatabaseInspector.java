@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.dialect.runtime;
 
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
+import cn.superhuang.data.scalpel.dialect.api.DatabaseMetadataProvider;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
@@ -10,14 +11,18 @@ import cn.superhuang.data.scalpel.dialect.model.NamespaceInfo;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableList;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
 import cn.superhuang.data.scalpel.dialect.model.TablePreview;
 import cn.superhuang.data.scalpel.dialect.model.TableQuery;
+import cn.superhuang.data.scalpel.dialect.model.TdEngineTmqTopic;
 
 import java.sql.Connection;
 import java.sql.DatabaseMetaData;
 import java.sql.SQLException;
 import java.sql.SQLFeatureNotSupportedException;
+import java.sql.SQLTimeoutException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.List;
 
 public class DatabaseInspector {
@@ -61,18 +66,45 @@ public class DatabaseInspector {
     }
 
     public List<NamespaceInfo> listNamespaces(String databaseType, JdbcConnectionConfig config) {
-        return execute(databaseType, config, (connection, dialect) ->
-                new JdbcMetadataReader(dialect).listNamespaces(connection, config));
+        return execute(databaseType, config, (connection, dialect) -> dialect instanceof DatabaseMetadataProvider provider
+                ? provider.listNamespaces(connection, config)
+                : new JdbcMetadataReader(dialect).listNamespaces(connection, config));
     }
 
     public TableList listTables(String databaseType, JdbcConnectionConfig config, TableQuery query) {
+        return execute(databaseType, config, (connection, dialect) -> dialect instanceof DatabaseMetadataProvider provider
+                ? provider.listTables(connection, config, query)
+                : new JdbcMetadataReader(dialect).listTables(connection, config, query));
+    }
+
+    public List<TdEngineTmqTopic> listTdEngineTmqTopics(
+            String databaseType,
+            JdbcConnectionConfig config,
+            String keyword
+    ) {
         return execute(databaseType, config, (connection, dialect) ->
-                new JdbcMetadataReader(dialect).listTables(connection, config, query));
+                new TdEngineTmqMetadataReader(dialect).list(connection, keyword));
     }
 
     public TableMetadata readTable(String databaseType, JdbcConnectionConfig config, TableIdentifier table) {
-        return execute(databaseType, config, (connection, dialect) ->
-                new JdbcMetadataReader(dialect).readTable(connection, table));
+        return execute(databaseType, config, (connection, dialect) -> readTable(connection, dialect, table));
+    }
+
+    public TablePhysicalStatistics readTablePhysicalStatistics(
+            String databaseType,
+            JdbcConnectionConfig config,
+            TableIdentifier table,
+            Duration timeout
+    ) {
+        try {
+            return execute(databaseType, config, (connection, dialect) ->
+                    dialect.readTablePhysicalStatistics(connection, table, timeout));
+        } catch (DatabaseAccessException exception) {
+            if (exception.getCause() instanceof SQLTimeoutException) {
+                throw new DatabaseAccessException("QUERY_TIMEOUT", "物理表统计查询超时", exception);
+            }
+            throw exception;
+        }
     }
 
     /**
@@ -87,7 +119,7 @@ public class DatabaseInspector {
             } catch (SQLException ignored) {
                 // Read-only mode is an optimization and is not supported by every JDBC driver.
             }
-            return new JdbcMetadataReader(dialect).readTable(connection, table);
+            return readTable(connection, dialect, table);
         } catch (DatabaseAccessException exception) {
             throw exception;
         } catch (ClassNotFoundException | LinkageError exception) {
@@ -100,8 +132,23 @@ public class DatabaseInspector {
     }
 
     public TablePreview preview(String databaseType, JdbcConnectionConfig config, TableIdentifier table, int limit) {
-        return execute(databaseType, config, (connection, dialect) ->
-                new JdbcMetadataReader(dialect).preview(connection, table, limit));
+        return execute(databaseType, config, (connection, dialect) -> {
+            if (dialect instanceof DatabaseMetadataProvider) {
+                // The provider verifies that the requested object belongs to its supported resource boundary.
+                readTable(connection, dialect, table);
+            }
+            return new JdbcMetadataReader(dialect).preview(connection, table, limit);
+        });
+    }
+
+    private static TableMetadata readTable(
+            Connection connection,
+            DatabaseDialect dialect,
+            TableIdentifier table
+    ) throws SQLException {
+        return dialect instanceof DatabaseMetadataProvider provider
+                ? provider.readTableMetadata(connection, table)
+                : new JdbcMetadataReader(dialect).readTable(connection, table);
     }
 
     private <T> T execute(String databaseType, JdbcConnectionConfig config, SqlOperation<T> operation) {

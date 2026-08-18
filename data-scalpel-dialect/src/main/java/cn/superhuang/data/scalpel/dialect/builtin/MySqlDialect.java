@@ -10,24 +10,30 @@ import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionChoice;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionDefinition;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionType;
 import cn.superhuang.data.scalpel.dialect.api.NamespaceMode;
+import cn.superhuang.data.scalpel.dialect.api.JdbcIncrementalReadDialect;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
+import cn.superhuang.data.scalpel.dialect.model.JdbcSnapshotColumn;
+import cn.superhuang.data.scalpel.dialect.model.JdbcSnapshotSyncSql;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
+import cn.superhuang.data.scalpel.dialect.model.TableStatisticQuality;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -40,7 +46,7 @@ import java.util.Optional;
 import java.util.Properties;
 import java.util.Set;
 
-public final class MySqlDialect extends AbstractJdbcDialect {
+public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncrementalReadDialect {
 
     public MySqlDialect() {
         super(
@@ -87,6 +93,49 @@ public final class MySqlDialect extends AbstractJdbcDialect {
     }
 
     @Override
+    public java.time.Instant readDatabaseCurrentTime(Connection connection) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement("SELECT UTC_TIMESTAMP(6)");
+             ResultSet resultSet = statement.executeQuery()) {
+            if (!resultSet.next() || resultSet.getTimestamp(1) == null) {
+                throw new SQLException("Database current time query returned no value");
+            }
+            return resultSet.getTimestamp(1).toLocalDateTime().toInstant(java.time.ZoneOffset.UTC);
+        }
+    }
+
+    @Override
+    public TablePhysicalStatistics readTablePhysicalStatistics(
+            Connection connection,
+            TableIdentifier table,
+            Duration timeout
+    ) throws SQLException {
+        String sql = """
+                SELECT TABLE_TYPE, TABLE_ROWS, COALESCE(DATA_LENGTH, 0) + COALESCE(INDEX_LENGTH, 0)
+                FROM information_schema.TABLES
+                WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            statement.setString(1, table.catalog());
+            statement.setString(2, table.table());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return TablePhysicalStatistics.notFound();
+                }
+                if (!"BASE TABLE".equalsIgnoreCase(resultSet.getString(1))) {
+                    return TablePhysicalStatistics.unsupported("普通视图没有独立物理存储统计");
+                }
+                return TablePhysicalStatistics.available(
+                        TableStatisticsJdbcSupport.nullableLong(resultSet, 2),
+                        TableStatisticQuality.ESTIMATED,
+                        TableStatisticsJdbcSupport.nullableLong(resultSet, 3),
+                        TableStatisticQuality.ESTIMATED
+                );
+            }
+        }
+    }
+
+    @Override
     public String renderRowUpsert(
             TableIdentifier target,
             List<JdbcUpsertColumn> columns,
@@ -107,6 +156,74 @@ public final class MySqlDialect extends AbstractJdbcDialect {
                 .collect(java.util.stream.Collectors.joining(", "));
         return "INSERT INTO " + qualifiedName(target) + " (" + names + ") VALUES (" + values
                 + ") ON DUPLICATE KEY UPDATE " + update;
+    }
+
+    @Override
+    public JdbcSnapshotSyncSql renderSnapshotSyncSql(
+            TableIdentifier target,
+            List<JdbcSnapshotColumn> columns,
+            List<String> keyColumns,
+            Duration lockTimeout
+    ) {
+        validateSnapshotSync(columns, keyColumns, lockTimeout);
+        String table = qualifiedName(target);
+        String selectColumns = columns.stream()
+                .map(column -> column.geometry()
+                        ? "ST_AsBinary(" + quoteIdentifier(column.name()) + ") AS "
+                        + quoteIdentifier(column.name())
+                        : quoteIdentifier(column.name()))
+                .collect(java.util.stream.Collectors.joining(", "));
+        String keyPredicate = keyColumns.stream()
+                .map(key -> quoteIdentifier(key) + " = ?")
+                .collect(java.util.stream.Collectors.joining(" AND "));
+        Set<String> keySet = Set.copyOf(keyColumns);
+        List<JdbcSnapshotColumn> updateColumns = columns.stream()
+                .filter(column -> !keySet.contains(column.name()))
+                .toList();
+        String updateSql = updateColumns.isEmpty() ? null : "UPDATE " + table + " SET "
+                + updateColumns.stream()
+                .map(column -> quoteIdentifier(column.name()) + " = " + snapshotValue(column))
+                .collect(java.util.stream.Collectors.joining(", "))
+                + " WHERE " + keyPredicate;
+        String names = columns.stream().map(column -> quoteIdentifier(column.name()))
+                .collect(java.util.stream.Collectors.joining(", "));
+        String values = columns.stream().map(MySqlDialect::snapshotValue)
+                .collect(java.util.stream.Collectors.joining(", "));
+        long seconds = Math.max(1L, lockTimeout.toSeconds());
+        return new JdbcSnapshotSyncSql(
+                List.of(
+                        "SET SESSION lock_wait_timeout = " + seconds,
+                        "SET SESSION innodb_lock_wait_timeout = " + seconds,
+                        "LOCK TABLES " + table + " WRITE"
+                ),
+                "SELECT " + selectColumns + " FROM " + table,
+                "DELETE FROM " + table + " WHERE " + keyPredicate,
+                updateSql,
+                "INSERT INTO " + table + " (" + names + ") VALUES (" + values + ")",
+                "UNLOCK TABLES"
+        );
+    }
+
+    private static String snapshotValue(JdbcSnapshotColumn column) {
+        return column.geometry()
+                ? "ST_GeomFromWKB(?, " + column.geometrySpatialReferenceId() + ")"
+                : "?";
+    }
+
+    private static void validateSnapshotSync(
+            List<JdbcSnapshotColumn> columns,
+            List<String> keyColumns,
+            Duration timeout
+    ) {
+        if (columns == null || columns.isEmpty() || keyColumns == null || keyColumns.isEmpty()
+                || timeout == null || timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("Invalid snapshot synchronization SQL arguments");
+        }
+        Set<String> names = columns.stream().map(JdbcSnapshotColumn::name)
+                .collect(java.util.stream.Collectors.toSet());
+        if (names.size() != columns.size() || !names.containsAll(keyColumns)) {
+            throw new IllegalArgumentException("Snapshot Key must be included in unique columns");
+        }
     }
 
     private static String upsertValue(JdbcUpsertColumn column) {

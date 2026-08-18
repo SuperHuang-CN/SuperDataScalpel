@@ -57,6 +57,14 @@ public class ProblemDetailsExceptionHandler extends ResponseEntityExceptionHandl
         return problemDetailFactory.create(ProblemType.BUSINESS_CONFLICT, "数据操作与当前资源状态冲突", request);
     }
 
+    @ExceptionHandler(CodedProblemException.class)
+    ProblemDetail handleCodedProblem(CodedProblemException exception, HttpServletRequest request) {
+        ProblemDetail problem = problemDetailFactory.create(
+                ProblemType.fromStatus(exception.status()), exception.status(), exception.getMessage(), request);
+        problem.setProperty("code", exception.code());
+        return problem;
+    }
+
     @ExceptionHandler(AuthenticationException.class)
     ProblemDetail handleAuthentication(AuthenticationException exception, HttpServletRequest request) {
         return problemDetailFactory.create(ProblemType.AUTHENTICATION_REQUIRED, "身份认证失败", request);

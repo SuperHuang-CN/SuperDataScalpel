@@ -188,6 +188,7 @@ export const FileDatasetParseQueueDrawer = ({ open, onClose }: FileDatasetParseQ
 
   return (
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay"
       title="文件解析队列"
       open={open}
       size={1180}

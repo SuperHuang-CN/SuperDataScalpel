@@ -56,7 +56,6 @@ import {
   mergeManagedTableModelDrafts,
   managedTableDraftIssues,
   managedTableKey,
-  managedTableLocation,
   toManagedDataModelDraftRequest,
   type ManagedImportFieldDraft,
   type ManagedTableModelDraft,
@@ -184,6 +183,7 @@ const FieldEditor = ({
 
   return (
     <Modal
+      rootClassName="business-overlay business-modal-overlay"
       title={field ? `调整字段：${field.sourceName}` : '调整字段'}
       open={open}
       width={680}
@@ -427,7 +427,7 @@ export const ManagedTableModelImportDrawer = ({
 
   const enterReview = () => {
     const nextDrafts = mergeManagedTableModelDrafts(
-      [...selectedTables.values()].sort((left, right) => managedTableLocation(left).localeCompare(managedTableLocation(right))),
+      [...selectedTables.values()].sort((left, right) => left.identifier.table.localeCompare(right.identifier.table)),
       drafts,
       warehouseLayerId,
       warehouseLayerPrefix(warehouseLayerId),
@@ -447,6 +447,7 @@ export const ManagedTableModelImportDrawer = ({
     };
     if (drafts.some((draft) => draft.fields.length > 0)) {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '切换目标数据存储',
         content: '切换后需要按新目标重新映射字段，当前字段调整会被重置。确认继续吗？',
         okText: '确认切换',
@@ -463,6 +464,7 @@ export const ManagedTableModelImportDrawer = ({
     const apply = () => loadPreviews(effectiveTargetStorageDataSourceId, drafts);
     if (drafts.some((draft) => draft.fields.length > 0)) {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '重新读取源表结构',
         content: '重新读取会重置当前字段调整，但会保留模型编码、名称、说明和目标表名。确认继续吗？',
         okText: '重新读取',
@@ -544,7 +546,7 @@ export const ManagedTableModelImportDrawer = ({
       key: 'table',
       width: 320,
       ellipsis: true,
-      render: (_value, table) => <code>{managedTableLocation(table)}</code>,
+      render: (_value, table) => <code>{table.identifier.table}</code>,
     },
     { title: '类型', dataIndex: 'type', width: 100, render: (value: string) => <Tag>{value}</Tag> },
     { title: '表注释', dataIndex: 'comment', ellipsis: true, render: (value: string | null) => value || '—' },
@@ -617,7 +619,7 @@ export const ManagedTableModelImportDrawer = ({
       key: 'sourceTable',
       width: 220,
       ellipsis: true,
-      render: (_value, draft) => <code>{managedTableLocation(draft.table)}</code>,
+      render: (_value, draft) => <code>{draft.table.identifier.table}</code>,
     },
     {
       title: '模型编码',
@@ -785,6 +787,7 @@ export const ManagedTableModelImportDrawer = ({
     <>
       {modalContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title="从 JDBC 表结构创建模型"
         open={open}
         size="large"

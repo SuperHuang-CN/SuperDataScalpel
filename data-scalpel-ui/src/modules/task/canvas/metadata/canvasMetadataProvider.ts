@@ -42,6 +42,7 @@ export const createCanvasMetadataProviderRegistry = (
     'HTTP_API_RESOURCE',
     'SPATIAL_SERVICE_RESOURCE',
     'KAFKA_TOPIC',
+    'TDENGINE_TMQ_TOPIC',
     'S3_TARGET',
   ];
   const missingKinds = expectedKinds.filter((kind) => !byKind.has(kind));
@@ -101,6 +102,10 @@ export const canvasMetadataProviderRegistry = createCanvasMetadataProviderRegist
   {
     kind: 'KAFKA_TOPIC',
     key: (reference) => `${reference.dataSourceId}\u0000${reference.topic}`,
+  },
+  {
+    kind: 'TDENGINE_TMQ_TOPIC',
+    key: (reference) => `${reference.dataSourceId}\u0000${reference.topicName}`,
   },
   {
     kind: 'S3_TARGET',

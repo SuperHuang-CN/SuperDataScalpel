@@ -20,11 +20,9 @@ const statusColors: Record<DataModelStatus, string> = {
   DISABLED: 'warning',
 };
 
-const physicalLocation = (row: DataServiceRelatedModelView) => {
-  if (!row.model) return '—';
-  return [row.model.catalogName, row.model.schemaName, row.model.physicalTableName]
-    .filter(Boolean)
-    .join('.');
+const physicalTableName = (row: DataServiceRelatedModelView) => {
+  if (!row.resolved) return '—';
+  return row.physicalTableName ?? '—';
 };
 
 export const DataServiceRelatedModelsPanel = ({
@@ -76,21 +74,21 @@ export const DataServiceRelatedModelsPanel = ({
       ellipsis: true,
       render: (_value, row) => row.error
         ? <Typography.Text type="danger">模型加载失败</Typography.Text>
-        : row.model?.name ?? '—',
+        : row.name ?? '—',
     },
     {
       title: '模型编码',
       key: 'code',
       width: 170,
       ellipsis: true,
-      render: (_value, row) => <code>{row.model?.code ?? row.modelId}</code>,
+      render: (_value, row) => <code>{row.code ?? row.modelId}</code>,
     },
     {
       title: '状态',
       key: 'status',
       width: 100,
-      render: (_value, row) => row.model
-        ? <Tag color={statusColors[row.model.status]}>{dataModelStatusLabels[row.model.status]}</Tag>
+      render: (_value, row) => row.status
+        ? <Tag color={statusColors[row.status]}>{dataModelStatusLabels[row.status]}</Tag>
         : '—',
     },
     {
@@ -98,14 +96,14 @@ export const DataServiceRelatedModelsPanel = ({
       key: 'storageDataSource',
       width: 190,
       ellipsis: true,
-      render: (_value, row) => row.model?.storageDataSourceName ?? '—',
+      render: (_value, row) => row.storageDataSourceName ?? '—',
     },
     {
-      title: '物理位置',
+      title: '物理表',
       key: 'physicalLocation',
       width: 280,
       ellipsis: true,
-      render: (_value, row) => <code>{physicalLocation(row)}</code>,
+      render: (_value, row) => <code>{physicalTableName(row)}</code>,
     },
     {
       title: '操作',
@@ -116,11 +114,12 @@ export const DataServiceRelatedModelsPanel = ({
         <Button
           type="link"
           size="small"
-          disabled={!canViewModels || !row.model}
+          disabled={!canViewModels || !row.resolved}
           onClick={() => navigate(`/model/${row.modelId}`, {
             state: {
               returnTo: `${location.pathname}${location.search}`,
               returnLabel: '返回数据服务',
+              returnState: location.state,
             },
           })}
         >

@@ -7,14 +7,19 @@
 当前阶段提供：
 
 - 数据源 CRUD、统一 Search DSL 查询和目录筛选。
-- JDBC：已保存连接和未保存表单的真实连接测试、库/Schema、表和视图、表元数据、安全唯一键、最多 100 行的只读预览，以及 PostgreSQL/MySQL 只读查询结果分析。
+- JDBC：已保存连接和未保存表单的真实连接测试、库/Schema、表和视图、表元数据、安全唯一键、最多 100 行的只读预览，以及 PostgreSQL/MySQL 只读查询结果分析；TDengine 仅发现和读取超级表。
 - HTTP API：只作为输入使用，支持可复用连接、运行时 Token、请求签名、API 资源、分页/异步请求、资源测试和 Canvas 输入节点。
-- Kafka：登记一个 Kafka 集群；Topic 是任务阶段的资源，不属于数据源配置。
+- Kafka：登记一个 Kafka 集群；Topic 是任务阶段的资源，不属于数据源配置，详情页可按名称发现 Topic。
+- TDengine TMQ：仅 `TDENGINE_WEBSOCKET` 数据源具备 `TMQ_SUBSCRIBE`；Topic 由外部系统管理，
+  详情页只发现和查看完整超级表 Topic，Canvas 通过独立实时输入节点订阅。
+- JDBC 时间字段增量读取：PostgreSQL、MySQL、openGauss 和 Kingbase 暴露
+  `JDBC_INCREMENTAL_READ`；实时 Canvas 使用独立节点轮询完整 `(fromTime,toTime]` 窗口。
+  TDengine 不开放该能力，实时读取继续使用 TMQ。
 - S3：登记一个固定 Bucket，可选配置根目录；对象 Key 位于该根目录之下。
-- JDBC 方言：PostgreSQL、MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓和 openGauss。
+- JDBC 方言：PostgreSQL、MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓、openGauss，以及共用超级表方言的 TDengine WebSocket/RESTful JDBC。
 - 空间结构元数据：已安装 PostGIS 的 PostgreSQL 与 MySQL 8.x 可整表读取受约束的 Geometry subtype、EPSG CRS 和 XY 维度；不读取 Geometry 值，也不创建或解释空间索引。
 
-当前尚未实现 Kafka、S3 客户端，因此它们只支持 CRUD 和目录/用途管理；连接测试、资源发现、元数据和预览会返回“尚未实现”。常规构建不依赖外部数据库；PostGIS 和 MySQL 8 Geometry 提供默认跳过、只面向可销毁隔离实例的 opt-in 验收。不提供连接健康定时检查或任务执行连接池，其他数据库的真实环境兼容性验证仍需独立安排。
+当前 S3 不提供对象浏览；Kafka 仅提供 Topic 发现和任务侧校验，不提供独立连接测试。TDengine 第一阶段不枚举子表，不支持受管模型、写入、自定义查询输入、数据服务或物理统计。常规构建不依赖外部数据库；PostGIS、MySQL 8 Geometry 和 TDengine 的真实环境验收需面向可销毁隔离实例独立安排。不提供连接健康定时检查或任务执行连接池，其他数据库的真实环境兼容性验证仍需独立安排。
 
 ## 架构
 
@@ -25,11 +30,12 @@
 - 标识符引用、默认 Catalog/Schema 和预览 SQL 方言。
 - 统一的表、字段、主键、安全唯一键、索引和预览数据模型。
 - 基于短连接的连接测试与只读元数据读取。
+- 通过可选 `DatabaseMetadataProvider` 适配 TDengine 等无法直接套用标准 JDBC 表元数据的数据库；TDengine 只从系统视图发现超级表。
 - 连接感知的 PostGIS/MySQL 8 空间能力检查、整表空间元数据增强和 EPSG 到数据库本地空间参考 ID 的目录解析。
 
 `data-scalpel-business` 负责维护数据源聚合，并按连接类别转换为运行时快照、编排 JDBC 方言或 HTTP 连接器调用和映射稳定的 Web DTO。远程 JDBC/HTTP 调用不运行在管理库的 JPA 事务中。HTTP 通用连接器负责管理端连接及资源测试；Task Engine Runner 使用同一份稳定运行契约执行真实拉取。Kafka/S3 客户端接入时在该业务域新增对应运行时实现，不扩展或污染 JDBC 方言模块。
 
-各数据库 JDBC 驱动由 `data-scalpel-admin` 在运行时提供。数据库类型接口会返回驱动是否可用，前端的名称、默认端口、字段标签和高级参数来自该接口，不再依赖硬编码表单定义。
+各数据库 JDBC 驱动由 `data-scalpel-admin` 在运行时提供。数据库类型接口会返回驱动是否可用，前端的名称、默认端口、字段标签和高级参数来自该接口，不再依赖硬编码表单定义。TDengine 使用两个明确的数据源类型，但 WebSocket/RESTful 只在 URL 前缀和驱动入口上分流，共用一个参数化超级表方言；完整边界见 [TDengine 超级表数据源设计与开发说明](tdengine-supertable-data-source-development-plan.md)。
 
 ## 数据模型
 
@@ -57,6 +63,33 @@
 为兼容第一版已落库的 JDBC 表结构，非 JDBC 连接在原来要求非空、但没有对应业务含义的 `port`、`database_name`、`username` 槽位中保存内部占位值；该值不会通过 API 返回，也不参与运行时连接。这样既不需要引入迁移框架，也不会把 Kafka/S3 参数伪装成 JDBC 语义。
 
 对于已存在的 PostgreSQL 管理库，应用启动时会幂等更新 Hibernate 早期创建的 `database_type` 校验约束，使其包含当前所有 `DataSourceType` 枚举值。原因是 `ddl-auto=update` 不会自动演进该约束；其他数据库不执行这段 PostgreSQL 兼容 SQL。
+
+### 详情与任务数据源引用索引
+
+数据源详情使用固定路由 `/datasource/{id}`，通过 `tab=basic|resources|models|tasks|services`
+保持当前页签。类型接口返回稳定的 `resourceBrowserKind`：JDBC、Kafka、HTTP API、ArcGIS/WFS
+分别映射为 `JDBC_TABLES`、`KAFKA_TOPICS`、`API_RESOURCES`、`SPATIAL_RESOURCES`，TDengine
+WebSocket/RESTful 映射为 `TDENGINE_SUPERTABLES`，S3 为 `NONE`。资源页签只在激活时访问外部系统，
+外部连接失败不会阻止基本配置和管理库内关联关系加载。
+
+TDengine WebSocket 的资源页在“超级表”之外提供“TMQ Topic”内层页签。只读接口为
+`GET /api/v1/data-sources/{id}/tmq-topics` 和
+`GET /api/v1/data-sources/{id}/tmq-topic?topic=...`，统一要求 `datasource.metadata`。列表包含
+Topic、数据库、超级表、创建时间、支持状态和定义指纹；详情增加字段及时间精度。响应不返回原始
+Topic SQL、子表名或凭据，也不提供 Topic 增删改与预览。完整协议见
+[TDengine TMQ 输入](tdengine-tmq-input-development-plan.md)。
+
+Canvas 定义中对数据源的直接引用派生为 `task_data_source_reference` 查询索引。索引只保存任务 ID、
+数据源 ID、定义版本、输入/输出角色、位置类别、位置键和资源类别，不保存任务名、节点名、表名、
+Topic 或资源名。任务定义仍是事实来源；保存 Canvas 定义时在同一管理库事务中原子替换索引，删除任务
+时同步清理。启动回填会比较既有定义的计算结果与当前索引，只修复缺失或不一致的任务，因此可重复执行。
+索引服务接收任务类型无关的引用草稿；当前位置类别为 `CANVAS_NODE`，后续非 Canvas 任务可以调用同一
+原子替换入口。
+
+关联任务同时查询上述直接引用，以及本地 SQL/Canvas 通过模型形成的间接引用。同一任务多处使用只
+返回一行，并聚合输入/输出、直接/经模型和引用位置；展示名称只为当前分页任务批量读取定义和资源后
+临时组装。数据源存在直接任务引用时删除返回 `409 Conflict`。关联模型和关联数据服务同样只查询管理库，
+不会访问外部数据源。
 
 JDBC 高级参数由方言定义并校验。例如 PostgreSQL 的 `sslmode`、Oracle 的 Service Name/SID 模式和 SQL Server 的证书选项。驱动类名和 JDBC URL 模板不是可编辑业务字典。S3 的 Bucket 是数据源固定边界，不允许由调用方在后续资源请求中覆盖。
 
@@ -132,16 +165,20 @@ Vendor Code、耗时和异常堆栈。响应与日志都会遮蔽当前连接密
 | `GET` | `/api/v1/data-source-types` | 数据源类型、支持用途、连接类别与运行时能力；JDBC 额外返回默认值、能力和驱动状态 |
 | `GET` | `/api/v1/data-sources` | 统一 Search DSL 分页查询 |
 | `GET` | `/api/v1/data-sources/{id}` | 查询详情 |
+| `GET` | `/api/v1/data-sources/{id}/related-models` | 分页查询存储在当前数据源的模型；额外要求 `model.view` |
+| `GET` | `/api/v1/data-sources/{id}/related-tasks` | 分页查询直接或经模型关联的任务；额外要求 `task.view` |
+| `GET` | `/api/v1/data-sources/{id}/related-services` | 分页查询直接或经模型关联的数据服务；额外要求 `service.view` |
 | `POST` | `/api/v1/data-sources` | 创建 |
 | `POST` | `/api/v1/data-sources/{id}/actions/update` | 更新 |
 | `POST` | `/api/v1/data-sources/{id}/actions/delete` | 删除 |
 | `POST` | `/api/v1/data-sources/actions/test` | 测试未保存连接 |
 | `POST` | `/api/v1/data-sources/{id}/actions/test` | 测试已保存连接 |
 | `GET` | `/api/v1/data-sources/{id}/namespaces` | 查询 Catalog/Schema |
-| `GET` | `/api/v1/data-sources/{id}/tables` | 查询表和可选视图；最多返回 500 项 |
-| `GET` | `/api/v1/data-sources/{id}/table-metadata` | 查询字段、主键、安全唯一键和索引 |
+| `GET` | `/api/v1/data-sources/{id}/tables` | 查询表和可选视图；最多返回 500 项；TDengine 只返回超级表 |
+| `GET` | `/api/v1/data-sources/{id}/table-metadata` | 查询字段、主键、安全唯一键和索引；TDengine 额外返回时间列/指标/TAG 角色 |
 | `POST` | `/api/v1/data-sources/{id}/actions/inspect-query` | 分析 PostgreSQL/MySQL 单条只读查询的输出 Schema |
 | `GET` | `/api/v1/data-sources/{id}/table-preview` | 预览数据；默认 50 行、最多 100 行 |
+| `GET` | `/api/v1/data-sources/{id}/kafka-topics` | 按可选 `keyword` 查询 Kafka Topic，`includeInternal=true` 时包含内部 Topic，最多返回 200 项 |
 | `GET` | `/api/v1/data-sources/{id}/api-resources` | 查询 HTTP API 数据源下的 API 资源 |
 | `GET` | `/api/v1/data-sources/{id}/api-resources/{resourceId}` | 查询 API 资源详情 |
 | `POST` | `/api/v1/data-sources/{id}/api-resources` | 创建 API 资源 |
@@ -150,6 +187,11 @@ Vendor Code、耗时和异常堆栈。响应与日志都会遮蔽当前连接密
 | `POST` | `/api/v1/data-sources/{id}/api-resources/{resourceId}/actions/test` | 使用非敏感运行时参数测试 API 资源 |
 
 数据源创建/更新请求由 `type` 和带 `kind` 的 `connection` 组成。`type` 与 `connection.kind` 必须匹配：数据库使用 `JDBC`，HTTP API 使用 `HTTP_API`，Kafka 使用 `KAFKA`，S3 使用 `S3`。JDBC 元数据端点仅对 JDBC 类型可用；API 资源端点仅对 HTTP API 类型可用。
+
+Kafka Topic 响应在名称之外返回 Topic ID、内部 Topic 标记、分区数、最小/最大副本数、ISR 不足
+分区数和无 Leader 分区数。Topic 列表查询成功但当前 Kafka 账号没有 Describe Topic 权限时，接口仍
+返回名称和可用的列表信息，并以 `metadataAvailable=false`、其余运行元数据为 `null` 表示降级，避免
+元数据权限不足导致整个资源页不可用。
 
 表元数据响应除 `columns/primaryKey/indexes` 外还返回 `uniqueKeys`：
 

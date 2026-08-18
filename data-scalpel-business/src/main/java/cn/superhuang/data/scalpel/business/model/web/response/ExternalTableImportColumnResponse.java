@@ -17,6 +17,7 @@ public record ExternalTableImportColumnResponse(
         TypeMappingQuality mappingQuality,
         String message,
         boolean importable,
-        String comment
+        String comment,
+        String physicalColumnRole
 ) {
 }

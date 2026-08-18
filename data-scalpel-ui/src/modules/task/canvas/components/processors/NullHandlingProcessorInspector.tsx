@@ -101,44 +101,45 @@ export const NullHandlingProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (rules.length === 0) {
           setDraftError('至少配置一条空值处理规则');
-          return false;
+
         }
         if (rules.length > CANVAS_NULL_HANDLING_MAX_RULES) {
           setDraftError(`规则不能超过 ${CANVAS_NULL_HANDLING_MAX_RULES} 项`);
-          return false;
+
         }
         const filled = new Set<string>();
         for (const rule of rules) {
           if (rule.kind === 'DROP_ROW') {
             if (rule.columnNames.length === 0) {
               setDraftError('删除行规则至少选择一个检查字段');
-              return false;
+
             }
             if (new Set(rule.columnNames).size !== rule.columnNames.length) {
               setDraftError('同一删除行规则的检查字段不能重复');
-              return false;
+
             }
           } else {
             if (!rule.columnName) {
               setDraftError('固定值填充规则必须选择字段');
-              return false;
+
             }
             if (!filled.add(rule.columnName)) {
               setDraftError(`字段 ${rule.columnName} 只能配置一次固定值填充`);
-              return false;
+
             }
             if (rule.value.value === null) {
               setDraftError(`字段 ${rule.columnName} 的填充值不能为空`);
-              return false;
+
             }
           }
         }
         const configuration: NullHandlingConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           rules: structuredClone(rules),
         };
         onApply({

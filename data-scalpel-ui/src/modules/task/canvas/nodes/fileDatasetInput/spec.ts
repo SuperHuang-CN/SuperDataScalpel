@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeFileDatasetInput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { fileDatasetInputCanvasView } from './canvasView';
 
 export const fileDatasetInputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.FileDatasetInput,
@@ -15,9 +16,9 @@ export const fileDatasetInputSpec = createCanvasNodeSpec({
   searchKeywords: ['file', 'dataset', '文件', '数据集'],
   iconKey: CanvasNodeIconKey.File,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: fileDatasetInputCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 4,
+  introducedInMinor: 0,
   graph: { minInputs: 0, maxInputs: 0, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createFileDatasetInputConfiguration,
   summarize: summarizeFileDatasetInput,

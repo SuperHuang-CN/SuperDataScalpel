@@ -17,7 +17,17 @@ const Inspector = ({ node, onApply, onDirtyChange, inspectorRef }: CanvasNodeIns
     onApply({ id: node.id, type: node.type, configuration: { dataSourceId: values.dataSourceId ?? '', resourceId: values.resourceId ?? '', outputTableName: values.outputTableName?.trim() ?? '' } } as CanvasNodeConfigurationUpdateByType<typeof CanvasNodeType.SpatialServiceInput>);
     onDirtyChange(false);
   };
-  useImperativeHandle(inspectorRef, (): CanvasNodeInspectorHandle => ({ apply: async () => { try { apply(await form.validateFields()); return true; } catch { return false; } } }));
+  useImperativeHandle(inspectorRef, (): CanvasNodeInspectorHandle => ({
+    apply: async () => {
+      try {
+        void form.validateFields().catch(() => undefined);
+        apply(form.getFieldsValue(true));
+        return true;
+      } catch {
+        return false;
+      }
+    },
+  }));
   return <Form<Values> autoComplete="off" form={form} layout="vertical" initialValues={node.configuration} onFinish={apply} onValuesChange={() => onDirtyChange(true)}>
     <Form.Item name="dataSourceId" label="空间服务数据源" rules={[{ required: true, message: '请选择 ArcGIS REST 或 WFS 数据源' }]}><Select showSearch open={sourceOpen} onOpenChange={setSourceOpen} optionFilterProp="label" loading={sourcesQuery.isFetching} options={sources.map((source) => ({ value: source.id, label: `${source.name} · ${source.type}` }))} /></Form.Item>
     <Form.Item name="resourceId" label="空间要素资源" rules={[{ required: true, message: '请选择已登记的空间要素资源' }]}><Select showSearch disabled={!sourceId} loading={resourcesQuery.isFetching} options={(resourcesQuery.data ?? []).map((resource) => ({ value: resource.id, label: `${resource.name} · ${resource.epsgCode ? `EPSG:${resource.epsgCode}` : '未指定坐标系'}`, disabled: !resource.enabled }))} /></Form.Item>

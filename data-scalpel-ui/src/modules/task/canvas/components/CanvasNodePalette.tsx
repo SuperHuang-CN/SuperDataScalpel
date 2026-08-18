@@ -205,7 +205,7 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
               aria-expanded={active}
               onClick={() => onActiveCategoryChange(active ? null : category)}
             >
-              <span>{presentation.label}</span>
+              <span className="canvas-node-palette-category-label">{presentation.label}</span>
               <span className="canvas-node-palette-count">{categoryCounts[category]}</span>
             </Button>
           );

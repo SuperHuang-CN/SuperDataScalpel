@@ -16,6 +16,8 @@ export type DataSourceType =
   | 'DAMENG'
   | 'KINGBASE'
   | 'OPENGAUSS'
+  | 'TDENGINE_WEBSOCKET'
+  | 'TDENGINE_RESTFUL'
   | 'KAFKA'
   | 'S3'
   | 'HTTP_API'
@@ -253,8 +255,122 @@ export interface DataSource {
   updatedAt: string;
 }
 
+interface DataSourceAssistantDraftBase {
+  name: string;
+  directoryId: string | null;
+  purposes: DataSourcePurpose[];
+  enabled: boolean;
+  description: string | null;
+}
+
+export interface DataSourceAssistantCreateDraft extends DataSourceAssistantDraftBase {
+  mode: 'CREATE';
+  code: string;
+  type: DataSourceType;
+}
+
+export interface DataSourceAssistantUpdateDraft extends DataSourceAssistantDraftBase {
+  mode: 'UPDATE';
+  code: null;
+  type: null;
+}
+
+export type DataSourceAssistantDraft = DataSourceAssistantCreateDraft | DataSourceAssistantUpdateDraft;
+
+export type DataSourceAssistantRouteAction =
+  | { kind: 'CREATE'; draft: DataSourceAssistantCreateDraft }
+  | { kind: 'EDIT'; dataSourceId: string; draft: DataSourceAssistantUpdateDraft };
+
+export interface DataSourceAssistantLocationState {
+  assistantDataSourceAction?: DataSourceAssistantRouteAction;
+}
+
 export interface KafkaTopic {
   name: string;
+  topicId: string | null;
+  internal: boolean;
+  metadataAvailable: boolean;
+  partitionCount: number | null;
+  minimumReplicationFactor: number | null;
+  maximumReplicationFactor: number | null;
+  underReplicatedPartitionCount: number | null;
+  unavailableLeaderPartitionCount: number | null;
+}
+
+export interface TdEngineTmqTopic {
+  topicName: string;
+  databaseName: string | null;
+  supertableName: string | null;
+  createdAt: string | null;
+  supported: boolean;
+  unsupportedReason: string | null;
+  definitionFingerprint: string;
+}
+
+export interface TdEngineTmqTopicDetail extends TdEngineTmqTopic {
+  columns: ColumnMetadata[];
+  timePrecision: 'MS' | 'US' | null;
+}
+
+export type DataSourceRelationKind = 'DIRECT' | 'VIA_MODEL';
+export type DataSourceTaskRelationRole = 'INPUT' | 'OUTPUT';
+export type DataSourceTaskResourceKind =
+  | 'MODEL'
+  | 'JDBC_TABLE'
+  | 'JDBC_QUERY'
+  | 'HTTP_API_RESOURCE'
+  | 'SPATIAL_RESOURCE'
+  | 'KAFKA_TOPIC'
+  | 'TDENGINE_TMQ_TOPIC'
+  | 'JDBC_DATA_SOURCE'
+  | 'FILE_PATH';
+
+export interface DataSourceRelatedModel {
+  modelId: string;
+  modelCode: string;
+  modelName: string;
+  status: 'DRAFT' | 'PUBLISHED' | 'DISABLED';
+  physicalTableMode: 'MANAGED' | 'EXTERNAL';
+  catalogName: string | null;
+  schemaName: string | null;
+  physicalTableName: string;
+  schemaVersion: number;
+  updatedAt: string;
+}
+
+export interface DataSourceTaskReferenceLocation {
+  role: DataSourceTaskRelationRole;
+  relationKind: DataSourceRelationKind;
+  resourceKind: DataSourceTaskResourceKind;
+  locationKey: string;
+  locationLabel: string;
+  resourceLabel: string | null;
+  modelId: string | null;
+  modelName: string | null;
+}
+
+export interface DataSourceRelatedTask {
+  taskId: string;
+  taskName: string;
+  taskType: 'LOCAL_SQL' | 'SPARK_CANVAS' | 'SPARK_STREAMING_CANVAS' | 'SPARK_MODEL_QUALITY' | 'SPARK_JAR' | 'SPARK_STREAMING_JAR';
+  taskStatus: 'DRAFT' | 'PUBLISHED' | 'DISABLED';
+  definitionVersion: number;
+  roles: DataSourceTaskRelationRole[];
+  relationKinds: DataSourceRelationKind[];
+  locations: DataSourceTaskReferenceLocation[];
+  updatedAt: string;
+}
+
+export interface DataSourceRelatedService {
+  serviceId: string;
+  serviceCode: string;
+  serviceName: string;
+  serviceType: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API';
+  status: 'DRAFT' | 'ENABLED' | 'DISABLED';
+  definitionVersion: number | null;
+  relationKinds: DataSourceRelationKind[];
+  routePath: string;
+  updatedAt: string;
 }
 
 export interface CreateDataSourceRequest {
@@ -532,9 +648,17 @@ export type DatabaseCapability =
   | 'LIST_NAMESPACES'
   | 'LIST_TABLES'
   | 'READ_TABLE_METADATA'
+  | 'READ_TABLE_STATISTICS'
   | 'PREVIEW_DATA'
+  | 'STANDARD_QUERY'
   | 'SQL_SERVICE_QUERY'
-  | 'CREATE_TABLE';
+  | 'QUERY_METADATA'
+  | 'INSERT_SELECT'
+  | 'OVERWRITE_INSERT_SELECT'
+  | 'ROW_UPSERT'
+  | 'CREATE_TABLE'
+  | 'JDBC_INCREMENTAL_READ'
+  | 'TMQ_SUBSCRIBE';
 
 export interface ConnectionOptionChoice {
   value: string;
@@ -556,6 +680,7 @@ export interface DataSourceTypeDefinition {
   supportedPurposes: DataSourcePurpose[];
   connectionTestAvailable: boolean;
   metadataAvailable: boolean;
+  resourceBrowserKind: 'JDBC_TABLES' | 'TDENGINE_SUPERTABLES' | 'KAFKA_TOPICS' | 'API_RESOURCES' | 'SPATIAL_RESOURCES' | 'NONE';
   defaultPort: number | null;
   databaseNameLabel: string | null;
   schemaNameLabel: string | null;
@@ -605,6 +730,7 @@ export interface ColumnMetadata {
   autoIncrement: boolean;
   generated: boolean;
   comment: string | null;
+  role?: 'REGULAR' | 'TIME_KEY' | 'TAG';
 }
 
 export interface PrimaryKeyMetadata {
@@ -693,6 +819,8 @@ export const dataSourceTypeLabels: Record<DataSourceType, string> = {
   DAMENG: '达梦',
   KINGBASE: '人大金仓',
   OPENGAUSS: 'openGauss',
+  TDENGINE_WEBSOCKET: 'TDengine WebSocket JDBC',
+  TDENGINE_RESTFUL: 'TDengine RESTful JDBC',
   KAFKA: 'Kafka',
   S3: 'S3 兼容对象存储',
   HTTP_API: 'HTTP API',

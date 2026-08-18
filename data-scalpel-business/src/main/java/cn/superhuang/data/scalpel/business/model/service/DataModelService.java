@@ -8,6 +8,7 @@ import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.domain.DataModelPhysicalColumnRole;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
@@ -21,6 +22,7 @@ import cn.superhuang.data.scalpel.business.model.domain.ModelWarehouseLayer;
 import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelPhysicalChangeRepository;
+import cn.superhuang.data.scalpel.business.model.repository.DataModelPhysicalStatisticsRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.model.repository.ModelWarehouseLayerRepository;
 import cn.superhuang.data.scalpel.business.model.web.request.CreatePhysicalTableChangePlanRequest;
@@ -30,6 +32,8 @@ import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryR
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryFilterInput;
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelFieldInput;
 import cn.superhuang.data.scalpel.business.model.web.request.ExecutePhysicalTableChangePlanRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.ImportModelMetadataModelRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.ImportModelMetadataRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ManagedImportPreviewRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateDataModelFieldsRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateDataModelRequest;
@@ -37,23 +41,22 @@ import cn.superhuang.data.scalpel.business.model.web.response.DataModelDetailRes
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelDataQueryResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelFieldResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelPhysicalChangeResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.DataModelPhysicalStatisticsResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImportColumnResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImportPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportColumnResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportPreviewResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.ImportedModelMetadataResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.ModelMetadataImportResultResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ModelWarehouseLayerSummaryResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PlatformTypeCapabilityResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableDdlPlanResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableInspectionResponse;
+import cn.superhuang.data.scalpel.business.quality.service.ModelQualityRuleService;
 import cn.superhuang.data.scalpel.business.standard.service.StandardDictionaryValueSupport;
 import cn.superhuang.data.scalpel.business.standard.web.response.StandardDictionarySummaryResponse;
-import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
-import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceModelReferenceRepository;
-import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskDefinitionRepository;
-import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskInputRepository;
-import cn.superhuang.data.scalpel.business.task.repository.TaskCanvasModelReferenceRepository;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
@@ -87,6 +90,7 @@ import cn.superhuang.data.scalpel.dialect.query.StandardQueryOrderInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryResult;
 import cn.superhuang.data.scalpel.dialect.query.StandardTableQueryCompiler;
 import cn.superhuang.data.scalpel.search.SearchEngine;
+import cn.superhuang.data.scalpel.web.error.CodedProblemException;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
@@ -130,57 +134,51 @@ public class DataModelService {
     private final DataModelRepository repository;
     private final DataModelFieldRepository fieldRepository;
     private final DataModelPhysicalChangeRepository physicalChangeRepository;
+    private final DataModelPhysicalStatisticsRepository physicalStatisticsRepository;
     private final DataSourceRepository dataSourceRepository;
     private final ModelWarehouseLayerRepository warehouseLayerRepository;
     private final DirectoryService directoryService;
     private final SearchEngine searchEngine;
     private final ModelPhysicalTablePort physicalTablePort;
-    private final StandardDataServiceDefinitionRepository standardServiceDefinitionRepository;
-    private final SqlDataServiceModelReferenceRepository sqlServiceModelReferenceRepository;
-    private final LocalSqlTaskDefinitionRepository localSqlTaskDefinitionRepository;
-    private final LocalSqlTaskInputRepository localSqlTaskInputRepository;
-    private final TaskCanvasModelReferenceRepository canvasModelReferenceRepository;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
     private final DialectRegistry dialectRegistry;
     private final StandardDictionaryValueSupport standardDictionaryValueSupport;
+    private final ModelQualityRuleService qualityRuleService;
+    private final DataModelReferenceQueryService referenceQueryService;
 
     public DataModelService(
             DataModelRepository repository,
             DataModelFieldRepository fieldRepository,
             DataModelPhysicalChangeRepository physicalChangeRepository,
+            DataModelPhysicalStatisticsRepository physicalStatisticsRepository,
             DataSourceRepository dataSourceRepository,
             ModelWarehouseLayerRepository warehouseLayerRepository,
             DirectoryService directoryService,
             SearchEngine searchEngine,
             ModelPhysicalTablePort physicalTablePort,
-            StandardDataServiceDefinitionRepository standardServiceDefinitionRepository,
-            SqlDataServiceModelReferenceRepository sqlServiceModelReferenceRepository,
-            LocalSqlTaskDefinitionRepository localSqlTaskDefinitionRepository,
-            LocalSqlTaskInputRepository localSqlTaskInputRepository,
-            TaskCanvasModelReferenceRepository canvasModelReferenceRepository,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
             DialectRegistry dialectRegistry,
-            StandardDictionaryValueSupport standardDictionaryValueSupport
+            StandardDictionaryValueSupport standardDictionaryValueSupport,
+            ModelQualityRuleService qualityRuleService,
+            DataModelReferenceQueryService referenceQueryService
     ) {
         this.repository = repository;
         this.fieldRepository = fieldRepository;
         this.physicalChangeRepository = physicalChangeRepository;
+        this.physicalStatisticsRepository = physicalStatisticsRepository;
         this.dataSourceRepository = dataSourceRepository;
         this.warehouseLayerRepository = warehouseLayerRepository;
         this.directoryService = directoryService;
         this.searchEngine = searchEngine;
         this.physicalTablePort = physicalTablePort;
-        this.standardServiceDefinitionRepository = standardServiceDefinitionRepository;
-        this.sqlServiceModelReferenceRepository = sqlServiceModelReferenceRepository;
-        this.localSqlTaskDefinitionRepository = localSqlTaskDefinitionRepository;
-        this.localSqlTaskInputRepository = localSqlTaskInputRepository;
-        this.canvasModelReferenceRepository = canvasModelReferenceRepository;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.dialectRegistry = dialectRegistry;
         this.standardDictionaryValueSupport = standardDictionaryValueSupport;
+        this.qualityRuleService = qualityRuleService;
+        this.referenceQueryService = referenceQueryService;
     }
 
     @Transactional(readOnly = true)
@@ -188,6 +186,7 @@ public class DataModelService {
         Page<DataModel> result = searchEngine.search(request, DataModel.class, repository);
         Map<UUID, String> storageNames = storageNames(result.getContent());
         Map<UUID, ModelWarehouseLayer> warehouseLayers = warehouseLayers(result.getContent());
+        Map<UUID, DataModelPhysicalStatisticsResponse> physicalStatistics = physicalStatistics(result.getContent());
         return new PageResponse<>(
                 result.getContent().stream()
                         .map(model -> DataModelResponse.from(
@@ -195,7 +194,8 @@ public class DataModelService {
                                 storageNames.get(model.getStorageDataSourceId()),
                                 ModelWarehouseLayerSummaryResponse.from(
                                         warehouseLayers.get(model.getWarehouseLayerId())
-                                )
+                                ),
+                                physicalStatistics.get(model.getId())
                         ))
                         .toList(),
                 result.getTotalElements(), result.getTotalPages(), result.getNumber(), result.getSize()
@@ -245,7 +245,8 @@ public class DataModelService {
                         mapping.quality(),
                         mapping.mappingMessage(),
                         mapping.importable(),
-                        truncateExternalFieldComment(mapping.column().comment())
+                        truncateExternalFieldComment(mapping.column().comment()),
+                        mapping.column().role().name()
                 ))
                 .toList();
         return new ExternalTableImportPreviewResponse(table, !columns.isEmpty() && issues.isEmpty(), columns, issues);
@@ -356,6 +357,99 @@ public class DataModelService {
 
     public DataModelDetailResponse createManagedDraft(CreateManagedDraftRequest request) {
         ManagedDraftPreparation preparation = prepareManagedDraft(request);
+        inspectManagedDraftTarget(preparation);
+        return requireTransactionResult(transactionTemplate.execute(
+                status -> completeManagedDraft(request, preparation)
+        ));
+    }
+
+    public ModelMetadataImportResultResponse importModelMetadata(ImportModelMetadataRequest request) {
+        DirectoryService.DirectoryPathIndex directoryPaths = directoryService.pathIndex(DirectoryScope.MODEL);
+        boolean usesDirectories = request.models().stream()
+                .anyMatch(model -> model.directoryPath() != null && !model.directoryPath().isBlank());
+        if (usesDirectories && !directoryPaths.issues().isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "模型目录树无法用于 Excel 导入：" + String.join("；", directoryPaths.issues())
+            );
+        }
+        List<String> directoryIssues = new ArrayList<>();
+        List<CreateManagedDraftRequest> drafts = new ArrayList<>(request.models().size());
+        for (ImportModelMetadataModelRequest model : request.models()) {
+            DirectoryService.DirectoryPathResolution directory = directoryPaths.resolve(model.directoryPath());
+            if (!directory.resolved()) {
+                directoryIssues.add("模型“" + model.code() + "”：" + directory.issue());
+                continue;
+            }
+            drafts.add(new CreateManagedDraftRequest(
+                    model.code(),
+                    model.name(),
+                    directory.directoryId(),
+                    model.warehouseLayerId(),
+                    request.targetStorageDataSourceId(),
+                    model.physicalTableName(),
+                    model.clickHouseOrderByColumns(),
+                    model.description(),
+                    model.fields()
+            ));
+        }
+        if (!directoryIssues.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("；", directoryIssues));
+        }
+        validateMetadataImportBatchUniqueness(drafts);
+        List<ManagedDraftPreparation> preparations = drafts.stream()
+                .map(this::prepareManagedDraft)
+                .toList();
+        preparations.forEach(this::inspectManagedDraftTarget);
+        List<DataModelDetailResponse> imported = requireTransactionResult(transactionTemplate.execute(status -> {
+            validateMetadataImportDirectoriesAtCommit(request.models(), drafts);
+            List<DataModelDetailResponse> details = new ArrayList<>(drafts.size());
+            for (int index = 0; index < drafts.size(); index++) {
+                details.add(completeManagedDraft(drafts.get(index), preparations.get(index)));
+            }
+            return List.copyOf(details);
+        }));
+        return new ModelMetadataImportResultResponse(
+                imported.size(),
+                request.models().stream().mapToInt(model -> model.fields().size()).sum(),
+                imported.stream().map(detail -> new ImportedModelMetadataResponse(
+                        detail.model().id(),
+                        detail.model().code(),
+                        detail.model().name(),
+                        detail.model().directoryId()
+                )).toList()
+        );
+    }
+
+    private void validateMetadataImportDirectoriesAtCommit(
+            List<ImportModelMetadataModelRequest> models,
+            List<CreateManagedDraftRequest> drafts
+    ) {
+        DirectoryService.DirectoryPathIndex directoryPaths = directoryService.pathIndex(DirectoryScope.MODEL);
+        boolean usesDirectories = models.stream()
+                .anyMatch(model -> model.directoryPath() != null && !model.directoryPath().isBlank());
+        if (usesDirectories && !directoryPaths.issues().isEmpty()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "模型目录树在创建前发生变化：" + String.join("；", directoryPaths.issues())
+            );
+        }
+        List<String> issues = new ArrayList<>();
+        for (int index = 0; index < models.size(); index++) {
+            ImportModelMetadataModelRequest model = models.get(index);
+            DirectoryService.DirectoryPathResolution directory = directoryPaths.resolve(model.directoryPath());
+            if (!directory.resolved()) {
+                issues.add("模型“" + model.code() + "”：" + directory.issue());
+            } else if (!Objects.equals(directory.directoryId(), drafts.get(index).directoryId())) {
+                issues.add("模型“" + model.code() + "”：模型目录在创建前发生变化，请重新校对 Excel");
+            }
+        }
+        if (!issues.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, String.join("；", issues));
+        }
+    }
+
+    private void inspectManagedDraftTarget(ManagedDraftPreparation preparation) {
         ModelPhysicalTableInspection inspection;
         try {
             inspection = physicalTablePort.inspect(
@@ -370,9 +464,25 @@ public class DataModelService {
                     "目标物理表必须不存在，当前状态为 " + inspection.state() + "：" + inspection.message()
             );
         }
-        return requireTransactionResult(transactionTemplate.execute(
-                status -> completeManagedDraft(request, preparation)
-        ));
+    }
+
+    private static void validateMetadataImportBatchUniqueness(List<CreateManagedDraftRequest> drafts) {
+        Set<String> modelCodes = new HashSet<>();
+        Set<String> physicalTableNames = new HashSet<>();
+        List<String> issues = new ArrayList<>();
+        for (CreateManagedDraftRequest draft : drafts) {
+            String code = draft.code().trim().toLowerCase(Locale.ROOT);
+            if (!modelCodes.add(code)) {
+                issues.add("文件内模型编码重复：" + code);
+            }
+            String physicalTableName = draft.physicalTableName().trim().toLowerCase(Locale.ROOT);
+            if (!physicalTableNames.add(physicalTableName)) {
+                issues.add("文件内目标物理表名重复：" + physicalTableName);
+            }
+        }
+        if (!issues.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, String.join("；", issues));
+        }
     }
 
     private ManagedDraftPreparation prepareManagedDraft(CreateManagedDraftRequest request) {
@@ -674,6 +784,9 @@ public class DataModelService {
                 request.description()
         );
         DataModel saved = repository.saveAndFlush(model);
+        if (preparation.physicalLocationChanged()) {
+            physicalStatisticsRepository.deleteByModelId(id);
+        }
         if (!importedFields.isEmpty()) {
             saveImportedExternalFields(saved, importedFields, true);
         }
@@ -734,6 +847,8 @@ public class DataModelService {
         List<DataModelField> currentFields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(id);
         Map<UUID, DataModelField> existingFields = currentFields.stream()
                 .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
+        Map<String, DataModelPhysicalColumnRole> physicalRolesByCode = currentFields.stream()
+                .collect(Collectors.toMap(DataModelField::getCode, DataModelField::getPhysicalColumnRole));
         validateStandardDictionaryAssignments(normalizedFields, existingFields);
         Set<UUID> retainedIds = new HashSet<>();
         List<DataModelField> fieldsToSave = new ArrayList<>();
@@ -748,6 +863,9 @@ public class DataModelService {
                         input.nullable(), input.primaryKey(),
                         input.sortOrder(), input.description()
                 );
+                if (model.getPhysicalTableMode() == PhysicalTableMode.EXTERNAL) {
+                    field.assignPhysicalColumnRole(physicalRolesByCode.get(normalized.code()));
+                }
             } else {
                 field = existingFields.get(input.id());
                 if (field == null) {
@@ -776,7 +894,9 @@ public class DataModelService {
         }
         fieldRepository.saveAllAndFlush(fieldsToSave);
         model.advanceSchemaVersion();
-        return detail(repository.saveAndFlush(model));
+        DataModelDetailResponse detail = detail(repository.saveAndFlush(model));
+        qualityRuleService.reconcileModelFields(id);
+        return detail;
     }
 
     public DataModelPhysicalChangeResponse createPhysicalTableChangePlan(
@@ -1015,22 +1135,19 @@ public class DataModelService {
 
     @Transactional
     public void delete(UUID id) {
-        DataModel model = requireModel(id);
+        DataModel model = repository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模型不存在"));
         if (model.getStatus() == DataModelStatus.PUBLISHED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已发布模型请先停用后再删除");
         }
-        if (standardServiceDefinitionRepository.existsByModelId(id)
-                || sqlServiceModelReferenceRepository.existsByModelId(id)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "模型已被数据服务使用，不能删除");
-        }
-        if (localSqlTaskDefinitionRepository.existsByOutputModelId(id)
-                || localSqlTaskInputRepository.existsByModelId(id)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "模型已被本地 SQL 任务引用，不能删除");
-        }
-        if (canvasModelReferenceRepository.existsByModelId(id)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "模型已被 Canvas 任务引用，不能删除");
+        if (!referenceQueryService.authoritative(id).deletable()) {
+            throw new CodedProblemException(
+                    HttpStatus.CONFLICT, "MODEL_REFERENCED", "模型仍被任务或数据服务引用，不能删除");
         }
         physicalChangeRepository.deleteAllByModelId(id);
+        physicalStatisticsRepository.deleteByModelId(id);
+        qualityRuleService.invalidateReferencesToDeletedModel(id);
+        qualityRuleService.deleteByModelId(id);
         fieldRepository.deleteAllByModelId(id);
         repository.delete(model);
     }
@@ -1061,7 +1178,13 @@ public class DataModelService {
                                 : dictionaries.get(field.getStandardDictionaryId())
                 ))
                 .toList();
-        return new DataModelDetailResponse(DataModelResponse.from(model, storageName, warehouseLayer), fields);
+        DataModelPhysicalStatisticsResponse physicalStatistics = physicalStatisticsRepository.findByModelId(model.getId())
+                .map(DataModelPhysicalStatisticsResponse::from)
+                .orElse(null);
+        return new DataModelDetailResponse(
+                DataModelResponse.from(model, storageName, warehouseLayer, physicalStatistics),
+                fields
+        );
     }
 
     private void validateWarehouseLayerAssignment(UUID requestedLayerId, UUID currentLayerId) {
@@ -1086,6 +1209,18 @@ public class DataModelService {
         }
         return warehouseLayerRepository.findAllById(layerIds).stream()
                 .collect(Collectors.toMap(ModelWarehouseLayer::getId, Function.identity()));
+    }
+
+    private Map<UUID, DataModelPhysicalStatisticsResponse> physicalStatistics(List<DataModel> models) {
+        List<UUID> modelIds = models.stream().map(DataModel::getId).toList();
+        if (modelIds.isEmpty()) {
+            return Map.of();
+        }
+        return physicalStatisticsRepository.findAllByModelIdIn(modelIds).stream()
+                .collect(Collectors.toMap(
+                        statistics -> statistics.getModelId(),
+                        DataModelPhysicalStatisticsResponse::from
+                ));
     }
 
     private void requireDirectFieldUpdateAllowed(
@@ -1231,9 +1366,13 @@ public class DataModelService {
                 fields.stream().map(DataModelField::getCode).toList(),
                 fields.stream().map(DataModelField::getFieldType).toList()
         );
-        return PhysicalTableInspectionResponse.from(
+        PhysicalTableInspectionResponse response = PhysicalTableInspectionResponse.from(
                 model.getPhysicalTableMode(), physicalTablePort.create(storage, model, fields)
         );
+        if (response.state() == PhysicalTableState.MATCHED) {
+            transactionTemplate.executeWithoutResult(status -> physicalStatisticsRepository.deleteByModelId(id));
+        }
+        return response;
     }
 
     public DataModelPreviewResponse previewPhysicalTable(UUID id) {
@@ -1465,6 +1604,8 @@ public class DataModelService {
         }
         change.succeed();
         repository.saveAndFlush(model);
+        qualityRuleService.reconcileModelFields(modelId);
+        physicalStatisticsRepository.deleteByModelId(modelId);
         return physicalChangeResponse(physicalChangeRepository.saveAndFlush(change));
     }
 
@@ -1556,6 +1697,12 @@ public class DataModelService {
                 && !dataSource.getPurposes().contains(DataSourcePurpose.STORAGE)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型只能绑定具有数据存储用途的数据源");
         }
+        if (physicalTableMode == PhysicalTableMode.MANAGED && dataSource.getType().isTdEngine()) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "TDengine 第一版只能绑定已有超级表，不能创建受管模型"
+            );
+        }
         if (requireEnabled && !dataSource.isEnabled()) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -1600,7 +1747,8 @@ public class DataModelService {
                     mapping.column().nullable(),
                     mapping.primaryKey(),
                     fields.size() * 10 + 10,
-                    truncateExternalFieldComment(mapping.column().comment())
+                    truncateExternalFieldComment(mapping.column().comment()),
+                    DataModelPhysicalColumnRole.valueOf(mapping.column().role().name())
             ));
         }
         return List.copyOf(fields);
@@ -1787,16 +1935,21 @@ public class DataModelService {
             fieldRepository.flush();
         }
         List<DataModelField> fields = importedFields.stream()
-                .map(field -> DataModelField.create(
+                .map(field -> {
+                    DataModelField imported = DataModelField.create(
                         model.getId(), field.code(), field.code(), field.type(),
                         field.length(), field.precision(), field.scale(), field.geometry(),
                         field.nullable(), field.primaryKey(),
                         field.sortOrder(), field.description()
-                ))
+                    );
+                    imported.assignPhysicalColumnRole(field.physicalColumnRole());
+                    return imported;
+                })
                 .toList();
         List<DataModelField> saved = fieldRepository.saveAllAndFlush(fields);
         if (replaceExisting) {
             model.advanceSchemaVersion();
+            qualityRuleService.reconcileModelFields(model.getId());
         }
         return saved;
     }
@@ -2257,7 +2410,8 @@ public class DataModelService {
             boolean nullable,
             boolean primaryKey,
             int sortOrder,
-            String description
+            String description,
+            DataModelPhysicalColumnRole physicalColumnRole
     ) {
     }
 

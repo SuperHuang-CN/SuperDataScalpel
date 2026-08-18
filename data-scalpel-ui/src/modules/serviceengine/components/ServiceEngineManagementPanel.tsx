@@ -68,6 +68,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     }
   };
   const confirmRemove = (engine: ServiceEngine) => Modal.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除 Service Engine',
     content: `确认删除“${engine.name}”吗？`,
     okText: '删除',
@@ -77,7 +78,17 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const columns: TableProps<ServiceEngine>['columns'] = [
-    { title: '引擎', dataIndex: 'name', width: 260, render: (value: string, engine) => <ManagementListCell icon={<ApiOutlined />} iconTone="cyan" primary={value} secondary={<><ManagementCode value={engine.code} /> {engine.description || ''}</>} /> },
+    { title: '引擎', dataIndex: 'name', width: 240, render: (value: string, engine) => <ManagementListCell icon={<ApiOutlined />} iconTone="cyan" primary={value} secondary={<ManagementCode value={engine.code} />} /> },
+    {
+      title: '说明',
+      dataIndex: 'description',
+      render: (value?: string) => (
+        <ManagementListCell
+          className="service-engine-description-cell"
+          primary={value ? <Tooltip title={value}><span>{value}</span></Tooltip> : '—'}
+        />
+      ),
+    },
     { title: '访问地址', width: 390, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.adminUrl} title="管理地址" />} secondary={<ManagementCode value={engine.publicUrl} title="公共地址" />} /> },
     { title: '状态 / 凭据', width: 170, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={engine.enabled ? '启用' : '停用'} tone={engine.enabled ? 'success' : 'default'} />} secondary={engine.managementTokenConfigured ? '管理 Token 已配置' : '未配置管理 Token'} /> },
     { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },

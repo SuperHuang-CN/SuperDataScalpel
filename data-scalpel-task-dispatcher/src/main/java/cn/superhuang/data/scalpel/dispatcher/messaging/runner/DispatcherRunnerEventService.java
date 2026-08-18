@@ -8,6 +8,8 @@ import cn.superhuang.data.scalpel.contract.execution.RunnerStartedEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingStartedEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingProgressEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingStoppedEvent;
+import cn.superhuang.data.scalpel.contract.execution.RunnerUserObservabilityEvent;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultResolution;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultService;
@@ -121,19 +123,28 @@ public class DispatcherRunnerEventService {
                 boolean first = execution.getStartedAt() == null;
                 execution.running(started.occurredAt());
                 if (first && execution.getState() == DispatcherExecutionState.RUNNING) {
-                    eventService.enqueue(execution, ExecutionMessageType.EXECUTION_RUNNING, null, null);
+                    eventService.enqueueStreamingStarted(execution, started.queries());
                 }
             }
             case RunnerStreamingProgressEvent progress -> {
                 if (execution.getState().terminal()) break;
                 execution.running(progress.occurredAt());
                 eventService.enqueue(
-                        execution, ExecutionMessageType.STREAMING_PROGRESS, null, null, progress.queries());
+                        execution, ExecutionMessageType.STREAMING_PROGRESS, null, null,
+                        progress.queries(), progress.sourceProgress());
             }
             case RunnerStreamingStoppedEvent stopped -> {
                 if (execution.getState().terminal()) break;
                 execution.stopped(stopped.stoppedAt());
                 eventService.enqueue(execution, ExecutionMessageType.EXECUTION_STOPPED, null, null);
+            }
+            case RunnerUserObservabilityEvent observability -> {
+                if (execution.getState().terminal()) break;
+                if (execution.getTaskType() != ExecutionTaskType.SPARK_JAR
+                        && execution.getTaskType() != ExecutionTaskType.SPARK_STREAMING_JAR) {
+                    throw new IllegalArgumentException("非 Spark JAR 执行不能上报用户作业观测事件");
+                }
+                eventService.enqueueObservability(execution, observability.observability());
             }
         }
         executionRepository.save(execution);

@@ -64,7 +64,18 @@ public class DispatcherExecutionReconciliationService {
             reconcile(run);
         }
         for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(
+                TaskType.SPARK_MODEL_QUALITY, ACTIVE)) {
+            reconcile(run);
+        }
+        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(TaskType.SPARK_JAR, ACTIVE)) {
+            reconcile(run);
+        }
+        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(
                 TaskType.SPARK_STREAMING_CANVAS, ACTIVE)) {
+            reconcile(run);
+        }
+        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(
+                TaskType.SPARK_STREAMING_JAR, ACTIVE)) {
             reconcile(run);
         }
     }
@@ -94,7 +105,7 @@ public class DispatcherExecutionReconciliationService {
     }
 
     private boolean recoverUntrackedStreamingRun(TaskRun snapshot) {
-        if (snapshot.getTaskType() != TaskType.SPARK_STREAMING_CANVAS
+        if (!snapshot.getTaskType().isStreaming()
                 || snapshot.getStatus() != TaskRunStatus.STOP_REQUESTED
                 || snapshot.getLastDispatcherEventSequence() != 0
                 || snapshot.getStartedAt() != null
@@ -106,7 +117,7 @@ public class DispatcherExecutionReconciliationService {
             return false;
         }
         transactionTemplate.executeWithoutResult(status -> runRepository.findByIdForUpdate(snapshot.getId())
-                .filter(current -> current.getTaskType() == TaskType.SPARK_STREAMING_CANVAS)
+                .filter(current -> current.getTaskType().isStreaming())
                 .filter(current -> current.getStatus() == TaskRunStatus.STOP_REQUESTED)
                 .filter(current -> current.getLastDispatcherEventSequence() == 0)
                 .filter(current -> current.getStartedAt() == null)
@@ -168,7 +179,14 @@ public class DispatcherExecutionReconciliationService {
                 1, messageId, type, Instant.now(), response.engineId(), response.executionId(), response.runId(),
                 response.attempt(), response.sequence(), response.backendType(), response.externalExecutionId(),
                 response.trackingUrl(), response.startedAt(), response.endedAt(), response.affectedRows(), error,
-                run.getStreamingDeploymentId(), List.of());
+                run.getStreamingDeploymentId(), List.of(), List.of(), null, response.qualitySummary(),
+                switch (run.getTaskType()) {
+                    case SPARK_JAR -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_JAR;
+                    case SPARK_STREAMING_JAR -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_STREAMING_JAR;
+                    case SPARK_MODEL_QUALITY -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_MODEL_QUALITY;
+                    case SPARK_STREAMING_CANVAS -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_STREAMING_CANVAS;
+                    default -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_CANVAS;
+                });
     }
 
     static boolean dispatcherExecutionNotFound(Throwable throwable) {

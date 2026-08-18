@@ -16,6 +16,10 @@
 
     <dependencies>
         <dependency>
+            <groupId>com.github.jsqlparser</groupId>
+            <artifactId>jsqlparser</artifactId>
+        </dependency>
+        <dependency>
             <groupId>cn.superhuang</groupId>
             <artifactId>data-scalpel-contracts</artifactId>
             <version>${project.version}</version>

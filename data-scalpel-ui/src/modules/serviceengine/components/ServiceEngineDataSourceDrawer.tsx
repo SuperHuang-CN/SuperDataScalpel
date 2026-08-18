@@ -145,6 +145,7 @@ export const ServiceEngineDataSourceDrawer = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={engine ? `${engine.name} · 数据源` : 'Engine 数据源'}
         open={open}
         size={960}

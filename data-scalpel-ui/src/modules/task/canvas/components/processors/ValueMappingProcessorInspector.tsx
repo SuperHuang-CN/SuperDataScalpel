@@ -97,32 +97,33 @@ export const ValueMappingProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (rules.length === 0) {
           setDraftError('至少配置一个字段的值映射');
-          return false;
+
         }
         if (rules.length > CANVAS_VALUE_MAPPING_MAX_RULES) {
           setDraftError(`字段规则不能超过 ${CANVAS_VALUE_MAPPING_MAX_RULES} 项`);
-          return false;
+
         }
         if (totalEntries > CANVAS_VALUE_MAPPING_MAX_TOTAL_ENTRIES) {
           setDraftError(`单节点映射项总数不能超过 ${CANVAS_VALUE_MAPPING_MAX_TOTAL_ENTRIES}`);
-          return false;
+
         }
         const mappedColumns = new Set<string>();
         for (const rule of rules) {
           if (!rule.columnName) {
             setDraftError('每条规则都必须选择字段');
-            return false;
+
           }
           if (!mappedColumns.add(rule.columnName)) {
             setDraftError(`字段 ${rule.columnName} 只能配置一条映射规则`);
-            return false;
+
           }
           if (rule.entries.length === 0) {
             setDraftError(`字段 ${rule.columnName} 至少需要一个映射项`);
-            return false;
+
           }
           if (rule.entries.length > CANVAS_VALUE_MAPPING_MAX_ENTRIES_PER_RULE) {
             setDraftError(
@@ -130,32 +131,32 @@ export const ValueMappingProcessorInspector = ({
                 CANVAS_VALUE_MAPPING_MAX_ENTRIES_PER_RULE
               }`,
             );
-            return false;
+
           }
           const sourceValues = new Set<string>();
           for (const entry of rule.entries) {
             if (entry.sourceValue.value === null) {
               setDraftError(`字段 ${rule.columnName} 存在未填写的源值`);
-              return false;
+
             }
             const key = `${entry.sourceValue.dataType}\u0000${entry.sourceValue.value}`;
             if (!sourceValues.add(key)) {
               setDraftError(`字段 ${rule.columnName} 存在重复源值`);
-              return false;
+
             }
           }
           if (rule.unmatchedStrategy === 'SET_LITERAL' && !rule.unmatchedValue) {
             setDraftError(`字段 ${rule.columnName} 的未匹配默认值不能为空`);
-            return false;
+
           }
           if (rule.unmatchedStrategy !== 'SET_LITERAL' && rule.unmatchedValue) {
             setDraftError(`字段 ${rule.columnName} 当前策略不能携带默认值`);
-            return false;
+
           }
         }
         const configuration: ValueMappingConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           rules: structuredClone(rules),
         };
         onApply({

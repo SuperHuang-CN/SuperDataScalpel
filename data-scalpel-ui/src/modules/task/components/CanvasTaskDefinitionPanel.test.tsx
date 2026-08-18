@@ -1,6 +1,12 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { useEffect, type ReactNode } from 'react';
+import {
+  forwardRef,
+  useEffect,
+  useImperativeHandle,
+  type ForwardedRef,
+  type ReactNode,
+} from 'react';
 import { createMemoryRouter, Link, RouterProvider } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { CanvasDefinition } from '../canvas/canvasTypes';
@@ -29,7 +35,11 @@ vi.mock('../hooks/useTasks', () => ({
       taskId: 'ed92188e-dde3-4503-a8ba-3ddbe79ca516',
       configured: definitionState.configured,
       version: definitionState.configured ? 1 : 0,
+      loadStatus: definitionState.configured ? 'LOADED' : 'UNCONFIGURED',
+      schemaVersion: savedDefinition.schemaVersion,
+      schemaMinorVersion: savedDefinition.schemaMinorVersion,
       definition: savedDefinition,
+      message: null,
       updatedAt: null,
     },
   }),
@@ -48,7 +58,7 @@ vi.mock('../hooks/useTasks', () => ({
 }));
 
 vi.mock('../canvas/CanvasDesigner', () => ({
-  CanvasDesigner: ({
+  CanvasDesigner: forwardRef(({
     initialDefinition,
     onDefinitionChange,
     onInspectorDirtyChange,
@@ -60,8 +70,11 @@ vi.mock('../canvas/CanvasDesigner', () => ({
     onInspectorDirtyChange?: (dirty: boolean) => void;
     toolbarLeading?: ReactNode;
     toolbarTrailing?: ReactNode;
-  }) => {
+  }, ref: ForwardedRef<{ applyPendingInspector: () => Promise<CanvasDefinition | null> }>) => {
     useEffect(() => onDefinitionChange?.(initialDefinition), [initialDefinition, onDefinitionChange]);
+    useImperativeHandle(ref, () => ({
+      applyPendingInspector: async () => changedDefinition,
+    }));
     return (
       <div>
         {toolbarLeading}
@@ -70,7 +83,7 @@ vi.mock('../canvas/CanvasDesigner', () => ({
         {toolbarTrailing}
       </div>
     );
-  },
+  }),
 }));
 
 import { CanvasTaskDefinitionPanel } from './CanvasTaskDefinitionPanel';
@@ -111,7 +124,17 @@ const renderPanel = (task: DataTask = baseTask, onDirtyChange = vi.fn()) => {
 describe('CanvasTaskDefinitionPanel', () => {
   beforeEach(() => {
     definitionState.configured = false;
-    saveDefinition.mockReset().mockResolvedValue({ version: 1 });
+    saveDefinition.mockReset().mockResolvedValue({
+      taskId: baseTask.id,
+      configured: true,
+      version: 1,
+      loadStatus: 'LOADED',
+      schemaVersion: savedDefinition.schemaVersion,
+      schemaMinorVersion: savedDefinition.schemaMinorVersion,
+      definition: changedDefinition,
+      message: null,
+      updatedAt: '2026-07-17T00:00:00Z',
+    });
     saveStreamingConfiguration.mockReset().mockResolvedValue({ triggerIntervalSeconds: 10 });
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
@@ -139,7 +162,7 @@ describe('CanvasTaskDefinitionPanel', () => {
     expect(screen.getByRole('button', { name: /保存定义/ })).toBeDisabled();
   });
 
-  it('saves an invalid draft definition and protects browser unload', async () => {
+  it('saves an invalid draft definition and clears browser unload protection', async () => {
     const user = userEvent.setup();
     const onDirtyChange = vi.fn();
     renderPanel(baseTask, onDirtyChange);
@@ -155,7 +178,22 @@ describe('CanvasTaskDefinitionPanel', () => {
 
     const unloadEvent = new Event('beforeunload', { cancelable: true });
     window.dispatchEvent(unloadEvent);
-    expect(unloadEvent.defaultPrevented).toBe(true);
+    expect(unloadEvent.defaultPrevented).toBe(false);
+  });
+
+  it('saves pending changes before continuing a blocked navigation', async () => {
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(await screen.findByRole('button', { name: '修改节点草稿' }));
+    await user.click(screen.getByRole('link', { name: '离开定义页' }));
+    await user.click(await screen.findByRole('button', { name: '保存并离开' }));
+
+    await waitFor(() => expect(saveDefinition).toHaveBeenCalledWith({
+      id: baseTask.id,
+      definition: changedDefinition,
+    }));
+    expect(await screen.findByText('其他页面')).toBeInTheDocument();
   });
 
   it('does not expose save actions for a published task', async () => {

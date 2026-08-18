@@ -8,6 +8,7 @@ import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
+import cn.superhuang.data.scalpel.dialect.model.JdbcSnapshotColumn;
 import cn.superhuang.data.scalpel.dialect.model.PrimaryKeyMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
@@ -19,6 +20,7 @@ import cn.superhuang.data.scalpel.dialect.model.TableSummary;
 import org.junit.jupiter.api.Test;
 
 import java.sql.Types;
+import java.time.Duration;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -33,15 +35,28 @@ class BuiltInDialectsTest {
 
     @Test
     void registersAllSupportedDatabaseTypesWithMetadataCapabilities() {
-        assertEquals(8, registry.all().size());
+        assertEquals(10, registry.all().size());
         assertEquals(
-                java.util.Set.of("POSTGRESQL", "MYSQL", "ORACLE", "SQL_SERVER", "CLICKHOUSE", "DAMENG", "KINGBASE", "OPENGAUSS"),
+                java.util.Set.of(
+                        "POSTGRESQL", "MYSQL", "ORACLE", "SQL_SERVER", "CLICKHOUSE", "DAMENG",
+                        "KINGBASE", "OPENGAUSS", "TDENGINE_WEBSOCKET", "TDENGINE_RESTFUL"
+                ),
                 registry.all().stream().map(dialect -> dialect.definition().id()).collect(java.util.stream.Collectors.toSet())
         );
         assertTrue(registry.require("POSTGRESQL").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("MYSQL").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("CLICKHOUSE").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertFalse(registry.require("ORACLE").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
+        assertTrue(registry.require("TDENGINE_WEBSOCKET").definition().capabilities()
+                .contains(DatabaseCapability.READ_TABLE_METADATA));
+        assertTrue(registry.require("TDENGINE_WEBSOCKET").definition().capabilities()
+                .contains(DatabaseCapability.TMQ_SUBSCRIBE));
+        assertFalse(registry.require("TDENGINE_WEBSOCKET").definition().capabilities()
+                .contains(DatabaseCapability.CREATE_TABLE));
+        assertFalse(registry.require("TDENGINE_RESTFUL").definition().capabilities()
+                .contains(DatabaseCapability.TMQ_SUBSCRIBE));
+        assertFalse(registry.require("TDENGINE_RESTFUL").definition().capabilities()
+                .contains(DatabaseCapability.SQL_SERVICE_QUERY));
     }
 
     @Test
@@ -56,6 +71,10 @@ class BuiltInDialectsTest {
         assertEquals("jdbc:dm://db.internal:5432/business", registry.require("DAMENG").createConnectionSpec(config).jdbcUrl());
         assertEquals("jdbc:kingbase8://db.internal:5432/business", registry.require("KINGBASE").createConnectionSpec(config).jdbcUrl());
         assertEquals("jdbc:opengauss://db.internal:5432/business", registry.require("OPENGAUSS").createConnectionSpec(config).jdbcUrl());
+        assertEquals("jdbc:TAOS-WS://db.internal:5432/business",
+                registry.require("TDENGINE_WEBSOCKET").createConnectionSpec(config).jdbcUrl());
+        assertEquals("jdbc:TAOS-RS://db.internal:5432/business",
+                registry.require("TDENGINE_RESTFUL").createConnectionSpec(config).jdbcUrl());
 
         assertEquals("sales", registry.require("POSTGRESQL").createConnectionSpec(config).schemaName());
         assertEquals("sales", registry.require("ORACLE").createConnectionSpec(config).schemaName());
@@ -65,6 +84,8 @@ class BuiltInDialectsTest {
         assertNull(registry.require("MYSQL").createConnectionSpec(config).schemaName());
         assertNull(registry.require("CLICKHOUSE").createConnectionSpec(config).schemaName());
         assertNull(registry.require("SQL_SERVER").createConnectionSpec(config).schemaName());
+        assertNull(registry.require("TDENGINE_WEBSOCKET").createConnectionSpec(config).schemaName());
+        assertNull(registry.require("TDENGINE_RESTFUL").createConnectionSpec(config).schemaName());
 
         assertTrue(registry.all().stream().allMatch(dialect ->
                 !dialect.createConnectionSpec(config).jdbcUrl().contains("do-not-leak")));
@@ -115,6 +136,10 @@ class BuiltInDialectsTest {
                 postgres.createConnectionSpec(config(Map.of("sslmode", "unexpected"))));
         assertThrows(IllegalArgumentException.class, () ->
                 registry.require("MYSQL").createConnectionSpec(config(Map.of("useSSL", "sometimes"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                registry.require("TDENGINE_RESTFUL").createConnectionSpec(config(Map.of("batchfetch", "true"))));
+        assertThrows(IllegalArgumentException.class, () ->
+                registry.require("TDENGINE_RESTFUL").createConnectionSpec(config(Map.of("batchLoad", "true"))));
         assertThrows(IllegalArgumentException.class, () ->
                 postgres.createConnectionSpec(config(Map.of("tcpKeepAlive", ""))));
     }
@@ -189,6 +214,36 @@ class BuiltInDialectsTest {
                 UnsupportedOperationException.class,
                 () -> registry.require("ORACLE").renderRowUpsert(table, columns, keys)
         );
+    }
+
+    @Test
+    void rendersLockedSnapshotSyncSqlForPostgresAndMySql() {
+        TableIdentifier table = new TableIdentifier("warehouse", "public", "reservoir");
+        var columns = java.util.List.of(
+                new JdbcSnapshotColumn("reservoir_code", null),
+                new JdbcSnapshotColumn("name", null),
+                new JdbcSnapshotColumn("boundary", 4326)
+        );
+        var keys = java.util.List.of("reservoir_code");
+
+        var postgres = registry.require("POSTGRESQL").renderSnapshotSyncSql(
+                table, columns, keys, Duration.ofSeconds(30));
+        assertEquals("LOCK TABLE \"public\".\"reservoir\" IN ACCESS EXCLUSIVE MODE",
+                postgres.lockStatements().get(1));
+        assertTrue(postgres.selectSql().contains("ST_AsBinary(\"boundary\")"));
+        assertTrue(postgres.updateSql().contains("\"boundary\" = ST_GeomFromWKB(?, 4326)"));
+        assertEquals("DELETE FROM \"public\".\"reservoir\" WHERE \"reservoir_code\" = ?",
+                postgres.deleteSql());
+
+        var mysql = registry.require("MYSQL").renderSnapshotSyncSql(
+                table, columns, keys, Duration.ofSeconds(30));
+        assertEquals("LOCK TABLES `warehouse`.`reservoir` WRITE",
+                mysql.lockStatements().get(2));
+        assertEquals("UNLOCK TABLES", mysql.unlockSql());
+        assertTrue(mysql.insertSql().contains("ST_GeomFromWKB(?, 4326)"));
+        assertThrows(UnsupportedOperationException.class, () ->
+                registry.require("ORACLE").renderSnapshotSyncSql(
+                        table, columns, keys, Duration.ofSeconds(30)));
     }
 
     @Test

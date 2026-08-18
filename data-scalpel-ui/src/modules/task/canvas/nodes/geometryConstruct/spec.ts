@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeGeometryConstruct } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { geometryConstructCanvasView } from './canvasView';
 
 export const geometryConstructSpec = createCanvasNodeSpec({
   type: CanvasNodeType.GeometryConstruct,
@@ -15,9 +16,9 @@ export const geometryConstructSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'construct', 'wkt', 'wkb', 'geojson', 'xy', '构造'],
   iconKey: CanvasNodeIconKey.GeometryConstruct,
   order: 10,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: geometryConstructCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 21,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createGeometryConstructConfiguration,
   summarize: summarizeGeometryConstruct,

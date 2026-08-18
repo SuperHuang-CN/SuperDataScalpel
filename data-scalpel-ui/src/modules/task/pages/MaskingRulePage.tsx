@@ -1,14 +1,17 @@
 import {
+  ClearOutlined,
+  ColumnWidthOutlined,
   DeleteOutlined,
   EditOutlined,
+  EyeInvisibleOutlined,
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
-  SafetyCertificateOutlined,
+  SwapOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
 import { Alert, Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
@@ -31,6 +34,16 @@ interface MaskingRuleDrawerState {
   rule: DataMaskingRule | null;
   readOnly: boolean;
 }
+
+const maskingStrategyVisuals: Record<MaskingStrategy, {
+  icon: ReactNode;
+  tone: 'violet' | 'cyan' | 'orange' | 'slate';
+}> = {
+  PARTIAL_MASK: { icon: <EyeInvisibleOutlined />, tone: 'violet' },
+  KEEP_LENGTH_MASK: { icon: <ColumnWidthOutlined />, tone: 'cyan' },
+  FIXED_VALUE: { icon: <SwapOutlined />, tone: 'orange' },
+  NULLIFY: { icon: <ClearOutlined />, tone: 'slate' },
+};
 
 const escapeDsl = (value: string) => value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 
@@ -80,17 +93,29 @@ export const MaskingRulePage = () => {
 
   const columns: TableProps<DataMaskingRule>['columns'] = [
     {
-      title: '规则', dataIndex: 'name', width: 260,
-      render: (value: string, rule) => <ManagementListCell icon={<SafetyCertificateOutlined />} iconTone="rose" primary={value} secondary={<ManagementCode value={rule.code} />} />,
-    },
-    {
-      title: '脱敏策略', width: 200,
-      render: (_value: unknown, rule) => <ManagementListCell primary={maskingStrategyLabels[rule.strategy]} secondary={rule.strategy === 'PARTIAL_MASK' ? `保留前 ${rule.definition.keepPrefixLength ?? 0} 位 / 后 ${rule.definition.keepSuffixLength ?? 0} 位` : rule.strategy === 'FIXED_VALUE' ? `固定值：${rule.definition.fixedValue || '—'}` : '按规则定义执行'} />,
+      title: '规则', dataIndex: 'name', width: 300,
+      render: (value: string, rule) => {
+        const strategyLabel = maskingStrategyLabels[rule.strategy];
+        const visual = maskingStrategyVisuals[rule.strategy];
+        return (
+          <ManagementListCell
+            icon={<Tooltip title={strategyLabel}>{visual.icon}</Tooltip>}
+            iconLabel={`脱敏策略：${strategyLabel}`}
+            iconTone={visual.tone}
+            primary={value}
+            secondary={<ManagementCode value={rule.code} />}
+          />
+        );
+      },
     },
     {
       title: '说明',
       dataIndex: 'description',
-      render: (value: string | null) => <ManagementListCell primary={value || '—'} secondary="规则说明" />,
+      render: (value: string | null) => (
+        <Tooltip title={value || undefined} placement="topLeft">
+          <span className="masking-rule-description-text">{value || '—'}</span>
+        </Tooltip>
+      ),
     },
     {
       title: '更新时间',
@@ -107,7 +132,7 @@ export const MaskingRulePage = () => {
           <div className="management-row-actions-shortcuts">{canManage && <Tooltip title="修改规则"><Button type="text" icon={<EditOutlined />} aria-label={`修改脱敏规则${rule.name}`} onClick={() => setDrawerState({ rule, readOnly: false })} /></Tooltip>}</div>
           <Dropdown menu={{ items: [
             { key: 'view', label: '查看规则', onClick: () => setDrawerState({ rule, readOnly: true }) },
-            ...(canManage ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setDrawerState({ rule, readOnly: false }) }, { type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ title: '删除脱敏规则', content: `确认删除“${rule.name}”吗？已有 Canvas 节点中的配置不会变化。`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(rule) }) }] : []),
+            ...(canManage ? [{ key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => setDrawerState({ rule, readOnly: false }) }, { type: 'divider' as const }, { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '删除脱敏规则', content: `确认删除“${rule.name}”吗？已有 Canvas 节点中的配置不会变化。`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => remove(rule) }) }] : []),
           ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${rule.name}的更多操作`} /></Tooltip></Dropdown>
         </div>
       ),

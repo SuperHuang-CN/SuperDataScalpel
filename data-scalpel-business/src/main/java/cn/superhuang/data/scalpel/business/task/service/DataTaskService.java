@@ -8,6 +8,7 @@ import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutio
 import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutionService.ExecutionRoute;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
+import cn.superhuang.data.scalpel.business.lineage.service.TaskLineageSnapshotService;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.business.model.domain.PhysicalTableMode;
@@ -18,17 +19,23 @@ import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskInput;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlWriteMode;
+import cn.superhuang.data.scalpel.business.task.domain.ModelQualityTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStreamingConfiguration;
 import cn.superhuang.data.scalpel.business.task.domain.TaskType;
+import cn.superhuang.data.scalpel.business.task.domain.SparkJarTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.repository.CanvasTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskInputRepository;
+import cn.superhuang.data.scalpel.business.task.repository.ModelQualityTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskStreamingConfigurationRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskStreamingDeploymentRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskCanvasModelReferenceRepository;
+import cn.superhuang.data.scalpel.business.task.repository.TaskDataSourceReferenceRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskResourceBindingRepository;
 import cn.superhuang.data.scalpel.business.task.web.request.CreateDataTaskRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateDataTaskRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateLocalSqlTaskDefinitionRequest;
@@ -67,11 +74,13 @@ public class DataTaskService {
     private final DataTaskRepository taskRepository;
     private final LocalSqlTaskDefinitionRepository definitionRepository;
     private final CanvasTaskDefinitionRepository canvasDefinitionRepository;
+    private final ModelQualityTaskDefinitionRepository modelQualityDefinitionRepository;
     private final LocalSqlTaskInputRepository inputRepository;
     private final TaskRunRepository taskRunRepository;
     private final TaskStreamingConfigurationRepository streamingConfigurationRepository;
     private final TaskStreamingDeploymentRepository streamingDeploymentRepository;
     private final TaskCanvasModelReferenceRepository canvasModelReferenceRepository;
+    private final TaskDataSourceReferenceRepository dataSourceReferenceRepository;
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
     private final DataSourceRepository dataSourceRepository;
@@ -83,6 +92,13 @@ public class DataTaskService {
     private final CanvasTaskRunPreparationService canvasPreparationService;
     private final ComputeEngineSelectionService computeEngineSelectionService;
     private final ComputeEngineExecutionService computeEngineExecutionService;
+    private final TaskLineageSnapshotService lineageSnapshotService;
+    private final LocalSqlLineageDraftFactory localSqlLineageDraftFactory;
+    private final CanvasLineageDraftFactory canvasLineageDraftFactory;
+    private final ModelQualityTaskDefinitionService modelQualityTaskDefinitionService;
+    private final SparkJarTaskDefinitionService sparkJarTaskDefinitionService;
+    private final SparkJarTaskDefinitionRepository sparkJarDefinitionRepository;
+    private final SparkJarTaskResourceBindingRepository sparkJarBindingRepository;
     private final TransactionTemplate readTransactionTemplate;
     private final TransactionTemplate transactionTemplate;
 
@@ -90,11 +106,13 @@ public class DataTaskService {
             DataTaskRepository taskRepository,
             LocalSqlTaskDefinitionRepository definitionRepository,
             CanvasTaskDefinitionRepository canvasDefinitionRepository,
+            ModelQualityTaskDefinitionRepository modelQualityDefinitionRepository,
             LocalSqlTaskInputRepository inputRepository,
             TaskRunRepository taskRunRepository,
             TaskStreamingConfigurationRepository streamingConfigurationRepository,
             TaskStreamingDeploymentRepository streamingDeploymentRepository,
             TaskCanvasModelReferenceRepository canvasModelReferenceRepository,
+            TaskDataSourceReferenceRepository dataSourceReferenceRepository,
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
             DataSourceRepository dataSourceRepository,
@@ -106,16 +124,25 @@ public class DataTaskService {
             CanvasTaskRunPreparationService canvasPreparationService,
             ComputeEngineSelectionService computeEngineSelectionService,
             ComputeEngineExecutionService computeEngineExecutionService,
+            TaskLineageSnapshotService lineageSnapshotService,
+            LocalSqlLineageDraftFactory localSqlLineageDraftFactory,
+            CanvasLineageDraftFactory canvasLineageDraftFactory,
+            ModelQualityTaskDefinitionService modelQualityTaskDefinitionService,
+            SparkJarTaskDefinitionService sparkJarTaskDefinitionService,
+            SparkJarTaskDefinitionRepository sparkJarDefinitionRepository,
+            SparkJarTaskResourceBindingRepository sparkJarBindingRepository,
             PlatformTransactionManager transactionManager
     ) {
         this.taskRepository = taskRepository;
         this.definitionRepository = definitionRepository;
         this.canvasDefinitionRepository = canvasDefinitionRepository;
+        this.modelQualityDefinitionRepository = modelQualityDefinitionRepository;
         this.inputRepository = inputRepository;
         this.taskRunRepository = taskRunRepository;
         this.streamingConfigurationRepository = streamingConfigurationRepository;
         this.streamingDeploymentRepository = streamingDeploymentRepository;
         this.canvasModelReferenceRepository = canvasModelReferenceRepository;
+        this.dataSourceReferenceRepository = dataSourceReferenceRepository;
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
         this.dataSourceRepository = dataSourceRepository;
@@ -127,6 +154,13 @@ public class DataTaskService {
         this.canvasPreparationService = canvasPreparationService;
         this.computeEngineSelectionService = computeEngineSelectionService;
         this.computeEngineExecutionService = computeEngineExecutionService;
+        this.lineageSnapshotService = lineageSnapshotService;
+        this.localSqlLineageDraftFactory = localSqlLineageDraftFactory;
+        this.canvasLineageDraftFactory = canvasLineageDraftFactory;
+        this.modelQualityTaskDefinitionService = modelQualityTaskDefinitionService;
+        this.sparkJarTaskDefinitionService = sparkJarTaskDefinitionService;
+        this.sparkJarDefinitionRepository = sparkJarDefinitionRepository;
+        this.sparkJarBindingRepository = sparkJarBindingRepository;
         this.readTransactionTemplate = new TransactionTemplate(transactionManager);
         this.readTransactionTemplate.setReadOnly(true);
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -141,6 +175,9 @@ public class DataTaskService {
         ).stream().collect(Collectors.toMap(LocalSqlTaskDefinition::getTaskId, Function.identity()));
         Map<UUID, CanvasTaskDefinition> canvasDefinitions = canvasDefinitionRepository.findAllByTaskIdIn(taskIds).stream()
                 .collect(Collectors.toMap(CanvasTaskDefinition::getTaskId, Function.identity()));
+        Map<UUID, ModelQualityTaskDefinition> qualityDefinitions = modelQualityDefinitionRepository
+                .findAllByTaskIdIn(taskIds).stream()
+                .collect(Collectors.toMap(ModelQualityTaskDefinition::getTaskId, Function.identity()));
         Map<UUID, String> outputModelNames = modelNames(definitions.values().stream()
                 .map(LocalSqlTaskDefinition::getOutputModelId).collect(Collectors.toSet()));
         Map<UUID, String> computeEngineNames = computeEngineSelectionService.names(page.getContent().stream()
@@ -148,6 +185,7 @@ public class DataTaskService {
         return new PageResponse<>(
                 page.getContent().stream().map(task -> summary(
                         task, definitions.get(task.getId()), canvasDefinitions.get(task.getId()),
+                        qualityDefinitions.get(task.getId()),
                         outputModelNames, computeEngineNames
                 )).toList(),
                 page.getTotalElements(), page.getTotalPages(), page.getNumber(), page.getSize()
@@ -159,8 +197,10 @@ public class DataTaskService {
         DataTask task = requireTask(id);
         LocalSqlTaskDefinition definition = definitionRepository.findByTaskId(id).orElse(null);
         CanvasTaskDefinition canvasDefinition = canvasDefinitionRepository.findByTaskId(id).orElse(null);
+        ModelQualityTaskDefinition qualityDefinition = modelQualityDefinitionRepository.findByTaskId(id).orElse(null);
         Map<UUID, String> outputModelNames = definition == null ? Map.of() : modelNames(Set.of(definition.getOutputModelId()));
-        return summary(task, definition, canvasDefinition, outputModelNames, computeEngineNames(task));
+        return summary(task, definition, canvasDefinition, qualityDefinition,
+                outputModelNames, computeEngineNames(task));
     }
 
     @Transactional(readOnly = true)
@@ -178,10 +218,7 @@ public class DataTaskService {
         DataTask task = taskRepository.saveAndFlush(DataTask.create(
                 request.name(), request.directoryId(), request.type(), request.description(), request.computeEngineId()
         ));
-        if (task.getType() == TaskType.SPARK_STREAMING_CANVAS) {
-            streamingConfigurationRepository.saveAndFlush(TaskStreamingConfiguration.create(task.getId()));
-        }
-        return summary(task, null, null, Map.of());
+        return summary(task, null, null, null, Map.of(), computeEngineNames(task));
     }
 
     @Transactional
@@ -197,13 +234,15 @@ public class DataTaskService {
         DataTask saved = taskRepository.saveAndFlush(task);
         LocalSqlTaskDefinition definition = definitionRepository.findByTaskId(id).orElse(null);
         CanvasTaskDefinition canvasDefinition = canvasDefinitionRepository.findByTaskId(id).orElse(null);
+        ModelQualityTaskDefinition qualityDefinition = modelQualityDefinitionRepository.findByTaskId(id).orElse(null);
         Map<UUID, String> outputModelNames = definition == null ? Map.of() : modelNames(Set.of(definition.getOutputModelId()));
-        return summary(saved, definition, canvasDefinition, outputModelNames, computeEngineNames(saved));
+        return summary(saved, definition, canvasDefinition, qualityDefinition,
+                outputModelNames, computeEngineNames(saved));
     }
 
     @Transactional
     public LocalSqlTaskDefinitionResponse updateDefinition(UUID taskId, UpdateLocalSqlTaskDefinitionRequest request) {
-        DataTask task = requireTask(taskId);
+        DataTask task = requireTaskForUpdate(taskId);
         requireLocalSqlTask(task);
         requireDefinitionEditable(task);
         ValidatedDefinition validated = validateForSave(request);
@@ -239,6 +278,12 @@ public class DataTaskService {
 
     public DataTaskResponse publish(UUID taskId) {
         DataTask current = requireTask(taskId);
+        if (current.getType().isJar()) {
+            return publishSparkJar(taskId, TaskStatus.DRAFT);
+        }
+        if (current.getType() == TaskType.SPARK_MODEL_QUALITY) {
+            return publishModelQuality(taskId, TaskStatus.DRAFT);
+        }
         if (current.getType().isCanvas()) {
             return publishCanvas(taskId);
         }
@@ -249,8 +294,11 @@ public class DataTaskService {
         }
         LocalSqlDefinitionInspection inspection = inspectSnapshot(snapshot);
         requireValidInspection(inspection);
+        LocalSqlLineageDraftFactory.BuildResult lineage = localSqlLineageDraftFactory.create(
+                taskId, snapshot.definitionVersion(), snapshot.request(), inspection
+        );
         DataTaskResponse response = requireTransactionResult(transactionTemplate.execute(status -> {
-            DataTask task = requireTask(taskId);
+            DataTask task = requireTaskForUpdate(taskId);
             LocalSqlTaskDefinition definition = requireDefinition(taskId);
             if (task.getStatus() != TaskStatus.DRAFT) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新发布");
@@ -258,6 +306,7 @@ public class DataTaskService {
             if (definition.getVersion() != snapshot.definitionVersion()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务定义已变化，请重新校验后发布");
             }
+            lineageSnapshotService.publish(lineage.draft());
             task.publish();
             return summary(
                     taskRepository.saveAndFlush(task),
@@ -271,6 +320,12 @@ public class DataTaskService {
 
     public DataTaskResponse disable(UUID taskId) {
         DataTask current = requireTask(taskId);
+        if (current.getType().isJar()) {
+            return disableSparkJar(taskId);
+        }
+        if (current.getType() == TaskType.SPARK_MODEL_QUALITY) {
+            return disableModelQuality(taskId);
+        }
         if (current.getType().isCanvas()) {
             return disableCanvas(taskId);
         }
@@ -290,6 +345,12 @@ public class DataTaskService {
 
     public DataTaskResponse enable(UUID taskId) {
         DataTask current = requireTask(taskId);
+        if (current.getType().isJar()) {
+            return publishSparkJar(taskId, TaskStatus.DISABLED);
+        }
+        if (current.getType() == TaskType.SPARK_MODEL_QUALITY) {
+            return publishModelQuality(taskId, TaskStatus.DISABLED);
+        }
         if (current.getType().isCanvas()) {
             return enableCanvas(taskId);
         }
@@ -300,8 +361,11 @@ public class DataTaskService {
         }
         LocalSqlDefinitionInspection inspection = inspectSnapshot(snapshot);
         requireValidInspection(inspection);
+        LocalSqlLineageDraftFactory.BuildResult lineage = localSqlLineageDraftFactory.create(
+                taskId, snapshot.definitionVersion(), snapshot.request(), inspection
+        );
         DataTaskResponse response = requireTransactionResult(transactionTemplate.execute(status -> {
-            DataTask task = requireTask(taskId);
+            DataTask task = requireTaskForUpdate(taskId);
             LocalSqlTaskDefinition definition = requireDefinition(taskId);
             if (task.getStatus() != TaskStatus.DISABLED) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新启用");
@@ -309,6 +373,7 @@ public class DataTaskService {
             if (definition.getVersion() != snapshot.definitionVersion()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务定义已变化，请重新校验后启用");
             }
+            lineageSnapshotService.publish(lineage.draft());
             task.publish();
             return summary(
                     taskRepository.saveAndFlush(task),
@@ -329,11 +394,19 @@ public class DataTaskService {
         if (taskRunRepository.existsByTaskId(taskId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "任务已有运行记录，不能删除");
         }
+        lineageSnapshotService.retireCurrent(taskId);
         scheduleService.deleteForTask(taskId);
+        dataSourceReferenceRepository.deleteAllByTaskId(taskId);
         canvasModelReferenceRepository.deleteAllByTaskId(taskId);
         inputRepository.deleteAllByTaskId(taskId);
         definitionRepository.findByTaskId(taskId).ifPresent(definitionRepository::delete);
         canvasDefinitionRepository.findByTaskId(taskId).ifPresent(canvasDefinitionRepository::delete);
+        modelQualityDefinitionRepository.findByTaskId(taskId).ifPresent(modelQualityDefinitionRepository::delete);
+        sparkJarBindingRepository.deleteAllByTaskId(taskId);
+        sparkJarDefinitionRepository.findByTaskId(taskId).ifPresent(definition -> {
+            sparkJarTaskDefinitionService.deleteObjectAfterCommit(taskId, definition.getJarObjectKey());
+            sparkJarDefinitionRepository.delete(definition);
+        });
         streamingConfigurationRepository.deleteByTaskId(taskId);
         taskRepository.delete(task);
     }
@@ -432,8 +505,10 @@ public class DataTaskService {
                 snapshot.taskType() == TaskType.SPARK_STREAMING_CANVAS
                         ? cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode.STREAMING
                         : cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode.BATCH);
+        var lineageDraft = canvasLineageDraftFactory.create(
+                taskId, snapshot.definitionVersion(), preparation.compilation().lineage());
         return requireTransactionResult(transactionTemplate.execute(status -> {
-            DataTask task = requireTask(taskId);
+            DataTask task = requireTaskForUpdate(taskId);
             CanvasTaskDefinition definition = requireCanvasDefinition(taskId);
             if (task.getStatus() != TaskStatus.DRAFT) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新发布");
@@ -447,6 +522,7 @@ public class DataTaskService {
             computeEngineExecutionService.assertUnchanged(route);
             canvasPreparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
             canvasPreparationService.assertModelsUnchanged(preparation.modelVersions());
+            lineageSnapshotService.publish(lineageDraft);
             task.publish();
             return summary(taskRepository.saveAndFlush(task), null, definition, Map.of());
         }));
@@ -486,8 +562,10 @@ public class DataTaskService {
                 snapshot.taskType() == TaskType.SPARK_STREAMING_CANVAS
                         ? cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode.STREAMING
                         : cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode.BATCH);
+        var lineageDraft = canvasLineageDraftFactory.create(
+                taskId, snapshot.definitionVersion(), preparation.compilation().lineage());
         return requireTransactionResult(transactionTemplate.execute(status -> {
-            DataTask task = requireTask(taskId);
+            DataTask task = requireTaskForUpdate(taskId);
             CanvasTaskDefinition definition = requireCanvasDefinition(taskId);
             if (task.getStatus() != TaskStatus.DISABLED) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新启用");
@@ -501,9 +579,104 @@ public class DataTaskService {
             computeEngineExecutionService.assertUnchanged(route);
             canvasPreparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
             canvasPreparationService.assertModelsUnchanged(preparation.modelVersions());
+            lineageSnapshotService.publish(lineageDraft);
             task.publish();
             return summary(taskRepository.saveAndFlush(task), null, definition, Map.of());
         }));
+    }
+
+    private DataTaskResponse publishModelQuality(UUID taskId, TaskStatus expectedStatus) {
+        ModelQualityTaskDefinition definition = modelQualityTaskDefinitionService.requireConfigured(taskId);
+        modelQualityTaskDefinitionService.validatePublishable(taskId);
+        ExecutionRoute route = computeEngineExecutionService.requireRunnable(
+                requireTask(taskId).getComputeEngineId());
+        DataTaskResponse response = requireTransactionResult(transactionTemplate.execute(status -> {
+            DataTask task = requireTaskForUpdate(taskId);
+            if (task.getType() != TaskType.SPARK_MODEL_QUALITY || task.getStatus() != expectedStatus) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新操作");
+            }
+            ModelQualityTaskDefinition current = modelQualityDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "请先选择质检目标模型"));
+            if (current.getVersion() != definition.getVersion()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "质检定义已变化，请重新操作");
+            }
+            if (!route.engineId().equals(task.getComputeEngineId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新操作");
+            }
+            computeEngineExecutionService.assertUnchanged(route);
+            task.publish();
+            return summary(taskRepository.saveAndFlush(task), null, null, current,
+                    Map.of(), computeEngineNames(task));
+        }));
+        scheduleService.resumeForTask(taskId);
+        return response;
+    }
+
+    private DataTaskResponse disableModelQuality(UUID taskId) {
+        DataTaskResponse response = requireTransactionResult(transactionTemplate.execute(status -> {
+            DataTask task = requireTaskForUpdate(taskId);
+            if (task.getType() != TaskType.SPARK_MODEL_QUALITY || task.getStatus() != TaskStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已发布质检任务可以停用");
+            }
+            task.disable();
+            return summary(taskRepository.saveAndFlush(task), null, null,
+                    modelQualityDefinitionRepository.findByTaskId(taskId).orElse(null),
+                    Map.of(), computeEngineNames(task));
+        }));
+        scheduleService.pauseForTask(taskId);
+        return response;
+    }
+
+    private DataTaskResponse publishSparkJar(UUID taskId, TaskStatus expectedStatus) {
+        SparkJarTaskDefinition definition = sparkJarTaskDefinitionService.requireConfigured(taskId);
+        sparkJarTaskDefinitionService.validatePublishable(taskId);
+        sparkJarTaskDefinitionService.validateArtifactAvailable(taskId);
+        DataTask sourceTask = requireTask(taskId);
+        ExecutionRoute route = sourceTask.getType().isStreaming()
+                ? computeEngineExecutionService.requireStreamingRunnable(sourceTask.getComputeEngineId())
+                : computeEngineExecutionService.requireRunnable(sourceTask.getComputeEngineId());
+        DataTaskResponse response = requireTransactionResult(transactionTemplate.execute(status -> {
+            DataTask task = requireTaskForUpdate(taskId);
+            if (!task.getType().isJar() || task.getStatus() != expectedStatus) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新操作");
+            }
+            SparkJarTaskDefinition current = sparkJarDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "请先配置 Spark JAR 任务定义"));
+            if (current.getVersion() != definition.getVersion()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR 定义已变化，请重新操作");
+            }
+            if (!route.engineId().equals(task.getComputeEngineId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新操作");
+            }
+            computeEngineExecutionService.assertUnchanged(route);
+            task.publish();
+            return summary(taskRepository.saveAndFlush(task), null, null, null,
+                    Map.of(), computeEngineNames(task));
+        }));
+        if (!sourceTask.getType().isStreaming()) scheduleService.resumeForTask(taskId);
+        return response;
+    }
+
+    private DataTaskResponse disableSparkJar(UUID taskId) {
+        DataTaskResponse response = requireTransactionResult(transactionTemplate.execute(status -> {
+            DataTask task = requireTaskForUpdate(taskId);
+            if (!task.getType().isJar() || task.getStatus() != TaskStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已发布 Spark JAR 任务可以停用");
+            }
+            if (task.getType().isStreaming()
+                    && streamingDeploymentRepository.existsByTaskIdAndActualStateIn(
+                    taskId, List.of(
+                            cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState.STARTING,
+                            cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState.RUNNING,
+                            cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState.STOPPING))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "活动实时任务必须先停止，再停用");
+            }
+            task.disable();
+            return summary(taskRepository.saveAndFlush(task), null, null, null,
+                    Map.of(), computeEngineNames(task));
+        }));
+        if (!requireTask(taskId).getType().isStreaming()) scheduleService.pauseForTask(taskId);
+        return response;
     }
 
     private CanvasLifecycleSnapshot readCanvasLifecycleSnapshot(UUID taskId) {
@@ -515,7 +688,7 @@ public class DataTaskService {
             CanvasTaskDefinition definition = requireCanvasDefinition(taskId);
             return new CanvasLifecycleSnapshot(
                     task.getType(), task.getStatus(), task.getComputeEngineId(), definition.getVersion(),
-                    canvasTaskDefinitionService.deserialize(definition.getDefinitionJson()));
+                    canvasTaskDefinitionService.requireReadable(definition));
         }));
     }
 
@@ -524,7 +697,8 @@ public class DataTaskService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "请先保存 Canvas 任务定义"));
     }
 
-    private static LocalSqlDefinitionValidationResponse validationResponse(LocalSqlDefinitionInspection inspection) {
+    private LocalSqlDefinitionValidationResponse validationResponse(LocalSqlDefinitionInspection inspection) {
+        LocalSqlLineageDraftFactory.Assessment lineage = localSqlLineageDraftFactory.assess(inspection);
         return new LocalSqlDefinitionValidationResponse(
                 inspection.valid(),
                 inspection.problems().stream()
@@ -536,7 +710,13 @@ public class DataTaskService {
                                 column.ordinal(), column.label(), column.logicalType(), column.nativeType(), column.nullable(),
                                 column.matchedOutputFieldCode()
                         )).toList(),
-                inspection.targetColumns()
+                inspection.targetColumns(),
+                lineage.coverage().name(),
+                lineage.analysisStatus().name(),
+                lineage.warnings().stream().map(warning ->
+                        new cn.superhuang.data.scalpel.business.task.web.response.LocalSqlLineageWarningResponse(
+                                warning.code(), warning.message(), warning.outputOrdinal()
+                        )).toList()
         );
     }
 
@@ -561,7 +741,7 @@ public class DataTaskService {
             LocalSqlTaskDefinition definition,
             Map<UUID, String> outputModelNames
     ) {
-        return summary(task, definition, null, outputModelNames, computeEngineNames(task));
+        return summary(task, definition, null, null, outputModelNames, computeEngineNames(task));
     }
 
     private DataTaskResponse summary(
@@ -570,7 +750,7 @@ public class DataTaskService {
             CanvasTaskDefinition canvasDefinition,
             Map<UUID, String> outputModelNames
     ) {
-        return summary(task, definition, canvasDefinition, outputModelNames, computeEngineNames(task));
+        return summary(task, definition, canvasDefinition, null, outputModelNames, computeEngineNames(task));
     }
 
     private DataTaskResponse summary(
@@ -580,12 +760,40 @@ public class DataTaskService {
             Map<UUID, String> outputModelNames,
             Map<UUID, String> computeEngineNames
     ) {
+        return summary(task, definition, canvasDefinition, null, outputModelNames, computeEngineNames);
+    }
+
+    private DataTaskResponse summary(
+            DataTask task,
+            LocalSqlTaskDefinition definition,
+            CanvasTaskDefinition canvasDefinition,
+            ModelQualityTaskDefinition qualityDefinition,
+            Map<UUID, String> outputModelNames,
+            Map<UUID, String> computeEngineNames
+    ) {
         String computeEngineName = task.getComputeEngineId() == null
                 ? null : computeEngineNames.get(task.getComputeEngineId());
         if (task.getType().isCanvas()) {
             return canvasDefinition == null
                     ? DataTaskResponse.from(task, computeEngineName, false, null, null, null)
                     : DataTaskResponse.from(task, computeEngineName, true, canvasDefinition.getVersion(), null, null);
+        }
+        if (task.getType() == TaskType.SPARK_MODEL_QUALITY) {
+            if (qualityDefinition == null) {
+                return DataTaskResponse.from(task, computeEngineName, false, null, null, null,
+                        null, null);
+            }
+            String targetName = modelRepository.findById(qualityDefinition.getModelId())
+                    .map(DataModel::getName).orElse(null);
+            return DataTaskResponse.from(task, computeEngineName, true, qualityDefinition.getVersion(),
+                    null, null, qualityDefinition.getModelId(), targetName);
+        }
+        if (task.getType().isJar()) {
+            SparkJarTaskDefinition jarDefinition = sparkJarDefinitionRepository.findByTaskId(task.getId()).orElse(null);
+            return jarDefinition == null
+                    ? DataTaskResponse.from(task, computeEngineName, false, null, null, null)
+                    : DataTaskResponse.from(task, computeEngineName, jarDefinition.hasJar(),
+                    jarDefinition.getVersion(), null, null);
         }
         if (definition == null) return DataTaskResponse.from(task, computeEngineName, false, null, null, null);
         return DataTaskResponse.from(
@@ -606,8 +814,8 @@ public class DataTaskService {
             }
             return;
         }
-        if (taskType == TaskType.SPARK_STREAMING_CANVAS && computeEngineId == null) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Spark 实时编排任务必须绑定计算引擎");
+        if (taskType.requiresComputeEngine() && computeEngineId == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Spark 任务必须绑定计算引擎");
         }
         if (computeEngineId != null) {
             computeEngineSelectionService.requireExisting(computeEngineId);
@@ -616,6 +824,11 @@ public class DataTaskService {
 
     private DataTask requireTask(UUID id) {
         return taskRepository.findById(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+    }
+
+    private DataTask requireTaskForUpdate(UUID id) {
+        return taskRepository.findByIdForUpdate(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
     }
 

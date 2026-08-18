@@ -34,10 +34,15 @@ SQL 服务关联的模型只用于来源说明、血缘记录、编辑辅助和�
 
 数据服务统一使用以下资源：
 
-- `GET /api/v1/data-services`：摘要分页，包含 `type`、`sourceId`、`sourceName`，不返回 SQL 大文本。
-- `GET /api/v1/data-services/{id}`：完整详情和具体定义。
-- `POST /api/v1/data-services`
-- `POST /api/v1/data-services/{id}/actions/update`
+- `GET /api/v1/data-services`：摘要分页，包含 `type`、`definitionConfigured`、`definitionVersion`、`sourceId`、`sourceName`，不返回 SQL 大文本。
+- `GET /api/v1/data-services/{id}`：完整详情和可空的具体定义。
+- `POST /api/v1/data-services`：创建基础信息；允许不携带具体定义形成可恢复草稿。
+- `POST /api/v1/data-services/{id}/actions/update`：更新基础信息；未携带定义时保留已有定义。
+- `POST /api/v1/data-services/{id}/actions/update-definition`：按服务固定类型整体新增或更新具体定义。
+- `GET /api/v1/data-services/{id}/standard-model-candidates`：分页查询当前 Engine 下的标准单表模型候选，可选择包含不可用项及原因。
+- `GET /api/v1/data-services/{id}/related-models`：一次返回有序关联模型摘要；要求 `service.view` 与 `model.view`，标准单表返回一个 `PRIMARY`，SQL 返回有序 `REFERENCE`，脚本或未配置定义返回空列表。模型已删除时仍返回引用 ID，并标记 `resolved=false`。
+- `GET /api/v1/data-services/{id}/lineage/table`：以服务为根查询标准服务关联模型及其表级上游血缘。
+- `GET /api/v1/data-services/{id}/lineage/fields/{fieldId}`：查询标准服务实际暴露字段及其字段级上游血缘。
 - `POST /api/v1/data-services/actions/test-sql`：测试未保存表单定义并返回实际查询预览。
 - `POST /api/v1/data-services/actions/execute-script-draft`：在所选 Engine 中执行未保存脚本，不保存 API Studio 数据，也不注册公开路由。
 - `GET /api/v1/data-services/script-completion`：按 Engine 和数据源代理 API Studio 的 Groovy、变量和数据库补全数据。
@@ -47,9 +52,15 @@ SQL 服务关联的模型只用于来源说明、血缘记录、编辑辅助和�
 - `POST /api/v1/data-services/{id}/actions/cleanup-deployment`
 - `POST /api/v1/data-services/{id}/actions/delete`
 
-创建与更新使用显式互斥定义。`STANDARD_TABLE` 只能提供 `standardDefinition.modelId`；`SQL_QUERY` 只能提供 `sqlDefinition`；`SCRIPT_API` 只能提供 `scriptDefinition`。更新请求仍携带类型以校验不可切换，但不能修改编码。
+创建与基础更新为了兼容原调用仍接受显式互斥定义，但三个定义全部为空表示只保存基础信息，不会清除已有定义。独立定义更新必须且只能提供一种与服务固定类型匹配的定义：`STANDARD_TABLE` 使用 `standardDefinition.modelId`，`SQL_QUERY` 使用 `sqlDefinition`，`SCRIPT_API` 使用 `scriptDefinition`。首次保存定义产生 v1，内容实际变化后才递增版本；部署 `revision` 仍只在启用时增长。未配置定义的服务可以查看、修改和删除，但启用返回 409“数据服务定义未配置”。
 
-SQL 服务的管理端选择顺序为：PostgreSQL 数据源 → 该数据源下的一个或多个模型 → 已注册该数据源的 Engine → SQL 和参数。`modelIds` 至少一个、不能包含空值或重复值，且所有模型的 `storageDataSourceId` 必须与 `dataSourceId` 相同。草稿、已发布和已停用模型均可关联，模型状态不参与保存、测试或启用判定。切换数据源后必须重新选择模型和 Engine。
+Engine 属于基础信息，可以独立修改。修改 Engine 不清空或改写原定义；定义页保留原值并展示不兼容原因。重新保存定义和启用时，后台都按当前 Engine 校验数据源 READY 注册。标准单表定义还要求模型已发布、存在字段且绑定有效 JDBC 存储数据源。
+
+SQL 服务先在基础信息中选择 Engine，再在定义页选择该 Engine 已就绪的 PostgreSQL 数据源 → 该数据源下的一个或多个模型 → SQL 和参数。`modelIds` 至少一个、不能包含空值或重复值，且所有模型的 `storageDataSourceId` 必须与 `dataSourceId` 相同。草稿、已发布和已停用模型均可关联，模型状态不参与保存、测试或启用判定。切换数据源后必须重新选择关联模型；切换 Engine 时保留原定义并由用户在定义页调整。
+
+标准单表与 SQL 共用数据服务模块内的模型选择工作区，统一目录树、名称/编码搜索、状态/数仓分层/数据源筛选、分页表格和跨页选中语义，但由各自业务外壳提供候选查询与提交规则。SQL 不再一次加载固定上限的模型到多选下拉框，而是复用通用 `/api/v1/models` Search API，并始终附加当前 PostgreSQL 数据源条件，以每页 20 条执行服务端分页。SQL 选择 Drawer 提供“全部模型/已选模型”视图，选择先保存在 Drawer 草稿中，取消不修改定义，确定后才写入有序 `modelIds`；原有关联顺序保持，新模型按选择顺序追加。
+
+已保存但不在当前候选页的 SQL 模型由 `related-models` 摘要接口回显。模型已删除、摘要无法加载或模型已不属于当前数据源时，原引用不会被静默清空；选择器会保留并解释问题，在用户移除或修复前禁止确认。切换数据源且存在关联模型时，页面必须先确认将清空关联模型、测试参数值和测试结果；取消后保持原数据源和编辑状态。
 
 SQL 定义示例：
 
@@ -102,23 +113,22 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
 
 ## 管理端创建与详情工作台
 
-数据服务列表的“新建服务”使用类型下拉菜单，不预设默认类型：
-
-- 标准单表服务：进入独立的紧凑表单页。
-- SQL 查询服务：进入独立的 SQL 工作台。
-- Groovy 脚本服务：进入嵌入 API Studio 简化工作台的脚本编辑页。
+数据服务列表的“新建服务”使用类型下拉菜单，不预设默认类型。选择类型后在列表右侧 Drawer 中维护编码、名称、目录、说明、Service Engine、公开路由和访问方式；确认后立即形成可恢复草稿并留在当前列表，不自动进入服务定义页。用户随后从创建成功提示、列表“继续配置”或详情“服务定义”页签手动进入定义编辑器。列表和详情明确展示“定义未配置”并禁止启用。
 
 对应前端路由为：
 
 | 路由 | 用途 | 页面权限 |
 | --- | --- | --- |
 | `/dataservice` | 数据服务列表 | `service.view` |
-| `/dataservice/new/standard` | 新建标准单表服务 | `service.create` |
-| `/dataservice/new/sql` | 新建 SQL 查询服务 | `service.create` |
-| `/dataservice/new/script` | 新建 Groovy 脚本服务 | `service.create` |
-| `/dataservice/:id` | 查看、编辑和执行生命周期操作 | `service.view` |
+| `/dataservice/:id` | 查看详情和执行生命周期操作 | `service.view` |
+| `/dataservice/:id/edit` | 修改基础信息 | `service.update` |
+| `/dataservice/:id/definition/edit` | 配置或修改服务定义 | `service.update` |
 
-创建页只提供“保存草稿”，不提供“保存并启用”。创建成功后用 `replace` 进入详情路由，因此浏览器返回会直接回到进入创建页之前的列表。列表将 `keyword`、`status`、`type`、`engine`、`directory`、`page` 和 `size` 写入 URL；`directory=uncategorized` 表示未分类。进入详情或创建页再返回时，筛选、目录和分页位置能够恢复。
+创建 Drawer 主操作为“创建服务”，不提供“保存并启用”。创建成功后关闭 Drawer、刷新列表，并在成功提示中提供“配置定义”快捷入口；不改变当前筛选、目录和分页上下文。列表将 `keyword`、`status`、`type`、`engine`、`directory`、`page` 和 `size` 写入 URL；`directory=uncategorized` 表示未分类。进入详情或定义编辑器再返回时，筛选、目录和分页位置能够恢复。
+
+详情页签固定为“基本信息、服务定义、关联模型、血缘分析、运行与发布”。标准单表定义页复用模型管理的全高目录与结果工作区，直接内嵌名称/编码、数据源和数仓分层筛选以及服务端分页单选表格，不再通过二级 Drawer 选择；默认只返回可发布模型，选择表格行后立即更新当前表单定义。已选模型在结果面板底部固定摘要栏展示 Schema、字段数、主键数和 Engine 兼容状态，完整字段通过模型详情查看。开启“显示不可用模型”后，未发布、无字段、数据源无效或当前 Engine 注册未就绪的模型保留在结果中但禁止选择并展示原因；不会批量加载所有候选字段。
+
+“血缘分析”使用正式血缘查询，不生成数据源、网关或消费者示例节点。第一版只支持标准单表服务：服务节点作为模型的终端消费者，通过 `EXPOSES` 连接模型或字段。服务启用到 Service Engine 成功后进入模型正式血缘，与是否发布到 API 网关无关；停用后仍展示，修改关联模型后立即切换到当前定义。草稿服务只在自身详情展示当前关联模型。已启用服务的字段级关系以当前 Revision 的部署字段白名单为准，与模型当前字段不一致时只连接可精确确认的字段并标记陈旧。SQL 和脚本服务显示暂未接入血缘。
 
 详情页根据服务端状态计算交互模式，不在前端提前猜测生命周期结果：
 
@@ -133,9 +143,9 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
 
 权限会继续叠加到以上状态：保存要求 `service.update`，详情页 SQL 测试要求 `service.update`，启用、发布到网关、停用、重试和清理要求 `service.publish`。标准服务创建还要求模型和 Engine 查看权限；SQL 服务创建还要求数据源查看权限。缺少依赖资源查看权限时页面持续显示提示，并禁用相关选择和维护操作。
 
-SQL 工作台在桌面端采用左右布局。左侧保存服务元数据、PostgreSQL 数据源、关联模型、Engine 和公开路由；右侧包含模型物理位置、Monaco SQL 编辑器、参数定义、临时测试值、输出字段、问题和预览数据。左右区域各自滚动，窄屏改为上下布局。SQL 编辑页面及 Monaco 均通过路由动态加载，不进入数据服务列表首屏包。
+SQL 工作台在桌面端采用左右布局。左侧顶部固定当前 Engine 中已就绪的 PostgreSQL 数据源和关联模型操作区，下方在独立滚动区域直接展示全部已选模型的名称、编码、状态和可复制物理位置，不再截断为前若干项；数据源不会随模型列表滚动。每个有效模型可以就地展开字段结构，同一时间只展开一个，首次展开时通过模型详情接口按需加载并缓存字段、平台类型、可空性、主键和说明，不批量请求所有模型字段。常驻解释性提示不占用左栏空间，仅在模型引用失效、数据源与 Engine 不兼容或权限不足等需要处理的状态下显示问题。更多模型通过约 1080px、窄屏自适应的选择 Drawer 管理。关联模型仍只用于来源说明和血缘，不构成 SQL 访问白名单。右侧使用可拖动的上下分栏，上层维护 Monaco SQL、参数定义和临时测试值，下层展示测试状态、问题和预览数据。预览表列头以两行合并展示字段名、平台类型与可空性，不再单独展示输出字段表。下层可整体收起并保留紧凑状态栏，展开高度由浏览器保存并可双击分隔条复位；编辑器外层不滚动，左侧、上层和结果表分别管理内部滚动。Engine、公开路由等基础信息在第一步或基础信息编辑页维护，窄屏仍使用安全的上下布局。SQL 编辑页面及 Monaco 均通过路由动态加载，不进入数据服务列表首屏包。
 
-脚本工作台由 API Studio 的 `@superhuang/super-api-studio-script-workbench` 包提供，DataScalpel 通过固定在 `data-scalpel-ui/vendor` 的 `3.0.0-SNAPSHOT` tarball 使用，不使用 iframe，也不复制 Monaco Groovy 语言实现。DataScalpel 页面只管理名称、编码、目录、默认数据源、Engine、路由、访问方式和生命周期；受控 `ScriptWorkbench` 管理脚本编辑、测试 JSON、执行结果、日志、SQL Trace、耗时和错误定位。补全和执行均由浏览器访问 Admin，再由 Admin 访问目标 Engine，浏览器不直接接触 Engine 地址或 Management Token。
+脚本工作台由 API Studio 的 `@superhuang/super-api-studio-script-workbench` 包提供，DataScalpel 通过固定在 `data-scalpel-ui/vendor` 的 `3.0.0-SNAPSHOT` tarball 使用，不使用 iframe，也不复制 Monaco Groovy 语言实现。定义页左栏选择当前 Engine 中已就绪的默认 JDBC 数据源并维护请求 Example，右侧完整宽度交给受控 `ScriptWorkbench` 管理脚本编辑、执行结果、日志、SQL Trace、耗时和错误定位；执行时使用左栏当前选中的 Example。脚本编辑器与执行结果之间支持上下拖动调整高度、键盘微调和双击恢复默认值，并在本地记忆高度偏好。补全和执行均由浏览器访问 Admin，再由 Admin 访问目标 Engine，浏览器不直接接触 Engine 地址或 Management Token。
 
 页面仅对持久化服务定义计算未保存状态；SQL 测试参数、脚本测试 JSON、问题和执行结果不参与 dirty fingerprint，也不会随服务保存。站内跳转使用路由 blocker，刷新、关闭标签页和浏览器离开使用 `beforeunload`。启用或重新启用前若存在未保存修改，必须先保存。保存校验失败时显示错误摘要并定位第一个错误字段。
 

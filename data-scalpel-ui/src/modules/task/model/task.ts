@@ -1,7 +1,13 @@
 import type { CanvasDefinition } from '../canvas/canvasTypes';
 import type { DataModelStatus, PhysicalTableMode } from '../../model';
 
-export type TaskType = 'LOCAL_SQL' | 'SPARK_CANVAS' | 'SPARK_STREAMING_CANVAS';
+export type TaskType =
+  | 'LOCAL_SQL'
+  | 'SPARK_CANVAS'
+  | 'SPARK_STREAMING_CANVAS'
+  | 'SPARK_MODEL_QUALITY'
+  | 'SPARK_JAR'
+  | 'SPARK_STREAMING_JAR';
 
 export type TaskStatus = 'DRAFT' | 'PUBLISHED' | 'DISABLED';
 
@@ -76,6 +82,8 @@ export interface DataTask {
   definitionVersion: number | null;
   outputModelId: string | null;
   outputModelName: string | null;
+  qualityTargetModelId?: string | null;
+  qualityTargetModelName?: string | null;
   createdAt: string;
   updatedAt: string;
 }
@@ -89,7 +97,13 @@ export interface TaskModelReference {
 
 export type ModelTaskRelationRole = 'INPUT' | 'OUTPUT';
 
-export type ModelTaskReferenceType = 'LOCAL_SQL_INPUT' | 'LOCAL_SQL_OUTPUT' | 'CANVAS_NODE';
+export type ModelTaskReferenceType =
+  | 'LOCAL_SQL_INPUT'
+  | 'LOCAL_SQL_OUTPUT'
+  | 'CANVAS_NODE'
+  | 'MODEL_QUALITY_TARGET'
+  | 'SPARK_JAR_RESOURCE_BINDING'
+  | 'CURRENT_LINEAGE';
 
 export interface TaskModelReferenceLocation {
   role: ModelTaskRelationRole;
@@ -152,8 +166,79 @@ export interface CanvasTaskDefinition {
   taskId: string;
   configured: boolean;
   version: number;
-  definition: CanvasDefinition;
+  loadStatus: 'UNCONFIGURED' | 'LOADED' | 'INCOMPATIBLE';
+  schemaVersion: number;
+  schemaMinorVersion: number;
+  definition: CanvasDefinition | null;
+  message: string | null;
   updatedAt: string | null;
+}
+
+export interface ModelQualityTaskDefinitionSkippedRule {
+  ruleId: string;
+  ruleName: string;
+  reason: string;
+}
+
+export interface ModelQualityTaskDefinition {
+  taskId: string;
+  configured: boolean;
+  version: number | null;
+  targetModel: TaskModelReference | null;
+  failureSampleLimit: number;
+  executableRuleCount: number;
+  skippedRuleCount: number;
+  skippedRules: ModelQualityTaskDefinitionSkippedRule[];
+  updatedAt: string | null;
+}
+
+export type SparkJarJobMode = 'BATCH' | 'STREAMING';
+
+export type SparkJarResourceType = 'MODEL' | 'JDBC_DATA_SOURCE' | 'KAFKA_TOPIC';
+
+export type SparkJarResourceAccessMode = 'READ' | 'WRITE' | 'READ_WRITE';
+
+export interface SparkJarDefinitionEntry {
+  name: string;
+  value: string;
+}
+
+export interface SparkJarResourceBinding {
+  bindingName: string;
+  resourceType: SparkJarResourceType;
+  resourceId: string;
+  resourceName: string | null;
+  topicName: string | null;
+  accessMode: SparkJarResourceAccessMode;
+}
+
+export interface SparkJarArtifact {
+  fileName: string;
+  sha256: string;
+  sizeBytes: number;
+  jobClass: string;
+  jobApiVersion: number;
+  jobMode: SparkJarJobMode;
+}
+
+export interface SparkJarTaskDefinition {
+  taskId: string;
+  configured: boolean;
+  definitionVersion: number;
+  jobMode: SparkJarJobMode;
+  jar: SparkJarArtifact | null;
+  parameters: SparkJarDefinitionEntry[];
+  sparkConf: SparkJarDefinitionEntry[];
+  resourceBindings: SparkJarResourceBinding[];
+  timeoutSeconds: number;
+  updatedAt: string | null;
+}
+
+export interface UpdateSparkJarTaskDefinitionRequest {
+  parameters: SparkJarDefinitionEntry[];
+  sparkConf: SparkJarDefinitionEntry[];
+  resourceBindings: Array<Omit<SparkJarResourceBinding, 'resourceName'>>;
+  timeoutSeconds: number;
 }
 
 export interface UpdateLocalSqlTaskDefinitionRequest {
@@ -199,6 +284,15 @@ export interface LocalSqlDefinitionValidation {
   problems: LocalSqlDefinitionValidationProblem[];
   columns: LocalSqlDefinitionValidationColumn[];
   targetColumns: string[];
+  lineageCoverage: 'MODEL_ONLY' | 'FIELD_PARTIAL' | 'FIELD_COMPLETE';
+  lineageAnalysisStatus: 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
+  lineageWarnings: LocalSqlLineageWarning[];
+}
+
+export interface LocalSqlLineageWarning {
+  code: string;
+  message: string;
+  outputOrdinal: number | null;
 }
 
 export interface TaskRun {
@@ -222,11 +316,45 @@ export interface TaskRun {
   endedAt: string | null;
   deadlineAt: string | null;
   affectedRows: number | null;
+  userJarFileName: string | null;
+  userJarSha256: string | null;
+  userJarSizeBytes: number | null;
+  qualityConclusion?: 'PASSED' | 'FAILED' | null;
+  qualityTotalRules?: number | null;
+  qualityPassedRules?: number | null;
+  qualityFailedRules?: number | null;
+  qualitySkippedRules?: number | null;
+  qualityCheckedRows?: number | null;
+  userJobObservability?: UserJobObservability | null;
   message: string | null;
   errorDetail: string | null;
   executionError: TaskRunExecutionError | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type UserJobMetricKind = 'COUNTER' | 'GAUGE' | 'TIMER';
+
+export interface UserJobStatus {
+  phase: string;
+  message: string;
+  updatedAt: string;
+}
+
+export interface UserJobMetricSnapshot {
+  name: string;
+  kind: UserJobMetricKind;
+  counterValue: number | null;
+  gaugeValue: number | null;
+  count: number | null;
+  lastDurationMillis: number | null;
+  totalDurationMillis: number | null;
+  maxDurationMillis: number | null;
+}
+
+export interface UserJobObservability {
+  status: UserJobStatus | null;
+  metrics: UserJobMetricSnapshot[];
 }
 
 export type StreamingDeploymentDesiredState = 'RUNNING' | 'STOPPED';
@@ -245,7 +373,9 @@ export type StreamingQueryState =
   | 'STOPPED'
   | 'FAILED';
 
-export type StreamingSinkType = 'KAFKA' | 'JDBC';
+export type StreamingSinkType = 'KAFKA' | 'JDBC' | 'CUSTOM';
+
+export type StreamingCheckpointMode = 'CONTINUE' | 'FRESH';
 
 export interface TaskStreamingConfiguration {
   taskId: string;
@@ -281,6 +411,9 @@ export interface TaskStreamingDeployment {
   computeEngineId: string;
   currentRunId: string | null;
   checkpointKeyPrefix: string;
+  checkpointGeneration: number;
+  checkpointStartMode: StreamingCheckpointMode;
+  checkpointSourceDeploymentId: string | null;
   desiredState: StreamingDeploymentDesiredState;
   actualState: StreamingDeploymentActualState;
   applicationId: string | null;
@@ -292,6 +425,16 @@ export interface TaskStreamingDeployment {
   lastProgressAt: string | null;
   lastErrorAt: string | null;
   lastError: string | null;
+  sourceNodeId: string | null;
+  sourceSignature: string | null;
+  committedOffset: string | null;
+  windowStart: string | null;
+  windowEnd: string | null;
+  rowCount: number | null;
+  pollDurationMillis: number | null;
+  pollTime: string | null;
+  cursorLagMillis: number | null;
+  userJobObservability?: UserJobObservability | null;
   queries: TaskStreamingQuery[];
 }
 
@@ -334,12 +477,18 @@ export const taskTypeLabels: Record<TaskType, string> = {
   LOCAL_SQL: '本地 SQL',
   SPARK_CANVAS: 'Spark 编排',
   SPARK_STREAMING_CANVAS: 'Spark 实时编排',
+  SPARK_MODEL_QUALITY: 'Spark 模型质检',
+  SPARK_JAR: 'Spark JAR',
+  SPARK_STREAMING_JAR: 'Spark 实时 JAR',
 };
 
 export const taskTypeColors: Record<TaskType, string> = {
   LOCAL_SQL: 'blue',
   SPARK_CANVAS: 'purple',
   SPARK_STREAMING_CANVAS: 'magenta',
+  SPARK_MODEL_QUALITY: 'cyan',
+  SPARK_JAR: 'geekblue',
+  SPARK_STREAMING_JAR: 'orange',
 };
 
 export const taskStatusLabels: Record<TaskStatus, string> = {
@@ -463,4 +612,5 @@ export const streamingQueryStateColors: Record<StreamingQueryState, string> = {
 export const streamingSinkTypeLabels: Record<StreamingSinkType, string> = {
   KAFKA: 'Kafka',
   JDBC: 'JDBC',
+  CUSTOM: '自定义',
 };

@@ -6,6 +6,7 @@ import {
   ShareAltOutlined,
 } from '@ant-design/icons';
 import {
+  Alert,
   Badge,
   Button,
   Card,
@@ -41,6 +42,7 @@ import {
   type CreateDataSourceRequest,
   type ConnectionTestResult,
   type DataSource,
+  type DataSourceAssistantDraft,
   type DataSourceConnectionInput,
   type DataSourceConnectionKind,
   type DataSourcePurpose,
@@ -65,6 +67,7 @@ interface DataSourceDrawerProps {
   dataSource: DataSource | null;
   open: boolean;
   initialDirectoryId?: string;
+  initialDraft?: DataSourceAssistantDraft | null;
   canViewDirectories: boolean;
   canTest: boolean;
   onClose: () => void;
@@ -199,6 +202,8 @@ const jdbcUrlPreview = (
     case 'DAMENG': return `jdbc:dm://${host}:${port}/${database}`;
     case 'KINGBASE': return `jdbc:kingbase8://${host}:${port}/${database}`;
     case 'OPENGAUSS': return `jdbc:opengauss://${host}:${port}/${database}`;
+    case 'TDENGINE_WEBSOCKET': return `jdbc:TAOS-WS://${host}:${port}/${database}`;
+    case 'TDENGINE_RESTFUL': return `jdbc:TAOS-RS://${host}:${port}/${database}`;
     default: return '';
   }
 };
@@ -523,6 +528,7 @@ export const DataSourceDrawer = ({
   dataSource,
   open,
   initialDirectoryId,
+  initialDraft,
   canViewDirectories,
   canTest,
   onClose,
@@ -556,14 +562,15 @@ export const DataSourceDrawer = ({
     if (!open) return;
     form.resetFields();
     if (dataSource) {
+      const updateDraft = initialDraft?.mode === 'UPDATE' ? initialDraft : null;
       form.setFieldsValue({
         code: dataSource.code,
-        name: dataSource.name,
-        directoryId: dataSource.directoryId ?? undefined,
-        purposes: dataSource.purposes,
+        name: updateDraft?.name ?? dataSource.name,
+        directoryId: updateDraft ? (updateDraft.directoryId ?? undefined) : (dataSource.directoryId ?? undefined),
+        purposes: updateDraft?.purposes ?? dataSource.purposes,
         type: dataSource.type,
-        enabled: dataSource.enabled,
-        description: dataSource.description ?? undefined,
+        enabled: updateDraft?.enabled ?? dataSource.enabled,
+        description: updateDraft ? (updateDraft.description ?? undefined) : (dataSource.description ?? undefined),
         connection: setEditingConnection(
           dataSource,
           dataSourceTypesQuery.data?.find((item) => item.id === dataSource.type),
@@ -571,15 +578,19 @@ export const DataSourceDrawer = ({
       });
       return;
     }
-    const defaultType: DataSourceType = 'POSTGRESQL';
+    const createDraft = initialDraft?.mode === 'CREATE' ? initialDraft : null;
+    const defaultType: DataSourceType = createDraft?.type ?? 'POSTGRESQL';
     form.setFieldsValue({
-      directoryId: initialDirectoryId,
-      purposes: ['SOURCE'],
+      code: createDraft?.code,
+      name: createDraft?.name,
+      directoryId: createDraft ? (createDraft.directoryId ?? undefined) : initialDirectoryId,
+      purposes: createDraft?.purposes ?? ['SOURCE'],
       type: defaultType,
-      enabled: true,
+      enabled: createDraft?.enabled ?? true,
+      description: createDraft?.description ?? undefined,
       connection: defaultConnection(defaultType, dataSourceTypesQuery.data?.find((item) => item.id === defaultType)),
     });
-  }, [dataSource, dataSourceTypesQuery.data, form, initialDirectoryId, open]);
+  }, [dataSource, dataSourceTypesQuery.data, form, initialDirectoryId, initialDraft, open]);
 
   const closeDrawer = () => {
     setTestFailure(null);
@@ -655,9 +666,7 @@ export const DataSourceDrawer = ({
     label: dataSourcePurposeLabels[purpose],
     disabled: !supportedPurposes.includes(purpose),
   }));
-  const testAvailable = canTest
-    && (selectedKind === 'JDBC' || selectedKind === 'HTTP_API')
-    && Boolean(selectedDefinition?.connectionTestAvailable);
+  const testAvailable = canTest && Boolean(selectedDefinition?.connectionTestAvailable);
   const jdbcPreview = selectedKind === 'JDBC' ? jdbcUrlPreview(selectedType, watchedConnection) : '';
   const sections: { key: DataSourceFormSection; label: string }[] = [
     { key: 'basic', label: '基本信息' },
@@ -715,6 +724,7 @@ export const DataSourceDrawer = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={(
           <div className="data-source-drawer-title">
             <span>{editing ? '编辑数据源' : '新建数据源'}</span>
@@ -805,6 +815,26 @@ export const DataSourceDrawer = ({
                 extra={<Badge status={testStatus.status} text={testStatus.text} />}
               >
                 <Row gutter={12}>
+                  {selectedType === 'TDENGINE_WEBSOCKET' && (
+                    <Col span={24}>
+                      <Alert
+                        type="info"
+                        showIcon
+                        title="推荐的 TDengine 连接方式"
+                        description="第一阶段仅发现和读取超级表，不列出子表，也不开放写入与自定义 SQL 输入。"
+                      />
+                    </Col>
+                  )}
+                  {selectedType === 'TDENGINE_RESTFUL' && (
+                    <Col span={24}>
+                      <Alert
+                        type="warning"
+                        showIcon
+                        title="RESTful JDBC 仅用于旧环境兼容"
+                        description="TDengine 官方已弃用 RestfulDriver；新连接请优先选择 WebSocket JDBC。batchfetch/batchLoad=true 不受支持。"
+                      />
+                    </Col>
+                  )}
                   {selectedKind === 'JDBC' && <JdbcConnectionFields definition={selectedDefinition} editing={editing} />}
                   {selectedKind === 'KAFKA' && <KafkaConnectionFields />}
                   {selectedKind === 'S3' && <S3ConnectionFields />}

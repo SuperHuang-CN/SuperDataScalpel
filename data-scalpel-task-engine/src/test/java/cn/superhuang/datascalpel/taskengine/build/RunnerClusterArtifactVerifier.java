@@ -35,6 +35,16 @@ public final class RunnerClusterArtifactVerifier {
             "software/amazon/awssdk/services/s3/S3Client.class",
             "org/apache/poi/xssf/usermodel/XSSFWorkbook.class",
             "org/apache/spark/sql/v2/avro/AvroDataSourceV2.class",
+            "cn/superhuang/datascalpel/sdk/SparkBatchJob.class",
+            "oracle/jdbc/OracleDriver.class",
+            "com/microsoft/sqlserver/jdbc/SQLServerDriver.class",
+            "com/clickhouse/jdbc/ClickHouseDriver.class",
+            "dm/jdbc/driver/DmDriver.class",
+            "com/kingbase8/Driver.class",
+            "org/opengauss/Driver.class",
+            "com/taosdata/jdbc/tmq/TaosConsumer.class",
+            "com/taosdata/jdbc/ws/tmq/WSConsumer.class",
+            "org/java_websocket/client/WebSocketClient.class",
             "org/apache/sedona/spark/SedonaContext.class",
             "org/apache/spark/sql/sedona_sql/UDT/GeometryUDT.class",
             "org/apache/spark/sql/execution/datasources/geoparquet/GeoParquetFileFormat.class",
@@ -183,6 +193,14 @@ public final class RunnerClusterArtifactVerifier {
             try {
                 Class.forName(SHAPEFILE_DATA_STORE_CLASS, true, loader);
                 Class.forName(GEOPARQUET_FILE_FORMAT_CLASS, true, loader);
+                Class.forName("org.postgresql.Driver", true, loader);
+                Class.forName("com.mysql.cj.jdbc.Driver", true, loader);
+                Class.forName("oracle.jdbc.OracleDriver", true, loader);
+                Class.forName("com.microsoft.sqlserver.jdbc.SQLServerDriver", true, loader);
+                Class.forName("com.clickhouse.jdbc.ClickHouseDriver", true, loader);
+                Class.forName("dm.jdbc.driver.DmDriver", true, loader);
+                Class.forName("com.kingbase8.Driver", true, loader);
+                Class.forName("org.opengauss.Driver", true, loader);
                 Class<?> crs = Class.forName(CRS_CLASS, true, loader);
                 Object decoded = crs.getMethod("decode", String.class, boolean.class)
                         .invoke(null, "EPSG:4326", true);

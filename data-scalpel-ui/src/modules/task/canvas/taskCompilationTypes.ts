@@ -10,7 +10,7 @@ import type {
 
 export interface TaskCompilationMetadataTable {
   tableName: string;
-  objectType: 'TABLE' | 'VIEW' | 'API_RESOURCE' | 'SPATIAL_FEATURE_RESOURCE';
+  objectType: 'TABLE' | 'VIEW' | 'SUPERTABLE' | 'API_RESOURCE' | 'SPATIAL_FEATURE_RESOURCE';
   columns: CanvasColumnSchema[];
   uniqueKeys: TaskCompilationMetadataUniqueKey[];
 }
@@ -25,9 +25,30 @@ export interface TaskCompilationMetadataDataSource {
   id: string;
   enabled: boolean;
   connectionKind: 'JDBC' | 'HTTP_API' | 'KAFKA' | 'S3';
-  jdbcDatabaseType: 'POSTGRESQL' | 'MYSQL' | null;
+  jdbcDatabaseType:
+    | 'POSTGRESQL'
+    | 'MYSQL'
+    | 'ORACLE'
+    | 'SQL_SERVER'
+    | 'CLICKHOUSE'
+    | 'DAMENG'
+    | 'OPENGAUSS'
+    | 'KINGBASE'
+    | 'TDENGINE_WEBSOCKET'
+    | 'TDENGINE_RESTFUL'
+    | null;
   purposes: DataSourcePurpose[];
   tables: TaskCompilationMetadataTable[];
+  tdEngineTmqTopics: TaskCompilationMetadataTdEngineTmqTopic[];
+}
+
+export interface TaskCompilationMetadataTdEngineTmqTopic {
+  topicName: string;
+  catalogName: string;
+  supertableName: string;
+  definitionFingerprint: string;
+  timePrecision: 'MS' | 'US';
+  columns: CanvasColumnSchema[];
 }
 
 export interface TaskCompilationMetadataModel {
@@ -42,6 +63,7 @@ export interface TaskCompilationMetadataModel {
   schemaName: string | null;
   physicalTableName: string;
   columns: CanvasColumnSchema[];
+  uniqueKeys: TaskCompilationMetadataUniqueKey[];
 }
 
 export interface TaskCompilationMetadataFileDatasetTable {
@@ -80,6 +102,31 @@ export interface TaskCompilationNodeResult {
   issues: CanvasValidationIssue[];
 }
 
+export type CanvasLineageAnalysisStatus = 'COMPLETE' | 'PARTIAL' | 'UNAVAILABLE';
+export type CanvasLineageCoverage = 'MODEL_ONLY' | 'FIELD_PARTIAL' | 'FIELD_COMPLETE';
+
+export interface CanvasLineageWarning {
+  code: string;
+  message: string;
+  nodeId: string | null;
+  flowKey: string | null;
+  outputOrdinal: number | null;
+}
+
+export interface CanvasLineageFlowPreview {
+  flowKey: string;
+  outputNodeId: string;
+  coverage: CanvasLineageCoverage;
+  warnings: CanvasLineageWarning[];
+}
+
+export interface CanvasLineageCompilationPreview {
+  analysisStatus: CanvasLineageAnalysisStatus;
+  coverage: CanvasLineageCoverage | null;
+  flows: CanvasLineageFlowPreview[];
+  warnings: CanvasLineageWarning[];
+}
+
 export interface TaskCompilationResponse {
   requestId: string;
   taskType: 'CANVAS';
@@ -88,6 +135,7 @@ export interface TaskCompilationResponse {
   sparkApplicationId: string;
   canvasIssues: CanvasValidationIssue[];
   nodeResults: TaskCompilationNodeResult[];
+  lineage?: CanvasLineageCompilationPreview | null;
 }
 
 export interface TaskCompilationCancellationResponse {

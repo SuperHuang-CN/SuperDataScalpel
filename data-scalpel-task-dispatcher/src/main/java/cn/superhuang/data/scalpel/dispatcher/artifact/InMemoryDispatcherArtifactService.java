@@ -19,11 +19,14 @@ public class InMemoryDispatcherArtifactService implements DispatcherArtifactServ
 
     @Override
     public ArtifactLaunchAccess prepareLaunch(ExecutionLaunch launch) {
+        var userJar = launch.userJar() == null ? null
+                : new cn.superhuang.data.scalpel.contract.execution.LaunchUserJarDownload(
+                URI.create("http://artifact.test/user-job.jar"), launch.userJar().sha256(), launch.userJar().sizeBytes());
         return new ArtifactLaunchAccess(
                 URI.create("http://artifact.test/manifest"),
                 URI.create("http://artifact.test/result"),
                 URI.create("http://artifact.test/log"),
-                10 * 1024 * 1024);
+                10 * 1024 * 1024, java.util.List.of(), userJar);
     }
 
     @Override

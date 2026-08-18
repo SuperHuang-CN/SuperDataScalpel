@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeNullHandling } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { nullHandlingCanvasView } from './canvasView';
 
 export const nullHandlingSpec = createCanvasNodeSpec({
   type: CanvasNodeType.NullHandling,
@@ -15,9 +16,9 @@ export const nullHandlingSpec = createCanvasNodeSpec({
   searchKeywords: ['null', '空值', '缺失值', '填充', '删除行'],
   iconKey: CanvasNodeIconKey.NullHandling,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: nullHandlingCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 14,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createNullHandlingConfiguration,
   summarize: summarizeNullHandling,

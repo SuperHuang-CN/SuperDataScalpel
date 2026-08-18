@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeSpatialServiceInput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { spatialServiceInputCanvasView } from './canvasView';
 
 export const spatialServiceInputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.SpatialServiceInput,
@@ -15,9 +16,9 @@ export const spatialServiceInputSpec = createCanvasNodeSpec({
   searchKeywords: ['arcgis', 'wfs', 'ogc', '空间', '要素'],
   iconKey: CanvasNodeIconKey.Api,
   order: 11,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: spatialServiceInputCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 26,
+  introducedInMinor: 0,
   graph: { minInputs: 0, maxInputs: 0, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createSpatialServiceInputConfiguration,
   summarize: summarizeSpatialServiceInput,

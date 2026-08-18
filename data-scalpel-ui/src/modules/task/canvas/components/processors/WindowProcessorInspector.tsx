@@ -267,45 +267,46 @@ export const WindowProcessorInspector = ({
     apply: async () => {
       if (executionMode !== 'BATCH') {
         setDraftError('WINDOW 仅支持批处理任务');
-        return false;
+
       }
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (orderBy.length === 0) {
           setDraftError('至少配置一个窗口排序字段');
-          return false;
+
         }
         if (functions.length === 0) {
           setDraftError('至少配置一个窗口函数');
-          return false;
+
         }
         if (functions.length > CANVAS_WINDOW_MAX_FUNCTIONS) {
           setDraftError(`窗口函数不能超过 ${CANVAS_WINDOW_MAX_FUNCTIONS} 项`);
-          return false;
+
         }
         const outputNames = new Set<string>();
         for (const item of functions) {
           if (!item.outputColumnName.trim()) {
             setDraftError('每个窗口函数都必须设置输出字段名');
-            return false;
+
           }
           if (!outputNames.add(item.outputColumnName.trim())) {
             setDraftError(`窗口输出字段重复：${item.outputColumnName}`);
-            return false;
+
           }
           if (sourceNames.has(item.outputColumnName.trim())) {
             setDraftError(`窗口输出字段与来源字段冲突：${item.outputColumnName}`);
-            return false;
+
           }
           if ((item.kind === 'LAG' || item.kind === 'LEAD')
             && (item.offset < 1 || item.offset > CANVAS_WINDOW_MAX_OFFSET)) {
             setDraftError(`LAG/LEAD offset 必须在 1..${CANVAS_WINDOW_MAX_OFFSET}`);
-            return false;
+
           }
         }
         const configuration: WindowConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           partitionByColumns: [...partitionByColumns],
           orderBy: structuredClone(orderBy),
           functions: structuredClone(functions).map((item) => ({

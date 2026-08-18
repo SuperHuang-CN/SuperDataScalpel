@@ -4,6 +4,8 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
+import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
+import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.business.model.domain.ModelWarehouseLayer;
@@ -82,7 +84,8 @@ public class ModelMetadataExcelService {
 
     private static final String CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
     private static final String FILE_MARKER = "DATASCALPEL_MODEL_METADATA";
-    private static final int FORMAT_VERSION = 4;
+    private static final int FORMAT_VERSION = 5;
+    private static final int V4_FORMAT_VERSION = 4;
     private static final int V3_FORMAT_VERSION = 3;
     private static final int V2_FORMAT_VERSION = 2;
     private static final int LEGACY_FORMAT_VERSION = 1;
@@ -100,8 +103,12 @@ public class ModelMetadataExcelService {
     private static final List<String> LEGACY_MODEL_HEADERS = List.of(
             "模型编码*", "模型名称*", "目标物理表名*", "模型说明", "ClickHouse排序键"
     );
-    private static final List<String> MODEL_HEADERS = List.of(
+    private static final List<String> V3_V4_MODEL_HEADERS = List.of(
             "模型编码*", "模型名称*", "数仓分层编码", "数仓分层名称",
+            "目标物理表名*", "模型说明", "ClickHouse排序键"
+    );
+    private static final List<String> MODEL_HEADERS = List.of(
+            "模型编码*", "模型名称*", "数仓分层编码", "数仓分层名称", "模型目录路径",
             "目标物理表名*", "模型说明", "ClickHouse排序键"
     );
     private static final List<String> V1_FIELD_HEADERS = List.of(
@@ -121,6 +128,7 @@ public class ModelMetadataExcelService {
 
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
+    private final DirectoryService directoryService;
     private final ModelWarehouseLayerRepository warehouseLayerRepository;
     private final DataSourceRepository dataSourceRepository;
     private final DialectRegistry dialectRegistry;
@@ -131,6 +139,7 @@ public class ModelMetadataExcelService {
     public ModelMetadataExcelService(
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
+            DirectoryService directoryService,
             ModelWarehouseLayerRepository warehouseLayerRepository,
             DataSourceRepository dataSourceRepository,
             DialectRegistry dialectRegistry,
@@ -140,6 +149,7 @@ public class ModelMetadataExcelService {
     ) {
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
+        this.directoryService = directoryService;
         this.warehouseLayerRepository = warehouseLayerRepository;
         this.dataSourceRepository = dataSourceRepository;
         this.dialectRegistry = dialectRegistry;
@@ -195,10 +205,23 @@ public class ModelMetadataExcelService {
                         .distinct()
                         .toList()
         ).stream().collect(Collectors.toMap(StandardDictionary::getId, Function.identity()));
+        DirectoryService.DirectoryPathIndex directoryPaths = directoryService.pathIndex(DirectoryScope.MODEL);
+        Map<UUID, String> directoryPathsByModelId = new HashMap<>();
+        for (DataModel model : models) {
+            DirectoryService.DirectoryPathResolution resolution = directoryPaths.resolve(model.getDirectoryId());
+            if (!resolution.resolved()) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "模型“" + model.getCode() + "”的目录路径无法导出：" + resolution.issue()
+                );
+            }
+            directoryPathsByModelId.put(model.getId(), resolution.path());
+        }
         List<ExportModel> exports = models.stream()
                 .map(model -> new ExportModel(
                         model,
                         layersById.get(model.getWarehouseLayerId()),
+                        directoryPathsByModelId.get(model.getId()),
                         fieldsByModel.getOrDefault(model.getId(), List.of()),
                         dictionariesById
                 ))
@@ -230,7 +253,7 @@ public class ModelMetadataExcelService {
                     "模型",
                     MODEL_HEADERS,
                     styles,
-                    new int[]{20, 24, 18, 24, 24, 42, 28}
+                    new int[]{20, 24, 18, 24, 34, 24, 42, 28}
             );
             Sheet fieldSheet = createDataSheet(
                     workbook, "字段", FIELD_HEADERS, styles,
@@ -253,9 +276,10 @@ public class ModelMetadataExcelService {
                 writeText(row, 1, model.getName(), styles.text());
                 writeText(row, 2, layer == null ? null : layer.getCode(), styles.text());
                 writeText(row, 3, layer == null ? null : layer.getName(), styles.text());
-                writeText(row, 4, model.getPhysicalTableName(), styles.text());
-                writeText(row, 5, model.getDescription(), styles.text());
-                writeText(row, 6, String.join(",", model.getClickHouseOrderByColumns()), styles.text());
+                writeText(row, 4, export.directoryPath(), styles.text());
+                writeText(row, 5, model.getPhysicalTableName(), styles.text());
+                writeText(row, 6, model.getDescription(), styles.text());
+                writeText(row, 7, String.join(",", model.getClickHouseOrderByColumns()), styles.text());
                 for (DataModelField field : export.fields()) {
                     Row fieldRow = fieldSheet.createRow(fieldRowIndex++);
                     writeText(fieldRow, 0, model.getCode(), styles.text());
@@ -291,9 +315,10 @@ public class ModelMetadataExcelService {
         String[][] rows = {
                 {"文件标识", FILE_MARKER},
                 {"格式版本", String.valueOf(FORMAT_VERSION)},
-                {"用途", "仅导入导出模型、数仓分层编码和字段元数据，不包含数据源连接、目录、状态、UUID 或物理表数据。"},
-                {"导入结果", "所有模型固定创建为 MANAGED + DRAFT，不会自动创建物理表。"},
+                {"用途", "仅导入导出模型、模型目录路径、数仓分层编码和字段元数据，不包含数据源连接、状态、UUID 或物理表数据。"},
+                {"导入结果", "整份文件原子创建为 MANAGED + DRAFT；任一模型失败时全部回滚；不会自动创建物理表。"},
                 {"填写规则", "带 * 的列必填；编码只允许小写字母、数字和下划线，且必须以小写字母开头。"},
+                {"模型目录路径", "使用 / 分隔已有 MODEL 目录，例如 DW/水库工程；逐级忽略大小写匹配；空值表示未分类；导入不会自动创建目录。"},
                 {"数仓分层", "按数仓分层编码匹配当前系统中的启用分层；名称仅用于导出展示，导入时不参与匹配。"},
                 {"码表", "字段可按码表编码绑定当前系统中的启用码表；码表必须与字段类型兼容，旧版文件缺少该列时按未绑定处理。"},
                 {"字段类型", String.join("、", enumNames(PlatformDataType.values()))},
@@ -350,11 +375,13 @@ public class ModelMetadataExcelService {
             Sheet fieldSheet = requireSheet(workbook, "字段");
             requireHeaders(
                     modelSheet,
-                    formatVersion >= V3_FORMAT_VERSION ? MODEL_HEADERS : LEGACY_MODEL_HEADERS
+                    formatVersion >= FORMAT_VERSION
+                            ? MODEL_HEADERS
+                            : formatVersion >= V3_FORMAT_VERSION ? V3_V4_MODEL_HEADERS : LEGACY_MODEL_HEADERS
             );
             requireHeaders(
                     fieldSheet,
-                    formatVersion == FORMAT_VERSION
+                    formatVersion >= V4_FORMAT_VERSION
                             ? FIELD_HEADERS
                             : formatVersion == LEGACY_FORMAT_VERSION ? V1_FIELD_HEADERS : V2_V3_FIELD_HEADERS
             );
@@ -399,6 +426,7 @@ public class ModelMetadataExcelService {
         if (parsedVersion != LEGACY_FORMAT_VERSION
                 && parsedVersion != V2_FORMAT_VERSION
                 && parsedVersion != V3_FORMAT_VERSION
+                && parsedVersion != V4_FORMAT_VERSION
                 && parsedVersion != FORMAT_VERSION) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "暂不支持该 Excel 格式版本：" + version);
         }
@@ -427,7 +455,9 @@ public class ModelMetadataExcelService {
     }
 
     private static void readModels(Sheet sheet, ParsedWorkbook parsed, int formatVersion) {
-        int columnCount = formatVersion >= V3_FORMAT_VERSION ? MODEL_HEADERS.size() : LEGACY_MODEL_HEADERS.size();
+        int columnCount = formatVersion >= FORMAT_VERSION
+                ? MODEL_HEADERS.size()
+                : formatVersion >= V3_FORMAT_VERSION ? V3_V4_MODEL_HEADERS.size() : LEGACY_MODEL_HEADERS.size();
         for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
             Row row = sheet.getRow(rowIndex);
             if (blankRow(row, columnCount)) {
@@ -455,6 +485,17 @@ public class ModelMetadataExcelService {
                 descriptionColumn = 5;
                 orderByColumn = 6;
             }
+            if (formatVersion >= FORMAT_VERSION) {
+                model.directoryPath = optionalText(
+                        cellText(row, 4, model.issues, "模型", rowNumber),
+                        "模型目录路径",
+                        1000,
+                        model.issues
+                );
+                physicalTableColumn = 5;
+                descriptionColumn = 6;
+                orderByColumn = 7;
+            }
             String physicalName = normalizedText(cellText(
                     row, physicalTableColumn, model.issues, "模型", rowNumber
             ));
@@ -477,7 +518,7 @@ public class ModelMetadataExcelService {
     }
 
     private static void readFields(Sheet sheet, ParsedWorkbook parsed, int formatVersion) {
-        int columnCount = formatVersion == FORMAT_VERSION
+        int columnCount = formatVersion >= V4_FORMAT_VERSION
                 ? FIELD_HEADERS.size()
                 : formatVersion == LEGACY_FORMAT_VERSION ? V1_FIELD_HEADERS.size() : V2_V3_FIELD_HEADERS.size();
         for (int rowIndex = 1; rowIndex <= sheet.getLastRowNum(); rowIndex++) {
@@ -516,7 +557,7 @@ public class ModelMetadataExcelService {
                 field.primaryKey = booleanValue(cellText(row, 12, field.issues, "字段", rowNumber), "是否主键", field.issues);
                 field.sortOrder = integer(cellText(row, 13, field.issues, "字段", rowNumber), "排序值", true, field.issues);
                 field.description = optionalText(cellText(row, 14, field.issues, "字段", rowNumber), "字段说明", 500, field.issues);
-                if (formatVersion == FORMAT_VERSION) {
+                if (formatVersion >= V4_FORMAT_VERSION) {
                     field.standardDictionaryCode = normalizedDictionaryCode(
                             cellText(row, 15, field.issues, "字段", rowNumber),
                             field.issues
@@ -560,6 +601,11 @@ public class ModelMetadataExcelService {
         JdbcConnectionConfig connection = target.getConnection().toJdbcConnectionConfig();
         String catalog = normalizeOptional(dialect.resolveCatalog(connection, null));
         String schema = normalizeOptional(dialect.resolveSchema(connection, null));
+        DirectoryService.DirectoryPathIndex directoryPaths = directoryService.pathIndex(DirectoryScope.MODEL);
+        if (parsed.formatVersion >= FORMAT_VERSION
+                && parsed.models.stream().anyMatch(model -> !model.directoryPath.isBlank())) {
+            parsed.issues.addAll(directoryPaths.issues());
+        }
 
         Set<String> duplicatePhysicalNames = duplicateValues(
                 parsed.models.stream().map(model -> model.physicalTableName).toList()
@@ -569,6 +615,7 @@ public class ModelMetadataExcelService {
         Map<String, StandardDictionary> dictionariesByCode = standardDictionaryRepository.findAll().stream()
                 .collect(Collectors.toMap(StandardDictionary::getCode, Function.identity()));
         for (MutableModel model : parsed.models) {
+            resolveDirectory(model, parsed.formatVersion, directoryPaths);
             resolveWarehouseLayer(model, layersByCode);
             validateModelFields(model, dialect);
             resolveStandardDictionaries(model, dictionariesByCode);
@@ -583,6 +630,26 @@ public class ModelMetadataExcelService {
                 validateTargetLocation(model, target, catalog, schema);
             }
         }
+    }
+
+    private static void resolveDirectory(
+            MutableModel model,
+            int formatVersion,
+            DirectoryService.DirectoryPathIndex directoryPaths
+    ) {
+        if (formatVersion < FORMAT_VERSION) {
+            model.warnings.add("旧版文件未定义模型目录，将导入未分类");
+            model.directoryPath = "";
+            model.directoryId = null;
+            return;
+        }
+        DirectoryService.DirectoryPathResolution resolution = directoryPaths.resolve(model.directoryPath);
+        if (!resolution.resolved()) {
+            model.issues.add(resolution.issue());
+            return;
+        }
+        model.directoryPath = resolution.path();
+        model.directoryId = resolution.directoryId();
     }
 
     private static void resolveWarehouseLayer(
@@ -1151,6 +1218,7 @@ public class ModelMetadataExcelService {
     private record ExportModel(
             DataModel model,
             ModelWarehouseLayer warehouseLayer,
+            String directoryPath,
             List<DataModelField> fields,
             Map<UUID, StandardDictionary> dictionariesById
     ) {
@@ -1173,6 +1241,8 @@ public class ModelMetadataExcelService {
         private String sourceCode = "";
         private String code = "";
         private String name = "";
+        private String directoryPath = "";
+        private UUID directoryId;
         private String warehouseLayerCode = "";
         private ModelWarehouseLayer warehouseLayer;
         private String physicalTableName = "";
@@ -1194,7 +1264,7 @@ public class ModelMetadataExcelService {
             boolean importable = issues.isEmpty() && !fieldResponses.isEmpty()
                     && fieldResponses.stream().allMatch(ModelMetadataImportFieldResponse::importable);
             return new ModelMetadataImportModelResponse(
-                    key, rowNumber, code, name, warehouseLayerCode,
+                    key, rowNumber, code, name, directoryPath, warehouseLayerCode,
                     ModelWarehouseLayerSummaryResponse.from(warehouseLayer),
                     physicalTableName, clickHouseOrderByColumns, description,
                     importable, issues, warnings, fieldResponses

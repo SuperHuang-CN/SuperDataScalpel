@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeMaskFields } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { maskFieldsCanvasView } from './canvasView';
 
 export const maskFieldsSpec = createCanvasNodeSpec({
   type: CanvasNodeType.MaskFields,
@@ -15,9 +16,9 @@ export const maskFieldsSpec = createCanvasNodeSpec({
   searchKeywords: ['mask', 'masking', '脱敏', '掩码', '隐私'],
   iconKey: CanvasNodeIconKey.Masking,
   order: 50,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: maskFieldsCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 18,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: 1 },
   createDefaultConfiguration: createMaskFieldsConfiguration,
   summarize: summarizeMaskFields,

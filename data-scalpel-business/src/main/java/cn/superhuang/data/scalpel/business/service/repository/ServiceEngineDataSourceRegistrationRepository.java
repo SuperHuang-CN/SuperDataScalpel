@@ -16,5 +16,7 @@ public interface ServiceEngineDataSourceRegistrationRepository
 
     boolean existsByDataSourceId(UUID dataSourceId);
 
+    List<ServiceEngineDataSourceRegistration> findAllByEngineId(UUID engineId);
+
     List<ServiceEngineDataSourceRegistration> findAllByDataSourceId(UUID dataSourceId);
 }

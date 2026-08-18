@@ -22,6 +22,15 @@ public record DispatcherStreamingProperties(
         return checkpointBaseUri + "/deployments/" + deploymentId;
     }
 
+    public String checkpointUri(String checkpointKeyPrefix) {
+        if (checkpointKeyPrefix == null || checkpointKeyPrefix.isBlank()
+                || checkpointKeyPrefix.startsWith("/") || checkpointKeyPrefix.contains("..")
+                || checkpointKeyPrefix.indexOf('\r') >= 0 || checkpointKeyPrefix.indexOf('\n') >= 0) {
+            throw new IllegalArgumentException("Streaming Checkpoint Key Prefix is invalid");
+        }
+        return checkpointBaseUri + "/" + checkpointKeyPrefix;
+    }
+
     public boolean configured() {
         try {
             URI uri = URI.create(checkpointBaseUri);

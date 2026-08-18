@@ -25,12 +25,17 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadata
 import cn.superhuang.data.scalpel.business.datasource.web.response.TablePreviewResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.KafkaTopicResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.JdbcQueryInspectionResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTopicDetailResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTopicResponse;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineDataSourceRegistrationService;
 import cn.superhuang.data.scalpel.business.service.repository.ScriptDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.repository.TaskDataSourceReferenceRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskResourceBindingRepository;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceType;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
@@ -63,6 +68,8 @@ public class DataSourceService {
     private final DataSourceCredentialCipher credentialCipher;
     private final ApiResourceRepository apiResourceRepository;
     private final SpatialFeatureResourceRepository spatialFeatureResourceRepository;
+    private final TaskDataSourceReferenceRepository taskDataSourceReferenceRepository;
+    private final SparkJarTaskResourceBindingRepository sparkJarBindingRepository;
 
     public DataSourceService(
             DataSourceRepository repository,
@@ -75,7 +82,9 @@ public class DataSourceService {
             ScriptDataServiceDefinitionRepository scriptServiceDefinitionRepository,
             DataSourceCredentialCipher credentialCipher,
             ApiResourceRepository apiResourceRepository,
-            SpatialFeatureResourceRepository spatialFeatureResourceRepository
+            SpatialFeatureResourceRepository spatialFeatureResourceRepository,
+            TaskDataSourceReferenceRepository taskDataSourceReferenceRepository,
+            SparkJarTaskResourceBindingRepository sparkJarBindingRepository
     ) {
         this.repository = repository;
         this.searchEngine = searchEngine;
@@ -88,6 +97,8 @@ public class DataSourceService {
         this.credentialCipher = credentialCipher;
         this.apiResourceRepository = apiResourceRepository;
         this.spatialFeatureResourceRepository = spatialFeatureResourceRepository;
+        this.taskDataSourceReferenceRepository = taskDataSourceReferenceRepository;
+        this.sparkJarBindingRepository = sparkJarBindingRepository;
     }
 
     @Transactional(readOnly = true)
@@ -170,6 +181,15 @@ public class DataSourceService {
         if (scriptServiceDefinitionRepository.existsByDataSourceId(id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源已被脚本服务使用，不能删除");
         }
+        if (taskDataSourceReferenceRepository.existsByDataSourceId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源已被任务直接使用，不能删除");
+        }
+        if (sparkJarBindingRepository.existsByResourceTypeAndResourceId(
+                SparkJarResourceType.JDBC_DATA_SOURCE, id)
+                || sparkJarBindingRepository.existsByResourceTypeAndResourceId(
+                SparkJarResourceType.KAFKA_TOPIC, id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源已被 Spark JAR 任务绑定，不能删除");
+        }
         repository.deleteById(id);
     }
 
@@ -207,8 +227,16 @@ public class DataSourceService {
         return runtimeService.inspectQuery(id, sql);
     }
 
-    public List<KafkaTopicResponse> listKafkaTopics(UUID id, String keyword) {
-        return runtimeService.listKafkaTopics(id, keyword);
+    public List<KafkaTopicResponse> listKafkaTopics(UUID id, String keyword, boolean includeInternal) {
+        return runtimeService.listKafkaTopics(id, keyword, includeInternal);
+    }
+
+    public List<TdEngineTmqTopicResponse> listTdEngineTmqTopics(UUID id, String keyword) {
+        return runtimeService.listTdEngineTmqTopics(id, keyword);
+    }
+
+    public TdEngineTmqTopicDetailResponse readTdEngineTmqTopic(UUID id, String topicName) {
+        return runtimeService.readTdEngineTmqTopic(id, topicName);
     }
 
     private DataSource requireDataSource(UUID id) {

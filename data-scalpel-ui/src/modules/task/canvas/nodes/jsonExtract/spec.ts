@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeJsonExtract } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { jsonExtractCanvasView } from './canvasView';
 
 export const jsonExtractSpec = createCanvasNodeSpec({
   type: CanvasNodeType.JsonExtract,
@@ -15,9 +16,9 @@ export const jsonExtractSpec = createCanvasNodeSpec({
   searchKeywords: ['json', 'path', 'extract', 'variant', 'JSON 提取', '字段解析'],
   iconKey: CanvasNodeIconKey.Json,
   order: 60,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: jsonExtractCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 19,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createJsonExtractConfiguration,
   summarize: summarizeJsonExtract,

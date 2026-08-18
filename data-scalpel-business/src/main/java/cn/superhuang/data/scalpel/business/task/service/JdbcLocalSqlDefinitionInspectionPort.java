@@ -14,6 +14,9 @@ import cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery;
 import cn.superhuang.data.scalpel.dialect.query.QueryColumn;
 import cn.superhuang.data.scalpel.dialect.query.QueryInspection;
 import cn.superhuang.data.scalpel.dialect.query.ReadOnlySelectQueryParser;
+import cn.superhuang.data.scalpel.dialect.query.lineage.SqlLineageAnalysis;
+import cn.superhuang.data.scalpel.dialect.query.lineage.SqlLineageAnalysisRequest;
+import cn.superhuang.data.scalpel.dialect.query.lineage.SqlLineageAnalyzer;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseAccessException;
 import cn.superhuang.data.scalpel.dialect.runtime.JdbcQueryInspector;
 import org.springframework.stereotype.Component;
@@ -56,15 +59,17 @@ public class JdbcLocalSqlDefinitionInspectionPort implements LocalSqlDefinitionI
                 && !dialect.definition().capabilities().contains(DatabaseCapability.OVERWRITE_INSERT_SELECT)) {
             problems.add(problem("WRITE_MODE_UNSUPPORTED", "当前数据库第一阶段不支持 OVERWRITE，请使用 APPEND", null));
         }
-        if (!problems.isEmpty()) {
-            return new LocalSqlDefinitionInspection(problems, List.of(), List.of(), null);
-        }
 
         InsertSelectQuery query;
         try {
             query = ReadOnlySelectQueryParser.parse(request.sql());
         } catch (IllegalArgumentException exception) {
             return new LocalSqlDefinitionInspection(List.of(problem("SQL_NOT_READ_ONLY", exception.getMessage(), null)), List.of(), List.of(), null);
+        }
+        LocalSqlLineageEvidence lineageEvidence = analyzeLineage(dialect, request);
+        addTableReferenceProblems(lineageEvidence.analysis(), problems);
+        if (!problems.isEmpty()) {
+            return new LocalSqlDefinitionInspection(problems, List.of(), List.of(), null, lineageEvidence);
         }
         QueryInspection inspection;
         try {
@@ -73,10 +78,61 @@ public class JdbcLocalSqlDefinitionInspectionPort implements LocalSqlDefinitionI
             );
         } catch (DatabaseAccessException exception) {
             return new LocalSqlDefinitionInspection(
-                    List.of(problem("SQL_INSPECTION_FAILED", exception.getMessage(), null)), List.of(), List.of(), null
+                    List.of(problem("SQL_INSPECTION_FAILED", exception.getMessage(), null)), List.of(), List.of(), null,
+                    lineageEvidence
             );
         }
-        return compareOutput(dialect, request, query, inspection);
+        return compareOutput(dialect, request, query, inspection, lineageEvidence);
+    }
+
+    private static LocalSqlLineageEvidence analyzeLineage(
+            DatabaseDialect dialect,
+            LocalSqlDefinitionInspectionRequest request
+    ) {
+        var connection = request.dataSource().getConnection().toJdbcConnectionConfig();
+        List<SqlLineageAnalysisRequest.Relation> relations = request.inputs().stream().map(input -> {
+            var model = input.model();
+            var table = new cn.superhuang.data.scalpel.dialect.model.TableIdentifier(
+                    dialect.resolveCatalog(connection, model.getCatalogName()),
+                    dialect.resolveSchema(connection, model.getSchemaName()),
+                    model.getPhysicalTableName()
+            );
+            return new SqlLineageAnalysisRequest.Relation(
+                    model.getId().toString(),
+                    table,
+                    input.fields().stream().map(field -> new SqlLineageAnalysisRequest.Field(
+                            field.getId().toString(), field.getCode(), field.getSortOrder()
+                    )).toList()
+            );
+        }).toList();
+        return new LocalSqlLineageEvidence(SqlLineageAnalyzer.analyze(new SqlLineageAnalysisRequest(
+                request.dataSource().getType().name(),
+                request.sql(),
+                dialect.resolveCatalog(connection, null),
+                dialect.resolveSchema(connection, null),
+                relations
+        )));
+    }
+
+    private static void addTableReferenceProblems(
+            SqlLineageAnalysis analysis,
+            List<LocalSqlDefinitionInspectionProblem> problems
+    ) {
+        analysis.tableReferences().forEach(reference -> {
+            if (reference.matchStatus() == SqlLineageAnalysis.TableMatchStatus.UNDECLARED) {
+                problems.add(problem(
+                        "UNDECLARED_INPUT_TABLE",
+                        "SQL 引用了未声明的输入表：" + reference.displayName(),
+                        null
+                ));
+            } else if (reference.matchStatus() == SqlLineageAnalysis.TableMatchStatus.AMBIGUOUS) {
+                problems.add(problem(
+                        "AMBIGUOUS_INPUT_TABLE",
+                        "SQL 表引用匹配到多个输入模型：" + reference.displayName(),
+                        null
+                ));
+            }
+        });
     }
 
     private void validateModels(
@@ -120,6 +176,16 @@ public class JdbcLocalSqlDefinitionInspectionPort implements LocalSqlDefinitionI
             LocalSqlDefinitionInspectionRequest request,
             InsertSelectQuery query,
             QueryInspection queryInspection
+    ) {
+        return compareOutput(dialect, request, query, queryInspection, null);
+    }
+
+    static LocalSqlDefinitionInspection compareOutput(
+            DatabaseDialect dialect,
+            LocalSqlDefinitionInspectionRequest request,
+            InsertSelectQuery query,
+            QueryInspection queryInspection,
+            LocalSqlLineageEvidence lineageEvidence
     ) {
         List<LocalSqlDefinitionInspectionProblem> problems = new ArrayList<>();
         Map<String, DataModelField> fieldsByCode = new HashMap<>();
@@ -171,7 +237,7 @@ public class JdbcLocalSqlDefinitionInspectionPort implements LocalSqlDefinitionI
         String generatedInsertSql = problems.isEmpty()
                 ? dialect.renderInsertSelect(physicalTable(request, dialect), targetColumns, query)
                 : null;
-        return new LocalSqlDefinitionInspection(problems, columns, targetColumns, generatedInsertSql);
+        return new LocalSqlDefinitionInspection(problems, columns, targetColumns, generatedInsertSql, lineageEvidence);
     }
 
     private static cn.superhuang.data.scalpel.dialect.model.TableIdentifier physicalTable(

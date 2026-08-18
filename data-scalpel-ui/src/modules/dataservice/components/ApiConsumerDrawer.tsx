@@ -81,6 +81,7 @@ export const ApiConsumerDrawer = ({ open, consumer, onClose }: ApiConsumerDrawer
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={editing ? '修改 API 消费者' : '新建 API 消费者'}
         open={open}
         size={560}

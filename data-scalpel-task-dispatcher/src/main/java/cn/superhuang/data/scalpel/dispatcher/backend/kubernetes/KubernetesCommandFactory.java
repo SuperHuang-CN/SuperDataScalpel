@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.dispatcher.config.KubernetesProperties;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry;
 
 public class KubernetesCommandFactory {
     private static final String RUNNER_MAIN = "cn.superhuang.datascalpel.taskengine.runner.TaskRunnerMain";
@@ -45,6 +46,16 @@ public class KubernetesCommandFactory {
                 "--conf", "spark.executor.instances=" + properties.executorInstances(),
                 "local:///opt/datascalpel/task-runner-cluster.jar"
         ));
+        return List.copyOf(command);
+    }
+
+    public List<String> submit(ExecutionIdentity identity, List<SparkConfigurationEntry> sparkConf) {
+        List<String> command = new ArrayList<>(submit(identity));
+        int runnerIndex = command.size() - 1;
+        for (SparkConfigurationEntry entry : sparkConf) {
+            command.add(runnerIndex++, "--conf");
+            command.add(runnerIndex++, entry.name() + "=" + entry.value());
+        }
         return List.copyOf(command);
     }
 

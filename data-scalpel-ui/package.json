@@ -26,6 +26,7 @@
     "@superhuang/super-api-studio-script-workbench": "file:vendor/superhuang-super-api-studio-script-workbench-3.0.0-SNAPSHOT.tgz",
     "@tanstack/react-query": "^5.90.0",
     "antd": "^6.5.0",
+    "maplibre-gl": "^5.7.1",
     "monaco-editor": "^0.55.1",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",

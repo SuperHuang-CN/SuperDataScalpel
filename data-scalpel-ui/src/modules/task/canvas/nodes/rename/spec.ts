@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeRename } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { renameCanvasView } from './canvasView';
 
 export const renameSpec = createCanvasNodeSpec({
   type: CanvasNodeType.Rename,
@@ -15,9 +16,9 @@ export const renameSpec = createCanvasNodeSpec({
   searchKeywords: ['rename', '名称', '表名', '字段名'],
   iconKey: CanvasNodeIconKey.Rename,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: renameCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 2,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createRenameConfiguration,
   summarize: summarizeRename,

@@ -21,14 +21,18 @@ import {
   createHttpApiInputConfiguration,
   createSpatialServiceInputConfiguration,
   createJdbcInputConfiguration,
+  createJdbcIncrementalInputConfiguration,
   createJdbcQueryInputConfiguration,
   createJdbcOutputConfiguration,
+  createJdbcSnapshotSyncOutputConfiguration,
   createJoinConfiguration,
   createJsonExtractConfiguration,
   createKafkaInputConfiguration,
+  createTdEngineTmqInputConfiguration,
   createKafkaOutputConfiguration,
   createModelInputConfiguration,
   createModelOutputConfiguration,
+  createModelSnapshotSyncOutputConfiguration,
   createMaskFieldsConfiguration,
   createNullHandlingConfiguration,
   createRenameConfiguration,
@@ -51,8 +55,8 @@ export type {
   MaskingStrategy,
 } from '../model/maskingRule';
 
-export const CANVAS_SCHEMA_VERSION = 1 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 26 as const;
+export const CANVAS_SCHEMA_VERSION = 2 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 3 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
 export const CANVAS_FILTER_MAX_DEPTH = 12 as const;
 export const CANVAS_FILTER_MAX_CONDITION_NODES = 256 as const;
@@ -78,11 +82,13 @@ export const CANVAS_SPATIAL_AGGREGATE_MAX_AGGREGATIONS = 32 as const;
 export const CanvasNodeType = {
   ModelInput: 'MODEL_INPUT',
   JdbcInput: 'JDBC_INPUT',
+  JdbcIncrementalInput: 'JDBC_INCREMENTAL_INPUT',
   JdbcQueryInput: 'JDBC_QUERY_INPUT',
   FileDatasetInput: 'FILE_DATASET_INPUT',
   HttpApiInput: 'HTTP_API_INPUT',
   SpatialServiceInput: 'SPATIAL_SERVICE_INPUT',
   KafkaInput: 'KAFKA_INPUT',
+  TdEngineTmqInput: 'TDENGINE_TMQ_INPUT',
   Join: 'JOIN',
   GeometryConstruct: 'GEOMETRY_CONSTRUCT',
   SpatialTransform: 'SPATIAL_TRANSFORM',
@@ -112,6 +118,8 @@ export const CanvasNodeType = {
   TopN: 'TOP_N',
   ModelOutput: 'MODEL_OUTPUT',
   JdbcOutput: 'JDBC_OUTPUT',
+  JdbcSnapshotSyncOutput: 'JDBC_SNAPSHOT_SYNC_OUTPUT',
+  ModelSnapshotSyncOutput: 'MODEL_SNAPSHOT_SYNC_OUTPUT',
   KafkaOutput: 'KAFKA_OUTPUT',
   FileOutput: 'FILE_OUTPUT',
 } as const;
@@ -140,6 +148,20 @@ export interface CanvasNodeLayout {
 export interface JdbcInputConfiguration {
   dataSourceId: string;
   tableName: string;
+}
+
+export type JdbcIncrementalStartPosition = 'LATEST' | 'EARLIEST' | 'AT_TIME';
+
+export interface JdbcIncrementalInputConfiguration {
+  dataSourceId: string;
+  tableName: string;
+  outputTableName: string;
+  incrementalTimeColumn: string;
+  startPosition: JdbcIncrementalStartPosition;
+  startTime: string | null;
+  cursorTimeZone: string;
+  visibilityDelaySeconds: number;
+  triggerIntervalSeconds?: number;
 }
 
 export interface JdbcQueryInputConfiguration {
@@ -198,6 +220,21 @@ export interface KafkaInputConfiguration {
   valueSchema: KafkaValueSchema;
   outputTableName: string;
   startingOffsets: KafkaStartingOffsets | null;
+  triggerIntervalSeconds?: number;
+}
+
+export type TdEngineTmqStartingOffsets = 'EARLIEST' | 'LATEST';
+
+export interface TdEngineTmqInputConfiguration {
+  dataSourceId: string;
+  topicName: string;
+  catalogName: string;
+  supertableName: string;
+  topicDefinitionFingerprint: string;
+  outputTableName: string;
+  startingOffsets: TdEngineTmqStartingOffsets;
+  maxOffsetsPerVGroupPerTrigger: number;
+  triggerIntervalSeconds: number;
 }
 
 export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL';
@@ -715,8 +752,6 @@ export interface TopNConfiguration {
 
 export type JdbcWriteMode = 'APPEND' | 'OVERWRITE' | 'UPSERT';
 
-export type ColumnMappingMode = 'BY_NAME' | 'EXPLICIT';
-
 export interface CanvasColumnMapping {
   sourceColumnName: string;
   targetColumnName: string;
@@ -729,7 +764,6 @@ export interface JdbcOutputConfiguration {
   dataSourceId: string;
   targetTableName: string;
   writeMode: JdbcWriteMode | null;
-  columnMappingMode: ColumnMappingMode | null;
   columnMappings: CanvasColumnMapping[];
   upsertKeyColumns: string[];
 }
@@ -738,8 +772,31 @@ export interface ModelOutputConfiguration {
   sourceTableName: string;
   targetModelId: string;
   writeMode: JdbcWriteMode | null;
-  columnMappingMode: ColumnMappingMode | null;
   columnMappings: CanvasColumnMapping[];
+}
+
+export type SnapshotTargetOnlyAction = 'KEEP' | 'DELETE';
+
+export interface SnapshotDeletePolicy {
+  action: SnapshotTargetOnlyAction;
+  maxDeleteRows: number | null;
+  maxDeleteRatio: number | null;
+}
+
+export interface SnapshotSyncConfiguration {
+  sourceTableName: string;
+  keyColumns: string[];
+  columnMappings: CanvasColumnMapping[];
+  deletePolicy: SnapshotDeletePolicy;
+}
+
+export interface JdbcSnapshotSyncOutputConfiguration extends SnapshotSyncConfiguration {
+  dataSourceId: string;
+  targetTableName: string;
+}
+
+export interface ModelSnapshotSyncOutputConfiguration extends SnapshotSyncConfiguration {
+  targetModelId: string;
 }
 
 export interface KafkaOutputConfiguration {
@@ -748,7 +805,6 @@ export interface KafkaOutputConfiguration {
   topic: string;
   valueSchema: KafkaValueSchema;
   keyColumnName: string;
-  columnMappingMode: ColumnMappingMode | null;
   columnMappings: CanvasColumnMapping[];
 }
 
@@ -836,6 +892,11 @@ export type JdbcInputNodeDefinition = CanvasNodeBase<
   JdbcInputConfiguration
 >;
 
+export type JdbcIncrementalInputNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.JdbcIncrementalInput,
+  JdbcIncrementalInputConfiguration
+>;
+
 export type JdbcQueryInputNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.JdbcQueryInput,
   JdbcQueryInputConfiguration
@@ -859,6 +920,11 @@ export type SpatialServiceInputNodeDefinition = CanvasNodeBase<
 export type KafkaInputNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.KafkaInput,
   KafkaInputConfiguration
+>;
+
+export type TdEngineTmqInputNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TdEngineTmqInput,
+  TdEngineTmqInputConfiguration
 >;
 
 export type JoinNodeDefinition = CanvasNodeBase<typeof CanvasNodeType.Join, JoinConfiguration>;
@@ -997,6 +1063,16 @@ export type ModelOutputNodeDefinition = CanvasNodeBase<
   ModelOutputConfiguration
 >;
 
+export type JdbcSnapshotSyncOutputNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.JdbcSnapshotSyncOutput,
+  JdbcSnapshotSyncOutputConfiguration
+>;
+
+export type ModelSnapshotSyncOutputNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.ModelSnapshotSyncOutput,
+  ModelSnapshotSyncOutputConfiguration
+>;
+
 export type KafkaOutputNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.KafkaOutput,
   KafkaOutputConfiguration
@@ -1010,10 +1086,13 @@ export type FileOutputNodeDefinition = CanvasNodeBase<
 export type CanvasNodeDefinition =
   | ModelInputNodeDefinition
   | JdbcInputNodeDefinition
+  | JdbcIncrementalInputNodeDefinition
   | JdbcQueryInputNodeDefinition
   | FileDatasetInputNodeDefinition
   | HttpApiInputNodeDefinition
+  | SpatialServiceInputNodeDefinition
   | KafkaInputNodeDefinition
+  | TdEngineTmqInputNodeDefinition
   | JoinNodeDefinition
   | GeometryConstructNodeDefinition
   | SpatialTransformNodeDefinition
@@ -1043,6 +1122,8 @@ export type CanvasNodeDefinition =
   | TopNNodeDefinition
   | ModelOutputNodeDefinition
   | JdbcOutputNodeDefinition
+  | JdbcSnapshotSyncOutputNodeDefinition
+  | ModelSnapshotSyncOutputNodeDefinition
   | KafkaOutputNodeDefinition
   | FileOutputNodeDefinition;
 
@@ -1055,10 +1136,13 @@ export type CanvasNodeConfigurationByType<T extends CanvasNodeType> =
 export type CanvasNodeConfigurationUpdate =
   | Pick<ModelInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JdbcInputNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<JdbcIncrementalInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JdbcQueryInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<FileDatasetInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<HttpApiInputNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialServiceInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<KafkaInputNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TdEngineTmqInputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JoinNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<GeometryConstructNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<SpatialTransformNodeDefinition, 'id' | 'type' | 'configuration'>
@@ -1088,6 +1172,8 @@ export type CanvasNodeConfigurationUpdate =
   | Pick<TopNNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<ModelOutputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<JdbcOutputNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<JdbcSnapshotSyncOutputNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<ModelSnapshotSyncOutputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<KafkaOutputNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<FileOutputNodeDefinition, 'id' | 'type' | 'configuration'>;
 
@@ -1135,6 +1221,14 @@ export type CanvasTableOrigin =
     modelSchemaVersion: null;
   }
   | {
+    kind: 'JDBC_INCREMENTAL';
+    dataSourceId: string;
+    tableName: string;
+    modelId: null;
+    modelCode: null;
+    modelSchemaVersion: null;
+  }
+  | {
     kind: 'JDBC_QUERY';
     dataSourceId: string;
     tableName: string;
@@ -1165,6 +1259,17 @@ export type CanvasTableOrigin =
     modelId: null;
     modelCode: null;
     modelSchemaVersion: null;
+  }
+  | {
+    kind: 'TDENGINE_TMQ';
+    dataSourceId: string;
+    tableName: string;
+    modelId: null;
+    modelCode: null;
+    modelSchemaVersion: null;
+    topicName: string;
+    catalogName: string;
+    supertableName: string;
   }
   | {
     kind: 'FILE_DATASET';
@@ -1215,11 +1320,18 @@ export interface CanvasNodeValidationBadge {
   message: string;
 }
 
+export interface CanvasNodeRuntimeCompilation {
+  inputTables: CanvasTableSchema[];
+  outputTables: CanvasTableSchema[];
+}
+
 export type CanvasNodeRuntimeSummary =
   | {
     kind: 'JDBC';
     dataSourceName: string;
+    dataSourceType: string;
     qualifiedTableName: string;
+    primaryKeyColumns?: string[];
   }
   | {
     kind: 'MODEL';
@@ -1241,10 +1353,17 @@ export type CanvasNodeRuntimeSummary =
     fieldCount: number;
   }
   | {
+    kind: 'TDENGINE_TMQ';
+    dataSourceName: string;
+    qualifiedTableName: string;
+    fieldCount: number;
+  }
+  | {
     kind: 'FILE_DATASET';
     fileDatasetName: string;
     tableName: string;
     tableCode: string;
+    datasetType: string;
     status: string;
     geometry: {
       fieldName: string;
@@ -1252,24 +1371,36 @@ export type CanvasNodeRuntimeSummary =
       crs: GeometryTypeDefinition['crs'];
       dimension: GeometryTypeDefinition['dimension'];
     } | null;
+  }
+  | {
+    kind: 'S3';
+    dataSourceName: string;
+    bucketName: string;
   };
 
 interface CanvasNodeRuntimeBase<T extends CanvasNodeType, C> {
   type: T;
   name: string;
   configuration: C;
+  readOnly?: boolean;
   validation?: CanvasNodeValidationBadge;
   summary?: CanvasNodeRuntimeSummary;
+  compilation?: CanvasNodeRuntimeCompilation;
 }
 
 export type CanvasNodeRuntimeData =
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.ModelInput, ModelInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.JdbcInput, JdbcInputConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.JdbcIncrementalInput,
+    JdbcIncrementalInputConfiguration
+  >
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.JdbcQueryInput, JdbcQueryInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.FileDatasetInput, FileDatasetInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.HttpApiInput, HttpApiInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.SpatialServiceInput, SpatialServiceInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.KafkaInput, KafkaInputConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.TdEngineTmqInput, TdEngineTmqInputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.Join, JoinConfiguration>
   | CanvasNodeRuntimeBase<
     typeof CanvasNodeType.GeometryConstruct,
@@ -1320,6 +1451,14 @@ export type CanvasNodeRuntimeData =
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.TopN, TopNConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.ModelOutput, ModelOutputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.JdbcOutput, JdbcOutputConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.JdbcSnapshotSyncOutput,
+    JdbcSnapshotSyncOutputConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.ModelSnapshotSyncOutput,
+    ModelSnapshotSyncOutputConfiguration
+  >
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.KafkaOutput, KafkaOutputConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.FileOutput, FileOutputConfiguration>;
 
@@ -1332,11 +1471,13 @@ const emptyConfigurationFactories: Record<
 > = {
   [CanvasNodeType.ModelInput]: createModelInputConfiguration,
   [CanvasNodeType.JdbcInput]: createJdbcInputConfiguration,
+  [CanvasNodeType.JdbcIncrementalInput]: createJdbcIncrementalInputConfiguration,
   [CanvasNodeType.JdbcQueryInput]: createJdbcQueryInputConfiguration,
   [CanvasNodeType.FileDatasetInput]: createFileDatasetInputConfiguration,
   [CanvasNodeType.HttpApiInput]: createHttpApiInputConfiguration,
   [CanvasNodeType.SpatialServiceInput]: createSpatialServiceInputConfiguration,
   [CanvasNodeType.KafkaInput]: createKafkaInputConfiguration,
+  [CanvasNodeType.TdEngineTmqInput]: createTdEngineTmqInputConfiguration,
   [CanvasNodeType.Join]: createJoinConfiguration,
   [CanvasNodeType.GeometryConstruct]: createGeometryConstructConfiguration,
   [CanvasNodeType.SpatialTransform]: createSpatialTransformConfiguration,
@@ -1366,6 +1507,8 @@ const emptyConfigurationFactories: Record<
   [CanvasNodeType.TopN]: createTopNConfiguration,
   [CanvasNodeType.ModelOutput]: createModelOutputConfiguration,
   [CanvasNodeType.JdbcOutput]: createJdbcOutputConfiguration,
+  [CanvasNodeType.JdbcSnapshotSyncOutput]: createJdbcSnapshotSyncOutputConfiguration,
+  [CanvasNodeType.ModelSnapshotSyncOutput]: createModelSnapshotSyncOutputConfiguration,
   [CanvasNodeType.KafkaOutput]: createKafkaOutputConfiguration,
   [CanvasNodeType.FileOutput]: createFileOutputConfiguration,
 };

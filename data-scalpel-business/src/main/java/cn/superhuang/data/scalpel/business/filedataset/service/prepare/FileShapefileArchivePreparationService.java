@@ -34,11 +34,15 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
 
-/** Safely publishes one ZIP containing exactly one Shapefile component set. */
+/** Safely publishes one ZIP containing one Shapefile component set and optional known sidecars. */
 @Component
 public class FileShapefileArchivePreparationService implements FileDatasetPreparationService {
 
     private static final Logger log = LoggerFactory.getLogger(FileShapefileArchivePreparationService.class);
+    private static final String SHAPEFILE_METADATA_SUFFIX = ".shp.xml";
+    private static final Set<String> ALLOWED_AUXILIARY_EXTENSIONS = Set.of(
+            "sbn", "sbx", "fbn", "fbx", "ain", "aih", "atx", "ixs", "mxs", "qix", "fix"
+    );
 
     private final ObjectProvider<FileObjectStorage> storageProvider;
     private final FileDatasetTemporaryFileManager temporaryFileManager;
@@ -125,6 +129,7 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
         try (ZipFile zip = new ZipFile(archive.toFile())) {
             EnumMap<ShapefileComponent, ArchiveComponent> components = new EnumMap<>(ShapefileComponent.class);
             Set<String> normalizedPaths = new HashSet<>();
+            List<AuxiliaryEntry> auxiliaryEntries = new ArrayList<>();
             String componentDirectory = null;
             String normalizedStem = null;
             String sourceName = null;
@@ -140,6 +145,17 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
                 if (normalized.ignored() || entry.isDirectory()) {
                     continue;
                 }
+                String duplicatePath = normalized.path().toLowerCase(Locale.ROOT);
+                if (!normalizedPaths.add(duplicatePath)) {
+                    throw invalid("ZIP 中存在重复条目");
+                }
+                String auxiliaryStem = auxiliaryStem(normalized.fileName());
+                if (auxiliaryStem != null) {
+                    auxiliaryEntries.add(new AuxiliaryEntry(
+                            normalized.directory(), auxiliaryStem.toLowerCase(Locale.ROOT), normalized.fileName()
+                    ));
+                    continue;
+                }
                 ShapefileComponent component = component(normalized.fileName());
                 String stem = stem(normalized.fileName());
                 if (componentDirectory == null) {
@@ -153,8 +169,7 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
                         || !normalizedStem.equals(stem.toLowerCase(Locale.ROOT))) {
                     throw invalid("ZIP 中必须且只能包含一套同名 SHP 组件");
                 }
-                String duplicatePath = normalized.path().toLowerCase(Locale.ROOT);
-                if (!normalizedPaths.add(duplicatePath) || components.containsKey(component)) {
+                if (components.containsKey(component)) {
                     throw invalid("ZIP 中存在重复的 SHP 组件");
                 }
                 long size = entry.getSize();
@@ -170,6 +185,12 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
             }
             if (sourceName == null) {
                 throw invalid("ZIP 中没有找到 SHP 组件");
+            }
+            for (AuxiliaryEntry auxiliary : auxiliaryEntries) {
+                if (!componentDirectory.equals(auxiliary.directory())
+                        || !normalizedStem.equals(auxiliary.normalizedStem())) {
+                    throw invalid("SHP 辅助文件必须与核心组件同目录且同名：" + auxiliary.fileName());
+                }
             }
             return new ArchiveManifest(sourceName, Map.copyOf(components), totalExpanded);
         }
@@ -319,11 +340,25 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
             return true;
         }
         for (String segment : segments) {
-            if (segment.equals("__MACOSX") || segment.equals(".DS_Store")) {
+            if (segment.equals("__MACOSX") || segment.equals(".DS_Store") || segment.startsWith("._")) {
                 return true;
             }
         }
         return false;
+    }
+
+    private static String auxiliaryStem(String fileName) {
+        String normalized = fileName.toLowerCase(Locale.ROOT);
+        if (normalized.endsWith(SHAPEFILE_METADATA_SUFFIX)
+                && normalized.length() > SHAPEFILE_METADATA_SUFFIX.length()) {
+            return fileName.substring(0, fileName.length() - SHAPEFILE_METADATA_SUFFIX.length());
+        }
+        int separator = fileName.lastIndexOf('.');
+        if (separator < 1 || separator == fileName.length() - 1) {
+            return null;
+        }
+        String extension = fileName.substring(separator + 1).toLowerCase(Locale.ROOT);
+        return ALLOWED_AUXILIARY_EXTENSIONS.contains(extension) ? fileName.substring(0, separator) : null;
     }
 
     private static ShapefileComponent component(String fileName) {
@@ -337,7 +372,7 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
                 return value;
             }
         }
-        throw invalid("ZIP 中只允许包含 .shp/.shx/.dbf 及可选 .cpg/.prj 组件");
+        throw invalid("ZIP 中包含不支持的文件：" + fileName);
     }
 
     private static String stem(String fileName) {
@@ -380,6 +415,9 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
     }
 
     private record ArchiveComponent(String entryName, ShapefileComponent kind, long sizeBytes) {
+    }
+
+    private record AuxiliaryEntry(String directory, String normalizedStem, String fileName) {
     }
 
     private record NormalizedEntry(String path, String directory, String fileName, boolean ignored) {

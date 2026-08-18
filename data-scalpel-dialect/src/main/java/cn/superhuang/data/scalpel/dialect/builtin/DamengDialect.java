@@ -22,6 +22,8 @@ import cn.superhuang.data.scalpel.dialect.model.TableDdlAtomicity;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
+import cn.superhuang.data.scalpel.dialect.model.TableStatisticQuality;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 
@@ -29,6 +31,8 @@ import java.sql.Connection;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.sql.PreparedStatement;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -72,6 +76,79 @@ public final class DamengDialect extends AbstractJdbcDialect {
     public String resolveSchema(JdbcConnectionConfig config, String requestedSchema) {
         String resolved = super.resolveSchema(config, requestedSchema);
         return resolved == null ? config.username().toUpperCase(Locale.ROOT) : resolved;
+    }
+
+    @Override
+    public TablePhysicalStatistics readTablePhysicalStatistics(
+            Connection connection,
+            TableIdentifier table,
+            Duration timeout
+    ) throws SQLException {
+        String owner = table.schema().toUpperCase(Locale.ROOT);
+        String tableName = table.table().toUpperCase(Locale.ROOT);
+        long deadlineNanos = TableStatisticsJdbcSupport.deadlineNanos(timeout);
+        String typeSql = "SELECT OBJECT_TYPE FROM ALL_OBJECTS WHERE OWNER = ? AND OBJECT_NAME = ? "
+                + "AND SUBOBJECT_NAME IS NULL AND OBJECT_TYPE IN ('TABLE', 'VIEW')";
+        try (PreparedStatement statement = connection.prepareStatement(typeSql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.remainingTimeoutSeconds(deadlineNanos));
+            statement.setString(1, owner);
+            statement.setString(2, tableName);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return TablePhysicalStatistics.notFound();
+                }
+                if ("VIEW".equalsIgnoreCase(resultSet.getString(1))) {
+                    return TablePhysicalStatistics.unsupported("普通视图没有独立物理存储统计");
+                }
+            }
+        }
+
+        Long rowCount = queryStatisticValue(
+                connection,
+                "SELECT NUM_ROWS FROM ALL_TABLES WHERE OWNER = ? AND TABLE_NAME = ?",
+                owner,
+                tableName,
+                1,
+                deadlineNanos
+        );
+        Long storageBytes = queryStatisticValue(
+                connection,
+                "SELECT SUM(BYTES) FROM ALL_SEGMENTS WHERE OWNER = ? AND ("
+                        + "(SEGMENT_NAME = ? AND SEGMENT_TYPE LIKE 'TABLE%') "
+                        + "OR SEGMENT_NAME IN (SELECT INDEX_NAME FROM ALL_INDEXES WHERE OWNER = ? AND TABLE_NAME = ?) "
+                        + "OR SEGMENT_NAME IN (SELECT SEGMENT_NAME FROM ALL_LOBS WHERE OWNER = ? AND TABLE_NAME = ?) "
+                        + "OR SEGMENT_NAME IN (SELECT INDEX_NAME FROM ALL_LOBS WHERE OWNER = ? AND TABLE_NAME = ?))",
+                owner,
+                tableName,
+                4,
+                deadlineNanos
+        );
+        return TablePhysicalStatistics.available(
+                rowCount,
+                TableStatisticQuality.ESTIMATED,
+                storageBytes,
+                TableStatisticQuality.EXACT
+        );
+    }
+
+    private static Long queryStatisticValue(
+            Connection connection,
+            String sql,
+            String owner,
+            String tableName,
+            int identifierPairCount,
+            long deadlineNanos
+    ) throws SQLException {
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.remainingTimeoutSeconds(deadlineNanos));
+            for (int index = 1; index <= identifierPairCount * 2; index += 2) {
+                statement.setString(index, owner);
+                statement.setString(index + 1, tableName);
+            }
+            try (ResultSet resultSet = statement.executeQuery()) {
+                return resultSet.next() ? TableStatisticsJdbcSupport.nullableLong(resultSet, 1) : null;
+            }
+        }
     }
 
     @Override

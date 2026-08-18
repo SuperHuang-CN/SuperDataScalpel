@@ -254,33 +254,34 @@ export const MaskFieldsProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (fieldRules.length === 0) {
           setDraftError('至少配置一条字段脱敏规则');
-          return false;
+
         }
         if (fieldRules.length > CANVAS_MASKING_MAX_FIELD_RULES) {
           setDraftError(`字段规则不能超过 ${CANVAS_MASKING_MAX_FIELD_RULES} 项`);
-          return false;
+
         }
         const selectedFields = new Set<string>();
         for (const rule of fieldRules) {
           if (!rule.fieldName || !columnNames.has(rule.fieldName)) {
             setDraftError(`脱敏字段 ${rule.fieldName || '未选择'} 不存在`);
-            return false;
+
           }
           if (!selectedFields.add(rule.fieldName)) {
             setDraftError(`字段 ${rule.fieldName} 只能配置一条脱敏规则`);
-            return false;
+
           }
           if (executionMode === 'STREAMING'
             && sourceTable?.eventTimeColumn === rule.fieldName) {
             setDraftError(`实时任务不能脱敏事件时间字段 ${rule.fieldName}`);
-            return false;
+
           }
           if (rule.ruleSource === 'GLOBAL' && !rule.sourceRuleRef?.ruleId) {
             setDraftError(`字段 ${rule.fieldName} 请选择全局规则`);
-            return false;
+
           }
           const invalidMessage = invalidDefinitionMessage(
             rule.definition,
@@ -288,12 +289,12 @@ export const MaskFieldsProcessorInspector = ({
           );
           if (invalidMessage) {
             setDraftError(`字段 ${rule.fieldName}：${invalidMessage}`);
-            return false;
+
           }
         }
         const configuration: MaskFieldsConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           fieldRules: structuredClone(fieldRules),
         };
         onApply({

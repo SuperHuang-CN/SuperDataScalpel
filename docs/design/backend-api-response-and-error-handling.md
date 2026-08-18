@@ -68,6 +68,7 @@ DataScalpel 是模块化单体。接口响应应当直接、可预测，不引�
 | 405 | `METHOD_NOT_ALLOWED` | 请求方法不受支持 |
 | 406 | `NOT_ACCEPTABLE` | 请求的响应格式不可接受 |
 | 409 | `BUSINESS_CONFLICT` | 资源状态、唯一性或并发业务冲突 |
+| 409 | `MODEL_REFERENCED` | 模型仍被任务、数据服务或当前有效血缘引用，删除被阻止 |
 | 413 | `PAYLOAD_TOO_LARGE` | 上传或请求内容过大 |
 | 415 | `UNSUPPORTED_MEDIA_TYPE` | 请求媒体类型不支持 |
 | 501 | `NOT_IMPLEMENTED` | 功能尚未实现 |

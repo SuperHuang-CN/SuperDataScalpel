@@ -85,6 +85,12 @@ public final class ModelInputNodeOperator implements CanvasNodeOperator {
                 "configuration.modelId",
                 issues
         );
+        CanvasNodeSupport.validateJdbcGeometryDatabase(
+                model.tableSchema().columns(),
+                dataSource == null ? null : dataSource.metadata().jdbcDatabaseType(),
+                "configuration.modelId",
+                issues
+        );
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(List.of());
         }

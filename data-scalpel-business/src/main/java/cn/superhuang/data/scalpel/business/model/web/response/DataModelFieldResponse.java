@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.model.web.response;
 
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.domain.DataModelPhysicalColumnRole;
 import cn.superhuang.data.scalpel.business.standard.web.response.StandardDictionarySummaryResponse;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
@@ -22,6 +23,7 @@ public record DataModelFieldResponse(
         boolean primaryKey,
         int sortOrder,
         String description,
+        DataModelPhysicalColumnRole physicalColumnRole,
         StandardDictionarySummaryResponse standardDictionary,
         Instant createdAt,
         Instant updatedAt
@@ -38,7 +40,7 @@ public record DataModelFieldResponse(
                 field.getId(), field.getModelId(), field.getCode(), field.getName(), field.getFieldType(),
                 field.getLength(), field.getPrecision(), field.getScale(), field.getGeometry(),
                 field.isNullable(), field.isPrimaryKey(),
-                field.getSortOrder(), field.getDescription(), standardDictionary,
+                field.getSortOrder(), field.getDescription(), field.getPhysicalColumnRole(), standardDictionary,
                 field.getCreatedAt(), field.getUpdatedAt()
         );
     }

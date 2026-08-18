@@ -3,11 +3,6 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
-import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
-import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
-import cn.superhuang.data.scalpel.filegdb.model.FileGdbFieldType;
-import cn.superhuang.data.scalpel.filegdb.model.FileGdbSchema;
-import cn.superhuang.data.scalpel.filegdb.model.FileGdbSpatialReference;
 import cn.superhuang.data.scalpel.filegdb.model.geometry.FileGdbCoordinateSequence;
 import cn.superhuang.data.scalpel.filegdb.model.geometry.FileGdbGeometry;
 import cn.superhuang.data.scalpel.filegdb.model.geometry.FileGdbMultiPoint;
@@ -20,7 +15,6 @@ import cn.superhuang.data.scalpel.shapefile.model.geometry.ShapefileMultiPoint;
 import cn.superhuang.data.scalpel.shapefile.model.geometry.ShapefilePoint;
 import cn.superhuang.data.scalpel.shapefile.model.geometry.ShapefilePolygon;
 import cn.superhuang.data.scalpel.shapefile.model.geometry.ShapefilePolyline;
-import cn.superhuang.data.scalpel.shapefile.model.ShapefileSchema;
 import org.locationtech.jts.algorithm.Orientation;
 import org.locationtech.jts.geom.Coordinate;
 import org.locationtech.jts.geom.CoordinateXY;
@@ -36,19 +30,10 @@ import org.locationtech.jts.geom.PrecisionModel;
 
 import java.util.ArrayList;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.List;
-import java.util.OptionalInt;
-import java.util.Set;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 
 /** Strict XY conversion from the project's bounded file readers into Sedona's JTS representation. */
 final class FileDatasetGeometryConverter {
-
-    private static final Pattern EPSG_IDENTIFIER = Pattern.compile(
-            "(?i)(?:AUTHORITY|ID)\\s*\\[\\s*[\"']EPSG[\"']\\s*,\\s*[\"']?(\\d+)[\"']?\\s*]"
-    );
 
     private FileDatasetGeometryConverter() {
     }
@@ -95,194 +80,6 @@ final class FileDatasetGeometryConverter {
         return requireExpectedKind(geometry, expected.kind());
     }
 
-    static void validateSchema(FileGdbSchema source, List<CanvasColumnSchema> expectedColumns) {
-        if (source.fields().size() != expectedColumns.size()) {
-            throw schemaDrift("GDB 字段数量已变化");
-        }
-        for (int index = 0; index < source.fields().size(); index++) {
-            requireColumn(expectedColumns.get(index), source.fields().get(index), index);
-        }
-        CanvasColumnSchema geometryColumn = geometryColumn(expectedColumns);
-        List<String> sourceGeometryColumns = source.fields().stream()
-                .filter(field -> field.type() == FileGdbFieldType.SHAPE)
-                .map(field -> field.name())
-                .toList();
-        if (geometryColumn == null) {
-            if (!sourceGeometryColumns.isEmpty()) {
-                throw schemaDrift("GDB 来源包含 Geometry，但 Manifest Schema 不包含 Geometry");
-            }
-            return;
-        }
-        if (sourceGeometryColumns.size() != 1 || !sourceGeometryColumns.getFirst().equals(geometryColumn.name())) {
-            throw schemaDrift("GDB Geometry 字段已经变化");
-        }
-        GeometryTypeDefinition expected = geometryColumn.geometry();
-        FileGdbSpatialReference spatialReference = source.spatialReference();
-        requireSchema(
-                expected,
-                switch (source.layerType()) {
-                    case POINT -> GeometryKind.POINT;
-                    case MULTIPOINT -> GeometryKind.MULTIPOINT;
-                    case POLYLINE -> GeometryKind.MULTILINESTRING;
-                    case POLYGON -> GeometryKind.MULTIPOLYGON;
-                    default -> GeometryKind.GEOMETRY;
-                },
-                spatialReference == null
-                        ? CoordinateDimension.XY
-                        : dimension(spatialReference.hasZ(), spatialReference.hasM()),
-                spatialReference == null ? null : spatialReference.wkt(),
-                "GDB"
-        );
-    }
-
-    static void validateSchema(ShapefileSchema source, List<CanvasColumnSchema> expectedColumns) {
-        if (source.fields().size() + 1 != expectedColumns.size()) {
-            throw schemaDrift("SHP 字段数量已变化");
-        }
-        for (int index = 0; index < source.fields().size(); index++) {
-            requireColumn(expectedColumns.get(index), source.fields().get(index), index);
-        }
-        CanvasColumnSchema geometryColumn = geometryColumn(expectedColumns);
-        if (geometryColumn == null) {
-            throw schemaDrift("SHP Manifest Schema 不包含 Geometry");
-        }
-        if (!shapefileGeometryField(source).equals(geometryColumn.name())) {
-            throw schemaDrift("SHP Geometry 字段已经变化");
-        }
-        String shapeType = source.shapeType().name();
-        GeometryKind kind = shapeType.startsWith("MULTIPOINT") ? GeometryKind.MULTIPOINT
-                : shapeType.startsWith("POINT") ? GeometryKind.POINT
-                : shapeType.startsWith("POLYLINE") ? GeometryKind.MULTILINESTRING
-                : shapeType.startsWith("POLYGON") ? GeometryKind.MULTIPOLYGON
-                : GeometryKind.GEOMETRY;
-        requireSchema(
-                geometryColumn.geometry(),
-                kind,
-                dimension(source.shapeType().hasZ(), source.shapeType().hasM()),
-                source.spatialReference() == null ? null : source.spatialReference().wkt(),
-                "SHP"
-        );
-    }
-
-    private static void requireColumn(
-            CanvasColumnSchema expected,
-            cn.superhuang.data.scalpel.filegdb.model.FileGdbField actual,
-            int index
-    ) {
-        PlatformDataType type = switch (actual.type()) {
-            case INT16, INT32, OID -> PlatformDataType.LONG;
-            case FLOAT32 -> PlatformDataType.FLOAT;
-            case FLOAT64 -> PlatformDataType.DOUBLE;
-            case STRING, UUID, GUID, XML -> PlatformDataType.STRING;
-            case TIMESTAMP -> PlatformDataType.TIMESTAMP_NTZ;
-            case BINARY -> PlatformDataType.BINARY;
-            case SHAPE -> PlatformDataType.GEOMETRY;
-        };
-        Integer length = type == PlatformDataType.STRING
-                && actual.length() > 0 && actual.length() <= Integer.MAX_VALUE
-                ? (int) actual.length() : null;
-        requireColumn(expected, actual.name(), type, length, null, null, actual.nullable(), "GDB", index);
-    }
-
-    private static void requireColumn(
-            CanvasColumnSchema expected,
-            cn.superhuang.data.scalpel.shapefile.model.ShapefileField actual,
-            int index
-    ) {
-        PlatformDataType type = switch (actual.type()) {
-            case STRING -> PlatformDataType.STRING;
-            case INTEGER -> PlatformDataType.LONG;
-            case DECIMAL -> PlatformDataType.DECIMAL;
-            case BOOLEAN -> PlatformDataType.BOOLEAN;
-            case DATE -> PlatformDataType.DATE;
-        };
-        Integer precision = type == PlatformDataType.DECIMAL
-                ? Math.max(1, Math.min(38, actual.length())) : null;
-        Integer scale = type == PlatformDataType.DECIMAL
-                ? Math.max(0, Math.min(precision, actual.decimalCount())) : null;
-        requireColumn(
-                expected,
-                actual.name(),
-                type,
-                type == PlatformDataType.STRING ? actual.length() : null,
-                precision,
-                scale,
-                actual.nullable(),
-                "SHP",
-                index
-        );
-    }
-
-    private static void requireColumn(
-            CanvasColumnSchema expected,
-            String actualName,
-            PlatformDataType actualType,
-            Integer actualLength,
-            Integer actualPrecision,
-            Integer actualScale,
-            boolean actualNullable,
-            String format,
-            int index
-    ) {
-        if (!expected.name().equals(actualName)) {
-            throw schemaDrift(format + " 第 " + (index + 1) + " 个字段名称已变化");
-        }
-        if (expected.fieldType() != actualType
-                || !java.util.Objects.equals(expected.length(), actualLength)
-                || !java.util.Objects.equals(expected.precision(), actualPrecision)
-                || !java.util.Objects.equals(expected.scale(), actualScale)
-                || expected.nullable() != actualNullable) {
-            throw schemaDrift(format + " 字段 " + actualName + " 的类型或可空性已变化");
-        }
-    }
-
-    private static void requireSchema(
-            GeometryTypeDefinition expected,
-            GeometryKind actualKind,
-            CoordinateDimension actualDimension,
-            String wkt,
-            String format
-    ) {
-        if (expected == null) {
-            throw schemaDrift(format + " Geometry 定义缺失");
-        }
-        if (expected.kind() != GeometryKind.GEOMETRY && expected.kind() != actualKind) {
-            throw schemaDrift(format + " Geometry kind 已变化");
-        }
-        if (expected.dimension() != actualDimension) {
-            throw schemaDrift(format + " Geometry dimension 已变化");
-        }
-        OptionalInt detected = detectEpsg(wkt);
-        if (detected.isPresent() && detected.getAsInt() != expected.crs().code()) {
-            throw schemaDrift(format + " Geometry CRS 已变化");
-        }
-    }
-
-    private static CanvasColumnSchema geometryColumn(List<CanvasColumnSchema> columns) {
-        CanvasColumnSchema result = null;
-        for (CanvasColumnSchema column : columns) {
-            if (column.fieldType() != PlatformDataType.GEOMETRY) {
-                continue;
-            }
-            if (result != null) {
-                throw schemaDrift("文件数据集包含多个 Geometry 字段");
-            }
-            result = column;
-        }
-        return result;
-    }
-
-    private static String shapefileGeometryField(ShapefileSchema source) {
-        Set<String> names = new HashSet<>();
-        source.fields().forEach(field -> names.add(field.name()));
-        String candidate = "_geometry";
-        int suffix = 1;
-        while (!names.add(candidate)) {
-            candidate = "_geometry_" + suffix++;
-        }
-        return candidate;
-    }
-
     private static CoordinateDimension dimension(boolean hasZ, boolean hasM) {
         if (hasZ && hasM) return CoordinateDimension.XYZM;
         if (hasZ) return CoordinateDimension.XYZ;
@@ -296,28 +93,10 @@ final class FileDatasetGeometryConverter {
             String format
     ) {
         if (expected == null || expected.dimension() != dimension(hasZ, hasM)) {
-            throw schemaDrift(format + " Geometry dimension 已变化");
+            throw new IllegalArgumentException(
+                    "FILE_GEOMETRY_DIMENSION_UNSUPPORTED: " + format + " Geometry 维度无法转换"
+            );
         }
-    }
-
-    private static OptionalInt detectEpsg(String wkt) {
-        if (wkt == null || wkt.isBlank()) {
-            return OptionalInt.empty();
-        }
-        Matcher matcher = EPSG_IDENTIFIER.matcher(wkt);
-        int result = -1;
-        while (matcher.find()) {
-            try {
-                result = Integer.parseInt(matcher.group(1));
-            } catch (NumberFormatException ignored) {
-                // Ignore a malformed nested identifier and retain the last valid one.
-            }
-        }
-        return result > 0 ? OptionalInt.of(result) : OptionalInt.empty();
-    }
-
-    private static FileDatasetSpatialSchemaDriftException schemaDrift(String detail) {
-        return new FileDatasetSpatialSchemaDriftException(detail);
     }
 
     private static GeometryFactory factory(GeometryTypeDefinition expected) {
@@ -418,7 +197,9 @@ final class FileDatasetGeometryConverter {
             case GEOMETRYCOLLECTION -> geometry instanceof org.locationtech.jts.geom.GeometryCollection;
         };
         if (!matches) {
-            throw schemaDrift("Geometry kind 与文件 Schema 不一致");
+            throw new IllegalArgumentException(
+                    "FILE_GEOMETRY_KIND_UNSUPPORTED: Geometry 类型无法转换为 " + expected
+            );
         }
         return geometry;
     }

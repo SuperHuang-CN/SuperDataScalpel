@@ -15,6 +15,7 @@ import cn.superhuang.data.scalpel.contract.task.GeometryValidateNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
@@ -22,6 +23,7 @@ import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.SpatialMeasureNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.SpatialMeasurement;
@@ -97,7 +99,7 @@ class TaskCompilationContractTest {
         String modelNodes = """
                 {
                   "schemaVersion": 1,
-                  "schemaMinorVersion": 1,
+                  "schemaMinorVersion": 28,
                   "nodes": [
                     {
                       "id": "1c436443-4cc0-4fe8-b748-4c02143eb602",
@@ -115,8 +117,10 @@ class TaskCompilationContractTest {
                         "sourceTableName": "orders",
                         "targetModelId": "e8b93333-d6ee-4c8b-b5af-df5c90c9620d",
                         "writeMode": "APPEND",
-                        "columnMappingMode": "BY_NAME",
-                        "columnMappings": []
+                        "columnMappings": [{
+                          "sourceColumnName": "id",
+                          "targetColumnName": "id"
+                        }]
                       }
                     }
                   ],
@@ -131,7 +135,7 @@ class TaskCompilationContractTest {
         CanvasDefinition definition = objectMapper.readValue(modelNodes, CanvasDefinition.class);
 
         assertEquals(1, definition.schemaVersion());
-        assertEquals(1, definition.schemaMinorVersion());
+        assertEquals(28, definition.schemaMinorVersion());
         assertInstanceOf(ModelInputNodeDefinition.class, definition.nodes().get(0));
         assertInstanceOf(ModelOutputNodeDefinition.class, definition.nodes().get(1));
         String roundTrip = objectMapper.writeValueAsString(definition);
@@ -140,6 +144,73 @@ class TaskCompilationContractTest {
         assertTrue(!roundTrip.contains("nodeType"));
         assertTrue(!roundTrip.contains("shape"));
         assertTrue(!roundTrip.contains("ports"));
+    }
+
+    @Test
+    void readsAndWritesSnapshotSyncOutputsAsTheOneDotTwentyEightContract() throws Exception {
+        String json = """
+                {
+                  "schemaVersion": 1,
+                  "schemaMinorVersion": 28,
+                  "nodes": [
+                    {
+                      "id": "11111111-1111-4111-8111-111111111111",
+                      "type": "JDBC_SNAPSHOT_SYNC_OUTPUT",
+                      "name": "JDBC 快照同步",
+                      "layout": {"x": 0, "y": 0, "width": 260, "height": 120},
+                      "configuration": {
+                        "sourceTableName": "reservoir_source",
+                        "dataSourceId": "55859069-6387-4390-b850-104845ee5370",
+                        "targetTableName": "reservoir",
+                        "keyColumns": ["reservoir_code"],
+                        "columnMappings": [{
+                          "sourceColumnName": "reservoir_code",
+                          "targetColumnName": "reservoir_code"
+                        }],
+                        "deletePolicy": {
+                          "action": "DELETE",
+                          "maxDeleteRows": 1000,
+                          "maxDeleteRatio": 0.2
+                        }
+                      }
+                    },
+                    {
+                      "id": "22222222-2222-4222-8222-222222222222",
+                      "type": "MODEL_SNAPSHOT_SYNC_OUTPUT",
+                      "name": "模型快照同步",
+                      "layout": {"x": 320, "y": 0, "width": 260, "height": 120},
+                      "configuration": {
+                        "sourceTableName": "district_source",
+                        "targetModelId": "805c80b3-959e-4690-90d3-5c2d613864c1",
+                        "keyColumns": ["district_code"],
+                        "columnMappings": [{
+                          "sourceColumnName": "code",
+                          "targetColumnName": "district_code"
+                        }],
+                        "deletePolicy": {
+                          "action": "KEEP",
+                          "maxDeleteRows": null,
+                          "maxDeleteRatio": null
+                        }
+                      }
+                    }
+                  ],
+                  "edges": []
+                }
+                """;
+
+        CanvasDefinition definition = objectMapper.readValue(json, CanvasDefinition.class);
+
+        JdbcSnapshotSyncOutputNodeDefinition jdbc = assertInstanceOf(
+                JdbcSnapshotSyncOutputNodeDefinition.class, definition.nodes().get(0));
+        ModelSnapshotSyncOutputNodeDefinition model = assertInstanceOf(
+                ModelSnapshotSyncOutputNodeDefinition.class, definition.nodes().get(1));
+        assertEquals(0.2D, jdbc.configuration().deletePolicy().maxDeleteRatio());
+        assertEquals(List.of("district_code"), model.configuration().keyColumns());
+        String roundTrip = objectMapper.writeValueAsString(definition);
+        assertTrue(roundTrip.contains("\"type\":\"JDBC_SNAPSHOT_SYNC_OUTPUT\""));
+        assertTrue(roundTrip.contains("\"type\":\"MODEL_SNAPSHOT_SYNC_OUTPUT\""));
+        assertTrue(roundTrip.contains("\"action\":\"DELETE\""));
     }
 
     @Test
@@ -445,11 +516,11 @@ class TaskCompilationContractTest {
     }
 
     @Test
-    void readsAndWritesKafkaInlineValueSchemasAsTheOneDotFiveContract() throws Exception {
+    void readsAndWritesKafkaInlineValueSchemasAsTheOneDotTwentyEightContract() throws Exception {
         String json = """
                 {
                   "schemaVersion": 1,
-                  "schemaMinorVersion": 5,
+                  "schemaMinorVersion": 28,
                   "nodes": [
                     {
                       "id": "1c436443-4cc0-4fe8-b748-4c02143eb602",
@@ -495,8 +566,10 @@ class TaskCompilationContractTest {
                           }]
                         },
                         "keyColumnName": "event_id",
-                        "columnMappingMode": "BY_NAME",
-                        "columnMappings": []
+                        "columnMappings": [{
+                          "sourceColumnName": "event_id",
+                          "targetColumnName": "event_id"
+                        }]
                       }
                     }
                   ],
@@ -510,7 +583,7 @@ class TaskCompilationContractTest {
 
         CanvasDefinition definition = objectMapper.readValue(json, CanvasDefinition.class);
 
-        assertEquals(5, definition.schemaMinorVersion());
+        assertEquals(28, definition.schemaMinorVersion());
         KafkaInputNodeDefinition input = assertInstanceOf(
                 KafkaInputNodeDefinition.class,
                 definition.nodes().getFirst()
@@ -669,11 +742,11 @@ class TaskCompilationContractTest {
     }
 
     @Test
-    void readsAndWritesJdbcQueryInputAndJdbcOutputUpsertAsCanvasOneDotTwentyFour() throws Exception {
+    void readsAndWritesJdbcQueryInputAndJdbcOutputUpsertAsCanvasOneDotTwentyEight() throws Exception {
         String json = """
                 {
                   "schemaVersion": 1,
-                  "schemaMinorVersion": 24,
+                  "schemaMinorVersion": 28,
                   "nodes": [
                     {
                       "id": "11111111-1111-4111-8111-111111111111",
@@ -703,8 +776,10 @@ class TaskCompilationContractTest {
                         "dataSourceId": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
                         "targetTableName": "orders",
                         "writeMode": "UPSERT",
-                        "columnMappingMode": "BY_NAME",
-                        "columnMappings": [],
+                        "columnMappings": [{
+                          "sourceColumnName": "order_id",
+                          "targetColumnName": "order_id"
+                        }],
                         "upsertKeyColumns": ["order_id"]
                       }
                     }

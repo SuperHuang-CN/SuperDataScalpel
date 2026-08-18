@@ -1,4 +1,4 @@
-export type DirectoryScope = 'DATA_SOURCE' | 'MODEL' | 'FILE_DATASET' | 'TASK' | 'DATA_SERVICE';
+export type DirectoryScope = 'DATA_SOURCE' | 'MODEL' | 'FILE_DATASET' | 'TASK' | 'DATA_SERVICE' | 'ASSET';
 
 export interface DirectoryTreeNode {
   id: string;
@@ -36,6 +36,13 @@ export interface UpdateDirectoryRequest {
   name: string;
   sortOrder: number;
   description?: string;
+}
+
+export interface DirectoryImportResult {
+  totalCount: number;
+  createdCount: number;
+  updatedCount: number;
+  unchangedCount: number;
 }
 
 export interface DirectoryTreeSelectNode {

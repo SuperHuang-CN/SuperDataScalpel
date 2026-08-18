@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.contract.task.MetadataFileDatasetTable;
 import cn.superhuang.data.scalpel.contract.task.MetadataModel;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
 import cn.superhuang.data.scalpel.contract.task.MetadataTable;
+import cn.superhuang.data.scalpel.contract.task.MetadataTdEngineTmqTopic;
 import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKey;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableOrigin;
@@ -64,6 +65,9 @@ public final class MetadataIndex {
             if (dataSource.tables() == null) {
                 throw invalid(path + ".tables is required");
             }
+            if (dataSource.tdEngineTmqTopics() == null) {
+                throw invalid(path + ".tdEngineTmqTopics is required");
+            }
             Map<String, MetadataTable> tables = new LinkedHashMap<>();
             for (int tableIndex = 0; tableIndex < dataSource.tables().size(); tableIndex++) {
                 MetadataTable table = dataSource.tables().get(tableIndex);
@@ -73,7 +77,17 @@ public final class MetadataIndex {
                     throw invalid(tablePath + ".tableName duplicates table " + table.tableName());
                 }
             }
-            DataSourceEntry entry = new DataSourceEntry(dataSource, Map.copyOf(tables));
+            Map<String, MetadataTdEngineTmqTopic> tmqTopics = new LinkedHashMap<>();
+            for (int topicIndex = 0; topicIndex < dataSource.tdEngineTmqTopics().size(); topicIndex++) {
+                MetadataTdEngineTmqTopic topic = dataSource.tdEngineTmqTopics().get(topicIndex);
+                String topicPath = path + ".tdEngineTmqTopics[" + topicIndex + "]";
+                validateTdEngineTmqTopic(topic, topicPath);
+                if (tmqTopics.putIfAbsent(topic.topicName(), topic) != null) {
+                    throw invalid(topicPath + ".topicName duplicates topic " + topic.topicName());
+                }
+            }
+            DataSourceEntry entry = new DataSourceEntry(
+                    dataSource, Map.copyOf(tables), Map.copyOf(tmqTopics));
             if (dataSources.putIfAbsent(dataSource.id(), entry) != null) {
                 throw invalid(path + ".id duplicates data source " + dataSource.id());
             }
@@ -213,6 +227,7 @@ public final class MetadataIndex {
                 throw invalid(columnPath + ".name duplicates column " + column.name());
             }
         }
+        validateUniqueKeys(model.uniqueKeys(), path, columnNames);
     }
 
     private static void validateOptionalNamespace(String value, String path) {
@@ -240,20 +255,44 @@ public final class MetadataIndex {
                 throw invalid(columnPath + ".name duplicates column " + column.name());
             }
         }
-        validateUniqueKeys(table, path, columnNames);
+        validateUniqueKeys(table.uniqueKeys(), path, columnNames);
+    }
+
+    private static void validateTdEngineTmqTopic(MetadataTdEngineTmqTopic topic, String path) {
+        if (topic == null || blank(topic.topicName())) throw invalid(path + ".topicName is required");
+        if (blank(topic.catalogName())) throw invalid(path + ".catalogName is required");
+        if (blank(topic.supertableName())) throw invalid(path + ".supertableName is required");
+        if (blank(topic.definitionFingerprint())
+                || !topic.definitionFingerprint().matches("[0-9a-f]{64}")) {
+            throw invalid(path + ".definitionFingerprint must be lowercase SHA-256");
+        }
+        if (blank(topic.timePrecision()) || !Set.of("MS", "US").contains(topic.timePrecision())) {
+            throw invalid(path + ".timePrecision must be MS or US");
+        }
+        if (topic.columns() == null || topic.columns().isEmpty()) {
+            throw invalid(path + ".columns must not be empty");
+        }
+        Set<String> columnNames = new HashSet<>();
+        for (int index = 0; index < topic.columns().size(); index++) {
+            CanvasColumnSchema column = topic.columns().get(index);
+            validateColumn(column, path + ".columns[" + index + "]");
+            if (!columnNames.add(column.name())) {
+                throw invalid(path + ".columns duplicates column " + column.name());
+            }
+        }
     }
 
     private static void validateUniqueKeys(
-            MetadataTable table,
+            java.util.List<MetadataUniqueKey> keys,
             String path,
             Set<String> columnNames
     ) {
-        if (table.uniqueKeys() == null) {
+        if (keys == null) {
             throw invalid(path + ".uniqueKeys is required");
         }
         Set<java.util.List<String>> uniqueKeyColumns = new HashSet<>();
-        for (int keyIndex = 0; keyIndex < table.uniqueKeys().size(); keyIndex++) {
-            MetadataUniqueKey key = table.uniqueKeys().get(keyIndex);
+        for (int keyIndex = 0; keyIndex < keys.size(); keyIndex++) {
+            MetadataUniqueKey key = keys.get(keyIndex);
             String keyPath = path + ".uniqueKeys[" + keyIndex + "]";
             if (key == null || key.type() == null) {
                 throw invalid(keyPath + ".type is required");
@@ -315,9 +354,18 @@ public final class MetadataIndex {
         return value == null || value.isBlank();
     }
 
-    public record DataSourceEntry(MetadataDataSource metadata, Map<String, MetadataTable> tables) {
+    public record DataSourceEntry(
+            MetadataDataSource metadata,
+            Map<String, MetadataTable> tables,
+            Map<String, MetadataTdEngineTmqTopic> tdEngineTmqTopics
+    ) {
         public MetadataTable table(String tableName) {
             return tables.get(tableName);
+        }
+
+
+        public MetadataTdEngineTmqTopic tdEngineTmqTopic(String topicName) {
+            return tdEngineTmqTopics.get(topicName);
         }
     }
 

@@ -1,49 +1,64 @@
-import { useQueries } from '@tanstack/react-query';
-import { fetchDataModel, type DataModel } from '../../model';
-import type { DataServiceDetail } from '../model/dataService';
+import { useQuery } from '@tanstack/react-query';
+import { fetchDataServiceRelatedModels } from '../api/dataServiceApi';
+import type { DataServiceDetail, DataServiceRelatedModel } from '../model/dataService';
 
-export interface DataServiceRelatedModelView {
-  modelId: string;
-  role: 'PRIMARY' | 'REFERENCE';
-  order: number;
-  model?: DataModel;
+export interface DataServiceRelatedModelView extends DataServiceRelatedModel {
   loading: boolean;
   error: boolean;
 }
 
-const relatedModelReferences = (dataService: DataServiceDetail | undefined) => {
+const relatedModelReferences = (dataService: DataServiceDetail | undefined): DataServiceRelatedModel[] => {
   if (dataService?.standardDefinition) {
-    return [{
-      modelId: dataService.standardDefinition.modelId,
-      role: 'PRIMARY' as const,
-      order: 1,
-    }];
+    return [unresolvedModel(dataService.standardDefinition.modelId, 'PRIMARY', 1)];
   }
-  return (dataService?.sqlDefinition?.modelIds ?? []).map((modelId, index) => ({
-    modelId,
-    role: 'REFERENCE' as const,
-    order: index + 1,
-  }));
+  return (dataService?.sqlDefinition?.modelIds ?? []).map((modelId, index) => (
+    unresolvedModel(modelId, 'REFERENCE', index + 1)
+  ));
 };
+
+const unresolvedModel = (
+  modelId: string,
+  role: DataServiceRelatedModel['role'],
+  order: number,
+): DataServiceRelatedModel => ({
+  modelId,
+  role,
+  order,
+  resolved: false,
+  code: null,
+  name: null,
+  status: null,
+  directoryId: null,
+  directoryName: null,
+  warehouseLayerId: null,
+  warehouseLayerCode: null,
+  warehouseLayerName: null,
+  storageDataSourceId: null,
+  storageDataSourceCode: null,
+  storageDataSourceName: null,
+  catalogName: null,
+  schemaName: null,
+  physicalTableName: null,
+  schemaVersion: null,
+  updatedAt: null,
+});
 
 export const useDataServiceRelatedModels = (
   dataService: DataServiceDetail | undefined,
   enabled: boolean,
 ): DataServiceRelatedModelView[] => {
   const references = relatedModelReferences(dataService);
-  const queries = useQueries({
-    queries: references.map(({ modelId }) => ({
-      queryKey: ['data-models', modelId],
-      queryFn: () => fetchDataModel(modelId),
-      enabled,
-      staleTime: 30_000,
-    })),
+  const query = useQuery({
+    queryKey: ['data-services', dataService?.id, 'related-models'],
+    queryFn: () => fetchDataServiceRelatedModels(dataService?.id as string),
+    enabled: enabled && Boolean(dataService?.id),
+    staleTime: 30_000,
   });
+  const models = query.data ?? references;
 
-  return references.map((reference, index) => ({
-    ...reference,
-    model: queries[index]?.data?.model,
-    loading: Boolean(queries[index]?.isPending && enabled),
-    error: Boolean(queries[index]?.isError),
+  return models.map((model) => ({
+    ...model,
+    loading: enabled && query.isPending,
+    error: enabled && query.isError,
   }));
 };

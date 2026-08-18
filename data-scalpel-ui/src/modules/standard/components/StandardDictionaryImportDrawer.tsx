@@ -90,6 +90,7 @@ export const StandardDictionaryImportDrawer = ({ open, onClose }: Props) => {
     <>
       {contextHolder}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title="导入树形码表"
         open={open}
         width={760}

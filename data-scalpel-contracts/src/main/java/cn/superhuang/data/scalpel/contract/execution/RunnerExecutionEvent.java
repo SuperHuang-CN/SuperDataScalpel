@@ -11,8 +11,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = RunnerFailedEvent.class, name = "RUNNER_FAILED"),
         @JsonSubTypes.Type(value = RunnerStreamingStartedEvent.class, name = "RUNNER_STREAMING_STARTED"),
         @JsonSubTypes.Type(value = RunnerStreamingProgressEvent.class, name = "RUNNER_STREAMING_PROGRESS"),
-        @JsonSubTypes.Type(value = RunnerStreamingStoppedEvent.class, name = "RUNNER_STREAMING_STOPPED")
+        @JsonSubTypes.Type(value = RunnerStreamingStoppedEvent.class, name = "RUNNER_STREAMING_STOPPED"),
+        @JsonSubTypes.Type(value = RunnerUserObservabilityEvent.class, name = "RUNNER_USER_OBSERVABILITY")
 })
 public sealed interface RunnerExecutionEvent extends ExecutionMessageEnvelope permits RunnerStartedEvent, RunnerResultAvailableEvent,
-        RunnerFailedEvent, RunnerStreamingStartedEvent, RunnerStreamingProgressEvent, RunnerStreamingStoppedEvent {
+        RunnerFailedEvent, RunnerStreamingStartedEvent, RunnerStreamingProgressEvent, RunnerStreamingStoppedEvent,
+        RunnerUserObservabilityEvent {
 }

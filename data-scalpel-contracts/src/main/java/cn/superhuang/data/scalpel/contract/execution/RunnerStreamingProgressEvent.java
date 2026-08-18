@@ -14,7 +14,8 @@ public record RunnerStreamingProgressEvent(
         UUID runId,
         int attempt,
         UUID deploymentId,
-        List<StreamingQueryProgress> queries
+        List<StreamingQueryProgress> queries,
+        StreamingSourceProgress sourceProgress
 ) implements RunnerExecutionEvent {
     public RunnerStreamingProgressEvent {
         ExecutionContractValidation.envelope(
@@ -23,5 +24,21 @@ public record RunnerStreamingProgressEvent(
             throw new IllegalArgumentException("Runner 实时进度事件无效");
         }
         queries = queries == null ? List.of() : List.copyOf(queries);
+    }
+
+    public RunnerStreamingProgressEvent(
+            int messageVersion,
+            UUID messageId,
+            ExecutionMessageType messageType,
+            Instant occurredAt,
+            UUID engineId,
+            UUID executionId,
+            UUID runId,
+            int attempt,
+            UUID deploymentId,
+            List<StreamingQueryProgress> queries
+    ) {
+        this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
+                attempt, deploymentId, queries, null);
     }
 }

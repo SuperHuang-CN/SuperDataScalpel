@@ -29,6 +29,7 @@ export const ApiResourceTestResultModal = ({ result, resourceName, onClose }: {
   return <>
     {contextHolder}
     <Modal
+      rootClassName="business-overlay business-modal-overlay"
       open
       width={900}
       title={`API 资源测试 · ${resourceName}`}

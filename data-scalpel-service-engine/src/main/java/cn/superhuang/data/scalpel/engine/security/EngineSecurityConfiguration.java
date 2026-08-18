@@ -23,6 +23,8 @@ public class EngineSecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/actuator/health/**").permitAll()
+                        .requestMatchers("/modern-ui", "/modern-ui/**").permitAll()
+                        .requestMatchers("/interface-ui/**").permitAll()
                         .requestMatchers("/open-api/v1/**").permitAll()
                         .requestMatchers("/internal/v1/**").hasAuthority("engine.manage")
                         .anyRequest().denyAll())

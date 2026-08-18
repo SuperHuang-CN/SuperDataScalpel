@@ -8,11 +8,13 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonSubTypes({
         @JsonSubTypes.Type(value = ModelInputNodeDefinition.class, name = "MODEL_INPUT"),
         @JsonSubTypes.Type(value = JdbcInputNodeDefinition.class, name = "JDBC_INPUT"),
+        @JsonSubTypes.Type(value = JdbcIncrementalInputNodeDefinition.class, name = "JDBC_INCREMENTAL_INPUT"),
         @JsonSubTypes.Type(value = JdbcQueryInputNodeDefinition.class, name = "JDBC_QUERY_INPUT"),
         @JsonSubTypes.Type(value = FileDatasetInputNodeDefinition.class, name = "FILE_DATASET_INPUT"),
         @JsonSubTypes.Type(value = HttpApiInputNodeDefinition.class, name = "HTTP_API_INPUT"),
         @JsonSubTypes.Type(value = SpatialServiceInputNodeDefinition.class, name = "SPATIAL_SERVICE_INPUT"),
         @JsonSubTypes.Type(value = KafkaInputNodeDefinition.class, name = "KAFKA_INPUT"),
+        @JsonSubTypes.Type(value = TdEngineTmqInputNodeDefinition.class, name = "TDENGINE_TMQ_INPUT"),
         @JsonSubTypes.Type(value = JoinNodeDefinition.class, name = "JOIN"),
         @JsonSubTypes.Type(value = GeometryConstructNodeDefinition.class, name = "GEOMETRY_CONSTRUCT"),
         @JsonSubTypes.Type(value = SpatialTransformNodeDefinition.class, name = "SPATIAL_TRANSFORM"),
@@ -41,16 +43,20 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = WindowNodeDefinition.class, name = "WINDOW"),
         @JsonSubTypes.Type(value = TopNNodeDefinition.class, name = "TOP_N"),
         @JsonSubTypes.Type(value = ModelOutputNodeDefinition.class, name = "MODEL_OUTPUT"),
+        @JsonSubTypes.Type(value = ModelSnapshotSyncOutputNodeDefinition.class, name = "MODEL_SNAPSHOT_SYNC_OUTPUT"),
         @JsonSubTypes.Type(value = JdbcOutputNodeDefinition.class, name = "JDBC_OUTPUT"),
+        @JsonSubTypes.Type(value = JdbcSnapshotSyncOutputNodeDefinition.class, name = "JDBC_SNAPSHOT_SYNC_OUTPUT"),
         @JsonSubTypes.Type(value = KafkaOutputNodeDefinition.class, name = "KAFKA_OUTPUT"),
         @JsonSubTypes.Type(value = FileOutputNodeDefinition.class, name = "FILE_OUTPUT")
 })
 public sealed interface CanvasNodeDefinition
-        permits ModelInputNodeDefinition, JdbcInputNodeDefinition, JdbcQueryInputNodeDefinition,
+        permits ModelInputNodeDefinition, JdbcInputNodeDefinition, JdbcIncrementalInputNodeDefinition,
+                JdbcQueryInputNodeDefinition,
                 FileDatasetInputNodeDefinition,
                 HttpApiInputNodeDefinition,
                 SpatialServiceInputNodeDefinition,
-                KafkaInputNodeDefinition, JoinNodeDefinition, GeometryConstructNodeDefinition,
+                KafkaInputNodeDefinition, TdEngineTmqInputNodeDefinition,
+                JoinNodeDefinition, GeometryConstructNodeDefinition,
                 SpatialTransformNodeDefinition, GeometryValidateNodeDefinition,
                 GeometryRepairNodeDefinition, GeometryBufferNodeDefinition,
                 GeometryExplodeNodeDefinition, SpatialMeasureNodeDefinition,
@@ -68,7 +74,8 @@ public sealed interface CanvasNodeDefinition
                 JsonExtractNodeDefinition,
                 WindowNodeDefinition,
                 TopNNodeDefinition,
-                ModelOutputNodeDefinition, JdbcOutputNodeDefinition, KafkaOutputNodeDefinition,
+                ModelOutputNodeDefinition, ModelSnapshotSyncOutputNodeDefinition,
+                JdbcOutputNodeDefinition, JdbcSnapshotSyncOutputNodeDefinition, KafkaOutputNodeDefinition,
                 FileOutputNodeDefinition {
     String id();
 

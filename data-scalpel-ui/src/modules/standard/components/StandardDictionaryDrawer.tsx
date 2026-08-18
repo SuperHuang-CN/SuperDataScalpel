@@ -84,6 +84,7 @@ export const StandardDictionaryDrawer = ({ open, dictionary, onClose }: Props) =
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={dictionary ? '修改码表' : '新建码表'}
         open={open}
         width={560}

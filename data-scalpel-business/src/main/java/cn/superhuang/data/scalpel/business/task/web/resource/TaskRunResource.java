@@ -2,6 +2,8 @@ package cn.superhuang.data.scalpel.business.task.web.resource;
 
 import cn.superhuang.data.scalpel.business.task.service.TaskRunService;
 import cn.superhuang.data.scalpel.business.task.service.TaskRunService.TaskRunArtifact;
+import cn.superhuang.data.scalpel.business.task.service.QualityFailureSampleService;
+import cn.superhuang.data.scalpel.business.task.web.response.QualityFailureSampleResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
@@ -11,6 +13,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ContentDisposition;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,15 +25,18 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
+import java.nio.charset.StandardCharsets;
 
 @RestController
 @Tag(name = "任务运行")
 public class TaskRunResource {
 
     private final TaskRunService service;
+    private final QualityFailureSampleService qualityFailureSampleService;
 
-    public TaskRunResource(TaskRunService service) {
+    public TaskRunResource(TaskRunService service, QualityFailureSampleService qualityFailureSampleService) {
         this.service = service;
+        this.qualityFailureSampleService = qualityFailureSampleService;
     }
 
     @PostMapping("/api/v1/tasks/{id}/actions/run")
@@ -70,6 +76,32 @@ public class TaskRunResource {
     @Operation(summary = "读取 Canvas 任务运行日志")
     public ResponseEntity<byte[]> logArtifact(@PathVariable UUID runId) {
         return artifactResponse(service.logArtifact(runId));
+    }
+
+    @GetMapping("/api/v1/task-runs/{runId}/quality-rules/{ruleId}/samples")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "预览模型质检规则失败样本")
+    public QualityFailureSampleResponse qualitySamples(
+            @PathVariable UUID runId,
+            @PathVariable UUID ruleId
+    ) {
+        return qualityFailureSampleService.preview(runId, ruleId);
+    }
+
+    @GetMapping("/api/v1/task-runs/{runId}/quality-rules/{ruleId}/samples/download")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "下载模型质检规则失败样本 Parquet")
+    public ResponseEntity<byte[]> downloadQualitySamples(
+            @PathVariable UUID runId,
+            @PathVariable UUID ruleId
+    ) {
+        QualityFailureSampleService.QualitySampleDownload download =
+                qualityFailureSampleService.download(runId, ruleId);
+        return ResponseEntity.ok()
+                .contentType(MediaType.parseMediaType("application/vnd.apache.parquet"))
+                .header(HttpHeaders.CONTENT_DISPOSITION, ContentDisposition.attachment()
+                        .filename(download.fileName(), StandardCharsets.UTF_8).build().toString())
+                .body(download.content());
     }
 
     @PostMapping("/api/v1/task-runs/{runId}/actions/cancel")

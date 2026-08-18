@@ -1,6 +1,7 @@
 package cn.superhuang.datascalpel.taskengine.compiler.canvas;
 
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasLineageOutputCandidate;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 
 import java.util.Collections;
@@ -10,7 +11,8 @@ import java.util.Map;
 
 record NodeCompileOutput(
         Map<String, SparkCanvasTable> propagatedTables,
-        List<CanvasTableSchema> displayedOutputTables
+        List<CanvasTableSchema> displayedOutputTables,
+        CanvasLineageOutputCandidate lineageOutputCandidate
 ) {
     NodeCompileOutput {
         propagatedTables = Collections.unmodifiableMap(new LinkedHashMap<>(propagatedTables));
@@ -18,10 +20,10 @@ record NodeCompileOutput(
     }
 
     static NodeCompileOutput invalid(List<CanvasTableSchema> displayedOutputTables) {
-        return new NodeCompileOutput(Map.of(), displayedOutputTables);
+        return new NodeCompileOutput(Map.of(), displayedOutputTables, null);
     }
 
     static NodeCompileOutput outputOnly() {
-        return new NodeCompileOutput(Map.of(), List.of());
+        return new NodeCompileOutput(Map.of(), List.of(), null);
     }
 }

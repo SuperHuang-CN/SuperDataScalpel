@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.task.web.response;
 import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState;
 import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentDesiredState;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStreamingDeployment;
+import cn.superhuang.data.scalpel.contract.execution.StreamingCheckpointMode;
 
 import java.time.Instant;
 import java.util.List;
@@ -14,6 +15,9 @@ public record TaskStreamingDeploymentResponse(
         UUID computeEngineId,
         UUID currentRunId,
         String checkpointKeyPrefix,
+        int checkpointGeneration,
+        StreamingCheckpointMode checkpointStartMode,
+        UUID checkpointSourceDeploymentId,
         StreamingDeploymentDesiredState desiredState,
         StreamingDeploymentActualState actualState,
         String applicationId,
@@ -25,6 +29,16 @@ public record TaskStreamingDeploymentResponse(
         Instant lastProgressAt,
         Instant lastErrorAt,
         String lastError,
+        UUID sourceNodeId,
+        String sourceSignature,
+        String committedOffset,
+        Instant windowStart,
+        Instant windowEnd,
+        Long rowCount,
+        Long pollDurationMillis,
+        Instant pollTime,
+        Long cursorLagMillis,
+        UserJobObservabilityResponse userJobObservability,
         List<TaskStreamingQueryResponse> queries
 ) {
     public static TaskStreamingDeploymentResponse from(
@@ -35,12 +49,20 @@ public record TaskStreamingDeploymentResponse(
         return new TaskStreamingDeploymentResponse(
                 deployment.getId(), deployment.getDefinitionVersion(), deployment.getComputeEngineId(),
                 deployment.getCurrentRunId(), deployment.getCheckpointKeyPrefix(),
+                deployment.getCheckpointGeneration(), deployment.getCheckpointStartMode(),
+                deployment.getCheckpointSourceDeploymentId(),
                 deployment.getDesiredState(), deployment.getActualState(),
                 run == null ? null : run.getBackendApplicationId(),
                 run == null ? null : run.getTrackingUrl(),
                 run == null ? null : run.getAttempt(),
                 deployment.getStartedAt(), deployment.getStopRequestedAt(), deployment.getStoppedAt(),
                 deployment.getLastProgressAt(), deployment.getLastErrorAt(), deployment.getLastError(),
+                deployment.getSourceNodeId(), deployment.getSourceSignature(),
+                deployment.getLastCommittedOffset(), deployment.getLastWindowStart(),
+                deployment.getLastWindowEnd(), deployment.getLastWindowRowCount(),
+                deployment.getLastPollDurationMillis(), deployment.getLastPollAt(),
+                deployment.getCursorLagMillis(),
+                TaskRunResponse.observabilityFrom(run),
                 List.copyOf(queries)
         );
     }

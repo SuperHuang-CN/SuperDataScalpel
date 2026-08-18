@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeJdbcInput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { jdbcInputCanvasView } from './canvasView';
 
 export const jdbcInputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.JdbcInput,
@@ -15,7 +16,7 @@ export const jdbcInputSpec = createCanvasNodeSpec({
   searchKeywords: ['jdbc', '数据库', '数据源', '物理表'],
   iconKey: CanvasNodeIconKey.Database,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: jdbcInputCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
   introducedInMinor: 0,
   graph: { minInputs: 0, maxInputs: 0, minOutputs: 1, maxOutputs: null },

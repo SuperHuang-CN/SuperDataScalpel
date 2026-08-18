@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeKafkaOutput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { kafkaOutputCanvasView } from './canvasView';
 
 export const kafkaOutputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.KafkaOutput,
@@ -15,9 +16,9 @@ export const kafkaOutputSpec = createCanvasNodeSpec({
   searchKeywords: ['kafka', 'topic', '消息', '发送'],
   iconKey: CanvasNodeIconKey.StreamOutput,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: kafkaOutputCanvasView,
   supportedModes: ['STREAMING'],
-  introducedInMinor: 5,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 0, maxOutputs: 0 },
   createDefaultConfiguration: createKafkaOutputConfiguration,
   summarize: summarizeKafkaOutput,

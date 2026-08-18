@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeTopN } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { topNCanvasView } from './canvasView';
 
 export const topNSpec = createCanvasNodeSpec({
   type: CanvasNodeType.TopN,
@@ -15,9 +16,9 @@ export const topNSpec = createCanvasNodeSpec({
   searchKeywords: ['top n', '排名', '前几名', '分组', '并列'],
   iconKey: CanvasNodeIconKey.TopN,
   order: 30,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: topNCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 17,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createTopNConfiguration,
   summarize: summarizeTopN,

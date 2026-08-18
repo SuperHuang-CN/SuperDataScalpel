@@ -21,6 +21,7 @@
 - 普通页面优先使用 Ant Design 的 Table、Form、Drawer、Tree、Select 等组件；服务端数据由 TanStack Query 管理，局部交互状态优先使用 React 自身状态。
 - 可视化任务编排统一使用 AntV X6。后端持久化的是与 X6 解耦的节点/连线 JSON 契约，不得直接持久化 X6 内部对象。
 - X6 节点配置必须使用明确的 TypeScript 类型；不得在新代码中扩散 `any`。
+- Canvas 节点配置面板优先保证配置密度：普通配置、当前错误和必须立即处理的风险直接展示；低频元数据详情、协议说明、执行语义和计算后的物理信息通过 Tooltip、图标按钮或 Modal 按需查看，不得用常驻大段说明挤占 Inspector 空间。
 - 前端新增或修改依赖、Canvas 交互变更后的测试与验证要求当前暂时禁用，具体见“测试与验证（暂时禁用）”。
 - 前端目录、依赖方向、模块公开入口和统一查询等具体规范，以 `data-scalpel-ui/AGENTS.md` 为准。
 
@@ -32,6 +33,8 @@
 - `data-scalpel-business`：统一存放业务实现，按照 `system`、`datasource`、`model`、`task`、`service` 等业务包组织；这些业务包允许真实、必要的直接协作，不拆成独立 Maven 模块。
 - `data-scalpel-admin`：Spring Boot 可执行应用和运行配置。不得把新的业务实体、Repository、Service 或 Controller 放入该模块。
 - `data-scalpel-task-engine`：负责 Canvas 任务编译和 Spark/JDBC 运行时执行。节点生命周期日志、错误分类、脱敏和执行结果必须遵循 [Task Engine 开发约定](data-scalpel-task-engine/AGENTS.md)。
+- `data-scalpel-task-sdk`：Spark JAR 用户作业唯一公开兼容 API。只允许依赖 Spark 公共 API，不得依赖 Spring、JPA、Canvas、Manifest 或 Task Engine 内部实现；Task Engine Uber JAR 不是用户工程的编译依赖。
+- `data-scalpel-task-sdk-testkit`：用户 Spark JAR 的本地测试辅助 API。只允许依赖公开 SDK 和 Spark 公共 API，不得依赖控制面、Contracts、Task Engine、Spring、JPA 或 Testcontainers；用户工程必须以 `test` 作用域引入，不得打入运行 JAR。
 - 没有明确需求时，不新增模块，也不随意调整现有模块职责。
 
 ## Super API Gateway 独立工程
@@ -101,6 +104,10 @@
 - Canvas 内置节点使用显式编译期注册表。没有运行时第三方节点需求时，不得引入反射扫描、Spring 扫描、ServiceLoader、远程模块或其他动态插件框架。
 - 物理类型到平台类型、平台类型到物理类型的双向转换只能由 `data-scalpel-dialect` 实现；JDBC 类型只允许停留在元数据边界。映射存在 `LOSSY` 或 `UNSUPPORTED` 时必须阻止导入或建表，不得静默截断精度、长度、值域或时区语义。
 - Spark 类不得进入 JPA 实体、REST 契约或核心模块。实际接入 Spark 时，由执行模块使用 Java `DataTypes` 与 `PlatformTypeDefinition` 显式转换。
+- 用户 Spark JAR 只能通过 `data-scalpel-task-sdk` 使用平台封装能力。SDK 和 Spark 在用户 Maven 工程中使用 `provided`；用户自己的其他依赖由用户 JAR携带。SDK 资源绑定是授权声明和凭据最小化机制，不是 JVM 沙箱或恶意代码隔离边界。
+- SDK TestKit只模拟本地Spark转换、资源绑定、字段映射、写入捕获和StreamingQuery生命周期，不复制生产Runner、数据库方言或外部连接实现。真实Kafka认证、数据库约束、事务和网络故障必须由独立集成测试验证。
+- 实时 Spark JAR 必须通过 SDK 注册全部 `StreamingQuery`，由平台分配查询名称和 Checkpoint并统一停止、监控和上报进度。Trigger、Output Mode和状态Schema由用户代码负责；跨定义版本继续Checkpoint不做兼容性分析。
+- Spark JAR用户作业可通过SDK记录结构化事件、当前阶段、Counter、Gauge和Operation Timer。观测能力只保存当前Attempt最新快照，结构化事件进入现有控制台日志；不得为指标额外触发Dataset Action，也不得记录SQL、数据内容、凭据或Checkpoint物理信息。
 
 - 优先使用直接、清晰的 Spring/JPA 实现和职责集中的小类。没有当前使用场景时，不增加额外分层、接口、工厂或扩展点。
 - 除非任务明确要求修改，否则保持现有 API 行为兼容。

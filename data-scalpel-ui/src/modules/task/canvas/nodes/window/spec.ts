@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeWindow } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { windowCanvasView } from './canvasView';
 
 export const windowSpec = createCanvasNodeSpec({
   type: CanvasNodeType.Window,
@@ -15,9 +16,9 @@ export const windowSpec = createCanvasNodeSpec({
   searchKeywords: ['window', '窗口', '排名', 'lag', 'lead', 'rank'],
   iconKey: CanvasNodeIconKey.Window,
   order: 20,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: windowCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 16,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createWindowConfiguration,
   summarize: summarizeWindow,

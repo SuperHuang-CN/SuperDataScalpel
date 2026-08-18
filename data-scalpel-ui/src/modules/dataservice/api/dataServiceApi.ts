@@ -4,11 +4,15 @@ import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
   CreateDataServiceRequest,
   DataServiceDetail,
+  DataServiceRelatedModel,
   DataServiceSummary,
   SqlServiceTestRequest,
   SqlServiceTestResponse,
+  StandardDataServiceModelCandidate,
+  UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
 } from '../model/dataService';
+import type { LineageGraph } from '../../model';
 import type {
   ScriptCompletionData,
   ScriptExecutionResult,
@@ -30,6 +34,24 @@ export const fetchDataService = (id: string): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}`)
 );
 
+export const fetchDataServiceRelatedModels = (id: string): Promise<DataServiceRelatedModel[]> => (
+  requestJson<DataServiceRelatedModel[]>(`${DATA_SERVICE_PATH}/${id}/related-models`)
+);
+
+export const fetchDataServiceTableLineage = (id: string, depth: 1 | 2): Promise<LineageGraph> => {
+  const query = new URLSearchParams({ depth: String(depth) });
+  return requestJson<LineageGraph>(`${DATA_SERVICE_PATH}/${id}/lineage/table?${query.toString()}`);
+};
+
+export const fetchDataServiceFieldLineage = (
+  id: string,
+  fieldId: string,
+  depth: 1 | 2,
+): Promise<LineageGraph> => {
+  const query = new URLSearchParams({ depth: String(depth) });
+  return requestJson<LineageGraph>(`${DATA_SERVICE_PATH}/${id}/lineage/fields/${fieldId}?${query.toString()}`);
+};
+
 export const createDataService = (request: CreateDataServiceRequest): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(DATA_SERVICE_PATH, { method: 'POST', body: JSON.stringify(request) })
 );
@@ -37,6 +59,27 @@ export const createDataService = (request: CreateDataServiceRequest): Promise<Da
 export const updateDataService = (id: string, request: UpdateDataServiceRequest): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/update`, { method: 'POST', body: JSON.stringify(request) })
 );
+
+export const updateDataServiceDefinition = (
+  id: string,
+  request: UpdateDataServiceDefinitionRequest,
+): Promise<DataServiceDetail> => requestJson<DataServiceDetail>(
+  `${DATA_SERVICE_PATH}/${id}/actions/update-definition`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export const fetchStandardDataServiceModelCandidates = (
+  id: string,
+  request: SearchRequest,
+  includeUnavailable: boolean,
+): Promise<PageResponse<StandardDataServiceModelCandidate>> => {
+  const query = toSearchParams(request);
+  if (includeUnavailable) query.set('includeUnavailable', 'true');
+  const suffix = query.toString();
+  return requestJson<PageResponse<StandardDataServiceModelCandidate>>(
+    `${DATA_SERVICE_PATH}/${id}/standard-model-candidates${suffix ? `?${suffix}` : ''}`,
+  );
+};
 
 export const testSqlDataService = (request: SqlServiceTestRequest): Promise<SqlServiceTestResponse> => (
   requestJson<SqlServiceTestResponse>(`${DATA_SERVICE_PATH}/actions/test-sql`, {

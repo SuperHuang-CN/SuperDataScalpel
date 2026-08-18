@@ -11,6 +11,7 @@ import type {
   PlatformTypeDefinition,
   SqlServiceParameterDefinition,
   SqlServiceTestRequest,
+  UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
 } from './dataService';
 
@@ -191,7 +192,7 @@ export const detailToDataServiceFormValues = (detail: DataServiceDetail): DataSe
   engineId: detail.engineId,
   routePath: detail.routePath,
   sqlText: detail.sqlDefinition?.sqlText ?? '',
-  script: detail.scriptDefinition?.script ?? '',
+  script: detail.scriptDefinition?.script ?? 'return [message: "Hello DataScalpel"]',
   examples: detail.scriptDefinition?.examples?.length
     ? detail.scriptDefinition.examples
     : defaultScriptRequestExamples(),
@@ -209,9 +210,19 @@ export const buildDataServiceUpdateRequest = (values: DataServiceFormValues): Up
     type: values.type,
     description: normalizedOptionalText(values.description),
   };
+  return {
+    ...common,
+    standardDefinition: null,
+    sqlDefinition: null,
+    scriptDefinition: null,
+  };
+};
+
+export const buildDataServiceDefinitionRequest = (
+  values: DataServiceFormValues,
+): UpdateDataServiceDefinitionRequest => {
   if (values.type === 'STANDARD_TABLE') {
     return {
-      ...common,
       standardDefinition: { modelId: values.modelId ?? '' },
       sqlDefinition: null,
       scriptDefinition: null,
@@ -219,7 +230,6 @@ export const buildDataServiceUpdateRequest = (values: DataServiceFormValues): Up
   }
   if (values.type === 'SQL_QUERY') {
     return {
-      ...common,
       standardDefinition: null,
       sqlDefinition: {
         dataSourceId: values.dataSourceId ?? '',
@@ -231,7 +241,6 @@ export const buildDataServiceUpdateRequest = (values: DataServiceFormValues): Up
     };
   }
   return {
-    ...common,
     standardDefinition: null,
     sqlDefinition: null,
     scriptDefinition: {
@@ -273,8 +282,18 @@ export const buildSqlServiceTestRequest = (
 
 export const dataServiceFormFingerprint = (values: DataServiceFormValues): string => JSON.stringify({
   code: values.code?.trim().toLowerCase() ?? '',
-  definition: buildDataServiceUpdateRequest(values),
+  basic: buildDataServiceUpdateRequest(values),
+  definition: buildDataServiceDefinitionRequest(values),
 });
+
+export const dataServiceBasicFingerprint = (values: DataServiceFormValues): string => JSON.stringify({
+  code: values.code?.trim().toLowerCase() ?? '',
+  basic: buildDataServiceUpdateRequest(values),
+});
+
+export const dataServiceDefinitionFingerprint = (values: DataServiceFormValues): string => JSON.stringify(
+  buildDataServiceDefinitionRequest(values),
+);
 
 export const typeDescription = (type: PlatformTypeDefinition): string => {
   if (type.type === 'STRING' && type.length) return `STRING(${type.length})`;

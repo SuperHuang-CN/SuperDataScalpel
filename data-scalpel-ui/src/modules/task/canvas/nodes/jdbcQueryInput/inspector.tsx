@@ -78,7 +78,8 @@ const JdbcQueryInputInspector = ({
   useImperativeHandle<CanvasNodeInspectorHandle, CanvasNodeInspectorHandle>(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (values.dataSourceId && dataSourceAvailable !== true) {
           form.setFields([{
             name: 'dataSourceId',
@@ -86,7 +87,7 @@ const JdbcQueryInputInspector = ({
               ? '正在读取数据源信息，请稍候'
               : '数据源不可用，或不是具有 SOURCE 用途的 PostgreSQL/MySQL'],
           }]);
-          return false;
+
         }
         submit(values);
         return true;

@@ -166,6 +166,7 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
   const close = (confirmDirty = true) => {
     if (confirmDirty && dirtyRef.current) {
       modalApi.confirm({
+        rootClassName: 'business-overlay business-modal-overlay',
         title: '放弃未保存修改？',
         content: '常用字段模板内容已修改，关闭后这些修改不会保留。',
         okText: '放弃修改',
@@ -248,6 +249,7 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
       {messageContext}
       {modalContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={template ? '修改常用字段模板' : '新建常用字段模板'}
         open={open}
         width={920}
@@ -528,6 +530,7 @@ export const ModelFieldTemplatePage = () => {
   };
 
   const removeTemplate = (template: ModelFieldTemplate) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除常用字段模板',
     content: `确认删除“${template.name}（${template.code}）”吗？已复制到模型的字段不会受影响。`,
     okText: '删除',

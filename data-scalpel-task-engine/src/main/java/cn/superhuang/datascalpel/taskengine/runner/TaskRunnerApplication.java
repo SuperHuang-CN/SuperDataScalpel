@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.contract.execution.RunnerFailedEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerResultAvailableEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerStartedEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingStoppedEvent;
+import cn.superhuang.data.scalpel.contract.execution.RunnerUserObservabilityEvent;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.TaskExecutionLaunchDescriptor;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
@@ -33,6 +34,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 
 final class TaskRunnerApplication {
     private static final Logger LOGGER = LoggerFactory.getLogger(TaskRunnerApplication.class);
@@ -41,6 +43,7 @@ final class TaskRunnerApplication {
     private final RunnerArtifactAccess artifactClient;
     private final RunnerEventPublisherFactory publisherFactory;
     private final RunnerTaskExecutor taskExecutor;
+    private final QualityRunnerTaskExecutor qualityTaskExecutor;
     private final StreamingRunnerTaskExecutor streamingTaskExecutor;
     private final RunnerFailureClassifier failureClassifier = new RunnerFailureClassifier();
 
@@ -49,7 +52,8 @@ final class TaskRunnerApplication {
             RunnerArtifactAccess artifactClient,
             RunnerEventPublisherFactory publisherFactory,
             RunnerTaskExecutor taskExecutor,
-            StreamingRunnerTaskExecutor streamingTaskExecutor
+            StreamingRunnerTaskExecutor streamingTaskExecutor,
+            QualityRunnerTaskExecutor qualityTaskExecutor
     ) {
         this.objectMapper = objectMapper;
         this.launchLoader = new RunnerLaunchLoader(objectMapper);
@@ -57,6 +61,18 @@ final class TaskRunnerApplication {
         this.publisherFactory = publisherFactory;
         this.taskExecutor = taskExecutor;
         this.streamingTaskExecutor = streamingTaskExecutor;
+        this.qualityTaskExecutor = qualityTaskExecutor;
+    }
+
+    TaskRunnerApplication(
+            ObjectMapper objectMapper,
+            RunnerArtifactAccess artifactClient,
+            RunnerEventPublisherFactory publisherFactory,
+            RunnerTaskExecutor taskExecutor,
+            StreamingRunnerTaskExecutor streamingTaskExecutor
+    ) {
+        this(objectMapper, artifactClient, publisherFactory, taskExecutor, streamingTaskExecutor,
+                new ModelQualityTaskExecutor()::execute);
     }
 
     TaskRunnerApplication(
@@ -73,7 +89,8 @@ final class TaskRunnerApplication {
                 (manifest, sparkMode, launch, publisher) -> {
                     throw new RunnerExecutionException(
                             "STREAMING_RUNNER_UNAVAILABLE", "流式 Runner 未配置", null);
-                }
+                },
+                new ModelQualityTaskExecutor()::execute
         );
     }
 
@@ -97,6 +114,7 @@ final class TaskRunnerApplication {
                 launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt);
         RunnerEventPublisher publisher = createPublisher(launch);
         TaskExecutionResult result;
+        TaskExecutionManifest loadedManifest = null;
         try {
             byte[] manifestBytes = artifactClient.download(launch.manifest().getUrl(), launch.manifest().maxBytes());
             verifySha256(manifestBytes, launch.manifest().sha256());
@@ -104,7 +122,41 @@ final class TaskRunnerApplication {
                 throw new RunnerExecutionException("EXECUTION_DEADLINE_EXCEEDED", "任务已超过执行截止时间", null);
             }
             TaskExecutionManifest manifest = objectMapper.readValue(manifestBytes, TaskExecutionManifest.class);
+            loadedManifest = manifest;
             requireManifestIdentity(launch, manifest);
+            if (manifest.executionTaskType() == ExecutionTaskType.SPARK_STREAMING_JAR) {
+                if (launch.userJar() == null) {
+                    throw new RunnerExecutionException("USER_JAR_DOWNLOAD_MISSING", "启动描述缺少用户 JAR", null);
+                }
+                Path userJar = loaded.workDirectory().resolve("user-job.jar");
+                artifactClient.downloadToFile(launch.userJar().getUrl(), launch.userJar().sizeBytes(), userJar);
+                verifySha256(userJar, launch.userJar().sha256());
+                return runStreamingJar(launch, manifest, userJar, publisher);
+            } else if (manifest.executionTaskType() == ExecutionTaskType.SPARK_JAR) {
+                if (launch.userJar() == null) {
+                    throw new RunnerExecutionException("USER_JAR_DOWNLOAD_MISSING", "启动描述缺少用户 JAR", null);
+                }
+                Path userJar = loaded.workDirectory().resolve("user-job.jar");
+                artifactClient.downloadToFile(launch.userJar().getUrl(), launch.userJar().sizeBytes(), userJar);
+                verifySha256(userJar, launch.userJar().sha256());
+                result = new SparkJarTaskExecutor(objectMapper).execute(manifest, launch.sparkMode(), userJar, applicationId ->
+                        publishBestEffort(publisher, new RunnerStartedEvent(
+                                ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
+                                ExecutionMessageType.RUNNER_STARTED, Instant.now(), launch.engineId(),
+                                launch.executionId(), launch.runId(), launch.attempt(), applicationId)),
+                        snapshot -> publishObservability(publisher, launch, snapshot));
+                requireResultIdentity(launch, result);
+            } else if (manifest.executionTaskType() == ExecutionTaskType.SPARK_MODEL_QUALITY) {
+                AtomicReference<String> sparkApplicationId = new AtomicReference<>();
+                result = qualityTaskExecutor.execute(manifest, launch.sparkMode(), applicationId -> {
+                    sparkApplicationId.set(applicationId);
+                    publishBestEffort(publisher, new RunnerStartedEvent(
+                            ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
+                            ExecutionMessageType.RUNNER_STARTED, Instant.now(), launch.engineId(),
+                            launch.executionId(), launch.runId(), launch.attempt(), applicationId));
+                }, launch, loaded.workDirectory(), artifactClient);
+                requireResultIdentity(launch, result);
+            } else {
             if (manifest.task() != null
                     && manifest.task().executionMode() == CanvasExecutionMode.STREAMING) {
                 return runStreaming(launch, manifest, publisher);
@@ -129,8 +181,16 @@ final class TaskRunnerApplication {
                 ));
             });
             requireResultIdentity(launch, result);
+            }
         } catch (Throwable throwable) {
-            result = CanvasTaskExecutor.failure(
+            result = loadedManifest != null
+                    && loadedManifest.executionTaskType() == ExecutionTaskType.SPARK_MODEL_QUALITY
+                    ? ModelQualityTaskExecutor.failure(
+                    launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt, throwable)
+                    : loadedManifest != null && loadedManifest.executionTaskType() == ExecutionTaskType.SPARK_JAR
+                    ? SparkJarTaskExecutor.failure(
+                    launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt, throwable)
+                    : CanvasTaskExecutor.failure(
                     launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt, throwable);
             LOGGER.error(
                     "event=TASK_FAILURE_DETAIL executionId={} runId={} attempt={} code={} diagnosticId={}\n{}",
@@ -236,6 +296,36 @@ final class TaskRunnerApplication {
         }
     }
 
+    private int runStreamingJar(
+            TaskExecutionLaunchDescriptor launch,
+            TaskExecutionManifest manifest,
+            Path userJar,
+            RunnerEventPublisher publisher
+    ) {
+        try {
+            new SparkStreamingJarTaskExecutor(objectMapper)
+                    .execute(manifest, launch.sparkMode(), launch, userJar, publisher);
+            return 0;
+        } catch (Throwable throwable) {
+            TaskExecutionError error = failureClassifier.classify(
+                    throwable,
+                    RunnerFailureContext.task(
+                            cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase.PROCESS));
+            LOGGER.error(
+                    "event=TASK_FAILED executionId={} runId={} attempt={} code={} category={} phase={} diagnosticId={}\n{}",
+                    launch.executionId(), launch.runId(), launch.attempt(), error.code(),
+                    error.category(), error.phase(), error.diagnosticId(),
+                    RunnerLogSanitizer.stackTrace(throwable));
+            publishBestEffort(publisher, new RunnerFailedEvent(
+                    ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
+                    ExecutionMessageType.RUNNER_FAILED, Instant.now(), launch.engineId(),
+                    launch.executionId(), launch.runId(), launch.attempt(), safeError(error)));
+            return 1;
+        } finally {
+            try { publisher.close(); } catch (RuntimeException ignored) { }
+        }
+    }
+
     private RunnerEventPublisher createPublisher(TaskExecutionLaunchDescriptor launch) {
         try {
             return publisherFactory.create(launch);
@@ -246,6 +336,27 @@ final class TaskRunnerApplication {
                 }
                 @Override public void close() { }
             };
+        }
+    }
+
+    private static void publishObservability(
+            RunnerEventPublisher publisher,
+            TaskExecutionLaunchDescriptor launch,
+            cn.superhuang.data.scalpel.contract.execution.UserJobObservabilitySnapshot snapshot
+    ) {
+        try {
+            publisher.publish(new RunnerUserObservabilityEvent(
+                    ExecutionMessageEnvelope.CURRENT_VERSION,
+                    UUID.randomUUID(),
+                    ExecutionMessageType.RUNNER_USER_OBSERVABILITY,
+                    Instant.now(),
+                    launch.engineId(),
+                    launch.executionId(),
+                    launch.runId(),
+                    launch.attempt(),
+                    snapshot));
+        } catch (Exception exception) {
+            throw new IllegalStateException("用户作业观测事件发送失败", exception);
         }
     }
 
@@ -311,6 +422,19 @@ final class TaskRunnerApplication {
         if (!MessageDigest.isEqual(actual.getBytes(StandardCharsets.US_ASCII),
                 expected.getBytes(StandardCharsets.US_ASCII))) {
             throw new RunnerExecutionException("MANIFEST_DIGEST_MISMATCH", "manifest SHA-256 校验失败", null);
+        }
+    }
+
+    private static void verifySha256(Path content, String expected) throws Exception {
+        MessageDigest digest = MessageDigest.getInstance("SHA-256");
+        try (var input = Files.newInputStream(content)) {
+            byte[] buffer = new byte[64 * 1024];
+            for (int read; (read = input.read(buffer)) >= 0;) digest.update(buffer, 0, read);
+        }
+        String actual = HexFormat.of().formatHex(digest.digest());
+        if (!MessageDigest.isEqual(actual.getBytes(StandardCharsets.US_ASCII),
+                expected.getBytes(StandardCharsets.US_ASCII))) {
+            throw new RunnerExecutionException("USER_JAR_DIGEST_MISMATCH", "用户 JAR SHA-256 校验失败", null);
         }
     }
 

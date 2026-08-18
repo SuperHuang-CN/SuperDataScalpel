@@ -12,12 +12,14 @@ import {
 } from '../../datasource';
 import {
   fetchDataModel,
-  fetchPhysicalTableInspection,
   type DataModelDetail,
-  type PhysicalTableInspection,
 } from '../../model';
 import { fetchFileDatasetCanvasMetadata } from '../../filedataset';
-import { CANVAS_SCHEMA_MINOR_VERSION, type CanvasDefinition } from './canvasTypes';
+import {
+  CANVAS_SCHEMA_MINOR_VERSION,
+  CANVAS_SCHEMA_VERSION,
+  type CanvasDefinition,
+} from './canvasTypes';
 import { useCanvasMetadataSnapshot } from './useCanvasMetadataSnapshot';
 
 vi.mock('../../datasource', () => ({
@@ -28,7 +30,6 @@ vi.mock('../../datasource', () => ({
 
 vi.mock('../../model', () => ({
   fetchDataModel: vi.fn(),
-  fetchPhysicalTableInspection: vi.fn(),
 }));
 
 vi.mock('../../filedataset', () => ({
@@ -38,7 +39,7 @@ vi.mock('../../filedataset', () => ({
 const dataSourceId = '55859069-6387-4390-b850-104845ee5370';
 
 const definition: CanvasDefinition = {
-  schemaVersion: 1,
+  schemaVersion: CANVAS_SCHEMA_VERSION,
   schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [
     {
@@ -59,8 +60,7 @@ const definition: CanvasDefinition = {
         targetTableName: 'orders',
         writeMode: 'APPEND',
         upsertKeyColumns: [],
-        columnMappingMode: 'BY_NAME',
-        columnMappings: [],
+        columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
       },
     },
   ],
@@ -158,19 +158,6 @@ const tableMetadata: TableMetadata = {
   uniqueKeys: [],
 };
 
-const modelTableMetadata: TableMetadata = {
-  ...tableMetadata,
-  table: {
-    ...tableMetadata.table,
-    identifier: { catalog: 'warehouse', schema: 'model_schema', table: 'dwd_order_model' },
-  },
-  columns: tableMetadata.columns.map((column) => ({
-    ...column,
-    autoIncrement: column.name === 'order_id',
-    generated: column.name === 'description',
-  })),
-};
-
 const modelId = '805c80b3-959e-4690-90d3-5c2d613864c1';
 
 const apiResourceId = 'fca550ff-85d7-4d42-92ba-6c32b0446281';
@@ -238,7 +225,7 @@ const apiResource: ApiResource = {
 };
 
 const httpApiDefinition: CanvasDefinition = {
-  schemaVersion: 1,
+  schemaVersion: CANVAS_SCHEMA_VERSION,
   schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: '16b03251-cff6-40f1-971c-79cf26430b30',
@@ -323,7 +310,7 @@ const modelDetail: DataModelDetail = {
 };
 
 const modelDefinition: CanvasDefinition = {
-  schemaVersion: 1,
+  schemaVersion: CANVAS_SCHEMA_VERSION,
   schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: 'a73c1b85-afeb-46f4-9ce9-dd9082ed3757',
@@ -340,8 +327,7 @@ const modelDefinition: CanvasDefinition = {
       sourceTableName: 'order_model',
       targetModelId: modelId,
       writeMode: 'APPEND',
-      columnMappingMode: 'BY_NAME',
-      columnMappings: [],
+      columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
     },
   }],
   edges: [{
@@ -349,19 +335,6 @@ const modelDefinition: CanvasDefinition = {
     sourceNodeId: 'a73c1b85-afeb-46f4-9ce9-dd9082ed3757',
     targetNodeId: '045e5399-b198-4ddd-959d-bf311732322c',
   }],
-};
-
-const compatibleInspection: PhysicalTableInspection = {
-  mode: 'MANAGED',
-  state: 'MATCHED',
-  catalogName: 'warehouse',
-  schemaName: 'model_schema',
-  tableName: 'dwd_order_model',
-  exists: true,
-  compatible: true,
-  createSupported: true,
-  message: '物理表结构与模型字段一致',
-  differences: [],
 };
 
 const createWrapper = () => {
@@ -375,7 +348,6 @@ const createWrapper = () => {
 
 describe('useCanvasMetadataSnapshot', () => {
   beforeEach(() => {
-    vi.mocked(fetchPhysicalTableInspection).mockResolvedValue(compatibleInspection);
     vi.mocked(fetchFileDatasetCanvasMetadata).mockResolvedValue({ tables: [] });
   });
 
@@ -383,7 +355,11 @@ describe('useCanvasMetadataSnapshot', () => {
 
   it('sends one complete table schema and preserves source/storage/distribution purposes for Task Engine', async () => {
     vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
-    vi.mocked(fetchTableMetadata).mockResolvedValue(tableMetadata);
+    vi.mocked(fetchTableMetadata).mockResolvedValue({
+      ...tableMetadata,
+      primaryKey: { name: 'orders_pkey', columns: ['order_id'] },
+      uniqueKeys: [{ name: 'orders_pkey', type: 'PRIMARY_KEY', columns: ['order_id'] }],
+    });
 
     const { result } = renderHook(() => useCanvasMetadataSnapshot(definition), {
       wrapper: createWrapper(),
@@ -438,20 +414,26 @@ describe('useCanvasMetadataSnapshot', () => {
           comment: '订单金额',
           geometry: null,
         }],
-        uniqueKeys: [],
+        uniqueKeys: [{
+          name: 'orders_pkey',
+          type: 'PRIMARY_KEY',
+          columns: ['order_id'],
+        }],
       }],
     }]);
     expect(result.current.metadataSnapshot.models).toEqual([]);
     expect(result.current.nodeSummaries.get(definition.nodes[0].id)).toEqual({
       kind: 'JDBC',
       dataSourceName: '订单数据库',
-      qualifiedTableName: 'demo.public.orders',
+      dataSourceType: 'POSTGRESQL',
+      qualifiedTableName: 'orders',
+      primaryKeyColumns: ['order_id'],
     });
   });
 
   it('loads only the JDBC source for a query input and builds its safe summary', async () => {
     const queryDefinition: CanvasDefinition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '11111111-1111-4111-8111-111111111111',
@@ -488,6 +470,7 @@ describe('useCanvasMetadataSnapshot', () => {
     expect(result.current.nodeSummaries.get(queryDefinition.nodes[0].id)).toEqual({
       kind: 'JDBC',
       dataSourceName: '订单数据库',
+      dataSourceType: 'POSTGRESQL',
       qualifiedTableName: 'query_orders',
     });
   });
@@ -567,7 +550,7 @@ describe('useCanvasMetadataSnapshot', () => {
       },
     };
     const kafkaDefinition: CanvasDefinition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '49cc72e3-0b1e-4031-a71f-b8fa26045339',
@@ -612,8 +595,7 @@ describe('useCanvasMetadataSnapshot', () => {
             }],
           },
           keyColumnName: 'event_id',
-          columnMappingMode: 'BY_NAME',
-          columnMappings: [],
+          columnMappings: [{ sourceColumnName: 'event_id', targetColumnName: 'event_id' }],
         },
       }],
       edges: [{
@@ -631,7 +613,6 @@ describe('useCanvasMetadataSnapshot', () => {
 
     expect(fetchDataSource).toHaveBeenCalledTimes(1);
     expect(fetchDataModel).not.toHaveBeenCalled();
-    expect(fetchPhysicalTableInspection).not.toHaveBeenCalled();
     expect(result.current.metadataSnapshot.models).toEqual([]);
     expect(result.current.metadataSnapshot.dataSources).toEqual([{
       id: dataSourceId,
@@ -652,7 +633,7 @@ describe('useCanvasMetadataSnapshot', () => {
   it('builds file dataset metadata and summary without exposing storage fields', async () => {
     const fileDatasetTableId = '4caa81d1-a92e-44b6-a5aa-5cd31635972c';
     const fileDefinition: CanvasDefinition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '6762e8e3-6b76-4c29-8ac1-1db11d1fa57d',
@@ -761,6 +742,7 @@ describe('useCanvasMetadataSnapshot', () => {
       fileDatasetName: '订单归档',
       tableName: '七月订单',
       tableCode: 'orders_202607',
+      datasetType: 'SHP',
       status: 'READY',
       geometry: {
         fieldName: '_geometry',
@@ -817,10 +799,9 @@ describe('useCanvasMetadataSnapshot', () => {
     expect(result.current.error).toBe(false);
   });
 
-  it('deduplicates model references and builds an exact physical model snapshot', async () => {
+  it('deduplicates model references and builds a logical model snapshot', async () => {
     vi.mocked(fetchDataModel).mockResolvedValue(modelDetail);
     vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
-    vi.mocked(fetchTableMetadata).mockResolvedValue(modelTableMetadata);
 
     const { result } = renderHook(() => useCanvasMetadataSnapshot(modelDefinition), {
       wrapper: createWrapper(),
@@ -828,14 +809,8 @@ describe('useCanvasMetadataSnapshot', () => {
     await waitFor(() => expect(result.current.loading).toBe(false));
 
     expect(fetchDataModel).toHaveBeenCalledTimes(1);
-    expect(fetchPhysicalTableInspection).toHaveBeenCalledTimes(1);
     expect(fetchDataSource).toHaveBeenCalledTimes(1);
-    expect(fetchTableMetadata).toHaveBeenCalledTimes(1);
-    expect(fetchTableMetadata).toHaveBeenCalledWith(dataSourceId, {
-      catalog: 'warehouse',
-      schema: 'model_schema',
-      table: 'dwd_order_model',
-    });
+    expect(fetchTableMetadata).not.toHaveBeenCalled();
     expect(result.current.metadataSnapshot.dataSources).toEqual([expect.objectContaining({
       id: dataSourceId,
       purposes: ['DISTRIBUTION', 'SOURCE', 'STORAGE'],
@@ -860,7 +835,7 @@ describe('useCanvasMetadataSnapshot', () => {
         scale: null,
         nullable: false,
         defaultValue: null,
-        autoIncrement: true,
+        autoIncrement: false,
         generated: false,
         comment: '模型订单ID',
         geometry: null,
@@ -873,8 +848,8 @@ describe('useCanvasMetadataSnapshot', () => {
         nullable: true,
         defaultValue: null,
         autoIncrement: false,
-        generated: true,
-        comment: '订单说明',
+        generated: false,
+        comment: null,
         geometry: null,
       }, {
         name: 'amount',
@@ -883,11 +858,16 @@ describe('useCanvasMetadataSnapshot', () => {
         precision: 12,
         scale: 2,
         nullable: false,
-        defaultValue: '0',
+        defaultValue: null,
         autoIncrement: false,
         generated: false,
-        comment: '订单金额',
+        comment: null,
         geometry: null,
+      }],
+      uniqueKeys: [{
+        name: 'MODEL_PRIMARY_KEY',
+        type: 'PRIMARY_KEY',
+        columns: ['order_id'],
       }],
     }]);
     modelDefinition.nodes.forEach((node) => {
@@ -897,82 +877,10 @@ describe('useCanvasMetadataSnapshot', () => {
         modelCode: 'order_model',
         modelSchemaVersion: 7,
         dataSourceName: '订单数据库',
-        qualifiedTableName: 'warehouse.model_schema.dwd_order_model',
+        qualifiedTableName: 'dwd_order_model',
       });
     });
     expect(result.current.error).toBe(false);
   });
 
-  it('uses the authoritative physical inspection when raw metadata presents a different logical type', async () => {
-    vi.mocked(fetchDataModel).mockResolvedValue(modelDetail);
-    vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
-    vi.mocked(fetchTableMetadata).mockResolvedValue({
-      ...modelTableMetadata,
-      columns: modelTableMetadata.columns.map((column) => column.name === 'order_id'
-        ? { ...column, logicalType: 'INTEGER' }
-        : column),
-    });
-
-    const { result } = renderHook(() => useCanvasMetadataSnapshot(modelDefinition), {
-      wrapper: createWrapper(),
-    });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.error).toBe(false);
-    expect(result.current.metadataSnapshot.models[0]?.columns[0]).toEqual(expect.objectContaining({
-      name: 'order_id',
-      fieldType: 'LONG',
-    }));
-  });
-
-  it('rejects a model when the authoritative physical inspection reports drift', async () => {
-    vi.mocked(fetchDataModel).mockResolvedValue(modelDetail);
-    vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
-    vi.mocked(fetchTableMetadata).mockResolvedValue(modelTableMetadata);
-    vi.mocked(fetchPhysicalTableInspection).mockResolvedValue({
-      ...compatibleInspection,
-      state: 'DRIFTED',
-      compatible: false,
-      message: '物理表结构与模型字段不一致',
-      differences: [{
-        column: 'amount',
-        type: 'TYPE_MISMATCH',
-        expected: 'DECIMAL(12,2)',
-        actual: 'varchar',
-      }],
-    });
-
-    const { result } = renderHook(() => useCanvasMetadataSnapshot(modelDefinition), {
-      wrapper: createWrapper(),
-    });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.error).toBe(true);
-    expect(result.current.issues).toContainEqual(expect.objectContaining({
-      code: 'MODEL_PHYSICAL_SCHEMA_MISMATCH',
-      nodeIds: modelDefinition.nodes.map((node) => node.id),
-    }));
-    expect(result.current.metadataSnapshot.models).toEqual([]);
-  });
-
-  it('rejects an incomplete raw table response even when physical inspection is compatible', async () => {
-    vi.mocked(fetchDataModel).mockResolvedValue(modelDetail);
-    vi.mocked(fetchDataSource).mockResolvedValue(dataSource);
-    vi.mocked(fetchTableMetadata).mockResolvedValue({
-      ...modelTableMetadata,
-      columns: modelTableMetadata.columns.filter((column) => column.name !== 'amount'),
-    });
-
-    const { result } = renderHook(() => useCanvasMetadataSnapshot(modelDefinition), {
-      wrapper: createWrapper(),
-    });
-    await waitFor(() => expect(result.current.loading).toBe(false));
-
-    expect(result.current.error).toBe(true);
-    expect(result.current.issues).toContainEqual(expect.objectContaining({
-      code: 'MODEL_PHYSICAL_METADATA_INCOMPLETE',
-      message: expect.stringContaining('amount'),
-    }));
-    expect(result.current.metadataSnapshot.models).toEqual([]);
-  });
 });

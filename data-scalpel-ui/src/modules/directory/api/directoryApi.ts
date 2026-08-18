@@ -1,6 +1,7 @@
-import { requestJson } from '../../../shared/api/http';
+import { requestBlob, requestJson } from '../../../shared/api/http';
 import type {
   CreateDirectoryRequest,
+  DirectoryImportResult,
   DirectoryResponse,
   DirectoryScope,
   DirectoryTreeNode,
@@ -27,3 +28,21 @@ export const updateDirectory = (id: string, request: UpdateDirectoryRequest): Pr
 export const deleteDirectory = (id: string): Promise<void> => (
   requestJson<void>(`${DIRECTORY_PATH}/${id}/actions/delete`, { method: 'POST' })
 );
+
+export const downloadDirectoryImportTemplate = (): Promise<Blob> => (
+  requestBlob(`${DIRECTORY_PATH}/actions/download-import-template`)
+);
+
+export const exportDirectoryTree = (scope: DirectoryScope): Promise<Blob> => (
+  requestBlob(`${DIRECTORY_PATH}/actions/export?scope=${encodeURIComponent(scope)}`)
+);
+
+export const importDirectoryTree = (scope: DirectoryScope, file: File): Promise<DirectoryImportResult> => {
+  const formData = new FormData();
+  formData.append('file', file);
+  return requestJson<DirectoryImportResult>(
+    `${DIRECTORY_PATH}/actions/import?scope=${encodeURIComponent(scope)}`,
+    { method: 'POST', body: formData },
+    60_000,
+  );
+};

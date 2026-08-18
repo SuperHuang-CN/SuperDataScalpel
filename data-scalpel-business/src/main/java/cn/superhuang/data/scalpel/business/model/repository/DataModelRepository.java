@@ -3,13 +3,20 @@ package cn.superhuang.data.scalpel.business.model.repository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.search.SearchRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.Lock;
+import jakarta.persistence.LockModeType;
 import org.springframework.data.repository.query.Param;
 
 import java.util.Collection;
 import java.util.List;
 import java.util.UUID;
+import java.util.Optional;
 
 public interface DataModelRepository extends SearchRepository<DataModel, UUID> {
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select model from DataModel model where model.id = :id")
+    Optional<DataModel> findByIdForUpdate(@Param("id") UUID id);
 
     boolean existsByCode(String code);
 

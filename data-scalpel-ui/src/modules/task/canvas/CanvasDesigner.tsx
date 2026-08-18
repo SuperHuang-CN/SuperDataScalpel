@@ -2,6 +2,8 @@ import {
   AimOutlined,
   CloseOutlined,
   EyeOutlined,
+  FullscreenExitOutlined,
+  FullscreenOutlined,
   ImportOutlined,
   ReadOutlined,
   RedoOutlined,
@@ -9,18 +11,21 @@ import {
   ZoomInOutlined,
   ZoomOutOutlined,
 } from '@ant-design/icons';
-import { Dnd, Graph, History, Keyboard, MiniMap, Selection, Shape, Snapline, Transform } from '@antv/x6';
+import { Dnd, Graph, History, Keyboard, MiniMap, Selection, Shape, Snapline } from '@antv/x6';
 import type { Node } from '@antv/x6';
 import { Button, List, Modal, Space, Tag, Tooltip, Typography, message } from 'antd';
 import {
   useCallback,
   useEffect,
+  useImperativeHandle,
   useMemo,
   useRef,
   useState,
+  forwardRef,
   type ChangeEvent,
   type MouseEvent,
   type ReactNode,
+  type Ref,
 } from 'react';
 import { parseCanvasDefinitionJson } from './canvasDefinitionIO';
 import {
@@ -28,7 +33,7 @@ import {
   exampleCanvasTopologyDefinition,
   exampleStreamingCanvasTopologyDefinition,
 } from './defaultCanvas';
-import { canvasResizeOptions, isCanvasZoomWheel } from './canvasInteraction';
+import { isCanvasZoomWheel } from './canvasInteraction';
 import {
   confirmCanvasNodeDeletion,
   registerCanvasNodeDeletionRequestHandler,
@@ -55,8 +60,10 @@ import {
   type CanvasNodeRuntimeData,
 } from './canvasTypes';
 import { taskCompilationValidation } from './taskCompilationTypes';
+import type { CanvasLineageCoverage } from './taskCompilationTypes';
 import { CanvasCompilationMask } from './components/CanvasCompilationMask';
 import { CanvasDefinitionModal } from './components/CanvasDefinitionModal';
+import { CanvasDefinitionViewer } from './components/CanvasDefinitionViewer';
 import { CanvasNodeInspector, type CanvasNodeInspectorHandle } from './components/CanvasNodeInspector';
 import { CanvasNodePalette } from './components/CanvasNodePalette';
 import { useCanvasMetadataSnapshot } from './useCanvasMetadataSnapshot';
@@ -67,13 +74,25 @@ import {
 } from './useCanvasTaskCompilation';
 import './canvasDesigner.css';
 
+export type CanvasDesignerMode = 'VIEW' | 'EDIT';
+
 export interface CanvasDesignerProps {
+  mode?: CanvasDesignerMode;
   initialDefinition?: CanvasDefinition;
   onDefinitionChange?: (definition: CanvasDefinition) => void;
   onInspectorDirtyChange?: (dirty: boolean) => void;
   toolbarLeading?: ReactNode;
   toolbarTrailing?: ReactNode;
   executionMode?: CanvasExecutionMode;
+}
+
+export interface CanvasDesignerHandle {
+  applyPendingInspector: () => Promise<CanvasDefinition | null>;
+}
+
+interface CanvasFullscreenControls {
+  fullscreen: boolean;
+  onToggleFullscreen: () => void;
 }
 
 interface PendingInspectorAction {
@@ -145,14 +164,23 @@ const taskCompilationStatus = (
   return { color: 'default', text: '等待校验', detail: '' };
 };
 
-export const CanvasDesigner = ({
+const lineageCoverageLabels: Record<CanvasLineageCoverage, string> = {
+  MODEL_ONLY: '仅表级',
+  FIELD_PARTIAL: '字段部分覆盖',
+  FIELD_COMPLETE: '字段完整覆盖',
+};
+
+const EditableCanvasDesigner = ({
   initialDefinition = emptyCanvasDefinition(),
   onDefinitionChange,
   onInspectorDirtyChange,
   toolbarLeading,
   toolbarTrailing,
   executionMode = 'BATCH',
-}: CanvasDesignerProps) => {
+  fullscreen,
+  onToggleFullscreen,
+  designerRef,
+}: CanvasDesignerProps & CanvasFullscreenControls & { designerRef?: Ref<CanvasDesignerHandle> }) => {
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const minimapContainerRef = useRef<HTMLDivElement>(null);
   const paletteRef = useRef<HTMLDivElement>(null);
@@ -197,6 +225,16 @@ export const CanvasDesigner = ({
   );
   const selectedValidation = selectedNodeId ? engineValidation?.nodeResults.get(selectedNodeId) : undefined;
   const compilationStatus = taskCompilationStatus(taskCompilation, metadata.issues);
+  const lineage = taskCompilation.response?.lineage;
+  const lineageWarningMessages = Array.from(new Set(
+    lineage?.warnings.map((warning) => warning.message) ?? [],
+  ));
+  const lineagePreviewDetail = lineage
+    ? [
+      `当前草稿的即时编译预览，已分析 ${lineage.flows.length} 条输出链路；正式血缘在任务发布或重新启用时生成`,
+      ...lineageWarningMessages,
+    ].join('；')
+    : '';
   const compilationBlocking = isCanvasTaskCompilationBlocking(taskCompilation.status);
   const selectedMetadataIssue = selectedNodeId
     ? metadata.issues.find((issue) => issue.nodeIds.includes(selectedNodeId))
@@ -355,7 +393,6 @@ export const CanvasDesigner = ({
       modifiers: 'shift',
     }));
     graph.use(new Snapline());
-    graph.use(new Transform({ resizing: canvasResizeOptions }));
     graph.use(new MiniMap({
       container: minimapContainer,
       width: 160,
@@ -397,7 +434,10 @@ export const CanvasDesigner = ({
       });
     });
     graph.on('node:change:position', refresh);
-    graph.on('node:change:size', refresh);
+    graph.on('node:change:size', ({ options }) => {
+      if (options.canvasPresentationUpdate) return;
+      refresh();
+    });
     graph.on('node:change:data', ({ options }) => {
       if (options.canvasPresentationUpdate || options.canvasConfigurationCommit) return;
       refresh();
@@ -452,9 +492,14 @@ export const CanvasDesigner = ({
     definition.nodes.forEach((nodeDefinition) => {
       const graphNode = graph.getCellById(nodeDefinition.id);
       if (!graphNode?.isNode()) return;
+      const compilation = engineValidation?.nodeResults.get(nodeDefinition.id);
       graphNode.setData({
-        validation: canvasNodeCompilationBadge(engineValidation?.nodeResults.get(nodeDefinition.id)),
+        validation: canvasNodeCompilationBadge(compilation),
         summary: metadata.nodeSummaries.get(nodeDefinition.id),
+        compilation: compilation ? {
+          inputTables: compilation.inputTables,
+          outputTables: compilation.outputTables,
+        } : undefined,
       }, { canvasPresentationUpdate: true, deep: false });
     });
   }, [definition.nodes, engineValidation, metadata.nodeSummaries]);
@@ -507,7 +552,7 @@ export const CanvasDesigner = ({
     );
     refreshDefinitionRef.current();
     setValidationRequestVersion((currentVersion) => currentVersion + 1);
-    message.success(`${current.name} 配置已应用`);
+    message.success(`${current.name} 配置草稿已应用`);
   };
 
   const replaceDefinition = (nextDefinition: CanvasDefinition) => {
@@ -606,14 +651,30 @@ export const CanvasDesigner = ({
     action?.execute();
   };
 
-  const applyInspector = async () => {
+  const applyInspector = useCallback(async () => {
     setApplyingInspector(true);
     try {
       return await inspectorRef.current?.apply() ?? false;
     } finally {
       setApplyingInspector(false);
     }
-  };
+  }, []);
+
+  useImperativeHandle(designerRef, () => ({
+    applyPendingInspector: async () => {
+      if (inspectorDirtyRef.current) {
+        const applied = await applyInspector();
+        if (!applied) return null;
+        updateInspectorDirty(false);
+      }
+      const graph = graphRef.current;
+      if (!graph) return null;
+      const nextDefinition = toCanvasDefinition(graph);
+      setDefinition(nextDefinition);
+      definitionChangeRef.current?.(nextDefinition);
+      return nextDefinition;
+    },
+  }), [applyInspector, updateInspectorDirty]);
 
   const applyInspectorAndContinue = async () => {
     const action = pendingInspectorActionRef.current;
@@ -630,17 +691,31 @@ export const CanvasDesigner = ({
   };
 
   return (
-    <div className="canvas-designer">
+    <div className={`canvas-designer${fullscreen ? ' canvas-designer-fullscreen' : ''}`}>
       <div className="canvas-toolbar">
         {toolbarLeading && <div className="canvas-toolbar-leading">{toolbarLeading}</div>}
         <Space wrap className="canvas-toolbar-actions">
           <Tooltip title={compilationStatus.detail}>
             <Tag color={compilationStatus.color}>{compilationStatus.text}</Tag>
           </Tooltip>
+          {lineage?.coverage && (
+            <Tooltip title={lineagePreviewDetail}>
+              <Tag color={lineage.coverage === 'FIELD_COMPLETE' ? 'success' : 'warning'}>
+                血缘预览：{lineageCoverageLabels[lineage.coverage]}
+              </Tag>
+            </Tooltip>
+          )}
           {canRetryCompilation && <Button onClick={retryCompilation}>重新校验</Button>}
           <Button icon={<ReadOutlined />} onClick={loadExample}>加载示例</Button>
           <Button icon={<ImportOutlined />} onClick={() => importInputRef.current?.click()}>导入 JSON</Button>
           <Button type="primary" icon={<EyeOutlined />} onClick={showDefinition}>查看定义</Button>
+          <Tooltip title={fullscreen ? '退出全屏' : '全屏'}>
+            <Button
+              icon={fullscreen ? <FullscreenExitOutlined /> : <FullscreenOutlined />}
+              aria-label={fullscreen ? '退出 Canvas 全屏' : 'Canvas 全屏'}
+              onClick={onToggleFullscreen}
+            />
+          </Tooltip>
           {toolbarTrailing}
           <input ref={importInputRef} hidden type="file" accept="application/json,.json" onChange={(event) => void importDefinition(event)} />
         </Space>
@@ -762,8 +837,57 @@ export const CanvasDesigner = ({
           </Space>
         )}
       >
-        当前节点的配置已修改，离开后这些修改会丢失。
+        当前节点的配置已修改。应用并继续会保存当前草稿；即使草稿仍有业务校验错误，
+        也可以先离开处理上游节点，错误状态会继续保留在画布中。
       </Modal>
     </div>
   );
 };
+
+export const CanvasDesigner = forwardRef<CanvasDesignerHandle, CanvasDesignerProps>((props, ref) => {
+  const [fullscreen, setFullscreen] = useState(false);
+
+  useEffect(() => {
+    if (!fullscreen) return undefined;
+    document.body.classList.add('canvas-fullscreen-open');
+    const exitFullscreen = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return;
+      const modalOpen = Array.from(document.querySelectorAll<HTMLElement>('.ant-modal-wrap'))
+        .some((modal) => {
+          const style = window.getComputedStyle(modal);
+          return style.display !== 'none' && style.visibility !== 'hidden';
+        });
+      if (modalOpen) return;
+      setFullscreen(false);
+    };
+    window.addEventListener('keydown', exitFullscreen);
+    return () => {
+      document.body.classList.remove('canvas-fullscreen-open');
+      window.removeEventListener('keydown', exitFullscreen);
+    };
+  }, [fullscreen]);
+
+  const toggleFullscreen = () => setFullscreen((current) => !current);
+
+  return props.mode === 'VIEW'
+    ? (
+      <CanvasDefinitionViewer
+        definition={props.initialDefinition ?? emptyCanvasDefinition()}
+        executionMode={props.executionMode ?? 'BATCH'}
+        toolbarLeading={props.toolbarLeading}
+        toolbarTrailing={props.toolbarTrailing}
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
+    )
+    : (
+      <EditableCanvasDesigner
+        {...props}
+        designerRef={ref}
+        fullscreen={fullscreen}
+        onToggleFullscreen={toggleFullscreen}
+      />
+    );
+});
+
+CanvasDesigner.displayName = 'CanvasDesigner';

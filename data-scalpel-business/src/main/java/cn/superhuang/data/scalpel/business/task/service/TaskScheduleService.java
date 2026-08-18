@@ -193,7 +193,7 @@ public class TaskScheduleService {
     }
 
     private static void requireSchedulableTask(DataTask task) {
-        if (task.getType() == TaskType.SPARK_STREAMING_CANVAS) {
+        if (task.getType().isStreaming()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Spark 实时任务持续运行，不支持定时计划");
         }
     }

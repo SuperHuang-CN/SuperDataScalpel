@@ -84,6 +84,10 @@ public class DataModelField extends BaseEntity {
     @Column(name = "standard_dictionary_id")
     private UUID standardDictionaryId;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "physical_column_role", length = 16)
+    private DataModelPhysicalColumnRole physicalColumnRole;
+
     protected DataModelField() {
     }
 
@@ -253,6 +257,16 @@ public class DataModelField extends BaseEntity {
 
     public void assignStandardDictionary(UUID standardDictionaryId) {
         this.standardDictionaryId = standardDictionaryId;
+    }
+
+    public DataModelPhysicalColumnRole getPhysicalColumnRole() {
+        return physicalColumnRole == null ? DataModelPhysicalColumnRole.REGULAR : physicalColumnRole;
+    }
+
+    public void assignPhysicalColumnRole(DataModelPhysicalColumnRole physicalColumnRole) {
+        this.physicalColumnRole = physicalColumnRole == null
+                ? DataModelPhysicalColumnRole.REGULAR
+                : physicalColumnRole;
     }
 
     private static String normalizeRequired(String value) {

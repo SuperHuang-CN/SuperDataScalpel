@@ -66,6 +66,7 @@ export const TaskScheduleDrawer = ({
 
   return (
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay"
       title={schedule ? `编辑计划：${schedule.name}` : '新建定时计划'}
       open={open}
       size={520}

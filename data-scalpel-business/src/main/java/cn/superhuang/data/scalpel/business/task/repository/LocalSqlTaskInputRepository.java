@@ -16,6 +16,10 @@ public interface LocalSqlTaskInputRepository extends JpaRepository<LocalSqlTaskI
             UUID modelId
     );
 
+    List<LocalSqlTaskInput> findAllByTaskIdInOrderByTaskIdAscSortOrderAsc(Collection<UUID> taskIds);
+
+    List<LocalSqlTaskInput> findAllByModelIdOrderByTaskIdAscSortOrderAsc(UUID modelId);
+
     boolean existsByModelId(UUID modelId);
 
     void deleteAllByTaskId(UUID taskId);

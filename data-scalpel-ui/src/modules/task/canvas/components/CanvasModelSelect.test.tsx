@@ -29,20 +29,39 @@ const fixtures = vi.hoisted(() => {
     name: '已停用模型',
     status: 'DISABLED',
   };
-  return { published, disabled };
+  const external = {
+    ...published,
+    id: '8876bfe2-b58a-4d84-8b6f-d9eb29bf744c',
+    code: 'external_model',
+    name: '外部表模型',
+    physicalTableMode: 'EXTERNAL',
+  };
+  return { published, disabled, external };
 });
 
 vi.mock('../../../model', () => ({
-  buildDataModelSearch: vi.fn(({ keyword, status }: { keyword: string; status: string }) => (
-    `keyword:${keyword};status:${status}`
+  buildDataModelSearch: vi.fn(({
+    keyword,
+    status,
+    physicalTableModes,
+  }: {
+    keyword: string;
+    status: string;
+    physicalTableModes?: string[];
+  }) => (
+    `keyword:${keyword};status:${status};modes:${physicalTableModes?.join(',') ?? ''}`
   )),
   dataModelStatusLabels: { DRAFT: '草稿', PUBLISHED: '已发布', DISABLED: '已停用' },
   physicalTableModeLabels: { MANAGED: '新建物理表', EXTERNAL: '绑定已有表' },
   useDataModel: vi.fn((id: string | undefined) => ({
     data: id === fixtures.disabled.id ? { model: fixtures.disabled, fields: [] }
+      : id === fixtures.external.id ? { model: fixtures.external, fields: [] }
       : id === fixtures.published.id ? { model: fixtures.published, fields: [] }
         : undefined,
-    isError: Boolean(id) && id !== fixtures.disabled.id && id !== fixtures.published.id,
+    isError: Boolean(id)
+      && id !== fixtures.disabled.id
+      && id !== fixtures.external.id
+      && id !== fixtures.published.id,
     isFetching: false,
   })),
   useDataModels: vi.fn(() => ({
@@ -83,6 +102,8 @@ describe('CanvasModelSelect', () => {
     fireEvent.mouseDown(screen.getByRole('combobox'));
     expect(screen.getByText('已停用')).toBeInTheDocument();
     expect(screen.getByText('订单模型')).toBeInTheDocument();
+    expect(screen.getByText('order_model · 模型仓库 · dwd_order')).toBeInTheDocument();
+    expect(screen.queryByText(/public/)).not.toBeInTheDocument();
   });
 
   it('debounces server-side search and keeps the PUBLISHED filter', () => {
@@ -96,10 +117,31 @@ describe('CanvasModelSelect', () => {
 
     expect(buildDataModelSearch).toHaveBeenLastCalledWith({ keyword: '订单', status: 'PUBLISHED' });
     expect(vi.mocked(useDataModels).mock.calls.at(-1)?.[0]).toEqual({
-      search: 'keyword:订单;status:PUBLISHED',
+      search: 'keyword:订单;status:PUBLISHED;modes:',
       page: 0,
       size: 50,
       sort: 'code',
     });
+  });
+
+  it('requests only allowed physical table modes and retains an invalid selected model', () => {
+    render(
+      <CanvasModelSelect
+        value={fixtures.external.id}
+        placeholder="选择模型"
+        physicalTableModes={['MANAGED']}
+        onChange={vi.fn()}
+      />,
+    );
+
+    expect(buildDataModelSearch).toHaveBeenLastCalledWith({
+      keyword: '',
+      status: 'PUBLISHED',
+      physicalTableModes: ['MANAGED'],
+    });
+    expect(screen.getByRole('combobox').closest('.ant-select')).toHaveClass('ant-select-status-error');
+    fireEvent.mouseDown(screen.getByRole('combobox'));
+    expect(screen.getByText('外部表模型')).toBeInTheDocument();
+    expect(screen.getByText('订单模型')).toBeInTheDocument();
   });
 });

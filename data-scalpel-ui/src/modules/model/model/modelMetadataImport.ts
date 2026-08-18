@@ -1,6 +1,6 @@
 import type {
-  CreateManagedDataModelDraftRequest,
   GeometryTypeDefinition,
+  ImportModelMetadataModelRequest,
   ModelMetadataImportPreview,
   PlatformDataType,
 } from './dataModel';
@@ -32,6 +32,8 @@ export interface ModelMetadataDraft {
   rowNumber: number;
   code: string;
   name: string;
+  directoryPath: string;
+  directoryIssue?: string;
   warehouseLayerCode: string;
   warehouseLayerId?: string;
   warehouseLayerIssue?: string;
@@ -46,6 +48,7 @@ export interface ModelMetadataDraft {
 export interface ModelMetadataDraftIssue {
   code?: string;
   name?: string;
+  directoryPath?: string;
   warehouseLayer?: string;
   physicalTableName?: string;
   description?: string;
@@ -66,24 +69,30 @@ const duplicates = (values: string[]): Set<string> => {
 };
 
 const isWarehouseLayerIssue = (issue: string): boolean => issue.startsWith('数仓分层');
+const isDirectoryIssue = (issue: string): boolean => issue.startsWith('模型目录');
 const isStandardDictionaryIssue = (issue: string): boolean => issue.includes('码表');
 
 export const modelMetadataDrafts = (preview: ModelMetadataImportPreview): ModelMetadataDraft[] => (
   preview.models.map((model) => {
     const warehouseLayerIssues = model.issues.filter(isWarehouseLayerIssue);
+    const directoryIssues = model.issues.filter(isDirectoryIssue);
     const resolvedLayer = model.warehouseLayer?.enabled ? model.warehouseLayer : null;
     return {
       key: model.key,
       rowNumber: model.rowNumber,
       code: model.code,
       name: model.name,
+      directoryPath: model.directoryPath ?? '',
+      ...(directoryIssues.length ? { directoryIssue: directoryIssues.join('；') } : {}),
       warehouseLayerCode: model.warehouseLayerCode ?? '',
       ...(resolvedLayer ? { warehouseLayerId: resolvedLayer.id } : {}),
       ...(warehouseLayerIssues.length ? { warehouseLayerIssue: warehouseLayerIssues.join('；') } : {}),
       physicalTableName: model.physicalTableName,
       clickHouseOrderByColumns: model.clickHouseOrderByColumns,
       description: model.description,
-      serverIssues: model.issues.filter((issue) => !isWarehouseLayerIssue(issue)),
+      serverIssues: model.issues.filter((issue) => (
+        !isWarehouseLayerIssue(issue) && !isDirectoryIssue(issue)
+      )),
       warnings: model.warnings,
       fields: model.fields.map((field) => {
         const dictionaryIssues = field.issues.filter(isStandardDictionaryIssue);
@@ -163,6 +172,7 @@ export const modelMetadataDraftIssues = (
     else if (duplicateCodes.has(code.toLowerCase())) issue.code = '本次导入中模型编码重复';
     if (!draft.name.trim()) issue.name = '请填写模型名称';
     else if (draft.name.trim().length > 100) issue.name = '模型名称不能超过 100 个字符';
+    if (draft.directoryIssue) issue.directoryPath = draft.directoryIssue;
     if (draft.warehouseLayerIssue) issue.warehouseLayer = draft.warehouseLayerIssue;
     const tableName = draft.physicalTableName.trim();
     if (!tableName) issue.physicalTableName = '请填写目标物理表名';
@@ -203,26 +213,23 @@ export const modelMetadataDraftIssues = (
 
 export const hasModelMetadataDraftIssues = (issues: Map<string, ModelMetadataDraftIssue>): boolean => (
   [...issues.values()].some((issue) => (
-    Boolean(issue.code || issue.name || issue.physicalTableName || issue.description
+    Boolean(issue.code || issue.name || issue.directoryPath || issue.physicalTableName || issue.description
       || issue.warehouseLayer || issue.clickHouseOrderByColumns || issue.fields || issue.server)
     || issue.fieldIssues.size > 0
   ))
 );
 
-export const toManagedDraftRequest = (
+export const toModelMetadataImportRequest = (
   draft: ModelMetadataDraft,
-  storageDataSourceId: string,
-  directoryId?: string,
-): CreateManagedDataModelDraftRequest | undefined => {
+): ImportModelMetadataModelRequest | undefined => {
   if (draft.fields.some((field) => (
     !field.fieldType || field.nullable === null || field.primaryKey === null || field.sortOrder === null
   ))) return undefined;
   return {
     code: draft.code.trim(),
     name: draft.name.trim(),
-    directoryId,
+    directoryPath: draft.directoryPath.trim() || undefined,
     warehouseLayerId: draft.warehouseLayerId,
-    storageDataSourceId,
     physicalTableName: draft.physicalTableName.trim(),
     clickHouseOrderByColumns: draft.clickHouseOrderByColumns,
     description: draft.description.trim() || undefined,

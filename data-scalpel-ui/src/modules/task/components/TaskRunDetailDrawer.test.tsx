@@ -48,6 +48,9 @@ const run: TaskRun = {
   endedAt: null,
   deadlineAt: '2026-07-21T02:00:00Z',
   affectedRows: null,
+  userJarFileName: null,
+  userJarSha256: null,
+  userJarSizeBytes: null,
   message: null,
   errorDetail: null,
   executionError: null,
@@ -131,6 +134,47 @@ describe('TaskRunDetailDrawer', () => {
 
     expect(await screen.findByText('Spark 执行路由')).toBeInTheDocument();
     expect(screen.queryByRole('link', { name: '打开 Spark 跟踪页面' })).not.toBeInTheDocument();
+  });
+
+  it('shows the latest Spark JAR phase and metric snapshot', async () => {
+    state.run = {
+      ...run,
+      taskType: 'SPARK_JAR',
+      userJobObservability: {
+        status: {
+          phase: 'WRITE_OUTPUT',
+          message: '正在写入结果',
+          updatedAt: '2026-08-14T06:00:00Z',
+        },
+        metrics: [{
+          name: 'orders.rows',
+          kind: 'COUNTER',
+          counterValue: 12,
+          gaugeValue: null,
+          count: null,
+          lastDurationMillis: null,
+          totalDurationMillis: null,
+          maxDurationMillis: null,
+        }],
+      },
+    };
+
+    render(
+      <TaskRunDetailDrawer
+        open
+        runId={run.id}
+        canExecute={false}
+        cancelLoading={false}
+        onClose={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+
+    expect(await screen.findByText('用户作业观测（当前 Attempt）')).toBeInTheDocument();
+    expect(screen.getByText('WRITE_OUTPUT')).toBeInTheDocument();
+    expect(screen.getByText('正在写入结果')).toBeInTheDocument();
+    expect(screen.getByText('orders.rows')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 
   it('shows structured Canvas execution diagnostics without a stack trace', async () => {

@@ -285,10 +285,18 @@ public class ServiceEngineDataSourceRegistrationService {
                 && hasEnabledStandardServiceForDataSource(dataSource.getId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已启用标准服务使用该数据源，不能移除存储用途");
         }
-        if (hasEnabledSqlServiceForDataSource(dataSource.getId())
-                && !dialectRegistry.require(nextType.name()).definition().capabilities()
-                .contains(DatabaseCapability.SQL_SERVICE_QUERY)) {
+        boolean serviceEngineSupported = supportsServiceEngine(nextType);
+        if (hasEnabledSqlServiceForDataSource(dataSource.getId()) && !serviceEngineSupported) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已启用 SQL 服务使用该数据源，不能切换到不支持的数据库类型");
+        }
+        if (hasEnabledScriptServiceForDataSource(dataSource.getId()) && !serviceEngineSupported) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已启用脚本服务使用该数据源，不能切换到不支持的数据库类型");
+        }
+        if (repository.existsByDataSourceId(dataSource.getId()) && !serviceEngineSupported) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "数据源已注册到服务引擎；当前数据库类型不受 Service Engine 支持，请先解除注册"
+            );
         }
     }
 
@@ -364,6 +372,11 @@ public class ServiceEngineDataSourceRegistrationService {
         return !serviceIds.isEmpty() && dataServiceRepository.existsByIdInAndStatus(serviceIds, DataServiceStatus.ENABLED);
     }
 
+    private boolean hasEnabledScriptServiceForDataSource(UUID dataSourceId) {
+        List<UUID> serviceIds = scriptServiceIdsForDataSource(dataSourceId);
+        return !serviceIds.isEmpty() && dataServiceRepository.existsByIdInAndStatus(serviceIds, DataServiceStatus.ENABLED);
+    }
+
     private List<UUID> serviceIdsForDataSource(UUID dataSourceId) {
         LinkedHashSet<UUID> serviceIds = new LinkedHashSet<>(standardServiceIdsForDataSource(dataSourceId));
         serviceIds.addAll(sqlServiceIdsForDataSource(dataSourceId));
@@ -430,7 +443,10 @@ public class ServiceEngineDataSourceRegistrationService {
         DataSource dataSource = dataSourceRepository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "数据源不存在"));
         if (!isRuntimeEligible(dataSource)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "只能注册已启用的 JDBC 数据源");
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "只能注册已启用且受 Service Engine 支持的 JDBC 数据源"
+            );
         }
         if (dataSource.getConnection().getPort() == null) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "JDBC 数据源缺少端口");
@@ -438,8 +454,14 @@ public class ServiceEngineDataSourceRegistrationService {
         return dataSource;
     }
 
-    private static boolean isRuntimeEligible(DataSource dataSource) {
-        return dataSource.isEnabled() && dataSource.getType().isJdbc();
+    private boolean isRuntimeEligible(DataSource dataSource) {
+        return dataSource.isEnabled() && supportsServiceEngine(dataSource.getType());
+    }
+
+    private boolean supportsServiceEngine(DataSourceType type) {
+        return type.isJdbc()
+                && dialectRegistry.require(type.name()).definition().capabilities()
+                .contains(DatabaseCapability.SQL_SERVICE_QUERY);
     }
 
     private static JdbcDataSourceSnapshot snapshot(DataSource dataSource) {

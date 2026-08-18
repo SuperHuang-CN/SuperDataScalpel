@@ -150,6 +150,7 @@ export const DataModelPhysicalChangeDrawer = ({
   const current = detailQuery.data ?? change;
 
   const cancel = (target: DataModelPhysicalChange) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '取消变更计划',
     content: '取消后不会修改模型字段或物理表；如需继续修改，请重新生成计划。',
     okText: '确认取消',
@@ -170,6 +171,7 @@ export const DataModelPhysicalChangeDrawer = ({
     const option = target.plan.executionOptions.find((item) => item.mode === mode);
     if (!option) return;
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: executionButtonLabel(mode),
       width: 540,
       content: (
@@ -216,6 +218,7 @@ export const DataModelPhysicalChangeDrawer = ({
       {messageContext}
       {modalContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title="物理表变更计划"
         open={open}
         size="large"

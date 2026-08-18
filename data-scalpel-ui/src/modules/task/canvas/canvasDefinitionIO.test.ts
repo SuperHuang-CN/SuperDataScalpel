@@ -9,7 +9,11 @@ import {
   exampleCanvasDefinition,
   exampleStreamingCanvasTopologyDefinition,
 } from './defaultCanvas';
-import { CANVAS_SCHEMA_MINOR_VERSION, CanvasNodeType } from './canvasTypes';
+import {
+  CANVAS_SCHEMA_MINOR_VERSION,
+  CANVAS_SCHEMA_VERSION,
+  CanvasNodeType,
+} from './canvasTypes';
 
 describe('canvas definition import and export', () => {
   afterEach(() => {
@@ -23,6 +27,87 @@ describe('canvas definition import and export', () => {
 
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(parsed.definition).toEqual(definition);
+  });
+
+  it('rejects previous majors and future minors before parsing node configurations', () => {
+    const previousMajor = parseCanvasDefinitionJson(JSON.stringify({
+      schemaVersion: 1,
+      schemaMinorVersion: 28,
+      nodes: [{ type: 'LEGACY_NODE_WITH_UNKNOWN_CONFIGURATION' }],
+      edges: [],
+    }));
+    expect(previousMajor).toEqual({
+      success: false,
+      errors: [`schemaVersion 仅支持 ${CANVAS_SCHEMA_VERSION}`],
+    });
+
+    const futureMinor = parseCanvasDefinitionJson(JSON.stringify({
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION + 1,
+      nodes: [],
+      edges: [],
+    }));
+    expect(futureMinor.success).toBe(false);
+  });
+
+  it('requires Canvas 2.3 for MODEL_OUTPUT UPSERT', () => {
+    const modelOutput = {
+      id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      type: CanvasNodeType.ModelOutput,
+      name: '模型 UPSERT',
+      layout: { x: 0, y: 0, width: 240, height: 120 },
+      configuration: {
+        sourceTableName: 'orders',
+        targetModelId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+        writeMode: 'UPSERT',
+        columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
+      },
+    };
+    const previous = parseCanvasDefinitionJson(JSON.stringify({
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: 2,
+      nodes: [modelOutput],
+      edges: [],
+    }));
+    const current = parseCanvasDefinitionJson(JSON.stringify({
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [modelOutput],
+      edges: [],
+    }));
+
+    expect(previous.success).toBe(false);
+    if (!previous.success) {
+      expect(previous.errors).toContain('MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持');
+    }
+    expect(current.success).toBe(true);
+  });
+
+  it('loads Canvas 2.0 through 2.2 MODEL_OUTPUT definitions without UPSERT and normalizes them to 2.3', () => {
+    for (const schemaMinorVersion of [0, 1, 2]) {
+      const parsed = parseCanvasDefinitionJson(JSON.stringify({
+        schemaVersion: CANVAS_SCHEMA_VERSION,
+        schemaMinorVersion,
+        nodes: [{
+          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          type: CanvasNodeType.ModelOutput,
+          name: '模型输出',
+          layout: { x: 0, y: 0, width: 240, height: 120 },
+          configuration: {
+            sourceTableName: 'orders',
+            targetModelId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
+            writeMode: 'APPEND',
+            columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
+          },
+        }],
+        edges: [],
+      }));
+
+      expect(parsed.success).toBe(true);
+      if (parsed.success) {
+        expect(parsed.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+      }
+    }
   });
 
   it('round-trips all Canvas 1.21 spatial foundation node configurations', () => {
@@ -240,10 +325,10 @@ describe('canvas definition import and export', () => {
     }
   });
 
-  it('round-trips Canvas 1.24 JDBC query input and JDBC output UPSERT', () => {
+  it('round-trips Canvas 2.0 JDBC query input and JDBC output UPSERT', () => {
     const definition = {
-      schemaVersion: 1,
-      schemaMinorVersion: 24,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [
         {
           id: '11111111-1111-4111-8111-111111111111',
@@ -280,8 +365,7 @@ describe('canvas definition import and export', () => {
             dataSourceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
             targetTableName: 'orders',
             writeMode: 'UPSERT',
-            columnMappingMode: 'BY_NAME',
-            columnMappings: [],
+            columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
             upsertKeyColumns: ['order_id'],
           },
         },
@@ -304,12 +388,11 @@ describe('canvas definition import and export', () => {
 
     const incompatible = parseCanvasDefinitionJson(JSON.stringify({
       ...definition,
-      schemaMinorVersion: 23,
+      schemaVersion: 1,
     }));
     expect(incompatible.success).toBe(false);
     if (!incompatible.success) {
-      expect(incompatible.errors).toContain('JDBC_QUERY_INPUT 从 Canvas 1.24 开始支持');
-      expect(incompatible.errors).toContain('JDBC_OUTPUT UPSERT 从 Canvas 1.24 开始支持');
+      expect(incompatible.errors).toContain(`schemaVersion 仅支持 ${CANVAS_SCHEMA_VERSION}`);
     }
   });
 
@@ -432,7 +515,7 @@ describe('canvas definition import and export', () => {
   it('round-trips model nodes and validates nonblank model identifiers as UUIDs', () => {
     const definition = {
       schemaVersion: 1 as const,
-      schemaMinorVersion: 2 as const,
+      schemaMinorVersion: 28 as const,
       nodes: [
         {
           id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
@@ -450,8 +533,7 @@ describe('canvas definition import and export', () => {
             sourceTableName: 'orders',
             targetModelId: 'e8b93333-d6ee-4c8b-b5af-df5c90c9620d',
             writeMode: 'APPEND' as const,
-            columnMappingMode: 'BY_NAME' as const,
-            columnMappings: [],
+            columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
           },
         },
       ],

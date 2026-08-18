@@ -8,8 +8,8 @@ public record CanvasDefinition(
         List<CanvasNodeDefinition> nodes,
         List<CanvasEdgeDefinition> edges
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 1;
-    public static final int CURRENT_SCHEMA_MINOR_VERSION = 26;
+    public static final int CURRENT_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_MINOR_VERSION = 3;
     public static final int LEGACY_SCHEMA_MINOR_VERSION = 0;
 
     public CanvasDefinition {

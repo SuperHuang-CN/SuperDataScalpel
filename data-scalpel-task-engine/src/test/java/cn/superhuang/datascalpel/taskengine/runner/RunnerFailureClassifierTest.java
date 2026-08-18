@@ -55,20 +55,38 @@ class RunnerFailureClassifierTest {
     }
 
     @Test
-    void preservesRuntimeSchemaMismatchAndFallsBackByNodeType() {
-        TaskExecutionError schema = classifier.classify(
-                new RunnerExecutionException("RUNTIME_SCHEMA_MISMATCH", "changed", input.nodeId()), input);
-        assertEquals("RUNTIME_SCHEMA_MISMATCH", schema.code());
-        assertEquals(ExecutionErrorCategory.SCHEMA, schema.category());
-        assertNull(schema.sqlState());
+    void classifiesConfigurationAndSpatialExecutionPrerequisites() {
+        TaskExecutionError staleQuery = classifier.classify(
+                new RunnerExecutionException("JDBC_QUERY_SCHEMA_STALE", "changed", input.nodeId()), input);
+        assertEquals("JDBC_QUERY_SCHEMA_STALE", staleQuery.code());
+        assertEquals(ExecutionErrorCategory.CONFIGURATION, staleQuery.category());
+        assertNull(staleQuery.sqlState());
 
-        TaskExecutionError spatialSchema = classifier.classify(
-                new RunnerExecutionException("SPATIAL_SCHEMA_DRIFT", "secret physical detail", input.nodeId()),
+        TaskExecutionError spatialMetadata = classifier.classify(
+                new RunnerExecutionException(
+                        "SPATIAL_TARGET_METADATA_UNAVAILABLE",
+                        "secret physical detail",
+                        input.nodeId()
+                ),
                 input
         );
-        assertEquals("SPATIAL_SCHEMA_DRIFT", spatialSchema.code());
-        assertEquals(ExecutionErrorCategory.SCHEMA, spatialSchema.category());
-        assertEquals("运行时 Geometry Schema 与任务定义不一致", spatialSchema.message());
+        assertEquals("SPATIAL_TARGET_METADATA_UNAVAILABLE", spatialMetadata.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, spatialMetadata.category());
+        assertEquals("目标 Geometry 字段缺少写入所需元数据", spatialMetadata.message());
+
+        for (String code : new String[]{
+                "OVERWRITE_DATABASE_NOT_SUPPORTED",
+                "UPSERT_DATABASE_NOT_SUPPORTED",
+                "SPATIAL_JDBC_UNSUPPORTED"
+        }) {
+            TaskExecutionError unsupported = classifier.classify(
+                    new RunnerExecutionException(code, "unsafe detail", input.nodeId()),
+                    input
+            );
+            assertEquals(code, unsupported.code());
+            assertEquals(ExecutionErrorCategory.CONFIGURATION, unsupported.category());
+            assertFalse(unsupported.message().contains("unsafe detail"));
+        }
 
         RunnerFailureContext join = new RunnerFailureContext(
                 "e55c50d7-374d-4fe0-aede-e1648988af23", "JOIN", "订单客户 Join",
@@ -222,6 +240,66 @@ class RunnerFailureClassifierTest {
         assertEquals("模型输出节点执行失败", outputFallback.message());
         assertEquals(ExecutionErrorCategory.EXTERNAL_SYSTEM, outputFallback.category());
         assertEquals("JDBC_PERMISSION_DENIED", permission.code());
+        assertEquals("42501", permission.sqlState());
+    }
+
+    @Test
+    void preservesSnapshotSyncFailuresAndUsesTheModelSpecificFallback() {
+        RunnerFailureContext jdbcSnapshot = new RunnerFailureContext(
+                "3b645b40-1de7-4afb-a276-80a31772a5a9",
+                "JDBC_SNAPSHOT_SYNC_OUTPUT",
+                "JDBC 快照同步",
+                ExecutionFailurePhase.WRITE,
+                "public.reservoir"
+        );
+        RunnerFailureContext modelSnapshot = new RunnerFailureContext(
+                "ac801c40-d13a-4f0d-9c98-b3d5c7ef7d37",
+                "MODEL_SNAPSHOT_SYNC_OUTPUT",
+                "模型快照同步",
+                ExecutionFailurePhase.WRITE,
+                "public.district"
+        );
+
+        TaskExecutionError jdbcFallback = classifier.classify(
+                new IllegalStateException("boom"), jdbcSnapshot);
+        TaskExecutionError modelFallback = classifier.classify(
+                new RunnerExecutionException(
+                        "MODEL_SNAPSHOT_SYNC_OUTPUT_FAILED",
+                        "private target details",
+                        modelSnapshot.nodeId(),
+                        new SQLException("private SQL", "HY000")
+                ),
+                modelSnapshot
+        );
+        TaskExecutionError constraint = classifier.classify(
+                new RunnerExecutionException(
+                        "SNAPSHOT_SYNC_EMPTY_SOURCE_DELETE_BLOCKED",
+                        "private key details",
+                        modelSnapshot.nodeId()
+                ),
+                modelSnapshot
+        );
+        TaskExecutionError permission = classifier.classify(
+                new RunnerExecutionException(
+                        "SNAPSHOT_SYNC_OUTPUT_FAILED",
+                        "private target details",
+                        jdbcSnapshot.nodeId(),
+                        new SQLException("permission denied", "42501")
+                ),
+                jdbcSnapshot
+        );
+
+        assertEquals("SNAPSHOT_SYNC_OUTPUT_FAILED", jdbcFallback.code());
+        assertEquals("JDBC 快照同步失败", jdbcFallback.message());
+        assertEquals("MODEL_SNAPSHOT_SYNC_OUTPUT_FAILED", modelFallback.code());
+        assertEquals("模型快照同步失败", modelFallback.message());
+        assertEquals(ExecutionErrorCategory.EXTERNAL_SYSTEM, modelFallback.category());
+        assertEquals("HY000", modelFallback.sqlState());
+        assertEquals("SNAPSHOT_SYNC_EMPTY_SOURCE_DELETE_BLOCKED", constraint.code());
+        assertEquals(ExecutionErrorCategory.CONSTRAINT, constraint.category());
+        assertFalse(constraint.message().contains("private"));
+        assertEquals("JDBC_PERMISSION_DENIED", permission.code());
+        assertEquals(ExecutionErrorCategory.PERMISSION, permission.category());
         assertEquals("42501", permission.sqlState());
     }
 
@@ -393,15 +471,15 @@ class RunnerFailureClassifierTest {
     }
 
     @Test
-    void preservesSpatialSchemaDriftAndFileInputIdentityDuringLazyRead() {
+    void preservesFileParseFailureAndInputIdentityDuringLazyRead() {
         String fileNodeId = "2ca10a7e-2030-4926-ad79-a9324c45c44c";
         FileDatasetReadException readFailure = new FileDatasetReadException(
-                "SPATIAL_SCHEMA_DRIFT",
-                "文件 Geometry Schema 与任务定义不一致",
+                "FILE_DATASET_PARSE_FAILED",
+                "文件数据集内容解析失败",
                 fileNodeId,
                 "行政区文件输入",
                 false,
-                new FileDatasetSpatialSchemaDriftException("secret object path")
+                new IllegalArgumentException("secret object path")
         );
 
         TaskExecutionError error = classifier.classify(
@@ -415,13 +493,13 @@ class RunnerFailureClassifierTest {
                 )
         );
 
-        assertEquals("SPATIAL_SCHEMA_DRIFT", error.code());
+        assertEquals("FILE_DATASET_PARSE_FAILED", error.code());
         assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
         assertEquals(ExecutionFailurePhase.READ, error.phase());
         assertEquals(fileNodeId, error.nodeId());
         assertEquals("FILE_DATASET_INPUT", error.nodeType());
         assertEquals("行政区文件输入", error.nodeName());
-        assertEquals("运行时 Geometry Schema 与任务定义不一致", error.message());
+        assertEquals("文件数据集内容解析失败", error.message());
         assertFalse(error.message().contains("secret"));
     }
 

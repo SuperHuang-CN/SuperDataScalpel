@@ -1,4 +1,4 @@
-import type { PlatformDataType } from '../../model';
+import type { DataModelStatus, PlatformDataType } from '../../model';
 import type { GatewayProvider } from './apiConsumer';
 import type { GatewayReconciliationState } from './gatewayReconciliation';
 import type { ScriptRequestExample } from '@superhuang/super-api-studio-script-workbench';
@@ -79,6 +79,8 @@ interface DataServiceBase {
   name: string;
   directoryId: string | null;
   type: DataServiceType;
+  definitionConfigured: boolean;
+  definitionVersion: number | null;
   engineId: string;
   routePath: string;
   accessMode: DataServiceAccessMode;
@@ -95,7 +97,7 @@ interface DataServiceBase {
 
 export interface DataServiceSummary extends DataServiceBase {
   sourceId: string | null;
-  sourceName: string;
+  sourceName: string | null;
 }
 
 export interface DataServiceDetail extends DataServiceBase {
@@ -139,6 +141,60 @@ export interface CreateDataServiceRequest extends DataServiceWriteRequest {
 }
 
 export type UpdateDataServiceRequest = DataServiceWriteRequest;
+
+export interface UpdateDataServiceDefinitionRequest {
+  standardDefinition: StandardDataServiceDefinitionRequest | null;
+  sqlDefinition: SqlDataServiceDefinitionRequest | null;
+  scriptDefinition: ScriptDataServiceDefinitionRequest | null;
+}
+
+export interface StandardDataServiceModelCandidate {
+  id: string;
+  code: string;
+  name: string;
+  status: DataModelStatus;
+  directoryId: string | null;
+  directoryName: string | null;
+  warehouseLayerId: string | null;
+  warehouseLayerCode: string | null;
+  warehouseLayerName: string | null;
+  storageDataSourceId: string;
+  storageDataSourceCode: string | null;
+  storageDataSourceName: string | null;
+  catalogName: string | null;
+  schemaName: string | null;
+  physicalTableName: string;
+  schemaVersion: number;
+  fieldCount: number;
+  selectable: boolean;
+  unavailableReason: string | null;
+  updatedAt: string;
+}
+
+export type DataServiceRelatedModelRole = 'PRIMARY' | 'REFERENCE';
+
+export interface DataServiceRelatedModel {
+  modelId: string;
+  role: DataServiceRelatedModelRole;
+  order: number;
+  resolved: boolean;
+  code: string | null;
+  name: string | null;
+  status: DataModelStatus | null;
+  directoryId: string | null;
+  directoryName: string | null;
+  warehouseLayerId: string | null;
+  warehouseLayerCode: string | null;
+  warehouseLayerName: string | null;
+  storageDataSourceId: string | null;
+  storageDataSourceCode: string | null;
+  storageDataSourceName: string | null;
+  catalogName: string | null;
+  schemaName: string | null;
+  physicalTableName: string | null;
+  schemaVersion: number | null;
+  updatedAt: string | null;
+}
 
 export interface SqlServiceTestRequest extends SqlDataServiceDefinitionRequest {
   arguments: Record<string, unknown>;

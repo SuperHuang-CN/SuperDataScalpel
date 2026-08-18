@@ -31,8 +31,10 @@ import java.util.concurrent.ConcurrentHashMap;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -54,6 +56,26 @@ class DataScalpelServiceEngineApplicationTests {
         mockMvc = MockMvcBuilders.webAppContextSetup(applicationContext)
                 .apply(springSecurity())
                 .build();
+    }
+
+    @Test
+    void apiStudioModernUiAndManagementApiAreReachableWithoutEngineToken() throws Exception {
+        mockMvc.perform(get("/modern-ui"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/modern-ui/index.html"));
+
+        mockMvc.perform(get("/modern-ui/"))
+                .andExpect(status().isOk())
+                .andExpect(forwardedUrl("/modern-ui/index.html"));
+
+        mockMvc.perform(get("/modern-ui/index.html"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/html"));
+
+        mockMvc.perform(get("/interface-ui/api/setup/status"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.code").value(200))
+                .andExpect(jsonPath("$.data.initialized").isBoolean());
     }
 
     @Test

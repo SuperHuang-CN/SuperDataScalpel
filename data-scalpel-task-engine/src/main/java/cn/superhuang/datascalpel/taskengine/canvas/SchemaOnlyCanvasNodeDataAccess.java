@@ -7,12 +7,16 @@ import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcIncrementalInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
@@ -31,44 +35,52 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     }
 
     @Override
-    public Dataset<Row> readJdbcInput(JdbcInputNodeDefinition node, CanvasTableSchema expectedSchema) {
-        return empty(expectedSchema);
+    public Dataset<Row> readJdbcInput(JdbcInputNodeDefinition node, CanvasTableSchema logicalSchema) {
+        return empty(logicalSchema);
+    }
+
+    @Override
+    public Dataset<Row> readJdbcIncrementalInput(
+            JdbcIncrementalInputNodeDefinition node,
+            CanvasTableSchema logicalSchema
+    ) {
+        return readKafkaInput(null, logicalSchema);
     }
 
     @Override
     public Dataset<Row> readJdbcQueryInput(
             JdbcQueryInputNodeDefinition node,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
-        return empty(expectedSchema);
+        return empty(logicalSchema);
     }
 
     @Override
     public Dataset<Row> readFileDatasetInput(
             FileDatasetInputNodeDefinition node,
             MetadataIndex.FileDatasetTableEntry table,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
-        return empty(expectedSchema);
+        return empty(logicalSchema);
     }
 
     @Override
-    public Dataset<Row> readHttpApiInput(HttpApiInputNodeDefinition node, CanvasTableSchema expectedSchema) {
-        return empty(expectedSchema);
+    public Dataset<Row> readHttpApiInput(HttpApiInputNodeDefinition node, CanvasTableSchema logicalSchema) {
+        return empty(logicalSchema);
     }
 
     @Override
-    public Dataset<Row> readSpatialServiceInput(SpatialServiceInputNodeDefinition node, CanvasTableSchema expectedSchema) {
-        return empty(expectedSchema);
+    public Dataset<Row> readSpatialServiceInput(SpatialServiceInputNodeDefinition node, CanvasTableSchema logicalSchema) {
+        return empty(logicalSchema);
     }
 
     @Override
-    public Dataset<Row> readKafkaInput(KafkaInputNodeDefinition node, CanvasTableSchema expectedSchema) {
+    public Dataset<Row> readKafkaInput(KafkaInputNodeDefinition node, CanvasTableSchema logicalSchema) {
         Dataset<Row> rate = sparkSession.readStream()
                 .format("rate")
                 .option("rowsPerSecond", 1)
                 .load();
-        Column[] columns = expectedSchema.columns().stream()
+        Column[] columns = logicalSchema.columns().stream()
                 .map(column -> functions.lit(null)
                         .cast(SparkTypeMapper.toDataType(column))
                         .alias(column.name()))
@@ -77,12 +89,20 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     }
 
     @Override
+    public Dataset<Row> readTdEngineTmqInput(
+            TdEngineTmqInputNodeDefinition node,
+            CanvasTableSchema logicalSchema
+    ) {
+        return readKafkaInput(null, logicalSchema);
+    }
+
+    @Override
     public Dataset<Row> readModelInput(
             ModelInputNodeDefinition node,
             MetadataIndex.ModelEntry model,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
-        return empty(expectedSchema);
+        return empty(logicalSchema);
     }
 
     @Override
@@ -98,6 +118,28 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public CanvasPreparedOutput prepareModelOutput(
             ModelOutputNodeDefinition node,
+            MetadataIndex.ModelEntry model,
+            CanvasTableSchema targetSchema,
+            Dataset<Row> dataset,
+            List<String> upsertKeyColumns
+    ) {
+        dataset.schema();
+        return null;
+    }
+
+    @Override
+    public CanvasPreparedSnapshotSyncOutput prepareJdbcSnapshotSyncOutput(
+            JdbcSnapshotSyncOutputNodeDefinition node,
+            CanvasTableSchema targetSchema,
+            Dataset<Row> dataset
+    ) {
+        dataset.schema();
+        return null;
+    }
+
+    @Override
+    public CanvasPreparedSnapshotSyncOutput prepareModelSnapshotSyncOutput(
+            ModelSnapshotSyncOutputNodeDefinition node,
             MetadataIndex.ModelEntry model,
             CanvasTableSchema targetSchema,
             Dataset<Row> dataset

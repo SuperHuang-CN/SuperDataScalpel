@@ -1,10 +1,12 @@
 import { lazy, Suspense } from 'react';
-import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider, useParams } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider } from 'react-router-dom';
 import { DashboardPage } from '../modules/dashboard';
+import { LlmModelManagementPage } from '../modules/assistant';
 import { ComputeEnginePage } from '../modules/computeengine';
 import { DataSourcePage } from '../modules/datasource';
 import { ApiConsumerPage, DataServicePage } from '../modules/dataservice';
 import { FileDatasetPage } from '../modules/filedataset';
+import { DataEntryPage } from '../modules/dataentry';
 import { DataModelPage, ModelFieldTemplatePage, ModelWarehouseLayerPage } from '../modules/model';
 import { ServiceEnginePage } from '../modules/serviceengine';
 import { StandardDictionaryDetailPage, StandardDictionaryPage } from '../modules/standard';
@@ -32,6 +34,11 @@ const TaskDetailPage = lazy(async () => {
   return { default: module.TaskDetailPage };
 });
 
+const TaskDefinitionEditorPage = lazy(async () => {
+  const module = await import('../modules/task/pages/TaskDefinitionEditorPage');
+  return { default: module.TaskDefinitionEditorPage };
+});
+
 const MaskingRulePage = lazy(async () => {
   const module = await import('../modules/task/pages/MaskingRulePage');
   return { default: module.MaskingRulePage };
@@ -40,6 +47,16 @@ const MaskingRulePage = lazy(async () => {
 const DataModelDetailPage = lazy(async () => {
   const module = await import('../modules/model/pages/DataModelDetailPage');
   return { default: module.DataModelDetailPage };
+});
+
+const DataEntryDetailPage = lazy(async () => {
+  const module = await import('../modules/dataentry/pages/DataEntryDetailPage');
+  return { default: module.DataEntryDetailPage };
+});
+
+const DataSourceDetailPage = lazy(async () => {
+  const module = await import('../modules/datasource/pages/DataSourceDetailPage');
+  return { default: module.DataSourceDetailPage };
 });
 
 const FileDatasetDetailPage = lazy(async () => {
@@ -52,29 +69,82 @@ const DataServiceEditorPage = lazy(async () => {
   return { default: module.DataServiceEditorPage };
 });
 
+const DataServiceDefinitionEditorPage = lazy(async () => {
+  const module = await import('../modules/dataservice/pages/DataServiceDefinitionEditorPage');
+  return { default: module.DataServiceDefinitionEditorPage };
+});
+
+const DataServiceDetailPage = lazy(async () => {
+  const module = await import('../modules/dataservice/pages/DataServiceDetailPage');
+  return { default: module.DataServiceDetailPage };
+});
+
 const GatewayOperationsPage = lazy(async () => {
   const module = await import('../modules/dataservice/pages/GatewayOperationsPage');
   return { default: module.GatewayOperationsPage };
 });
 
-const LegacyTaskDefinitionRedirect = () => {
-  const { taskId } = useParams<{ taskId: string }>();
-  return <Navigate to={taskId ? `/task/${taskId}?tab=definition` : '/task'} replace />;
-};
+const AssetPortalPage = lazy(async () => {
+  const module = await import('../modules/asset');
+  return { default: module.AssetPortalPage };
+});
+
+const AssetPortalDetailPage = lazy(async () => {
+  const module = await import('../modules/asset');
+  return { default: module.AssetPortalDetailPage };
+});
+
+const AssetDomainManagementPage = lazy(async () => {
+  const module = await import('../modules/asset');
+  return { default: module.AssetDomainManagementPage };
+});
+
+const AssetManagementPage = lazy(async () => {
+  const module = await import('../modules/asset');
+  return { default: module.AssetManagementPage };
+});
 
 const router = createBrowserRouter(createRoutesFromElements(
   <>
         <Route path="login" element={<LoginPage />} />
+        <Route path="assets" element={<Suspense fallback="正在加载数据资产门户…"><AssetPortalPage /></Suspense>} />
+        <Route path="assets/:id" element={<Suspense fallback="正在加载资产详情…"><AssetPortalDetailPage /></Suspense>} />
         <Route element={<RequireAuthentication />}>
           <Route element={<AppShell />}>
             <Route index element={<DashboardPage />} />
             <Route path="system/configurations" element={<RequirePermission permission="system.configuration.view"><SystemConfigurationPage /></RequirePermission>} />
             <Route path="system/model-warehouse-layers" element={<RequirePermission permission="system.configuration.view"><ModelWarehouseLayerPage /></RequirePermission>} />
+            <Route path="system/ai-models" element={<RequirePermission permission="system.configuration.view"><LlmModelManagementPage /></RequirePermission>} />
             <Route path="system/users" element={<RequirePermission permission="system.user.view"><SystemUserManagementPage /></RequirePermission>} />
             <Route path="system/roles" element={<RequirePermission permission="system.role.view"><SystemRoleManagementPage /></RequirePermission>} />
             <Route path="system/permissions" element={<RequirePermission permission="system.permission.view"><SystemPermissionManagementPage /></RequirePermission>} />
             <Route path="system/*" element={<PlaceholderPage title="系统管理" description="请选择左侧已有的系统管理功能。" />} />
+            <Route
+              path="asset-management/assets"
+              element={(
+                <RequirePermission permission="asset.view">
+                  <Suspense fallback="正在加载资产管理…"><AssetManagementPage /></Suspense>
+                </RequirePermission>
+              )}
+            />
+            <Route
+              path="asset-management/domains"
+              element={(
+                <RequirePermission permission="directory.view">
+                  <Suspense fallback="正在加载业务领域…"><AssetDomainManagementPage /></Suspense>
+                </RequirePermission>
+              )}
+            />
+            <Route path="asset-management/*" element={<Navigate to="/asset-management/assets" replace />} />
             <Route path="datasource" element={<RequirePermission permission="datasource.view"><DataSourcePage /></RequirePermission>} />
+            <Route
+              path="datasource/:id"
+              element={(
+                <RequirePermission permission="datasource.view">
+                  <Suspense fallback="正在加载数据源详情…"><DataSourceDetailPage /></Suspense>
+                </RequirePermission>
+              )}
+            />
             <Route path="datasource/*" element={<Navigate to="/datasource" replace />} />
             <Route path="file-dataset" element={<RequirePermission permission="filedataset.view"><FileDatasetPage /></RequirePermission>} />
             <Route
@@ -109,6 +179,16 @@ const router = createBrowserRouter(createRoutesFromElements(
               )}
             />
             <Route path="model/*" element={<Navigate to="/model" replace />} />
+            <Route path="data-entry" element={<RequirePermission permission="dataentry.view"><DataEntryPage /></RequirePermission>} />
+            <Route
+              path="data-entry/:id"
+              element={(
+                <RequirePermission permission="dataentry.view">
+                  <Suspense fallback="正在加载填报详情…"><DataEntryDetailPage /></Suspense>
+                </RequirePermission>
+              )}
+            />
+            <Route path="data-entry/*" element={<Navigate to="/data-entry" replace />} />
             <Route path="task" element={<RequirePermission permission="task.view"><TaskListPage /></RequirePermission>} />
             <Route
               path="task/masking-rules"
@@ -120,7 +200,11 @@ const router = createBrowserRouter(createRoutesFromElements(
             />
             <Route
               path="task/:taskId/definition"
-              element={<LegacyTaskDefinitionRedirect />}
+              element={(
+                <RequirePermission permission="task.update">
+                  <Suspense fallback="正在加载任务定义编辑器…"><TaskDefinitionEditorPage /></Suspense>
+                </RequirePermission>
+              )}
             />
             <Route
               path="task/:taskId"
@@ -147,26 +231,18 @@ const router = createBrowserRouter(createRoutesFromElements(
               )}
             />
             <Route
-              path="dataservice/new/standard"
+              path="dataservice/:id/edit"
               element={(
-                <RequirePermission permission="service.create">
-                  <Suspense fallback="正在加载标准服务编辑器…"><DataServiceEditorPage /></Suspense>
+                <RequirePermission permission="service.update">
+                  <Suspense fallback="正在加载数据服务编辑器…"><DataServiceEditorPage /></Suspense>
                 </RequirePermission>
               )}
             />
             <Route
-              path="dataservice/new/sql"
+              path="dataservice/:id/definition/edit"
               element={(
-                <RequirePermission permission="service.create">
-                  <Suspense fallback="正在加载 SQL 服务工作台…"><DataServiceEditorPage /></Suspense>
-                </RequirePermission>
-              )}
-            />
-            <Route
-              path="dataservice/new/script"
-              element={(
-                <RequirePermission permission="service.create">
-                  <Suspense fallback="正在加载脚本服务工作台…"><DataServiceEditorPage /></Suspense>
+                <RequirePermission permission="service.update">
+                  <Suspense fallback="正在加载数据服务定义编辑器…"><DataServiceDefinitionEditorPage /></Suspense>
                 </RequirePermission>
               )}
             />
@@ -174,7 +250,7 @@ const router = createBrowserRouter(createRoutesFromElements(
               path="dataservice/:id"
               element={(
                 <RequirePermission permission="service.view">
-                  <Suspense fallback="正在加载数据服务详情…"><DataServiceEditorPage /></Suspense>
+                  <Suspense fallback="正在加载数据服务详情…"><DataServiceDetailPage /></Suspense>
                 </RequirePermission>
               )}
             />

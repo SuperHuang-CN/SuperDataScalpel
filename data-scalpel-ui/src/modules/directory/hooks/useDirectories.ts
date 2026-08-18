@@ -1,5 +1,13 @@
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query';
-import { createDirectory, deleteDirectory, fetchDirectoryTree, updateDirectory } from '../api/directoryApi';
+import {
+  createDirectory,
+  deleteDirectory,
+  downloadDirectoryImportTemplate,
+  exportDirectoryTree,
+  fetchDirectoryTree,
+  importDirectoryTree,
+  updateDirectory,
+} from '../api/directoryApi';
 import type { CreateDirectoryRequest, DirectoryScope, UpdateDirectoryRequest } from '../model/directory';
 
 export const directoryTreeQueryKey = (scope: DirectoryScope) => ['directories', scope] as const;
@@ -34,6 +42,22 @@ export const useDeleteDirectory = (scope: DirectoryScope) => {
   const queryClient = useQueryClient();
   return useMutation({
     mutationFn: deleteDirectory,
+    onSuccess: () => invalidateDirectoryTree(queryClient, scope),
+  });
+};
+
+export const useDownloadDirectoryImportTemplate = () => useMutation({
+  mutationFn: downloadDirectoryImportTemplate,
+});
+
+export const useExportDirectoryTree = () => useMutation({
+  mutationFn: exportDirectoryTree,
+});
+
+export const useImportDirectoryTree = (scope: DirectoryScope) => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (file: File) => importDirectoryTree(scope, file),
     onSuccess: () => invalidateDirectoryTree(queryClient, scope),
   });
 };

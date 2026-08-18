@@ -213,6 +213,12 @@ const nodeGlyph = (iconKey: CanvasNodeIconKeyValue): ReactNode => {
         <ellipse cx="16.5" cy="6" rx="4.5" ry="2.25" />
         <path d="M12 6v10c0 1.24 2.01 2.25 4.5 2.25S21 17.24 21 16V6m-9 5c0 1.24 2.01 2.25 4.5 2.25S21 12.24 21 11" />
       </>;
+    case CanvasNodeIconKey.SnapshotSync:
+      return <>
+        <ellipse cx="12" cy="6" rx="6" ry="3" />
+        <path d="M6 6v4c0 1.65 2.69 3 6 3 1.38 0 2.65-.23 3.66-.62M6 10v4c0 1.65 2.69 3 6 3" />
+        <path d="M17 14a4 4 0 0 1 3 3.87M20 15v3h-3M19 20a4 4 0 0 1-5.6-.4M13 21v-3h3" />
+      </>;
     case CanvasNodeIconKey.StreamOutput:
       return <>
         <path d="M3 7h5c3.5 0 3.5 4 7 4h6M3 12h4c3.5 0 3.5 5 7 5h7" />

@@ -55,6 +55,7 @@ export const SystemConfigurationDrawer = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title="修改系统配置"
         open={open}
         size="default"

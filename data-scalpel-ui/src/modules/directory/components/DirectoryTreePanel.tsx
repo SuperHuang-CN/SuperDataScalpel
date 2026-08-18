@@ -1,15 +1,21 @@
-import { AppstoreOutlined, DeleteOutlined, EditOutlined, FolderAddOutlined, FolderOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, PlusOutlined } from '@ant-design/icons';
-import { Button, Popconfirm, Spin, Tooltip, Tree, message } from 'antd';
+import { AppstoreOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Modal, Spin, Tooltip, Tree, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import { useState } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { useDeleteDirectory } from '../hooks/useDirectories';
+import { downloadBlob } from '../../../shared/browser/downloadBlob';
+import { useDeleteDirectory, useExportDirectoryTree } from '../hooks/useDirectories';
 import type { DirectoryScope, DirectoryTreeNode } from '../model/directory';
 import { DirectoryDrawer } from './DirectoryDrawer';
+import { DirectoryImportModal } from './DirectoryImportModal';
 
-const ALL_DIRECTORY_KEY = '__all__';
-const UNCATEGORIZED_DIRECTORY_KEY = '__uncategorized__';
 const DIRECTORY_PANEL_COLLAPSED_STORAGE_KEY_PREFIX = 'data-scalpel.ui.directory-panel.collapsed';
+const DIRECTORY_PANEL_WIDTH_STORAGE_KEY = 'data-scalpel.ui.directory-panel.width';
+const DIRECTORY_PANEL_DEFAULT_WIDTH = 244;
+const DIRECTORY_PANEL_MIN_WIDTH = 200;
+const DIRECTORY_PANEL_MAX_WIDTH = 360;
+const DIRECTORY_PANEL_MAX_WIDTH_RATIO = 0.35;
+const DIRECTORY_PANEL_KEYBOARD_STEP = 8;
 
 const directoryPanelStorageKey = (scope: DirectoryScope) => `${DIRECTORY_PANEL_COLLAPSED_STORAGE_KEY_PREFIX}.${scope}`;
 
@@ -29,22 +35,69 @@ const writeDirectoryPanelCollapsedPreference = (scope: DirectoryScope, collapsed
   }
 };
 
+const readDirectoryPanelWidthPreference = (): number => {
+  try {
+    const storedValue = window.localStorage.getItem(DIRECTORY_PANEL_WIDTH_STORAGE_KEY);
+    const storedWidth = storedValue === null ? Number.NaN : Number(storedValue);
+    if (Number.isFinite(storedWidth)) {
+      return Math.min(DIRECTORY_PANEL_MAX_WIDTH, Math.max(DIRECTORY_PANEL_MIN_WIDTH, storedWidth));
+    }
+  } catch {
+    // Local storage may be unavailable in restricted browser environments.
+  }
+  return DIRECTORY_PANEL_DEFAULT_WIDTH;
+};
+
+const writeDirectoryPanelWidthPreference = (width: number) => {
+  try {
+    window.localStorage.setItem(DIRECTORY_PANEL_WIDTH_STORAGE_KEY, String(Math.round(width)));
+  } catch {
+    // Local storage may be unavailable in restricted browser environments.
+  }
+};
+
 export type DirectorySelection = string | null | undefined;
 
 interface DirectoryTreePanelProps {
   scope: DirectoryScope;
+  label?: string;
   tree: DirectoryTreeNode[];
   loading: boolean;
   selection: DirectorySelection;
   canManage?: boolean;
+  showResourceCounts?: boolean;
+  showVirtualNodes?: boolean;
   onSelectionChange: (selection: DirectorySelection) => void;
 }
 
-export const DirectoryTreePanel = ({ scope, tree, loading, selection, canManage = false, onSelectionChange }: DirectoryTreePanelProps) => {
+export const DirectoryTreePanel = ({
+  scope,
+  label = '目录',
+  tree,
+  loading,
+  selection,
+  canManage = false,
+  showResourceCounts = true,
+  showVirtualNodes = true,
+  onSelectionChange,
+}: DirectoryTreePanelProps) => {
   const [messageApi, messageContext] = message.useMessage();
+  const [modal, modalContext] = Modal.useModal();
   const [collapsed, setCollapsed] = useState(() => readDirectoryPanelCollapsedPreference(scope));
+  const [panelWidth, setPanelWidth] = useState(readDirectoryPanelWidthPreference);
+  const [resizing, setResizing] = useState(false);
   const [drawerState, setDrawerState] = useState<{ directory: DirectoryTreeNode | null; parentId?: string } | null>(null);
+  const [importOpen, setImportOpen] = useState(false);
+  const panelRef = useRef<HTMLElement>(null);
+  const resizeStateRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startWidth: number;
+    maxWidth: number;
+    currentWidth: number;
+  } | null>(null);
   const deleteMutation = useDeleteDirectory(scope);
+  const exportMutation = useExportDirectoryTree();
 
   const openCreate = (parentId?: string) => setDrawerState({ directory: null, parentId });
   const openEdit = (directory: DirectoryTreeNode) => setDrawerState({ directory });
@@ -58,83 +111,215 @@ export const DirectoryTreePanel = ({ scope, tree, loading, selection, canManage 
     try {
       await deleteMutation.mutateAsync(directory.id);
       if (selection === directory.id) onSelectionChange(undefined);
-      messageApi.success('目录已删除');
+      messageApi.success(`${label}已删除`);
     } catch (error) {
-      messageApi.error(error instanceof ApiError ? error.message : '删除目录失败');
+      messageApi.error(error instanceof ApiError ? error.message : `删除${label}失败`);
     }
+  };
+
+  const confirmRemove = (directory: DirectoryTreeNode) => {
+    modal.confirm({
+      title: `删除${label}`,
+      content: `确认删除${label}“${directory.name}”吗？`,
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => remove(directory),
+    });
+  };
+
+  const exportTree = async () => {
+    try {
+      const blob = await exportMutation.mutateAsync(scope);
+      downloadBlob(blob, `DataScalpel-${scope}-${label}-${new Date().toISOString().slice(0, 10)}.xlsx`);
+      messageApi.success(`${label}已导出`);
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : `导出${label}失败`);
+    }
+  };
+
+  const getMaximumPanelWidth = () => {
+    const availableWidth = panelRef.current?.parentElement?.getBoundingClientRect().width;
+    if (!availableWidth) return DIRECTORY_PANEL_MAX_WIDTH;
+    return Math.max(
+      DIRECTORY_PANEL_MIN_WIDTH,
+      Math.min(DIRECTORY_PANEL_MAX_WIDTH, availableWidth * DIRECTORY_PANEL_MAX_WIDTH_RATIO),
+    );
+  };
+
+  const updatePanelWidth = (nextWidth: number, maximumWidth = getMaximumPanelWidth()) => {
+    const boundedWidth = Math.round(Math.min(maximumWidth, Math.max(DIRECTORY_PANEL_MIN_WIDTH, nextWidth)));
+    setPanelWidth(boundedWidth);
+    writeDirectoryPanelWidthPreference(boundedWidth);
+  };
+
+  const startResize = (event: PointerEvent<HTMLDivElement>) => {
+    if (event.button !== 0) return;
+    const currentWidth = panelRef.current?.getBoundingClientRect().width ?? panelWidth;
+    const maximumWidth = getMaximumPanelWidth();
+    resizeStateRef.current = {
+      pointerId: event.pointerId,
+      startX: event.clientX,
+      startWidth: currentWidth,
+      maxWidth: maximumWidth,
+      currentWidth,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+    setResizing(true);
+    event.preventDefault();
+  };
+
+  const resize = (event: PointerEvent<HTMLDivElement>) => {
+    const resizeState = resizeStateRef.current;
+    if (!resizeState || resizeState.pointerId !== event.pointerId) return;
+    const nextWidth = Math.round(Math.min(
+      resizeState.maxWidth,
+      Math.max(DIRECTORY_PANEL_MIN_WIDTH, resizeState.startWidth + event.clientX - resizeState.startX),
+    ));
+    resizeState.currentWidth = nextWidth;
+    setPanelWidth(nextWidth);
+  };
+
+  const finishResize = (event: PointerEvent<HTMLDivElement>) => {
+    const resizeState = resizeStateRef.current;
+    if (!resizeState || resizeState.pointerId !== event.pointerId) return;
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+    writeDirectoryPanelWidthPreference(resizeState.currentWidth);
+    resizeStateRef.current = null;
+    setResizing(false);
+  };
+
+  const resizeWithKeyboard = (event: KeyboardEvent<HTMLDivElement>) => {
+    const maximumWidth = getMaximumPanelWidth();
+    let nextWidth: number | undefined;
+    if (event.key === 'ArrowLeft') nextWidth = panelWidth - DIRECTORY_PANEL_KEYBOARD_STEP;
+    if (event.key === 'ArrowRight') nextWidth = panelWidth + DIRECTORY_PANEL_KEYBOARD_STEP;
+    if (event.key === 'Home') nextWidth = DIRECTORY_PANEL_MIN_WIDTH;
+    if (event.key === 'End') nextWidth = maximumWidth;
+    if (nextWidth === undefined) return;
+    event.preventDefault();
+    updatePanelWidth(nextWidth, maximumWidth);
   };
 
   const treeData: DataNode[] = (() => {
     const buildNodes = (nodes: DirectoryTreeNode[]): DataNode[] => nodes.map((directory) => ({
       key: directory.id,
-      icon: <FolderOutlined />,
       title: (
         <span className="directory-tree-node-title">
-          <span className="directory-tree-node-name">{directory.name}</span>
-          <span className="directory-tree-node-meta">
-            <span className="directory-tree-node-count">{directory.resourceCount}</span>
-            {canManage && (
-              <span className="directory-tree-node-actions" onClick={(event) => event.stopPropagation()}>
-                <Tooltip title="新建子目录">
-                  <Button type="text" size="small" icon={<FolderAddOutlined />} aria-label={`在“${directory.name}”下新建子目录`} onClick={() => openCreate(directory.id)} />
-                </Tooltip>
-                <Tooltip title="修改目录">
-                  <Button type="text" size="small" icon={<EditOutlined />} aria-label={`修改目录“${directory.name}”`} onClick={() => openEdit(directory)} />
-                </Tooltip>
-                <Popconfirm title="删除目录" description={`确认删除“${directory.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => void remove(directory)}>
-                  <Tooltip title="删除目录">
-                    <Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`删除目录“${directory.name}”`} />
+          <Tooltip title={directory.name} mouseEnterDelay={0.5}>
+            <span className="directory-tree-node-name">{directory.name}</span>
+          </Tooltip>
+          {(canManage || (showResourceCounts && directory.resourceCount > 0)) && (
+            <span className="directory-tree-node-meta">
+              {showResourceCounts && directory.resourceCount > 0 && (
+              <Tooltip title={`${directory.resourceCount} 个资源`}>
+                <span className="directory-tree-node-count">{directory.resourceCount}</span>
+              </Tooltip>
+              )}
+              {canManage && (
+                <span className="directory-tree-node-actions" onClick={(event) => event.stopPropagation()}>
+                  <Tooltip title="更多操作">
+                    <Dropdown
+                      trigger={['click']}
+                      placement="bottomRight"
+                      menu={{
+                        items: [
+                          { key: 'create', icon: <FolderAddOutlined />, label: `新增子${label}` },
+                          { key: 'edit', icon: <EditOutlined />, label: `修改${label}` },
+                          { key: 'delete', icon: <DeleteOutlined />, label: `删除${label}`, danger: true },
+                        ],
+                        onClick: ({ key, domEvent }) => {
+                          domEvent.stopPropagation();
+                          if (key === 'create') openCreate(directory.id);
+                          if (key === 'edit') openEdit(directory);
+                          if (key === 'delete') confirmRemove(directory);
+                        },
+                      }}
+                    >
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<EllipsisOutlined />}
+                        aria-label={`${label}“${directory.name}”的更多操作`}
+                      />
+                    </Dropdown>
                   </Tooltip>
-                </Popconfirm>
-              </span>
-            )}
-          </span>
+                </span>
+              )}
+            </span>
+          )}
         </span>
       ),
       children: buildNodes(directory.children),
     }));
-    return [
-      { key: ALL_DIRECTORY_KEY, icon: <AppstoreOutlined />, title: '全部' },
-      { key: UNCATEGORIZED_DIRECTORY_KEY, icon: <InboxOutlined />, title: '未分类' },
-      ...buildNodes(tree),
-    ];
+    return buildNodes(tree);
   })();
 
-  const selectedKeys = selection === undefined
-    ? [ALL_DIRECTORY_KEY]
-    : selection === null ? [UNCATEGORIZED_DIRECTORY_KEY] : [selection];
+  const selectedKeys = selection === null || selection === undefined ? [] : [selection];
+  const totalResourceCount = tree.reduce((total, directory) => total + directory.resourceCount, 0);
 
   return (
-    <aside className={`directory-tree-panel${collapsed ? ' directory-tree-panel-collapsed' : ''}`}>
+    <aside
+      ref={panelRef}
+      className={`directory-tree-panel${collapsed ? ' directory-tree-panel-collapsed' : ''}${resizing ? ' directory-tree-panel-resizing' : ''}`}
+      style={collapsed ? undefined : { flexBasis: panelWidth, width: panelWidth }}
+    >
       {messageContext}
+      {modalContext}
       <div className="directory-tree-panel-header">
         {collapsed ? (
-          <Tooltip title="展开目录" placement="right">
+          <Tooltip title={`展开${label}`} placement="right">
             <Button
               type="text"
               size="small"
               className="directory-tree-panel-toggle"
               icon={<MenuUnfoldOutlined />}
-              aria-label="展开目录"
+              aria-label={`展开${label}`}
               onClick={toggleCollapsed}
             />
           </Tooltip>
         ) : (
           <>
-            <span>目录</span>
+            <span>{label}</span>
             <span className="directory-tree-panel-header-actions">
               {canManage && (
-                <Tooltip title="新建顶级目录">
-                  <Button type="text" size="small" icon={<PlusOutlined />} aria-label="新建顶级目录" onClick={() => openCreate()} />
+                <Tooltip title={`新建顶级${label}`}>
+                  <Button type="text" size="small" icon={<PlusOutlined />} aria-label={`新建顶级${label}`} onClick={() => openCreate()} />
                 </Tooltip>
               )}
-              <Tooltip title="收起目录">
+              <Tooltip title={`${label}导入导出`}>
+                <Dropdown
+                  trigger={['click']}
+                  placement="bottomRight"
+                  menu={{
+                    items: [
+                      ...(canManage ? [{ key: 'import', icon: <ImportOutlined />, label: `导入${label}` }] : []),
+                      { key: 'export', icon: <ExportOutlined />, label: `导出${label}` },
+                    ],
+                    onClick: ({ key }) => {
+                      if (key === 'import') setImportOpen(true);
+                      if (key === 'export') void exportTree();
+                    },
+                  }}
+                >
+                  <Button
+                    type="text"
+                    size="small"
+                    icon={<MoreOutlined />}
+                    loading={exportMutation.isPending}
+                    aria-label={`${label}导入导出`}
+                  />
+                </Dropdown>
+              </Tooltip>
+              <Tooltip title={`收起${label}`}>
                 <Button
                   type="text"
                   size="small"
                   className="directory-tree-panel-toggle"
                   icon={<MenuFoldOutlined />}
-                  aria-label="收起目录"
+                  aria-label={`收起${label}`}
                   onClick={toggleCollapsed}
                 />
               </Tooltip>
@@ -143,29 +328,78 @@ export const DirectoryTreePanel = ({ scope, tree, loading, selection, canManage 
         )}
       </div>
       <div className="directory-tree-panel-content">
+        {showVirtualNodes && (
+          <div className="directory-tree-panel-quick-filters" aria-label={`${label}快捷筛选`}>
+            <Button
+              type="text"
+              className={selection === undefined ? 'directory-tree-quick-filter-active' : undefined}
+              icon={<AppstoreOutlined />}
+              aria-pressed={selection === undefined}
+              onClick={() => onSelectionChange(undefined)}
+            >
+              全部
+              {showResourceCounts && totalResourceCount > 0 && (
+                <span className="directory-tree-quick-filter-count">{totalResourceCount}</span>
+              )}
+            </Button>
+            <Button
+              type="text"
+              className={selection === null ? 'directory-tree-quick-filter-active' : undefined}
+              icon={<InboxOutlined />}
+              aria-pressed={selection === null}
+              onClick={() => onSelectionChange(null)}
+            >
+              未分类
+            </Button>
+          </div>
+        )}
         <Spin spinning={loading} size="small" className="directory-tree-spin">
           <Tree
             blockNode
-            showIcon
             defaultExpandAll
             selectedKeys={selectedKeys}
             treeData={treeData}
-            onSelect={(keys) => {
-              const key = String(keys[0] ?? ALL_DIRECTORY_KEY);
-              onSelectionChange(key === ALL_DIRECTORY_KEY ? undefined : key === UNCATEGORIZED_DIRECTORY_KEY ? null : key);
-            }}
+            onSelect={(keys) => onSelectionChange(keys[0] === undefined ? undefined : String(keys[0]))}
           />
         </Spin>
       </div>
-      {canManage && (
-        <DirectoryDrawer
-          scope={scope}
-          open={Boolean(drawerState)}
-          directory={drawerState?.directory ?? null}
-          initialParentId={drawerState?.parentId}
-          tree={tree}
-          onClose={() => setDrawerState(null)}
+      {!collapsed && (
+        <div
+          className="directory-tree-panel-resizer"
+          role="separator"
+          aria-label={`调整${label}面板宽度`}
+          aria-orientation="vertical"
+          aria-valuemin={DIRECTORY_PANEL_MIN_WIDTH}
+          aria-valuemax={DIRECTORY_PANEL_MAX_WIDTH}
+          aria-valuenow={Math.round(panelWidth)}
+          tabIndex={0}
+          title={`拖动调整${label}面板宽度，双击恢复默认宽度`}
+          onDoubleClick={() => updatePanelWidth(DIRECTORY_PANEL_DEFAULT_WIDTH)}
+          onKeyDown={resizeWithKeyboard}
+          onPointerDown={startResize}
+          onPointerMove={resize}
+          onPointerUp={finishResize}
+          onPointerCancel={finishResize}
         />
+      )}
+      {canManage && (
+        <>
+          <DirectoryDrawer
+            scope={scope}
+            label={label}
+            open={Boolean(drawerState)}
+            directory={drawerState?.directory ?? null}
+            initialParentId={drawerState?.parentId}
+            tree={tree}
+            onClose={() => setDrawerState(null)}
+          />
+          <DirectoryImportModal
+            scope={scope}
+            label={label}
+            open={importOpen}
+            onClose={() => setImportOpen(false)}
+          />
+        </>
       )}
     </aside>
   );

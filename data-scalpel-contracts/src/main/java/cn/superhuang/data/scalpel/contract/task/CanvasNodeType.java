@@ -3,11 +3,13 @@ package cn.superhuang.data.scalpel.contract.task;
 public enum CanvasNodeType {
     MODEL_INPUT,
     JDBC_INPUT,
+    JDBC_INCREMENTAL_INPUT,
     JDBC_QUERY_INPUT,
     FILE_DATASET_INPUT,
     HTTP_API_INPUT,
     SPATIAL_SERVICE_INPUT,
     KAFKA_INPUT,
+    TDENGINE_TMQ_INPUT,
     JOIN,
     GEOMETRY_CONSTRUCT,
     SPATIAL_TRANSFORM,
@@ -36,7 +38,9 @@ public enum CanvasNodeType {
     WINDOW,
     TOP_N,
     MODEL_OUTPUT,
+    MODEL_SNAPSHOT_SYNC_OUTPUT,
     JDBC_OUTPUT,
+    JDBC_SNAPSHOT_SYNC_OUTPUT,
     KAFKA_OUTPUT,
     FILE_OUTPUT
 }

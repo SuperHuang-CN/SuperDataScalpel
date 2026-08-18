@@ -11,7 +11,8 @@ import {
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message } from 'antd';
-import { useMemo, useState, type ReactNode } from 'react';
+import { useEffect, useMemo, useState, type ReactNode } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
@@ -20,18 +21,19 @@ import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type 
 import { useCurrentUser } from '../../system';
 import { ConnectionTestResultModal } from '../components/ConnectionTestResultModal';
 import { DataSourceDrawer } from '../components/DataSourceDrawer';
-import { DataSourceMetadataDrawer } from '../components/DataSourceMetadataDrawer';
-import { ApiResourceListDrawer } from '../components/ApiResourceListDrawer';
-import { SpatialFeatureResourceListDrawer } from '../components/SpatialFeatureResourceListDrawer';
+import { DataSourceTypeIcon } from '../components/DataSourceTypeIcon';
 import { useDataSourceTypes, useDataSources, useDeleteDataSource, useTestSavedDataSourceConnection } from '../hooks/useDataSources';
 import {
   dataSourceTypeLabels,
   dataSourcePurposeLabels,
   type DataSource,
+  type DataSourceAssistantCreateDraft,
+  type DataSourceAssistantLocationState,
   type ConnectionTestResult,
   type DataSourceFilters,
   type DataSourcePurpose,
   type DataSourcePurposeFilter,
+  type DataSourceType,
 } from '../model/dataSource';
 import { buildDataSourceSearch } from '../model/dataSourceSearch';
 
@@ -52,7 +54,27 @@ const purposeIcons = {
   DISTRIBUTION: <ShareAltOutlined />,
 } satisfies Record<DataSourcePurpose, ReactNode>;
 
+const dataSourceTypeIconTones = {
+  MYSQL: 'orange',
+  POSTGRESQL: 'blue',
+  ORACLE: 'rose',
+  SQL_SERVER: 'rose',
+  CLICKHOUSE: 'slate',
+  DAMENG: 'blue',
+  KINGBASE: 'rose',
+  OPENGAUSS: 'orange',
+  TDENGINE_WEBSOCKET: 'cyan',
+  TDENGINE_RESTFUL: 'slate',
+  KAFKA: 'slate',
+  S3: 'rose',
+  HTTP_API: 'blue',
+  ARCGIS_REST: 'green',
+  WFS: 'cyan',
+} satisfies Record<DataSourceType, 'blue' | 'violet' | 'cyan' | 'green' | 'orange' | 'rose' | 'slate'>;
+
 export const DataSourcePage = () => {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [filterForm] = Form.useForm<DataSourceFilters>();
   const [advancedFilterForm] = Form.useForm<DataSourceFilters>();
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
@@ -62,14 +84,12 @@ export const DataSourcePage = () => {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [editingDataSource, setEditingDataSource] = useState<DataSource | null>(null);
-  const [metadataDataSource, setMetadataDataSource] = useState<DataSource | null>(null);
-  const [apiResourceDataSource, setApiResourceDataSource] = useState<DataSource | null>(null);
-  const [spatialResourceDataSource, setSpatialResourceDataSource] = useState<DataSource | null>(null);
   const [testFailure, setTestFailure] = useState<{
     result: ConnectionTestResult;
     targetLabel: string;
   } | null>(null);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [assistantCreateDraft, setAssistantCreateDraft] = useState<DataSourceAssistantCreateDraft | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const currentUserQuery = useCurrentUser();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
@@ -91,11 +111,32 @@ export const DataSourcePage = () => {
   const dataSourcesQuery = useDataSources(request);
   const deleteMutation = useDeleteDataSource();
   const testMutation = useTestSavedDataSourceConnection();
+
+  useEffect(() => {
+    if (!currentUserQuery.data) return;
+    const state = location.state as (DataSourceAssistantLocationState & Record<string, unknown>) | null;
+    const action = state?.assistantDataSourceAction;
+    if (action?.kind !== 'CREATE') return;
+    const remainingState = { ...state };
+    delete remainingState.assistantDataSourceAction;
+    navigate(
+      { pathname: location.pathname, search: location.search, hash: location.hash },
+      { replace: true, state: Object.keys(remainingState).length ? remainingState : null },
+    );
+    if (!canCreate) {
+      messageApi.error('当前账号没有新建数据源权限');
+      return;
+    }
+    // React Router state is an external one-shot handoff that must be copied before it is cleared.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setEditingDataSource(null);
+    setAssistantCreateDraft(action.draft);
+    setCreateDrawerOpen(true);
+  }, [canCreate, currentUserQuery.data, location, messageApi, navigate]);
   const dataSourceTypeOptions = dataSourceTypesQuery.data?.map((definition) => ({
     value: definition.id,
     label: definition.displayName,
   })) ?? Object.entries(dataSourceTypeLabels).map(([value, label]) => ({ value, label }));
-  const dataSourceTypeName = new Map(dataSourceTypesQuery.data?.map((definition) => [definition.id, definition.displayName]) ?? []);
   const dataSourceTypeDefinition = new Map(dataSourceTypesQuery.data?.map((definition) => [definition.id, definition]) ?? []);
   const advancedFilterCount = Number(Boolean(advancedFilters.type)) + Number(typeof advancedFilters.enabled === 'boolean');
   const search = (nextFilters: DataSourceFilters) => {
@@ -152,6 +193,7 @@ export const DataSourcePage = () => {
   const closeDrawer = () => {
     setEditingDataSource(null);
     setCreateDrawerOpen(false);
+    setAssistantCreateDraft(null);
   };
 
   const testConnection = async (dataSource: DataSource) => {
@@ -184,21 +226,50 @@ export const DataSourcePage = () => {
     }
   };
   const confirmRemove = (dataSource: DataSource) => Modal.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除数据源', content: `确认删除“${dataSource.name}”吗？`, okText: '删除', cancelText: '取消',
     okButtonProps: { danger: true }, onOk: () => remove(dataSource),
   });
 
   const columns: TableProps<DataSource>['columns'] = [
-    { title: '数据源', dataIndex: 'name', width: 250, render: (value: string, dataSource) => <ManagementListCell icon={<DatabaseOutlined />} primary={value} secondary={<><ManagementCode value={dataSource.code} /> {dataSource.description || ''}</>} /> },
     {
-      title: '类型 / 用途', width: 180,
-      render: (_value: unknown, dataSource) => <ManagementListCell primary={dataSourceTypeName.get(dataSource.type) ?? dataSourceTypeLabels[dataSource.type]} secondary={<Space size={2}>
+      title: '数据源', dataIndex: 'name', width: 260,
+      render: (value: string, dataSource) => (
+        <ManagementListCell
+          icon={<DataSourceTypeIcon type={dataSource.type} />}
+          iconLabel={`数据源类型：${dataSourceTypeLabels[dataSource.type]}`}
+          iconTone={dataSourceTypeIconTones[dataSource.type]}
+          primary={(
+            <Button
+              type="link"
+              size="small"
+              className="data-source-name-button"
+              onClick={() => navigate(`/datasource/${dataSource.id}`, { state: { fromDataSourceList: true } })}
+            >
+              {value}
+            </Button>
+          )}
+          secondary={<ManagementCode value={dataSource.code} />}
+        />
+      ),
+    },
+    {
+      title: '说明', dataIndex: 'description', width: 240,
+      render: (value: string | null) => value ? (
+        <Tooltip title={value}>
+          <div className="data-source-description">{value}</div>
+        </Tooltip>
+      ) : <span className="data-source-description-empty">—</span>,
+    },
+    {
+      title: '用途', width: 110,
+      render: (_value: unknown, dataSource) => <Space size={4}>
         {purposeOrder.filter((purpose) => dataSource.purposes.includes(purpose)).map((purpose) => (
           <Tooltip key={purpose} title={dataSourcePurposeLabels[purpose]}>
             <span className="management-enum-icon" aria-label={dataSourcePurposeLabels[purpose]}>{purposeIcons[purpose]}</span>
           </Tooltip>
         ))}
-      </Space>} />,
+      </Space>,
     },
     {
       title: '连接目标', width: 300,
@@ -223,14 +294,23 @@ export const DataSourcePage = () => {
       key: 'action',
       width: 112,
       render: (_: unknown, dataSource: DataSource) => {
-        const canTestConnection = canTest && (dataSource.connectionKind === 'JDBC' || dataSource.connectionKind === 'HTTP_API') && dataSourceTypeDefinition.get(dataSource.type)?.connectionTestAvailable;
-        const resourceItem = dataSource.type === 'HTTP_API'
-          ? { key: 'resources', label: 'API 资源', icon: <ApiOutlined /> }
-          : (dataSource.type === 'ARCGIS_REST' || dataSource.type === 'WFS')
-            ? { key: 'resources', label: '空间资源', icon: <DatabaseOutlined /> }
-            : canReadMetadata && dataSource.connectionKind === 'JDBC'
-              ? { key: 'resources', label: '表结构', icon: <DatabaseOutlined /> }
-              : undefined;
+        const definition = dataSourceTypeDefinition.get(dataSource.type);
+        const canTestConnection = canTest && Boolean(definition?.connectionTestAvailable);
+        const canBrowseResources = Boolean(definition && definition.resourceBrowserKind !== 'NONE'
+          && (!['JDBC_TABLES', 'TDENGINE_SUPERTABLES'].includes(definition.resourceBrowserKind) || canReadMetadata));
+        const resourceItem = canBrowseResources
+          ? {
+            key: 'resources',
+            label: definition?.resourceBrowserKind === 'API_RESOURCES'
+              ? 'API 资源'
+              : definition?.resourceBrowserKind === 'SPATIAL_RESOURCES'
+                ? '空间资源'
+                : definition?.resourceBrowserKind === 'KAFKA_TOPICS'
+                  ? 'Topic'
+                  : definition?.resourceBrowserKind === 'TDENGINE_SUPERTABLES' ? '超级表' : '数据表',
+            icon: definition?.resourceBrowserKind === 'API_RESOURCES' ? <ApiOutlined /> : <DatabaseOutlined />,
+          }
+          : undefined;
         const moreItems = [
           ...(resourceItem ? [resourceItem] : []),
           ...(canUpdate ? [{ key: 'edit', label: '修改', icon: <EditOutlined /> }] : []),
@@ -238,11 +318,7 @@ export const DataSourcePage = () => {
           ...(canDelete ? [{ type: 'divider' as const }] : []),
           ...(canDelete ? [{ key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
         ];
-        const openResources = () => {
-          if (dataSource.type === 'HTTP_API') setApiResourceDataSource(dataSource);
-          else if (dataSource.type === 'ARCGIS_REST' || dataSource.type === 'WFS') setSpatialResourceDataSource(dataSource);
-          else setMetadataDataSource(dataSource);
-        };
+        const openResources = () => navigate(`/datasource/${dataSource.id}?tab=resources`, { state: { fromDataSourceList: true } });
         return <div className="management-row-actions">
           <div className="management-row-actions-shortcuts">
             {resourceItem && <Tooltip title={String(resourceItem.label)}><Button type="text" size="small" aria-label={`${resourceItem.label}${dataSource.name}`} icon={resourceItem.icon} onClick={openResources} /></Tooltip>}
@@ -307,7 +383,7 @@ export const DataSourcePage = () => {
           <div className="management-results-surface">
             <div className="management-result-toolbar">
             <span className="management-result-title">数据源列表 <span className="management-result-count">共 {dataSourcesQuery.data?.totalElements ?? 0} 项</span></span>
-            <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新数据源列表" onClick={() => void dataSourcesQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}</div>
+            <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新数据源列表" onClick={() => void dataSourcesQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setAssistantCreateDraft(null); setCreateDrawerOpen(true); }}>新建</Button>}</div>
             </div>
             <Table<DataSource>
             size="small"
@@ -316,7 +392,7 @@ export const DataSourcePage = () => {
             columns={columns}
             dataSource={dataSourcesQuery.data?.content ?? []}
             loading={dataSourcesQuery.isFetching}
-            scroll={{ y: '100%' }}
+            scroll={{ x: 1_152, y: '100%' }}
             pagination={{
               current: page + 1,
               pageSize: size,
@@ -339,32 +415,10 @@ export const DataSourcePage = () => {
         open={createDrawerOpen || Boolean(editingDataSource)}
         dataSource={editingDataSource}
         initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
+        initialDraft={assistantCreateDraft}
         canViewDirectories={canViewDirectories}
         canTest={canTest}
         onClose={closeDrawer}
-      />
-      <DataSourceMetadataDrawer
-        open={Boolean(metadataDataSource)}
-        dataSource={metadataDataSource}
-        onClose={() => setMetadataDataSource(null)}
-      />
-      <ApiResourceListDrawer
-        open={Boolean(apiResourceDataSource)}
-        dataSource={apiResourceDataSource}
-        canCreate={canCreate}
-        canUpdate={canUpdate}
-        canDelete={canDelete}
-        canTest={canTest}
-        onClose={() => setApiResourceDataSource(null)}
-      />
-      <SpatialFeatureResourceListDrawer
-        open={Boolean(spatialResourceDataSource)}
-        dataSource={spatialResourceDataSource}
-        canCreate={canCreate}
-        canUpdate={canUpdate}
-        canDelete={canDelete}
-        canReadMetadata={canReadMetadata}
-        onClose={() => setSpatialResourceDataSource(null)}
       />
       {testFailure && (
         <ConnectionTestResultModal

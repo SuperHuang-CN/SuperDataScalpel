@@ -90,7 +90,7 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
           type="info"
           showIcon
           className="file-dataset-form-alert"
-          message="每个 ZIP 必须包含且只包含一套同名 .shp/.shx/.dbf，可选携带 .cpg/.prj。"
+          message="每个 ZIP 必须包含一套同名 .shp/.shx/.dbf，可选携带 .cpg/.prj；常见索引和元数据辅助文件会自动忽略。"
         />
         <Row gutter={12}>
           <Col span={12}>

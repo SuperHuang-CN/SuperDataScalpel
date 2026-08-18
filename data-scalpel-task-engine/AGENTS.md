@@ -15,8 +15,16 @@
 - 现有 `JOIN` 节点和定义协议保持不变并仅支持 `BATCH`，不得为了命名对称将其重命名为 `BATCH_JOIN`。流式 Join 使用独立节点类型 `STREAM_JOIN`、独立配置类型和独立 Operator，不得在现有 Join 配置中堆叠 Watermark、时间范围、状态超时等流式可选字段。
 - 只有当批流之间的用户配置和业务语义一致时，节点才可以同时支持 `BATCH`、`STREAMING`，例如 Filter、Select、Rename、Cast 和普通派生列。涉及 Watermark、事件时间、状态存储、时间窗口、流式去重、输出模式或 Checkpoint 语义时必须使用独立流式节点，例如 `STREAM_JOIN`、`WINDOW_AGGREGATE`、`STREAM_DEDUPLICATE`。
 - 不得仅因为底层 Spark API 分为 `Dataset` 和 `DataStreamWriter` 就机械复制所有节点。是否拆分节点以配置契约、Schema 传播、状态语义和用户可理解性是否存在实质差异为准。
-- 节点能力基线为：`JDBC_INPUT` 可支持批流，但在流任务中产生静态有界维表；`KAFKA_INPUT` 仅支持流并产生无界表；`JOIN` 仅支持批；`STREAM_JOIN` 仅支持流；无状态通用 Processor 可同时支持批流；`JDBC_OUTPUT` 只有在 Operator 明确校验流式写入限制时才可同时支持批流；`KAFKA_OUTPUT` 仅支持流。
+- 节点能力基线为：`JDBC_INPUT` 可支持批流，但在流任务中产生静态有界维表；`KAFKA_INPUT` 仅支持流并产生无界表；`JOIN` 仅支持批；`STREAM_JOIN` 仅支持流；无状态通用 Processor 可同时支持批流；`JDBC_OUTPUT` 和 `MODEL_OUTPUT` 只有在 Operator 明确校验流式写入限制时才可同时支持批流；`KAFKA_OUTPUT` 仅支持流。
 - 同一节点类型同时支持批流时仍只能有一个 `CanvasNodeOperator`。模式差异通过明确的执行上下文和小范围策略表达；当配置契约已经明显分叉时，应新增节点类型，而不是在一个 Operator 中持续增加模式条件分支。
+
+## Canvas 协议版本
+
+- Canvas Definition 使用独立的 `schemaVersion + schemaMinorVersion`。`schemaVersion` 是大版本，`schemaMinorVersion` 是同一大版本内的小版本；不得把任务定义自身的 `definitionVersion` 与协议版本混用。
+- 大版本之间默认不兼容。管理端、Compiler 和 Runner 在发现 `schemaVersion` 不一致时必须在反序列化节点配置前拒绝读取，不得隐式迁移、猜测旧字段语义或为某些节点增加例外兼容分支。
+- 同一大版本内的小版本必须向下兼容。新增小版本只能增加节点类型、可选字段或其他不改变既有定义语义的能力；读取受支持的旧小版本后，当前写入端统一规范化为最新小版本。
+- 删除或重命名字段、改变已有字段或节点语义、修改核心图规则等破坏性变化必须升级大版本，并把小版本重置为 `0`。不得通过“低于某个小版本且包含某类节点”的特殊判断承载破坏性变化。
+- 高于当前实现的小版本必须拒绝读取，避免旧程序忽略尚不了解的语义；低于当前大版本的定义只允许明确标记为不兼容并由用户重新配置，不自动覆盖原始定义。
 
 ## 数据有界性与流式 Schema 传播
 
@@ -29,6 +37,7 @@
 - Window Aggregate、流式去重、Stream-Stream Join 等有状态 Processor 必须明确声明和验证事件时间、Watermark、状态保留边界及输出模式。缺失任何保证有界状态的必要配置时属于编译 `ERROR`，不得降级为 WARNING。
 - 节点模式兼容和图数据语义是两层校验：节点全部支持 `STREAMING` 不代表整张图能够形成合法流式查询。Compiler 必须继续验证有界性组合、流式 Sink 能力、输出模式、Watermark 和状态算子约束。
 - 流式 `JDBC_OUTPUT` 不得沿用批处理 `OVERWRITE` 语义。允许的写入模式、至少一次或幂等保证以及必要业务键必须由 Output Operator 显式校验和记录；不得笼统宣称任意流式 Sink 为 Exactly Once。
+- `MODEL_OUTPUT` 的 UPSERT Key 固定来自目标模型按字段顺序声明的完整主键，不得让用户另配 Key，也不得访问物理表预检唯一约束。批流均可使用 UPSERT；流式继续禁止 OVERWRITE 和 Geometry，并按至少一次交付理解。
 - Checkpoint、Trigger、查询名称和恢复策略属于任务/部署级运行配置，不得重复塞入每个节点配置。节点只声明形成执行计划所需的局部语义。
 
 ## 节点生命周期日志
@@ -38,9 +47,26 @@
 - 节点日志必须包含 `executionId`、`runId`、`attempt`、`nodeId`、`nodeType`、`nodeName`、`phase`；成功和失败日志还必须包含耗时，失败日志必须包含错误码和诊断 ID。
 - `JDBC_INPUT`、`KAFKA_INPUT`、`MODEL_INPUT` 默认归属 `READ`，包括 `JOIN`、`STREAM_JOIN` 在内的 Processor 默认归属 `PROCESS`，`JDBC_OUTPUT`、`KAFKA_OUTPUT`、`MODEL_OUTPUT` 默认归属 `WRITE`。任务准备、制品投递和分发分别使用当前协议定义的阶段，不得用节点名称代替阶段。
 - 节点摘要只能记录诊断所需的安全元数据，例如数据源 UUID、模型 UUID、模型 code、模型 schemaVersion、表名、Join 类型、条件数量、写入模式和目标表；不得记录数据行、字段实际值或 SQL 参数值。
-- Input 成功只表示读取计划和运行时 Schema 校验准备完成；不得为了日志或统计额外触发 Spark Action。
+- Input 成功只表示读取计划已经准备完成；不得为了日志、统计或 Schema 对比额外触发 Spark Action。
 - 文件 Input 的安全摘要只允许记录节点 ID、文件表 UUID、稳定 table code、格式和字段数量。对象 Key、物化前缀、来源 Key、S3 凭据和执行器临时路径禁止出现在节点日志、异常消息、Result 或 Kafka 事件中。
 - Output 行数应从实际写入计划的指标中采集；不得为日志单独调用 `count()` 或重复扫描数据源。
+
+## Spark JAR 与公开 SDK
+
+- `data-scalpel-task-sdk` 是用户 Spark JAR 的唯一公开兼容面。批作业实现 `SparkBatchJob`，实时作业实现 `SparkStreamingJob`，均不得提供任意 `main()` 入口；Task Engine Uber JAR、Manifest、Runner 类和 Canvas Operator 都不是用户编译 API。
+- SDK 只能依赖 Spark 公共 API，不得依赖 Spring、JPA、Canvas 或 Task Engine 内部实现。用户模板必须把 SDK、Spark、Scala 和 Hadoop 作为 `provided`，只把用户自己的第三方依赖打入 JAR。
+- Runner 使用一次性父优先 ClassLoader 加载用户类，一个进程只执行一个用户作业，不复用 ClassLoader。Spark、Scala、Hadoop、SDK 和 Task Engine 类必须由父加载器提供，用户 JAR不得覆盖平台运行时类。
+- 平台负责根 SparkSession 生命周期。SDK 文档和模板必须明确禁止用户调用 `spark.stop()`、创建新的根 SparkSession或调用 `System.exit()`；第一版信任实施人员，不建设 JVM 沙箱或恶意代码防护。
+- 模型、JDBC 和 Kafka Topic 绑定名大小写敏感，绑定只表达授权声明和运行凭据范围，不保证用户代码一定使用该资源，也不是针对任意 Java 代码的强安全边界。SDK 必须在每次读写时校验资源类型和 `READ/WRITE/READ_WRITE`；Kafka SDK只能返回标准原始 Kafka 行，不替用户解释消息 Schema，也不得暴露 Broker认证配置。
+- SDK 字段映射固定为 `map(目标字段, 来源字段)`。模型 UPSERT Key 来自完整模型主键；JDBC UPSERT Key 由代码显式提供。物理唯一约束、Schema兼容和真实值转换由实际数据库/Spark执行结果决定，不增加运行前物理契约门禁。
+- SDK 写操作立即执行，多个目标之间没有跨目标事务。平台只累计 SDK 写入的影响行数；没有 SDK 写入时为 `0`，任一 SDK 写入指标未知时整体为 `null`，用户直接调用原生 Spark Writer 的写入不计入平台指标。
+- 用户 JAR、签名 URL、对象 Key、Manifest 和凭据不得进入日志、Result、Runner事件或管理端对外响应；内部提交命令只允许携带 Dispatcher 获取制品所必需的对象 Key，不得携带签名 URL。下载后必须同时校验大小和 SHA-256；类加载、构造、下载和用户执行失败使用稳定错误码，并优先保留 Cause链中的真实 Spark/JDBC错误。
+- 实时 JAR 的全部 `StreamingQuery` 必须通过 `StreamingQueries.start()` 注册。平台生成稳定 Query UUID、Spark Query Name 和 Checkpoint位置；用户 Starter必须使用平台提供的 Query Name和Checkpoint，`SparkStreamingJob.start()`完成注册后返回且不得调用 `awaitTermination()`。零查询、重名、非 Active查询或绕过SDK启动查询都必须使整个Application失败。
+- 实时 JAR由用户代码控制 Trigger、Output Mode和处理逻辑；平台只负责查询集合、进度、停止和Checkpoint生命周期。任一查询失败或意外停止时停止其他查询；正常停止先停止查询再调用一次 `onStop()`，原始执行错误优先于清理错误。
+- 实时 JAR首次启动必须使用 `FRESH`；后续可选 `CONTINUE`复用最近Checkpoint或 `FRESH`创建新世代。跨定义版本继续由实施人员确认代码、查询集合和状态Schema兼容性，平台不得自动转换、删除或复制历史Checkpoint。
+- 用户作业观测由 `SparkJobContext.observability()`统一提供，只支持结构化事件、最新阶段、Counter、Gauge和Operation Timer。Runner最多每5秒上报完整最新快照并在终态刷新；Streaming指标属于当前Application/Attempt且不得写入Checkpoint。
+- 用户作业观测对象只允许Driver端使用，不得设计为可序列化对象或支持捕获到Executor闭包；Operation必须在创建线程关闭并恢复原Spark Job Description。
+- SDK模型/JDBC写入和StreamingQuery注册应自动形成安全事件与保留指标，但不得为了观测增加`count()`、采样或其他Spark Action。自定义事件内容由用户负责，平台自动事件不得包含SQL、数据值、凭据、签名地址、对象Key或Checkpoint物理地址。
 
 ## 统一节点实现
 
@@ -49,8 +75,9 @@
 - Operator Registry 继续使用显式内置列表，不使用反射、Spring 扫描、ServiceLoader 或其他运行时插件发现机制。
 - Canvas 草稿中的字符串资源 ID 必须在 Operator 校验边界解析；空值和非法 UUID 必须分别返回稳定必填/格式问题，并保留当前节点已经能够安全取得的上游输入上下文。
 - Operator 统一负责配置规则、元数据定位、表 Map 语义、Spark Dataset 变换、字段映射和显式 Cast。预检与运行时的差异只能通过 `CanvasNodeDataAccess` 等外部 I/O 端口注入。
-- 预检 I/O 必须使用元数据 Schema 创建零行 Dataset，Output 只分析计划，不得读取 JDBC/HTTP、创建 Writer、TRUNCATE 或写入。Runner I/O 才允许真实读取、运行时 Schema 漂移检查和生成延迟写入计划。
-- 文件 Reader 必须以 Manifest 中的快照 Schema 为目标 Schema 并采用 FAILFAST 语义，不得根据运行文件重定义 Canvas Schema。Manifest 的文件存储配置、对象位置和解析参数属于受保护运行字段，不得回写 Canvas Definition、编译响应或前端状态。
+- 预检 I/O 必须使用元数据 Schema 创建零行 Dataset，Output 只分析计划，不得读取 JDBC/HTTP、创建 Writer、TRUNCATE 或写入。Runner I/O 才允许真实读取和生成延迟写入计划。
+- 元数据快照和节点内联 Schema 是 Canvas 的逻辑规划与解析依据，不是物理系统的运行时相等契约。Runner 不得因为字段数量、顺序、类型参数、可空性或 Geometry 元数据与逻辑 Schema 不完全一致而提前拒绝执行；真实读取、Spark Analyzer、Cast、解析器或目标系统能够处理时必须继续，不能处理时报告实际执行失败。
+- 文件 Reader 必须以 Manifest 中的快照 Schema 为目标 Schema 并采用 FAILFAST 语义，不得根据运行文件重定义 Canvas Schema。`schemaFingerprint` 仅作为当前 Manifest 的兼容信息，不得用于运行时相等门禁。Manifest 的文件存储配置、对象位置和解析参数属于受保护运行字段，不得回写 Canvas Definition、编译响应或前端状态。
 - Kafka Value Schema 归 `KAFKA_INPUT/KAFKA_OUTPUT` 节点自身所有，Compiler 与 Runner 必须直接使用节点内联字段调用同一个 Operator，不得通过模型 ID、模型元数据快照或运行时模型查询间接取得 Schema。前端从模型导入只能是一次性字段复制，模型引用不得进入 Kafka 节点定义、编译契约或 Manifest。
 - Kafka 节点内联 Schema 只允许平台稳定标量类型和明确的 STRING/DECIMAL 参数；Broker 地址、认证信息、序列化器私有配置和其他运行连接字段仍只能来自受保护 Manifest，不得混入 Value Schema 或 Canvas Definition。
 - Compiler 只保证 Canvas 定义能够生成合法的 Spark 执行计划，不保证任务针对真实数据和外部系统一定执行成功。真实数据值、数据库约束、权限、连接状态和驱动差异由 Runner 在运行时判断，不得为了提高预检覆盖率在 Compiler 中增加试读、试写或外部连接测试。
@@ -99,7 +126,7 @@
 - 新节点必须接入统一生命周期包装和错误分类器，不得复制一套节点日志或异常处理逻辑。
 - Processor 不得记录参与计算的实际字段值；只允许记录表名、字段名、条件数量和操作类型等安全元数据。
 - 新节点的编译校验与运行时失败必须可区分。配置或编译错误不得伪装成 JDBC 或 Runner 内部错误。
-- 文件 Input 新增或修改格式支持时，必须同时覆盖 Registry 能力校验、零行 Compiler、真实 Reader、Schema 指纹、当前 Manifest 有序来源快照、来源节点错误归属和敏感路径脱敏；不得为每种格式拆分重复的 Canvas 节点。
+- 文件 Input 新增或修改格式支持时，必须同时覆盖 Registry 能力校验、零行 Compiler、真实 Reader、逻辑 Schema 解析、当前 Manifest 有序来源快照、来源节点错误归属和敏感路径脱敏；不得为每种格式拆分重复的 Canvas 节点，也不得重新引入文件物理 Schema 相等门禁。
 
 ## 测试与验证（暂时禁用）
 

@@ -1,5 +1,4 @@
 import {
-  BookOutlined,
   DeleteOutlined,
   EditOutlined,
   ExportOutlined,
@@ -33,6 +32,7 @@ import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useCurrentUser } from '../../system';
 import { StandardDictionaryDrawer } from '../components/StandardDictionaryDrawer';
 import { StandardDictionaryImportDrawer } from '../components/StandardDictionaryImportDrawer';
+import { StandardDictionaryValueTypeIcon } from '../components/StandardDictionaryValueTypeIcon';
 import {
   useExportStandardDictionaryMetadata,
   useStandardDictionaries,
@@ -66,6 +66,14 @@ const buildSearch = (filters: Filters) => {
 const valueTypeOptions = (
   Object.entries(standardDictionaryValueTypeLabels) as [StandardDictionaryValueType, string][]
 ).map(([value, label]) => ({ value, label }));
+
+const valueTypeIconTones = {
+  STRING: 'violet',
+  INTEGER: 'cyan',
+  LONG: 'blue',
+  DECIMAL: 'orange',
+  BOOLEAN: 'green',
+} as const satisfies Record<StandardDictionaryValueType, 'blue' | 'violet' | 'cyan' | 'green' | 'orange'>;
 
 export const StandardDictionaryPage = () => {
   const [form] = Form.useForm<Filters>();
@@ -123,13 +131,35 @@ export const StandardDictionaryPage = () => {
   const columns: TableProps<StandardDictionary>['columns'] = [
     {
       title: '码表', dataIndex: 'name', width: 300,
-      render: (value: string, row) => <ManagementListCell icon={<BookOutlined />} iconTone="orange" primary={<Link to={`/standard/dictionaries/${row.id}`}>{value}</Link>} secondary={<Link to={`/standard/dictionaries/${row.id}`}><ManagementCode value={row.code} /></Link>} />,
+      render: (value: string, row) => (
+        <ManagementListCell
+          icon={<StandardDictionaryValueTypeIcon valueType={row.valueType} />}
+          iconLabel={`取值类型：${standardDictionaryValueTypeLabels[row.valueType]}`}
+          iconTone={valueTypeIconTones[row.valueType]}
+          primary={<Link to={`/standard/dictionaries/${row.id}`}>{value}</Link>}
+          secondary={<Link to={`/standard/dictionaries/${row.id}`}><ManagementCode value={row.code} /></Link>}
+        />
+      ),
     },
     {
-      title: '取值定义', width: 150,
-      render: (_value: unknown, row) => <ManagementListCell primary={standardDictionaryValueTypeLabels[row.valueType]} secondary={<><ManagementStatusIndicator label={row.enabled ? '启用' : '停用'} tone={row.enabled ? 'success' : 'default'} /> · v{row.version}</>} />,
+      title: '状态 / 版本', width: 140,
+      render: (_value: unknown, row) => (
+        <ManagementListCell
+          primary={<ManagementStatusIndicator label={row.enabled ? '启用' : '停用'} tone={row.enabled ? 'success' : 'default'} />}
+          secondary={`内容版本 v${row.version}`}
+        />
+      ),
     },
-    { title: '说明', dataIndex: 'description', render: (value?: string) => <ManagementListCell primary={value || '—'} secondary="码表业务说明" /> },
+    {
+      title: '说明',
+      dataIndex: 'description',
+      render: (value?: string) => (
+        <ManagementListCell
+          className="standard-dictionary-description-cell"
+          primary={value ? <Tooltip title={value}><span>{value}</span></Tooltip> : '—'}
+        />
+      ),
+    },
     {
       title: '更新时间',
       dataIndex: 'updatedAt',
@@ -150,7 +180,7 @@ export const StandardDictionaryPage = () => {
             { key: 'edit', icon: <EditOutlined />, label: '修改', onClick: () => { setEditing(row); setDrawerOpen(true); } },
             { key: 'lifecycle', icon: row.enabled ? <PauseCircleOutlined /> : <PlayCircleOutlined />, label: row.enabled ? '停用' : '启用', onClick: () => void executeCommand(row, row.enabled ? 'disable' : 'enable') },
             { type: 'divider' },
-            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ title: '删除码表', content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') }) },
+            { key: 'delete', icon: <DeleteOutlined />, label: '删除', danger: true, onClick: () => Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '删除码表', content: `确认删除“${row.name}”及其全部树节点吗？`, okText: '删除', okButtonProps: { danger: true }, cancelText: '取消', onOk: () => executeCommand(row, 'delete') }) },
           ] satisfies MenuProps['items'] }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" icon={<MoreOutlined />} aria-label={`${row.name}的更多操作`} /></Tooltip></Dropdown>
         </div>
       ),

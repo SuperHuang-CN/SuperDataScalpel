@@ -91,6 +91,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   };
 
   const register = (engine: ComputeEngine) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: engine.registrationState === 'DETACHED' ? '重新注册离线解绑的计算引擎' : '注册计算引擎',
     content: engine.registrationState === 'DETACHED'
       ? `请先确认原 Dispatcher 进程已经永久停止。继续后将“${engine.name}”注册到当前配置的 Dispatcher，并重新启用任务准入。`
@@ -103,6 +104,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const drain = (engine: ComputeEngine) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '排空计算引擎',
     content: `“${engine.name}”将停止接收新任务，但继续监管已运行任务。`,
     okText: '开始排空', cancelText: '取消',
@@ -113,6 +115,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const deactivate = (engine: ComputeEngine, force: boolean) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: force ? '强制反注册并取消任务' : '安全反注册计算引擎',
     content: force
       ? `Dispatcher 将取消“${engine.name}”中仍在排队或运行的任务，然后完成反注册。此操作需要 Dispatcher 可访问，确认继续吗？`
@@ -152,6 +155,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   };
 
   const remove = (engine: ComputeEngine) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
     title: '删除计算引擎', content: `确认删除“${engine.name}”吗？已被任务引用时无法删除。`,
     okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
     onOk: async () => {
@@ -286,6 +290,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
       onClose={() => setDrawerEngine(undefined)}
     />
     <Modal
+      rootClassName="business-overlay business-modal-overlay"
       title="离线解除绑定"
       open={detachEngine !== null}
       okText="确认离线解除绑定"

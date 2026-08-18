@@ -111,12 +111,6 @@ export const managedTableKey = (table: DataSourceTable): string => JSON.stringif
   table.identifier.table,
 ]);
 
-export const managedTableLocation = (table: DataSourceTable): string => (
-  [table.identifier.catalog, table.identifier.schema, table.identifier.table]
-    .filter((part): part is string => Boolean(part))
-    .join('.')
-);
-
 const duplicateValues = (values: string[]): Set<string> => {
   const counts = new Map<string, number>();
   values.filter(Boolean).forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));

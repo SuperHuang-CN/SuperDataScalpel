@@ -23,11 +23,19 @@ V1 完成以下结构管理闭环：
   `MULTILINESTRING`、`MULTIPOLYGON`、`GEOMETRYCOLLECTION`；
 - 新建受管表、绑定外部表、从数据源导入受管模型、Excel 元数据交换和物理结构检查。
 
-V1 不创建或识别空间索引，也不提供 Geometry 值预览、筛选、排序、聚合、空间函数、
+V1 结构管理不创建空间索引，也不提供 Geometry 值筛选、排序、聚合、空间函数、
 WKT/WKB/GeoJSON 值解析或转换、CRS 转换、Geometry 修复、单体/Multi 自动转换、
 `geography`、Raster、自定义 WKT CRS 或已建受管表的空间结构变更。ClickHouse 使用
 WKB 仅表示物理存储编码，平台不读取、生成或校验 WKB 值。Shapefile/FileGDB 的独立
 文件预览协议保持不变，不自动转换为模型 Geometry。
+
+模型详情另提供 PostgreSQL/PostGIS 动态空间预览 MVP。该只读能力识别目标 Geometry
+字段上有效、就绪、非 partial、非 expression 的单列 GiST/SP-GiST 索引，但不把索引
+纳入模型结构、不自动创建索引。PostGIS 按当前视口在原字段上执行 `&&` 过滤，再转换、
+裁剪并简化到 EPSG:3857，返回 WKB 给业务层使用 JTS 和 Java2D 渲染透明 PNG；浏览器的
+MapLibre 仅显示图片，不接收 Geometry。没有索引时只允许数据库 `reltuples` 估算不超过
+50,000 行的小表预览；统计未知或超过阈值时拒绝。单图限制为 5 秒、5,000 个 Geometry、
+500,000 个坐标点和 16 MiB WKB。普通快速预览和条件查询仍排除 Geometry。
 
 ## Canvas/Sedona 空间执行扩展
 
@@ -246,7 +254,8 @@ V1 不扩展 `IndexMetadata`、`TableDefinition` 索引定义或 DDL 原子性�
 或字段类型；整表物理结构变更入口在前端禁用，后端同样拒绝生成计划。
 
 模型快速预览和标准条件查询默认排除 Geometry。客户端显式选择、筛选、排序、分组或
-聚合 Geometry 时返回查询参数错误。当前不读取 Geometry 值。
+聚合 Geometry 时返回查询参数错误。PostGIS 动态空间预览是独立的受控 PNG 渲染边界，
+不改变普通数据查询契约，也不向浏览器返回 Geometry 值。
 
 以下执行/服务边界明确区分 Geometry 能力，任何场景都不能把 Geometry 降级映射为 Spark
 String/Binary：

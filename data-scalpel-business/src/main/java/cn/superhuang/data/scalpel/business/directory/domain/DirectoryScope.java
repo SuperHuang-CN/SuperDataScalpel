@@ -7,5 +7,6 @@ public enum DirectoryScope {
     FILE_DATASET,
     MODEL,
     TASK,
-    DATA_SERVICE
+    DATA_SERVICE,
+    ASSET
 }

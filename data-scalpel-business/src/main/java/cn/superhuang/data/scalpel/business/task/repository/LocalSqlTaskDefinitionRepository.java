@@ -14,5 +14,7 @@ public interface LocalSqlTaskDefinitionRepository extends JpaRepository<LocalSql
 
     List<LocalSqlTaskDefinition> findAllByTaskIdIn(Collection<UUID> taskIds);
 
+    List<LocalSqlTaskDefinition> findAllByOutputModelId(UUID outputModelId);
+
     boolean existsByOutputModelId(UUID outputModelId);
 }

@@ -5,6 +5,9 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.StreamingQueryProgress;
+import cn.superhuang.data.scalpel.contract.execution.StreamingSourceProgress;
+import cn.superhuang.data.scalpel.contract.execution.StreamingQueryDescriptor;
+import cn.superhuang.data.scalpel.contract.execution.UserJobObservabilitySnapshot;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherEventOutbox;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistration;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
@@ -17,6 +20,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
 
 @Service
 public class DispatcherEventService {
@@ -40,7 +44,37 @@ public class DispatcherEventService {
             SafeExecutionError error,
             Long affectedRows
     ) {
-        return enqueue(execution, type, error, affectedRows, List.of());
+        return enqueue(execution, type, error, affectedRows, List.of(), List.of(), null, null, null);
+    }
+
+    public DispatcherExecutionEvent enqueue(
+            DispatcherTaskExecution execution,
+            ExecutionMessageType type,
+            SafeExecutionError error,
+            Long affectedRows,
+            QualitySummary qualitySummary
+    ) {
+        return enqueue(execution, type, error, affectedRows, List.of(), List.of(), null, qualitySummary, null);
+    }
+
+    public DispatcherExecutionEvent enqueueTerminal(
+            DispatcherTaskExecution execution,
+            ExecutionMessageType type,
+            SafeExecutionError error,
+            Long affectedRows,
+            QualitySummary qualitySummary,
+            UserJobObservabilitySnapshot observability
+    ) {
+        return enqueue(execution, type, error, affectedRows, List.of(), List.of(), null,
+                qualitySummary, observability);
+    }
+
+    public DispatcherExecutionEvent enqueueObservability(
+            DispatcherTaskExecution execution,
+            UserJobObservabilitySnapshot observability
+    ) {
+        return enqueue(execution, ExecutionMessageType.USER_OBSERVABILITY, null, null,
+                List.of(), List.of(), null, null, observability);
     }
 
     public DispatcherExecutionEvent enqueue(
@@ -50,13 +84,49 @@ public class DispatcherEventService {
             Long affectedRows,
             List<StreamingQueryProgress> streamingProgress
     ) {
+        return enqueue(execution, type, error, affectedRows, List.of(), streamingProgress, null, null, null);
+    }
+
+    public DispatcherExecutionEvent enqueue(
+            DispatcherTaskExecution execution,
+            ExecutionMessageType type,
+            SafeExecutionError error,
+            Long affectedRows,
+            List<StreamingQueryProgress> streamingProgress,
+            StreamingSourceProgress streamingSourceProgress
+    ) {
+        return enqueue(execution, type, error, affectedRows, List.of(), streamingProgress,
+                streamingSourceProgress, null, null);
+    }
+
+    public DispatcherExecutionEvent enqueueStreamingStarted(
+            DispatcherTaskExecution execution,
+            List<StreamingQueryDescriptor> queries
+    ) {
+        return enqueue(execution, ExecutionMessageType.EXECUTION_RUNNING, null, null,
+                queries, List.of(), null, null, null);
+    }
+
+    private DispatcherExecutionEvent enqueue(
+            DispatcherTaskExecution execution,
+            ExecutionMessageType type,
+            SafeExecutionError error,
+            Long affectedRows,
+            List<StreamingQueryDescriptor> streamingQueries,
+            List<StreamingQueryProgress> streamingProgress,
+            StreamingSourceProgress streamingSourceProgress,
+            QualitySummary qualitySummary,
+            UserJobObservabilitySnapshot userJobObservability
+    ) {
         long sequence = execution.nextEventSequence();
         DispatcherExecutionEvent event = new DispatcherExecutionEvent(
                 1, UUID.randomUUID(), type, Instant.now(), execution.getEngineId(), execution.getExecutionId(),
                 execution.getRunId(), execution.getAttempt(), sequence, execution.getBackendType(),
                 execution.getExternalExecutionId(), execution.getTrackingUrl(), execution.getStartedAt(),
                 execution.getEndedAt(), affectedRows, error,
-                execution.getStreamingDeploymentId(), streamingProgress
+                execution.getStreamingDeploymentId(), streamingQueries, streamingProgress,
+                streamingSourceProgress, qualitySummary,
+                execution.getTaskType(), userJobObservability
         );
         String topic = registrationRepository.findFirstByOrderByCreatedAtAsc()
                 .orElseThrow(() -> new IllegalStateException("Dispatcher 尚未注册"))

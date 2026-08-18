@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeFileOutput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { fileOutputCanvasView } from './canvasView';
 
 export const fileOutputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.FileOutput,
@@ -19,9 +20,9 @@ export const fileOutputSpec = createCanvasNodeSpec({
   ],
   iconKey: CanvasNodeIconKey.FileOutput,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: fileOutputCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 6,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 0, maxOutputs: 0 },
   createDefaultConfiguration: createFileOutputConfiguration,
   summarize: summarizeFileOutput,

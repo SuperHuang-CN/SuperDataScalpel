@@ -78,6 +78,7 @@ class CanvasNodeOperatorRegistryTest {
         assertBatchAndStreaming(registry, CanvasNodeType.VALUE_MAPPING);
         assertBatchAndStreaming(registry, CanvasNodeType.MASK_FIELDS);
         assertBatchAndStreaming(registry, CanvasNodeType.JSON_EXTRACT);
+        assertBatchAndStreaming(registry, CanvasNodeType.MODEL_OUTPUT);
         assertBatchOnly(registry, CanvasNodeType.WINDOW);
         assertBatchOnly(registry, CanvasNodeType.TOP_N);
     }

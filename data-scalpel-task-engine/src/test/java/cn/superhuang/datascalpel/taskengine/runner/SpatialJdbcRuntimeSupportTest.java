@@ -3,16 +3,17 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.CrsReference;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDataSource;
@@ -139,15 +140,16 @@ class SpatialJdbcRuntimeSupportTest {
                 new CanvasNodeLayout(0d, 0d, 240d, 120d),
                 new JdbcOutputConfiguration(
                         "source", UUID.randomUUID().toString(), "target",
-                        JdbcWriteMode.UPSERT, ColumnMappingMode.BY_NAME,
-                        List.of(), List.of("id"))
+                        JdbcWriteMode.UPSERT,
+                        List.of(new JdbcColumnMapping("id", "id")), List.of("id"))
         );
         RuntimeDataSource runtime = new RuntimeDataSource(
                 UUID.randomUUID(), RuntimeDatabaseType.POSTGRESQL,
                 Set.of(DataSourcePurpose.DISTRIBUTION), null
         );
         return new CanvasPreparedOutput(
-                node, runtime, "target", "target", JdbcWriteMode.UPSERT,
+                node, runtime, new TableIdentifier(null, null, "target"),
+                "target", "target", JdbcWriteMode.UPSERT,
                 dataset, target, Map.of(), List.of("id")
         );
     }

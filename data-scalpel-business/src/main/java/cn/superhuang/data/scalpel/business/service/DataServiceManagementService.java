@@ -45,6 +45,7 @@ import cn.superhuang.data.scalpel.business.service.web.request.SqlDataServiceDef
 import cn.superhuang.data.scalpel.business.service.web.request.SqlServiceTestRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.StandardDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceDetailResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceSummaryResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.GatewayServiceBindingResponse;
@@ -187,13 +188,13 @@ public class DataServiceManagementService {
         List<DataService> services = page.getContent();
         Map<UUID, DataServiceDeployment> deployments = deploymentsByServiceId(services);
         Map<UUID, List<GatewayServiceBinding>> gatewayBindings = gatewayBindingsByServiceId(services);
-        Map<UUID, SourceSummary> sources = sourcesByServiceId(services);
+        Map<UUID, DefinitionSummary> definitions = definitionSummariesByServiceId(services);
         return new PageResponse<>(
                 services.stream().map(service -> summary(
                         service,
                         deployments.get(service.getId()),
                         gatewayBindings.getOrDefault(service.getId(), List.of()),
-                        sources.get(service.getId())
+                        definitions.get(service.getId())
                 )).toList(),
                 page.getTotalElements(), page.getTotalPages(), page.getNumber(), page.getSize()
         );
@@ -210,8 +211,8 @@ public class DataServiceManagementService {
 
     @Transactional
     public DataServiceDetailResponse create(CreateDataServiceRequest request) {
-        validateDefinitionShape(
-                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+        boolean definitionPresent = validateDefinitionShape(
+                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(), false
         );
         String code = request.code().trim().toLowerCase(Locale.ROOT);
         if (repository.existsByCode(code)) {
@@ -219,20 +220,24 @@ public class DataServiceManagementService {
         }
         directoryService.validateAssignment(DirectoryScope.DATA_SERVICE, request.directoryId());
         requireEngine(request.engineId());
-        validateDefinitionSource(
-                request.type(), request.standardDefinition(), request.sqlDefinition(),
-                request.scriptDefinition(), request.engineId()
-        );
+        if (definitionPresent) {
+            validateDefinitionSource(
+                    request.type(), request.standardDefinition(), request.sqlDefinition(),
+                    request.scriptDefinition(), request.engineId()
+            );
+        }
         String routePath = normalizeRoutePath(request.routePath());
         requireRouteAvailable(routePath, null);
         DataService service = repository.saveAndFlush(DataService.create(
                 code, request.name(), request.directoryId(), request.type(), request.engineId(), routePath,
                 request.accessMode(), request.description()
         ));
-        saveNewDefinition(
-                service.getId(), request.type(), request.standardDefinition(),
-                request.sqlDefinition(), request.scriptDefinition()
-        );
+        if (definitionPresent) {
+            saveNewDefinition(
+                    service.getId(), request.type(), request.standardDefinition(),
+                    request.sqlDefinition(), request.scriptDefinition()
+            );
+        }
         return detail(service, null, List.of());
     }
 
@@ -254,23 +259,48 @@ public class DataServiceManagementService {
                     "数据服务仍有消费者订阅，请先撤回订阅后再改为公开访问"
             );
         }
-        validateDefinitionShape(
-                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+        boolean definitionPresent = validateDefinitionShape(
+                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(), false
         );
         directoryService.validateAssignment(DirectoryScope.DATA_SERVICE, request.directoryId());
         requireEngine(request.engineId());
-        validateDefinitionSource(
-                request.type(), request.standardDefinition(), request.sqlDefinition(),
-                request.scriptDefinition(), request.engineId()
-        );
+        if (definitionPresent) {
+            validateDefinitionSource(
+                    request.type(), request.standardDefinition(), request.sqlDefinition(),
+                    request.scriptDefinition(), request.engineId()
+            );
+        }
         String routePath = normalizeRoutePath(request.routePath());
         requireRouteAvailable(routePath, id);
         service.update(
                 request.name(), request.directoryId(), request.engineId(), routePath,
                 request.accessMode(), request.description()
         );
-        updateDefinition(
-                id, request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+        if (definitionPresent) {
+            upsertDefinition(
+                    id, request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+            );
+        }
+        return detail(
+                repository.saveAndFlush(service),
+                deploymentRepository.findByDataServiceId(id).orElse(null),
+                gatewayBindingRepository.findAllByDataServiceId(id)
+        );
+    }
+
+    @Transactional
+    public DataServiceDetailResponse updateDefinition(UUID id, UpdateDataServiceDefinitionRequest request) {
+        DataService service = requireServiceForUpdate(id);
+        requireModifiable(service);
+        validateDefinitionShape(
+                service.getType(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(), true
+        );
+        validateDefinitionSource(
+                service.getType(), request.standardDefinition(), request.sqlDefinition(),
+                request.scriptDefinition(), service.getEngineId()
+        );
+        upsertDefinition(
+                id, service.getType(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
         );
         return detail(
                 repository.saveAndFlush(service),
@@ -402,6 +432,11 @@ public class DataServiceManagementService {
         DataService service = requireService(id);
         if (service.getStatus() == DataServiceStatus.ENABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已启用服务不能重复启用，请先停用");
+        }
+        switch (service.getType()) {
+            case STANDARD_TABLE -> requireStandardDefinition(service.getId());
+            case SQL_QUERY -> requireSqlDefinition(service.getId());
+            case SCRIPT_API -> requireScriptDefinition(service.getId());
         }
         ServiceEngine engine = requireEnabledEngine(service.getEngineId());
         return switch (service.getType()) {
@@ -702,6 +737,22 @@ public class DataServiceManagementService {
         if (modelsChanged) replaceModelReferences(serviceId, sql.modelIds());
     }
 
+    private void upsertDefinition(
+            UUID serviceId,
+            DataServiceType type,
+            StandardDataServiceDefinitionRequest standard,
+            SqlDataServiceDefinitionRequest sql,
+            ScriptDataServiceDefinitionRequest script
+    ) {
+        boolean configured = switch (type) {
+            case STANDARD_TABLE -> standardDefinitionRepository.findByDataServiceId(serviceId).isPresent();
+            case SQL_QUERY -> sqlDefinitionRepository.findByDataServiceId(serviceId).isPresent();
+            case SCRIPT_API -> scriptDefinitionRepository.findByDataServiceId(serviceId).isPresent();
+        };
+        if (configured) updateDefinition(serviceId, type, standard, sql, script);
+        else saveNewDefinition(serviceId, type, standard, sql, script);
+    }
+
     private void replaceModelReferences(UUID serviceId, List<UUID> modelIds) {
         sqlModelReferenceRepository.deleteAllByDataServiceId(serviceId);
         sqlModelReferenceRepository.flush();
@@ -722,21 +773,25 @@ public class DataServiceManagementService {
         sqlParameterRepository.saveAllAndFlush(entities);
     }
 
-    private void validateDefinitionShape(
+    private boolean validateDefinitionShape(
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
             SqlDataServiceDefinitionRequest sql,
-            ScriptDataServiceDefinitionRequest script
+            ScriptDataServiceDefinitionRequest script,
+            boolean required
     ) {
         boolean standardPresent = standard != null;
         boolean sqlPresent = sql != null;
         boolean scriptPresent = script != null;
-        if ((standardPresent ? 1 : 0) + (sqlPresent ? 1 : 0) + (scriptPresent ? 1 : 0) != 1
+        int count = (standardPresent ? 1 : 0) + (sqlPresent ? 1 : 0) + (scriptPresent ? 1 : 0);
+        if (!required && count == 0) return false;
+        if (count != 1
                 || type == DataServiceType.STANDARD_TABLE && !standardPresent
                 || type == DataServiceType.SQL_QUERY && !sqlPresent
                 || type == DataServiceType.SCRIPT_API && !scriptPresent) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "数据服务类型与具体定义不匹配");
         }
+        return true;
     }
 
     private void validateDefinitionSource(
@@ -748,17 +803,24 @@ public class DataServiceManagementService {
     ) {
         if (type == DataServiceType.STANDARD_TABLE) {
             DataModel model = requireModel(standard.modelId());
-            dataSourceRegistrationService.requireRegistration(engineId, model.getStorageDataSourceId());
+            if (model.getStatus() != DataModelStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "标准单表服务只能选择已发布模型");
+            }
+            DataSource dataSource = requireStorageDataSource(model.getStorageDataSourceId());
+            if (!fieldRepository.existsByModelId(model.getId())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "模型尚未定义字段");
+            }
+            dataSourceRegistrationService.requireReadyRegistration(engineId, dataSource.getId());
             return;
         }
         if (type == DataServiceType.SCRIPT_API) {
             DataSource dataSource = requireScriptDataSource(script.dataSourceId());
-            dataSourceRegistrationService.requireRegistration(engineId, dataSource.getId());
+            dataSourceRegistrationService.requireReadyRegistration(engineId, dataSource.getId());
             return;
         }
         DataSource dataSource = requireSqlDataSource(sql.dataSourceId());
         requireSqlModels(dataSource.getId(), sql.modelIds());
-        dataSourceRegistrationService.requireRegistration(engineId, dataSource.getId());
+        dataSourceRegistrationService.requireReadyRegistration(engineId, dataSource.getId());
         requireLocalSqlDefinition(dataSource, sql.sqlText(), sql.parameters());
     }
 
@@ -802,6 +864,12 @@ public class DataServiceManagementService {
         if (!dataSource.isEnabled() || !dataSource.getType().isJdbc()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "脚本服务必须绑定已启用的 JDBC 数据源");
         }
+        if (dataSource.getType().isTdEngine()) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "TDengine 第一版不开放脚本服务，只允许通过外部模型或 Canvas 超级表输入读取"
+            );
+        }
         return dataSource;
     }
 
@@ -823,26 +891,40 @@ public class DataServiceManagementService {
         StandardDataServiceDefinitionResponse standard = null;
         SqlDataServiceDefinitionResponse sql = null;
         ScriptDataServiceDefinitionResponse script = null;
+        Integer definitionVersion = null;
         if (service.getType() == DataServiceType.STANDARD_TABLE) {
-            StandardDataServiceDefinition definition = requireStandardDefinition(service.getId());
-            standard = new StandardDataServiceDefinitionResponse(definition.getModelId(), definition.getVersion());
+            StandardDataServiceDefinition definition = standardDefinitionRepository.findByDataServiceId(service.getId())
+                    .orElse(null);
+            if (definition != null) {
+                definitionVersion = definition.getVersion();
+                standard = new StandardDataServiceDefinitionResponse(definition.getModelId(), definition.getVersion());
+            }
         } else if (service.getType() == DataServiceType.SQL_QUERY) {
-            SqlDataServiceDefinition definition = requireSqlDefinition(service.getId());
-            sql = new SqlDataServiceDefinitionResponse(
-                    definition.getDataSourceId(), sqlModelIds(service.getId()), definition.getSqlText(),
-                    parameterDefinitions(service.getId()), definition.getVersion()
-            );
+            SqlDataServiceDefinition definition = sqlDefinitionRepository.findByDataServiceId(service.getId())
+                    .orElse(null);
+            if (definition != null) {
+                definitionVersion = definition.getVersion();
+                sql = new SqlDataServiceDefinitionResponse(
+                        definition.getDataSourceId(), sqlModelIds(service.getId()), definition.getSqlText(),
+                        parameterDefinitions(service.getId()), definition.getVersion()
+                );
+            }
         } else {
-            ScriptDataServiceDefinition definition = requireScriptDefinition(service.getId());
-            script = new ScriptDataServiceDefinitionResponse(
-                    definition.getDataSourceId(),
-                    definition.getScript(),
-                    readScriptExamples(definition.getExamplesJson()),
-                    definition.getVersion()
-            );
+            ScriptDataServiceDefinition definition = scriptDefinitionRepository.findByDataServiceId(service.getId())
+                    .orElse(null);
+            if (definition != null) {
+                definitionVersion = definition.getVersion();
+                script = new ScriptDataServiceDefinitionResponse(
+                        definition.getDataSourceId(),
+                        definition.getScript(),
+                        readScriptExamples(definition.getExamplesJson()),
+                        definition.getVersion()
+                );
+            }
         }
         return new DataServiceDetailResponse(
                 service.getId(), service.getCode(), service.getName(), service.getDirectoryId(), service.getType(),
+                definitionVersion != null, definitionVersion,
                 standard, sql, script, service.getEngineId(), service.getRoutePath(), service.getAccessMode(),
                 service.getStatus(), service.getRevision(),
                 deployment == null ? null : deployment.getStatus(), deployment == null ? null : deployment.getLastError(),
@@ -860,11 +942,13 @@ public class DataServiceManagementService {
             DataService service,
             DataServiceDeployment deployment,
             List<GatewayServiceBinding> gatewayBindings,
-            SourceSummary source
+            DefinitionSummary definition
     ) {
         return new DataServiceSummaryResponse(
                 service.getId(), service.getCode(), service.getName(), service.getDirectoryId(), service.getType(),
-                source == null ? null : source.id(), source == null ? "已删除" : source.name(),
+                definition != null, definition == null ? null : definition.version(),
+                definition == null ? null : definition.sourceId(),
+                definition == null ? null : definition.sourceName(),
                 service.getEngineId(), service.getRoutePath(), service.getAccessMode(),
                 service.getStatus(), service.getRevision(),
                 deployment == null ? null : deployment.getStatus(), deployment == null ? null : deployment.getLastError(),
@@ -878,7 +962,7 @@ public class DataServiceManagementService {
         );
     }
 
-    private Map<UUID, SourceSummary> sourcesByServiceId(List<DataService> services) {
+    private Map<UUID, DefinitionSummary> definitionSummariesByServiceId(List<DataService> services) {
         if (services.isEmpty()) return Map.of();
         List<UUID> serviceIds = services.stream().map(DataService::getId).toList();
         List<StandardDataServiceDefinition> standards = standardDefinitionRepository.findAllByDataServiceIdIn(serviceIds);
@@ -894,23 +978,25 @@ public class DataServiceManagementService {
                         scriptDefinitions.stream().map(ScriptDataServiceDefinition::getDataSourceId)
                 ).distinct().toList()
         ).stream().collect(Collectors.toMap(DataSource::getId, Function.identity()));
-        Map<UUID, SourceSummary> result = new HashMap<>();
+        Map<UUID, DefinitionSummary> result = new HashMap<>();
         for (StandardDataServiceDefinition definition : standards) {
             DataModel model = models.get(definition.getModelId());
-            result.put(definition.getDataServiceId(), new SourceSummary(
-                    definition.getModelId(), model == null ? "已删除" : model.getName()
+            result.put(definition.getDataServiceId(), new DefinitionSummary(
+                    definition.getModelId(), model == null ? "已删除" : model.getName(), definition.getVersion()
             ));
         }
         for (SqlDataServiceDefinition definition : sqlDefinitions) {
             DataSource dataSource = dataSources.get(definition.getDataSourceId());
-            result.put(definition.getDataServiceId(), new SourceSummary(
-                    definition.getDataSourceId(), dataSource == null ? "已删除" : dataSource.getName()
+            result.put(definition.getDataServiceId(), new DefinitionSummary(
+                    definition.getDataSourceId(), dataSource == null ? "已删除" : dataSource.getName(),
+                    definition.getVersion()
             ));
         }
         for (ScriptDataServiceDefinition definition : scriptDefinitions) {
             DataSource dataSource = dataSources.get(definition.getDataSourceId());
-            result.put(definition.getDataServiceId(), new SourceSummary(
-                    definition.getDataSourceId(), dataSource == null ? "已删除" : dataSource.getName()
+            result.put(definition.getDataServiceId(), new DefinitionSummary(
+                    definition.getDataSourceId(), dataSource == null ? "已删除" : dataSource.getName(),
+                    definition.getVersion()
             ));
         }
         return result;
@@ -997,17 +1083,17 @@ public class DataServiceManagementService {
 
     private StandardDataServiceDefinition requireStandardDefinition(UUID serviceId) {
         return standardDefinitionRepository.findByDataServiceId(serviceId)
-                .orElseThrow(() -> new IllegalStateException("标准服务缺少具体定义"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "数据服务定义未配置"));
     }
 
     private SqlDataServiceDefinition requireSqlDefinition(UUID serviceId) {
         return sqlDefinitionRepository.findByDataServiceId(serviceId)
-                .orElseThrow(() -> new IllegalStateException("SQL 服务缺少具体定义"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "数据服务定义未配置"));
     }
 
     private ScriptDataServiceDefinition requireScriptDefinition(UUID serviceId) {
         return scriptDefinitionRepository.findByDataServiceId(serviceId)
-                .orElseThrow(() -> new IllegalStateException("脚本服务缺少具体定义"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "数据服务定义未配置"));
     }
 
     private List<ScriptRequestExampleRequest> normalizeScriptExamples(
@@ -1270,6 +1356,6 @@ public class DataServiceManagementService {
     ) {
     }
 
-    private record SourceSummary(UUID id, String name) {
+    private record DefinitionSummary(UUID sourceId, String sourceName, int version) {
     }
 }

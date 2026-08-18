@@ -1,0 +1,80 @@
+.asset-management-page .management-filter-strip .ant-input {
+  width: 220px;
+}
+
+.asset-management-page .management-filter-strip .ant-select {
+  width: 140px;
+}
+
+.asset-management-page .management-filter-strip .ant-form-item:nth-child(5) .ant-select {
+  width: 190px;
+}
+
+.asset-primary-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  line-height: 1.45;
+}
+
+.asset-primary-cell > .ant-btn-link {
+  align-self: flex-start;
+  max-width: 100%;
+  height: auto;
+  padding: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.asset-primary-cell > .ant-typography {
+  max-width: 100%;
+  font-size: 12px;
+}
+
+.asset-registration-drawer .ant-drawer-body,
+.asset-edit-drawer .ant-drawer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-height: 0;
+}
+
+.asset-registration-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.asset-registration-toolbar > .ant-select {
+  width: 160px;
+}
+
+.asset-registration-toolbar > .ant-input-affix-wrapper {
+  flex: 1;
+}
+
+.asset-registration-drawer .ant-table-wrapper {
+  min-height: 0;
+}
+
+.asset-edit-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0 16px;
+}
+
+.asset-edit-drawer .ant-alert {
+  margin-bottom: 14px;
+}
+
+.asset-edit-drawer .ant-descriptions-item-label {
+  width: 130px;
+  color: #59647a;
+  background: rgb(240 243 255 / 72%);
+}
+
+@media (max-width: 900px) {
+  .asset-edit-form-grid {
+    grid-template-columns: 1fr;
+  }
+}

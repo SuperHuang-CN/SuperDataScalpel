@@ -74,6 +74,14 @@ const externalColumnColumns: TableProps<ExternalTableImportColumn>['columns'] = 
   { title: '字段', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => <code>{value}</code> },
   { title: '原生类型', dataIndex: 'nativeType', width: 160, ellipsis: true, render: (value: string) => <code>{value}</code> },
   {
+    title: '物理角色',
+    dataIndex: 'physicalColumnRole',
+    width: 100,
+    render: (value: ExternalTableImportColumn['physicalColumnRole']) => value === 'TIME_KEY'
+      ? <Tag color="blue">时间主列</Tag>
+      : value === 'TAG' ? <Tag color="purple">TAG</Tag> : '普通列',
+  },
+  {
     title: '导入类型',
     key: 'targetType',
     width: 120,
@@ -314,6 +322,7 @@ export const DataModelDrawer = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={editing ? '修改模型' : '新建模型'}
         open={open}
         size="large"

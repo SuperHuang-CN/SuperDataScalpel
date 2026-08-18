@@ -362,6 +362,7 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
   return <>
     {contextHolder}
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay"
       open={open}
       title={resource ? `修改 API 资源 · ${resource.name}` : '新建 API 资源'}
       width={980}

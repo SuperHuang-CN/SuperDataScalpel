@@ -4,13 +4,13 @@ import {
   fetchSpatialFeatureResources,
   fetchDataSource,
   fetchTableMetadata,
+  fetchTdEngineTmqTopic,
   type DataSource,
   type TableIdentifier,
   type TableMetadata,
 } from '../../datasource';
 import {
   fetchDataModel,
-  fetchPhysicalTableInspection,
   type DataModelField,
 } from '../../model';
 import {
@@ -31,6 +31,7 @@ import type {
   JdbcQuerySourceMetadataReference,
   HttpApiResourceMetadataReference,
   SpatialServiceResourceMetadataReference,
+  TdEngineTmqTopicMetadataReference,
 } from './nodes/metadataReferences';
 import type {
   TaskCompilationMetadataDataSource,
@@ -48,12 +49,6 @@ interface CanvasJdbcMetadataRequest {
   role: CanvasMetadataRole;
 }
 
-interface CanvasModelTableRequest {
-  modelId: string;
-  dataSourceId: string;
-  identifier: TableIdentifier;
-}
-
 interface CanvasApiMetadataRequest {
   dataSourceId: string;
   resourceId: string;
@@ -64,10 +59,8 @@ export type CanvasMetadataIssueCode =
   | 'DATA_SOURCE_READ_FAILED'
   | 'TABLE_METADATA_READ_FAILED'
   | 'API_RESOURCE_READ_FAILED'
+  | 'TDENGINE_TMQ_TOPIC_READ_FAILED'
   | 'FILE_DATASET_METADATA_READ_FAILED'
-  | 'MODEL_PHYSICAL_INSPECTION_FAILED'
-  | 'MODEL_PHYSICAL_SCHEMA_MISMATCH'
-  | 'MODEL_PHYSICAL_METADATA_INCOMPLETE'
   | 'COLUMN_TYPE_MAPPING_UNSUPPORTED';
 
 export interface CanvasMetadataIssue {
@@ -110,31 +103,19 @@ const canvasColumnSchema = (
   };
 };
 
-const modelColumnSchema = (
-  field: DataModelField,
-  physicalColumn: TableMetadata['columns'][number],
-): CanvasColumnSchema => ({
+const modelColumnSchema = (field: DataModelField): CanvasColumnSchema => ({
   name: field.code,
   fieldType: field.fieldType,
   length: field.fieldType === 'STRING' ? field.length : null,
   precision: field.fieldType === 'DECIMAL' ? field.precision : null,
   scale: field.fieldType === 'DECIMAL' ? field.scale : null,
   nullable: field.nullable,
-  defaultValue: physicalColumn.defaultValue,
-  autoIncrement: physicalColumn.autoIncrement,
-  generated: physicalColumn.generated,
-  comment: field.description ?? physicalColumn.comment,
+  defaultValue: null,
+  autoIncrement: false,
+  generated: false,
+  comment: field.description,
   geometry: field.geometry ?? null,
 });
-
-const requirePhysicalColumn = (
-  columns: Map<string, TableMetadata['columns'][number]>,
-  field: DataModelField,
-) => {
-  const column = columns.get(field.code);
-  if (!column) throw new Error(`模型字段缺少对应物理字段：${field.code}`);
-  return column;
-};
 
 const collectMetadataReferences = (definition: CanvasDefinition): CanvasMetadataReference[] => (
   definition.nodes.flatMap((node) => canvasNodeRegistry.collectMetadataReferences(node))
@@ -176,10 +157,15 @@ const compilationDataSource = (
       id: dataSource.id,
       enabled: dataSource.enabled,
       connectionKind: 'JDBC',
-      jdbcDatabaseType: dataSource.type === 'POSTGRESQL' || dataSource.type === 'MYSQL'
-        ? dataSource.type : null,
+      jdbcDatabaseType: [
+        'POSTGRESQL', 'MYSQL', 'ORACLE', 'SQL_SERVER', 'CLICKHOUSE', 'DAMENG',
+        'OPENGAUSS', 'KINGBASE', 'TDENGINE_WEBSOCKET', 'TDENGINE_RESTFUL',
+      ].includes(dataSource.type)
+        ? (dataSource.type as TaskCompilationMetadataDataSource['jdbcDatabaseType'])
+        : null,
       purposes: [...dataSource.purposes].sort(),
       tables,
+      tdEngineTmqTopics: [],
     }
     : null
 );
@@ -196,6 +182,7 @@ const apiCompilationDataSource = (
       jdbcDatabaseType: null,
       purposes: [...dataSource.purposes].sort(),
       tables,
+      tdEngineTmqTopics: [],
     }
     : null
 );
@@ -211,6 +198,7 @@ const kafkaCompilationDataSource = (
       jdbcDatabaseType: null,
       purposes: [...dataSource.purposes].sort(),
       tables: [],
+      tdEngineTmqTopics: [],
     }
     : null
 );
@@ -226,6 +214,7 @@ const s3CompilationDataSource = (
       jdbcDatabaseType: null,
       purposes: [...dataSource.purposes].sort(),
       tables: [],
+      tdEngineTmqTopics: [],
     }
     : null
 );
@@ -268,11 +257,12 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   const modelIds = [...new Set(resourceReferences.flatMap(
     (reference) => reference.kind === 'MODEL' ? [reference.modelId] : [],
   ))];
-  const physicalIds = modelIds;
-  const physicalIdSet = new Set(physicalIds);
   const kafkaIds = [...new Set(resourceReferences.flatMap(
     (reference) => reference.kind === 'KAFKA_TOPIC' ? [reference.dataSourceId] : [],
   ))];
+  const tmqReferences = resourceReferences.filter(
+    (reference): reference is TdEngineTmqTopicMetadataReference => reference.kind === 'TDENGINE_TMQ_TOPIC',
+  );
   const fileOutputIds = [...new Set(resourceReferences.flatMap(
     (reference) => reference.kind === 'S3_TARGET' ? [reference.dataSourceId] : [],
   ))];
@@ -294,31 +284,20 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       staleTime: 60_000,
     })),
   });
-  const modelInspectionQueries = useQueries({
-    queries: physicalIds.map((modelId) => ({
-      queryKey: ['data-models', modelId, 'physical-table'],
-      queryFn: () => fetchPhysicalTableInspection(modelId),
-      staleTime: 60_000,
-    })),
-  });
   const modelById = new Map(modelIds.map((id, index) => [id, modelQueries[index].data]));
-  const modelInspectionById = new Map(physicalIds.map((id, index) => [
-    id,
-    modelInspectionQueries[index].data,
-  ]));
   const modelDetails = modelIds.flatMap((id) => {
     const detail = modelById.get(id);
     return detail ? [detail] : [];
   });
-  const physicalModelDetails = modelDetails.filter((detail) => physicalIdSet.has(detail.model.id));
   const dataSourceIds = [...new Set([
     ...jdbcRequests.map((request) => request.dataSourceId),
     ...jdbcQueryReferences.map((reference) => reference.dataSourceId),
     ...apiRequests.map((request) => request.dataSourceId),
     ...spatialRequests.map((request) => request.dataSourceId),
     ...kafkaIds,
+    ...tmqReferences.map((reference) => reference.dataSourceId),
     ...fileOutputIds,
-    ...physicalModelDetails.map((detail) => detail.model.storageDataSourceId),
+    ...modelDetails.map((detail) => detail.model.storageDataSourceId),
   ])];
   const dataSourceQueries = useQueries({
     queries: dataSourceIds.map((dataSourceId) => ({
@@ -368,26 +347,16 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     const resource = spatialResourceQueries[sourceIndex].data?.find((item) => item.id === request.resourceId);
     return [`${request.dataSourceId}\u0000${request.resourceId}`, resource];
   }));
-
-  const modelTableRequests: CanvasModelTableRequest[] = physicalModelDetails.map((detail) => ({
-    modelId: detail.model.id,
-    dataSourceId: detail.model.storageDataSourceId,
-    identifier: {
-      catalog: detail.model.catalogName,
-      schema: detail.model.schemaName,
-      table: detail.model.physicalTableName,
-    },
-  }));
-  const modelTableQueries = useQueries({
-    queries: modelTableRequests.map((request) => ({
-      queryKey: ['data-sources', request.dataSourceId, 'table-metadata', request.identifier],
-      queryFn: () => fetchTableMetadata(request.dataSourceId, request.identifier),
-      staleTime: 60_000,
+  const tmqTopicQueries = useQueries({
+    queries: tmqReferences.map((reference) => ({
+      queryKey: ['data-sources', reference.dataSourceId, 'tdengine-tmq-topic', reference.topicName],
+      queryFn: () => fetchTdEngineTmqTopic(reference.dataSourceId, reference.topicName),
+      staleTime: 30_000,
     })),
   });
-  const modelTableById = new Map(modelTableRequests.map((request, index) => [
-    request.modelId,
-    modelTableQueries[index].data,
+  const tmqTopicByKey = new Map(tmqReferences.map((reference, index) => [
+    `${reference.dataSourceId}\u0000${reference.topicName}`,
+    tmqTopicQueries[index].data,
   ]));
 
   const compilationDataSources = new Map<string, TaskCompilationMetadataDataSource>();
@@ -403,13 +372,29 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         if (metadata?.columns.some((column) => !column.platformTypeDefinition)) return [];
         return metadata ? [{
           tableName: request.tableName,
-          objectType: metadata.table.type.toUpperCase() === 'VIEW' ? 'VIEW' : 'TABLE',
+          objectType: metadata.table.type.toUpperCase() === 'VIEW'
+            ? 'VIEW'
+            : metadata.table.type.toUpperCase() === 'SUPERTABLE' ? 'SUPERTABLE' : 'TABLE',
           columns: metadata.columns.map(canvasColumnSchema),
           uniqueKeys: metadata.uniqueKeys,
         }] : [];
       });
     const compiled = compilationDataSource(dataSource, tables);
     if (compiled) {
+      compiled.tdEngineTmqTopics = tmqReferences
+        .filter((reference) => reference.dataSourceId === dataSourceId)
+        .flatMap((reference) => {
+          const topic = tmqTopicByKey.get(`${reference.dataSourceId}\u0000${reference.topicName}`);
+          if (!topic?.supported || !topic.databaseName || !topic.supertableName || !topic.timePrecision) return [];
+          return [{
+            topicName: topic.topicName,
+            catalogName: topic.databaseName,
+            supertableName: topic.supertableName,
+            definitionFingerprint: topic.definitionFingerprint,
+            timePrecision: topic.timePrecision,
+            columns: topic.columns.map(canvasColumnSchema),
+          }];
+        });
       compilationDataSources.set(dataSourceId, compiled);
       return;
     }
@@ -445,7 +430,15 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       .filter((request) => request.dataSourceId === dataSourceId)
       .flatMap((request): TaskCompilationMetadataTable[] => {
         const resource = spatialResourceByKey.get(`${request.dataSourceId}\u0000${request.resourceId}`);
-        return resource ? [{ tableName: resource.id, objectType: 'SPATIAL_FEATURE_RESOURCE', columns: resource.columns, uniqueKeys: [] }] : [];
+        return resource ? [{
+          tableName: resource.id,
+          objectType: 'SPATIAL_FEATURE_RESOURCE',
+          columns: resource.columns.map((column) => ({
+            ...column,
+            geometry: column.geometry ?? null,
+          })),
+          uniqueKeys: [],
+        }] : [];
       });
     const spatialCompiled = apiCompilationDataSource(dataSource, spatialResources);
     if (spatialCompiled) {
@@ -462,11 +455,8 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   });
 
   const compilationModels = modelDetails.flatMap((detail): TaskCompilationMetadataModel[] => {
-    const physical = modelTableById.get(detail.model.id);
-    const inspection = modelInspectionById.get(detail.model.id);
-    if (!physical || !inspection?.compatible) return [];
-    const physicalByName = new Map(physical.columns.map((column) => [column.name, column]));
-    if (detail.fields.some((field) => !physicalByName.has(field.code))) return [];
+    const fields = [...detail.fields].sort((left, right) => left.sortOrder - right.sortOrder);
+    const primaryKeyColumns = fields.filter((field) => field.primaryKey).map((field) => field.code);
     return [{
       id: detail.model.id,
       code: detail.model.code,
@@ -478,9 +468,12 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       catalogName: detail.model.catalogName,
       schemaName: detail.model.schemaName,
       physicalTableName: detail.model.physicalTableName,
-      columns: [...detail.fields]
-        .sort((left, right) => left.sortOrder - right.sortOrder)
-        .map((field) => modelColumnSchema(field, requirePhysicalColumn(physicalByName, field))),
+      columns: fields.map(modelColumnSchema),
+      uniqueKeys: primaryKeyColumns.length > 0 ? [{
+        name: 'MODEL_PRIMARY_KEY',
+        type: 'PRIMARY_KEY',
+        columns: primaryKeyColumns,
+      }] : [],
     }];
   });
   const compilationFileDatasetTables: TaskCompilationMetadataFileDatasetTable[] =
@@ -526,6 +519,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         fileDatasetName: table.fileDatasetName,
         tableName: table.name,
         tableCode: table.code,
+        datasetType: table.datasetType,
         status: table.parseStatus,
         geometry: geometryField && geometry ? {
           fieldName: geometryField.name,
@@ -536,7 +530,9 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       });
       return;
     }
-    if (node.type === CanvasNodeType.ModelInput || node.type === CanvasNodeType.ModelOutput) {
+    if (node.type === CanvasNodeType.ModelInput
+      || node.type === CanvasNodeType.ModelOutput
+      || node.type === CanvasNodeType.ModelSnapshotSyncOutput) {
       const modelId = node.type === CanvasNodeType.ModelInput
         ? node.configuration.modelId
         : node.configuration.targetModelId;
@@ -549,11 +545,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         modelCode: detail.model.code,
         modelSchemaVersion: detail.model.schemaVersion,
         dataSourceName: dataSource.name,
-        qualifiedTableName: [
-          detail.model.catalogName,
-          detail.model.schemaName,
-          detail.model.physicalTableName,
-        ].filter(Boolean).join('.'),
+        qualifiedTableName: detail.model.physicalTableName,
       });
       return;
     }
@@ -588,31 +580,60 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       });
       return;
     }
+    if (node.type === CanvasNodeType.TdEngineTmqInput) {
+      const dataSource = dataSourceById.get(node.configuration.dataSourceId);
+      const topic = tmqTopicByKey.get(`${node.configuration.dataSourceId}\u0000${node.configuration.topicName}`);
+      if (!dataSource || !topic) return;
+      nodeSummaries.set(node.id, {
+        kind: 'TDENGINE_TMQ',
+        dataSourceName: dataSource.name,
+        qualifiedTableName: `${topic.databaseName ?? '—'}.${topic.supertableName ?? '—'}`,
+        fieldCount: topic.columns.length,
+      });
+      return;
+    }
     if (node.type === CanvasNodeType.JdbcQueryInput) {
       const dataSource = dataSourceById.get(node.configuration.dataSourceId);
       if (!dataSource) return;
       nodeSummaries.set(node.id, {
         kind: 'JDBC',
         dataSourceName: dataSource.name,
+        dataSourceType: dataSource.type,
         qualifiedTableName: node.configuration.outputTableName,
       });
       return;
     }
-    if (node.type !== CanvasNodeType.JdbcInput && node.type !== CanvasNodeType.JdbcOutput) return;
+    if (node.type === CanvasNodeType.FileOutput) {
+      const dataSource = dataSourceById.get(node.configuration.dataSourceId);
+      if (!dataSource || dataSource.connection.kind !== 'S3') return;
+      nodeSummaries.set(node.id, {
+        kind: 'S3',
+        dataSourceName: dataSource.name,
+        bucketName: dataSource.connection.bucket,
+      });
+      return;
+    }
+    if (node.type !== CanvasNodeType.JdbcInput
+      && node.type !== CanvasNodeType.JdbcOutput
+      && node.type !== CanvasNodeType.JdbcSnapshotSyncOutput) return;
     const dataSourceId = node.configuration.dataSourceId;
     const tableName = node.type === CanvasNodeType.JdbcInput
       ? node.configuration.tableName
       : node.configuration.targetTableName;
     const dataSource = dataSourceById.get(dataSourceId);
     if (!dataSource || dataSource.connection.kind !== 'JDBC' || !tableName) return;
+    const tableMetadata = jdbcTableByKey.get(
+      tableRequestKey(dataSourceId, jdbcTableIdentifier(tableName)),
+    );
+    const primaryKeyColumns = tableMetadata?.uniqueKeys.find(
+      (key) => key.type === 'PRIMARY_KEY',
+    )?.columns ?? [];
     nodeSummaries.set(node.id, {
       kind: 'JDBC',
       dataSourceName: dataSource.name,
-      qualifiedTableName: [
-        dataSource.connection.databaseName,
-        dataSource.connection.schemaName,
-        tableName,
-      ].filter(Boolean).join('.'),
+      dataSourceType: dataSource.type,
+      qualifiedTableName: tableName,
+      ...(tableMetadata ? { primaryKeyColumns } : {}),
     });
   });
 
@@ -645,6 +666,12 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       && reference.dataSourceId === request.dataSourceId
       && reference.resourceId === request.resourceId,
   );
+  const tmqTopicNodeIds = (reference: TdEngineTmqTopicMetadataReference) => referenceNodeIds(
+    metadataReferences,
+    (candidate) => candidate.kind === 'TDENGINE_TMQ_TOPIC'
+      && candidate.dataSourceId === reference.dataSourceId
+      && candidate.topicName === reference.topicName,
+  );
 
   const metadataIssues: CanvasMetadataIssue[] = [];
   if (fileDatasetMetadataQuery.isError) {
@@ -663,15 +690,6 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     metadataIssues.push({
       code: 'MODEL_READ_FAILED',
       message: queryFailureMessage(`读取模型 ${modelId} 失败`, query.error),
-      nodeIds: modelNodeIds(modelId),
-    });
-  });
-  modelInspectionQueries.forEach((query, index) => {
-    if (!query.isError) return;
-    const modelId = physicalIds[index];
-    metadataIssues.push({
-      code: 'MODEL_PHYSICAL_INSPECTION_FAILED',
-      message: queryFailureMessage(`检查模型 ${modelId} 的物理表失败`, query.error),
       nodeIds: modelNodeIds(modelId),
     });
   });
@@ -714,44 +732,21 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       nodeIds: apiResourceNodeIds(request),
     });
   });
-  modelTableQueries.forEach((query, index) => {
+  tmqTopicQueries.forEach((query, index) => {
     if (!query.isError) return;
-    const request = modelTableRequests[index];
+    const reference = tmqReferences[index];
     metadataIssues.push({
-      code: 'TABLE_METADATA_READ_FAILED',
-      message: queryFailureMessage(`读取模型物理表 ${request.identifier.table} 元数据失败`, query.error),
-      nodeIds: modelNodeIds(request.modelId),
+      code: 'TDENGINE_TMQ_TOPIC_READ_FAILED',
+      message: queryFailureMessage(`读取 TMQ Topic ${reference.topicName} 失败`, query.error),
+      nodeIds: tmqTopicNodeIds(reference),
     });
-  });
-  physicalModelDetails.forEach((detail) => {
-    const inspection = modelInspectionById.get(detail.model.id);
-    if (inspection && !inspection.compatible) {
-      metadataIssues.push({
-        code: 'MODEL_PHYSICAL_SCHEMA_MISMATCH',
-        message: `模型 ${detail.model.name} 不可用于 Canvas：${inspection.message}`,
-        nodeIds: modelNodeIds(detail.model.id),
-      });
-      return;
-    }
-    const physical = modelTableById.get(detail.model.id);
-    if (!inspection?.compatible || !physical) return;
-    const physicalNames = new Set(physical.columns.map((column) => column.name));
-    const missingFields = detail.fields.filter((field) => !physicalNames.has(field.code));
-    if (missingFields.length > 0) {
-      metadataIssues.push({
-        code: 'MODEL_PHYSICAL_METADATA_INCOMPLETE',
-        message: `模型 ${detail.model.name} 的物理表元数据缺少字段：${missingFields.map((field) => field.code).join('、')}`,
-        nodeIds: modelNodeIds(detail.model.id),
-      });
-    }
   });
   const allQueries = [
     ...modelQueries,
-    ...modelInspectionQueries,
     ...dataSourceQueries,
     ...jdbcTableQueries,
     ...apiResourceQueries,
-    ...modelTableQueries,
+    ...tmqTopicQueries,
     ...(referencedFileTableIds.length > 0 ? [fileDatasetMetadataQuery] : []),
   ];
   return {

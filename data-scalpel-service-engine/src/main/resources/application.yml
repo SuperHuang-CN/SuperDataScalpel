@@ -18,6 +18,9 @@ spring:
         jdbc:
           time_zone: UTC
   super-api-studio:
+    view-enabled: true
+    security:
+      management-auth-enabled: true
     embedded:
       propagate-published-execution-errors: true
 

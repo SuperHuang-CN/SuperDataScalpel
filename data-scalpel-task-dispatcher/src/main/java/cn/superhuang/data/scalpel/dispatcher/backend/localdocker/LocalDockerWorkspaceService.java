@@ -72,7 +72,9 @@ public class LocalDockerWorkspaceService {
                     new LaunchArtifactUpload(access.resultPutUrl(), launch.resultKey()),
                     launch.runnerEvent(),
                     launch.checkpointUriPrefix(),
-                    launch.runnerControl()
+                    launch.runnerControl(),
+                    access.qualitySamples(),
+                    access.userJar()
             );
             writeAtomic(launchFile, objectMapper.writeValueAsBytes(descriptor));
             writeAtomic(environmentFile, environment(launch, access).getBytes(StandardCharsets.UTF_8));

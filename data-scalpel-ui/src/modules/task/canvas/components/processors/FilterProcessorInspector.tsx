@@ -424,15 +424,16 @@ export const FilterProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         const draftIssue = validateFilterConditionDraft(condition);
         if (draftIssue) {
           setConditionError(draftIssue);
-          return false;
+
         }
         const configuration: FilterConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           condition: structuredClone(condition),
         };
         onApply({ id: node.id, type: CanvasNodeType.Filter, configuration });

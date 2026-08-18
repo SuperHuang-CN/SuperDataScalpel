@@ -225,7 +225,7 @@ class TaskCompilationIntegrationTests {
         return """
                 {
                   "requestId":"%s",
-                  "task":{"type":"CANVAS","definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
+                  "task":{"type":"CANVAS","definition":{"schemaVersion":1,"schemaMinorVersion":28,"nodes":[
                     {"id":"4add70a7-4948-42a5-af66-e56dbaccad3e","type":"JDBC_INPUT","name":"订单输入",
                      "layout":{"x":10,"y":10,"width":240,"height":120},
                      "configuration":{"dataSourceId":"%s","tableName":"orders"}},
@@ -236,7 +236,7 @@ class TaskCompilationIntegrationTests {
                     {"id":"8fd542d5-37c2-4769-8ea6-47dff963073a","type":"JDBC_OUTPUT","name":"结果输出",
                      "layout":{"x":700,"y":10,"width":240,"height":120},
                      "configuration":{"sourceTableName":"joined","dataSourceId":"%s","targetTableName":"result",
-                     "writeMode":"APPEND","columnMappingMode":"BY_NAME","columnMappings":[]}}
+                     "writeMode":"APPEND","columnMappings":[{"sourceColumnName":"order_id","targetColumnName":"order_id"}]}}
                   ],"edges":[]}},
                   "metadataSnapshot":{"dataSources":[{"id":"%s","enabled":true,"connectionKind":"JDBC",
                     "purposes":["SOURCE","DISTRIBUTION"],"tables":[{"tableName":"orders","objectType":"TABLE","columns":[

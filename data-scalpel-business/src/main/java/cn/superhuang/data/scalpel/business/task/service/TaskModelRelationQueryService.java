@@ -7,12 +7,18 @@ import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskInput;
+import cn.superhuang.data.scalpel.business.task.domain.ModelQualityTaskDefinition;
+import cn.superhuang.data.scalpel.business.task.domain.SparkJarTaskDefinition;
+import cn.superhuang.data.scalpel.business.task.domain.SparkJarTaskResourceBinding;
 import cn.superhuang.data.scalpel.business.task.domain.TaskCanvasModelReference;
 import cn.superhuang.data.scalpel.business.task.domain.TaskCanvasModelReferenceRole;
 import cn.superhuang.data.scalpel.business.task.repository.CanvasTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskInputRepository;
+import cn.superhuang.data.scalpel.business.task.repository.ModelQualityTaskDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskResourceBindingRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskCanvasModelReferenceRepository;
 import cn.superhuang.data.scalpel.business.task.web.response.ModelRelatedTaskResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.ModelTaskReferenceType;
@@ -22,6 +28,8 @@ import cn.superhuang.data.scalpel.business.task.web.response.TaskModelRelationsR
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRelatedModelResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceAccessMode;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceType;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import jakarta.persistence.criteria.Predicate;
 import jakarta.persistence.criteria.Root;
@@ -69,6 +77,9 @@ public class TaskModelRelationQueryService {
     private final LocalSqlTaskInputRepository localSqlInputRepository;
     private final CanvasTaskDefinitionRepository canvasDefinitionRepository;
     private final TaskCanvasModelReferenceRepository canvasReferenceRepository;
+    private final ModelQualityTaskDefinitionRepository qualityDefinitionRepository;
+    private final SparkJarTaskDefinitionRepository sparkJarDefinitionRepository;
+    private final SparkJarTaskResourceBindingRepository sparkJarBindingRepository;
     private final DataModelRepository modelRepository;
     private final CanvasTaskDefinitionService canvasDefinitionService;
     private final SearchEngine searchEngine;
@@ -79,6 +90,9 @@ public class TaskModelRelationQueryService {
             LocalSqlTaskInputRepository localSqlInputRepository,
             CanvasTaskDefinitionRepository canvasDefinitionRepository,
             TaskCanvasModelReferenceRepository canvasReferenceRepository,
+            ModelQualityTaskDefinitionRepository qualityDefinitionRepository,
+            SparkJarTaskDefinitionRepository sparkJarDefinitionRepository,
+            SparkJarTaskResourceBindingRepository sparkJarBindingRepository,
             DataModelRepository modelRepository,
             CanvasTaskDefinitionService canvasDefinitionService,
             SearchEngine searchEngine
@@ -88,6 +102,9 @@ public class TaskModelRelationQueryService {
         this.localSqlInputRepository = localSqlInputRepository;
         this.canvasDefinitionRepository = canvasDefinitionRepository;
         this.canvasReferenceRepository = canvasReferenceRepository;
+        this.qualityDefinitionRepository = qualityDefinitionRepository;
+        this.sparkJarDefinitionRepository = sparkJarDefinitionRepository;
+        this.sparkJarBindingRepository = sparkJarBindingRepository;
         this.modelRepository = modelRepository;
         this.canvasDefinitionService = canvasDefinitionService;
         this.searchEngine = searchEngine;
@@ -122,6 +139,12 @@ public class TaskModelRelationQueryService {
         Map<UUID, CanvasTaskDefinition> canvasDefinitions = canvasDefinitionRepository
                 .findAllByTaskIdIn(taskIds).stream()
                 .collect(Collectors.toMap(CanvasTaskDefinition::getTaskId, Function.identity()));
+        Map<UUID, ModelQualityTaskDefinition> qualityDefinitions = qualityDefinitionRepository
+                .findAllByTaskIdIn(taskIds).stream()
+                .collect(Collectors.toMap(ModelQualityTaskDefinition::getTaskId, Function.identity()));
+        Map<UUID, SparkJarTaskDefinition> sparkJarDefinitions = sparkJarDefinitionRepository
+                .findAllByTaskIdIn(taskIds).stream()
+                .collect(Collectors.toMap(SparkJarTaskDefinition::getTaskId, Function.identity()));
         Map<UUID, Map<UUID, String>> canvasNodeNames = canvasNodeNames(canvasDefinitions.values());
         Map<UUID, List<TaskModelReferenceLocationResponse>> locationsByTask = new HashMap<>();
 
@@ -144,15 +167,30 @@ public class TaskModelRelationQueryService {
                         reference.getTaskId(),
                         canvasLocation(reference, canvasNodeNames.getOrDefault(reference.getTaskId(), Map.of()))
                 ));
+        qualityDefinitions.values().stream()
+                .filter(definition -> definition.getModelId().equals(modelId))
+                .forEach(definition -> addLocation(
+                        locationsByTask,
+                        definition.getTaskId(),
+                        modelQualityTargetLocation()
+                ));
+        sparkJarBindingRepository
+                .findAllByTaskIdInAndResourceTypeAndResourceIdOrderByTaskIdAscBindingNameAsc(
+                        taskIds, SparkJarResourceType.MODEL, modelId)
+                .forEach(binding -> addSparkJarLocations(locationsByTask, binding.getTaskId(), binding));
 
         List<ModelRelatedTaskResponse> content = page.getContent().stream()
                 .map(task -> {
                     List<TaskModelReferenceLocationResponse> locations = sortedLocations(
                             locationsByTask.getOrDefault(task.getId(), List.of())
                     );
-                    int definitionVersion = task.getType().isCanvas()
-                            ? canvasDefinitions.get(task.getId()).getVersion()
-                            : localDefinitions.get(task.getId()).getVersion();
+                    int definitionVersion = task.getType() == cn.superhuang.data.scalpel.business.task.domain.TaskType.SPARK_MODEL_QUALITY
+                            ? qualityDefinitions.get(task.getId()).getVersion()
+                            : task.getType().isJar()
+                            ? sparkJarDefinitions.get(task.getId()).getVersion()
+                            : task.getType().isCanvas()
+                                    ? canvasDefinitions.get(task.getId()).getVersion()
+                                    : localDefinitions.get(task.getId()).getVersion();
                     return new ModelRelatedTaskResponse(
                             task.getId(),
                             task.getName(),
@@ -176,7 +214,24 @@ public class TaskModelRelationQueryService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
         Map<UUID, List<TaskModelReferenceLocationResponse>> locationsByModel = new LinkedHashMap<>();
         Integer definitionVersion;
-        if (task.getType().isCanvas()) {
+        if (task.getType() == cn.superhuang.data.scalpel.business.task.domain.TaskType.SPARK_MODEL_QUALITY) {
+            ModelQualityTaskDefinition definition = qualityDefinitionRepository.findByTaskId(taskId).orElse(null);
+            if (definition == null) {
+                return new TaskModelRelationsResponse(taskId, false, null, List.of());
+            }
+            addLocation(locationsByModel, definition.getModelId(), modelQualityTargetLocation());
+            definitionVersion = definition.getVersion();
+        } else if (task.getType().isJar()) {
+            SparkJarTaskDefinition definition = sparkJarDefinitionRepository.findByTaskId(taskId).orElse(null);
+            if (definition == null) {
+                return new TaskModelRelationsResponse(taskId, false, null, List.of());
+            }
+            sparkJarBindingRepository.findAllByTaskIdOrderByCreatedAtAsc(taskId).stream()
+                    .filter(binding -> binding.getResourceType() == SparkJarResourceType.MODEL)
+                    .forEach(binding -> addSparkJarLocations(
+                            locationsByModel, binding.getResourceId(), binding));
+            definitionVersion = definition.getVersion();
+        } else if (task.getType().isCanvas()) {
             CanvasTaskDefinition definition = canvasDefinitionRepository.findByTaskId(taskId).orElse(null);
             if (definition == null) {
                 return new TaskModelRelationsResponse(taskId, false, null, List.of());
@@ -229,6 +284,17 @@ public class TaskModelRelationQueryService {
         return (root, query, builder) -> {
             List<Predicate> alternatives = new ArrayList<>();
             if (role == null || role == ModelTaskRelationRole.INPUT) {
+                alternatives.add(sparkJarModelBindingExists(
+                        query, builder, root, modelId,
+                        SparkJarResourceAccessMode.READ, SparkJarResourceAccessMode.READ_WRITE));
+                Subquery<Integer> qualityTargetQuery = query.subquery(Integer.class);
+                Root<ModelQualityTaskDefinition> qualityTarget = qualityTargetQuery.from(ModelQualityTaskDefinition.class);
+                qualityTargetQuery.select(builder.literal(1)).where(
+                        builder.equal(qualityTarget.get("taskId"), root.get("id")),
+                        builder.equal(qualityTarget.get("modelId"), modelId)
+                );
+                alternatives.add(builder.exists(qualityTargetQuery));
+
                 Subquery<Integer> localInputQuery = query.subquery(Integer.class);
                 Root<LocalSqlTaskInput> localInput = localInputQuery.from(LocalSqlTaskInput.class);
                 localInputQuery.select(builder.literal(1)).where(
@@ -250,6 +316,9 @@ public class TaskModelRelationQueryService {
                 alternatives.add(builder.exists(canvasInputQuery));
             }
             if (role == null || role == ModelTaskRelationRole.OUTPUT) {
+                alternatives.add(sparkJarModelBindingExists(
+                        query, builder, root, modelId,
+                        SparkJarResourceAccessMode.WRITE, SparkJarResourceAccessMode.READ_WRITE));
                 Subquery<Integer> localOutputQuery = query.subquery(Integer.class);
                 Root<LocalSqlTaskDefinition> localOutput = localOutputQuery.from(LocalSqlTaskDefinition.class);
                 localOutputQuery.select(builder.literal(1)).where(
@@ -272,6 +341,25 @@ public class TaskModelRelationQueryService {
             }
             return builder.or(alternatives.toArray(Predicate[]::new));
         };
+    }
+
+    private Predicate sparkJarModelBindingExists(
+            jakarta.persistence.criteria.CriteriaQuery<?> query,
+            jakarta.persistence.criteria.CriteriaBuilder builder,
+            Root<DataTask> task,
+            UUID modelId,
+            SparkJarResourceAccessMode first,
+            SparkJarResourceAccessMode second
+    ) {
+        Subquery<Integer> subquery = query.subquery(Integer.class);
+        Root<SparkJarTaskResourceBinding> binding = subquery.from(SparkJarTaskResourceBinding.class);
+        subquery.select(builder.literal(1)).where(
+                builder.equal(binding.get("taskId"), task.get("id")),
+                builder.equal(binding.get("resourceType"), SparkJarResourceType.MODEL),
+                builder.equal(binding.get("resourceId"), modelId),
+                binding.get("accessMode").in(first, second)
+        );
+        return builder.exists(subquery);
     }
 
     private static SearchRequest withDefaultSort(SearchRequest request) {
@@ -299,11 +387,12 @@ public class TaskModelRelationQueryService {
     }
 
     private Map<UUID, String> nodeNames(CanvasTaskDefinition definition) {
-        return canvasDefinitionService.deserialize(definition.getDefinitionJson()).nodes().stream()
-                .collect(Collectors.toMap(
+        return canvasDefinitionService.readIfCompatible(definition)
+                .map(canvas -> canvas.nodes().stream().collect(Collectors.toMap(
                         node -> UUID.fromString(node.id()),
                         CanvasNodeDefinition::name
-                ));
+                )))
+                .orElseGet(Map::of);
     }
 
     private static TaskModelReferenceLocationResponse localSqlInputLocation(LocalSqlTaskInput input) {
@@ -339,6 +428,42 @@ public class TaskModelRelationQueryService {
                 reference.getNodeId(),
                 nodeNames.get(reference.getNodeId())
         );
+    }
+
+    private static TaskModelReferenceLocationResponse modelQualityTargetLocation() {
+        return new TaskModelReferenceLocationResponse(
+                ModelTaskRelationRole.INPUT,
+                ModelTaskReferenceType.MODEL_QUALITY_TARGET,
+                null,
+                null,
+                null
+        );
+    }
+
+    private static TaskModelReferenceLocationResponse sparkJarBindingLocation(
+            SparkJarTaskResourceBinding binding,
+            ModelTaskRelationRole role
+    ) {
+        return new TaskModelReferenceLocationResponse(
+                role,
+                ModelTaskReferenceType.SPARK_JAR_RESOURCE_BINDING,
+                null,
+                null,
+                binding.getBindingName()
+        );
+    }
+
+    private static void addSparkJarLocations(
+            Map<UUID, List<TaskModelReferenceLocationResponse>> locations,
+            UUID key,
+            SparkJarTaskResourceBinding binding
+    ) {
+        if (binding.getAccessMode().canRead()) {
+            addLocation(locations, key, sparkJarBindingLocation(binding, ModelTaskRelationRole.INPUT));
+        }
+        if (binding.getAccessMode().canWrite()) {
+            addLocation(locations, key, sparkJarBindingLocation(binding, ModelTaskRelationRole.OUTPUT));
+        }
     }
 
     private static List<TaskModelReferenceLocationResponse> sortedLocations(

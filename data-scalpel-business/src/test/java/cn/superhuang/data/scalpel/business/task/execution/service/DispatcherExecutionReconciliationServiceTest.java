@@ -51,7 +51,7 @@ class DispatcherExecutionReconciliationServiceTest {
         DispatcherExecutionResponse response = new DispatcherExecutionResponse(
                 executionId, runId, 1, engineId, ExecutionBackendType.LOCAL_DOCKER,
                 "STOPPED", 2, null, null, null, endedAt.minusSeconds(10),
-                null, endedAt, null, null, null, null
+                null, endedAt, null, null, null, null, null
         );
 
         DispatcherExecutionEvent event =

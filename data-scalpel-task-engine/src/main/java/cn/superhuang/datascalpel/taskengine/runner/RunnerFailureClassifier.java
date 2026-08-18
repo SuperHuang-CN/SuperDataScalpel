@@ -3,6 +3,8 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionErrorCategory;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionError;
+import cn.superhuang.datascalpel.taskengine.tdengine.tmq.TdEngineTmqException;
+import cn.superhuang.datascalpel.taskengine.jdbc.incremental.JdbcIncrementalException;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -57,6 +59,71 @@ final class RunnerFailureClassifier {
             );
         }
         String causeText = causeMessages(throwable);
+        TdEngineTmqException tmqFailure = findCause(throwable, TdEngineTmqException.class);
+        if (tmqFailure != null) {
+            ExecutionErrorCategory category = switch (tmqFailure.code()) {
+                case "TDENGINE_TMQ_AUTHENTICATION_FAILED" -> ExecutionErrorCategory.AUTHENTICATION;
+                case "TDENGINE_TMQ_NETWORK_ERROR" -> ExecutionErrorCategory.CONNECTION;
+                case "TDENGINE_TMQ_ASSIGNMENT_TIMEOUT" -> ExecutionErrorCategory.TIMEOUT;
+                case "TDENGINE_TMQ_SCHEMA_MISMATCH", "TDENGINE_TMQ_MESSAGE_TYPE_UNSUPPORTED" ->
+                        ExecutionErrorCategory.SCHEMA;
+                case "TDENGINE_TMQ_TOPIC_NOT_FOUND", "TDENGINE_TMQ_TOPIC_UNSUPPORTED",
+                        "TDENGINE_TMQ_TOPIC_CHANGED", "TDENGINE_TMQ_OFFSET_EXPIRED",
+                        "TDENGINE_TMQ_VGROUP_CHANGED" -> ExecutionErrorCategory.CONFIGURATION;
+                default -> ExecutionErrorCategory.EXTERNAL_SYSTEM;
+            };
+            return new Classification(tmqFailure.code(), category, tmqFailure.retryable());
+        }
+        JdbcIncrementalException incrementalFailure = findCause(
+                throwable, JdbcIncrementalException.class);
+        if (incrementalFailure != null) {
+            ExecutionErrorCategory category = switch (incrementalFailure.code()) {
+                case "JDBC_INCREMENTAL_AUTHENTICATION_FAILED" -> ExecutionErrorCategory.AUTHENTICATION;
+                case "JDBC_INCREMENTAL_NETWORK_ERROR" -> ExecutionErrorCategory.CONNECTION;
+                case "JDBC_INCREMENTAL_TIMEOUT" -> ExecutionErrorCategory.TIMEOUT;
+                case "JDBC_INCREMENTAL_SCHEMA_CHANGED" -> ExecutionErrorCategory.SCHEMA;
+                case "JDBC_INCREMENTAL_CLOCK_REGRESSION", "JDBC_INCREMENTAL_SOURCE_CHANGED",
+                        "JDBC_INCREMENTAL_CHECKPOINT_INVALID", "JDBC_INCREMENTAL_DATABASE_UNSUPPORTED",
+                        "JDBC_INCREMENTAL_DRIVER_UNAVAILABLE" -> ExecutionErrorCategory.CONFIGURATION;
+                default -> ExecutionErrorCategory.EXTERNAL_SYSTEM;
+            };
+            return new Classification(
+                    incrementalFailure.code(), category, incrementalFailure.retryable());
+        }
+        RunnerExecutionException declaredRunnerFailure = findCause(
+                throwable, RunnerExecutionException.class);
+        if (declaredRunnerFailure != null
+                && ("USER_JOB_CLASS_LOAD_FAILED".equals(declaredRunnerFailure.code())
+                || "USER_JOB_CONSTRUCTION_FAILED".equals(declaredRunnerFailure.code()))) {
+            return failure(declaredRunnerFailure.code(), ExecutionErrorCategory.CONFIGURATION);
+        }
+        if (declaredRunnerFailure != null
+                && "SNAPSHOT_SYNC_LOCK_TIMEOUT".equals(declaredRunnerFailure.code())) {
+            return retryable(declaredRunnerFailure.code(), ExecutionErrorCategory.TIMEOUT);
+        }
+        if (declaredRunnerFailure != null
+                && sqlException == null
+                && (declaredRunnerFailure.code().startsWith("SNAPSHOT_SYNC_")
+                || "MODEL_SNAPSHOT_SYNC_OUTPUT_FAILED".equals(declaredRunnerFailure.code()))) {
+            String code = declaredRunnerFailure.code();
+            if ("SNAPSHOT_SYNC_SOURCE_ROW_LIMIT_EXCEEDED".equals(code)
+                    || "SNAPSHOT_SYNC_TARGET_ROW_LIMIT_EXCEEDED".equals(code)
+                    || "SNAPSHOT_SYNC_MEMORY_LIMIT_EXCEEDED".equals(code)) {
+                return failure(code, ExecutionErrorCategory.RESOURCE);
+            }
+            if ("SNAPSHOT_SYNC_GEOMETRY_COMPARISON_FAILED".equals(code)) {
+                return failure(code, ExecutionErrorCategory.SCHEMA);
+            }
+            if ("SNAPSHOT_SYNC_MAPPING_INVALID".equals(code)
+                    || "SNAPSHOT_SYNC_VALUE_CONVERSION_FAILED".equals(code)) {
+                return failure(code, ExecutionErrorCategory.SCHEMA);
+            }
+            if (code.endsWith("_KEY_NULL") || code.endsWith("_KEY_DUPLICATE")
+                    || code.contains("DELETE_") || code.contains("EMPTY_SOURCE")) {
+                return failure(code, ExecutionErrorCategory.CONSTRAINT);
+            }
+            return failure(code, ExecutionErrorCategory.EXTERNAL_SYSTEM);
+        }
         if (causeText.contains("geometry_construct_kind_mismatch")) {
             return failure(
                     "GEOMETRY_CONSTRUCT_KIND_MISMATCH",
@@ -119,7 +186,7 @@ final class RunnerFailureClassifier {
         if (fileFailure != null) {
             ExecutionErrorCategory category = switch (fileFailure.code()) {
                 case "FILE_DATASET_STORAGE_UNAVAILABLE" -> ExecutionErrorCategory.CONNECTION;
-                case "FILE_DATASET_PARSE_FAILED", "SPATIAL_SCHEMA_DRIFT" -> ExecutionErrorCategory.SCHEMA;
+                case "FILE_DATASET_PARSE_FAILED" -> ExecutionErrorCategory.SCHEMA;
                 default -> ExecutionErrorCategory.EXTERNAL_SYSTEM;
             };
             return new Classification(fileFailure.code(), category, fileFailure.retryable());
@@ -128,13 +195,14 @@ final class RunnerFailureClassifier {
         RunnerExecutionException runner = findCause(throwable, RunnerExecutionException.class);
         if (runner != null) {
             switch (runner.code()) {
-                case "RUNTIME_SCHEMA_MISMATCH" -> {
-                    return failure("RUNTIME_SCHEMA_MISMATCH", ExecutionErrorCategory.SCHEMA);
+                case "JDBC_QUERY_SCHEMA_STALE", "OUTPUT_MAPPING_INVALID" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.CONFIGURATION);
                 }
-                case "SPATIAL_SCHEMA_DRIFT" -> {
-                    return failure("SPATIAL_SCHEMA_DRIFT", ExecutionErrorCategory.SCHEMA);
+                case "OVERWRITE_DATABASE_NOT_SUPPORTED", "UPSERT_DATABASE_NOT_SUPPORTED",
+                        "SPATIAL_JDBC_UNSUPPORTED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.CONFIGURATION);
                 }
-                case "JDBC_QUERY_SCHEMA_DRIFT", "JDBC_QUERY_SCHEMA_STALE" -> {
+                case "SPATIAL_TARGET_METADATA_UNAVAILABLE" -> {
                     return failure(runner.code(), ExecutionErrorCategory.SCHEMA);
                 }
                 case "UPSERT_KEY_NULL", "UPSERT_DUPLICATE_KEY" -> {
@@ -166,6 +234,34 @@ final class RunnerFailureClassifier {
                 }
                 case "MANIFEST_DOWNLOAD_FAILED", "RESULT_UPLOAD_FAILED" -> {
                     return retryable(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
+                }
+                case "USER_JAR_DOWNLOAD_FAILED" -> {
+                    return retryable(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
+                }
+                case "USER_JAR_DOWNLOAD_MISSING", "USER_JAR_SIZE_MISMATCH",
+                        "USER_JAR_DIGEST_MISMATCH", "USER_JOB_CLASS_NOT_FOUND",
+                        "USER_JOB_CLASS_INVALID", "USER_JOB_CLASS_LOAD_FAILED",
+                        "USER_JOB_CONSTRUCTOR_INVALID", "USER_JOB_CONSTRUCTION_FAILED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.CONFIGURATION);
+                }
+                case "USER_JOB_EXECUTION_FAILED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
+                }
+                case "STREAMING_JOB_START_TIMEOUT", "STREAMING_STOP_TIMEOUT" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.TIMEOUT);
+                }
+                case "INVALID_SPARK_STREAMING_JAR_MANIFEST",
+                        "USER_STREAMING_JOB_CLASS_INVALID",
+                        "STREAMING_QUERY_NAME_INVALID", "STREAMING_QUERY_NAME_DUPLICATE",
+                        "STREAMING_QUERY_REGISTRATION_INVALID", "STREAMING_QUERY_REQUIRED",
+                        "UNREGISTERED_STREAMING_QUERY", "SDK_KAFKA_BINDING_UNAVAILABLE",
+                        "STREAMING_SDK_OVERWRITE_NOT_ALLOWED", "STREAMING_SDK_GEOMETRY_NOT_ALLOWED" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.CONFIGURATION);
+                }
+                case "USER_STREAMING_JOB_EXECUTION_FAILED", "USER_STREAMING_JOB_START_FAILED",
+                        "USER_STREAMING_JOB_START_INTERRUPTED", "STREAMING_JOB_ON_STOP_FAILED",
+                        "STREAMING_QUERY_FAILED", "STREAMING_QUERY_STOPPED_UNEXPECTEDLY" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
                 }
                 case "FILE_OUTPUT_TARGET_EXISTS" -> {
                     return failure(runner.code(), ExecutionErrorCategory.CONSTRAINT);
@@ -258,6 +354,11 @@ final class RunnerFailureClassifier {
         if (hasCause(throwable, ConnectException.class) || hasCause(throwable, SocketException.class)) {
             return retryable("JDBC_CONNECTION_FAILED", ExecutionErrorCategory.CONNECTION);
         }
+        if (declaredRunnerFailure != null
+                && (declaredRunnerFailure.code().startsWith("SNAPSHOT_SYNC_")
+                || "MODEL_SNAPSHOT_SYNC_OUTPUT_FAILED".equals(declaredRunnerFailure.code()))) {
+            return failure(declaredRunnerFailure.code(), ExecutionErrorCategory.EXTERNAL_SYSTEM);
+        }
         if (sqlException != null) {
             boolean transientFailure = sqlException instanceof SQLTransientException;
             return new Classification("JDBC_STATEMENT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM,
@@ -294,6 +395,12 @@ final class RunnerFailureClassifier {
         if ("MODEL_OUTPUT".equals(context.nodeType())) {
             return failure("MODEL_OUTPUT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM);
         }
+        if ("JDBC_SNAPSHOT_SYNC_OUTPUT".equals(context.nodeType())) {
+            return failure("SNAPSHOT_SYNC_OUTPUT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM);
+        }
+        if ("MODEL_SNAPSHOT_SYNC_OUTPUT".equals(context.nodeType())) {
+            return failure("MODEL_SNAPSHOT_SYNC_OUTPUT_FAILED", ExecutionErrorCategory.EXTERNAL_SYSTEM);
+        }
         return failure("RUNNER_INTERNAL_ERROR", ExecutionErrorCategory.INTERNAL);
     }
 
@@ -309,11 +416,20 @@ final class RunnerFailureClassifier {
             case "JDBC_TIMEOUT" -> "数据源操作超时";
             case "JDBC_CONSTRAINT_VIOLATION" -> "写入目标表时违反数据库约束";
             case "JDBC_UNSUPPORTED_TYPE" -> "数据源字段类型不受支持";
-            case "RUNTIME_SCHEMA_MISMATCH" -> "运行时表结构与任务定义不一致";
-            case "SPATIAL_SCHEMA_DRIFT" -> "运行时 Geometry Schema 与任务定义不一致";
             case "JDBC_STATEMENT_FAILED" -> context.phase() == ExecutionFailurePhase.READ
                     ? withResource("读取数据源表失败", resource)
                     : withResource("写入目标表失败", resource);
+            case "TDENGINE_TMQ_TOPIC_NOT_FOUND" -> "TDengine TMQ Topic 不存在";
+            case "TDENGINE_TMQ_TOPIC_UNSUPPORTED" -> "TDengine TMQ Topic 类型不受支持";
+            case "TDENGINE_TMQ_TOPIC_CHANGED" -> "TDengine TMQ Topic 定义已变化";
+            case "TDENGINE_TMQ_AUTHENTICATION_FAILED" -> "TDengine TMQ 认证失败";
+            case "TDENGINE_TMQ_NETWORK_ERROR" -> "TDengine TMQ 网络连接失败";
+            case "TDENGINE_TMQ_ASSIGNMENT_TIMEOUT" -> "等待 TDengine TMQ VGroup 分配超时";
+            case "TDENGINE_TMQ_OFFSET_EXPIRED" -> "TDengine TMQ Checkpoint Offset 已过期";
+            case "TDENGINE_TMQ_VGROUP_CHANGED" -> "TDengine TMQ VGroup 已变化，需要新建部署";
+            case "TDENGINE_TMQ_SCHEMA_MISMATCH" -> "TDengine TMQ 消息结构与超级表快照不一致";
+            case "TDENGINE_TMQ_MESSAGE_TYPE_UNSUPPORTED" -> "TDengine TMQ 返回了不支持的消息类型";
+            case "TDENGINE_TMQ_POLL_FAILED" -> "TDengine TMQ 消费失败";
             case "PROCESSOR_EXECUTION_FAILED" -> "处理器节点执行失败";
             case "VALUE_MAPPING_UNMATCHED_VALUE" -> "值映射遇到未配置的非 NULL 值";
             case "GEOMETRY_CONSTRUCT_PARSE_FAILED" -> "Geometry 来源内容解析失败";
@@ -325,10 +441,30 @@ final class RunnerFailureClassifier {
             case "SPATIAL_AGGREGATE_FAILED" -> "空间聚合失败";
             case "JDBC_INPUT_FAILED" -> "JDBC 输入节点执行失败";
             case "JDBC_QUERY_INPUT_FAILED" -> "JDBC 查询输入节点执行失败";
-            case "JDBC_QUERY_SCHEMA_DRIFT" -> "JDBC 查询结果结构已变化";
             case "JDBC_QUERY_SCHEMA_STALE" -> "JDBC 查询 SQL 已修改，需要重新分析";
+            case "OUTPUT_MAPPING_INVALID" -> "输出字段映射无法生成写入计划";
+            case "OVERWRITE_DATABASE_NOT_SUPPORTED" -> "当前数据库不支持 OVERWRITE，请使用 APPEND";
+            case "UPSERT_DATABASE_NOT_SUPPORTED" -> "当前数据库不支持 UPSERT";
+            case "SPATIAL_JDBC_UNSUPPORTED" -> "当前数据库不支持 Geometry JDBC 读写";
+            case "SPATIAL_TARGET_METADATA_UNAVAILABLE" -> "目标 Geometry 字段缺少写入所需元数据";
             case "UPSERT_KEY_NULL" -> "UPSERT Key 不能包含 NULL";
             case "UPSERT_DUPLICATE_KEY" -> "当前批次存在重复 UPSERT Key";
+            case "SNAPSHOT_SYNC_SOURCE_KEY_NULL" -> "来源快照 Key 不能包含 NULL";
+            case "SNAPSHOT_SYNC_SOURCE_KEY_DUPLICATE" -> "来源快照包含重复 Key";
+            case "SNAPSHOT_SYNC_TARGET_KEY_NULL" -> "目标快照 Key 不能包含 NULL";
+            case "SNAPSHOT_SYNC_TARGET_KEY_DUPLICATE" -> "目标快照包含重复 Key";
+            case "SNAPSHOT_SYNC_SOURCE_ROW_LIMIT_EXCEEDED" -> "来源快照超过单侧行数限制";
+            case "SNAPSHOT_SYNC_TARGET_ROW_LIMIT_EXCEEDED" -> "目标快照超过单侧行数限制";
+            case "SNAPSHOT_SYNC_MEMORY_LIMIT_EXCEEDED" -> "快照同步估算内存超过限制";
+            case "SNAPSHOT_SYNC_EMPTY_SOURCE_DELETE_BLOCKED" -> "来源为空时禁止删除非空目标";
+            case "SNAPSHOT_SYNC_DELETE_ROWS_EXCEEDED" -> "候选删除数量超过安全阈值";
+            case "SNAPSHOT_SYNC_DELETE_RATIO_EXCEEDED" -> "候选删除比例超过安全阈值";
+            case "SNAPSHOT_SYNC_LOCK_TIMEOUT" -> "等待快照同步目标表写锁失败或超时";
+            case "SNAPSHOT_SYNC_GEOMETRY_COMPARISON_FAILED" -> "Geometry 无法进行拓扑比较";
+            case "SNAPSHOT_SYNC_MAPPING_INVALID" -> "快照同步字段映射无效";
+            case "SNAPSHOT_SYNC_VALUE_CONVERSION_FAILED" -> "快照同步字段值无法转换";
+            case "SNAPSHOT_SYNC_OUTPUT_FAILED" -> "JDBC 快照同步失败";
+            case "MODEL_SNAPSHOT_SYNC_OUTPUT_FAILED" -> "模型快照同步失败";
             case "MODEL_INPUT_FAILED" -> "模型输入节点执行失败";
             case "HTTP_API_INPUT_FAILED" -> "HTTP API 输入节点执行失败";
             case "FILE_DATASET_OBJECT_NOT_FOUND" -> "文件数据集对象不存在";
@@ -371,6 +507,16 @@ final class RunnerFailureClassifier {
             case "API_REQUIRED_FIELD_MISSING", "API_FIELD_CONVERSION_FAILED" ->
                     "HTTP API 响应与输出 Schema 不匹配";
             case "API_BATCH_STAGING_FAILED" -> "HTTP API 分批暂存失败";
+            case "USER_JAR_DOWNLOAD_FAILED" -> "用户 JAR 下载失败";
+            case "USER_JAR_DOWNLOAD_MISSING" -> "Spark JAR 任务缺少用户 JAR 下载信息";
+            case "USER_JAR_SIZE_MISMATCH" -> "用户 JAR 大小校验失败";
+            case "USER_JAR_DIGEST_MISMATCH" -> "用户 JAR SHA-256 校验失败";
+            case "USER_JOB_CLASS_NOT_FOUND" -> "用户 Job Class 无法加载";
+            case "USER_JOB_CLASS_LOAD_FAILED" -> "用户 Job Class 初始化或链接失败";
+            case "USER_JOB_CLASS_INVALID" -> "用户 Job Class 必须是 public 并实现 SparkBatchJob";
+            case "USER_JOB_CONSTRUCTOR_INVALID" -> "用户 Job Class 必须提供 public 无参构造方法";
+            case "USER_JOB_CONSTRUCTION_FAILED" -> "用户 Job Class 构造失败";
+            case "USER_JOB_EXECUTION_FAILED" -> "用户 Spark 作业执行失败";
             case "RUNNER_INTERNAL_ERROR" -> "Task Runner 内部错误";
             case "RUNNER_RESOURCE_EXHAUSTED" -> "Task Runner 运行资源不足";
             case "RUNNER_DELIVERY_FAILED" -> "Task Runner 无法投递执行结果";

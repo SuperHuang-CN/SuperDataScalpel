@@ -16,6 +16,8 @@ import org.hibernate.type.SqlTypes;
 
 import java.time.Instant;
 import java.util.UUID;
+import cn.superhuang.data.scalpel.contract.quality.QualityConclusion;
+import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
 
 /** Immutable-definition execution history for one manual or scheduled task run. */
 @Entity
@@ -27,7 +29,9 @@ import java.util.UUID;
         ),
         indexes = {
                 @Index(name = "idx_task_run_task_queued", columnList = "task_id,queued_at"),
-                @Index(name = "idx_task_run_task_status", columnList = "task_id,status")
+                @Index(name = "idx_task_run_task_status", columnList = "task_id,status"),
+                @Index(name = "idx_task_run_quality_model_queued", columnList = "quality_target_model_id,queued_at"),
+                @Index(name = "idx_task_run_quality_model_ended", columnList = "quality_target_model_id,status,ended_at")
         }
 )
 public class TaskRun extends BaseEntity {
@@ -89,6 +93,22 @@ public class TaskRun extends BaseEntity {
     @Column(name = "log_object_key", length = 500)
     private String logObjectKey;
 
+    @Column(name = "user_jar_file_name", length = 255, updatable = false)
+    private String userJarFileName;
+
+    @Column(name = "user_jar_sha256", length = 64, updatable = false)
+    private String userJarSha256;
+
+    @Column(name = "user_jar_size_bytes", updatable = false)
+    private Long userJarSizeBytes;
+
+    @Column(name = "run_user_jar_object_key", length = 500)
+    private String runUserJarObjectKey;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "user_jar_cleanup_status", length = 16)
+    private TaskRunJarCleanupStatus userJarCleanupStatus;
+
     @Enumerated(EnumType.STRING)
     @Column(name = "trigger_type", nullable = false, updatable = false, length = 32)
     private TaskRunTriggerType triggerType;
@@ -115,6 +135,46 @@ public class TaskRun extends BaseEntity {
 
     @Column(name = "affected_rows")
     private Long affectedRows;
+
+    @Column(name = "user_job_phase", length = 100)
+    private String userJobPhase;
+
+    @Column(name = "user_job_status_message", length = 1000)
+    private String userJobStatusMessage;
+
+    @Column(name = "user_job_status_at")
+    private Instant userJobStatusAt;
+
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "user_job_metrics")
+    private String userJobMetrics;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "quality_conclusion", length = 16)
+    private QualityConclusion qualityConclusion;
+
+    @Column(name = "quality_total_rules")
+    private Long qualityTotalRules;
+
+    @Column(name = "quality_passed_rules")
+    private Long qualityPassedRules;
+
+    @Column(name = "quality_failed_rules")
+    private Long qualityFailedRules;
+
+    @Column(name = "quality_skipped_rules")
+    private Long qualitySkippedRules;
+
+    @Column(name = "quality_checked_rows")
+    private Long qualityCheckedRows;
+
+    /** Immutable target-model identity captured when a model-quality run is created. */
+    @Column(name = "quality_target_model_id", updatable = false)
+    private UUID qualityTargetModelId;
+
+    /** Time at which the executable and skipped rule snapshots for this run were fixed. */
+    @Column(name = "quality_rule_snapshot_at", updatable = false)
+    private Instant qualityRuleSnapshotAt;
 
     @Column(length = 1000)
     private String message;
@@ -257,6 +317,104 @@ public class TaskRun extends BaseEntity {
         return run;
     }
 
+    public static TaskRun queueDispatchedModelQuality(
+            UUID runId,
+            UUID taskId,
+            int definitionVersion,
+            String definitionSnapshot,
+            UUID executionId,
+            int attempt,
+            Instant deadlineAt,
+            UUID computeEngineId,
+            String commandTopicSnapshot
+    ) {
+        TaskRun run = queueDispatchedCanvas(
+                runId, taskId, definitionVersion, definitionSnapshot, executionId, attempt,
+                deadlineAt, computeEngineId, commandTopicSnapshot);
+        run.taskType = TaskType.SPARK_MODEL_QUALITY;
+        return run;
+    }
+
+    public void captureModelQualityContext(UUID modelId, Instant ruleSnapshotAt) {
+        if (getTaskType() != TaskType.SPARK_MODEL_QUALITY || modelId == null
+                || qualityTargetModelId != null || qualityRuleSnapshotAt != null) {
+            throw new IllegalStateException("模型质检运行上下文无效");
+        }
+        qualityTargetModelId = modelId;
+        qualityRuleSnapshotAt = ruleSnapshotAt;
+    }
+
+    public static TaskRun queueScheduledDispatchedModelQuality(
+            UUID runId,
+            UUID taskId,
+            UUID scheduleId,
+            Instant scheduledFireAt,
+            int definitionVersion,
+            String definitionSnapshot,
+            UUID executionId,
+            int attempt,
+            Instant deadlineAt,
+            UUID computeEngineId,
+            String commandTopicSnapshot
+    ) {
+        TaskRun run = queueDispatchedModelQuality(
+                runId, taskId, definitionVersion, definitionSnapshot, executionId, attempt,
+                deadlineAt, computeEngineId, commandTopicSnapshot);
+        if (scheduleId == null || scheduledFireAt == null) {
+            throw new IllegalArgumentException("质检定时运行触发信息不能为空");
+        }
+        run.triggerType = TaskRunTriggerType.SCHEDULED;
+        run.scheduleId = scheduleId;
+        run.scheduledFireAt = scheduledFireAt;
+        return run;
+    }
+
+    public static TaskRun queueDispatchedSparkJar(
+            UUID runId, UUID taskId, int definitionVersion, String definitionSnapshot,
+            UUID executionId, int attempt, Instant deadlineAt, UUID computeEngineId,
+            String commandTopicSnapshot
+    ) {
+        TaskRun run = queueDispatchedCanvas(runId, taskId, definitionVersion, definitionSnapshot,
+                executionId, attempt, deadlineAt, computeEngineId, commandTopicSnapshot);
+        run.taskType = TaskType.SPARK_JAR;
+        return run;
+    }
+
+    public static TaskRun queueScheduledDispatchedSparkJar(
+            UUID runId, UUID taskId, UUID scheduleId, Instant scheduledFireAt,
+            int definitionVersion, String definitionSnapshot, UUID executionId, int attempt,
+            Instant deadlineAt, UUID computeEngineId, String commandTopicSnapshot
+    ) {
+        TaskRun run = queueDispatchedSparkJar(runId, taskId, definitionVersion, definitionSnapshot,
+                executionId, attempt, deadlineAt, computeEngineId, commandTopicSnapshot);
+        if (scheduleId == null || scheduledFireAt == null) {
+            throw new IllegalArgumentException("Spark JAR 定时运行触发信息不能为空");
+        }
+        run.triggerType = TaskRunTriggerType.SCHEDULED;
+        run.scheduleId = scheduleId;
+        run.scheduledFireAt = scheduledFireAt;
+        return run;
+    }
+
+    public void attachUserJar(String fileName, String sha256, long sizeBytes, String runObjectKey) {
+        requireStatus(TaskRunStatus.QUEUED);
+        if (taskType == null || !taskType.isJar() || blank(fileName) || blank(sha256)
+                || sizeBytes < 1 || blank(runObjectKey) || runUserJarObjectKey != null) {
+            throw new IllegalStateException("用户 JAR 制品不能写入当前运行实例");
+        }
+        userJarFileName = fileName.trim();
+        userJarSha256 = sha256.trim();
+        userJarSizeBytes = sizeBytes;
+        runUserJarObjectKey = runObjectKey.trim();
+        userJarCleanupStatus = TaskRunJarCleanupStatus.PENDING;
+    }
+
+    public void userJarCleanupCompleted() {
+        if (taskType == null || !taskType.isJar() || runUserJarObjectKey == null) return;
+        userJarCleanupStatus = TaskRunJarCleanupStatus.COMPLETED;
+        runUserJarObjectKey = null;
+    }
+
     public static TaskRun queueDispatchedStreaming(
             UUID runId,
             UUID taskId,
@@ -268,12 +426,30 @@ public class TaskRun extends BaseEntity {
             UUID computeEngineId,
             String commandTopicSnapshot
     ) {
+        return queueDispatchedStreaming(runId, taskId, streamingDeploymentId, definitionVersion,
+                definitionSnapshot, executionId, attempt, computeEngineId, commandTopicSnapshot,
+                TaskType.SPARK_STREAMING_CANVAS);
+    }
+
+    public static TaskRun queueDispatchedStreaming(
+            UUID runId,
+            UUID taskId,
+            UUID streamingDeploymentId,
+            int definitionVersion,
+            String definitionSnapshot,
+            UUID executionId,
+            int attempt,
+            UUID computeEngineId,
+            String commandTopicSnapshot,
+            TaskType streamingTaskType
+    ) {
         if (runId == null || streamingDeploymentId == null || executionId == null || attempt < 1
-                || computeEngineId == null || blank(commandTopicSnapshot)) {
+                || computeEngineId == null || blank(commandTopicSnapshot)
+                || streamingTaskType == null || !streamingTaskType.isStreaming()) {
             throw new IllegalArgumentException("实时 Canvas 任务运行标识无效");
         }
         TaskRun run = new TaskRun(taskId, definitionVersion, definitionSnapshot);
-        run.taskType = TaskType.SPARK_STREAMING_CANVAS;
+        run.taskType = streamingTaskType;
         run.streamingDeploymentId = streamingDeploymentId;
         run.externalExecutionId = executionId;
         run.executionRunId = runId;
@@ -286,7 +462,9 @@ public class TaskRun extends BaseEntity {
 
     public void attachArtifacts(String manifestObjectKey, String resultObjectKey, String logObjectKey) {
         requireStatus(TaskRunStatus.QUEUED);
-        if ((taskType != TaskType.SPARK_CANVAS && taskType != TaskType.SPARK_STREAMING_CANVAS)
+        if ((taskType != TaskType.SPARK_CANVAS && taskType != TaskType.SPARK_STREAMING_CANVAS
+                && taskType != TaskType.SPARK_STREAMING_JAR
+                && taskType != TaskType.SPARK_MODEL_QUALITY && taskType != TaskType.SPARK_JAR)
                 || this.manifestObjectKey != null
                 || blank(manifestObjectKey) || blank(resultObjectKey) || blank(logObjectKey)) {
             throw new IllegalStateException("Canvas 任务制品不能写入当前运行实例");
@@ -294,6 +472,17 @@ public class TaskRun extends BaseEntity {
         this.manifestObjectKey = manifestObjectKey;
         this.resultObjectKey = resultObjectKey;
         this.logObjectKey = logObjectKey;
+    }
+
+    public void useTaskType(TaskType taskType) {
+        if (status == null || status == TaskRunStatus.QUEUED
+                || status == TaskRunStatus.STOPPED || status == TaskRunStatus.SUCCESS
+                || status == TaskRunStatus.FAILED || status == TaskRunStatus.TIMED_OUT
+                || status == TaskRunStatus.CANCELLED || status == TaskRunStatus.SKIPPED) {
+            this.taskType = java.util.Objects.requireNonNull(taskType, "任务类型不能为空");
+            return;
+        }
+        throw new IllegalStateException("当前运行状态不能修改任务类型");
     }
 
     public static TaskRun scheduledSuccess(
@@ -342,6 +531,30 @@ public class TaskRun extends BaseEntity {
         return run;
     }
 
+    public static TaskRun scheduledModelQualitySkipped(
+            UUID taskId,
+            UUID scheduleId,
+            int definitionVersion,
+            String definitionSnapshot,
+            Instant scheduledFireAt,
+            String message
+    ) {
+        TaskRun run = scheduledCanvasSkipped(
+                taskId, scheduleId, definitionVersion, definitionSnapshot, scheduledFireAt, message);
+        run.taskType = TaskType.SPARK_MODEL_QUALITY;
+        return run;
+    }
+
+    public static TaskRun scheduledSparkJarSkipped(
+            UUID taskId, UUID scheduleId, int definitionVersion, String definitionSnapshot,
+            Instant scheduledFireAt, String message
+    ) {
+        TaskRun run = scheduledCanvasSkipped(taskId, scheduleId, definitionVersion,
+                definitionSnapshot, scheduledFireAt, message);
+        run.taskType = TaskType.SPARK_JAR;
+        return run;
+    }
+
     public static TaskRun failedScheduledCanvasSubmission(
             UUID taskId,
             UUID scheduleId,
@@ -382,6 +595,15 @@ public class TaskRun extends BaseEntity {
     }
 
     public void externalSucceed(Long affectedRows, Instant startedAt, Instant endedAt) {
+        externalSucceed(affectedRows, startedAt, endedAt, null);
+    }
+
+    public void externalSucceed(
+            Long affectedRows,
+            Instant startedAt,
+            Instant endedAt,
+            QualitySummary qualitySummary
+    ) {
         if (status != TaskRunStatus.QUEUED && status != TaskRunStatus.RUNNING
                 && status != TaskRunStatus.CANCEL_REQUESTED && status != TaskRunStatus.STOP_REQUESTED) return;
         status = TaskRunStatus.SUCCESS;
@@ -389,6 +611,16 @@ public class TaskRun extends BaseEntity {
         this.startedAt = this.startedAt == null ? startedAt : this.startedAt;
         this.endedAt = endedAt == null ? Instant.now() : endedAt;
         this.message = "执行成功";
+        if (qualitySummary != null) {
+            qualityConclusion = qualitySummary.conclusion();
+            qualityTotalRules = qualitySummary.totalRules();
+            qualityPassedRules = qualitySummary.passedRules();
+            qualityFailedRules = qualitySummary.failedRules();
+            qualitySkippedRules = qualitySummary.skippedRules();
+            qualityCheckedRows = qualitySummary.checkedRows();
+            this.affectedRows = null;
+            this.message = qualityConclusion == QualityConclusion.PASSED ? "质检通过" : "质检未通过";
+        }
     }
 
     public void fail(String message, String errorDetail) {
@@ -432,7 +664,7 @@ public class TaskRun extends BaseEntity {
     }
 
     public void requestCancel() {
-        if (taskType == TaskType.SPARK_STREAMING_CANVAS) {
+        if (taskType != null && taskType.isStreaming()) {
             throw new IllegalStateException("实时任务请使用停止操作");
         }
         if (status == TaskRunStatus.CANCEL_REQUESTED) return;
@@ -457,7 +689,7 @@ public class TaskRun extends BaseEntity {
     }
 
     public void requestStop() {
-        if (taskType != TaskType.SPARK_STREAMING_CANVAS) {
+        if (taskType == null || !taskType.isStreaming()) {
             throw new IllegalStateException("只有实时任务运行可以停止");
         }
         if (status == TaskRunStatus.STOP_REQUESTED) return;
@@ -468,7 +700,7 @@ public class TaskRun extends BaseEntity {
     }
 
     public void stop(String message, Instant stoppedAt) {
-        if (taskType != TaskType.SPARK_STREAMING_CANVAS
+        if ((taskType == null || !taskType.isStreaming())
                 || (status != TaskRunStatus.QUEUED && status != TaskRunStatus.RUNNING
                 && status != TaskRunStatus.STOP_REQUESTED)) return;
         status = TaskRunStatus.STOPPED;
@@ -513,6 +745,35 @@ public class TaskRun extends BaseEntity {
         if (!blank(trackingUrl)) this.trackingUrl = truncate(trackingUrl, 1000);
     }
 
+    public void recordUserJobObservability(
+            String phase,
+            String statusMessage,
+            Instant statusAt,
+            String metricsJson
+    ) {
+        if (getTaskType() != TaskType.SPARK_JAR && getTaskType() != TaskType.SPARK_STREAMING_JAR) {
+            throw new IllegalStateException("只有 Spark JAR 任务可以记录用户作业观测快照");
+        }
+        if (phase == null) {
+            userJobPhase = null;
+            userJobStatusMessage = null;
+            userJobStatusAt = null;
+        } else {
+            if (!phase.matches("[A-Za-z][A-Za-z0-9._-]{0,99}")
+                    || statusMessage == null || statusMessage.isBlank() || statusMessage.length() > 1000
+                    || statusAt == null) {
+                throw new IllegalArgumentException("用户作业状态无效");
+            }
+            userJobPhase = phase;
+            userJobStatusMessage = statusMessage;
+            userJobStatusAt = statusAt;
+        }
+        if (metricsJson == null || metricsJson.isBlank()) {
+            throw new IllegalArgumentException("用户作业指标快照不能为空");
+        }
+        userJobMetrics = metricsJson;
+    }
+
     public Integer getAttempt() {
         return attempt;
     }
@@ -532,6 +793,16 @@ public class TaskRun extends BaseEntity {
     public String getLogObjectKey() {
         return logObjectKey;
     }
+
+    public String getUserJarFileName() { return userJarFileName; }
+    public String getUserJarSha256() { return userJarSha256; }
+    public Long getUserJarSizeBytes() { return userJarSizeBytes; }
+    public String getRunUserJarObjectKey() { return runUserJarObjectKey; }
+    public TaskRunJarCleanupStatus getUserJarCleanupStatus() { return userJarCleanupStatus; }
+    public String getUserJobPhase() { return userJobPhase; }
+    public String getUserJobStatusMessage() { return userJobStatusMessage; }
+    public Instant getUserJobStatusAt() { return userJobStatusAt; }
+    public String getUserJobMetrics() { return userJobMetrics; }
 
     public UUID getScheduleId() {
         return scheduleId;
@@ -576,6 +847,15 @@ public class TaskRun extends BaseEntity {
     public Long getAffectedRows() {
         return affectedRows;
     }
+
+    public QualityConclusion getQualityConclusion() { return qualityConclusion; }
+    public Long getQualityTotalRules() { return qualityTotalRules; }
+    public Long getQualityPassedRules() { return qualityPassedRules; }
+    public Long getQualityFailedRules() { return qualityFailedRules; }
+    public Long getQualitySkippedRules() { return qualitySkippedRules; }
+    public Long getQualityCheckedRows() { return qualityCheckedRows; }
+    public UUID getQualityTargetModelId() { return qualityTargetModelId; }
+    public Instant getQualityRuleSnapshotAt() { return qualityRuleSnapshotAt; }
 
     public String getMessage() {
         return message;

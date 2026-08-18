@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeJdbcOutput } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { jdbcOutputCanvasView } from './canvasView';
 
 export const jdbcOutputSpec = createCanvasNodeSpec({
   type: CanvasNodeType.JdbcOutput,
@@ -15,7 +16,7 @@ export const jdbcOutputSpec = createCanvasNodeSpec({
   searchKeywords: ['jdbc', '数据库', '目标表', '写入'],
   iconKey: CanvasNodeIconKey.JdbcOutput,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: jdbcOutputCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
   introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 0, maxOutputs: 0 },

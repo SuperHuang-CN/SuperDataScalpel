@@ -8,6 +8,8 @@ import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
+import cn.superhuang.data.scalpel.dialect.model.JdbcSnapshotColumn;
+import cn.superhuang.data.scalpel.dialect.model.JdbcSnapshotSyncSql;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
@@ -15,6 +17,7 @@ import cn.superhuang.data.scalpel.dialect.model.TableChangeCheck;
 import cn.superhuang.data.scalpel.dialect.model.TableChangePlan;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
 import cn.superhuang.data.scalpel.dialect.model.TableStorageMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableStructureComparison;
 import cn.superhuang.data.scalpel.dialect.query.CompiledStandardQuery;
@@ -25,6 +28,7 @@ import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.List;
 
 public interface DatabaseDialect {
@@ -75,6 +79,17 @@ public interface DatabaseDialect {
         throw new UnsupportedOperationException(definition().displayName() + " does not support row UPSERT");
     }
 
+    /** Renders the controlled SQL plan for one locked snapshot synchronization transaction. */
+    default JdbcSnapshotSyncSql renderSnapshotSyncSql(
+            TableIdentifier target,
+            List<JdbcSnapshotColumn> columns,
+            List<String> keyColumns,
+            Duration lockTimeout
+    ) {
+        throw new UnsupportedOperationException(
+                definition().displayName() + " does not support snapshot synchronization");
+    }
+
     /** SQL executed by Spark JDBC after opening a query-input connection. */
     default String readOnlySessionInitializationSql() {
         return null;
@@ -116,6 +131,13 @@ public interface DatabaseDialect {
     default TableStorageMetadata readTableStorageMetadata(Connection connection, TableIdentifier table) throws SQLException {
         return TableStorageMetadata.none();
     }
+
+    /** Reads fast database-maintained row and storage statistics without scanning the target table. */
+    TablePhysicalStatistics readTablePhysicalStatistics(
+            Connection connection,
+            TableIdentifier table,
+            Duration timeout
+    ) throws SQLException;
 
     /** Converts readable JDBC metadata into the portable structural representation of this dialect. */
     TableDefinition snapshotTableDefinition(TableMetadata actual);

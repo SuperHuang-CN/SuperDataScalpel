@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.datasource.web.response;
 
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceConnectionKind;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
+import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceResourceBrowserKind;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDefinition;
 
@@ -16,6 +17,7 @@ public record DataSourceTypeResponse(
         Set<String> supportedPurposes,
         boolean connectionTestAvailable,
         boolean metadataAvailable,
+        DataSourceResourceBrowserKind resourceBrowserKind,
         Integer defaultPort,
         String databaseNameLabel,
         String schemaNameLabel,
@@ -29,7 +31,11 @@ public record DataSourceTypeResponse(
         DataSourceType type = DataSourceType.valueOf(definition.id());
         return new DataSourceTypeResponse(
                 definition.id(), definition.displayName(), DataSourceConnectionKind.JDBC.name(), purposes(type),
-                driverAvailable, driverAvailable, definition.defaultPort(), definition.databaseNameLabel(),
+                driverAvailable, driverAvailable,
+                type.isTdEngine()
+                        ? DataSourceResourceBrowserKind.TDENGINE_SUPERTABLES
+                        : DataSourceResourceBrowserKind.JDBC_TABLES,
+                definition.defaultPort(), definition.databaseNameLabel(),
                 definition.schemaNameLabel(), definition.defaultSchema(), definition.namespaceMode().name(),
                 definition.capabilities().stream().map(Enum::name).collect(java.util.stream.Collectors.toUnmodifiableSet()),
                 definition.connectionOptions().stream().map(ConnectionOptionResponse::from).toList(), driverAvailable
@@ -37,18 +43,19 @@ public record DataSourceTypeResponse(
     }
 
     public static DataSourceTypeResponse kafka() {
-        return nonJdbc(DataSourceType.KAFKA);
+        return nonJdbc(DataSourceType.KAFKA, DataSourceResourceBrowserKind.KAFKA_TOPICS);
     }
 
     public static DataSourceTypeResponse s3() {
-        return nonJdbc(DataSourceType.S3);
+        return nonJdbc(DataSourceType.S3, DataSourceResourceBrowserKind.NONE);
     }
 
     public static DataSourceTypeResponse httpApi() {
         DataSourceType type = DataSourceType.HTTP_API;
         return new DataSourceTypeResponse(
                 type.name(), type.displayName(), type.connectionKind().name(), purposes(type),
-                true, false, null, null, null, null, null, Set.of(), List.of(), true
+                true, false, DataSourceResourceBrowserKind.API_RESOURCES,
+                null, null, null, null, null, Set.of(), List.of(), true
         );
     }
 
@@ -63,14 +70,18 @@ public record DataSourceTypeResponse(
     private static DataSourceTypeResponse httpBacked(DataSourceType type) {
         return new DataSourceTypeResponse(
                 type.name(), type.displayName(), type.connectionKind().name(), purposes(type),
-                true, true, null, null, null, null, null, Set.of(), List.of(), true
+                true, true, DataSourceResourceBrowserKind.SPATIAL_RESOURCES,
+                null, null, null, null, null, Set.of(), List.of(), true
         );
     }
 
-    private static DataSourceTypeResponse nonJdbc(DataSourceType type) {
+    private static DataSourceTypeResponse nonJdbc(
+            DataSourceType type,
+            DataSourceResourceBrowserKind resourceBrowserKind
+    ) {
         return new DataSourceTypeResponse(
                 type.name(), type.displayName(), type.connectionKind().name(), purposes(type),
-                false, false, null, null, null, null, null, Set.of(), List.of(), false
+                false, false, resourceBrowserKind, null, null, null, null, null, Set.of(), List.of(), false
         );
     }
 

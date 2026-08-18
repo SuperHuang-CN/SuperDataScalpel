@@ -69,11 +69,30 @@ public class S3DispatcherArtifactService implements DispatcherArtifactService {
                     || manifest.contentLength() > properties.maximumManifestBytes()) {
                 throw new BackendException("INVALID_MANIFEST_OBJECT", "manifest 对象为空或超过允许大小");
             }
+            java.util.List<cn.superhuang.data.scalpel.contract.execution.QualitySampleArtifactUpload> qualitySamples =
+                    launch.qualitySampleRuleIds().stream().map(ruleId -> {
+                        String objectKey = "task-runs/%s/attempts/%d/quality/samples/%s.parquet".formatted(
+                                launch.identity().runId(), launch.identity().attempt(), ruleId);
+                        return new cn.superhuang.data.scalpel.contract.execution.QualitySampleArtifactUpload(
+                                ruleId, presignPut(resolve(objectKey), "application/vnd.apache.parquet"),
+                                objectKey, 20 * 1024 * 1024);
+                    }).toList();
+            cn.superhuang.data.scalpel.contract.execution.LaunchUserJarDownload userJar = null;
+            if (launch.userJar() != null) {
+                String jarKey = resolve(launch.userJar().objectKey());
+                HeadObjectResponse jar = client().headObject(HeadObjectRequest.builder()
+                        .bucket(properties.bucket()).key(jarKey).build());
+                if (jar.contentLength() == null || jar.contentLength() != launch.userJar().sizeBytes()) {
+                    throw new BackendException("INVALID_USER_JAR_OBJECT", "用户 JAR 对象大小不一致");
+                }
+                userJar = new cn.superhuang.data.scalpel.contract.execution.LaunchUserJarDownload(
+                        presignGet(jarKey), launch.userJar().sha256(), launch.userJar().sizeBytes());
+            }
             return new ArtifactLaunchAccess(
                     presignGet(manifestKey),
                     presignPut(resolve(launch.resultKey()), "application/json"),
                     presignPut(resolve(launch.logKey()), "text/plain; charset=utf-8"),
-                    Math.toIntExact(properties.maximumManifestBytes())
+                    Math.toIntExact(properties.maximumManifestBytes()), qualitySamples, userJar
             );
         } catch (BackendException exception) {
             throw exception;

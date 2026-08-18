@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeSpatialTransform } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { spatialTransformCanvasView } from './canvasView';
 
 export const spatialTransformSpec = createCanvasNodeSpec({
   type: CanvasNodeType.SpatialTransform,
@@ -15,9 +16,9 @@ export const spatialTransformSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'transform', 'crs', 'epsg', '坐标转换'],
   iconKey: CanvasNodeIconKey.SpatialTransform,
   order: 20,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: spatialTransformCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 20,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createSpatialTransformConfiguration,
   summarize: summarizeSpatialTransform,

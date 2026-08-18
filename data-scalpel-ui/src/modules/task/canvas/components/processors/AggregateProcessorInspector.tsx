@@ -131,60 +131,61 @@ export const AggregateProcessorInspector = ({
     apply: async () => {
       if (executionMode !== 'BATCH') {
         setDraftError('AGGREGATE 仅支持批处理任务');
-        return false;
+
       }
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (aggregations.length === 0) {
           setDraftError('至少配置一个聚合项');
-          return false;
+
         }
         const groupNames = new Set<string>();
         for (const columnName of groupByColumns) {
           if (!columnName) {
             setDraftError('分组字段不能为空');
-            return false;
+
           }
           if (!groupNames.add(columnName)) {
             setDraftError(`分组字段重复：${columnName}`);
-            return false;
+
           }
         }
         const outputNames = new Set<string>();
         for (const item of aggregations) {
           if (!item.function) {
             setDraftError('聚合项中存在未选择函数');
-            return false;
+
           }
           if (!item.outputColumnName.trim()) {
             setDraftError('聚合输出字段名不能为空');
-            return false;
+
           }
           if (!outputNames.add(item.outputColumnName.trim())) {
             setDraftError(`聚合输出字段名重复：${item.outputColumnName.trim()}`);
-            return false;
+
           }
           if (groupNames.has(item.outputColumnName.trim())) {
             setDraftError(`聚合输出字段与分组字段同名：${item.outputColumnName.trim()}`);
-            return false;
+
           }
           if (item.sourceColumnName === null) {
             if (item.function !== 'COUNT' || item.distinct) {
               setDraftError('只有非 DISTINCT 的 COUNT 才能使用全部行（*）');
-              return false;
+
             }
           } else if (!item.sourceColumnName) {
             setDraftError(`${item.function} 必须选择来源字段`);
-            return false;
+
           }
           if (item.distinct && (item.function === 'MIN' || item.function === 'MAX')) {
             setDraftError(`${item.function} 不支持 DISTINCT`);
-            return false;
+
           }
         }
         const configuration: AggregateConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           groupByColumns: [...groupByColumns],
           aggregations: aggregations.map((item) => ({
             ...item,

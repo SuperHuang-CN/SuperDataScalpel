@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeGeometryValidate } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { geometryValidateCanvasView } from './canvasView';
 
 export const geometryValidateSpec = createCanvasNodeSpec({
   type: CanvasNodeType.GeometryValidate,
@@ -15,9 +16,9 @@ export const geometryValidateSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'validate', 'valid', '校验', '合法性'],
   iconKey: CanvasNodeIconKey.GeometryValidate,
   order: 30,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: geometryValidateCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 21,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createGeometryValidateConfiguration,
   summarize: summarizeGeometryValidate,

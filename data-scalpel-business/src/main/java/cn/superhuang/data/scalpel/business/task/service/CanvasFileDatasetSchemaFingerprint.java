@@ -8,7 +8,7 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.List;
 
-/** Stable fingerprint shared by run preparation and the Task Engine verification algorithm. */
+/** Compatibility-only Manifest fingerprint; the Runner does not use it as a runtime Schema gate. */
 final class CanvasFileDatasetSchemaFingerprint {
 
     private CanvasFileDatasetSchemaFingerprint() {

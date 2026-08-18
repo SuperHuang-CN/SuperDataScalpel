@@ -50,6 +50,9 @@ const dateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 const locationLabel = (location: TaskModelReferenceLocation) => {
   if (location.referenceType === 'LOCAL_SQL_INPUT') return `输入 #${location.ordinal}`;
   if (location.referenceType === 'LOCAL_SQL_OUTPUT') return '输出模型';
+  if (location.referenceType === 'MODEL_QUALITY_TARGET') return '质检目标模型';
+  if (location.referenceType === 'SPARK_JAR_RESOURCE_BINDING') return 'Spark JAR 资源绑定';
+  if (location.referenceType === 'CURRENT_LINEAGE') return location.nodeName ? `当前血缘 · ${location.nodeName}` : '当前血缘';
   return location.nodeName || location.nodeId || 'Canvas 节点';
 };
 

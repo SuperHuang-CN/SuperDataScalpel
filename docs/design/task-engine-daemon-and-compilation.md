@@ -7,12 +7,8 @@
 - Java 21、Spark 4.1.1、Scala 2.13、Apache Sedona 1.9.0。
 - 普通 Java Main 和 JDK `HttpServer`，不使用 Spring、Servlet、Thrift 或 gRPC。
 - 默认以 `local[*]` 长期运行，也可由未来的 `spark-submit --master yarn --deploy-mode client` 启动同一个 Main。
-- 兼容读取 Canvas `1.0`～`1.24` 并以 `1.24` 写出；`1.20` 增加批处理
-  `SPATIAL_TRANSFORM/SPATIAL_JOIN`，`1.21` 增加批流共用的
-  `GEOMETRY_CONSTRUCT/GEOMETRY_VALIDATE/SPATIAL_MEASURE/GEOMETRY_SERIALIZE`，`1.22` 增加
-  `GEOMETRY_REPAIR/GEOMETRY_BUFFER/GEOMETRY_EXPLODE`，`1.23` 增加批处理
-  `SPATIAL_CLIP/SPATIAL_AGGREGATE`，`1.24` 增加 JDBC 查询输入、JDBC UPSERT 和
-  `FILE_OUTPUT.SHAPEFILE`。
+- Canvas 当前协议为 `2.3`；`2.1` 引入 TMQ，`2.2` 引入 JDBC 时间字段增量输入和节点级触发间隔，`2.3` 引入 MODEL_OUTPUT 批流 UPSERT。`1.x` 定义按大版本不兼容处理，不反序列化、不自动迁移；用户重新配置并保存后才覆盖旧定义。
+- 同一大版本内只允许向下兼容的小版本增量；删除字段、改变既有节点语义等破坏性变化必须升级大版本并将小版本归零。
 - 根据请求携带的元数据快照创建零行 DataFrame，只构造并分析 Spark 逻辑计划。
 - 编译接口不连接 JDBC、不调用 Spark Action、不创建 `DataFrameWriter`。
 - Daemon不包含真实执行、Docker、Kafka、MinIO或回执职责；Runner连接 PostgreSQL/PostGIS
@@ -34,21 +30,45 @@ TaskEngineDaemon
 ├─ CanvasNodeOperatorRegistry
 │  ├─ ModelInputNodeOperator
 │  ├─ JdbcInputNodeOperator
+│  ├─ JdbcQueryInputNodeOperator
 │  ├─ FileDatasetInputNodeOperator
 │  ├─ HttpApiInputNodeOperator
+│  ├─ SpatialServiceInputNodeOperator
 │  ├─ KafkaInputNodeOperator
+│  ├─ TdEngineTmqInputNodeOperator
 │  ├─ JoinNodeOperator
-│  ├─ SpatialTransformNodeOperator
-│  ├─ SpatialJoinNodeOperator
 │  ├─ GeometryConstructNodeOperator
+│  ├─ SpatialTransformNodeOperator
 │  ├─ GeometryValidateNodeOperator
+│  ├─ GeometryRepairNodeOperator
+│  ├─ GeometryBufferNodeOperator
+│  ├─ GeometryExplodeNodeOperator
 │  ├─ SpatialMeasureNodeOperator
 │  ├─ GeometrySerializeNodeOperator
+│  ├─ SpatialClipNodeOperator
+│  ├─ SpatialAggregateNodeOperator
+│  ├─ SpatialJoinNodeOperator
 │  ├─ StreamJoinNodeOperator
 │  ├─ RenameNodeOperator
+│  ├─ FilterNodeOperator
+│  ├─ SelectColumnsNodeOperator
+│  ├─ DeriveColumnsNodeOperator
+│  ├─ TypeCastNodeOperator
+│  ├─ AggregateNodeOperator
+│  ├─ UnionNodeOperator
+│  ├─ DeduplicateNodeOperator
+│  ├─ NullHandlingNodeOperator
+│  ├─ ValueMappingNodeOperator
+│  ├─ MaskFieldsNodeOperator
+│  ├─ JsonExtractNodeOperator
+│  ├─ WindowNodeOperator
+│  ├─ TopNNodeOperator
 │  ├─ ModelOutputNodeOperator
+│  ├─ ModelSnapshotSyncOutputNodeOperator
 │  ├─ JdbcOutputNodeOperator
-│  └─ KafkaOutputNodeOperator
+│  ├─ JdbcSnapshotSyncOutputNodeOperator
+│  ├─ KafkaOutputNodeOperator
+│  └─ FileOutputNodeOperator
 └─ TaskEngineHttpServer
 
 TaskRunnerMain
@@ -126,8 +146,8 @@ Content-Type: application/json
   "task": {
     "type": "CANVAS",
     "definition": {
-      "schemaVersion": 1,
-      "schemaMinorVersion": 2,
+      "schemaVersion": 2,
+      "schemaMinorVersion": 0,
       "nodes": [],
       "edges": []
     }
@@ -178,8 +198,9 @@ Engine 返回的 `200 valid=false` 仍作为正常编译结果原样返回。`40
 `metadataSnapshot` 是单次编译的临时输入，不属于 Canvas 定义。它只携带：
 
 - 数据源 ID、启用状态、`JDBC` 连接类型和 `SOURCE/STORAGE/DISTRIBUTION` 用途。
-- 数据源内的 `TABLE/VIEW`、物理表名和稳定平台字段 Schema。
-- 模型 UUID、code、名称、schemaVersion、状态、物理模式、数据源 UUID、精确物理位置和字段 Schema。
+- 数据源内的 `TABLE/VIEW`、物理表名、稳定平台字段 Schema 和可安全用于推荐的物理唯一键。
+- 模型 UUID、code、名称、schemaVersion、状态、物理模式、数据源 UUID、精确物理位置、已保存
+  字段 Schema 和按模型主键标记构造的逻辑主键。
 - Kafka Value Schema 不属于元数据快照，直接来自 Canvas 节点的内联 `valueSchema`；Kafka 数据源快照只表达数据源状态、连接类型和用途。
 - 不包含 URL、账号、密码或其他连接内容。
 
@@ -194,7 +215,10 @@ STRING BINARY DATE TIMESTAMP TIMESTAMP_NTZ
 
 DECIMAL precision 必须在 `1..38`，scale 必须在 `0..precision`；只有 STRING 可以设置正整数 length。
 
-当前设计器从已经加载的真实数据源详情和物理表字段元数据组装临时快照，只包含当前 Canvas 节点引用的数据源和表。同一数据源或物理表重复引用会合并，数据源用途保留真实的集合语义。元数据尚在读取时暂停编译；读取失败时不提交残缺快照。该前端快照只用于本阶段零行预编译，未来保存或执行任务时必须由 Admin 重建可信快照。
+当前设计器从已经加载的数据源详情、普通 JDBC 表字段元数据和已保存模型字段组装临时快照，
+只包含当前 Canvas 节点引用的数据源、表和模型。同一引用会合并，数据源用途保留真实的集合语义。
+元数据尚在读取时暂停编译；读取失败时不提交残缺快照。该前端快照只用于本阶段零行预编译，
+保存或执行任务时必须由 Admin 重建可信逻辑快照。
 
 ## 6. Canvas 图与 Schema 编译
 
@@ -217,12 +241,14 @@ Map 按定义边顺序无覆盖合并。重复 Key 返回 `DUPLICATE_TABLE_NAME`
 检查 PostgreSQL/MySQL SOURCE 数据源、单条只读 SQL、规范化 SQL SHA-256、非空字段快照和
 输出逻辑表名。字段名称必须唯一，类型参数必须合法，首版拒绝 Geometry。Compiler 只依据节点
 保存的 `outputColumns` 创建零行 BOUNDED Dataset，不访问数据库；输出 Origin 为 `JDBC_QUERY`。
-发布、重新启用和运行准备阶段由 Admin 重新分析查询并比较名称、顺序、平台类型、类型参数和
-nullable，不一致时拒绝但不自动修改 Canvas。实时任务把该结果作为启动时加载一次的静态维表。
+发布、重新启用和运行准备阶段不重新分析或比较查询结果 Schema；SQL Hash 变化仍要求重新分析
+和保存。实时任务把真实查询结果作为启动时加载一次的静态维表。
 
 ### 6.2 MODEL_INPUT
 
-按模型 UUID 查找已发布模型快照，校验数据源可读和物理结构可用，将模型字段转成零行 DataFrame。输出 Map 只有模型不可修改 `code` 一个 Key；模型名称、物理表名和数据源不参与 Key。
+按模型 UUID 查找已发布模型逻辑快照，校验数据源可读，将已保存模型字段转成零行 DataFrame。
+不读取物理表做相等校验。输出 Map 只有模型不可修改 `code` 一个 Key；模型名称、物理表名和
+数据源不参与 Key。
 
 ### 6.3 KAFKA_INPUT
 
@@ -255,11 +281,11 @@ Processor 不维护平台类型兼容矩阵，也不按字段类型产生风险�
 
 ### 6.6 MODEL_OUTPUT
 
-检查来源逻辑表、目标模型、数据源 STORAGE 用途、物理模式、写入模式和字段映射。字段匹配使用模型字段 code，BY_NAME/EXPLICIT 与 JDBC_OUTPUT 复用同一个字段映射和显式 Spark Cast 实现。APPEND 可写受管或外部模型，OVERWRITE 只允许受管模型。
+检查来源逻辑表、目标模型、数据源 STORAGE 用途、物理模式、写入模式和显式字段映射。目标字段使用模型字段 code，与 JDBC_OUTPUT 复用同一个字段映射和显式 Spark Cast 实现。APPEND 可写受管或外部模型，OVERWRITE 只允许受管模型。UPSERT 仅支持 PostgreSQL/MySQL，Key 固定取模型按字段顺序声明的完整主键；Key 必须全部完成映射且不能是 Geometry。平台不读取物理表预检唯一约束。Batch 支持 APPEND/OVERWRITE/UPSERT；Streaming 支持 APPEND/UPSERT，并通过独立 `foreachBatch` 与 Checkpoint 按至少一次交付。
 
 ### 6.7 JDBC_OUTPUT
 
-检查 sourceTableName、启用且具有 `DISTRIBUTION`（数据分发）用途的 JDBC 数据源、TABLE 目标、APPEND/OVERWRITE/UPSERT 和 BY_NAME/EXPLICIT 映射。共享 Operator 使用 Spark `select/alias/cast` 构造映射计划并触发 Analyzer；预检 I/O 只接收零行 Dataset，不创建 Writer。
+检查 sourceTableName、启用且具有 `DISTRIBUTION`（数据分发）用途的 JDBC 数据源、TABLE 目标、APPEND/OVERWRITE/UPSERT 和显式映射。共享 Operator 使用 Spark `select/alias/cast` 构造映射计划并触发 Analyzer；预检 I/O 只接收零行 Dataset，不创建 Writer。
 
 UPSERT 只支持 PostgreSQL/MySQL，配置必须按数据库返回顺序完整匹配一组主键或安全唯一索引，
 且所有 Key 都必须进入映射后的目标字段；Key 不得是自增、生成或 Geometry 字段。冲突时仅更新
@@ -267,21 +293,52 @@ UPSERT 只支持 PostgreSQL/MySQL，配置必须按数据库返回顺序完整�
 目标存在多组唯一键时返回 `MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS` 警告。Streaming 允许 APPEND
 和 UPSERT，继续拒绝 OVERWRITE；运行时写入语义见 [JDBC_OUTPUT UPSERT 设计](canvas-jdbc-output-upsert-design.md)。
 
-Output 专用字段转换策略分为安全、风险和不支持三类：可证明无损的扩大转换自动 Cast 且不提示；Spark 支持但可能受实际值、nullable、STRING length 或 DECIMAL 精度影响的转换自动 Cast 并产生警告；Spark Analyzer 不支持的 Cast 才产生错误。BY_NAME 的额外来源字段产生警告，目标必填字段缺失和显式重复目标映射仍是错误。该策略不得供 Processor 判断字段类型兼容性。
+Output 专用字段转换策略分为安全、风险和不支持三类：可证明无损的扩大转换自动 Cast 且不提示；Spark 支持但可能受实际值、nullable、STRING length 或 DECIMAL 精度影响的转换自动 Cast 并产生警告；Spark Analyzer 不支持的 Cast 才产生错误。未映射来源字段直接忽略，目标必填字段缺失和重复目标映射仍是错误。该策略不得供 Processor 判断字段类型兼容性。
 
 ### 6.8 KAFKA_OUTPUT
 
-检查来源无界表、启用且具有 `DISTRIBUTION` 用途的 Kafka 数据源、Topic、可选 Key 字段以及 BY_NAME/EXPLICIT 映射。目标字段直接取自节点内联 Value Schema，并与其他 Output 复用同一个字段映射和显式 Spark Cast 实现。Compiler 不查询模型、不建立 Kafka Writer；Runner 才使用 Manifest 中的 Kafka 连接信息准备真实流式输出。
+检查来源无界表、启用且具有 `DISTRIBUTION` 用途的 Kafka 数据源、Topic、可选 Key 字段以及显式映射。目标字段直接取自节点内联 Value Schema，并与其他 Output 复用同一个字段映射和显式 Spark Cast 实现。Compiler 不查询模型、不建立 Kafka Writer；Runner 才使用 Manifest 中的 Kafka 连接信息准备真实流式输出。
 
 ### 6.9 FILE_OUTPUT
 
-仅接受有界来源表，以及已启用、连接类型为 S3、用途包含 `DISTRIBUTION` 的数据源。检查用户指定的相对目录、`FAIL_IF_EXISTS/OVERWRITE` 冲突策略和 CSV、JSON Lines、Parquet、Shapefile 的判别式格式参数。
+仅接受有界来源表，以及已启用、连接类型为 S3、用途包含 `DISTRIBUTION` 的数据源。检查用户指定的相对目录、`FAIL_IF_EXISTS/OVERWRITE` 冲突策略和 CSV、JSON Lines、Parquet、Shapefile、GeoParquet、GeoJSON 的判别式格式参数。
 
-Shapefile 从 Canvas `1.24` 开始可用。Compiler 额外检查 EPSG + XY Geometry、Shape 类型兼容、文件基础名和 `1..255` 个有序 DBF 属性映射，包括 10 位 ASCII 字段名、STRING UTF-8 字节宽度、数值宽度与受支持平台类型。Compiler 只使用零行 Dataset 和元数据 Schema，不读取 Geometry、不连接 S3、不建立 Writer。
+Shapefile 是 Canvas `2.0` 的正式能力。Compiler 额外检查 EPSG + XY Geometry、Shape 类型兼容、文件基础名和 `1..255` 个有序 DBF 属性映射，包括 10 位 ASCII 字段名、STRING UTF-8 字节宽度、数值宽度与受支持平台类型。Compiler 只使用零行 Dataset 和元数据 Schema，不读取 Geometry、不连接 S3、不建立 Writer。
 
-Runner 使用 Manifest 的外部 S3 连接和 bucket 级 S3A 配置。普通格式继续使用 Spark Writer；Shapefile 通过 Driver 本地 GeoTools 33.5 Writer 和 `Dataset.toLocalIterator()` 生成唯一一套 ZIP 或五组件制品，上传运行级临时前缀后提交精确目标目录，最后写 `_SUCCESS`。完整约束见 [FILE_OUTPUT Shapefile 输出设计](canvas-shapefile-output-design.md)。
+Runner 使用 Manifest 的外部 S3 连接和 bucket 级 S3A 配置。普通格式继续使用 Spark Writer；Shapefile 通过 Driver 本地 GeoTools 33.5 Writer 和 `Dataset.toLocalIterator()` 生成唯一一套 ZIP 或五组件制品，上传运行级临时前缀后提交精确目标目录，最后写 `_SUCCESS`。GeoParquet 使用 Sedona 分布式写出，GeoJSON 使用受大小限制的 Driver FeatureCollection Writer。完整约束见 [FILE_OUTPUT Shapefile 输出设计](canvas-shapefile-output-design.md)、[GeoParquet 输出设计](canvas-geoparquet-output-design.md)和 [GeoJSON 输出设计](canvas-geojson-output-design.md)。
 
-## 7. 配置与认证
+### 6.10 JDBC 与模型快照同步 Output
+
+`JDBC_SNAPSHOT_SYNC_OUTPUT` 和 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是 Canvas `2.0` 的正式节点，
+只支持 BATCH、有界来源、一条入边和无出边。两个独立 Operator 只解析 JDBC 表或已发布
+MANAGED 模型目标，字段映射、显式 Cast、Key 与删除策略校验统一由
+`SnapshotSyncOperatorSupport` 完成；Compiler 仍只分析零行 Dataset，不连接目标数据库。
+
+用户必须选择 `1..32` 个已映射目标字段作为复合 Key。数据库主键和安全唯一索引只用于推荐；
+所选字段未匹配物理唯一键时返回 `SNAPSHOT_SYNC_KEY_NOT_DATABASE_UNIQUE` Warning，不阻止
+编译。Key 不允许 Geometry、自增或生成字段；nullable Key 只产生编译 Warning，真实 NULL 和
+来源/目标重复 Key 由 Runner 在运行时拒绝，错误不得包含实际 Key 值。
+
+Runner 使用共享 `JdbcSnapshotSyncExecutor`：先把来源映射并 Cast 为目标 Schema，缓存并校验
+来源；再以单条 JDBC 连接取得 PostgreSQL/MySQL 严格写锁，在同一事务读取目标并形成内部
+INSERT/UPDATE/DELETE/UNCHANGED/RETAINED 分类。Geometry 使用 JTS/Sedona 拓扑相等；比较
+所有已映射、可写的非 Key 字段，Key 永不更新。任何 DML 前必须完成空来源删除拦截以及最大
+删除行数、比例保护，之后固定按 `DELETE → UPDATE → INSERT` 批量执行；任一步失败整体回滚。
+实现不创建 Outbox、不保存内部 ChangeSet，也不向 Kafka 发送行级变化。
+
+## 7. Runner 协议版本
+
+Admin 当前写出 Manifest `v11`；Runner 兼容读取 `v10/v11`，但 v10 携带任一 Snapshot Sync
+节点时必须拒绝。v11 的受保护 `snapshotSyncLimits` 不进入 Canvas JSON，包含每侧最大行数、
+来源与目标合计估算字节上限和锁等待秒数，默认分别为 `100000`、`256 MiB` 和 `30` 秒。
+
+Runner 当前只写 `result.json schemaVersion: 3`。成功的 Snapshot Sync 节点在
+`NodeExecutionResult.metrics` 写入 `kind: SNAPSHOT_SYNC` 及来源、目标、新增、更新、删除、
+未变化、保留目标独有行数量；`rowsWritten` 等于新增、更新、删除之和，任务 `affectedRows`
+继续汇总已提交 Output 的 `rowsWritten`。失败或事务回滚的节点不得携带成功指标。Dispatcher
+兼容读取 Result v2/v3，便于升级时收敛已经运行的旧任务。
+
+## 8. 配置与认证
 
 优先级为“环境变量 > 外部 properties > 内置默认值”。外部配置由 `DATASCALPEL_TASK_ENGINE_CONFIG` 指定；分发脚本默认读取 `conf/task-engine.properties`。
 
@@ -302,7 +359,7 @@ Token 没有默认值且只允许从环境变量读取；为空时拒绝启动�
 
 默认容量：最大并发 2、取得许可超时 10 秒、编译超时 30 秒、HTTP 线程 8。资源取得超时返回 `429`，编译超时返回 `504`，相同活动 requestId 返回 `409`。
 
-## 8. 构建、分发与启动
+## 9. 构建、分发与启动
 
 ```bash
 ./mvnw -pl data-scalpel-task-engine test

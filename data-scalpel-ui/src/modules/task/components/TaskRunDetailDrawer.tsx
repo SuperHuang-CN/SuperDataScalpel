@@ -1,25 +1,38 @@
 import {
   DownloadOutlined,
   FileTextOutlined,
+  EyeOutlined,
   ReloadOutlined,
   StopOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
   Button,
+  Card,
   Descriptions,
   Drawer,
   Empty,
   Space,
   Spin,
+  Table,
   Tag,
   Tooltip,
   Typography,
   message,
 } from 'antd';
+import type { TableProps } from 'antd';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { ApiError } from '../../../shared/api/http';
-import { useDownloadTaskRunArtifact, useTaskRun } from '../hooks/useTasks';
+import {
+  modelQualityRuleSeverityLabels,
+  modelQualityRuleTypeLabels,
+} from '../../model';
+import {
+  useDownloadQualityFailureSamples,
+  useDownloadTaskRunArtifact,
+  useTaskRun,
+  useTaskRunResultArtifact,
+} from '../hooks/useTasks';
 import {
   executionErrorCategoryLabels,
   executionFailurePhaseLabels,
@@ -30,6 +43,10 @@ import {
   taskTypeLabels,
   type TaskRun,
 } from '../model/task';
+import type { QualityRuleExecutionResult, QualitySkippedRuleResult } from '../model/taskExecutionResult';
+import { QualityFailureSampleDrawer } from './QualityFailureSampleDrawer';
+import { useState } from 'react';
+import { UserJobObservabilityPanel } from './UserJobObservabilityPanel';
 import {
   formatTaskRunDateTime,
   formatTaskRunDuration,
@@ -49,6 +66,65 @@ const idValue = (value: string | null) => (
   value ? <Typography.Text code copyable={{ text: value }}>{value}</Typography.Text> : '—'
 );
 
+const formatBytes = (value: number): string => {
+  if (value >= 1024 * 1024) return `${(value / 1024 / 1024).toFixed(2)} MiB`;
+  if (value >= 1024) return `${(value / 1024).toFixed(2)} KiB`;
+  return `${value} B`;
+};
+
+const qualityConclusion = (value: 'PASSED' | 'FAILED' | null) => {
+  if (!value) return '—';
+  return <Tag color={value === 'PASSED' ? 'success' : 'error'}>{value === 'PASSED' ? '通过' : '不通过'}</Tag>;
+};
+
+const qualityMetric = (metric: QualityRuleExecutionResult['metric']) => {
+  if (metric.kind === 'VIOLATION') {
+    const tolerance = metric.toleranceMetric === 'COUNT'
+      ? `${metric.toleranceValue} 行`
+      : `${metric.toleranceValue}%`;
+    return `异常 ${metric.violationCount} 行（${metric.violationPercent}%），允许 ${tolerance}`;
+  }
+  if (metric.kind === 'ROW_COUNT') return `实际 ${metric.actualRows} 行，至少 ${metric.minimumRows} 行`;
+  return metric.maximumValue
+    ? `最大时间 ${new Date(metric.maximumValue).toLocaleString('zh-CN')}，延迟 ${metric.actualDelayMinutes ?? '—'} 分钟，允许 ${metric.maximumDelayMinutes} 分钟`
+    : `没有有效时间值，允许延迟 ${metric.maximumDelayMinutes} 分钟`;
+};
+
+const qualitySampleStatus = (rule: QualityRuleExecutionResult) => {
+  if (!rule.sample) return '—';
+  if (rule.sample.status === 'AVAILABLE') {
+    return `${rule.sample.sampledRows} 条${rule.sample.truncated ? '（截断）' : ''}`;
+  }
+  if (rule.sample.status === 'NOT_FAILED') return '规则通过';
+  if (rule.sample.status === 'NOT_APPLICABLE') return '不适用';
+  return '未保存';
+};
+
+const baseQualityRuleColumns: TableProps<QualityRuleExecutionResult>['columns'] = [
+  {
+    title: '规则', dataIndex: 'ruleName', width: 180,
+    render: (name: string, rule) => (
+      <Space orientation="vertical" size={0}>
+        <Typography.Text>{name}</Typography.Text>
+        <Typography.Text type="secondary">{modelQualityRuleTypeLabels[rule.ruleType]}</Typography.Text>
+      </Space>
+    ),
+  },
+  {
+    title: '级别', dataIndex: 'severity', width: 80,
+    render: (severity: QualityRuleExecutionResult['severity']) => modelQualityRuleSeverityLabels[severity],
+  },
+  {
+    title: '结论', dataIndex: 'state', width: 88,
+    render: (state: QualityRuleExecutionResult['state']) => (
+      <Tag color={state === 'PASSED' ? 'success' : 'error'}>{state === 'PASSED' ? '通过' : '不通过'}</Tag>
+    ),
+  },
+  { title: '指标', dataIndex: 'metric', ellipsis: true, render: qualityMetric },
+  { title: '失败样本', width: 110, render: (_, rule) => qualitySampleStatus(rule) },
+  { title: '耗时', dataIndex: 'durationMs', width: 90, align: 'right', render: (value: number) => `${value} ms` },
+];
+
 export const TaskRunDetailDrawer = ({
   open,
   runId,
@@ -58,10 +134,22 @@ export const TaskRunDetailDrawer = ({
   onCancel,
 }: TaskRunDetailDrawerProps) => {
   const [messageApi, messageContext] = message.useMessage();
+  const [sampleRule, setSampleRule] = useState<QualityRuleExecutionResult | null>(null);
   const runQuery = useTaskRun(runId ?? undefined, open);
   const resultDownload = useDownloadTaskRunArtifact();
   const logDownload = useDownloadTaskRunArtifact();
+  const sampleDownload = useDownloadQualityFailureSamples();
   const run = runQuery.data;
+  const resultArtifactQuery = useTaskRunResultArtifact(
+    run?.id,
+    open && (run?.taskType === 'SPARK_CANVAS' || run?.taskType === 'SPARK_MODEL_QUALITY'
+      || run?.taskType === 'SPARK_JAR')
+      && (run.status === 'SUCCESS' || run.status === 'FAILED'
+        || run.status === 'TIMED_OUT' || run.status === 'CANCELLED'),
+  );
+  const snapshotResults = resultArtifactQuery.data?.nodeResults.filter(
+    (node) => node.metrics?.kind === 'SNAPSHOT_SYNC',
+  ) ?? [];
 
   const download = async (kind: 'result' | 'log') => {
     if (!run) return;
@@ -77,11 +165,50 @@ export const TaskRunDetailDrawer = ({
   };
 
   const trackingUrl = safeTrackingUrl(run?.trackingUrl ?? null);
-  const cancellable = run?.taskType === 'SPARK_CANVAS'
+  const cancellable = (run?.taskType === 'SPARK_CANVAS' || run?.taskType === 'SPARK_MODEL_QUALITY'
+    || run?.taskType === 'SPARK_JAR')
     && (run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'CANCEL_REQUESTED');
+  const downloadSamples = async (rule: QualityRuleExecutionResult) => {
+    if (!run) return;
+    try {
+      const blob = await sampleDownload.mutateAsync({ runId: run.id, ruleId: rule.ruleId });
+      const safeName = rule.ruleName.replace(/[\r\n\t/\\";]/g, '_').trim().slice(0, 80);
+      downloadBlob(blob, `${safeName || rule.ruleId}-失败样本.parquet`);
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '下载失败样本失败');
+    }
+  };
+  const qualityRuleColumns: TableProps<QualityRuleExecutionResult>['columns'] = [
+    ...baseQualityRuleColumns,
+    {
+      title: '操作', width: 90, fixed: 'right',
+      render: (_, rule) => rule.sample?.status === 'AVAILABLE' ? (
+        <Space size={0}>
+          <Tooltip title={`查看${rule.ruleName}失败样本`}>
+            <Button
+              type="text"
+              icon={<EyeOutlined />}
+              aria-label={`查看${rule.ruleName}失败样本`}
+              onClick={() => setSampleRule(rule)}
+            />
+          </Tooltip>
+          <Tooltip title={`下载${rule.ruleName}失败样本 Parquet`}>
+            <Button
+              type="text"
+              icon={<DownloadOutlined />}
+              aria-label={`下载${rule.ruleName}失败样本 Parquet`}
+              loading={sampleDownload.isPending && sampleDownload.variables?.ruleId === rule.ruleId}
+              onClick={() => void downloadSamples(rule)}
+            />
+          </Tooltip>
+        </Space>
+      ) : '—',
+    },
+  ];
 
   return (
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay"
       open={open}
       size="large"
       destroyOnHidden
@@ -115,16 +242,21 @@ export const TaskRunDetailDrawer = ({
         <div className="task-run-detail-content">
           <Space wrap>
             <Tag color={taskRunStatusColors[run.status]}>{taskRunStatusLabels[run.status]}</Tag>
-            {run.taskType === 'SPARK_CANVAS' && (
+            {(run.taskType === 'SPARK_CANVAS' || run.taskType === 'SPARK_MODEL_QUALITY'
+              || run.taskType === 'SPARK_JAR' || run.taskType === 'SPARK_STREAMING_JAR') && (
               <>
-                <Button
-                  icon={<DownloadOutlined />}
-                  aria-label="下载执行结果"
-                  loading={resultDownload.isPending}
-                  onClick={() => void download('result')}
-                >
-                  执行结果
-                </Button>
+                {run.taskType !== 'SPARK_STREAMING_JAR' && (
+                  <Button
+                    icon={<DownloadOutlined />}
+                    aria-label="下载执行结果"
+                    loading={resultDownload.isPending}
+                    disabled={run.status === 'QUEUED' || run.status === 'RUNNING'
+                      || run.status === 'CANCEL_REQUESTED'}
+                    onClick={() => void download('result')}
+                  >
+                    执行结果
+                  </Button>
+                )}
                 <Button
                   icon={<FileTextOutlined />}
                   aria-label="下载控制台日志"
@@ -155,12 +287,25 @@ export const TaskRunDetailDrawer = ({
             <Descriptions.Item label="定义版本">v{run.definitionVersion}</Descriptions.Item>
             <Descriptions.Item label="触发方式">{taskRunTriggerTypeLabels[run.triggerType]}</Descriptions.Item>
             <Descriptions.Item label="执行模式">{taskRunExecutionModeLabels[run.executionMode]}</Descriptions.Item>
-            <Descriptions.Item label="影响行数">
-              {run.affectedRows === null
-                ? <span aria-label="影响行数未知">—</span>
-                : run.affectedRows}
+            <Descriptions.Item label={run.taskType === 'SPARK_MODEL_QUALITY' ? '检查行数' : '影响行数'}>
+              {run.taskType === 'SPARK_MODEL_QUALITY'
+                ? run.qualityCheckedRows ?? '—'
+                : run.affectedRows ?? <span aria-label="影响行数未知">—</span>}
             </Descriptions.Item>
             <Descriptions.Item label="耗时">{formatTaskRunDuration(run)}</Descriptions.Item>
+            {(run.taskType === 'SPARK_JAR' || run.taskType === 'SPARK_STREAMING_JAR') && (
+              <>
+                <Descriptions.Item label="用户 JAR">{run.userJarFileName ?? '—'}</Descriptions.Item>
+                <Descriptions.Item label="JAR 大小">
+                  {run.userJarSizeBytes == null ? '—' : formatBytes(run.userJarSizeBytes)}
+                </Descriptions.Item>
+                <Descriptions.Item label="JAR SHA-256" span={2}>
+                  {run.userJarSha256
+                    ? <Typography.Text code copyable ellipsis>{run.userJarSha256}</Typography.Text>
+                    : '—'}
+                </Descriptions.Item>
+              </>
+            )}
             <Descriptions.Item label="排队时间">{formatTaskRunDateTime(run.queuedAt)}</Descriptions.Item>
             <Descriptions.Item label="计划触发时间">{formatTaskRunDateTime(run.scheduledFireAt)}</Descriptions.Item>
             <Descriptions.Item label="开始时间">{formatTaskRunDateTime(run.startedAt)}</Descriptions.Item>
@@ -169,7 +314,15 @@ export const TaskRunDetailDrawer = ({
             <Descriptions.Item label="更新时间">{formatTaskRunDateTime(run.updatedAt)}</Descriptions.Item>
           </Descriptions>
 
-          {(run.taskType === 'SPARK_CANVAS' || run.taskType === 'SPARK_STREAMING_CANVAS') && (
+          {(run.taskType === 'SPARK_JAR' || run.taskType === 'SPARK_STREAMING_JAR') && (
+            <UserJobObservabilityPanel observability={run.userJobObservability} attemptScoped />
+          )}
+
+          {(run.taskType === 'SPARK_CANVAS'
+            || run.taskType === 'SPARK_STREAMING_CANVAS'
+            || run.taskType === 'SPARK_STREAMING_JAR'
+            || run.taskType === 'SPARK_MODEL_QUALITY'
+            || run.taskType === 'SPARK_JAR') && (
             <Descriptions size="small" bordered column={2} title="Spark 执行路由">
               {run.streamingDeploymentId && (
                 <Descriptions.Item label="实时部署 ID" span={2}>
@@ -189,6 +342,118 @@ export const TaskRunDetailDrawer = ({
               </Descriptions.Item>
             </Descriptions>
           )}
+
+          {run.taskType === 'SPARK_CANVAS' && run.status === 'SUCCESS' && (
+            <Card size="small" title="快照同步结果" loading={resultArtifactQuery.isPending}>
+              {resultArtifactQuery.isError ? (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="暂时无法读取结构化执行指标"
+                  description="仍可通过上方“执行结果”下载完整结果制品。"
+                  action={<Button size="small" onClick={() => void resultArtifactQuery.refetch()}>重试</Button>}
+                />
+              ) : snapshotResults.length === 0 ? (
+                <Typography.Text type="secondary">本次运行没有 Snapshot Sync 节点指标。</Typography.Text>
+              ) : (
+                <Space orientation="vertical" size={10} className="task-run-snapshot-results">
+                  {snapshotResults.map((node) => {
+                    const metrics = node.metrics;
+                    if (!metrics) return null;
+                    return (
+                      <Descriptions
+                        key={node.nodeId}
+                        size="small"
+                        bordered
+                        column={4}
+                        title={`${node.nodeName} · ${node.nodeType}`}
+                      >
+                        <Descriptions.Item label="来源行数">{metrics.sourceRows}</Descriptions.Item>
+                        <Descriptions.Item label="目标行数">{metrics.targetRows}</Descriptions.Item>
+                        <Descriptions.Item label="新增"><Tag color="success">{metrics.insertedRows}</Tag></Descriptions.Item>
+                        <Descriptions.Item label="更新"><Tag color="processing">{metrics.updatedRows}</Tag></Descriptions.Item>
+                        <Descriptions.Item label="删除"><Tag color={metrics.deletedRows > 0 ? 'error' : 'default'}>{metrics.deletedRows}</Tag></Descriptions.Item>
+                        <Descriptions.Item label="未变化">{metrics.unchangedRows}</Descriptions.Item>
+                        <Descriptions.Item label="保留目标独有行">{metrics.retainedTargetOnlyRows}</Descriptions.Item>
+                        <Descriptions.Item label="实际写入">{node.rowsWritten ?? 0}</Descriptions.Item>
+                      </Descriptions>
+                    );
+                  })}
+                </Space>
+              )}
+            </Card>
+          )}
+
+          {run.taskType === 'SPARK_MODEL_QUALITY' && run.qualityConclusion && (
+            <Card size="small" title="质量检查汇总">
+              <Descriptions size="small" bordered column={3}>
+                <Descriptions.Item label="质量结论">{qualityConclusion(run.qualityConclusion)}</Descriptions.Item>
+                <Descriptions.Item label="检查行数">{run.qualityCheckedRows ?? '—'}</Descriptions.Item>
+                <Descriptions.Item label="规则总数">{run.qualityTotalRules ?? '—'}</Descriptions.Item>
+                <Descriptions.Item label="通过"><Tag color="success">{run.qualityPassedRules ?? 0}</Tag></Descriptions.Item>
+                <Descriptions.Item label="不通过"><Tag color="error">{run.qualityFailedRules ?? 0}</Tag></Descriptions.Item>
+                <Descriptions.Item label="跳过"><Tag color="warning">{run.qualitySkippedRules ?? 0}</Tag></Descriptions.Item>
+              </Descriptions>
+            </Card>
+          )}
+
+          {run.taskType === 'SPARK_MODEL_QUALITY' && run.status === 'SUCCESS' && (
+            <Card size="small" title="规则检查结果" loading={resultArtifactQuery.isPending}>
+              {resultArtifactQuery.isError ? (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="暂时无法读取结构化质检结果"
+                  description="仍可通过上方“执行结果”下载完整结果制品。"
+                  action={<Button size="small" onClick={() => void resultArtifactQuery.refetch()}>重试</Button>}
+                />
+              ) : resultArtifactQuery.data?.qualityResult ? (
+                <Space orientation="vertical" size={16} className="task-run-quality-results">
+                  <Table<QualityRuleExecutionResult>
+                    size="small"
+                    rowKey="ruleId"
+                    pagination={false}
+                    columns={qualityRuleColumns}
+                    dataSource={resultArtifactQuery.data.qualityResult.ruleResults}
+                  />
+                  {resultArtifactQuery.data.qualityResult.skippedRuleResults.length > 0 && (
+                    <Table
+                      size="small"
+                      rowKey="id"
+                      pagination={false}
+                      title={() => '跳过规则'}
+                      dataSource={resultArtifactQuery.data.qualityResult.skippedRuleResults}
+                      columns={[
+                        { title: '规则', dataIndex: 'name', width: 180 },
+                        {
+                          title: '类型', dataIndex: 'type', width: 120,
+                          render: (type: QualitySkippedRuleResult['type']) => modelQualityRuleTypeLabels[type],
+                        },
+                        { title: '原因', dataIndex: 'reason' },
+                        { title: '原因码', dataIndex: 'reasonCode', width: 180, render: (code) => <Typography.Text code>{code}</Typography.Text> },
+                      ]}
+                    />
+                  )}
+                </Space>
+              ) : (
+                <Empty description="没有可展示的质检结果" />
+              )}
+            </Card>
+          )}
+
+          {run.taskType === 'SPARK_MODEL_QUALITY'
+            && run.status !== 'SUCCESS'
+            && run.executionError
+            && (
+              <Alert
+                type="error"
+                showIcon
+                message="质检执行发生技术错误"
+                description={resultArtifactQuery.data?.qualityResult?.technicalFailure
+                  ? `失败规则：${resultArtifactQuery.data.qualityResult.technicalFailure.ruleName}（${modelQualityRuleTypeLabels[resultArtifactQuery.data.qualityResult.technicalFailure.ruleType]}），诊断 ID：${resultArtifactQuery.data.qualityResult.technicalFailure.diagnosticId}`
+                  : '本次运行没有生成通过/不通过指标；请结合下方诊断 ID、执行结果和控制台日志定位问题。'}
+              />
+            )}
 
           {run.executionError && (
             <Alert
@@ -250,6 +515,13 @@ export const TaskRunDetailDrawer = ({
           )}
         </div>
       )}
+      <QualityFailureSampleDrawer
+        open={Boolean(sampleRule)}
+        runId={run?.id ?? null}
+        ruleId={sampleRule?.ruleId ?? null}
+        ruleName={sampleRule?.ruleName ?? null}
+        onClose={() => setSampleRule(null)}
+      />
     </Drawer>
   );
 };

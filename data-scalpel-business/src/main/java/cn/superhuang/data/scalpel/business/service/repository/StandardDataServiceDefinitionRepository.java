@@ -18,5 +18,7 @@ public interface StandardDataServiceDefinitionRepository extends JpaRepository<S
 
     List<StandardDataServiceDefinition> findAllByModelIdIn(Collection<UUID> modelIds);
 
+    List<StandardDataServiceDefinition> findAllByModelId(UUID modelId);
+
     void deleteByDataServiceId(UUID dataServiceId);
 }

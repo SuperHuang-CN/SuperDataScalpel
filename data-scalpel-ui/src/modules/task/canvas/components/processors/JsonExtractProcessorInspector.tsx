@@ -182,14 +182,15 @@ export const JsonExtractProcessorInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = await form.validateFields();
+        const values = form.getFieldsValue(true);
+        void form.validateFields().catch(() => undefined);
         if (extractions.length === 0) {
           setDraftError('至少配置一个 JSON 提取项');
-          return false;
+
         }
         if (extractions.length > CANVAS_JSON_EXTRACT_MAX_EXTRACTIONS) {
           setDraftError(`JSON 提取项不能超过 ${CANVAS_JSON_EXTRACT_MAX_EXTRACTIONS} 项`);
-          return false;
+
         }
         const outputColumnNames = new Set(
           sourceTable?.columns.map((column) => column.name) ?? [],
@@ -198,36 +199,36 @@ export const JsonExtractProcessorInspector = ({
           const extraction = extractions[index];
           if (!extraction.jsonPath) {
             setDraftError(`提取 ${index + 1}：请输入 JSON Path`);
-            return false;
+
           }
           if (!extraction.jsonPath.startsWith('$')) {
             setDraftError(`提取 ${index + 1}：JSON Path 必须以 $ 开头`);
-            return false;
+
           }
           if (extraction.jsonPath.length > CANVAS_JSON_EXTRACT_MAX_PATH_LENGTH) {
             setDraftError(
               `提取 ${index + 1}：JSON Path 不能超过 ${CANVAS_JSON_EXTRACT_MAX_PATH_LENGTH} 个字符`,
             );
-            return false;
+
           }
           const outputColumnName = extraction.outputColumnName.trim();
           if (!outputColumnName) {
             setDraftError(`提取 ${index + 1}：请输入输出字段名`);
-            return false;
+
           }
           if (!outputColumnNames.add(outputColumnName)) {
             setDraftError(`输出字段名与来源字段或其他提取项重复：${outputColumnName}`);
-            return false;
+
           }
           const typeIssue = validateTargetType(extraction.targetType);
           if (typeIssue) {
             setDraftError(`提取 ${index + 1}：${typeIssue}`);
-            return false;
+
           }
         }
         const configuration: JsonExtractConfiguration = {
-          sourceTableName: values.sourceTableName,
-          outputTableName: values.outputTableName.trim(),
+          sourceTableName: values.sourceTableName ?? '',
+          outputTableName: (values.outputTableName ?? '').trim(),
           sourceColumnName: values.sourceColumnName,
           failureStrategy: values.failureStrategy,
           extractions: extractions.map((extraction) => ({

@@ -1,14 +1,22 @@
 import { useEffect, useRef } from 'react';
+import type { CSSProperties } from 'react';
 
 interface MonacoSqlEditorProps {
   value?: string;
   readOnly?: boolean;
-  height?: number;
+  height?: CSSProperties['height'];
+  className?: string;
   onChange: (value: string) => void;
 }
 
 /** Shared SQL editor that keeps Monaco in a dynamic chunk. */
-export const MonacoSqlEditor = ({ value = '', readOnly = false, height = 420, onChange }: MonacoSqlEditorProps) => {
+export const MonacoSqlEditor = ({
+  value = '',
+  readOnly = false,
+  height = 420,
+  className,
+  onChange,
+}: MonacoSqlEditorProps) => {
   const containerRef = useRef<HTMLDivElement>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
@@ -45,5 +53,11 @@ export const MonacoSqlEditor = ({ value = '', readOnly = false, height = 420, on
     };
   }, [readOnly]);
 
-  return <div ref={containerRef} style={{ height, border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }} />;
+  return (
+    <div
+      ref={containerRef}
+      className={className}
+      style={{ height, border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }}
+    />
+  );
 };

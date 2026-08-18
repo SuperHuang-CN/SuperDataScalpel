@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeSpatialClip } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { spatialClipCanvasView } from './canvasView';
 
 export const spatialClipSpec = createCanvasNodeSpec({
   type: CanvasNodeType.SpatialClip,
@@ -15,9 +16,9 @@ export const spatialClipSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'clip', 'mask', '裁剪', '掩膜', '相交'],
   iconKey: CanvasNodeIconKey.SpatialClip,
   order: 90,
-  defaultSize: { width: 260, height: 120 },
+  canvasView: spatialClipCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 23,
+  introducedInMinor: 0,
   graph: { minInputs: 2, maxInputs: 2, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createSpatialClipConfiguration,
   summarize: summarizeSpatialClip,

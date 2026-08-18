@@ -20,6 +20,8 @@ public record DataTaskResponse(
         Integer definitionVersion,
         UUID outputModelId,
         String outputModelName,
+        UUID qualityTargetModelId,
+        String qualityTargetModelName,
         Instant createdAt,
         Instant updatedAt
 ) {
@@ -30,14 +32,29 @@ public record DataTaskResponse(
             boolean definitionConfigured,
             Integer definitionVersion,
             UUID outputModelId,
-            String outputModelName
+            String outputModelName,
+            UUID qualityTargetModelId,
+            String qualityTargetModelName
     ) {
         return new DataTaskResponse(
                 task.getId(), task.getName(), task.getDirectoryId(), task.getType(), task.getStatus(),
                 task.getDescription(), task.getComputeEngineId(), computeEngineName,
                 definitionConfigured, definitionVersion, outputModelId, outputModelName,
+                qualityTargetModelId, qualityTargetModelName,
                 task.getCreatedAt(), task.getUpdatedAt()
         );
+    }
+
+    public static DataTaskResponse from(
+            DataTask task,
+            String computeEngineName,
+            boolean definitionConfigured,
+            Integer definitionVersion,
+            UUID outputModelId,
+            String outputModelName
+    ) {
+        return from(task, computeEngineName, definitionConfigured, definitionVersion,
+                outputModelId, outputModelName, null, null);
     }
 
     public static DataTaskResponse from(
@@ -47,6 +64,7 @@ public record DataTaskResponse(
             UUID outputModelId,
             String outputModelName
     ) {
-        return from(task, null, definitionConfigured, definitionVersion, outputModelId, outputModelName);
+        return from(task, null, definitionConfigured, definitionVersion, outputModelId, outputModelName,
+                null, null);
     }
 }

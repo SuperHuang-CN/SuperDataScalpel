@@ -67,6 +67,7 @@ export interface DataModelFieldsPanelHandle {
 interface EditableField extends DataModelFieldInput {
   rowKey: string;
   standardDictionary?: StandardDictionarySummary | null;
+  physicalColumnRole?: DataModelField['physicalColumnRole'];
 }
 
 interface FieldFilters {
@@ -109,6 +110,7 @@ const toEditableFields = (fields: DataModelField[]): EditableField[] => (
       standardDictionaryId: field.standardDictionary.id,
       standardDictionary: field.standardDictionary,
     } : {}),
+    physicalColumnRole: field.physicalColumnRole,
     rowKey: field.id,
   }))
 );
@@ -286,6 +288,7 @@ const FieldEditorModal = ({
 
   return (
     <Modal
+      rootClassName="business-overlay business-modal-overlay"
       title={structuralLocked ? '修改外部字段业务信息' : field ? '修改字段' : '新增字段'}
       open={open}
       width={620}
@@ -502,6 +505,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
       return;
     }
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '放弃当前字段修改？',
       content: '字段编辑弹窗中的修改尚未应用，关闭后会丢失。',
       okText: '放弃修改',
@@ -603,6 +607,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
       return;
     }
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '放弃未保存的字段修改？',
       content: '刷新后将重新加载最后保存的字段定义，当前修改会丢失。',
       okText: '放弃修改并刷新',
@@ -632,6 +637,14 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
     { title: '字段编码', dataIndex: 'code', width: 170, ellipsis: true, fixed: 'left', render: (value: string) => <code>{value}</code> },
     { title: '字段名称', dataIndex: 'name', width: 170, ellipsis: true },
     { title: '类型', key: 'type', width: 140, render: (_value, field) => fieldTypeDescription(field) },
+    {
+      title: '物理角色',
+      dataIndex: 'physicalColumnRole',
+      width: 100,
+      render: (value?: DataModelField['physicalColumnRole']) => value === 'TIME_KEY'
+        ? <Tag color="blue">时间主列</Tag>
+        : value === 'TAG' ? <Tag color="purple">TAG</Tag> : '普通列',
+    },
     { title: '主键', dataIndex: 'primaryKey', width: 72, render: (value: boolean) => value ? <Tag color="blue">是</Tag> : '—' },
     { title: '允许为空', dataIndex: 'nullable', width: 90, render: (value: boolean) => value ? '是' : '否' },
     { title: '排序', dataIndex: 'sortOrder', width: 72 },

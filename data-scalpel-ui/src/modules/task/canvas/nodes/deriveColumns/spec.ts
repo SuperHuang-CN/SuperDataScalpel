@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeDeriveColumns } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { deriveColumnsCanvasView } from './canvasView';
 
 export const deriveColumnsSpec = createCanvasNodeSpec({
   type: CanvasNodeType.DeriveColumns,
@@ -15,9 +16,9 @@ export const deriveColumnsSpec = createCanvasNodeSpec({
   searchKeywords: ['derive', 'expression', '计算字段', '派生字段', '新增字段', '覆盖字段'],
   iconKey: CanvasNodeIconKey.Derive,
   order: 30,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: deriveColumnsCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 9,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createDeriveColumnsConfiguration,
   summarize: summarizeDeriveColumns,

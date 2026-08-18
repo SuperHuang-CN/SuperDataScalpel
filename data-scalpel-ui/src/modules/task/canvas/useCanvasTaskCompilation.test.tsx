@@ -2,7 +2,11 @@ import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { cancelTaskCompilation, compileCanvasTask } from '../api/taskCompilationApi';
 import { emptyCanvasDefinition } from './defaultCanvas';
-import { CANVAS_SCHEMA_MINOR_VERSION, type CanvasDefinition } from './canvasTypes';
+import {
+  CANVAS_SCHEMA_MINOR_VERSION,
+  CANVAS_SCHEMA_VERSION,
+  type CanvasDefinition,
+} from './canvasTypes';
 import type { TaskCompilationMetadataSnapshot, TaskCompilationResponse } from './taskCompilationTypes';
 import {
   canvasCompilationFingerprint,
@@ -22,7 +26,7 @@ const emptyMetadata: TaskCompilationMetadataSnapshot = {
 };
 
 const inputDefinition = (tableName = ''): CanvasDefinition => ({
-  schemaVersion: 1,
+  schemaVersion: CANVAS_SCHEMA_VERSION,
   schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: '4add70a7-4948-42a5-af66-e56dbaccad3e',
@@ -34,8 +38,8 @@ const inputDefinition = (tableName = ''): CanvasDefinition => ({
   edges: [],
 });
 
-const outputDefinition = (columnMappingMode: 'BY_NAME' | 'EXPLICIT'): CanvasDefinition => ({
-  schemaVersion: 1,
+const outputDefinition = (): CanvasDefinition => ({
+  schemaVersion: CANVAS_SCHEMA_VERSION,
   schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
   nodes: [{
     id: 'd35adbfb-9a83-4d92-b229-d4af1a5049cf',
@@ -48,10 +52,7 @@ const outputDefinition = (columnMappingMode: 'BY_NAME' | 'EXPLICIT'): CanvasDefi
       targetTableName: 'sys_user_copy',
       writeMode: 'OVERWRITE',
       upsertKeyColumns: [],
-      columnMappingMode,
-      columnMappings: columnMappingMode === 'EXPLICIT'
-        ? [{ sourceColumnName: 'id', targetColumnName: 'user_id' }]
-        : [],
+      columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'user_id' }],
     },
   }],
   edges: [],
@@ -87,6 +88,7 @@ describe('canvasCompilationFingerprint', () => {
           jdbcDatabaseType: 'POSTGRESQL',
           purposes: ['SOURCE'],
           tables: [],
+          tdEngineTmqTopics: [],
         }],
         models: [],
         fileDatasetTables: [],
@@ -165,8 +167,8 @@ describe('useCanvasTaskCompilation', () => {
       .toMatchObject({ tableName: 'customers' });
   });
 
-  it('revalidates an explicitly applied configuration even when its semantic fingerprint is unchanged', async () => {
-    const definition = outputDefinition('EXPLICIT');
+  it('revalidates an applied configuration even when its semantic fingerprint is unchanged', async () => {
+    const definition = outputDefinition();
     const { rerender } = renderHook(
       ({ requestVersion }) => useCanvasTaskCompilation({
         definition,
@@ -192,7 +194,6 @@ describe('useCanvasTaskCompilation', () => {
         targetTableName: 'sys_user_copy',
         writeMode: 'OVERWRITE',
         upsertKeyColumns: [],
-        columnMappingMode: 'EXPLICIT',
         columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'user_id' }],
       });
   });

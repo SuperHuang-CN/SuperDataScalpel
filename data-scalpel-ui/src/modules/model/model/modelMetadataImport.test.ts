@@ -4,7 +4,7 @@ import {
   hasModelMetadataDraftIssues,
   modelMetadataDraftIssues,
   modelMetadataDrafts,
-  toManagedDraftRequest,
+  toModelMetadataImportRequest,
 } from './modelMetadataImport';
 
 const preview = (): ModelMetadataImportPreview => ({
@@ -14,6 +14,7 @@ const preview = (): ModelMetadataImportPreview => ({
   issues: [],
   models: [{
     key: 'model:2', rowNumber: 2, code: 'orders', name: '订单模型', physicalTableName: 'orders',
+    directoryPath: 'DW/订单主题',
     clickHouseOrderByColumns: [], description: '', importable: true, issues: [], warnings: [],
     fields: [{
       key: 'field:2', rowNumber: 2, code: 'order_id', name: '订单ID', fieldType: 'LONG',
@@ -26,9 +27,9 @@ const preview = (): ModelMetadataImportPreview => ({
 describe('model metadata Excel import', () => {
   it('creates a fixed managed draft request without environment bindings', () => {
     const draft = modelMetadataDrafts(preview())[0];
-    const request = toManagedDraftRequest(draft, 'storage-id', 'directory-id');
+    const request = toModelMetadataImportRequest(draft);
     expect(request).toMatchObject({
-      code: 'orders', storageDataSourceId: 'storage-id', directoryId: 'directory-id',
+      code: 'orders', directoryPath: 'DW/订单主题',
       physicalTableName: 'orders', fields: [{ code: 'order_id', fieldType: 'LONG', primaryKey: true }],
     });
     expect(request).not.toHaveProperty('physicalTableMode');
@@ -60,7 +61,7 @@ describe('model metadata Excel import', () => {
 
     expect(draft.fields[0].nullable).toBeNull();
     expect(draft.fields[0].primaryKey).toBeNull();
-    expect(toManagedDraftRequest(draft, 'storage-id')).toBeUndefined();
+    expect(toModelMetadataImportRequest(draft)).toBeUndefined();
   });
 
   it('preserves Geometry from a V2 metadata preview', () => {
@@ -83,7 +84,7 @@ describe('model metadata Excel import', () => {
 
     const draft = modelMetadataDrafts(source)[0];
     expect(draft.fields[0]).toMatchObject({ fieldType: 'GEOMETRY', geometry, primaryKey: false });
-    expect(toManagedDraftRequest(draft, 'storage-id')?.fields[0])
+    expect(toModelMetadataImportRequest(draft)?.fields[0])
       .toMatchObject({ fieldType: 'GEOMETRY', geometry, primaryKey: false });
   });
 
@@ -100,7 +101,7 @@ describe('model metadata Excel import', () => {
       modelCodePrefix: 'dwd_',
     };
     const resolvedDraft = modelMetadataDrafts(resolvedSource)[0];
-    expect(toManagedDraftRequest(resolvedDraft, 'storage-id')).toMatchObject({
+    expect(toModelMetadataImportRequest(resolvedDraft)).toMatchObject({
       warehouseLayerId: 'layer-id',
     });
 

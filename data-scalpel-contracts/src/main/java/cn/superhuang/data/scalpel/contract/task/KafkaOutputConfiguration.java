@@ -8,7 +8,9 @@ public record KafkaOutputConfiguration(
         String topic,
         KafkaValueSchema valueSchema,
         String keyColumnName,
-        ColumnMappingMode columnMappingMode,
         List<JdbcColumnMapping> columnMappings
 ) {
+    public KafkaOutputConfiguration {
+        columnMappings = columnMappings == null ? List.of() : List.copyOf(columnMappings);
+    }
 }

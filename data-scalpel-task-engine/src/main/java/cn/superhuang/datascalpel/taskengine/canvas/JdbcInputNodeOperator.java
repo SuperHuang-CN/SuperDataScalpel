@@ -92,6 +92,12 @@ public final class JdbcInputNodeOperator implements CanvasNodeOperator {
                 "configuration.tableName",
                 issues
         );
+        CanvasNodeSupport.validateJdbcGeometryDatabase(
+                schema.columns(),
+                dataSource.metadata().jdbcDatabaseType(),
+                "configuration.tableName",
+                issues
+        );
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(List.of());
         }

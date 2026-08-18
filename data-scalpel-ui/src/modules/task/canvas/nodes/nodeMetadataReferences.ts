@@ -34,6 +34,15 @@ export const collectJdbcInputMetadataReferences = (
     : [];
 };
 
+export const collectJdbcIncrementalInputMetadataReferences = (
+  node: CanvasNodeByType<typeof CanvasNodeType.JdbcIncrementalInput>,
+): readonly CanvasMetadataReference[] => {
+  const { dataSourceId, tableName } = node.configuration;
+  return dataSourceId && tableName
+    ? [{ kind: 'JDBC_TABLE', nodeId: node.id, role: 'SOURCE', dataSourceId, tableName }]
+    : [];
+};
+
 export const collectJdbcQueryInputMetadataReferences = (
   node: CanvasNodeByType<typeof CanvasNodeType.JdbcQueryInput>,
 ): readonly CanvasMetadataReference[] => (
@@ -85,6 +94,15 @@ export const collectKafkaInputMetadataReferences = (
     : [];
 };
 
+export const collectTdEngineTmqInputMetadataReferences = (
+  node: CanvasNodeByType<typeof CanvasNodeType.TdEngineTmqInput>,
+): readonly CanvasMetadataReference[] => {
+  const { dataSourceId, topicName } = node.configuration;
+  return dataSourceId && topicName
+    ? [{ kind: 'TDENGINE_TMQ_TOPIC', nodeId: node.id, dataSourceId, topicName }]
+    : [];
+};
+
 export const collectModelOutputMetadataReferences = (
   node: CanvasNodeByType<typeof CanvasNodeType.ModelOutput>,
 ): readonly CanvasMetadataReference[] => (
@@ -112,6 +130,34 @@ export const collectJdbcOutputMetadataReferences = (
     }]
     : [];
 };
+
+export const collectJdbcSnapshotSyncOutputMetadataReferences = (
+  node: CanvasNodeByType<typeof CanvasNodeType.JdbcSnapshotSyncOutput>,
+): readonly CanvasMetadataReference[] => {
+  const { dataSourceId, targetTableName } = node.configuration;
+  return dataSourceId && targetTableName
+    ? [{
+      kind: 'JDBC_TABLE',
+      nodeId: node.id,
+      role: 'DISTRIBUTION',
+      dataSourceId,
+      tableName: targetTableName,
+    }]
+    : [];
+};
+
+export const collectModelSnapshotSyncOutputMetadataReferences = (
+  node: CanvasNodeByType<typeof CanvasNodeType.ModelSnapshotSyncOutput>,
+): readonly CanvasMetadataReference[] => (
+  node.configuration.targetModelId
+    ? [{
+      kind: 'MODEL',
+      nodeId: node.id,
+      role: 'TARGET',
+      modelId: node.configuration.targetModelId,
+    }]
+    : []
+);
 
 export const collectKafkaOutputMetadataReferences = (
   node: CanvasNodeByType<typeof CanvasNodeType.KafkaOutput>,

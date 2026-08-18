@@ -784,14 +784,14 @@ class TaskIntegrationTests {
         }
         String outputNodeId = UUID.randomUUID().toString();
         return """
-                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
+                {"definition":{"schemaVersion":1,"schemaMinorVersion":28,"nodes":[
                   {"id":"%s","type":"MODEL_INPUT","name":"模型输入",
                    "layout":{"x":80,"y":80,"width":240,"height":120},
                    "configuration":{"modelId":"%s"}},
                   {"id":"%s","type":"MODEL_OUTPUT","name":"模型输出",
                    "layout":{"x":400,"y":80,"width":240,"height":120},
                    "configuration":{"sourceTableName":"source_model","targetModelId":"%s",
-                   "writeMode":"APPEND","columnMappingMode":"BY_NAME","columnMappings":[]}}
+                   "writeMode":"APPEND","columnMappings":[{"sourceColumnName":"id","targetColumnName":"id"}]}}
                 ],"edges":[{"id":"%s","sourceNodeId":"%s","targetNodeId":"%s"}]}}
                 """.formatted(
                 inputNodeId, inputModelId, outputNodeId, outputModelId,
@@ -801,7 +801,7 @@ class TaskIntegrationTests {
 
     private static String multiReferenceModelCanvasDefinitionJson(UUID modelId) {
         return """
-                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
+                {"definition":{"schemaVersion":1,"schemaMinorVersion":28,"nodes":[
                   {"id":"%s","type":"MODEL_INPUT","name":"输入 B",
                    "layout":{"x":80,"y":80,"width":240,"height":120},
                    "configuration":{"modelId":"%s"}},
@@ -811,7 +811,7 @@ class TaskIntegrationTests {
                   {"id":"%s","type":"MODEL_OUTPUT","name":"模型输出",
                    "layout":{"x":400,"y":80,"width":240,"height":120},
                    "configuration":{"sourceTableName":"source_model","targetModelId":"%s",
-                   "writeMode":"APPEND","columnMappingMode":"BY_NAME","columnMappings":[]}}
+                   "writeMode":"APPEND","columnMappings":[{"sourceColumnName":"id","targetColumnName":"id"}]}}
                 ],"edges":[]}}
                 """.formatted(
                 UUID.randomUUID(), modelId,

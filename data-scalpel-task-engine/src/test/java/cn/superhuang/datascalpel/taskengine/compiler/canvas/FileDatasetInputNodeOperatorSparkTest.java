@@ -6,7 +6,6 @@ import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
-import cn.superhuang.data.scalpel.contract.task.ColumnMappingMode;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
@@ -17,6 +16,7 @@ import cn.superhuang.data.scalpel.contract.task.FileDatasetParseStatus;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetType;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataDataSource;
 import cn.superhuang.data.scalpel.contract.task.MetadataFileDatasetTable;
@@ -99,7 +99,7 @@ class FileDatasetInputNodeOperatorSparkTest {
         });
 
         CanvasCompilation compilation = compile(
-                definition(4, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadata(tableId, FileDatasetParseStatus.READY, FileDatasetFileStatus.READY, COLUMNS),
                 CanvasExecutionMode.BATCH
         );
@@ -119,7 +119,7 @@ class FileDatasetInputNodeOperatorSparkTest {
         UUID tableId = UUID.randomUUID();
 
         CanvasCompilation compilation = compile(
-                definition(4, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadata(tableId, FileDatasetParseStatus.SCHEMA_READY, FileDatasetFileStatus.READY, COLUMNS),
                 CanvasExecutionMode.BATCH
         );
@@ -149,7 +149,7 @@ class FileDatasetInputNodeOperatorSparkTest {
         );
 
         CanvasCompilation compilation = compile(
-                definition(20, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadata(
                         tableId,
                         FileDatasetParseStatus.READY,
@@ -172,27 +172,27 @@ class FileDatasetInputNodeOperatorSparkTest {
         UUID tableId = UUID.randomUUID();
 
         assertIssue(compile(
-                definition(4, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadata(tableId, FileDatasetParseStatus.PARSING, FileDatasetFileStatus.READY, COLUMNS),
                 CanvasExecutionMode.BATCH
         ), "FILE_DATASET_TABLE_NOT_READY");
         assertIssue(compile(
-                definition(4, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadata(tableId, FileDatasetParseStatus.READY, FileDatasetFileStatus.PREPARING, COLUMNS),
                 CanvasExecutionMode.BATCH
         ), "FILE_DATASET_FILE_NOT_READY");
         assertIssue(compile(
-                definition(4, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadata(tableId, FileDatasetParseStatus.READY, FileDatasetFileStatus.READY, List.of()),
                 CanvasExecutionMode.BATCH
         ), "FILE_DATASET_SCHEMA_EMPTY");
         assertIssue(compile(
-                definition(4, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadataWithoutFileTable(),
                 CanvasExecutionMode.BATCH
         ), "FILE_DATASET_TABLE_NOT_FOUND");
         assertIssue(compile(
-                definition(4, "not-a-uuid"),
+                definition(28, "not-a-uuid"),
                 metadataWithoutFileTable(),
                 CanvasExecutionMode.BATCH
         ), "FILE_DATASET_TABLE_ID_REQUIRED");
@@ -210,7 +210,7 @@ class FileDatasetInputNodeOperatorSparkTest {
                 CanvasExecutionMode.BATCH
         ), "NODE_TYPE_REQUIRES_SCHEMA_VERSION");
         assertIssue(compile(
-                definition(4, tableId.toString()),
+                definition(28, tableId.toString()),
                 metadata,
                 CanvasExecutionMode.STREAMING
         ), "NODE_EXECUTION_MODE_NOT_SUPPORTED");
@@ -253,7 +253,7 @@ class FileDatasetInputNodeOperatorSparkTest {
                                         targetDataSourceId.toString(),
                                         "orders_target",
                                         JdbcWriteMode.APPEND,
-                                        ColumnMappingMode.BY_NAME,
+                                        List.of(new JdbcColumnMapping("order_id", "order_id")),
                                         List.of()
                                 )
                         )

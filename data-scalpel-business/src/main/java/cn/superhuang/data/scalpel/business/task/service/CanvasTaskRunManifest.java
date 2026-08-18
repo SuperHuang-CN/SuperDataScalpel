@@ -19,6 +19,11 @@ import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
+import cn.superhuang.data.scalpel.contract.quality.ModelQualityExecutionPayload;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarExecutionPayload;
+import cn.superhuang.data.scalpel.contract.execution.SparkStreamingJarExecutionPayload;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 public record CanvasTaskRunManifest(
         int manifestVersion,
@@ -28,13 +33,36 @@ public record CanvasTaskRunManifest(
         List<RuntimeDataSource> runtimeDataSources,
         Streaming streaming,
         RuntimeFileStorage runtimeFileStorage,
-        List<RuntimeFileInput> runtimeFileInputs
+        List<RuntimeFileInput> runtimeFileInputs,
+        SnapshotSyncLimits snapshotSyncLimits,
+        @JsonProperty("taskType") ExecutionTaskType executionTaskType,
+        ModelQualityExecutionPayload modelQuality,
+        SparkJarExecutionPayload sparkJarJob,
+        SparkStreamingJarExecutionPayload streamingSparkJarJob
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 10;
+    public static final int CURRENT_MANIFEST_VERSION = 18;
 
     public CanvasTaskRunManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);
         runtimeFileInputs = runtimeFileInputs == null ? List.of() : List.copyOf(runtimeFileInputs);
+        snapshotSyncLimits = snapshotSyncLimits == null ? SnapshotSyncLimits.defaults() : snapshotSyncLimits;
+        executionTaskType = executionTaskType == null
+                ? task != null && task.executionMode() == CanvasExecutionMode.STREAMING
+                ? ExecutionTaskType.SPARK_STREAMING_CANVAS : ExecutionTaskType.SPARK_CANVAS
+                : executionTaskType;
+        if (executionTaskType == ExecutionTaskType.SPARK_JAR) {
+            if (sparkJarJob == null || streamingSparkJarJob != null
+                    || task != null || streaming != null || modelQuality != null) {
+                throw new IllegalArgumentException("Spark JAR Manifest 载荷无效");
+            }
+        } else if (executionTaskType == ExecutionTaskType.SPARK_STREAMING_JAR) {
+            if (streamingSparkJarJob == null || sparkJarJob != null
+                    || task != null || streaming != null || modelQuality != null) {
+                throw new IllegalArgumentException("Spark Streaming JAR Manifest 载荷无效");
+            }
+        } else if (sparkJarJob != null || streamingSparkJarJob != null) {
+            throw new IllegalArgumentException("非 Spark JAR Manifest 不得包含 JAR 载荷");
+        }
     }
 
     public CanvasTaskRunManifest(
@@ -44,7 +72,8 @@ public record CanvasTaskRunManifest(
             MetadataSnapshot metadataSnapshot,
             List<RuntimeDataSource> runtimeDataSources
     ) {
-        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources, null, null, List.of());
+        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources,
+                null, null, List.of(), SnapshotSyncLimits.defaults(), null, null, null, null);
     }
 
     public CanvasTaskRunManifest(
@@ -55,7 +84,65 @@ public record CanvasTaskRunManifest(
             List<RuntimeDataSource> runtimeDataSources,
             Streaming streaming
     ) {
-        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources, streaming, null, List.of());
+        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources,
+                streaming, null, List.of(), SnapshotSyncLimits.defaults(), null, null, null, null);
+    }
+
+    public CanvasTaskRunManifest(
+            int manifestVersion,
+            Execution execution,
+            Task task,
+            MetadataSnapshot metadataSnapshot,
+            List<RuntimeDataSource> runtimeDataSources,
+            Streaming streaming,
+            RuntimeFileStorage runtimeFileStorage,
+            List<RuntimeFileInput> runtimeFileInputs
+    ) {
+        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources,
+                streaming, runtimeFileStorage, runtimeFileInputs, SnapshotSyncLimits.defaults(), null, null, null, null);
+    }
+
+    public CanvasTaskRunManifest(
+            int manifestVersion,
+            Execution execution,
+            Task task,
+            MetadataSnapshot metadataSnapshot,
+            List<RuntimeDataSource> runtimeDataSources,
+            Streaming streaming,
+            RuntimeFileStorage runtimeFileStorage,
+            List<RuntimeFileInput> runtimeFileInputs,
+            SnapshotSyncLimits snapshotSyncLimits
+    ) {
+        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources, streaming,
+                runtimeFileStorage, runtimeFileInputs, snapshotSyncLimits, null, null, null, null);
+    }
+
+    public CanvasTaskRunManifest(
+            int manifestVersion, Execution execution, Task task, MetadataSnapshot metadataSnapshot,
+            List<RuntimeDataSource> runtimeDataSources, Streaming streaming,
+            RuntimeFileStorage runtimeFileStorage, List<RuntimeFileInput> runtimeFileInputs,
+            SnapshotSyncLimits snapshotSyncLimits, ExecutionTaskType executionTaskType,
+            ModelQualityExecutionPayload modelQuality
+    ) {
+        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources, streaming,
+                runtimeFileStorage, runtimeFileInputs, snapshotSyncLimits, executionTaskType,
+                modelQuality, null, null);
+    }
+
+    public record SnapshotSyncLimits(
+            int maxRowsPerSide,
+            long maxEstimatedBytes,
+            int lockTimeoutSeconds
+    ) {
+        public SnapshotSyncLimits {
+            if (maxRowsPerSide < 1 || maxEstimatedBytes < 1 || lockTimeoutSeconds < 1) {
+                throw new IllegalArgumentException("Snapshot Sync limits must be positive");
+            }
+        }
+
+        public static SnapshotSyncLimits defaults() {
+            return new SnapshotSyncLimits(100_000, 256L * 1024 * 1024, 30);
+        }
     }
 
     public record Execution(
@@ -101,7 +188,8 @@ public record CanvasTaskRunManifest(
             List<HttpApiContracts.ResourceDefinition> apiResources,
             RuntimeKafkaConnection kafkaConnection,
             RuntimeS3Connection s3Connection,
-            List<SpatialServiceResourceDefinition> spatialResources
+            List<SpatialServiceResourceDefinition> spatialResources,
+            RuntimeTdEngineTmqConnection tdEngineTmqConnection
     ) {
         public RuntimeDataSource {
             purposes = Set.copyOf(purposes);
@@ -116,10 +204,27 @@ public record CanvasTaskRunManifest(
                 Set<DataSourcePurpose> purposes,
                 RuntimeJdbcConnection connection,
                 HttpApiContracts.RuntimeConnection httpApiConnection,
+                List<HttpApiContracts.ResourceDefinition> apiResources,
+                RuntimeKafkaConnection kafkaConnection,
+                RuntimeS3Connection s3Connection,
+                List<SpatialServiceResourceDefinition> spatialResources
+        ) {
+            this(dataSourceId, connectionKind, databaseType, purposes, connection,
+                    httpApiConnection, apiResources, kafkaConnection, s3Connection,
+                    spatialResources, null);
+        }
+
+        public RuntimeDataSource(
+                UUID dataSourceId,
+                ConnectionKind connectionKind,
+                RuntimeDatabaseType databaseType,
+                Set<DataSourcePurpose> purposes,
+                RuntimeJdbcConnection connection,
+                HttpApiContracts.RuntimeConnection httpApiConnection,
                 List<HttpApiContracts.ResourceDefinition> apiResources
         ) {
             this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                    httpApiConnection, apiResources, null, null, List.of());
+                    httpApiConnection, apiResources, null, null, List.of(), null);
         }
 
         public RuntimeDataSource(
@@ -133,7 +238,7 @@ public record CanvasTaskRunManifest(
                 RuntimeKafkaConnection kafkaConnection
         ) {
             this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                    httpApiConnection, apiResources, kafkaConnection, null, List.of());
+                    httpApiConnection, apiResources, kafkaConnection, null, List.of(), null);
         }
 
         public RuntimeDataSource(
@@ -148,13 +253,21 @@ public record CanvasTaskRunManifest(
                 RuntimeS3Connection s3Connection
         ) {
             this(dataSourceId, connectionKind, databaseType, purposes, connection,
-                    httpApiConnection, apiResources, kafkaConnection, s3Connection, List.of());
+                    httpApiConnection, apiResources, kafkaConnection, s3Connection, List.of(), null);
         }
     }
 
     public enum RuntimeDatabaseType {
         POSTGRESQL,
-        MYSQL
+        MYSQL,
+        ORACLE,
+        SQL_SERVER,
+        CLICKHOUSE,
+        DAMENG,
+        OPENGAUSS,
+        KINGBASE,
+        TDENGINE_WEBSOCKET,
+        TDENGINE_RESTFUL
     }
 
     public record RuntimeJdbcConnection(
@@ -189,6 +302,23 @@ public record CanvasTaskRunManifest(
             String accessKey,
             String secretKey
     ) {
+    }
+
+    public record RuntimeTdEngineTmqConnection(
+            String bootstrapServers,
+            String username,
+            String password,
+            boolean useSsl
+    ) {
+        @Override
+        public String toString() {
+            return "RuntimeTdEngineTmqConnection["
+                    + "bootstrapServers=" + bootstrapServers
+                    + ", usernameConfigured=" + (username != null && !username.isBlank())
+                    + ", passwordConfigured=" + (password != null && !password.isBlank())
+                    + ", useSsl=" + useSsl
+                    + ']';
+        }
     }
 
     public record RuntimeFileStorage(
@@ -296,7 +426,13 @@ public record CanvasTaskRunManifest(
 
     public record Streaming(
             int triggerIntervalSeconds,
-            String checkpointKeyPrefix
+            String checkpointKeyPrefix,
+            String sourceNodeId,
+            String sourceSignature,
+            String initialSourceOffset
     ) {
+        public Streaming(int triggerIntervalSeconds, String checkpointKeyPrefix) {
+            this(triggerIntervalSeconds, checkpointKeyPrefix, null, null, null);
+        }
     }
 }

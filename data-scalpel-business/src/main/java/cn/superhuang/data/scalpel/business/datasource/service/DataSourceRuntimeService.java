@@ -19,6 +19,8 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadata
 import cn.superhuang.data.scalpel.business.datasource.web.response.TablePreviewResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.KafkaTopicResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.JdbcQueryInspectionResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTopicDetailResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTopicResponse;
 import cn.superhuang.data.scalpel.business.datasource.service.http.ConnectionProbeResult;
 import cn.superhuang.data.scalpel.business.datasource.service.http.HttpApiConnectorRegistry;
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
@@ -54,6 +56,11 @@ import java.util.concurrent.TimeUnit;
 import org.apache.kafka.clients.CommonClientConfigs;
 import org.apache.kafka.clients.admin.Admin;
 import org.apache.kafka.clients.admin.AdminClientConfig;
+import org.apache.kafka.clients.admin.ListTopicsOptions;
+import org.apache.kafka.clients.admin.TopicDescription;
+import org.apache.kafka.clients.admin.TopicListing;
+import org.apache.kafka.common.TopicPartitionInfo;
+import org.apache.kafka.common.Uuid;
 import org.apache.kafka.common.config.SaslConfigs;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -318,7 +325,7 @@ public class DataSourceRuntimeService {
         }
     }
 
-    public List<KafkaTopicResponse> listKafkaTopics(UUID id, String keyword) {
+    public List<KafkaTopicResponse> listKafkaTopics(UUID id, String keyword, boolean includeInternal) {
         DataSource dataSource = requireDataSource(id);
         if (dataSource.getType() != DataSourceType.KAFKA) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "该数据源不是 Kafka");
@@ -328,21 +335,121 @@ public class DataSourceRuntimeService {
         }
         String normalizedKeyword = keyword == null ? "" : keyword.trim();
         try (Admin admin = Admin.create(adminProperties(kafkaSettings(dataSource)))) {
-            return admin.listTopics()
-                    .names()
+            List<TopicListing> listings = admin.listTopics(new ListTopicsOptions().listInternal(includeInternal))
+                    .listings()
                     .get(KAFKA_API_TIMEOUT_SECONDS, TimeUnit.SECONDS)
                     .stream()
-                    .filter(name -> normalizedKeyword.isEmpty()
-                            || name.toLowerCase(java.util.Locale.ROOT)
+                    .filter(listing -> normalizedKeyword.isEmpty()
+                            || listing.name().toLowerCase(java.util.Locale.ROOT)
                             .contains(normalizedKeyword.toLowerCase(java.util.Locale.ROOT)))
-                    .sorted()
+                    .sorted(java.util.Comparator.comparing(TopicListing::name))
                     .limit(200)
-                    .map(KafkaTopicResponse::new)
+                    .toList();
+            Map<String, TopicDescription> descriptions = describeKafkaTopics(admin, listings, id);
+            return listings.stream()
+                    .map(listing -> kafkaTopicResponse(listing, descriptions.get(listing.name())))
                     .toList();
         } catch (Exception exception) {
+            if (exception instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
             throw new ResponseStatusException(
                     HttpStatus.BAD_GATEWAY, "Kafka Topic 查询失败", exception);
         }
+    }
+
+    public List<TdEngineTmqTopicResponse> listTdEngineTmqTopics(UUID id, String keyword) {
+        DataSource dataSource = requireTdEngineWebSocket(id);
+        try {
+            return inspector.listTdEngineTmqTopics(
+                            dataSource.getType().name(),
+                            dataSource.getConnection().toJdbcConnectionConfig(),
+                            keyword
+                    ).stream()
+                    .limit(500)
+                    .map(TdEngineTmqTopicResponse::from)
+                    .toList();
+        } catch (DatabaseAccessException exception) {
+            throw remoteAccessException(exception);
+        }
+    }
+
+    public TdEngineTmqTopicDetailResponse readTdEngineTmqTopic(UUID id, String topicName) {
+        if (topicName == null || topicName.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Topic 名称不能为空");
+        }
+        DataSource dataSource = requireTdEngineWebSocket(id);
+        try {
+            var topic = inspector.listTdEngineTmqTopics(
+                            dataSource.getType().name(),
+                            dataSource.getConnection().toJdbcConnectionConfig(),
+                            topicName.trim()
+                    ).stream()
+                    .filter(candidate -> candidate.topicName().equals(topicName.trim()))
+                    .findFirst()
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "TMQ Topic 不存在"));
+            return TdEngineTmqTopicDetailResponse.from(topic, registry.require(dataSource.getType().name()));
+        } catch (DatabaseAccessException exception) {
+            throw remoteAccessException(exception);
+        }
+    }
+
+    private Map<String, TopicDescription> describeKafkaTopics(
+            Admin admin,
+            List<TopicListing> listings,
+            UUID dataSourceId
+    ) {
+        if (listings.isEmpty()) return Map.of();
+        try {
+            return admin.describeTopics(listings.stream().map(TopicListing::name).toList())
+                    .allTopicNames()
+                    .get(KAFKA_API_TIMEOUT_SECONDS, TimeUnit.SECONDS);
+        } catch (Exception exception) {
+            if (exception instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            LOGGER.warn(
+                    "Kafka Topic metadata unavailable: dataSourceId={}, topicCount={}",
+                    dataSourceId,
+                    listings.size(),
+                    exception
+            );
+            return Map.of();
+        }
+    }
+
+    private static KafkaTopicResponse kafkaTopicResponse(
+            TopicListing listing,
+            TopicDescription description
+    ) {
+        String topicId = listing.topicId() == null || Uuid.ZERO_UUID.equals(listing.topicId())
+                ? null : listing.topicId().toString();
+        if (description == null) {
+            return new KafkaTopicResponse(
+                    listing.name(), topicId, listing.isInternal(), false,
+                    null, null, null, null, null
+            );
+        }
+        List<TopicPartitionInfo> partitions = description.partitions();
+        int minimumReplicationFactor = partitions.stream()
+                .mapToInt(partition -> partition.replicas().size())
+                .min()
+                .orElse(0);
+        int maximumReplicationFactor = partitions.stream()
+                .mapToInt(partition -> partition.replicas().size())
+                .max()
+                .orElse(0);
+        int underReplicatedPartitionCount = (int) partitions.stream()
+                .filter(partition -> partition.isr().size() < partition.replicas().size())
+                .count();
+        int unavailableLeaderPartitionCount = (int) partitions.stream()
+                .filter(partition -> partition.leader() == null || partition.leader().id() < 0)
+                .count();
+        return new KafkaTopicResponse(
+                listing.name(), topicId, listing.isInternal(), true,
+                partitions.size(), minimumReplicationFactor, maximumReplicationFactor,
+                underReplicatedPartitionCount, unavailableLeaderPartitionCount
+        );
     }
 
     public void requireKafkaTopics(UUID id, Set<String> topics) {
@@ -372,6 +479,15 @@ public class DataSourceRuntimeService {
     private DataSource requireDataSource(UUID id) {
         return repository.findById(id)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "数据源不存在"));
+    }
+
+    private DataSource requireTdEngineWebSocket(UUID id) {
+        DataSource dataSource = requireDataSource(id);
+        if (dataSource.getType() != DataSourceType.TDENGINE_WEBSOCKET) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT, "只有 TDengine WebSocket JDBC 数据源支持 TMQ Topic");
+        }
+        return dataSource;
     }
 
     private ConnectionTestResponse testConnection(

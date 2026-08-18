@@ -25,23 +25,25 @@ interface JdbcQueryInputConfiguration {
 - `POST /api/v1/data-sources/{id}/actions/inspect-query` 使用 `datasource.metadata` 权限，只接受已启用、具有 `SOURCE` 用途的 PostgreSQL/MySQL 数据源。它在只读连接和只读 Session 中优先读取 PreparedStatement 元数据；驱动不提供时最多执行一行 fallback，只返回 Hash 和字段，不返回 SQL 或数据行。
 - Inspector 仅在用户点击“分析 SQL”时调用接口；SQL 变化后保留旧快照并标记过期。
 - Compiler 校验 Hash、字段结构、数据源和表名冲突，并使用保存字段创建零行计划，不连接数据库。
-- 发布、重新启用和运行准备重新分析并比较保存快照；不一致返回 `JDBC_QUERY_SCHEMA_DRIFT`，不自动改写定义。
-- Runner 再次校验只读 SQL 和 Hash，以数据库只读 Session 执行查询并校验运行时 Schema。
+- 发布、重新启用和运行准备不重新分析查询结果，也不把当前结果结构与保存快照比较。
+- Runner 再次校验只读 SQL 和 Hash，并以数据库只读 Session 执行查询；保存的 `outputColumns`
+  是下游逻辑规划依据，真实结果能否被使用由 Spark 实际分析和执行决定。
 - 首版拒绝 Geometry 查询列；可以查询 WKT/WKB 后连接 `GEOMETRY_CONSTRUCT`。
 
-字段比较覆盖名称、顺序、平台类型、STRING length、DECIMAL precision/scale 和 nullable。字段名重复、类型参数不完整、无法无损映射或 Geometry 均阻止分析/编译；导入内容不能绕过运行前重新分析。
+显式分析时，字段名重复、类型参数不完整、无法无损映射或 Geometry 均阻止保存/编译；SQL 文本
+变化仍通过 Hash 返回 `JDBC_QUERY_SCHEMA_STALE`，导入内容不能绕过只读 SQL 和 Hash 校验。
 
 安全摘要只包含数据源 ID、输出表和字段数，不记录 SQL、SQL Hash、字面量、数据或凭据。
 
 ## 版本与错误
 
-节点从 Canvas `1.24` 引入，低版本返回 `NODE_TYPE_REQUIRES_SCHEMA_VERSION`；Manifest v9 才允许运行，v8 携带该节点时拒绝。主要错误包括 `JDBC_QUERY_NOT_READ_ONLY`、`JDBC_QUERY_SQL_TOO_LONG`、`JDBC_QUERY_SCHEMA_REQUIRED`、`JDBC_QUERY_SCHEMA_INVALID`、`JDBC_QUERY_SCHEMA_STALE`、`JDBC_QUERY_SCHEMA_DRIFT`、`JDBC_QUERY_DATABASE_NOT_SUPPORTED`、`JDBC_QUERY_GEOMETRY_NOT_SUPPORTED` 和 `JDBC_QUERY_INPUT_FAILED`。
+节点从 Canvas `1.24` 引入，低版本返回 `NODE_TYPE_REQUIRES_SCHEMA_VERSION`；Manifest v9 才允许运行，v8 携带该节点时拒绝。主要错误包括 `JDBC_QUERY_NOT_READ_ONLY`、`JDBC_QUERY_SQL_TOO_LONG`、`JDBC_QUERY_SCHEMA_REQUIRED`、`JDBC_QUERY_SCHEMA_INVALID`、`JDBC_QUERY_SCHEMA_STALE`、`JDBC_QUERY_DATABASE_NOT_SUPPORTED`、`JDBC_QUERY_GEOMETRY_NOT_SUPPORTED` 和 `JDBC_QUERY_INPUT_FAILED`。
 
 ## 已实现范围
 
 - Contracts、Jackson 判别联合、Canvas 版本门槛和 `JDBC_QUERY` 表来源。
 - 数据源查询分析 API、只读 SQL 词法护栏、Hash、字段映射和安全响应。
-- Admin 发布/启用/运行准备漂移检查，以及 Manifest v9 快照生成。
+- Admin 生成 Manifest v9 逻辑字段快照，不执行运行时查询结果漂移检查。
 - SchemaOnly/Runtime Data Access、批处理读取和 Streaming 启动时静态缓存。
 - 前端节点库、Monaco Inspector、显式分析、过期状态、字段预览、摘要和 JSON 往返。
 

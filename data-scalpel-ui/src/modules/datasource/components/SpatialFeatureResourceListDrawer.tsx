@@ -1,6 +1,6 @@
-import { DatabaseOutlined, DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { DeleteOutlined, EditOutlined, EyeOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, message } from 'antd';
+import { Alert, Button, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Space, Switch, Table, Tag, Tooltip, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {
@@ -28,6 +28,7 @@ interface SpatialFeatureResourceListDrawerProps {
   canDelete: boolean;
   canReadMetadata: boolean;
   onClose: () => void;
+  embedded?: boolean;
 }
 
 const resourceCode = (remoteIdentifier: string) => {
@@ -36,7 +37,7 @@ const resourceCode = (remoteIdentifier: string) => {
 };
 
 export const SpatialFeatureResourceListDrawer = ({
-  dataSource, open, canCreate, canUpdate, canDelete, canReadMetadata, onClose,
+  dataSource, open, canCreate, canUpdate, canDelete, canReadMetadata, onClose, embedded = false,
 }: SpatialFeatureResourceListDrawerProps) => {
   const dataSourceId = dataSource?.id ?? '';
   const [registerOpen, setRegisterOpen] = useState(false);
@@ -46,8 +47,8 @@ export const SpatialFeatureResourceListDrawer = ({
   const [registerForm] = Form.useForm<CreateSpatialFeatureResourceRequest>();
   const [editForm] = Form.useForm<UpdateSpatialFeatureResourceRequest>();
   const [messageApi, contextHolder] = message.useMessage();
-  const resourcesQuery = useSpatialFeatureResources(dataSourceId || undefined, open);
-  const catalogQuery = useSpatialCatalog(dataSourceId || undefined, catalogParent, open && registerOpen);
+  const resourcesQuery = useSpatialFeatureResources(dataSourceId || undefined, open || embedded);
+  const catalogQuery = useSpatialCatalog(dataSourceId || undefined, catalogParent, (open || embedded) && registerOpen);
   const createMutation = useCreateSpatialFeatureResource(dataSourceId);
   const updateMutation = useUpdateSpatialFeatureResource(dataSourceId);
   const refreshMutation = useRefreshSpatialFeatureResourceSchema(dataSourceId);
@@ -136,22 +137,47 @@ export const SpatialFeatureResourceListDrawer = ({
     },
   ], [canDelete, canReadMetadata, canUpdate, deleteMutation.isPending, deleteMutation.variables, refreshMutation.isPending, refreshMutation.variables]);
 
-  return <>
-    {contextHolder}
-    <Drawer
-      open={open}
-      width={1040}
-      title={`空间资源 · ${dataSource?.name ?? ''}`}
-      destroyOnHidden
-      onClose={onClose}
-      extra={<Space><Button icon={<ReloadOutlined />} onClick={() => void resourcesQuery.refetch()}>刷新</Button>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={startRegistration}>发现并登记</Button>}</Space>}
-    >
-      <Table<SpatialFeatureResource>
+  const toolbar = <Space><Button icon={<ReloadOutlined />} onClick={() => void resourcesQuery.refetch()}>刷新</Button>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={startRegistration}>发现并登记</Button>}</Space>;
+  const resourceError = resourcesQuery.error ? (
+    <Alert
+      showIcon
+      type="error"
+      message="空间资源加载失败"
+      description={resourcesQuery.error instanceof ApiError ? resourcesQuery.error.message : '请稍后重试。'}
+      action={<Button size="small" onClick={() => void resourcesQuery.refetch()}>重试</Button>}
+    />
+  ) : null;
+  const resourceTable = (
+    <Table<SpatialFeatureResource>
         size="small" rowKey="id" pagination={false} loading={resourcesQuery.isFetching}
         dataSource={resourcesQuery.data ?? []} columns={resourceColumns} scroll={{ x: 980, y: 'calc(100vh - 190px)' }}
       />
-    </Drawer>
+  );
+
+  return <>
+    {contextHolder}
+    {embedded ? (
+      <div className="data-source-resource-panel">
+        <div className="data-source-resource-toolbar">{toolbar}</div>
+        {resourceError}
+        {resourceTable}
+      </div>
+    ) : (
+      <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
+        open={open}
+        width={1040}
+        title={`空间资源 · ${dataSource?.name ?? ''}`}
+        destroyOnHidden
+        onClose={onClose}
+        extra={toolbar}
+      >
+        {resourceError}
+        {resourceTable}
+      </Drawer>
+    )}
     <Modal
+      rootClassName="business-overlay business-modal-overlay"
       open={registerOpen} width={980} title="发现并登记空间要素资源" destroyOnHidden
       onCancel={() => setRegisterOpen(false)} onOk={() => void register()} okText="登记资源" confirmLoading={createMutation.isPending}
     >
@@ -179,13 +205,13 @@ export const SpatialFeatureResourceListDrawer = ({
         <Form.Item name="remoteIdentifier" label="远程图层 / FeatureType 标识" rules={[{ required: true }, { max: 1000 }]}><Input name="spatial-resource-identifier" placeholder="从上方目录选择，或手工输入" /></Form.Item>
       </Form>
     </Modal>
-    <Modal open={Boolean(editing)} title={`修改空间要素资源 · ${editing?.name ?? ''}`} destroyOnHidden onCancel={() => setEditing(null)} onOk={() => void update()} okText="保存" confirmLoading={updateMutation.isPending}>
+    <Modal rootClassName="business-overlay business-modal-overlay" open={Boolean(editing)} title={`修改空间要素资源 · ${editing?.name ?? ''}`} destroyOnHidden onCancel={() => setEditing(null)} onOk={() => void update()} okText="保存" confirmLoading={updateMutation.isPending}>
       <Form<UpdateSpatialFeatureResourceRequest> form={editForm} layout="vertical" autoComplete="off">
         <Form.Item name="name" label="名称" rules={[{ required: true }, { max: 100 }]}><Input name="spatial-resource-edit-name" /></Form.Item>
         <Form.Item name="enabled" label="状态" valuePropName="checked"><Switch checkedChildren="启用" unCheckedChildren="停用" /></Form.Item>
       </Form>
     </Modal>
-    <Modal open={Boolean(previewing)} title={`属性预览 · ${previewing?.name ?? ''}`} footer={<Button onClick={() => setPreviewing(null)}>关闭</Button>} width={980} destroyOnHidden onCancel={() => setPreviewing(null)}>
+    <Modal rootClassName="business-overlay business-modal-overlay" open={Boolean(previewing)} title={`属性预览 · ${previewing?.name ?? ''}`} footer={<Button onClick={() => setPreviewing(null)}>关闭</Button>} width={980} destroyOnHidden onCancel={() => setPreviewing(null)}>
       <Table<Record<string, unknown>>
         size="small" rowKey={(_, index) => String(index)} pagination={false} loading={previewQuery.isFetching}
         dataSource={previewQuery.data?.rows ?? []} scroll={{ x: true, y: 340 }}
@@ -195,3 +221,7 @@ export const SpatialFeatureResourceListDrawer = ({
     </Modal>
   </>;
 };
+
+export const SpatialFeatureResourcePanel = (
+  props: Omit<SpatialFeatureResourceListDrawerProps, 'open' | 'onClose' | 'embedded'>,
+) => <SpatialFeatureResourceListDrawer {...props} open onClose={() => undefined} embedded />;

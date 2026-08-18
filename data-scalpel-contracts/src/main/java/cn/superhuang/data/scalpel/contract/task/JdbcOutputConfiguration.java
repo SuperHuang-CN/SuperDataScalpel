@@ -7,7 +7,6 @@ public record JdbcOutputConfiguration(
         String dataSourceId,
         String targetTableName,
         JdbcWriteMode writeMode,
-        ColumnMappingMode columnMappingMode,
         List<JdbcColumnMapping> columnMappings,
         List<String> upsertKeyColumns
 ) {
@@ -16,15 +15,4 @@ public record JdbcOutputConfiguration(
         upsertKeyColumns = upsertKeyColumns == null ? List.of() : List.copyOf(upsertKeyColumns);
     }
 
-    public JdbcOutputConfiguration(
-            String sourceTableName,
-            String dataSourceId,
-            String targetTableName,
-            JdbcWriteMode writeMode,
-            ColumnMappingMode columnMappingMode,
-            List<JdbcColumnMapping> columnMappings
-    ) {
-        this(sourceTableName, dataSourceId, targetTableName, writeMode,
-                columnMappingMode, columnMappings, List.of());
-    }
 }

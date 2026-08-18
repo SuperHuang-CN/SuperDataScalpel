@@ -130,6 +130,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
       return;
     }
     modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
       title: '应用计算引擎配置',
       content: `将暂停“${engine.name}”的新任务准入，安全排空后自动反注册并重新注册。`,
       okText: '应用并重新注册',
@@ -145,6 +146,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
   return <>
     {messageContext}{modalContext}
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay"
       title={engine ? (editingAllowed ? '修改计算引擎' : '查看计算引擎') : '新建计算引擎'}
       open={open}
       size={720}

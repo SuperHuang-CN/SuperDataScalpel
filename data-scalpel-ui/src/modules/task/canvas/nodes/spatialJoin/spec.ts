@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeSpatialJoin } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { spatialJoinCanvasView } from './canvasView';
 
 export const spatialJoinSpec = createCanvasNodeSpec({
   type: CanvasNodeType.SpatialJoin,
@@ -15,9 +16,9 @@ export const spatialJoinSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'spatial join', '相交', '包含'],
   iconKey: CanvasNodeIconKey.SpatialJoin,
   order: 110,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: spatialJoinCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 20,
+  introducedInMinor: 0,
   graph: { minInputs: 2, maxInputs: 2, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createSpatialJoinConfiguration,
   summarize: summarizeSpatialJoin,

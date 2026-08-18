@@ -8,14 +8,22 @@ import {
   deleteTask,
   deleteTaskSchedule,
   downloadTaskRunArtifact,
+  downloadQualityFailureSamples,
+  downloadSparkJarTemplate,
   executeTaskCommand,
   executeTaskScheduleCommand,
   executeTaskStreamingCommand,
   fetchTask,
   fetchTaskModelRelations,
+  fetchTaskTableLineage,
+  fetchTaskFieldLineage,
   fetchModelRelatedTasks,
   fetchTaskRun,
+  fetchTaskRunResultArtifact,
+  fetchQualityFailureSamples,
   fetchCanvasTaskDefinition,
+  fetchModelQualityTaskDefinition,
+  fetchSparkJarTaskDefinition,
   fetchTaskDefinition,
   fetchTaskRuns,
   fetchTaskSchedules,
@@ -28,6 +36,9 @@ import {
   updateTaskDefinition,
   updateTaskSchedule,
   updateTaskStreamingConfiguration,
+  updateModelQualityTaskDefinition,
+  updateSparkJarTaskDefinition,
+  uploadSparkJar,
   validateTaskDefinition,
   type TaskCommand,
   type TaskRunArtifactKind,
@@ -40,8 +51,10 @@ import type {
   ModelTaskRelationRole,
   TaskScheduleRequest,
   UpdateTaskStreamingConfigurationRequest,
+  StreamingCheckpointMode,
   UpdateDataTaskRequest,
   UpdateLocalSqlTaskDefinitionRequest,
+  UpdateSparkJarTaskDefinitionRequest,
 } from '../model/task';
 
 const tasksKey = 'tasks';
@@ -79,10 +92,85 @@ export const useCanvasTaskDefinition = (id: string | undefined, enabled = true) 
   enabled: Boolean(id) && enabled,
 });
 
+export const useModelQualityTaskDefinition = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [tasksKey, id, 'model-quality-definition'],
+  queryFn: () => fetchModelQualityTaskDefinition(id as string),
+  enabled: Boolean(id) && enabled,
+});
+
+export const useSparkJarTaskDefinition = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [tasksKey, id, 'spark-jar-definition'],
+  queryFn: () => fetchSparkJarTaskDefinition(id as string),
+  enabled: Boolean(id) && enabled,
+});
+
+export const useUpdateSparkJarTaskDefinition = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: UpdateSparkJarTaskDefinitionRequest }) => (
+      updateSparkJarTaskDefinition(id, request)
+    ),
+    onSuccess: async (definition) => {
+      queryClient.setQueryData([tasksKey, definition.taskId, 'spark-jar-definition'], definition);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId] });
+      await invalidateTasks(queryClient);
+    },
+  });
+};
+
+export const useUploadSparkJar = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => uploadSparkJar(id, file),
+    onSuccess: async (definition) => {
+      queryClient.setQueryData([tasksKey, definition.taskId, 'spark-jar-definition'], definition);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId] });
+      await invalidateTasks(queryClient);
+    },
+  });
+};
+
+export const useDownloadSparkJarTemplate = () => useMutation({
+  mutationFn: downloadSparkJarTemplate,
+});
+
+export const useUpdateModelQualityTaskDefinition = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, modelId, failureSampleLimit }: {
+      id: string;
+      modelId: string;
+      failureSampleLimit: number;
+    }) => (
+      updateModelQualityTaskDefinition(id, modelId, failureSampleLimit)
+    ),
+    onSuccess: async (definition) => {
+      queryClient.setQueryData([tasksKey, definition.taskId, 'model-quality-definition'], definition);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId] });
+      await invalidateTasks(queryClient);
+    },
+  });
+};
+
 export const useTaskModelRelations = (id: string | undefined, enabled = true) => useQuery({
   queryKey: [taskModelRelationsKey, 'task', id],
   queryFn: () => fetchTaskModelRelations(id as string),
   enabled: Boolean(id) && enabled,
+});
+
+export const useTaskLineage = (
+  id: string | undefined,
+  granularity: 'TABLE' | 'FIELD',
+  flowKey: string | undefined,
+  outputFieldKey: string | undefined,
+  enabled = true,
+) => useQuery({
+  queryKey: [tasksKey, id, 'lineage', granularity, flowKey ?? null, outputFieldKey ?? null],
+  queryFn: () => granularity === 'TABLE'
+    ? fetchTaskTableLineage(id as string, flowKey)
+    : fetchTaskFieldLineage(id as string, flowKey, outputFieldKey),
+  enabled: Boolean(id) && enabled,
+  placeholderData: (previous) => previous,
 });
 
 export const useModelRelatedTasks = (
@@ -115,10 +203,38 @@ export const useTaskRun = (runId: string | undefined, enabled = true) => useQuer
   queryFn: () => fetchTaskRun(runId as string),
   enabled: Boolean(runId) && enabled,
   refetchInterval: (query) => {
-    const status = query.state.data?.status;
-    return status === 'QUEUED' || status === 'RUNNING' || status === 'CANCEL_REQUESTED'
-      || status === 'STOP_REQUESTED' ? 2_000 : false;
+    const run = query.state.data;
+    const active = run?.status === 'QUEUED' || run?.status === 'RUNNING'
+      || run?.status === 'CANCEL_REQUESTED' || run?.status === 'STOP_REQUESTED';
+    if (!active) return false;
+    return run?.taskType === 'SPARK_JAR' || run?.taskType === 'SPARK_STREAMING_JAR' ? 5_000 : 2_000;
   },
+});
+
+export const useTaskRunResultArtifact = (runId: string | undefined, enabled = true) => useQuery({
+  queryKey: [taskRunsKey, runId, 'result-artifact'],
+  queryFn: () => fetchTaskRunResultArtifact(runId as string),
+  enabled: Boolean(runId) && enabled,
+  staleTime: Infinity,
+  retry: false,
+});
+
+export const useQualityFailureSamples = (
+  runId: string | undefined,
+  ruleId: string | undefined,
+  enabled = true,
+) => useQuery({
+  queryKey: [taskRunsKey, runId, 'quality-samples', ruleId],
+  queryFn: () => fetchQualityFailureSamples(runId as string, ruleId as string),
+  enabled: Boolean(runId) && Boolean(ruleId) && enabled,
+  staleTime: Infinity,
+  retry: false,
+});
+
+export const useDownloadQualityFailureSamples = () => useMutation({
+  mutationFn: ({ runId, ruleId }: { runId: string; ruleId: string }) => (
+    downloadQualityFailureSamples(runId, ruleId)
+  ),
 });
 
 export const useTaskSchedules = (id: string | undefined) => useQuery({
@@ -241,7 +357,11 @@ export const useUpdateTaskStreamingConfiguration = () => {
 export const useTaskStreamingCommand = (command: TaskStreamingCommand) => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (id: string) => executeTaskStreamingCommand(id, command),
+    mutationFn: (request: string | { id: string; checkpointMode?: StreamingCheckpointMode }) => {
+      const id = typeof request === 'string' ? request : request.id;
+      const checkpointMode = typeof request === 'string' ? undefined : request.checkpointMode;
+      return executeTaskStreamingCommand(id, command, checkpointMode);
+    },
     onSuccess: async (status) => {
       queryClient.setQueryData([tasksKey, status.taskId, 'streaming-status'], status);
       await queryClient.invalidateQueries({ queryKey: [tasksKey, status.taskId, 'runs'] });

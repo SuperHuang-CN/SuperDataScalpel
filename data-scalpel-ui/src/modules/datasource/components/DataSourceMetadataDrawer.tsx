@@ -38,6 +38,11 @@ interface DataSourceMetadataDrawerProps {
   onClose: () => void;
 }
 
+interface DataSourceMetadataPanelProps {
+  dataSource: DataSource;
+  active: boolean;
+}
+
 interface PreviewRow {
   key: number;
   cells: unknown[];
@@ -80,41 +85,40 @@ const platformTypeDefinitionLabel = (column: ColumnMetadata) => {
   return definition.type;
 };
 
-export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSourceMetadataDrawerProps) => {
+export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetadataPanelProps) => {
+  const tdEngine = dataSource.type === 'TDENGINE_WEBSOCKET' || dataSource.type === 'TDENGINE_RESTFUL';
   const [selectedNamespaceKey, setSelectedNamespaceKey] = useState<string>();
   const [keyword, setKeyword] = useState('');
   const [submittedKeyword, setSubmittedKeyword] = useState('');
   const [includeViews, setIncludeViews] = useState(false);
   const [selectedTableKey, setSelectedTableKey] = useState<string>();
   const [activeTab, setActiveTab] = useState('columns');
-  const namespacesQuery = useDataSourceNamespaces(dataSource?.id, open);
+  const namespacesQuery = useDataSourceNamespaces(dataSource.id, active);
   const effectiveNamespaceKey = selectedNamespaceKey ?? defaultNamespaceKey(namespacesQuery.data ?? []);
   const selectedNamespace = namespacesQuery.data?.find((namespace) => namespaceKey(namespace) === effectiveNamespaceKey);
   const tableQuery = useMemo(() => ({
     catalog: selectedNamespace?.catalog ?? undefined,
     schema: selectedNamespace?.schema ?? undefined,
     keyword: submittedKeyword || undefined,
-    includeViews,
-  }), [includeViews, selectedNamespace?.catalog, selectedNamespace?.schema, submittedKeyword]);
-  const tablesQuery = useDataSourceTables(dataSource?.id, tableQuery, open && Boolean(selectedNamespace));
+    includeViews: tdEngine ? false : includeViews,
+  }), [includeViews, selectedNamespace?.catalog, selectedNamespace?.schema, submittedKeyword, tdEngine]);
+  const tablesQuery = useDataSourceTables(dataSource.id, tableQuery, active && Boolean(selectedNamespace));
   const selectedTable = tablesQuery.data?.tables.find((table) => identifierKey(table.identifier) === selectedTableKey)
     ?? tablesQuery.data?.tables[0];
-  const metadataQuery = useTableMetadata(dataSource?.id, selectedTable?.identifier, open);
-  const previewQuery = useTablePreview(dataSource?.id, selectedTable?.identifier, open && activeTab === 'preview');
-
-  const close = () => {
-    setSelectedNamespaceKey(undefined);
-    setKeyword('');
-    setSubmittedKeyword('');
-    setIncludeViews(false);
-    setSelectedTableKey(undefined);
-    setActiveTab('columns');
-    onClose();
-  };
+  const metadataQuery = useTableMetadata(dataSource.id, selectedTable?.identifier, active);
+  const previewQuery = useTablePreview(dataSource.id, selectedTable?.identifier, active && activeTab === 'preview');
 
   const columnColumns: TableProps<ColumnMetadata>['columns'] = [
     { title: '#', dataIndex: 'ordinal', width: 48 },
     { title: '字段', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => <code>{value}</code> },
+    ...(tdEngine ? [{
+      title: '角色',
+      dataIndex: 'role',
+      width: 96,
+      render: (value: ColumnMetadata['role']) => value === 'TIME_KEY'
+        ? <Tag color="blue">时间主列</Tag>
+        : value === 'TAG' ? <Tag color="purple">TAG</Tag> : <Tag>指标列</Tag>,
+    }] : []),
     { title: '数据库类型', dataIndex: 'nativeType', width: 140, ellipsis: true },
     {
       title: '平台类型',
@@ -178,12 +182,20 @@ export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSour
         <Space size={6}>
           <TableOutlined />
           <Typography.Text strong>{selectedTable.identifier.table}</Typography.Text>
-          <Tag>{selectedTable.type}</Tag>
+          <Tag color={tdEngine ? 'cyan' : undefined}>{tdEngine ? '超级表' : selectedTable.type}</Tag>
           {selectedTable.comment && <Typography.Text type="secondary">{selectedTable.comment}</Typography.Text>}
         </Space>
       </div>
       {metadataQuery.isError && (
         <Alert type="error" showIcon message={errorMessage(metadataQuery.error, '读取表元数据失败')} />
+      )}
+      {tdEngine && (
+        <Alert
+          type="info"
+          showIcon
+          banner
+          message="仅管理超级表定义；数据预览会读取超级表下的汇总数据，但不会枚举或管理子表。"
+        />
       )}
       <Tabs
         size="small"
@@ -250,20 +262,13 @@ export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSour
               </>
             ),
           },
-        ]}
+        ].filter((item) => !tdEngine || item.key !== 'indexes')}
       />
     </>
-  ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="请选择数据表" />;
+  ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={tdEngine ? '请选择超级表' : '请选择数据表'} />;
 
   return (
-    <Drawer
-      title={dataSource ? `${dataSource.name} · 表结构` : '表结构'}
-      open={open}
-      width="86vw"
-      className="data-source-metadata-drawer"
-      onClose={close}
-      destroyOnHidden
-    >
+    <div className="data-source-metadata-panel">
       <div className="metadata-toolbar">
         <Select
           value={effectiveNamespaceKey}
@@ -282,20 +287,22 @@ export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSour
         <Input.Search
           allowClear
           value={keyword}
-          placeholder="筛选表名"
+          placeholder={tdEngine ? '筛选超级表名' : '筛选表名'}
           className="metadata-table-search"
           onChange={(event) => setKeyword(event.target.value)}
           onSearch={(value) => setSubmittedKeyword(value.trim())}
         />
-        <Checkbox checked={includeViews} onChange={(event) => setIncludeViews(event.target.checked)}>包含视图</Checkbox>
+        {!tdEngine && (
+          <Checkbox checked={includeViews} onChange={(event) => setIncludeViews(event.target.checked)}>包含视图</Checkbox>
+        )}
         <Button icon={<ReloadOutlined />} onClick={() => void tablesQuery.refetch()}>刷新</Button>
-        {tablesQuery.data?.truncated && <Typography.Text type="warning">结果已截断为 500 张表</Typography.Text>}
+        {tablesQuery.data?.truncated && <Typography.Text type="warning">结果已截断为 500 个对象</Typography.Text>}
       </div>
       {namespacesQuery.isError && (
         <Alert type="error" showIcon message={errorMessage(namespacesQuery.error, '读取库和 Schema 失败')} />
       )}
       {tablesQuery.isError && (
-        <Alert type="error" showIcon message={errorMessage(tablesQuery.error, '读取数据表失败')} />
+        <Alert type="error" showIcon message={errorMessage(tablesQuery.error, tdEngine ? '读取超级表失败' : '读取数据表失败')} />
       )}
       <div className="metadata-workspace">
         <div className="metadata-table-browser">
@@ -311,7 +318,9 @@ export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSour
                 render: (_: unknown, table: DataSourceTable) => (
                   <div className="metadata-table-item">
                     <Typography.Text ellipsis>{table.identifier.table}</Typography.Text>
-                    <Tag bordered={false}>{table.type === 'TABLE' ? '表' : '视图'}</Tag>
+                    <Tag bordered={false} color={table.type === 'SUPERTABLE' ? 'cyan' : undefined}>
+                      {table.type === 'SUPERTABLE' ? '超级表' : table.type === 'TABLE' ? '表' : '视图'}
+                    </Tag>
                   </div>
                 ),
               }]}
@@ -325,6 +334,22 @@ export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSour
         </div>
         <div className="metadata-detail">{detailContent}</div>
       </div>
-    </Drawer>
+    </div>
   );
 };
+
+export const DataSourceMetadataDrawer = ({ dataSource, open, onClose }: DataSourceMetadataDrawerProps) => (
+  <Drawer
+    rootClassName="business-overlay business-drawer-overlay"
+    title={dataSource
+      ? `${dataSource.name} · ${dataSource.type.startsWith('TDENGINE_') ? '超级表结构' : '表结构'}`
+      : '表结构'}
+    open={open}
+    width="86vw"
+    className="data-source-metadata-drawer"
+    onClose={onClose}
+    destroyOnHidden
+  >
+    {dataSource && <DataSourceMetadataPanel key={dataSource.id} dataSource={dataSource} active={open} />}
+  </Drawer>
+);

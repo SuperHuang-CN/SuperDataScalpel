@@ -10,11 +10,13 @@ public final class CanvasNodeOperators {
             new CanvasNodeOperatorRegistry(List.of(
                     new ModelInputNodeOperator(),
                     new JdbcInputNodeOperator(),
+                    new JdbcIncrementalInputNodeOperator(),
                     new JdbcQueryInputNodeOperator(),
                     new FileDatasetInputNodeOperator(),
                     new HttpApiInputNodeOperator(),
                     new SpatialServiceInputNodeOperator(),
                     new KafkaInputNodeOperator(),
+                    new TdEngineTmqInputNodeOperator(),
                     new JoinNodeOperator(),
                     new GeometryConstructNodeOperator(),
                     new SpatialTransformNodeOperator(),
@@ -43,7 +45,9 @@ public final class CanvasNodeOperators {
                     new WindowNodeOperator(),
                     new TopNNodeOperator(),
                     new ModelOutputNodeOperator(),
+                    new ModelSnapshotSyncOutputNodeOperator(),
                     new JdbcOutputNodeOperator(),
+                    new JdbcSnapshotSyncOutputNodeOperator(),
                     new KafkaOutputNodeOperator(),
                     new FileOutputNodeOperator()
             ));

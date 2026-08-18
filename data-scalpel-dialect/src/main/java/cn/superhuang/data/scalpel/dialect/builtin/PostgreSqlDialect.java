@@ -10,14 +10,24 @@ import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionChoice;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionDefinition;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionType;
 import cn.superhuang.data.scalpel.dialect.api.NamespaceMode;
+import cn.superhuang.data.scalpel.dialect.api.JdbcIncrementalReadDialect;
+import cn.superhuang.data.scalpel.dialect.api.SpatialPreviewDialect;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
+import cn.superhuang.data.scalpel.dialect.model.JdbcSnapshotColumn;
+import cn.superhuang.data.scalpel.dialect.model.JdbcSnapshotSyncSql;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewColumn;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewColumnMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewData;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewLimits;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialPreviewViewport;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheck;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheckType;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
@@ -35,6 +45,8 @@ import cn.superhuang.data.scalpel.dialect.model.TableDdlAtomicity;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
+import cn.superhuang.data.scalpel.dialect.model.TableStatisticQuality;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 
 import java.sql.Connection;
@@ -42,6 +54,7 @@ import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -55,7 +68,7 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 
-public final class PostgreSqlDialect extends AbstractJdbcDialect {
+public final class PostgreSqlDialect extends AbstractJdbcDialect implements JdbcIncrementalReadDialect, SpatialPreviewDialect {
 
     public PostgreSqlDialect() {
         super(
@@ -98,6 +111,217 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
     }
 
     @Override
+    public TablePhysicalStatistics readTablePhysicalStatistics(
+            Connection connection,
+            TableIdentifier table,
+            Duration timeout
+    ) throws SQLException {
+        String sql = """
+                WITH RECURSIVE target AS (
+                    SELECT c.oid, c.relkind
+                    FROM pg_catalog.pg_class c
+                    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                    WHERE n.nspname = ? AND c.relname = ?
+                ), relations AS (
+                    SELECT oid, relkind FROM target
+                    UNION ALL
+                    SELECT child.oid, child.relkind
+                    FROM relations parent
+                    JOIN pg_catalog.pg_inherits inheritance ON inheritance.inhparent = parent.oid
+                    JOIN pg_catalog.pg_class child ON child.oid = inheritance.inhrelid
+                )
+                SELECT
+                    (SELECT relkind::text FROM target),
+                    CASE WHEN SUM(CASE WHEN reltuples >= 0 THEN 1 ELSE 0 END) = 0 THEN NULL
+                         ELSE CAST(SUM(CASE WHEN reltuples >= 0 THEN reltuples ELSE 0 END) AS bigint) END,
+                    CAST(SUM(CASE WHEN relkind IN ('r', 'm') THEN pg_catalog.pg_total_relation_size(oid) ELSE 0 END) AS bigint)
+                FROM relations
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            statement.setString(1, table.schema());
+            statement.setString(2, table.table());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next() || resultSet.getString(1) == null) {
+                    return TablePhysicalStatistics.notFound();
+                }
+                String kind = resultSet.getString(1);
+                if ("v".equals(kind)) {
+                    return TablePhysicalStatistics.unsupported("普通视图没有独立物理存储统计");
+                }
+                if (!"r".equals(kind) && !"p".equals(kind) && !"m".equals(kind)) {
+                    return TablePhysicalStatistics.unsupported("当前 PostgreSQL 物理对象类型无法提供表统计");
+                }
+                Long rowCount = TableStatisticsJdbcSupport.nullableLong(resultSet, 2);
+                Long storageBytes = TableStatisticsJdbcSupport.nullableLong(resultSet, 3);
+                return TablePhysicalStatistics.available(
+                        rowCount,
+                        TableStatisticQuality.ESTIMATED,
+                        storageBytes,
+                        TableStatisticQuality.EXACT
+                );
+            }
+        }
+    }
+
+    @Override
+    public SpatialPreviewMetadata inspectSpatialPreview(
+            Connection connection,
+            TableIdentifier table,
+            List<SpatialPreviewColumn> columns,
+            Duration timeout
+    ) throws SQLException {
+        String extensionSchema = postGisSchema(connection, timeout);
+        if (extensionSchema == null) {
+            return SpatialPreviewMetadata.unsupported("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
+        }
+        Set<String> indexedColumns = spatialPreviewIndexedColumns(connection, table, timeout);
+        TablePhysicalStatistics statistics = readTablePhysicalStatistics(connection, table, timeout);
+        Long estimatedRows = statistics.rowCount();
+        List<SpatialPreviewColumnMetadata> result = new ArrayList<>();
+        for (SpatialPreviewColumn column : columns) {
+            String issue = SpatialTypeSupport.validateV1Geometry(column.geometry());
+            if (issue == null) {
+                try {
+                    resolveSpatialPreviewSrid(
+                            connection, extensionSchema, column.geometry().crs().code(), timeout
+                    );
+                    resolveSpatialPreviewSrid(connection, extensionSchema, 3857, timeout);
+                } catch (IllegalArgumentException exception) {
+                    issue = exception.getMessage();
+                }
+            }
+            boolean indexed = indexedColumns.contains(normalizeSpatialName(column.name()));
+            boolean allowed = issue == null && (indexed || (estimatedRows != null && estimatedRows <= 50_000L));
+            String message = issue;
+            if (message == null && !indexed) {
+                message = estimatedRows == null
+                        ? "未发现可用空间索引，且表统计不可用；请创建 GiST/SP-GiST 索引或执行 ANALYZE"
+                        : estimatedRows > 50_000L
+                        ? "未发现可用空间索引，估算行数超过 50,000；请创建 GiST/SP-GiST 索引"
+                        : "未发现可用空间索引，将仅对小表执行受限预览";
+            }
+            result.add(new SpatialPreviewColumnMetadata(
+                    column.name(), indexed, estimatedRows, allowed, message
+            ));
+        }
+        return new SpatialPreviewMetadata(true, null, result);
+    }
+
+    @Override
+    public SpatialPreviewData readSpatialPreview(
+            Connection connection,
+            TableIdentifier table,
+            SpatialPreviewColumn column,
+            SpatialPreviewViewport viewport,
+            SpatialPreviewLimits limits,
+            Duration timeout
+    ) throws SQLException {
+        String extensionSchema = postGisSchema(connection, timeout);
+        if (extensionSchema == null) {
+            throw new IllegalArgumentException("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
+        }
+        int sourceSrid = resolveSpatialPreviewSrid(
+                connection, extensionSchema, column.geometry().crs().code(), timeout
+        );
+        int targetSrid = resolveSpatialPreviewSrid(connection, extensionSchema, 3857, timeout);
+        boolean indexed = spatialPreviewIndexedColumns(connection, table, timeout)
+                .contains(normalizeSpatialName(column.name()));
+        if (!indexed) {
+            Long estimatedRows = readTablePhysicalStatistics(connection, table, timeout).rowCount();
+            if (estimatedRows == null) {
+                throw new IllegalArgumentException(
+                        "未发现可用空间索引，且表统计不可用；请创建 GiST/SP-GiST 索引或执行 ANALYZE"
+                );
+            }
+            if (estimatedRows > limits.unindexedMaximumRows()) {
+                throw new IllegalArgumentException(
+                        "未发现可用空间索引，估算行数超过 50,000；请创建 GiST/SP-GiST 索引"
+                );
+            }
+        }
+
+        String postGis = quoteIdentifier(extensionSchema) + ".";
+        String geometryColumn = quoteIdentifier(column.name());
+        String sql = """
+                WITH params AS (
+                    SELECT %1$s%2$s(?, ?, ?, ?, ?) AS target_bbox
+                ), transformed_params AS (
+                    SELECT target_bbox, %1$s%3$s(target_bbox, ?) AS source_bbox
+                    FROM params
+                ), candidates AS (
+                    SELECT source.%4$s AS geom
+                    FROM %5$s source
+                    CROSS JOIN transformed_params bounds
+                    WHERE source.%4$s IS NOT NULL
+                      AND source.%4$s OPERATOR(%6$s.&&) bounds.source_bbox
+                    LIMIT ?
+                )
+                SELECT CASE
+                         WHEN %1$s%7$s(geom) OR NOT %1$s%8$s(geom) THEN NULL
+                         ELSE %1$s%9$s(
+                           %1$s%10$s(
+                             %1$s%11$s(%1$s%3$s(geom, ?), target_bbox),
+                             ?
+                           )
+                         )
+                       END AS geometry_wkb
+                FROM candidates
+                CROSS JOIN transformed_params
+                """.formatted(
+                postGis,
+                quoteIdentifier("st_makeenvelope"),
+                quoteIdentifier("st_transform"),
+                geometryColumn,
+                qualifiedName(table),
+                quoteIdentifier(extensionSchema),
+                quoteIdentifier("st_isempty"),
+                quoteIdentifier("st_isvalid"),
+                quoteIdentifier("st_asbinary"),
+                quoteIdentifier("st_simplifypreservetopology"),
+                quoteIdentifier("st_intersection")
+        );
+        List<byte[]> geometries = new ArrayList<>();
+        int skipped = 0;
+        int rowsRead = 0;
+        boolean truncated = false;
+        long wkbBytes = 0L;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            statement.setDouble(1, viewport.minX());
+            statement.setDouble(2, viewport.minY());
+            statement.setDouble(3, viewport.maxX());
+            statement.setDouble(4, viewport.maxY());
+            statement.setInt(5, targetSrid);
+            statement.setInt(6, sourceSrid);
+            statement.setInt(7, Math.addExact(limits.maximumFeatures(), 1));
+            statement.setInt(8, targetSrid);
+            statement.setDouble(9, viewport.simplificationTolerance());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    rowsRead++;
+                    if (rowsRead > limits.maximumFeatures()) {
+                        truncated = true;
+                        break;
+                    }
+                    byte[] wkb = resultSet.getBytes(1);
+                    if (wkb == null || wkb.length == 0) {
+                        skipped++;
+                        continue;
+                    }
+                    if (wkbBytes + wkb.length > limits.maximumWkbBytes()) {
+                        truncated = true;
+                        break;
+                    }
+                    geometries.add(wkb);
+                    wkbBytes += wkb.length;
+                }
+            }
+        }
+        return new SpatialPreviewData(geometries, skipped, truncated);
+    }
+
+    @Override
     public String renderRowUpsert(
             TableIdentifier target,
             List<JdbcUpsertColumn> columns,
@@ -120,6 +344,73 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
                 .collect(java.util.stream.Collectors.joining(", "));
         return "INSERT INTO " + qualifiedName(target) + " (" + names + ") VALUES (" + values
                 + ") ON CONFLICT (" + keys + ")" + conflict;
+    }
+
+    @Override
+    public JdbcSnapshotSyncSql renderSnapshotSyncSql(
+            TableIdentifier target,
+            List<JdbcSnapshotColumn> columns,
+            List<String> keyColumns,
+            Duration lockTimeout
+    ) {
+        validateSnapshotSync(columns, keyColumns, lockTimeout);
+        String table = qualifiedName(target);
+        String selectColumns = columns.stream()
+                .map(column -> column.geometry()
+                        ? "ST_AsBinary(" + quoteIdentifier(column.name()) + ") AS "
+                        + quoteIdentifier(column.name())
+                        : quoteIdentifier(column.name()))
+                .collect(java.util.stream.Collectors.joining(", "));
+        String keyPredicate = keyColumns.stream()
+                .map(key -> quoteIdentifier(key) + " = ?")
+                .collect(java.util.stream.Collectors.joining(" AND "));
+        Set<String> keySet = Set.copyOf(keyColumns);
+        List<JdbcSnapshotColumn> updateColumns = columns.stream()
+                .filter(column -> !keySet.contains(column.name()))
+                .toList();
+        String updateSql = updateColumns.isEmpty() ? null : "UPDATE " + table + " SET "
+                + updateColumns.stream()
+                .map(column -> quoteIdentifier(column.name()) + " = " + snapshotValue(column))
+                .collect(java.util.stream.Collectors.joining(", "))
+                + " WHERE " + keyPredicate;
+        String names = columns.stream().map(column -> quoteIdentifier(column.name()))
+                .collect(java.util.stream.Collectors.joining(", "));
+        String values = columns.stream().map(PostgreSqlDialect::snapshotValue)
+                .collect(java.util.stream.Collectors.joining(", "));
+        long millis = Math.max(1L, lockTimeout.toMillis());
+        return new JdbcSnapshotSyncSql(
+                List.of(
+                        "SET LOCAL lock_timeout = '" + millis + "ms'",
+                        "LOCK TABLE " + table + " IN ACCESS EXCLUSIVE MODE"
+                ),
+                "SELECT " + selectColumns + " FROM " + table,
+                "DELETE FROM " + table + " WHERE " + keyPredicate,
+                updateSql,
+                "INSERT INTO " + table + " (" + names + ") VALUES (" + values + ")",
+                null
+        );
+    }
+
+    private static String snapshotValue(JdbcSnapshotColumn column) {
+        return column.geometry()
+                ? "ST_GeomFromWKB(?, " + column.geometrySpatialReferenceId() + ")"
+                : "?";
+    }
+
+    private static void validateSnapshotSync(
+            List<JdbcSnapshotColumn> columns,
+            List<String> keyColumns,
+            Duration timeout
+    ) {
+        if (columns == null || columns.isEmpty() || keyColumns == null || keyColumns.isEmpty()
+                || timeout == null || timeout.isZero() || timeout.isNegative()) {
+            throw new IllegalArgumentException("Invalid snapshot synchronization SQL arguments");
+        }
+        Set<String> names = columns.stream().map(JdbcSnapshotColumn::name)
+                .collect(java.util.stream.Collectors.toSet());
+        if (names.size() != columns.size() || !names.containsAll(keyColumns)) {
+            throw new IllegalArgumentException("Snapshot Key must be included in unique columns");
+        }
     }
 
     private static String upsertValue(JdbcUpsertColumn column) {
@@ -1258,6 +1549,75 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
         return value == null ? "" : value.toLowerCase(Locale.ROOT);
     }
 
+    private Set<String> spatialPreviewIndexedColumns(
+            Connection connection,
+            TableIdentifier table,
+            Duration timeout
+    ) throws SQLException {
+        String sql = """
+                SELECT attribute.attname
+                  FROM pg_catalog.pg_class target
+                  JOIN pg_catalog.pg_namespace namespace ON namespace.oid = target.relnamespace
+                  JOIN pg_catalog.pg_index index_definition ON index_definition.indrelid = target.oid
+                  JOIN pg_catalog.pg_class index_relation ON index_relation.oid = index_definition.indexrelid
+                  JOIN pg_catalog.pg_am access_method ON access_method.oid = index_relation.relam
+                  JOIN pg_catalog.pg_attribute attribute
+                    ON attribute.attrelid = target.oid
+                   AND attribute.attnum = ANY(index_definition.indkey)
+                 WHERE namespace.nspname = ?
+                   AND target.relname = ?
+                   AND access_method.amname IN ('gist', 'spgist')
+                   AND index_definition.indisvalid
+                   AND index_definition.indisready
+                   AND index_definition.indpred IS NULL
+                   AND index_definition.indexprs IS NULL
+                   AND index_definition.indnkeyatts = 1
+                   AND index_definition.indnatts = 1
+                """;
+        Set<String> result = new HashSet<>();
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            statement.setString(1, table.schema());
+            statement.setString(2, table.table());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    result.add(normalizeSpatialName(resultSet.getString(1)));
+                }
+            }
+        }
+        return Set.copyOf(result);
+    }
+
+    private int resolveSpatialPreviewSrid(
+            Connection connection,
+            String extensionSchema,
+            int epsgCode,
+            Duration timeout
+    ) throws SQLException {
+        String sql = "SELECT srid FROM " + quoteIdentifier(extensionSchema)
+                + "." + quoteIdentifier("spatial_ref_sys")
+                + " WHERE UPPER(auth_name) = 'EPSG' AND auth_srid = ?";
+        Integer srid = null;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            statement.setInt(1, epsgCode);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    if (srid != null) {
+                        throw new IllegalArgumentException(
+                                "目标 PostGIS 中 EPSG:" + epsgCode + " 对应多个本地 SRID"
+                        );
+                    }
+                    srid = resultSet.getInt(1);
+                }
+            }
+        }
+        if (srid == null) {
+            throw new IllegalArgumentException("目标 PostGIS 中不存在 EPSG:" + epsgCode);
+        }
+        return srid;
+    }
+
     private String postGisSchema(Connection connection) throws SQLException {
         String sql = """
                 SELECT namespace.nspname
@@ -1268,6 +1628,21 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect {
         try (Statement statement = connection.createStatement();
              ResultSet resultSet = statement.executeQuery(sql)) {
             return resultSet.next() ? resultSet.getString(1) : null;
+        }
+    }
+
+    private String postGisSchema(Connection connection, Duration timeout) throws SQLException {
+        String sql = """
+                SELECT namespace.nspname
+                  FROM pg_extension extension
+                  JOIN pg_namespace namespace ON namespace.oid = extension.extnamespace
+                 WHERE extension.extname = 'postgis'
+                """;
+        try (Statement statement = connection.createStatement()) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            try (ResultSet resultSet = statement.executeQuery(sql)) {
+                return resultSet.next() ? resultSet.getString(1) : null;
+            }
         }
     }
 

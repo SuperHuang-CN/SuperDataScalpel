@@ -99,6 +99,7 @@ export const MoveStandardDictionaryItemModal = ({
     <>
       {contextHolder}
       <Modal
+        rootClassName="business-overlay business-modal-overlay"
         title={item ? `移动“${item.name}”` : '移动节点'}
         open={open}
         destroyOnHidden

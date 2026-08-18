@@ -74,9 +74,6 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
         if (configuration.writeMode() == null) {
             issues.error("REQUIRED_CONFIGURATION", "请选择写入模式", "configuration.writeMode");
         }
-        if (configuration.columnMappingMode() == null) {
-            issues.error("REQUIRED_CONFIGURATION", "请选择字段映射模式", "configuration.columnMappingMode");
-        }
         if (configuration.columnMappings() == null) {
             issues.error("REQUIRED_CONFIGURATION", "字段映射列表不能为空", "configuration.columnMappings");
         }
@@ -111,6 +108,14 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
                     "configuration.dataSourceId"
             );
         }
+        if (dataSource != null) {
+            CanvasNodeSupport.validateJdbcWriteMode(
+                    configuration.writeMode(),
+                    dataSource.metadata().jdbcDatabaseType(),
+                    "configuration.writeMode",
+                    issues
+            );
+        }
         MetadataTable target =
                 dataSource == null ? null : dataSource.table(configuration.targetTableName());
         if (!CanvasNodeSupport.blank(configuration.targetTableName()) && target == null) {
@@ -140,31 +145,43 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
                 "configuration.targetTableName",
                 issues
         );
-        if (context.executionMode() == CanvasExecutionMode.STREAMING
-                && targetSchema.columns().stream().anyMatch(column ->
-                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
-            issues.error(
-                    "SPATIAL_JDBC_UNSUPPORTED",
-                    "第一阶段不支持实时任务写入 Geometry",
-                    "configuration.targetTableName"
-            );
-            return CanvasNodeOperationResult.outputOnly();
-        }
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.outputOnly();
         }
         Dataset<Row> selected = mappingOperator.apply(
                 source,
                 targetSchema,
-                configuration.columnMappingMode(),
                 configuration.columnMappings(),
                 issues
         );
         if (selected == null || issues.hasErrors()) {
             return CanvasNodeOperationResult.outputOnly();
         }
+        Set<String> projectedColumns = Set.of(selected.columns());
+        List<cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema> projectedSchemas =
+                targetSchema.columns().stream()
+                        .filter(column -> projectedColumns.contains(column.name()))
+                        .toList();
+        if (context.executionMode() == CanvasExecutionMode.STREAMING
+                && projectedSchemas.stream().anyMatch(column ->
+                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
+            issues.error(
+                    "SPATIAL_JDBC_UNSUPPORTED",
+                    "第一阶段不支持实时任务写入 Geometry",
+                    "configuration.columnMappings"
+            );
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        CanvasNodeSupport.validateJdbcGeometryDatabase(
+                projectedSchemas,
+                dataSource.metadata().jdbcDatabaseType(),
+                "configuration.columnMappings",
+                issues
+        );
+        if (issues.hasErrors()) {
+            return CanvasNodeOperationResult.outputOnly();
+        }
         if (configuration.writeMode() == JdbcWriteMode.UPSERT) {
-            Set<String> projectedColumns = Set.of(selected.columns());
             if (!projectedColumns.containsAll(configuration.upsertKeyColumns())) {
                 issues.error(
                         "UPSERT_KEY_NOT_MAPPED",
@@ -176,7 +193,16 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
         }
         CanvasPreparedOutput prepared =
                 context.dataAccess().prepareJdbcOutput(node, targetSchema, selected);
-        return CanvasNodeOperationResult.output(prepared);
+        var lineageWriteMode = switch (configuration.writeMode()) {
+            case APPEND -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.APPEND;
+            case OVERWRITE -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.FULL_OVERWRITE;
+            case UPSERT -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.UPSERT;
+        };
+        return CanvasNodeOperationResult.output(
+                prepared,
+                CanvasLineageOutputCandidate.jdbcTable(
+                        node, selected, dataSourceId, target, lineageWriteMode)
+        );
     }
 
     private static void validateUpsertConfiguration(

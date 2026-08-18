@@ -32,7 +32,6 @@ import {
   type DeriveBinaryOperator,
   type DeriveFunction,
   type FilterOperator,
-  type ColumnMappingMode,
   type JdbcWriteMode,
   type JoinCondition,
   type JoinType,
@@ -134,13 +133,6 @@ export const parseWriteMode = (value: unknown, path: string, errors: string[]): 
   if (value === null || value === undefined || value === '') return null;
   if (value === 'APPEND' || value === 'OVERWRITE' || value === 'UPSERT') return value;
   errors.push(`${path} 不是受支持的写入模式`);
-  return null;
-};
-
-export const parseMappingMode = (value: unknown, path: string, errors: string[]): ColumnMappingMode | null => {
-  if (value === null || value === undefined || value === '') return null;
-  if (value === 'BY_NAME' || value === 'EXPLICIT') return value;
-  errors.push(`${path} 不是受支持的字段映射模式`);
   return null;
 };
 
@@ -1034,28 +1026,13 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
       const spec = canvasNodeRegistry.require(node.type);
       if (sourceSchemaMinorVersion < spec.introducedInMinor) {
         errors.push(
-          `${spec.type} 从 Canvas 1.${spec.introducedInMinor} 开始支持`,
+          `${spec.type} 从 Canvas ${CANVAS_SCHEMA_VERSION}.${spec.introducedInMinor} 开始支持`,
         );
       }
-      if (sourceSchemaMinorVersion < 24
-          && node.type === CanvasNodeType.FileOutput
-          && node.configuration.formatOptions.type === 'SHAPEFILE') {
-        errors.push('SHAPEFILE 文件输出从 Canvas 1.24 开始支持');
-      }
-      if (sourceSchemaMinorVersion < 24
-          && node.type === CanvasNodeType.JdbcOutput
+      if (sourceSchemaMinorVersion < 3
+          && node.type === CanvasNodeType.ModelOutput
           && node.configuration.writeMode === 'UPSERT') {
-        errors.push('JDBC_OUTPUT UPSERT 从 Canvas 1.24 开始支持');
-      }
-      if (sourceSchemaMinorVersion < 25
-          && node.type === CanvasNodeType.FileOutput
-          && node.configuration.formatOptions.type === 'GEOPARQUET') {
-        errors.push('GEOPARQUET 文件输出从 Canvas 1.25 开始支持');
-      }
-      if (sourceSchemaMinorVersion < 25
-          && node.type === CanvasNodeType.FileOutput
-          && node.configuration.formatOptions.type === 'GEOJSON') {
-        errors.push('GEOJSON 文件输出从 Canvas 1.25 开始支持');
+        errors.push('MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持');
       }
     });
   }

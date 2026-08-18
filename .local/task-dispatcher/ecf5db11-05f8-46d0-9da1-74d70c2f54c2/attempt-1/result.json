@@ -1,0 +1,48 @@
+{
+  "schemaVersion" : 3,
+  "executionId" : "ecf5db11-05f8-46d0-9da1-74d70c2f54c2",
+  "runId" : "d918b3d8-73e2-4047-885a-ce6d8160024a",
+  "attempt" : 1,
+  "state" : "FAILED",
+  "startedAt" : "2026-08-09T08:01:41.204885875Z",
+  "endedAt" : "2026-08-09T08:01:43.606601418Z",
+  "durationMs" : 2401,
+  "affectedRows" : null,
+  "nodeResults" : [ {
+    "nodeId" : "94e1719e-16e8-4b19-be62-0879eac7809e",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "FAILED",
+    "phase" : "READ",
+    "startedAt" : "2026-08-09T08:01:43.296896918Z",
+    "endedAt" : "2026-08-09T08:01:43.603179918Z",
+    "durationMs" : 306,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "运行时表结构与任务定义不一致",
+    "error" : {
+      "code" : "RUNTIME_SCHEMA_MISMATCH",
+      "message" : "运行时表结构与任务定义不一致",
+      "category" : "SCHEMA",
+      "retryable" : false,
+      "nodeId" : "94e1719e-16e8-4b19-be62-0879eac7809e",
+      "nodeType" : "JDBC_INPUT",
+      "nodeName" : "JDBC 输入",
+      "phase" : "READ",
+      "sqlState" : null,
+      "diagnosticId" : "6ce4af86-152b-46b0-a427-d42d26ec4d37"
+    }
+  } ],
+  "error" : {
+    "code" : "RUNTIME_SCHEMA_MISMATCH",
+    "message" : "运行时表结构与任务定义不一致",
+    "category" : "SCHEMA",
+    "retryable" : false,
+    "nodeId" : "94e1719e-16e8-4b19-be62-0879eac7809e",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "phase" : "READ",
+    "sqlState" : null,
+    "diagnosticId" : "6ce4af86-152b-46b0-a427-d42d26ec4d37"
+  }
+}

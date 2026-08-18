@@ -16,6 +16,7 @@ public record NodeExecutionResult(
         Instant endedAt,
         Long durationMs,
         Long rowsWritten,
+        NodeExecutionMetrics metrics,
         String message,
         TaskExecutionError error
 ) {
@@ -31,5 +32,29 @@ public record NodeExecutionResult(
                 || state == NodeExecutionState.FAILED && error == null) {
             throw new IllegalArgumentException("节点执行状态与错误对象不一致");
         }
+        if (state == NodeExecutionState.FAILED && metrics != null) {
+            throw new IllegalArgumentException("失败节点不能包含成功指标");
+        }
+        if (metrics instanceof SnapshotSyncMetrics snapshot
+                && (rowsWritten == null || rowsWritten.longValue() != snapshot.rowsWritten())) {
+            throw new IllegalArgumentException("Snapshot Sync rowsWritten 与指标不一致");
+        }
+    }
+
+    public NodeExecutionResult(
+            String nodeId,
+            String nodeType,
+            String nodeName,
+            NodeExecutionState state,
+            ExecutionFailurePhase phase,
+            Instant startedAt,
+            Instant endedAt,
+            Long durationMs,
+            Long rowsWritten,
+            String message,
+            TaskExecutionError error
+    ) {
+        this(nodeId, nodeType, nodeName, state, phase, startedAt, endedAt,
+                durationMs, rowsWritten, null, message, error);
     }
 }

@@ -28,7 +28,7 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 
 ```json
 {
-  "launchVersion": 1,
+  "launchVersion": 4,
   "engineId": "uuid",
   "executionId": "uuid",
   "runId": "uuid",
@@ -48,6 +48,19 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
     "topic": "datascalpel.runner.event.local",
     "securityProtocol": "PLAINTEXT",
     "clientId": "datascalpel-runner-{executionId}"
+  },
+  "qualitySamples": [
+    {
+      "ruleId": "uuid",
+      "putUrl": "short-lived-presigned-put-url",
+      "objectKey": "task-runs/{runId}/attempts/{attempt}/quality/samples/{ruleId}.parquet",
+      "maximumBytes": 20971520
+    }
+  ],
+  "userJar": {
+    "getUrl": "short-lived-presigned-get-url",
+    "sha256": "64-lowercase-hex",
+    "sizeBytes": 102400
   }
 }
 ```
@@ -57,13 +70,16 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 - launch.json 不是 Canvas Definition，也不持久化到任务定义。
 - 预签名 URL和 Kafka认证参数不得进入结果、日志和异常消息。
 - Dispatcher 在任务真正出队时生成短期 URL。
+- launch v4 的 `qualitySamples` 仅为本次质检可生成样本的行级规则签发固定对象 Key PUT 地址；
+  Canvas 或关闭样本时为空。该清单不进入 Manifest、Result、日志或 Kafka 事件。
+- `userJar` 只在 `SPARK_JAR` 出队时存在，和 Manifest 使用相互独立的短期下载地址与 100 MiB 大小限制。
 - launch 文件只读交付给 Runner，完成后由 Dispatcher/集群清理。
 - SASL 密码使用独立受限文件或环境变量引用，不直接放进 `spark-submit` 参数。
 
-## 4. Manifest v9
+## 4. Manifest v18
 
-Admin 当前写出 `manifestVersion: 9`；Runner 兼容读取 v8，但 v8 不得携带
-`JDBC_QUERY_INPUT` 或 `JDBC_OUTPUT.writeMode=UPSERT`。v7 及更早版本不再兼容：
+Admin 当前写出 `manifestVersion: 18`；Runner 严格只接受 v18。升级时先停止或排空旧 Runner，
+再统一发布 Admin、Dispatcher 和 Runner：
 
 ```text
 manifestVersion
@@ -71,22 +87,41 @@ execution
 task
 metadataSnapshot
 runtimeDataSources
+streaming
 runtimeFileStorage
 runtimeFileInputs
+snapshotSyncLimits
+taskType
+modelQuality
+sparkJarJob
 ```
 
 边界：
 
-- `task.definition` 是纯 Canvas 定义。
-- `metadataSnapshot` 是权威编译元数据。
-- `runtimeDataSources` 是真实 JDBC、Kafka、HTTP API 和外部 S3 运行信息；外部 S3 凭据只存在于此私有 Manifest。
+- `taskType` 显式区分 `SPARK_CANVAS/SPARK_STREAMING_CANVAS/SPARK_MODEL_QUALITY/SPARK_JAR`。
+- Canvas 使用 `task.definition`，它是纯 Canvas 定义；模型质检改用互斥的 `modelQuality` 载荷，
+  不生成 Canvas 节点，也不进入 Canvas 编译器。
+- Spark JAR 使用互斥的 `sparkJarJob`，保存 Job API/Class、有序参数、允许的 Spark Conf、资源绑定和
+  触发身份；`task`、`streaming`、`modelQuality` 必须为空。用户 JAR本体和下载地址不进入 Manifest。
+- `modelQuality` 保存目标模型、字段和物理位置、实际执行规则、跳过规则、引用模型及有效码表值快照；
+  JDBC 凭据仍只位于 `runtimeDataSources`。v18 继续保存本次失败样本上限，并在字段快照中标记主键。
+- `metadataSnapshot` 是逻辑编译与解析依据，不是运行时物理 Schema 相等契约。
+- `runtimeDataSources` 是真实 JDBC、Kafka、HTTP API、外部 S3 和按需 TDengine TMQ 运行信息；
+  外部凭据只存在于此私有 Manifest。`tdEngineTmqConnection` 仅在任务引用 TMQ 节点时生成，包含
+  WebSocket 地址、账号、密码和 SSL 开关。
 - `runtimeFileStorage` 仅在引用文件 Input 时存在；`runtimeFileInputs` 按稳定逻辑表 ID 去重。表级保存
-  `fileDatasetId/fileDatasetTableId/schemaFingerprint` 和统一解析参数；
+  `fileDatasetId/fileDatasetTableId/schemaFingerprint` 和统一解析参数；`schemaFingerprint` 仅为
+  Manifest 向后兼容信息，Runner 不用它比较运行时 Schema；
   `sources` 按当前顺序保存来源 ID、文件 ID、格式、压缩方式、存储形态、私有对象
   位置和来源键。Runner 对来源逐一使用 metadataSnapshot 中的同一权威 Schema 和 FAILFAST Reader，
   再按清单顺序执行 `unionByName`，语义固定为 `UNION ALL`。
+- `snapshotSyncLimits` 是 Admin 受保护运行配置，固定携带每侧最大行数、来源与目标合计估算字节上限
+  和锁等待秒数；默认分别为 `100000`、`268435456` 和 `30`，不得回写 Canvas Definition。
+- `streaming` 从唯一无界输入提取触发间隔。JDBC 增量输入还可携带来源节点、SHA-256 来源签名和
+  跨定义版本的初始 Offset；Runner 原样校验签名，但不会用它覆盖同版本已有 Spark Checkpoint。
 - Kafka、Dispatcher、Backend、预签名 URL不进入 manifest。
-- v8 保持既有 JDBC/模型/文件/空间能力；新 Query Input 和 UPSERT 必须使用 v9。Admin、Dispatcher 和 Task Engine 必须同步部署，升级前必须排空或取消更早版本任务。
+- v17 及更早版本不再兼容。Admin、Dispatcher 和 Task Engine 必须同步部署，升级前必须排空或取消
+  旧版本任务；旧实时任务升级后按原定义重新部署并使用新版本 Checkpoint 前缀。
 - 第一阶段 manifest 保持明文并存放在私有 MinIO Bucket。文件存储凭据、对象 Key和物化前缀不得进入日志、Result、Kafka终态事件或管理端运行记录。
 
 ## 5. Runner 启动入口
@@ -110,15 +145,18 @@ Runner 的可写目录由 `DATASCALPEL_TASK_WORK_DIRECTORY` 指定。Local Docke
 1. 严格读取 launch.json 并验证身份、deadline 和 URL Scheme。
 2. 下载 manifest，限制大小并校验 SHA-256。
 3. 严格反序列化 manifest，校验与 launch 身份完全一致。
-4. 创建 SparkSession 后发布 `RUNNER_STARTED`。
-5. 使用 metadataSnapshot 再次执行完整 Canvas 编译。
-6. 校验真实 Input/Output Schema。
-7. 构造完整非输出计划。
-8. 按稳定顺序执行 JDBC Output。
-9. 原子生成本地 result.json。
-10. 计算 result SHA-256并 PUT 到 MinIO。
-11. 发布 `RUNNER_RESULT_AVAILABLE`。
-12. finally 停止 SparkSession 和 Kafka Producer。
+4. Spark JAR任务额外下载用户 JAR并校验准确大小和 SHA-256。
+5. 创建 SparkSession 后发布 `RUNNER_STARTED`。
+6. 使用 metadataSnapshot 再次执行完整 Canvas 编译。
+7. 按逻辑 Schema 构造 Input/Output 计划，不执行物理 Schema 相等校验。
+8. 构造完整非输出计划。
+9. 按稳定拓扑顺序执行 Output；Snapshot Sync 使用独立单连接事务与严格目标表写锁。
+10. 质检失败规则按需在 Driver 生成有界 Parquet，并使用 launch v4 中的短期固定 Key PUT 地址上传。
+11. Spark JAR使用父优先 ClassLoader 调用 SDK `SparkBatchJob.execute()`，结果固定 `nodeResults=[]`。
+12. 原子生成本地 result.json。
+13. 计算 result SHA-256并 PUT 到 MinIO。
+14. 发布 `RUNNER_RESULT_AVAILABLE`。
+15. finally 停止 SparkSession 和 Kafka Producer。
 
 ## 6. SparkSession 平台化
 
@@ -167,7 +205,8 @@ result.json 已上传
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 5,
+  "taskType": "SPARK_CANVAS",
   "executionId": "uuid",
   "runId": "uuid",
   "attempt": 1,
@@ -187,6 +226,7 @@ result.json 已上传
       "endedAt": "...",
       "durationMs": 800,
       "rowsWritten": 20,
+      "metrics": null,
       "message": "JDBC 输出写入成功",
       "error": null
     }
@@ -199,7 +239,8 @@ result.json 已上传
 
 ```json
 {
-  "schemaVersion": 2,
+  "schemaVersion": 5,
+  "taskType": "SPARK_CANVAS",
   "executionId": "uuid",
   "runId": "uuid",
   "attempt": 1,
@@ -219,6 +260,7 @@ result.json 已上传
       "endedAt": "...",
       "durationMs": 812,
       "rowsWritten": null,
+      "metrics": null,
       "message": "数据源用户无权读取表 dev_source.sys_user",
       "error": {
         "code": "JDBC_PERMISSION_DENIED",
@@ -249,7 +291,49 @@ result.json 已上传
 }
 ```
 
-`schemaVersion: 2` 是当前唯一可接受版本，Dispatcher严格拒绝 v1、未知字段、身份或时间不一致、错误码/SQLState格式错误、节点状态与错误对象不一致，以及顶层/节点诊断 ID不一致的结果。节点结果按拓扑执行顺序保存；失败时保留已完成节点并追加失败节点，未开始节点不写入。SUCCESS禁止携带错误，FAILED、TIMED_OUT和CANCELLED必须携带安全错误。
+Runner 当前只写 `schemaVersion: 5`。v4 增加顶层 `taskType` 和互斥载荷：Canvas 只能使用
+`nodeResults`，模型质检只能使用 `qualityResult`，`SPARK_JAR` 的 `nodeResults` 必须为空且不含
+`qualityResult`；Dispatcher 兼容读取历史 Canvas v2/v3/v4 和
+模型质检 v4，以收敛
+升级前已经运行的任务，并
+严格拒绝 v1、未知字段、身份或时间不一致、错误码/SQLState格式错误、节点状态与错误对象不一致，
+以及顶层/节点诊断 ID不一致的结果。节点结果按拓扑执行顺序保存；失败时保留已完成节点并追加
+失败节点，未开始节点不写入。SUCCESS禁止携带错误，FAILED、TIMED_OUT和CANCELLED必须携带
+安全错误。
+
+模型质检成功结果必须包含至少一个已执行规则，并满足
+`totalRules = passedRules + failedRules + skippedRules`。规则指标使用异常量、行数或新鲜度三种
+判别联合；Dispatcher 会校验非负范围、异常比例、阈值、规则状态与指标结论的一致性。数据不合格时
+Runner 状态仍为 `SUCCESS`，只把质量结论设为 `FAILED`；连接、读取或表达式错误使 Runner 进入技术
+失败终态。技术失败仍携带 `qualityResult`，但质量结论和汇总字段为空，不为失败规则伪造质量指标；
+它可保留失败前已完成的规则、跳过规则，以及不含数据值的失败规则身份。规则级失败上下文与顶层
+`error` 必须使用同一个诊断 ID；如果错误发生在规则执行之前，失败规则上下文可以为空。
+
+v5 为每条质检规则增加样本状态 `NOT_FAILED / NOT_APPLICABLE / DISABLED / AVAILABLE`。只有失败的
+11 类行级规则可以是 `AVAILABLE`；行数和新鲜度规则固定为 `NOT_APPLICABLE`。AVAILABLE 只记录样本
+行数、异常总数、是否截断、文件大小、SHA-256、行可定位性和字段元数据，不记录对象 Key 或业务值。
+Dispatcher 根据执行账本中的规则 ID 和运行身份推导固定对象 Key，并校验对象存在、20 MiB 单文件与
+100 MiB 单运行上限、SHA-256 和 Parquet `PAR1` 头尾。新 Runner 不再写旧版本结果。
+
+v3 为节点结果增加可空的判别联合 `metrics`。成功的 JDBC/模型快照同步节点使用：
+
+```json
+{
+  "kind": "SNAPSHOT_SYNC",
+  "sourceRows": 100,
+  "targetRows": 98,
+  "insertedRows": 5,
+  "updatedRows": 3,
+  "deletedRows": 2,
+  "unchangedRows": 92,
+  "retainedTargetOnlyRows": 1
+}
+```
+
+必须满足 `sourceRows = insertedRows + updatedRows + unchangedRows`，以及
+`targetRows = deletedRows + retainedTargetOnlyRows + updatedRows + unchangedRows`。
+Snapshot Sync 的 `rowsWritten` 固定为新增、更新、删除之和；失败或事务回滚节点不得携带成功
+指标。其他节点的 `metrics` 为 `null`。
 
 错误类别固定为 `CONFIGURATION/CONNECTION/AUTHENTICATION/PERMISSION/SCHEMA/CONSTRAINT/TIMEOUT/CANCELLED/RESOURCE/EXTERNAL_SYSTEM/INTERNAL`；阶段固定为 `PREPARE/READ/PROCESS/WRITE/DELIVERY/DISPATCH`。SQLState `08xxx/28xxx/42501/23xxx/57014` 分别映射连接、认证、权限、约束和超时错误。只有连接、网络超时和暂时性外部系统故障标记为可重试；本阶段不自动重试。
 
@@ -289,19 +373,37 @@ NODE_START / NODE_SUCCESS / NODE_FAILED
 
 保持现有第一期语义：
 
-- JDBC 只支持 PostgreSQL 和 MySQL。
+- 普通标量 JDBC 读取和 APPEND 支持 PostgreSQL、MySQL、openGauss、Kingbase、Oracle、
+  SQL Server、ClickHouse 和达梦；TDengine 保持超级表和 TMQ 专用规则。
 - Input 使用数据库类型对应的限定名和标识符引用。
 - Join 支持 INNER、LEFT、RIGHT、FULL。
 - 多条件只支持 EQUALS + AND。
-- Output 支持 BY_NAME/EXPLICIT。
-- APPEND 使用 Spark JDBC append。
-- OVERWRITE 使用数据库 TRUNCATE 后 append，不 drop/recreate。
+- Output 使用目标字段到来源字段的显式映射。
+- APPEND 使用 Spark JDBC append。Oracle、SQL Server、ClickHouse 和达梦第一阶段只承诺写入
+  已存在物理表，不自动建表或演进 Schema。
+- OVERWRITE 仅对 PostgreSQL、MySQL、openGauss 和 Kingbase 保持数据库 TRUNCATE 后 append，
+  不 drop/recreate；其他数据库在任何清表动作前返回 `OVERWRITE_DATABASE_NOT_SUPPORTED`。
+- UPSERT、JDBC Query Input 和 Snapshot Sync 仅支持 PostgreSQL/MySQL；JDBC 增量输入额外支持
+  openGauss/Kingbase；Geometry JDBC 仅支持 PostgreSQL/PostGIS 和 MySQL 8。
+- 模型质检允许全部普通 JDBC 数据库的标量读取；Spark JAR 允许标量读取和 APPEND，并复用同一
+  OVERWRITE、UPSERT 和 Geometry 能力边界。
 - 多个 Output 按稳定拓扑顺序执行，不提供跨库事务。
-- 每个 Output 使用 `Dataset.observe` 将 `rowsWritten=count(1)` 注入同一次 JDBC 写入计划，禁止写入前独立执行 `count()`。
-- `QueryExecutionListener` 按 executionId、attempt 和 nodeId 关联指标；每个 Output 使用独立 Spark Job Group。
-- 只有 JDBC `save()` 成功后才采纳 `rowsWritten`，多个 Output 的 `affectedRows` 是各输出行数之和。
+- `JDBC_SNAPSHOT_SYNC_OUTPUT/MODEL_SNAPSHOT_SYNC_OUTPUT` 只接受 BATCH 有界来源，先按目标
+  Schema 完成字段映射和显式 Cast，再按用户指定的 `1..32` 个目标字段 Key 比较来源与目标。
+- Snapshot Sync 使用一条 PostgreSQL/MySQL JDBC 连接和严格目标表写锁，在同一事务中读取目标、
+  校验两侧 Key 非空且唯一，并按 `DELETE → UPDATE → INSERT` 执行；Geometry 使用拓扑相等。
+- Snapshot Sync 删除默认关闭；启用时来源为空且目标非空固定拒绝，并在任何 DML 前同时校验最大
+  删除数量和 `deletedRows / targetRows` 比例，任一超限整次回滚。
+- 使用 Spark JDBC `save()` 的普通 Output 通过 `Dataset.observe` 将 `rowsWritten=count(1)` 注入同一次
+  写入计划，禁止为了指标在写入前独立执行 `count()`。
+- `QueryExecutionListener` 按 executionId、attempt 和 nodeId 关联普通 Spark Writer 指标；每个
+  Output 使用独立 Spark Job Group。
+- 只有 JDBC `save()` 成功后才采纳普通 Output 的 `rowsWritten`；Snapshot Sync 只在事务提交后采纳
+  分类指标。多个 Output 的 `affectedRows` 是各输出已提交行数之和。
 - 写入成功但指标缺失时任务仍为 SUCCESS，节点 `rowsWritten` 和任务 `affectedRows` 保持 null，不得伪装成 0。
 - Canvas 行数表示进入 JDBC Writer 的逻辑输出行，不等同于数据库触发器执行后的物理表行数。
+- Snapshot Sync 是例外：其 `rowsWritten/affectedRows` 表示已经提交的新增、更新、删除分类数量之和，
+  不使用 JDBC 驱动的 affected-row 语义。
 - Runner 显式关闭 Spark 推测执行，降低有副作用 JDBC 写入被并行重复执行的风险；本阶段仍不承诺数据库 Exactly Once。
 - 真实任务不自动重试。
 
@@ -315,7 +417,8 @@ NODE_START / NODE_SUCCESS / NODE_FAILED
 data-scalpel-task-engine-*-runner-local.jar
 ```
 
-包含：Spark、Scala、Jackson、Kafka Client、PostgreSQL/MySQL Driver。可直接：
+包含：Spark、Scala、Jackson、Kafka Client，以及 PostgreSQL、MySQL、openGauss、Kingbase、
+Oracle、SQL Server、ClickHouse、达梦和 TDengine JDBC Driver。可直接：
 
 ```text
 java -jar task-runner-local.jar
@@ -328,12 +431,12 @@ data-scalpel-task-engine-*-runner-cluster.jar
 ```
 
 - Spark 和 Scala 使用 provided，由目标 Spark 4.1.1 集群提供。
-- 包含 Runner、共享执行契约、Sedona 1.9.0、Jackson、Kafka Client、
-  PostgreSQL/MySQL JDBC Driver及 Kafka 所需压缩库。
+- 包含 Runner、共享执行契约、Sedona 1.9.0、Jackson、Kafka Client、全部受支持 JDBC Driver、
+  ClickHouse 必需运行依赖及 Kafka 所需压缩库。
 - 不包含 Spark、Scala、Hadoop、Netty；这些类由目标 Spark 4.1.1 集群提供。
 - 不允许把另一版本 Spark/Scala 打进 YARN/Kubernetes Driver classpath。
-- 构建验证必须确认 `SedonaContext` 和 `GeometryUDT` 存在，同时继续拒绝 Spark、
-  Scala、Hadoop核心类泄漏。
+- 构建验证必须确认 `SedonaContext`、`GeometryUDT` 和全部 JDBC Driver 可加载，同时继续拒绝
+  Spark、Scala、Hadoop核心类泄漏。
 
 两个制品运行相同 Main 和相同 manifest/launch/result 协议。
 
@@ -392,7 +495,8 @@ Runner 自己在以下边界检查 deadline 和线程中断：
 - result 原子生成、上传后再发事件。
 - Kafka 短暂失败重试、永久失败但 result 可恢复。
 - 所有异常路径停止 SparkSession 和 Producer。
-- PostgreSQL/MySQL Canvas 执行回归。
+- PostgreSQL/MySQL/openGauss/Kingbase/TDengine 存量能力回归，以及 Oracle、SQL Server、
+  ClickHouse、达梦普通标量读取和 APPEND 冒烟。
 - Observation/QueryExecutionListener 在同一次 JDBC `save()` 中返回准确输出行数，不产生独立 `count` Action。
 - 空输出记录 0；指标缺失保留 null；多输出按节点汇总且任一指标缺失时总数为 null。
 - local JAR 使用 JDK 21 `java -jar` 启动。

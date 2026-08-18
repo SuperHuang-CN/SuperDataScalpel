@@ -5,6 +5,7 @@ import {
 } from '@superhuang/super-api-studio-script-workbench';
 import '@superhuang/super-api-studio-script-workbench/style.css';
 import { Alert, Form, Input, Select, Typography } from 'antd';
+import { useState } from 'react';
 import { useDataSources } from '../../../datasource';
 import { useServiceEngineDataSourceRegistrations } from '../../../serviceengine';
 import { useExecuteScriptDraft, useScriptCompletion } from '../../hooks/useDataServices';
@@ -13,14 +14,14 @@ import {
   scriptRequestExamplesValidationMessage,
   type DataServiceFormValues,
 } from '../../model/dataServiceEditor';
-import { CommonServiceFields } from './CommonServiceFields';
+import { ResizableScriptWorkbench } from './ResizableScriptWorkbench';
+import { ScriptRequestExamplesPanel } from './ScriptRequestExamplesPanel';
 
 interface ScriptServiceEditorProps {
   form: ReturnType<typeof Form.useForm<DataServiceFormValues>>[0];
-  creating: boolean;
+  engineId: string;
   readOnly: boolean;
   canRun: boolean;
-  canViewDirectories: boolean;
   canViewDataSources: boolean;
   canViewEngines: boolean;
 }
@@ -36,44 +37,41 @@ const JDBC_TYPES = new Set([
   'OPENGAUSS',
 ]);
 
-const HiddenExamplesField = (_props: {
-  value?: ScriptRequestExample[];
-  onChange?: (value: ScriptRequestExample[]) => void;
-}) => null;
+const HiddenExamplesField = () => null;
 
 export const ScriptServiceEditor = ({
   form,
-  creating,
+  engineId,
   readOnly,
   canRun,
-  canViewDirectories,
   canViewDataSources,
   canViewEngines,
 }: ScriptServiceEditorProps) => {
   const selectedDataSourceId = Form.useWatch('dataSourceId', form);
-  const selectedEngineId = Form.useWatch('engineId', form);
   const routePath = Form.useWatch('routePath', form);
   const script = Form.useWatch('script', form) ?? '';
   const examples = Form.useWatch('examples', form) ?? defaultScriptRequestExamples();
+  const [activeExampleId, setActiveExampleId] = useState<string>();
   const dataSourcesQuery = useDataSources(
     { search: 'enabled:"true"', page: 0, size: 500, sort: 'code' },
     canViewDataSources,
   );
   const registrationsQuery = useServiceEngineDataSourceRegistrations(
     {
-      search: selectedDataSourceId ? `dataSourceId:"${selectedDataSourceId}"` : undefined,
+      search: `engineId:"${engineId}" AND status:"READY"`,
       page: 0,
       size: 500,
-      sort: 'engineId',
+      sort: 'dataSourceId',
     },
-    canViewEngines && Boolean(selectedDataSourceId),
+    canViewEngines && Boolean(engineId),
   );
   const completionQuery = useScriptCompletion(
-    selectedEngineId,
+    engineId,
     selectedDataSourceId,
     canRun && canViewDataSources && canViewEngines,
   );
   const executeMutation = useExecuteScriptDraft();
+  const activeExample = examples.find((example) => example.id === activeExampleId) ?? examples[0];
 
   const run = async (request: ScriptRunRequest) => {
     if (!canRun) {
@@ -81,7 +79,7 @@ export const ScriptServiceEditor = ({
     }
     await form.validateFields(['dataSourceId', 'engineId', 'routePath', 'script']);
     return executeMutation.mutateAsync({
-      engineId: selectedEngineId ?? '',
+      engineId,
       dataSourceId: selectedDataSourceId ?? '',
       routePath: routePath ?? '',
       script,
@@ -89,64 +87,51 @@ export const ScriptServiceEditor = ({
     });
   };
 
-  const dataSources = (dataSourcesQuery.data?.content ?? [])
-    .filter((dataSource) => JDBC_TYPES.has(dataSource.type));
+  const readyDataSourceIds = new Set((registrationsQuery.data?.content ?? []).map((item) => item.dataSourceId));
+  const dataSources = (dataSourcesQuery.data?.content ?? []).filter((dataSource) => (
+    JDBC_TYPES.has(dataSource.type)
+    && (readyDataSourceIds.has(dataSource.id) || dataSource.id === selectedDataSourceId)
+  ));
 
   return (
     <div className="data-service-script-workbench">
       <aside className="data-service-script-sidebar">
-        <Typography.Title level={5}>服务配置</Typography.Title>
-        <CommonServiceFields
-          creating={creating}
+        <div className="data-service-script-config">
+          <Typography.Title level={5}>定义配置</Typography.Title>
+          <Typography.Paragraph type="secondary">仅显示已在当前 Service Engine 中就绪的 JDBC 数据源。</Typography.Paragraph>
+          {selectedDataSourceId && !registrationsQuery.isFetching && !readyDataSourceIds.has(selectedDataSourceId) && (
+            <Alert className="data-service-model-notice" type="warning" showIcon message="当前数据源与所属 Engine 不兼容，请重新选择" />
+          )}
+          <Form.Item<DataServiceFormValues>
+            label="默认 JDBC 数据源"
+            name="dataSourceId"
+            rules={[{ required: true, message: '请选择默认数据源' }]}
+          >
+            <Select
+              showSearch
+              optionFilterProp="label"
+              disabled={readOnly || !canViewDataSources}
+              loading={dataSourcesQuery.isFetching}
+              options={dataSources.map((dataSource) => ({
+                value: dataSource.id,
+                label: `${dataSource.name}（${dataSource.code}）${readyDataSourceIds.has(dataSource.id) ? '' : ' · 当前 Engine 不可用'}`,
+                disabled: !readyDataSourceIds.has(dataSource.id),
+              }))}
+            />
+          </Form.Item>
+          <Typography.Paragraph type="secondary">
+            第一版固定使用 Groovy、POST 和单默认数据源。脚本可以使用 API Studio 提供的
+            <code> db </code>、<code>log</code>、<code>Assert</code>、<code>Utils</code> 和
+            <code>Pager</code>。
+          </Typography.Paragraph>
+        </div>
+        <ScriptRequestExamplesPanel
+          examples={examples}
+          activeExampleId={activeExample?.id}
           readOnly={readOnly}
-          canViewDirectories={canViewDirectories}
-          section="identity"
+          onActiveExampleChange={setActiveExampleId}
+          onChange={(value) => form.setFieldValue('examples', value)}
         />
-        <Form.Item<DataServiceFormValues>
-          label="默认 JDBC 数据源"
-          name="dataSourceId"
-          rules={[{ required: true, message: '请选择默认数据源' }]}
-        >
-          <Select
-            showSearch
-            optionFilterProp="label"
-            disabled={readOnly || !canViewDataSources}
-            loading={dataSourcesQuery.isFetching}
-            options={dataSources.map((dataSource) => ({
-              value: dataSource.id,
-              label: `${dataSource.name}（${dataSource.code}）`,
-            }))}
-            onChange={() => form.setFieldValue('engineId', undefined)}
-          />
-        </Form.Item>
-        <Form.Item<DataServiceFormValues>
-          label="Service Engine"
-          name="engineId"
-          extra="仅显示已注册默认数据源的 Engine。"
-          rules={[{ required: true, message: '请选择 Service Engine' }]}
-        >
-          <Select
-            showSearch
-            optionFilterProp="label"
-            disabled={readOnly || !canViewEngines || !selectedDataSourceId}
-            loading={registrationsQuery.isFetching}
-            options={(registrationsQuery.data?.content ?? []).map((registration) => ({
-              value: registration.engineId,
-              label: `${registration.engineName}（${registration.engineCode}） · ${registration.status === 'READY' ? '已就绪' : '待同步'}`,
-            }))}
-          />
-        </Form.Item>
-        <CommonServiceFields
-          creating={creating}
-          readOnly={readOnly}
-          canViewDirectories={false}
-          section="routing"
-        />
-        <Typography.Paragraph type="secondary">
-          第一版固定使用 Groovy、POST 和单默认数据源。脚本可以使用 API Studio 提供的
-          <code> db </code>、<code>log</code>、<code>Assert</code>、<code>Utils</code> 和
-          <code>Pager</code>。
-        </Typography.Paragraph>
       </aside>
 
       <main className="data-service-script-main">
@@ -180,15 +165,17 @@ export const ScriptServiceEditor = ({
         >
           <HiddenExamplesField />
         </Form.Item>
-        <ScriptWorkbench
-          value={script}
-          onChange={readOnly ? () => undefined : (value) => form.setFieldValue('script', value)}
-          onRun={run}
-          completionData={completionQuery.data}
-          examples={examples}
-          onExamplesChange={readOnly ? () => undefined : (value) => form.setFieldValue('examples', value)}
-          readOnly={readOnly}
-        />
+        <ResizableScriptWorkbench>
+          <ScriptWorkbench
+            value={script}
+            onChange={readOnly ? () => undefined : (value) => form.setFieldValue('script', value)}
+            onRun={run}
+            completionData={completionQuery.data}
+            examples={activeExample ? [activeExample] : []}
+            onExamplesChange={() => undefined}
+            readOnly={readOnly}
+          />
+        </ResizableScriptWorkbench>
       </main>
     </div>
   );

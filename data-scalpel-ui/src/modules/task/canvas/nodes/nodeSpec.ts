@@ -52,6 +52,7 @@ export const CanvasNodeIconKey = {
   Window: 'WINDOW',
   TopN: 'TOP_N',
   JdbcOutput: 'JDBC_OUTPUT',
+  SnapshotSync: 'SNAPSHOT_SYNC',
 } as const;
 
 export type CanvasNodeIconKey = typeof CanvasNodeIconKey[keyof typeof CanvasNodeIconKey];
@@ -61,6 +62,20 @@ export interface CanvasNodeGraphCapability {
   maxInputs: number | null;
   minOutputs: number;
   maxOutputs: number | null;
+}
+
+export interface CanvasNodeSize {
+  width: number;
+  height: number;
+}
+
+export interface CanvasNodeBodyProps<T extends CanvasNodeType> {
+  data: CanvasNodeRuntimeDataByType<T>;
+}
+
+export interface CanvasNodeCanvasView<T extends CanvasNodeType> {
+  resolveSize(configuration: CanvasNodeConfigurationByType<T>): CanvasNodeSize;
+  Body: ComponentType<CanvasNodeBodyProps<T>>;
 }
 
 export type CanvasParseResult<T> =
@@ -93,7 +108,7 @@ export interface CanvasNodeSpec<T extends CanvasNodeType> {
   searchKeywords: readonly string[];
   iconKey: CanvasNodeIconKey;
   order: number;
-  defaultSize: Readonly<{ width: number; height: number }>;
+  canvasView: CanvasNodeCanvasView<T>;
   supportedModes: readonly CanvasExecutionMode[];
   introducedInMinor: number;
   graph: CanvasNodeGraphCapability;

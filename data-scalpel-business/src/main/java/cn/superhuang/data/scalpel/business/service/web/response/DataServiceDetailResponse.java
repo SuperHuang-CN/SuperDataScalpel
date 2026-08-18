@@ -15,6 +15,8 @@ public record DataServiceDetailResponse(
         String name,
         UUID directoryId,
         DataServiceType type,
+        boolean definitionConfigured,
+        Integer definitionVersion,
         StandardDataServiceDefinitionResponse standardDefinition,
         SqlDataServiceDefinitionResponse sqlDefinition,
         ScriptDataServiceDefinitionResponse scriptDefinition,

@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.datasource.web.resource;
 
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceService;
+import cn.superhuang.data.scalpel.business.datasource.service.DataSourceRelationQueryService;
 import cn.superhuang.data.scalpel.business.datasource.web.request.CreateDataSourceRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.TestDataSourceConnectionRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.UpdateDataSourceRequest;
@@ -13,6 +14,13 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.TableMetadata
 import cn.superhuang.data.scalpel.business.datasource.web.response.TablePreviewResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.KafkaTopicResponse;
 import cn.superhuang.data.scalpel.business.datasource.web.response.JdbcQueryInspectionResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceRelationKind;
+import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceRelatedModelResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceRelatedTaskResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceRelatedServiceResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceTaskRelationRole;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTopicDetailResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTopicResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -40,9 +48,11 @@ import java.util.UUID;
 public class DataSourceResource {
 
     private final DataSourceService service;
+    private final DataSourceRelationQueryService relationQueryService;
 
-    public DataSourceResource(DataSourceService service) {
+    public DataSourceResource(DataSourceService service, DataSourceRelationQueryService relationQueryService) {
         this.service = service;
+        this.relationQueryService = relationQueryService;
     }
 
     @GetMapping
@@ -57,6 +67,39 @@ public class DataSourceResource {
     @Operation(summary = "查询数据源详情")
     public DataSourceResponse get(@PathVariable UUID id) {
         return service.get(id);
+    }
+
+    @GetMapping("/{id}/related-models")
+    @PreAuthorize("hasAuthority('datasource.view') and hasAuthority('model.view')")
+    @Operation(summary = "查询使用当前数据源存储的模型")
+    public PageResponse<DataSourceRelatedModelResponse> relatedModels(
+            @PathVariable UUID id,
+            @ParameterObject @ModelAttribute SearchRequest request
+    ) {
+        return relationQueryService.relatedModels(id, request);
+    }
+
+    @GetMapping("/{id}/related-tasks")
+    @PreAuthorize("hasAuthority('datasource.view') and hasAuthority('task.view')")
+    @Operation(summary = "查询直接或通过模型使用当前数据源的任务")
+    public PageResponse<DataSourceRelatedTaskResponse> relatedTasks(
+            @PathVariable UUID id,
+            @RequestParam(required = false) DataSourceTaskRelationRole role,
+            @RequestParam(required = false) DataSourceRelationKind relationKind,
+            @ParameterObject @ModelAttribute SearchRequest request
+    ) {
+        return relationQueryService.relatedTasks(id, role, relationKind, request);
+    }
+
+    @GetMapping("/{id}/related-services")
+    @PreAuthorize("hasAuthority('datasource.view') and hasAuthority('service.view')")
+    @Operation(summary = "查询直接或通过模型使用当前数据源的数据服务")
+    public PageResponse<DataSourceRelatedServiceResponse> relatedServices(
+            @PathVariable UUID id,
+            @RequestParam(required = false) DataSourceRelationKind relationKind,
+            @ParameterObject @ModelAttribute SearchRequest request
+    ) {
+        return relationQueryService.relatedServices(id, relationKind, request);
     }
 
     @PostMapping
@@ -162,8 +205,29 @@ public class DataSourceResource {
     @Operation(summary = "查询 Kafka Topic")
     public List<KafkaTopicResponse> listKafkaTopics(
             @PathVariable UUID id,
+            @RequestParam(required = false) String keyword,
+            @RequestParam(defaultValue = "false") boolean includeInternal
+    ) {
+        return service.listKafkaTopics(id, keyword, includeInternal);
+    }
+
+    @GetMapping("/{id}/tmq-topics")
+    @PreAuthorize("hasAuthority('datasource.metadata')")
+    @Operation(summary = "查询 TDengine TMQ Topic")
+    public List<TdEngineTmqTopicResponse> listTdEngineTmqTopics(
+            @PathVariable UUID id,
             @RequestParam(required = false) String keyword
     ) {
-        return service.listKafkaTopics(id, keyword);
+        return service.listTdEngineTmqTopics(id, keyword);
+    }
+
+    @GetMapping("/{id}/tmq-topic")
+    @PreAuthorize("hasAuthority('datasource.metadata')")
+    @Operation(summary = "读取 TDengine TMQ Topic 详情")
+    public TdEngineTmqTopicDetailResponse readTdEngineTmqTopic(
+            @PathVariable UUID id,
+            @RequestParam String topic
+    ) {
+        return service.readTdEngineTmqTopic(id, topic);
     }
 }

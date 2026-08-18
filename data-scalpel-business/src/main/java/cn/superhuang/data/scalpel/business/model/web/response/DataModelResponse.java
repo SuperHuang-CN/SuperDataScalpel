@@ -23,6 +23,7 @@ public record DataModelResponse(
         List<String> clickHouseOrderByColumns,
         DataModelStatus status,
         int schemaVersion,
+        DataModelPhysicalStatisticsResponse physicalStatistics,
         String description,
         Instant createdAt,
         Instant updatedAt
@@ -30,18 +31,27 @@ public record DataModelResponse(
     public static DataModelResponse from(
             DataModel model,
             String storageDataSourceName,
-            ModelWarehouseLayerSummaryResponse warehouseLayer
+            ModelWarehouseLayerSummaryResponse warehouseLayer,
+            DataModelPhysicalStatisticsResponse physicalStatistics
     ) {
         return new DataModelResponse(
                 model.getId(), model.getCode(), model.getName(), model.getDirectoryId(),
                 warehouseLayer,
                 model.getStorageDataSourceId(), storageDataSourceName, model.getCatalogName(), model.getSchemaName(),
-                model.getPhysicalTableName(), model.getPhysicalTableMode(), model.getClickHouseOrderByColumns(), model.getStatus(), model.getSchemaVersion(), model.getDescription(),
+                model.getPhysicalTableName(), model.getPhysicalTableMode(), model.getClickHouseOrderByColumns(), model.getStatus(), model.getSchemaVersion(), physicalStatistics, model.getDescription(),
                 model.getCreatedAt(), model.getUpdatedAt()
         );
     }
 
+    public static DataModelResponse from(
+            DataModel model,
+            String storageDataSourceName,
+            ModelWarehouseLayerSummaryResponse warehouseLayer
+    ) {
+        return from(model, storageDataSourceName, warehouseLayer, null);
+    }
+
     public static DataModelResponse from(DataModel model, String storageDataSourceName) {
-        return from(model, storageDataSourceName, null);
+        return from(model, storageDataSourceName, null, null);
     }
 }

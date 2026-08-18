@@ -217,7 +217,9 @@ export const CanvasJdbcTableSelect = ({
             <div className="canvas-metadata-option-title">
               <TableOutlined />
               <Typography.Text ellipsis code>{table.identifier.table}</Typography.Text>
-              <Tag variant="filled">{table.type === 'TABLE' ? '表' : table.type}</Tag>
+              <Tag variant="filled" color={table.type === 'SUPERTABLE' ? 'cyan' : undefined}>
+                {table.type === 'SUPERTABLE' ? '超级表' : table.type === 'TABLE' ? '表' : table.type}
+              </Tag>
               {unavailable && <Tag color="error">不可用</Tag>}
             </div>
             {table.comment && (
@@ -236,7 +238,9 @@ export const CanvasJdbcTableSelect = ({
           {menu}
           <Divider className="canvas-metadata-popup-divider" />
           <div className="canvas-metadata-popup-footer" onMouseDown={(event) => event.preventDefault()}>
-            <span>{tablesQuery.data?.truncated ? '结果超过 500 项，请输入表名继续筛选' : '仅显示真实物理表'}</span>
+            <span>{tablesQuery.data?.truncated
+              ? '结果超过 500 项，请输入名称继续筛选'
+              : listedTables.some((table) => table.type === 'SUPERTABLE') ? '仅显示 TDengine 超级表' : '仅显示真实物理表'}</span>
             <Button
               type="text"
               size="small"

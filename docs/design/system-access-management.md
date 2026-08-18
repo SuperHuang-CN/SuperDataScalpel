@@ -41,6 +41,7 @@
 | `system.permission.view` | 查看代码维护的权限目录 |
 | `system.configuration.view` / `system.configuration.update` | 查看 / 修改系统配置 |
 | `directory.view` / `directory.manage` | 查看 / 管理通用目录 |
+| `asset.view` / `asset.manage` | 查看资产登记与同步状态 / 登记、维护、发布、下线、检查和同步资产 |
 | `datasource.view`、`datasource.create`、`datasource.update`、`datasource.delete` | 数据源查询及各 CRUD 操作 |
 | `datasource.test` | 测试数据源连接 |
 | `datasource.metadata` | 读取库表、字段和预览数据 |
@@ -55,6 +56,18 @@
 | --- | --- | --- |
 | `POST` | `/api/v1/auth/login` | 用户名密码登录，返回 JWT |
 | `GET` | `/api/v1/auth/me` | 返回当前用户名、角色编码与权限编码 |
+
+资产门户的以下只读接口也允许匿名 `GET`，用于展示已发布资产的裁剪后安全元数据：
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/v1/asset-portal/overview` | 门户统计、热门标签和顶级业务领域 |
+| `GET` | `/api/v1/asset-portal/assets` | 已发布资产分页与服务端筛选 |
+| `GET` | `/api/v1/asset-portal/assets/{id}` | 已发布资产公开详情 |
+
+除上述公开查询外，资产管理接口仍需 JWT。`GET /api/v1/assets/{id}/source-navigation` 也必须登录，并根据资产来源类型再次校验对应的 `model.view`、`filedataset.view`、`standard.dictionary.view` 或 `service.view`；浏览器不能用门户身份直接访问原模块管理接口。
+
+AI 助手接口 `/api/v1/assistant/**` 全部要求登录且会话只允许创建者访问。助手不新增 `assistant.use` 权限；工具按照当前 JWT authorities 动态提供并在执行时再次校验。目录查询要求 `directory.view`，目录计划生成和确认执行要求 `directory.manage`。AI 模型管理复用 `system.configuration.view/update`，API Key 只返回是否已配置，不能进入 JWT、接口响应或助手审计。
 
 JWT 的 `roles` 和 `permissions` Claim 由登录时的数据库用户、单一角色及有效权限产生。受保护的 Resource 使用 `@PreAuthorize("hasAuthority('权限编码')")` 进行判断。令牌有效期内的角色调整不会立即影响已签发令牌，重新登录后生效；第一版不维护服务端令牌黑名单。
 
@@ -73,11 +86,11 @@ JWT 的 `roles` 和 `permissions` Claim 由登录时的数据库用户、单一�
 - 删除角色前必须确认没有用户引用它；内置角色不能删除。
 - 内置 `super_admin` 的权限由启动同步维护，角色管理页面不可修改。
 - 配置角色权限时只能选择有效权限；保存时使用映射表全量替换，先删除并刷写旧映射，再写入新映射，保证唯一约束下的更新稳定。
-- 所有业务接口默认需要有效 JWT；健康检查、OpenAPI、Swagger 与登录入口例外。
+- 所有业务接口默认需要有效 JWT；健康检查、OpenAPI、Swagger、登录入口以及明确列出的资产门户只读接口例外。
 
 ## 前端
 
-前端在会话级 `sessionStorage` 保存访问令牌，统一 HTTP 客户端自动附加 `Authorization: Bearer`。启动时调用 `/auth/me` 恢复登录态；令牌无效或过期则清除并返回登录页。
+前端在会话级 `sessionStorage` 保存访问令牌，统一 HTTP 客户端自动附加 `Authorization: Bearer`。启动时调用 `/auth/me` 恢复登录态；令牌无效或过期则清除并返回登录页。资产门户公开请求显式跳过认证头；匿名用户点击“使用资产”时跳转登录并保留当前详情地址。
 
 系统管理下提供紧凑型用户、角色、权限和系统配置页面。菜单、路由和按钮依据 `/auth/me` 的权限编码显示；数据源页还会分别收敛目录、创建、修改、测试、元数据和删除操作。所有实际操作仍由后端鉴权。
 

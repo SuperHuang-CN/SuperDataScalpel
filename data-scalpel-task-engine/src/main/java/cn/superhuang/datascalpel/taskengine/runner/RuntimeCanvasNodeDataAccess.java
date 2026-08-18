@@ -3,6 +3,7 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeDataAccess;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedSnapshotSyncOutput;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedKafkaOutput;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedFileOutput;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
@@ -13,9 +14,13 @@ import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.SpatialServiceResourceDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcIncrementalInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcIncrementalSourceSignature;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
@@ -23,8 +28,12 @@ import cn.superhuang.datascalpel.taskengine.contract.RuntimeFileInput;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeFileStorage;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeKafkaConnection;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeS3Connection;
+import cn.superhuang.datascalpel.taskengine.contract.RuntimeTdEngineTmqConnection;
+import cn.superhuang.datascalpel.taskengine.tdengine.tmq.TdEngineTmqTableProvider;
+import cn.superhuang.datascalpel.taskengine.jdbc.incremental.JdbcIncrementalTableProvider;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery;
 import cn.superhuang.data.scalpel.dialect.query.ReadOnlyQueryFingerprint;
@@ -51,6 +60,11 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     private final Map<UUID, RuntimeDataSource> runtimeSources;
     private final RuntimeFileStorage runtimeFileStorage;
     private final Map<UUID, RuntimeFileInput> runtimeFileInputs;
+    private final String executionId;
+    private final int attempt;
+    private final String streamingSourceNodeId;
+    private final String streamingSourceSignature;
+    private final String initialSourceOffset;
     private final FileDatasetBatchReaderRegistry fileReaders = new FileDatasetBatchReaderRegistry();
     private final List<HttpApiBatchDatasetStager> httpApiStagers = new ArrayList<>();
     private final SpatialServiceFeatureReader spatialServiceFeatureReader = new SpatialServiceFeatureReader();
@@ -59,7 +73,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             SparkSession spark,
             Map<UUID, RuntimeDataSource> runtimeSources
     ) {
-        this(spark, runtimeSources, null, List.of());
+        this(spark, runtimeSources, null, List.of(), null, 0, null, null, null);
     }
 
     RuntimeCanvasNodeDataAccess(
@@ -68,9 +82,29 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             RuntimeFileStorage runtimeFileStorage,
             List<RuntimeFileInput> runtimeFileInputs
     ) {
+        this(spark, runtimeSources, runtimeFileStorage, runtimeFileInputs, null, 0,
+                null, null, null);
+    }
+
+    RuntimeCanvasNodeDataAccess(
+            SparkSession spark,
+            Map<UUID, RuntimeDataSource> runtimeSources,
+            RuntimeFileStorage runtimeFileStorage,
+            List<RuntimeFileInput> runtimeFileInputs,
+            String executionId,
+            int attempt,
+            String streamingSourceNodeId,
+            String streamingSourceSignature,
+            String initialSourceOffset
+    ) {
         this.spark = spark;
         this.runtimeSources = runtimeSources;
         this.runtimeFileStorage = runtimeFileStorage;
+        this.executionId = executionId;
+        this.attempt = attempt;
+        this.streamingSourceNodeId = streamingSourceNodeId;
+        this.streamingSourceSignature = streamingSourceSignature;
+        this.initialSourceOffset = initialSourceOffset;
         this.runtimeFileInputs = runtimeFileInputs.stream().collect(java.util.stream.Collectors.toUnmodifiableMap(
                 RuntimeFileInput::fileDatasetTableId,
                 java.util.function.Function.identity(),
@@ -84,7 +118,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public Dataset<Row> readJdbcInput(
             JdbcInputNodeDefinition node,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
                 node.configuration().dataSourceId(), "输入数据源 ID 无效", node.id());
@@ -98,15 +132,75 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 spark,
                 runtime,
                 SpatialJdbcRuntimeSupport.tableIdentifier(runtime, node.configuration().tableName()),
-                expectedSchema,
+                logicalSchema,
                 node.id()
         );
     }
 
     @Override
+    public Dataset<Row> readJdbcIncrementalInput(
+            JdbcIncrementalInputNodeDefinition node,
+            CanvasTableSchema logicalSchema
+    ) {
+        UUID dataSourceId = CanvasTaskExecutor.uuid(
+                node.configuration().dataSourceId(), "增量输入数据源 ID 无效", node.id());
+        RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
+                runtimeSources, dataSourceId, DataSourcePurpose.SOURCE, node.id());
+        if (runtime.connectionKind() != ConnectionKind.JDBC
+                || runtime.databaseType() == null || runtime.connection() == null) {
+            throw new RunnerExecutionException(
+                    "RUNTIME_DATA_SOURCE_UNAVAILABLE", "增量输入节点需要 JDBC 数据源", node.id());
+        }
+        var cursor = logicalSchema.columns().stream()
+                .filter(column -> column.name().equals(node.configuration().incrementalTimeColumn()))
+                .findFirst().orElseThrow(() -> new RunnerExecutionException(
+                        "JDBC_INCREMENTAL_SCHEMA_CHANGED", "增量时间字段不存在", node.id()));
+        var connection = runtime.connection();
+        String sourceSignature = JdbcIncrementalSourceSignature.sha256(
+                node, connection.catalogName(), connection.schemaName(), logicalSchema.columns());
+        if (streamingSourceSignature != null
+                && (!node.id().equals(streamingSourceNodeId)
+                || !sourceSignature.equals(streamingSourceSignature))) {
+            throw new RunnerExecutionException(
+                    "JDBC_INCREMENTAL_SOURCE_CHANGED",
+                    "运行 Manifest 的 JDBC 增量来源签名与当前定义不一致",
+                    node.id());
+        }
+        var reader = spark.readStream()
+                .format(JdbcIncrementalTableProvider.class.getName())
+                .schema(SparkTypeMapper.toStructType(logicalSchema.columns()))
+                .option("dataSourceId", dataSourceId.toString())
+                .option("nodeId", node.id())
+                .option("sourceSignature", sourceSignature)
+                .option("databaseType", runtime.databaseType().name())
+                .option("driverClassName", connection.driverClassName())
+                .option("jdbcUrl", connection.jdbcUrl())
+                .option("username", connection.username())
+                .option("tableName", node.configuration().tableName())
+                .option("incrementalTimeColumn", node.configuration().incrementalTimeColumn())
+                .option("temporalType", cursor.fieldType().name())
+                .option("cursorTimeZone", node.configuration().cursorTimeZone())
+                .option("visibilityDelaySeconds", node.configuration().visibilityDelaySeconds())
+                .option("startPosition", node.configuration().startPosition().name());
+        if (connection.password() != null) reader = reader.option("password", connection.password());
+        if (connection.catalogName() != null) reader = reader.option("catalogName", connection.catalogName());
+        if (connection.schemaName() != null) reader = reader.option("schemaName", connection.schemaName());
+        if (node.configuration().startTime() != null) {
+            reader = reader.option("startTime", node.configuration().startTime().toString());
+        }
+        if (initialSourceOffset != null && node.id().equals(streamingSourceNodeId)) {
+            reader = reader.option("resumeOffset", initialSourceOffset);
+        }
+        for (Map.Entry<String, String> property : connection.properties().entrySet()) {
+            reader = reader.option("jdbcProperty." + property.getKey(), property.getValue());
+        }
+        return reader.load();
+    }
+
+    @Override
     public Dataset<Row> readJdbcQueryInput(
             JdbcQueryInputNodeDefinition node,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
                 node.configuration().dataSourceId(), "查询输入数据源 ID 无效", node.id());
@@ -135,9 +229,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             if (sessionInitialization != null && !sessionInitialization.isBlank()) {
                 reader = reader.option("sessionInitStatement", sessionInitialization);
             }
-            Dataset<Row> dataset = reader.load();
-            validateJdbcQuerySchema(expectedSchema, dataset, node.id());
-            return dataset;
+            return reader.load();
         } catch (RunnerExecutionException exception) {
             throw exception;
         } catch (RuntimeException exception) {
@@ -147,39 +239,11 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         }
     }
 
-    private static void validateJdbcQuerySchema(
-            CanvasTableSchema expectedSchema,
-            Dataset<Row> actual,
-            String nodeId
-    ) {
-        List<cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema> expected =
-                expectedSchema.columns();
-        List<cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema> actualColumns =
-                SparkTypeMapper.fromStructType(actual.schema(), expected);
-        if (expected.size() != actualColumns.size()) {
-            throw new RunnerExecutionException(
-                    "JDBC_QUERY_SCHEMA_DRIFT", "查询结果字段数量已变化", nodeId);
-        }
-        for (int index = 0; index < expected.size(); index++) {
-            var left = expected.get(index);
-            var right = actualColumns.get(index);
-            if (!left.name().equals(right.name())
-                    || left.fieldType() != right.fieldType()
-                    || !java.util.Objects.equals(left.length(), right.length())
-                    || !java.util.Objects.equals(left.precision(), right.precision())
-                    || !java.util.Objects.equals(left.scale(), right.scale())
-                    || left.nullable() != right.nullable()) {
-                throw new RunnerExecutionException(
-                        "JDBC_QUERY_SCHEMA_DRIFT", "查询结果字段结构已变化：" + left.name(), nodeId);
-            }
-        }
-    }
-
     @Override
     public Dataset<Row> readFileDatasetInput(
             FileDatasetInputNodeDefinition node,
             MetadataIndex.FileDatasetTableEntry table,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
         UUID tableId = CanvasTaskExecutor.uuid(
                 node.configuration().fileDatasetTableId(),
@@ -194,20 +258,13 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                     node.id()
             );
         }
-        if (!input.schemaFingerprint().equals(FileDatasetSchemaFingerprint.calculate(expectedSchema.columns()))) {
-            throw new RunnerExecutionException(
-                    "RUNTIME_SCHEMA_MISMATCH",
-                    "文件数据集 Manifest Schema 与任务定义不一致",
-                    node.id()
-            );
-        }
-        return fileReaders.read(spark, runtimeFileStorage, input, expectedSchema, node.id(), node.name());
+        return fileReaders.read(spark, runtimeFileStorage, input, logicalSchema, node.id(), node.name());
     }
 
     @Override
     public Dataset<Row> readHttpApiInput(
             HttpApiInputNodeDefinition node,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
                 node.configuration().dataSourceId(), "API 数据源 ID 无效", node.id());
@@ -229,7 +286,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         }
         HttpApiBatchDatasetStager stager = new HttpApiBatchDatasetStager(
                 spark,
-                SparkTypeMapper.toStructType(expectedSchema.columns())
+                SparkTypeMapper.toStructType(logicalSchema.columns())
         );
         httpApiStagers.add(stager);
         try {
@@ -253,7 +310,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public Dataset<Row> readSpatialServiceInput(
             SpatialServiceInputNodeDefinition node,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
                 node.configuration().dataSourceId(), "空间服务数据源 ID 无效", node.id());
@@ -271,13 +328,13 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         if (!resource.enabled()) {
             throw new RunnerExecutionException("SPATIAL_RESOURCE_DISABLED", "空间要素资源已停用", node.id());
         }
-        return spatialServiceFeatureReader.read(spark, runtime.httpApiConnection(), resource, expectedSchema, node.id());
+        return spatialServiceFeatureReader.read(spark, runtime.httpApiConnection(), resource, logicalSchema, node.id());
     }
 
     @Override
     public Dataset<Row> readKafkaInput(
             KafkaInputNodeDefinition node,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
                 runtimeSources,
@@ -308,16 +365,53 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         Dataset<Row> raw = reader.load();
         return raw.select(functions.from_json(
                         functions.col("value").cast("string"),
-                        SparkTypeMapper.toStructType(expectedSchema.columns()),
+                        SparkTypeMapper.toStructType(logicalSchema.columns()),
                         Map.of("mode", "FAILFAST"))
                 .alias("data")).select("data.*");
+    }
+
+    @Override
+    public Dataset<Row> readTdEngineTmqInput(
+            TdEngineTmqInputNodeDefinition node,
+            CanvasTableSchema logicalSchema
+    ) {
+        UUID dataSourceId = CanvasTaskExecutor.uuid(
+                node.configuration().dataSourceId(), "TMQ 输入数据源 ID 无效", node.id());
+        RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
+                runtimeSources, dataSourceId, DataSourcePurpose.SOURCE, node.id());
+        RuntimeTdEngineTmqConnection connection = runtime.tdEngineTmqConnection();
+        if (runtime.connectionKind() != ConnectionKind.JDBC || connection == null) {
+            throw new RunnerExecutionException(
+                    "RUNTIME_DATA_SOURCE_UNAVAILABLE",
+                    "TMQ 输入需要 TDengine WebSocket 运行连接",
+                    node.id()
+            );
+        }
+        return spark.readStream()
+                .format(TdEngineTmqTableProvider.class.getName())
+                .schema(SparkTypeMapper.toStructType(logicalSchema.columns()))
+                .option("dataSourceId", dataSourceId.toString())
+                .option("nodeId", node.id())
+                .option("executionId", executionId == null ? "unknown" : executionId)
+                .option("attempt", attempt)
+                .option("bootstrapServers", connection.bootstrapServers())
+                .option("username", connection.username())
+                .option("password", connection.password())
+                .option("useSsl", connection.useSsl())
+                .option("topic", node.configuration().topicName())
+                .option("startingOffsets", node.configuration().startingOffsets().name().toLowerCase())
+                .option(
+                        "maxOffsetsPerVGroupPerTrigger",
+                        node.configuration().maxOffsetsPerVGroupPerTrigger()
+                )
+                .load();
     }
 
     @Override
     public Dataset<Row> readModelInput(
             ModelInputNodeDefinition node,
             MetadataIndex.ModelEntry model,
-            CanvasTableSchema expectedSchema
+            CanvasTableSchema logicalSchema
     ) {
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSourceForModelRead(
                 runtimeSources, model.metadata().dataSourceId(), node.id());
@@ -329,7 +423,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                         model.metadata().schemaName(),
                         model.metadata().physicalTableName()
                 ),
-                expectedSchema,
+                logicalSchema,
                 node.id()
         );
     }
@@ -351,21 +445,12 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         TableIdentifier targetTable =
                 SpatialJdbcRuntimeSupport.tableIdentifier(runtime, node.configuration().targetTableName());
         String qualifiedTableName = SpatialJdbcRuntimeSupport.qualifiedTable(runtime, targetTable);
-        Map<String, Integer> geometryLocalSrids;
-        if (targetSchema.columns().stream().anyMatch(column ->
-                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
-            geometryLocalSrids =
-                    SpatialJdbcRuntimeSupport.validateTarget(runtime, targetTable, targetSchema, node.id());
-        } else {
-            Dataset<Row> actualTarget = CanvasTaskExecutor.reader(spark, runtime)
-                    .option("dbtable", qualifiedTableName)
-                    .load();
-            CanvasTaskExecutor.validateRuntimeSchema(targetSchema.columns(), actualTarget, node.id());
-            geometryLocalSrids = Map.of();
-        }
+        Map<String, Integer> geometryLocalSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
+                runtime, targetTable, targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedOutput(
                 node,
                 runtime,
+                targetTable,
                 qualifiedTableName,
                 CanvasTaskExecutor.displayTable(runtime, node.configuration().targetTableName()),
                 node.configuration().writeMode(),
@@ -381,7 +466,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             ModelOutputNodeDefinition node,
             MetadataIndex.ModelEntry model,
             CanvasTableSchema targetSchema,
-            Dataset<Row> dataset
+            Dataset<Row> dataset,
+            List<String> upsertKeyColumns
     ) {
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
                 runtimeSources,
@@ -399,29 +485,91 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 model.metadata().physicalTableName()
         );
         String qualifiedTableName = SpatialJdbcRuntimeSupport.qualifiedTable(runtime, targetTable);
-        Map<String, Integer> geometryLocalSrids;
-        if (targetSchema.columns().stream().anyMatch(column ->
-                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
-            geometryLocalSrids =
-                    SpatialJdbcRuntimeSupport.validateTarget(runtime, targetTable, targetSchema, node.id());
-        } else {
-            Dataset<Row> actualTarget = CanvasTaskExecutor.reader(spark, runtime)
-                    .option("dbtable", qualifiedTableName)
-                    .load();
-            CanvasTaskExecutor.validateRuntimeSchema(targetSchema.columns(), actualTarget, node.id());
-            geometryLocalSrids = Map.of();
-        }
+        Map<String, Integer> geometryLocalSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
+                runtime, targetTable, targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedOutput(
                 node,
                 runtime,
+                targetTable,
                 qualifiedTableName,
                 CanvasTaskExecutor.displayModelTable(runtime, model),
                 node.configuration().writeMode(),
                 dataset,
                 targetSchema,
                 geometryLocalSrids,
-                List.of()
+                upsertKeyColumns
         );
+    }
+
+    @Override
+    public CanvasPreparedSnapshotSyncOutput prepareJdbcSnapshotSyncOutput(
+            JdbcSnapshotSyncOutputNodeDefinition node,
+            CanvasTableSchema targetSchema,
+            Dataset<Row> dataset
+    ) {
+        UUID dataSourceId = CanvasTaskExecutor.uuid(
+                node.configuration().dataSourceId(), "快照同步数据源 ID 无效", node.id());
+        RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
+                runtimeSources, dataSourceId, DataSourcePurpose.DISTRIBUTION, node.id());
+        requireSnapshotSyncDatabase(runtime, node.id());
+        TableIdentifier targetTable = SpatialJdbcRuntimeSupport.tableIdentifier(
+                runtime, node.configuration().targetTableName());
+        Map<String, Integer> localSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
+                runtime, targetTable, targetSchema, dataset.columns(), node.id());
+        return new CanvasPreparedSnapshotSyncOutput(
+                node,
+                runtime,
+                targetTable,
+                CanvasTaskExecutor.displayTable(runtime, node.configuration().targetTableName()),
+                dataset,
+                targetSchema,
+                node.configuration().keyColumns(),
+                node.configuration().deletePolicy(),
+                localSrids
+        );
+    }
+
+    @Override
+    public CanvasPreparedSnapshotSyncOutput prepareModelSnapshotSyncOutput(
+            ModelSnapshotSyncOutputNodeDefinition node,
+            MetadataIndex.ModelEntry model,
+            CanvasTableSchema targetSchema,
+            Dataset<Row> dataset
+    ) {
+        RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
+                runtimeSources, model.metadata().dataSourceId(), DataSourcePurpose.STORAGE, node.id());
+        requireSnapshotSyncDatabase(runtime, node.id());
+        TableIdentifier targetTable = new TableIdentifier(
+                model.metadata().catalogName(),
+                model.metadata().schemaName(),
+                model.metadata().physicalTableName()
+        );
+        Map<String, Integer> localSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
+                runtime, targetTable, targetSchema, dataset.columns(), node.id());
+        return new CanvasPreparedSnapshotSyncOutput(
+                node,
+                runtime,
+                targetTable,
+                CanvasTaskExecutor.displayModelTable(runtime, model),
+                dataset,
+                targetSchema,
+                node.configuration().keyColumns(),
+                node.configuration().deletePolicy(),
+                localSrids
+        );
+    }
+
+    private static void requireSnapshotSyncDatabase(RuntimeDataSource runtime, String nodeId) {
+        if (runtime.connectionKind() != ConnectionKind.JDBC
+                || runtime.connection() == null
+                || runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.POSTGRESQL
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL) {
+            throw new RunnerExecutionException(
+                    "SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED",
+                    "快照同步只支持 PostgreSQL 和 MySQL JDBC 数据源",
+                    nodeId
+            );
+        }
     }
 
     @Override

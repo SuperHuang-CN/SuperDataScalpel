@@ -34,13 +34,13 @@ import {
   type ApiServiceSubscription,
   type GatewaySubscriptionStatus,
 } from '../model/apiConsumerAccess';
-import type { DataServiceSummary } from '../model/dataService';
+import type { DataServiceDetail, DataServiceSummary } from '../model/dataService';
 import { publishedGatewayBinding } from '../model/dataServiceGateway';
 import { GatewayReconciliationTag } from './GatewayReconciliationTag';
 
 interface DataServiceSubscriptionsDrawerProps {
   open: boolean;
-  dataService: DataServiceSummary | null;
+  dataService: DataServiceDetail | DataServiceSummary | null;
   canManage: boolean;
   onClose: () => void;
 }
@@ -237,6 +237,7 @@ export const DataServiceSubscriptionsDrawer = ({
     <>
       {messageContext}
       <Drawer
+        rootClassName="business-overlay business-drawer-overlay"
         title={dataService ? `${dataService.name} · 订阅消费者` : '订阅消费者'}
         open={open}
         width={780}

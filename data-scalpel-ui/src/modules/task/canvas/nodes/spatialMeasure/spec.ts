@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeSpatialMeasure } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { spatialMeasureCanvasView } from './canvasView';
 
 export const spatialMeasureSpec = createCanvasNodeSpec({
   type: CanvasNodeType.SpatialMeasure,
@@ -15,9 +16,9 @@ export const spatialMeasureSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'measure', 'area', 'length', 'distance', '面积', '距离'],
   iconKey: CanvasNodeIconKey.SpatialMeasure,
   order: 70,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: spatialMeasureCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 21,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createSpatialMeasureConfiguration,
   summarize: summarizeSpatialMeasure,

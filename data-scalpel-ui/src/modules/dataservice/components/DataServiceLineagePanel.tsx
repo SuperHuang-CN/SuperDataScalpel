@@ -1,264 +1,109 @@
-import { AimOutlined, ZoomInOutlined, ZoomOutOutlined } from '@ant-design/icons';
-import { Graph } from '@antv/x6';
-import { Button, Descriptions, Space, Tag } from 'antd';
-import { useEffect, useRef, useState } from 'react';
-import type { DataServiceRelatedModelView } from '../hooks/useDataServiceRelatedModels';
-import { gatewayProviderLabels } from '../model/apiConsumer';
+import { DatabaseOutlined, FieldStringOutlined } from '@ant-design/icons';
+import { Alert, Segmented, Select, Space, Tag } from 'antd';
+import { useState } from 'react';
+import { ApiError } from '../../../shared/api/http';
+import {
+  LineageGraphCanvas,
+  useDataModel,
+  type LineageCoverage,
+  type LineageGranularity,
+} from '../../model';
+import { useDataServiceLineage } from '../hooks/useDataServices';
 import type { DataServiceDetail } from '../model/dataService';
 
 interface DataServiceLineagePanelProps {
   dataService: DataServiceDetail;
-  sourceName?: string;
-  relatedModels: DataServiceRelatedModelView[];
 }
 
-type LineageNodeKind = 'DATASOURCE' | 'MODEL' | 'SERVICE' | 'GATEWAY' | 'CONSUMER';
-
-interface LineageNode {
-  id: string;
-  label: string;
-  subtitle: string;
-  kind: LineageNodeKind;
-  direction: 'UPSTREAM' | 'CURRENT' | 'DOWNSTREAM';
-  mock: boolean;
-  x: number;
-  y: number;
-}
-
-interface LineageEdge {
-  id: string;
-  source: string;
-  target: string;
-  mock: boolean;
-}
-
-const nodeKindLabels: Record<LineageNodeKind, string> = {
-  DATASOURCE: '数据源',
-  MODEL: '数据模型',
-  SERVICE: '数据服务',
-  GATEWAY: 'API 网关',
-  CONSUMER: '调用方',
+const coverageLabels: Record<LineageCoverage, string> = {
+  MODEL_ONLY: '仅表级', FIELD_PARTIAL: '字段部分覆盖', FIELD_COMPLETE: '字段完整覆盖',
 };
 
-const nodeThemes: Record<LineageNodeKind, { fill: string; stroke: string }> = {
-  DATASOURCE: { fill: '#fff7e6', stroke: '#fa8c16' },
-  MODEL: { fill: '#e6f4ff', stroke: '#1677ff' },
-  SERVICE: { fill: '#f9f0ff', stroke: '#722ed1' },
-  GATEWAY: { fill: '#f6ffed', stroke: '#52c41a' },
-  CONSUMER: { fill: '#fff1f0', stroke: '#ff4d4f' },
-};
-
-const buildLineage = (
-  dataService: DataServiceDetail,
-  sourceName: string | undefined,
-  relatedModels: DataServiceRelatedModelView[],
-): { nodes: LineageNode[]; edges: LineageEdge[] } => {
-  const displayedModels = relatedModels.slice(0, 5);
-  const modelNodeCount = Math.max(displayedModels.length, 1);
-  const rowGap = 86;
-  const top = 32;
-  const centerY = top + ((modelNodeCount - 1) * rowGap) / 2;
-  const sourceId = dataService.sqlDefinition?.dataSourceId ?? dataService.scriptDefinition?.dataSourceId;
-  const sourceLabel = sourceName
-    ?? displayedModels[0]?.model?.storageDataSourceName
-    ?? (sourceId ? `数据源 ${sourceId.slice(0, 8)}` : '上游数据源');
-  const gatewayBinding = dataService.gatewayBindings[0];
-
-  const nodes: LineageNode[] = [
-    {
-      id: 'source',
-      label: sourceLabel,
-      subtitle: sourceId ? '服务配置数据源' : '模型存储数据源',
-      kind: 'DATASOURCE',
-      direction: 'UPSTREAM',
-      mock: false,
-      x: 24,
-      y: centerY,
-    },
-    {
-      id: 'current-service',
-      label: dataService.name,
-      subtitle: dataService.code,
-      kind: 'SERVICE',
-      direction: 'CURRENT',
-      mock: false,
-      x: 560,
-      y: centerY,
-    },
-    {
-      id: 'gateway',
-      label: gatewayBinding ? gatewayProviderLabels[gatewayBinding.provider] : '内网 API 网关',
-      subtitle: gatewayBinding ? '当前网关绑定' : '下游发布节点（示例）',
-      kind: 'GATEWAY',
-      direction: 'DOWNSTREAM',
-      mock: !gatewayBinding,
-      x: 820,
-      y: centerY,
-    },
-    {
-      id: 'consumer',
-      label: '政务业务应用',
-      subtitle: '订阅消费者（示例）',
-      kind: 'CONSUMER',
-      direction: 'DOWNSTREAM',
-      mock: true,
-      x: 1080,
-      y: centerY,
-    },
-  ];
-  const edges: LineageEdge[] = [
-    { id: 'service-gateway', source: 'current-service', target: 'gateway', mock: !gatewayBinding },
-    { id: 'gateway-consumer', source: 'gateway', target: 'consumer', mock: true },
-  ];
-
-  if (displayedModels.length > 0) {
-    displayedModels.forEach((row, index) => {
-      const nodeId = `model-${index}`;
-      nodes.push({
-        id: nodeId,
-        label: row.model?.name ?? `模型引用 ${row.order}`,
-        subtitle: row.model?.code ?? row.modelId,
-        kind: 'MODEL',
-        direction: 'UPSTREAM',
-        mock: false,
-        x: 286,
-        y: top + index * rowGap,
-      });
-      edges.push(
-        { id: `source-${nodeId}`, source: 'source', target: nodeId, mock: false },
-        { id: `${nodeId}-service`, source: nodeId, target: 'current-service', mock: false },
-      );
-    });
-    if (relatedModels.length > displayedModels.length) {
-      nodes.push({
-        id: 'more-models',
-        label: `其余 ${relatedModels.length - displayedModels.length} 个模型`,
-        subtitle: '关联模型汇总',
-        kind: 'MODEL',
-        direction: 'UPSTREAM',
-        mock: false,
-        x: 286,
-        y: top + displayedModels.length * rowGap,
-      });
-      edges.push({ id: 'more-models-service', source: 'more-models', target: 'current-service', mock: false });
-    }
-  } else {
-    edges.push({ id: 'source-service', source: 'source', target: 'current-service', mock: dataService.type !== 'SCRIPT_API' });
-  }
-
-  return { nodes, edges };
-};
-
-export const DataServiceLineagePanel = ({
-  dataService,
-  sourceName,
-  relatedModels,
-}: DataServiceLineagePanelProps) => {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const graphRef = useRef<Graph | null>(null);
-  const [selectedNode, setSelectedNode] = useState<LineageNode>();
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container) return undefined;
-    const definition = buildLineage(dataService, sourceName, relatedModels);
-    const currentNode = definition.nodes.find((node) => node.id === 'current-service');
-    const graph = new Graph({
-      container,
-      autoResize: true,
-      background: { color: '#fbfcfe' },
-      grid: { visible: true, size: 10 },
-      interacting: false,
-      panning: true,
-      mousewheel: { enabled: true, minScale: 0.5, maxScale: 1.5 },
-    });
-
-    graph.addNodes(definition.nodes.map((node) => ({
-      id: node.id,
-      shape: 'rect',
-      x: node.x,
-      y: node.y,
-      width: 200,
-      height: 64,
-      data: node,
-      attrs: {
-        body: {
-          fill: nodeThemes[node.kind].fill,
-          stroke: nodeThemes[node.kind].stroke,
-          strokeWidth: node.id === 'current-service' ? 2 : 1,
-          strokeDasharray: node.mock ? '5 3' : undefined,
-          rx: 5,
-          ry: 5,
-        },
-        label: {
-          text: `${node.label}\n${node.subtitle}`,
-          fill: '#262626',
-          fontSize: 12,
-          lineHeight: 18,
-        },
-      },
-    })));
-    graph.addEdges(definition.edges.map((edge) => ({
-      id: edge.id,
-      source: edge.source,
-      target: edge.target,
-      router: { name: 'manhattan' },
-      connector: { name: 'rounded' },
-      attrs: {
-        line: {
-          stroke: edge.mock ? '#bfbfbf' : '#8c8c8c',
-          strokeWidth: 1.5,
-          strokeDasharray: edge.mock ? '5 3' : undefined,
-          targetMarker: { name: 'block', width: 8, height: 6 },
-        },
-      },
-    })));
-    graph.on('node:click', ({ node }) => setSelectedNode(node.getData<LineageNode>()));
-    graph.on('blank:click', () => setSelectedNode(currentNode));
-    graph.zoomToFit({ padding: 28, maxScale: 1 });
-    graphRef.current = graph;
-    setSelectedNode(currentNode);
-
-    return () => {
-      graphRef.current = null;
-      graph.dispose();
-    };
-  }, [dataService, relatedModels, sourceName]);
+export const DataServiceLineagePanel = ({ dataService }: DataServiceLineagePanelProps) => {
+  const [granularity, setGranularity] = useState<LineageGranularity>('TABLE');
+  const [fieldId, setFieldId] = useState<string>();
+  const [depth, setDepth] = useState<1 | 2>(2);
+  const standardModelId = dataService.type === 'STANDARD_TABLE'
+    ? dataService.standardDefinition?.modelId
+    : undefined;
+  const modelQuery = useDataModel(standardModelId, Boolean(standardModelId));
+  const fields = modelQuery.data?.fields ?? [];
+  const effectiveFieldId = fieldId && fields.some((field) => field.id === fieldId)
+    ? fieldId
+    : fields[0]?.id;
+  const query = useDataServiceLineage(
+    dataService.id, granularity, effectiveFieldId, depth,
+    granularity === 'TABLE' || Boolean(effectiveFieldId),
+  );
+  const graph = query.data;
+  const statusMessage = graph?.warnings.join('；');
+  const activeError = granularity === 'FIELD' && modelQuery.error ? modelQuery.error : query.error;
+  const errorMessage = activeError instanceof ApiError ? activeError.message
+    : activeError ? '服务血缘加载失败' : undefined;
+  const unsupported = dataService.type !== 'STANDARD_TABLE';
+  const emptyDescription = unsupported
+    ? '当前服务类型暂未接入血缘'
+    : !standardModelId
+      ? '标准服务定义尚未配置'
+      : granularity === 'FIELD' ? '当前字段未被服务暴露或暂无上游血缘' : '当前服务关联模型暂无上游血缘';
 
   return (
     <div className="data-service-detail-tab-panel">
-      <div className="data-service-lineage-toolbar">
+      <div className="model-lineage-toolbar">
         <Space size={8} wrap>
-          <Tag color="gold">前端 Mock</Tag>
-          <span>实线表示当前配置引用，虚线表示示例或推演关系</span>
-        </Space>
-        <Space size={4}>
-          <Button icon={<ZoomInOutlined />} aria-label="放大血缘图" onClick={() => graphRef.current?.zoom(0.1)} />
-          <Button icon={<ZoomOutOutlined />} aria-label="缩小血缘图" onClick={() => graphRef.current?.zoom(-0.1)} />
-          <Button icon={<AimOutlined />} onClick={() => graphRef.current?.zoomToFit({ padding: 28, maxScale: 1 })}>适应画布</Button>
+          <Segmented<LineageGranularity>
+            value={granularity}
+            onChange={setGranularity}
+            disabled={unsupported}
+            options={[
+              { value: 'TABLE', label: '表级血缘', icon: <DatabaseOutlined /> },
+              { value: 'FIELD', label: '字段级血缘', icon: <FieldStringOutlined /> },
+            ]}
+          />
+          {granularity === 'FIELD' && !unsupported && (
+            <Select
+              showSearch value={effectiveFieldId} loading={modelQuery.isPending}
+              className="model-lineage-field-select" placeholder="选择关联模型字段"
+              optionFilterProp="label" onChange={setFieldId}
+              options={fields.map((field) => ({ value: field.id, label: `${field.name} (${field.code})` }))}
+            />
+          )}
+          <span>层级</span>
+          <Select<1 | 2>
+            value={depth} className="model-lineage-depth-select" onChange={setDepth}
+            options={[{ value: 1, label: '1 层' }, { value: 2, label: '2 层' }]}
+          />
+          {graph?.coverage && <Tag>{coverageLabels[graph.coverage]}</Tag>}
         </Space>
       </div>
-      <div className="data-service-lineage-workspace">
-        <div className="data-service-lineage-canvas-shell">
-          <div ref={containerRef} className="data-service-lineage-canvas" aria-label="数据服务血缘关系图" />
-        </div>
-        <aside className="data-service-lineage-inspector">
-          <div className="data-service-lineage-inspector-title">节点信息</div>
-          {selectedNode ? (
-            <Descriptions size="small" column={1}>
-              <Descriptions.Item label="名称">{selectedNode.label}</Descriptions.Item>
-              <Descriptions.Item label="类型">{nodeKindLabels[selectedNode.kind]}</Descriptions.Item>
-              <Descriptions.Item label="说明">{selectedNode.subtitle}</Descriptions.Item>
-              <Descriptions.Item label="方向">
-                {selectedNode.direction === 'CURRENT' ? '当前服务' : selectedNode.direction === 'UPSTREAM' ? '上游' : '下游'}
-              </Descriptions.Item>
-              <Descriptions.Item label="数据性质">
-                <Tag color={selectedNode.mock ? 'gold' : 'blue'}>{selectedNode.mock ? '示例数据' : '当前配置'}</Tag>
-              </Descriptions.Item>
-            </Descriptions>
-          ) : <span className="data-service-lineage-empty">点击图中节点查看信息</span>}
-        </aside>
-      </div>
+      {statusMessage && (
+        <Alert
+          className="model-lineage-alert" type={graph?.truncated ? 'warning' : 'info'} showIcon
+          message={graph?.truncated ? '血缘图已截断' : '血缘提示'} description={statusMessage}
+        />
+      )}
+      {granularity === 'FIELD' && !effectiveFieldId && !modelQuery.isPending && !modelQuery.error ? (
+        <LineageGraphCanvas
+          graph={undefined} loading={false} emptyDescription="当前关联模型没有可选择的字段"
+          ariaLabel="数据服务血缘关系图" onRetry={() => void modelQuery.refetch()}
+          sideLabels={{ UPSTREAM: '上游', CURRENT: '当前服务', DOWNSTREAM: '下游' }}
+        />
+      ) : (
+        <LineageGraphCanvas
+          graph={graph} loading={query.isFetching || (granularity === 'FIELD' && modelQuery.isPending)}
+          errorMessage={errorMessage} emptyDescription={emptyDescription}
+          ariaLabel="数据服务血缘关系图" onRetry={() => {
+            if (granularity === 'FIELD' && modelQuery.error) void modelQuery.refetch();
+            else void query.refetch();
+          }}
+          sideLabels={{ UPSTREAM: '上游', CURRENT: '当前服务', DOWNSTREAM: '下游' }}
+          legend={[
+            '当前服务是血缘终点，模型和加工任务只向上游展开',
+            '已启用服务的字段关系以实际部署字段快照为准',
+            '橙色虚线节点表示模型结构与部署快照不一致',
+          ]}
+        />
+      )}
     </div>
   );
 };

@@ -35,6 +35,8 @@ import cn.superhuang.data.scalpel.dialect.model.TableDdlAtomicity;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
+import cn.superhuang.data.scalpel.dialect.model.TableStatisticQuality;
 import cn.superhuang.data.scalpel.dialect.model.TableStorageDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableStorageEngine;
 import cn.superhuang.data.scalpel.dialect.model.TableStorageMetadata;
@@ -47,6 +49,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
@@ -134,6 +137,44 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
                     throw new SQLException("ClickHouse system.tables does not contain the target table");
                 }
                 return new TableStorageMetadata(resultSet.getString(1), parseSortingKey(resultSet.getString(2)));
+            }
+        }
+    }
+
+    @Override
+    public TablePhysicalStatistics readTablePhysicalStatistics(
+            Connection connection,
+            TableIdentifier table,
+            Duration timeout
+    ) throws SQLException {
+        String sql = """
+                SELECT t.engine, coalesce(sum(p.rows), 0), coalesce(sum(p.bytes_on_disk), 0)
+                FROM system.tables t
+                LEFT JOIN system.parts p
+                  ON p.database = t.database AND p.table = t.name AND p.active = 1
+                WHERE t.database = ? AND t.name = ?
+                GROUP BY t.engine
+                """;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            statement.setString(1, table.catalog());
+            statement.setString(2, table.table());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) {
+                    return TablePhysicalStatistics.notFound();
+                }
+                String engine = resultSet.getString(1);
+                if (engine == null || !engine.endsWith("MergeTree")) {
+                    return TablePhysicalStatistics.unsupported(
+                            "ClickHouse " + (engine == null ? "未知" : engine) + " 表无法确认本地物理统计"
+                    );
+                }
+                return TablePhysicalStatistics.available(
+                        TableStatisticsJdbcSupport.nullableLong(resultSet, 2),
+                        TableStatisticQuality.EXACT,
+                        TableStatisticsJdbcSupport.nullableLong(resultSet, 3),
+                        TableStatisticQuality.EXACT
+                );
             }
         }
     }

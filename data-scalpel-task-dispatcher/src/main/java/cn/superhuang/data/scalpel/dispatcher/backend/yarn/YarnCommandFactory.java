@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.dispatcher.config.YarnProperties;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry;
 
 public class YarnCommandFactory {
     private static final String RUNNER_MAIN =
@@ -31,7 +32,19 @@ public class YarnCommandFactory {
                 "--files", launchFile.toUri() + "#launch.json",
                 properties.runnerJar()
         ));
+        // User configuration is already allow-listed by Admin; append it after platform defaults.
+        // Platform-controlled keys are rejected before this boundary.
         return List.copyOf(command);
+    }
+
+    public List<String> submit(ExecutionIdentity identity, Path launchFile, List<SparkConfigurationEntry> sparkConf) {
+        List<String> base = new ArrayList<>(submit(identity, launchFile));
+        int jarIndex = base.size() - 1;
+        for (SparkConfigurationEntry entry : sparkConf) {
+            base.add(jarIndex++, "--conf");
+            base.add(jarIndex++, entry.name() + "=" + entry.value());
+        }
+        return List.copyOf(base);
     }
 
     public List<String> status(String applicationId) {

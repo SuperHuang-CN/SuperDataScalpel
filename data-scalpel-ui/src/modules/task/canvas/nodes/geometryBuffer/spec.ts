@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeGeometryBuffer } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { geometryBufferCanvasView } from './canvasView';
 
 export const geometryBufferSpec = createCanvasNodeSpec({
   type: CanvasNodeType.GeometryBuffer,
@@ -15,9 +16,9 @@ export const geometryBufferSpec = createCanvasNodeSpec({
   searchKeywords: ['空间', 'geometry', 'buffer', '缓冲区', '距离', '影响范围'],
   iconKey: CanvasNodeIconKey.GeometryBuffer,
   order: 50,
-  defaultSize: { width: 250, height: 120 },
+  canvasView: geometryBufferCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
-  introducedInMinor: 22,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createGeometryBufferConfiguration,
   summarize: summarizeGeometryBuffer,

@@ -225,33 +225,42 @@ public class DispatcherExecutionStateService {
         Long affectedRows = result.affectedRows();
         switch (result.state()) {
             case SUCCESS -> {
+                cn.superhuang.data.scalpel.contract.quality.QualitySummary qualitySummary =
+                        result.qualityResult() == null ? null
+                                : new cn.superhuang.data.scalpel.contract.quality.QualitySummary(
+                                result.qualityResult().conclusion(), result.qualityResult().totalRules(),
+                                result.qualityResult().passedRules(), result.qualityResult().failedRules(),
+                                result.qualityResult().skippedRules(), result.qualityResult().checkedRows());
                 execution.completeFromRunner(DispatcherExecutionState.SUCCESS, result.startedAt(), result.endedAt(),
                         affectedRows, null);
+                execution.applyQualitySummary(qualitySummary);
                 executionRepository.save(execution);
-                eventService.enqueue(execution, ExecutionMessageType.EXECUTION_SUCCEEDED, null, affectedRows);
+                eventService.enqueueTerminal(execution, ExecutionMessageType.EXECUTION_SUCCEEDED, null,
+                        affectedRows, qualitySummary, result.userJobObservability());
             }
             case FAILED -> {
                 SafeExecutionError safeError = safeError(result.error());
                 execution.completeFromRunner(DispatcherExecutionState.FAILED, result.startedAt(), result.endedAt(),
                         affectedRows, safeError);
                 executionRepository.save(execution);
-                eventService.enqueue(execution, ExecutionMessageType.EXECUTION_FAILED,
-                        safeError, affectedRows);
+                eventService.enqueueTerminal(execution, ExecutionMessageType.EXECUTION_FAILED,
+                        safeError, affectedRows, null, result.userJobObservability());
             }
             case TIMED_OUT -> {
                 SafeExecutionError safeError = safeError(result.error());
                 execution.completeFromRunner(DispatcherExecutionState.TIMED_OUT, result.startedAt(), result.endedAt(),
                         affectedRows, safeError);
                 executionRepository.save(execution);
-                eventService.enqueue(execution, ExecutionMessageType.EXECUTION_TIMED_OUT,
-                        safeError, affectedRows);
+                eventService.enqueueTerminal(execution, ExecutionMessageType.EXECUTION_TIMED_OUT,
+                        safeError, affectedRows, null, result.userJobObservability());
             }
             case CANCELLED -> {
                 SafeExecutionError safeError = safeError(result.error());
                 execution.completeFromRunner(DispatcherExecutionState.CANCELLED, result.startedAt(), result.endedAt(),
                         affectedRows, safeError);
                 executionRepository.save(execution);
-                eventService.enqueue(execution, ExecutionMessageType.EXECUTION_CANCELLED, safeError, affectedRows);
+                eventService.enqueueTerminal(execution, ExecutionMessageType.EXECUTION_CANCELLED,
+                        safeError, affectedRows, null, result.userJobObservability());
             }
             default -> throw new IllegalArgumentException("Runner result.json 不是终态");
         }
@@ -300,7 +309,7 @@ public class DispatcherExecutionStateService {
                         kafka.bootstrapServers(), registration.getRunnerEventTopic(), kafka.securityProtocol(),
                         kafka.clientIdPrefix() + "-" + execution.getExecutionId()),
                 streamingExecution
-                        ? streaming.deploymentCheckpointUri(execution.getStreamingDeploymentId())
+                        ? streaming.checkpointUri(execution.getCheckpointKeyPrefix())
                         : null,
                 streamingExecution
                         ? new RunnerControlChannel(
@@ -310,7 +319,8 @@ public class DispatcherExecutionStateService {
                                 kafka.clientIdPrefix() + "-control-" + execution.getExecutionId(),
                                 "datascalpel-runner-control-" + execution.getExecutionId()
                                     + "-" + execution.getAttempt())
-                        : null
+                        : null,
+                execution.getQualitySampleRuleIds(), execution.getUserJar(), execution.getSparkConf()
         );
     }
 

@@ -1,0 +1,80 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>cn.superhuang</groupId>
+        <artifactId>data-scalpel</artifactId>
+        <version>0.1.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>data-scalpel-task-sdk-testkit</artifactId>
+    <name>DataScalpel Task SDK TestKit</name>
+    <description>Framework-neutral local Spark test support for user batch and streaming jobs.</description>
+
+    <properties>
+        <spark.version>4.1.1</spark.version>
+        <scala.binary.version>2.13</scala.binary.version>
+        <junit.version>6.0.3</junit.version>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>cn.superhuang</groupId>
+            <artifactId>data-scalpel-task-sdk</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>org.apache.spark</groupId>
+            <artifactId>spark-sql_${scala.binary.version}</artifactId>
+            <version>${spark.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>jakarta.servlet</groupId>
+            <artifactId>jakarta.servlet-api</artifactId>
+            <!-- Spark 4.1.1's embedded metrics servlet still references SingleThreadModel. -->
+            <version>5.0.0</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${junit.version}</version>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-surefire-plugin</artifactId>
+                <version>3.5.4</version>
+                <configuration>
+                    <argLine>
+                        -XX:+IgnoreUnrecognizedVMOptions
+                        --add-modules=jdk.incubator.vector
+                        --add-opens=java.base/java.lang=ALL-UNNAMED
+                        --add-opens=java.base/java.lang.invoke=ALL-UNNAMED
+                        --add-opens=java.base/java.lang.reflect=ALL-UNNAMED
+                        --add-opens=java.base/java.io=ALL-UNNAMED
+                        --add-opens=java.base/java.net=ALL-UNNAMED
+                        --add-opens=java.base/java.nio=ALL-UNNAMED
+                        --add-opens=java.base/java.util=ALL-UNNAMED
+                        --add-opens=java.base/java.util.concurrent=ALL-UNNAMED
+                        --add-opens=java.base/java.util.concurrent.atomic=ALL-UNNAMED
+                        --add-opens=java.base/jdk.internal.ref=ALL-UNNAMED
+                        --add-opens=java.base/sun.nio.ch=ALL-UNNAMED
+                        --add-opens=java.base/sun.nio.cs=ALL-UNNAMED
+                        --add-opens=java.base/sun.security.action=ALL-UNNAMED
+                        --add-opens=java.base/sun.util.calendar=ALL-UNNAMED
+                        --add-opens=java.security.jgss/sun.security.krb5=ALL-UNNAMED
+                        -Djdk.reflect.useDirectMethodHandle=false
+                        -Dio.netty.tryReflectionSetAccessible=true
+                        --enable-native-access=ALL-UNNAMED
+                    </argLine>
+                </configuration>
+            </plugin>
+        </plugins>
+    </build>
+</project>

@@ -1,4 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import type { QueryClient } from '@tanstack/react-query';
 import type { SearchRequest } from '../../../shared/search';
 import { invalidateDirectoryTree } from '../../directory';
 import { invalidateStandardDictionaries } from '../../standard';
@@ -20,7 +21,11 @@ import {
   downloadModelMetadataTemplate,
   exportModelMetadata,
   fetchDataModelPreview,
+  fetchDataModelSpatialPreview,
   fetchDataModel,
+  fetchDataModelReferences,
+  fetchDataModelFieldLineage,
+  fetchDataModelTableLineage,
   fetchExternalTableImportPreview,
   fetchManagedImportPreview,
   fetchModelFieldTemplate,
@@ -31,8 +36,10 @@ import {
   fetchPhysicalTableChangePlans,
   fetchPhysicalTableInspection,
   fetchPlatformTypeCapabilities,
+  importModelMetadata,
   previewModelMetadataImport,
   queryDataModelData,
+  refreshDataModelPhysicalStatistics,
   updateDataModel,
   updateModelFieldTemplate,
   updateDataModelFields,
@@ -49,6 +56,9 @@ import type {
   DataModelDataQueryRequest,
   ManagedImportPreview,
   ManagedImportPreviewRequest,
+  ImportModelMetadataRequest,
+  LineageDirection,
+  LineageGranularity,
   CreateModelFieldTemplateRequest,
   UpdateModelFieldTemplateRequest,
   CreateModelWarehouseLayerRequest,
@@ -57,6 +67,7 @@ import type {
   UpdateDataModelRequest,
 } from '../model/dataModel';
 import { runManagedImportTasks } from '../model/managedTableImport';
+import { modelQualityRulesQueryKey } from './useModelQualityRules';
 
 export interface ManagedImportPreviewItem {
   key: string;
@@ -79,6 +90,10 @@ export interface ManagedDataModelDraftResult extends ManagedDataModelDraftItem {
 }
 
 const dataModelsQueryKey = 'data-models';
+
+export const invalidateDataModelLineage = (queryClient: QueryClient) => queryClient.invalidateQueries({
+  predicate: (query) => query.queryKey[0] === dataModelsQueryKey && query.queryKey.includes('lineage'),
+});
 const modelWarehouseLayersQueryKey = 'model-warehouse-layers';
 const modelFieldTemplatesQueryKey = 'model-field-templates';
 const physicalTableChangePlansQueryKey = 'physical-table-change-plans';
@@ -219,6 +234,33 @@ export const useDataModel = (id: string | undefined, enabled: boolean) => useQue
   enabled: enabled && Boolean(id),
 });
 
+export const useDataModelReferences = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [dataModelsQueryKey, id, 'references'],
+  queryFn: () => fetchDataModelReferences(id as string),
+  enabled: enabled && Boolean(id),
+  staleTime: 0,
+});
+
+export const useDataModelLineage = (
+  modelId: string,
+  granularity: LineageGranularity,
+  fieldId: string | undefined,
+  direction: LineageDirection,
+  depth: 1 | 2,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataModelsQueryKey, modelId, 'lineage', granularity, fieldId ?? null, direction, depth],
+  queryFn: () => granularity === 'TABLE'
+    ? fetchDataModelTableLineage(modelId, direction, depth)
+    : fetchDataModelFieldLineage(modelId, fieldId as string, direction, depth),
+  enabled: enabled && (granularity === 'TABLE' || Boolean(fieldId)),
+});
+
+/** Callers decide when to refresh the list so a batch can finish with exactly one refetch. */
+export const useRefreshDataModelPhysicalStatistics = () => useMutation({
+  mutationFn: refreshDataModelPhysicalStatistics,
+});
+
 export const useExternalTableImportPreview = (
   storageDataSourceId: string | undefined,
   physicalTableName: string | undefined,
@@ -257,6 +299,12 @@ export const usePhysicalTableChangePlan = (modelId: string | undefined, planId: 
 export const useDataModelPreview = (id: string | undefined, enabled: boolean) => useQuery({
   queryKey: [dataModelsQueryKey, id, 'data-preview'],
   queryFn: () => fetchDataModelPreview(id as string),
+  enabled: enabled && Boolean(id),
+});
+
+export const useDataModelSpatialPreview = (id: string | undefined, enabled: boolean) => useQuery({
+  queryKey: [dataModelsQueryKey, id, 'spatial-preview'],
+  queryFn: () => fetchDataModelSpatialPreview(id as string),
   enabled: enabled && Boolean(id),
 });
 
@@ -303,6 +351,18 @@ export const usePreviewModelMetadataImport = () => useMutation({
   ),
 });
 
+export const useImportModelMetadata = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: (request: ImportModelMetadataRequest) => importModelMetadata(request),
+    onSuccess: () => Promise.all([
+      invalidateDataModels(queryClient),
+      invalidateModelWarehouseLayers(queryClient),
+      invalidateStandardDictionaries(queryClient),
+    ]),
+  });
+};
+
 const createManagedDataModelDrafts = async (
   items: ManagedDataModelDraftItem[],
 ): Promise<ManagedDataModelDraftResult[]> => (
@@ -333,6 +393,7 @@ export const useUpdateDataModel = () => {
         invalidateStandardDictionaries(queryClient),
         invalidateTaskModelRelations(queryClient),
         invalidateModelWarehouseLayers(queryClient),
+        queryClient.invalidateQueries({ queryKey: [modelQualityRulesQueryKey] }),
       ]);
     },
   });
@@ -350,6 +411,7 @@ export const useUpdateDataModelFields = () => {
         invalidateTaskModelRelations(queryClient),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, detail.model.id, 'physical-table'] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, detail.model.id, 'data-preview'] }),
+        queryClient.invalidateQueries({ queryKey: [modelQualityRulesQueryKey] }),
       ]);
     },
   });
@@ -399,6 +461,7 @@ export const useExecutePhysicalTableChangePlan = () => {
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, physicalTableChangePlansQueryKey] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, 'physical-table'] }),
         queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, change.modelId, 'data-preview'] }),
+        queryClient.invalidateQueries({ queryKey: [modelQualityRulesQueryKey] }),
         invalidateTaskModelRelations(queryClient),
         invalidateStandardDictionaries(queryClient),
       ]);
@@ -416,6 +479,7 @@ export const useDataModelCommand = (command: DataModelCommand) => {
         invalidateDataModels(queryClient),
         invalidateTaskModelRelations(queryClient),
         invalidateStandardDictionaries(queryClient),
+        queryClient.invalidateQueries({ queryKey: [modelQualityRulesQueryKey] }),
       ]);
     },
   });
@@ -427,7 +491,10 @@ export const useCreatePhysicalTable = () => {
     mutationFn: createPhysicalTable,
     onSuccess: async (inspection, id) => {
       queryClient.setQueryData([dataModelsQueryKey, id, 'physical-table'], inspection);
-      await queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, id, 'data-preview'] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey] }),
+        queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey, id, 'data-preview'] }),
+      ]);
     },
   });
 };
@@ -441,6 +508,7 @@ export const useDeleteDataModel = () => {
       invalidateTaskModelRelations(queryClient),
       invalidateModelWarehouseLayers(queryClient),
       invalidateStandardDictionaries(queryClient),
+      queryClient.invalidateQueries({ queryKey: [modelQualityRulesQueryKey] }),
     ]),
   });
 };

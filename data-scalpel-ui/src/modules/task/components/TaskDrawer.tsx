@@ -31,10 +31,10 @@ export const TaskDrawer = ({
 }: TaskDrawerProps) => {
   const [form] = Form.useForm<TaskDrawerValues>();
   const taskType = Form.useWatch('type', form);
-  const canvasTask = taskType === 'SPARK_CANVAS' || taskType === 'SPARK_STREAMING_CANVAS';
+  const sparkTask = taskType !== undefined && taskType !== 'LOCAL_SQL';
   const computeEnginesQuery = useComputeEngines(
     { page: 0, size: 500, sort: 'name' },
-    open && canvasTask,
+    open && sparkTask,
   );
 
   useEffect(() => {
@@ -50,6 +50,7 @@ export const TaskDrawer = ({
 
   return (
     <Drawer
+      rootClassName="business-overlay business-drawer-overlay"
       title={task ? '修改任务基本信息' : '新建任务'}
       open={open}
       size={480}
@@ -67,10 +68,11 @@ export const TaskDrawer = ({
         {task && <Form.Item name="type" label="任务类型">
           <Select disabled options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))} />
         </Form.Item>}
-        {canvasTask && <Form.Item
+        {sparkTask && <Form.Item
           name="computeEngineId"
           label="计算引擎"
           extra={task?.status === 'PUBLISHED' ? '已发布任务需先停用，才能更换计算引擎。' : '发布和执行前，计算引擎必须已激活且健康。'}
+          rules={[{ required: true, message: '请选择计算引擎' }]}
         >
           <Select
             allowClear

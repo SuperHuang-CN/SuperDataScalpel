@@ -5,6 +5,8 @@ import { CanvasNodeView, canvasNodeTemplates } from './canvasRegistry';
 import {
   CANVAS_SCHEMA_MINOR_VERSION,
   CanvasNodeType,
+  type CanvasColumnSchema,
+  type FileOutputFormatOptions,
   type CanvasNodeRuntimeData,
 } from './canvasTypes';
 import { canvasNodeRegistry } from './nodes/nodeRegistry';
@@ -13,17 +15,38 @@ import { CANVAS_RUNTIME_NODE_SHAPE } from './nodes/nodeSpec';
 
 vi.mock('@antv/x6-react-shape', () => ({ register: vi.fn() }));
 
+const canvasColumn = (
+  name: string,
+  fieldType: CanvasColumnSchema['fieldType'],
+  nullable: boolean,
+  length: number | null = null,
+): CanvasColumnSchema => ({
+  name,
+  fieldType,
+  length,
+  precision: null,
+  scale: null,
+  nullable,
+  defaultValue: null,
+  autoIncrement: false,
+  generated: false,
+  comment: null,
+  geometry: null,
+});
+
 const createNode = (data: CanvasNodeRuntimeData) => {
   const setData = vi.fn();
+  const resize = vi.fn();
   const node = {
     getData: () => data,
     getSize: () => ({ width: 240, height: 120 }),
     setData,
+    resize,
     on: vi.fn(),
     off: vi.fn(),
     model: null,
   } as unknown as Node;
-  return { node, setData };
+  return { node, resize, setData };
 };
 
 describe('CanvasNodeView', () => {
@@ -50,13 +73,41 @@ describe('CanvasNodeView', () => {
       summary: {
         kind: 'JDBC',
         dataSourceName: '业务 PostgreSQL',
+        dataSourceType: 'POSTGRESQL',
         qualifiedTableName: 'order_db.public.orders',
+        primaryKeyColumns: ['order_id'],
+      },
+      compilation: {
+        inputTables: [],
+        outputTables: [{
+          name: 'orders',
+          origin: null,
+          columns: [
+            canvasColumn('description', 'STRING', true, 128),
+            canvasColumn('created_at', 'TIMESTAMP', false),
+            canvasColumn('order_id', 'LONG', false),
+            canvasColumn('remark', 'STRING', true, 255),
+          ],
+          datasetKind: 'BOUNDED',
+          eventTimeColumn: null,
+          watermarkDelay: null,
+        }],
       },
     });
 
-    render(<CanvasNodeView node={node} />);
+    const { container } = render(<CanvasNodeView node={node} />);
 
-    expect(screen.getByText('业务 PostgreSQL · order_db.public.orders')).toBeInTheDocument();
+    expect(screen.getByText('业务 PostgreSQL')).toBeInTheDocument();
+    expect(screen.getByText('POSTGRESQL')).toBeInTheDocument();
+    expect(screen.getAllByText('orders')).toHaveLength(1);
+    expect([...container.querySelectorAll('.canvas-semantic-preview-label')].map(
+      (element) => element.textContent,
+    )).toEqual(['order_id', 'created_at', 'description']);
+    expect(screen.getByText('PK')).toBeInTheDocument();
+    expect(screen.getByText('非空')).toBeInTheDocument();
+    expect(screen.getByText('另 1 个字段')).toBeInTheDocument();
+    expect(screen.queryByText('READ')).not.toBeInTheDocument();
+    expect(screen.queryByText('order_db.public.orders')).not.toBeInTheDocument();
   });
 
   it('renders model identity and schema version instead of the model UUID', () => {
@@ -70,13 +121,15 @@ describe('CanvasNodeView', () => {
         modelCode: 'order_model',
         modelSchemaVersion: 7,
         dataSourceName: '模型仓库',
-        qualifiedTableName: 'warehouse.public.order_model',
+        qualifiedTableName: 'order_model',
       },
     });
 
     render(<CanvasNodeView node={node} />);
 
-    expect(screen.getByText('订单模型 · order_model · v7')).toBeInTheDocument();
+    expect(screen.getByText('订单模型')).toBeInTheDocument();
+    expect(screen.getByText('order_model · v7')).toBeInTheDocument();
+    expect(screen.queryByText('warehouse.public.order_model')).not.toBeInTheDocument();
     expect(screen.queryByText(/04aee9c7/)).not.toBeInTheDocument();
   });
 
@@ -90,6 +143,7 @@ describe('CanvasNodeView', () => {
         fileDatasetName: '订单归档',
         tableName: '七月订单',
         tableCode: 'orders_202607',
+        datasetType: 'SHAPEFILE',
         status: 'READY',
         geometry: {
           fieldName: '_geometry',
@@ -102,9 +156,10 @@ describe('CanvasNodeView', () => {
 
     render(<CanvasNodeView node={node} />);
 
-    expect(screen.getByText(
-      '订单归档 · 七月订单 (orders_202607) · READY · _geometry: POINT EPSG:4326 XY',
-    )).toBeInTheDocument();
+    expect(screen.getByText('订单归档')).toBeInTheDocument();
+    expect(screen.getByText('七月订单 · orders_202607')).toBeInTheDocument();
+    expect(screen.getByText('SHAPEFILE')).toBeInTheDocument();
+    expect(screen.getByText('POINT · EPSG:4326 · XY')).toBeInTheDocument();
   });
 
   it('renders the ModelOutput source, model identity and write mode', () => {
@@ -115,8 +170,7 @@ describe('CanvasNodeView', () => {
         sourceTableName: 'order_customer',
         targetModelId: '34ccdaed-bfa6-4afb-a085-7318153d75b1',
         writeMode: 'APPEND',
-        columnMappingMode: 'BY_NAME',
-        columnMappings: [],
+        columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
       },
       summary: {
         kind: 'MODEL',
@@ -124,14 +178,17 @@ describe('CanvasNodeView', () => {
         modelCode: 'order_customer_model',
         modelSchemaVersion: 3,
         dataSourceName: '模型仓库',
-        qualifiedTableName: 'warehouse.public.order_customer_model',
+        qualifiedTableName: 'order_customer_model',
       },
     });
 
     render(<CanvasNodeView node={node} />);
 
-    expect(screen.getByText('order_customer → 订单客户模型 · order_customer_model (APPEND)'))
-      .toBeInTheDocument();
+    expect(screen.getByText('订单客户模型')).toBeInTheDocument();
+    expect(screen.getByText('order_customer_model · v3')).toBeInTheDocument();
+    expect(screen.queryByText('warehouse.public.order_customer_model')).not.toBeInTheDocument();
+    expect(screen.getAllByText('APPEND')).not.toHaveLength(0);
+    expect(screen.getByText('1 个字段映射')).toBeInTheDocument();
   });
 
   it('renders the Rename table transition and mapping count', () => {
@@ -150,7 +207,9 @@ describe('CanvasNodeView', () => {
 
     render(<CanvasNodeView node={node} />);
 
-    expect(screen.getByText('orders → source_orders · 2 个字段')).toBeInTheDocument();
+    expect(screen.getByText('orders')).toBeInTheDocument();
+    expect(screen.getByText('source_orders')).toBeInTheDocument();
+    expect(screen.getByText('2 个字段')).toBeInTheDocument();
   });
 
   it('renames from the title and restores the original name for empty input', () => {
@@ -182,7 +241,7 @@ describe('CanvasNodeView', () => {
   });
 
   it('declares a non-empty execution mode set for every registered node', () => {
-    expect(canvasNodeTemplates).toHaveLength(37);
+    expect(canvasNodeTemplates).toHaveLength(40);
     expect(canvasNodeTemplates.every((template) => template.supportedModes.length > 0)).toBe(true);
     expect(canvasNodeTemplates.every((template) => template.description.length > 0)).toBe(true);
     expect(canvasNodeTemplates.every((template) => template.searchKeywords.length > 0)).toBe(true);
@@ -211,6 +270,7 @@ describe('CanvasNodeView', () => {
         CanvasNodeType.ValueMapping,
         CanvasNodeType.MaskFields,
         CanvasNodeType.JsonExtract,
+        CanvasNodeType.ModelOutput,
         CanvasNodeType.JdbcOutput,
         CanvasNodeType.KafkaOutput,
       ]));
@@ -221,6 +281,302 @@ describe('CanvasNodeView', () => {
     expect(canvasNodeTemplates.find((template) => template.type === CanvasNodeType.FileDatasetInput)
       ?.supportedModes)
       .toEqual(['BATCH']);
+    expect(canvasNodeTemplates.find(
+      (template) => template.type === CanvasNodeType.JdbcSnapshotSyncOutput,
+    )?.supportedModes).toEqual(['BATCH']);
+    expect(canvasNodeTemplates.find(
+      (template) => template.type === CanvasNodeType.ModelSnapshotSyncOutput,
+    )?.supportedModes).toEqual(['BATCH']);
+  });
+
+  it('renders every registered node with its own default semantic body', () => {
+    canvasNodeRegistry.all().forEach((spec) => {
+      const { node } = createNode(canvasNodeRegistry.createRuntimeData(spec.type));
+      const { container, unmount } = render(<CanvasNodeView node={node} />);
+      expect(container.querySelector('.canvas-node-body')).toBeInTheDocument();
+      expect(container.querySelector('.canvas-semantic-empty')).toBeInTheDocument();
+      unmount();
+    });
+  });
+
+  it('derives list height and spatial file-output size from configuration', () => {
+    const joinSpec = canvasNodeRegistry.require(CanvasNodeType.Join);
+    const join = joinSpec.createDefaultConfiguration();
+    expect(joinSpec.canvasView.resolveSize(join)).toEqual({ width: 360, height: 116 });
+    expect(joinSpec.canvasView.resolveSize({
+      ...join,
+      leftTableName: 'orders',
+      conditions: [{
+        leftColumnName: 'customer_id',
+        operator: 'EQUALS',
+        rightColumnName: 'customer_id',
+      }],
+    })).toEqual({ width: 360, height: 192 });
+
+    const fileOutputSpec = canvasNodeRegistry.require(CanvasNodeType.FileOutput);
+    const fileOutput = fileOutputSpec.createDefaultConfiguration();
+    expect(fileOutputSpec.canvasView.resolveSize({
+      ...fileOutput,
+      sourceTableName: 'districts',
+      formatOptions: {
+        type: 'GEOPARQUET',
+        geometryColumnName: 'geom',
+        compression: 'ZSTD',
+        coveringMode: 'ROW_BBOX',
+      },
+    })).toEqual({ width: 376, height: 240 });
+  });
+
+  it('adds issue height without serializing it into the base node size', () => {
+    const { node, resize } = createNode({
+      type: CanvasNodeType.JdbcInput,
+      name: '订单来源',
+      configuration: { dataSourceId: '', tableName: '' },
+      validation: { status: 'ERROR', message: '请选择物理表' },
+    });
+
+    render(<CanvasNodeView node={node} />);
+
+    expect(screen.getByText('请选择物理表')).toHaveClass('canvas-node-issue');
+    expect(resize).toHaveBeenCalledWith(320, 132, { canvasPresentationUpdate: true });
+  });
+
+  it('renders representative configured processors without exposing literal values', () => {
+    const nodes: CanvasNodeRuntimeData[] = [
+      {
+        type: CanvasNodeType.Join,
+        name: '订单客户关联',
+        configuration: {
+          leftTableName: 'orders',
+          rightTableName: 'customers',
+          outputTableName: 'order_customer',
+          joinType: 'INNER',
+          conditions: [{
+            leftColumnName: 'customer_id',
+            operator: 'EQUALS',
+            rightColumnName: 'id',
+          }],
+        },
+      },
+      {
+        type: CanvasNodeType.Filter,
+        name: '有效订单筛选',
+        configuration: {
+          sourceTableName: 'orders',
+          outputTableName: 'valid_orders',
+          condition: {
+            kind: 'GROUP',
+            operator: 'AND',
+            children: [{
+              kind: 'PREDICATE',
+              columnName: 'status',
+              operator: 'EQUALS',
+              values: [{ dataType: 'STRING', value: 'SECRET_LITERAL' }],
+            }],
+          },
+        },
+      },
+      {
+        type: CanvasNodeType.Aggregate,
+        name: '客户订单聚合',
+        configuration: {
+          sourceTableName: 'orders',
+          outputTableName: 'customer_order_metrics',
+          groupByColumns: ['customer_id'],
+          aggregations: [{
+            function: 'SUM',
+            sourceColumnName: 'amount',
+            outputColumnName: 'total_amount',
+            distinct: false,
+          }],
+        },
+      },
+      {
+        type: CanvasNodeType.Window,
+        name: '客户订单排名',
+        configuration: {
+          sourceTableName: 'orders',
+          outputTableName: 'ranked_orders',
+          partitionByColumns: ['customer_id'],
+          orderBy: [{ columnName: 'created_at', direction: 'DESC', nullOrdering: 'LAST' }],
+          functions: [{ kind: 'ROW_NUMBER', outputColumnName: 'row_number' }],
+        },
+      },
+      {
+        type: CanvasNodeType.SpatialJoin,
+        name: '订单归属区域',
+        configuration: {
+          leftTableName: 'orders',
+          rightTableName: 'districts',
+          outputTableName: 'district_orders',
+          joinType: 'INNER',
+          conditions: [{
+            leftGeometryColumnName: 'order_geom',
+            predicate: 'WITHIN',
+            rightGeometryColumnName: 'district_geom',
+          }],
+        },
+      },
+    ];
+    const expectedTexts = [
+      ['INNER JOIN', 'customer_id', 'id'],
+      ['FILTER', '1 个值', 'AND'],
+      ['SUM(amount)', 'total_amount'],
+      ['ROW_NUMBER', 'customer_id'],
+      ['SPATIAL JOIN', 'WITHIN', 'district_geom'],
+    ];
+
+    nodes.forEach((data, index) => {
+      const { node } = createNode(data);
+      const { unmount } = render(<CanvasNodeView node={node} />);
+      expectedTexts[index].forEach((content) => {
+        expect(screen.getAllByText(content)).not.toHaveLength(0);
+      });
+      expect(screen.queryByText('SECRET_LITERAL')).not.toBeInTheDocument();
+      unmount();
+    });
+  });
+
+  it('renders configured JDBC, snapshot, Kafka and spatial file outputs', () => {
+    const nodes: CanvasNodeRuntimeData[] = [
+      {
+        type: CanvasNodeType.JdbcOutput,
+        name: '订单写库',
+        configuration: {
+          sourceTableName: 'orders',
+          dataSourceId: 'jdbc-target',
+          targetTableName: 'dwd_orders',
+          writeMode: 'UPSERT',
+          upsertKeyColumns: ['id'],
+          columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'order_id' }],
+        },
+      },
+      {
+        type: CanvasNodeType.JdbcSnapshotSyncOutput,
+        name: '订单快照同步',
+        configuration: {
+          sourceTableName: 'orders',
+          dataSourceId: 'jdbc-target',
+          targetTableName: 'snapshot_orders',
+          keyColumns: ['id'],
+          columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
+          deletePolicy: { action: 'DELETE', maxDeleteRows: 100, maxDeleteRatio: 0.2 },
+        },
+      },
+      {
+        type: CanvasNodeType.KafkaOutput,
+        name: '订单事件输出',
+        configuration: {
+          sourceTableName: 'orders',
+          dataSourceId: 'kafka-target',
+          topic: 'order-events',
+          valueSchema: { columns: [] },
+          keyColumnName: 'id',
+          columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
+        },
+      },
+      {
+        type: CanvasNodeType.FileOutput,
+        name: '区域 GeoParquet 输出',
+        configuration: {
+          sourceTableName: 'districts',
+          dataSourceId: 's3-target',
+          targetPath: 'exports/districts',
+          conflictPolicy: 'FAIL_IF_EXISTS',
+          formatOptions: {
+            type: 'GEOPARQUET',
+            geometryColumnName: 'geom',
+            compression: 'ZSTD',
+            coveringMode: 'ROW_BBOX',
+          },
+        },
+      },
+    ];
+    const expectedTexts = [
+      ['UPSERT', '键 id', '1 个映射'],
+      ['SNAPSHOT SYNC', 'DELETE', '100 行 · 0.2 比例'],
+      ['order-events', 'KEY id', '1 个映射'],
+      ['GEOPARQUET', 'GeoParquet · geom', 'ZSTD · ROW_BBOX'],
+    ];
+
+    nodes.forEach((data, index) => {
+      const { node } = createNode(data);
+      const { unmount } = render(<CanvasNodeView node={node} />);
+      expectedTexts[index].forEach((content) => {
+        expect(screen.getAllByText(content)).not.toHaveLength(0);
+      });
+      unmount();
+    });
+  });
+
+  it('renders the distinguishing option for every file-output format', () => {
+    const formats: Array<{ options: FileOutputFormatOptions; expected: string }> = [
+      {
+        options: {
+          type: 'CSV',
+          header: true,
+          delimiter: ',',
+          quote: '"',
+          escape: '\\',
+          nullValue: '',
+        },
+        expected: '分隔符 "," · Header',
+      },
+      { options: { type: 'JSON_LINES', ignoreNullFields: true }, expected: '忽略 NULL 字段' },
+      { options: { type: 'PARQUET' }, expected: '标准列式文件' },
+      {
+        options: {
+          type: 'SHAPEFILE',
+          baseName: 'districts',
+          packageMode: 'ZIP',
+          geometryColumnName: 'geom',
+          targetShapeType: 'POLYGON',
+          attributeMappings: [{
+            sourceColumnName: 'district_id',
+            targetFieldName: 'DIST_ID',
+            targetStringByteLength: null,
+          }],
+        },
+        expected: 'ZIP · POLYGON · 1 个属性',
+      },
+      {
+        options: {
+          type: 'GEOPARQUET',
+          geometryColumnName: 'geom',
+          compression: 'SNAPPY',
+          coveringMode: 'ROW_BBOX',
+        },
+        expected: 'SNAPPY · ROW_BBOX',
+      },
+      {
+        options: {
+          type: 'GEOJSON',
+          baseName: 'districts',
+          geometryColumnName: 'geom',
+          idColumnName: 'district_id',
+          ignoreNullProperties: true,
+        },
+        expected: 'ID district_id · 忽略 NULL',
+      },
+    ];
+
+    formats.forEach(({ options, expected }) => {
+      const data: CanvasNodeRuntimeData = {
+        type: CanvasNodeType.FileOutput,
+        name: `${options.type} 输出`,
+        configuration: {
+          sourceTableName: 'districts',
+          dataSourceId: 's3-target',
+          targetPath: 'exports/districts',
+          conflictPolicy: 'FAIL_IF_EXISTS',
+          formatOptions: options,
+        },
+      };
+      const { node } = createNode(data);
+      const { unmount } = render(<CanvasNodeView node={node} />);
+      expect(screen.getByText(expected)).toBeInTheDocument();
+      unmount();
+    });
   });
 
   it('registers every stable node exactly once with coherent extension metadata', () => {
@@ -232,8 +588,10 @@ describe('CanvasNodeView', () => {
       expect(spec.introducedInMinor).toBeGreaterThanOrEqual(0);
       expect(spec.introducedInMinor).toBeLessThanOrEqual(CANVAS_SCHEMA_MINOR_VERSION);
       expect(spec.supportedModes.length).toBeGreaterThan(0);
-      expect(spec.defaultSize.width).toBeGreaterThanOrEqual(180);
-      expect(spec.defaultSize.height).toBeGreaterThanOrEqual(96);
+      const size = canvasNodeRegistry.resolveSize(canvasNodeRegistry.createRuntimeData(spec.type));
+      expect(size.width).toBeGreaterThanOrEqual(180);
+      expect(size.height).toBeGreaterThanOrEqual(96);
+      expect(spec.canvasView.Body).toBeTypeOf('function');
       expect(spec.createDefaultConfiguration()).toEqual(
         canvasNodeRegistry.createDefaultConfiguration(spec.type),
       );

@@ -103,7 +103,7 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
         Path launchFile = launchFiles.create(properties.absoluteWorkDirectory(), launch, access);
         recreateSecret(identity, launchFile);
         try {
-            CommandResult submitted = execute(commands.submit(identity), properties.submitTimeout(), CONTROL_BYTES);
+            CommandResult submitted = execute(commands.submit(identity, launch.sparkConf()), properties.submitTimeout(), CONTROL_BYTES);
             if (!submitted.successful()) {
                 Optional<KubernetesPodParser.ParsedPod> raced = driver(identity);
                 if (raced.isPresent()) {

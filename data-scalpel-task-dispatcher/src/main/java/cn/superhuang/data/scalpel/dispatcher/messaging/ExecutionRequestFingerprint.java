@@ -18,7 +18,15 @@ public final class ExecutionRequestFingerprint {
                 Integer.toString(command.attempt()), command.taskId().toString(), command.taskType().name(),
                 Integer.toString(command.definitionVersion()), command.deadlineAt().toString(),
                 command.artifacts().manifestKey(), command.artifacts().manifestSha256(),
-                command.artifacts().resultKey(), command.artifacts().logKey()
+                command.artifacts().resultKey(), command.artifacts().logKey(),
+                Integer.toString(command.qualitySampleLimit()),
+                command.qualitySampleRuleIds().stream().map(java.util.UUID::toString)
+                        .collect(java.util.stream.Collectors.joining(",")),
+                command.userJar() == null ? "" : command.userJar().objectKey(),
+                command.userJar() == null ? "" : command.userJar().sha256(),
+                command.userJar() == null ? "" : Long.toString(command.userJar().sizeBytes()),
+                command.sparkConf().stream().map(entry -> entry.name() + "=" + entry.value())
+                        .collect(java.util.stream.Collectors.joining("\n"))
         );
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(stable.getBytes(StandardCharsets.UTF_8)));
@@ -31,9 +39,14 @@ public final class ExecutionRequestFingerprint {
         String stable = String.join("\n",
                 command.engineId().toString(), command.executionId().toString(), command.runId().toString(),
                 Integer.toString(command.attempt()), command.taskId().toString(), command.deploymentId().toString(),
-                Integer.toString(command.definitionVersion()),
+                Integer.toString(command.definitionVersion()), command.checkpointKeyPrefix(), command.taskType().name(),
                 command.artifacts().manifestKey(), command.artifacts().manifestSha256(),
-                command.artifacts().resultKey(), command.artifacts().logKey()
+                command.artifacts().resultKey(), command.artifacts().logKey(),
+                command.userJar() == null ? "" : command.userJar().objectKey(),
+                command.userJar() == null ? "" : command.userJar().sha256(),
+                command.userJar() == null ? "" : Long.toString(command.userJar().sizeBytes()),
+                command.sparkConf().stream().map(entry -> entry.name() + "=" + entry.value())
+                        .collect(java.util.stream.Collectors.joining("\n"))
         );
         return sha256(stable);
     }

@@ -2,6 +2,7 @@ package cn.superhuang.datascalpel.taskengine.canvas;
 
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
+import cn.superhuang.data.scalpel.contract.task.CanvasJdbcDatabaseType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
@@ -11,6 +12,8 @@ import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelPhysicalTableMode;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelStatus;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKey;
+import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKeyType;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
@@ -18,6 +21,7 @@ import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -37,7 +41,7 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
 
     @Override
     public Set<CanvasExecutionMode> supportedModes() {
-        return Set.of(CanvasExecutionMode.BATCH);
+        return Set.of(CanvasExecutionMode.BATCH, CanvasExecutionMode.STREAMING);
     }
 
     @Override
@@ -67,15 +71,13 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
         );
         if (configuration.writeMode() == null) {
             issues.error("REQUIRED_CONFIGURATION", "请选择写入模式", "configuration.writeMode");
-        } else if (configuration.writeMode() == JdbcWriteMode.UPSERT) {
+        } else if (context.executionMode() == CanvasExecutionMode.STREAMING
+                && configuration.writeMode() == JdbcWriteMode.OVERWRITE) {
             issues.error(
-                    "MODEL_OUTPUT_UPSERT_NOT_SUPPORTED",
-                    "模型输出只支持 APPEND 和 OVERWRITE",
+                    "STREAMING_MODEL_OUTPUT_OVERWRITE_NOT_SUPPORTED",
+                    "实时 MODEL_OUTPUT 不支持 OVERWRITE",
                     "configuration.writeMode"
             );
-        }
-        if (configuration.columnMappingMode() == null) {
-            issues.error("REQUIRED_CONFIGURATION", "请选择字段映射模式", "configuration.columnMappingMode");
         }
         if (configuration.columnMappings() == null) {
             issues.error("REQUIRED_CONFIGURATION", "字段映射列表不能为空", "configuration.columnMappings");
@@ -111,6 +113,14 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
                     "configuration.targetModelId"
             );
         }
+        if (dataSource != null) {
+            CanvasNodeSupport.validateJdbcWriteMode(
+                    configuration.writeMode(),
+                    dataSource.metadata().jdbcDatabaseType(),
+                    "configuration.writeMode",
+                    issues
+            );
+        }
         if (model != null
                 && configuration.writeMode() == JdbcWriteMode.OVERWRITE
                 && model.metadata().physicalTableMode() != MetadataModelPhysicalTableMode.MANAGED) {
@@ -120,6 +130,9 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
                     "configuration.writeMode"
             );
         }
+        List<String> upsertKeyColumns = configuration.writeMode() == JdbcWriteMode.UPSERT
+                ? validateUpsertConfiguration(model, dataSource, issues)
+                : List.of();
         if (source == null || model == null || issues.hasErrors()) {
             return CanvasNodeOperationResult.outputOnly();
         }
@@ -134,15 +147,19 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
                 "configuration.targetModelId",
                 issues
         );
-        if (context.executionMode() == CanvasExecutionMode.STREAMING
-                && targetSchema.columns().stream().anyMatch(column ->
-                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
-            issues.error(
-                    "SPATIAL_JDBC_UNSUPPORTED",
-                    "第一阶段不支持实时任务写入 Geometry",
-                    "configuration.targetModelId"
-            );
-            return CanvasNodeOperationResult.outputOnly();
+        if (configuration.writeMode() == JdbcWriteMode.UPSERT) {
+            Set<String> mappedTargets = configuration.columnMappings().stream()
+                    .filter(java.util.Objects::nonNull)
+                    .map(cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping::targetColumnName)
+                    .filter(java.util.Objects::nonNull)
+                    .collect(java.util.stream.Collectors.toSet());
+            if (!mappedTargets.containsAll(upsertKeyColumns)) {
+                issues.error(
+                        "UPSERT_KEY_NOT_MAPPED",
+                        "目标模型主键必须全部映射到输出字段",
+                        "configuration.columnMappings"
+                );
+            }
         }
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.outputOnly();
@@ -150,16 +167,110 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
         Dataset<Row> selected = mappingOperator.apply(
                 source,
                 targetSchema,
-                configuration.columnMappingMode(),
                 configuration.columnMappings(),
                 issues
         );
         if (selected == null || issues.hasErrors()) {
             return CanvasNodeOperationResult.outputOnly();
         }
+        Set<String> projectedColumns = Set.of(selected.columns());
+        List<cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema> projectedSchemas =
+                targetSchema.columns().stream()
+                        .filter(column -> projectedColumns.contains(column.name()))
+                        .toList();
+        if (context.executionMode() == CanvasExecutionMode.STREAMING
+                && projectedSchemas.stream().anyMatch(column ->
+                column.fieldType() == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
+            issues.error(
+                    "SPATIAL_JDBC_UNSUPPORTED",
+                    "第一阶段不支持实时任务写入 Geometry",
+                    "configuration.columnMappings"
+            );
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        CanvasNodeSupport.validateJdbcGeometryDatabase(
+                projectedSchemas,
+                dataSource.metadata().jdbcDatabaseType(),
+                "configuration.columnMappings",
+                issues
+        );
+        if (issues.hasErrors()) {
+            return CanvasNodeOperationResult.outputOnly();
+        }
         CanvasPreparedOutput prepared =
-                context.dataAccess().prepareModelOutput(node, model, targetSchema, selected);
-        return CanvasNodeOperationResult.output(prepared);
+                context.dataAccess().prepareModelOutput(
+                        node, model, targetSchema, selected, upsertKeyColumns);
+        var lineageWriteMode = switch (configuration.writeMode()) {
+            case APPEND -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.APPEND;
+            case OVERWRITE -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.FULL_OVERWRITE;
+            case UPSERT -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.UPSERT;
+        };
+        return CanvasNodeOperationResult.output(
+                prepared,
+                CanvasLineageOutputCandidate.model(
+                        node, selected, model.metadata(), targetSchema, lineageWriteMode
+                )
+        );
+    }
+
+    private static List<String> validateUpsertConfiguration(
+            MetadataIndex.ModelEntry model,
+            MetadataIndex.DataSourceEntry dataSource,
+            CanvasNodeIssueSink issues
+    ) {
+        if (model == null || dataSource == null) {
+            return List.of();
+        }
+        CanvasJdbcDatabaseType databaseType = dataSource.metadata().jdbcDatabaseType();
+        if (databaseType != CanvasJdbcDatabaseType.POSTGRESQL
+                && databaseType != CanvasJdbcDatabaseType.MYSQL) {
+            issues.error(
+                    "UPSERT_DATABASE_NOT_SUPPORTED",
+                    "UPSERT 只支持 PostgreSQL 和 MySQL",
+                    "configuration.targetModelId"
+            );
+        }
+        MetadataUniqueKey primaryKey = model.metadata().uniqueKeys().stream()
+                .filter(key -> key.type() == MetadataUniqueKeyType.PRIMARY_KEY)
+                .findFirst()
+                .orElse(null);
+        if (primaryKey == null || primaryKey.columns().isEmpty()) {
+            issues.error(
+                    "UPSERT_KEY_REQUIRED",
+                    "目标模型必须定义主键才能使用 UPSERT",
+                    "configuration.targetModelId"
+            );
+            return List.of();
+        }
+        List<String> primaryKeyColumns = primaryKey.columns();
+        if (model.metadata().fields() != null && !model.metadata().fields().isEmpty()) {
+            Map<String, Integer> fieldOrder = model.metadata().fields().stream()
+                    .collect(java.util.stream.Collectors.toMap(
+                            cn.superhuang.data.scalpel.contract.task.MetadataModelField::code,
+                            cn.superhuang.data.scalpel.contract.task.MetadataModelField::sortOrder
+                    ));
+            primaryKeyColumns = primaryKey.columns().stream()
+                    .sorted(java.util.Comparator.comparingInt(
+                            column -> fieldOrder.getOrDefault(column, Integer.MAX_VALUE)))
+                    .toList();
+        }
+        Map<String, cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema> columns =
+                model.metadata().columns().stream().collect(java.util.stream.Collectors.toMap(
+                        cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema::name,
+                        java.util.function.Function.identity()
+                ));
+        for (String key : primaryKeyColumns) {
+            var column = columns.get(key);
+            if (column == null || column.autoIncrement() || column.generated()
+                    || column.fieldType() == PlatformDataType.GEOMETRY) {
+                issues.error(
+                        "UPSERT_KEY_COLUMN_NOT_ALLOWED",
+                        "模型主键字段不存在或不能用于 UPSERT：" + key,
+                        "configuration.targetModelId"
+                );
+            }
+        }
+        return primaryKeyColumns;
     }
 
     private static boolean availableForWrite(MetadataIndex.DataSourceEntry dataSource) {

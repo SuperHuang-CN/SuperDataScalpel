@@ -5,6 +5,7 @@ import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
 import { summarizeAggregate } from '../nodeSummaries';
 import { createCanvasNodeSpec } from '../specFactory';
+import { aggregateCanvasView } from './canvasView';
 
 export const aggregateSpec = createCanvasNodeSpec({
   type: CanvasNodeType.Aggregate,
@@ -15,9 +16,9 @@ export const aggregateSpec = createCanvasNodeSpec({
   searchKeywords: ['aggregate', 'group by', '聚合', '分组', '统计', 'count', 'sum', 'avg'],
   iconKey: CanvasNodeIconKey.Aggregate,
   order: 10,
-  defaultSize: { width: 240, height: 120 },
+  canvasView: aggregateCanvasView,
   supportedModes: ['BATCH'],
-  introducedInMinor: 11,
+  introducedInMinor: 0,
   graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createAggregateConfiguration,
   summarize: summarizeAggregate,
