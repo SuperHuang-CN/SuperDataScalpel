@@ -7,6 +7,7 @@ import type { CanvasTaskDefinition, TaskRun } from '../model/task';
 
 const api = vi.hoisted(() => ({
   cancelTaskRun: vi.fn(),
+  forceTerminateTaskRun: vi.fn(),
   updateCanvasTaskDefinition: vi.fn(),
 }));
 
@@ -16,6 +17,7 @@ vi.mock('../../directory', () => ({
 
 vi.mock('../api/taskApi', () => ({
   cancelTaskRun: api.cancelTaskRun,
+  forceTerminateTaskRun: api.forceTerminateTaskRun,
   createTask: vi.fn(),
   createTaskSchedule: vi.fn(),
   deleteTask: vi.fn(),

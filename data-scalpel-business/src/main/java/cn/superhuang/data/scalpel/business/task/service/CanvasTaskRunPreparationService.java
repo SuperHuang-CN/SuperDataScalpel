@@ -86,8 +86,8 @@ import cn.superhuang.data.scalpel.contract.task.SortField;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
-import cn.superhuang.data.scalpel.contract.task.JdbcInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
@@ -886,6 +886,7 @@ public class CanvasTaskRunPreparationService {
             FileDatasetParseStatus effectiveStatus = table.getParseStatus();
             metadata.add(new MetadataFileDatasetTable(
                     table.getId(),
+                    dataset.getId(),
                     table.getCode(),
                     table.getName(),
                     FileDatasetType.valueOf(dataset.getType().name()),
@@ -1013,11 +1014,13 @@ public class CanvasTaskRunPreparationService {
         Set<UUID> ids = new LinkedHashSet<>();
         for (CanvasNodeDefinition node : definition.nodes()) {
             if (node instanceof FileDatasetInputNodeDefinition input) {
-                try {
-                    ids.add(UUID.fromString(input.configuration().fileDatasetTableId()));
-                } catch (RuntimeException ignored) {
-                    // The compiler owns the stable invalid-ID issue. Missing metadata makes the node invalid.
-                }
+                input.configuration().tables().forEach(selection -> {
+                    try {
+                        ids.add(UUID.fromString(selection.fileDatasetTableId()));
+                    } catch (RuntimeException ignored) {
+                        // The compiler owns the stable invalid-ID issue. Missing metadata makes the node invalid.
+                    }
+                });
             }
         }
         return Set.copyOf(ids);
@@ -1108,8 +1111,14 @@ public class CanvasTaskRunPreparationService {
         for (CanvasNodeDefinition node : definition.nodes()) {
             if (node instanceof JdbcInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
-                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
-                        .source(input.configuration().tableName());
+                RequestedDataSourceBuilder builder = builders.computeIfAbsent(
+                        id, ignored -> new RequestedDataSourceBuilder()).source();
+                if (input.configuration().tables() != null) {
+                    input.configuration().tables().stream()
+                            .map(JdbcInputTableSelection::tableName)
+                            .filter(tableName -> tableName != null && !tableName.isBlank())
+                            .forEach(builder::sourceTable);
+                }
             } else if (node instanceof JdbcIncrementalInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
@@ -1120,14 +1129,14 @@ public class CanvasTaskRunPreparationService {
                         .querySource();
             } else if (node instanceof HttpApiInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
-                UUID resourceId = uuid(input.configuration().resourceId(), input.name());
-                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
-                        .apiResource(resourceId);
+                RequestedDataSourceBuilder builder = builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder());
+                input.configuration().resources().forEach(selection ->
+                        builder.apiResource(uuid(selection.resourceId(), input.name())));
             } else if (node instanceof SpatialServiceInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
-                UUID resourceId = uuid(input.configuration().resourceId(), input.name());
-                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
-                        .spatialResource(resourceId);
+                RequestedDataSourceBuilder builder = builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder());
+                input.configuration().resources().forEach(selection ->
+                        builder.spatialResource(uuid(selection.resourceId(), input.name())));
             } else if (node instanceof KafkaInputNodeDefinition input) {
                 UUID id = uuid(input.configuration().dataSourceId(), input.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
@@ -1143,16 +1152,18 @@ public class CanvasTaskRunPreparationService {
                         ));
             } else if (node instanceof JdbcOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
-                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
-                        .distributionTable(output.configuration().targetTableName());
+                RequestedDataSourceBuilder builder = builders.computeIfAbsent(
+                        id, ignored -> new RequestedDataSourceBuilder());
+                output.configuration().writes().forEach(write -> builder.distributionTable(write.targetTableName()));
             } else if (node instanceof JdbcSnapshotSyncOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
                         .distributionTable(output.configuration().targetTableName());
             } else if (node instanceof KafkaOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
-                builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
-                        .distribution(output.configuration().topic());
+                RequestedDataSourceBuilder builder = builders.computeIfAbsent(
+                        id, ignored -> new RequestedDataSourceBuilder());
+                output.configuration().writes().forEach(write -> builder.distribution(write.topic()));
             } else if (node instanceof FileOutputNodeDefinition output) {
                 UUID id = uuid(output.configuration().dataSourceId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedDataSourceBuilder())
@@ -1174,11 +1185,15 @@ public class CanvasTaskRunPreparationService {
         Map<UUID, RequestedModelBuilder> builders = new LinkedHashMap<>();
         for (CanvasNodeDefinition node : definition.nodes()) {
             if (node instanceof ModelInputNodeDefinition input) {
-                UUID id = modelUuid(input.configuration().modelId(), input.name());
-                builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).input();
+                input.configuration().models().forEach(selection -> {
+                    UUID id = modelUuid(selection.modelId(), input.name());
+                    builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).input();
+                });
             } else if (node instanceof ModelOutputNodeDefinition output) {
-                UUID id = modelUuid(output.configuration().targetModelId(), output.name());
-                builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).output();
+                output.configuration().writes().forEach(write -> {
+                    UUID id = modelUuid(write.targetModelId(), output.name());
+                    builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).output();
+                });
             } else if (node instanceof ModelSnapshotSyncOutputNodeDefinition output) {
                 UUID id = modelUuid(output.configuration().targetModelId(), output.name());
                 builders.computeIfAbsent(id, ignored -> new RequestedModelBuilder()).output();
@@ -1304,7 +1319,12 @@ public class CanvasTaskRunPreparationService {
         private final Set<String> kafkaTopics = new LinkedHashSet<>();
         private final Set<RequestedTdEngineTmqTopic> tdEngineTmqTopics = new LinkedHashSet<>();
 
-        private RequestedDataSourceBuilder source(String table) {
+        private RequestedDataSourceBuilder source() {
+            source = true;
+            return this;
+        }
+
+        private RequestedDataSourceBuilder sourceTable(String table) {
             source = true;
             tables.add(table);
             return this;

@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.service.web.resource;
 
 import cn.superhuang.data.scalpel.business.lineage.service.DataServiceLineageQueryService;
 import cn.superhuang.data.scalpel.business.lineage.web.response.LineageGraphResponse;
+import cn.superhuang.data.scalpel.business.lineage.web.response.LineageFieldGraphResponse;
 import cn.superhuang.data.scalpel.business.service.DataServiceManagementService;
 import cn.superhuang.data.scalpel.business.service.DataServiceRelatedModelService;
 import cn.superhuang.data.scalpel.business.service.StandardDataServiceModelCandidateService;
@@ -9,6 +10,7 @@ import cn.superhuang.data.scalpel.business.service.web.request.CreateDataService
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.SqlServiceTestRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.QueryDataServiceFieldLineageRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceDetailResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceRelatedModelResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceSummaryResponse;
@@ -121,6 +123,17 @@ public class DataServiceResource {
             @RequestParam(defaultValue = "2") int depth
     ) {
         return lineageQueryService.fieldLineage(id, fieldId, depth);
+    }
+
+    @PostMapping("/{id}/lineage/actions/query-fields")
+    @PreAuthorize("hasAuthority('service.view') and hasAuthority('model.view') and hasAuthority('task.view')")
+    public LineageFieldGraphResponse queryFieldLineage(
+            @PathVariable UUID id,
+            @Valid @RequestBody QueryDataServiceFieldLineageRequest request
+    ) {
+        return lineageQueryService.fieldLineages(
+                id, request.fieldIds(), request.depth() == null ? 2 : request.depth()
+        );
     }
 
     @PostMapping("/actions/test-sql")

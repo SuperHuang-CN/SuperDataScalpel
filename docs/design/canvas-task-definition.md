@@ -27,6 +27,7 @@ X6 Shape、Palette 分组、图标和校验结果不属于持久化协议。
 - `STREAM_JOIN`
 - `RENAME`
 - `FILTER`
+- `SQL_TRANSFORM`
 - `SELECT_COLUMNS`
 - `DERIVE_COLUMNS`
 - `TYPE_CAST`
@@ -52,15 +53,22 @@ X6 Shape、Palette 分组、图标和校验结果不属于持久化协议。
 
 Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳定 JSON。X6 只负责编辑和展示，不得直接持久化 X6 Cell、Shape、Port 或运行时状态。
 
+AI 助手生成任务定义时同样不能直接产生任意 Canvas JSON。助手只提交受限的强类型语义方案，
+由后端 Builder 生成当前 Canvas 4.1 的节点 UUID、边、逻辑表名和布局，并通过本文相同的持久化结构
+校验。提案接受后只替换前端内存画布并触发 dirty 与既有自动编译；最终保存仍使用原任务定义接口。
+AI V1 只生成批任务完整替换方案，不支持自动生成自由 SQL 节点、节点级 Patch、实时任务、发布或执行；
+已人工配置的 `SQL_TRANSFORM` 可正常加载、保存和展示。
+
 ## 2. 核心决策
 
-### 2.1 一个节点只表达一个动作
+### 2.1 一个节点只表达一个动作或一个同类资源集合
 
-- 一个 `JDBC_INPUT` 节点只读取一张 JDBC 表。
+- 一个 `JDBC_INPUT` 节点只绑定一个 JDBC 数据源，可以从该数据源读取一张或多张物理表；每张表仍形成独立的 Canvas 表。
 - 一个 `JDBC_QUERY_INPUT` 节点只执行一条已显式分析的只读 JDBC 查询。
-- 一个 `FILE_DATASET_INPUT` 节点只读取一张文件数据集逻辑表。
-- 一个 `HTTP_API_INPUT` 节点只读取一个已声明 Schema 的 API 资源。
-- 一个 `MODEL_INPUT` 节点只读取一个数据模型。
+- 一个 `FILE_DATASET_INPUT` 节点绑定一个文件数据集，可读取其中多张逻辑表。
+- 一个 `HTTP_API_INPUT` 节点绑定一个数据源，可读取多个已声明 Schema 的 API 资源。
+- 一个 `SPATIAL_SERVICE_INPUT` 节点绑定一个空间服务数据源，可读取多个要素资源。
+- 一个 `MODEL_INPUT` 节点可读取多个已发布数据模型（允许跨数据源）。
 - 一个 `KAFKA_INPUT` 节点只读取一个 Topic，并持有自己的 Value Schema。
 - 一个 `TDENGINE_TMQ_INPUT` 节点只订阅一个由外部系统管理的完整超级表 TMQ Topic。
 - 一个 `JOIN` 节点只执行一次两表连接。
@@ -75,9 +83,11 @@ Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳
 - 一个 `SPATIAL_JOIN` 节点只使用受控空间谓词执行一次两表 INNER 连接。
 - 一个 `STREAM_JOIN` 节点只执行一次流式表连接。
 - 一个 `RENAME` 节点只替换一张逻辑表，并原子重命名该表的零到多个字段。
-- 一个 `FILTER` 节点只按一棵结构化条件树筛选一张逻辑表，并产生一个新的逻辑表。
+- 一个 `FILTER` 节点可选择多张逻辑表逐表筛选；每项可使用结构化条件树或受控 SQL 布尔表达式。
+- 一个 `SQL_TRANSFORM` 节点对完整上游表 Map 执行一条受控 Spark SQL `SELECT` 或
+  `WITH ... SELECT`，保留全部上游表并追加一张新逻辑表。
 - 一个 `SELECT_COLUMNS` 节点只裁剪并排序一张逻辑表的字段，并产生一个新的逻辑表。
-- 一个 `DERIVE_COLUMNS` 节点只通过结构化表达式新增或覆盖字段，并产生一个新的逻辑表。
+- 一个 `DERIVE_COLUMNS` 节点可对多张已选逻辑表应用共享的全局规则和各表独立规则；每张表可原表更新或生成一张新逻辑表。
 - 一个 `TYPE_CAST` 节点只显式转换一张来源表中的一个或多个字段类型。
 - 一个 `AGGREGATE` 节点只对一张来源表执行一次全表或分组聚合。
 - 一个 `UNION` 节点只按字段名纵向合并配置选择的多张逻辑表。
@@ -94,7 +104,7 @@ Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳
 - 一个 `MODEL_SNAPSHOT_SYNC_OUTPUT` 节点只对比并同步一个 MANAGED 模型的完整实体快照。
 - 一个 `KAFKA_OUTPUT` 节点只描述一次向一个 Topic 的写入，并持有自己的 Value Schema。
 - 一个 `FILE_OUTPUT` 节点只描述一次向用户指定的外部存储目录写入。
-- 多张输入表、多次 Join 或多个输出目标使用多个图节点表达。
+- 跨数据源输入、多次 Join 或多个输出目标使用多个图节点表达。同一数据源下批量选择物理表不再要求重复创建 JDBC Input。
 
 这样可以让画布直接表达数据血缘，避免在节点内部再次维护 `items`、`actions`、`mappings` 等小型工作流。
 
@@ -108,7 +118,7 @@ Map<tableName, CanvasTable>
 
 `CanvasTable.name` 是当前数据流中的逻辑表名，同时也是 Map Key：
 
-- `JDBC_INPUT` 初始使用配置的 `tableName`。
+- `JDBC_INPUT` 为 `configuration.tables` 中每个物理表产生一个以原始 `tableName` 为 Key 的条目。
 - `JDBC_QUERY_INPUT` 使用配置的 `outputTableName`。
 - `FILE_DATASET_INPUT` 使用不可修改的 `FileDatasetTable.code`。
 - `HTTP_API_INPUT` 使用配置的 `outputTableName`。
@@ -119,9 +129,9 @@ Map<tableName, CanvasTable>
   `GEOMETRY_SERIALIZE`、`SPATIAL_CLIP`、`SPATIAL_AGGREGATE` 和 `SPATIAL_JOIN` 保留输入表，
   并使用 `outputTableName` 创建新表。
 - `RENAME` 处理器替换逻辑表名及 Map Key，但不得修改输入表的物理来源信息。
-- `FILTER` 保留全部输入表，并以配置的 `outputTableName` 追加筛选结果。
+- `FILTER` 按 `operations` 逐表筛选：`REPLACE_SOURCE` 替换来源 Map 项，`CREATE_NEW_TABLE` 追加筛选结果。
 - `SELECT_COLUMNS` 保留全部输入表，并以配置的 `outputTableName` 追加字段投影结果。
-- `DERIVE_COLUMNS` 保留全部输入表，并以配置的 `outputTableName` 追加派生结果。
+- `DERIVE_COLUMNS` 按 `operations` 逐表处理：`REPLACE_SOURCE` 替换对应 Map Key，`CREATE_NEW_TABLE` 以该项 `outputTableName` 追加派生结果；全局规则与表级规则都只引用该表进入节点时的原始 Schema。
 - `TYPE_CAST` 保留全部输入表，并以配置的 `outputTableName` 追加类型转换结果。
 - `AGGREGATE` 保留全部输入表，并以配置的 `outputTableName` 追加聚合结果。
 - `UNION` 保留全部输入表，并以配置的 `outputTableName` 追加合并结果。
@@ -157,7 +167,7 @@ Task Engine 的编译请求使用独立的 `metadataSnapshot` 携带本次分析
 
 ### 2.4 不保存数据源凭据
 
-Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 `fileDatasetTableId`，HTTP API 节点只保存 `dataSourceId/resourceId`，模型节点只保存 `modelId/targetModelId`，Kafka 节点只保存数据源 ID、Topic、节点自有 Value Schema 和映射配置，TMQ 节点只保存数据源 ID、Topic、数据库、超级表和定义指纹，文件输出只保存数据源 ID 与相对目录。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
+Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输入只保存一个 `fileDatasetId` 和表选择，HTTP API 与空间服务节点只保存数据源 ID 和资源选择，模型节点只保存模型选择/目标模型 ID，Kafka 节点只保存数据源 ID、Topic、节点自有 Value Schema 和映射配置，TMQ 节点只保存数据源 ID、Topic、数据库、超级表和定义指纹，文件输出只保存数据源 ID 与相对目录。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
 
 `HTTP_API_INPUT.runtimeParameters` 会随 Canvas 定义明文持久化，只允许保存日期、业务筛选条件、初始游标等非敏感值。动态 Token 必须由 HTTP API 数据源的 OAuth2 或 Token Endpoint 鉴权在执行时生成，不能作为运行时参数绕过凭据边界。
 
@@ -167,8 +177,8 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 
 ```json
 {
-  "schemaVersion": 2,
-  "schemaMinorVersion": 3,
+  "schemaVersion": 4,
+  "schemaMinorVersion": 1,
   "nodes": [],
   "edges": []
 }
@@ -176,13 +186,17 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
-| `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `2` |
-| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；缺失时按 `0`，当前写出版本为 `3` |
+| `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `4` |
+| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；当前写出版本为 `1` |
 | `nodes` | array | 节点定义，按照前端保存顺序持久化；业务逻辑不得依赖数组顺序 |
 | `edges` | array | 有向边定义，业务逻辑不得依赖数组顺序 |
 
-当前写出版本统一为 `2.3`。`2.0/2.1/2.2` 定义仍可读取，保存和导出时规范化为 `2.3`；
-`TDENGINE_TMQ_INPUT` 从小版本 1 开始可用，`JDBC_INCREMENTAL_INPUT` 从小版本 2 开始可用，`MODEL_OUTPUT` 的 UPSERT 从小版本 3 开始可用。Canvas `1.x` 与 `2.x` 不兼容：后端必须先读取持久化的协议版本，再决定是否反序列化定义；发现旧大版本时返回明确的不兼容状态，定义内容置空，由用户选择从空白 Canvas `2.3` 重新配置。重新配置只在用户保存后覆盖旧 JSON，不进行跨大版本自动迁移。
+当前写出版本统一为 `4.1`。`4.0` 将 `MODEL_INPUT`、`FILE_DATASET_INPUT`、`HTTP_API_INPUT` 和
+`SPATIAL_SERVICE_INPUT` 从单资源结构改为有序资源数组；这是破坏性协议变化，所有 `3.x` 定义均不导入、
+不迁移或猜测旧字段语义，必须重新配置后保存。一个 Input 节点的唯一输出端口传递完整表 Map，数组中每个资源产生一张表。
+
+`SQL_TRANSFORM` 从 `4.1` 引入。`4.0` 定义继续读取，并在保存和导出时规范化为 `4.1`；标记为
+`4.0` 却含有 `SQL_TRANSFORM` 的定义必须拒绝，不能因为升级而猜测其语义。
 
 同一大版本内，小版本只允许新增节点类型、可选字段或其他不改变已有定义语义的能力，并必须向下兼容；读取受支持的较低小版本后，保存和导出统一规范化为当前小版本。高于当前实现的小版本必须拒绝。删除或重命名字段、改变已有字段或节点语义、修改核心图规则等不兼容变化必须升级大版本，并将小版本重置为 `0`。版本不得使用 JSON 小数表示，避免 `2.1`、`2.10` 的比较歧义。
 
@@ -254,7 +268,7 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId`，文件输入只保存 
 
 ## 4. 物理表定位
 
-JDBC 数据源已经固定数据库和 Schema，Canvas 节点只保存该数据源下的 `tableName`，不重复保存 `catalogName` 或 `schemaName`：
+JDBC 数据源已经固定数据库和 Schema，Canvas 节点中的每个表配置只保存该数据源下的 `tableName`，不重复保存 `catalogName` 或 `schemaName`：
 
 - `tableName` 必填，去除首尾空白后不能为空。
 - `tableName` 只保存元数据返回的原始表名，不允许提交已经拼接、引用或转义的 `schema.table` 字符串。
@@ -269,34 +283,76 @@ JDBC 数据源已经固定数据库和 Schema，Canvas 节点只保存该数据�
 ```json
 {
   "dataSourceId": "a406e119-fbd2-4173-84ee-c92c69231168",
-  "tableName": "orders"
+  "tables": [
+    {
+      "tableName": "orders",
+      "readOptions": [
+        { "name": "fetchsize", "value": "10000" },
+        { "name": "pushDownAggregate", "value": "true" }
+      ]
+    },
+    { "tableName": "customers", "readOptions": [] }
+  ]
 }
 ```
 
 对应 TypeScript 类型：
 
 ```ts
+interface JdbcInputTableSelection {
+  tableName: string;
+  readOptions: JdbcInputReadOption[];
+}
+
+interface JdbcInputReadOption {
+  name: string;
+  value: string;
+}
+
 interface JdbcInputConfiguration {
   dataSourceId: string;
-  tableName: string;
+  tables: JdbcInputTableSelection[];
 }
 ```
 
-第一版不支持在定义中直接填写 JDBC URL、自定义 SQL、分区参数、Driver 参数或任意连接 Options。需要自由 SQL 输入时，应设计独立节点类型，不能扩张 `JDBC_INPUT` 的含义。
+`tables` 使用对象数组而不是字符串数组，为逐表读取调优与以后独立的分片读取配置保留稳定边界。
+`readOptions` 从 Canvas `4.0` 起属于每张 JDBC 表选择；其键和值均为字符串，并在读取
+该物理表时才生效。它不保存 URL、Driver、用户、密码、物理表、Catalog/Schema 或其他连接上下文。
+自由 SQL 仍使用独立 `JDBC_QUERY_INPUT`。
+
+### 5.1A 逐表高级读取参数
+
+每张表最多可保存 32 个参数。Task Engine 是权威校验边界：参数名长度为 `1..128`，匹配
+`[A-Za-z][A-Za-z0-9._-]{0,127}`，按大小写不敏感唯一；参数值最多 4096 个字符，允许多行。
+`fetchsize`、`queryTimeout` 必须为非负整数；`pushDownPredicate`、`pushDownAggregate`、
+`pushDownLimit`、`pushDownOffset`、`pushDownTableSample`、`pushDownJoin` 和
+`preferTimestampNTZ` 必须是 `true/false`；`sessionInitStatement` 配置后不能为空。
+
+以下名称由平台控制、与写入相关、包含凭据或预留给未来分片读取，必须拒绝：连接和目标参数
+`url/driver/user/password/dbtable/query/prepareQuery/customSchema`，认证提供器参数，
+`catalog/schema/currentSchema/database/databaseName`，写入参数，
+`partitionColumn/lowerBound/upperBound/numPartitions`，以及匹配
+`password/passwd/pwd/secret/token/credential/apiKey/accessKey/secretKey/privateKey` 的名称。
+未知参数允许保存，并由 Spark/JDBC Driver 在真实读取时解释。
+
+实际应用顺序固定为：运行 Manifest 的受保护连接与凭据 → 数据源 JDBC Properties → 当前物理表
+`readOptions` → 平台最终设置 `dbtable` → `load()`。因此逐表参数可以覆盖普通数据源 JDBC Property，
+但不能覆盖连接、目标表或分片边界。Compiler 不连接数据库也不执行 `sessionInitStatement`。
 
 ### 5.2 输入与输出
 
 - 节点类别：`INPUT`
 - 入边数量：必须为 `0`
 - 出边数量：至少为 `1`
-- 输出 Map：只包含一个条目
-- 输出 Key：`configuration.tableName`
+- 输出 Map：包含 `configuration.tables` 对应的全部无重复条目
+- 输出 Key：每个 `configuration.tables[i].tableName`
 
 概念结果：
 
 ```text
 {
-  "orders" -> CanvasTable(name="orders", origin=JdbcTableOrigin(...))
+  "orders" -> CanvasTable(name="orders", origin=JdbcTableOrigin(...)),
+  "customers" -> CanvasTable(name="customers", origin=JdbcTableOrigin(...))
 }
 ```
 
@@ -304,9 +360,11 @@ interface JdbcInputConfiguration {
 
 - `dataSourceId` 是有效 UUID，数据源存在且已启用。
 - 数据源类型是 JDBC，并具有 `SOURCE` 用途。
-- `tableName` 完整，且没有包含数据库或 Schema 前缀。
-- 通过元数据接口可以定位该表。
-- 表字段可以全部映射为平台类型；存在 `LOSSY` 或 `UNSUPPORTED` 映射时校验失败。
+- `tables` 至少包含一个对象，每个 `tableName` 完整且没有包含数据库或 Schema 前缀。
+- 同一节点内 `tableName` 精确匹配后唯一，重复时返回 `DUPLICATE_TABLE_NAME`。
+- 通过元数据接口可以定位每张表。
+- 每张表的字段都可以映射为平台类型；存在 `LOSSY` 或 `UNSUPPORTED` 映射时校验失败。
+- `readOptions` 按上述逐表高级读取参数规则校验；参数值、尤其是 `sessionInitStatement`，不得进入节点卡片、摘要、运行日志或错误摘要。
 - 不在定义中保存读取到的字段 Schema。
 
 ## 5A. `JDBC_QUERY_INPUT` 节点
@@ -384,10 +442,12 @@ SQL 最大 100,000 字符，只接受 PostgreSQL/MySQL 的单条 `SELECT` 或 `W
 ```json
 {
   "dataSourceId": "d5823019-3479-45bc-81ef-f945814558cc",
-  "resourceId": "e67ebceb-78ab-4eb8-bf90-7d428cc8fa09",
-  "outputTableName": "api_orders",
-  "runtimeParameters": [
-    { "name": "startDate", "value": "2026-07-01" }
+  "resources": [
+    {
+      "resourceId": "e67ebceb-78ab-4eb8-bf90-7d428cc8fa09",
+      "outputTableName": "api_orders",
+      "runtimeParameters": [{ "name": "startDate", "value": "2026-07-01" }]
+    }
   ]
 }
 ```
@@ -397,9 +457,7 @@ SQL 最大 100,000 字符，只接受 PostgreSQL/MySQL 的单条 `SELECT` 或 `W
 ```ts
 interface HttpApiInputConfiguration {
   dataSourceId: string;
-  resourceId: string;
-  outputTableName: string;
-  runtimeParameters: Array<{ name: string; value: string }>;
+  resources: HttpApiInputResourceSelection[];
 }
 ```
 
@@ -410,16 +468,16 @@ interface HttpApiInputConfiguration {
 - 节点类别：`INPUT`
 - 入边数量：必须为 `0`
 - 出边数量：至少为 `1`
-- 输出 Map：只包含一个条目
-- 输出 Key：`configuration.outputTableName`
+- 输出 Map：按 `resources` 配置顺序包含全部资源
+- 输出 Key：每项的 `outputTableName`
 - 编译 Schema：来自 API 资源显式声明的 `outputFields`，编译时不访问远程接口
 
 ### 6.3 校验
 
-- `dataSourceId/resourceId` 是有效 UUID，且资源确实属于该数据源。
+- `dataSourceId` 和每项 `resourceId` 是有效 UUID，且资源确实属于该数据源；同一资源不能重复。
 - 数据源类型是 `HTTP_API`、已启用并具有 `SOURCE` 用途；API 资源也必须已启用。
-- `outputTableName` 是合法且不冲突的逻辑表名。
-- 运行时参数名合法且不重复；参数值不能用于保存敏感凭据。
+- 每项 `outputTableName` 是合法且不冲突的逻辑表名。
+- 每项运行时参数名合法且不重复；参数值不能用于保存敏感凭据。
 - API 资源存在至少一个完整、可由平台类型表达的输出字段。
 
 ## 7. `JOIN` 节点
@@ -438,6 +496,20 @@ interface HttpApiInputConfiguration {
       "operator": "EQUALS",
       "rightColumnName": "customer_key"
     }
+  ],
+  "outputColumns": [
+    {
+      "sourceSide": "LEFT",
+      "sourceColumnName": "id",
+      "outputColumnName": "id",
+      "included": true
+    },
+    {
+      "sourceSide": "RIGHT",
+      "sourceColumnName": "id",
+      "outputColumnName": "customers_id",
+      "included": true
+    }
   ]
 }
 ```
@@ -453,12 +525,20 @@ interface JoinCondition {
   rightColumnName: string;
 }
 
+interface JoinOutputColumn {
+  sourceSide: 'LEFT' | 'RIGHT';
+  sourceColumnName: string;
+  outputColumnName: string;
+  included: boolean;
+}
+
 interface JoinConfiguration {
   leftTableName: string;
   rightTableName: string;
   outputTableName: string;
   joinType: JoinType;
   conditions: JoinCondition[];
+  outputColumns: JoinOutputColumn[];
 }
 ```
 
@@ -467,9 +547,10 @@ interface JoinConfiguration {
 ### 7.2 输入与输出
 
 - 节点类别：`PROCESSOR`
-- 入边数量：必须为 `2`
+- 入边数量：至少为 `1`，不限制上限
 - 出边数量：至少为 `1`
-- 节点先合并两个直接上游输出的表 Map。
+- 单条入边可以携带包含左右表的完整表 Map；多条入边用于合并来自不同上游分支的表 Map。
+- 存在多条入边时，节点先无覆盖合并所有直接上游输出的表 Map。
 - 合并时发现同名表立即失败，不允许后到的表覆盖先到的表。
 - 左表和右表从合并后的 Map 中按表名取得。
 - 输出 Map 保留所有输入表，并新增 `outputTableName` 对应的 Join 结果表。
@@ -494,9 +575,13 @@ interface JoinConfiguration {
 
 ### 7.3 字段 Schema
 
-Join 结果字段顺序固定为左表字段在前、右表字段在后。
+Join 结果使用 `outputColumns` 执行显式投影，数组顺序就是最终字段顺序。`included=false`
+保留配置但不输出该字段；启用字段的最终 `outputColumnName` 按大小写不敏感规则保持唯一。
 
-第一版不静默修改重名字段。左右表存在同名输出字段时返回 `DUPLICATE_COLUMN_NAME`，由 `RENAME` 处理器在 Join 前显式重命名字段。Join 条件中使用的同名字段也不例外，因为结果同时保留左右两列。
+左右表允许存在同名来源字段。Inspector 首次取得两侧 Schema 时生成可编辑建议：左表字段保持原名；
+右表字段只有与左表同名时才建议为 `右表表名_字段名`，例如 `sys_dept.id → sys_dept_id`。
+如果建议名称仍与其他输出字段重名，不继续追加编号或二次前缀，由用户手动改名或排除字段。
+已经编辑的投影不因上游 Schema 变化被静默重建。
 
 Join 类型对可空性的影响：
 
@@ -516,7 +601,53 @@ Join 类型对可空性的影响：
 - 同一组左右字段条件不得重复。
 - Join 先构造真实 Spark 等值表达式并由 Analyzer 判断可比较性；Analyzer 接受时直接通过且不再按平台类型产生风险警告，Analyzer 拒绝时返回错误。
 - Geometry 不得作为普通 Join 的 `EQUALS` 条件；空间相等必须使用 `SPATIAL_JOIN/EQUALS`。
-- 结果字段名不得重复。
+- `outputColumns` 至少启用一个字段，同一侧来源字段只能配置一次。
+- 每项来源字段必须存在于对应左表或右表；失效配置保留并返回 `COLUMN_NOT_FOUND`。
+- 最终启用的输出字段名不得重复；重名返回 `DUPLICATE_COLUMN_NAME`。
+
+## 7A. `STREAM_JOIN` 节点
+
+`STREAM_JOIN` 复用普通 Join 的 `JoinCondition` 和 `JoinOutputColumn`，第一阶段只支持左侧无界流
+关联右侧有界静态维表：
+
+```json
+{
+  "leftTableName": "order_events",
+  "rightTableName": "dim_customer",
+  "outputTableName": "enriched_events",
+  "joinType": "LEFT",
+  "conditions": [
+    {
+      "leftColumnName": "customer_id",
+      "operator": "EQUALS",
+      "rightColumnName": "id"
+    }
+  ],
+  "outputColumns": [
+    {
+      "sourceSide": "LEFT",
+      "sourceColumnName": "event_time",
+      "outputColumnName": "event_time",
+      "included": true
+    },
+    {
+      "sourceSide": "RIGHT",
+      "sourceColumnName": "id",
+      "outputColumnName": "dim_customer_id",
+      "included": true
+    }
+  ]
+}
+```
+
+- `joinType` 仅支持 `INNER | LEFT`；左表必须为 `UNBOUNDED`，右表必须为 `BOUNDED`。
+- 左右表允许同名字段，最终结果严格按 `outputColumns` 顺序执行限定来源的 `select + alias`。
+- Inspector 的默认命名、字段排除、改名、排序、右侧 Join Key 排除和重建规则与普通 Join 相同；
+  右侧重名字段使用完整逻辑表名作为前缀，建议后仍冲突时由用户处理。
+- 同一侧来源字段只能配置一次，至少启用一个输出字段，最终字段名按大小写不敏感唯一。
+- 左侧事件时间字段保留时继续传播 Watermark；被改名时同步更新事件时间字段名；被排除时清除
+  输出 Schema 的事件时间和 Watermark。右侧静态表的事件时间信息不传播。
+- 静态维表只在流任务启动时读取，不自动刷新；本节点不支持 Stream-Stream Join。
 
 ## 7.5 `SPATIAL_TRANSFORM` 节点
 
@@ -536,7 +667,7 @@ Join 类型对可空性的影响：
 ```
 
 - 类别为 `PROCESSOR`，执行模式为 `BATCH`，协议引入版本为 `1.20`。
-- 恰好一条入边，至少一条出边。
+- 至少一条入边；允许没有出边，此时结果无人消费并产生 `UNCONSUMED_PROCESSOR_OUTPUT` 警告。
 - source CRS 只来自 Task Engine 上游 Schema，定义不能覆盖。
 - 第一阶段只接受 `EPSG + XY`；源和目标 CRS 相同时返回 Warning。
 - 输出表名与已有 Map Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
@@ -562,7 +693,7 @@ Join 类型对可空性的影响：
 ```
 
 - 类别为 `PROCESSOR`，执行模式为 `BATCH`，协议引入版本为 `1.20`。
-- 恰好两条入边，至少一条出边；第一阶段只支持 `INNER`。
+- 至少一条入边；允许没有出边，左右表从合并后的表 Map 选择，第一阶段只支持 `INNER`。
 - 条件数量为 `1..8`，多条件固定使用 `AND`，重复条件被拒绝。
 - 谓词支持 `INTERSECTS/CONTAINS/WITHIN/COVERS/COVERED_BY/TOUCHES/OVERLAPS/CROSSES/EQUALS`。
 - 两侧字段必须是 Geometry 且 CRS、dimension 完全一致；不执行隐式 CRS 转换。
@@ -575,7 +706,7 @@ Join 类型对可空性的影响：
 设置目标 `GeometryKind + EPSG CRS + XY`，并将字段追加到来源字段之后。
 
 - 类别为 `PROCESSOR`，支持 `BATCH/STREAMING`，协议引入版本为 `1.21`。
-- 恰好一条入边，至少一条出边；来源 NULL 时输出 NULL。
+- 至少一条入边；允许没有出边，来源 NULL 时输出 NULL。
 - WKT/GeoJSON 来源必须是 STRING，WKB 必须是 BINARY，X/Y 必须是数值字段。
 - 目标必须是具体 kind；`POINT_FROM_XY` 的目标固定为 POINT。
 - 嵌入式 CRS 不受信任；畸形值或实际 kind 不匹配在运行时失败，不静默置 NULL。
@@ -620,7 +751,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 节点保留来源 Geometry，并使用 Sedona `ST_MakeValid(geometry, false)` 追加修复结果字段。
 
 - 类别为 `PROCESSOR`，支持 `BATCH/STREAMING`，协议引入版本为 `1.22`。
-- 恰好一条入边，至少一条出边；节点逐行无状态处理。
+- 至少一条入边；允许没有出边，节点逐行无状态处理。
 - NULL 输入输出 NULL；无法修复的真实 Geometry 在运行时失败，不回退原值或静默置 NULL。
 - 修复可能改变具体 GeometryKind，因此输出字段固定声明为通用 `GEOMETRY`；CRS 和 dimension
   继承来源字段。
@@ -632,7 +763,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 节点保留来源 Geometry，并按显式距离模式追加规范化的 MultiPolygon 缓冲字段。
 
 - 类别为 `PROCESSOR`，支持 `BATCH/STREAMING`，协议引入版本为 `1.22`。
-- 恰好一条入边，至少一条出边；距离必须是有限正数。
+- 至少一条入边；允许没有出边，距离必须是有限正数。
 - PLANAR 使用来源 CRS 坐标单位；EPSG:4326 下产生角度单位 Warning。
 - SPHEROID 只接受 EPSG:4326，距离单位为米。
 - 结果通过 `ST_Multi` 规范化为 `MULTIPOLYGON`，CRS、dimension 和 nullable 继承来源字段。
@@ -645,7 +776,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 并复制来源行的全部属性。
 
 - 类别为 `PROCESSOR`，支持 `BATCH/STREAMING`，协议引入版本为 `1.22`。
-- 恰好一条入边，至少一条出边；节点可能增加行数，但不增加流式状态。
+- 至少一条入边；允许没有出边，节点可能增加行数，但不增加流式状态。
 - 使用 outer 展开语义，NULL 或 Empty 输入保留一行并输出 NULL 部件。
 - 可选部件序号从 0 开始；NULL 或 Empty 行的序号为 NULL。
 - MultiPoint/MultiLineString/MultiPolygon 的输出 kind 分别收窄为
@@ -659,7 +790,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 追加裁剪结果字段；Mask 属性不进入输出。
 
 - 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `1.23`。
-- 恰好两条入边，至少一条出边；来源表和 Mask 表必须不同且均为 BOUNDED。
+- 至少一条入边；允许没有出边，来源表和 Mask 表从合并后的表 Map 选择，且必须不同并均为 BOUNDED。
 - 固定使用 `ST_Intersects` INNER 候选连接与 `ST_Intersection`；NULL、Empty 和未命中结果不输出。
 - 一个来源行命中多个 Mask 时输出多行，不自动 dissolve、去重或稳定排序。
 - 两侧 Geometry 的 CRS 和 dimension 必须一致，Mask kind 只允许 Polygon/MultiPolygon。
@@ -674,7 +805,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 空间聚合。
 
 - 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `1.23`。
-- 恰好一条入边，至少一条出边；只接受 BOUNDED 来源。
+- 至少一条入边；允许没有出边，只接受 BOUNDED 来源。
 - `groupByColumns=[]` 表示全局聚合；分组字段不得重复或使用 Geometry。
 - 聚合项数量为 `1..32`；输出字段名不得重复，也不得与分组字段同名。
 - 每个结果独立继承来源 Geometry 的 CRS 和 dimension，kind 固定为通用 `GEOMETRY`，
@@ -758,7 +889,7 @@ interface JdbcOutputConfiguration {
 
 非 `UPSERT` 模式下 `upsertKeyColumns` 必须为空；旧定义缺少该字段时规范化为空数组。`UPSERT` 必须一次选择目标元数据 `uniqueKeys` 中完整且顺序一致的一项，不能逐字段拼接。Key 必须全部被输出映射覆盖，并且不能是自增字段、生成字段或 Geometry；冲突时只更新已映射的非 Key 字段。只有 Key 而没有非 Key 字段时，PostgreSQL 使用 `DO NOTHING`，MySQL 执行无变化更新。
 
-`JDBC_OUTPUT` 的 Batch 支持三种模式，Streaming 支持 `APPEND/UPSERT` 并拒绝 `OVERWRITE`；Streaming JDBC 输出继续拒绝 Geometry，Batch UPSERT 可以更新非 Key Geometry 字段。`MODEL_OUTPUT` 从 Canvas `2.3` 起同样在 Batch 支持 `APPEND/OVERWRITE/UPSERT`、在 Streaming 支持 `APPEND/UPSERT`；其 UPSERT Key 固定取目标模型完整主键，不写入节点配置，也不检查物理表唯一约束。
+`JDBC_OUTPUT` 的 Batch 支持三种模式，Streaming 支持 `APPEND/UPSERT` 并拒绝 `OVERWRITE`；Streaming JDBC 输出继续拒绝 Geometry，Batch UPSERT 可以更新非 Key Geometry 字段。Canvas `3.0` 中的 `MODEL_OUTPUT` 同样在 Batch 支持 `APPEND/OVERWRITE/UPSERT`、在 Streaming 支持 `APPEND/UPSERT`；其 UPSERT Key 固定取目标模型完整主键，不写入节点配置，也不检查物理表唯一约束。
 
 UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSERT_KEY_NULL`，批内重复返回 `UPSERT_DUPLICATE_KEY`，错误不得包含实际 Key 值。每个 Spark 分区使用独立 JDBC 事务，不提供跨分区全局事务；Streaming 是至少一次交付，micro-batch 重放只保证键级收敛，不宣称 Exactly Once。完整运行规则见 [JDBC_OUTPUT UPSERT 设计](canvas-jdbc-output-upsert-design.md)。
 
@@ -795,11 +926,12 @@ UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSE
 
 表单顺序：
 
-1. 数据源：远程搜索真实数据源，只列出已启用、JDBC 类型、具有 `SOURCE` 用途且支持表和字段元数据读取的数据源；选项展示名称、编码、数据库类型、数据库和 Schema，定义只保存 UUID。
-2. 物理表：从所选数据源配置的数据库和 Schema 中搜索真实物理表，不展示视图。选择器使用远程关键字过滤和虚拟列表；结果超过接口的 500 项限制时明确提示继续输入表名筛选，并提供刷新入口。
-3. 字段预览：选择表后读取最新字段元数据，只读展示字段名、平台类型、可空性和注释；加载和失败状态必须持续可见并允许重试。
+1. 数据源：远程搜索真实数据源，只列出已启用、JDBC 类型、具有 `SOURCE` 用途且支持表和字段元数据读取的数据源；定义只保存 UUID。
+2. 管理物理表：打开双栏选择弹窗。候选区按物理表名远程搜索，每次最多读取 100 个表摘要；结果截断时提示继续输入关键词。已选项跨搜索结果保留，候选表不预取字段元数据。
+3. 已选表配置：Inspector 中按照定义顺序完整列出所有已选物理表，支持移除、排序、按需展开字段和重新读取失败元数据。每一行对应一个独立 `JdbcInputTableSelection`。
+4. 逐表读取配置：每张已选表在“查看字段”和“移除”之间提供设置按钮，打开独立的键值编辑弹窗。弹窗可添加、删除、清空和排序参数，并提示 Spark 按字符串传参、`sessionInitStatement` 在每条 JDBC 连接建立后执行、不得填写凭据及分片读取将使用后续专门配置。无效非空草稿必须保留并标红；仅名称和值同时为空的新建占位行可在保存时移除。删除带参数的表、取消选择或清空表时必须二次确认。
 
-切换数据源时不得静默清空物理表；保留原值并使用新数据源重新解析，表不存在时阻止应用并显示错误。节点卡片配置完成后显示数据源名称、物理表限定名和输出表 Key。
+切换数据源时不得静默清空已选表；保留原值并使用新数据源重新解析。不存在的表就地标红，但错误草稿仍允许应用和保存，由发布/执行预检阻止运行。节点卡片单表时展示优先字段，多表时展示前 3 张表、字段数和剩余表数量；表名不附加数据库或 Schema。
 
 ### 9.2A `JDBC_QUERY_INPUT` 面板
 
@@ -818,19 +950,20 @@ UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSE
 ### 9.3 `HTTP_API_INPUT` 面板
 
 - 数据源下拉只显示已启用、具有 `SOURCE` 用途的 HTTP API 数据源。
-- API 资源下拉只显示当前数据源下已启用的资源。
-- 输出表名和非敏感运行时参数由用户配置；面板持续提示参数会进入 Canvas JSON，禁止填写 Token、密码、API Key 或 Secret。
+- “管理资源”使用双栏批量选择，候选只显示当前数据源下已启用资源，已选资源完整保留且可排序。
+- 每个资源独立配置输出表名和非敏感运行时参数；面板持续提示参数会进入 Canvas JSON，禁止填写 Token、密码、API Key 或 Secret。
 - 资源输出字段以只读方式预览，字段变化通过重新读取资源详情和重新编译反映，不复制进 Canvas 定义。
 
 ### 9.4 `JOIN` 面板
 
 表单顺序：
 
-1. 左表：从两个直接上游 Map 的无冲突合并结果中选择。
+1. 左表：从全部直接上游 Map 的无冲突合并结果中选择。
 2. 右表：排除已经选择的左表。
 3. Join 类型。
 4. 输出表名。
 5. Join 条件列表：每行选择左字段、操作符和右字段，支持新增和删除。
+6. 输出字段列表：展示来源侧、来源字段、输出字段名和启用状态，支持排除、改名和排序。
 
 选择左右表后，字段下拉框只展示当前 Task Engine 节点结果中对应表的 Schema。Engine 使用实际 Spark Analyzer 判断兼容性；Analyzer 接受时不显示平台类型提示，Analyzer 拒绝时显示节点错误。
 
@@ -840,7 +973,16 @@ UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSE
 orders INNER customers → order_customer
 ```
 
-当两个上游 Map 存在同名表，或 Join 结果存在同名字段时，配置面板应直接展示冲突名称，不生成自动前缀。
+面板提供“排除右侧 Join Key”和“重建建议”。重建建议会明确覆盖当前排除、改名和排序，并要求二次确认。
+上游字段失效时保留原映射并标红；建议后仍重名时直接展示冲突，不自动追加数字。
+
+### 9.4A `STREAM_JOIN` 面板
+
+- 左表候选只显示无界流表，右表候选只显示有界静态表。
+- 输出字段编辑复用 `JOIN` 面板，来源标签显示为“流”和“维”。
+- 首次取得两侧 Schema 且当前投影为空时生成建议；已有投影不因上游变化被静默重建。
+- 允许排除、改名、排序和一键排除右侧 Join Key；重建建议必须二次确认。
+- 失效字段和最终重名就地标红，但业务校验错误不阻止应用草稿。
 
 ### 9.5 `RENAME` 面板
 
@@ -856,13 +998,9 @@ orders INNER customers → order_customer
 
 ### 9.6 `FILTER` 面板
 
-表单顺序：
+窄 Inspector 只展示已选处理表、筛选方式摘要和逐表配置入口。逐表 Modal 顶部配置输出方式，规则区可在“可视化条件”和“SQL 表达式”之间切换；切换时保留另一模式的草稿，但只有当前模式参与校验和执行。
 
-1. 来源表：从唯一直接上游的无冲突 Map 中选择一张逻辑表。
-2. 输出表名：必须与当前输入 Map 中所有表名不同。
-3. 条件树：支持嵌套 `AND/OR` 条件组和字段谓词；字段候选只使用 Task Engine 返回的来源 Schema。
-
-操作符控制 Literal 数量：`IS_NULL/IS_NOT_NULL` 不填写值，`IN/NOT_IN` 至少一个值，其余操作符恰好一个值。上游字段失效时保留字段名、操作符和 Literal 并显示错误，不静默清空。节点卡片只显示来源表、输出表和条件数量，不展示 Literal 实际值。
+可视化模式支持嵌套 `AND/OR` 条件组和字段谓词。SQL 模式只填写 Spark SQL 布尔谓词，不填写 `WHERE`；提供当前来源表字段插入，禁止完整 SQL、子查询、注释和分号，最大 8192 个字符。字段候选只使用 Task Engine 返回的来源 Schema。上游字段失效时保留原配置并显示错误，不静默清空。节点卡片只显示处理表、模式和条件数量，不展示 Literal 或 SQL 表达式正文。
 
 ### 9.7 `SELECT_COLUMNS` 面板
 
@@ -876,9 +1014,11 @@ orders INNER customers → order_customer
 
 ### 9.8 `DERIVE_COLUMNS` 面板
 
-面板顶部配置来源表和输出表名，中部列出派生字段，局部编辑区配置目标字段名、新增/覆盖模式和结构化表达式。表达式构建器固定支持字段引用、Literal、二元运算、白名单函数和 `CASE_WHEN`，不提供自由 SQL。
+窄 Inspector 仅展示全局规则入口和已选处理表；每张表显示全局规则数、本表独立规则数和配置入口。全局规则作用于所有已选处理表，新增处理表后也立即继承。表级输出方式和输出表名仍独立配置。
 
-同一节点内的字段候选始终只来自 Task Engine 返回的原始来源 Schema，不包含本节点其他派生结果。上游字段失效时保留 AST 并在引用处标红。流任务覆盖事件时间字段时立即提示 `STREAM_EVENT_TIME_COLUMN_IMMUTABLE`。节点卡片只显示新增/覆盖数量和函数类别，不显示 Literal 值。
+全局规则和表级规则均通过宽 Modal 编辑：左侧维护规则列表，右侧配置目标字段名和结构化表达式。目标字段已存在时自动覆盖，不存在时自动追加；表配置 Modal 中的全局规则只读，可跳转至全局配置修改。表达式构建器固定支持字段引用、Literal、二元运算、白名单函数和 `CASE_WHEN`，不提供自由 SQL。
+
+全局规则的字段候选取所有已选处理表共有的字段 code；任一全局规则无法应用到某张表时，节点整体无效且不产生部分输出。全局与表级规则写入同一目标字段时返回 `GLOBAL_DERIVATION_TARGET_CONFLICT`。同一节点内的字段候选始终只来自 Task Engine 返回的原始来源 Schema，不包含本节点其他派生结果。上游字段失效时保留 AST 并在引用处标红。流任务目标名命中事件时间字段时立即提示 `STREAM_EVENT_TIME_COLUMN_IMMUTABLE`。节点卡片显示处理表、全局规则和规则总数，不显示 Literal 值。
 
 ### 9.9 `TYPE_CAST` 面板
 
@@ -985,8 +1125,8 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
 
 ```json
 {
-  "schemaVersion": 2,
-  "schemaMinorVersion": 3,
+  "schemaVersion": 3,
+  "schemaMinorVersion": 1,
   "nodes": [
     {
       "id": "878f22f4-86cf-4487-b697-5bc34eccb169",
@@ -995,7 +1135,7 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
       "layout": { "x": 80, "y": 80, "width": 240, "height": 120 },
       "configuration": {
         "dataSourceId": "c5c021bd-35d1-43ae-bbdb-ff90ff824ba0",
-        "tableName": "orders"
+        "tables": [{ "tableName": "orders", "readOptions": [] }]
       }
     },
     {
@@ -1005,7 +1145,7 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
       "layout": { "x": 80, "y": 280, "width": 240, "height": 120 },
       "configuration": {
         "dataSourceId": "c5c021bd-35d1-43ae-bbdb-ff90ff824ba0",
-        "tableName": "customers"
+        "tables": [{ "tableName": "customers", "readOptions": [] }]
       }
     },
     {
@@ -1024,6 +1164,12 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
             "operator": "EQUALS",
             "rightColumnName": "customer_key"
           }
+        ],
+        "outputColumns": [
+          { "sourceSide": "LEFT", "sourceColumnName": "order_id", "outputColumnName": "order_id", "included": true },
+          { "sourceSide": "LEFT", "sourceColumnName": "customer_id", "outputColumnName": "customer_id", "included": true },
+          { "sourceSide": "RIGHT", "sourceColumnName": "customer_key", "outputColumnName": "customer_key", "included": true },
+          { "sourceSide": "RIGHT", "sourceColumnName": "customer_name", "outputColumnName": "customer_name", "included": true }
         ]
       }
     },
@@ -1079,34 +1225,21 @@ OVERWRITE 非原子语义。GeoParquet 明确标识为分布式目录；GeoJSON 
 - 边的起点和终点存在。
 - 禁止自连接、重复方向边和环路。
 - 输入节点没有入边，输出节点没有出边。
-- `JOIN` 恰好有两条入边。
-- `RENAME` 恰好有一条入边。
-- `FILTER` 恰好有一条入边。
-- `SELECT_COLUMNS` 恰好有一条入边。
-- `DERIVE_COLUMNS` 恰好有一条入边。
-- `TYPE_CAST` 恰好有一条入边。
-- `AGGREGATE` 恰好有一条入边。
-- `UNION` 至少有一条入边。
-- `DEDUPLICATE` 恰好有一条入边。
-- `NULL_HANDLING` 恰好有一条入边。
-- `VALUE_MAPPING` 恰好有一条入边。
-- `MASK_FIELDS` 恰好有一条入边和一条出边。
-- `JSON_EXTRACT` 恰好有一条入边。
-- `WINDOW` 恰好有一条入边。
-- `TOP_N` 恰好有一条入边。
-- `SPATIAL_CLIP` 恰好有两条入边。
-- `SPATIAL_AGGREGATE` 恰好有一条入边。
-- 除输出节点外，每个节点至少有一条出边。
+- 所有 Processor 至少需要一条入边且不限制上限；多个前驱输出的表 Map 先执行无覆盖合并。
+- Processor 需要的一张或多张逻辑表由节点配置按表名选择，不使用物理入边数量表达操作数。
+- Processor 允许没有出边；此时编译继续推导节点 Schema，并产生 `UNCONSUMED_PROCESSOR_OUTPUT` 警告。
+- Input 仍至少需要一条出边；Output 仍恰好需要一条入边。
 - 除输入节点外，每个节点至少有一条入边。
-- 不允许与有效输入到输出路径无关的游离节点。
+- Processor 的悬空结果允许保留在草稿或可执行定义中，但不会被任何写入或流式查询消费，也不会影响其他输出链路。
+- 实时任务整张图仍至少需要一个可启动的 Output；没有任何 Output 时返回 `STREAMING_OUTPUT_REQUIRED`。
 
 Task Engine 中的 Schema 校验按拓扑顺序执行：
 
-1. `JDBC_INPUT` 从数据源读取最新表元数据；`JDBC_QUERY_INPUT` 校验 SQL Hash，并从节点保存的字段快照生成以 `outputTableName` 为 Key 的有界表；`FILE_DATASET_INPUT` 从文件表元数据生成以稳定 code 为 Key 的有界表，`HTTP_API_INPUT` 从资源声明的输出 Schema 生成以 `outputTableName` 为 Key 的表，`MODEL_INPUT` 从模型快照生成以模型 code 为 Key 的表，`KAFKA_INPUT` 直接使用节点内联 Value Schema 生成无界表，`TDENGINE_TMQ_INPUT` 使用 TMQ Topic 元数据快照中的完整超级表字段生成无界表。
+1. `JDBC_INPUT` 按配置顺序为全部已选物理表读取最新元数据并分别生成同名有界表；`JDBC_QUERY_INPUT` 校验 SQL Hash，并从节点保存的字段快照生成以 `outputTableName` 为 Key 的有界表；`FILE_DATASET_INPUT` 从文件表元数据生成以稳定 code 为 Key 的有界表，`HTTP_API_INPUT` 从资源声明的输出 Schema 生成以 `outputTableName` 为 Key 的表，`MODEL_INPUT` 从模型快照生成以模型 code 为 Key 的表，`KAFKA_INPUT` 直接使用节点内联 Value Schema 生成无界表，`TDENGINE_TMQ_INPUT` 使用 TMQ Topic 元数据快照中的完整超级表字段生成无界表。
 2. 节点接收所有直接上游的输出 Map，并执行无覆盖合并。
 3. `JOIN` 检查左右表、条件和字段类型，追加结果表。
 4. `RENAME` 替换选中表的 Map Key，并使用共享 Spark 投影原子生成新字段 Schema。
-5. `FILTER` 使用结构化条件 AST 筛选来源表，保留输入 Map 并追加新的输出表。
+5. `FILTER` 按每项配置使用结构化条件 AST 或受控 SQL 布尔表达式筛选来源表，并按输出方式替换来源表或追加新表。
 6. `SELECT_COLUMNS` 使用单次 Spark 投影按配置顺序裁剪字段，保留输入 Map 并追加新的输出表。
 7. `DERIVE_COLUMNS` 基于原始来源 Schema 使用单次 Spark 投影新增或覆盖字段，保留输入 Map 并追加新的输出表。
 8. `TYPE_CAST` 使用显式 Spark cast/try_cast 在原位置转换字段，保留输入 Map 并追加新的输出表。
@@ -1133,6 +1266,7 @@ Task Engine 中的 Schema 校验按拓扑顺序执行：
 | `DUPLICATE_EDGE_ID` | 边 ID 重复 |
 | `EDGE_ENDPOINT_NOT_FOUND` | 边引用不存在的节点 |
 | `INVALID_NODE_DEGREE` | 节点入边或出边数量不符合类型规则 |
+| `UNCONSUMED_PROCESSOR_OUTPUT` | Processor 结果没有下游消费者，不会产生写入或流式查询，仅作为警告 |
 | `CANVAS_CYCLE` | 画布存在环路 |
 | `DUPLICATE_TABLE_NAME` | 上游 Map 或处理结果出现同名表 |
 | `FILE_DATASET_TABLE_ID_REQUIRED` | 文件数据集表 ID 缺失或非法 |
@@ -1145,6 +1279,8 @@ Task Engine 中的 Schema 校验按拓扑顺序执行：
 | `TABLE_NOT_FOUND` | 配置引用的逻辑表或物理表不存在 |
 | `COLUMN_NOT_FOUND` | 配置引用的字段不存在 |
 | `DUPLICATE_COLUMN_NAME` | 处理结果包含同名字段 |
+| `JOIN_OUTPUT_COLUMNS_REQUIRED` | Join 或 Stream Join 未配置任何可输出字段 |
+| `DUPLICATE_JOIN_OUTPUT_SOURCE` | Join 或 Stream Join 对同一侧来源字段配置了多次 |
 | `DUPLICATE_RENAME_SOURCE_COLUMN` | Rename 对同一来源字段配置了多次 |
 | `RENAME_HAS_NO_EFFECT` | Rename 的表名和字段名均未发生变化，仅作为警告 |
 | `REDUNDANT_RENAME_MAPPING` | Rename 字段映射前后名称相同，仅作为警告 |
@@ -1153,12 +1289,11 @@ Task Engine 中的 Schema 校验按拓扑顺序执行：
 | `INVALID_FILTER_OPERATOR` | Filter 操作符无效 |
 | `INVALID_FILTER_OPERAND_COUNT` | Filter 操作符与 Literal 数量不匹配 |
 | `INVALID_FILTER_LITERAL` | Filter Literal 类型或稳定字符串格式无效 |
+| `INVALID_FILTER_SQL_EXPRESSION` | Filter SQL 表达式包含禁用结构，或无法由 Spark 解析为当前来源表上的布尔谓词 |
 | `EMPTY_COLUMN_SELECTION` | Select Columns 没有选择任何字段 |
 | `DUPLICATE_SELECTED_COLUMN` | Select Columns 重复选择同一字段 |
 | `EMPTY_DERIVATIONS` | Derive Columns 没有配置派生字段 |
 | `DUPLICATE_DERIVATION_TARGET` | 同一派生目标字段配置多次 |
-| `DERIVATION_TARGET_ALREADY_EXISTS` | 新增模式的目标字段已经存在 |
-| `DERIVATION_TARGET_NOT_FOUND` | 覆盖模式的目标字段不存在 |
 | `INVALID_DERIVATION_EXPRESSION` | 派生表达式 AST 结构或安全限制无效 |
 | `UNSUPPORTED_EXPRESSION_FUNCTION` | 表达式函数不在稳定白名单中 |
 | `INVALID_FUNCTION_ARGUMENTS` | 函数参数数量或必需结构无效 |
@@ -1363,6 +1498,52 @@ Canvas 正式执行只有 `Admin Outbox → Kafka → Dispatcher → Runner` 一
 
 `SPARK_CANVAS` 与 `LOCAL_SQL` 共用定时计划管理接口。Quartz 触发批处理 Canvas 时进入与手动运行相同的 Manifest、Outbox、Dispatcher 和 Runner 真实执行链路；`ALLOW` 按每个计划触发点创建独立实例，不做输出模型或物理 Sink 冲突治理。`SPARK_STREAMING_CANVAS` 是持续运行任务，继续不接受 Cron。自动重试、补数和跨多个 `JDBC_OUTPUT` 的原子事务不在当前范围内。
 
+## 14A. `SQL_TRANSFORM` 处理器（Canvas 4.1）
+
+```json
+{
+  "outputTableName": "order_summary",
+  "sql": "WITH paid AS (SELECT `customer_id`, `amount` FROM `orders`) SELECT `customer_id`, sum(`amount`) AS `total_amount` FROM paid GROUP BY `customer_id`"
+}
+```
+
+- `outputTableName` 和 `sql` 默认均为空字符串，允许保存未完成草稿；SQL 最大长度为
+  `100000` 个字符。完整编译时两者必须非空。
+- 节点类别为 `PROCESSOR`，仅支持 `BATCH`，至少一条入边；允许没有出边并返回
+  `UNCONSUMED_PROCESSOR_OUTPUT` 警告。
+- 节点接收直接上游传播的完整有序表 Map。执行成功后保留全部输入表，并在末尾追加
+  `outputTableName` 对应的新 `BOUNDED` 表；输出名与现有表名冲突时返回
+  `DUPLICATE_TABLE_NAME`，不能更新或替换已有 Canvas 表。
+- 只接受单个 Spark SQL `SELECT` 或 `WITH ... SELECT`。SQL 表引用只能是当前输入 Map 的表 code
+  或同一查询的 CTE。表 code、字段 code 大小写敏感；含点号、空格或其他特殊字符时必须使用反引号，
+  反引号自身用两个反引号转义。
+- DDL、DML、命令、SQL Script/多语句、显式视图操作、外部 Catalog、多段物理表、文件/JDBC
+  Relation 和 Table-Valued Function 都返回稳定错误，且错误、日志、血缘和运行摘要不回显 SQL 正文或
+  Literal。
+- Compiler 与 Runner 都为每个 SQL 节点创建独立 Spark 子 Session。每张输入 Dataset 的已分析计划
+  重新绑定后注册为本地临时视图，结果分析完毕后再绑定回节点执行 Session，并在 `finally` 清理视图；
+  子 Session 不会停止共享 SparkContext。
+- 输出 Schema 只使用 Spark Analyzer 结果。字段名必须非空且唯一，类型必须能映射到平台稳定类型；
+  直接投影尽量保留字段描述和类型元数据。计算后缺少稳定 Kind/CRS 元数据的 Geometry 字段拒绝，复杂
+  空间派生继续使用专属空间 Processor。
+
+设计器 Inspector 只显示输出表、SQL 配置状态、引用表数量和“配置 SQL”入口。配置 Modal 左侧为可搜索的
+上游表/字段树，点击表插入 `` `tableCode` ``，点击字段插入 `` `tableCode`.`columnCode` ``；右侧使用
+Monaco SQL 编辑器。卡片不展示 SQL 片段或 Literal，只展示输出表、引用表数与编译得到的字段数。
+
+## 14B. 简单 Processor 的多表 Operation（Canvas 4.0）
+
+`RENAME`、`FILTER`、`SELECT_COLUMNS`、`DERIVE_COLUMNS`、`TYPE_CAST`、`DEDUPLICATE`、
+`NULL_HANDLING`、`VALUE_MAPPING`、`MASK_FIELDS`、`JSON_EXTRACT` 和 `TOP_N` 使用
+`operations` 数组配置多张来源表。每个 Operation 持有稳定 UUID、来源逻辑表、节点专属规则和：
+
+- `REPLACE_SOURCE`：以处理结果替换同名来源表；只有 `RENAME` 可额外提供新逻辑表名。
+- `CREATE_NEW_TABLE`：保留来源表并追加指定的新逻辑表。
+
+同一来源表在节点中只能出现一次；所有 Operation 都从节点入口 Map 读取，不能引用同节点新产生的表。
+任一 Operation 编译失败时节点整体无效。未处理的表按原顺序传播，覆盖结果保留来源位置，新表按
+Operation 顺序追加。空数组是可保存草稿，但编译返回 `EMPTY_PROCESSOR_OPERATIONS`。
+
 ## 14. `RENAME` 处理器
 
 ### 14.1 配置
@@ -1380,7 +1561,7 @@ Canvas 正式执行只有 `Admin Outbox → Kafka → Dispatcher → Runner` 一
 }
 ```
 
-- 节点类别为 `PROCESSOR`，恰好一条入边并至少一条出边。
+- 节点类别为 `PROCESSOR`，至少一条入边；允许没有出边，悬空结果仅产生警告。
 - 一个节点只处理输入 Map 中的一张逻辑表；其他表按原顺序透传。
 - `outputTableName` 始终必填。只改字段名时填写与 `sourceTableName` 相同的值；只改表名时 `columnMappings` 为空。
 - 不继承旧系统的多 Action 或表别名结构。
@@ -1406,12 +1587,16 @@ Rename 必须放在同名表分支合并之前；上游 Map 已经发生名称�
   "name": "订单文件输入",
   "layout": { "x": 120, "y": 160, "width": 240, "height": 120 },
   "configuration": {
-    "fileDatasetTableId": "bd6c3996-5e96-4714-ae65-f35b015f3cd1"
+    "fileDatasetId": "4bbd56c6-5c4f-4af7-8860-5adecc1c29bd",
+    "tables": [
+      { "fileDatasetTableId": "bd6c3996-5e96-4714-ae65-f35b015f3cd1" },
+      { "fileDatasetTableId": "c239e3ae-6ad5-430f-b66f-ec1c09124809" }
+    ]
   }
 }
 ```
 
-配置只能保存 `fileDatasetTableId`。数据集 ID、文件 ID、格式、路径、解析参数、Schema、输出表名和存储凭据均由权威元数据及运行 Manifest 提供，不得进入定义。输出逻辑表名固定为不可修改的 `FileDatasetTable.code`。
+配置固定绑定一个 `fileDatasetId`，并保存有序 `tables` 选择。每个 `fileDatasetTableId` 必须属于该数据集；同一表不得重复。文件 ID、格式、路径、解析参数、Schema、输出表名和存储凭据均由权威元数据及运行 Manifest 提供，不得进入定义。每张输出逻辑表名固定为不可修改的 `FileDatasetTable.code`。
 
 ### 15.2 图与编译语义
 
@@ -1419,11 +1604,11 @@ Rename 必须放在同名表分支合并之前；上游 Map 已经发生名称�
 - 仅支持 `BATCH`，输出 `BOUNDED` Dataset；流任务可以导入回显，但 Compiler 返回 `NODE_EXECUTION_MODE_NOT_SUPPORTED`。
 - 表、来源文件和 Schema 必须存在，且表和文件都处于 `READY`。
 - Compiler 只使用 `metadataSnapshot.fileDatasetTables` 创建显式 Schema 的零行 Dataset，不访问对象存储，也不重新推断 Schema。
-- 输出 Map 只有以表 code 为 Key 的一个条目，来源用 `fileDatasetTableId` 明确标识；与其他上游同名时继续返回 `DUPLICATE_TABLE_NAME`。
+- 输出 Map 以配置顺序包含每张表的 code，来源用 `fileDatasetTableId` 明确标识；任一资源无效或任意 code 与其他上游同名时节点整体返回错误，不传播部分结果。
 
 ### 15.3 设计器
 
-Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Inspector 依次选择文件数据集和 `READY` 逻辑表，并只读展示字段 Schema。已经保存的表失效、删除或变为不可用时保留原 UUID，等待 Compiler 展示权威错误，不静默清空配置。
+Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Inspector 先选择文件数据集，再通过双栏面板批量选择 `READY/SCHEMA_READY` 逻辑表；已选项完整保留、可排序、查看字段和删除。已经保存的表失效、删除或变为不可用时保留原 UUID，等待 Compiler 展示权威错误，不静默清空配置。
 
 ## 16. Kafka 节点内联 Value Schema
 
@@ -1474,7 +1659,7 @@ Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Ins
 
 ## 16A. `TDENGINE_TMQ_INPUT`
 
-该节点从 Canvas `2.1` 开始提供，只支持 `STREAMING`：
+该节点在 Canvas `3.0` 中提供，只支持 `STREAMING`：
 
 ```json
 {
@@ -1505,7 +1690,7 @@ Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Ins
 
 ## 16B. `JDBC_INCREMENTAL_INPUT`
 
-该节点从 Canvas `2.2` 开始提供，只支持 `STREAMING`。它按固定间隔读取普通 JDBC 物理表的完整时间窗口：
+该节点在 Canvas `3.0` 中提供，只支持 `STREAMING`。它按固定间隔读取普通 JDBC 物理表的完整时间窗口：
 
 ```sql
 WHERE incremental_time > :fromTime
@@ -1530,35 +1715,22 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ```json
 {
-  "sourceTableName": "orders",
-  "outputTableName": "paid_orders",
-  "condition": {
-    "kind": "GROUP",
-    "operator": "AND",
-    "children": [
-      {
-        "kind": "PREDICATE",
-        "columnName": "status",
-        "operator": "IN",
-        "values": [
-          { "dataType": "STRING", "value": "PAID" },
-          { "dataType": "STRING", "value": "SHIPPED" }
-        ]
-      },
-      {
-        "kind": "PREDICATE",
-        "columnName": "amount",
-        "operator": "GREATER_THAN",
-        "values": [
-          { "dataType": "DECIMAL", "value": "100.00" }
-        ]
-      }
-    ]
-  }
+  "operations": [
+    {
+      "operationId": "0e49ab0d-238a-4212-a560-230d089941eb",
+      "sourceTableName": "orders",
+      "output": { "mode": "REPLACE_SOURCE", "outputTableName": null },
+      "mode": "SQL_EXPRESSION",
+      "condition": { "kind": "GROUP", "operator": "AND", "children": [] },
+      "sqlExpression": "amount >= 100 AND status IN ('PAID', 'SHIPPED')"
+    }
+  ]
 }
 ```
 
-条件是以 `kind` 为判别字段的递归联合：
+`mode` 固定为 `STRUCTURED` 或 `SQL_EXPRESSION`。`condition` 与 `sqlExpression` 同时保存，以便切换模式时保留未激活的编辑草稿；只有当前模式参与编译和执行。旧 4.0 定义缺失 `mode/sqlExpression` 时规范化为 `STRUCTURED` 和空字符串。
+
+结构化条件是以 `kind` 为判别字段的递归联合：
 
 - `GROUP`：`operator` 为 `AND/OR`，`children` 至少一项。
 - `PREDICATE`：包含 `columnName`、操作符和 `values`。
@@ -1566,17 +1738,19 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 - Literal 保存 `PlatformDataType + string/null value`。Boolean 使用 `true/false`，日期使用 `yyyy-MM-dd`，Timestamp 使用带时区的 ISO-8601，Timestamp NTZ 使用无时区 ISO-8601，Binary 使用 Base64。
 - 条件最大嵌套深度为 12，总节点数最多 256，单个 `IN/NOT_IN` 最多 100 个值。
 - `IS_NULL/IS_NOT_NULL` 的 values 必须为空，`IN/NOT_IN` 至少一项，其余操作符恰好一项。同一谓词中的 Literal 类型必须一致。
-- 首期不支持字段与字段比较、SQL 片段、子查询、运行参数或自定义函数。
+- 结构化模式不支持字段与字段比较、运行参数或自定义函数。
+- SQL 模式只接受一个布尔谓词，最大 8192 个字符。未引用字符串和反引号标识符中的 `WHERE/SELECT/FROM/JOIN/UNION/WITH/INSERT/UPDATE/DELETE/MERGE/CREATE/ALTER/DROP/TRUNCATE`、分号和 SQL 注释均被拒绝；Spark Analyzer 继续校验字段、函数、语法和布尔结果类型。
+- SQL 表达式正文可能包含敏感 Literal，不得进入节点摘要、日志、错误消息或血缘展示。
 
 ### 17.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边。
+- 节点类别为 `PROCESSOR`，至少一条入边；允许没有出边，悬空结果仅产生警告。
 - 支持 `BATCH` 和 `STREAMING`；两种模式使用同一配置和同一个无状态 `FilterNodeOperator`。
-- 从合并后的输入 Map 中按 `sourceTableName` 精确取表。
-- 复制全部输入 Map，以 `outputTableName` 追加过滤结果。输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`，包括来源表名。
+- 按 `operations[]` 顺序从合并后的输入 Map 中精确取表；同一来源表在同一节点内只能配置一次。
+- `REPLACE_SOURCE` 替换来源 Map 项，`CREATE_NEW_TABLE` 追加过滤结果；新输出名冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 输出字段、顺序、Origin、有界性、事件时间和 Watermark 全部继承来源表。
-- Compiler 使用零行 Dataset 和同一 Operator 构造实际 Spark 条件并由 Analyzer 判断可执行性，不读取真实数据。
-- 节点安全摘要只记录来源/输出表、谓词数、条件组数和操作符集合，不记录 Literal 实际值。
+- Compiler 使用零行 Dataset 和同一 Operator 构造实际 Spark 条件并由 Analyzer 判断可执行性，不读取真实数据。SQL 模式同样支持 Batch 和 Streaming。
+- 节点安全摘要只记录处理表数、输出方式、模式、结构化谓词数和 SQL 表达式长度，不记录 Literal 或 SQL 表达式正文。
 
 ## 18. `SELECT_COLUMNS` 处理器
 
@@ -1602,7 +1776,7 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 18.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边。
+- 节点类别为 `PROCESSOR`，至少一条入边；允许没有出边，悬空结果仅产生警告。
 - 支持 `BATCH` 和 `STREAMING`；两种模式使用同一配置和同一个无状态 `SelectColumnsNodeOperator`。
 - 从合并后的输入 Map 中按 `sourceTableName` 精确取表，使用一次 Spark `select` 按配置顺序投影字段。
 - 复制全部输入 Map，以 `outputTableName` 追加投影结果。输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`，包括来源表名。
@@ -1617,12 +1791,9 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ```json
 {
-  "sourceTableName": "orders",
-  "outputTableName": "orders_enriched",
-  "derivations": [
+  "globalDerivations": [
     {
       "targetColumnName": "amount_with_tax",
-      "replaceExisting": false,
       "expression": {
         "kind": "BINARY",
         "operator": "MULTIPLY",
@@ -1633,6 +1804,14 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
         }
       }
     }
+  ],
+  "operations": [
+    {
+      "operationId": "ad71b64a-0f0d-4dd0-87ad-a64b3302470f",
+      "sourceTableName": "orders",
+      "output": { "mode": "CREATE_NEW_TABLE", "outputTableName": "orders_enriched" },
+      "derivations": []
+    }
   ]
 }
 ```
@@ -1641,6 +1820,8 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 - `COLUMN`：`columnName` 引用进入节点时的原始来源字段。
 - `LITERAL`：复用 FILTER 的 `CanvasLiteral`。
+- `RUNTIME_VALUE`：由 Task Engine 注入白名单运行时常量；首期仅支持 `EXECUTION_ID`（STRING）和
+  `EXECUTION_STARTED_AT`（TIMESTAMP）。定义只保存枚举名，不保存实际执行值。
 - `BINARY`：`operator` 为 `ADD/SUBTRACT/MULTIPLY/DIVIDE/MODULO`，包含 `left/right`。
 - `FUNCTION`：包含白名单 `function` 与有序 `arguments`。
 - `CASE_WHEN`：包含一个或多个 `condition + result` 分支和可空的 `elseExpression`；条件复用 FILTER 的 `CanvasFilterCondition`。
@@ -1662,15 +1843,19 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 19.3 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边，支持 `BATCH` 和 `STREAMING`。
-- 同一节点内所有表达式只引用原始来源 Schema；后一项不能引用前一项新建的字段。
-- Operator 基于原始 Dataset 构造一次最终 `select`：覆盖字段保留原位置，新增字段按 derivations 顺序追加。
-- `replaceExisting=false` 要求目标字段不存在；`replaceExisting=true` 要求目标字段存在；目标名不能重复。
-- 复制全部输入 Map，以 `outputTableName` 追加结果；输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边，支持 `BATCH` 和 `STREAMING`。
+- 每张已选表的有效规则是 `globalDerivations + operation.derivations`。同一表的全部表达式只引用该表进入节点时的原始 Schema；后一项不能引用前一项新建的字段。
+- 全局规则必须对全部已选表都有效，新增处理表自动继承；任何一张表不兼容时整个节点失败，不产生部分输出。全局和本表规则使用同一目标字段时返回 `GLOBAL_DERIVATION_TARGET_CONFLICT`。
+- Operator 对每张表基于原始 Dataset 构造一次最终 `select`：目标字段存在时覆盖并保留原位置，不存在时按有效规则顺序追加；全局规则可以在不同表上分别覆盖或新增。
+- 每张表的有效规则中目标名不能重复。
+- `REPLACE_SOURCE` 替换该来源表的 Map Key；`CREATE_NEW_TABLE` 使用此项 `outputTableName` 追加结果，输出名与现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 未改变字段完整继承平台元数据。派生字段的类型和 nullable 取 Analyzer 结果，默认值、自增、生成列和注释等物理属性清空。
-- Origin、有界性、事件时间和 Watermark 默认继承来源表。流模式禁止覆盖事件时间字段。
+- Origin、有界性、事件时间和 Watermark 默认继承每张来源表。流模式禁止覆盖事件时间字段。
 - Compiler 与 Runner 使用同一个无状态 `DeriveColumnsNodeOperator`；CASE 条件和 FILTER 共享同一个谓词表达式构建器。
-- 安全摘要只记录来源/输出表、目标字段名、新增/覆盖数量、表达式 kind 和函数名集合，不记录 Literal、生成 SQL 或数据行。
+- 编译预览以零 UUID 和 Epoch 时间推导 Schema；真实 Batch 或 Streaming Attempt 分别注入 Manifest
+  `executionId` 与一次执行入口捕获的 UTC 开始时间。同一 Attempt 的所有表和行共享该值，流任务中
+  它不是微批次时间。
+- 安全摘要只记录处理表数量、全局/本表规则数量、目标字段名、表达式 kind 和函数名集合，不记录 Literal、生成 SQL 或数据行。
 
 ## 20. `TYPE_CAST` 处理器
 
@@ -1715,7 +1900,7 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 20.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边，支持 `BATCH` 和 `STREAMING`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边，支持 `BATCH` 和 `STREAMING`。
 - Operator 基于来源 Dataset 构造一次 `select`；未转换字段直接投影，转换字段在原位置使用原字段名 alias。
 - 复制全部输入 Map，以 `outputTableName` 追加结果；输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 未转换字段完整继承元数据。转换字段类型来自目标平台类型和 Analyzer，物理默认值、自增、生成列和注释清空。
@@ -1760,7 +1945,7 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 21.2 Map、Schema 与执行语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边，仅支持 `BATCH`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边，仅支持 `BATCH`。
 - 输出字段顺序固定为全部 `groupByColumns`，随后按 `aggregations` 配置顺序排列指标。
 - Operator 使用 Spark Analyzer 推导聚合字段类型和 nullable，不在平台层复制函数类型矩阵，也不读取真实数据。
 - 分组字段继承来源字段注释等展示元数据，但清空默认值、自增和生成列属性；指标字段不继承来源物理属性。
@@ -1790,7 +1975,7 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 22.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，至少一条入边、至少一条出边，支持 `BATCH` 和 `STREAMING`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边，支持 `BATCH` 和 `STREAMING`。
 - 直接上游 Map 仍先按普通规则合并；同名 Key 在进入 UNION 前就返回 `DUPLICATE_TABLE_NAME`。
 - Operator 按配置顺序查找表，使用第一张表字段顺序，以 `unionByName` 合并其余 Dataset。
 - 字段类型兼容和必要提升由 Spark Analyzer 判断。输出类型和 nullable 取最终 Analyzer Schema，来源专属物理属性和注释清空，`origin=null`。
@@ -1829,7 +2014,7 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 23.2 Map、Schema 与执行语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边，仅支持 `BATCH`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边，仅支持 `BATCH`。
 - `ANY + keyColumns=[]` 使用全字段 `dropDuplicates()`；带 key 时使用按 key 的 `dropDuplicates`。
 - `FIRST/LAST` 使用 `Window.partitionBy(keyColumns).orderBy(...) + row_number()`，只保留序号 1；不执行 count、collect 或其他额外 Spark Action。
 - 内部 row number 字段使用不与业务字段冲突的临时名称，并在最终投影中移除，不进入稳定定义、输出 Schema、下游 Map 或日志。
@@ -1875,7 +2060,7 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 24.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边；最低协议版本为 Canvas `1.14`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边；当前属于 Canvas `3.0` 基础能力。
 - 支持 `BATCH` 和 `STREAMING`，两种模式使用同一配置和同一个无状态 `NullHandlingNodeOperator`。
 - 从输入 Map 按 `sourceTableName` 精确取表，保留全部输入表，并以 `outputTableName` 追加处理结果；输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 输出字段名、顺序、平台类型、Origin、有界性、事件时间和 Watermark 继承来源表。
@@ -1934,7 +2119,7 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ### 25.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边；最低协议版本为 Canvas `1.15`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边；当前属于 Canvas `3.0` 基础能力。
 - 支持 `BATCH` 和 `STREAMING`，两种模式使用同一配置和同一个无状态 `ValueMappingNodeOperator`。
 - Operator 以一次最终投影处理全部规则，保持来源字段名和字段顺序；规则数组顺序和映射项顺序在 JSON 往返时保持稳定。
 - 保留输入 Map 中全部表，以 `outputTableName` 追加结果；输出名与任一现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
@@ -2012,7 +2197,7 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
 
 ### 26.3 Map、Schema 与执行语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边；最低协议版本为 Canvas `1.16`，仅支持 `BATCH` 和 `BOUNDED` 来源。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边；当前属于 Canvas `3.0` 基础能力，仅支持 `BATCH` 和 `BOUNDED` 来源。
 - Operator 使用配置中的分区、排序及明确 `ROWS` Frame 构造 Spark Window 表达式，通过一次最终投影保留全部来源字段，并按 `functions` 顺序追加窗口字段。
 - 保留输入 Map 中全部表，以 `outputTableName` 追加结果；输出名与任一现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 来源字段完整继承元数据；窗口字段的类型和 nullable 取 Spark Analyzer 结果，物理默认值、自增、生成列和注释清空。
@@ -2058,7 +2243,7 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
 
 ### 27.2 Map、Schema 与执行语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边；最低协议版本为 Canvas `1.17`，仅支持 `BATCH` 和 `BOUNDED` 来源。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边；当前属于 Canvas `3.0` 基础能力，仅支持 `BATCH` 和 `BOUNDED` 来源。
 - 全局 `EXACT` 使用显式 `orderBy + limit`；分区 `EXACT` 使用 `row_number()`；全局和分区 `WITH_TIES` 使用 `rank()`。
 - 内部排名字段使用不与业务字段冲突的临时名称，并在最终投影中移除，不进入定义、输出 Schema、下游 Map 或日志。
 - 保留输入 Map 中全部表，以 `outputTableName` 追加结果；输出名与任一现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
@@ -2088,6 +2273,7 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
         "strategy": "PARTIAL_MASK",
         "keepPrefixLength": 3,
         "keepSuffixLength": 4,
+        "maskPosition": null,
         "maskCharacter": "*",
         "fixedValue": null
       }
@@ -2101,6 +2287,7 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
 - `ruleSource=INLINE` 不允许保存 `sourceRuleRef`。
 - `definition` 是节点自己的唯一执行配置，不是独立快照资源；不得保存测试值、真实数据样例或凭据。
 - `PARTIAL_MASK` 保留前后字符，中间等长掩码；短值不能同时满足前后长度时整体掩码。
+- `POSITION_MASK` 将从 1 开始计数的第 N 个字符替换为掩码字符；位置缺失时默认为第 2 位，长度不足 N 时原样保留。
 - `KEEP_LENGTH_MASK` 将每个字符替换为掩码字符。
 - `FIXED_VALUE` 使用最长 1024 字符的固定字符串替换。
 - `NULLIFY` 使用原字段类型的 `null` 替换。
@@ -2110,7 +2297,7 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
 
 ### 28.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边和一条出边；最低协议版本为 Canvas `1.18`，支持 `BATCH` 和 `STREAMING`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边；当前属于 Canvas `3.0` 基础能力，支持 `BATCH` 和 `STREAMING`。
 - 节点无状态并继承来源 `BOUNDED/UNBOUNDED`、事件时间字段和 Watermark；实时任务禁止脱敏事件时间字段。
 - 来源表和字段必须存在；非 `NULLIFY` 策略只支持 `STRING`，`NULLIFY` 只支持可空字段。
 - 保留输入 Map 中全部表，以 `outputTableName` 追加结果；输出名与任一现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
@@ -2167,7 +2354,7 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
 
 ### 29.2 Map、Schema 与批流语义
 
-- 节点类别为 `PROCESSOR`，恰好一条入边、至少一条出边；最低协议版本为 Canvas `1.19`。
+- 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边；当前属于 Canvas `3.0` 基础能力。
 - 支持 `BATCH` 和 `STREAMING`，两种模式使用同一配置和同一个无状态 `JsonExtractNodeOperator`。
 - 从输入 Map 按 `sourceTableName` 精确取表，保留全部输入表，并以 `outputTableName` 追加提取结果；输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 输出先完整保留来源字段及其顺序，再按 `extractions` 顺序追加字段。
@@ -2182,7 +2369,7 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
 
 ### 30.1 稳定配置
 
-`FILE_OUTPUT` 从 Canvas `1.6` 引入，公共配置保持不变：
+`FILE_OUTPUT` 是 Canvas `3.0` 的正式输出节点，公共配置保持不变：
 
 ```json
 {
@@ -2217,15 +2404,11 @@ Frame 起点不能为 `UNBOUNDED_FOLLOWING`，终点不能为 `UNBOUNDED_PRECEDI
 - `CSV`：`header + delimiter + quote + escape + nullValue`。
 - `JSON_LINES`：`ignoreNullFields`。
 - `PARQUET`：无额外字段，运行时固定 Snappy。
-- `SHAPEFILE`：从 Canvas `1.24` 开始可用；低版本携带该格式时返回
-  `FORMAT_OPTION_REQUIRES_SCHEMA_VERSION`。
-- `GEOPARQUET`：从 Canvas `1.25` 开始可用；配置为
+- `SHAPEFILE`：Canvas `3.0` 直接支持该格式。
+- `GEOPARQUET`：Canvas `3.0` 直接支持该格式；配置为
   `geometryColumnName + compression(SNAPPY|ZSTD) + coveringMode(NONE|ROW_BBOX)`。
-- `GEOJSON`：从 Canvas `1.25` 开始可用；配置为
+- `GEOJSON`：Canvas `3.0` 直接支持该格式；配置为
   `baseName + geometryColumnName + idColumnName + ignoreNullProperties`。
-
-`GEOPARQUET/GEOJSON` 在低于 `1.25` 的定义中同样返回
-`FORMAT_OPTION_REQUIRES_SCHEMA_VERSION`。
 
 Shapefile 的 `packageMode` 为 `ZIP | COMPONENT_DIRECTORY`，目标 Shape 类型为
 `POINT | MULTIPOINT | POLYLINE | POLYGON`。每项 DBF 映射固定保存来源字段、最多 10 位的
@@ -2261,7 +2444,7 @@ ASCII 目标字段名以及 STRING 专用的 UTF-8 字节宽度；属性顺序�
 
 ### 31.1 稳定配置
 
-`JDBC_SNAPSHOT_SYNC_OUTPUT` 与 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是 Canvas `2.0` 的正式节点，使用统一的显式字段映射配置：
+`JDBC_SNAPSHOT_SYNC_OUTPUT` 与 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是 Canvas `3.0` 的正式节点，使用统一的显式字段映射配置：
 
 ```json
 {

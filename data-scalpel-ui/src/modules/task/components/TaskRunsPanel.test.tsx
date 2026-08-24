@@ -6,6 +6,7 @@ import type { DataTask, TaskRun } from '../model/task';
 
 const state = vi.hoisted(() => ({
   cancel: { mutateAsync: vi.fn(), isPending: false },
+  forceTerminate: { mutateAsync: vi.fn(), isPending: false },
 }));
 
 const run: TaskRun = {
@@ -65,6 +66,7 @@ vi.mock('../hooks/useTasks', () => ({
     refetch: vi.fn(),
   }),
   useCancelTaskRun: () => state.cancel,
+  useForceTerminateTaskRun: () => state.forceTerminate,
 }));
 
 vi.mock('./TaskRunDetailDrawer', () => ({
@@ -94,6 +96,7 @@ class ResizeObserverStub {
 describe('TaskRunsPanel', () => {
   beforeEach(() => {
     state.cancel.mutateAsync.mockReset().mockResolvedValue({ ...run, status: 'CANCEL_REQUESTED' });
+    state.forceTerminate.mutateAsync.mockReset().mockResolvedValue({ ...run, status: 'CANCEL_REQUESTED' });
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,

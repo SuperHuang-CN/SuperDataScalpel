@@ -152,6 +152,9 @@ public final class MetadataIndex {
         if (table == null || table.id() == null) {
             throw invalid(path + ".id is required");
         }
+        if (table.fileDatasetId() == null) {
+            throw invalid(path + ".fileDatasetId is required");
+        }
         if (blank(table.code())) {
             throw invalid(path + ".code is required");
         }

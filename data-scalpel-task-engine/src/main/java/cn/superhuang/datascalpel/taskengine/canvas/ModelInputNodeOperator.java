@@ -9,6 +9,7 @@ import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelStatus;
 import cn.superhuang.data.scalpel.contract.task.ModelInputConfiguration;
+import cn.superhuang.data.scalpel.contract.task.ModelInputSelection;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -16,6 +17,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
 import java.util.List;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -51,56 +53,60 @@ public final class ModelInputNodeOperator implements CanvasNodeOperator {
             return CanvasNodeOperationResult.invalid(List.of());
         }
         CanvasNodeIssueSink issues = context.issues();
-        UUID modelId = CanvasNodeSupport.parseModelUuid(
-                configuration.modelId(),
-                "configuration.modelId",
-                issues
-        );
-        if (modelId == null) {
+        if (configuration.models().isEmpty()) {
+            issues.error("MODEL_ID_REQUIRED", "至少选择一个输入模型", "configuration.models");
             return CanvasNodeOperationResult.invalid(List.of());
         }
-        MetadataIndex.ModelEntry model = context.metadataIndex().model(modelId);
-        if (model == null) {
-            issues.error("MODEL_NOT_FOUND", "输入模型不存在：" + modelId, "configuration.modelId");
-            return CanvasNodeOperationResult.invalid(List.of());
+        List<ResolvedModel> resolved = new java.util.ArrayList<>();
+        Set<UUID> modelIds = new java.util.HashSet<>();
+        Set<String> outputNames = new java.util.HashSet<>();
+        for (int index = 0; index < configuration.models().size(); index++) {
+            ModelInputSelection selection = configuration.models().get(index);
+            String path = "configuration.models[" + index + "]";
+            if (selection == null) {
+                issues.error("MODEL_ID_REQUIRED", "输入模型不能为空", path);
+                continue;
+            }
+            UUID modelId = CanvasNodeSupport.parseModelUuid(selection.modelId(), path + ".modelId", issues);
+            if (modelId == null) continue;
+            if (!modelIds.add(modelId)) {
+                issues.error("DUPLICATE_MODEL_SELECTION", "输入模型重复", path + ".modelId");
+                continue;
+            }
+            MetadataIndex.ModelEntry model = context.metadataIndex().model(modelId);
+            if (model == null) {
+                issues.error("MODEL_NOT_FOUND", "输入模型不存在：" + modelId, path + ".modelId");
+                continue;
+            }
+            if (!outputNames.add(model.metadata().code())) {
+                issues.error("DUPLICATE_TABLE_NAME", "输入模型输出表名重复：" + model.metadata().code(), path);
+            }
+            if (model.metadata().status() != MetadataModelStatus.PUBLISHED) {
+                issues.error("MODEL_NOT_PUBLISHED", "输入模型不是已发布状态：" + model.metadata().name(), path + ".modelId");
+            }
+            MetadataIndex.DataSourceEntry dataSource = context.metadataIndex().dataSource(model.metadata().dataSourceId());
+            if (!availableForRead(dataSource)) {
+                issues.error("MODEL_DATA_SOURCE_UNAVAILABLE",
+                        "模型数据源不存在、未启用或不具有 SOURCE/STORAGE 用途", path + ".modelId");
+            }
+            CanvasNodeSupport.validateSupportedGeometry(model.tableSchema().columns(), path + ".modelId", issues);
+            CanvasNodeSupport.validateJdbcGeometryDatabase(
+                    model.tableSchema().columns(),
+                    dataSource == null ? null : dataSource.metadata().jdbcDatabaseType(), path + ".modelId", issues);
+            resolved.add(new ResolvedModel(selection, model));
         }
-        if (model.metadata().status() != MetadataModelStatus.PUBLISHED) {
-            issues.error(
-                    "MODEL_NOT_PUBLISHED",
-                    "输入模型不是已发布状态：" + model.metadata().name(),
-                    "configuration.modelId"
-            );
-        }
-        MetadataIndex.DataSourceEntry dataSource =
-                context.metadataIndex().dataSource(model.metadata().dataSourceId());
-        if (!availableForRead(dataSource)) {
-            issues.error(
-                    "MODEL_DATA_SOURCE_UNAVAILABLE",
-                    "模型数据源不存在、未启用或不具有 SOURCE/STORAGE 用途",
-                    "configuration.modelId"
-            );
-        }
-        CanvasNodeSupport.validateSupportedGeometry(
-                model.tableSchema().columns(),
-                "configuration.modelId",
-                issues
-        );
-        CanvasNodeSupport.validateJdbcGeometryDatabase(
-                model.tableSchema().columns(),
-                dataSource == null ? null : dataSource.metadata().jdbcDatabaseType(),
-                "configuration.modelId",
-                issues
-        );
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(List.of());
         }
-
-        Dataset<Row> dataset = context.dataAccess().readModelInput(node, model, model.tableSchema());
-        Map<String, SparkCanvasTable> output = Map.of(
-                model.metadata().code(),
-                new SparkCanvasTable(model.tableSchema(), dataset)
-        );
-        return CanvasNodeOperationResult.propagated(output, List.of(model.tableSchema()));
+        Map<String, SparkCanvasTable> output = new LinkedHashMap<>();
+        List<cn.superhuang.data.scalpel.contract.task.CanvasTableSchema> schemas = new java.util.ArrayList<>();
+        for (ResolvedModel item : resolved) {
+            Dataset<Row> dataset = context.dataAccess().readModelInput(
+                    node, item.selection(), item.model(), item.model().tableSchema());
+            output.put(item.model().metadata().code(), new SparkCanvasTable(item.model().tableSchema(), dataset));
+            schemas.add(item.model().tableSchema());
+        }
+        return CanvasNodeOperationResult.propagated(output, schemas);
     }
 
     private static boolean availableForRead(MetadataIndex.DataSourceEntry dataSource) {
@@ -109,5 +115,8 @@ public final class ModelInputNodeOperator implements CanvasNodeOperator {
                 && dataSource.metadata().connectionKind() == ConnectionKind.JDBC
                 && (dataSource.metadata().purposes().contains(DataSourcePurpose.SOURCE)
                 || dataSource.metadata().purposes().contains(DataSourcePurpose.STORAGE));
+    }
+
+    private record ResolvedModel(ModelInputSelection selection, MetadataIndex.ModelEntry model) {
     }
 }

@@ -148,7 +148,8 @@ class SpatialJdbcRuntimeSupportTest {
                 Set.of(DataSourcePurpose.DISTRIBUTION), null
         );
         return new CanvasPreparedOutput(
-                node, runtime, new TableIdentifier(null, null, "target"),
+                node, UUID.randomUUID().toString(), "source", runtime,
+                new TableIdentifier(null, null, "target"),
                 "target", "target", JdbcWriteMode.UPSERT,
                 dataset, target, Map.of(), List.of("id")
         );

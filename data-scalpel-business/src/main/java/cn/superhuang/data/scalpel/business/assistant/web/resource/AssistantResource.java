@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.assistant.web.resource;
 
 import cn.superhuang.data.scalpel.business.assistant.domain.AssistantChangeSet;
+import cn.superhuang.data.scalpel.business.assistant.domain.AssistantChangeSetType;
 import cn.superhuang.data.scalpel.business.assistant.service.AssistantChangeSetResponseService;
 import cn.superhuang.data.scalpel.business.assistant.service.AssistantAuditQueryService;
 import cn.superhuang.data.scalpel.business.assistant.service.AssistantConversationService;
@@ -8,6 +9,8 @@ import cn.superhuang.data.scalpel.business.assistant.service.AssistantSessionSer
 import cn.superhuang.data.scalpel.business.assistant.service.DirectoryChangePlanService;
 import cn.superhuang.data.scalpel.business.assistant.service.DirectoryChangeSetApplicationService;
 import cn.superhuang.data.scalpel.business.assistant.service.LlmModelManagementService;
+import cn.superhuang.data.scalpel.business.assistant.service.TaskCanvasProposalService;
+import cn.superhuang.data.scalpel.business.assistant.web.request.AcceptTaskCanvasProposalRequest;
 import cn.superhuang.data.scalpel.business.assistant.web.request.CreateAssistantSessionRequest;
 import cn.superhuang.data.scalpel.business.assistant.web.request.SelectAssistantModelRequest;
 import cn.superhuang.data.scalpel.business.assistant.web.request.SendAssistantMessageRequest;
@@ -35,6 +38,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.UUID;
@@ -52,6 +56,7 @@ public class AssistantResource {
     private final DirectoryChangeSetApplicationService applicationService;
     private final AssistantChangeSetResponseService changeSetResponseService;
     private final AssistantAuditQueryService auditQueryService;
+    private final TaskCanvasProposalService taskCanvasProposalService;
 
     public AssistantResource(
             LlmModelManagementService modelService,
@@ -60,7 +65,8 @@ public class AssistantResource {
             DirectoryChangePlanService changePlanService,
             DirectoryChangeSetApplicationService applicationService,
             AssistantChangeSetResponseService changeSetResponseService,
-            AssistantAuditQueryService auditQueryService
+            AssistantAuditQueryService auditQueryService,
+            TaskCanvasProposalService taskCanvasProposalService
     ) {
         this.modelService = modelService;
         this.sessionService = sessionService;
@@ -69,6 +75,7 @@ public class AssistantResource {
         this.applicationService = applicationService;
         this.changeSetResponseService = changeSetResponseService;
         this.auditQueryService = auditQueryService;
+        this.taskCanvasProposalService = taskCanvasProposalService;
     }
 
     @GetMapping("/models")
@@ -153,8 +160,25 @@ public class AssistantResource {
     @PreAuthorize("hasAuthority('directory.manage')")
     @Operation(summary = "确认并执行目录变更计划")
     public AssistantChangeSetResponse approve(@PathVariable UUID id, Authentication authentication) {
+        AssistantChangeSet owned = changePlanService.getOwned(id, authentication.getName());
+        if (owned.getChangeType() != AssistantChangeSetType.DIRECTORY) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "该变更计划不是目录计划");
+        }
         return changeSetResponseService.toResponse(
                 applicationService.approve(id, authentication.getName()).changeSet()
+        );
+    }
+
+    @PostMapping("/change-sets/{id}/actions/accept-task-canvas")
+    @PreAuthorize("hasAuthority('task.view') and hasAuthority('task.update')")
+    @Operation(summary = "接受任务 Canvas 提案为前端未保存草稿")
+    public AssistantChangeSetResponse acceptTaskCanvas(
+            @PathVariable UUID id,
+            @Valid @RequestBody AcceptTaskCanvasProposalRequest request,
+            Authentication authentication
+    ) {
+        return changeSetResponseService.toResponse(
+                taskCanvasProposalService.accept(id, request.taskId(), authentication.getName())
         );
     }
 

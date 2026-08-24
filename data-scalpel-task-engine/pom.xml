@@ -353,6 +353,13 @@
                             <createDependencyReducedPom>false</createDependencyReducedPom>
                             <filters>
                                 <filter>
+                                    <artifact>org.datasyslab:geotools-wrapper</artifact>
+                                    <excludes>
+                                        <exclude>org/slf4j/**</exclude>
+                                        <exclude>META-INF/maven/org.slf4j/slf4j-api/**</exclude>
+                                    </excludes>
+                                </filter>
+                                <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>
                                         <exclude>META-INF/*.SF</exclude>
@@ -431,6 +438,13 @@
                                 </includes>
                             </artifactSet>
                             <filters>
+                                <filter>
+                                    <artifact>org.datasyslab:geotools-wrapper</artifact>
+                                    <excludes>
+                                        <exclude>org/slf4j/**</exclude>
+                                        <exclude>META-INF/maven/org.slf4j/slf4j-api/**</exclude>
+                                    </excludes>
+                                </filter>
                                 <filter>
                                     <artifact>*:*</artifact>
                                     <excludes>

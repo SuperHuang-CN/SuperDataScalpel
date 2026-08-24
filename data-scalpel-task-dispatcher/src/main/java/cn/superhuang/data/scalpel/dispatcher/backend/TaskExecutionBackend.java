@@ -16,6 +16,9 @@ public interface TaskExecutionBackend {
     default void cancel(ExternalExecutionHandle handle, ExecutionIdentity identity) throws BackendException {
         cancel(handle);
     }
+    default void forceTerminate(ExternalExecutionHandle handle, ExecutionIdentity identity) throws BackendException {
+        cancel(handle, identity);
+    }
     BackendLog collectLog(ExternalExecutionHandle handle) throws BackendException;
     Optional<ExternalExecutionHandle> recover(ExecutionIdentity identity) throws BackendException;
     default void cleanup(ExternalExecutionHandle handle) throws BackendException { }

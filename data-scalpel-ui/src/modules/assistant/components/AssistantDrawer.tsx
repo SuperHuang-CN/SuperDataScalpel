@@ -9,7 +9,7 @@ import {
 import { useQueryClient } from '@tanstack/react-query';
 import { Alert, Button, Collapse, Drawer, Empty, Input, Modal, Select, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import {
@@ -18,6 +18,7 @@ import {
   type ConnectionTestResult,
   type DataSourceAssistantLocationState,
 } from '../../datasource';
+import type { TaskAssistantLocationState, TaskCanvasProposalLocationState } from '../../task';
 import { exportDirectoryTree, invalidateDirectoryTree } from '../../directory';
 import {
   useApproveAssistantChangeSet,
@@ -33,6 +34,7 @@ import {
 } from '../hooks/useAssistant';
 import type { AssistantClientAction } from '../model/assistant';
 import { DirectoryChangeSetCard } from './DirectoryChangeSetCard';
+import { TaskCanvasChangeSetCard } from './TaskCanvasChangeSetCard';
 
 interface AssistantDrawerProps {
   open: boolean;
@@ -56,6 +58,7 @@ export const AssistantDrawer = ({
   onManageModels,
 }: AssistantDrawerProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
   const [draft, setDraft] = useState('');
   const [testFailure, setTestFailure] = useState<{
@@ -87,6 +90,7 @@ export const AssistantDrawer = ({
   const changeSet = sessionQuery.data?.latestChangeSet ?? null;
   const latestRun = sessionQuery.data?.latestRun ?? null;
   const canManageDirectories = permissions.has('directory.manage');
+  const currentTaskId = /^\/task\/([0-9a-fA-F-]{36})(?:\/definition)?$/.exec(location.pathname)?.[1];
   const canManageModels = permissions.has('system.configuration.view');
 
   useEffect(() => {
@@ -191,6 +195,31 @@ export const AssistantDrawer = ({
           },
         });
       }
+      if (action.type === 'OPEN_TASK_CANVAS_PROPOSAL') {
+        if (!permissions.has('task.view') || !permissions.has('task.update')) {
+          messageApi.error('当前账号没有查看或修改任务的权限');
+          continue;
+        }
+        if (action.taskId) {
+          const state: TaskCanvasProposalLocationState = {
+            assistantTaskCanvasChangeSetId: action.changeSetId,
+          };
+          navigate(`/task/${action.taskId}/definition`, { state });
+          continue;
+        }
+        if (!permissions.has('task.create') || !action.taskDraft) {
+          messageApi.error('当前账号没有新建任务权限，或提案缺少任务草稿');
+          continue;
+        }
+        const state: TaskAssistantLocationState = {
+          assistantTaskCanvasAction: {
+            kind: 'CREATE_TASK',
+            changeSetId: action.changeSetId,
+            draft: action.taskDraft,
+          },
+        };
+        navigate('/task', { state });
+      }
     }
   };
 
@@ -201,7 +230,7 @@ export const AssistantDrawer = ({
       setDraft('');
       const turn = await sendMutation.mutateAsync({
         id: selectedSessionId,
-        request: { content, pageKey, sidebarCollapsed },
+        request: { content, pageKey, sidebarCollapsed, currentTaskId },
       });
       await executeActions(turn.clientActions);
     } catch (error) {
@@ -211,20 +240,22 @@ export const AssistantDrawer = ({
   };
 
   const approve = () => {
-    if (!changeSet) return;
-    const hasDeletes = changeSet.directoryPlan.deletes.length > 0;
+    if (!changeSet || changeSet.changeType !== 'DIRECTORY') return;
+    const directoryChangeSet = changeSet;
+    const hasDeletes = directoryChangeSet.directoryPlan.deletes.length > 0;
     modalApi.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
       title: hasDeletes ? '确认执行包含删除的目录计划' : '确认执行目录计划',
       content: hasDeletes
-        ? `计划将删除 ${changeSet.directoryPlan.deletes.length} 个空叶子目录。执行前会再次检查目录和业务引用，确认继续吗？`
-        : `确认执行“${changeSet.summary}”吗？执行前会再次检查目录是否发生变化。`,
+        ? `计划将删除 ${directoryChangeSet.directoryPlan.deletes.length} 个空叶子目录。执行前会再次检查目录和业务引用，确认继续吗？`
+        : `确认执行“${directoryChangeSet.summary}”吗？执行前会再次检查目录是否发生变化。`,
       okText: hasDeletes ? '确认危险变更' : '确认执行',
       cancelText: '取消',
       okButtonProps: { danger: hasDeletes },
       onOk: async () => {
         try {
-          const result = await approveMutation.mutateAsync(changeSet.id);
+          const result = await approveMutation.mutateAsync(directoryChangeSet.id);
+          if (result.changeType !== 'DIRECTORY') throw new Error('目录计划响应类型不匹配');
           await invalidateDirectoryTree(queryClient, result.directoryPlan.scope);
           messageApi.success('目录变更计划已执行');
         } catch (error) { showError(error, '执行目录变更计划失败'); throw error; }
@@ -234,8 +265,32 @@ export const AssistantDrawer = ({
 
   const reject = async () => {
     if (!changeSet) return;
-    try { await rejectMutation.mutateAsync(changeSet.id); messageApi.success('目录变更计划已拒绝'); }
-    catch (error) { showError(error, '拒绝目录变更计划失败'); }
+    try { await rejectMutation.mutateAsync(changeSet.id); messageApi.success('助手提案已拒绝'); }
+    catch (error) { showError(error, '拒绝助手提案失败'); }
+  };
+
+  const openTaskProposal = () => {
+    if (!changeSet || changeSet.changeType !== 'TASK_CANVAS') return;
+    const proposal = changeSet.taskCanvasProposal;
+    if (changeSet.taskCanvasResult) {
+      const state: TaskCanvasProposalLocationState = { assistantTaskCanvasChangeSetId: changeSet.id };
+      navigate(`/task/${changeSet.taskCanvasResult.taskId}/definition`, { state });
+      return;
+    }
+    if (proposal.existingTask) {
+      const state: TaskCanvasProposalLocationState = { assistantTaskCanvasChangeSetId: changeSet.id };
+      navigate(`/task/${proposal.existingTask.taskId}/definition`, { state });
+      return;
+    }
+    if (!proposal.newTaskDraft) return;
+    const state: TaskAssistantLocationState = {
+      assistantTaskCanvasAction: {
+        kind: 'CREATE_TASK',
+        changeSetId: changeSet.id,
+        draft: proposal.newTaskDraft,
+      },
+    };
+    navigate('/task', { state });
   };
 
   const emptyModels = !modelsQuery.isLoading && models.length === 0;
@@ -299,12 +354,22 @@ export const AssistantDrawer = ({
                 children: <Space direction="vertical" size={5}>{latestRun.failureSummary && <Alert type="warning" showIcon message={latestRun.failureSummary} />}{latestRun.toolInvocations.map((invocation) => <Space key={invocation.id}><Tag color={invocation.status === 'SUCCEEDED' ? 'blue' : 'red'}>{invocation.status}</Tag><Typography.Text code>{invocation.toolName}</Typography.Text><Typography.Text type="secondary">{invocation.risk}</Typography.Text></Space>)}</Space>,
               }]}
             />}
-            {changeSet && <DirectoryChangeSetCard
+            {changeSet?.changeType === 'DIRECTORY' && <DirectoryChangeSetCard
               changeSet={changeSet}
               canManage={canManageDirectories}
               approving={approveMutation.isPending}
               rejecting={rejectMutation.isPending}
               onApprove={approve}
+              onReject={() => void reject()}
+            />}
+            {changeSet?.changeType === 'TASK_CANVAS' && <TaskCanvasChangeSetCard
+              changeSet={changeSet}
+              canOpen={permissions.has('task.view') && permissions.has('task.update')
+                && (Boolean(changeSet.taskCanvasResult)
+                  || Boolean(changeSet.taskCanvasProposal.existingTask)
+                  || permissions.has('task.create'))}
+              rejecting={rejectMutation.isPending}
+              onOpen={openTaskProposal}
               onReject={() => void reject()}
             />}
           </div>
@@ -316,7 +381,7 @@ export const AssistantDrawer = ({
               maxLength={8000}
               autoSize={{ minRows: 2, maxRows: 5 }}
               disabled={activeSession.status === 'ARCHIVED' || sendMutation.isPending}
-              placeholder="例如：查找 PostgreSQL 数据源，或帮我准备新建数据源表单"
+              placeholder="例如：用已发布模型生成一个清洗并写入目标模型的批任务"
               onChange={(event) => setDraft(event.target.value)}
               onPressEnter={(event) => {
                 if (!event.shiftKey) { event.preventDefault(); void send(); }
@@ -324,7 +389,7 @@ export const AssistantDrawer = ({
             />
             <Button type="primary" icon={<SendOutlined />} aria-label="发送消息" disabled={!draft.trim() || activeSession.status === 'ARCHIVED'} loading={sendMutation.isPending} onClick={() => void send()} />
           </div>
-          <Typography.Text className="assistant-disclaimer" type="secondary">目录写入必须确认；数据源仍由原表单测试和保存，连接信息不会发送给 AI。</Typography.Text>
+          <Typography.Text className="assistant-disclaimer" type="secondary">目录写入必须确认；数据源和任务仍由原页面测试、创建和保存，连接信息不会发送给 AI。</Typography.Text>
         </>}
       </div>}
     </Drawer>

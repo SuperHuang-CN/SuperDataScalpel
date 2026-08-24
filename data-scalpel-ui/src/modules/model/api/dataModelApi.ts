@@ -17,10 +17,13 @@ import type {
   DataModelSpatialPreviewMap,
   ExecutePhysicalTableChangePlanRequest,
   ExternalTableImportPreview,
+  FileDatasetImportPreview,
+  FileDatasetImportPreviewRequest,
   ManagedImportPreview,
   ManagedImportPreviewRequest,
   LineageDirection,
   LineageGraph,
+  LineageFieldGraph,
   ModelFieldTemplate,
   CreateModelFieldTemplateRequest,
   UpdateModelFieldTemplateRequest,
@@ -151,6 +154,17 @@ export const fetchDataModelFieldLineage = (
   return requestJson<LineageGraph>(`${DATA_MODEL_PATH}/${id}/lineage/fields/${fieldId}?${query.toString()}`);
 };
 
+export const queryDataModelFieldLineage = (
+  id: string,
+  fieldIds: string[] | null,
+  direction: LineageDirection,
+  depth: 1 | 2,
+  signal?: AbortSignal,
+): Promise<LineageFieldGraph> => requestJson<LineageFieldGraph>(
+  `${DATA_MODEL_PATH}/${id}/lineage/actions/query-fields`,
+  { method: 'POST', body: JSON.stringify({ fieldIds, direction, depth }), signal },
+);
+
 export const refreshDataModelPhysicalStatistics = (
   id: string,
 ): Promise<DataModelPhysicalStatistics> => requestJson<DataModelPhysicalStatistics>(
@@ -183,6 +197,15 @@ export const fetchManagedImportPreview = (
   request: ManagedImportPreviewRequest,
 ): Promise<ManagedImportPreview> => (
   requestJson<ManagedImportPreview>(`${DATA_MODEL_PATH}/managed-import-preview`, {
+    method: 'POST',
+    body: JSON.stringify(request),
+  })
+);
+
+export const fetchFileDatasetImportPreview = (
+  request: FileDatasetImportPreviewRequest,
+): Promise<FileDatasetImportPreview> => (
+  requestJson<FileDatasetImportPreview>(`${DATA_MODEL_PATH}/file-dataset-import-preview`, {
     method: 'POST',
     body: JSON.stringify(request),
   })
@@ -346,10 +369,14 @@ export const updateDataModelFields = (id: string, request: UpdateDataModelFields
   })
 );
 
-export type DataModelCommand = 'publish' | 'disable' | 'enable';
+export type DataModelCommand = 'publish' | 'disable';
 
 export const executeDataModelCommand = (id: string, command: DataModelCommand): Promise<DataModelDetail> => (
-  requestJson<DataModelDetail>(`${DATA_MODEL_PATH}/${id}/actions/${command}`, { method: 'POST' })
+  requestJson<DataModelDetail>(
+    `${DATA_MODEL_PATH}/${id}/actions/${command}`,
+    { method: 'POST' },
+    command === 'publish' ? 60_000 : undefined,
+  )
 );
 
 export const deleteDataModel = (id: string): Promise<void> => (

@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Locale;
+import java.util.Properties;
 import java.util.jar.JarFile;
 
 /** Build-time smoke check for local, cluster and distribution runtime artifacts. */
@@ -23,6 +24,10 @@ public final class RunnerClusterArtifactVerifier {
             "org.geotools.referencing.factory.DeferredAuthorityFactory";
     private static final String WEAK_COLLECTION_CLEANER_CLASS =
             "org.geotools.util.WeakCollectionCleaner";
+    private static final String SLF4J_API_PROPERTIES =
+            "META-INF/maven/org.slf4j/slf4j-api/pom.properties";
+    private static final String SLF4J_PROVIDER_SERVICE =
+            "META-INF/services/org.slf4j.spi.SLF4JServiceProvider";
     private static final List<String> REQUIRED_ENTRIES = List.of(
             "cn/superhuang/datascalpel/taskengine/runner/TaskRunnerMain.class",
             "cn/superhuang/datascalpel/taskengine/runner/FileDatasetBatchReaderRegistry.class",
@@ -76,6 +81,7 @@ public final class RunnerClusterArtifactVerifier {
         }
 
         verifyClusterEntries(clusterArtifact);
+        verifyLocalLogging(localArtifact);
         verifyClassLoading("local runner", List.of(localArtifact));
         verifyClusterClassLoading(clusterArtifact, localArtifact);
         List<Path> distributionJars = distributionJars(distributionLib);
@@ -103,6 +109,51 @@ public final class RunnerClusterArtifactVerifier {
                     throw new IllegalStateException("Runner cluster JAR contains cluster-provided entry: " + entry);
                 }
             }
+        }
+    }
+
+    private static void verifyLocalLogging(Path artifact) throws Exception {
+        try (JarFile jar = new JarFile(artifact.toFile())) {
+            if (jar.getJarEntry("org/slf4j/LoggerFactory.class") == null) {
+                throw new IllegalStateException("Local runner JAR is missing the SLF4J API");
+            }
+            var propertiesEntry = jar.getJarEntry(SLF4J_API_PROPERTIES);
+            if (propertiesEntry == null) {
+                throw new IllegalStateException("Local runner JAR is missing SLF4J version metadata");
+            }
+            Properties properties = new Properties();
+            try (var input = jar.getInputStream(propertiesEntry)) {
+                properties.load(input);
+            }
+            String version = properties.getProperty("version", "");
+            if (!version.startsWith("2.")) {
+                throw new IllegalStateException(
+                        "Local runner JAR must contain SLF4J 2.x, but found " + version);
+            }
+            if (jar.getJarEntry(SLF4J_PROVIDER_SERVICE) == null
+                    || jar.getJarEntry("org/apache/logging/slf4j/SLF4JServiceProvider.class") == null) {
+                throw new IllegalStateException(
+                        "Local runner JAR is missing the Log4j SLF4J 2 provider");
+            }
+        }
+
+        URL[] urls = {artifact.toUri().toURL()};
+        Thread thread = Thread.currentThread();
+        ClassLoader previous = thread.getContextClassLoader();
+        try (URLClassLoader loader = new URLClassLoader(
+                urls, ClassLoader.getPlatformClassLoader())) {
+            thread.setContextClassLoader(loader);
+            Class<?> loggerFactory = Class.forName("org.slf4j.LoggerFactory", true, loader);
+            Object factory = loggerFactory.getMethod("getILoggerFactory").invoke(null);
+            if (factory == null || factory.getClass().getName().contains("NOPLoggerFactory")) {
+                throw new IllegalStateException(
+                        "Local runner JAR did not initialize an SLF4J logging provider");
+            }
+        } catch (ReflectiveOperationException | LinkageError exception) {
+            throw new IllegalStateException(
+                    "Local runner JAR cannot initialize its SLF4J logging provider", exception);
+        } finally {
+            thread.setContextClassLoader(previous);
         }
     }
 

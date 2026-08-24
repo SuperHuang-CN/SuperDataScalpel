@@ -7,7 +7,7 @@
 - 节点类型：`GEOMETRY_SERIALIZE`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：`BATCH`、`STREAMING`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `GEOMETRY_SERIALIZE` 将一张逻辑表中的一个 Geometry 字段序列化为 WKT、WKB 或标准
 GeoJSON 字段，在保留原 Geometry 和其他来源字段的同时追加一个普通标量字段。该节点

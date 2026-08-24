@@ -108,6 +108,21 @@ const edgeAttrs = {
   },
 };
 
+export const canvasEdgeRouter = {
+  name: 'manhattan',
+  args: {
+    padding: 24,
+    step: 10,
+  },
+};
+
+export const canvasEdgeConnector = {
+  name: 'rounded',
+  args: {
+    radius: 8,
+  },
+};
+
 export const loadCanvasDefinition = (
   graph: Graph,
   definition: CanvasDefinition,
@@ -134,6 +149,8 @@ export const loadCanvasDefinition = (
       id: edge.id,
       source: { cell: edge.sourceNodeId, port: 'out' },
       target: { cell: edge.targetNodeId, port: 'in' },
+      router: canvasEdgeRouter,
+      connector: canvasEdgeConnector,
       attrs: edgeAttrs,
     });
   });

@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.contract.execution;
 public enum ExecutionMessageType {
     SUBMIT_EXECUTION,
     CANCEL_EXECUTION,
+    FORCE_TERMINATE_EXECUTION,
     START_STREAMING_EXECUTION,
     STOP_STREAMING_EXECUTION,
     RUNNER_STARTED,
@@ -41,6 +42,7 @@ public enum ExecutionMessageType {
                  EXECUTION_LOST -> true;
             case SUBMIT_EXECUTION,
                  CANCEL_EXECUTION,
+                 FORCE_TERMINATE_EXECUTION,
                  START_STREAMING_EXECUTION,
                  STOP_STREAMING_EXECUTION,
                  RUNNER_STARTED,

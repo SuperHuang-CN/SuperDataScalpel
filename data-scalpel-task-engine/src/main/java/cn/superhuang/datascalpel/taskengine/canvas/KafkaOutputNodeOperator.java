@@ -12,11 +12,14 @@ import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.KafkaOutputWrite;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
 import java.util.Map;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
@@ -50,20 +53,46 @@ public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
         KafkaOutputConfiguration configuration = node.configuration();
         if (configuration == null) return CanvasNodeOperationResult.outputOnly();
         CanvasNodeIssueSink issues = context.issues();
-        CanvasNodeSupport.required(configuration.sourceTableName(), "请选择来源流表",
+        if (configuration.writes().isEmpty()) {
+            issues.error("REQUIRED_CONFIGURATION", "至少配置一条写入", "configuration.writes");
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (!CanvasNodeSupport.validateOutputWriteIds(
+                configuration.writes(), write -> write.writeId(), issues)) {
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (configuration.writes().size() > 32) {
+            issues.error("OUTPUT_WRITE_COUNT_EXCEEDED", "实时输出最多支持 32 条写入", "configuration.writes");
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (configuration.writes().size() != 1) {
+            List<CanvasPreparedKafkaOutput> prepared = new ArrayList<>();
+            List<CanvasLineageOutputCandidate> lineage = new ArrayList<>();
+            for (var write : configuration.writes()) {
+                CanvasNodeOperationResult item = apply(new KafkaOutputNodeDefinition(
+                        node.id(), node.name(), node.layout(), new KafkaOutputConfiguration(
+                        configuration.dataSourceId(), List.of(write))), inputs, context);
+                prepared.addAll(item.preparedKafkaOutputs());
+                lineage.addAll(item.lineageOutputCandidates());
+            }
+            return issues.hasErrors() ? CanvasNodeOperationResult.outputOnly()
+                    : CanvasNodeOperationResult.kafkaOutputs(prepared, lineage);
+        }
+        KafkaOutputWrite write = configuration.writes().iterator().next();
+        CanvasNodeSupport.required(write.sourceTableName(), "请选择来源流表",
                 "configuration.sourceTableName", issues);
-        CanvasNodeSupport.required(configuration.topic(), "请输入 Kafka Topic", "configuration.topic", issues);
+        CanvasNodeSupport.required(write.topic(), "请输入 Kafka Topic", "configuration.topic", issues);
         UUID dataSourceId = CanvasNodeSupport.parseUuid(
                 configuration.dataSourceId(),
                 "configuration.dataSourceId",
                 issues
         );
         var valueColumns = KafkaValueSchemaSupport.columns(
-                configuration.valueSchema(), issues, "configuration.valueSchema");
-        if (configuration.columnMappings() == null) {
+                write.valueSchema(), issues, "configuration.valueSchema");
+        if (write.columnMappings() == null) {
             issues.error("REQUIRED_CONFIGURATION", "字段映射配置不完整", "configuration.columnMappings");
         }
-        SparkCanvasTable source = inputs.get(configuration.sourceTableName());
+        SparkCanvasTable source = inputs.get(write.sourceTableName());
         if (source == null) {
             issues.error("TABLE_NOT_FOUND", "来源流表不在上游数据中", "configuration.sourceTableName");
         } else if (source.schema().datasetKind() != CanvasDatasetKind.UNBOUNDED) {
@@ -80,11 +109,11 @@ public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
         }
         if (source == null || issues.hasErrors()) return CanvasNodeOperationResult.outputOnly();
         CanvasTableSchema target = new CanvasTableSchema(
-                configuration.topic(),
-                CanvasTableOrigin.kafka(dataSourceId, configuration.topic()),
+                write.topic(),
+                CanvasTableOrigin.kafka(dataSourceId, write.topic()),
                 valueColumns
         );
-        String keyColumn = configuration.keyColumnName();
+        String keyColumn = write.keyColumnName();
         if (keyColumn != null && !keyColumn.isBlank()) {
             if (CanvasNodeSupport.columns(source.schema()).get(keyColumn) == null) {
                 issues.error("COLUMN_NOT_FOUND", "Kafka Key 字段不存在：" + keyColumn,
@@ -96,22 +125,24 @@ public final class KafkaOutputNodeOperator implements CanvasNodeOperator {
                 ? mappingOperator.apply(
                         source,
                         target,
-                        configuration.columnMappings(),
+                        write.columnMappings(),
                         issues
                 )
                 : mappingOperator.applyPreserving(
                         source,
                         target,
-                        configuration.columnMappings(),
+                        write.columnMappings(),
                         keyColumn,
                         "__datascalpel_kafka_key",
                         issues
                 );
         if (mapped == null || issues.hasErrors()) return CanvasNodeOperationResult.outputOnly();
-        CanvasPreparedKafkaOutput prepared = context.dataAccess().prepareKafkaOutput(node, mapped);
+        CanvasPreparedKafkaOutput prepared = context.dataAccess().prepareKafkaOutput(
+                node, write, mapped);
         return CanvasNodeOperationResult.kafkaOutput(
                 prepared,
-                CanvasLineageOutputCandidate.kafka(node, mapped, dataSourceId, configuration.topic(), target)
+                CanvasLineageOutputCandidate.kafka(
+                        node, mapped, dataSourceId, write.topic(), target, write.writeId())
         );
     }
 }

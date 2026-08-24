@@ -19,7 +19,7 @@ export const windowSpec = createCanvasNodeSpec({
   canvasView: windowCanvasView,
   supportedModes: ['BATCH'],
   introducedInMinor: 0,
-  graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createWindowConfiguration,
   summarize: summarizeWindow,
   collectMetadataReferences: collectNoMetadataReferences,

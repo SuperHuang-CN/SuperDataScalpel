@@ -1,0 +1,78 @@
+{
+  "schemaVersion" : 7,
+  "executionId" : "0fa49f4c-97d3-4ca7-895d-65c6963c83ea",
+  "runId" : "b1eeb600-c28a-4fc2-a23c-f21ce1c7f6d1",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-21T08:48:01.838403667Z",
+  "endedAt" : "2026-08-21T08:48:09.116770587Z",
+  "durationMs" : 7278,
+  "affectedRows" : 428,
+  "nodeResults" : [ {
+    "nodeId" : "033a2fad-2279-472a-8621-e9d6e9fb92e7",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-08-21T08:48:04.858598876Z",
+    "endedAt" : "2026-08-21T08:48:06.657549294Z",
+    "durationMs" : 1798,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "JDBC 输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "8913adc0-b3ea-4940-9626-b69a64263b03",
+    "nodeType" : "JOIN",
+    "nodeName" : "Join 处理器",
+    "state" : "SUCCESS",
+    "phase" : "PROCESS",
+    "startedAt" : "2026-08-21T08:48:06.658912294Z",
+    "endedAt" : "2026-08-21T08:48:06.678746461Z",
+    "durationMs" : 19,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "Join 已准备",
+    "error" : null
+  }, {
+    "nodeId" : "c2e76020-067e-4984-a566-5dd9b3c58f1d",
+    "nodeType" : "RENAME",
+    "nodeName" : "重命名",
+    "state" : "SUCCESS",
+    "phase" : "PROCESS",
+    "startedAt" : "2026-08-21T08:48:06.679080669Z",
+    "endedAt" : "2026-08-21T08:48:06.699616252Z",
+    "durationMs" : 20,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "重命名已准备",
+    "error" : null
+  }, {
+    "nodeId" : "618ee77b-16dc-4171-a4e4-4044ab8fbd9b",
+    "nodeType" : "MODEL_OUTPUT",
+    "nodeName" : "模型输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-08-21T08:48:06.700669294Z",
+    "endedAt" : "2026-08-21T08:48:09.116370878Z",
+    "durationMs" : 2415,
+    "rowsWritten" : 428,
+    "metrics" : {
+      "kind" : "OUTPUT_WRITES",
+      "writes" : [ {
+        "writeId" : "74afc084-d1bd-43c5-bd1b-d8ddf81a7d6a",
+        "sourceTableName" : "dim_user2",
+        "targetDisplayName" : "用户全表 · dim_user",
+        "state" : "SUCCESS",
+        "affectedRows" : 428,
+        "errorCode" : null
+      } ]
+    },
+    "message" : "模型输出写入成功",
+    "error" : null
+  } ],
+  "taskType" : "SPARK_CANVAS",
+  "qualityResult" : null,
+  "userJobObservability" : null,
+  "error" : null
+}

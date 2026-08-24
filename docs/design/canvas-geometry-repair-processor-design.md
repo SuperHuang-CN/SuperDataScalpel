@@ -7,7 +7,7 @@
 - 节点类型：`GEOMETRY_REPAIR`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：`BATCH`、`STREAMING`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `GEOMETRY_REPAIR` 对一张逻辑表中的 Geometry 字段执行拓扑修复，在保留原字段的同时
 追加修复结果。它与 `GEOMETRY_VALIDATE` 形成明确分工：Validate 只诊断，Repair 才改变

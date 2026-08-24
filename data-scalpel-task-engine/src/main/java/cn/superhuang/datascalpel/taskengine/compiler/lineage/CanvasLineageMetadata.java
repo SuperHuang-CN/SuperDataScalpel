@@ -29,6 +29,7 @@ public final class CanvasLineageMetadata {
     public static final String PREFIX = "datascalpel.lineage.";
     public static final String MARKER_VERSION = PREFIX + "markerVersion";
     public static final String INPUT_NODE_ID = PREFIX + "inputNodeId";
+    public static final String INPUT_ASSET_KEY = PREFIX + "inputAssetKey";
     public static final String ASSET_KIND = PREFIX + "assetKind";
     public static final String EXTERNAL_RESOURCE_TYPE = PREFIX + "externalResourceType";
     public static final String MODEL_ID = PREFIX + "modelId";
@@ -71,6 +72,7 @@ public final class CanvasLineageMetadata {
             MetadataBuilder builder = new MetadataBuilder()
                     .putLong(MARKER_VERSION, 1)
                     .putString(INPUT_NODE_ID, node.id())
+                    .putString(INPUT_ASSET_KEY, asset.localAssetKey())
                     .putString(ASSET_KIND, asset.kind().name())
                     .putString(COLUMN_KEY, fieldKey)
                     .putString(DISPLAY_NAME, asset.safeDisplayName());
@@ -139,6 +141,12 @@ public final class CanvasLineageMetadata {
         return metadata.getString(INPUT_NODE_ID);
     }
 
+    public static String inputAssetKey(Metadata metadata) {
+        return metadata.contains(INPUT_ASSET_KEY)
+                ? metadata.getString(INPUT_ASSET_KEY)
+                : "input:" + inputNodeId(metadata);
+    }
+
     public static String columnKey(Metadata metadata) {
         return metadata.getString(COLUMN_KEY);
     }
@@ -154,49 +162,64 @@ public final class CanvasLineageMetadata {
     ) {
         CanvasTableOrigin origin = schema.origin();
         if (origin == null) throw new IllegalArgumentException("Input lineage origin is missing: " + node.id());
+        String localAssetKey = inputAssetKey(node, schema);
         return switch (origin.kind()) {
             case "MODEL" -> {
                 var model = metadataIndex.model(origin.modelId()).metadata();
                 yield new CanvasLineageCompilation.Asset(
-                        "input:" + node.id(), CanvasLineageCompilation.AssetRole.INPUT,
+                        localAssetKey, CanvasLineageCompilation.AssetRole.INPUT,
                         CanvasLineageCompilation.AssetKind.MODEL, null, null,
-                        model.id(), model.schemaVersion(), model.dataSourceId(), model.catalogName(),
-                        model.schemaName(), model.physicalTableName(), null, null, model.name());
+                        model.id(), model.schemaVersion(),
+                        null, null, null, null,
+                        null, null, model.name());
             }
             case "JDBC", "JDBC_INCREMENTAL" -> {
                 var table = metadataIndex.dataSource(origin.dataSourceId()).table(origin.tableName());
                 yield new CanvasLineageCompilation.Asset(
-                        "input:" + node.id(), CanvasLineageCompilation.AssetRole.INPUT,
+                        localAssetKey, CanvasLineageCompilation.AssetRole.INPUT,
                         CanvasLineageCompilation.AssetKind.JDBC_TABLE, null, null,
                         null, null, origin.dataSourceId(), table.catalogName(), table.schemaName(),
                         table.physicalTableName(), null, null, table.tableName());
             }
             case "TDENGINE_TMQ" -> new CanvasLineageCompilation.Asset(
-                    "input:" + node.id(), CanvasLineageCompilation.AssetRole.INPUT,
+                    localAssetKey, CanvasLineageCompilation.AssetRole.INPUT,
                     CanvasLineageCompilation.AssetKind.JDBC_TABLE, null, null,
                     null, null, origin.dataSourceId(), origin.catalogName(), null,
                     origin.supertableName(), null, null, origin.supertableName());
-            case "JDBC_QUERY" -> external(node, origin.dataSourceId(), null,
+            case "JDBC_QUERY" -> external(localAssetKey, origin.dataSourceId(), null,
                     CanvasLineageCompilation.ExternalResourceType.JDBC_QUERY_RESULT,
                     jdbcQueryResourceKey(node), node.name());
-            case "KAFKA" -> external(node, origin.dataSourceId(), null,
+            case "KAFKA" -> external(localAssetKey, origin.dataSourceId(), null,
                     CanvasLineageCompilation.ExternalResourceType.KAFKA_TOPIC,
                     sha256(origin.tableName()), origin.tableName());
-            case "FILE_DATASET" -> external(node, null, origin.fileDatasetTableId(),
+            case "FILE_DATASET" -> external(localAssetKey, null, origin.fileDatasetTableId(),
                     CanvasLineageCompilation.ExternalResourceType.FILE_DATASET_TABLE,
                     sha256(origin.fileDatasetTableId().toString()), node.name());
-            case "HTTP_API" -> external(node, origin.dataSourceId(), uuid(origin.tableName()),
+            case "HTTP_API" -> external(localAssetKey, origin.dataSourceId(), uuid(origin.tableName()),
                     CanvasLineageCompilation.ExternalResourceType.HTTP_API_RESOURCE,
                     sha256(origin.tableName()), node.name());
-            case "SPATIAL_SERVICE" -> external(node, origin.dataSourceId(), uuid(origin.tableName()),
+            case "SPATIAL_SERVICE" -> external(localAssetKey, origin.dataSourceId(), uuid(origin.tableName()),
                     CanvasLineageCompilation.ExternalResourceType.SPATIAL_SERVICE_RESOURCE,
                     sha256(origin.tableName()), node.name());
             default -> throw new IllegalArgumentException("Unsupported input lineage origin: " + origin.kind());
         };
     }
 
+    private static String inputAssetKey(CanvasNodeDefinition node, CanvasTableSchema schema) {
+        String nodeKey = "input:" + node.id();
+        CanvasTableOrigin origin = schema.origin();
+        if (origin == null) return nodeKey;
+        // 一个 Input 节点可以产生多张表。资源 Origin 是稳定来源身份，不能让它们共享同一血缘资产。
+        String originKey = String.join("\0",
+                origin.kind(), String.valueOf(origin.dataSourceId()), String.valueOf(origin.tableName()),
+                String.valueOf(origin.modelId()), String.valueOf(origin.fileDatasetTableId()),
+                String.valueOf(origin.topicName()), String.valueOf(origin.catalogName()),
+                String.valueOf(origin.supertableName()));
+        return nodeKey + ":origin:" + sha256(originKey);
+    }
+
     private static CanvasLineageCompilation.Asset external(
-            CanvasNodeDefinition node,
+            String localAssetKey,
             UUID dataSourceId,
             UUID resourceId,
             CanvasLineageCompilation.ExternalResourceType type,
@@ -204,7 +227,7 @@ public final class CanvasLineageMetadata {
             String name
     ) {
         return new CanvasLineageCompilation.Asset(
-                "input:" + node.id(), CanvasLineageCompilation.AssetRole.INPUT,
+                localAssetKey, CanvasLineageCompilation.AssetRole.INPUT,
                 CanvasLineageCompilation.AssetKind.EXTERNAL_RESOURCE, type, null,
                 null, null, dataSourceId, null, null, null,
                 resourceId, resourceKey, name);

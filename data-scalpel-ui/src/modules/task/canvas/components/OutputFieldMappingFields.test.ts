@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { CanvasColumnSchema } from '../canvasTypes';
-import {
-  autoMatchedSourceColumn,
-  orderOutputFieldMappings,
-} from './OutputFieldMappingFields';
+import { autoMatchedSourceColumn, orderOutputFieldMappings } from './outputFieldMappings';
 
 const column = (name: string): CanvasColumnSchema => ({
   name,

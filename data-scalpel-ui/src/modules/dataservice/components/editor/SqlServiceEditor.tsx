@@ -80,7 +80,7 @@ export const SqlServiceEditor = ({
   const querySectionRef = useRef<HTMLDivElement>(null);
   const parameterSectionRef = useRef<HTMLDivElement>(null);
   const dataSourcesQuery = useDataSources(
-    { search: 'type:"POSTGRESQL" AND enabled:"true"', page: 0, size: 500, sort: 'code' },
+    { search: '(type:"POSTGRESQL" OR type:"CLICKHOUSE") AND enabled:"true"', page: 0, size: 500, sort: 'code' },
     canViewDataSources,
   );
   const registrationsQuery = useServiceEngineDataSourceRegistrations(
@@ -109,7 +109,7 @@ export const SqlServiceEditor = ({
       return;
     }
     modal.confirm({
-      title: '切换 PostgreSQL 数据源？',
+      title: '切换 SQL 数据源？',
       content: `切换数据源将清空当前关联的 ${selectedModelIds.length} 个模型和 SQL 测试结果。`,
       okText: '切换并清空',
       cancelText: '取消',
@@ -161,9 +161,9 @@ export const SqlServiceEditor = ({
         <Form.Item<DataServiceFormValues> name="dataSourceId" hidden rules={[{ required: true, message: '请选择数据源' }]}>
           <Select />
         </Form.Item>
-        <Form.Item label="PostgreSQL 数据源" required>
+        <Form.Item label="SQL 数据源" required>
           <Select
-            aria-label="PostgreSQL 数据源"
+            aria-label="SQL 数据源"
             value={selectedDataSourceId}
             showSearch
             optionFilterProp="label"

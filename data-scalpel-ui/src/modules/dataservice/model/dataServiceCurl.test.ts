@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { buildDataServiceCurlCommand } from './dataServiceCurl';
+import { buildDataServiceAccessUrl, buildDataServiceCurlCommand } from './dataServiceCurl';
+
+describe('buildDataServiceAccessUrl', () => {
+  it('joins the Service Engine public URL and service route with exactly one slash', () => {
+    expect(buildDataServiceAccessUrl('https://engine.example.com/', '/open-api/v1/orders')).toBe(
+      'https://engine.example.com/open-api/v1/orders',
+    );
+  });
+});
 
 describe('buildDataServiceCurlCommand', () => {
   it('uses a complete gateway URL without appending an extra slash', () => {

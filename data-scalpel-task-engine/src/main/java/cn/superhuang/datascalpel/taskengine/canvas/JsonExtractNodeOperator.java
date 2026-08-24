@@ -7,9 +7,11 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.JsonExtractConfiguration;
+import cn.superhuang.data.scalpel.contract.task.JsonExtractOperation;
 import cn.superhuang.data.scalpel.contract.task.JsonExtractFailureStrategy;
 import cn.superhuang.data.scalpel.contract.task.JsonExtractNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JsonExtraction;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
@@ -59,6 +61,19 @@ public final class JsonExtractNodeOperator implements CanvasNodeOperator {
         JsonExtractConfiguration configuration = node.configuration();
         if (configuration == null) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
+        }
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        JsonExtractOperation sourceOperation = (JsonExtractOperation) operation.operation();
+                        JsonExtractConfiguration single = new JsonExtractConfiguration(List.of(new JsonExtractOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()),
+                                sourceOperation.sourceColumnName(), sourceOperation.extractions(), sourceOperation.failureStrategy()
+                        )));
+                        return apply(new JsonExtractNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
         }
 
         CanvasNodeIssueSink issues = context.issues();

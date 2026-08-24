@@ -8,10 +8,12 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.MaskFieldRule;
 import cn.superhuang.data.scalpel.contract.task.MaskFieldsConfiguration;
+import cn.superhuang.data.scalpel.contract.task.MaskFieldsOperation;
 import cn.superhuang.data.scalpel.contract.task.MaskFieldsNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.MaskingRuleDefinition;
 import cn.superhuang.data.scalpel.contract.task.MaskingRuleSource;
 import cn.superhuang.data.scalpel.contract.task.MaskingSourceRuleReference;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -61,6 +63,18 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
         MaskFieldsConfiguration configuration = node.configuration();
         if (configuration == null) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
+        }
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        MaskFieldsOperation sourceOperation = (MaskFieldsOperation) operation.operation();
+                        MaskFieldsConfiguration single = new MaskFieldsConfiguration(List.of(new MaskFieldsOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()), sourceOperation.fieldRules()
+                        )));
+                        return apply(new MaskFieldsNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
         }
 
         CanvasNodeIssueSink issues = context.issues();
@@ -304,18 +318,32 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
                         issues
                 );
                 validateMaskCharacter(definition.maskCharacter(), path + ".maskCharacter", issues);
-                if (sourceDefinition.fixedValue() != null) {
+                if (sourceDefinition.maskPosition() != null || sourceDefinition.fixedValue() != null) {
                     issues.error(
                             "MASKING_PARAMETER_NOT_ALLOWED",
-                            "PARTIAL_MASK 不能配置固定替换值",
-                            path + ".fixedValue"
+                            "PARTIAL_MASK 包含不适用参数",
+                            path
+                    );
+                }
+            }
+            case POSITION_MASK -> {
+                requireStringColumn(column, issues, path);
+                validateMaskPosition(definition.maskPosition(), path + ".maskPosition", issues);
+                validateMaskCharacter(definition.maskCharacter(), path + ".maskCharacter", issues);
+                if (sourceDefinition.keepPrefixLength() != null
+                        || sourceDefinition.keepSuffixLength() != null
+                        || sourceDefinition.fixedValue() != null) {
+                    issues.error(
+                            "MASKING_PARAMETER_NOT_ALLOWED",
+                            "POSITION_MASK 包含不适用参数",
+                            path
                     );
                 }
             }
             case KEEP_LENGTH_MASK -> {
                 requireStringColumn(column, issues, path);
                 validateMaskCharacter(definition.maskCharacter(), path + ".maskCharacter", issues);
-                rejectUnusedLengthsAndFixedValue(sourceDefinition, issues, path);
+                rejectUnusedPositionLengthsAndFixedValue(sourceDefinition, issues, path);
             }
             case FIXED_VALUE -> {
                 requireStringColumn(column, issues, path);
@@ -336,6 +364,7 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
                 }
                 if (sourceDefinition.keepPrefixLength() != null
                         || sourceDefinition.keepSuffixLength() != null
+                        || sourceDefinition.maskPosition() != null
                         || sourceDefinition.maskCharacter() != null) {
                     issues.error(
                             "MASKING_PARAMETER_NOT_ALLOWED",
@@ -354,6 +383,7 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
                 }
                 if (sourceDefinition.keepPrefixLength() != null
                         || sourceDefinition.keepSuffixLength() != null
+                        || sourceDefinition.maskPosition() != null
                         || sourceDefinition.maskCharacter() != null
                         || sourceDefinition.fixedValue() != null) {
                     issues.error(
@@ -395,6 +425,20 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
         }
     }
 
+    private static void validateMaskPosition(
+            Integer value,
+            String path,
+            CanvasNodeIssueSink issues
+    ) {
+        if (value == null || value < 1 || value > CanvasMaskingLimits.MAX_MASK_POSITION) {
+            issues.error(
+                    "INVALID_MASKING_POSITION",
+                    "掩码位置必须在 1.." + CanvasMaskingLimits.MAX_MASK_POSITION + " 之间",
+                    path
+            );
+        }
+    }
+
     private static void validateMaskCharacter(
             String value,
             String path,
@@ -409,13 +453,14 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
         }
     }
 
-    private static void rejectUnusedLengthsAndFixedValue(
+    private static void rejectUnusedPositionLengthsAndFixedValue(
             MaskingRuleDefinition definition,
             CanvasNodeIssueSink issues,
             String path
     ) {
         if (definition.keepPrefixLength() != null
                 || definition.keepSuffixLength() != null
+                || definition.maskPosition() != null
                 || definition.fixedValue() != null) {
             issues.error(
                     "MASKING_PARAMETER_NOT_ALLOWED",
@@ -434,6 +479,7 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
         Column original = dataset.col(CanvasNodeSupport.quoteIdentifier(column.name()));
         Column masked = switch (definition.strategy()) {
             case PARTIAL_MASK -> partialMask(original, definition);
+            case POSITION_MASK -> positionMask(original, definition);
             case KEEP_LENGTH_MASK -> functions.repeat(
                     functions.lit(definition.maskCharacter()),
                     functions.length(original)
@@ -473,6 +519,26 @@ public final class MaskFieldsNodeOperator implements CanvasNodeOperator {
         );
         return functions.when(length.leq(retainedLength), allMasked)
                 .otherwise(functions.concat(prefix, middle, suffix));
+    }
+
+    private static Column positionMask(
+            Column original,
+            MaskingRuleDefinition definition
+    ) {
+        int maskPosition = definition.maskPosition();
+        Column length = functions.length(original);
+        Column prefix = functions.substring(
+                original,
+                functions.lit(1),
+                functions.lit(maskPosition - 1)
+        );
+        Column suffix = functions.substring(
+                original,
+                functions.lit(maskPosition + 1),
+                length
+        );
+        Column masked = functions.concat(prefix, functions.lit(definition.maskCharacter()), suffix);
+        return functions.when(length.geq(maskPosition), masked).otherwise(original);
     }
 
     private static CanvasColumnSchema maskedColumn(CanvasColumnSchema original) {

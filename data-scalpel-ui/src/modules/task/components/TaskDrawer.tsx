@@ -3,6 +3,7 @@ import { useEffect } from 'react';
 import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory';
 import { computeEngineRegistrationStateLabels, isComputeEngineSelectable, useComputeEngines } from '../../computeengine';
 import { taskTypeLabels, type DataTask, type TaskType } from '../model/task';
+import type { TaskAssistantCreateDraft } from '../model/taskAssistant';
 
 export interface TaskDrawerValues {
   name: string;
@@ -16,6 +17,7 @@ interface TaskDrawerProps {
   open: boolean;
   task: DataTask | null;
   initialDirectoryId?: string;
+  initialDraft?: TaskAssistantCreateDraft;
   directories: DirectoryTreeNode[];
   onClose: () => void;
   onSubmit: (values: TaskDrawerValues) => Promise<void>;
@@ -25,6 +27,7 @@ export const TaskDrawer = ({
   open,
   task,
   initialDirectoryId,
+  initialDraft,
   directories,
   onClose,
   onSubmit,
@@ -45,8 +48,14 @@ export const TaskDrawer = ({
       directoryId: task.directoryId ?? undefined,
       description: task.description ?? undefined,
       computeEngineId: task.computeEngineId ?? undefined,
+    } : initialDraft ? {
+      name: initialDraft.name,
+      type: 'SPARK_CANVAS',
+      directoryId: initialDraft.directoryId ?? undefined,
+      description: initialDraft.description ?? '',
+      computeEngineId: undefined,
     } : { name: '', type: 'LOCAL_SQL', directoryId: initialDirectoryId, description: '', computeEngineId: undefined });
-  }, [form, initialDirectoryId, open, task]);
+  }, [form, initialDirectoryId, initialDraft, open, task]);
 
   return (
     <Drawer
@@ -63,7 +72,10 @@ export const TaskDrawer = ({
     >
       <Form autoComplete="off" form={form} layout="vertical">
         {!task && <Form.Item name="type" label="任务类型" rules={[{ required: true, message: '请选择任务类型' }]}>
-          <Select options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))} />
+          <Select
+            disabled={Boolean(initialDraft)}
+            options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))}
+          />
         </Form.Item>}
         {task && <Form.Item name="type" label="任务类型">
           <Select disabled options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))} />

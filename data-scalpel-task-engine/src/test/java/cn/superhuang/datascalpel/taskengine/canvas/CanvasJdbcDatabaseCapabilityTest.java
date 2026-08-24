@@ -19,10 +19,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class CanvasJdbcDatabaseCapabilityTest {
 
     @Test
-    void overwriteKeepsExistingDatabasesAndRejectsNewDatabases() {
+    void overwriteAllowsAllRegularJdbcDatabasesAndRejectsTdEngine() {
         for (CanvasJdbcDatabaseType type : List.of(
                 CanvasJdbcDatabaseType.POSTGRESQL,
                 CanvasJdbcDatabaseType.MYSQL,
+                CanvasJdbcDatabaseType.ORACLE,
+                CanvasJdbcDatabaseType.SQL_SERVER,
+                CanvasJdbcDatabaseType.CLICKHOUSE,
+                CanvasJdbcDatabaseType.DAMENG,
                 CanvasJdbcDatabaseType.OPENGAUSS,
                 CanvasJdbcDatabaseType.KINGBASE
         )) {
@@ -32,10 +36,8 @@ class CanvasJdbcDatabaseCapabilityTest {
             assertFalse(issues.hasErrors(), type.name());
         }
         for (CanvasJdbcDatabaseType type : List.of(
-                CanvasJdbcDatabaseType.ORACLE,
-                CanvasJdbcDatabaseType.SQL_SERVER,
-                CanvasJdbcDatabaseType.CLICKHOUSE,
-                CanvasJdbcDatabaseType.DAMENG
+                CanvasJdbcDatabaseType.TDENGINE_WEBSOCKET,
+                CanvasJdbcDatabaseType.TDENGINE_RESTFUL
         )) {
             RecordingIssues issues = new RecordingIssues();
             CanvasNodeSupport.validateJdbcWriteMode(

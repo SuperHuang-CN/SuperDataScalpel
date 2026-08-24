@@ -1,0 +1,72 @@
+{
+  "schemaVersion" : 7,
+  "executionId" : "3873cfb2-e371-4270-9ce4-1fe09a0502fa",
+  "runId" : "a5936004-a1a5-4dcd-a09b-892bf6c5ed43",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-20T07:11:09.035582792Z",
+  "endedAt" : "2026-08-20T07:11:50.551731840Z",
+  "durationMs" : 41516,
+  "affectedRows" : 10723,
+  "nodeResults" : [ {
+    "nodeId" : "323feccd-909f-46cc-9039-e0aa4948d150",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-08-20T07:11:12.025824877Z",
+    "endedAt" : "2026-08-20T07:11:12.764458211Z",
+    "durationMs" : 738,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "JDBC 输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "5443e87d-7971-4898-ac16-1162d1b4de21",
+    "nodeType" : "DERIVE_COLUMNS",
+    "nodeName" : "派生字段",
+    "state" : "SUCCESS",
+    "phase" : "PROCESS",
+    "startedAt" : "2026-08-20T07:11:12.765366919Z",
+    "endedAt" : "2026-08-20T07:11:12.785081461Z",
+    "durationMs" : 19,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "派生字段已准备",
+    "error" : null
+  }, {
+    "nodeId" : "20761935-b98f-4be9-8fd2-24f8ea1d0323",
+    "nodeType" : "MODEL_OUTPUT",
+    "nodeName" : "模型输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-08-20T07:11:12.785354836Z",
+    "endedAt" : "2026-08-20T07:11:50.551247590Z",
+    "durationMs" : 37765,
+    "rowsWritten" : 10723,
+    "metrics" : {
+      "kind" : "OUTPUT_WRITES",
+      "writes" : [ {
+        "writeId" : "34c0b219-b455-4d85-892b-7f31e45ca4d7",
+        "sourceTableName" : "slbres_yg_rsvr_b",
+        "targetDisplayName" : "水库基本信息贴源模型 · ods_slbres_yg_rsvr_b",
+        "state" : "SUCCESS",
+        "affectedRows" : 10562,
+        "errorCode" : null
+      }, {
+        "writeId" : "279275de-0d44-4ce2-af63-b3b2145be448",
+        "sourceTableName" : "slbres_yg_rsvr_b_fz",
+        "targetDisplayName" : "未注册水库信息表贴源模型 · ods_slbres_yg_rsvr_b_fz",
+        "state" : "SUCCESS",
+        "affectedRows" : 161,
+        "errorCode" : null
+      } ]
+    },
+    "message" : "模型输出写入成功",
+    "error" : null
+  } ],
+  "taskType" : "SPARK_CANVAS",
+  "qualityResult" : null,
+  "userJobObservability" : null,
+  "error" : null
+}

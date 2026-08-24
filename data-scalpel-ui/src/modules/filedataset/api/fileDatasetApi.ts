@@ -23,6 +23,7 @@ const FILE_DATASET_PATH = '/v1/file-datasets';
 const FILE_DATASET_TABLE_PATH = '/v1/file-dataset-tables';
 const FILE_DATASET_PARSE_JOB_PATH = '/v1/file-dataset-parse-jobs';
 const FILE_OPERATION_TIMEOUT = 5 * 60 * 1000;
+const CANVAS_METADATA_BATCH_SIZE = 200;
 
 const listPath = (path: string, request: SearchRequest): string => {
   const query = toSearchParams(request).toString();
@@ -39,15 +40,21 @@ export const fetchFileDataset = (id: string): Promise<FileDataset> => (
 
 export const fetchFileDatasetCanvasMetadata = (
   fileDatasetTableIds: string[],
-): Promise<FileDatasetCanvasMetadata> => (
-  requestJson<FileDatasetCanvasMetadata>(
+): Promise<FileDatasetCanvasMetadata> => {
+  const ids = [...new Set(fileDatasetTableIds)];
+  if (ids.length === 0) return Promise.resolve({ tables: [] });
+  const batches = Array.from(
+    { length: Math.ceil(ids.length / CANVAS_METADATA_BATCH_SIZE) },
+    (_value, index) => ids.slice(index * CANVAS_METADATA_BATCH_SIZE, (index + 1) * CANVAS_METADATA_BATCH_SIZE),
+  );
+  return Promise.all(batches.map((batch) => requestJson<FileDatasetCanvasMetadata>(
     `${FILE_DATASET_TABLE_PATH}/actions/query-canvas-metadata`,
     {
       method: 'POST',
-      body: JSON.stringify({ fileDatasetTableIds: [...new Set(fileDatasetTableIds)] }),
+      body: JSON.stringify({ fileDatasetTableIds: batch }),
     },
-  )
-);
+  ))).then((responses) => ({ tables: responses.flatMap((response) => response.tables) }));
+};
 
 export const createFileDataset = (request: CreateFileDatasetRequest): Promise<FileDataset> => (
   requestJson<FileDataset>(FILE_DATASET_PATH, { method: 'POST', body: JSON.stringify(request) })

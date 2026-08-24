@@ -11,9 +11,12 @@ import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.HttpApiInputResourceSelection;
 import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputResourceSelection;
 import cn.superhuang.data.scalpel.contract.task.SpatialServiceResourceDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.JdbcIncrementalInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcIncrementalSourceSignature;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
@@ -23,6 +26,7 @@ import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FileDatasetInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeFileInput;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeFileStorage;
@@ -32,6 +36,7 @@ import cn.superhuang.datascalpel.taskengine.contract.RuntimeTdEngineTmqConnectio
 import cn.superhuang.datascalpel.taskengine.tdengine.tmq.TdEngineTmqTableProvider;
 import cn.superhuang.datascalpel.taskengine.jdbc.incremental.JdbcIncrementalTableProvider;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelInputSelection;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
@@ -118,6 +123,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public Dataset<Row> readJdbcInput(
             JdbcInputNodeDefinition node,
+            JdbcInputTableSelection table,
             CanvasTableSchema logicalSchema
     ) {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
@@ -131,8 +137,9 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         return SpatialJdbcRuntimeSupport.readTable(
                 spark,
                 runtime,
-                SpatialJdbcRuntimeSupport.tableIdentifier(runtime, node.configuration().tableName()),
+                SpatialJdbcRuntimeSupport.tableIdentifier(runtime, table.tableName()),
                 logicalSchema,
+                table.readOptions(),
                 node.id()
         );
     }
@@ -242,11 +249,12 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public Dataset<Row> readFileDatasetInput(
             FileDatasetInputNodeDefinition node,
+            FileDatasetInputTableSelection selection,
             MetadataIndex.FileDatasetTableEntry table,
             CanvasTableSchema logicalSchema
     ) {
         UUID tableId = CanvasTaskExecutor.uuid(
-                node.configuration().fileDatasetTableId(),
+                selection.fileDatasetTableId(),
                 "文件数据集表 ID 无效",
                 node.id()
         );
@@ -264,12 +272,13 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public Dataset<Row> readHttpApiInput(
             HttpApiInputNodeDefinition node,
+            HttpApiInputResourceSelection selection,
             CanvasTableSchema logicalSchema
     ) {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
                 node.configuration().dataSourceId(), "API 数据源 ID 无效", node.id());
         UUID resourceId = CanvasTaskExecutor.uuid(
-                node.configuration().resourceId(), "API 资源 ID 无效", node.id());
+                selection.resourceId(), "API 资源 ID 无效", node.id());
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
                 runtimeSources, dataSourceId, DataSourcePurpose.SOURCE, node.id());
         if (runtime.connectionKind() != ConnectionKind.HTTP_API || runtime.httpApiConnection() == null) {
@@ -294,7 +303,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                     new HttpApiContracts.PullRequest(
                             runtime.httpApiConnection(),
                             resource,
-                            node.configuration().runtimeParameters()
+                            selection.runtimeParameters()
                     ),
                     stager
             );
@@ -310,12 +319,13 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public Dataset<Row> readSpatialServiceInput(
             SpatialServiceInputNodeDefinition node,
+            SpatialServiceInputResourceSelection selection,
             CanvasTableSchema logicalSchema
     ) {
         UUID dataSourceId = CanvasTaskExecutor.uuid(
                 node.configuration().dataSourceId(), "空间服务数据源 ID 无效", node.id());
         UUID resourceId = CanvasTaskExecutor.uuid(
-                node.configuration().resourceId(), "空间要素资源 ID 无效", node.id());
+                selection.resourceId(), "空间要素资源 ID 无效", node.id());
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
                 runtimeSources, dataSourceId, DataSourcePurpose.SOURCE, node.id());
         if (runtime.connectionKind() != ConnectionKind.HTTP_API || runtime.httpApiConnection() == null) {
@@ -410,6 +420,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public Dataset<Row> readModelInput(
             ModelInputNodeDefinition node,
+            ModelInputSelection selection,
             MetadataIndex.ModelEntry model,
             CanvasTableSchema logicalSchema
     ) {
@@ -424,6 +435,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                         model.metadata().physicalTableName()
                 ),
                 logicalSchema,
+                List.of(),
                 node.id()
         );
     }
@@ -431,6 +443,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public CanvasPreparedOutput prepareJdbcOutput(
             JdbcOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.JdbcOutputWrite write,
             CanvasTableSchema targetSchema,
             Dataset<Row> dataset
     ) {
@@ -443,27 +456,30 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                     "RUNTIME_DATA_SOURCE_UNAVAILABLE", "输出节点需要 JDBC 数据源", node.id());
         }
         TableIdentifier targetTable =
-                SpatialJdbcRuntimeSupport.tableIdentifier(runtime, node.configuration().targetTableName());
+                SpatialJdbcRuntimeSupport.tableIdentifier(runtime, write.targetTableName());
         String qualifiedTableName = SpatialJdbcRuntimeSupport.qualifiedTable(runtime, targetTable);
         Map<String, Integer> geometryLocalSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
                 runtime, targetTable, targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedOutput(
                 node,
+                write.writeId(),
+                write.sourceTableName(),
                 runtime,
                 targetTable,
                 qualifiedTableName,
-                CanvasTaskExecutor.displayTable(runtime, node.configuration().targetTableName()),
-                node.configuration().writeMode(),
+                write.targetTableName(),
+                write.writeMode(),
                 dataset,
                 targetSchema,
                 geometryLocalSrids,
-                node.configuration().upsertKeyColumns()
+                write.upsertKeyColumns()
         );
     }
 
     @Override
     public CanvasPreparedOutput prepareModelOutput(
             ModelOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.ModelOutputWrite write,
             MetadataIndex.ModelEntry model,
             CanvasTableSchema targetSchema,
             Dataset<Row> dataset,
@@ -489,11 +505,13 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 runtime, targetTable, targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedOutput(
                 node,
+                write.writeId(),
+                write.sourceTableName(),
                 runtime,
                 targetTable,
                 qualifiedTableName,
-                CanvasTaskExecutor.displayModelTable(runtime, model),
-                node.configuration().writeMode(),
+                model.metadata().name() + " · " + model.metadata().code(),
+                write.writeMode(),
                 dataset,
                 targetSchema,
                 geometryLocalSrids,
@@ -575,6 +593,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public CanvasPreparedKafkaOutput prepareKafkaOutput(
             KafkaOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.KafkaOutputWrite write,
             Dataset<Row> dataset
     ) {
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
@@ -593,8 +612,9 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         }
         return new CanvasPreparedKafkaOutput(
                 node,
+                write.writeId(),
                 runtime,
-                node.configuration().topic(),
+                write.topic(),
                 dataset
         );
     }
@@ -602,6 +622,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     @Override
     public CanvasPreparedFileOutput prepareFileOutput(
             FileOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.FileOutputWrite write,
             CanvasTableSchema sourceSchema,
             Dataset<Row> dataset
     ) {
@@ -614,11 +635,16 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             throw new RunnerExecutionException(
                     "RUNTIME_DATA_SOURCE_UNAVAILABLE", "文件输出节点需要 S3 数据源", node.id());
         }
-        String targetKey = joinKey(connection.rootPrefix(), node.configuration().targetPath());
+        String targetKey = joinKey(connection.rootPrefix(), write.targetPath());
         return new CanvasPreparedFileOutput(
                 node,
+                write.writeId(),
+                write.sourceTableName(),
                 runtime,
+                write.targetPath(),
                 "s3a://" + connection.bucket() + "/" + targetKey,
+                write.conflictPolicy(),
+                write.formatOptions(),
                 sourceSchema,
                 dataset
         );

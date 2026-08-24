@@ -8,6 +8,7 @@ import {
   parseFileOutputFormatOptions,
   parseFilterCondition,
   parseJoinConditions,
+  parseJoinOutputColumns,
   parseJoinType,
   parseKafkaValueSchema,
   parseMappings,
@@ -51,6 +52,7 @@ import {
   type CanvasNodeType as CanvasNodeTypeValue,
 } from '../canvasTypes';
 import { createMaskingRuleDefinition } from '../../model/maskingRule';
+import { findFilterSqlExpressionViolation } from './filter/filterSqlExpression';
 import type { CanvasParseResult } from './nodeSpec';
 
 type Configuration<T extends CanvasNodeTypeValue> = CanvasNodeConfigurationByType<T>;
@@ -69,14 +71,209 @@ const isRecord = (value: unknown): value is Record<string, unknown> => (
 const parseConfiguration = <T>(
   value: unknown,
   _path: string,
-  parser: (configuration: Record<string, unknown>, errors: string[]) => T,
+  parser: (configuration: Record<string, unknown>, errors: string[]) => unknown,
 ): CanvasParseResult<T> => {
   const errors: string[] = [];
   const configuration = isRecord(value) ? value : {};
-  const parsed = parser(configuration, errors);
+  const parsed = parser(configuration, errors) as T;
   return errors.length > 0
     ? { success: false, errors }
     : { success: true, value: parsed };
+};
+
+const parseProcessorOutput = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): { mode: 'REPLACE_SOURCE'; outputTableName: string | null } | { mode: 'CREATE_NEW_TABLE'; outputTableName: string } => {
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是输出方式对象`);
+    return { mode: 'REPLACE_SOURCE', outputTableName: null };
+  }
+  if (value.mode === 'REPLACE_SOURCE') {
+    if (value.outputTableName !== null && value.outputTableName !== undefined
+      && typeof value.outputTableName !== 'string') {
+      errors.push(`${path}.outputTableName 必须是字符串或 null`);
+    }
+    return { mode: 'REPLACE_SOURCE', outputTableName: value.outputTableName == null ? null : stringValue(value.outputTableName) };
+  }
+  if (value.mode === 'CREATE_NEW_TABLE') {
+    if (typeof value.outputTableName !== 'string') {
+      errors.push(`${path}.outputTableName 必须是字符串`);
+    }
+    return { mode: 'CREATE_NEW_TABLE', outputTableName: stringValue(value.outputTableName) };
+  }
+  errors.push(`${path}.mode 仅支持 REPLACE_SOURCE 或 CREATE_NEW_TABLE`);
+  return { mode: 'REPLACE_SOURCE', outputTableName: null };
+};
+
+const parseProcessorOperations = <T extends object>(
+  value: unknown,
+  path: string,
+  errors: string[],
+  parsePayload: (operation: Record<string, unknown>, operationPath: string) => T,
+): Array<T & { operationId: string; sourceTableName: string; output: ReturnType<typeof parseProcessorOutput> }> => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    const operationPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${operationPath} 必须是对象`);
+      return [];
+    }
+    const operationId = stringValue(item.operationId);
+    if (!operationId) errors.push(`${operationPath}.operationId 必须是 UUID`);
+    else validateOptionalUuid(operationId, `${operationPath}.operationId`, errors);
+    return [{
+      operationId,
+      sourceTableName: stringValue(item.sourceTableName),
+      output: parseProcessorOutput(item.output, `${operationPath}.output`, errors),
+      ...parsePayload(item, operationPath),
+    }];
+  });
+};
+
+const parseJdbcInputTables = (
+  configuration: Record<string, unknown>,
+  path: string,
+  errors: string[],
+): Configuration<'JDBC_INPUT'>['tables'] => {
+  if (configuration.tables === undefined || configuration.tables === null) {
+    return [];
+  }
+  if (!Array.isArray(configuration.tables)) {
+    errors.push(`${path}.tables 必须是数组`);
+    return [];
+  }
+  return configuration.tables.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`${path}.tables[${index}] 必须是对象`);
+      return [];
+    }
+    const readOptionsValue = item.readOptions;
+    if (readOptionsValue !== undefined && readOptionsValue !== null && !Array.isArray(readOptionsValue)) {
+      errors.push(`${path}.tables[${index}].readOptions 必须是数组`);
+    }
+    const readOptions = Array.isArray(readOptionsValue)
+      ? readOptionsValue.flatMap((option, optionIndex) => {
+        if (!isRecord(option)) {
+          errors.push(`${path}.tables[${index}].readOptions[${optionIndex}] 必须是对象`);
+          return [];
+        }
+        return [{ name: stringValue(option.name), value: stringValue(option.value) }];
+      })
+      : [];
+    return [{ tableName: stringValue(item.tableName), readOptions }];
+  });
+};
+
+const parseModelInputSelections = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): Configuration<'MODEL_INPUT'>['models'] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`${path}[${index}] 必须是对象`);
+      return [];
+    }
+    return [{ modelId: validateOptionalUuid(stringValue(item.modelId), `${path}[${index}].modelId`, errors) }];
+  });
+};
+
+const parseOutputWrites = <T>(
+  value: unknown,
+  path: string,
+  errors: string[],
+  parseWrite: (item: Record<string, unknown>, itemPath: string) => T,
+): T[] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`${path}[${index}] 必须是对象`);
+      return [];
+    }
+    return [parseWrite(item, `${path}[${index}]`)];
+  });
+};
+
+const parseFileDatasetInputTables = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): Configuration<'FILE_DATASET_INPUT'>['tables'] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`${path}[${index}] 必须是对象`);
+      return [];
+    }
+    return [{
+      fileDatasetTableId: validateOptionalUuid(
+        stringValue(item.fileDatasetTableId), `${path}[${index}].fileDatasetTableId`, errors,
+      ),
+    }];
+  });
+};
+
+const parseHttpApiInputResources = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): Configuration<'HTTP_API_INPUT'>['resources'] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`${path}[${index}] 必须是对象`);
+      return [];
+    }
+    return [{
+      resourceId: validateOptionalUuid(stringValue(item.resourceId), `${path}[${index}].resourceId`, errors),
+      outputTableName: stringValue(item.outputTableName),
+      runtimeParameters: parseRuntimeParameters(item.runtimeParameters, `${path}[${index}].runtimeParameters`, errors),
+    }];
+  });
+};
+
+const parseSpatialServiceInputResources = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): Configuration<'SPATIAL_SERVICE_INPUT'>['resources'] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index) => {
+    if (!isRecord(item)) {
+      errors.push(`${path}[${index}] 必须是对象`);
+      return [];
+    }
+    return [{
+      resourceId: validateOptionalUuid(stringValue(item.resourceId), `${path}[${index}].resourceId`, errors),
+      outputTableName: stringValue(item.outputTableName),
+    }];
+  });
 };
 
 const parseSnapshotDeletePolicy = (
@@ -329,6 +526,7 @@ const parseMaskingDefinition = (
   }
   const supportedStrategies = new Set([
     'PARTIAL_MASK',
+    'POSITION_MASK',
     'KEEP_LENGTH_MASK',
     'FIXED_VALUE',
     'NULLIFY',
@@ -348,6 +546,14 @@ const parseMaskingDefinition = (
     }
     return raw;
   };
+  const parseMaskPosition = (raw: unknown, fieldPath: string) => {
+    if (raw === null || raw === undefined) return 2;
+    if (typeof raw !== 'number' || !Number.isInteger(raw) || raw < 1 || raw > 1024) {
+      errors.push(`${fieldPath} 必须是 1..1024 的整数`);
+      return 2;
+    }
+    return raw;
+  };
   if (strategy === 'PARTIAL_MASK') {
     const maskCharacter = value.maskCharacter === null
       || value.maskCharacter === undefined
@@ -355,8 +561,9 @@ const parseMaskingDefinition = (
     if (Array.from(maskCharacter).length !== 1) {
       errors.push(`${path}.maskCharacter 必须是一个 Unicode 字符`);
     }
-    if (value.fixedValue !== null && value.fixedValue !== undefined) {
-      errors.push(`${path}.fixedValue 不适用于 PARTIAL_MASK`);
+    if (value.maskPosition !== null && value.maskPosition !== undefined
+      || value.fixedValue !== null && value.fixedValue !== undefined) {
+      errors.push(`${path} 包含不适用于 PARTIAL_MASK 的参数`);
     }
     return {
       ...defaults,
@@ -371,6 +578,24 @@ const parseMaskingDefinition = (
       maskCharacter,
     };
   }
+  if (strategy === 'POSITION_MASK') {
+    const maskCharacter = value.maskCharacter === null
+      || value.maskCharacter === undefined
+      ? '*' : stringValue(value.maskCharacter);
+    if (Array.from(maskCharacter).length !== 1) {
+      errors.push(`${path}.maskCharacter 必须是一个 Unicode 字符`);
+    }
+    if (value.keepPrefixLength !== null && value.keepPrefixLength !== undefined
+      || value.keepSuffixLength !== null && value.keepSuffixLength !== undefined
+      || value.fixedValue !== null && value.fixedValue !== undefined) {
+      errors.push(`${path} 包含不适用于 POSITION_MASK 的参数`);
+    }
+    return {
+      ...defaults,
+      maskPosition: parseMaskPosition(value.maskPosition, `${path}.maskPosition`),
+      maskCharacter,
+    };
+  }
   if (strategy === 'KEEP_LENGTH_MASK') {
     const maskCharacter = value.maskCharacter === null
       || value.maskCharacter === undefined
@@ -380,6 +605,7 @@ const parseMaskingDefinition = (
     }
     if (value.keepPrefixLength !== null && value.keepPrefixLength !== undefined
       || value.keepSuffixLength !== null && value.keepSuffixLength !== undefined
+      || value.maskPosition !== null && value.maskPosition !== undefined
       || value.fixedValue !== null && value.fixedValue !== undefined) {
       errors.push(`${path} 包含不适用于 KEEP_LENGTH_MASK 的参数`);
     }
@@ -393,6 +619,7 @@ const parseMaskingDefinition = (
     }
     if (value.keepPrefixLength !== null && value.keepPrefixLength !== undefined
       || value.keepSuffixLength !== null && value.keepSuffixLength !== undefined
+      || value.maskPosition !== null && value.maskPosition !== undefined
       || value.maskCharacter !== null && value.maskCharacter !== undefined) {
       errors.push(`${path} 包含不适用于 FIXED_VALUE 的参数`);
     }
@@ -403,6 +630,7 @@ const parseMaskingDefinition = (
   }
   if (value.keepPrefixLength !== null && value.keepPrefixLength !== undefined
     || value.keepSuffixLength !== null && value.keepSuffixLength !== undefined
+    || value.maskPosition !== null && value.maskPosition !== undefined
     || value.maskCharacter !== null && value.maskCharacter !== undefined
     || value.fixedValue !== null && value.fixedValue !== undefined) {
     errors.push(`${path} 包含不适用于 NULLIFY 的参数`);
@@ -776,17 +1004,13 @@ const parseSpatialMeasurements = (
 const configurationParsers = {
   [CanvasNodeType.ModelInput]: (value, path) => (
     parseConfiguration<Configuration<'MODEL_INPUT'>>(value, path, (configuration, errors) => ({
-      modelId: validateOptionalUuid(
-        stringValue(configuration.modelId),
-        `${path}.modelId`,
-        errors,
-      ),
+      models: parseModelInputSelections(configuration.models, `${path}.models`, errors),
     }))
   ),
   [CanvasNodeType.JdbcInput]: (value, path) => (
-    parseConfiguration<Configuration<'JDBC_INPUT'>>(value, path, (configuration) => ({
+    parseConfiguration<Configuration<'JDBC_INPUT'>>(value, path, (configuration, errors) => ({
       dataSourceId: stringValue(configuration.dataSourceId),
-      tableName: stringValue(configuration.tableName) || legacyTableName(configuration.table),
+      tables: parseJdbcInputTables(configuration, path, errors),
     }))
   ),
   [CanvasNodeType.JdbcIncrementalInput]: (value, path) => (
@@ -840,6 +1064,7 @@ const configurationParsers = {
         errors.push(`${path}.analyzedSqlSha256 必须是 64 位小写 SHA-256`);
       }
       return {
+        sourceTableName: stringValue(configuration.sourceTableName),
         dataSourceId: validateOptionalUuid(
           stringValue(configuration.dataSourceId),
           `${path}.dataSourceId`,
@@ -861,11 +1086,10 @@ const configurationParsers = {
       value,
       path,
       (configuration, errors) => ({
-        fileDatasetTableId: validateOptionalUuid(
-          stringValue(configuration.fileDatasetTableId),
-          `${path}.fileDatasetTableId`,
-          errors,
+        fileDatasetId: validateOptionalUuid(
+          stringValue(configuration.fileDatasetId), `${path}.fileDatasetId`, errors,
         ),
+        tables: parseFileDatasetInputTables(configuration.tables, `${path}.tables`, errors),
       }),
     )
   ),
@@ -876,24 +1100,13 @@ const configurationParsers = {
         `${path}.dataSourceId`,
         errors,
       ),
-      resourceId: validateOptionalUuid(
-        stringValue(configuration.resourceId),
-        `${path}.resourceId`,
-        errors,
-      ),
-      outputTableName: stringValue(configuration.outputTableName),
-      runtimeParameters: parseRuntimeParameters(
-        configuration.runtimeParameters,
-        `${path}.runtimeParameters`,
-        errors,
-      ),
+      resources: parseHttpApiInputResources(configuration.resources, `${path}.resources`, errors),
     }))
   ),
   [CanvasNodeType.SpatialServiceInput]: (value, path) => (
     parseConfiguration<Configuration<'SPATIAL_SERVICE_INPUT'>>(value, path, (configuration, errors) => ({
       dataSourceId: validateOptionalUuid(stringValue(configuration.dataSourceId), `${path}.dataSourceId`, errors),
-      resourceId: validateOptionalUuid(stringValue(configuration.resourceId), `${path}.resourceId`, errors),
-      outputTableName: stringValue(configuration.outputTableName),
+      resources: parseSpatialServiceInputResources(configuration.resources, `${path}.resources`, errors),
     }))
   ),
   [CanvasNodeType.KafkaInput]: (value, path) => (
@@ -906,6 +1119,7 @@ const configurationParsers = {
         errors.push(`${path}.startingOffsets 仅支持 EARLIEST 或 LATEST`);
       }
       return {
+        sourceTableName: stringValue(configuration.sourceTableName),
         dataSourceId: validateOptionalUuid(
           stringValue(configuration.dataSourceId),
           `${path}.dataSourceId`,
@@ -960,6 +1174,11 @@ const configurationParsers = {
       outputTableName: stringValue(configuration.outputTableName),
       joinType: parseJoinType(configuration.joinType, `${path}.joinType`, errors),
       conditions: parseJoinConditions(configuration.conditions, `${path}.conditions`, errors),
+      outputColumns: parseJoinOutputColumns(
+        configuration.outputColumns,
+        `${path}.outputColumns`,
+        errors,
+      ),
     }))
   ),
   [CanvasNodeType.GeometryConstruct]: (value, path) => (
@@ -1228,45 +1447,75 @@ const configurationParsers = {
       outputTableName: stringValue(configuration.outputTableName),
       joinType: parseStreamJoinType(configuration.joinType, `${path}.joinType`, errors),
       conditions: parseJoinConditions(configuration.conditions, `${path}.conditions`, errors),
-    }))
-  ),
-  [CanvasNodeType.Rename]: (value, path) => (
-    parseConfiguration<Configuration<'RENAME'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      columnMappings: parseMappings(
-        configuration.columnMappings,
-        `${path}.columnMappings`,
+      outputColumns: parseJoinOutputColumns(
+        configuration.outputColumns,
+        `${path}.outputColumns`,
         errors,
       ),
     }))
   ),
+  [CanvasNodeType.Rename]: (value, path) => (
+    parseConfiguration<Configuration<'RENAME'>>(value, path, (configuration, errors) => ({
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({ columnMappings: parseMappings(operation.columnMappings, `${operationPath}.columnMappings`, errors) })),
+    }))
+  ),
   [CanvasNodeType.Filter]: (value, path) => (
     parseConfiguration<Configuration<'FILTER'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      condition: parseFilterCondition(configuration.condition, `${path}.condition`, errors),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => {
+          const rawMode = operation.mode ?? 'STRUCTURED';
+          if (rawMode !== 'STRUCTURED' && rawMode !== 'SQL_EXPRESSION') {
+            errors.push(`${operationPath}.mode 仅支持 STRUCTURED 或 SQL_EXPRESSION`);
+          }
+          if (operation.sqlExpression !== undefined
+            && operation.sqlExpression !== null
+            && typeof operation.sqlExpression !== 'string') {
+            errors.push(`${operationPath}.sqlExpression 必须是字符串`);
+          }
+          const mode = rawMode === 'SQL_EXPRESSION' ? 'SQL_EXPRESSION' : 'STRUCTURED';
+          const sqlExpression = typeof operation.sqlExpression === 'string'
+            ? operation.sqlExpression
+            : '';
+          const sqlViolation = findFilterSqlExpressionViolation(sqlExpression);
+          if (mode === 'SQL_EXPRESSION' && sqlViolation !== null && sqlViolation !== 'REQUIRED') {
+            errors.push(`${operationPath}.sqlExpression 只能包含单个布尔谓词，不能包含 WHERE、完整 SQL、注释或分号`);
+          }
+          return {
+            mode,
+            condition: parseFilterCondition(operation.condition, `${operationPath}.condition`, errors),
+            sqlExpression,
+          };
+        }),
     }))
+  ),
+  [CanvasNodeType.SqlTransform]: (value, path) => (
+    parseConfiguration<Configuration<'SQL_TRANSFORM'>>(value, path, (configuration, errors) => {
+      const sql = stringValue(configuration.sql);
+      if (sql.length > 100_000) errors.push(`${path}.sql 不能超过 100000 个字符`);
+      return {
+        outputTableName: stringValue(configuration.outputTableName),
+        sql,
+      };
+    })
   ),
   [CanvasNodeType.SelectColumns]: (value, path) => (
     parseConfiguration<Configuration<'SELECT_COLUMNS'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      columns: parseStringArray(configuration.columns, `${path}.columns`, errors),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({ columns: parseStringArray(operation.columns, `${operationPath}.columns`, errors) })),
     }))
   ),
   [CanvasNodeType.DeriveColumns]: (value, path) => (
     parseConfiguration<Configuration<'DERIVE_COLUMNS'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      derivations: parseDerivations(configuration.derivations, `${path}.derivations`, errors),
+      globalDerivations: parseDerivations(configuration.globalDerivations ?? [], `${path}.globalDerivations`, errors),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({ derivations: parseDerivations(operation.derivations, `${operationPath}.derivations`, errors) })),
     }))
   ),
   [CanvasNodeType.TypeCast]: (value, path) => (
     parseConfiguration<Configuration<'TYPE_CAST'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      casts: parseTypeCasts(configuration.casts, `${path}.casts`, errors),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({ casts: parseTypeCasts(operation.casts, `${operationPath}.casts`, errors) })),
     }))
   ),
   [CanvasNodeType.Aggregate]: (value, path) => (
@@ -1298,59 +1547,46 @@ const configurationParsers = {
   ),
   [CanvasNodeType.Deduplicate]: (value, path) => (
     parseConfiguration<Configuration<'DEDUPLICATE'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      keyColumns: parseStringArray(configuration.keyColumns, `${path}.keyColumns`, errors),
-      keepStrategy: parseDeduplicateKeepStrategy(
-        configuration.keepStrategy,
-        `${path}.keepStrategy`,
-        errors,
-      ),
-      orderBy: parseSortFields(configuration.orderBy, `${path}.orderBy`, errors),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({
+          keyColumns: parseStringArray(operation.keyColumns, `${operationPath}.keyColumns`, errors),
+          keepStrategy: parseDeduplicateKeepStrategy(operation.keepStrategy, `${operationPath}.keepStrategy`, errors),
+          orderBy: parseSortFields(operation.orderBy, `${operationPath}.orderBy`, errors),
+        })),
     }))
   ),
   [CanvasNodeType.NullHandling]: (value, path) => (
     parseConfiguration<Configuration<'NULL_HANDLING'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      rules: parseNullHandlingRules(configuration.rules, `${path}.rules`, errors),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({ rules: parseNullHandlingRules(operation.rules, `${operationPath}.rules`, errors) })),
     }))
   ),
   [CanvasNodeType.ValueMapping]: (value, path) => (
     parseConfiguration<Configuration<'VALUE_MAPPING'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      rules: parseValueMappingRules(configuration.rules, `${path}.rules`, errors),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({ rules: parseValueMappingRules(operation.rules, `${operationPath}.rules`, errors) })),
     }))
   ),
   [CanvasNodeType.MaskFields]: (value, path) => (
     parseConfiguration<Configuration<'MASK_FIELDS'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      outputTableName: stringValue(configuration.outputTableName),
-      fieldRules: parseMaskFieldRules(
-        configuration.fieldRules,
-        `${path}.fieldRules`,
-        errors,
-      ),
+      operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+        (operation, operationPath) => ({ fieldRules: parseMaskFieldRules(operation.fieldRules, `${operationPath}.fieldRules`, errors) })),
     }))
   ),
   [CanvasNodeType.JsonExtract]: (value, path) => (
     parseConfiguration<Configuration<'JSON_EXTRACT'>>(value, path, (configuration, errors) => {
-      if (configuration.failureStrategy !== 'ERROR'
-        && configuration.failureStrategy !== 'SET_NULL') {
-        errors.push(`${path}.failureStrategy 仅支持 ERROR 或 SET_NULL`);
-      }
       return {
-        sourceTableName: stringValue(configuration.sourceTableName),
-        outputTableName: stringValue(configuration.outputTableName),
-        sourceColumnName: stringValue(configuration.sourceColumnName),
-        extractions: parseJsonExtractions(
-          configuration.extractions,
-          `${path}.extractions`,
-          errors,
-        ),
-        failureStrategy: configuration.failureStrategy === 'SET_NULL'
-          ? 'SET_NULL' : 'ERROR',
+        operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+          (operation, operationPath) => {
+            if (operation.failureStrategy !== 'ERROR' && operation.failureStrategy !== 'SET_NULL') {
+              errors.push(`${operationPath}.failureStrategy 仅支持 ERROR 或 SET_NULL`);
+            }
+            return {
+              sourceColumnName: stringValue(operation.sourceColumnName),
+              extractions: parseJsonExtractions(operation.extractions, `${operationPath}.extractions`, errors),
+              failureStrategy: operation.failureStrategy === 'SET_NULL' ? 'SET_NULL' : 'ERROR',
+            };
+          }),
       };
     })
   ),
@@ -1369,63 +1605,50 @@ const configurationParsers = {
   ),
   [CanvasNodeType.TopN]: (value, path) => (
     parseConfiguration<Configuration<'TOP_N'>>(value, path, (configuration, errors) => {
-      const limit = parseInteger(configuration.limit, `${path}.limit`, errors, 10);
-      if (limit < 1 || limit > CANVAS_TOP_N_MAX_LIMIT) {
-        errors.push(`${path}.limit 必须在 1..${CANVAS_TOP_N_MAX_LIMIT}`);
-      }
-      if (configuration.tieStrategy !== 'EXACT'
-        && configuration.tieStrategy !== 'WITH_TIES') {
-        errors.push(`${path}.tieStrategy 仅支持 EXACT 或 WITH_TIES`);
-      }
       return {
-        sourceTableName: stringValue(configuration.sourceTableName),
-        outputTableName: stringValue(configuration.outputTableName),
-        partitionByColumns: parseStringArray(
-          configuration.partitionByColumns,
-          `${path}.partitionByColumns`,
-          errors,
-        ),
-        orderBy: parseSortFields(configuration.orderBy, `${path}.orderBy`, errors),
-        limit,
-        tieStrategy: configuration.tieStrategy === 'WITH_TIES'
-          ? 'WITH_TIES' : 'EXACT',
+        operations: parseProcessorOperations(configuration.operations, `${path}.operations`, errors,
+          (operation, operationPath) => {
+            const limit = parseInteger(operation.limit, `${operationPath}.limit`, errors, 10);
+            if (limit < 1 || limit > CANVAS_TOP_N_MAX_LIMIT) {
+              errors.push(`${operationPath}.limit 必须在 1..${CANVAS_TOP_N_MAX_LIMIT}`);
+            }
+            if (operation.tieStrategy !== 'EXACT' && operation.tieStrategy !== 'WITH_TIES') {
+              errors.push(`${operationPath}.tieStrategy 仅支持 EXACT 或 WITH_TIES`);
+            }
+            return {
+              partitionByColumns: parseStringArray(operation.partitionByColumns, `${operationPath}.partitionByColumns`, errors),
+              orderBy: parseSortFields(operation.orderBy, `${operationPath}.orderBy`, errors),
+              limit,
+              tieStrategy: operation.tieStrategy === 'WITH_TIES' ? 'WITH_TIES' : 'EXACT',
+            };
+          }),
       };
     })
   ),
   [CanvasNodeType.ModelOutput]: (value, path) => (
-    parseConfiguration<Configuration<'MODEL_OUTPUT'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      targetModelId: validateOptionalUuid(
-        stringValue(configuration.targetModelId),
-        `${path}.targetModelId`,
-        errors,
-      ),
-      writeMode: parseWriteMode(configuration.writeMode, `${path}.writeMode`, errors),
-      columnMappings: parseMappings(
-        configuration.columnMappings,
-        `${path}.columnMappings`,
-        errors,
-      ),
-    }))
+    parseConfiguration<Configuration<'MODEL_OUTPUT'>>(value, path, (configuration, errors) => {
+      const writes = parseOutputWrites(configuration.writes, `${path}.writes`, errors, (write, writePath) => ({
+        writeId: validateOptionalUuid(stringValue(write.writeId), `${writePath}.writeId`, errors),
+        sourceTableName: stringValue(write.sourceTableName),
+        targetModelId: validateOptionalUuid(stringValue(write.targetModelId), `${writePath}.targetModelId`, errors),
+        writeMode: parseWriteMode(write.writeMode, `${writePath}.writeMode`, errors),
+        columnMappings: parseMappings(write.columnMappings, `${writePath}.columnMappings`, errors),
+      }));
+      return { writes };
+    })
   ),
   [CanvasNodeType.JdbcOutput]: (value, path) => (
-    parseConfiguration<Configuration<'JDBC_OUTPUT'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      dataSourceId: stringValue(configuration.dataSourceId),
-      targetTableName: stringValue(configuration.targetTableName)
-        || legacyTableName(configuration.targetTable),
-      writeMode: parseWriteMode(configuration.writeMode, `${path}.writeMode`, errors),
-      columnMappings: parseMappings(
-        configuration.columnMappings,
-        `${path}.columnMappings`,
-        errors,
-      ),
-      upsertKeyColumns: parseStringArray(
-        configuration.upsertKeyColumns,
-        `${path}.upsertKeyColumns`,
-        errors,
-      ),
-    }))
+    parseConfiguration<Configuration<'JDBC_OUTPUT'>>(value, path, (configuration, errors) => {
+      const writes = parseOutputWrites(configuration.writes, `${path}.writes`, errors, (write, writePath) => ({
+        writeId: validateOptionalUuid(stringValue(write.writeId), `${writePath}.writeId`, errors),
+        sourceTableName: stringValue(write.sourceTableName),
+        targetTableName: stringValue(write.targetTableName) || legacyTableName(write.targetTable),
+        writeMode: parseWriteMode(write.writeMode, `${writePath}.writeMode`, errors),
+        columnMappings: parseMappings(write.columnMappings, `${writePath}.columnMappings`, errors),
+        upsertKeyColumns: parseStringArray(write.upsertKeyColumns, `${writePath}.upsertKeyColumns`, errors),
+      }));
+      return { dataSourceId: stringValue(configuration.dataSourceId), writes };
+    })
   ),
   [CanvasNodeType.JdbcSnapshotSyncOutput]: (value, path) => (
     parseConfiguration<Configuration<'JDBC_SNAPSHOT_SYNC_OUTPUT'>>(
@@ -1483,63 +1706,51 @@ const configurationParsers = {
     )
   ),
   [CanvasNodeType.KafkaOutput]: (value, path) => (
-    parseConfiguration<Configuration<'KAFKA_OUTPUT'>>(value, path, (configuration, errors) => ({
-      sourceTableName: stringValue(configuration.sourceTableName),
-      dataSourceId: validateOptionalUuid(
-        stringValue(configuration.dataSourceId),
-        `${path}.dataSourceId`,
-        errors,
-      ),
-      topic: stringValue(configuration.topic),
-      valueSchema: parseKafkaValueSchema(
-        configuration.valueSchema,
-        `${path}.valueSchema`,
-        errors,
-      ),
-      keyColumnName: stringValue(configuration.keyColumnName),
-      columnMappings: parseMappings(
-        configuration.columnMappings,
-        `${path}.columnMappings`,
-        errors,
-      ),
-    }))
+    parseConfiguration<Configuration<'KAFKA_OUTPUT'>>(value, path, (configuration, errors) => {
+      const writes = parseOutputWrites(configuration.writes, `${path}.writes`, errors, (write, writePath) => ({
+        writeId: validateOptionalUuid(stringValue(write.writeId), `${writePath}.writeId`, errors),
+        sourceTableName: stringValue(write.sourceTableName),
+        topic: stringValue(write.topic),
+        valueSchema: parseKafkaValueSchema(write.valueSchema, `${writePath}.valueSchema`, errors),
+        keyColumnName: stringValue(write.keyColumnName),
+        columnMappings: parseMappings(write.columnMappings, `${writePath}.columnMappings`, errors),
+      }));
+      return {
+        dataSourceId: validateOptionalUuid(
+          stringValue(configuration.dataSourceId), `${path}.dataSourceId`, errors,
+        ),
+        writes,
+      };
+    })
   ),
   [CanvasNodeType.FileOutput]: (value, path) => (
     parseConfiguration<Configuration<'FILE_OUTPUT'>>(value, path, (configuration, errors) => {
-      const rawTargetPath = stringValue(configuration.targetPath);
-      const targetPath = normalizeFileOutputPath(rawTargetPath);
-      const invalidSegment = targetPath.split('/').some(
-        (segment) => !segment || segment === '.' || segment === '..'
-          || segment.toLowerCase() === '_temporary',
-      );
-      if (!targetPath
-        || targetPath.length > 1024
-        || rawTargetPath.trim().startsWith('/')
-        || targetPath.includes('\\')
-        || targetPath.includes('://')
-        || targetPath.includes('?')
-        || targetPath.includes('#')
-        || invalidSegment) {
-        errors.push(`${path}.targetPath 必须是合法的 S3 相对路径`);
-      }
       return {
-        sourceTableName: stringValue(configuration.sourceTableName),
         dataSourceId: validateOptionalUuid(
           stringValue(configuration.dataSourceId),
           `${path}.dataSourceId`,
           errors,
         ),
-        targetPath,
-        conflictPolicy: parseFileOutputConflictPolicy(
-          configuration.conflictPolicy,
-          `${path}.conflictPolicy`,
-          errors,
-        ),
-        formatOptions: parseFileOutputFormatOptions(
-          configuration.formatOptions,
-          `${path}.formatOptions`,
-          errors,
-        ),
+        writes: parseOutputWrites(configuration.writes, `${path}.writes`, errors, (write, writePath) => {
+          const rawTargetPath = stringValue(write.targetPath);
+          const targetPath = normalizeFileOutputPath(rawTargetPath);
+          const invalidSegment = targetPath.split('/').some(
+            (segment) => !segment || segment === '.' || segment === '..'
+              || segment.toLowerCase() === '_temporary',
+          );
+          if (!targetPath || targetPath.length > 1024 || rawTargetPath.trim().startsWith('/')
+            || targetPath.includes('\\') || targetPath.includes('://') || targetPath.includes('?')
+            || targetPath.includes('#') || invalidSegment) {
+            errors.push(`${writePath}.targetPath 必须是合法的 S3 相对路径`);
+          }
+          return {
+            writeId: validateOptionalUuid(stringValue(write.writeId), `${writePath}.writeId`, errors),
+            sourceTableName: stringValue(write.sourceTableName),
+            targetPath,
+            conflictPolicy: parseFileOutputConflictPolicy(write.conflictPolicy, `${writePath}.conflictPolicy`, errors),
+            formatOptions: parseFileOutputFormatOptions(write.formatOptions, `${writePath}.formatOptions`, errors),
+          };
+        }),
       };
     })
   ),

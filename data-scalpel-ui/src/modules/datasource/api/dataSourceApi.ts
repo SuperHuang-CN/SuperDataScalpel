@@ -205,6 +205,7 @@ export const fetchDataSourceTables = (id: string, query: TableQuery): Promise<Ta
   if (query.schema) searchParams.set('schema', query.schema);
   if (query.keyword) searchParams.set('keyword', query.keyword);
   if (query.includeViews) searchParams.set('includeViews', 'true');
+  if (query.limit !== undefined) searchParams.set('limit', String(query.limit));
   const suffix = searchParams.size ? `?${searchParams.toString()}` : '';
   return requestJson<TableListResult>(`${DATA_SOURCE_PATH}/${id}/tables${suffix}`);
 };

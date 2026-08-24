@@ -40,7 +40,7 @@ public record CanvasTaskRunManifest(
         SparkJarExecutionPayload sparkJarJob,
         SparkStreamingJarExecutionPayload streamingSparkJarJob
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 18;
+    public static final int CURRENT_MANIFEST_VERSION = 21;
 
     public CanvasTaskRunManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);

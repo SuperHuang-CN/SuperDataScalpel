@@ -7,6 +7,12 @@ import type {
 
 const shellQuote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
 
+export const buildDataServiceAccessUrl = (publicUrl: string, routePath: string): string => {
+  const baseUrl = publicUrl.replace(/\/+$/, '');
+  const normalizedRoutePath = routePath.replace(/^\/+/, '');
+  return normalizedRoutePath ? `${baseUrl}/${normalizedRoutePath}` : baseUrl;
+};
+
 const exampleValue = (type: PlatformTypeDefinition): unknown => {
   switch (type.type) {
     case 'BOOLEAN': return true;
@@ -34,9 +40,7 @@ export const buildDataServiceCurlCommand = (
   routePath: string,
   service?: Pick<DataServiceDetail, 'type' | 'sqlDefinition'> & { accessMode?: DataServiceAccessMode },
 ): string => {
-  const baseUrl = publicUrl.replace(/\/+$/, '');
-  const normalizedRoutePath = routePath.replace(/^\/+/, '');
-  const requestUrl = normalizedRoutePath ? `${baseUrl}/${normalizedRoutePath}` : baseUrl;
+  const requestUrl = buildDataServiceAccessUrl(publicUrl, routePath);
   const body = service?.type === 'SQL_QUERY'
     ? {
       pageNo: 1,

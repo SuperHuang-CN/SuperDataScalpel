@@ -19,11 +19,14 @@
 | 策略 | 参数 | 类型边界 | 语义 |
 | --- | --- | --- | --- |
 | `PARTIAL_MASK` | `keepPrefixLength`、`keepSuffixLength`、`maskCharacter` | 仅 `STRING` | 保留前后字符，中间等长掩码；短值整体掩码 |
+| `POSITION_MASK` | `maskPosition`、`maskCharacter` | 仅 `STRING` | 替换从 1 开始计数的第 N 个字符；长度不足 N 时原样保留 |
 | `KEEP_LENGTH_MASK` | `maskCharacter` | 仅 `STRING` | 每个字符替换为掩码字符 |
 | `FIXED_VALUE` | `fixedValue` | 仅 `STRING` | 使用固定字符串替换，允许空字符串 |
 | `NULLIFY` | 无 | 任意可空平台类型 | 替换为原字段类型的 `null` |
 
-所有策略对输入 `null` 保持 `null`。掩码字符默认 `*`，配置时必须恰好包含一个 Unicode 字符；保留长度为 `0..1024` 的整数；固定值最长 1024 个字符。未被当前策略使用的参数必须为空，避免同一执行含义出现多种不稳定表达。
+所有策略对输入 `null` 保持 `null`。掩码字符默认 `*`，配置时必须恰好包含一个 Unicode 字符；保留长度为 `0..1024` 的整数；按位置掩码的位置为 `1..1024` 的整数，缺失时默认第 `2` 位；固定值最长 1024 个字符。未被当前策略使用的参数必须为空，避免同一执行含义出现多种不稳定表达。
+
+例如 `POSITION_MASK(maskPosition=2, maskCharacter="*")` 会把 `张三` 变为 `张*`、把 `张三丰` 变为 `张*丰`，而 `张` 保持不变。
 
 第一版不支持脚本、自由表达式、自由正则、加密、HMAC 或密钥管理。
 
@@ -74,6 +77,7 @@ POST /api/v1/masking-rules/{ruleId}/actions/delete
         "strategy": "PARTIAL_MASK",
         "keepPrefixLength": 3,
         "keepSuffixLength": 4,
+        "maskPosition": null,
         "maskCharacter": "*",
         "fixedValue": null
       }

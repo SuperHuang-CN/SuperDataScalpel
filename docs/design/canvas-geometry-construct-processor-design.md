@@ -7,7 +7,7 @@
 - 节点类型：`GEOMETRY_CONSTRUCT`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：`BATCH`、`STREAMING`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `GEOMETRY_CONSTRUCT` 从一张逻辑表的普通字段构造一个 Sedona Geometry 字段，并以新
 逻辑表名追加结果。首期支持 WKT、WKB、GeoJSON 和二维 X/Y 坐标四种来源，用于把

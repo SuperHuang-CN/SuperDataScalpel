@@ -1,38 +1,49 @@
-import { Form, Input, Select } from 'antd';
+import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
+import { Button, Empty, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import type { TableColumnsType } from 'antd';
 import { useImperativeHandle, useMemo, useState } from 'react';
-import { buildDataSourceSearch, useDataSources, useSpatialFeatureResources } from '../../../../datasource';
-import { CanvasNodeType, type CanvasNodeConfigurationUpdateByType } from '../../canvasTypes';
+import { buildDataSourceSearch, useDataSources, useSpatialFeatureResources, type SpatialFeatureResource } from '../../../../datasource';
+import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
+import { configurationFingerprint } from '../../components/CanvasInspectorUtils';
+import { CanvasNodeType, type SpatialServiceInputConfiguration, type SpatialServiceInputResourceSelection } from '../../canvasTypes';
 import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } from '../nodeSpec';
 
-interface Values { dataSourceId: string; resourceId: string; outputTableName: string; }
+interface Values { dataSourceId: string; }
 
-const Inspector = ({ node, onApply, onDirtyChange, inspectorRef }: CanvasNodeInspectorComponentProps<typeof CanvasNodeType.SpatialServiceInput>) => {
+const ResourcePicker = ({ open, sourceId, value, onCancel, onConfirm }: { open: boolean; sourceId: string; value: readonly SpatialServiceInputResourceSelection[]; onCancel: () => void; onConfirm: (value: SpatialServiceInputResourceSelection[]) => void; }) => {
+  const query = useSpatialFeatureResources(sourceId || undefined, open && Boolean(sourceId));
+  const [selected, setSelected] = useState<SpatialServiceInputResourceSelection[]>(() => value.map((item) => ({ ...item })));
+  const resources = query.data ?? [];
+  const selectedIds = useMemo(() => new Set(selected.map((item) => item.resourceId)), [selected]);
+  const toggle = (resource: SpatialFeatureResource, checked: boolean) => setSelected((current) => checked ? current.some((item) => item.resourceId === resource.id) ? current : [...current, { resourceId: resource.id, outputTableName: resource.code }] : current.filter((item) => item.resourceId !== resource.id));
+  const columns: TableColumnsType<SpatialFeatureResource> = [{ title: '要素资源', key: 'resource', ellipsis: true, render: (_, resource) => <><Typography.Text>{resource.name}</Typography.Text><Typography.Text type="secondary" className="canvas-resource-row-meta">{resource.code} · {resource.protocol}</Typography.Text></> }, { title: 'Geometry', key: 'geometry', width: 155, render: (_, resource) => resource.geometryFieldName ? `${resource.geometryFieldName} · EPSG:${resource.epsgCode ?? '—'}` : '无 Geometry' }, { title: '状态', key: 'enabled', width: 80, render: (_, resource) => <Tag color={resource.enabled ? 'success' : 'error'}>{resource.enabled ? '启用' : '停用'}</Tag> }];
+  return <Modal open={open} width={860} title="管理空间要素资源" onCancel={onCancel} footer={<Space><Button onClick={onCancel}>取消</Button><Button type="primary" onClick={() => onConfirm(selected)}>确定 · {selected.length} 个资源</Button></Space>}><div className="canvas-jdbc-input-picker-grid"><section className="canvas-jdbc-input-picker-pane"><div className="canvas-jdbc-input-picker-heading"><strong>候选资源</strong><Button type="link" size="small" onClick={() => setSelected((current) => { const ids = new Set(current.map((item) => item.resourceId)); return [...current, ...resources.filter((resource) => resource.enabled && !ids.has(resource.id)).map((resource) => ({ resourceId: resource.id, outputTableName: resource.code }))]; })}>选择当前结果</Button></div><Table<SpatialFeatureResource> size="small" pagination={false} loading={query.isFetching} dataSource={resources} rowKey="id" columns={columns} locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有空间要素资源" /> }} rowSelection={{ selectedRowKeys: [...selectedIds], getCheckboxProps: (resource) => ({ disabled: !resource.enabled }), onSelect: toggle }} /></section><section className="canvas-jdbc-input-picker-pane"><div className="canvas-jdbc-input-picker-heading"><strong>已选资源</strong><Typography.Text type="secondary">完整保留</Typography.Text></div><Table<SpatialServiceInputResourceSelection> size="small" pagination={false} dataSource={selected} rowKey="resourceId" columns={[{ title: '输出表', dataIndex: 'outputTableName', ellipsis: true }, { title: '操作', width: 64, render: (_, item) => <Button type="text" danger icon={<DeleteOutlined />} onClick={() => setSelected((current) => current.filter((candidate) => candidate.resourceId !== item.resourceId))} /> }]} /></section></div></Modal>;
+};
+
+const SpatialOutputNameModal = ({ selection, onCancel, onConfirm }: { selection: SpatialServiceInputResourceSelection; onCancel: () => void; onConfirm: (outputTableName: string) => void; }) => {
+  const [outputTableName, setOutputTableName] = useState(selection.outputTableName);
+  return <Modal open title="空间资源输出配置" onCancel={onCancel} onOk={() => onConfirm(outputTableName.trim())}><Form autoComplete="off" layout="vertical"><Form.Item label="输出表名" validateStatus={/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(outputTableName) ? undefined : 'error'} help={/^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(outputTableName) ? undefined : '只能包含字母、数字和下划线'}><Input value={outputTableName} onChange={(event) => setOutputTableName(event.target.value)} placeholder="输出表名" /></Form.Item></Form></Modal>;
+};
+
+const Inspector = ({ node, validation, validationUnavailableMessage, onApply, onDirtyChange, inspectorRef }: CanvasNodeInspectorComponentProps<typeof CanvasNodeType.SpatialServiceInput>) => {
   const [form] = Form.useForm<Values>();
-  const sourceId = Form.useWatch('dataSourceId', form) ?? '';
+  const [resources, setResources] = useState<SpatialServiceInputResourceSelection[]>(node.configuration.resources.map((item) => ({ ...item })));
+  const [pickerOpen, setPickerOpen] = useState(false);
+  const [settingsIndex, setSettingsIndex] = useState<number | null>(null);
   const [sourceOpen, setSourceOpen] = useState(false);
+  const sourceId = Form.useWatch('dataSourceId', form) ?? '';
   const sourcesQuery = useDataSources(useMemo(() => ({ search: buildDataSourceSearch({ purpose: 'SOURCE', enabled: true }), page: 0, size: 100, sort: 'name' }), []), sourceOpen || Boolean(sourceId));
   const resourcesQuery = useSpatialFeatureResources(sourceId || undefined, Boolean(sourceId));
-  const sources = (sourcesQuery.data?.content ?? []).filter((source) => source.type === 'ARCGIS_REST' || source.type === 'WFS');
-  const apply = (values: Values) => {
-    onApply({ id: node.id, type: node.type, configuration: { dataSourceId: values.dataSourceId ?? '', resourceId: values.resourceId ?? '', outputTableName: values.outputTableName?.trim() ?? '' } } as CanvasNodeConfigurationUpdateByType<typeof CanvasNodeType.SpatialServiceInput>);
-    onDirtyChange(false);
-  };
-  useImperativeHandle(inspectorRef, (): CanvasNodeInspectorHandle => ({
-    apply: async () => {
-      try {
-        void form.validateFields().catch(() => undefined);
-        apply(form.getFieldsValue(true));
-        return true;
-      } catch {
-        return false;
-      }
-    },
-  }));
-  return <Form<Values> autoComplete="off" form={form} layout="vertical" initialValues={node.configuration} onFinish={apply} onValuesChange={() => onDirtyChange(true)}>
-    <Form.Item name="dataSourceId" label="空间服务数据源" rules={[{ required: true, message: '请选择 ArcGIS REST 或 WFS 数据源' }]}><Select showSearch open={sourceOpen} onOpenChange={setSourceOpen} optionFilterProp="label" loading={sourcesQuery.isFetching} options={sources.map((source) => ({ value: source.id, label: `${source.name} · ${source.type}` }))} /></Form.Item>
-    <Form.Item name="resourceId" label="空间要素资源" rules={[{ required: true, message: '请选择已登记的空间要素资源' }]}><Select showSearch disabled={!sourceId} loading={resourcesQuery.isFetching} options={(resourcesQuery.data ?? []).map((resource) => ({ value: resource.id, label: `${resource.name} · ${resource.epsgCode ? `EPSG:${resource.epsgCode}` : '未指定坐标系'}`, disabled: !resource.enabled }))} /></Form.Item>
-    <Form.Item name="outputTableName" label="输出表名" rules={[{ required: true, whitespace: true }, { pattern: /^[A-Za-z_][A-Za-z0-9_]{0,127}$/, message: '只能包含字母、数字和下划线' }]}><Input placeholder="例如 spatial_features" /></Form.Item>
-  </Form>;
+  const sourceOptions = (sourcesQuery.data?.content ?? []).filter((source) => source.type === 'ARCGIS_REST' || source.type === 'WFS').map((source) => ({ value: source.id, label: `${source.name} · ${source.type}` }));
+  const byId = new Map((resourcesQuery.data ?? []).map((item) => [item.id, item]));
+  const configuration = (values: Partial<Values>, selected: SpatialServiceInputResourceSelection[]): SpatialServiceInputConfiguration => ({ dataSourceId: values.dataSourceId ?? '', resources: selected.map((item) => ({ ...item, outputTableName: item.outputTableName.trim() })) });
+  const markDirty = (values: Partial<Values>, selected: SpatialServiceInputResourceSelection[]) => onDirtyChange(configurationFingerprint(configuration(values, selected)) !== configurationFingerprint(node.configuration));
+  const update = (next: SpatialServiceInputResourceSelection[]) => { setResources(next); markDirty(form.getFieldsValue(true), next); };
+  const apply = () => { onApply({ id: node.id, type: node.type, configuration: configuration(form.getFieldsValue(true), resources) }); onDirtyChange(false); };
+  useImperativeHandle<CanvasNodeInspectorHandle, CanvasNodeInspectorHandle>(inspectorRef, () => ({ apply: async () => { void form.validateFields().catch(() => undefined); apply(); return true; } }));
+  const move = (index: number, direction: -1 | 1) => { const target = index + direction; if (target < 0 || target >= resources.length) return; const next = [...resources]; [next[index], next[target]] = [next[target], next[index]]; update(next); };
+  const current = settingsIndex === null ? null : resources[settingsIndex] ?? null;
+  return <Space orientation="vertical" size={12} className="canvas-inspector-content"><CanvasNodeValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} /><Form<Values> autoComplete="off" form={form} layout="vertical" initialValues={{ dataSourceId: node.configuration.dataSourceId }} onValuesChange={(_changed, values) => markDirty(values, resources)}><Form.Item name="dataSourceId" label="空间服务数据源" rules={[{ required: true, message: '请选择 ArcGIS REST 或 WFS 数据源' }]}><Select showSearch open={sourceOpen} onOpenChange={setSourceOpen} optionFilterProp="label" loading={sourcesQuery.isFetching} options={sourceOptions} /></Form.Item></Form><div className="canvas-jdbc-input-table-section-heading"><div><Typography.Text strong>空间要素资源</Typography.Text><Typography.Text type="secondary"> 每个资源产生一张 Canvas 表</Typography.Text></div><Button disabled={!sourceId} icon={<PlusOutlined />} onClick={() => setPickerOpen(true)}>管理资源</Button></div>{resources.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未选择空间要素资源" /> : resources.map((item, index) => { const detail = byId.get(item.resourceId); return <div className="canvas-jdbc-input-selected-table" key={item.resourceId}><div className="canvas-jdbc-input-selected-table-main"><span className="canvas-jdbc-input-selected-table-index">{index + 1}</span><div className="canvas-jdbc-input-selected-table-identity"><Typography.Text ellipsis>{detail ? `${detail.name} → ${item.outputTableName}` : item.outputTableName}</Typography.Text><div className="canvas-jdbc-input-selected-table-meta"><Tag>{detail?.geometryFieldName ?? '无 Geometry'}</Tag>{detail?.epsgCode && <Tag>EPSG:{detail.epsgCode}</Tag>}{detail && <Tag>{detail.columns.length} 个字段</Tag>}</div></div><Space size={0} className="canvas-jdbc-input-selected-table-actions"><Tooltip title="上移"><Button type="text" size="small" disabled={index === 0} icon={<UpOutlined />} onClick={() => move(index, -1)} /></Tooltip><Tooltip title="下移"><Button type="text" size="small" disabled={index === resources.length - 1} icon={<DownOutlined />} onClick={() => move(index, 1)} /></Tooltip><Tooltip title="配置输出表名"><Button type="text" size="small" icon={<SettingOutlined />} onClick={() => setSettingsIndex(index)} /></Tooltip><Tooltip title="移除"><Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => update(resources.filter((candidate) => candidate.resourceId !== item.resourceId))} /></Tooltip></Space></div></div>; })}{pickerOpen && <ResourcePicker key={JSON.stringify(resources)} open sourceId={sourceId} value={resources} onCancel={() => setPickerOpen(false)} onConfirm={(next) => { update(next); setPickerOpen(false); }} />}{current && <SpatialOutputNameModal key={`${settingsIndex}:${current.resourceId}`} selection={current} onCancel={() => setSettingsIndex(null)} onConfirm={(outputTableName) => { if (settingsIndex === null) return; update(resources.map((resource, index) => index === settingsIndex ? { ...resource, outputTableName } : resource)); setSettingsIndex(null); }} />}</Space>;
 };
 
 export default Inspector;

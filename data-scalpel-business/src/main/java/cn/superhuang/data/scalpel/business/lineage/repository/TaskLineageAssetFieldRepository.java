@@ -12,6 +12,8 @@ import java.util.UUID;
 public interface TaskLineageAssetFieldRepository extends JpaRepository<TaskLineageAssetField, UUID> {
     List<TaskLineageAssetField> findAllBySnapshotIdIn(Collection<UUID> snapshotIds);
 
+    List<TaskLineageAssetField> findAllByAssetIdIn(Collection<UUID> assetIds);
+
     @Query("""
             select field
             from TaskLineageAssetField field

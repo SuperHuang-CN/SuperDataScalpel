@@ -12,6 +12,8 @@ import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import org.springframework.http.HttpStatus;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.server.ResponseStatusException;
@@ -23,6 +25,9 @@ import java.util.stream.Collectors;
 /** Builds one current task snapshot graph without consulting Spark runtime evidence. */
 @Service
 public class TaskLineageQueryService {
+    private static final int DEFAULT_FIELD_COUNT = 20;
+    private static final int MAXIMUM_NODES = 200;
+    private static final int MAXIMUM_EDGES = 600;
     private final DataTaskRepository taskRepository;
     private final TaskLineageSnapshotRepository snapshotRepository;
     private final TaskLineageAssetRepository assetRepository;
@@ -94,66 +99,100 @@ public class TaskLineageQueryService {
             String requestedFlowKey,
             String requestedOutputFieldKey
     ) {
+        TaskFieldLineageGraphResponse result = fieldLines(
+                taskId, requestedFlowKey,
+                requestedOutputFieldKey == null ? null : List.of(requestedOutputFieldKey)
+        );
+        String selectedFieldKey = result.fieldGraph().focusFields().isEmpty()
+                ? null : result.fieldGraph().focusFields().getFirst().fieldKey();
+        return new TaskLineageGraphResponse(
+                result.taskId(), result.definitionVersion(), result.coverage(), result.flows(),
+                result.selectedFlowKey(), selectedFieldKey, result.fieldGraph().graph()
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public TaskFieldLineageGraphResponse fieldLines(
+            UUID taskId,
+            String requestedFlowKey,
+            List<String> requestedOutputFieldKeys
+    ) {
         DataTask task = requireTask(taskId);
-        Bundle bundle = load(taskId);
-        if (bundle.snapshot() == null) return empty(task);
-        List<TaskLineageFlowResponse> flows = flowResponses(bundle);
+        Bundle baseBundle = loadForFields(taskId);
+        if (baseBundle.snapshot() == null) return emptyFields(task);
+        List<TaskLineageFlowResponse> flows = flowResponses(baseBundle);
         TaskLineageFlowResponse selected = selectFlow(flows, requestedFlowKey);
         if (selected.outputFields().isEmpty()) {
-            return response(taskId, bundle, flows, selected.flowKey(), null,
-                    new LineageGraphResponse(taskNodeId(bundle.snapshot(), selected.flowKey()),
+            return new TaskFieldLineageGraphResponse(
+                    taskId, baseBundle.snapshot().getDefinitionVersion(), baseBundle.snapshot().getCoverage(), flows,
+                    selected.flowKey(), new LineageFieldGraphResponse(
+                    new LineageGraphResponse(taskNodeId(baseBundle.snapshot(), selected.flowKey()),
                             LineageGranularity.FIELD, selected.coverage(), false,
-                            List.of("当前输出链路只有表级血缘"), List.of(), List.of()));
+                            List.of("当前输出链路只有表级血缘"), List.of(), List.of()), List.of()));
         }
-        TaskLineageOutputFieldResponse selectedField = requestedOutputFieldKey == null
-                ? selected.outputFields().getFirst()
-                : selected.outputFields().stream()
-                .filter(field -> field.fieldKey().equals(requestedOutputFieldKey)).findFirst()
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "输出字段不属于所选血缘链路"));
+        List<TaskLineageOutputFieldResponse> selectedFields = selectOutputFields(selected, requestedOutputFieldKeys);
+        Bundle bundle = enrichFieldBundle(baseBundle, selected.flowKey(),
+                selectedFields.stream().map(TaskLineageOutputFieldResponse::fieldKey).collect(Collectors.toSet()));
         List<TaskLineageAsset> flowAssets = bundle.assets().stream()
                 .filter(asset -> asset.getFlowKey().equals(selected.flowKey())).toList();
         TaskLineageAsset outputAsset = output(flowAssets);
-        TaskLineageAssetField target = bundle.fields().stream()
-                .filter(field -> field.getAssetId().equals(outputAsset.getId())
-                        && field.getFieldKey().equals(selectedField.fieldKey())).findFirst().orElseThrow();
-
         String taskNodeId = taskNodeId(bundle.snapshot(), selected.flowKey());
-        List<LineageGraphNodeResponse> nodes = new ArrayList<>();
-        List<LineageGraphEdgeResponse> graphEdges = new ArrayList<>();
-        nodes.add(taskNode(task, bundle.snapshot(), taskNodeId, outputAsset.getWriteMode()));
-        String targetNodeId = fieldNodeId(target, LineageGraphNodeSide.DOWNSTREAM);
-        nodes.add(fieldNode(target, outputAsset, LineageGraphNodeSide.DOWNSTREAM, bundle));
-
+        Map<String, LineageGraphNodeResponse> nodes = new LinkedHashMap<>();
+        Map<String, LineageGraphEdgeResponse> graphEdges = new LinkedHashMap<>();
+        Set<String> allFocusKeys = selectedFields.stream().map(TaskLineageOutputFieldResponse::fieldKey)
+                .collect(Collectors.toCollection(LinkedHashSet::new));
+        mergeNode(nodes, taskNode(task, bundle.snapshot(), taskNodeId, outputAsset.getWriteMode()), allFocusKeys, false);
         Map<UUID, TaskLineageAssetField> fieldsById = bundle.fields().stream()
                 .collect(Collectors.toMap(TaskLineageAssetField::getId, Function.identity()));
         Map<UUID, TaskLineageAsset> assetsById = bundle.assets().stream()
                 .collect(Collectors.toMap(TaskLineageAsset::getId, Function.identity()));
+        Map<String, TaskLineageAssetField> targetsByKey = bundle.fields().stream()
+                .filter(field -> field.getAssetId().equals(outputAsset.getId()))
+                .collect(Collectors.toMap(TaskLineageAssetField::getFieldKey, Function.identity()));
+        Map<UUID, List<TaskLineageFieldEdge>> incomingByTarget = bundle.edges().stream()
+                .filter(edge -> edge.getFlowKey().equals(selected.flowKey()))
+                .collect(Collectors.groupingBy(TaskLineageFieldEdge::getTargetAssetFieldId));
+        Map<String, Boolean> hasPath = new LinkedHashMap<>();
+        boolean truncated = false;
 
-        List<TaskLineageFieldEdge> incoming = bundle.edges().stream()
-                .filter(edge -> edge.getFlowKey().equals(selected.flowKey())
-                        && edge.getTargetAssetFieldId().equals(target.getId())).toList();
-        if (incoming.isEmpty()) {
-            graphEdges.add(new LineageGraphEdgeResponse(
-                    edgeId(taskNodeId, targetNodeId, "effect"), taskNodeId, targetNodeId,
-                    LineageGraphEdgeType.FIELD_EFFECT, null, target.getOutputEffect(), List.of()));
-        } else {
-            for (TaskLineageFieldEdge edge : incoming) {
+        for (TaskLineageOutputFieldResponse selectedField : selectedFields) {
+            TaskLineageAssetField target = targetsByKey.get(selectedField.fieldKey());
+            if (target != null) {
+                mergeNode(nodes, fieldNode(target, outputAsset, LineageGraphNodeSide.DOWNSTREAM, bundle),
+                        Set.of(selectedField.fieldKey()), true);
+            }
+        }
+
+        for (TaskLineageOutputFieldResponse selectedField : selectedFields) {
+            TaskLineageAssetField target = targetsByKey.get(selectedField.fieldKey());
+            if (target == null) continue;
+            Set<String> focusKeys = Set.of(selectedField.fieldKey());
+            String targetNodeId = fieldNodeId(target, LineageGraphNodeSide.DOWNSTREAM);
+            List<TaskLineageFieldEdge> incoming = incomingByTarget.getOrDefault(target.getId(), List.of());
+            if (incoming.isEmpty()) {
+                mergeEdge(graphEdges, new LineageGraphEdgeResponse(
+                        edgeId(taskNodeId, targetNodeId, "effect"), taskNodeId, targetNodeId,
+                        LineageGraphEdgeType.FIELD_EFFECT, null, target.getOutputEffect(), List.of()), focusKeys);
+                hasPath.put(selectedField.fieldKey(), target.getOutputEffect() != LineageOutputFieldEffect.NOT_WRITTEN);
+            } else {
+                hasPath.put(selectedField.fieldKey(), true);
+                for (TaskLineageFieldEdge edge : incoming) {
                 TaskLineageAssetField source = fieldsById.get(edge.getSourceAssetFieldId());
                 TaskLineageAsset sourceAsset = source == null ? null : assetsById.get(source.getAssetId());
                 if (source == null || sourceAsset == null) continue;
                 String sourceNodeId = fieldNodeId(source, LineageGraphNodeSide.UPSTREAM);
-                nodes.add(fieldNode(source, sourceAsset, LineageGraphNodeSide.UPSTREAM, bundle));
-                graphEdges.add(new LineageGraphEdgeResponse(
+                    mergeNode(nodes, fieldNode(source, sourceAsset, LineageGraphNodeSide.UPSTREAM, bundle), focusKeys, false);
+                    mergeEdge(graphEdges, new LineageGraphEdgeResponse(
                         edgeId(sourceNodeId, taskNodeId, edge.getId().toString()),
                         sourceNodeId, taskNodeId, LineageGraphEdgeType.DERIVES,
-                        edge.getDerivationType(), null, List.of()));
+                            edge.getDerivationType(), null, List.of()), focusKeys);
+                }
+                mergeEdge(graphEdges, new LineageGraphEdgeResponse(
+                        edgeId(taskNodeId, targetNodeId, target.getFieldKey()), taskNodeId, targetNodeId,
+                        LineageGraphEdgeType.DERIVES, incoming.getFirst().getDerivationType(),
+                        target.getOutputEffect(), List.of()), focusKeys);
             }
-            graphEdges.add(new LineageGraphEdgeResponse(
-                    edgeId(taskNodeId, targetNodeId, target.getFieldKey()), taskNodeId, targetNodeId,
-                    LineageGraphEdgeType.DERIVES, incoming.getFirst().getDerivationType(),
-                    target.getOutputEffect(), List.of()));
         }
-
         bundle.usages().stream()
                 .filter(usage -> usage.getFlowKey().equals(selected.flowKey()))
                 .collect(Collectors.groupingBy(
@@ -168,16 +207,54 @@ public class TaskLineageQueryService {
                         return;
                     }
                     String sourceNodeId = fieldNodeId(source, LineageGraphNodeSide.UPSTREAM);
-                    nodes.add(fieldNode(source, sourceAsset, LineageGraphNodeSide.UPSTREAM, bundle));
-                    graphEdges.add(new LineageGraphEdgeResponse(
+                    mergeNode(nodes, fieldNode(source, sourceAsset, LineageGraphNodeSide.UPSTREAM, bundle), allFocusKeys, false);
+                    mergeEdge(graphEdges, new LineageGraphEdgeResponse(
                             edgeId(sourceNodeId, taskNodeId, "usage:" + source.getId()),
                             sourceNodeId, taskNodeId, LineageGraphEdgeType.FIELD_EFFECT,
-                            null, null, usageTypes.stream().sorted().toList()));
+                            null, null, usageTypes.stream().sorted().toList()), allFocusKeys);
                 });
-        return response(taskId, bundle, flows, selected.flowKey(), selectedField.fieldKey(),
-                new LineageGraphResponse(taskNodeId, LineageGranularity.FIELD,
-                        selected.coverage(), false, warnings(bundle, flowAssets),
-                        deduplicateNodes(nodes), graphEdges));
+        Map<String, LineageGraphNodeResponse> boundedNodes = nodes;
+        if (nodes.size() > MAXIMUM_NODES) {
+            boundedNodes = nodes.entrySet().stream().limit(MAXIMUM_NODES)
+                    .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue, (a, b) -> a, LinkedHashMap::new));
+            truncated = true;
+        }
+        Set<String> retainedNodeIds = boundedNodes.keySet();
+        List<LineageGraphEdgeResponse> retainedEdges = graphEdges.values().stream()
+                .filter(edge -> retainedNodeIds.contains(edge.source()) && retainedNodeIds.contains(edge.target()))
+                .limit(MAXIMUM_EDGES).toList();
+        if (retainedEdges.size() < graphEdges.size()) truncated = true;
+        LinkedHashSet<String> graphWarnings = new LinkedHashSet<>(warnings(bundle, flowAssets));
+        if (truncated) graphWarnings.add("字段血缘超过 200 个节点或 600 条关系，当前图已截断");
+        boolean finalTruncated = truncated;
+        List<LineageFocusFieldResponse> summaries = selectedFields.stream().map(field ->
+                new LineageFocusFieldResponse(
+                        field.fieldKey(), field.modelFieldId(), field.code(), field.name(), field.sortOrder(),
+                        selected.coverage(), hasPath.getOrDefault(field.fieldKey(), false), finalTruncated,
+                        hasPath.getOrDefault(field.fieldKey(), false) ? List.of() : List.of("该输出字段暂无来源路径")
+                )).toList();
+        LineageGraphResponse graph = new LineageGraphResponse(
+                taskNodeId, LineageGranularity.FIELD, selected.coverage(), truncated,
+                List.copyOf(graphWarnings), List.copyOf(boundedNodes.values()), retainedEdges
+        );
+        return new TaskFieldLineageGraphResponse(
+                taskId, bundle.snapshot().getDefinitionVersion(), bundle.snapshot().getCoverage(), flows,
+                selected.flowKey(), new LineageFieldGraphResponse(graph, summaries)
+        );
+    }
+
+    private static List<TaskLineageOutputFieldResponse> selectOutputFields(
+            TaskLineageFlowResponse flow, List<String> requestedKeys
+    ) {
+        if (requestedKeys == null) return flow.outputFields().stream().limit(DEFAULT_FIELD_COUNT).toList();
+        if (requestedKeys.isEmpty()) return List.of();
+        Set<String> requested = new LinkedHashSet<>(requestedKeys);
+        List<TaskLineageOutputFieldResponse> selected = flow.outputFields().stream()
+                .filter(field -> requested.contains(field.fieldKey())).toList();
+        if (selected.size() != requested.size()) {
+            throw new ResponseStatusException(HttpStatus.NOT_FOUND, "部分输出字段不属于所选血缘链路");
+        }
+        return selected;
     }
 
     private Bundle load(UUID taskId) {
@@ -203,6 +280,67 @@ public class TaskLineageQueryService {
         return new Bundle(snapshot, assets, fields,
                 edgeRepository.findAllBySnapshotIdIn(snapshotIds),
                 usageRepository.findAllBySnapshotIdIn(snapshotIds), models, modelFields, dataSources);
+    }
+
+    private Bundle loadForFields(UUID taskId) {
+        TaskLineageSnapshot snapshot = snapshotRepository
+                .findFirstByTaskIdAndRetiredAtIsNullOrderByGenerationDesc(taskId).orElse(null);
+        if (snapshot == null) return Bundle.empty();
+        Set<UUID> snapshotIds = Set.of(snapshot.getId());
+        List<TaskLineageAsset> assets = assetRepository.findAllBySnapshotIdIn(snapshotIds);
+        Set<UUID> outputAssetIds = assets.stream().filter(asset -> asset.getRole() == LineageAssetRole.OUTPUT)
+                .map(TaskLineageAsset::getId).collect(Collectors.toSet());
+        List<TaskLineageAssetField> fields = outputAssetIds.isEmpty()
+                ? List.of() : fieldRepository.findAllByAssetIdIn(outputAssetIds);
+        return bundleMetadata(snapshot, assets, fields, List.of(), List.of());
+    }
+
+    private Bundle enrichFieldBundle(Bundle base, String flowKey, Set<String> selectedFieldKeys) {
+        TaskLineageAsset outputAsset = base.assets().stream()
+                .filter(asset -> asset.getRole() == LineageAssetRole.OUTPUT && asset.getFlowKey().equals(flowKey))
+                .findFirst().orElseThrow();
+        List<TaskLineageAssetField> targets = base.fields().stream()
+                .filter(field -> field.getAssetId().equals(outputAsset.getId())
+                        && selectedFieldKeys.contains(field.getFieldKey())).toList();
+        Set<UUID> targetIds = targets.stream().map(TaskLineageAssetField::getId).collect(Collectors.toSet());
+        List<TaskLineageFieldEdge> edges = targetIds.isEmpty()
+                ? List.of() : edgeRepository.findAllByTargetAssetFieldIdIn(
+                        targetIds, PageRequest.of(0, MAXIMUM_EDGES + 1, Sort.by("id"))).stream()
+                .filter(edge -> edge.getSnapshotId().equals(base.snapshot().getId()) && edge.getFlowKey().equals(flowKey))
+                .toList();
+        List<TaskLineageFieldUsage> usages = usageRepository.findAllBySnapshotIdAndFlowKey(
+                base.snapshot().getId(), flowKey,
+                PageRequest.of(0, MAXIMUM_EDGES + 1, Sort.by("id")));
+        Set<UUID> sourceFieldIds = new LinkedHashSet<>();
+        edges.forEach(edge -> sourceFieldIds.add(edge.getSourceAssetFieldId()));
+        usages.forEach(usage -> sourceFieldIds.add(usage.getAssetFieldId()));
+        Map<UUID, TaskLineageAssetField> fields = base.fields().stream()
+                .collect(Collectors.toMap(TaskLineageAssetField::getId, Function.identity(), (a, b) -> a, LinkedHashMap::new));
+        fieldRepository.findAllById(sourceFieldIds).forEach(field -> fields.put(field.getId(), field));
+        return bundleMetadata(base.snapshot(), base.assets(), List.copyOf(fields.values()), edges, usages);
+    }
+
+    private Bundle bundleMetadata(
+            TaskLineageSnapshot snapshot,
+            List<TaskLineageAsset> assets,
+            List<TaskLineageAssetField> fields,
+            List<TaskLineageFieldEdge> edges,
+            List<TaskLineageFieldUsage> usages
+    ) {
+        Set<UUID> modelIds = assets.stream().map(TaskLineageAsset::getModelId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, DataModel> models = modelRepository.findAllById(modelIds).stream()
+                .collect(Collectors.toMap(DataModel::getId, Function.identity()));
+        Set<UUID> modelFieldIds = fields.stream().map(TaskLineageAssetField::getModelFieldId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        Map<UUID, DataModelField> modelFields = modelFieldRepository.findAllById(modelFieldIds).stream()
+                .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
+        Set<UUID> dataSourceIds = assets.stream().map(TaskLineageAsset::getDataSourceId)
+                .filter(Objects::nonNull).collect(Collectors.toSet());
+        models.values().stream().map(DataModel::getStorageDataSourceId).forEach(dataSourceIds::add);
+        Map<UUID, DataSource> dataSources = dataSourceRepository.findAllById(dataSourceIds).stream()
+                .collect(Collectors.toMap(DataSource::getId, Function.identity()));
+        return new Bundle(snapshot, assets, fields, edges, usages, models, modelFields, dataSources);
     }
 
     private static List<TaskLineageFlowResponse> flowResponses(Bundle bundle) {
@@ -274,7 +412,18 @@ public class TaskLineageQueryService {
                         + (current == null ? field.getFieldCodeSnapshot() : current.getCode()),
                 asset.getModelId(), field.getModelFieldId(), null, asset.getDataSourceId(),
                 null, null, asset.getWriteMode(), stale,
-                asset.getExternalResourceType(), asset.getResourceId());
+                asset.getExternalResourceType(), asset.getResourceId(), null, null, null, null,
+                new LineageFieldOwnerResponse(
+                        assetNodeId(asset, side), switch (asset.getAssetKind()) {
+                            case MODEL -> LineageGraphNodeKind.MODEL;
+                            case JDBC_TABLE -> LineageGraphNodeKind.JDBC_TABLE;
+                            case EXTERNAL_RESOURCE -> LineageGraphNodeKind.EXTERNAL_RESOURCE;
+                        },
+                        assetLabel(asset, bundle),
+                        assetSubtitle(asset, bundle.models().get(asset.getModelId()),
+                                bundle.dataSources().get(asset.getDataSourceId())),
+                        field.getSortOrder()
+                ), false, List.of());
     }
 
     private static LineageGraphNodeResponse taskNode(
@@ -298,15 +447,21 @@ public class TaskLineageQueryService {
     private static String assetSubtitle(TaskLineageAsset asset, DataModel model, DataSource source) {
         return switch (asset.getAssetKind()) {
             case MODEL -> model == null ? asset.getModelCodeSnapshot() : model.getCode();
-            case JDBC_TABLE -> java.util.stream.Stream.of(
-                            source == null ? asset.getDataSourceNameSnapshot() : source.getName(),
-                            asset.getCatalogName(), asset.getSchemaName(), asset.getPhysicalTableName())
-                    .filter(value -> value != null && !value.isBlank()).collect(Collectors.joining("."));
+            case JDBC_TABLE -> jdbcSubtitle(asset, source);
             case EXTERNAL_RESOURCE -> java.util.stream.Stream.of(
                             asset.getExternalResourceType() == null ? null : asset.getExternalResourceType().name(),
                             source == null ? asset.getDataSourceNameSnapshot() : source.getName())
                     .filter(value -> value != null && !value.isBlank()).collect(Collectors.joining(" · "));
         };
+    }
+
+    private static String jdbcSubtitle(TaskLineageAsset asset, DataSource source) {
+        String dataSourceName = source == null ? asset.getDataSourceNameSnapshot() : source.getName();
+        String physicalLocation = java.util.stream.Stream.of(
+                        asset.getCatalogName(), asset.getSchemaName(), asset.getPhysicalTableName())
+                .filter(value -> value != null && !value.isBlank())
+                .collect(Collectors.joining("."));
+        return physicalLocation.isBlank() ? dataSourceName : dataSourceName + " · " + physicalLocation;
     }
 
     private static List<String> warnings(Bundle bundle, List<TaskLineageAsset> assets) {
@@ -351,6 +506,42 @@ public class TaskLineageQueryService {
         return List.copyOf(byId.values());
     }
 
+    private static void mergeNode(
+            Map<String, LineageGraphNodeResponse> nodes,
+            LineageGraphNodeResponse node,
+            Collection<String> focusKeys,
+            boolean focusRoot
+    ) {
+        LineageGraphNodeResponse existing = nodes.get(node.id());
+        Set<String> merged = new LinkedHashSet<>(existing == null ? List.of() : existing.focusFieldKeys());
+        merged.addAll(focusKeys);
+        LineageGraphNodeResponse basis = existing == null ? node : existing;
+        nodes.put(node.id(), new LineageGraphNodeResponse(
+                basis.id(), basis.kind(), basis.side(), basis.depth(), basis.label(), basis.subtitle(),
+                basis.modelId(), basis.modelFieldId(), basis.taskId(), basis.dataSourceId(), basis.taskStatus(),
+                basis.definitionVersion(), basis.writeMode(), basis.stale() || node.stale(),
+                basis.externalResourceType(), basis.resourceId(), basis.dataServiceId(), basis.dataServiceType(),
+                basis.dataServiceStatus(), basis.routePath(),
+                basis.fieldOwner(),
+                (existing != null && existing.focusRoot()) || focusRoot, List.copyOf(merged)
+        ));
+    }
+
+    private static void mergeEdge(
+            Map<String, LineageGraphEdgeResponse> edges,
+            LineageGraphEdgeResponse edge,
+            Collection<String> focusKeys
+    ) {
+        LineageGraphEdgeResponse existing = edges.get(edge.id());
+        Set<String> merged = new LinkedHashSet<>(existing == null ? List.of() : existing.focusFieldKeys());
+        merged.addAll(focusKeys);
+        LineageGraphEdgeResponse basis = existing == null ? edge : existing;
+        edges.put(edge.id(), new LineageGraphEdgeResponse(
+                basis.id(), basis.source(), basis.target(), basis.type(), basis.derivationType(),
+                basis.outputEffect(), basis.usages(), List.copyOf(merged)
+        ));
+    }
+
     private DataTask requireTask(UUID taskId) {
         return taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
@@ -368,6 +559,17 @@ public class TaskLineageQueryService {
         return new TaskLineageGraphResponse(task.getId(), null, null, List.of(), null, null,
                 new LineageGraphResponse(null, LineageGranularity.TABLE, null,
                         false, List.of(), List.of(), List.of()));
+    }
+
+    private static TaskFieldLineageGraphResponse emptyFields(DataTask task) {
+        return new TaskFieldLineageGraphResponse(
+                task.getId(), null, null, List.of(), null,
+                new LineageFieldGraphResponse(
+                        new LineageGraphResponse(null, LineageGranularity.FIELD, null,
+                                false, List.of(), List.of(), List.of()),
+                        List.of()
+                )
+        );
     }
 
     private record Bundle(

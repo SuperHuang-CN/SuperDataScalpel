@@ -492,9 +492,9 @@ class TaskIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
-                                  {"id":"%s","type":"JDBC_INPUT","name":"输入一","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tableName":""}},
-                                  {"id":"%s","type":"JDBC_INPUT","name":"输入二","layout":{"x":0,"y":160,"width":240,"height":120},"configuration":{"dataSourceId":"","tableName":""}}
+                                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
+                                  {"id":"%s","type":"JDBC_INPUT","name":"输入一","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tables":[]}},
+                                  {"id":"%s","type":"JDBC_INPUT","name":"输入二","layout":{"x":0,"y":160,"width":240,"height":120},"configuration":{"dataSourceId":"","tables":[]}}
                                 ],"edges":[]}}
                                 """.formatted(nodeId, nodeId)))
                 .andExpect(status().isBadRequest())
@@ -503,8 +503,8 @@ class TaskIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
-                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tableName":""}}
+                                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
+                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tables":[]}}
                                 ],"edges":[{"id":"%s","sourceNodeId":"%s","targetNodeId":"%s"}]}}
                                 """.formatted(nodeId, edgeId, nodeId, UUID.randomUUID())))
                 .andExpect(status().isBadRequest());
@@ -512,8 +512,8 @@ class TaskIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
-                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":100,"height":120},"configuration":{"dataSourceId":"","tableName":""}}
+                                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
+                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":100,"height":120},"configuration":{"dataSourceId":"","tables":[]}}
                                 ],"edges":[]}}
                 """.formatted(nodeId)))
                 .andExpect(status().isBadRequest());
@@ -524,30 +524,20 @@ class TaskIntegrationTests {
                                 {"definition":{"schemaVersion":2,"schemaMinorVersion":0,"nodes":[],"edges":[]}}
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Canvas schemaVersion 仅支持 1"));
+                .andExpect(jsonPath("$.detail").value("Canvas schemaVersion 仅支持 3"));
 
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":7,"nodes":[],"edges":[]}}
+                                {"definition":{"schemaVersion":3,"schemaMinorVersion":1,"nodes":[],"edges":[]}}
                                 """))
                 .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Canvas schemaMinorVersion 仅支持 0 到 6"));
+                .andExpect(jsonPath("$.detail").value("Canvas schemaMinorVersion 仅支持 0 到 0"));
 
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"nodes":[
-                                  {"id":"%s","type":"MODEL_INPUT","name":"模型输入","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"modelId":""}}
-                                ],"edges":[]}}
-                                """.formatted(nodeId)))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("MODEL_INPUT 和 MODEL_OUTPUT 从 Canvas 1.1 开始支持"));
-
-        mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
+                                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
                                   {"id":"%s","type":"FILTER","name":"未知节点","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{}}
                                 ],"edges":[]}}
                                 """.formatted(nodeId)))
@@ -556,8 +546,8 @@ class TaskIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
-                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tableName":""}}
+                                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
+                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tables":[]}}
                                 ],"edges":[
                                   {"id":"%s","sourceNodeId":"%s","targetNodeId":"%s"},
                                   {"id":"%s","sourceNodeId":"%s","targetNodeId":"%s"}
@@ -583,8 +573,8 @@ class TaskIntegrationTests {
         mockMvc.perform(post("/api/v1/tasks/{id}/actions/update-canvas-definition", taskId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
-                                {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
-                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tableName":"%s"}}
+                                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
+                                  {"id":"%s","type":"JDBC_INPUT","name":"输入","layout":{"x":0,"y":0,"width":240,"height":120},"configuration":{"dataSourceId":"","tables":[{"tableName":"%s"}]}}
                                 ],"edges":[]}}
                                 """.formatted(UUID.randomUUID(), oversizedTableName)))
                 .andExpect(status().isBadRequest())
@@ -765,8 +755,8 @@ class TaskIntegrationTests {
 
     private static String canvasDefinitionJson(String nodeId, String nodeName) {
         return """
-                {"definition":{"schemaVersion":1,"nodes":[
-                  {"id":"%s","type":"JDBC_INPUT","name":"%s","layout":{"x":80,"y":80,"width":240,"height":120},"configuration":{"dataSourceId":"","tableName":""}}
+                {"definition":{"schemaVersion":3,"nodes":[
+                  {"id":"%s","type":"JDBC_INPUT","name":"%s","layout":{"x":80,"y":80,"width":240,"height":120},"configuration":{"dataSourceId":"","tables":[]}}
                 ],"edges":[]}}
                 """.formatted(nodeId, nodeName);
     }
@@ -775,7 +765,7 @@ class TaskIntegrationTests {
         String inputNodeId = UUID.randomUUID().toString();
         if (outputModelId == null) {
             return """
-                    {"definition":{"schemaVersion":1,"schemaMinorVersion":1,"nodes":[
+                    {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
                       {"id":"%s","type":"MODEL_INPUT","name":"模型输入",
                        "layout":{"x":80,"y":80,"width":240,"height":120},
                        "configuration":{"modelId":"%s"}}
@@ -784,7 +774,7 @@ class TaskIntegrationTests {
         }
         String outputNodeId = UUID.randomUUID().toString();
         return """
-                {"definition":{"schemaVersion":1,"schemaMinorVersion":28,"nodes":[
+                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
                   {"id":"%s","type":"MODEL_INPUT","name":"模型输入",
                    "layout":{"x":80,"y":80,"width":240,"height":120},
                    "configuration":{"modelId":"%s"}},
@@ -801,7 +791,7 @@ class TaskIntegrationTests {
 
     private static String multiReferenceModelCanvasDefinitionJson(UUID modelId) {
         return """
-                {"definition":{"schemaVersion":1,"schemaMinorVersion":28,"nodes":[
+                {"definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
                   {"id":"%s","type":"MODEL_INPUT","name":"输入 B",
                    "layout":{"x":80,"y":80,"width":240,"height":120},
                    "configuration":{"modelId":"%s"}},

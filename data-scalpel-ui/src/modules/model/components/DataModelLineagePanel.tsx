@@ -1,8 +1,8 @@
 import { DatabaseOutlined, FieldStringOutlined } from '@ant-design/icons';
-import { Alert, Segmented, Select, Space, Tag } from 'antd';
-import { useState } from 'react';
+import { Segmented, Select, Space, Tag } from 'antd';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { useDataModelLineage } from '../hooks/useDataModels';
+import { useDataModelFieldLineage, useDataModelLineage } from '../hooks/useDataModels';
 import type {
   DataModel,
   DataModelField,
@@ -11,6 +11,8 @@ import type {
   LineageGranularity,
 } from '../model/dataModel';
 import { LineageGraphCanvas } from './LineageGraphCanvas';
+import { LineageFieldSelector } from './LineageFieldSelector';
+import { LineageWarningHint } from './LineageWarningHint';
 
 interface DataModelLineagePanelProps {
   model: DataModel;
@@ -27,22 +29,32 @@ const coverageColors: Record<LineageCoverage, string> = {
 
 export const DataModelLineagePanel = ({ model, fields }: DataModelLineagePanelProps) => {
   const [granularity, setGranularity] = useState<LineageGranularity>('TABLE');
-  const [fieldId, setFieldId] = useState<string>();
+  const [fieldIds, setFieldIds] = useState<string[] | null>(null);
+  const [submittedFieldIds, setSubmittedFieldIds] = useState<string[] | null>(null);
   const [direction, setDirection] = useState<LineageDirection>('BOTH');
   const [depth, setDepth] = useState<1 | 2>(2);
-  const effectiveFieldId = fieldId && fields.some((field) => field.id === fieldId)
-    ? fieldId
-    : fields[0]?.id;
-  const query = useDataModelLineage(
-    model.id, granularity, effectiveFieldId, direction, depth,
-    granularity === 'TABLE' || Boolean(effectiveFieldId),
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSubmittedFieldIds(fieldIds), 250);
+    return () => window.clearTimeout(timer);
+  }, [fieldIds]);
+  const tableQuery = useDataModelLineage(model.id, 'TABLE', undefined, direction, depth, granularity === 'TABLE');
+  const fieldQuery = useDataModelFieldLineage(
+    model.id, submittedFieldIds, direction, depth, granularity === 'FIELD',
   );
-  const graph = query.data;
-  const statusMessage = graph?.warnings.join('；');
+  const fieldResult = fieldQuery.data;
+  const effectiveFieldIds = fieldIds ?? fieldResult?.focusFields.map((field) => field.fieldKey) ?? [];
+  const query = granularity === 'TABLE' ? tableQuery : fieldQuery;
+  const graph = granularity === 'TABLE' ? tableQuery.data : fieldResult?.graph;
   const errorMessage = query.error instanceof ApiError ? query.error.message : query.error ? '血缘加载失败' : undefined;
   const emptyDescription = graph?.coverage === 'MODEL_ONLY'
     ? '当前路径只有表级血缘，尚未生成字段来源关系'
-    : granularity === 'FIELD' ? '当前字段暂无血缘关系' : '当前模型暂无血缘关系';
+    : granularity === 'FIELD' ? '当前所选字段暂无血缘关系' : '当前模型暂无血缘关系';
+  const focusSummary = fieldResult?.focusFields.reduce((result, field) => {
+    const key = field.truncated ? 'truncated' : !field.hasLineage ? 'empty'
+      : field.coverage === 'FIELD_COMPLETE' ? 'complete' : 'partial';
+    result[key] += 1;
+    return result;
+  }, { complete: 0, partial: 0, empty: 0, truncated: 0 });
 
   return (
     <div className="model-detail-tab-panel">
@@ -57,10 +69,11 @@ export const DataModelLineagePanel = ({ model, fields }: DataModelLineagePanelPr
             ]}
           />
           {granularity === 'FIELD' && (
-            <Select
-              showSearch value={effectiveFieldId} className="model-lineage-field-select"
-              placeholder="选择当前模型字段" optionFilterProp="label" onChange={setFieldId}
-              options={fields.map((field) => ({ value: field.id, label: `${field.name} (${field.code})` }))}
+            <LineageFieldSelector
+              value={effectiveFieldIds}
+              placeholder="选择当前模型字段"
+              onChange={setFieldIds}
+              options={fields.map((field) => ({ key: field.id, label: `${field.name} (${field.code})` }))}
             />
           )}
           <span>方向</span>
@@ -78,15 +91,15 @@ export const DataModelLineagePanel = ({ model, fields }: DataModelLineagePanelPr
             options={[{ value: 1, label: '1 层' }, { value: 2, label: '2 层' }]}
           />
           {graph?.coverage && <Tag color={coverageColors[graph.coverage]}>{coverageLabels[graph.coverage]}</Tag>}
+          <LineageWarningHint warnings={graph?.warnings} truncated={graph?.truncated} />
+          {granularity === 'FIELD' && focusSummary && (
+            <span className="model-lineage-field-summary">
+              完整 {focusSummary.complete} · 部分 {focusSummary.partial} · 无路径 {focusSummary.empty} · 截断 {focusSummary.truncated}
+            </span>
+          )}
         </Space>
       </div>
-      {statusMessage && (
-        <Alert
-          className="model-lineage-alert" type={graph?.truncated ? 'warning' : 'info'} showIcon
-          message={graph?.truncated ? '血缘图已截断' : '血缘覆盖提示'} description={statusMessage}
-        />
-      )}
-      {granularity === 'FIELD' && !effectiveFieldId ? (
+      {granularity === 'FIELD' && fields.length === 0 ? (
         <LineageGraphCanvas
           graph={undefined} loading={false} emptyDescription="当前模型没有可选择的字段"
           ariaLabel="模型血缘关系图" onRetry={() => void query.refetch()}
@@ -95,6 +108,7 @@ export const DataModelLineagePanel = ({ model, fields }: DataModelLineagePanelPr
         <LineageGraphCanvas
           graph={graph} loading={query.isFetching} errorMessage={errorMessage}
           emptyDescription={emptyDescription} ariaLabel="模型血缘关系图"
+          focusFields={fieldResult?.focusFields}
           onRetry={() => void query.refetch()}
         />
       )}

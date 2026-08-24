@@ -76,9 +76,9 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 - launch 文件只读交付给 Runner，完成后由 Dispatcher/集群清理。
 - SASL 密码使用独立受限文件或环境变量引用，不直接放进 `spark-submit` 参数。
 
-## 4. Manifest v18
+## 4. Manifest v21
 
-Admin 当前写出 `manifestVersion: 18`；Runner 严格只接受 v18。升级时先停止或排空旧 Runner，
+Admin 当前写出 `manifestVersion: 21`；Runner 严格只接受 v21。升级时先停止或排空旧 Runner，
 再统一发布 Admin、Dispatcher 和 Runner：
 
 ```text
@@ -104,7 +104,7 @@ sparkJarJob
 - Spark JAR 使用互斥的 `sparkJarJob`，保存 Job API/Class、有序参数、允许的 Spark Conf、资源绑定和
   触发身份；`task`、`streaming`、`modelQuality` 必须为空。用户 JAR本体和下载地址不进入 Manifest。
 - `modelQuality` 保存目标模型、字段和物理位置、实际执行规则、跳过规则、引用模型及有效码表值快照；
-  JDBC 凭据仍只位于 `runtimeDataSources`。v18 继续保存本次失败样本上限，并在字段快照中标记主键。
+  JDBC 凭据仍只位于 `runtimeDataSources`。v21 继续保存本次失败样本上限，并在字段快照中标记主键。
 - `metadataSnapshot` 是逻辑编译与解析依据，不是运行时物理 Schema 相等契约。
 - `runtimeDataSources` 是真实 JDBC、Kafka、HTTP API、外部 S3 和按需 TDengine TMQ 运行信息；
   外部凭据只存在于此私有 Manifest。`tdEngineTmqConnection` 仅在任务引用 TMQ 节点时生成，包含
@@ -205,7 +205,7 @@ result.json 已上传
 
 ```json
 {
-  "schemaVersion": 5,
+  "schemaVersion": 7,
   "taskType": "SPARK_CANVAS",
   "executionId": "uuid",
   "runId": "uuid",
@@ -291,10 +291,9 @@ result.json 已上传
 }
 ```
 
-Runner 当前只写 `schemaVersion: 5`。v4 增加顶层 `taskType` 和互斥载荷：Canvas 只能使用
+Runner 当前只写 `schemaVersion: 7`。v4 增加顶层 `taskType` 和互斥载荷：Canvas 只能使用
 `nodeResults`，模型质检只能使用 `qualityResult`，`SPARK_JAR` 的 `nodeResults` 必须为空且不含
-`qualityResult`；Dispatcher 兼容读取历史 Canvas v2/v3/v4 和
-模型质检 v4，以收敛
+`qualityResult`；Dispatcher 兼容读取历史 v2～v7，以收敛
 升级前已经运行的任务，并
 严格拒绝 v1、未知字段、身份或时间不一致、错误码/SQLState格式错误、节点状态与错误对象不一致，
 以及顶层/节点诊断 ID不一致的结果。节点结果按拓扑执行顺序保存；失败时保留已完成节点并追加
@@ -313,7 +312,8 @@ v5 为每条质检规则增加样本状态 `NOT_FAILED / NOT_APPLICABLE / DISABL
 11 类行级规则可以是 `AVAILABLE`；行数和新鲜度规则固定为 `NOT_APPLICABLE`。AVAILABLE 只记录样本
 行数、异常总数、是否截断、文件大小、SHA-256、行可定位性和字段元数据，不记录对象 Key 或业务值。
 Dispatcher 根据执行账本中的规则 ID 和运行身份推导固定对象 Key，并校验对象存在、20 MiB 单文件与
-100 MiB 单运行上限、SHA-256 和 Parquet `PAR1` 头尾。新 Runner 不再写旧版本结果。
+100 MiB 单运行上限、SHA-256 和 Parquet `PAR1` 头尾。v6 增加 Spark JAR 用户作业观测快照；v7
+增加普通多目标 Output 的逐写入结果。新 Runner 不再写旧版本结果。
 
 v3 为节点结果增加可空的判别联合 `metrics`。成功的 JDBC/模型快照同步节点使用：
 
@@ -333,7 +333,33 @@ v3 为节点结果增加可空的判别联合 `metrics`。成功的 JDBC/模型�
 必须满足 `sourceRows = insertedRows + updatedRows + unchangedRows`，以及
 `targetRows = deletedRows + retainedTargetOnlyRows + updatedRows + unchangedRows`。
 Snapshot Sync 的 `rowsWritten` 固定为新增、更新、删除之和；失败或事务回滚节点不得携带成功
-指标。其他节点的 `metrics` 为 `null`。
+指标。
+
+v7 中普通 `JDBC_OUTPUT/MODEL_OUTPUT/FILE_OUTPUT` 无论包含一条还是多条写入，都只生成一条节点
+结果，并使用：
+
+```json
+{
+  "kind": "OUTPUT_WRITES",
+  "writes": [
+    {
+      "writeId": "uuid",
+      "sourceTableName": "orders",
+      "targetDisplayName": "ods_orders",
+      "state": "SUCCESS",
+      "affectedRows": 10562,
+      "errorCode": null
+    }
+  ]
+}
+```
+
+最终制品只允许 `SUCCESS/FAILED/SKIPPED`。执行按配置顺序串行进行；失败前已提交项保留成功行数，
+当前项携带与节点错误一致的稳定错误码，当前节点内尚未开始的项标为 `SKIPPED`。一个 Canvas 节点
+在 `nodeResults` 中必须唯一，不能为每条写入重复生成相同 `nodeId`。`rowsWritten` 和顶层
+`affectedRows` 汇总已成功提交项；只要任一成功项行数未知或汇总溢出，汇总即为 `null`。尚未开始
+的其他 Output 节点不伪造节点结果。Kafka 多目标实时写入继续按 `writeId` 隔离 StreamingQuery 与
+Checkpoint，其运行明细遵循实时查询事件，不把物理 Checkpoint 或连接信息写入 Result。
 
 错误类别固定为 `CONFIGURATION/CONNECTION/AUTHENTICATION/PERMISSION/SCHEMA/CONSTRAINT/TIMEOUT/CANCELLED/RESOURCE/EXTERNAL_SYSTEM/INTERNAL`；阶段固定为 `PREPARE/READ/PROCESS/WRITE/DELIVERY/DISPATCH`。SQLState `08xxx/28xxx/42501/23xxx/57014` 分别映射连接、认证、权限、约束和超时错误。只有连接、网络超时和暂时性外部系统故障标记为可重试；本阶段不自动重试。
 
@@ -381,8 +407,9 @@ NODE_START / NODE_SUCCESS / NODE_FAILED
 - Output 使用目标字段到来源字段的显式映射。
 - APPEND 使用 Spark JDBC append。Oracle、SQL Server、ClickHouse 和达梦第一阶段只承诺写入
   已存在物理表，不自动建表或演进 Schema。
-- OVERWRITE 仅对 PostgreSQL、MySQL、openGauss 和 Kingbase 保持数据库 TRUNCATE 后 append，
-  不 drop/recreate；其他数据库在任何清表动作前返回 `OVERWRITE_DATABASE_NOT_SUPPORTED`。
+- OVERWRITE 对 PostgreSQL、MySQL、openGauss、Kingbase、Oracle、SQL Server、ClickHouse 和达梦均执行
+  数据库 TRUNCATE 后 append，不 drop/recreate，也不承诺两步原子性。TDengine 不支持普通 JDBC 输出；
+  外键、权限、ClickHouse 集群表及数据库版本造成的 TRUNCATE 失败由真实运行返回 JDBC 错误。
 - UPSERT、JDBC Query Input 和 Snapshot Sync 仅支持 PostgreSQL/MySQL；JDBC 增量输入额外支持
   openGauss/Kingbase；Geometry JDBC 仅支持 PostgreSQL/PostGIS 和 MySQL 8。
 - 模型质检允许全部普通 JDBC 数据库的标量读取；Spark JAR 允许标量读取和 APPEND，并复用同一
@@ -477,6 +504,11 @@ Runner 不直接消费取消 Topic。取消由 Dispatcher 调用 Backend 原生�
 - Docker stop/kill。
 - YARN application -kill。
 - Kubernetes delete Driver Pod/Application。
+
+正常取消或实时停止无法收敛时，管理端可发送独立的 `FORCE_TERMINATE_EXECUTION`。强制终止跳过
+Runner 正常退出：Docker 直接 kill，YARN 直接 application kill，Kubernetes 使用零宽限期删除
+Driver 和 Executor。确认后运行记录进入 `CANCELLED`；30 秒内无法确认 Backend 终态时进入
+`FAILED`，错误码为 `EXECUTION_TERMINATION_UNCONFIRMED`，并提示外部 Application 可能仍需人工处理。
 
 Runner 自己在以下边界检查 deadline 和线程中断：
 

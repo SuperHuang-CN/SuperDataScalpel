@@ -25,6 +25,7 @@ public enum CanvasNodeType {
     STREAM_JOIN,
     RENAME,
     FILTER,
+    SQL_TRANSFORM,
     SELECT_COLUMNS,
     DERIVE_COLUMNS,
     TYPE_CAST,
@@ -42,5 +43,10 @@ public enum CanvasNodeType {
     JDBC_OUTPUT,
     JDBC_SNAPSHOT_SYNC_OUTPUT,
     KAFKA_OUTPUT,
-    FILE_OUTPUT
+    FILE_OUTPUT;
+
+    /** Canvas protocol minor version in which this node type was introduced. */
+    public int introducedInMinorVersion() {
+        return this == SQL_TRANSFORM ? 1 : 0;
+    }
 }

@@ -3,7 +3,7 @@
   "task": {
     "type": "CANVAS",
     "definition": {
-      "schemaVersion": 2,
+      "schemaVersion": 4,
       "schemaMinorVersion": 0,
       "nodes": [
         {
@@ -13,7 +13,7 @@
           "layout": { "x": 100, "y": 100, "width": 240, "height": 120 },
           "configuration": {
             "dataSourceId": "11111111-1111-4111-8111-111111111111",
-            "tableName": "orders"
+            "tables": [{ "tableName": "orders" }]
           }
         },
         {
@@ -23,7 +23,7 @@
           "layout": { "x": 100, "y": 300, "width": 240, "height": 120 },
           "configuration": {
             "dataSourceId": "11111111-1111-4111-8111-111111111111",
-            "tableName": "orders"
+            "tables": [{ "tableName": "orders" }]
           }
         },
         {
@@ -38,6 +38,10 @@
             "joinType": "INNER",
             "conditions": [
               { "leftColumnName": "id", "operator": "EQUALS", "rightColumnName": "id" }
+            ],
+            "outputColumns": [
+              { "sourceSide": "LEFT", "sourceColumnName": "id", "outputColumnName": "id", "included": true },
+              { "sourceSide": "RIGHT", "sourceColumnName": "id", "outputColumnName": "customers_id", "included": true }
             ]
           }
         },
@@ -47,12 +51,18 @@
           "name": "结果输出",
           "layout": { "x": 780, "y": 200, "width": 240, "height": 120 },
           "configuration": {
-            "sourceTableName": "joined_orders",
             "dataSourceId": "22222222-2222-4222-8222-222222222222",
-            "targetTableName": "joined_orders",
-            "writeMode": "APPEND",
-            "columnMappings": [
-              { "sourceColumnName": "id", "targetColumnName": "id" }
+            "writes": [
+              {
+                "writeId": "10000000-0000-4000-8000-000000000005",
+                "sourceTableName": "joined_orders",
+                "targetTableName": "joined_orders",
+                "writeMode": "APPEND",
+                "columnMappings": [
+                  { "sourceColumnName": "id", "targetColumnName": "id" }
+                ],
+                "upsertKeyColumns": []
+              }
             ]
           }
         }

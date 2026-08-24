@@ -1,6 +1,6 @@
-import { DownOutlined, DeleteOutlined, EyeOutlined, PlusOutlined, UpOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Descriptions, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
-import { useEffect, useImperativeHandle, useState, type Ref } from 'react';
+import { DeleteOutlined, EyeOutlined, PlusOutlined, SearchOutlined, UndoOutlined } from '@ant-design/icons';
+import { Alert, Button, Card, Checkbox, Descriptions, Form, Input, InputNumber, Select, Space, Table, Tag, Tooltip, Typography, type TableColumnsType } from 'antd';
+import { useEffect, useImperativeHandle, useMemo, useState, type Ref } from 'react';
 import { useApiResource, useDataSource, useTableMetadata, type DataSource, type TableMetadata } from '../../../datasource';
 import {
   dataModelStatusLabels,
@@ -26,12 +26,12 @@ import {
   type CanvasExecutionMode,
   type CanvasNodeValidationResult,
   type JdbcColumnMapping,
-  type JdbcInputConfiguration,
   type FileDatasetInputConfiguration,
   type HttpApiInputConfiguration,
   type JdbcOutputConfiguration,
   type JoinCondition,
   type JoinConfiguration,
+  type JoinOutputColumn,
   type KafkaInputConfiguration,
   type KafkaOutputConfiguration,
   type KafkaValueSchema,
@@ -50,8 +50,11 @@ import { KafkaValueSchemaEditor } from './KafkaValueSchemaEditor';
 import { configurationFingerprint, focusFirstInvalidField } from './CanvasInspectorUtils';
 import {
   OutputFieldMappingFields,
-  orderOutputFieldMappings,
 } from './OutputFieldMappingFields';
+import { orderOutputFieldMappings } from './outputFieldMappings';
+import { JoinOutputColumnsEditor } from './JoinOutputColumnsEditor';
+import { suggestJoinOutputColumns } from './joinOutputColumns';
+import { CanvasNodeValidationIssues } from './common/CanvasNodeValidationIssues';
 
 interface CanvasNodeInspectorProps {
   node: CanvasNodeDefinition | null;
@@ -72,67 +75,10 @@ export const ValidationIssues = ({
 }: {
   validation: CanvasNodeValidationResult | undefined;
   unavailableMessage: string | null;
-}) => {
-  const [expanded, setExpanded] = useState(false);
-  if (!validation && unavailableMessage) {
-    return (
-      <Alert
-        showIcon
-        type="info"
-        title="Task Engine 尚未完成校验"
-        description={unavailableMessage}
-      />
-    );
-  }
-  const errors = validation?.issues.filter((item) => item.severity === 'ERROR') ?? [];
-  const warnings = validation?.issues.filter((item) => item.severity === 'WARNING') ?? [];
-  if (errors.length === 0 && warnings.length === 0) return null;
-  const issues = [...errors, ...warnings];
-  const primaryIssue = issues.find((item) => item.code === 'REQUIRED_CONFIGURATION') ?? issues[0];
-  const summary = [
-    errors.length > 0 ? `${errors.length} 个错误` : '',
-    warnings.length > 0 ? `${warnings.length} 个警告` : '',
-  ].filter(Boolean).join(' · ');
-  return (
-    <Alert
-      showIcon
-      type={errors.length > 0 ? 'error' : 'warning'}
-      className="canvas-validation-alert"
-      title={(
-        <div className="canvas-validation-title">
-          <span className="canvas-validation-count">{summary}</span>
-          <span className="canvas-validation-primary" title={primaryIssue.message}>{primaryIssue.message}</span>
-        </div>
-      )}
-      action={(
-        <Button
-          type="text"
-          size="small"
-          className="canvas-validation-action"
-          icon={expanded ? <UpOutlined /> : <DownOutlined />}
-          aria-label={expanded ? '收起问题详情' : '展开问题详情'}
-          aria-expanded={expanded}
-          onClick={() => setExpanded((current) => !current)}
-        >
-          {expanded ? '收起' : '详情'}
-        </Button>
-      )}
-      description={expanded ? (
-        <div className="canvas-validation-list" role="list">
-          {issues.map((item, index) => (
-            <div className="canvas-validation-list-item" role="listitem" key={`${item.code}-${index}`}>
-              <span className={`canvas-validation-dot canvas-validation-dot-${item.severity.toLowerCase()}`} />
-              <div className="canvas-validation-issue">
-                <span>{item.message}</span>
-                <Typography.Text type="secondary" className="canvas-validation-code">{item.code}</Typography.Text>
-              </div>
-            </div>
-          ))}
-        </div>
-      ) : undefined}
-    />
-  );
-};
+}) => <CanvasNodeValidationIssues
+  validation={validation}
+  unavailableMessage={unavailableMessage}
+/>;
 
 export const FieldPreview = ({ columns, loading = false }: { columns: CanvasColumnSchema[]; loading?: boolean }) => (
   <Table<CanvasColumnSchema>
@@ -207,175 +153,6 @@ const MetadataErrorAlert = ({
   />
 );
 
-interface JdbcInputFormValues {
-  dataSourceId: string;
-  tableName?: string;
-}
-
-export const JdbcInputInspector = ({
-  node,
-  validation,
-  validationUnavailableMessage = null,
-  onApply,
-  onDirtyChange,
-  inspectorRef,
-}: {
-  node: Extract<CanvasNodeDefinition, { type: 'JDBC_INPUT' }>;
-  validation: CanvasNodeValidationResult | undefined;
-  validationUnavailableMessage: string | null;
-  onApply: CanvasNodeInspectorProps['onApply'];
-  onDirtyChange: CanvasNodeInspectorProps['onDirtyChange'];
-  inspectorRef: Ref<CanvasNodeInspectorHandle>;
-}) => {
-  const [form] = Form.useForm<JdbcInputFormValues>();
-  const selectedDataSourceId = Form.useWatch('dataSourceId', form) ?? '';
-  const selectedTableName = Form.useWatch('tableName', form) ?? '';
-  const selectedDataSourceQuery = useDataSource(selectedDataSourceId || undefined, Boolean(selectedDataSourceId));
-  const selectedTableQuery = useTableMetadata(
-    selectedDataSourceId || undefined,
-    selectedTableName ? { catalog: null, schema: null, table: selectedTableName } : undefined,
-    Boolean(selectedDataSourceId && selectedTableName),
-  );
-  const selectedDataSourceAvailable = selectedDataSourceQuery.data
-    ? dataSourceAvailable(selectedDataSourceQuery.data, 'SOURCE')
-    : selectedDataSourceQuery.isError ? false : undefined;
-  const selectedTableAvailable = selectedTableQuery.data
-    ? true
-    : selectedTableQuery.isError ? false : undefined;
-  const selectedColumns = canvasColumns(selectedTableQuery.data);
-
-  const toConfiguration = (values: JdbcInputFormValues): JdbcInputConfiguration => ({
-      dataSourceId: values.dataSourceId ?? '',
-      tableName: values.tableName ?? '',
-  });
-
-  const submit = (values: JdbcInputFormValues) => {
-    onApply({ id: node.id, type: node.type, configuration: toConfiguration(values) });
-    onDirtyChange(false);
-  };
-
-  useImperativeHandle(inspectorRef, () => ({
-    apply: async () => {
-      try {
-        const values = form.getFieldsValue(true);
-        void form.validateFields().catch(() => undefined);
-        if (values.dataSourceId && selectedDataSourceAvailable !== true) {
-          form.setFields([{
-            name: 'dataSourceId',
-            errors: [selectedDataSourceQuery.isFetching
-              ? '正在读取数据源信息，请稍候'
-              : '数据源不存在、已停用或不具有 SOURCE 用途'],
-          }]);
-
-        }
-        if (values.tableName && selectedTableAvailable !== true) {
-          form.setFields([{
-            name: 'tableName',
-            errors: [selectedTableQuery.isFetching
-              ? '正在读取物理表元数据，请稍候'
-              : '该物理表不存在或不属于当前数据源'],
-          }]);
-
-        }
-        submit(values);
-        return true;
-      } catch (error) {
-        focusFirstInvalidField(form, error);
-        return false;
-      }
-    },
-  }));
-
-  return (
-    <Space orientation="vertical" size={12} className="canvas-inspector-content">
-      <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
-      <Form<JdbcInputFormValues> autoComplete="off"
-        form={form}
-        layout="vertical"
-        initialValues={{
-          dataSourceId: node.configuration.dataSourceId,
-          tableName: node.configuration.tableName || undefined,
-        }}
-        onFinish={submit}
-        onValuesChange={(_changed, values) => {
-          onDirtyChange(configurationFingerprint(toConfiguration(values)) !== configurationFingerprint(node.configuration));
-        }}
-      >
-        <Form.Item
-          name="dataSourceId"
-          label="来源数据源"
-          rules={[
-            { required: true, message: '请选择来源数据源' },
-            {
-              validator: async () => {
-                if (!selectedDataSourceId) return;
-                if (selectedDataSourceQuery.isFetching && !selectedDataSourceQuery.data) {
-                  throw new Error('正在读取数据源信息，请稍候');
-                }
-                if (selectedDataSourceAvailable === false) {
-                  throw new Error('数据源不存在、已停用或不具有 SOURCE 用途');
-                }
-              },
-            },
-          ]}
-        >
-          <CanvasJdbcDataSourceSelect
-            purpose="SOURCE"
-            placeholder="选择 JDBC SOURCE 数据源"
-          />
-        </Form.Item>
-        {selectedDataSourceId && selectedDataSourceQuery.isError && (
-          <MetadataErrorAlert
-            error={selectedDataSourceQuery.error}
-            fallback="读取数据源信息失败"
-            onRetry={() => void selectedDataSourceQuery.refetch()}
-          />
-        )}
-        <Form.Item
-          name="tableName"
-          label="物理表"
-          dependencies={['dataSourceId']}
-          rules={[
-            { required: true, message: '请选择物理表' },
-            {
-              validator: async () => {
-                if (!selectedTableName) return;
-                if (selectedTableQuery.isFetching && !selectedTableQuery.data) {
-                  throw new Error('正在读取物理表元数据，请稍候');
-                }
-                if (selectedTableAvailable === false) {
-                  throw new Error('该物理表不存在或不属于当前数据源');
-                }
-              },
-            },
-          ]}
-        >
-          <CanvasJdbcTableSelect
-            dataSourceId={selectedDataSourceId}
-            placeholder="输入表名搜索真实物理表"
-            selectedTableAvailable={selectedTableAvailable}
-          />
-        </Form.Item>
-        {selectedTableName && selectedTableQuery.isError && (
-          <MetadataErrorAlert
-            error={selectedTableQuery.error}
-            fallback="读取物理表元数据失败"
-            onRetry={() => void selectedTableQuery.refetch()}
-          />
-        )}
-        {selectedTableName && (selectedTableQuery.isFetching || selectedTableQuery.data) && (
-          <Card
-            size="small"
-            title={`字段 · ${selectedTableName}`}
-          >
-            <FieldPreview columns={selectedColumns} loading={selectedTableQuery.isFetching} />
-          </Card>
-        )}
-      </Form>
-    </Space>
-  );
-};
-
 interface FileDatasetInputFormValues {
   fileDatasetId: string;
   fileDatasetTableId: string;
@@ -402,15 +179,15 @@ export const FileDatasetInputInspector = ({
   const datasetsQuery = useFileDatasets({ page: 0, size: 200, sort: 'name' });
   const tablesQuery = useFileDatasetTables(selectedDatasetId || undefined, Boolean(selectedDatasetId));
   const savedMetadataQuery = useFileDatasetCanvasMetadata(
-    node.configuration.fileDatasetTableId ? [node.configuration.fileDatasetTableId] : [],
-    Boolean(node.configuration.fileDatasetTableId),
+    node.configuration.tables[0]?.fileDatasetTableId ? [node.configuration.tables[0].fileDatasetTableId] : [],
+    Boolean(node.configuration.tables[0]?.fileDatasetTableId),
   );
   const selectedMetadataQuery = useFileDatasetCanvasMetadata(
     selectedTableId ? [selectedTableId] : [],
     Boolean(selectedTableId),
   );
   const savedMetadata = savedMetadataQuery.data?.tables.find(
-    (table) => table.fileDatasetTableId === node.configuration.fileDatasetTableId,
+    (table) => table.fileDatasetTableId === node.configuration.tables[0]?.fileDatasetTableId,
   );
   const selectedMetadata = selectedMetadataQuery.data?.tables.find(
     (table) => table.fileDatasetTableId === selectedTableId,
@@ -422,7 +199,8 @@ export const FileDatasetInputInspector = ({
   }, [form, savedMetadata]);
 
   const toConfiguration = (values: FileDatasetInputFormValues): FileDatasetInputConfiguration => ({
-    fileDatasetTableId: values.fileDatasetTableId ?? '',
+    fileDatasetId: values.fileDatasetId ?? '',
+    tables: values.fileDatasetTableId ? [{ fileDatasetTableId: values.fileDatasetTableId }] : [],
   });
   const submit = (values: FileDatasetInputFormValues) => {
     onApply({ id: node.id, type: node.type, configuration: toConfiguration(values) });
@@ -495,8 +273,8 @@ export const FileDatasetInputInspector = ({
         form={form}
         layout="vertical"
         initialValues={{
-          fileDatasetId: savedMetadata?.fileDatasetId ?? '',
-          fileDatasetTableId: node.configuration.fileDatasetTableId,
+          fileDatasetId: node.configuration.fileDatasetId || savedMetadata?.fileDatasetId || '',
+          fileDatasetTableId: node.configuration.tables[0]?.fileDatasetTableId ?? '',
         }}
         onFinish={submit}
         onValuesChange={(_changed, values) => {
@@ -610,12 +388,13 @@ export const HttpApiInputInspector = ({
   })) ?? [];
   const toConfiguration = (values: HttpApiInputFormValues): HttpApiInputConfiguration => ({
     dataSourceId: values.dataSourceId ?? '',
-    resourceId: values.resourceId ?? '',
-    outputTableName: values.outputTableName?.trim() ?? '',
-    runtimeParameters: (values.runtimeParameters ?? []).map((parameter) => ({
-      name: parameter.name?.trim() ?? '',
-      value: parameter.value ?? '',
-    })),
+    resources: values.resourceId ? [{
+      resourceId: values.resourceId,
+      outputTableName: values.outputTableName?.trim() ?? '',
+      runtimeParameters: (values.runtimeParameters ?? []).map((parameter) => ({
+        name: parameter.name?.trim() ?? '', value: parameter.value ?? '',
+      })),
+    }] : [],
   });
   const submit = (values: HttpApiInputFormValues) => {
     onApply({ id: node.id, type: node.type, configuration: toConfiguration(values) });
@@ -847,6 +626,7 @@ interface JoinFormValues {
   outputTableName: string;
   joinType: JoinConfiguration['joinType'];
   conditions: JoinCondition[];
+  outputColumns: JoinOutputColumn[];
 }
 
 export const JoinInspector = ({
@@ -867,6 +647,8 @@ export const JoinInspector = ({
   const [form] = Form.useForm<JoinFormValues>();
   const leftName = Form.useWatch('leftTableName', form) ?? '';
   const rightName = Form.useWatch('rightTableName', form) ?? '';
+  const outputColumns = Form.useWatch('outputColumns', form) ?? [];
+  const conditions = Form.useWatch('conditions', form) ?? [];
   const tables = validation?.inputTables ?? [];
   const left = tables.find((table) => table.name === leftName);
   const right = tables.find((table) => table.name === rightName);
@@ -882,7 +664,18 @@ export const JoinInspector = ({
         operator: 'EQUALS',
         rightColumnName: condition.rightColumnName ?? '',
       })),
+      outputColumns: (values.outputColumns ?? []).map((column) => ({
+        sourceSide: column.sourceSide === 'RIGHT' ? 'RIGHT' : 'LEFT',
+        sourceColumnName: column.sourceColumnName ?? '',
+        outputColumnName: column.outputColumnName?.trim() ?? '',
+        included: column.included !== false,
+      })),
   });
+
+  useEffect(() => {
+    if (!left || !right || outputColumns.length > 0) return;
+    form.setFieldValue('outputColumns', suggestJoinOutputColumns(left, right));
+  }, [form, left, outputColumns.length, right]);
 
   const submit = (values: JoinFormValues) => {
     onApply({ id: node.id, type: node.type, configuration: toConfiguration(values) });
@@ -964,6 +757,18 @@ export const JoinInspector = ({
             </Space>
           )}
         </Form.List>
+        <JoinOutputColumnsEditor
+          left={left}
+          right={right}
+          conditions={conditions}
+          outputColumns={outputColumns}
+          leftLabel="左"
+          rightLabel="右"
+          onProgrammaticChange={(columns) => {
+            form.setFieldValue('outputColumns', columns);
+            onDirtyChange(true);
+          }}
+        />
       </Form>
     </Space>
   );
@@ -975,6 +780,7 @@ interface StreamJoinFormValues {
   outputTableName: string;
   joinType: StreamJoinConfiguration['joinType'];
   conditions: JoinCondition[];
+  outputColumns: JoinOutputColumn[];
 }
 
 export const StreamJoinInspector = ({
@@ -995,6 +801,8 @@ export const StreamJoinInspector = ({
   const [form] = Form.useForm<StreamJoinFormValues>();
   const leftName = Form.useWatch('leftTableName', form) ?? '';
   const rightName = Form.useWatch('rightTableName', form) ?? '';
+  const outputColumns = Form.useWatch('outputColumns', form) ?? [];
+  const conditions = Form.useWatch('conditions', form) ?? [];
   const tables = validation?.inputTables ?? [];
   const left = tables.find((table) => table.name === leftName);
   const right = tables.find((table) => table.name === rightName);
@@ -1010,7 +818,19 @@ export const StreamJoinInspector = ({
       operator: 'EQUALS',
       rightColumnName: condition.rightColumnName ?? '',
     })),
+    outputColumns: (values.outputColumns ?? []).map((column) => ({
+      sourceSide: column.sourceSide === 'RIGHT' ? 'RIGHT' : 'LEFT',
+      sourceColumnName: column.sourceColumnName ?? '',
+      outputColumnName: column.outputColumnName?.trim() ?? '',
+      included: column.included !== false,
+    })),
   });
+
+  useEffect(() => {
+    if (!left || !right || outputColumns.length > 0) return;
+    form.setFieldValue('outputColumns', suggestJoinOutputColumns(left, right));
+  }, [form, left, outputColumns.length, right]);
+
   const submit = (values: StreamJoinFormValues) => {
     onApply({ id: node.id, type: node.type, configuration: toConfiguration(values) });
     onDirtyChange(false);
@@ -1130,6 +950,18 @@ export const StreamJoinInspector = ({
             </Space>
           )}
         </Form.List>
+        <JoinOutputColumnsEditor
+          left={left}
+          right={right}
+          conditions={conditions}
+          outputColumns={outputColumns}
+          leftLabel="流"
+          rightLabel="维"
+          onProgrammaticChange={(columns) => {
+            form.setFieldValue('outputColumns', columns);
+            onDirtyChange(true);
+          }}
+        />
       </Form>
     </Space>
   );
@@ -1138,7 +970,15 @@ export const StreamJoinInspector = ({
 interface RenameFormValues {
   sourceTableName: string;
   outputTableName: string;
-  columnMappings: JdbcColumnMapping[];
+}
+
+interface RenameFieldRow {
+  key: string;
+  sourceColumnName: string;
+  targetColumnName: string;
+  column: CanvasColumnSchema | null;
+  changed: boolean;
+  issue: string | null;
 }
 
 export const RenameInspector = ({
@@ -1157,18 +997,75 @@ export const RenameInspector = ({
   inspectorRef: Ref<CanvasNodeInspectorHandle>;
 }) => {
   const [form] = Form.useForm<RenameFormValues>();
+  const [search, setSearch] = useState('');
+  const [changedOnly, setChangedOnly] = useState(false);
+  const [mappingTargets, setMappingTargets] = useState<Record<string, string>>(() => Object.fromEntries(
+    node.configuration.columnMappings.map((mapping) => [
+      mapping.sourceColumnName,
+      mapping.targetColumnName,
+    ]),
+  ));
   const sourceName = Form.useWatch('sourceTableName', form) ?? '';
   const source = validation?.inputTables.find((table) => table.name === sourceName);
   const tableOptions = (validation?.inputTables ?? [])
     .map((table) => ({ value: table.name, label: table.name }));
 
+  const rows = useMemo<RenameFieldRow[]>(() => {
+    const sourceColumns = source?.columns ?? [];
+    const sourceColumnMap = new Map(sourceColumns.map((column) => [column.name, column]));
+    const sourceColumnNames = [
+      ...sourceColumns.map((column) => column.name),
+      ...Object.keys(mappingTargets).filter((name) => !sourceColumnMap.has(name)),
+    ];
+    const targetNames = sourceColumnNames.map((name) => mappingTargets[name] ?? name);
+    const targetCounts = targetNames.reduce((counts, name) => {
+      if (name) counts.set(name, (counts.get(name) ?? 0) + 1);
+      return counts;
+    }, new Map<string, number>());
+    return sourceColumnNames.map((sourceColumnName) => {
+      const targetColumnName = mappingTargets[sourceColumnName] ?? sourceColumnName;
+      const column = sourceColumnMap.get(sourceColumnName) ?? null;
+      const issue = !column
+        ? '来源字段已失效，可恢复原名以移除这条旧映射'
+        : !targetColumnName.trim()
+          ? '新字段名不能为空'
+          : (targetCounts.get(targetColumnName) ?? 0) > 1
+            ? `新字段名重复：${targetColumnName}`
+            : null;
+      return {
+        key: sourceColumnName,
+        sourceColumnName,
+        targetColumnName,
+        column,
+        changed: targetColumnName !== sourceColumnName,
+        issue,
+      };
+    });
+  }, [mappingTargets, source?.columns]);
+
+  const changedCount = rows.filter((row) => row.changed).length;
+  const invalidCount = rows.filter((row) => row.issue !== null).length;
+  const visibleRows = useMemo(() => {
+    const keyword = search.trim().toLocaleLowerCase();
+    return rows.filter((row) => {
+      if (changedOnly && !row.changed) return false;
+      if (!keyword) return true;
+      return [row.sourceColumnName, row.targetColumnName, row.column?.comment]
+        .some((value) => value?.toLocaleLowerCase().includes(keyword));
+    });
+  }, [changedOnly, rows, search]);
+
+  const buildMappings = (): JdbcColumnMapping[] => rows
+    .filter((row) => row.changed)
+    .map((row) => ({
+      sourceColumnName: row.sourceColumnName,
+      targetColumnName: row.targetColumnName,
+    }));
+
   const toConfiguration = (values: RenameFormValues): RenameConfiguration => ({
     sourceTableName: values.sourceTableName ?? '',
     outputTableName: values.outputTableName?.trim() ?? '',
-    columnMappings: (values.columnMappings ?? []).map((mapping) => ({
-      sourceColumnName: mapping.sourceColumnName ?? '',
-      targetColumnName: mapping.targetColumnName ?? '',
-    })),
+    columnMappings: buildMappings(),
   });
 
   const submit = (values: RenameFormValues) => {
@@ -1188,6 +1085,81 @@ export const RenameInspector = ({
       }
     },
   }));
+
+  const updateTargetName = (sourceColumnName: string, targetColumnName: string) => {
+    setMappingTargets((current) => {
+      const next = { ...current };
+      if (targetColumnName === sourceColumnName) delete next[sourceColumnName];
+      else next[sourceColumnName] = targetColumnName;
+      return next;
+    });
+    onDirtyChange(true);
+  };
+
+  const columns: TableColumnsType<RenameFieldRow> = [
+    {
+      title: '描述',
+      key: 'description',
+      width: '50%',
+      ellipsis: true,
+      render: (_, row) => (
+        row.column?.comment ? (
+          <Typography.Text
+            type="secondary"
+            className="canvas-rename-source-comment"
+            ellipsis={{ tooltip: row.column.comment }}
+          >
+            {row.column.comment}
+          </Typography.Text>
+        ) : <Typography.Text type="secondary">—</Typography.Text>
+      ),
+    },
+    {
+      title: '源字段名',
+      key: 'sourceColumnName',
+      width: '25%',
+      ellipsis: true,
+      render: (_, row) => (
+        <Tooltip
+          title={row.column
+            ? `${platformTypeLabel(row.column)} · ${row.column.nullable ? '可空' : '非空'}`
+            : '来源字段已失效'}
+        >
+          <Typography.Text className="canvas-rename-source-code" ellipsis>
+            {row.sourceColumnName}
+          </Typography.Text>
+        </Tooltip>
+      ),
+    },
+    {
+      title: '新字段名',
+      key: 'targetColumnName',
+      width: '25%',
+      render: (_, row) => (
+        <Tooltip title={row.issue} open={row.issue ? undefined : false}>
+          <Input
+            size="small"
+            status={row.issue ? 'error' : undefined}
+            value={row.targetColumnName}
+            aria-label={`重命名 ${row.sourceColumnName}`}
+            onChange={(event) => updateTargetName(row.sourceColumnName, event.target.value)}
+            suffix={row.changed ? (
+              <Tooltip title="恢复原名">
+                <Button
+                  type="text"
+                  size="small"
+                  className="canvas-rename-reset-button"
+                  icon={<UndoOutlined />}
+                  aria-label={`恢复 ${row.sourceColumnName} 原名`}
+                  onClick={() => updateTargetName(row.sourceColumnName, row.sourceColumnName)}
+                />
+              </Tooltip>
+            ) : null}
+          />
+        </Tooltip>
+      ),
+    },
+  ];
 
   return (
     <Space orientation="vertical" size={12} className="canvas-inspector-content">
@@ -1224,66 +1196,44 @@ export const RenameInspector = ({
         >
           <Input placeholder="例如 source_orders" />
         </Form.Item>
-        <Typography.Text strong>字段重命名</Typography.Text>
-        <Typography.Text type="secondary">
-          所有映射同时生效，支持 a→b、b→a 交换名称。
-        </Typography.Text>
-        <Form.List name="columnMappings">
-          {(fields, { add, remove }) => (
-            <Space orientation="vertical" size={8} className="canvas-condition-list">
-              {fields.map((field, index) => (
-                <Card
-                  key={field.key}
-                  size="small"
-                  title={`字段 ${index + 1}`}
-                  extra={(
-                    <Button
-                      type="text"
-                      danger
-                      icon={<DeleteOutlined />}
-                      aria-label={`删除字段映射 ${index + 1}`}
-                      onClick={() => remove(field.name)}
-                    />
-                  )}
-                >
-                  <Form.Item
-                    name={[field.name, 'sourceColumnName']}
-                    rules={[{ required: true, message: '请选择来源字段' }]}
-                  >
-                    <Select
-                      disabled={!validation || !source}
-                      placeholder="来源字段"
-                      options={source?.columns.map((column) => ({
-                        value: column.name,
-                        label: `${column.name} · ${platformTypeLabel(column)}`,
-                      })) ?? []}
-                    />
-                  </Form.Item>
-                  <div className="canvas-join-operator">→</div>
-                  <Form.Item
-                    name={[field.name, 'targetColumnName']}
-                    rules={[{ required: true, whitespace: true, message: '请输入目标字段名' }]}
-                  >
-                    <Input placeholder="目标字段名" />
-                  </Form.Item>
-                </Card>
-              ))}
-              <Button
-                icon={<PlusOutlined />}
-                disabled={!source}
-                onClick={() => add({ sourceColumnName: '', targetColumnName: '' })}
-              >
-                添加字段重命名
-              </Button>
-            </Space>
-          )}
-        </Form.List>
+        <div className="canvas-rename-field-heading">
+          <Typography.Text strong>字段重命名</Typography.Text>
+          <Typography.Text type="secondary">
+            直接修改右侧名称；未修改字段不会写入映射。
+          </Typography.Text>
+        </div>
+        <div className="canvas-rename-field-toolbar">
+          <Input
+            size="small"
+            allowClear
+            prefix={<SearchOutlined />}
+            value={search}
+            placeholder="搜索字段或描述"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <Checkbox
+            checked={changedOnly}
+            disabled={changedCount === 0}
+            onChange={(event) => setChangedOnly(event.target.checked)}
+          >
+            仅显示已修改
+          </Checkbox>
+          <Typography.Text type={invalidCount > 0 ? 'danger' : 'secondary'}>
+            已修改 {changedCount} / 总字段 {rows.length}{invalidCount > 0 ? ` · ${invalidCount} 项有误` : ''}
+          </Typography.Text>
+        </div>
+        <Table<RenameFieldRow>
+          className="canvas-rename-field-table"
+          size="small"
+          rowKey="key"
+          columns={columns}
+          dataSource={visibleRows}
+          pagination={false}
+          scroll={{ y: 480 }}
+          locale={{ emptyText: source ? '没有符合条件的字段' : '等待来源表 Schema' }}
+          rowClassName={(row) => row.issue ? 'is-invalid' : row.changed ? 'is-changed' : ''}
+        />
       </Form>
-      {source && (
-        <Card size="small" title={`来源字段 · ${source.name}`}>
-          <FieldPreview columns={source.columns} />
-        </Card>
-      )}
     </Space>
   );
 };
@@ -1321,6 +1271,9 @@ export const JdbcOutputInspector = ({
   onApply,
   onDirtyChange,
   inspectorRef,
+  splitLayout = false,
+  hideDataSource = false,
+  hideNodeValidation = false,
 }: {
   node: Extract<CanvasNodeDefinition, { type: 'JDBC_OUTPUT' }>;
   executionMode: CanvasExecutionMode;
@@ -1329,6 +1282,9 @@ export const JdbcOutputInspector = ({
   onApply: CanvasNodeInspectorProps['onApply'];
   onDirtyChange: CanvasNodeInspectorProps['onDirtyChange'];
   inspectorRef: Ref<CanvasNodeInspectorHandle>;
+  splitLayout?: boolean;
+  hideDataSource?: boolean;
+  hideNodeValidation?: boolean;
 }) => {
   const [form] = Form.useForm<JdbcOutputFormValues>();
   const sourceName = Form.useWatch('sourceTableName', form) ?? '';
@@ -1418,6 +1374,13 @@ export const JdbcOutputInspector = ({
           targetColumnName: mapping.targetColumnName ?? '',
         })),
       ),
+      writes: [{
+        writeId: node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID(),
+        sourceTableName: values.sourceTableName ?? '', targetTableName: values.targetTableName ?? '',
+        writeMode: values.writeMode ?? null,
+        upsertKeyColumns: values.writeMode === 'UPSERT' ? parseUpsertKeyColumns(values.upsertKeySelection) : [],
+        columnMappings: orderOutputFieldMappings(selectedTargetColumns, (values.columnMappings ?? []).map((mapping) => ({ sourceColumnName: mapping.sourceColumnName ?? '', targetColumnName: mapping.targetColumnName ?? '' }))),
+      }],
   });
 
   const submit = (values: JdbcOutputFormValues) => {
@@ -1468,11 +1431,12 @@ export const JdbcOutputInspector = ({
   }));
 
   return (
-    <Space orientation="vertical" size={12} className="canvas-inspector-content">
-      <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
+    <Space orientation="vertical" size={12} className={`canvas-inspector-content${splitLayout ? ' canvas-output-write-editor' : ''}`}>
+      {!hideNodeValidation && <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />}
       <Form<JdbcOutputFormValues> autoComplete="off"
         form={form}
         layout="vertical"
+        className={splitLayout ? 'canvas-output-write-editor-form' : undefined}
         initialValues={{
           sourceTableName: node.configuration.sourceTableName,
           dataSourceId: node.configuration.dataSourceId,
@@ -1486,6 +1450,8 @@ export const JdbcOutputInspector = ({
           onDirtyChange(configurationFingerprint(toConfiguration(values)) !== configurationFingerprint(node.configuration));
         }}
       >
+        <div className={splitLayout ? 'canvas-output-write-editor-grid' : undefined}>
+        <div className={splitLayout ? 'canvas-output-write-editor-settings' : undefined}>
         <Form.Item name="sourceTableName" label="来源表" rules={[{ required: true }]}>
           <Select
             disabled={!validation}
@@ -1493,7 +1459,7 @@ export const JdbcOutputInspector = ({
             options={(validation?.inputTables ?? []).map((table) => ({ value: table.name, label: table.name }))}
           />
         </Form.Item>
-        <Form.Item
+        {!hideDataSource && <Form.Item
           name="dataSourceId"
           label="目标数据源"
           rules={[
@@ -1515,8 +1481,8 @@ export const JdbcOutputInspector = ({
             purpose="DISTRIBUTION"
             placeholder="选择 JDBC 数据分发数据源"
           />
-        </Form.Item>
-        {selectedDataSourceId && selectedDataSourceQuery.isError && (
+        </Form.Item>}
+        {!hideDataSource && selectedDataSourceId && selectedDataSourceQuery.isError && (
           <MetadataErrorAlert
             error={selectedDataSourceQuery.error}
             fallback="读取目标数据源信息失败"
@@ -1557,12 +1523,14 @@ export const JdbcOutputInspector = ({
         )}
         <Form.Item
           name="writeMode"
-          label={executionMode === 'STREAMING' ? (
+          label={(
             <CanvasInspectorFieldLabel
               label="写入模式"
-              tooltip="实时任务通过 foreachBatch 执行 APPEND 或 UPSERT，整体按至少一次交付。"
+              tooltip={executionMode === 'STREAMING'
+                ? '实时任务通过 foreachBatch 执行 APPEND 或 UPSERT，整体按至少一次交付。'
+                : 'OVERWRITE 会先执行 TRUNCATE TABLE，再 APPEND 写入。两步不是同一原子事务；后续写入失败时，目标表可能为空或仅部分写入。'}
             />
-          ) : '写入模式'}
+          )}
           rules={[{ required: true }]}
           validateStatus={currentWriteModeUnavailableReason ? 'error' : undefined}
           help={currentWriteModeUnavailableReason ?? undefined}
@@ -1622,16 +1590,19 @@ export const JdbcOutputInspector = ({
             )}
           </>
         )}
+        </div>
+        <div className={splitLayout ? 'canvas-output-write-editor-mappings' : undefined}>
         <OutputFieldMappingFields
           sourceColumns={source?.columns ?? []}
           targetColumns={selectedTargetColumns}
           primaryKeyColumns={primaryKeyColumns}
-          initialMappings={node.configuration.columnMappings}
+          initialMappings={node.configuration.columnMappings ?? []}
           sourceReady={Boolean(validation && source)}
           targetReady={Boolean(selectedTableQuery.data)}
           targetLoading={selectedTableQuery.isFetching}
           keyColumns={writeMode === 'UPSERT' ? parseUpsertKeyColumns(upsertKeySelection) : []}
           keyLabel="UPSERT Key"
+          scrollHeight={splitLayout ? 520 : undefined}
           onProgrammaticChange={() => queueMicrotask(() => {
             const values = form.getFieldsValue(true);
             onDirtyChange(
@@ -1640,6 +1611,8 @@ export const JdbcOutputInspector = ({
             );
           })}
         />
+        </div>
+        </div>
       </Form>
     </Space>
   );
@@ -1661,6 +1634,9 @@ export const KafkaOutputInspector = ({
   onApply,
   onDirtyChange,
   inspectorRef,
+  splitLayout = false,
+  hideDataSource = false,
+  hideNodeValidation = false,
 }: {
   node: Extract<CanvasNodeDefinition, { type: 'KAFKA_OUTPUT' }>;
   validation: CanvasNodeValidationResult | undefined;
@@ -1668,6 +1644,9 @@ export const KafkaOutputInspector = ({
   onApply: CanvasNodeInspectorProps['onApply'];
   onDirtyChange: CanvasNodeInspectorProps['onDirtyChange'];
   inspectorRef: Ref<CanvasNodeInspectorHandle>;
+  splitLayout?: boolean;
+  hideDataSource?: boolean;
+  hideNodeValidation?: boolean;
 }) => {
   const [form] = Form.useForm<KafkaOutputFormValues>();
   const sourceName = Form.useWatch('sourceTableName', form) ?? '';
@@ -1705,6 +1684,12 @@ export const KafkaOutputInspector = ({
         targetColumnName: mapping.targetColumnName ?? '',
       })),
     ),
+    writes: [{
+      writeId: node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID(),
+      sourceTableName: values.sourceTableName ?? '', topic: values.topic?.trim() ?? '',
+      valueSchema: values.valueSchema ?? { columns: [] }, keyColumnName: values.keyColumnName ?? '',
+      columnMappings: orderOutputFieldMappings(targetColumns, (values.columnMappings ?? []).map((mapping) => ({ sourceColumnName: mapping.sourceColumnName ?? '', targetColumnName: mapping.targetColumnName ?? '' }))),
+    }],
   });
   const submit = (values: KafkaOutputFormValues) => {
     onApply({ id: node.id, type: node.type, configuration: toConfiguration(values) });
@@ -1735,11 +1720,12 @@ export const KafkaOutputInspector = ({
   }));
 
   return (
-    <Space orientation="vertical" size={12} className="canvas-inspector-content">
-      <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
+    <Space orientation="vertical" size={12} className={`canvas-inspector-content${splitLayout ? ' canvas-output-write-editor' : ''}`}>
+      {!hideNodeValidation && <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />}
       <Form<KafkaOutputFormValues> autoComplete="off"
         form={form}
         layout="vertical"
+        className={splitLayout ? 'canvas-output-write-editor-form' : undefined}
         initialValues={node.configuration}
         onFinish={submit}
         onValuesChange={(_changed, values) => {
@@ -1749,6 +1735,8 @@ export const KafkaOutputInspector = ({
           );
         }}
       >
+        <div className={splitLayout ? 'canvas-output-write-editor-grid' : undefined}>
+        <div className={splitLayout ? 'canvas-output-write-editor-settings' : undefined}>
         <Form.Item name="sourceTableName" label="来源流表" rules={[{ required: true }]}>
           <Select
             disabled={!validation}
@@ -1758,9 +1746,9 @@ export const KafkaOutputInspector = ({
               .map((table) => ({ value: table.name, label: table.name }))}
           />
         </Form.Item>
-        <Form.Item name="dataSourceId" label="Kafka 数据源" rules={[{ required: true }]}>
+        {!hideDataSource && <Form.Item name="dataSourceId" label="Kafka 数据源" rules={[{ required: true }]}>
           <CanvasKafkaDataSourceSelect purpose="DISTRIBUTION" placeholder="选择 Kafka 输出" />
-        </Form.Item>
+        </Form.Item>}
         <Form.Item
           name="topic"
           label={(
@@ -1797,12 +1785,15 @@ export const KafkaOutputInspector = ({
             })) ?? []}
           />
         </Form.Item>
+        </div>
+        <div className={splitLayout ? 'canvas-output-write-editor-mappings' : undefined}>
         <OutputFieldMappingFields
           sourceColumns={source?.columns ?? []}
           targetColumns={targetColumns}
-          initialMappings={node.configuration.columnMappings}
+          initialMappings={node.configuration.columnMappings ?? []}
           sourceReady={Boolean(validation && source)}
           targetReady={targetColumns.length > 0}
+          scrollHeight={splitLayout ? 520 : undefined}
           onProgrammaticChange={() => queueMicrotask(() => {
             const values = form.getFieldsValue(true);
             onDirtyChange(
@@ -1811,6 +1802,8 @@ export const KafkaOutputInspector = ({
             );
           })}
         />
+        </div>
+        </div>
       </Form>
     </Space>
   );
@@ -1926,7 +1919,7 @@ export const ModelInputInspector = ({
   );
 
   const toConfiguration = (values: ModelInputFormValues): ModelInputConfiguration => ({
-    modelId: values.modelId ?? '',
+    models: values.modelId ? [{ modelId: values.modelId }] : [],
   });
 
   const submit = (values: ModelInputFormValues) => {
@@ -1963,7 +1956,7 @@ export const ModelInputInspector = ({
       <Form<ModelInputFormValues> autoComplete="off"
         form={form}
         layout="vertical"
-        initialValues={{ modelId: node.configuration.modelId }}
+        initialValues={{ modelId: node.configuration.models[0]?.modelId ?? '' }}
         onFinish={submit}
         onValuesChange={(_changed, values) => {
           onDirtyChange(configurationFingerprint(toConfiguration(values)) !== configurationFingerprint(node.configuration));
@@ -1995,6 +1988,8 @@ export const ModelOutputInspector = ({
   onApply,
   onDirtyChange,
   inspectorRef,
+  splitLayout = false,
+  hideNodeValidation = false,
 }: {
   node: Extract<CanvasNodeDefinition, { type: 'MODEL_OUTPUT' }>;
   executionMode?: CanvasExecutionMode;
@@ -2003,6 +1998,8 @@ export const ModelOutputInspector = ({
   onApply: CanvasNodeInspectorProps['onApply'];
   onDirtyChange: CanvasNodeInspectorProps['onDirtyChange'];
   inspectorRef: Ref<CanvasNodeInspectorHandle>;
+  splitLayout?: boolean;
+  hideNodeValidation?: boolean;
 }) => {
   const [form] = Form.useForm<ModelOutputFormValues>();
   const [modelDetailOpen, setModelDetailOpen] = useState(false);
@@ -2068,6 +2065,12 @@ export const ModelOutputInspector = ({
         targetColumnName: mapping.targetColumnName ?? '',
       })),
     ),
+    writes: [{
+      writeId: node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID(),
+      sourceTableName: values.sourceTableName ?? '', targetModelId: values.targetModelId ?? '',
+      writeMode: values.writeMode ?? null,
+      columnMappings: orderOutputFieldMappings(targetColumns, (values.columnMappings ?? []).map((mapping) => ({ sourceColumnName: mapping.sourceColumnName ?? '', targetColumnName: mapping.targetColumnName ?? '' }))),
+    }],
   });
 
   const submit = (values: ModelOutputFormValues) => {
@@ -2127,12 +2130,13 @@ export const ModelOutputInspector = ({
     `${sourceTableName}（上游已不可用）`,
   );
   return (
-    <Space orientation="vertical" size={12} className="canvas-inspector-content">
-      <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
+    <Space orientation="vertical" size={12} className={`canvas-inspector-content${splitLayout ? ' canvas-output-write-editor' : ''}`}>
+      {!hideNodeValidation && <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />}
       {modelMessage && <Alert showIcon type="error" title={modelMessage} />}
       <Form<ModelOutputFormValues> autoComplete="off"
         form={form}
         layout="vertical"
+        className={splitLayout ? 'canvas-output-write-editor-form' : undefined}
         initialValues={{
           sourceTableName: node.configuration.sourceTableName,
           targetModelId: node.configuration.targetModelId,
@@ -2145,6 +2149,8 @@ export const ModelOutputInspector = ({
           onDirtyChange(configurationFingerprint(toConfiguration(values)) !== configurationFingerprint(node.configuration));
         }}
       >
+        <div className={splitLayout ? 'canvas-output-write-editor-grid' : undefined}>
+        <div className={splitLayout ? 'canvas-output-write-editor-settings' : undefined}>
         <Form.Item name="sourceTableName" label="来源表" rules={[{ required: true, message: '请选择来源表' }]}>
           <Select
             disabled={!validation}
@@ -2170,12 +2176,14 @@ export const ModelOutputInspector = ({
         </Form.Item>
         <Form.Item
           name="writeMode"
-          label={executionMode === 'STREAMING' ? (
+          label={(
             <CanvasInspectorFieldLabel
               label="写入模式"
-              tooltip="实时模型输出通过 foreachBatch 执行 APPEND 或 UPSERT，整体按至少一次交付。"
+              tooltip={executionMode === 'STREAMING'
+                ? '实时模型输出通过 foreachBatch 执行 APPEND 或 UPSERT，整体按至少一次交付。'
+                : 'OVERWRITE 会先执行 TRUNCATE TABLE，再 APPEND 写入。两步不是同一原子事务；后续写入失败时，目标表可能为空或仅部分写入。'}
             />
-          ) : '写入模式'}
+          )}
           rules={[{ required: true, message: '请选择写入模式' }]}
           validateStatus={currentWriteModeUnavailableReason ? 'error' : undefined}
           help={currentWriteModeUnavailableReason ?? undefined}
@@ -2194,6 +2202,8 @@ export const ModelOutputInspector = ({
             )}
           </div>
         )}
+        </div>
+        <div className={splitLayout ? 'canvas-output-write-editor-mappings' : undefined}>
         <OutputFieldMappingFields
           sourceColumns={sourceTable?.columns ?? []}
           targetColumns={targetColumns}
@@ -2201,10 +2211,11 @@ export const ModelOutputInspector = ({
           primaryKeyColumns={primaryKeyColumns}
           keyColumns={writeMode === 'UPSERT' ? primaryKeyColumns : []}
           keyLabel="UPSERT Key"
-          initialMappings={node.configuration.columnMappings}
+          initialMappings={node.configuration.columnMappings ?? []}
           sourceReady={Boolean(validation && sourceTable)}
           targetReady={Boolean(modelQuery.data)}
           targetLoading={modelQuery.isFetching}
+          scrollHeight={splitLayout ? 520 : undefined}
           onProgrammaticChange={() => queueMicrotask(() => {
             const values = form.getFieldsValue(true);
             onDirtyChange(
@@ -2213,6 +2224,8 @@ export const ModelOutputInspector = ({
             );
           })}
         />
+        </div>
+        </div>
       </Form>
       <CanvasModelDetailModal
         detail={modelQuery.data}

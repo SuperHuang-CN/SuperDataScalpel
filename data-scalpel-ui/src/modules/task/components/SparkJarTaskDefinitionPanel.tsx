@@ -98,6 +98,7 @@ const EntryEditor = ({
           size="small"
           rowKey="key"
           pagination={false}
+          scroll={{ y: 146 }}
           dataSource={fields}
           locale={{ emptyText: '暂无配置' }}
           columns={[
@@ -375,33 +376,35 @@ export const SparkJarTaskDefinitionPanel = ({
           initialValues={{ parameters: [], sparkConf: [], resourceBindings: [], timeoutSeconds: 3600 }}
           onValuesChange={() => initialized && setDirty(true)}
         >
-          <section className="spark-jar-definition-section">
-            <div className="spark-jar-definition-section-title">运行参数</div>
-            <EntryEditor
-              name="parameters"
-              addLabel="添加参数"
-              keyPlaceholder="例如 processingDate"
-              valueMax={4000}
-              valueRequired={false}
-              keyRules={[{ required: true, message: '请输入参数 Key' }, { max: 100 }]}
-            />
-          </section>
+          <div className="spark-jar-entry-grid">
+            <section className="spark-jar-definition-section spark-jar-entry-section">
+              <div className="spark-jar-definition-section-title">运行参数</div>
+              <EntryEditor
+                name="parameters"
+                addLabel="添加参数"
+                keyPlaceholder="例如 processingDate"
+                valueMax={4000}
+                valueRequired={false}
+                keyRules={[{ required: true, message: '请输入参数 Key' }, { max: 100 }]}
+              />
+            </section>
 
-          <section className="spark-jar-definition-section">
-            <div className="spark-jar-definition-section-title">Spark Conf</div>
-            <EntryEditor
-              name="sparkConf"
-              addLabel="添加 Spark Conf"
-              keyPlaceholder="spark.sql.shuffle.partitions"
-              valueMax={2000}
-              valueRequired
-              keyRules={[
-                { required: true, message: '请输入 Spark Conf Key' },
-                { max: 500 },
-                { pattern: /^spark\./, message: 'Key 必须以 spark. 开头' },
-              ]}
-            />
-          </section>
+            <section className="spark-jar-definition-section spark-jar-entry-section">
+              <div className="spark-jar-definition-section-title">Spark Conf</div>
+              <EntryEditor
+                name="sparkConf"
+                addLabel="添加 Spark Conf"
+                keyPlaceholder="spark.sql.shuffle.partitions"
+                valueMax={2000}
+                valueRequired
+                keyRules={[
+                  { required: true, message: '请输入 Spark Conf Key' },
+                  { max: 500 },
+                  { pattern: /^spark\./, message: 'Key 必须以 spark. 开头' },
+                ]}
+              />
+            </section>
+          </div>
 
           <section className="spark-jar-definition-section">
             <div className="spark-jar-definition-section-title">资源绑定</div>

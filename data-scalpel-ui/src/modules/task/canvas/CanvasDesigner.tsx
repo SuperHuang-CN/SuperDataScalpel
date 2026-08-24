@@ -44,6 +44,8 @@ import { canvasNodeCenterPlacement } from './canvasNodePlacement';
 import { canvasNodeTemplate, canvasNodeTemplates, registerCanvasNodes, type CanvasNodeTemplate } from './canvasRegistry';
 import { canvasNodeRegistry } from './nodes/nodeRegistry';
 import {
+  canvasEdgeConnector,
+  canvasEdgeRouter,
   loadCanvasDefinition,
   replaceCanvasDefinition,
   styleCanvasEdge,
@@ -88,6 +90,7 @@ export interface CanvasDesignerProps {
 
 export interface CanvasDesignerHandle {
   applyPendingInspector: () => Promise<CanvasDefinition | null>;
+  replaceDefinition: (definition: CanvasDefinition) => void;
 }
 
 interface CanvasFullscreenControls {
@@ -191,6 +194,7 @@ const EditableCanvasDesigner = ({
   const suspendedRef = useRef(false);
   const initialDefinitionRef = useRef(initialDefinition);
   const refreshDefinitionRef = useRef<() => void>(() => undefined);
+  const refreshCompilationDefinitionRef = useRef<() => void>(() => undefined);
   const selectedNodeIdRef = useRef<string | undefined>(undefined);
   const inspectorDirtyRef = useRef(false);
   const inspectorDirtyChangeRef = useRef(onInspectorDirtyChange);
@@ -203,10 +207,12 @@ const EditableCanvasDesigner = ({
   const [applyingInspector, setApplyingInspector] = useState(false);
   const [validationRequestVersion, setValidationRequestVersion] = useState(0);
   const [definition, setDefinition] = useState<CanvasDefinition>(initialDefinition);
+  const [compilationDefinition, setCompilationDefinition] = useState<CanvasDefinition>(initialDefinition);
+  const [deferredNodeIds, setDeferredNodeIds] = useState<ReadonlySet<string>>(() => new Set());
   const [activePaletteCategory, setActivePaletteCategory] = useState<CanvasNodeCategory | null>(null);
   const metadata = useCanvasMetadataSnapshot(definition);
   const taskCompilation = useCanvasTaskCompilation({
-    definition,
+    definition: compilationDefinition,
     metadataSnapshot: metadata.metadataSnapshot,
     metadataLoading: metadata.loading,
     metadataError: metadata.error,
@@ -224,7 +230,13 @@ const EditableCanvasDesigner = ({
     [definition.nodes, selectedNodeId],
   );
   const selectedValidation = selectedNodeId ? engineValidation?.nodeResults.get(selectedNodeId) : undefined;
-  const compilationStatus = taskCompilationStatus(taskCompilation, metadata.issues);
+  const compilationStatus = deferredNodeIds.size > 0
+    ? {
+      text: `待配置 ${deferredNodeIds.size} 个节点`,
+      color: 'default',
+      detail: '新拖入的默认节点暂不提交后台编译；应用节点配置或建立连线后会自动校验。',
+    }
+    : taskCompilationStatus(taskCompilation, metadata.issues);
   const lineage = taskCompilation.response?.lineage;
   const lineageWarningMessages = Array.from(new Set(
     lineage?.warnings.map((warning) => warning.message) ?? [],
@@ -239,11 +251,14 @@ const EditableCanvasDesigner = ({
   const selectedMetadataIssue = selectedNodeId
     ? metadata.issues.find((issue) => issue.nodeIds.includes(selectedNodeId))
     : undefined;
-  const validationUnavailableMessage = engineValidation
-    ? null
-    : selectedMetadataIssue?.message ?? (compilationStatus.detail || compilationStatus.text);
-  const canRetryCompilation = taskCompilation.status === 'METADATA_ERROR'
-    || taskCompilation.status === 'UNAVAILABLE';
+  const validationUnavailableMessage = selectedNodeId && deferredNodeIds.has(selectedNodeId)
+    ? '新节点尚未提交后台校验；应用配置或建立连线后会自动校验。'
+    : engineValidation
+      ? null
+      : selectedMetadataIssue?.message ?? (compilationStatus.detail || compilationStatus.text);
+  const canRetryCompilation = deferredNodeIds.size === 0 && (
+    taskCompilation.status === 'METADATA_ERROR' || taskCompilation.status === 'UNAVAILABLE'
+  );
 
   const retryCompilation = () => {
     if (taskCompilation.status === 'METADATA_ERROR') {
@@ -254,8 +269,9 @@ const EditableCanvasDesigner = ({
   };
 
   const updateInspectorDirty = useCallback((dirty: boolean) => {
-    inspectorDirtyRef.current = dirty;
-    setInspectorDirty(dirty);
+    const nextDirty = dirty && selectedNodeIdRef.current !== undefined;
+    inspectorDirtyRef.current = nextDirty;
+    setInspectorDirty(nextDirty);
   }, []);
 
   const restoreInspectorSelection = useCallback(() => {
@@ -278,10 +294,16 @@ const EditableCanvasDesigner = ({
   const closeInspector = useCallback(() => {
     selectedNodeIdRef.current = undefined;
     setSelectedNodeId(undefined);
+    updateInspectorDirty(false);
     graphRef.current?.cleanSelection();
-  }, []);
+  }, [updateInspectorDirty]);
 
   const requestInspectorExit = useCallback((action: () => void) => {
+    if (!selectedNodeIdRef.current) {
+      updateInspectorDirty(false);
+      action();
+      return;
+    }
     if (!inspectorDirtyRef.current) {
       action();
       return;
@@ -291,7 +313,7 @@ const EditableCanvasDesigner = ({
     pendingInspectorActionRef.current = pending;
     setPendingInspectorAction(pending);
     restoreInspectorSelection();
-  }, [restoreInspectorSelection]);
+  }, [restoreInspectorSelection, updateInspectorDirty]);
 
   useEffect(() => {
     inspectorDirtyChangeRef.current = onInspectorDirtyChange;
@@ -339,8 +361,13 @@ const EditableCanvasDesigner = ({
         allowEdge: false,
         allowNode: false,
         snap: { radius: 20 },
-        connector: { name: 'rounded' },
-        createEdge: () => new Shape.Edge({ id: crypto.randomUUID() }),
+        router: canvasEdgeRouter,
+        connector: canvasEdgeConnector,
+        createEdge: () => new Shape.Edge({
+          id: crypto.randomUUID(),
+          router: canvasEdgeRouter,
+          connector: canvasEdgeConnector,
+        }),
         validateConnection({ sourceCell, targetCell }) {
           if (!sourceCell?.isNode() || !targetCell?.isNode()) return false;
           const source = sourceCell as Node;
@@ -371,13 +398,30 @@ const EditableCanvasDesigner = ({
     };
     container.addEventListener('wheel', panCanvasWithWheel, { passive: false });
 
-    const refresh = () => {
+    const refresh = ({
+      requestCompilation = false,
+      deferredNodeId,
+    }: {
+      requestCompilation?: boolean;
+      deferredNodeId?: string;
+    } = {}) => {
       if (suspendedRef.current) return;
       const nextDefinition = toCanvasDefinition(graph);
       setDefinition(nextDefinition);
+      if (requestCompilation) {
+        setCompilationDefinition(nextDefinition);
+        setDeferredNodeIds(new Set());
+      } else if (deferredNodeId) {
+        setDeferredNodeIds((current) => {
+          const next = new Set(current);
+          next.add(deferredNodeId);
+          return next;
+        });
+      }
       definitionChangeRef.current?.(nextDefinition);
     };
-    refreshDefinitionRef.current = refresh;
+    refreshDefinitionRef.current = () => refresh();
+    refreshCompilationDefinitionRef.current = () => refresh({ requestCompilation: true });
 
     graph.use(new History({
       enabled: true,
@@ -403,13 +447,13 @@ const EditableCanvasDesigner = ({
     graph.bindKey(['ctrl+z', 'meta+z'], () => {
       requestInspectorExit(() => {
         graph.undo();
-        queueMicrotask(refresh);
+        queueMicrotask(() => refresh({ requestCompilation: true }));
       });
     });
     graph.bindKey(['ctrl+shift+z', 'meta+shift+z'], () => {
       requestInspectorExit(() => {
         graph.redo();
-        queueMicrotask(refresh);
+        queueMicrotask(() => refresh({ requestCompilation: true }));
       });
     });
     graph.bindKey(['backspace', 'delete'], () => {
@@ -419,28 +463,28 @@ const EditableCanvasDesigner = ({
         requestCanvasNodeDeletion(graph, selectedNodes);
       } else {
         selectedCells.forEach((cell) => cell.remove());
-        queueMicrotask(refresh);
+        queueMicrotask(() => refresh({ requestCompilation: true }));
       }
     });
     graph.on('edge:added', ({ edge }) => styleCanvasEdge(edge));
-    graph.on('edge:connected', refresh);
-    graph.on('edge:removed', refresh);
+    graph.on('edge:connected', () => refresh({ requestCompilation: true }));
+    graph.on('edge:removed', () => refresh({ requestCompilation: true }));
     graph.on('node:added', ({ node, options }) => {
-      refresh();
+      refresh({ deferredNodeId: node.id });
       if (suspendedRef.current || !options.stencil) return;
       queueMicrotask(() => {
         setActivePaletteCategory(null);
         selectInspectorNode(node.id);
       });
     });
-    graph.on('node:change:position', refresh);
+    graph.on('node:change:position', () => refresh());
     graph.on('node:change:size', ({ options }) => {
       if (options.canvasPresentationUpdate) return;
       refresh();
     });
     graph.on('node:change:data', ({ options }) => {
       if (options.canvasPresentationUpdate || options.canvasConfigurationCommit) return;
-      refresh();
+      refresh({ requestCompilation: true });
     });
     graph.on('node:removed', ({ node }) => {
       if (selectedNodeIdRef.current === node.id) {
@@ -448,7 +492,7 @@ const EditableCanvasDesigner = ({
         setSelectedNodeId(undefined);
         updateInspectorDirty(false);
       }
-      refresh();
+      refresh({ requestCompilation: true });
     });
     graph.on('node:click', ({ node }) => {
       setActivePaletteCategory(null);
@@ -480,6 +524,7 @@ const EditableCanvasDesigner = ({
       unregisterDeletionRequest();
       container.removeEventListener('wheel', panCanvasWithWheel);
       refreshDefinitionRef.current = () => undefined;
+      refreshCompilationDefinitionRef.current = () => undefined;
       dndRef.current = null;
       graphRef.current = null;
       graph.dispose();
@@ -542,20 +587,30 @@ const EditableCanvasDesigner = ({
   };
 
   const applyNodeConfiguration = (update: CanvasNodeConfigurationUpdate) => {
-    const graphNode = graphRef.current?.getCellById(update.id);
+    const graph = graphRef.current;
+    if (!graph) return;
+    const graphNode = graph.getCellById(update.id);
     if (!graphNode?.isNode()) return;
     const current = graphNode.getData<CanvasNodeRuntimeData>();
     if (current.type !== update.type) return;
+    const configuration = structuredClone(update.configuration);
     graphNode.setData(
-      { ...current, configuration: structuredClone(update.configuration) },
+      { ...current, configuration },
       { canvasConfigurationCommit: true },
     );
-    refreshDefinitionRef.current();
+    // Configuration commits must not depend solely on X6's asynchronous data
+    // round-trip. Keep the React definition authoritative for validation,
+    // export, and save as soon as the Inspector applies its draft.
+    const nextDefinition = toCanvasDefinition(graph);
+    setDefinition(nextDefinition);
+    setCompilationDefinition(nextDefinition);
+    setDeferredNodeIds(new Set());
+    definitionChangeRef.current?.(nextDefinition);
     setValidationRequestVersion((currentVersion) => currentVersion + 1);
     message.success(`${current.name} 配置草稿已应用`);
   };
 
-  const replaceDefinition = (nextDefinition: CanvasDefinition) => {
+  const replaceDefinition = useCallback((nextDefinition: CanvasDefinition) => {
     const graph = graphRef.current;
     if (!graph) return;
     suspendedRef.current = true;
@@ -566,9 +621,9 @@ const EditableCanvasDesigner = ({
     setInspectorResetVersion((current) => current + 1);
     replaceCanvasDefinition(graph, nextDefinition);
     suspendedRef.current = false;
-    refreshDefinitionRef.current();
+    refreshCompilationDefinitionRef.current();
     if (nextDefinition.nodes.length > 0) graph.zoomToFit({ padding: 32, maxScale: 1 });
-  };
+  }, [updateInspectorDirty]);
 
   const confirmReplacement = (title: string, content: string, action: () => void) => {
     const graph = graphRef.current;
@@ -625,12 +680,12 @@ const EditableCanvasDesigner = ({
 
   const undo = () => requestInspectorExit(() => {
     graphRef.current?.undo();
-    queueMicrotask(refreshDefinitionRef.current);
+    queueMicrotask(refreshCompilationDefinitionRef.current);
   });
 
   const redo = () => requestInspectorExit(() => {
     graphRef.current?.redo();
-    queueMicrotask(refreshDefinitionRef.current);
+    queueMicrotask(refreshCompilationDefinitionRef.current);
   });
 
   const closePendingInspectorAction = () => {
@@ -674,7 +729,8 @@ const EditableCanvasDesigner = ({
       definitionChangeRef.current?.(nextDefinition);
       return nextDefinition;
     },
-  }), [applyInspector, updateInspectorDirty]);
+    replaceDefinition,
+  }), [applyInspector, replaceDefinition, updateInspectorDirty]);
 
   const applyInspectorAndContinue = async () => {
     const action = pendingInspectorActionRef.current;

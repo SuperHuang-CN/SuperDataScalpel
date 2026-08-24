@@ -1,6 +1,6 @@
 # Canvas JDBC_OUTPUT UPSERT 设计
 
-状态：JDBC_OUTPUT UPSERT 的历史引入版本为 Canvas 1.24；当前 Canvas 2.3 已同时支持
+状态：JDBC_OUTPUT UPSERT 的历史引入版本为 Canvas 1.24；当前 Canvas 3.0 已同时支持
 JDBC_OUTPUT 与 MODEL_OUTPUT 的批流 UPSERT。
 
 ## 定义

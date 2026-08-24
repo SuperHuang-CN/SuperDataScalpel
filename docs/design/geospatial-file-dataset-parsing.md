@@ -28,8 +28,8 @@ SHP 和 GDB 都以单个归档文件上传，并进入统一文件数据集解�
 - DBF 字符集及必要来源元数据。
 
 Geometry 字段保存为公共 `PlatformTypeDefinition(GEOMETRY)`，其中包含 kind、EPSG CRS 和
-coordinate dimension；管理端 JSON 预览只用于可读展示，不是 Canvas 字段类型。Canvas 和 Runner
-始终使用 Sedona/JTS Geometry，不把 Geometry 降级为 JSON 或 String。
+coordinate dimension；管理端属性预览不返回 Geometry 字段或坐标值。Canvas 和 Runner 始终使用
+Sedona/JTS Geometry，不把 Geometry 降级为 JSON 或 String。
 
 Extent 和记录数不参与 Schema 一致性。SHP 支持表级追加、全量覆盖和单来源替换；所有来源必须
 满足同一权威 Schema 和空间元数据约束。
@@ -68,8 +68,9 @@ CRS 只按以下顺序确定，不根据名称、范围或坐标值猜测：
 
 ## 5. 预览与运行
 
-SHP 预览按当前来源的 `sourceOrder` 读取，累计到 limit 后停止；任一来源不支持安全预览时整表
-返回 `409`。GDB 图层可以处于 `SCHEMA_READY`，此时允许作为 Canvas 输入但管理端不提供预览。
+SHP/GDB 属性预览按当前来源的 `sourceOrder` 读取，累计到 limit 后停止，不返回 Geometry 字段和
+坐标值；任一来源不支持安全预览时整表返回 `409`。GDB 图层可以处于 `SCHEMA_READY`，此时允许
+作为 Canvas 输入但管理端不提供预览。
 
 Canvas Manifest v8 保存逻辑表 Schema、解析参数和有序来源的精确原归档/物化位置及来源键。
 Task Engine 不使用修订号，也不保护旧对象。覆盖或删除会立即移除旧对象，因此旧任务允许以文件

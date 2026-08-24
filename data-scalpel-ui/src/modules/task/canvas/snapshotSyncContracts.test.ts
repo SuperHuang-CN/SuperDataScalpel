@@ -70,7 +70,13 @@ describe('snapshot sync frontend contracts', () => {
 
   it('reads result v2 and v3 while exposing Snapshot Sync metrics only in v3', () => {
     expect(parseTaskExecutionResultArtifact({ schemaVersion: 2, nodeResults: [] }))
-      .toEqual({ schemaVersion: 2, nodeResults: [] });
+      .toEqual({
+        schemaVersion: 2,
+        taskType: 'SPARK_CANVAS',
+        nodeResults: [],
+        qualityResult: null,
+        userJobObservability: null,
+      });
     const result = parseTaskExecutionResultArtifact({
       schemaVersion: 3,
       nodeResults: [{
@@ -127,7 +133,7 @@ describe('snapshot sync frontend contracts', () => {
     expect(() => parseTaskExecutionResultArtifact({
       schemaVersion: 3,
       nodeResults: [{ ...snapshotNode, state: 'FAILED', metrics }],
-    })).toThrow('失败时不能包含成功指标');
+    })).toThrow('失败时不能包含 Snapshot Sync 指标');
     expect(() => parseTaskExecutionResultArtifact({
       schemaVersion: 3,
       nodeResults: [{ ...snapshotNode, nodeType: 'JDBC_OUTPUT', metrics }],

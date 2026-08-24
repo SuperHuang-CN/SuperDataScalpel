@@ -11,11 +11,15 @@ import cn.superhuang.data.scalpel.contract.task.ConnectionKind;
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.MetadataTable;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -54,8 +58,39 @@ public final class JdbcInputNodeOperator implements CanvasNodeOperator {
         CanvasNodeIssueSink issues = context.issues();
         UUID dataSourceId = CanvasNodeSupport.parseUuid(
                 configuration.dataSourceId(), "configuration.dataSourceId", issues);
-        CanvasNodeSupport.required(
-                configuration.tableName(), "输入表名不能为空", "configuration.tableName", issues);
+        List<JdbcInputTableSelection> selections = configuration.tables();
+        if (selections == null || selections.isEmpty()) {
+            issues.error(
+                    "REQUIRED_CONFIGURATION",
+                    "请至少选择一张物理表",
+                    "configuration.tables"
+            );
+        }
+        Set<String> configuredTableNames = new LinkedHashSet<>();
+        if (selections != null) {
+            for (int index = 0; index < selections.size(); index++) {
+                JdbcInputTableSelection selection = selections.get(index);
+                String path = "configuration.tables[" + index + "].tableName";
+                if (selection == null) {
+                    issues.error("REQUIRED_CONFIGURATION", "物理表配置不能为空", "configuration.tables[" + index + "]");
+                    continue;
+                }
+                CanvasNodeSupport.required(selection.tableName(), "输入表名不能为空", path, issues);
+                JdbcInputReadOptionPolicy.validate(
+                        selection.readOptions(),
+                        "configuration.tables[" + index + "].readOptions",
+                        issues
+                );
+                if (!CanvasNodeSupport.blank(selection.tableName())
+                        && !configuredTableNames.add(selection.tableName())) {
+                    issues.error(
+                            "DUPLICATE_TABLE_NAME",
+                            "同一 JDBC 输入中不能重复选择物理表：" + selection.tableName(),
+                            path
+                    );
+                }
+            }
+        }
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(List.of());
         }
@@ -72,40 +107,52 @@ public final class JdbcInputNodeOperator implements CanvasNodeOperator {
             );
             return CanvasNodeOperationResult.invalid(List.of());
         }
-        MetadataTable table = dataSource.table(configuration.tableName());
-        if (table == null) {
-            issues.error(
-                    "TABLE_NOT_FOUND",
-                    "输入表不存在：" + configuration.tableName(),
-                    "configuration.tableName"
+        List<ResolvedTable> resolvedTables = new ArrayList<>();
+        for (int index = 0; index < selections.size(); index++) {
+            JdbcInputTableSelection selection = selections.get(index);
+            String path = "configuration.tables[" + index + "].tableName";
+            MetadataTable table = dataSource.table(selection.tableName());
+            if (table == null) {
+                issues.error(
+                        "TABLE_NOT_FOUND",
+                        "输入表不存在：" + selection.tableName(),
+                        path
+                );
+                continue;
+            }
+            CanvasTableSchema schema = new CanvasTableSchema(
+                    selection.tableName(),
+                    CanvasTableOrigin.jdbc(dataSourceId, selection.tableName()),
+                    table.columns()
             );
-            return CanvasNodeOperationResult.invalid(List.of());
+            CanvasNodeSupport.validateSupportedGeometry(schema.columns(), path, issues);
+            CanvasNodeSupport.validateJdbcGeometryDatabase(
+                    schema.columns(),
+                    dataSource.metadata().jdbcDatabaseType(),
+                    path,
+                    issues
+            );
+            resolvedTables.add(new ResolvedTable(selection, schema));
         }
-
-        CanvasTableSchema schema = new CanvasTableSchema(
-                configuration.tableName(),
-                CanvasTableOrigin.jdbc(dataSourceId, configuration.tableName()),
-                table.columns()
-        );
-        CanvasNodeSupport.validateSupportedGeometry(
-                schema.columns(),
-                "configuration.tableName",
-                issues
-        );
-        CanvasNodeSupport.validateJdbcGeometryDatabase(
-                schema.columns(),
-                dataSource.metadata().jdbcDatabaseType(),
-                "configuration.tableName",
-                issues
-        );
+        List<CanvasTableSchema> schemas = resolvedTables.stream().map(ResolvedTable::schema).toList();
         if (issues.hasErrors()) {
-            return CanvasNodeOperationResult.invalid(List.of());
+            return CanvasNodeOperationResult.invalid(schemas);
         }
-        Dataset<Row> dataset = context.dataAccess().readJdbcInput(node, schema);
-        Map<String, SparkCanvasTable> output = Map.of(
-                schema.name(),
-                new SparkCanvasTable(schema, dataset)
-        );
-        return CanvasNodeOperationResult.propagated(output, List.of(schema));
+        Map<String, SparkCanvasTable> output = new LinkedHashMap<>();
+        for (ResolvedTable resolved : resolvedTables) {
+            Dataset<Row> dataset = context.dataAccess().readJdbcInput(
+                    node, resolved.selection(), resolved.schema());
+            output.put(
+                    resolved.schema().name(),
+                    new SparkCanvasTable(resolved.schema(), dataset)
+            );
+        }
+        return CanvasNodeOperationResult.propagated(output, schemas);
+    }
+
+    private record ResolvedTable(
+            JdbcInputTableSelection selection,
+            CanvasTableSchema schema
+    ) {
     }
 }

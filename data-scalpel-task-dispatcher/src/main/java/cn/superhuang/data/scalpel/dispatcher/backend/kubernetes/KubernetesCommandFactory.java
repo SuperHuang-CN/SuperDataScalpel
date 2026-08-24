@@ -98,6 +98,16 @@ public class KubernetesCommandFactory {
                 "--grace-period=" + properties.cancelGraceSeconds(), "--ignore-not-found=true");
     }
 
+    public List<String> forceDeleteDriver(String podName) {
+        return kubectl("delete", "pod", podName, "--grace-period=0", "--force",
+                "--ignore-not-found=true");
+    }
+
+    public List<String> forceDeleteExecutors(ExecutionIdentity identity) {
+        return kubectl("delete", "pods", "-l", KubernetesNames.selector(identity),
+                "--grace-period=0", "--force", "--ignore-not-found=true");
+    }
+
     public List<String> logs(String podName) { return kubectl("logs", podName, "--timestamps"); }
 
     public List<String> namespace() { return kubectl("get", "namespace", properties.namespace(), "-o", "name"); }

@@ -1,4 +1,5 @@
 import type { StandardDictionarySummary } from '../../standard';
+import type { FileDatasetParseStatus, FileDatasetType } from '../../filedataset';
 
 export type DataModelStatus = 'DRAFT' | 'PUBLISHED' | 'DISABLED';
 
@@ -352,6 +353,53 @@ export interface ManagedImportPreview {
   warnings: string[];
 }
 
+export interface FileDatasetImportPreviewRequest {
+  fileDatasetId: string;
+  fileDatasetTableId: string;
+  targetStorageDataSourceId: string;
+}
+
+export interface FileDatasetImportColumnPreview {
+  sourceName: string;
+  sourceType: PlatformTypeDefinition;
+  code: string | null;
+  name: string | null;
+  fieldType: PlatformDataType | null;
+  length: number | null;
+  precision: number | null;
+  scale: number | null;
+  geometry?: GeometryTypeDefinition | null;
+  nullable: boolean;
+  primaryKey: boolean;
+  sortOrder: number;
+  description: string | null;
+  mappingQuality: TypeMappingQuality;
+  mappingMessage: string | null;
+  importable: boolean;
+  issues: string[];
+}
+
+export interface FileDatasetImportPreview {
+  fileDatasetId: string;
+  fileDatasetName: string;
+  fileDatasetType: FileDatasetType;
+  fileDatasetTableId: string;
+  sourceTableCode: string;
+  sourceTableName: string;
+  parseStatus: FileDatasetParseStatus;
+  sourceUpdatedAt: string;
+  suggestedCode: string | null;
+  suggestedName: string | null;
+  suggestedPhysicalTableName: string | null;
+  tableImportable: boolean;
+  importable: boolean;
+  unresolvedCount: number;
+  columns: FileDatasetImportColumnPreview[];
+  tableIssues: string[];
+  issues: string[];
+  warnings: string[];
+}
+
 export interface ModelMetadataImportFieldPreview {
   key: string;
   rowNumber: number;
@@ -500,6 +548,15 @@ export interface LineageGraphNode {
   dataServiceType: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API' | null;
   dataServiceStatus: 'DRAFT' | 'ENABLED' | 'DISABLED' | null;
   routePath: string | null;
+  fieldOwner: {
+    key: string;
+    kind: Exclude<LineageGraphNodeKind, 'FIELD' | 'TASK' | 'DATA_SERVICE'>;
+    label: string;
+    subtitle: string | null;
+    fieldOrder: number;
+  } | null;
+  focusRoot: boolean;
+  focusFieldKeys: string[];
 }
 
 export interface LineageGraphEdge {
@@ -510,16 +567,34 @@ export interface LineageGraphEdge {
   derivationType: LineageFieldDerivationType | null;
   outputEffect: LineageOutputFieldEffect | null;
   usages: LineageFieldUsageType[];
+  focusFieldKeys: string[];
 }
 
 export interface LineageGraph {
-  rootNodeId: string;
+  rootNodeId: string | null;
   granularity: LineageGranularity;
   coverage: LineageCoverage | null;
   truncated: boolean;
   warnings: string[];
   nodes: LineageGraphNode[];
   edges: LineageGraphEdge[];
+}
+
+export interface LineageFocusField {
+  fieldKey: string;
+  modelFieldId: string | null;
+  code: string;
+  name: string;
+  sortOrder: number;
+  coverage: LineageCoverage | null;
+  hasLineage: boolean;
+  truncated: boolean;
+  warnings: string[];
+}
+
+export interface LineageFieldGraph {
+  graph: LineageGraph;
+  focusFields: LineageFocusField[];
 }
 
 export interface CreateDataModelRequest {

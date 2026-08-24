@@ -27,6 +27,23 @@ export const resolvedNodeSize = ({
   return { width, height: maxHeight - ((2 - Math.min(2, listCount)) * 24) };
 };
 
+export const resourceListNodeSize = ({
+  width,
+  count,
+  emptyHeight = 104,
+}: {
+  width: number;
+  count: number;
+  emptyHeight?: number;
+}): CanvasNodeSize => {
+  if (count === 0) return { width, height: emptyHeight };
+  const previewCount = Math.min(count, 3);
+  return {
+    width,
+    height: 112 + previewCount * 24 + (count > 3 ? 18 : 0),
+  };
+};
+
 export const inputTable = (
   data: CanvasNodeRuntimeData,
   name?: string,
@@ -92,6 +109,9 @@ export const expressionSignature = (expression: CanvasExpression): string => {
   switch (expression.kind) {
     case 'COLUMN': return expression.columnName || '字段';
     case 'LITERAL': return '字面量';
+    case 'RUNTIME_VALUE': return expression.value === 'EXECUTION_ID'
+      ? '运行时 · 本次执行 Attempt ID'
+      : '运行时 · 本次执行开始时间';
     case 'BINARY': return expression.operator;
     case 'FUNCTION': return `${expression.function}(…)`;
     case 'CASE_WHEN': return `CASE · ${expression.branches.length} 分支`;

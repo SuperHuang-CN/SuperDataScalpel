@@ -4,6 +4,8 @@ import cn.superhuang.data.scalpel.business.assistant.domain.AssistantChangeSetSt
 import cn.superhuang.data.scalpel.business.assistant.domain.AssistantChangeSetType;
 import cn.superhuang.data.scalpel.business.assistant.service.DirectoryChangePlanPayload;
 import cn.superhuang.data.scalpel.business.assistant.service.DirectoryExecutionResult;
+import cn.superhuang.data.scalpel.business.assistant.service.TaskCanvasApplicationResult;
+import cn.superhuang.data.scalpel.business.assistant.service.TaskCanvasProposalPayload;
 
 import java.time.Instant;
 import java.util.UUID;
@@ -17,6 +19,8 @@ public record AssistantChangeSetResponse(
         String summary,
         DirectoryChangePlanPayload directoryPlan,
         DirectoryExecutionResult directoryResult,
+        TaskCanvasProposalPayload taskCanvasProposal,
+        TaskCanvasApplicationResult taskCanvasResult,
         String approvedBy,
         Instant approvedAt,
         Instant executedAt,

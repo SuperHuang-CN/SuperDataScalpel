@@ -1,11 +1,12 @@
-import { ThunderboltOutlined } from '@ant-design/icons';
-import { Button, Form, Select, Space, Tag, Typography } from 'antd';
+import { ExclamationCircleOutlined, KeyOutlined, ThunderboltOutlined } from '@ant-design/icons';
+import { Button, Form, Select, Table, Tag, Tooltip, Typography, type TableColumnsType } from 'antd';
 import { useMemo } from 'react';
 import { platformTypeLabel } from '../canvasSchema';
 import type {
   CanvasColumnMapping,
   CanvasColumnSchema,
 } from '../canvasTypes';
+import { autoMatchedSourceColumn, mappingByTarget, orderedMappings } from './outputFieldMappings';
 
 interface OutputFieldMappingFormValue {
   columnMappings: CanvasColumnMapping[];
@@ -22,37 +23,9 @@ interface OutputFieldMappingFieldsProps {
   targetLoading?: boolean;
   keyColumns?: readonly string[];
   keyLabel?: string;
+  scrollHeight?: number;
   onProgrammaticChange: () => void;
 }
-
-const canonicalFieldName = (name: string) => name.toLocaleLowerCase('en-US').replaceAll('_', '');
-
-const uniqueMatch = (
-  candidates: readonly CanvasColumnSchema[],
-  predicate: (column: CanvasColumnSchema) => boolean,
-) => {
-  const matches = candidates.filter(predicate);
-  return matches.length === 1 ? matches[0] : null;
-};
-
-export const autoMatchedSourceColumn = (
-  targetName: string,
-  sourceColumns: readonly CanvasColumnSchema[],
-): string | null => {
-  const exact = uniqueMatch(sourceColumns, (column) => column.name === targetName);
-  if (exact) return exact.name;
-  const caseInsensitive = uniqueMatch(
-    sourceColumns,
-    (column) => column.name.toLocaleLowerCase('en-US') === targetName.toLocaleLowerCase('en-US'),
-  );
-  if (caseInsensitive) return caseInsensitive.name;
-  const canonicalTarget = canonicalFieldName(targetName);
-  const canonical = uniqueMatch(
-    sourceColumns,
-    (column) => canonicalFieldName(column.name) === canonicalTarget,
-  );
-  return canonical?.name ?? null;
-};
 
 const requiredTarget = (column: CanvasColumnSchema) => (
   !column.nullable
@@ -61,77 +34,27 @@ const requiredTarget = (column: CanvasColumnSchema) => (
   && !column.generated
 );
 
-const mappingByTarget = (mappings: readonly CanvasColumnMapping[]) => {
-  const indexed = new Map<string, CanvasColumnMapping>();
-  mappings.forEach((mapping) => indexed.set(mapping.targetColumnName, mapping));
-  return indexed;
-};
-
-const orderedMappings = (
-  targetColumns: readonly CanvasColumnSchema[],
-  mappings: ReadonlyMap<string, CanvasColumnMapping>,
-) => {
-  const targetNames = new Set(targetColumns.map((column) => column.name));
-  const current = targetColumns.flatMap((column) => {
-    const mapping = mappings.get(column.name);
-    return mapping ? [mapping] : [];
-  });
-  const missingTargets = [...mappings.values()]
-    .filter((mapping) => !targetNames.has(mapping.targetColumnName));
-  return [...current, ...missingTargets];
-};
-
-export const orderOutputFieldMappings = (
-  targetColumns: readonly CanvasColumnSchema[],
-  mappings: readonly CanvasColumnMapping[] | undefined,
-) => orderedMappings(targetColumns, mappingByTarget(mappings ?? []));
-
-const MappingValueControl = (_props: {
-  value?: CanvasColumnMapping[];
-  onChange?: (value: CanvasColumnMapping[]) => void;
-}) => null;
+const MappingValueControl = () => null;
 
 const fieldDisplayName = (
   column: CanvasColumnSchema,
   fieldNames?: ReadonlyMap<string, string>,
 ) => fieldNames?.get(column.name)?.trim() || column.comment?.trim() || column.name;
 
-const FieldSummary = ({
-  column,
-  displayName,
-  primaryKey = false,
-  target = false,
-  businessKey = false,
-  businessKeyLabel,
-}: {
-  column: CanvasColumnSchema;
-  displayName: string;
-  primaryKey?: boolean;
-  target?: boolean;
-  businessKey?: boolean;
-  businessKeyLabel?: string;
-}) => (
-  <div className="canvas-output-field-summary">
-    <Typography.Text className="canvas-output-field-name" ellipsis={{ tooltip: displayName }}>
-      {displayName}
-    </Typography.Text>
-    <Typography.Text code className="canvas-output-field-code" ellipsis={{ tooltip: column.name }}>
-      {column.name}
-    </Typography.Text>
-    <div className="canvas-output-field-meta">
-      <Typography.Text type="secondary" className="canvas-output-field-type">
-        {platformTypeLabel(column)}
-      </Typography.Text>
-      {target && primaryKey && <Tag color="geekblue">主键</Tag>}
-      {target && !column.nullable && <Tag color="red">非空</Tag>}
-      {target && column.nullable && <Tag>可空</Tag>}
-      {target && column.defaultValue !== null && <Tag color="blue">默认值</Tag>}
-      {target && column.autoIncrement && <Tag color="purple">自增</Tag>}
-      {target && column.generated && <Tag color="purple">生成字段</Tag>}
-      {target && businessKey && <Tag color="cyan">{businessKeyLabel}</Tag>}
-    </div>
-  </div>
-);
+type MappingTableRow =
+  | {
+    key: string;
+    kind: 'TARGET';
+    target: CanvasColumnSchema;
+    mapping: CanvasColumnMapping | undefined;
+    sourceMissing: boolean;
+    generatedMappingInvalid: boolean;
+  }
+  | {
+    key: string;
+    kind: 'MISSING_TARGET';
+    mapping: CanvasColumnMapping;
+  };
 
 export const OutputFieldMappingFields = ({
   sourceColumns,
@@ -144,11 +67,12 @@ export const OutputFieldMappingFields = ({
   targetLoading = false,
   keyColumns = [],
   keyLabel = 'Key',
+  scrollHeight,
   onProgrammaticChange,
 }: OutputFieldMappingFieldsProps) => {
   const form = Form.useFormInstance<OutputFieldMappingFormValue>();
   const watchedMappings = Form.useWatch('columnMappings', form);
-  const mappings = watchedMappings ?? [...initialMappings];
+  const mappings = watchedMappings ?? initialMappings;
   const indexedMappings = useMemo(() => mappingByTarget(mappings), [mappings]);
   const targetNames = useMemo(
     () => new Set(targetColumns.map((column) => column.name)),
@@ -197,7 +121,7 @@ export const OutputFieldMappingFields = ({
   const sourceOptions = (selected: string | undefined) => {
     const options = sourceColumns.map((column) => ({
       value: column.name,
-      label: `${fieldDisplayName(column)} · ${column.name} · ${platformTypeLabel(column)}`,
+      label: `${column.name} · ${fieldDisplayName(column)} · ${platformTypeLabel(column)}`,
     }));
     if (selected && !sourceNames.has(selected)) {
       options.unshift({ value: selected, label: `${selected}（来源字段已不可用）` });
@@ -205,12 +129,108 @@ export const OutputFieldMappingFields = ({
     return options;
   };
 
+  const tableRows: MappingTableRow[] = [
+    ...targetColumns.map((target) => {
+      const mapping = indexedMappings.get(target.name);
+      const sourceMissing = Boolean(mapping) && sourceReady
+        && !sourceNames.has(mapping?.sourceColumnName ?? '');
+      const generatedMappingInvalid = Boolean(mapping) && (target.autoIncrement || target.generated);
+      return {
+        key: target.name,
+        kind: 'TARGET' as const,
+        target,
+        mapping,
+        sourceMissing,
+        generatedMappingInvalid,
+      };
+    }),
+    ...missingTargetMappings.map((mapping, index) => ({
+      key: `missing-${mapping.targetColumnName}-${index}`,
+      kind: 'MISSING_TARGET' as const,
+      mapping,
+    })),
+  ];
+  const mappedTargetCount = targetColumns.filter((target) => indexedMappings.has(target.name)).length;
+  const columns: TableColumnsType<MappingTableRow> = [
+    {
+      title: '目标字段',
+      key: 'target',
+      width: 250,
+      render: (_, row) => row.kind === 'MISSING_TARGET' ? (
+        <div className="canvas-output-field-cell is-invalid">
+          <Typography.Text type="danger">目标字段已不存在</Typography.Text>
+          <Typography.Text code type="danger">{row.mapping.targetColumnName}</Typography.Text>
+        </div>
+      ) : (
+        <div className="canvas-output-field-cell" title={fieldDisplayName(row.target, targetFieldNames)}>
+          <div className="canvas-output-field-code-line">
+            {primaryKeyNames.has(row.target.name) && <Tooltip title="主键"><KeyOutlined className="canvas-output-field-status is-primary" /></Tooltip>}
+            {!row.target.nullable && <Tooltip title="非空"><ExclamationCircleOutlined className="canvas-output-field-status is-required" /></Tooltip>}
+            <Typography.Text ellipsis={{ tooltip: `${row.target.name} · ${fieldDisplayName(row.target, targetFieldNames)}` }}>
+              {row.target.name}
+            </Typography.Text>
+          </div>
+        </div>
+      ),
+    },
+    {
+      title: '类型',
+      key: 'constraints',
+      width: 156,
+      render: (_, row) => row.kind === 'MISSING_TARGET' ? '—' : (
+        <div className="canvas-output-field-constraints">
+          <Typography.Text type="secondary">{platformTypeLabel(row.target)}</Typography.Text>
+          {row.target.defaultValue !== null && <Tag color="blue">默认</Tag>}
+          {row.target.autoIncrement && <Tag color="purple">自增</Tag>}
+          {row.target.generated && <Tag color="purple">生成</Tag>}
+          {keyNames.has(row.target.name) && <Tag color="cyan">{keyLabel}</Tag>}
+        </div>
+      ),
+    },
+    {
+      title: '来源字段',
+      key: 'source',
+      render: (_, row) => {
+        if (row.kind === 'MISSING_TARGET') {
+          return <div className="canvas-output-field-missing-source">
+            <Typography.Text ellipsis={{ tooltip: row.mapping.sourceColumnName }}>
+              已保存来源字段：{row.mapping.sourceColumnName}
+            </Typography.Text>
+            <Button type="link" danger size="small" onClick={() => changeMapping(row.mapping.targetColumnName)}>
+              清除
+            </Button>
+          </div>;
+        }
+        const databaseGenerated = row.target.autoIncrement || row.target.generated;
+        if (databaseGenerated) {
+          return row.mapping ? <div className="canvas-output-field-generated-error">
+            <Typography.Text type="danger">数据库生成字段不能映射</Typography.Text>
+            <Button type="link" danger size="small" onClick={() => changeMapping(row.target.name)}>清除</Button>
+          </div> : <Typography.Text type="secondary">数据库生成</Typography.Text>;
+        }
+        return <Select
+          className="canvas-output-field-mapping-source-select"
+          allowClear
+          showSearch
+          aria-label={`目标字段 ${row.target.name} 的来源字段`}
+          placeholder={requiredTarget(row.target) ? '请选择来源字段' : '不映射'}
+          status={row.sourceMissing ? 'error' : undefined}
+          value={row.mapping?.sourceColumnName}
+          options={sourceOptions(row.mapping?.sourceColumnName)}
+          optionFilterProp="label"
+          disabled={!sourceReady}
+          onChange={(value) => changeMapping(row.target.name, value)}
+        />;
+      },
+    },
+  ];
+
   return (
     <div className="canvas-output-field-mapping">
       <div className="canvas-output-field-mapping-toolbar">
         <div>
           <Typography.Text strong>字段映射</Typography.Text>
-          <Typography.Text type="secondary"> · 目标字段 ← 来源字段</Typography.Text>
+          <Typography.Text type="secondary"> · 已映射 {mappedTargetCount} / {targetColumns.length}</Typography.Text>
         </div>
         <Button
           size="small"
@@ -223,114 +243,19 @@ export const OutputFieldMappingFields = ({
         </Button>
       </div>
 
-      <div className="canvas-output-field-mapping-list">
-        {targetColumns.map((target) => {
-          const mapping = indexedMappings.get(target.name);
-          const sourceMissing = Boolean(mapping) && sourceReady
-            && !sourceNames.has(mapping?.sourceColumnName ?? '');
-          const databaseGenerated = target.autoIncrement || target.generated;
-          const generatedMappingInvalid = Boolean(mapping) && databaseGenerated;
-          return (
-            <div
-              className={`canvas-output-field-mapping-row${sourceMissing || generatedMappingInvalid ? ' is-invalid' : ''}`}
-              key={target.name}
-            >
-              <div className="canvas-output-field-mapping-target">
-                <FieldSummary
-                  column={target}
-                  displayName={fieldDisplayName(target, targetFieldNames)}
-                  primaryKey={primaryKeyNames.has(target.name)}
-                  target
-                  businessKey={keyNames.has(target.name)}
-                  businessKeyLabel={keyLabel}
-                />
-              </div>
-              <div className="canvas-output-field-mapping-arrow">←</div>
-              <div className="canvas-output-field-mapping-source">
-                {databaseGenerated ? (
-                  mapping ? (
-                    <Space orientation="vertical" size={2}>
-                      <Typography.Text type="danger">该字段由数据库生成，不能映射</Typography.Text>
-                      <Button type="link" danger size="small" onClick={() => changeMapping(target.name)}>
-                        清除失效映射
-                      </Button>
-                    </Space>
-                  ) : <Typography.Text type="secondary">数据库生成</Typography.Text>
-                ) : (
-                  <Select
-                    className="canvas-output-field-mapping-source-select"
-                    allowClear
-                    showSearch
-                    aria-label={`目标字段 ${target.name} 的来源字段`}
-                    placeholder={requiredTarget(target) ? '请选择来源字段' : '不映射'}
-                    status={sourceMissing ? 'error' : undefined}
-                    value={mapping?.sourceColumnName}
-                    options={sourceOptions(mapping?.sourceColumnName)}
-                    optionFilterProp="label"
-                    labelRender={({ value, label }) => {
-                      const column = sourceColumns.find((candidate) => candidate.name === value);
-                      return column ? (
-                        <FieldSummary
-                          column={column}
-                          displayName={fieldDisplayName(column)}
-                        />
-                      ) : (
-                        <div className="canvas-output-field-summary is-invalid">
-                          <Typography.Text type="danger">来源字段已不可用</Typography.Text>
-                          <Typography.Text code>{String(value || label || '')}</Typography.Text>
-                          <Typography.Text type="secondary">—</Typography.Text>
-                        </div>
-                      );
-                    }}
-                    optionRender={(option) => {
-                      const column = sourceColumns.find((candidate) => candidate.name === option.value);
-                      return column ? (
-                        <FieldSummary
-                          column={column}
-                          displayName={fieldDisplayName(column)}
-                        />
-                      ) : option.label;
-                    }}
-                    disabled={!sourceReady}
-                    onChange={(value) => changeMapping(target.name, value)}
-                  />
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-        {missingTargetMappings.map((mapping, index) => (
-          <div
-            className="canvas-output-field-mapping-row is-invalid"
-            key={`missing-${mapping.targetColumnName}-${index}`}
-          >
-            <div className="canvas-output-field-mapping-target">
-              <div className="canvas-output-field-summary is-invalid">
-                <Typography.Text type="danger">目标字段已不存在</Typography.Text>
-                <Typography.Text code type="danger">{mapping.targetColumnName}</Typography.Text>
-                <Typography.Text type="secondary">—</Typography.Text>
-              </div>
-            </div>
-            <div className="canvas-output-field-mapping-arrow">←</div>
-            <div className="canvas-output-field-mapping-source">
-              <div className="canvas-output-field-summary">
-                <Typography.Text>已保存来源字段</Typography.Text>
-                <Typography.Text code>{mapping.sourceColumnName}</Typography.Text>
-                <Typography.Text type="secondary">—</Typography.Text>
-              </div>
-              <Button
-                type="link"
-                danger
-                size="small"
-                onClick={() => changeMapping(mapping.targetColumnName)}
-              >
-                清除失效映射
-              </Button>
-            </div>
-          </div>
-        ))}
-      </div>
+      <Table<MappingTableRow>
+        className="canvas-output-field-mapping-table"
+        size="small"
+        pagination={false}
+        tableLayout="fixed"
+        rowKey="key"
+        columns={columns}
+        dataSource={tableRows}
+        scroll={scrollHeight ? { y: scrollHeight } : undefined}
+        rowClassName={(row) => row.kind === 'MISSING_TARGET'
+          || row.sourceMissing || row.generatedMappingInvalid ? 'is-invalid' : ''}
+        locale={{ emptyText: targetLoading ? '正在读取目标字段…' : '暂无目标字段' }}
+      />
 
       <Form.Item
         name="columnMappings"

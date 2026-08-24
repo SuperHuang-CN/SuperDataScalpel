@@ -16,6 +16,7 @@ import { deriveColumnsSpec } from './deriveColumns/spec';
 import { fileDatasetInputSpec } from './fileDatasetInput/spec';
 import { fileOutputSpec } from './fileOutput/spec';
 import { filterSpec } from './filter/spec';
+import { sqlTransformSpec } from './sqlTransform/spec';
 import { geometryConstructSpec } from './geometryConstruct/spec';
 import { geometryBufferSpec } from './geometryBuffer/spec';
 import { geometryExplodeSpec } from './geometryExplode/spec';
@@ -72,6 +73,7 @@ const builtinSpecs = [
   kafkaInputSpec,
   tdEngineTmqInputSpec,
   filterSpec,
+  sqlTransformSpec,
   deduplicateSpec,
   nullHandlingSpec,
   valueMappingSpec,

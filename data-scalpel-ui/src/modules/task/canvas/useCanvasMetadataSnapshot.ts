@@ -506,7 +506,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   definition.nodes.forEach((node) => {
     if (node.type === CanvasNodeType.FileDatasetInput) {
       const table = fileDatasetMetadataQuery.data?.tables.find(
-        (candidate) => candidate.fileDatasetTableId === node.configuration.fileDatasetTableId,
+        (candidate) => candidate.fileDatasetTableId === node.configuration.tables[0]?.fileDatasetTableId,
       );
       if (!table) return;
       const geometryField = table.fields.find(
@@ -534,8 +534,10 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       || node.type === CanvasNodeType.ModelOutput
       || node.type === CanvasNodeType.ModelSnapshotSyncOutput) {
       const modelId = node.type === CanvasNodeType.ModelInput
-        ? node.configuration.modelId
-        : node.configuration.targetModelId;
+        ? node.configuration.models[0]?.modelId ?? ''
+        : node.type === CanvasNodeType.ModelOutput
+          ? node.configuration.writes?.[0]?.targetModelId ?? ''
+          : node.configuration.targetModelId;
       const detail = modelById.get(modelId);
       const dataSource = detail ? dataSourceById.get(detail.model.storageDataSourceId) : undefined;
       if (!detail || !dataSource) return;
@@ -552,7 +554,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     if (node.type === CanvasNodeType.HttpApiInput) {
       const dataSource = dataSourceById.get(node.configuration.dataSourceId);
       const resource = apiResourceByKey.get(
-        `${node.configuration.dataSourceId}\u0000${node.configuration.resourceId}`,
+        `${node.configuration.dataSourceId}\u0000${node.configuration.resources[0]?.resourceId ?? ''}`,
       );
       if (!dataSource || !resource) return;
       nodeSummaries.set(node.id, {
@@ -564,12 +566,12 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     }
     if (node.type === CanvasNodeType.SpatialServiceInput) {
       const dataSource = dataSourceById.get(node.configuration.dataSourceId);
-      const resource = spatialResourceByKey.get(`${node.configuration.dataSourceId}\u0000${node.configuration.resourceId}`);
+      const resource = spatialResourceByKey.get(`${node.configuration.dataSourceId}\u0000${node.configuration.resources[0]?.resourceId ?? ''}`);
       if (!dataSource || !resource) return;
       nodeSummaries.set(node.id, { kind: 'HTTP_API', dataSourceName: dataSource.name, qualifiedTableName: resource.name });
       return;
     }
-    if (node.type === CanvasNodeType.KafkaInput || node.type === CanvasNodeType.KafkaOutput) {
+    if (node.type === CanvasNodeType.KafkaInput) {
       const dataSource = dataSourceById.get(node.configuration.dataSourceId);
       if (!dataSource) return;
       nodeSummaries.set(node.id, {
@@ -577,6 +579,18 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         dataSourceName: dataSource.name,
         qualifiedTableName: node.configuration.topic,
         fieldCount: node.configuration.valueSchema.columns.length,
+      });
+      return;
+    }
+    if (node.type === CanvasNodeType.KafkaOutput) {
+      const dataSource = dataSourceById.get(node.configuration.dataSourceId);
+      const first = node.configuration.writes?.[0];
+      if (!dataSource || !first) return;
+      nodeSummaries.set(node.id, {
+        kind: 'KAFKA',
+        dataSourceName: dataSource.name,
+        qualifiedTableName: first.topic,
+        fieldCount: first.valueSchema.columns.length,
       });
       return;
     }
@@ -613,12 +627,36 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
       });
       return;
     }
-    if (node.type !== CanvasNodeType.JdbcInput
-      && node.type !== CanvasNodeType.JdbcOutput
+    if (node.type === CanvasNodeType.JdbcInput) {
+      const dataSourceId = node.configuration.dataSourceId;
+      const dataSource = dataSourceById.get(dataSourceId);
+      if (!dataSource || dataSource.connection.kind !== 'JDBC') return;
+      const tables = node.configuration.tables.map(({ tableName }) => {
+        const tableMetadata = jdbcTableByKey.get(
+          tableRequestKey(dataSourceId, jdbcTableIdentifier(tableName)),
+        );
+        return {
+          tableName,
+          primaryKeyColumns: tableMetadata?.uniqueKeys?.find(
+            (key) => key.type === 'PRIMARY_KEY',
+          )?.columns ?? [],
+        };
+      });
+      nodeSummaries.set(node.id, {
+        kind: 'JDBC',
+        dataSourceName: dataSource.name,
+        dataSourceType: dataSource.type,
+        qualifiedTableName: tables[0]?.tableName ?? '',
+        ...(tables.length === 1 ? { primaryKeyColumns: tables[0].primaryKeyColumns } : {}),
+        tables,
+      });
+      return;
+    }
+    if (node.type !== CanvasNodeType.JdbcOutput
       && node.type !== CanvasNodeType.JdbcSnapshotSyncOutput) return;
     const dataSourceId = node.configuration.dataSourceId;
-    const tableName = node.type === CanvasNodeType.JdbcInput
-      ? node.configuration.tableName
+    const tableName = node.type === CanvasNodeType.JdbcOutput
+      ? node.configuration.writes?.[0]?.targetTableName ?? ''
       : node.configuration.targetTableName;
     const dataSource = dataSourceById.get(dataSourceId);
     if (!dataSource || dataSource.connection.kind !== 'JDBC' || !tableName) return;

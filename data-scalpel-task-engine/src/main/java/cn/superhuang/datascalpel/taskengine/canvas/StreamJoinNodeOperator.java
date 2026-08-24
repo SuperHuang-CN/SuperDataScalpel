@@ -9,6 +9,7 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.JoinCondition;
 import cn.superhuang.data.scalpel.contract.task.JoinOperator;
+import cn.superhuang.data.scalpel.contract.task.JoinOutputColumnSource;
 import cn.superhuang.data.scalpel.contract.task.StreamJoinConfiguration;
 import cn.superhuang.data.scalpel.contract.task.StreamJoinNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -17,6 +18,7 @@ import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -82,9 +84,9 @@ public final class StreamJoinNodeOperator implements CanvasNodeOperator {
         if (left == null || right == null) return CanvasNodeOperationResult.invalid(inputSchemas);
         Map<String, CanvasColumnSchema> leftColumns = CanvasNodeSupport.columns(left.schema());
         Map<String, CanvasColumnSchema> rightColumns = CanvasNodeSupport.columns(right.schema());
-        leftColumns.keySet().stream().filter(rightColumns::containsKey).forEach(column ->
-                issues.error("DUPLICATE_COLUMN_NAME", "Stream Join 结果包含同名字段：" + column, "configuration"));
         validateConditions(configuration.conditions(), leftColumns, rightColumns, issues);
+        List<JoinOutputColumnSupport.ResolvedOutputColumn> outputColumns = JoinOutputColumnSupport.validate(
+                configuration.outputColumns(), leftColumns, rightColumns, issues);
         if (issues.hasErrors()) return CanvasNodeOperationResult.invalid(inputSchemas);
 
         Dataset<Row> leftDataset = left.dataset().alias("left_stream");
@@ -97,17 +99,37 @@ public final class StreamJoinNodeOperator implements CanvasNodeOperator {
         }
         Dataset<Row> joined = leftDataset.join(
                 rightDataset, expression, configuration.joinType().name().toLowerCase());
-        List<CanvasColumnSchema> fallback = CanvasNodeSupport.concatenatedColumns(left.schema(), right.schema());
+        List<Column> projections = new ArrayList<>(outputColumns.size());
+        List<CanvasColumnSchema> fallback = new ArrayList<>(outputColumns.size());
+        for (JoinOutputColumnSupport.ResolvedOutputColumn outputColumn : outputColumns) {
+            Dataset<Row> sourceDataset = outputColumn.sourceSide() == JoinOutputColumnSource.LEFT
+                    ? leftDataset : rightDataset;
+            projections.add(sourceDataset
+                    .col(CanvasNodeSupport.quoteIdentifier(outputColumn.sourceColumn().name()))
+                    .alias(outputColumn.outputColumnName()));
+            fallback.add(JoinOutputColumnSupport.copyWithName(
+                    outputColumn.sourceColumn(), outputColumn.outputColumnName()));
+        }
+        Dataset<Row> projected = joined.select(projections.toArray(Column[]::new));
+        String sourceEventTimeColumn = left.schema().eventTimeColumn();
+        String outputEventTimeColumn = sourceEventTimeColumn == null
+                ? null
+                : outputColumns.stream()
+                        .filter(column -> column.sourceSide() == JoinOutputColumnSource.LEFT)
+                        .filter(column -> sourceEventTimeColumn.equals(column.sourceColumn().name()))
+                        .map(JoinOutputColumnSupport.ResolvedOutputColumn::outputColumnName)
+                        .findFirst()
+                        .orElse(null);
         CanvasTableSchema schema = new CanvasTableSchema(
                 configuration.outputTableName(),
                 null,
-                SparkTypeMapper.fromStructType(joined.schema(), fallback),
+                SparkTypeMapper.fromStructType(projected.schema(), fallback),
                 CanvasDatasetKind.UNBOUNDED,
-                left.schema().eventTimeColumn(),
-                left.schema().watermarkDelay()
+                outputEventTimeColumn,
+                outputEventTimeColumn == null ? null : left.schema().watermarkDelay()
         );
         Map<String, SparkCanvasTable> output = new LinkedHashMap<>(inputs);
-        output.put(schema.name(), new SparkCanvasTable(schema, joined));
+        output.put(schema.name(), new SparkCanvasTable(schema, projected));
         return CanvasNodeOperationResult.propagated(output, CanvasNodeSupport.schemas(output));
     }
 

@@ -12,7 +12,7 @@ import type {
   UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
 } from '../model/dataService';
-import type { LineageGraph } from '../../model';
+import type { LineageFieldGraph, LineageGraph } from '../../model';
 import type {
   ScriptCompletionData,
   ScriptExecutionResult,
@@ -51,6 +51,16 @@ export const fetchDataServiceFieldLineage = (
   const query = new URLSearchParams({ depth: String(depth) });
   return requestJson<LineageGraph>(`${DATA_SERVICE_PATH}/${id}/lineage/fields/${fieldId}?${query.toString()}`);
 };
+
+export const queryDataServiceFieldLineage = (
+  id: string,
+  fieldIds: string[] | null,
+  depth: 1 | 2,
+  signal?: AbortSignal,
+): Promise<LineageFieldGraph> => requestJson<LineageFieldGraph>(
+  `${DATA_SERVICE_PATH}/${id}/lineage/actions/query-fields`,
+  { method: 'POST', body: JSON.stringify({ fieldIds, depth }), signal },
+);
 
 export const createDataService = (request: CreateDataServiceRequest): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(DATA_SERVICE_PATH, { method: 'POST', body: JSON.stringify(request) })

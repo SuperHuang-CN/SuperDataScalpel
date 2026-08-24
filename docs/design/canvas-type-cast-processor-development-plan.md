@@ -12,7 +12,7 @@
 - 转换是否合法以实际 Spark Cast 表达式和 Analyzer 为准，不维护平台类型兼容矩阵。
 - Compiler 与 Runner 使用唯一无状态 `TypeCastNodeOperator`。
 
-节点类别为 `PROCESSOR`。图规则为恰好一条入边、至少一条出边。
+节点类别为 `PROCESSOR`。图规则为至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 ## 2. 稳定配置协议
 

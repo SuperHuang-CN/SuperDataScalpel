@@ -23,7 +23,7 @@ export const exampleCanvasDefinition = (): CanvasDefinition => ({
       layout: { x: 80, y: 80, width: 300, height: 164 },
       configuration: {
         dataSourceId: 'c5c021bd-35d1-43ae-bbdb-ff90ff824ba0',
-        tableName: 'orders',
+        tables: [{ tableName: 'orders', readOptions: [] }],
       },
     },
     {
@@ -33,7 +33,7 @@ export const exampleCanvasDefinition = (): CanvasDefinition => ({
       layout: { x: 80, y: 280, width: 300, height: 164 },
       configuration: {
         dataSourceId: 'c5c021bd-35d1-43ae-bbdb-ff90ff824ba0',
-        tableName: 'customers',
+        tables: [{ tableName: 'customers', readOptions: [] }],
       },
     },
     {
@@ -51,6 +51,12 @@ export const exampleCanvasDefinition = (): CanvasDefinition => ({
           operator: 'EQUALS',
           rightColumnName: 'customer_key',
         }],
+        outputColumns: [
+          { sourceSide: 'LEFT', sourceColumnName: 'order_id', outputColumnName: 'order_id', included: true },
+          { sourceSide: 'LEFT', sourceColumnName: 'customer_id', outputColumnName: 'customer_id', included: true },
+          { sourceSide: 'RIGHT', sourceColumnName: 'customer_key', outputColumnName: 'customer_key', included: true },
+          { sourceSide: 'RIGHT', sourceColumnName: 'customer_name', outputColumnName: 'customer_name', included: true },
+        ],
       },
     },
     {
@@ -62,7 +68,7 @@ export const exampleCanvasDefinition = (): CanvasDefinition => ({
         sourceTableName: 'order_customer',
         dataSourceId: '04d11960-1ee1-4282-8963-6fb52a21ab0c',
         targetTableName: 'dwd_order_customer',
-        writeMode: 'APPEND',
+        writeMode: 'OVERWRITE',
         upsertKeyColumns: [],
         columnMappings: [
           { sourceColumnName: 'order_id', targetColumnName: 'order_id' },
@@ -101,14 +107,14 @@ export const exampleCanvasTopologyDefinition = (): CanvasDefinition => ({
       type: CanvasNodeType.JdbcInput,
       name: '订单输入',
       layout: { x: 80, y: 80, width: 300, height: 104 },
-      configuration: { dataSourceId: '', tableName: '' },
+      configuration: { dataSourceId: '', tables: [] },
     },
     {
       id: '3952906c-083d-434c-ac9c-d4d388bac74c',
       type: CanvasNodeType.JdbcInput,
       name: '客户输入',
       layout: { x: 80, y: 280, width: 300, height: 104 },
-      configuration: { dataSourceId: '', tableName: '' },
+      configuration: { dataSourceId: '', tables: [] },
     },
     {
       id: '1f17a225-f602-4a25-a08e-1e67e0b1b2f5',
@@ -121,6 +127,7 @@ export const exampleCanvasTopologyDefinition = (): CanvasDefinition => ({
         outputTableName: '',
         joinType: null,
         conditions: [],
+        outputColumns: [],
       },
     },
     {
@@ -132,7 +139,7 @@ export const exampleCanvasTopologyDefinition = (): CanvasDefinition => ({
         sourceTableName: '',
         dataSourceId: '',
         targetTableName: '',
-        writeMode: null,
+        writeMode: 'OVERWRITE',
         upsertKeyColumns: [],
         columnMappings: [],
       },
@@ -172,6 +179,7 @@ export const exampleStreamingCanvasTopologyDefinition = (): CanvasDefinition => 
         valueSchema: { columns: [] },
         outputTableName: 'order_events',
         startingOffsets: 'LATEST',
+        triggerIntervalSeconds: 10,
       },
     },
     {
@@ -179,7 +187,7 @@ export const exampleStreamingCanvasTopologyDefinition = (): CanvasDefinition => 
       type: CanvasNodeType.JdbcInput,
       name: '客户静态维表',
       layout: { x: 80, y: 280, width: 300, height: 104 },
-      configuration: { dataSourceId: '', tableName: '' },
+      configuration: { dataSourceId: '', tables: [] },
     },
     {
       id: '4ac766c1-111e-46d0-876e-a2c87b97b0db',
@@ -192,6 +200,7 @@ export const exampleStreamingCanvasTopologyDefinition = (): CanvasDefinition => 
         outputTableName: 'order_customer_stream',
         joinType: 'LEFT',
         conditions: [],
+        outputColumns: [],
       },
     },
     {

@@ -14,10 +14,13 @@ import cn.superhuang.data.scalpel.contract.task.CaseWhenExpression;
 import cn.superhuang.data.scalpel.contract.task.ColumnDerivation;
 import cn.superhuang.data.scalpel.contract.task.ColumnExpression;
 import cn.superhuang.data.scalpel.contract.task.DeriveColumnsConfiguration;
+import cn.superhuang.data.scalpel.contract.task.DeriveColumnsOperation;
 import cn.superhuang.data.scalpel.contract.task.DeriveColumnsNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.DeriveFunction;
 import cn.superhuang.data.scalpel.contract.task.FunctionExpression;
 import cn.superhuang.data.scalpel.contract.task.LiteralExpression;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
+import cn.superhuang.data.scalpel.contract.task.RuntimeValueExpression;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -27,6 +30,7 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.functions;
 
+import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -66,6 +70,25 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
         DeriveColumnsConfiguration configuration = node.configuration();
         if (configuration == null) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
+        }
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            validateGlobalDerivations(configuration, inputs, context);
+            if (context.issues().hasErrors()) {
+                return CanvasNodeOperationResult.invalid(inputSchemas);
+            }
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        DeriveColumnsOperation sourceOperation = (DeriveColumnsOperation) operation.operation();
+                        List<ColumnDerivation> effectiveDerivations = new ArrayList<>(configuration.globalDerivations());
+                        effectiveDerivations.addAll(sourceOperation.derivations() == null
+                                ? List.of() : sourceOperation.derivations());
+                        DeriveColumnsConfiguration single = new DeriveColumnsConfiguration(List.of(new DeriveColumnsOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()), effectiveDerivations
+                        )));
+                        return apply(new DeriveColumnsNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
         }
 
         CanvasNodeIssueSink issues = context.issues();
@@ -151,22 +174,8 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
             }
             if (!CanvasNodeSupport.blank(derivation.targetColumnName())) {
                 boolean exists = sourceColumns.containsKey(derivation.targetColumnName());
-                if (!derivation.replaceExisting() && exists) {
-                    issues.error(
-                            "DERIVATION_TARGET_ALREADY_EXISTS",
-                            "新增字段已存在：" + derivation.targetColumnName(),
-                            path + ".targetColumnName"
-                    );
-                }
-                if (derivation.replaceExisting() && source != null && !exists) {
-                    issues.error(
-                            "DERIVATION_TARGET_NOT_FOUND",
-                            "要覆盖的字段不存在：" + derivation.targetColumnName(),
-                            path + ".targetColumnName"
-                    );
-                }
                 if (context.executionMode() == CanvasExecutionMode.STREAMING
-                        && derivation.replaceExisting()
+                        && exists
                         && source != null
                         && derivation.targetColumnName().equals(
                                 source.schema().eventTimeColumn())) {
@@ -210,13 +219,13 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
             ColumnDerivation replacement = derivationsByTarget.get(sourceColumn.name());
             projection.add(replacement == null
                     ? sourceDataset.col(CanvasNodeSupport.quoteIdentifier(sourceColumn.name()))
-                    : expression(replacement.expression(), sourceDataset)
+                    : expression(replacement.expression(), sourceDataset, context)
                             .alias(replacement.targetColumnName()));
         }
         for (ColumnDerivation derivation : configuration.derivations()) {
-            if (!derivation.replaceExisting()) {
+            if (!sourceColumns.containsKey(derivation.targetColumnName())) {
                 projection.add(
-                        expression(derivation.expression(), sourceDataset)
+                        expression(derivation.expression(), sourceDataset, context)
                                 .alias(derivation.targetColumnName())
                 );
             }
@@ -249,6 +258,86 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
                 new SparkCanvasTable(outputSchema, derivedDataset)
         );
         return CanvasNodeOperationResult.propagated(output, CanvasNodeSupport.schemas(output));
+    }
+
+    private static void validateGlobalDerivations(
+            DeriveColumnsConfiguration configuration,
+            Map<String, SparkCanvasTable> inputs,
+            CanvasNodeOperationContext context
+    ) {
+        List<ColumnDerivation> globalDerivations = configuration.globalDerivations();
+        if (globalDerivations.isEmpty()) {
+            return;
+        }
+        CanvasNodeIssueSink issues = context.issues();
+        Set<String> globalTargets = new HashSet<>();
+        for (int globalIndex = 0; globalIndex < globalDerivations.size(); globalIndex++) {
+            ColumnDerivation derivation = globalDerivations.get(globalIndex);
+            String path = "configuration.globalDerivations[" + globalIndex + "]";
+            if (derivation == null) {
+                issues.error("REQUIRED_CONFIGURATION", "全局派生字段配置不能为空", path);
+                continue;
+            }
+            CanvasNodeSupport.required(derivation.targetColumnName(), "请输入目标字段名", path + ".targetColumnName", issues);
+            if (!CanvasNodeSupport.blank(derivation.targetColumnName())
+                    && !globalTargets.add(derivation.targetColumnName())) {
+                issues.error("DUPLICATE_DERIVATION_TARGET", "全局目标字段重复配置：" + derivation.targetColumnName(),
+                        path + ".targetColumnName");
+            }
+            if (derivation.expression() == null) {
+                issues.error("INVALID_DERIVATION_EXPRESSION", "请配置派生表达式", path + ".expression");
+            }
+        }
+        if (configuration.operations() == null) {
+            return;
+        }
+        for (int operationIndex = 0; operationIndex < configuration.operations().size(); operationIndex++) {
+            DeriveColumnsOperation operation = configuration.operations().get(operationIndex);
+            if (operation == null || CanvasNodeSupport.blank(operation.sourceTableName())) {
+                continue;
+            }
+            SparkCanvasTable source = inputs.get(operation.sourceTableName());
+            if (source == null) {
+                continue;
+            }
+            Map<String, CanvasColumnSchema> sourceColumns = CanvasNodeSupport.columns(source.schema());
+            Set<String> localTargets = new HashSet<>();
+            List<ColumnDerivation> localDerivations = operation.derivations() == null ? List.of() : operation.derivations();
+            for (int localIndex = 0; localIndex < localDerivations.size(); localIndex++) {
+                ColumnDerivation derivation = localDerivations.get(localIndex);
+                if (derivation != null && !CanvasNodeSupport.blank(derivation.targetColumnName())) {
+                    localTargets.add(derivation.targetColumnName());
+                }
+            }
+            int[] expressionNodes = {0};
+            for (int globalIndex = 0; globalIndex < globalDerivations.size(); globalIndex++) {
+                ColumnDerivation derivation = globalDerivations.get(globalIndex);
+                if (derivation == null) {
+                    continue;
+                }
+                String path = "configuration.globalDerivations[" + globalIndex + "]";
+                if (!CanvasNodeSupport.blank(derivation.targetColumnName())) {
+                    if (localTargets.contains(derivation.targetColumnName())) {
+                        issues.error("GLOBAL_DERIVATION_TARGET_CONFLICT",
+                                "全局规则与表 " + operation.sourceTableName() + " 的独立规则使用了同一目标字段："
+                                        + derivation.targetColumnName(),
+                                path + ".targetColumnName");
+                    }
+                    boolean exists = sourceColumns.containsKey(derivation.targetColumnName());
+                    if (context.executionMode() == CanvasExecutionMode.STREAMING
+                            && exists
+                            && derivation.targetColumnName().equals(source.schema().eventTimeColumn())) {
+                        issues.error("STREAM_EVENT_TIME_COLUMN_IMMUTABLE",
+                                "全局规则不能覆盖表 " + operation.sourceTableName() + " 的事件时间字段："
+                                        + derivation.targetColumnName(),
+                                path + ".targetColumnName");
+                    }
+                }
+                if (derivation.expression() != null) {
+                    validateExpression(derivation.expression(), source, issues, path + ".expression", 1, expressionNodes);
+                }
+            }
+        }
     }
 
     private static void validateExpression(
@@ -301,6 +390,15 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
                             "INVALID_DERIVATION_EXPRESSION",
                             "Literal 格式无效",
                             path + ".literal"
+                    );
+                }
+            }
+            case RuntimeValueExpression runtime -> {
+                if (runtime.value() == null) {
+                    issues.error(
+                            "INVALID_RUNTIME_VALUE",
+                            "请选择受支持的运行时变量",
+                            path + ".value"
                     );
                 }
             }
@@ -512,7 +610,8 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
 
     private static Column expression(
             CanvasExpression expression,
-            Dataset<Row> source
+            Dataset<Row> source,
+            CanvasNodeOperationContext context
     ) {
         return switch (expression) {
             case ColumnExpression column ->
@@ -521,9 +620,10 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
                     functions.lit(
                             CanvasPredicateExpressionBuilder.literalValue(literal.literal())
                     );
+            case RuntimeValueExpression runtime -> runtimeValueExpression(runtime, context);
             case BinaryExpression binary -> {
-                Column left = expression(binary.left(), source);
-                Column right = expression(binary.right(), source);
+                Column left = expression(binary.left(), source, context);
+                Column right = expression(binary.right(), source, context);
                 yield switch (binary.operator()) {
                     case ADD -> left.plus(right);
                     case SUBTRACT -> left.minus(right);
@@ -532,17 +632,30 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
                     case MODULO -> left.mod(right);
                 };
             }
-            case FunctionExpression function -> functionExpression(function, source);
-            case CaseWhenExpression caseWhen -> caseWhenExpression(caseWhen, source);
+            case FunctionExpression function -> functionExpression(function, source, context);
+            case CaseWhenExpression caseWhen -> caseWhenExpression(caseWhen, source, context);
+        };
+    }
+
+    private static Column runtimeValueExpression(
+            RuntimeValueExpression runtime,
+            CanvasNodeOperationContext context
+    ) {
+        return switch (runtime.value()) {
+            case EXECUTION_ID -> functions.lit(context.runtimeValues().executionId().toString());
+            case EXECUTION_STARTED_AT -> functions.lit(
+                    Timestamp.from(context.runtimeValues().executionStartedAt())
+            );
         };
     }
 
     private static Column functionExpression(
             FunctionExpression function,
-            Dataset<Row> source
+            Dataset<Row> source,
+            CanvasNodeOperationContext context
     ) {
         Column[] arguments = function.arguments().stream()
-                .map(argument -> expression(argument, source))
+                .map(argument -> expression(argument, source, context))
                 .toArray(Column[]::new);
         return switch (function.function()) {
             case TRIM -> functions.trim(arguments[0]);
@@ -566,23 +679,24 @@ public final class DeriveColumnsNodeOperator implements CanvasNodeOperator {
 
     private static Column caseWhenExpression(
             CaseWhenExpression caseWhen,
-            Dataset<Row> source
+            Dataset<Row> source,
+            CanvasNodeOperationContext context
     ) {
         CaseWhenBranch first = caseWhen.branches().getFirst();
         Column result = functions.when(
                 CanvasPredicateExpressionBuilder.expression(first.condition(), source),
-                expression(first.result(), source)
+                expression(first.result(), source, context)
         );
         for (int index = 1; index < caseWhen.branches().size(); index++) {
             CaseWhenBranch branch = caseWhen.branches().get(index);
             result = result.when(
                     CanvasPredicateExpressionBuilder.expression(branch.condition(), source),
-                    expression(branch.result(), source)
+                    expression(branch.result(), source, context)
             );
         }
         return caseWhen.elseExpression() == null
                 ? result
-                : result.otherwise(expression(caseWhen.elseExpression(), source));
+                : result.otherwise(expression(caseWhen.elseExpression(), source, context));
     }
 
     private static CanvasColumnSchema derivedColumn(CanvasColumnSchema analyzed) {

@@ -4,11 +4,13 @@ import {
   EyeOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SettingOutlined,
   UpOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
   Button,
+  Empty,
   Form,
   Input,
   InputNumber,
@@ -19,7 +21,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
-import { useImperativeHandle, useState } from 'react';
+import { useImperativeHandle, useRef, useState } from 'react';
 import { useDataSource } from '../../../../datasource';
 import {
   CanvasNodeType,
@@ -28,6 +30,7 @@ import {
   type CanvasTableSchema,
   type FileOutputConfiguration,
   type FileOutputFormatOptions,
+  type FileOutputWrite,
   type GeoParquetCompressionCodec,
   type GeoParquetCoveringMode,
   type ShapefileAttributeMapping,
@@ -162,6 +165,7 @@ const initialValues = (configuration: FileOutputConfiguration): FileOutputFormVa
 const configuration = (
   values: FileOutputFormValues,
   attributeMappings: ShapefileAttributeMapping[],
+  writeId: string,
 ): FileOutputConfiguration => {
   let formatOptions: FileOutputFormatOptions;
   if (values.formatType === 'CSV') {
@@ -212,6 +216,13 @@ const configuration = (
     targetPath: normalizeFileOutputPath(values.targetPath ?? ''),
     conflictPolicy: values.conflictPolicy,
     formatOptions,
+    writes: [{
+      writeId,
+      sourceTableName: values.sourceTableName ?? '',
+      targetPath: normalizeFileOutputPath(values.targetPath ?? ''),
+      conflictPolicy: values.conflictPolicy,
+      formatOptions,
+    }],
   };
 };
 
@@ -360,7 +371,7 @@ const validateFileOutputPath = async (_: unknown, value: string | undefined) => 
   }
 };
 
-const FileOutputInspector = ({
+const FileOutputWriteEditor = ({
   node,
   validation,
   validationUnavailableMessage,
@@ -369,6 +380,7 @@ const FileOutputInspector = ({
   inspectorRef,
 }: CanvasNodeInspectorComponentProps<typeof CanvasNodeType.FileOutput>) => {
   const [form] = Form.useForm<FileOutputFormValues>();
+  const [writeId] = useState(() => node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID());
   const [attributeMappings, setAttributeMappings] = useState<ShapefileAttributeMapping[]>(
     node.configuration.formatOptions.type === 'SHAPEFILE'
       ? node.configuration.formatOptions.attributeMappings : [],
@@ -405,7 +417,7 @@ const FileOutputInspector = ({
   const currentConfiguration = (
     values = form.getFieldsValue(true) as FileOutputFormValues,
     mappings = attributeMappings,
-  ) => configuration(values, mappings);
+  ) => configuration(values, mappings, writeId);
   const markDirty = (mappings = attributeMappings) => {
     onDirtyChange(fingerprint(currentConfiguration(
       form.getFieldsValue(true) as FileOutputFormValues,
@@ -444,7 +456,7 @@ const FileOutputInspector = ({
       setMappingErrors(new Map());
     }
     onDirtyChange(
-      fingerprint(configuration(nextValues, mappings)) !== fingerprint(node.configuration),
+      fingerprint(configuration(nextValues, mappings, writeId)) !== fingerprint(node.configuration),
     );
   };
   const updateMapping = (index: number, mapping: ShapefileAttributeMapping) => {
@@ -479,7 +491,7 @@ const FileOutputInspector = ({
     onApply({
       id: node.id,
       type: node.type,
-      configuration: configuration(values, attributeMappings),
+      configuration: configuration(values, attributeMappings, writeId),
     });
     onDirtyChange(false);
     return true;
@@ -1060,6 +1072,199 @@ const FileOutputInspector = ({
       </Modal>
     </>
   );
+};
+
+const configuredWrites = (configurationValue: FileOutputConfiguration): FileOutputWrite[] => {
+  if (configurationValue.writes?.length) return configurationValue.writes;
+  if (!configurationValue.sourceTableName && !configurationValue.targetPath) return [];
+  return [{
+    writeId: crypto.randomUUID(),
+    sourceTableName: configurationValue.sourceTableName ?? '',
+    targetPath: configurationValue.targetPath ?? '',
+    conflictPolicy: configurationValue.conflictPolicy ?? 'FAIL_IF_EXISTS',
+    formatOptions: configurationValue.formatOptions ?? {
+      type: 'PARQUET',
+    },
+  }];
+};
+
+const editorConfiguration = (
+  dataSourceId: string,
+  write: FileOutputWrite,
+): FileOutputConfiguration => ({
+  dataSourceId,
+  writes: [write],
+  sourceTableName: write.sourceTableName,
+  targetPath: write.targetPath,
+  conflictPolicy: write.conflictPolicy,
+  formatOptions: write.formatOptions,
+});
+
+const persistentConfiguration = (
+  dataSourceId: string,
+  writes: FileOutputWrite[],
+): FileOutputConfiguration => ({ dataSourceId, writes } as FileOutputConfiguration);
+
+const formatWriteLabel = (write: FileOutputWrite): string => {
+  if (write.formatOptions.type === 'SHAPEFILE') {
+    return `SHAPEFILE · ${write.formatOptions.packageMode}`;
+  }
+  if (write.formatOptions.type === 'GEOPARQUET') {
+    return `GEOPARQUET · ${write.formatOptions.compression}`;
+  }
+  return write.formatOptions.type;
+};
+
+const FileOutputInspector = ({
+  node,
+  executionMode,
+  validation,
+  validationUnavailableMessage,
+  onApply,
+  onDirtyChange,
+  inspectorRef,
+}: CanvasNodeInspectorComponentProps<typeof CanvasNodeType.FileOutput>) => {
+  const [initialState] = useState(() => ({
+    dataSourceId: node.configuration.dataSourceId ?? '',
+    writes: configuredWrites(node.configuration),
+  }));
+  const [dataSourceId, setDataSourceId] = useState(initialState.dataSourceId);
+  const [writes, setWrites] = useState<FileOutputWrite[]>(initialState.writes);
+  const [editingWriteId, setEditingWriteId] = useState<string | null>(null);
+  const settingsRef = useRef<CanvasNodeInspectorHandle>(null);
+  const editingWrite = writes.find((write) => write.writeId === editingWriteId) ?? null;
+
+  const markDirty = (nextDataSourceId: string, nextWrites: FileOutputWrite[]) => {
+    onDirtyChange(JSON.stringify({ dataSourceId: nextDataSourceId, writes: nextWrites })
+      !== JSON.stringify(initialState));
+  };
+  const updateWrites = (next: FileOutputWrite[]) => {
+    setWrites(next);
+    markDirty(dataSourceId, next);
+  };
+  const updateDataSourceId = (next: string) => {
+    setDataSourceId(next);
+    markDirty(next, writes);
+  };
+
+  useImperativeHandle(inspectorRef, () => ({
+    apply: async () => {
+      onApply({
+        id: node.id,
+        type: node.type,
+        configuration: persistentConfiguration(dataSourceId, writes),
+      });
+      onDirtyChange(false);
+      return true;
+    },
+  }), [dataSourceId, node.id, node.type, onApply, onDirtyChange, writes]);
+
+  const addWrite = () => {
+    const sourceTableName = validation?.inputTables[0]?.name ?? '';
+    const write: FileOutputWrite = {
+      writeId: crypto.randomUUID(),
+      sourceTableName,
+      targetPath: sourceTableName ? `exports/${sourceTableName}` : '',
+      conflictPolicy: 'FAIL_IF_EXISTS',
+      formatOptions: { type: 'PARQUET' },
+    };
+    updateWrites([...writes, write]);
+    setEditingWriteId(write.writeId);
+  };
+  const replaceWrite = (write: FileOutputWrite) => {
+    updateWrites(writes.map((item) => item.writeId === write.writeId ? write : item));
+  };
+  const moveWrite = (index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= writes.length) return;
+    const next = [...writes];
+    [next[index], next[target]] = [next[target], next[index]];
+    updateWrites(next);
+  };
+  const removeWrite = (write: FileOutputWrite) => {
+    Modal.confirm({
+      title: '删除这条文件写入？',
+      content: write.targetPath
+        ? `目标目录 ${write.targetPath} 的格式和空间字段设置会一并删除。`
+        : '未完成的写入配置会一并删除。',
+      okText: '删除',
+      cancelText: '取消',
+      okButtonProps: { danger: true },
+      onOk: () => updateWrites(writes.filter((item) => item.writeId !== write.writeId)),
+    });
+  };
+
+  return <div className="canvas-inspector-content">
+    <Space orientation="vertical" size={12} style={{ width: '100%' }}>
+      <CanvasNodeValidationIssues
+        validation={validation}
+        unavailableMessage={validationUnavailableMessage}
+      />
+      <div>
+        <Typography.Text strong>目标数据源</Typography.Text>
+        <div style={{ marginTop: 6 }}>
+          <CanvasS3DataSourceSelect
+            value={dataSourceId || undefined}
+            placeholder="选择 S3 数据分发数据源"
+            onChange={(value) => updateDataSourceId(value ?? '')}
+          />
+        </div>
+      </div>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div><Typography.Text strong>文件写入</Typography.Text><Typography.Text type="secondary"> · {writes.length} 项</Typography.Text></div>
+        <Button type="primary" size="small" icon={<PlusOutlined />} onClick={addWrite}>添加输出</Button>
+      </div>
+      {writes.length === 0 ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="尚未配置文件输出">
+        <Button icon={<PlusOutlined />} onClick={addWrite}>添加第一条输出</Button>
+      </Empty> : writes.map((write, index) => <div key={write.writeId}
+        style={{ border: '1px solid #e7e9f5', borderRadius: 10, padding: '10px 12px', background: '#fff' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <Typography.Text ellipsis style={{ display: 'block' }}>
+              {write.sourceTableName || '待选择来源表'} → {write.targetPath || '待配置目标目录'}
+            </Typography.Text>
+            <Space size={4} wrap style={{ marginTop: 5 }}>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>{formatWriteLabel(write)}</Typography.Text>
+              <Typography.Text type="secondary" style={{ fontSize: 12 }}>· {write.conflictPolicy}</Typography.Text>
+            </Space>
+          </div>
+          <Tooltip title="上移"><Button type="text" size="small" icon={<UpOutlined />} disabled={index === 0}
+            aria-label={`上移第 ${index + 1} 条文件写入`} onClick={() => moveWrite(index, -1)} /></Tooltip>
+          <Tooltip title="下移"><Button type="text" size="small" icon={<DownOutlined />} disabled={index === writes.length - 1}
+            aria-label={`下移第 ${index + 1} 条文件写入`} onClick={() => moveWrite(index, 1)} /></Tooltip>
+          <Tooltip title="设置"><Button type="text" size="small" icon={<SettingOutlined />}
+            aria-label={`设置第 ${index + 1} 条文件写入`} onClick={() => setEditingWriteId(write.writeId)} /></Tooltip>
+          <Tooltip title="删除"><Button danger type="text" size="small" icon={<DeleteOutlined />}
+            aria-label={`删除第 ${index + 1} 条文件写入`} onClick={() => removeWrite(write)} /></Tooltip>
+        </div>
+      </div>)}
+      <Typography.Text type="secondary" style={{ fontSize: 12 }}>
+        每条写入独立配置来源、格式和目录；批任务按列表顺序执行，已提交的目录不会回滚。
+      </Typography.Text>
+    </Space>
+    <Modal open={Boolean(editingWrite)} width={800} destroyOnHidden
+      styles={{ body: { maxHeight: '68vh', overflowY: 'auto' } }}
+      title={editingWrite ? `设置文件写入 · ${editingWrite.sourceTableName || '未选择来源表'}` : '设置文件写入'}
+      onCancel={() => setEditingWriteId(null)}
+      onOk={async () => { const applied = await settingsRef.current?.apply(); if (applied) setEditingWriteId(null); }}
+      okText="保存此项" cancelText="取消">
+      {editingWrite && <FileOutputWriteEditor
+        node={{ ...node, configuration: editorConfiguration(dataSourceId, editingWrite) }}
+        executionMode={executionMode}
+        validation={validation}
+        validationUnavailableMessage={validationUnavailableMessage}
+        inspectorRef={settingsRef}
+        onDirtyChange={() => undefined}
+        onApply={(update) => {
+          const updatedConfiguration = update.configuration as FileOutputConfiguration;
+          const updated = updatedConfiguration.writes?.[0];
+          if (updated) replaceWrite({ ...updated, writeId: editingWrite.writeId });
+          if (updatedConfiguration.dataSourceId !== dataSourceId) {
+            updateDataSourceId(updatedConfiguration.dataSourceId);
+          }
+        }} />}
+    </Modal>
+  </div>;
 };
 
 export default FileOutputInspector;

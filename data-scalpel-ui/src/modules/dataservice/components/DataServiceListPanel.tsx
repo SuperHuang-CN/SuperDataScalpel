@@ -60,7 +60,7 @@ import {
   type DataServiceType,
 } from '../model/dataService';
 import { gatewayProviderLabels } from '../model/apiConsumer';
-import { buildDataServiceCurlCommand } from '../model/dataServiceCurl';
+import { buildDataServiceAccessUrl, buildDataServiceCurlCommand } from '../model/dataServiceCurl';
 import { gatewayOperationError, publishedGatewayBinding } from '../model/dataServiceGateway';
 import { parseDataServiceListRoute, serializeDataServiceListRoute } from '../model/dataServiceListRoute';
 import { buildDataServiceSearch } from '../model/dataServiceSearch';
@@ -156,6 +156,7 @@ export const DataServiceListPanel = ({
   const unpublishMutation = useUnpublishDataService();
   const disableMutation = useDisableDataService();
   const cleanupMutation = useCleanupDataServiceDeployment();
+  const enginesById = new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine]));
   const engineNames = new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine.name]));
 
   const syncRoute = (
@@ -369,6 +370,24 @@ export const DataServiceListPanel = ({
     }
   };
 
+  const copyServiceAccessUrl = async (dataService: DataServiceSummary) => {
+    const engine = enginesById.get(dataService.engineId);
+    if (!engine) {
+      messageApi.error('未找到 Service Engine 公共地址，无法生成完整访问地址');
+      return;
+    }
+    if (!navigator.clipboard) {
+      messageApi.error('当前浏览器不支持自动复制，请使用 HTTPS 或 localhost 访问');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(buildDataServiceAccessUrl(engine.publicUrl, dataService.routePath));
+      messageApi.success('完整服务访问地址已复制');
+    } catch {
+      messageApi.error('复制失败，请检查浏览器的剪贴板权限');
+    }
+  };
+
   const columns: TableProps<DataServiceSummary>['columns'] = [
     {
       title: '服务', dataIndex: 'name', width: 240,
@@ -387,7 +406,38 @@ export const DataServiceListPanel = ({
     },
     {
       title: '路由 / 访问', width: 250,
-      render: (_: unknown, service) => <ManagementListCell primary={<ManagementCode value={service.routePath} />} secondary={dataServiceAccessModeLabels[service.accessMode]} />,
+      render: (_: unknown, service) => {
+        const engine = enginesById.get(service.engineId);
+        const accessUrl = engine && buildDataServiceAccessUrl(engine.publicUrl, service.routePath);
+        const copyUnavailableReason = !canViewEngines
+          ? '缺少 Service Engine 查看权限，无法生成完整访问地址'
+          : enginesQuery.isFetching
+            ? '正在加载 Service Engine 公共地址'
+            : '未找到 Service Engine 公共地址';
+        return (
+          <ManagementListCell
+            primary={(
+              <div className="data-service-route-address">
+                <ManagementCode value={service.routePath} />
+                <Tooltip title={accessUrl ? `复制完整访问地址：${accessUrl}` : copyUnavailableReason}>
+                  <span>
+                    <Button
+                      className="data-service-route-copy"
+                      type="text"
+                      size="small"
+                      icon={<CopyOutlined />}
+                      disabled={!accessUrl}
+                      aria-label={`复制${service.name}的完整访问地址`}
+                      onClick={() => void copyServiceAccessUrl(service)}
+                    />
+                  </span>
+                </Tooltip>
+              </div>
+            )}
+            secondary={dataServiceAccessModeLabels[service.accessMode]}
+          />
+        );
+      },
     },
     {
       title: '运行状态', width: 210,

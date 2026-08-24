@@ -1,18 +1,18 @@
 import {
   DeleteOutlined,
+  InfoCircleOutlined,
   PlusOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
   Button,
   Card,
-  Checkbox,
   Form,
   Input,
   Select,
   Space,
-  Switch,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import {
@@ -221,6 +221,9 @@ export const ValueMappingProcessorInspector = ({
             <Typography.Text type="secondary">
               {` · ${rules.length}/${CANVAS_VALUE_MAPPING_MAX_RULES} 字段 · ${totalEntries}/${CANVAS_VALUE_MAPPING_MAX_TOTAL_ENTRIES} 项`}
             </Typography.Text>
+            <Tooltip title="NULL 始终保持 NULL，不参与普通值匹配；大型或频繁变化的字典请使用 Input + Join。映射值不会进入节点摘要和日志。">
+              <InfoCircleOutlined className="canvas-value-mapping-help" aria-label="查看值映射说明" />
+            </Tooltip>
           </span>
           <Button
             size="small"
@@ -288,7 +291,9 @@ export const ValueMappingProcessorInspector = ({
                 title={(
                   <Space>
                     <Tag color="purple">{ruleIndex + 1}</Tag>
-                    <span>{rule.columnName || '未选择字段'}</span>
+                    <Typography.Text code>{rule.columnName || '未选择字段'}</Typography.Text>
+                    <Tag>{dataType}</Tag>
+                    <Typography.Text type="secondary">{rule.entries.length} 项</Typography.Text>
                     {missing && <Tag color="error">已失效</Tag>}
                   </Space>
                 )}
@@ -305,7 +310,7 @@ export const ValueMappingProcessorInspector = ({
                   />
                 )}
               >
-                <Space orientation="vertical" size={10} style={{ width: '100%' }}>
+                <div className="canvas-value-mapping-rule-body">
                   <Select
                     showSearch
                     optionFilterProp="label"
@@ -345,11 +350,69 @@ export const ValueMappingProcessorInspector = ({
                       实时任务不能映射事件时间字段。
                     </Typography.Text>
                   )}
-                  <div className="canvas-value-mapping-entry-list">
-                    {rule.entries.map((entry, entryIndex) => (
-                      <div className="canvas-value-mapping-entry" key={entryIndex}>
-                        <div className="canvas-value-mapping-entry-heading">
-                          <Typography.Text strong>{`映射 ${entryIndex + 1}`}</Typography.Text>
+                  <div className="canvas-value-mapping-table">
+                    <div className="canvas-value-mapping-table-header">
+                      <span>#</span>
+                      <span>原值</span>
+                      <span>目标方式</span>
+                      <span>目标值</span>
+                      <span>操作</span>
+                    </div>
+                    <div className="canvas-value-mapping-table-body">
+                      {rule.entries.map((entry, entryIndex) => (
+                        <div className="canvas-value-mapping-table-row" key={entryIndex}>
+                          <span className="canvas-value-mapping-index">{entryIndex + 1}</span>
+                          <TypedLiteralInput
+                            dataType={dataType}
+                            value={entry.sourceValue}
+                            showTypeLabel={false}
+                            placeholder="输入原值"
+                            onChange={(sourceValue) => updateRule({
+                              ...rule,
+                              entries: rule.entries.map((candidate, index) => (
+                                index === entryIndex
+                                  ? { ...candidate, sourceValue }
+                                  : candidate
+                              )),
+                            })}
+                          />
+                          <Select
+                            size="small"
+                            value={entry.targetValue === null ? 'NULL' : 'VALUE'}
+                            options={[
+                              { value: 'VALUE', label: '固定值' },
+                              { value: 'NULL', label: 'SQL NULL' },
+                            ]}
+                            onChange={(targetMode: 'VALUE' | 'NULL') => updateRule({
+                              ...rule,
+                              entries: rule.entries.map((candidate, index) => (
+                                index === entryIndex
+                                  ? {
+                                    ...candidate,
+                                    targetValue: targetMode === 'NULL'
+                                      ? null
+                                      : candidate.targetValue ?? createLiteral(dataType),
+                                  }
+                                  : candidate
+                              )),
+                            })}
+                          />
+                          {entry.targetValue === null
+                            ? <Typography.Text type="secondary" className="canvas-value-mapping-null">SQL NULL</Typography.Text>
+                            : <TypedLiteralInput
+                              dataType={dataType}
+                              value={entry.targetValue}
+                              showTypeLabel={false}
+                              placeholder="输入目标值"
+                              onChange={(targetValue) => updateRule({
+                                ...rule,
+                                entries: rule.entries.map((candidate, index) => (
+                                  index === entryIndex
+                                    ? { ...candidate, targetValue }
+                                    : candidate
+                                )),
+                              })}
+                            />}
                           <Button
                             type="text"
                             danger
@@ -364,60 +427,14 @@ export const ValueMappingProcessorInspector = ({
                             })}
                           />
                         </div>
-                        <Typography.Text type="secondary">原值</Typography.Text>
-                        <TypedLiteralInput
-                          dataType={dataType}
-                          value={entry.sourceValue}
-                          onChange={(sourceValue) => updateRule({
-                            ...rule,
-                            entries: rule.entries.map((candidate, index) => (
-                              index === entryIndex
-                                ? { ...candidate, sourceValue }
-                                : candidate
-                            )),
-                          })}
-                        />
-                        <Checkbox
-                          checked={entry.targetValue === null}
-                          onChange={(event) => updateRule({
-                            ...rule,
-                            entries: rule.entries.map((candidate, index) => (
-                              index === entryIndex
-                                ? {
-                                  ...candidate,
-                                  targetValue: event.target.checked
-                                    ? null
-                                    : createLiteral(dataType),
-                                }
-                                : candidate
-                            )),
-                          })}
-                        >
-                          映射为 SQL NULL
-                        </Checkbox>
-                        {entry.targetValue !== null && (
-                          <>
-                            <Typography.Text type="secondary">目标值</Typography.Text>
-                            <TypedLiteralInput
-                              dataType={dataType}
-                              value={entry.targetValue}
-                              onChange={(targetValue) => updateRule({
-                                ...rule,
-                                entries: rule.entries.map((candidate, index) => (
-                                  index === entryIndex
-                                    ? { ...candidate, targetValue }
-                                    : candidate
-                                )),
-                              })}
-                            />
-                          </>
-                        )}
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                   <Button
                     block
+                    size="small"
                     type="dashed"
+                    className="canvas-value-mapping-add-entry"
                     icon={<PlusOutlined />}
                     disabled={
                       rule.entries.length >= CANVAS_VALUE_MAPPING_MAX_ENTRIES_PER_RULE
@@ -436,6 +453,7 @@ export const ValueMappingProcessorInspector = ({
                   <div className="canvas-value-mapping-unmatched">
                     <Typography.Text strong>未匹配非 NULL 值</Typography.Text>
                     <Select
+                      size="small"
                       value={rule.unmatchedStrategy}
                       options={[
                         { value: 'KEEP', label: '保留原值' },
@@ -456,37 +474,31 @@ export const ValueMappingProcessorInspector = ({
                       <TypedLiteralInput
                         dataType={dataType}
                         value={rule.unmatchedValue}
+                        showTypeLabel={false}
+                        placeholder="输入未匹配时使用的固定值"
                         onChange={(unmatchedValue) => updateRule({
                           ...rule,
                           unmatchedValue,
                         })}
                       />
                     )}
-                    <Switch
-                      size="small"
-                      checkedChildren="严格"
-                      unCheckedChildren="宽松"
-                      checked={rule.unmatchedStrategy === 'ERROR'}
-                      onChange={(checked) => updateRule({
-                        ...rule,
-                        unmatchedStrategy: checked ? 'ERROR' : 'KEEP',
-                        unmatchedValue: null,
-                      })}
-                    />
+                    {rule.unmatchedStrategy !== 'SET_LITERAL' && (
+                      <Typography.Text type="secondary" className="canvas-value-mapping-unmatched-summary">
+                        {{
+                          KEEP: '未命中的值保持不变',
+                          SET_NULL: '未命中的值写为 SQL NULL',
+                          ERROR: '存在未命中值时终止节点',
+                        }[rule.unmatchedStrategy]}
+                      </Typography.Text>
+                    )}
                   </div>
-                </Space>
+                </div>
               </Card>
             );
           })}
         </div>
       </section>
       {draftError && <Alert showIcon type="error" title={draftError} />}
-      <Alert
-        showIcon
-        type="info"
-        title="NULL 始终保持 NULL"
-        description="NULL 不参与普通值匹配；空值补全请使用“空值处理”。大型或频繁变化的字典请使用 Input + Join。映射值不会进入节点摘要和日志。"
-      />
     </Space>
   );
 };

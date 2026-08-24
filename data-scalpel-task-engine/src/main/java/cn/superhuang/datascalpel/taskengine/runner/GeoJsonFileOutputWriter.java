@@ -61,7 +61,7 @@ final class GeoJsonFileOutputWriter {
             UUID executionId
     ) {
         FileOutputFormatOptions.GeoJson options =
-                (FileOutputFormatOptions.GeoJson) output.node().configuration().formatOptions();
+                (FileOutputFormatOptions.GeoJson) output.formatOptions();
         RuntimeS3Connection connection = output.runtimeDataSource().s3Connection();
         Configuration hadoop = spark.sparkContext().hadoopConfiguration();
         Path targetDirectory = new Path(output.targetUri());
@@ -74,7 +74,7 @@ final class GeoJsonFileOutputWriter {
 
         try {
             FileSystem fileSystem = targetDirectory.getFileSystem(hadoop);
-            if (output.node().configuration().conflictPolicy()
+            if (output.conflictPolicy()
                     == FileOutputConflictPolicy.FAIL_IF_EXISTS
                     && fileSystem.exists(targetDirectory)) {
                 throw failure("FILE_OUTPUT_TARGET_EXISTS", "File Output 目标目录已存在", output);
@@ -565,7 +565,7 @@ final class GeoJsonFileOutputWriter {
                 new Path(artifact.toUri()),
                 new Path(stagingDirectory, artifactName)
         );
-        if (output.node().configuration().conflictPolicy()
+        if (output.conflictPolicy()
                 == FileOutputConflictPolicy.FAIL_IF_EXISTS) {
             if (fileSystem.exists(targetDirectory)) {
                 throw failure("FILE_OUTPUT_TARGET_EXISTS", "File Output 目标目录已存在", output);

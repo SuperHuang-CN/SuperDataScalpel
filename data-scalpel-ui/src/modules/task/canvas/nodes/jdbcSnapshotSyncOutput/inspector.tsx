@@ -12,11 +12,11 @@ import {
 } from '../../canvasTypes';
 import { CanvasJdbcDataSourceSelect, CanvasJdbcTableSelect } from '../../components/CanvasJdbcSelectors';
 import { ValidationIssues } from '../../components/CanvasLegacyInspectors';
+import { SnapshotSyncConfigurationFields } from '../../components/SnapshotSyncConfigurationFields';
 import {
-  SnapshotSyncConfigurationFields,
   normalizeSnapshotSyncConfiguration,
   type SnapshotSyncFormValues,
-} from '../../components/SnapshotSyncConfigurationFields';
+} from '../../components/snapshotSyncConfiguration';
 import { configurationFingerprint, focusFirstInvalidField } from '../../components/CanvasInspectorUtils';
 import type { CanvasNodeInspectorComponentProps } from '../nodeSpec';
 

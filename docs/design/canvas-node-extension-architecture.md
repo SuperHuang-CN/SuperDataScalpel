@@ -4,7 +4,7 @@
 
 - 状态：已实施。
 - 适用范围：Canvas 设计器、Canvas 稳定定义、Business 保存与发布准备、Task Engine 编译与运行。
-- 当前协议：`schemaVersion: 2`、`schemaMinorVersion: 3`。
+- 当前协议：`schemaVersion: 3`、`schemaMinorVersion: 0`。
 - 实施门禁：本文档已完成评审确认，生产代码按本文约束迁移。
 
 本文定义 DataScalpel 内置 Canvas 节点的扩展架构。目标不是提供运行时第三方插件，而是让新增内置 `INPUT`、`PROCESSOR`、`OUTPUT` 时，展示、配置、导入、图规则、元数据依赖和执行能力通过明确的编译期注册机制接入。
@@ -262,7 +262,7 @@ src/modules/task/canvas/
 4. 调用 `spec.parseConfiguration` 解析配置。
 5. 解析成功后组装判别联合 `CanvasNodeDefinition`。
 6. 保留现有重复 ID、布局、边端点和协议版本校验。
-7. 规范化输出继续写入当前 `1.13`。
+7. 规范化输出统一写入当前 `3.0`。
 
 `emptyNodeConfiguration(type)` 改为调用 `registry.require(type).createDefaultConfiguration()`。旧函数名可以保留为薄适配层，避免调用方一次性重写；实现完成后不得再包含节点类型分支。
 
@@ -347,16 +347,16 @@ Inspector 加载失败不修改节点配置；面板显示持续错误和重试�
 | `KAFKA_INPUT` | INPUT | `input.stream` | STREAMING | 5 | 0 | 1..* |
 | `HTTP_API_INPUT` | INPUT | `input.api` | BATCH | 0 | 0 | 1..* |
 | `MODEL_INPUT` | INPUT | `input.model` | BATCH | 1 | 0 | 1..* |
-| `FILTER` | PROCESSOR | `processor.row` | BATCH, STREAMING | 7 | 1 | 1..* |
-| `DEDUPLICATE` | PROCESSOR | `processor.row` | BATCH | 13 | 1 | 1..* |
-| `RENAME` | PROCESSOR | `processor.column` | BATCH, STREAMING | 2 | 1 | 1..* |
-| `SELECT_COLUMNS` | PROCESSOR | `processor.column` | BATCH, STREAMING | 8 | 1 | 1..* |
-| `DERIVE_COLUMNS` | PROCESSOR | `processor.column` | BATCH, STREAMING | 9 | 1 | 1..* |
-| `TYPE_CAST` | PROCESSOR | `processor.column` | BATCH, STREAMING | 10 | 1 | 1..* |
-| `JOIN` | PROCESSOR | `processor.relational` | BATCH | 0 | 2 | 1..* |
+| `FILTER` | PROCESSOR | `processor.row` | BATCH, STREAMING | 7 | 1..* | 1..* |
+| `DEDUPLICATE` | PROCESSOR | `processor.row` | BATCH | 13 | 1..* | 1..* |
+| `RENAME` | PROCESSOR | `processor.column` | BATCH, STREAMING | 2 | 1..* | 1..* |
+| `SELECT_COLUMNS` | PROCESSOR | `processor.column` | BATCH, STREAMING | 8 | 1..* | 1..* |
+| `DERIVE_COLUMNS` | PROCESSOR | `processor.column` | BATCH, STREAMING | 9 | 1..* | 1..* |
+| `TYPE_CAST` | PROCESSOR | `processor.column` | BATCH, STREAMING | 10 | 1..* | 1..* |
+| `JOIN` | PROCESSOR | `processor.relational` | BATCH | 0 | 1..* | 1..* |
 | `UNION` | PROCESSOR | `processor.relational` | BATCH, STREAMING | 12 | 1..* | 1..* |
-| `AGGREGATE` | PROCESSOR | `processor.aggregate` | BATCH | 11 | 1 | 1..* |
-| `STREAM_JOIN` | PROCESSOR | `processor.stream` | STREAMING | 3 | 2 | 1..* |
+| `AGGREGATE` | PROCESSOR | `processor.aggregate` | BATCH | 11 | 1..* | 1..* |
+| `STREAM_JOIN` | PROCESSOR | `processor.stream` | STREAMING | 3 | 1..* | 1..* |
 | `JDBC_OUTPUT` | OUTPUT | `output.database` | BATCH, STREAMING | 0 | 1 | 0 |
 | `FILE_OUTPUT` | OUTPUT | `output.file` | BATCH | 6 | 1 | 0 |
 | `KAFKA_OUTPUT` | OUTPUT | `output.stream` | STREAMING | 5 | 1 | 0 |
@@ -364,7 +364,7 @@ Inspector 加载失败不修改节点配置；面板显示持续错误和重试�
 
 说明：
 
-- `UNION` 的配置要求至少选择两张逻辑表，但这些表可以来自一条上游边传播的 Map，因此图入边最少仍为一条。
+- 所有 Processor 的配置按表名选择逻辑表；这些表可以来自同一条边或多个上游表 Map，因此图入边统一为 `1..*`。
 - 非 Output 节点至少一条出边；`maxOutputs=null`。
 - `JDBC_INPUT` 在流任务中仍产生有界静态维表，Spec 只表达模式支持，不表达表有界性。
 
@@ -579,7 +579,7 @@ Business 保存边界：
 - 空字符串允许作为未配置草稿。
 - 非空字符串必须是 UUID；非法值继续返回 HTTP 400 ProblemDetail。
 - 不验证资源是否存在、是否启用或字段是否兼容。
-- 升级后保存的定义统一写为当前 `1.13`。
+- 升级后保存的定义统一写为当前 `3.0`。
 
 Task Engine 直接编译边界：
 
@@ -622,7 +622,7 @@ Task Engine 继续显式注册内置 Operator。每个 `CanvasNodeType`：
 ### 10.1 兼容
 
 - Canvas JSON 字段、节点类型和配置语义不变。
-- Registry 架构重构本身不单独占用协议版本；当前写出版本统一为 Canvas `2.3`。
+- Registry 架构重构本身不单独占用协议版本；当前写出版本统一为 Canvas `3.0`。
 - HTTP API 路径、请求和响应 JSON 不变。
 - 数据库表和已保存 JSON 不迁移。
 - X6 Shape 变化属于内存实现，不影响持久化。
@@ -772,6 +772,6 @@ git diff --check
 4. 元数据按资源种类注册 Provider。
 5. Contracts 成为唯一 Java Canvas 定义。
 6. 四个草稿资源 ID 的 Java 类型改为 String，JSON 不变。
-7. 当前协议保持 `1.13`，无数据库迁移和功能开关。
+7. 当前协议为 `3.0`，无数据库迁移和功能开关。
 8. 最近使用、收藏和快捷搜索不在本次范围。
 9. 设计文档确认后才开始代码实施。

@@ -77,7 +77,6 @@ import software.amazon.awssdk.services.s3.model.PutObjectRequest;
 public class DataSourceRuntimeService {
 
     private static final Logger LOGGER = LoggerFactory.getLogger(DataSourceRuntimeService.class);
-    private static final int TABLE_LIST_LIMIT = 500;
     private static final long KAFKA_API_TIMEOUT_SECONDS = 120;
     private static final String KAFKA_REQUEST_TIMEOUT_MS = "60000";
     private static final String KAFKA_API_TIMEOUT_MS = "120000";
@@ -207,7 +206,8 @@ public class DataSourceRuntimeService {
             String catalog,
             String schema,
             String keyword,
-            boolean includeViews
+            boolean includeViews,
+            int limit
     ) {
         DataSource dataSource = requireDataSource(id);
         requireJdbc(dataSource);
@@ -215,7 +215,7 @@ public class DataSourceRuntimeService {
             return TableListResponse.from(inspector.listTables(
                     dataSource.getType().name(),
                     dataSource.getConnection().toJdbcConnectionConfig(),
-                    new TableQuery(catalog, schema, keyword, includeViews, TABLE_LIST_LIMIT)
+                    new TableQuery(catalog, schema, keyword, includeViews, limit)
             ));
         } catch (DatabaseAccessException exception) {
             throw remoteAccessException(exception);

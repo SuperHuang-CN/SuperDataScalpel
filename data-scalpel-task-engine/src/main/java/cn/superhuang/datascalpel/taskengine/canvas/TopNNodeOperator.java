@@ -8,8 +8,10 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasTopNLimits;
 import cn.superhuang.data.scalpel.contract.task.TopNConfiguration;
+import cn.superhuang.data.scalpel.contract.task.TopNOperation;
 import cn.superhuang.data.scalpel.contract.task.TopNNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.TopNTieStrategy;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Column;
@@ -55,6 +57,20 @@ public final class TopNNodeOperator implements CanvasNodeOperator {
         List<CanvasTableSchema> inputSchemas = CanvasNodeSupport.schemas(inputs);
         TopNConfiguration configuration = node.configuration();
         if (configuration == null) return CanvasNodeOperationResult.invalid(inputSchemas);
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        TopNOperation sourceOperation = (TopNOperation) operation.operation();
+                        TopNConfiguration single = new TopNConfiguration(List.of(new TopNOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()),
+                                sourceOperation.partitionByColumns(), sourceOperation.orderBy(),
+                                sourceOperation.limit(), sourceOperation.tieStrategy()
+                        )));
+                        return apply(new TopNNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
+        }
 
         CanvasNodeIssueSink issues = context.issues();
         CanvasNodeSupport.required(

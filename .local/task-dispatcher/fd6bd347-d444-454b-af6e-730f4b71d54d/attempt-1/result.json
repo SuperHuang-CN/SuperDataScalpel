@@ -1,0 +1,65 @@
+{
+  "schemaVersion" : 7,
+  "executionId" : "fd6bd347-d444-454b-af6e-730f4b71d54d",
+  "runId" : "2dba8c7a-4e07-48f8-a08e-7245202dd754",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-20T15:41:39.100140334Z",
+  "endedAt" : "2026-08-20T15:41:45.947318629Z",
+  "durationMs" : 6847,
+  "affectedRows" : 17718,
+  "nodeResults" : [ {
+    "nodeId" : "0584f3af-847e-41ee-aa34-7952ee449c84",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-08-20T15:41:41.765194877Z",
+    "endedAt" : "2026-08-20T15:41:42.036531294Z",
+    "durationMs" : 271,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "JDBC 输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "68f7a8cf-7885-4bcb-9cca-e6df4e208729",
+    "nodeType" : "DERIVE_COLUMNS",
+    "nodeName" : "派生字段",
+    "state" : "SUCCESS",
+    "phase" : "PROCESS",
+    "startedAt" : "2026-08-20T15:41:42.037769335Z",
+    "endedAt" : "2026-08-20T15:41:42.046983252Z",
+    "durationMs" : 9,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "派生字段已准备",
+    "error" : null
+  }, {
+    "nodeId" : "e1e62adc-c573-48ed-85c9-f44384d1a349",
+    "nodeType" : "MODEL_OUTPUT",
+    "nodeName" : "模型输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-08-20T15:41:42.047205252Z",
+    "endedAt" : "2026-08-20T15:41:45.946828796Z",
+    "durationMs" : 3899,
+    "rowsWritten" : 17718,
+    "metrics" : {
+      "kind" : "OUTPUT_WRITES",
+      "writes" : [ {
+        "writeId" : "c3fa9b4f-e0d7-4db8-807a-c66eacb85636",
+        "sourceTableName" : "sthyits_st_stbprp_b",
+        "targetDisplayName" : "测站基本信息表贴源模型 · ods_sthyits_st_stbprp_b",
+        "state" : "SUCCESS",
+        "affectedRows" : 17718,
+        "errorCode" : null
+      } ]
+    },
+    "message" : "模型输出写入成功",
+    "error" : null
+  } ],
+  "taskType" : "SPARK_CANVAS",
+  "qualityResult" : null,
+  "userJobObservability" : null,
+  "error" : null
+}

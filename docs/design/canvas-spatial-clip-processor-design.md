@@ -7,7 +7,7 @@
 - 节点类型：`SPATIAL_CLIP`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：仅 `BATCH`。
-- 图规则：恰好两条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；来源表与 Mask 表从合并后的表 Map 选择。
 
 `SPATIAL_CLIP` 使用一张 Mask 表中的 Polygon/MultiPolygon 裁剪来源表 Geometry。节点保留
 来源表全部属性并追加裁剪结果，不把 Mask 属性带入输出。
@@ -44,7 +44,7 @@ interface SpatialClipConfiguration {
 协议限制：
 
 - 来源表、Mask 表、输出表和三个字段名全部必填。
-- 来源表与 Mask 表不能相同；节点从两个直接上游传播的表 Map 中精确选择两张逻辑表。
+- 来源表与 Mask 表不能相同；节点从全部直接上游无覆盖合并后的表 Map 中精确选择两张逻辑表。
 - 两个空间字段都必须有完整 Geometry 定义，并且仅支持 `EPSG + XY`。
 - 两侧 CRS、坐标维度必须完全一致；不执行隐式 `ST_Transform`。
 - Mask 字段的 GeometryKind 只允许 `POLYGON` 或 `MULTIPOLYGON`。
@@ -90,7 +90,7 @@ Schema 规则：
 - 结果字段为非 nullable；NULL 和 Empty 结果已被 INNER 语义过滤。
 - 输出表 `origin=null`、`datasetKind=BOUNDED`，事件时间和 Watermark 清空。
 
-节点只接受两张 BOUNDED 输入。它会改变行数并可能复制来源行，不保留来源表事件时间与
+节点选择的两张逻辑表都必须是 BOUNDED。它会改变行数并可能复制来源行，不保留来源表事件时间与
 Watermark 的流式语义。
 
 ## 5. 校验与稳定错误码

@@ -212,7 +212,11 @@ const engineValidationFixture = (
       outputTables: [],
     };
     if (node.type === CanvasNodeType.JdbcInput) {
-      result.outputTables = [node.configuration.tableName === 'customers' ? customers : orders];
+      result.outputTables = node.configuration.tables.flatMap(({ tableName }) => {
+        if (tableName === 'orders') return [orders];
+        if (tableName === 'customers') return [customers];
+        return [];
+      });
     } else if (node.type === CanvasNodeType.Join) {
       result.inputTables = [orders, customers];
       result.outputTables = [orders, customers, joined];
@@ -374,7 +378,7 @@ const modelInputNode = (modelId: string): Extract<CanvasNodeDefinition, { type: 
   type: CanvasNodeType.ModelInput,
   name: '模型输入',
   layout: { x: 80, y: 80, width: 240, height: 120 },
-  configuration: { modelId },
+  configuration: { models: [{ modelId }] },
 });
 
 const modelOutputNode = (
@@ -463,7 +467,8 @@ describe('CanvasNodeInspector', () => {
     const definition = exampleCanvasDefinition();
     const validation = engineValidationFixture(definition);
     const input = definition.nodes.find(
-      (node) => node.type === CanvasNodeType.JdbcInput && node.configuration.tableName === 'orders',
+      (node) => node.type === CanvasNodeType.JdbcInput
+        && node.configuration.tables.some((table) => table.tableName === 'orders'),
     );
     const onApply = vi.fn();
     const onDirtyChange = vi.fn();
@@ -482,11 +487,13 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    fireEvent.click(screen.getByRole('button', { name: '查看 orders 字段' }));
     expect(screen.getByText('order_id')).toBeInTheDocument();
-    expect(screen.getByText('字段 · orders')).toBeInTheDocument();
     expect(screen.queryByText('demo.public.orders')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('节点名称')).not.toBeInTheDocument();
-    await selectAntOption('物理表', 'payments');
+    fireEvent.click(screen.getByRole('button', { name: '管理物理表' }));
+    fireEvent.click(await screen.findByRole('checkbox', { name: /payments/ }));
+    fireEvent.click(screen.getByRole('button', { name: '确定 · 2 张表' }));
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
 
     await act(async () => {
@@ -499,7 +506,10 @@ describe('CanvasNodeInspector', () => {
         type: CanvasNodeType.JdbcInput,
         configuration: {
           dataSourceId: input.configuration.dataSourceId,
-          tableName: 'payments',
+          tables: [
+            { tableName: 'orders', readOptions: [] },
+            { tableName: 'payments', readOptions: [] },
+          ],
         },
       }));
       expect(onDirtyChange).toHaveBeenLastCalledWith(false);
@@ -514,7 +524,7 @@ describe('CanvasNodeInspector', () => {
     const onApply = vi.fn();
     expect(input).toBeDefined();
     if (!input) return;
-    input.configuration = { dataSourceId: '', tableName: '' };
+    input.configuration = { dataSourceId: '', tables: [] };
 
     render(
       <CanvasNodeInspector
@@ -535,7 +545,7 @@ describe('CanvasNodeInspector', () => {
     expect(onApply).toHaveBeenCalledWith(expect.objectContaining({
       id: input.id,
       type: CanvasNodeType.JdbcInput,
-      configuration: { dataSourceId: '', tableName: '' },
+      configuration: { dataSourceId: '', tables: [] },
     }));
   });
 
@@ -547,9 +557,7 @@ describe('CanvasNodeInspector', () => {
       layout: { x: 80, y: 80, width: 240, height: 120 },
       configuration: {
         dataSourceId: '',
-        resourceId: '',
-        outputTableName: 'api_orders',
-        runtimeParameters: [{ name: 'accessToken', value: 'must-not-be-persisted' }],
+        resources: [{ resourceId: '', outputTableName: 'api_orders', runtimeParameters: [{ name: 'accessToken', value: 'must-not-be-persisted' }] }],
       },
     };
     const inspectorRef = createRef<CanvasNodeInspectorHandle>();
@@ -578,7 +586,8 @@ describe('CanvasNodeInspector', () => {
     const definition = exampleCanvasDefinition();
     const validation = engineValidationFixture(definition);
     const input = definition.nodes.find(
-      (node) => node.type === CanvasNodeType.JdbcInput && node.configuration.tableName === 'orders',
+      (node) => node.type === CanvasNodeType.JdbcInput
+        && node.configuration.tables.some((table) => table.tableName === 'orders'),
     );
     const inspectorRef = createRef<CanvasNodeInspectorHandle>();
     const onApply = vi.fn();
@@ -601,12 +610,12 @@ describe('CanvasNodeInspector', () => {
     await waitFor(() => {
       expect(vi.mocked(useTableMetadata).mock.calls.at(-1)?.[0]).toBe(metadataFixtures.archiveSourceId);
     });
-    expect(screen.getByLabelText('物理表').closest('.ant-select-content')).toHaveAttribute('title', 'orders');
+    expect(screen.getByText('orders')).toBeInTheDocument();
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
     expect(onApply).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('该物理表不存在或不属于当前数据源')).toBeInTheDocument();
+    expect(await screen.findByText('物理表不存在或元数据读取失败')).toBeInTheDocument();
   });
 
   it('warns when the real table result is truncated and offers refresh', async () => {
@@ -626,9 +635,8 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    fireEvent.mouseDown(screen.getByLabelText('物理表'));
-    expect(await screen.findByText('结果超过 500 项，请输入名称继续筛选')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '刷新物理表' })).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '管理物理表' }));
+    expect(await screen.findByText(/匹配结果超过 100 项/)).toBeInTheDocument();
   });
 
   it('debounces physical-table input into a remote keyword query', async () => {
@@ -647,12 +655,13 @@ describe('CanvasNodeInspector', () => {
         />,
       );
       await waitForInspector();
+      fireEvent.click(screen.getByRole('button', { name: '管理物理表' }));
       vi.useFakeTimers();
 
-      fireEvent.change(screen.getByLabelText('物理表'), { target: { value: 'pay' } });
+      fireEvent.change(screen.getByPlaceholderText('输入物理表名搜索'), { target: { value: 'pay' } });
       act(() => vi.advanceTimersByTime(300));
       expect(vi.mocked(useDataSourceTables).mock.calls.at(-1)?.[1])
-        .toEqual({ keyword: 'pay', includeViews: false });
+        .toEqual({ keyword: 'pay', includeViews: false, limit: 100 });
     } finally {
       vi.useRealTimers();
     }
@@ -676,6 +685,110 @@ describe('CanvasNodeInspector', () => {
     expect(screen.getByText('条件 2')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: '删除条件 2' }));
     expect(screen.queryByText('条件 2')).not.toBeInTheDocument();
+  });
+
+  it('suggests the full right table name for duplicate Join output fields', async () => {
+    const join: Extract<CanvasNodeDefinition, { type: 'JOIN' }> = {
+      id: 'ba196a5c-64da-4869-806b-71ae31e2cbed',
+      type: CanvasNodeType.Join,
+      name: '用户部门关联',
+      layout: { x: 320, y: 20, width: 360, height: 216 },
+      configuration: {
+        leftTableName: 'sys_user',
+        rightTableName: 'sys_dept',
+        outputTableName: 'dim_user',
+        joinType: 'LEFT',
+        conditions: [{
+          leftColumnName: 'dept_id',
+          operator: 'EQUALS',
+          rightColumnName: 'id',
+        }],
+        outputColumns: [],
+      },
+    };
+    const table = (name: string): CanvasTableSchema => ({
+      ...canvasTable('orders'),
+      name,
+      origin: null,
+      columns: [canvasColumn(['id', 'LONG', false]), canvasColumn(['name', 'STRING', false])],
+    });
+    const validation: CanvasNodeValidationResult = {
+      nodeId: join.id,
+      issues: [],
+      inputTables: [table('sys_user'), table('sys_dept')],
+      outputTables: [],
+    };
+
+    render(
+      <CanvasNodeInspector
+        node={join}
+        validation={validation}
+        onApply={vi.fn()}
+        onDirtyChange={vi.fn()}
+      />,
+    );
+    await waitForInspector();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('sys_dept_id')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('sys_dept_name')).toBeInTheDocument();
+    });
+    expect(screen.queryByDisplayValue('right_id')).not.toBeInTheDocument();
+  });
+
+  it('suggests the full static table name for duplicate Stream Join output fields', async () => {
+    const streamJoin: Extract<CanvasNodeDefinition, { type: 'STREAM_JOIN' }> = {
+      id: '1f620b7a-ed25-4b17-8910-4399f52fa741',
+      type: CanvasNodeType.StreamJoin,
+      name: '订单流关联客户维表',
+      layout: { x: 320, y: 20, width: 360, height: 216 },
+      configuration: {
+        leftTableName: 'order_events',
+        rightTableName: 'dim_customer',
+        outputTableName: 'enriched_events',
+        joinType: 'LEFT',
+        conditions: [{
+          leftColumnName: 'id',
+          operator: 'EQUALS',
+          rightColumnName: 'id',
+        }],
+        outputColumns: [],
+      },
+    };
+    const table = (
+      name: string,
+      datasetKind: CanvasTableSchema['datasetKind'],
+    ): CanvasTableSchema => ({
+      ...canvasTable('orders'),
+      name,
+      origin: null,
+      columns: [canvasColumn(['id', 'LONG', false]), canvasColumn(['name', 'STRING', false])],
+      datasetKind,
+      eventTimeColumn: datasetKind === 'UNBOUNDED' ? 'event_time' : null,
+      watermarkDelay: datasetKind === 'UNBOUNDED' ? '10 minutes' : null,
+    });
+    const validation: CanvasNodeValidationResult = {
+      nodeId: streamJoin.id,
+      issues: [],
+      inputTables: [table('order_events', 'UNBOUNDED'), table('dim_customer', 'BOUNDED')],
+      outputTables: [],
+    };
+
+    render(
+      <CanvasNodeInspector
+        node={streamJoin}
+        validation={validation}
+        onApply={vi.fn()}
+        onDirtyChange={vi.fn()}
+      />,
+    );
+    await waitForInspector();
+
+    await waitFor(() => {
+      expect(screen.getByDisplayValue('dim_customer_id')).toBeInTheDocument();
+      expect(screen.getByDisplayValue('dim_customer_name')).toBeInTheDocument();
+    });
+    expect(screen.getByRole('button', { name: '排除右侧 Join Key' })).toBeInTheDocument();
   });
 
   it('configures Rename from Task Engine tables and keeps mappings as one atomic operation', async () => {
@@ -763,9 +876,9 @@ describe('CanvasNodeInspector', () => {
 
     expect(screen.getByText('archived_orders')).toBeInTheDocument();
     expect(screen.queryByText('TABLE_NOT_FOUND')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '展开问题详情' }));
-    expect(screen.getByText('TABLE_NOT_FOUND')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '收起问题详情' })).toHaveAttribute('aria-expanded', 'true');
+    const issueButton = screen.getByRole('button', { name: /查看 \d+ 个配置问题/ });
+    fireEvent.click(issueButton);
+    expect(issueButton).toHaveAttribute('aria-expanded', 'true');
   });
 
   it('renders JDBC output mappings as fixed target-driven rows', async () => {

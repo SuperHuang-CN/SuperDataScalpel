@@ -7,6 +7,7 @@ import {
 import {
   Alert,
   Button,
+  Checkbox,
   Form,
   Input,
   Select,
@@ -88,6 +89,8 @@ export const AggregateProcessorInspector = ({
   const [aggregations, setAggregations] = useState<AggregateItem[]>(
     () => structuredClone(node.configuration.aggregations),
   );
+  const [groupBySearch, setGroupBySearch] = useState('');
+  const [showSelectedGroupByOnly, setShowSelectedGroupByOnly] = useState(false);
   const [draftError, setDraftError] = useState<string | null>(null);
   const sourceTableName = Form.useWatch('sourceTableName', form)
     ?? node.configuration.sourceTableName;
@@ -108,12 +111,37 @@ export const AggregateProcessorInspector = ({
       label: `${table.name} · ${table.columns.length} 字段`,
     })),
   ], [inputTables, sourceTableMissing, sourceTableName]);
-  const availableGroupByOptions = sourceColumns
-    .filter((column) => !groupByColumns.includes(column.name))
-    .map((column) => ({
+  const selectedGroupByNames = useMemo(() => new Set(groupByColumns), [groupByColumns]);
+  const normalizedGroupBySearch = groupBySearch.trim().toLocaleLowerCase();
+  const groupByColumnMatchesSearch = (columnName: string) => {
+    if (!normalizedGroupBySearch) return true;
+    const column = sourceColumns.find((candidate) => candidate.name === columnName);
+    return [columnName, column?.fieldType, column?.comment]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(normalizedGroupBySearch);
+  };
+  const groupByOptions = [
+    ...groupByColumns
+      .filter((columnName) => !sourceTable || !sourceColumnNames.has(columnName))
+      .map((columnName) => ({
+        value: columnName,
+        label: sourceTableMissing || Boolean(sourceTable)
+          ? `${columnName}（已失效）`
+          : columnName,
+      })),
+    ...sourceColumns.map((column) => ({
       value: column.name,
-      label: `${column.name} · ${column.fieldType}`,
-    }));
+      label: column.name,
+    })),
+  ].filter((option) => (
+    (!showSelectedGroupByOnly || selectedGroupByNames.has(option.value))
+      && groupByColumnMatchesSearch(option.value)
+  ));
+  const groupByBulkCandidates = sourceColumns
+    .filter((column) => !selectedGroupByNames.has(column.name))
+    .filter((column) => !showSelectedGroupByOnly && groupByColumnMatchesSearch(column.name));
 
   const updateGroupByColumns = (next: string[]) => {
     setGroupByColumns(next);
@@ -269,65 +297,93 @@ export const AggregateProcessorInspector = ({
             <Typography.Text strong>分组字段</Typography.Text>
             <Typography.Text type="secondary"> · 不选择表示全表聚合</Typography.Text>
           </div>
-          <Tag>{groupByColumns.length}</Tag>
+          <Tag>{sourceTable
+            ? `已选 ${groupByColumns.length} / 共 ${sourceColumns.length}`
+            : `已选 ${groupByColumns.length}`}</Tag>
         </div>
         <Select
+          mode="multiple"
           showSearch
-          optionFilterProp="label"
-          value={undefined}
-          placeholder={sourceTable ? '添加分组字段' : '先选择来源表'}
-          disabled={!sourceTable}
-          options={availableGroupByOptions}
-          onChange={(columnName: string) => updateGroupByColumns([
-            ...groupByColumns,
-            columnName,
-          ])}
-        />
-        <div className="canvas-aggregate-group-list">
-          {groupByColumns.map((columnName, index) => {
-            const missing = Boolean(sourceTable && !sourceColumnNames.has(columnName));
+          allowClear
+          autoClearSearchValue={false}
+          className="canvas-aggregate-group-selector"
+          filterOption={false}
+          maxTagTextLength={18}
+          menuItemSelectedIcon={null}
+          searchValue={groupBySearch}
+          value={groupByColumns}
+          placeholder={sourceTable ? '搜索并选择分组字段' : '先选择来源表'}
+          disabled={!sourceTable && groupByColumns.length === 0}
+          status={validation
+            && groupByColumns.some((columnName) => !sourceColumnNames.has(columnName))
+            ? 'error' : undefined}
+          options={groupByOptions}
+          optionRender={(option) => {
+            const columnName = String(option.value);
+            const column = sourceColumns.find((candidate) => candidate.name === columnName);
+            const missing = Boolean(validation && !column);
             return (
-              <div
-                className={`canvas-aggregate-group-item${missing ? ' is-invalid' : ''}`}
-                key={`${columnName}-${index}`}
-              >
-                <div className="canvas-aggregate-group-name">
-                  <Tag color="blue">{index + 1}</Tag>
-                  <Typography.Text ellipsis title={columnName}>{columnName}</Typography.Text>
-                  {missing && <Tag color="error">已失效</Tag>}
-                </div>
-                <Space size={0}>
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<UpOutlined />}
-                    aria-label={`上移分组字段 ${columnName}`}
-                    disabled={index === 0}
-                    onClick={() => updateGroupByColumns(move(groupByColumns, index, index - 1))}
-                  />
-                  <Button
-                    type="text"
-                    size="small"
-                    icon={<DownOutlined />}
-                    aria-label={`下移分组字段 ${columnName}`}
-                    disabled={index === groupByColumns.length - 1}
-                    onClick={() => updateGroupByColumns(move(groupByColumns, index, index + 1))}
-                  />
-                  <Button
-                    type="text"
-                    size="small"
-                    danger
-                    icon={<DeleteOutlined />}
-                    aria-label={`删除分组字段 ${columnName}`}
-                    onClick={() => updateGroupByColumns(
-                      groupByColumns.filter((_, itemIndex) => itemIndex !== index),
-                    )}
-                  />
-                </Space>
+              <div className={`canvas-aggregate-group-option${missing ? ' is-invalid' : ''}`}>
+                <Checkbox
+                  checked={selectedGroupByNames.has(columnName)}
+                  tabIndex={-1}
+                  aria-hidden
+                />
+                <Typography.Text code ellipsis title={columnName}>
+                  {columnName}
+                </Typography.Text>
+                <Typography.Text type={missing ? 'danger' : 'secondary'}>
+                  {missing ? '已失效' : column?.fieldType ?? '等待校验'}
+                </Typography.Text>
               </div>
             );
-          })}
-        </div>
+          }}
+          popupRender={(menu) => (
+            <div className="canvas-aggregate-group-popup">
+              <div
+                className="canvas-aggregate-group-popup-toolbar"
+                onMouseDown={(event) => event.preventDefault()}
+              >
+                <Button
+                  type="link"
+                  size="small"
+                  disabled={groupByBulkCandidates.length === 0}
+                  onClick={() => updateGroupByColumns([
+                    ...groupByColumns,
+                    ...groupByBulkCandidates.map((column) => column.name),
+                  ])}
+                >
+                  {`选择当前结果${groupByBulkCandidates.length > 0
+                    ? `（${groupByBulkCandidates.length}）` : ''}`}
+                </Button>
+                <Button
+                  type={showSelectedGroupByOnly ? 'primary' : 'text'}
+                  size="small"
+                  onClick={() => setShowSelectedGroupByOnly((current) => !current)}
+                >
+                  仅看已选
+                </Button>
+                <Button
+                  type="text"
+                  size="small"
+                  disabled={groupByColumns.length === 0}
+                  onClick={() => updateGroupByColumns([])}
+                >
+                  清空
+                </Button>
+              </div>
+              {menu}
+            </div>
+          )}
+          onSearch={setGroupBySearch}
+          onOpenChange={(open) => {
+            if (!open) {
+              setGroupBySearch('');
+              setShowSelectedGroupByOnly(false);
+            }
+          }}
+          onChange={(columnNames: string[]) => updateGroupByColumns(columnNames)}
+        />
       </section>
 
       <section className="canvas-aggregate-section">

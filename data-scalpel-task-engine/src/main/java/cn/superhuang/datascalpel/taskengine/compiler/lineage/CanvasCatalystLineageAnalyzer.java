@@ -11,6 +11,8 @@ import org.apache.spark.sql.catalyst.expressions.NamedExpression;
 import org.apache.spark.sql.catalyst.expressions.WindowExpression;
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression;
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate;
+import org.apache.spark.sql.catalyst.plans.logical.CTERelationDef;
+import org.apache.spark.sql.catalyst.plans.logical.CTERelationRef;
 import org.apache.spark.sql.catalyst.plans.logical.Filter;
 import org.apache.spark.sql.catalyst.plans.logical.Generate;
 import org.apache.spark.sql.catalyst.plans.logical.Join;
@@ -18,6 +20,7 @@ import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
 import org.apache.spark.sql.catalyst.plans.logical.Project;
 import org.apache.spark.sql.catalyst.plans.logical.Sort;
 import org.apache.spark.sql.catalyst.plans.logical.Union;
+import org.apache.spark.sql.catalyst.plans.logical.WithCTE;
 import org.apache.spark.sql.catalyst.plans.logical.Window;
 import org.apache.spark.sql.types.Metadata;
 import scala.jdk.javaapi.CollectionConverters;
@@ -155,6 +158,13 @@ public final class CanvasCatalystLineageAnalyzer {
         PlanEvidence input = inputEvidence(plan, state);
         if (input != null) return input;
 
+        if (plan instanceof WithCTE withCte) {
+            return analyzeWithCte(withCte, activeNodeKey, state);
+        }
+        if (plan instanceof CTERelationRef cteReference) {
+            return analyzeCteReference(cteReference, activeNodeKey, state);
+        }
+
         if (plan instanceof Union union) {
             return analyzeUnion(union, activeNodeKey, state);
         }
@@ -220,6 +230,56 @@ public final class CanvasCatalystLineageAnalyzer {
         return projectOutputs(plan, available, activeNodeKey, state, true);
     }
 
+    private PlanEvidence analyzeWithCte(
+            WithCTE withCte,
+            String activeNodeKey,
+            FlowState state
+    ) {
+        for (CTERelationDef definition : CollectionConverters.asJava(withCte.cteDefs())) {
+            PlanEvidence evidence = analyzePlan(definition.child(), activeNodeKey, state);
+            List<ValueEvidence> values = new ArrayList<>();
+            for (Attribute attribute : attributes(definition.output())) {
+                values.add(evidence.values().getOrDefault(
+                        key(attribute),
+                        ValueEvidence.unknown(activeNodeKey, "cte-definition-output:" + definition.id())
+                ));
+            }
+            state.cteValues.put(definition.id(), List.copyOf(values));
+        }
+        return analyzePlan(withCte.plan(), activeNodeKey, state);
+    }
+
+    private PlanEvidence analyzeCteReference(
+            CTERelationRef reference,
+            String activeNodeKey,
+            FlowState state
+    ) {
+        List<Attribute> outputs = attributes(reference.output());
+        List<ValueEvidence> values = state.cteValues.get(reference.cteId());
+        if (values == null) {
+            state.partial = true;
+            state.warn("CTE_REFERENCE_UNRESOLVED", "无法可靠解析 CTE 引用", null);
+            Map<ExpressionKey, ValueEvidence> unknown = new LinkedHashMap<>();
+            for (Attribute attribute : outputs) {
+                unknown.put(key(attribute), ValueEvidence.unknown(
+                        activeNodeKey, "cte-reference:" + reference.cteId()));
+            }
+            return new PlanEvidence(unknown);
+        }
+        Map<ExpressionKey, ValueEvidence> mapped = new LinkedHashMap<>();
+        for (int ordinal = 0; ordinal < outputs.size(); ordinal++) {
+            ValueEvidence value = ordinal < values.size()
+                    ? values.get(ordinal)
+                    : ValueEvidence.unknown(activeNodeKey, "cte-column-count:" + reference.cteId());
+            mapped.put(key(outputs.get(ordinal)), value);
+        }
+        if (outputs.size() != values.size()) {
+            state.partial = true;
+            state.warn("CTE_REFERENCE_UNRESOLVED", "CTE 字段无法完整映射", null);
+        }
+        return new PlanEvidence(mapped);
+    }
+
     private PlanEvidence analyzeUnion(Union union, String activeNodeKey, FlowState state) {
         List<PlanEvidence> branches = plans(union.children()).stream()
                 .map(child -> analyzePlan(child, activeNodeKey, state)).toList();
@@ -257,7 +317,7 @@ public final class CanvasCatalystLineageAnalyzer {
         for (Attribute attribute : outputs) {
             Metadata metadata = attribute.metadata();
             if (!CanvasLineageMetadata.isInput(metadata)) continue;
-            String localAssetKey = "input:" + CanvasLineageMetadata.inputNodeId(metadata);
+            String localAssetKey = CanvasLineageMetadata.inputAssetKey(metadata);
             CanvasLineageCompilation.Asset asset = CanvasLineageMetadata.readAsset(metadata, localAssetKey);
             state.assets.putIfAbsent(localAssetKey, asset);
             int ordinal = ordinals.merge(localAssetKey, 1, Integer::sum) - 1;
@@ -435,7 +495,9 @@ public final class CanvasCatalystLineageAnalyzer {
     }
 
     private static String flowKey(CanvasLineageOutputCandidate candidate) {
-        return "canvas:" + candidate.node().id();
+        return candidate.outputWriteId() == null
+                ? "canvas:" + candidate.node().id()
+                : "canvas:" + candidate.node().id() + ":output-write:" + candidate.outputWriteId();
     }
 
     private static int coverageRank(CanvasLineageCompilation.Coverage coverage) {
@@ -481,7 +543,7 @@ public final class CanvasCatalystLineageAnalyzer {
         for (Attribute attribute : attributes(plan.output())) {
             Metadata metadata = attribute.metadata();
             if (!CanvasLineageMetadata.isInput(metadata)) continue;
-            String localAssetKey = "input:" + CanvasLineageMetadata.inputNodeId(metadata);
+            String localAssetKey = CanvasLineageMetadata.inputAssetKey(metadata);
             assets.putIfAbsent(localAssetKey, CanvasLineageMetadata.readAsset(metadata, localAssetKey));
         }
         for (LogicalPlan child : plans(plan.children())) {
@@ -600,6 +662,7 @@ public final class CanvasCatalystLineageAnalyzer {
         private final Map<String, CanvasLineageCompilation.Asset> assets = new LinkedHashMap<>();
         private final Map<CanvasLineageCompilation.FieldReference, CanvasLineageCompilation.Field> inputFields =
                 new LinkedHashMap<>();
+        private final Map<Long, List<ValueEvidence>> cteValues = new LinkedHashMap<>();
         private final Map<FieldUsageKey, CanvasLineageCompilation.FieldUsage> usages = new LinkedHashMap<>();
         private final List<CanvasLineageCompilation.Warning> warnings = new ArrayList<>();
         private boolean partial;

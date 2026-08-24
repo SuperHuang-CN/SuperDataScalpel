@@ -10,6 +10,7 @@ import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.FileOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.FileOutputFormatOptions;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FileOutputWrite;
 import cn.superhuang.data.scalpel.contract.task.ShapefileAttributeMapping;
 import cn.superhuang.data.scalpel.contract.task.ShapefileShapeType;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
@@ -22,6 +23,7 @@ import org.geotools.api.referencing.FactoryException;
 import org.geotools.referencing.CRS;
 
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
@@ -57,28 +59,50 @@ public final class FileOutputNodeOperator implements CanvasNodeOperator {
         if (configuration == null) return CanvasNodeOperationResult.outputOnly();
 
         CanvasNodeIssueSink issues = context.issues();
+        if (configuration.writes().isEmpty()) {
+            issues.error("REQUIRED_CONFIGURATION", "至少配置一条写入", "configuration.writes");
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (!CanvasNodeSupport.validateOutputWriteIds(
+                configuration.writes(), write -> write.writeId(), issues)) {
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (configuration.writes().size() != 1) {
+            List<CanvasPreparedFileOutput> prepared = new ArrayList<>();
+            List<CanvasLineageOutputCandidate> lineage = new ArrayList<>();
+            for (var write : configuration.writes()) {
+                CanvasNodeOperationResult item = apply(new FileOutputNodeDefinition(
+                        node.id(), node.name(), node.layout(), new FileOutputConfiguration(
+                        configuration.dataSourceId(), List.of(write))), inputs, context);
+                prepared.addAll(item.preparedFileOutputs());
+                lineage.addAll(item.lineageOutputCandidates());
+            }
+            return issues.hasErrors() ? CanvasNodeOperationResult.outputOnly()
+                    : CanvasNodeOperationResult.fileOutputs(prepared, lineage);
+        }
+        FileOutputWrite write = configuration.writes().iterator().next();
         CanvasNodeSupport.required(
-                configuration.sourceTableName(), "请选择来源表",
+                write.sourceTableName(), "请选择来源表",
                 "configuration.sourceTableName", issues);
         UUID dataSourceId = CanvasNodeSupport.parseUuid(
                 configuration.dataSourceId(), "configuration.dataSourceId", issues);
-        validateTargetPath(configuration.targetPath(), issues);
-        if (configuration.conflictPolicy() == null) {
+        validateTargetPath(write.targetPath(), issues);
+        if (write.conflictPolicy() == null) {
             issues.error("REQUIRED_CONFIGURATION", "请选择目录冲突策略",
                     "configuration.conflictPolicy");
         }
-        validateFormat(configuration.formatOptions(), issues);
+        validateFormat(write.formatOptions(), issues);
 
-        SparkCanvasTable source = inputs.get(configuration.sourceTableName());
-        if (!CanvasNodeSupport.blank(configuration.sourceTableName()) && source == null) {
-            issues.error("TABLE_NOT_FOUND", "来源表不在上游数据中：" + configuration.sourceTableName(),
+        SparkCanvasTable source = inputs.get(write.sourceTableName());
+        if (!CanvasNodeSupport.blank(write.sourceTableName()) && source == null) {
+            issues.error("TABLE_NOT_FOUND", "来源表不在上游数据中：" + write.sourceTableName(),
                     "configuration.sourceTableName");
         } else if (source != null) {
-            if (configuration.formatOptions() instanceof FileOutputFormatOptions.Shapefile shapefile) {
+            if (write.formatOptions() instanceof FileOutputFormatOptions.Shapefile shapefile) {
                 validateShapefile(shapefile, source, issues);
-            } else if (configuration.formatOptions() instanceof FileOutputFormatOptions.GeoParquet geoParquet) {
+            } else if (write.formatOptions() instanceof FileOutputFormatOptions.GeoParquet geoParquet) {
                 validateGeoParquet(geoParquet, source, issues);
-            } else if (configuration.formatOptions() instanceof FileOutputFormatOptions.GeoJson geoJson) {
+            } else if (write.formatOptions() instanceof FileOutputFormatOptions.GeoJson geoJson) {
                 validateGeoJson(geoJson, source, issues);
             } else if (source.schema().columns().stream().anyMatch(column ->
                     column.fieldType() == PlatformDataType.GEOMETRY)) {
@@ -103,10 +127,11 @@ public final class FileOutputNodeOperator implements CanvasNodeOperator {
         }
         if (source == null || issues.hasErrors()) return CanvasNodeOperationResult.outputOnly();
         return CanvasNodeOperationResult.fileOutput(
-                context.dataAccess().prepareFileOutput(node, source.schema(), source.dataset()),
+                context.dataAccess().prepareFileOutput(
+                        node, write, source.schema(), source.dataset()),
                 CanvasLineageOutputCandidate.file(
-                        node, source.dataset(), dataSourceId, configuration.targetPath(),
-                        configuration.conflictPolicy(), source.schema()
+                        node, source.dataset(), dataSourceId, write.targetPath(),
+                        write.conflictPolicy(), source.schema(), write.writeId()
                 )
         );
     }

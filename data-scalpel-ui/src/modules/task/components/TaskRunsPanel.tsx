@@ -3,7 +3,7 @@ import type { TableProps } from 'antd';
 import { Alert, Button, Form, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { useCancelTaskRun, useTaskRuns } from '../hooks/useTasks';
+import { useCancelTaskRun, useForceTerminateTaskRun, useTaskRuns } from '../hooks/useTasks';
 import {
   taskRunExecutionModeLabels,
   taskRunStatusColors,
@@ -25,7 +25,10 @@ interface TaskRunsPanelProps {
 
 const cancellable = (run: TaskRun) => (run.taskType === 'SPARK_CANVAS'
   || run.taskType === 'SPARK_MODEL_QUALITY' || run.taskType === 'SPARK_JAR')
-  && (run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'CANCEL_REQUESTED');
+  && (run.status === 'QUEUED' || run.status === 'RUNNING');
+
+const forceTerminable = (run: TaskRun) => run.taskType !== 'LOCAL_SQL'
+  && (run.status === 'CANCEL_REQUESTED' || run.status === 'STOP_REQUESTED');
 
 const qualityConclusion = (value: TaskRun['qualityConclusion']) => {
   if (!value) return '—';
@@ -43,9 +46,11 @@ export const TaskRunsPanel = ({
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
   const [cancellingRunId, setCancellingRunId] = useState<string | null>(null);
+  const [forceTerminatingRunId, setForceTerminatingRunId] = useState<string | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const cancelMutation = useCancelTaskRun();
+  const forceTerminateMutation = useForceTerminateTaskRun();
   const request = useMemo(() => ({
     search: buildTaskRunSearch(filters),
     page,
@@ -71,6 +76,27 @@ export const TaskRunsPanel = ({
         throw error;
       } finally {
         setCancellingRunId(null);
+      }
+    },
+  });
+
+  const forceTerminate = (run: TaskRun) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
+    title: '强制终止任务运行',
+    content: '确认立即强制终止该 Spark Application 吗？可能产生部分写入、重复数据，实时任务还可能重放当前微批。',
+    okText: '强制终止',
+    okButtonProps: { danger: true },
+    cancelText: '返回',
+    onOk: async () => {
+      setForceTerminatingRunId(run.id);
+      try {
+        await forceTerminateMutation.mutateAsync(run.id);
+        messageApi.success('已提交强制终止请求');
+      } catch (error) {
+        messageApi.error(error instanceof ApiError ? error.message : '强制终止任务运行失败');
+        throw error;
+      } finally {
+        setForceTerminatingRunId(null);
       }
     },
   });
@@ -126,15 +152,26 @@ export const TaskRunsPanel = ({
             />
           </Tooltip>
           {canExecute && cancellable(run) && (
-            <Tooltip title={run.status === 'CANCEL_REQUESTED' ? '正在取消' : '取消运行'}>
+            <Tooltip title="取消运行">
               <Button
                 type="text"
                 danger
                 icon={<StopOutlined />}
                 aria-label={`取消运行 ${run.id}`}
                 loading={cancellingRunId === run.id}
-                disabled={run.status === 'CANCEL_REQUESTED'}
                 onClick={() => cancel(run)}
+              />
+            </Tooltip>
+          )}
+          {canExecute && forceTerminable(run) && (
+            <Tooltip title="强制终止">
+              <Button
+                type="text"
+                danger
+                icon={<StopOutlined />}
+                aria-label={`强制终止运行 ${run.id}`}
+                loading={forceTerminatingRunId === run.id}
+                onClick={() => forceTerminate(run)}
               />
             </Tooltip>
           )}
@@ -224,8 +261,10 @@ export const TaskRunsPanel = ({
         runId={detailRunId}
         canExecute={canExecute}
         cancelLoading={cancellingRunId === detailRunId}
+        forceTerminateLoading={forceTerminatingRunId === detailRunId}
         onClose={() => onDetailRunChange(null)}
         onCancel={cancel}
+        onForceTerminate={forceTerminate}
       />
     </div>
   );

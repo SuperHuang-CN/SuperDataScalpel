@@ -22,6 +22,7 @@ import cn.superhuang.data.scalpel.contract.task.HttpApiInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
@@ -148,7 +149,10 @@ class CanvasTaskCompilerSparkTest {
                         "name", PlatformDataType.STRING, 100, null, null,
                         true, null, false, false, "订单名称")
         );
-        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
+        CanvasDefinition definition = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
                 new HttpApiInputNodeDefinition(
                         inputNodeId,
                         "HTTP API 订单输入",
@@ -235,7 +239,9 @@ class CanvasTaskCompilerSparkTest {
                         JdbcWriteMode.APPEND, identityMappings(columns), List.of())
         );
         CanvasDefinition definition = new CanvasDefinition(
-                1, 28, List.of(queryInput, output),
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(queryInput, output),
                 List.of(new CanvasEdgeDefinition(
                         UUID.randomUUID().toString(), queryNodeId, outputNodeId))
         );
@@ -277,7 +283,10 @@ class CanvasTaskCompilerSparkTest {
                         queryDataSourceId.toString(), sql, "query_orders", "0".repeat(64), columns)
         );
         CanvasCompilation stale = compiler.compile(
-                new CanvasDefinition(2, 0, List.of(staleInput, output), definition.edges()),
+                new CanvasDefinition(
+                        CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                        CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                        List.of(staleInput, output), definition.edges()),
                 MetadataIndex.create(metadata), sparkSession.newSession(), new AtomicBoolean());
         assertFalse(stale.valid());
         assertIssue(stale.nodeResults().getFirst(), "JDBC_QUERY_SCHEMA_STALE");
@@ -304,7 +313,8 @@ class CanvasTaskCompilerSparkTest {
                 "订单暂存输入",
                 new cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout(
                         0.0, 0.0, 240.0, 120.0),
-                new JdbcInputConfiguration(dataSourceId.toString(), "orders_stage")
+                new JdbcInputConfiguration(
+                        dataSourceId.toString(), List.of(new JdbcInputTableSelection("orders_stage")))
         );
         JdbcOutputNodeDefinition output = new JdbcOutputNodeDefinition(
                 outputNodeId,
@@ -317,7 +327,9 @@ class CanvasTaskCompilerSparkTest {
                         List.of("order_id"))
         );
         CanvasDefinition definition = new CanvasDefinition(
-                1, 28, List.of(input, output),
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(input, output),
                 List.of(new CanvasEdgeDefinition(
                         UUID.randomUUID().toString(), inputNodeId, outputNodeId))
         );
@@ -345,7 +357,10 @@ class CanvasTaskCompilerSparkTest {
                         List.of("order_no"))
         );
         CanvasCompilation invalid = compiler.compile(
-                new CanvasDefinition(2, 0, List.of(input, invalidOutput), definition.edges()),
+                new CanvasDefinition(
+                        CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                        CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                        List.of(input, invalidOutput), definition.edges()),
                 MetadataIndex.create(postgresMetadata), sparkSession.newSession(), new AtomicBoolean());
         assertFalse(invalid.valid());
         assertIssue(invalid.nodeResults().getLast(), "UPSERT_KEY_NOT_UNIQUE_CONSTRAINT");
@@ -375,8 +390,8 @@ class CanvasTaskCompilerSparkTest {
         String inputNodeId = UUID.randomUUID().toString();
         String outputNodeId = UUID.randomUUID().toString();
         CanvasDefinition definition = new CanvasDefinition(
-                1,
-                28,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.of(
                         new KafkaInputNodeDefinition(
                                 inputNodeId,
@@ -463,8 +478,9 @@ class CanvasTaskCompilerSparkTest {
     void reportsDuplicateColumnsAndDuplicateUpstreamTableNames() throws Exception {
         TaskCompilationRequest request = example();
         String duplicateColumnJson = Files.readString(examplePath())
-                .replaceFirst("\"name\": \"customer_key\"", "\"name\": \"customer_id\"")
-                .replace("\"rightColumnName\": \"customer_key\"", "\"rightColumnName\": \"customer_id\"");
+                .replace(
+                        "\"sourceColumnName\": \"customer_key\", \"outputColumnName\": \"customer_key\"",
+                        "\"sourceColumnName\": \"customer_key\", \"outputColumnName\": \"customer_id\"");
         TaskCompilationRequest duplicateColumnRequest = objectMapper.readValue(
                 duplicateColumnJson, TaskCompilationRequest.class);
 
@@ -481,18 +497,42 @@ class CanvasTaskCompilerSparkTest {
                 secondInput.layout(),
                 new JdbcInputConfiguration(
                         secondInput.configuration().dataSourceId(),
-                        "orders"
+                        List.of(new JdbcInputTableSelection("orders"))
                 )
         ));
         CanvasDefinition definition = new CanvasDefinition(
-                1,
-                28,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.copyOf(nodes),
                 request.task().definition().edges()
         );
         CanvasCompilation duplicateTables = compile(definition, request);
         assertFalse(duplicateTables.valid());
         assertIssue(duplicateTables.nodeResults().get(2), "DUPLICATE_TABLE_NAME");
+
+        List<CanvasNodeDefinition> duplicatedSelectionNodes = new ArrayList<>(
+                request.task().definition().nodes());
+        JdbcInputNodeDefinition firstInput = (JdbcInputNodeDefinition) duplicatedSelectionNodes.getFirst();
+        duplicatedSelectionNodes.set(0, new JdbcInputNodeDefinition(
+                firstInput.id(),
+                firstInput.name(),
+                firstInput.layout(),
+                new JdbcInputConfiguration(
+                        firstInput.configuration().dataSourceId(),
+                        List.of(
+                                new JdbcInputTableSelection("orders"),
+                                new JdbcInputTableSelection("orders")
+                        )
+                )
+        ));
+        CanvasCompilation duplicatedSelection = compile(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.copyOf(duplicatedSelectionNodes),
+                request.task().definition().edges()
+        ), request);
+        assertFalse(duplicatedSelection.valid());
+        assertIssue(duplicatedSelection.nodeResults().getFirst(), "DUPLICATE_TABLE_NAME");
     }
 
     @Test
@@ -505,8 +545,8 @@ class CanvasTaskCompilerSparkTest {
                 request.task().definition().nodes().get(0).id()
         ));
         CanvasCompilation cycle = compile(new CanvasDefinition(
-                1,
-                28,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 request.task().definition().nodes(),
                 edges
         ), request);
@@ -530,8 +570,8 @@ class CanvasTaskCompilerSparkTest {
                 )
         ));
         CanvasCompilation invalidMapping = compile(new CanvasDefinition(
-                1,
-                28,
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                 List.copyOf(nodes),
                 request.task().definition().edges()
         ), request);
@@ -556,13 +596,14 @@ class CanvasTaskCompilerSparkTest {
                             configuration.rightTableName(),
                             configuration.outputTableName(),
                             joinType,
-                            configuration.conditions()
+                            configuration.conditions(),
+                            configuration.outputColumns()
                     )
             ));
 
             CanvasCompilation compilation = compile(new CanvasDefinition(
-                    1,
-                    28,
+                    CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                    CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
                     List.copyOf(nodes),
                     request.task().definition().edges()
             ), request);
@@ -715,7 +756,7 @@ class CanvasTaskCompilerSparkTest {
     }
 
     @Test
-    void compilesBatchFileOutputForAnEnabledDistributionS3WithoutStartingAJob() throws Exception {
+    void compilesMultiTableJdbcInputBeforeBatchFileOutputWithoutStartingAJob() throws Exception {
         UUID inputDataSourceId = UUID.randomUUID();
         UUID outputDataSourceId = UUID.randomUUID();
         String inputNodeId = UUID.randomUUID().toString();
@@ -723,13 +764,21 @@ class CanvasTaskCompilerSparkTest {
         List<CanvasColumnSchema> columns = List.of(new CanvasColumnSchema(
                 "id", PlatformDataType.LONG, null, null, null,
                 false, null, false, false, "订单 ID"));
-        CanvasDefinition definition = new CanvasDefinition(1, 6, List.of(
+        CanvasDefinition definition = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
                 new JdbcInputNodeDefinition(
                         inputNodeId,
                         "订单输入",
                         new cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout(
                                 0.0, 0.0, 240.0, 120.0),
-                        new JdbcInputConfiguration(inputDataSourceId.toString(), "orders")
+                        new JdbcInputConfiguration(
+                                inputDataSourceId.toString(),
+                                List.of(
+                                        new JdbcInputTableSelection("orders"),
+                                        new JdbcInputTableSelection("customers")
+                                ))
                 ),
                 new FileOutputNodeDefinition(
                         outputNodeId,
@@ -749,7 +798,10 @@ class CanvasTaskCompilerSparkTest {
                 new MetadataDataSource(
                         inputDataSourceId, true, ConnectionKind.JDBC,
                         Set.of(DataSourcePurpose.SOURCE),
-                        List.of(new MetadataTable("orders", DatabaseObjectType.TABLE, columns))),
+                        List.of(
+                                new MetadataTable("orders", DatabaseObjectType.TABLE, columns),
+                                new MetadataTable("customers", DatabaseObjectType.TABLE, columns)
+                        )),
                 new MetadataDataSource(
                         outputDataSourceId, true, ConnectionKind.S3,
                         Set.of(DataSourcePurpose.DISTRIBUTION), List.of())
@@ -768,7 +820,50 @@ class CanvasTaskCompilerSparkTest {
 
         assertTrue(compilation.valid());
         assertEquals(2, compilation.nodeResults().size());
+        assertEquals(
+                List.of("orders", "customers"),
+                compilation.nodeResults().getFirst().outputTables().stream()
+                        .map(CanvasTableSchema::name)
+                        .toList()
+        );
         assertTrue(compilation.nodeResults().get(1).outputTables().isEmpty());
+
+        JdbcInputNodeDefinition input = (JdbcInputNodeDefinition) definition.nodes().getFirst();
+        CanvasDefinition partiallyInvalidDefinition = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
+                        new JdbcInputNodeDefinition(
+                                input.id(),
+                                input.name(),
+                                input.layout(),
+                                new JdbcInputConfiguration(
+                                        inputDataSourceId.toString(),
+                                        List.of(
+                                                new JdbcInputTableSelection("orders"),
+                                                new JdbcInputTableSelection("missing_table")
+                                        )
+                                )
+                        ),
+                        definition.nodes().get(1)
+                ),
+                definition.edges()
+        );
+        CanvasCompilation partiallyInvalid = compiler.compile(
+                partiallyInvalidDefinition,
+                MetadataIndex.create(metadata),
+                sparkSession.newSession(),
+                new AtomicBoolean()
+        );
+        assertFalse(partiallyInvalid.valid());
+        assertIssue(partiallyInvalid.nodeResults().getFirst(), "TABLE_NOT_FOUND");
+        assertEquals(
+                List.of("orders"),
+                partiallyInvalid.nodeResults().getFirst().outputTables().stream()
+                        .map(CanvasTableSchema::name)
+                        .toList()
+        );
+        assertIssue(partiallyInvalid.nodeResults().get(1), "UPSTREAM_INVALID");
         assertEquals(0, jobsStarted.get(), "FILE_OUTPUT compilation must not access S3 or execute Spark");
     }
 
@@ -1042,13 +1137,17 @@ class CanvasTaskCompilerSparkTest {
     ) {
         String inputNodeId = UUID.randomUUID().toString();
         String outputNodeId = UUID.randomUUID().toString();
-        return new CanvasDefinition(1, 25, List.of(
+        return new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
                 new JdbcInputNodeDefinition(
                         inputNodeId,
                         "行政区输入",
                         new cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout(
                                 0.0, 0.0, 240.0, 120.0),
-                        new JdbcInputConfiguration(inputDataSourceId.toString(), "districts")
+                        new JdbcInputConfiguration(
+                                inputDataSourceId.toString(), List.of(new JdbcInputTableSelection("districts")))
                 ),
                 new FileOutputNodeDefinition(
                         outputNodeId,
@@ -1074,13 +1173,17 @@ class CanvasTaskCompilerSparkTest {
             String outputNodeId,
             FileOutputFormatOptions.Shapefile options
     ) {
-        return new CanvasDefinition(1, 24, List.of(
+        return new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
                 new JdbcInputNodeDefinition(
                         inputNodeId,
                         "行政区输入",
                         new cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout(
                                 0.0, 0.0, 240.0, 120.0),
-                        new JdbcInputConfiguration(inputDataSourceId.toString(), "districts")
+                        new JdbcInputConfiguration(
+                                inputDataSourceId.toString(), List.of(new JdbcInputTableSelection("districts")))
                 ),
                 new FileOutputNodeDefinition(
                         outputNodeId,

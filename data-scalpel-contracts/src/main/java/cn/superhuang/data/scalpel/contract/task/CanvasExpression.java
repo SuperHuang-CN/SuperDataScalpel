@@ -9,9 +9,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = LiteralExpression.class, name = "LITERAL"),
         @JsonSubTypes.Type(value = BinaryExpression.class, name = "BINARY"),
         @JsonSubTypes.Type(value = FunctionExpression.class, name = "FUNCTION"),
-        @JsonSubTypes.Type(value = CaseWhenExpression.class, name = "CASE_WHEN")
+        @JsonSubTypes.Type(value = CaseWhenExpression.class, name = "CASE_WHEN"),
+        @JsonSubTypes.Type(value = RuntimeValueExpression.class, name = "RUNTIME_VALUE")
 })
 public sealed interface CanvasExpression
         permits ColumnExpression, LiteralExpression, BinaryExpression,
-                FunctionExpression, CaseWhenExpression {
+                FunctionExpression, CaseWhenExpression, RuntimeValueExpression {
 }

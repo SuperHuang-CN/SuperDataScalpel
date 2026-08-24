@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.model.web.resource;
 import cn.superhuang.data.scalpel.business.lineage.service.ModelLineageQueryService;
 import cn.superhuang.data.scalpel.business.lineage.web.request.LineageDirection;
 import cn.superhuang.data.scalpel.business.lineage.web.response.LineageGraphResponse;
+import cn.superhuang.data.scalpel.business.lineage.web.response.LineageFieldGraphResponse;
 import cn.superhuang.data.scalpel.business.model.service.DataModelService;
 import cn.superhuang.data.scalpel.business.model.service.DataModelReferenceQueryService;
 import cn.superhuang.data.scalpel.business.model.service.DataModelPhysicalStatisticsService;
@@ -16,10 +17,12 @@ import cn.superhuang.data.scalpel.business.model.web.request.CreatePhysicalTable
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ExecutePhysicalTableChangePlanRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ExportModelMetadataRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.FileDatasetImportPreviewRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ImportModelMetadataRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateDataModelFieldsRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateDataModelRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ManagedImportPreviewRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.QueryModelFieldLineageRequest;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelDetailResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelDataQueryResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelPreviewResponse;
@@ -31,6 +34,7 @@ import cn.superhuang.data.scalpel.business.model.web.response.DataModelReference
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableDdlPlanResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableInspectionResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImportPreviewResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.FileDatasetImportPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PlatformTypeCapabilityResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ModelMetadataImportPreviewResponse;
@@ -152,6 +156,20 @@ public class DataModelResource {
         return lineageQueryService.fieldLineage(id, fieldId, direction, depth);
     }
 
+    @PostMapping("/{id}/lineage/actions/query-fields")
+    @PreAuthorize("hasAuthority('model.view') and hasAuthority('task.view') and hasAuthority('service.view')")
+    @Operation(summary = "批量查询模型当前字段级血缘")
+    public LineageFieldGraphResponse queryFieldLineage(
+            @PathVariable UUID id,
+            @Valid @RequestBody QueryModelFieldLineageRequest request
+    ) {
+        return lineageQueryService.fieldLineages(
+                id, request.fieldIds(),
+                request.direction() == null ? LineageDirection.BOTH : request.direction(),
+                request.depth() == null ? 2 : request.depth()
+        );
+    }
+
     @GetMapping("/external-table-import-preview")
     @PreAuthorize("hasAuthority('model.create')")
     @Operation(summary = "预览已有物理表导入后的平台字段类型")
@@ -169,6 +187,15 @@ public class DataModelResource {
             @Valid @RequestBody ManagedImportPreviewRequest request
     ) {
         return service.previewManagedImport(request);
+    }
+
+    @PostMapping("/file-dataset-import-preview")
+    @PreAuthorize("hasAuthority('model.create') and hasAuthority('filedataset.view')")
+    @Operation(summary = "预览从文件数据集逻辑表创建受管模型草稿的字段")
+    public FileDatasetImportPreviewResponse previewFileDatasetImport(
+            @Valid @RequestBody FileDatasetImportPreviewRequest request
+    ) {
+        return service.previewFileDatasetImport(request);
     }
 
     @PostMapping("/managed-drafts")
@@ -384,7 +411,7 @@ public class DataModelResource {
 
     @PostMapping("/{id}/actions/publish")
     @PreAuthorize("hasAuthority('model.publish')")
-    @Operation(summary = "发布模型（物理表必须与字段定义一致）")
+    @Operation(summary = "发布草稿或已停用模型（缺失的受管物理表自动创建）")
     public DataModelDetailResponse publish(@PathVariable UUID id) {
         return service.publish(id);
     }
@@ -394,13 +421,6 @@ public class DataModelResource {
     @Operation(summary = "停用模型")
     public DataModelDetailResponse disable(@PathVariable UUID id) {
         return service.disable(id);
-    }
-
-    @PostMapping("/{id}/actions/enable")
-    @PreAuthorize("hasAuthority('model.publish')")
-    @Operation(summary = "重新启用模型")
-    public DataModelDetailResponse enable(@PathVariable UUID id) {
-        return service.enable(id);
     }
 
     @PostMapping("/{id}/actions/delete")

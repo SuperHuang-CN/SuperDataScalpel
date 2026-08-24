@@ -8,7 +8,9 @@ import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.CastFailureStrategy;
 import cn.superhuang.data.scalpel.contract.task.ColumnTypeCast;
 import cn.superhuang.data.scalpel.contract.task.TypeCastConfiguration;
+import cn.superhuang.data.scalpel.contract.task.TypeCastOperation;
 import cn.superhuang.data.scalpel.contract.task.TypeCastNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
@@ -58,6 +60,18 @@ public final class TypeCastNodeOperator implements CanvasNodeOperator {
         TypeCastConfiguration configuration = node.configuration();
         if (configuration == null) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
+        }
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        TypeCastOperation sourceOperation = (TypeCastOperation) operation.operation();
+                        TypeCastConfiguration single = new TypeCastConfiguration(List.of(new TypeCastOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()), sourceOperation.casts()
+                        )));
+                        return apply(new TypeCastNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
         }
 
         CanvasNodeIssueSink issues = context.issues();

@@ -15,7 +15,7 @@ import cn.superhuang.data.scalpel.engine.deployment.EngineDeploymentRecordStatus
 import cn.superhuang.data.scalpel.engine.deployment.EngineDeploymentRepository;
 import cn.superhuang.superops.api.studio.datasource.ApiDataSourceRegistry;
 import cn.superhuang.superops.api.studio.datasource.DataSourceDialect;
-import cn.superhuang.superops.api.studio.datasource.JdbcDataSource;
+import cn.superhuang.superops.api.studio.datasource.JdbcDataSourceAccess;
 import cn.superhuang.superops.api.studio.datasource.application.DataSourceService;
 import cn.superhuang.superops.api.studio.datasource.factory.ClickHouseDriver;
 import cn.superhuang.superops.api.studio.datasource.factory.DmDriver;
@@ -137,7 +137,7 @@ public class EngineApiStudioDataSourceService {
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引用的数据源尚未注册到 API Studio", exception);
         }
-        if (!(dialect instanceof JdbcDataSource jdbcDataSource)) {
+        if (!(dialect instanceof JdbcDataSourceAccess jdbcDataSource)) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "服务引用的 API Studio 数据源不是 JDBC 数据源");
         }
         return new RuntimeDataSource(databaseType(requireConfig(dataSourceId)), jdbcDataSource);
@@ -226,6 +226,6 @@ public class EngineApiStudioDataSourceService {
         return databaseType == null ? "" : databaseType.trim().toUpperCase(Locale.ROOT);
     }
 
-    public record RuntimeDataSource(String databaseType, JdbcDataSource jdbcDataSource) {
+    public record RuntimeDataSource(String databaseType, JdbcDataSourceAccess jdbcDataSource) {
     }
 }

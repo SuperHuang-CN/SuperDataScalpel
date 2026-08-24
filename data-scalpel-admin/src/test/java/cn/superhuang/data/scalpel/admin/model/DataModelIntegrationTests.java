@@ -231,6 +231,9 @@ class DataModelIntegrationTests {
         mockMvc.perform(post("/api/v1/models/{id}/actions/publish", modelId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.model.status").value("PUBLISHED"));
+        mockMvc.perform(post("/api/v1/models/{id}/actions/publish", modelId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("只有草稿或已停用模型可以发布"));
 
         mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -253,9 +256,11 @@ class DataModelIntegrationTests {
         mockMvc.perform(post("/api/v1/models/{id}/actions/disable", modelId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.model.status").value("DISABLED"));
-        mockMvc.perform(post("/api/v1/models/{id}/actions/enable", modelId))
+        mockMvc.perform(post("/api/v1/models/{id}/actions/publish", modelId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.model.status").value("PUBLISHED"));
+        mockMvc.perform(post("/api/v1/models/{id}/actions/enable", modelId))
+                .andExpect(status().isNotFound());
 
         mockMvc.perform(post("/api/v1/models/{id}/actions/delete", modelId))
                 .andExpect(status().isConflict())
@@ -300,6 +305,23 @@ class DataModelIntegrationTests {
         mockMvc.perform(post("/api/v1/models/{id}/actions/publish", modelId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.model.status").value("PUBLISHED"));
+
+        String missingCreated = mockMvc.perform(post("/api/v1/models")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "code": "missing_external_order", "name": "缺失外部表模型",
+                                  "storageDataSourceId": "%s", "physicalTableName": "missing_external",
+                                  "physicalTableMode": "EXTERNAL"
+                                }
+                                """.formatted(sourceId)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String missingModelId = JsonPath.read(missingCreated, "$.model.id");
+        mockMvc.perform(post("/api/v1/models/{id}/actions/publish", missingModelId))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("物理表未就绪：测试物理表尚未创建"));
+        assertEquals(0, PhysicalTableTestConfiguration.createCalls());
     }
 
     @Test
@@ -370,9 +392,9 @@ class DataModelIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("NOT_FOUND"));
 
-        mockMvc.perform(post("/api/v1/models/{id}/actions/create-physical-table", modelId))
+        mockMvc.perform(post("/api/v1/models/{id}/actions/publish", modelId))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.state").value("MATCHED"));
+                .andExpect(jsonPath("$.model.status").value("PUBLISHED"));
         assertEquals(1, PhysicalTableTestConfiguration.createCalls());
     }
 
@@ -1059,7 +1081,7 @@ class DataModelIntegrationTests {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$[8].type").value("STRING"))
                 .andExpect(jsonPath("$[8].supported").value(true))
-                .andExpect(jsonPath("$[8].lengthParameterSupported").value(false))
+                .andExpect(jsonPath("$[8].lengthParameterSupported").value(true))
                 .andExpect(jsonPath("$[9].type").value("BINARY"))
                 .andExpect(jsonPath("$[9].supported").value(false))
                 .andExpect(jsonPath("$[11].type").value("TIMESTAMP"))
@@ -1540,7 +1562,8 @@ class DataModelIntegrationTests {
                     assertNoManagementTransaction();
                     TableIdentifier table = new TableIdentifier(model.getCatalogName(), model.getSchemaName(), model.getPhysicalTableName());
                     boolean ready = (model.getId() != null && READY_MODEL_IDS.contains(model.getId()))
-                            || model.getPhysicalTableMode().name().equals("EXTERNAL")
+                            || (model.getPhysicalTableMode().name().equals("EXTERNAL")
+                                && !model.getPhysicalTableName().equals("missing_external"))
                             || model.getPhysicalTableName().equals("existing_target");
                     return new ModelPhysicalTableInspection(
                             table,

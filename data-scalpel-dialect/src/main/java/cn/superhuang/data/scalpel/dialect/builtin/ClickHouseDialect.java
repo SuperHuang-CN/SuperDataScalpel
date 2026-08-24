@@ -106,6 +106,11 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
     }
 
     @Override
+    public boolean queryMetadataRequiresExecution() {
+        return true;
+    }
+
+    @Override
     public DdlPlan planCreateTable(TableDefinition definition) {
         requireMergeTreeDefinition(definition);
         List<String> columns = definition.columns().stream()
@@ -215,8 +220,15 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
             SpatialColumnMetadata spatial = marker.present()
                     ? wkbSpatialMetadata(details.nativeType(), marker)
                     : null;
+            String nativeType = unwrapTypeWrappers(details.nativeType()).toLowerCase(Locale.ROOT);
+            Integer scale = column.scale();
+            if (scale == null && nativeType.startsWith("decimal(")) {
+                scale = 0;
+            }
             enriched.add(column.withDialectDetails(
                     details.nativeType(),
+                    column.precision(),
+                    scale,
                     isNullableType(details.nativeType()),
                     marker.humanComment(),
                     spatial
@@ -617,9 +629,9 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
             return TypeMappingResult.unsupported("ClickHouse DateTime 带时区解释，不能安全承载 TIMESTAMP_NTZ");
         }
         if (platformType.type() == PlatformDataType.STRING && platformType.length() != null) {
-            return TypeMappingResult.lossy(
+            return TypeMappingResult.normalized(
                     new PhysicalTypeDefinition(TableColumnType.TEXT, null, null, null),
-                    "ClickHouse String 不保留长度约束；请改为无长度上限 STRING"
+                    "长度仅作为模型逻辑约束保留，ClickHouse 物理表仍使用 String 且不强制长度"
             );
         }
         return super.mapPlatformTypeToPhysical(platformType);

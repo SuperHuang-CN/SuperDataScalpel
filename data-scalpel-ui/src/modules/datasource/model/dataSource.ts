@@ -797,6 +797,7 @@ export interface TableQuery {
   schema?: string;
   keyword?: string;
   includeViews?: boolean;
+  limit?: number;
 }
 
 export type DataSourcePurposeFilter = DataSourcePurpose | 'BOTH';

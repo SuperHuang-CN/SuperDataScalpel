@@ -3,6 +3,9 @@ package cn.superhuang.data.scalpel.dispatcher.messaging.command;
 import cn.superhuang.data.scalpel.contract.execution.CancelExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionErrorCategory;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
+import cn.superhuang.data.scalpel.contract.execution.ForceTerminateExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.StartStreamingExecutionCommand;
@@ -22,6 +25,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class DispatcherCommandService {
@@ -63,6 +67,7 @@ public class DispatcherCommandService {
         Outcome outcome = switch (command) {
             case SubmitExecutionCommand submit -> submit(submit, registration, inbox);
             case CancelExecutionCommand cancel -> cancel(cancel, inbox);
+            case ForceTerminateExecutionCommand forceTerminate -> forceTerminate(forceTerminate, inbox);
             case StartStreamingExecutionCommand start -> start(start, registration, inbox);
             case StopStreamingExecutionCommand stop -> stop(stop, registration, inbox);
         };
@@ -208,5 +213,39 @@ public class DispatcherCommandService {
         if (queued) eventService.enqueue(execution, ExecutionMessageType.EXECUTION_CANCELLED, null, null);
         inbox.processed();
         return Outcome.ACCEPTED;
+    }
+
+    private Outcome forceTerminate(
+            ForceTerminateExecutionCommand command,
+            DispatcherMessageInbox inbox
+    ) {
+        DispatcherTaskExecution execution = executionRepository.findByExecutionIdAndAttempt(
+                command.executionId(), command.attempt()
+        ).orElse(null);
+        if (execution == null || !execution.getRunId().equals(command.runId())
+                || !execution.getEngineId().equals(command.engineId())) {
+            inbox.rejected("强制终止命令身份与执行账本不匹配");
+            return Outcome.REJECTED;
+        }
+        if (execution.getState().terminal()) {
+            inbox.processed();
+            return Outcome.DUPLICATE;
+        }
+        boolean queued = execution.getState() == DispatcherExecutionState.QUEUED;
+        execution.requestForceTerminate();
+        if (queued) {
+            SafeExecutionError error = forceTerminationError("执行在提交前被强制终止");
+            execution.cancelled(error);
+            eventService.enqueue(execution, ExecutionMessageType.EXECUTION_CANCELLED, error, null);
+        }
+        executionRepository.save(execution);
+        inbox.processed();
+        return Outcome.ACCEPTED;
+    }
+
+    private static SafeExecutionError forceTerminationError(String message) {
+        return new SafeExecutionError(
+                "EXECUTION_FORCE_TERMINATED", message, ExecutionErrorCategory.CANCELLED, false,
+                null, null, null, ExecutionFailurePhase.DISPATCH, null, UUID.randomUUID());
     }
 }

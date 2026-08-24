@@ -643,6 +643,19 @@ public class TaskRun extends BaseEntity {
         applyExecutionError(error);
     }
 
+    public void fail(
+            SafeExecutionError error,
+            Long affectedRows,
+            Instant startedAt,
+            Instant endedAt
+    ) {
+        fail(error);
+        if (status != TaskRunStatus.FAILED) return;
+        this.affectedRows = affectedRows;
+        this.startedAt = this.startedAt == null ? startedAt : this.startedAt;
+        this.endedAt = endedAt == null ? this.endedAt : endedAt;
+    }
+
     public void timeout(String message, String errorDetail) {
         if (status != TaskRunStatus.QUEUED && status != TaskRunStatus.RUNNING
                 && status != TaskRunStatus.CANCEL_REQUESTED && status != TaskRunStatus.STOP_REQUESTED) {
@@ -661,6 +674,19 @@ public class TaskRun extends BaseEntity {
         }
         timeout(error.message(), error.code());
         applyExecutionError(error);
+    }
+
+    public void timeout(
+            SafeExecutionError error,
+            Long affectedRows,
+            Instant startedAt,
+            Instant endedAt
+    ) {
+        timeout(error);
+        if (status != TaskRunStatus.TIMED_OUT) return;
+        this.affectedRows = affectedRows;
+        this.startedAt = this.startedAt == null ? startedAt : this.startedAt;
+        this.endedAt = endedAt == null ? this.endedAt : endedAt;
     }
 
     public void requestCancel() {
@@ -686,6 +712,16 @@ public class TaskRun extends BaseEntity {
     public void cancel(SafeExecutionError error, Instant startedAt, Instant endedAt) {
         cancel(error == null ? "任务执行已取消" : error.message(), startedAt, endedAt);
         if (error != null) applyExecutionError(error);
+    }
+
+    public void cancel(
+            SafeExecutionError error,
+            Long affectedRows,
+            Instant startedAt,
+            Instant endedAt
+    ) {
+        cancel(error, startedAt, endedAt);
+        if (status == TaskRunStatus.CANCELLED) this.affectedRows = affectedRows;
     }
 
     public void requestStop() {

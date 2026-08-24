@@ -19,11 +19,13 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.time.Instant;
+import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 
 @Component
 public class DispatcherExecutionCoordinator {
+    private static final Duration FORCE_TERMINATION_CONFIRMATION_GRACE = Duration.ofSeconds(30);
     private static final List<DispatcherExecutionState> OBSERVED = List.of(
             DispatcherExecutionState.QUEUED, DispatcherExecutionState.SUBMITTING, DispatcherExecutionState.SUBMITTED,
             DispatcherExecutionState.RUNNING, DispatcherExecutionState.CANCEL_REQUESTED
@@ -121,6 +123,20 @@ public class DispatcherExecutionCoordinator {
         ExternalExecutionHandle handle = handle(execution);
         try {
             if (execution.getState() == DispatcherExecutionState.CANCEL_REQUESTED || execution.isCancelRequested()) {
+                if (execution.isForceTerminateRequested()) {
+                    if (!execution.getForceTerminateRequestedAt()
+                            .plus(FORCE_TERMINATION_CONFIRMATION_GRACE).isAfter(Instant.now())) {
+                        try {
+                            backend.forceTerminate(handle, identity(execution));
+                        } catch (BackendException ignored) {
+                            // The terminal state below explicitly records that Backend confirmation was unavailable.
+                        }
+                        stateService.forceTerminationUnconfirmed(execution.getExecutionId());
+                        return;
+                    }
+                    forceTerminateAndConfirm(execution, handle);
+                    return;
+                }
                 if (execution.isStreamingStopRequested()
                         && execution.getStreamingForceStopAt() != null
                         && execution.getStreamingForceStopAt().isAfter(Instant.now())) {
@@ -147,6 +163,40 @@ public class DispatcherExecutionCoordinator {
         } catch (BackendException exception) {
             recordObservationFailure(execution, exception);
         }
+    }
+
+    private void forceTerminateAndConfirm(
+            DispatcherTaskExecution execution,
+            ExternalExecutionHandle handle
+    ) throws BackendException {
+        try {
+            BackendStatus before = backend.inspect(handle, identity(execution));
+            if (before.state() == BackendExecutionState.SUCCEEDED
+                    || before.state() == BackendExecutionState.FAILED) {
+                reconcileTerminal(execution, before);
+                return;
+            }
+            if (before.state() == BackendExecutionState.CANCELLED) {
+                try {
+                    storeTerminalLog(execution, handle, before);
+                } catch (BackendException ignored) {
+                    // The runtime may already have removed its log source.
+                }
+                stateService.cancelled(execution.getExecutionId());
+                return;
+            }
+        } catch (BackendException ignored) {
+            // Inspection failure must not prevent the explicit hard-termination attempt.
+        }
+        backend.forceTerminate(handle, identity(execution));
+        BackendStatus after = backend.inspect(handle, identity(execution));
+        if (after.state() == BackendExecutionState.PENDING || after.state() == BackendExecutionState.RUNNING) return;
+        try {
+            storeTerminalLog(execution, handle, after);
+        } catch (BackendException ignored) {
+            // A hard kill may remove the runtime before its logs can be collected.
+        }
+        stateService.cancelled(execution.getExecutionId());
     }
 
     private void cancelAndConfirm(DispatcherTaskExecution execution, ExternalExecutionHandle handle)

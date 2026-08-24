@@ -19,7 +19,7 @@ export const spatialClipSpec = createCanvasNodeSpec({
   canvasView: spatialClipCanvasView,
   supportedModes: ['BATCH'],
   introducedInMinor: 0,
-  graph: { minInputs: 2, maxInputs: 2, minOutputs: 1, maxOutputs: null },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createSpatialClipConfiguration,
   summarize: summarizeSpatialClip,
   collectMetadataReferences: collectNoMetadataReferences,

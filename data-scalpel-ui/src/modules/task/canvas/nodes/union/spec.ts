@@ -19,7 +19,7 @@ export const unionSpec = createCanvasNodeSpec({
   canvasView: unionCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
   introducedInMinor: 0,
-  graph: { minInputs: 1, maxInputs: null, minOutputs: 1, maxOutputs: null },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createUnionConfiguration,
   summarize: summarizeUnion,
   collectMetadataReferences: collectNoMetadataReferences,

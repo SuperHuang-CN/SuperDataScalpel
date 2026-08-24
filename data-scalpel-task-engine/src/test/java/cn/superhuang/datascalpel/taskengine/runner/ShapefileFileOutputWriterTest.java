@@ -373,8 +373,13 @@ class ShapefileFileOutputWriterTest {
         );
         return new CanvasPreparedFileOutput(
                 node,
+                UUID.randomUUID().toString(),
+                "districts",
                 runtimeDataSource,
+                "districts",
                 "s3a://exports/root/districts",
+                conflictPolicy,
+                options,
                 schema,
                 dataset
         );

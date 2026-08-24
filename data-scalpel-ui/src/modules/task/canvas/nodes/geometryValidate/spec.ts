@@ -19,7 +19,7 @@ export const geometryValidateSpec = createCanvasNodeSpec({
   canvasView: geometryValidateCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
   introducedInMinor: 0,
-  graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createGeometryValidateConfiguration,
   summarize: summarizeGeometryValidate,
   collectMetadataReferences: collectNoMetadataReferences,

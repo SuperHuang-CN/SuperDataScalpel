@@ -9,6 +9,7 @@ import {
   Alert,
   Button,
   Card,
+  Collapse,
   Descriptions,
   Drawer,
   Empty,
@@ -43,7 +44,11 @@ import {
   taskTypeLabels,
   type TaskRun,
 } from '../model/task';
-import type { QualityRuleExecutionResult, QualitySkippedRuleResult } from '../model/taskExecutionResult';
+import type {
+  OutputWriteExecutionResult,
+  QualityRuleExecutionResult,
+  QualitySkippedRuleResult,
+} from '../model/taskExecutionResult';
 import { QualityFailureSampleDrawer } from './QualityFailureSampleDrawer';
 import { useState } from 'react';
 import { UserJobObservabilityPanel } from './UserJobObservabilityPanel';
@@ -58,8 +63,10 @@ interface TaskRunDetailDrawerProps {
   runId: string | null;
   canExecute: boolean;
   cancelLoading: boolean;
+  forceTerminateLoading: boolean;
   onClose: () => void;
   onCancel: (run: TaskRun) => void;
+  onForceTerminate: (run: TaskRun) => void;
 }
 
 const idValue = (value: string | null) => (
@@ -125,13 +132,39 @@ const baseQualityRuleColumns: TableProps<QualityRuleExecutionResult>['columns'] 
   { title: '耗时', dataIndex: 'durationMs', width: 90, align: 'right', render: (value: number) => `${value} ms` },
 ];
 
+const outputWriteState = (state: OutputWriteExecutionResult['state']) => {
+  const labels: Record<OutputWriteExecutionResult['state'], string> = {
+    PENDING: '等待', RUNNING: '执行中', SUCCESS: '成功', FAILED: '失败', SKIPPED: '未执行',
+  };
+  const colors: Record<OutputWriteExecutionResult['state'], string> = {
+    PENDING: 'default', RUNNING: 'processing', SUCCESS: 'success', FAILED: 'error', SKIPPED: 'warning',
+  };
+  return <Tag color={colors[state]}>{labels[state]}</Tag>;
+};
+
+const outputWriteColumns: TableProps<OutputWriteExecutionResult>['columns'] = [
+  {
+    title: '来源表', dataIndex: 'sourceTableName', width: 190, ellipsis: true,
+    render: (value: string) => <Typography.Text code>{value}</Typography.Text>,
+  },
+  { title: '目标', dataIndex: 'targetDisplayName', ellipsis: true },
+  { title: '状态', dataIndex: 'state', width: 90, render: outputWriteState },
+  {
+    title: '影响行数', dataIndex: 'affectedRows', width: 110, align: 'right',
+    render: (value: number | null) => value ?? '—',
+  },
+  { title: '错误码', dataIndex: 'errorCode', width: 180, ellipsis: true, render: (value: string | null) => value ?? '—' },
+];
+
 export const TaskRunDetailDrawer = ({
   open,
   runId,
   canExecute,
   cancelLoading,
+  forceTerminateLoading,
   onClose,
   onCancel,
+  onForceTerminate,
 }: TaskRunDetailDrawerProps) => {
   const [messageApi, messageContext] = message.useMessage();
   const [sampleRule, setSampleRule] = useState<QualityRuleExecutionResult | null>(null);
@@ -150,6 +183,9 @@ export const TaskRunDetailDrawer = ({
   const snapshotResults = resultArtifactQuery.data?.nodeResults.filter(
     (node) => node.metrics?.kind === 'SNAPSHOT_SYNC',
   ) ?? [];
+  const outputResults = resultArtifactQuery.data?.nodeResults.filter(
+    (node) => node.metrics?.kind === 'OUTPUT_WRITES',
+  ) ?? [];
 
   const download = async (kind: 'result' | 'log') => {
     if (!run) return;
@@ -167,7 +203,9 @@ export const TaskRunDetailDrawer = ({
   const trackingUrl = safeTrackingUrl(run?.trackingUrl ?? null);
   const cancellable = (run?.taskType === 'SPARK_CANVAS' || run?.taskType === 'SPARK_MODEL_QUALITY'
     || run?.taskType === 'SPARK_JAR')
-    && (run.status === 'QUEUED' || run.status === 'RUNNING' || run.status === 'CANCEL_REQUESTED');
+    && (run.status === 'QUEUED' || run.status === 'RUNNING');
+  const forceTerminable = run?.taskType !== 'LOCAL_SQL'
+    && (run?.status === 'CANCEL_REQUESTED' || run?.status === 'STOP_REQUESTED');
   const downloadSamples = async (rule: QualityRuleExecutionResult) => {
     if (!run) return;
     try {
@@ -271,12 +309,22 @@ export const TaskRunDetailDrawer = ({
               <Button
                 danger
                 icon={<StopOutlined />}
-                aria-label={run.status === 'CANCEL_REQUESTED' ? '正在取消运行' : '取消运行'}
+                aria-label="取消运行"
                 loading={cancelLoading}
-                disabled={run.status === 'CANCEL_REQUESTED'}
                 onClick={() => onCancel(run)}
               >
-                {run.status === 'CANCEL_REQUESTED' ? '正在取消' : '取消运行'}
+                取消运行
+              </Button>
+            )}
+            {canExecute && forceTerminable && (
+              <Button
+                danger
+                icon={<StopOutlined />}
+                aria-label="强制终止运行"
+                loading={forceTerminateLoading}
+                onClick={() => onForceTerminate(run)}
+              >
+                强制终止
               </Button>
             )}
           </Space>
@@ -287,7 +335,10 @@ export const TaskRunDetailDrawer = ({
             <Descriptions.Item label="定义版本">v{run.definitionVersion}</Descriptions.Item>
             <Descriptions.Item label="触发方式">{taskRunTriggerTypeLabels[run.triggerType]}</Descriptions.Item>
             <Descriptions.Item label="执行模式">{taskRunExecutionModeLabels[run.executionMode]}</Descriptions.Item>
-            <Descriptions.Item label={run.taskType === 'SPARK_MODEL_QUALITY' ? '检查行数' : '影响行数'}>
+            <Descriptions.Item label={run.taskType === 'SPARK_MODEL_QUALITY'
+              ? '检查行数'
+              : run.taskType === 'SPARK_CANVAS' && run.status !== 'SUCCESS'
+                ? '已提交影响行数' : '影响行数'}>
               {run.taskType === 'SPARK_MODEL_QUALITY'
                 ? run.qualityCheckedRows ?? '—'
                 : run.affectedRows ?? <span aria-label="影响行数未知">—</span>}
@@ -343,6 +394,60 @@ export const TaskRunDetailDrawer = ({
             </Descriptions>
           )}
 
+          {run.taskType === 'SPARK_CANVAS'
+            && (run.status === 'SUCCESS' || run.status === 'FAILED'
+              || run.status === 'TIMED_OUT' || run.status === 'CANCELLED') && (
+            <Card size="small" title="输出写入结果" loading={resultArtifactQuery.isPending}>
+              {resultArtifactQuery.isError ? (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="暂时无法读取逐写入结果"
+                  description="仍可通过上方“执行结果”下载完整结果制品。"
+                  action={<Button size="small" onClick={() => void resultArtifactQuery.refetch()}>重试</Button>}
+                />
+              ) : outputResults.length === 0 ? (
+                <Typography.Text type="secondary">本次运行没有逐写入结构化指标。</Typography.Text>
+              ) : (
+                <Collapse
+                  size="small"
+                  items={outputResults.map((node) => {
+                    const metrics = node.metrics?.kind === 'OUTPUT_WRITES' ? node.metrics : null;
+                    const writes = metrics?.writes ?? [];
+                    const successCount = writes.filter((write) => write.state === 'SUCCESS').length;
+                    const failedCount = writes.filter((write) => write.state === 'FAILED').length;
+                    const skippedCount = writes.filter((write) => write.state === 'SKIPPED').length;
+                    return {
+                      key: node.nodeId,
+                      label: (
+                        <Space wrap>
+                          <Typography.Text>{node.nodeName}</Typography.Text>
+                          <Typography.Text type="secondary">{node.nodeType}</Typography.Text>
+                          <Tag color="success">成功 {successCount}</Tag>
+                          <Tag color={failedCount > 0 ? 'error' : 'default'}>失败 {failedCount}</Tag>
+                          <Tag color={skippedCount > 0 ? 'warning' : 'default'}>未执行 {skippedCount}</Tag>
+                          <Typography.Text type="secondary">
+                            已提交 {node.rowsWritten ?? '—'} 行
+                          </Typography.Text>
+                        </Space>
+                      ),
+                      children: (
+                        <Table<OutputWriteExecutionResult>
+                          size="small"
+                          pagination={false}
+                          rowKey="writeId"
+                          columns={outputWriteColumns}
+                          dataSource={writes}
+                          scroll={{ x: 780 }}
+                        />
+                      ),
+                    };
+                  })}
+                />
+              )}
+            </Card>
+          )}
+
           {run.taskType === 'SPARK_CANVAS' && run.status === 'SUCCESS' && (
             <Card size="small" title="快照同步结果" loading={resultArtifactQuery.isPending}>
               {resultArtifactQuery.isError ? (
@@ -358,7 +463,7 @@ export const TaskRunDetailDrawer = ({
               ) : (
                 <Space orientation="vertical" size={10} className="task-run-snapshot-results">
                   {snapshotResults.map((node) => {
-                    const metrics = node.metrics;
+                    const metrics = node.metrics?.kind === 'SNAPSHOT_SYNC' ? node.metrics : null;
                     if (!metrics) return null;
                     return (
                       <Descriptions

@@ -7,7 +7,7 @@
 - Java 21、Spark 4.1.1、Scala 2.13、Apache Sedona 1.9.0。
 - 普通 Java Main 和 JDK `HttpServer`，不使用 Spring、Servlet、Thrift 或 gRPC。
 - 默认以 `local[*]` 长期运行，也可由未来的 `spark-submit --master yarn --deploy-mode client` 启动同一个 Main。
-- Canvas 当前协议为 `2.3`；`2.1` 引入 TMQ，`2.2` 引入 JDBC 时间字段增量输入和节点级触发间隔，`2.3` 引入 MODEL_OUTPUT 批流 UPSERT。`1.x` 定义按大版本不兼容处理，不反序列化、不自动迁移；用户重新配置并保存后才覆盖旧定义。
+- Canvas 当前协议为 `3.1`；`JDBC_INPUT` 使用同一数据源下的有序多表配置，并可在每张表上保存高级读取参数。`3.0` 定义继续兼容并在保存时规范化为 `3.1`；`1.x`、`2.x` 定义按大版本不兼容处理，不自动迁移；用户重新配置并保存后才覆盖旧定义。
 - 同一大版本内只允许向下兼容的小版本增量；删除字段、改变既有节点语义等破坏性变化必须升级大版本并将小版本归零。
 - 根据请求携带的元数据快照创建零行 DataFrame，只构造并分析 Spark 逻辑计划。
 - 编译接口不连接 JDBC、不调用 Spark Action、不创建 `DataFrameWriter`。
@@ -146,8 +146,8 @@ Content-Type: application/json
   "task": {
     "type": "CANVAS",
     "definition": {
-      "schemaVersion": 2,
-      "schemaMinorVersion": 0,
+      "schemaVersion": 3,
+      "schemaMinorVersion": 1,
       "nodes": [],
       "edges": []
     }
@@ -234,7 +234,9 @@ Map 按定义边顺序无覆盖合并。重复 Key 返回 `DUPLICATE_TABLE_NAME`
 
 ### 6.1 JDBC_INPUT
 
-按精确字符串在快照中查找启用的 JDBC SOURCE 数据源和物理表，将平台 Schema 显式转成 Spark `StructType`，再创建零行 DataFrame。输出 Map 只有物理 `tableName` 一个 Key。
+按配置顺序和精确字符串在快照中查找启用的 JDBC SOURCE 数据源及全部已选物理表，将每张表的
+平台 Schema 显式转成 Spark `StructType`，再分别创建零行 DataFrame。输出 Map 为每个物理
+`tableName` 保留一个 Key；同一节点内重复 Key 返回 `DUPLICATE_TABLE_NAME`。
 
 ### 6.1.1 JDBC_QUERY_INPUT
 
@@ -303,13 +305,13 @@ Output 专用字段转换策略分为安全、风险和不支持三类：可证�
 
 仅接受有界来源表，以及已启用、连接类型为 S3、用途包含 `DISTRIBUTION` 的数据源。检查用户指定的相对目录、`FAIL_IF_EXISTS/OVERWRITE` 冲突策略和 CSV、JSON Lines、Parquet、Shapefile、GeoParquet、GeoJSON 的判别式格式参数。
 
-Shapefile 是 Canvas `2.0` 的正式能力。Compiler 额外检查 EPSG + XY Geometry、Shape 类型兼容、文件基础名和 `1..255` 个有序 DBF 属性映射，包括 10 位 ASCII 字段名、STRING UTF-8 字节宽度、数值宽度与受支持平台类型。Compiler 只使用零行 Dataset 和元数据 Schema，不读取 Geometry、不连接 S3、不建立 Writer。
+Shapefile 是 Canvas `3.0` 的正式能力。Compiler 额外检查 EPSG + XY Geometry、Shape 类型兼容、文件基础名和 `1..255` 个有序 DBF 属性映射，包括 10 位 ASCII 字段名、STRING UTF-8 字节宽度、数值宽度与受支持平台类型。Compiler 只使用零行 Dataset 和元数据 Schema，不读取 Geometry、不连接 S3、不建立 Writer。
 
 Runner 使用 Manifest 的外部 S3 连接和 bucket 级 S3A 配置。普通格式继续使用 Spark Writer；Shapefile 通过 Driver 本地 GeoTools 33.5 Writer 和 `Dataset.toLocalIterator()` 生成唯一一套 ZIP 或五组件制品，上传运行级临时前缀后提交精确目标目录，最后写 `_SUCCESS`。GeoParquet 使用 Sedona 分布式写出，GeoJSON 使用受大小限制的 Driver FeatureCollection Writer。完整约束见 [FILE_OUTPUT Shapefile 输出设计](canvas-shapefile-output-design.md)、[GeoParquet 输出设计](canvas-geoparquet-output-design.md)和 [GeoJSON 输出设计](canvas-geojson-output-design.md)。
 
 ### 6.10 JDBC 与模型快照同步 Output
 
-`JDBC_SNAPSHOT_SYNC_OUTPUT` 和 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是 Canvas `2.0` 的正式节点，
+`JDBC_SNAPSHOT_SYNC_OUTPUT` 和 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是 Canvas `3.0` 的正式节点，
 只支持 BATCH、有界来源、一条入边和无出边。两个独立 Operator 只解析 JDBC 表或已发布
 MANAGED 模型目标，字段映射、显式 Cast、Key 与删除策略校验统一由
 `SnapshotSyncOperatorSupport` 完成；Compiler 仍只分析零行 Dataset，不连接目标数据库。

@@ -6,14 +6,16 @@ AI 助手是 `data-scalpel-business` 内独立的 `assistant` 业务包，前端
 `data-scalpel-ui/src/modules/assistant`。它仍属于现有模块化单体，不增加 Maven 模块、Spring AI、
 LangChain、向量数据库、事件总线或前端全局 Store。
 
-第一版提供三类能力：
+当前 V1 提供四类能力：
 
 - 全局界面协助：系统问答、白名单页面导航、主侧栏展开或收起、目录导出下载。
 - 目录协助：查询六类目录，以及生成可审阅的新增、修改、移动、排序和空叶子删除计划。
 - 数据源协助：查询安全基本信息、定位数据源，以及准备新建、修改和已保存连接测试的客户端动作。
+- 任务 Canvas 协助：查询任务和安全资源 Schema，生成批任务完整 Canvas 提案，并交付到原编辑器作为未保存草稿。
 
-模型、任务和服务等其他业务对象尚未注册为工具。LLM 不能直接访问数据库、调用 DataScalpel
-REST 接口、执行目录写入或保存数据源；数据源连接参数和凭据始终由用户在原表单中维护。
+任务工具只支持 `SPARK_CANVAS`，不创建、保存、发布、调度或执行任务。模型只作为 Canvas 资源
+查询，不提供模型业务写入。LLM 不能直接访问数据库、调用 DataScalpel REST 接口、执行目录写入、
+保存数据源或保存 Canvas；数据源连接参数、凭据和任务计算引擎始终由用户在原页面维护。
 
 ## 2. 依赖与执行方向
 
@@ -26,12 +28,13 @@ AssistantResource ──► AssistantConversationService ──► LlmGateway
         │                         ├──► AssistantToolCatalog（显式白名单）
         │                         ├──► DirectoryService（只读查询）
         │                         ├──► DataSourceService（安全字段查询）
-        │                         └──► DirectoryChangePlanService（仅保存计划）
+        │                         ├──► DirectoryChangePlanService（仅保存计划）
+        │                         └──► TaskCanvasProposalService（仅保存提案）
         │
         └── 用户确认 ──► DirectoryPlanExecutor ──► 现有 DirectoryService CRUD
 ```
 
-依赖固定由 `assistant` 指向现有目录和数据源能力。目录和数据源实体、REST API 不增加 Agent
+依赖固定由 `assistant` 指向现有目录、数据源、模型、文件数据集和任务能力。原业务实体和 REST API 不增加 Agent
 字段、事件或反向依赖。前端只给现有数据源 Drawer 增加可选安全草稿入口，最终测试、校验和保存
 仍复用原页面。未来接入模型或任务工具时，也在 Assistant 内增加显式处理器。
 
@@ -82,7 +85,7 @@ usage 和 Tool Calls。它不处理权限、业务事务、计划和工具执行
 | `AssistantMessage` | 用户与最终助手消息 |
 | `AssistantRun` | 单轮实际模型、状态、开始结束时间和安全失败摘要 |
 | `AssistantToolInvocation` | 工具名、风险、裁剪后的参数和结果、执行状态 |
-| `AssistantChangeSet` | 强类型目录计划、确认人与执行结果 |
+| `AssistantChangeSet` | 强类型目录计划或任务 Canvas 提案、确认人与结果 |
 
 所有大文本使用 `LONG32VARCHAR`。系统不保存 System Prompt、完整远端请求、API Key、SQL、
 凭据、样例数据或页面表单草稿。模型上下文只组装最近 20 条用户/助手消息。
@@ -114,6 +117,17 @@ Run 仍保留。
 - `datasource_prepare_create`
 - `datasource_prepare_update`
 - `datasource_prepare_test`
+- `task_search`
+- `task_get`
+- `task_get_canvas_summary`
+- `task_canvas_model_search`
+- `task_canvas_model_schema`
+- `task_canvas_file_dataset_search`
+- `task_canvas_file_table_search`
+- `task_canvas_file_table_schema`
+- `task_canvas_jdbc_tables`
+- `task_canvas_jdbc_table_schema`
+- `task_propose_canvas`
 
 页面导航只接受稳定 `pageKey`，前后端分别维护白名单并再次检查页面权限。前端只执行明确枚举
 动作，不接受任意 URL、Selector、JavaScript 或 DOM 指令。除原三种界面动作外，数据源仅增加
@@ -128,6 +142,13 @@ Prompt 中明确标记为不可信业务数据，不能覆盖系统指令或扩�
 类型、连接类别、用途、启用状态、说明、目录归属和时间，不返回主机、端口、数据库、Schema、
 用户名、Kafka 地址、S3 配置、HTTP URL/Header/Auth、连接选项、凭据、SQL、元数据、样例数据和
 连接测试诊断。按目录搜索和返回目录路径还要求 `directory.view`。
+
+任务查询要求 `task.view`；修改已有 Canvas 提案额外要求 `task.update`，新任务草稿还要求
+`task.create`。模型、文件和 JDBC 资源工具分别要求 `model.view`、`filedataset.view` 以及
+`datasource.view + datasource.metadata`。Schema 工具最多向模型返回 200 个逻辑字段，工具审计只保存
+资源 ID、字段数量、Schema 指纹和截断状态，不重复保存完整 Schema。JDBC 只披露已选数据源名称、
+表名和平台逻辑字段；连接地址、数据库连接配置、账号、凭据、原生类型、索引细节、SQL、样例行和
+物理文件位置不会进入模型上下文、工具审计或助手历史。
 
 每轮最多 4 次模型交互和 8 次工具调用；目录搜索最多返回 50 项，直属子目录最多返回 100 项，
 计划最多 100 个操作且只能处理一个 `DirectoryScope`。
@@ -168,6 +189,30 @@ Drawer 显示模型选择、会话历史、消息、目录计划和执行结果�
 立即清除，刷新不会重复打开。连接测试动作先由用户二次确认，再调用现有已保存数据源测试接口；
 测试结果只在前端 Modal 展示，不进入助手消息、模型上下文或工具审计。
 
+### 7.1 任务 Canvas 提案
+
+`task_propose_canvas` 接收 Assistant 内部强类型 `TaskCanvasPlan`，不接受 Canvas JSON、节点 UUID、边、
+坐标或协议版本。第一版允许 1～2 个输入、最多 1 个 Join、1 个输出和最多 20 个最终节点，节点范围为：
+
+- 输入：`MODEL_INPUT`、`JDBC_INPUT`、`FILE_DATASET_INPUT`；
+- 处理：`FILTER`、`SELECT_COLUMNS`、`RENAME`、`TYPE_CAST`、`NULL_HANDLING`、`DEDUPLICATE`、`JOIN`、`AGGREGATE`；
+- 输出：`MODEL_OUTPUT`、`JDBC_OUTPUT`。
+
+服务端使用真实资源解析 UUID 和逻辑 Schema，校验资源状态、字段引用和拓扑，再由确定性 Builder 生成
+Canvas 3.0 节点、边、逻辑表名和分层布局。输入逻辑表重名时 Builder 插入只调整表名的 `RENAME`。
+最终定义仍通过现有 `CanvasDefinitionValidator`；Builder 不调用 Task Engine，也不复制 Spark 类型兼容
+或 Schema 传播规则。缺少写入模式、字段映射等决策时必须写入 `needsUserInput`，由用户在 Inspector 中补齐。
+
+提案保存为 `TASK_CANVAS` ChangeSet。接受接口为
+`POST /api/v1/assistant/change-sets/{id}/actions/accept-task-canvas`，只把状态改为 `APPLIED` 并返回
+`CLIENT_DRAFT` 定义，不调用任务 Canvas 保存接口。接受前重新检查任务类型、状态、定义版本和全部资源
+Schema 指纹；变化后标记 `STALE`，JDBC 临时读取失败时保持 `PENDING`。
+
+已有任务直接进入 `/task/{id}/definition`。新任务先通过一次性路由状态打开原 `TaskDrawer`，类型固定
+`SPARK_CANVAS`，计算引擎必须由用户选择；创建后再进入定义编辑器。编辑器存在 Inspector 草稿或未保存
+修改时禁止应用，非空 Canvas 需要确认完整替换。应用只调用 `CanvasDesigner.replaceDefinition` 替换内存
+画布并产生 dirty，Task Engine 按原流程自动编译；只有用户点击“保存定义”才会落库。
+
 ## 8. 部署配置
 
 | 配置 | 环境变量 | 默认值 |
@@ -186,4 +231,6 @@ Drawer 显示模型选择、会话历史、消息、目录计划和执行结果�
 
 不提供流式输出、纯 JSON 降级、多模型路由、个人模型、RAG、知识库、多 Agent、长期记忆摘要、
 费用配额、定时自主任务，也不接入模型、任务、数据源或服务的直接业务写工具。数据源第一版不
-支持删除、修改类型或连接配置，也不查询表结构、数据预览、SQL、元数据和依赖影响。
+支持删除、修改类型或连接配置，也不提供通用表结构查询、数据预览、SQL和依赖影响；JDBC Schema
+仅在用户明确选择 Canvas 资源后以安全逻辑字段投影提供。任务第一版不支持实时 Canvas、任意 SQL、
+多输出、节点 Patch、编译错误自动修复、发布、调度或运行。

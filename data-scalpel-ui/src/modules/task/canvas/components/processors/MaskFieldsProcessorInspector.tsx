@@ -1,6 +1,7 @@
 import {
   DeleteOutlined,
   PlusOutlined,
+  QuestionCircleOutlined,
   SyncOutlined,
   SwapOutlined,
 } from '@ant-design/icons';
@@ -12,6 +13,7 @@ import {
   Form,
   Input,
   InputNumber,
+  Popover,
   Radio,
   Select,
   Space,
@@ -74,18 +76,90 @@ const strategyOptions = (
   Object.entries(maskingStrategyLabels) as [MaskingStrategy, string][]
 ).map(([value, label]) => ({ value, label }));
 
+const strategyHelp: Record<MaskingStrategy, {
+  usage: string;
+  example: string;
+  boundary: string;
+}> = {
+  PARTIAL_MASK: {
+    usage: '保留开头和结尾指定数量的字符，中间字符逐个替换为掩码字符；原值太短、无法同时保留前后部分时，会将整个值等长掩码。',
+    example: '13812345678 → 138****5678',
+    boundary: '仅 STRING；需设置前缀、后缀和一个掩码字符。',
+  },
+  POSITION_MASK: {
+    usage: '将指定位置的一个字符替换为掩码字符；位置从 1 开始计数，原值长度不足时保留原值。',
+    example: '张三 → 张*；张三丰 → 张*丰',
+    boundary: '仅 STRING；需设置位置和一个掩码字符。',
+  },
+  KEEP_LENGTH_MASK: {
+    usage: '把原值的每个字符都替换为掩码字符，保留字符数量，不保留任何原始字符。',
+    example: 'Alice → *****',
+    boundary: '仅 STRING；需设置一个掩码字符。',
+  },
+  FIXED_VALUE: {
+    usage: '把所有非 NULL 值统一替换为指定文本，适合用“保密”“已隐藏”等固定标记覆盖原内容。',
+    example: 'Alice → 已隐藏',
+    boundary: '仅 STRING；允许空字符串，最长 1024 个字符。',
+  },
+  NULLIFY: {
+    usage: '将字段值替换为同类型的 SQL NULL，不保留原值。',
+    example: '任意非 NULL 值 → NULL',
+    boundary: '支持任意平台类型，但字段必须允许为空。',
+  },
+};
+
+const MaskingStrategyHelp = ({ activeStrategy }: { activeStrategy: MaskingStrategy }) => (
+  <div className="canvas-masking-strategy-help">
+    <div className="canvas-masking-strategy-help-heading">脱敏策略说明</div>
+    {(Object.entries(strategyHelp) as [MaskingStrategy, (typeof strategyHelp)[MaskingStrategy]][])
+      .map(([strategy, help]) => (
+        <div
+          className={`canvas-masking-strategy-help-item${strategy === activeStrategy ? ' is-active' : ''}`}
+          key={strategy}
+        >
+          <div className="canvas-masking-strategy-help-title">
+            <strong>{maskingStrategyLabels[strategy]}</strong>
+            {strategy === activeStrategy && <Tag color="blue">当前</Tag>}
+          </div>
+          <span>{help.usage}</span>
+          <code>{help.example}</code>
+          <small>{help.boundary}</small>
+        </div>
+      ))}
+    <div className="canvas-masking-strategy-help-footer">
+      所有策略都会保持输入 NULL 为 NULL，不会把 NULL 转换成文本。
+    </div>
+  </div>
+);
+
 const MaskingDefinitionEditor = ({
   definition,
   disabled = false,
   onChange,
 }: DefinitionEditorProps) => (
   <Space orientation="vertical" size={8} style={{ width: '100%' }}>
-    <Select
-      disabled={disabled}
-      value={definition.strategy}
-      options={strategyOptions}
-      onChange={(strategy: MaskingStrategy) => onChange(createMaskingRuleDefinition(strategy))}
-    />
+    <div className="canvas-masking-strategy-control">
+      <Select
+        disabled={disabled}
+        value={definition.strategy}
+        options={strategyOptions}
+        onChange={(strategy: MaskingStrategy) => onChange(createMaskingRuleDefinition(strategy))}
+      />
+      <Popover
+        trigger={['hover', 'click']}
+        placement="bottomRight"
+        arrow={false}
+        rootClassName="canvas-masking-strategy-help-overlay"
+        content={<MaskingStrategyHelp activeStrategy={definition.strategy} />}
+      >
+        <Button
+          type="text"
+          className="canvas-masking-strategy-help-button"
+          icon={<QuestionCircleOutlined />}
+          aria-label="查看脱敏策略说明"
+        />
+      </Popover>
+    </div>
     {definition.strategy === 'PARTIAL_MASK' && (
       <Space.Compact block>
         <InputNumber
@@ -114,7 +188,22 @@ const MaskingDefinitionEditor = ({
         />
       </Space.Compact>
     )}
+    {definition.strategy === 'POSITION_MASK' && (
+      <InputNumber
+        disabled={disabled}
+        min={1}
+        max={1024}
+        precision={0}
+        addonBefore="位置"
+        value={definition.maskPosition}
+        onChange={(value) => onChange({
+          ...definition,
+          maskPosition: value,
+        })}
+      />
+    )}
     {(definition.strategy === 'PARTIAL_MASK'
+      || definition.strategy === 'POSITION_MASK'
       || definition.strategy === 'KEEP_LENGTH_MASK') && (
       <Input
         disabled={disabled}
@@ -173,6 +262,7 @@ const invalidDefinitionMessage = (
       : '当前策略仅支持 STRING 字段';
   }
   if ((definition.strategy === 'PARTIAL_MASK'
+      || definition.strategy === 'POSITION_MASK'
       || definition.strategy === 'KEEP_LENGTH_MASK')
     && Array.from(definition.maskCharacter ?? '').length !== 1) {
     return '掩码字符必须是一个 Unicode 字符';
@@ -186,6 +276,12 @@ const invalidDefinitionMessage = (
       || (definition.keepSuffixLength ?? 1025) > 1024) {
       return '前后保留字符数必须是 0..1024 的整数';
     }
+  }
+  if (definition.strategy === 'POSITION_MASK'
+    && (!Number.isInteger(definition.maskPosition)
+      || (definition.maskPosition ?? 0) < 1
+      || (definition.maskPosition ?? 1025) > 1024)) {
+    return '掩码位置必须是 1..1024 的整数';
   }
   if (definition.strategy === 'FIXED_VALUE'
     && (definition.fixedValue === null || definition.fixedValue.length > 1024)) {

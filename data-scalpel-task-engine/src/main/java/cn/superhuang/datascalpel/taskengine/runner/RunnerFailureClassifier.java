@@ -318,6 +318,9 @@ final class RunnerFailureClassifier {
                         "OVERWRITE_REQUIRES_MANAGED_MODEL" -> {
                     return failure(runner.code(), ExecutionErrorCategory.CONFIGURATION);
                 }
+                case "RUNTIME_CONTEXT_UNAVAILABLE" -> {
+                    return failure(runner.code(), ExecutionErrorCategory.INTERNAL);
+                }
                 default -> {
                     if (runner.code().matches("[A-Z][A-Z0-9_]{0,99}") && sqlException == null) {
                         return failure(runner.code(), fallbackCategory(context));
@@ -443,7 +446,7 @@ final class RunnerFailureClassifier {
             case "JDBC_QUERY_INPUT_FAILED" -> "JDBC 查询输入节点执行失败";
             case "JDBC_QUERY_SCHEMA_STALE" -> "JDBC 查询 SQL 已修改，需要重新分析";
             case "OUTPUT_MAPPING_INVALID" -> "输出字段映射无法生成写入计划";
-            case "OVERWRITE_DATABASE_NOT_SUPPORTED" -> "当前数据库不支持 OVERWRITE，请使用 APPEND";
+            case "OVERWRITE_DATABASE_NOT_SUPPORTED" -> "当前运行数据源不支持普通 JDBC OVERWRITE";
             case "UPSERT_DATABASE_NOT_SUPPORTED" -> "当前数据库不支持 UPSERT";
             case "SPATIAL_JDBC_UNSUPPORTED" -> "当前数据库不支持 Geometry JDBC 读写";
             case "SPATIAL_TARGET_METADATA_UNAVAILABLE" -> "目标 Geometry 字段缺少写入所需元数据";

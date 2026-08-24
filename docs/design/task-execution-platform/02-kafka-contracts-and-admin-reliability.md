@@ -134,6 +134,26 @@ JSON 顶层字段是权威值；Header 用于运维观察和未来路由，二�
 
 `reason` 是安全短文本，最长 500，不允许传递异常堆栈。
 
+### 5.3 FORCE_TERMINATE_EXECUTION
+
+```json
+{
+  "messageVersion": 1,
+  "messageId": "uuid",
+  "messageType": "FORCE_TERMINATE_EXECUTION",
+  "occurredAt": "2026-07-17T12:06:00Z",
+  "engineId": "uuid",
+  "executionId": "uuid",
+  "runId": "uuid",
+  "attempt": 1,
+  "reason": "用户请求强制终止"
+}
+```
+
+强制终止是取消或实时正常停止无法收敛时的人工升级路径。Dispatcher 必须跳过 Runner
+正常退出宽限期并调用 Backend 硬终止能力；该命令仍通过 Outbox 和 Command Topic 传递，
+不增加 HTTP 执行旁路。
+
 ## 6. Runner 到 Dispatcher 事件
 
 Runner 只发布原始运行信号，Dispatcher 才能发布 Admin 可消费的权威执行事件。

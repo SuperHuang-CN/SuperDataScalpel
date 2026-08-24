@@ -120,7 +120,7 @@ URLClassLoader加载 Job Class。Java默认父优先保证 Spark、Scala、Hadoo
 批 Job Class必须 public、实现 `SparkBatchJob`并提供 public无参构造。执行结果使用 result v6，
 `taskType=SPARK_JAR` 且 `nodeResults=[]`。JAR下载、摘要、类加载、构造和用户执行失败使用独立稳定错误码；
 Cause链中的真实 Spark/JDBC错误优先分类。所有日志和错误必须隐藏签名 URL、对象 Key、凭据和Manifest。
-Dispatcher继续读取v2～v5历史结果，但只有v6允许携带 `userJobObservability`。
+Dispatcher继续读取v2～v7结果；v6及以上允许携带 `userJobObservability`。
 
 ## 实时查询托管与Checkpoint
 

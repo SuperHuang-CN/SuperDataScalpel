@@ -209,8 +209,13 @@ Spark Canvas 使用编译阶段已经建立的 Schema-only Dataset，在不触�
 
 - `GET /api/v1/models/{modelId}/lineage/table`；
 - `GET /api/v1/models/{modelId}/lineage/fields/{fieldId}`。
+- `POST /api/v1/models/{modelId}/lineage/actions/query-fields`，请求携带 `fieldIds`、方向和 1～2 层深度。
 
-两个接口均要求 `model.view`、`task.view` 和 `service.view`，默认查询上下游两次任务转换。图设置固定节点上限，超限返回 `truncated=true` 和警告。当前没有血缘生成器接入时返回只含根节点的正式空图，不生成示例数据。
+模型接口均要求 `model.view`、`task.view` 和 `service.view`，默认查询上下游两次任务转换。批量字段请求中，`fieldIds=null` 表示按模型顺序默认前 20 个，空数组表示明确不展示字段，显式选择去重后最多 50 个。旧单字段接口继续保留并委托批量查询。图固定最多 200 个节点和 600 条边，超限返回 `truncated=true` 和字段级警告。当前没有血缘生成器接入时返回正式空图，不生成示例数据。
+
+批量字段响应在节点和边上携带查询期计算的 `focusFieldKeys`；模型和服务使用模型字段 UUID 字符串，任务使用快照中的稳定 `fieldKey`。共享节点、共享边合并全部路径键，路径键不写入血缘快照，也不改变生成器接入契约。前端利用该索引在字段悬停时临时高亮路径、点击时锁定，点击空白或按 Esc 清除聚焦。
+
+字段节点同时返回 `fieldOwner`，包含所属资产的稳定键、资产类型、表头名称、表头说明和字段顺序。该信息只用于查询展示分组：前端按所属模型、JDBC 表或外部资源生成动态高度的表卡片，字段作为卡片内的独立行和连接端口；不得根据字段 `subtitle` 或显示名称猜测所属表，也不得把该查询期分组信息写回任务血缘快照。
 
 模型下游还会在查询期组合当前标准数据服务关系：
 
@@ -224,6 +229,7 @@ Spark Canvas 使用编译阶段已经建立的 Schema-only Dataset，在不触�
 
 - `GET /api/v1/data-services/{serviceId}/lineage/table?depth=1|2`；
 - `GET /api/v1/data-services/{serviceId}/lineage/fields/{fieldId}?depth=1|2`。
+- `POST /api/v1/data-services/{serviceId}/lineage/actions/query-fields`，一次查询当前关联模型的多个字段。
 
 接口要求 `service.view`、`model.view` 和 `task.view`，以服务为当前根节点，只向上展开关联模型及其最多两次任务转换。草稿标准服务允许在自身详情查看当前定义关系；SQL、脚本或未配置标准定义返回正式空状态。
 
@@ -231,5 +237,8 @@ Spark Canvas 使用编译阶段已经建立的 Schema-only Dataset，在不触�
 
 - `GET /api/v1/tasks/{taskId}/lineage/table?flowKey=...`；
 - `GET /api/v1/tasks/{taskId}/lineage/fields?flowKey=...&outputFieldKey=...`。
+- `POST /api/v1/tasks/{taskId}/lineage/actions/query-fields`，请求固定一个 `flowKey`，并可携带最多 50 个 `outputFieldKeys`。
+
+服务和任务批量接口同样以 `null` 表示默认前 20 个、空数组表示空选择。启用标准服务的默认字段只从部署快照仍能精确匹配的暴露字段中选择；草稿和停用服务使用当前模型字段。任务批量查询不会合并不同 `flowKey`，查询边、对端字段和字段用途均按当前链路与当前字段集合批量读取。
 
 响应同时返回可选 flow 和输出字段，任务页按输出链路隔离展示模型、JDBC 表与外部资源。任务字段图以选中输出字段的值来源为主路径，同时以独立 `FIELD_EFFECT` 边展示该 flow 中影响输出行的 Join、过滤、分组、排序和窗口分区字段，不将它们伪造成所选字段的值来源。没有当前快照时返回正式空状态；字段链路只有 `MODEL_ONLY` 时明确提示只有表级覆盖。

@@ -195,7 +195,7 @@ describe('SqlServiceEditor', () => {
     const user = userEvent.setup();
     render(<Harness />);
 
-    await selectOption(user, 'PostgreSQL 数据源', '数据源一（source_one）');
+    await selectOption(user, 'SQL 数据源', '数据源一（source_one）');
     const chooseModels = screen.getByRole('button', { name: /选择模型/ });
     await waitFor(() => expect(chooseModels).toBeEnabled());
     await user.click(chooseModels);
@@ -226,13 +226,13 @@ describe('SqlServiceEditor', () => {
     await user.click(screen.getByRole('button', { name: '显示测试结果' }));
     expect(screen.getByText('SQL 测试通过，耗时 5 ms')).toBeInTheDocument();
 
-    await selectOption(user, 'PostgreSQL 数据源', '数据源二（source_two）');
+    await selectOption(user, 'SQL 数据源', '数据源二（source_two）');
     expect(screen.getByText('切换数据源将清空当前关联的 2 个模型和 SQL 测试结果。')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /取\s*消/ }));
     expect(screen.getByTestId('form-values')).toHaveTextContent('"dataSourceId":"source-1"');
     expect(screen.getByText('已关联 2 个模型')).toBeInTheDocument();
 
-    await selectOption(user, 'PostgreSQL 数据源', '数据源二（source_two）');
+    await selectOption(user, 'SQL 数据源', '数据源二（source_two）');
     await user.click(screen.getByRole('button', { name: '切换并清空' }));
     await waitFor(() => expect(screen.getByTestId('form-values')).toHaveTextContent('"dataSourceId":"source-2"'));
     expect(screen.queryByText('customer')).not.toBeInTheDocument();

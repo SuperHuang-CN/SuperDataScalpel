@@ -3,7 +3,7 @@ import { Alert, Button, Card, Divider, Space, Tag, Typography } from 'antd';
 import type { AssistantChangeSet } from '../model/assistant';
 
 interface DirectoryChangeSetCardProps {
-  changeSet: AssistantChangeSet;
+  changeSet: Extract<AssistantChangeSet, { changeType: 'DIRECTORY' }>;
   canManage: boolean;
   approving: boolean;
   rejecting: boolean;

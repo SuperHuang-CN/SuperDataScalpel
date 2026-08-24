@@ -19,7 +19,7 @@ export const topNSpec = createCanvasNodeSpec({
   canvasView: topNCanvasView,
   supportedModes: ['BATCH'],
   introducedInMinor: 0,
-  graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createTopNConfiguration,
   summarize: summarizeTopN,
   collectMetadataReferences: collectNoMetadataReferences,

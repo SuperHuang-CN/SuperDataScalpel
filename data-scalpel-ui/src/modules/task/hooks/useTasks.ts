@@ -3,6 +3,7 @@ import { invalidateDirectoryTree } from '../../directory';
 import type { SearchRequest } from '../../../shared/search';
 import {
   cancelTaskRun,
+  acceptTaskCanvasProposal,
   createTask,
   createTaskSchedule,
   deleteTask,
@@ -14,9 +15,11 @@ import {
   executeTaskScheduleCommand,
   executeTaskStreamingCommand,
   fetchTask,
+  fetchTaskCanvasProposal,
   fetchTaskModelRelations,
   fetchTaskTableLineage,
   fetchTaskFieldLineage,
+  queryTaskFieldLineage,
   fetchModelRelatedTasks,
   fetchTaskRun,
   fetchTaskRunResultArtifact,
@@ -30,6 +33,7 @@ import {
   fetchTaskStreamingConfiguration,
   fetchTaskStreamingStatus,
   fetchTasks,
+  forceTerminateTaskRun,
   runTask,
   updateTask,
   updateCanvasTaskDefinition,
@@ -91,6 +95,27 @@ export const useCanvasTaskDefinition = (id: string | undefined, enabled = true) 
   queryFn: () => fetchCanvasTaskDefinition(id as string),
   enabled: Boolean(id) && enabled,
 });
+
+export const useTaskCanvasProposal = (id: string | undefined) => useQuery({
+  queryKey: ['assistant', 'task-canvas-proposal', id],
+  queryFn: () => fetchTaskCanvasProposal(id as string),
+  enabled: Boolean(id),
+  retry: false,
+});
+
+export const useAcceptTaskCanvasProposal = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, taskId }: { id: string; taskId: string }) => acceptTaskCanvasProposal(id, taskId),
+    onSuccess: async (changeSet) => {
+      queryClient.setQueryData(['assistant', 'task-canvas-proposal', changeSet.id], changeSet);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['assistant', 'sessions'] }),
+        queryClient.invalidateQueries({ queryKey: ['assistant', 'session'] }),
+      ]);
+    },
+  });
+};
 
 export const useModelQualityTaskDefinition = (id: string | undefined, enabled = true) => useQuery({
   queryKey: [tasksKey, id, 'model-quality-definition'],
@@ -170,6 +195,19 @@ export const useTaskLineage = (
     ? fetchTaskTableLineage(id as string, flowKey)
     : fetchTaskFieldLineage(id as string, flowKey, outputFieldKey),
   enabled: Boolean(id) && enabled,
+  placeholderData: (previous) => previous,
+});
+
+export const useTaskFieldLineage = (
+  id: string | undefined,
+  flowKey: string | undefined,
+  outputFieldKeys: string[] | null,
+  enabled = true,
+) => useQuery({
+  queryKey: [tasksKey, id, 'lineage', 'FIELD_BATCH', flowKey ?? null, outputFieldKeys],
+  queryFn: ({ signal }) => queryTaskFieldLineage(id as string, flowKey, outputFieldKeys, signal),
+  enabled: Boolean(id) && enabled,
+  staleTime: 30_000,
   placeholderData: (previous) => previous,
 });
 
@@ -377,6 +415,20 @@ export const useCancelTaskRun = () => {
     onSuccess: async (run) => {
       queryClient.setQueryData([taskRunsKey, run.id], run);
       await queryClient.invalidateQueries({ queryKey: [tasksKey, run.taskId, 'runs'] });
+    },
+  });
+};
+
+export const useForceTerminateTaskRun = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: forceTerminateTaskRun,
+    onSuccess: async (run) => {
+      queryClient.setQueryData([taskRunsKey, run.id], run);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, run.taskId, 'runs'] });
+      if (run.streamingDeploymentId) {
+        await queryClient.invalidateQueries({ queryKey: [tasksKey, run.taskId, 'streaming-status'] });
+      }
     },
   });
 };

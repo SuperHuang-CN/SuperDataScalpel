@@ -2,14 +2,17 @@ import {
   DeleteOutlined,
   DownOutlined,
   PlusOutlined,
+  SettingOutlined,
   UpOutlined,
 } from '@ant-design/icons';
 import {
   Alert,
   Button,
   Card,
+  Empty,
   Form,
   Input,
+  Modal,
   Radio,
   Select,
   Space,
@@ -21,7 +24,6 @@ import {
   useImperativeHandle,
   useMemo,
   useState,
-  type Ref,
 } from 'react';
 import {
   CANVAS_EXPRESSION_MAX_CASE_BRANCHES,
@@ -31,15 +33,19 @@ import {
   type CanvasColumnSchema,
   type CanvasExpression,
   type CanvasLiteral,
-  type CanvasNodeConfigurationUpdate,
-  type CanvasNodeDefinition,
-  type CanvasNodeValidationResult,
+  type CanvasRuntimeValue,
+  type CanvasTableSchema,
   type ColumnDerivation,
   type DeriveBinaryOperator,
   type DeriveColumnsConfiguration,
+  type DeriveColumnsOperation,
   type DeriveFunction,
 } from '../../canvasTypes';
-import type { CanvasNodeInspectorHandle } from '../CanvasNodeInspector';
+import type { CanvasNodeInspectorComponentProps } from '../../nodes/nodeSpec';
+import {
+  ProcessorTablePickerModal,
+  type ProcessorOperationDraft,
+} from '../../nodes/inspectorAdapter';
 import { FilterConditionTreeEditor } from './FilterProcessorInspector';
 import {
   createDefaultFilterCondition,
@@ -47,15 +53,7 @@ import {
 } from './filterConditionDraft';
 import { ProcessorValidationIssues } from './ProcessorValidationIssues';
 
-interface DeriveColumnsProcessorInspectorProps {
-  node: Extract<CanvasNodeDefinition, { type: 'DERIVE_COLUMNS' }>;
-  executionMode: 'BATCH' | 'STREAMING';
-  validation: CanvasNodeValidationResult | undefined;
-  validationUnavailableMessage: string | null;
-  onApply: (update: CanvasNodeConfigurationUpdate) => void;
-  onDirtyChange: (dirty: boolean) => void;
-  inspectorRef: Ref<CanvasNodeInspectorHandle>;
-}
+type DeriveColumnsProcessorInspectorProps = CanvasNodeInspectorComponentProps<typeof CanvasNodeType.DeriveColumns>;
 
 interface DeriveColumnsFormValues {
   sourceTableName: string;
@@ -65,9 +63,30 @@ interface DeriveColumnsFormValues {
 const expressionKindOptions: Array<{ value: CanvasExpression['kind']; label: string }> = [
   { value: 'COLUMN', label: '字段引用' },
   { value: 'LITERAL', label: '固定值' },
+  { value: 'RUNTIME_VALUE', label: '运行时变量' },
   { value: 'BINARY', label: '二元运算' },
   { value: 'FUNCTION', label: '函数' },
   { value: 'CASE_WHEN', label: '条件 CASE' },
+];
+
+const runtimeValueOptions: Array<{
+  value: CanvasRuntimeValue;
+  label: string;
+  type: 'STRING' | 'TIMESTAMP';
+  help: string;
+}> = [
+  {
+    value: 'EXECUTION_ID',
+    label: '本次执行 Attempt ID',
+    type: 'STRING',
+    help: '每次实际执行唯一，同一次 Attempt 内固定。',
+  },
+  {
+    value: 'EXECUTION_STARTED_AT',
+    label: '本次执行开始时间',
+    type: 'TIMESTAMP',
+    help: '同一次 Attempt 内固定，不是逐行当前时间。',
+  },
 ];
 
 const binaryOperatorOptions: Array<{ value: DeriveBinaryOperator; label: string }> = [
@@ -79,19 +98,19 @@ const binaryOperatorOptions: Array<{ value: DeriveBinaryOperator; label: string 
 ];
 
 const functionOptions: Array<{ value: DeriveFunction; label: string }> = [
-  'TRIM',
-  'LTRIM',
-  'RTRIM',
-  'LOWER',
-  'UPPER',
-  'REPLACE',
-  'SUBSTRING',
-  'COALESCE',
-  'CONCAT',
-  'DATE_FORMAT',
-  'DATE_ADD',
-  'DATE_SUB',
-].map((value) => ({ value: value as DeriveFunction, label: value }));
+  { value: 'TRIM', label: 'TRIM · 去除两端空白' },
+  { value: 'LTRIM', label: 'LTRIM · 去除左侧空白' },
+  { value: 'RTRIM', label: 'RTRIM · 去除右侧空白' },
+  { value: 'LOWER', label: 'LOWER · 转为小写' },
+  { value: 'UPPER', label: 'UPPER · 转为大写' },
+  { value: 'REPLACE', label: 'REPLACE · 替换文本' },
+  { value: 'SUBSTRING', label: 'SUBSTRING · 截取文本' },
+  { value: 'COALESCE', label: 'COALESCE · 首个非空值' },
+  { value: 'CONCAT', label: 'CONCAT · 拼接文本' },
+  { value: 'DATE_FORMAT', label: 'DATE_FORMAT · 格式化日期' },
+  { value: 'DATE_ADD', label: 'DATE_ADD · 增加天数' },
+  { value: 'DATE_SUB', label: 'DATE_SUB · 减少天数' },
+];
 
 const literalTypeOptions: Array<{ value: CanvasLiteral['dataType']; label: string }> = [
   'BOOLEAN',
@@ -161,6 +180,8 @@ const defaultExpression = (
       return columnExpression(columns);
     case 'LITERAL':
       return literalExpression();
+    case 'RUNTIME_VALUE':
+      return { kind: 'RUNTIME_VALUE', value: 'EXECUTION_ID' };
     case 'BINARY':
       return {
         kind: 'BINARY',
@@ -189,15 +210,17 @@ const defaultExpression = (
 const expressionSummary = (expression: CanvasExpression): string => {
   switch (expression.kind) {
     case 'COLUMN':
-      return expression.columnName ? `字段 ${expression.columnName}` : '未选择字段';
+      return expression.columnName || '未选择字段';
     case 'LITERAL':
-      return `${expression.literal.dataType} Literal`;
+      return `<${expression.literal.dataType}>`;
+    case 'RUNTIME_VALUE':
+      return `$${expression.value}`;
     case 'BINARY':
-      return `${expression.operator} 运算`;
+      return `${expressionSummary(expression.left)} ${binaryOperatorOptions.find((option) => option.value === expression.operator)?.label.slice(-1) ?? expression.operator} ${expressionSummary(expression.right)}`;
     case 'FUNCTION':
-      return `${expression.function}(${expression.arguments.length})`;
+      return `${expression.function}(${expression.arguments.map(expressionSummary).join(', ')})`;
     case 'CASE_WHEN':
-      return `CASE · ${expression.branches.length} 个分支`;
+      return `CASE(${expression.branches.length} 个分支)`;
   }
 };
 
@@ -205,6 +228,7 @@ const expressionNodeCount = (expression: CanvasExpression): number => {
   switch (expression.kind) {
     case 'COLUMN':
     case 'LITERAL':
+    case 'RUNTIME_VALUE':
       return 1;
     case 'BINARY':
       return 1 + expressionNodeCount(expression.left) + expressionNodeCount(expression.right);
@@ -227,6 +251,9 @@ const validateExpressionDraft = (expression: CanvasExpression): string | null =>
       return expression.columnName ? null : '表达式中存在未选择的字段引用';
     case 'LITERAL':
       return expression.literal.value === null ? '表达式中存在未填写的 Literal' : null;
+    case 'RUNTIME_VALUE':
+      return runtimeValueOptions.some((option) => option.value === expression.value)
+        ? null : '表达式中存在不受支持的运行时变量';
     case 'BINARY':
       return validateExpressionDraft(expression.left)
         ?? validateExpressionDraft(expression.right);
@@ -256,6 +283,7 @@ interface ExpressionEditorProps {
   expression: CanvasExpression;
   columns: CanvasColumnSchema[];
   depth: number;
+  executionMode: 'BATCH' | 'STREAMING';
   onChange: (expression: CanvasExpression) => void;
 }
 
@@ -263,6 +291,7 @@ const ExpressionEditor = ({
   expression,
   columns,
   depth,
+  executionMode,
   onChange,
 }: ExpressionEditorProps) => {
   const nestedDisabled = depth >= CANVAS_EXPRESSION_MAX_DEPTH;
@@ -270,16 +299,20 @@ const ExpressionEditor = ({
     ...option,
     disabled: nestedDisabled
       && option.value !== 'COLUMN'
-      && option.value !== 'LITERAL',
+      && option.value !== 'LITERAL'
+      && option.value !== 'RUNTIME_VALUE',
   }));
-  const editorHeader = (
+  const kindSelect = (
     <Select
       size="small"
+      className="canvas-expression-kind-select"
       value={expression.kind}
       options={kindOptions}
+      popupMatchSelectWidth={240}
       onChange={(kind) => onChange(defaultExpression(kind, columns))}
     />
   );
+  const nodeClassName = `canvas-expression-node${depth > 1 ? ' is-nested' : ''}`;
 
   if (expression.kind === 'COLUMN') {
     const missing = Boolean(
@@ -287,10 +320,15 @@ const ExpressionEditor = ({
       && !columns.some((column) => column.name === expression.columnName),
     );
     return (
-      <Card size="small" className="canvas-expression-card" title={editorHeader}>
+      <div className={nodeClassName}>
+        <div className="canvas-expression-node-row">
+          {kindSelect}
         <Select
+          size="small"
+          className="canvas-expression-value-select"
           showSearch
           optionFilterProp="label"
+          popupMatchSelectWidth={320}
           status={missing ? 'error' : undefined}
           value={expression.columnName || undefined}
           placeholder="选择来源字段"
@@ -307,27 +345,35 @@ const ExpressionEditor = ({
           ]}
           onChange={(columnName) => onChange({ ...expression, columnName })}
         />
+        </div>
         {missing && (
-          <Typography.Text type="danger">原字段已失效，引用值已保留。</Typography.Text>
+          <Typography.Text className="canvas-expression-node-help" type="danger">
+            原字段已失效，引用值已保留。
+          </Typography.Text>
         )}
-      </Card>
+      </div>
     );
   }
 
   if (expression.kind === 'LITERAL') {
     return (
-      <Card size="small" className="canvas-expression-card" title={editorHeader}>
-        <Space.Compact block>
+      <div className={nodeClassName}>
+        <div className="canvas-expression-node-row">
+          {kindSelect}
+          <Space.Compact className="canvas-expression-literal-editor">
           <Select
+            size="small"
             className="canvas-expression-literal-type"
             value={expression.literal.dataType}
             options={literalTypeOptions}
+            popupMatchSelectWidth={180}
             onChange={(dataType) => onChange({
               ...expression,
               literal: { dataType, value: expression.literal.value ?? '' },
             })}
           />
           <Input
+            size="small"
             autoComplete="off"
             value={expression.literal.value ?? ''}
             placeholder="稳定字符串值"
@@ -337,33 +383,81 @@ const ExpressionEditor = ({
             })}
           />
         </Space.Compact>
-      </Card>
+        </div>
+      </div>
+    );
+  }
+
+  if (expression.kind === 'RUNTIME_VALUE') {
+    const selected = runtimeValueOptions.find((option) => option.value === expression.value);
+    return (
+      <div className={nodeClassName}>
+        <div className="canvas-expression-node-row">
+          {kindSelect}
+          <Select
+            size="small"
+            className="canvas-expression-value-select"
+            value={expression.value}
+            popupMatchSelectWidth={320}
+            options={runtimeValueOptions.map((option) => ({
+              value: option.value,
+              label: `${option.label} · ${option.type}`,
+            }))}
+            onChange={(value: CanvasRuntimeValue) => onChange({
+              kind: 'RUNTIME_VALUE',
+              value,
+            })}
+          />
+        </div>
+        <div className="canvas-expression-node-help">
+          <Typography.Text type="secondary">由执行引擎注入；设计态只分析类型。{selected?.help}</Typography.Text>
+          {executionMode === 'STREAMING' && (
+            <Typography.Text type="secondary">
+              流任务中在整个 Attempt 内固定，不是微批时间。
+            </Typography.Text>
+          )}
+        </div>
+      </div>
     );
   }
 
   if (expression.kind === 'BINARY') {
     return (
-      <Card size="small" className="canvas-expression-card" title={editorHeader}>
+      <div className={nodeClassName}>
+        <div className="canvas-expression-node-row">
+          {kindSelect}
         <Select
+          size="small"
+          className="canvas-expression-value-select"
           value={expression.operator}
           options={binaryOperatorOptions}
+          popupMatchSelectWidth={220}
           onChange={(operator) => onChange({ ...expression, operator })}
         />
-        <div className="canvas-expression-children">
-          <ExpressionEditor
-            expression={expression.left}
-            columns={columns}
-            depth={depth + 1}
-            onChange={(left) => onChange({ ...expression, left })}
-          />
-          <ExpressionEditor
-            expression={expression.right}
-            columns={columns}
-            depth={depth + 1}
-            onChange={(right) => onChange({ ...expression, right })}
-          />
         </div>
-      </Card>
+        <div className="canvas-expression-children">
+          <div className="canvas-expression-argument">
+            <Typography.Text type="secondary">左值</Typography.Text>
+            <ExpressionEditor
+              expression={expression.left}
+              columns={columns}
+              depth={depth + 1}
+              executionMode={executionMode}
+              onChange={(left) => onChange({ ...expression, left })}
+            />
+          </div>
+          <div className="canvas-expression-argument">
+            <Typography.Text type="secondary">右值</Typography.Text>
+            <ExpressionEditor
+              expression={expression.right}
+              columns={columns}
+              depth={depth + 1}
+              executionMode={executionMode}
+              onChange={(right) => onChange({ ...expression, right })}
+            />
+          </div>
+        </div>
+      </div>
     );
   }
 
@@ -371,11 +465,17 @@ const ExpressionEditor = ({
     const variableArguments = expression.function === 'COALESCE'
       || expression.function === 'CONCAT';
     return (
-      <Card size="small" className="canvas-expression-card" title={editorHeader}>
-        <div className="canvas-expression-function-heading">
+      <div className={nodeClassName}>
+        <div className="canvas-expression-node-row">
+          {kindSelect}
           <Select
+            size="small"
+            showSearch
+            optionFilterProp="label"
+            className="canvas-expression-value-select"
             value={expression.function}
             options={functionOptions}
+            popupMatchSelectWidth={300}
             onChange={(functionName) => onChange({
               ...expression,
               function: functionName,
@@ -391,7 +491,7 @@ const ExpressionEditor = ({
                 arguments: [...expression.arguments, columnExpression(columns)],
               })}
             >
-              参数
+              添加参数
             </Button>
           )}
         </div>
@@ -403,6 +503,7 @@ const ExpressionEditor = ({
                 expression={argument}
                 columns={columns}
                 depth={depth + 1}
+                executionMode={executionMode}
                 onChange={(nextArgument) => {
                   const argumentsCopy = [...expression.arguments];
                   argumentsCopy[index] = nextArgument;
@@ -411,37 +512,41 @@ const ExpressionEditor = ({
               />
               {variableArguments && expression.arguments.length > 2 && (
                 <Button
+                  className="canvas-expression-remove-argument"
                   type="text"
                   size="small"
                   danger
                   icon={<DeleteOutlined />}
+                  aria-label={`删除参数 ${index + 1}`}
                   onClick={() => onChange({
                     ...expression,
                     arguments: expression.arguments.filter(
                       (_, argumentIndex) => argumentIndex !== index,
                     ),
                   })}
-                >
-                  删除参数
-                </Button>
+                />
               )}
             </div>
           ))}
         </div>
-      </Card>
+      </div>
     );
   }
 
   return (
-    <Card size="small" className="canvas-expression-card" title={editorHeader}>
+    <div className={nodeClassName}>
+      <div className="canvas-expression-node-row">
+        {kindSelect}
+        <Typography.Text type="secondary">{expression.branches.length} 个 WHEN 分支</Typography.Text>
+      </div>
       <Space orientation="vertical" size={8} className="canvas-expression-case">
         {expression.branches.map((branch, index) => (
-          <Card
-            size="small"
+          <div
             key={index}
             className="canvas-expression-case-branch"
-            title={`WHEN ${index + 1}`}
-            extra={(
+          >
+            <div className="canvas-expression-case-branch-heading">
+              <Typography.Text strong>WHEN {index + 1}</Typography.Text>
               <Button
                 type="text"
                 size="small"
@@ -456,8 +561,7 @@ const ExpressionEditor = ({
                   ),
                 })}
               />
-            )}
-          >
+            </div>
             <Typography.Text type="secondary">条件</Typography.Text>
             <FilterConditionTreeEditor
               condition={branch.condition}
@@ -473,13 +577,14 @@ const ExpressionEditor = ({
               expression={branch.result}
               columns={columns}
               depth={depth + 1}
+              executionMode={executionMode}
               onChange={(result) => {
                 const branches = [...expression.branches];
                 branches[index] = { ...branch, result };
                 onChange({ ...expression, branches });
               }}
             />
-          </Card>
+          </div>
         ))}
         <Button
           size="small"
@@ -511,15 +616,27 @@ const ExpressionEditor = ({
             expression={expression.elseExpression}
             columns={columns}
             depth={depth + 1}
+            executionMode={executionMode}
             onChange={(elseExpression) => onChange({ ...expression, elseExpression })}
           />
         )}
       </Space>
-    </Card>
+    </div>
   );
 };
 
-export const DeriveColumnsProcessorInspector = ({
+const automaticDerivationStatus = (
+  derivation: ColumnDerivation,
+  columns: readonly CanvasColumnSchema[] | undefined,
+): string => {
+  if (!derivation.targetColumnName.trim()) return '自动 · 等待目标字段名';
+  if (!columns) return '自动 · 待判断';
+  return columns.some((column) => column.name === derivation.targetColumnName)
+    ? '自动 · 覆盖已有字段'
+    : '自动 · 新增字段';
+};
+
+export const LegacyDeriveColumnsProcessorInspector = ({
   node,
   executionMode,
   validation,
@@ -657,7 +774,6 @@ export const DeriveColumnsProcessorInspector = ({
           onClick={() => {
             const nextDerivations = [...derivations, {
               targetColumnName: '',
-              replaceExisting: false,
               expression: columnExpression(sourceColumns),
             }];
             updateDerivations(nextDerivations, nextDerivations.length - 1);
@@ -690,7 +806,7 @@ export const DeriveColumnsProcessorInspector = ({
                 {derivation.targetColumnName || `未命名字段 ${index + 1}`}
               </Typography.Text>
               <Typography.Text type="secondary">
-                {derivation.replaceExisting ? '覆盖' : '新增'} · {expressionSummary(derivation.expression)}
+                {automaticDerivationStatus(derivation, sourceTable?.columns)} · {expressionSummary(derivation.expression)}
               </Typography.Text>
             </div>
             <Space size={0}>
@@ -781,38 +897,11 @@ export const DeriveColumnsProcessorInspector = ({
                 updateDerivations(nextDerivations);
               }}
             />
-            <Radio.Group
-              optionType="button"
-              buttonStyle="solid"
-              value={selectedDerivation.replaceExisting ? 'REPLACE' : 'ADD'}
-              options={[
-                { value: 'ADD', label: '新增字段' },
-                { value: 'REPLACE', label: '覆盖字段' },
-              ]}
-              onChange={(event) => {
-                const nextDerivations = [...derivations];
-                nextDerivations[selectedIndex] = {
-                  ...selectedDerivation,
-                  replaceExisting: event.target.value === 'REPLACE',
-                };
-                updateDerivations(nextDerivations);
-              }}
-            />
-            {selectedDerivation.replaceExisting
-              && sourceTable
-              && !sourceColumns.some(
-                (column) => column.name === selectedDerivation.targetColumnName,
-              ) && (
-              <Alert showIcon type="error" title="覆盖模式要求目标字段已存在于原始来源 Schema" />
-            )}
-            {!selectedDerivation.replaceExisting
-              && sourceColumns.some(
-                (column) => column.name === selectedDerivation.targetColumnName,
-              ) && (
-              <Alert showIcon type="error" title="新增模式的目标字段不能与原始字段同名" />
-            )}
+            <Typography.Text type="secondary">
+              {automaticDerivationStatus(selectedDerivation, sourceTable?.columns)}
+            </Typography.Text>
             {executionMode === 'STREAMING'
-              && selectedDerivation.replaceExisting
+              && sourceColumns.some((column) => column.name === selectedDerivation.targetColumnName)
               && selectedDerivation.targetColumnName === sourceTable?.eventTimeColumn && (
               <Alert showIcon type="error" title="流模式不能覆盖事件时间字段" />
             )}
@@ -820,6 +909,7 @@ export const DeriveColumnsProcessorInspector = ({
               expression={selectedDerivation.expression}
               columns={sourceColumns}
               depth={1}
+              executionMode={executionMode}
               onChange={(expression) => {
                 const nextDerivations = [...derivations];
                 nextDerivations[selectedIndex] = {
@@ -834,4 +924,404 @@ export const DeriveColumnsProcessorInspector = ({
       )}
     </Space>
   );
+};
+
+type RuleSelection = { scope: 'GLOBAL' | 'LOCAL'; index: number } | null;
+
+const normalizedConfiguration = (configuration: DeriveColumnsConfiguration): Required<Pick<DeriveColumnsConfiguration, 'globalDerivations' | 'operations'>> => ({
+  globalDerivations: structuredClone(configuration.globalDerivations ?? []),
+  operations: structuredClone(configuration.operations ?? []),
+});
+
+const movedRuleSelection = (
+  selection: RuleSelection,
+  scope: 'GLOBAL' | 'LOCAL',
+  index: number,
+  offset: -1 | 1,
+): RuleSelection => {
+  if (selection?.scope !== scope) return selection;
+  const target = index + offset;
+  if (selection.index === index) return { scope, index: target };
+  if (selection.index === target) return { scope, index };
+  return selection;
+};
+
+const commonColumns = (
+  operations: readonly DeriveColumnsOperation[],
+  inputTables: readonly CanvasTableSchema[],
+): CanvasColumnSchema[] => {
+  const selectedTables = operations
+    .map((operation) => inputTables.find((table) => table.name === operation.sourceTableName))
+    .filter((table): table is CanvasTableSchema => Boolean(table));
+  if (selectedTables.length === 0) return [];
+  return selectedTables[0].columns.filter((column) => selectedTables.every((table) => (
+    table.columns.some((candidate) => candidate.name === column.name)
+  )));
+};
+
+const globalDerivationStatus = (
+  derivation: ColumnDerivation,
+  operations: readonly DeriveColumnsOperation[],
+  inputTables: readonly CanvasTableSchema[],
+): string => {
+  if (!derivation.targetColumnName.trim()) return '自动 · 等待目标字段名';
+  let existingTargetCount = 0;
+  let addCount = 0;
+  let pendingCount = 0;
+  for (const operation of operations) {
+    const table = inputTables.find((candidate) => candidate.name === operation.sourceTableName);
+    if (!table) {
+      pendingCount++;
+    } else if (table.columns.some((column) => column.name === derivation.targetColumnName)) {
+      existingTargetCount++;
+    } else {
+      addCount++;
+    }
+  }
+  const states = [`自动 · 覆盖 ${existingTargetCount} 张`, `新增 ${addCount} 张`];
+  if (pendingCount > 0) states.push(`待判断 ${pendingCount} 张`);
+  return states.join(' · ');
+};
+
+interface DerivationRuleEditorProps {
+  derivation: ColumnDerivation | null;
+  columns: CanvasColumnSchema[];
+  writeStatus: string;
+  executionMode: 'BATCH' | 'STREAMING';
+  eventTimeColumn: string | null;
+  readOnly?: boolean;
+  onChange: (derivation: ColumnDerivation) => void;
+  onEditGlobal?: () => void;
+}
+
+const DerivationRuleEditor = ({
+  derivation,
+  columns,
+  writeStatus,
+  executionMode,
+  eventTimeColumn,
+  readOnly = false,
+  onChange,
+  onEditGlobal,
+}: DerivationRuleEditorProps) => {
+  if (!derivation) return <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="从左侧选择或添加一条规则" />;
+  if (readOnly) {
+    return <Card size="small" title="全局规则详情" extra={<Tag>只读</Tag>}>
+      <Space orientation="vertical" size={12} className="canvas-expression-editor">
+        <div><Typography.Text type="secondary">目标字段</Typography.Text><Typography.Text code>{derivation.targetColumnName || '未命名字段'}</Typography.Text></div>
+        <div><Typography.Text type="secondary">字段写入</Typography.Text><Typography.Text>{writeStatus}</Typography.Text></div>
+        <div><Typography.Text type="secondary">表达式</Typography.Text><Typography.Text>{expressionSummary(derivation.expression)}</Typography.Text></div>
+        <Button onClick={onEditGlobal}>前往全局配置</Button>
+      </Space>
+    </Card>;
+  }
+  const targetExists = columns.some((column) => column.name === derivation.targetColumnName);
+  return <Card
+    size="small"
+    className="canvas-derive-editor"
+    title="规则详细配置"
+    extra={<Tag>{expressionNodeCount(derivation.expression)} 个表达式节点</Tag>}
+  >
+    <Space orientation="vertical" size={10} className="canvas-expression-editor">
+      <div className="canvas-derive-rule-field">
+        <Typography.Text strong>目标字段 code</Typography.Text>
+        <Input
+          autoComplete="off"
+          value={derivation.targetColumnName}
+          placeholder="例如 source_record_hash"
+          onChange={(event) => onChange({ ...derivation, targetColumnName: event.target.value })}
+        />
+        <Typography.Text type="secondary">{writeStatus}</Typography.Text>
+      </div>
+      {executionMode === 'STREAMING' && targetExists
+        && derivation.targetColumnName === eventTimeColumn && (
+        <Alert showIcon type="error" title="流模式不能覆盖事件时间字段" />
+      )}
+      <div className="canvas-expression-preview">
+        <Typography.Text type="secondary">表达式预览</Typography.Text>
+        <Typography.Text code ellipsis>
+          {(derivation.targetColumnName || '目标字段')} = {expressionSummary(derivation.expression)}
+        </Typography.Text>
+      </div>
+      <ExpressionEditor
+        expression={derivation.expression}
+        columns={columns}
+        depth={1}
+        executionMode={executionMode}
+        onChange={(expression) => onChange({ ...derivation, expression })}
+      />
+    </Space>
+  </Card>;
+};
+
+interface RuleListProps {
+  title: string;
+  rules: readonly ColumnDerivation[];
+  selection: RuleSelection;
+  scope: 'GLOBAL' | 'LOCAL';
+  readOnly?: boolean;
+  onSelect: (selection: RuleSelection) => void;
+  onMove?: (index: number, offset: -1 | 1) => void;
+  onRemove?: (index: number) => void;
+  onAdd?: () => void;
+}
+
+const RuleList = ({
+  title, rules, selection, scope, readOnly = false, onSelect, onMove, onRemove, onAdd,
+}: RuleListProps) => <section className="canvas-derive-rule-section">
+  <div className="canvas-derive-rule-section-heading">
+    <Typography.Text strong>{title}</Typography.Text>
+    {!readOnly && onAdd && <Button size="small" icon={<PlusOutlined />} onClick={onAdd}>添加</Button>}
+  </div>
+  {rules.length === 0 ? <Typography.Text type="secondary">暂无规则</Typography.Text> : rules.map((rule, index) => (
+    <div
+      className={`canvas-derive-rule-row${selection?.scope === scope && selection.index === index ? ' is-active' : ''}`}
+      key={`${scope}-${index}`}
+      role="button"
+      tabIndex={0}
+      onClick={() => onSelect({ scope, index })}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          onSelect({ scope, index });
+        }
+      }}
+    >
+      <div className="canvas-derive-rule-row-main">
+        <Typography.Text ellipsis>{rule.targetColumnName || `未命名字段 ${index + 1}`}</Typography.Text>
+        <Typography.Text type="secondary" ellipsis>{expressionSummary(rule.expression)}</Typography.Text>
+      </div>
+      {!readOnly && <Space size={0} onClick={(event) => event.stopPropagation()}>
+        <Button type="text" size="small" icon={<UpOutlined />} disabled={index === 0} onClick={() => onMove?.(index, -1)} />
+        <Button type="text" size="small" icon={<DownOutlined />} disabled={index === rules.length - 1} onClick={() => onMove?.(index, 1)} />
+        <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => onRemove?.(index)} />
+      </Space>}
+    </div>
+  ))}
+</section>;
+
+export const DeriveColumnsProcessorInspector = ({
+  node,
+  executionMode,
+  validation,
+  validationUnavailableMessage,
+  onApply,
+  onDirtyChange,
+  inspectorRef,
+}: DeriveColumnsProcessorInspectorProps) => {
+  const initial = useMemo(() => normalizedConfiguration(node.configuration), [node.configuration]);
+  const [configuration, setConfiguration] = useState(initial);
+  const [managerOpen, setManagerOpen] = useState(false);
+  const [globalOpen, setGlobalOpen] = useState(false);
+  const [globalDraft, setGlobalDraft] = useState<ColumnDerivation[] | null>(null);
+  const [tableDraft, setTableDraft] = useState<DeriveColumnsOperation | null>(null);
+  const [globalSelection, setGlobalSelection] = useState<RuleSelection>(initial.globalDerivations.length ? { scope: 'GLOBAL', index: 0 } : null);
+  const [tableSelection, setTableSelection] = useState<RuleSelection>(null);
+  const inputTables = useMemo(() => validation?.inputTables ?? [], [validation?.inputTables]);
+  const activeOperation = tableDraft;
+  const globalRules = globalDraft ?? configuration.globalDerivations;
+  const activeTable = activeOperation
+    ? inputTables.find((table) => table.name === activeOperation.sourceTableName)
+    : undefined;
+  const globalColumns = useMemo(
+    () => commonColumns(configuration.operations, inputTables),
+    [configuration.operations, inputTables],
+  );
+
+  const updateConfiguration = (next: typeof configuration) => {
+    setConfiguration(next);
+    onDirtyChange(true);
+  };
+  const moveRule = (rules: readonly ColumnDerivation[], index: number, offset: -1 | 1) => {
+    const target = index + offset;
+    if (target < 0 || target >= rules.length) return [...rules];
+    const next = [...rules];
+    [next[index], next[target]] = [next[target], next[index]];
+    return next;
+  };
+  const defaultRule = (columns: CanvasColumnSchema[]): ColumnDerivation => ({
+    targetColumnName: '', expression: columnExpression(columns),
+  });
+  const updateActiveOperation = (nextOperation: DeriveColumnsOperation) => setTableDraft(nextOperation);
+
+  useImperativeHandle(inspectorRef, () => ({
+    apply: async () => {
+      onApply({
+        id: node.id,
+        type: CanvasNodeType.DeriveColumns,
+        configuration: {
+          globalDerivations: structuredClone(configuration.globalDerivations),
+          operations: structuredClone(configuration.operations),
+        } as DeriveColumnsConfiguration,
+      });
+      onDirtyChange(false);
+      return true;
+    },
+  }), [configuration, node.id, onApply, onDirtyChange]);
+
+  const selectedGlobal = globalSelection?.scope === 'GLOBAL'
+    ? globalRules[globalSelection.index] ?? null : null;
+  const selectedLocal = tableSelection?.scope === 'LOCAL' && activeOperation
+    ? activeOperation.derivations[tableSelection.index] ?? null : null;
+
+  return <Space orientation="vertical" size={12} className="canvas-inspector-content">
+    <ProcessorValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
+    <div className="canvas-derive-compact-heading">
+      <div><Typography.Text strong>全局配置</Typography.Text><Typography.Text type="secondary"> · {configuration.globalDerivations.length} 条规则 · 作用于 {configuration.operations.length} 张表</Typography.Text></div>
+      <Button size="small" icon={<SettingOutlined />} onClick={() => {
+        setGlobalDraft(structuredClone(configuration.globalDerivations));
+        setGlobalSelection(configuration.globalDerivations.length ? { scope: 'GLOBAL', index: 0 } : null);
+        setGlobalOpen(true);
+      }}>配置</Button>
+    </div>
+    <div className="canvas-derive-compact-heading">
+      <div><Typography.Text strong>处理表</Typography.Text><Typography.Text type="secondary"> · 每张表独立配置规则</Typography.Text></div>
+      <Button size="small" icon={<SettingOutlined />} onClick={() => setManagerOpen(true)}>管理处理表</Button>
+    </div>
+    <div className="canvas-derive-operation-list">
+      {configuration.operations.length === 0 ? <Typography.Text type="secondary">尚未选择处理表。</Typography.Text> : configuration.operations.map((operation, index) => {
+        const tableAvailable = inputTables.some((table) => table.name === operation.sourceTableName);
+        return <div className={`canvas-derive-operation-row${tableAvailable ? '' : ' is-invalid'}`} key={operation.operationId}>
+          <span className="canvas-jdbc-input-picker-index">{index + 1}</span>
+          <div><Typography.Text ellipsis>{operation.sourceTableName}</Typography.Text><Typography.Text type={tableAvailable ? 'secondary' : 'danger'} ellipsis>{tableAvailable ? `全局 ${configuration.globalDerivations.length} 条 · 本表 ${operation.derivations.length} 条` : '上游表已失效'}</Typography.Text></div>
+          <Button type="text" size="small" icon={<SettingOutlined />} aria-label={`配置 ${operation.sourceTableName}`} onClick={() => {
+            setTableDraft(structuredClone(operation));
+            setTableSelection(operation.derivations.length ? { scope: 'LOCAL', index: 0 } : configuration.globalDerivations.length ? { scope: 'GLOBAL', index: 0 } : null);
+          }} />
+        </div>;
+      })}
+    </div>
+
+    <Modal open={globalOpen} width={1040} className="canvas-derive-rules-modal" title="配置全局派生规则"
+      styles={{ body: { overflow: 'hidden' } }} destroyOnHidden
+      onCancel={() => { setGlobalDraft(null); setGlobalOpen(false); }} okText="保存全局规则" onOk={() => {
+        updateConfiguration({ ...configuration, globalDerivations: structuredClone(globalRules) });
+        setGlobalDraft(null);
+        setGlobalOpen(false);
+      }}>
+      <div className="canvas-derive-modal-layout">
+        <div className="canvas-derive-modal-rule-list">
+          <RuleList title="全局规则" scope="GLOBAL" rules={globalRules} selection={globalSelection}
+            onSelect={setGlobalSelection}
+            onAdd={() => {
+              const rules = [...globalRules, defaultRule(globalColumns)];
+              setGlobalDraft(rules);
+              setGlobalSelection({ scope: 'GLOBAL', index: rules.length - 1 });
+            }}
+            onMove={(index, offset) => {
+              setGlobalDraft(moveRule(globalRules, index, offset));
+              setGlobalSelection(movedRuleSelection(globalSelection, 'GLOBAL', index, offset));
+            }}
+            onRemove={(index) => {
+              const rules = globalRules.filter((_, ruleIndex) => ruleIndex !== index);
+              setGlobalDraft(rules);
+              setGlobalSelection(rules.length ? { scope: 'GLOBAL', index: Math.min(index, rules.length - 1) } : null);
+            }} />
+        </div>
+        <div className="canvas-derive-modal-rule-detail">
+          <DerivationRuleEditor derivation={selectedGlobal} columns={globalColumns}
+            writeStatus={selectedGlobal
+              ? globalDerivationStatus(selectedGlobal, configuration.operations, inputTables)
+              : '自动 · 待判断'}
+            executionMode={executionMode} eventTimeColumn={null}
+            onChange={(rule) => {
+              if (globalSelection?.scope !== 'GLOBAL') return;
+              const rules = [...globalRules];
+              rules[globalSelection.index] = rule;
+              setGlobalDraft(rules);
+            }} />
+        </div>
+      </div>
+    </Modal>
+
+    <Modal open={Boolean(activeOperation)} width={1040} className="canvas-derive-rules-modal"
+      title={activeOperation ? `配置处理表 · ${activeOperation.sourceTableName}` : '配置处理表'} styles={{ body: { overflow: 'hidden' } }} destroyOnHidden
+      onCancel={() => setTableDraft(null)} okText="保存此项" onOk={() => {
+        if (tableDraft) {
+          updateConfiguration({ ...configuration, operations: configuration.operations.map((operation) => (
+            operation.operationId === tableDraft.operationId ? structuredClone(tableDraft) : operation
+          )) });
+        }
+        setTableDraft(null);
+      }}>
+      {activeOperation && <>
+        <div className="canvas-derive-table-output-settings">
+          <Typography.Text type="secondary">来源表</Typography.Text><Typography.Text code>{activeOperation.sourceTableName}</Typography.Text>
+          <Radio.Group size="small" optionType="button" buttonStyle="solid" value={activeOperation.output.mode}
+            options={[{ value: 'REPLACE_SOURCE', label: '更新当前表' }, { value: 'CREATE_NEW_TABLE', label: '生成新表' }]}
+            onChange={(event) => updateActiveOperation({ ...activeOperation, output: event.target.value === 'CREATE_NEW_TABLE'
+              ? { mode: 'CREATE_NEW_TABLE', outputTableName: activeOperation.output.outputTableName ?? '' }
+              : { mode: 'REPLACE_SOURCE', outputTableName: null } })} />
+          {activeOperation.output.mode === 'CREATE_NEW_TABLE' && <Input style={{ width: 240 }} value={activeOperation.output.outputTableName ?? ''} placeholder="新逻辑表名" onChange={(event) => updateActiveOperation({ ...activeOperation, output: { mode: 'CREATE_NEW_TABLE', outputTableName: event.target.value } })} />}
+        </div>
+        <div className="canvas-derive-modal-layout">
+          <div className="canvas-derive-modal-rule-list">
+            <RuleList title="全局规则" scope="GLOBAL" rules={configuration.globalDerivations} selection={tableSelection} readOnly onSelect={setTableSelection} />
+            <RuleList title="本表规则" scope="LOCAL" rules={activeOperation.derivations} selection={tableSelection} onSelect={setTableSelection}
+              onAdd={() => {
+                const rules = [...activeOperation.derivations, defaultRule(activeTable?.columns ?? [])];
+                updateActiveOperation({ ...activeOperation, derivations: rules });
+                setTableSelection({ scope: 'LOCAL', index: rules.length - 1 });
+              }}
+              onMove={(index, offset) => {
+                updateActiveOperation({ ...activeOperation, derivations: moveRule(activeOperation.derivations, index, offset) });
+                setTableSelection(movedRuleSelection(tableSelection, 'LOCAL', index, offset));
+              }}
+              onRemove={(index) => {
+                const rules = activeOperation.derivations.filter((_, ruleIndex) => ruleIndex !== index);
+                updateActiveOperation({ ...activeOperation, derivations: rules });
+                setTableSelection(rules.length ? { scope: 'LOCAL', index: Math.min(index, rules.length - 1) } : configuration.globalDerivations.length ? { scope: 'GLOBAL', index: 0 } : null);
+              }} />
+          </div>
+          <div className="canvas-derive-modal-rule-detail">
+            {tableSelection?.scope === 'GLOBAL'
+              ? <DerivationRuleEditor derivation={configuration.globalDerivations[tableSelection.index] ?? null} columns={globalColumns}
+                writeStatus={automaticDerivationStatus(
+                  configuration.globalDerivations[tableSelection.index] ?? {
+                    targetColumnName: '', expression: columnExpression([]),
+                  },
+                  activeTable?.columns,
+                )}
+                executionMode={executionMode} eventTimeColumn={activeTable?.eventTimeColumn ?? null} readOnly onChange={() => undefined} onEditGlobal={() => {
+                if (tableDraft) {
+                  updateConfiguration({ ...configuration, operations: configuration.operations.map((operation) => (
+                    operation.operationId === tableDraft.operationId ? structuredClone(tableDraft) : operation
+                  )) });
+                }
+                setTableDraft(null);
+                setGlobalDraft(structuredClone(configuration.globalDerivations));
+                setGlobalSelection({ scope: 'GLOBAL', index: tableSelection.index });
+                setGlobalOpen(true);
+              }} />
+              : <DerivationRuleEditor derivation={selectedLocal} columns={activeTable?.columns ?? []}
+                writeStatus={selectedLocal
+                  ? automaticDerivationStatus(selectedLocal, activeTable?.columns)
+                  : '自动 · 待判断'}
+                executionMode={executionMode} eventTimeColumn={activeTable?.eventTimeColumn ?? null}
+                onChange={(rule) => {
+                  if (tableSelection?.scope !== 'LOCAL') return;
+                  const rules = [...activeOperation.derivations];
+                  rules[tableSelection.index] = rule;
+                  updateActiveOperation({ ...activeOperation, derivations: rules });
+                }} />}
+          </div>
+        </div>
+      </>}
+    </Modal>
+
+    {managerOpen && <ProcessorTablePickerModal
+      open={managerOpen}
+      type={CanvasNodeType.DeriveColumns}
+      inputTables={inputTables}
+      operations={configuration.operations as unknown as ProcessorOperationDraft[]}
+      onCancel={() => setManagerOpen(false)}
+      onConfirm={(operations) => {
+        updateConfiguration({
+          ...configuration,
+          operations: operations as unknown as DeriveColumnsOperation[],
+        });
+        setManagerOpen(false);
+      }}
+    />}
+  </Space>;
 };

@@ -24,7 +24,7 @@ describe('canvas compilation presentation', () => {
       severity: 'ERROR' as const,
       message: '请选择输入表',
       nodeId: '4add70a7-4948-42a5-af66-e56dbaccad3e',
-      path: 'configuration.tableName',
+      path: 'configuration.tables',
     };
     const result = nodeResult([requiredIssue]);
     const validation: CanvasValidationResult = {

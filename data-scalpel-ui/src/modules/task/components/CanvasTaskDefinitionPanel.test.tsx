@@ -21,7 +21,7 @@ const changedDefinition: CanvasDefinition = {
     type: 'JDBC_INPUT',
     name: '订单输入',
     layout: { x: 80, y: 80, width: 240, height: 120 },
-    configuration: { dataSourceId: '', tableName: '' },
+    configuration: { dataSourceId: '', tables: [] },
   }],
 };
 const saveDefinition = vi.fn();

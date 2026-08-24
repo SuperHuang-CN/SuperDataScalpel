@@ -4,6 +4,8 @@ export { TaskDetailPage } from './pages/TaskDetailPage';
 export { QualityFailureSampleDrawer } from './components/QualityFailureSampleDrawer';
 export {
   useCanvasTaskDefinition,
+  useTaskCanvasProposal,
+  useAcceptTaskCanvasProposal,
   useModelRelatedTasks,
   useTask,
   useTaskDefinition,
@@ -31,3 +33,10 @@ export type {
   TaskStatus,
   TaskType,
 } from './model/task';
+export type { CanvasDefinition } from './canvas/canvasTypes';
+export type {
+  TaskAssistantCreateDraft,
+  TaskAssistantLocationState,
+  TaskCanvasProposalLocationState,
+  TaskCanvasProposalChangeSet,
+} from './model/taskAssistant';

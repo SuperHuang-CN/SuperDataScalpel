@@ -50,7 +50,8 @@ class DataSourceRuntimeServiceJdbcQueryTest {
             mock(DatabaseInspector.class),
             queryInspector,
             mock(DataSourceCredentialCipher.class),
-            mock(HttpApiConnectorRegistry.class)
+            mock(HttpApiConnectorRegistry.class),
+            mock(SpatialServiceClient.class)
     );
     private final UUID dataSourceId = UUID.randomUUID();
 

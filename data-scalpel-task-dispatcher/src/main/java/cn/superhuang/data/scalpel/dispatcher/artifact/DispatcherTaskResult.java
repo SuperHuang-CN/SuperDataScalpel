@@ -34,8 +34,17 @@ public record DispatcherTaskResult(
         UserJobObservabilitySnapshot userJobObservability,
         Error error
 ) {
+    public static final int MIN_SUPPORTED_SCHEMA_VERSION = 2;
+    public static final int CURRENT_SCHEMA_VERSION = 7;
+
     public DispatcherTaskResult {
         nodeResults = nodeResults == null ? List.of() : List.copyOf(nodeResults);
+    }
+
+    public static boolean supportsSchemaVersion(Integer schemaVersion) {
+        return schemaVersion != null
+                && schemaVersion >= MIN_SUPPORTED_SCHEMA_VERSION
+                && schemaVersion <= CURRENT_SCHEMA_VERSION;
     }
 
     public record QualityResult(
@@ -162,9 +171,27 @@ public record DispatcherTaskResult(
 
     @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, property = "kind")
     @JsonSubTypes({
-            @JsonSubTypes.Type(value = SnapshotSyncMetrics.class, name = "SNAPSHOT_SYNC")
+            @JsonSubTypes.Type(value = SnapshotSyncMetrics.class, name = "SNAPSHOT_SYNC"),
+            @JsonSubTypes.Type(value = OutputWritesMetrics.class, name = "OUTPUT_WRITES")
     })
-    public sealed interface Metrics permits SnapshotSyncMetrics {
+    public sealed interface Metrics permits SnapshotSyncMetrics, OutputWritesMetrics {
+    }
+
+    public enum OutputWriteState { PENDING, RUNNING, SUCCESS, FAILED, SKIPPED }
+
+    public record OutputWriteResult(
+            String writeId,
+            String sourceTableName,
+            String targetDisplayName,
+            OutputWriteState state,
+            Long affectedRows,
+            String errorCode
+    ) { }
+
+    public record OutputWritesMetrics(List<OutputWriteResult> writes) implements Metrics {
+        public OutputWritesMetrics {
+            writes = writes == null ? List.of() : List.copyOf(writes);
+        }
     }
 
     public record SnapshotSyncMetrics(

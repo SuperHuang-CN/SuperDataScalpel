@@ -21,10 +21,21 @@ describe('task canvas connection rules', () => {
     expect(createsCycle(edges, 'join', 'output')).toBe(false);
   });
 
+  it('provides an empty output projection for Stream Join drafts', () => {
+    expect(emptyNodeConfiguration(CanvasNodeType.StreamJoin)).toEqual({
+      leftTableName: '',
+      rightTableName: '',
+      outputTableName: '',
+      joinType: null,
+      conditions: [],
+      outputColumns: [],
+    });
+  });
+
   it('provides strongly typed defaults for every supported node type', () => {
     expect(emptyNodeConfiguration(CanvasNodeType.JdbcInput)).toEqual({
       dataSourceId: '',
-      tableName: '',
+      tables: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.ModelInput)).toEqual({
       modelId: '',
@@ -41,6 +52,7 @@ describe('task canvas connection rules', () => {
       outputTableName: '',
       joinType: null,
       conditions: [],
+      outputColumns: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.Rename)).toEqual({
       sourceTableName: '',
@@ -52,15 +64,18 @@ describe('task canvas connection rules', () => {
       outputTableName: '',
       condition: { kind: 'GROUP', operator: 'AND', children: [] },
     });
+    expect(emptyNodeConfiguration(CanvasNodeType.SqlTransform)).toEqual({
+      outputTableName: '',
+      sql: '',
+    });
     expect(emptyNodeConfiguration(CanvasNodeType.SelectColumns)).toEqual({
       sourceTableName: '',
       outputTableName: '',
       columns: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.DeriveColumns)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      derivations: [],
+      globalDerivations: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.TypeCast)).toEqual({
       sourceTableName: '',
@@ -170,7 +185,7 @@ describe('task canvas connection rules', () => {
 
     definition.nodes.forEach((node) => {
       if (node.type === CanvasNodeType.JdbcInput) {
-        expect(node.configuration).toEqual({ dataSourceId: '', tableName: '' });
+        expect(node.configuration).toEqual({ dataSourceId: '', tables: [] });
       }
       if (node.type === CanvasNodeType.JdbcOutput) {
         expect(node.configuration.dataSourceId).toBe('');

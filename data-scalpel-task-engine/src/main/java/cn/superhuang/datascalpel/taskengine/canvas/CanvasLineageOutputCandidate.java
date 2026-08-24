@@ -25,6 +25,7 @@ import java.util.stream.Collectors;
 public record CanvasLineageOutputCandidate(
         CanvasNodeDefinition node,
         Dataset<Row> dataset,
+        String outputWriteId,
         CanvasLineageCompilation.Asset asset,
         List<TargetField> targetFields
 ) {
@@ -32,6 +33,8 @@ public record CanvasLineageOutputCandidate(
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(dataset, "dataset");
         Objects.requireNonNull(asset, "asset");
+        outputWriteId = outputWriteId == null || outputWriteId.isBlank()
+                ? null : outputWriteId.trim();
         targetFields = List.copyOf(targetFields);
     }
 
@@ -40,7 +43,8 @@ public record CanvasLineageOutputCandidate(
             Dataset<Row> dataset,
             MetadataModel model,
             CanvasTableSchema targetSchema,
-            CanvasLineageCompilation.WriteMode writeMode
+            CanvasLineageCompilation.WriteMode writeMode,
+            String outputWriteId
     ) {
         Map<String, MetadataModelField> fields = model.fields().stream()
                 .collect(Collectors.toMap(MetadataModelField::code, Function.identity()));
@@ -55,12 +59,12 @@ public record CanvasLineageOutputCandidate(
                     );
                 }).toList();
         return new CanvasLineageOutputCandidate(
-                node, dataset,
+                node, dataset, outputWriteId,
                 new CanvasLineageCompilation.Asset(
                         "output", CanvasLineageCompilation.AssetRole.OUTPUT,
                         CanvasLineageCompilation.AssetKind.MODEL, null, writeMode,
-                        model.id(), model.schemaVersion(), model.dataSourceId(),
-                        model.catalogName(), model.schemaName(), model.physicalTableName(),
+                        model.id(), model.schemaVersion(),
+                        null, null, null, null,
                         null, null, model.name()
                 ),
                 targetFields
@@ -72,10 +76,11 @@ public record CanvasLineageOutputCandidate(
             Dataset<Row> dataset,
             UUID dataSourceId,
             MetadataTable table,
-            CanvasLineageCompilation.WriteMode writeMode
+            CanvasLineageCompilation.WriteMode writeMode,
+            String outputWriteId
     ) {
         return new CanvasLineageOutputCandidate(
-                node, dataset,
+                node, dataset, outputWriteId,
                 new CanvasLineageCompilation.Asset(
                         "output", CanvasLineageCompilation.AssetRole.OUTPUT,
                         CanvasLineageCompilation.AssetKind.JDBC_TABLE, null, writeMode,
@@ -94,12 +99,13 @@ public record CanvasLineageOutputCandidate(
             Dataset<Row> dataset,
             UUID dataSourceId,
             String topic,
-            CanvasTableSchema targetSchema
+            CanvasTableSchema targetSchema,
+            String outputWriteId
     ) {
         return external(
                 node, dataset, CanvasLineageCompilation.ExternalResourceType.KAFKA_TOPIC,
                 dataSourceId, null, sha256(topic), topic,
-                CanvasLineageCompilation.WriteMode.APPEND, targetSchema
+                CanvasLineageCompilation.WriteMode.APPEND, targetSchema, outputWriteId
         );
     }
 
@@ -109,7 +115,8 @@ public record CanvasLineageOutputCandidate(
             UUID dataSourceId,
             String targetPath,
             FileOutputConflictPolicy conflictPolicy,
-            CanvasTableSchema targetSchema
+            CanvasTableSchema targetSchema,
+            String outputWriteId
     ) {
         return external(
                 node, dataset, CanvasLineageCompilation.ExternalResourceType.OBJECT_STORAGE_PATH,
@@ -117,7 +124,7 @@ public record CanvasLineageOutputCandidate(
                 conflictPolicy == FileOutputConflictPolicy.OVERWRITE
                         ? CanvasLineageCompilation.WriteMode.FULL_OVERWRITE
                         : CanvasLineageCompilation.WriteMode.CREATE_NEW,
-                targetSchema
+                targetSchema, outputWriteId
         );
     }
 
@@ -130,10 +137,11 @@ public record CanvasLineageOutputCandidate(
             String resourceKeyHash,
             String displayName,
             CanvasLineageCompilation.WriteMode writeMode,
-            CanvasTableSchema targetSchema
+            CanvasTableSchema targetSchema,
+            String outputWriteId
     ) {
         return new CanvasLineageOutputCandidate(
-                node, dataset,
+                node, dataset, outputWriteId,
                 new CanvasLineageCompilation.Asset(
                         "output", CanvasLineageCompilation.AssetRole.OUTPUT,
                         CanvasLineageCompilation.AssetKind.EXTERNAL_RESOURCE, resourceType, writeMode,

@@ -5,7 +5,6 @@ import {
   EditOutlined,
   MoreOutlined,
   PauseCircleOutlined,
-  PlayCircleOutlined,
   ReloadOutlined,
   SendOutlined,
   TableOutlined,
@@ -34,6 +33,7 @@ import { DataModelLineagePanel } from '../components/DataModelLineagePanel';
 import { DataModelPhysicalChangePanel } from '../components/DataModelPhysicalChangePanel';
 import { DataModelReferenceModalContent } from '../components/DataModelReferenceModalContent';
 import { DataModelPreviewPanel } from '../components/DataModelPreviewPanel';
+import { DataModelPublishConfirmationContent } from '../components/DataModelPublishConfirmationContent';
 import { DataModelQualityRulesPanel } from '../components/DataModelQualityRulesPanel';
 import { DataModelTasksPanel } from '../components/DataModelTasksPanel';
 import {
@@ -65,15 +65,11 @@ const statusColor: Record<DataModelStatus, string> = {
 };
 
 const lifecycleLabel = (status: DataModelStatus) => {
-  if (status === 'DRAFT') return '发布';
-  if (status === 'PUBLISHED') return '停用';
-  return '启用';
+  return status === 'PUBLISHED' ? '停用' : '发布';
 };
 
 const lifecycleIcon = (status: DataModelStatus) => {
-  if (status === 'DRAFT') return <SendOutlined />;
-  if (status === 'PUBLISHED') return <PauseCircleOutlined />;
-  return <PlayCircleOutlined />;
+  return status === 'PUBLISHED' ? <PauseCircleOutlined /> : <SendOutlined />;
 };
 
 export const DataModelDetailPage = () => {
@@ -105,7 +101,6 @@ export const DataModelDetailPage = () => {
   const exportMutation = useExportModelMetadata();
   const publishMutation = useDataModelCommand('publish');
   const disableMutation = useDataModelCommand('disable');
-  const enableMutation = useDataModelCommand('enable');
   const requestedTab = normalizeModelDetailTab(searchParams.get('tab'));
   const unauthorizedProtectedTab = requestedTab === 'tasks'
     ? !canViewTasks
@@ -158,15 +153,13 @@ export const DataModelDetailPage = () => {
     else navigate('/model');
   };
 
-  const executeCommand = async (target: DataModel, command: 'publish' | 'disable' | 'enable') => {
+  const executeCommand = async (target: DataModel, command: 'publish' | 'disable') => {
     try {
-      const mutation = command === 'publish'
-        ? publishMutation
-        : command === 'disable' ? disableMutation : enableMutation;
+      const mutation = command === 'publish' ? publishMutation : disableMutation;
       await mutation.mutateAsync(target.id);
       messageApi.success(command === 'publish'
-        ? '模型已发布，物理表结构校验通过'
-        : command === 'disable' ? '模型已停用' : '模型已启用');
+        ? '模型已发布，物理表已就绪'
+        : '模型已停用');
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '模型状态操作失败');
       throw error;
@@ -174,13 +167,16 @@ export const DataModelDetailPage = () => {
   };
 
   const transition = (target: DataModel) => {
-    if (target.status === 'DRAFT') {
+    if (target.status !== 'PUBLISHED') {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
         title: '发布模型',
-        content: fieldsDirty
-          ? '当前字段定义有未保存修改。发布只会使用最后保存的字段，成功后当前修改将被放弃。'
-          : '发布前会实时检查物理表是否存在且与模型字段一致；发布后字段结构将变为只读。',
+        content: (
+          <DataModelPublishConfirmationContent
+            model={target}
+            discardUnsavedFields={fieldsDirty}
+          />
+        ),
         okText: fieldsDirty ? '放弃修改并发布' : '发布',
         okButtonProps: fieldsDirty ? { danger: true } : undefined,
         cancelText: fieldsDirty ? '继续编辑' : '取消',
@@ -191,23 +187,7 @@ export const DataModelDetailPage = () => {
       });
       return;
     }
-    const command = target.status === 'PUBLISHED' ? 'disable' : 'enable';
-    if (!fieldsDirty || command === 'disable') {
-      void executeCommand(target, command);
-      return;
-    }
-    modalApi.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
-      title: '启用模型并放弃字段修改？',
-      content: '启用只会使用最后保存的字段定义，成功后当前修改将被放弃。',
-      okText: '放弃修改并启用',
-      okButtonProps: { danger: true },
-      cancelText: '继续编辑',
-      onOk: async () => {
-        await executeCommand(target, command);
-        fieldsPanelRef.current?.discardChanges();
-      },
-    });
+    void executeCommand(target, 'disable');
   };
 
   const remove = () => setReferenceModalOpen(true);
@@ -278,7 +258,7 @@ export const DataModelDetailPage = () => {
     );
   }
 
-  const commandLoading = publishMutation.isPending || disableMutation.isPending || enableMutation.isPending;
+  const commandLoading = publishMutation.isPending || disableMutation.isPending;
   const tabItems = [
     {
       key: 'basic',
@@ -321,7 +301,7 @@ export const DataModelDetailPage = () => {
       ),
     },
     { key: 'changes', label: '物理变更', children: <DataModelPhysicalChangePanel model={model} canUpdate={canUpdate} /> },
-    { key: 'data', label: '数据预览', children: <DataModelPreviewPanel model={model} fields={detailQuery.data.fields} /> },
+    { key: 'data', label: '数据预览', children: <DataModelPreviewPanel key={model.id} model={model} fields={detailQuery.data.fields} /> },
     ...(canViewTasks
       ? [
           { key: 'tasks', label: '关联任务', children: <DataModelTasksPanel modelId={model.id} /> },
@@ -366,7 +346,7 @@ export const DataModelDetailPage = () => {
           {canUpdate && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>修改</Button>}
           {canPublish && (
             <Button
-              type={model.status === 'DRAFT' ? 'primary' : 'default'}
+              type={model.status !== 'PUBLISHED' ? 'primary' : 'default'}
               icon={lifecycleIcon(model.status)}
               loading={commandLoading}
               onClick={() => transition(model)}

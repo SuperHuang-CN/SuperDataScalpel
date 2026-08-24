@@ -75,9 +75,9 @@ Topic 超级表快照，Origin 为 `TDENGINE_TMQ`；不自动指定 Event Time �
 直接任务引用索引使用 `TDENGINE_TMQ_TOPIC`。数据源删除保护继续由通用
 `TaskDataSourceReference` 处理；关联任务展示 Topic 和超级表，但不访问外部 TDengine。
 
-## 5. Manifest v18
+## 5. Manifest 版本
 
-Admin 和 Runner 当前严格使用 `manifestVersion: 18`。`RuntimeDataSource` 包含可空
+Admin 和 Runner 当前严格使用 `manifestVersion: 21`。`RuntimeDataSource` 包含可空
 `RuntimeTdEngineTmqConnection`：
 
 ```text
@@ -89,7 +89,7 @@ useSsl
 
 只有任务引用 TMQ 节点时才生成该字段。连接由保存的数据源字段直接组装，不从 JDBC URL 反向解析。
 Manifest 是私有受保护制品；密码和完整连接选项不得进入编译响应、结果、Kafka 事件、管理端运行记录或
-日志。非 v18 Manifest 不兼容，升级必须同步发布 Admin、Dispatcher 与 Runner。
+日志。非 v21 Manifest 不兼容，升级必须同步发布 Admin、Dispatcher 与 Runner。
 
 ## 6. Spark DataSource V2
 

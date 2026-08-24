@@ -40,6 +40,7 @@ const maskingStrategyVisuals: Record<MaskingStrategy, {
   tone: 'violet' | 'cyan' | 'orange' | 'slate';
 }> = {
   PARTIAL_MASK: { icon: <EyeInvisibleOutlined />, tone: 'violet' },
+  POSITION_MASK: { icon: <EyeInvisibleOutlined />, tone: 'cyan' },
   KEEP_LENGTH_MASK: { icon: <ColumnWidthOutlined />, tone: 'cyan' },
   FIXED_VALUE: { icon: <SwapOutlined />, tone: 'orange' },
   NULLIFY: { icon: <ClearOutlined />, tone: 'slate' },

@@ -3,6 +3,11 @@ import react from '@vitejs/plugin-react';
 
 export default defineConfig({
   plugins: [react()],
+  resolve: {
+    alias: {
+      lodash: 'lodash-es',
+    },
+  },
   server: {
     port: 8887,
     strictPort: true,

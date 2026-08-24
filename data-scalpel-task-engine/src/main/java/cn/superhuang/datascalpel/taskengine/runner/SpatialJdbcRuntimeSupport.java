@@ -2,6 +2,7 @@ package cn.superhuang.datascalpel.taskengine.runner;
 
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
+import cn.superhuang.data.scalpel.contract.task.JdbcInputReadOption;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
@@ -22,6 +23,7 @@ import cn.superhuang.datascalpel.taskengine.contract.RuntimeJdbcConnection;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.api.java.function.ForeachPartitionFunction;
 import org.apache.spark.sql.Column;
+import org.apache.spark.sql.DataFrameReader;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
@@ -80,12 +82,13 @@ final class SpatialJdbcRuntimeSupport {
             RuntimeDataSource source,
             TableIdentifier table,
             CanvasTableSchema logicalSchema,
+            List<JdbcInputReadOption> readOptions,
             String nodeId
     ) {
         validateSourceTableBoundary(source, table, nodeId);
         boolean containsGeometry = containsGeometry(logicalSchema);
         if (!containsGeometry) {
-            return CanvasTaskExecutor.reader(spark, source)
+            return reader(spark, source, readOptions)
                     .option("dbtable", qualifiedTable(source, table))
                     .load();
         }
@@ -108,7 +111,7 @@ final class SpatialJdbcRuntimeSupport {
         String query = "(SELECT " + String.join(", ", selectExpressions)
                 + " FROM " + dialect.qualifiedName(table) + ") AS "
                 + dialect.quoteIdentifier(INPUT_ALIAS);
-        Dataset<Row> raw = CanvasTaskExecutor.reader(spark, source)
+        Dataset<Row> raw = reader(spark, source, readOptions)
                 .option("dbtable", query)
                 .load();
         Column[] projected = logicalSchema.columns().stream().map(column -> {
@@ -124,6 +127,20 @@ final class SpatialJdbcRuntimeSupport {
             ).as(column.name(), SparkTypeMapper.metadata(column));
         }).toArray(Column[]::new);
         return raw.select(projected);
+    }
+
+    private static DataFrameReader reader(
+            SparkSession spark,
+            RuntimeDataSource source,
+            List<JdbcInputReadOption> readOptions
+    ) {
+        DataFrameReader reader = CanvasTaskExecutor.reader(spark, source);
+        if (readOptions != null) {
+            for (JdbcInputReadOption option : readOptions) {
+                reader = reader.option(option.name(), option.value());
+            }
+        }
+        return reader;
     }
 
     private static void validateSourceTableBoundary(

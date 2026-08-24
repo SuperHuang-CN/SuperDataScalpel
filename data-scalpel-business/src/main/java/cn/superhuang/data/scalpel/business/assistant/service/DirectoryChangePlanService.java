@@ -70,7 +70,7 @@ public class DirectoryChangePlanService {
     @Transactional(readOnly = true)
     public AssistantChangeSet getOwned(UUID id, String username) {
         return repository.findByIdAndOwnerUsername(id, username)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "目录变更计划不存在"));
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "助手变更计划不存在"));
     }
 
     @Transactional(readOnly = true)
@@ -90,7 +90,7 @@ public class DirectoryChangePlanService {
         AssistantChangeSet changeSet = getOwned(id, username);
         if (changeSet.getStatus() == AssistantChangeSetStatus.REJECTED) return changeSet;
         if (changeSet.getStatus() != AssistantChangeSetStatus.PENDING) {
-            throw conflict("只有待确认的目录计划可以拒绝");
+            throw conflict("只有待确认的助手变更计划可以拒绝");
         }
         changeSet.reject();
         return repository.saveAndFlush(changeSet);

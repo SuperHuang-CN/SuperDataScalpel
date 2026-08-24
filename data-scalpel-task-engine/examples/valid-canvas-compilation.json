@@ -3,7 +3,7 @@
   "task": {
     "type": "CANVAS",
     "definition": {
-      "schemaVersion": 2,
+      "schemaVersion": 4,
       "schemaMinorVersion": 0,
       "nodes": [
         {
@@ -13,7 +13,7 @@
           "layout": { "x": 100, "y": 100, "width": 240, "height": 120 },
           "configuration": {
             "dataSourceId": "11111111-1111-4111-8111-111111111111",
-            "tableName": "orders"
+            "tables": [{ "tableName": "orders" }]
           }
         },
         {
@@ -23,7 +23,7 @@
           "layout": { "x": 100, "y": 300, "width": 240, "height": 120 },
           "configuration": {
             "dataSourceId": "11111111-1111-4111-8111-111111111111",
-            "tableName": "customers"
+            "tables": [{ "tableName": "customers" }]
           }
         },
         {
@@ -42,6 +42,12 @@
                 "operator": "EQUALS",
                 "rightColumnName": "customer_key"
               }
+            ],
+            "outputColumns": [
+              { "sourceSide": "LEFT", "sourceColumnName": "order_id", "outputColumnName": "order_id", "included": true },
+              { "sourceSide": "LEFT", "sourceColumnName": "customer_id", "outputColumnName": "customer_id", "included": true },
+              { "sourceSide": "RIGHT", "sourceColumnName": "customer_key", "outputColumnName": "customer_key", "included": true },
+              { "sourceSide": "RIGHT", "sourceColumnName": "customer_name", "outputColumnName": "customer_name", "included": true }
             ]
           }
         },
@@ -51,15 +57,21 @@
           "name": "明细输出",
           "layout": { "x": 780, "y": 200, "width": 240, "height": 120 },
           "configuration": {
-            "sourceTableName": "order_customer",
             "dataSourceId": "22222222-2222-4222-8222-222222222222",
-            "targetTableName": "dwd_order_customer",
-            "writeMode": "APPEND",
-            "columnMappings": [
-              { "sourceColumnName": "order_id", "targetColumnName": "order_id" },
-              { "sourceColumnName": "customer_id", "targetColumnName": "customer_id" },
-              { "sourceColumnName": "customer_key", "targetColumnName": "customer_key" },
-              { "sourceColumnName": "customer_name", "targetColumnName": "customer_name" }
+            "writes": [
+              {
+                "writeId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaa5",
+                "sourceTableName": "order_customer",
+                "targetTableName": "dwd_order_customer",
+                "writeMode": "APPEND",
+                "columnMappings": [
+                  { "sourceColumnName": "order_id", "targetColumnName": "order_id" },
+                  { "sourceColumnName": "customer_id", "targetColumnName": "customer_id" },
+                  { "sourceColumnName": "customer_key", "targetColumnName": "customer_key" },
+                  { "sourceColumnName": "customer_name", "targetColumnName": "customer_name" }
+                ],
+                "upsertKeyColumns": []
+              }
             ]
           }
         }

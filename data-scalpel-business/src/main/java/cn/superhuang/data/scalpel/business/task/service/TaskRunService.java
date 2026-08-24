@@ -36,6 +36,7 @@ import cn.superhuang.data.scalpel.contract.execution.CancelExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
+import cn.superhuang.data.scalpel.contract.execution.ForceTerminateExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
@@ -290,6 +291,27 @@ public class TaskRunService {
                     1, UUID.randomUUID(), ExecutionMessageType.CANCEL_EXECUTION, Instant.now(),
                     run.getComputeEngineId(), run.getExternalExecutionId(), run.getExecutionRunId(), run.getAttempt(),
                     "用户请求停止任务运行"
+            ));
+            return TaskRunResponse.from(run);
+        }));
+    }
+
+    public TaskRunResponse forceTerminate(UUID runId) {
+        return requireTransactionResult(transactionTemplate.execute(status -> {
+            TaskRun run = requireRunForUpdate(runId);
+            if (run.getTaskType() == null || !run.getTaskType().requiresComputeEngine()
+                    || run.getExternalExecutionId() == null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务运行不支持强制终止");
+            }
+            if (run.getStatus() != TaskRunStatus.CANCEL_REQUESTED
+                    && run.getStatus() != TaskRunStatus.STOP_REQUESTED) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT, "请先取消运行或正常停止，再执行强制终止");
+            }
+            executionOutboxService.enqueue(run.getCommandTopicSnapshot(), new ForceTerminateExecutionCommand(
+                    1, UUID.randomUUID(), ExecutionMessageType.FORCE_TERMINATE_EXECUTION, Instant.now(),
+                    run.getComputeEngineId(), run.getExternalExecutionId(), run.getExecutionRunId(), run.getAttempt(),
+                    "用户请求强制终止任务运行"
             ));
             return TaskRunResponse.from(run);
         }));

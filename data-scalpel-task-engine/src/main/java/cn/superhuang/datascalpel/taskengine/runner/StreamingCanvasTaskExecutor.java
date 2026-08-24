@@ -15,6 +15,7 @@ import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationContext;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationResult;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperatorRegistry;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperators;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasRuntimeValues;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedKafkaOutput;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
@@ -82,6 +83,7 @@ final class StreamingCanvasTaskExecutor {
             RunnerEventPublisher publisher
     ) {
         validateManifest(manifest, launch);
+        CanvasRuntimeValues runtimeValues = runtimeValues(manifest, Instant.now());
         SparkSession.Builder builder = SedonaSparkSupport.builder()
                 .appName("DataScalpel Streaming Task " + manifest.execution().executionId())
                 .config("spark.ui.enabled", "false")
@@ -91,12 +93,9 @@ final class StreamingCanvasTaskExecutor {
                 .config("spark.sql.session.timeZone", "UTC")
                 .config("spark.speculation", "false")
                 .config("spark.sql.streaming.stopTimeout", "60000");
-        builder.config(
-                        "spark.redaction.regex",
-                        "(?i)secret|password|passwd|token|credential|api[-_.]?key|access[-_.]?key|tdengine.*pass")
-                .config(
-                        "spark.sql.redaction.options.regex",
-                        "(?i)secret|password|passwd|token|credential|api[-_.]?key|access[-_.]?key|tdengine.*pass");
+        String redactionRegex = CanvasTaskExecutor.jdbcReadOptionRedactionRegex(manifest);
+        builder.config("spark.redaction.regex", redactionRegex)
+                .config("spark.sql.redaction.options.regex", redactionRegex);
         if (sparkMode == RunnerSparkMode.LOCAL) builder.master("local[*]");
         SparkSession spark = SedonaSparkSupport.initialize(builder.getOrCreate());
         List<Dataset<Row>> cachedDimensions = new ArrayList<>();
@@ -126,7 +125,7 @@ final class StreamingCanvasTaskExecutor {
             requireValidCompilation(compilation);
             prepareQueries(
                     manifest, spark, metadata, dataAccess,
-                    launch.checkpointUriPrefix(), queries, cachedDimensions);
+                    launch.checkpointUriPrefix(), queries, cachedDimensions, runtimeValues);
             publish(publisher, new RunnerStreamingStartedEvent(
                     ExecutionMessageEnvelope.CURRENT_VERSION,
                     UUID.randomUUID(),
@@ -154,7 +153,8 @@ final class StreamingCanvasTaskExecutor {
             RuntimeCanvasNodeDataAccess dataAccess,
             String checkpointUriPrefix,
             List<QueryBinding> queries,
-            List<Dataset<Row>> cachedDimensions
+            List<Dataset<Row>> cachedDimensions,
+            CanvasRuntimeValues runtimeValues
     ) {
         CanvasGraphPlan plan = CanvasGraphPlan.create(
                 manifest.task().definition(), CanvasExecutionMode.STREAMING);
@@ -180,7 +180,8 @@ final class StreamingCanvasTaskExecutor {
                             metadata,
                             new RunnerCanvasNodeIssueSink(node.id()),
                             dataAccess,
-                            CanvasExecutionMode.STREAMING
+                            CanvasExecutionMode.STREAMING,
+                            runtimeValues
                     )
             );
             if (node instanceof JdbcInputNodeDefinition || node instanceof JdbcQueryInputNodeDefinition) {
@@ -191,21 +192,25 @@ final class StreamingCanvasTaskExecutor {
                 });
             }
             if (node instanceof JdbcOutputNodeDefinition || node instanceof ModelOutputNodeDefinition) {
-                if (operation.preparedOutput() == null) {
+                if (operation.preparedOutputs().isEmpty()) {
                     throw new RunnerExecutionException(
                             "OUTPUT_NOT_PREPARED", "JDBC 或模型输出节点未生成流式写入计划", node.id());
                 }
-                StreamingQuery query = startJdbcQuery(
-                        manifest, operation.preparedOutput(), checkpoint(checkpointUriPrefix, node.id()));
-                queries.add(new QueryBinding(node.id(), query));
+                for (CanvasPreparedOutput output : operation.preparedOutputs()) {
+                    StreamingQuery query = startJdbcQuery(manifest, output,
+                            checkpoint(checkpointUriPrefix, node.id(), output.writeId()));
+                    queries.add(new QueryBinding(node.id(), output.writeId(), query));
+                }
             } else if (node instanceof KafkaOutputNodeDefinition) {
-                if (operation.preparedKafkaOutput() == null) {
+                if (operation.preparedKafkaOutputs().isEmpty()) {
                     throw new RunnerExecutionException(
                             "OUTPUT_NOT_PREPARED", "Kafka 输出节点未生成流式写入计划", node.id());
                 }
-                StreamingQuery query = startKafkaQuery(
-                        manifest, operation.preparedKafkaOutput(), checkpoint(checkpointUriPrefix, node.id()));
-                queries.add(new QueryBinding(node.id(), query));
+                for (CanvasPreparedKafkaOutput output : operation.preparedKafkaOutputs()) {
+                    StreamingQuery query = startKafkaQuery(manifest, output,
+                            checkpoint(checkpointUriPrefix, node.id(), output.writeId()));
+                    queries.add(new QueryBinding(node.id(), output.writeId(), query));
+                }
             } else {
                 propagated.set(nodeIndex, operation.propagatedTables());
             }
@@ -234,7 +239,7 @@ final class StreamingCanvasTaskExecutor {
         }
         try {
             return output.dataset().writeStream()
-                    .queryName(queryName(manifest, output.node().id()))
+                    .queryName(queryName(manifest, output.node().id(), output.writeId()))
                     .outputMode("append")
                     .trigger(Trigger.ProcessingTime(
                             manifest.streaming().triggerIntervalSeconds(), TimeUnit.SECONDS))
@@ -284,7 +289,7 @@ final class StreamingCanvasTaskExecutor {
         );
         RuntimeKafkaConnection connection = output.runtimeDataSource().kafkaConnection();
         DataStreamWriter<Row> writer = kafkaRows.writeStream()
-                .queryName(queryName(manifest, output.node().id()))
+                .queryName(queryName(manifest, output.node().id(), output.writeId()))
                 .format("kafka")
                 .outputMode("append")
                 .trigger(Trigger.ProcessingTime(
@@ -361,7 +366,9 @@ final class StreamingCanvasTaskExecutor {
             }
             ProgressSnapshot progress = latestProgress(manifest, queries);
             long signature = progress.queries().stream()
-                    .mapToLong(value -> 31L * value.outputNodeId().hashCode() + value.batchId())
+                    .mapToLong(value -> 31L * value.outputNodeId().hashCode()
+                            + 17L * (value.outputWriteId() == null ? 0 : value.outputWriteId().hashCode())
+                            + value.batchId())
                     .sum() + (progress.source() == null ? 0 : progress.source().committedOffset().hashCode());
             Instant now = Instant.now();
             boolean changed = signature != lastProgressSignature;
@@ -396,11 +403,12 @@ final class StreamingCanvasTaskExecutor {
             org.apache.spark.sql.streaming.StreamingQueryProgress progress = binding.query().lastProgress();
             if (progress == null) {
                 result.add(new StreamingQueryProgress(
-                        binding.outputNodeId(), -1, 0, 0, 0, 0, Instant.now()));
+                        binding.outputNodeId(), binding.outputWriteId(), -1, 0, 0, 0, 0, Instant.now()));
                 continue;
             }
             result.add(new StreamingQueryProgress(
                     binding.outputNodeId(),
+                    binding.outputWriteId(),
                     progress.batchId(),
                     progress.numInputRows(),
                     Math.max(0D, progress.inputRowsPerSecond()),
@@ -529,15 +537,30 @@ final class StreamingCanvasTaskExecutor {
         }
     }
 
-    private static String checkpoint(String prefix, String outputNodeId) {
+    private static CanvasRuntimeValues runtimeValues(
+            TaskExecutionManifest manifest,
+            Instant executionStartedAt
+    ) {
+        if (manifest == null || manifest.execution() == null
+                || manifest.execution().executionId() == null || executionStartedAt == null) {
+            throw new RunnerExecutionException(
+                    "RUNTIME_CONTEXT_UNAVAILABLE",
+                    "任务运行上下文不完整，无法生成派生字段",
+                    null
+            );
+        }
+        return CanvasRuntimeValues.execution(manifest.execution().executionId(), executionStartedAt);
+    }
+
+    private static String checkpoint(String prefix, String outputNodeId, String writeId) {
         String normalized = prefix.endsWith("/")
                 ? prefix.substring(0, prefix.length() - 1)
                 : prefix;
-        return normalized + "/outputs/" + UUID.fromString(outputNodeId);
+        return normalized + "/outputs/" + UUID.fromString(outputNodeId) + "/" + UUID.fromString(writeId);
     }
 
-    private static String queryName(TaskExecutionManifest manifest, String nodeId) {
-        return "datascalpel-" + manifest.execution().deploymentId() + "-" + nodeId;
+    private static String queryName(TaskExecutionManifest manifest, String nodeId, String writeId) {
+        return "datascalpel-" + manifest.execution().deploymentId() + "-" + nodeId + "-" + writeId;
     }
 
     private static void publish(
@@ -577,7 +600,7 @@ final class StreamingCanvasTaskExecutor {
         return value == null ? "" : value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 
-    private record QueryBinding(String outputNodeId, StreamingQuery query) {
+    private record QueryBinding(String outputNodeId, String outputWriteId, StreamingQuery query) {
     }
 
     private record ProgressSnapshot(

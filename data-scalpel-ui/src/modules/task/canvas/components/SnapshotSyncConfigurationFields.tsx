@@ -5,12 +5,9 @@ import type { TaskCompilationMetadataUniqueKey } from '../taskCompilationTypes';
 import { platformTypeLabel } from '../canvasSchema';
 import {
   OutputFieldMappingFields,
-  orderOutputFieldMappings,
 } from './OutputFieldMappingFields';
+import type { SnapshotSyncFormValues } from './snapshotSyncConfiguration';
 import { CanvasInspectorFieldLabel } from './CanvasInspectorFieldLabel';
-
-export interface SnapshotSyncFormValues extends SnapshotSyncConfiguration {
-}
 
 interface SnapshotSyncConfigurationFieldsProps {
   inputTables: readonly CanvasTableSchema[];
@@ -31,31 +28,6 @@ const retainedOption = (
 ) => value && !options.some((option) => option.value === value)
   ? [{ value, label, disabled: true }, ...options]
   : options;
-
-export const normalizeSnapshotSyncConfiguration = (
-  values: SnapshotSyncFormValues,
-  targetColumns: readonly CanvasColumnSchema[],
-): SnapshotSyncConfiguration => {
-  const action = values.deletePolicy?.action === 'DELETE' ? 'DELETE' : 'KEEP';
-  return {
-    sourceTableName: values.sourceTableName ?? '',
-    keyColumns: values.keyColumns ?? [],
-    columnMappings: orderOutputFieldMappings(
-      targetColumns,
-      (values.columnMappings ?? []).map((mapping) => ({
-        sourceColumnName: mapping.sourceColumnName ?? '',
-        targetColumnName: mapping.targetColumnName ?? '',
-      })),
-    ),
-    deletePolicy: action === 'DELETE'
-      ? {
-        action,
-        maxDeleteRows: values.deletePolicy?.maxDeleteRows ?? null,
-        maxDeleteRatio: values.deletePolicy?.maxDeleteRatio ?? null,
-      }
-      : { action: 'KEEP', maxDeleteRows: null, maxDeleteRatio: null },
-  };
-};
 
 export const SnapshotSyncConfigurationFields = ({
   inputTables,

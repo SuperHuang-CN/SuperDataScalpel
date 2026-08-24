@@ -103,7 +103,8 @@ public final class JdbcSnapshotSyncOutputNodeOperator implements CanvasNodeOpera
                 context.dataAccess().prepareJdbcSnapshotSyncOutput(node, targetSchema, selected),
                 CanvasLineageOutputCandidate.jdbcTable(
                         node, selected, dataSourceId, target,
-                        cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.SNAPSHOT_SYNC
+                        cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.SNAPSHOT_SYNC,
+                        null
                 )
         );
     }

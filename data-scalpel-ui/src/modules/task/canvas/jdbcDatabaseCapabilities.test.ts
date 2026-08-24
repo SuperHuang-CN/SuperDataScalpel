@@ -3,11 +3,10 @@ import { jdbcWriteModeUnavailableReason } from './jdbcDatabaseCapabilities';
 
 describe('jdbcDatabaseCapabilities', () => {
   it.each(['ORACLE', 'SQL_SERVER', 'CLICKHOUSE', 'DAMENG'] as const)(
-    'allows scalar APPEND but disables special write modes for %s',
+    'allows batch OVERWRITE but disables UPSERT for %s',
     (databaseType) => {
       expect(jdbcWriteModeUnavailableReason(databaseType, 'APPEND', 'BATCH')).toBeNull();
-      expect(jdbcWriteModeUnavailableReason(databaseType, 'OVERWRITE', 'BATCH'))
-        .toContain('暂不支持 OVERWRITE');
+      expect(jdbcWriteModeUnavailableReason(databaseType, 'OVERWRITE', 'BATCH')).toBeNull();
       expect(jdbcWriteModeUnavailableReason(databaseType, 'UPSERT', 'BATCH'))
         .toContain('暂不支持 UPSERT');
     },
@@ -24,5 +23,10 @@ describe('jdbcDatabaseCapabilities', () => {
   it('keeps imported streaming overwrite visible as an invalid draft value', () => {
     expect(jdbcWriteModeUnavailableReason('POSTGRESQL', 'OVERWRITE', 'STREAMING'))
       .toBe('实时模式不支持');
+  });
+
+  it('keeps TDengine unavailable for ordinary JDBC output', () => {
+    expect(jdbcWriteModeUnavailableReason('TDENGINE_WEBSOCKET', 'OVERWRITE', 'BATCH'))
+      .toContain('不支持普通 JDBC 输出');
   });
 });

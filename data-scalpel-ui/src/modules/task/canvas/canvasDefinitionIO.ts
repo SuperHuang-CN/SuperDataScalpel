@@ -31,9 +31,11 @@ import {
   type PlatformTypeDefinition,
   type DeriveBinaryOperator,
   type DeriveFunction,
+  type CanvasRuntimeValue,
   type FilterOperator,
   type JdbcWriteMode,
   type JoinCondition,
+  type JoinOutputColumn,
   type JoinType,
   type StreamJoinType,
   type HttpApiRuntimeParameter,
@@ -125,6 +127,36 @@ export const parseJoinConditions = (value: unknown, path: string, errors: string
       leftColumnName: stringValue(item.leftColumnName),
       operator: 'EQUALS',
       rightColumnName: stringValue(item.rightColumnName),
+    }];
+  });
+};
+
+export const parseJoinOutputColumns = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): JoinOutputColumn[] => {
+  if (value === undefined || value === null) return [];
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index): JoinOutputColumn[] => {
+    if (!isRecord(item)) {
+      errors.push(`${path}[${index}] 必须是对象`);
+      return [];
+    }
+    if (item.sourceSide !== 'LEFT' && item.sourceSide !== 'RIGHT') {
+      errors.push(`${path}[${index}].sourceSide 仅支持 LEFT 或 RIGHT`);
+    }
+    if (typeof item.included !== 'boolean') {
+      errors.push(`${path}[${index}].included 必须是布尔值`);
+    }
+    return [{
+      sourceSide: item.sourceSide === 'RIGHT' ? 'RIGHT' : 'LEFT',
+      sourceColumnName: stringValue(item.sourceColumnName),
+      outputColumnName: stringValue(item.outputColumnName),
+      included: typeof item.included === 'boolean' ? item.included : true,
     }];
   });
 };
@@ -411,6 +443,10 @@ const deriveFunctions = new Set<DeriveFunction>([
   'DATE_ADD',
   'DATE_SUB',
 ]);
+const canvasRuntimeValues = new Set<CanvasRuntimeValue>([
+  'EXECUTION_ID',
+  'EXECUTION_STARTED_AT',
+]);
 
 export const parseCanvasLiteral = (
   value: unknown,
@@ -542,6 +578,18 @@ const parseCanvasExpression = (
       literal: parseCanvasLiteral(value.literal, `${path}.literal`, errors),
     };
   }
+  if (value.kind === 'RUNTIME_VALUE') {
+    const rawRuntimeValue = stringValue(value.value);
+    if (!canvasRuntimeValues.has(rawRuntimeValue as CanvasRuntimeValue)) {
+      errors.push(`${path}.value 不是受支持的运行时变量`);
+    }
+    return {
+      kind: 'RUNTIME_VALUE',
+      value: canvasRuntimeValues.has(rawRuntimeValue as CanvasRuntimeValue)
+        ? rawRuntimeValue as CanvasRuntimeValue
+        : 'EXECUTION_ID',
+    };
+  }
   if (value.kind === 'BINARY') {
     const rawOperator = stringValue(value.operator);
     if (!deriveBinaryOperators.has(rawOperator as DeriveBinaryOperator)) {
@@ -664,9 +712,8 @@ export const parseDerivations = (
         errors.push(`${itemPath} 必须是对象`);
         return [];
       }
-      if (item.replaceExisting !== undefined
-        && typeof item.replaceExisting !== 'boolean') {
-        errors.push(`${itemPath}.replaceExisting 必须是布尔值`);
+      if (item.replaceExisting !== undefined) {
+        errors.push(`${itemPath}.replaceExisting 已不再支持；派生字段会按目标字段名自动新增或覆盖`);
       }
       return [{
         targetColumnName: stringValue(item.targetColumnName),
@@ -677,7 +724,6 @@ export const parseDerivations = (
           1,
           expressionNodes,
         ),
-        replaceExisting: item.replaceExisting === true,
       }];
     });
 };
@@ -1029,10 +1075,10 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
           `${spec.type} 从 Canvas ${CANVAS_SCHEMA_VERSION}.${spec.introducedInMinor} 开始支持`,
         );
       }
-      if (sourceSchemaMinorVersion < 3
-          && node.type === CanvasNodeType.ModelOutput
-          && node.configuration.writeMode === 'UPSERT') {
-        errors.push('MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持');
+      if (sourceSchemaMinorVersion < 1
+          && node.type === CanvasNodeType.JdbcInput
+          && node.configuration.tables.some((table) => table.readOptions.length > 0)) {
+        errors.push(`JDBC_INPUT.readOptions 从 Canvas ${CANVAS_SCHEMA_VERSION}.1 开始支持`);
       }
     });
   }

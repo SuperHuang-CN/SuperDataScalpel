@@ -1,18 +1,20 @@
 import {
   DatabaseOutlined,
   DeleteOutlined,
+  DownOutlined,
   DownloadOutlined,
   EditOutlined,
   FileExcelOutlined,
+  FileTextOutlined,
+  LoadingOutlined,
   MoreOutlined,
   PauseCircleOutlined,
-  PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
   SendOutlined,
   TableOutlined,
 } from '@ant-design/icons';
-import type { TableProps } from 'antd';
+import type { MenuProps, TableProps } from 'antd';
 import {
   Button,
   Dropdown,
@@ -41,12 +43,15 @@ import {
 } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { DataModelDrawer } from '../components/DataModelDrawer';
+import { FileDatasetModelImportDrawer } from '../components/FileDatasetModelImportDrawer';
 import { DataModelPhysicalStatisticsCell } from '../components/DataModelPhysicalStatisticsCell';
+import { DataModelPublishConfirmationContent } from '../components/DataModelPublishConfirmationContent';
 import { DataModelReferenceModalContent } from '../components/DataModelReferenceModalContent';
 import { ManagedTableModelImportDrawer } from '../components/ManagedTableModelImportDrawer';
 import { ModelMetadataImportDrawer } from '../components/ModelMetadataImportDrawer';
 import { ModelWarehouseLayerIcon } from '../components/ModelWarehouseLayerIcon';
 import {
+  useBatchPublishDataModels,
   useDataModelCommand,
   useDataModels,
   useDataModelReferences,
@@ -68,6 +73,7 @@ import { parseDataModelListRoute, serializeDataModelListRoute } from '../model/d
 const DEFAULT_PAGE_SIZE = 20;
 const MAX_STATISTICS_REFRESH_COUNT = 20;
 const STATISTICS_REFRESH_CONCURRENCY = 3;
+const MAX_BATCH_PUBLISH_COUNT = 50;
 
 const jdbcDataSourceRequest = {
   page: 0,
@@ -98,11 +104,13 @@ export const DataModelPage = () => {
   const [size, setSize] = useState(initialRouteState.size);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
   const [importDrawerOpen, setImportDrawerOpen] = useState(false);
+  const [fileDatasetImportDrawerOpen, setFileDatasetImportDrawerOpen] = useState(false);
   const [metadataImportDrawerOpen, setMetadataImportDrawerOpen] = useState(false);
   const [selectedModelIds, setSelectedModelIds] = useState<string[]>([]);
   const [selectedModelsById, setSelectedModelsById] = useState<Record<string, DataModel>>({});
   const [refreshingModelIds, setRefreshingModelIds] = useState<Set<string>>(() => new Set());
   const [batchRefreshingStatistics, setBatchRefreshingStatistics] = useState(false);
+  const [publishingModelIds, setPublishingModelIds] = useState<Set<string>>(() => new Set());
   const [editingModel, setEditingModel] = useState<DataModel | null>(null);
   const [referenceModel, setReferenceModel] = useState<DataModel | null>(null);
   const [messageApi, messageContext] = message.useMessage();
@@ -114,6 +122,7 @@ export const DataModelPage = () => {
   const canCreate = permissions.has('model.create');
   const canViewDataSources = permissions.has('datasource.view');
   const canReadDataSourceMetadata = permissions.has('datasource.metadata');
+  const canViewFileDatasets = permissions.has('filedataset.view');
   const canUpdate = permissions.has('model.update');
   const canDelete = permissions.has('model.delete');
   const canPublish = permissions.has('model.publish');
@@ -145,7 +154,7 @@ export const DataModelPage = () => {
   const refreshStatisticsMutation = useRefreshDataModelPhysicalStatistics();
   const publishMutation = useDataModelCommand('publish');
   const disableMutation = useDataModelCommand('disable');
-  const enableMutation = useDataModelCommand('enable');
+  const batchPublishMutation = useBatchPublishDataModels();
   const referencesQuery = useDataModelReferences(referenceModel?.id, Boolean(referenceModel));
   const dataSourceOptions = dataSourcesQuery.data?.content
     .filter((source) => source.connection.kind === 'JDBC')
@@ -159,7 +168,64 @@ export const DataModelPage = () => {
   const selectedModels = selectedModelIds
     .map((id) => visibleModelsById.get(id) ?? selectedModelsById[id])
     .filter((model): model is DataModel => Boolean(model));
+  const publishableSelectedModels = selectedModels.filter((model) => model.status !== 'PUBLISHED');
+  const publishedSelectedModels = selectedModels.filter((model) => model.status === 'PUBLISHED');
   const selectedIncludesExternal = selectedModels.some((model) => model.physicalTableMode === 'EXTERNAL');
+  const createMenuItems: MenuProps['items'] = [
+    {
+      key: 'manual',
+      icon: <PlusOutlined />,
+      label: (
+        <div className="model-create-menu-label">
+          <Typography.Text strong>手动创建</Typography.Text>
+          <Typography.Text type="secondary">从空白模型开始配置</Typography.Text>
+        </div>
+      ),
+      onClick: () => setCreateDrawerOpen(true),
+    },
+  ];
+  if (canViewDataSources && canReadDataSourceMetadata) {
+    createMenuItems.push({
+      key: 'jdbc',
+      icon: <DatabaseOutlined />,
+      label: (
+        <div className="model-create-menu-label">
+          <Typography.Text strong>从数据源表创建</Typography.Text>
+          <Typography.Text type="secondary">复制 JDBC 表结构，不导入数据</Typography.Text>
+        </div>
+      ),
+      onClick: () => setImportDrawerOpen(true),
+    });
+  }
+  if (canViewDataSources && canViewFileDatasets) {
+    createMenuItems.push({
+      key: 'file-dataset',
+      icon: <FileTextOutlined />,
+      label: (
+        <div className="model-create-menu-label">
+          <Typography.Text strong>从文件数据集创建</Typography.Text>
+          <Typography.Text type="secondary">复制已解析逻辑表 Schema</Typography.Text>
+        </div>
+      ),
+      onClick: () => setFileDatasetImportDrawerOpen(true),
+    });
+  }
+  if (canViewDataSources) {
+    createMenuItems.push(
+      { type: 'divider' },
+      {
+        key: 'excel',
+        icon: <FileExcelOutlined />,
+        label: (
+          <div className="model-create-menu-label">
+            <Typography.Text strong>从 Excel 模板导入</Typography.Text>
+            <Typography.Text type="secondary">按照固定模板批量创建模型</Typography.Text>
+          </div>
+        ),
+        onClick: () => setMetadataImportDrawerOpen(true),
+      },
+    );
+  }
   const syncRoute = (
     nextFilters: DataModelFilters,
     nextDirectorySelection: DirectorySelection,
@@ -228,15 +294,13 @@ export const DataModelPage = () => {
     }
   };
 
-  const executeCommand = async (model: DataModel, command: 'publish' | 'disable' | 'enable') => {
+  const executeCommand = async (model: DataModel, command: 'publish' | 'disable') => {
     try {
-      const mutation = command === 'publish'
-        ? publishMutation
-        : command === 'disable' ? disableMutation : enableMutation;
+      const mutation = command === 'publish' ? publishMutation : disableMutation;
       await mutation.mutateAsync(model.id);
       const successMessage = command === 'publish'
-        ? '模型已发布，物理表结构校验通过'
-        : command === 'disable' ? '模型已停用' : '模型已启用';
+        ? '模型已发布，物理表已就绪'
+        : '模型已停用';
       messageApi.success(successMessage);
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '模型状态操作失败');
@@ -244,18 +308,19 @@ export const DataModelPage = () => {
   };
 
   const transition = (model: DataModel) => {
-    if (model.status === 'DRAFT') {
+    if (publishingModelIds.has(model.id)) return;
+    if (model.status !== 'PUBLISHED') {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
         title: '发布模型',
-        content: '发布前会实时检查物理表是否存在且与模型字段一致；发布后字段结构将变为只读。',
+        content: <DataModelPublishConfirmationContent model={model} />,
         okText: '发布',
         cancelText: '取消',
         onOk: () => executeCommand(model, 'publish'),
       });
       return;
     }
-    void executeCommand(model, model.status === 'PUBLISHED' ? 'disable' : 'enable');
+    void executeCommand(model, 'disable');
   };
 
   const remove = (model: DataModel) => {
@@ -297,6 +362,106 @@ export const DataModelPage = () => {
         next[model.id] = model;
       });
       return next;
+    });
+  };
+
+  const markModelsPublishing = (modelIds: string[], publishing: boolean) => {
+    setPublishingModelIds((current) => {
+      const next = new Set(current);
+      modelIds.forEach((modelId) => {
+        if (publishing) next.add(modelId);
+        else next.delete(modelId);
+      });
+      return next;
+    });
+  };
+
+  const batchPublish = async (models: DataModel[], skippedModels: DataModel[]) => {
+    const modelIds = models.map((model) => model.id);
+    markModelsPublishing(modelIds, true);
+    try {
+      const results = await batchPublishMutation.mutateAsync(
+        models.map((model) => ({ id: model.id, name: model.name })),
+      );
+      const failures = results.filter((result) => !result.detail);
+      const successCount = results.length - failures.length;
+      const failedIds = new Set(failures.map((failure) => failure.id));
+      setSelectedModelIds(failures.map((failure) => failure.id));
+      setSelectedModelsById(Object.fromEntries(
+        models.filter((model) => failedIds.has(model.id)).map((model) => [model.id, model]),
+      ));
+
+      if (failures.length === 0) {
+        const skippedText = skippedModels.length > 0 ? `，跳过已发布模型 ${skippedModels.length} 个` : '';
+        messageApi.success(`批量发布完成：成功 ${successCount} 个${skippedText}`);
+        return;
+      }
+
+      const allFailed = successCount === 0;
+      const failureRows = failures.map((failure) => ({
+        id: failure.id,
+        name: failure.name,
+        reason: failure.error instanceof ApiError
+          ? failure.error.message
+          : failure.error instanceof Error ? failure.error.message : '发布失败',
+      }));
+      const resultModal = {
+        rootClassName: 'business-overlay business-modal-overlay',
+        title: allFailed ? '批量发布失败' : '批量发布部分成功',
+        width: 760,
+        okText: '关闭',
+        content: (
+          <Space direction="vertical" size={12} style={{ width: '100%' }}>
+            <Typography.Text>
+              成功 {successCount} 个，失败 {failures.length} 个，跳过已发布模型 {skippedModels.length} 个。
+              已成功发布的模型不会回滚，失败项已保留选中。
+            </Typography.Text>
+            <Table
+              size="small"
+              rowKey="id"
+              pagination={false}
+              scroll={{ y: 320 }}
+              dataSource={failureRows}
+              columns={[
+                { title: '模型', dataIndex: 'name', width: 220 },
+                { title: '失败原因', dataIndex: 'reason', ellipsis: true },
+              ]}
+            />
+          </Space>
+        ),
+      };
+      if (allFailed) modalApi.error(resultModal);
+      else modalApi.warning(resultModal);
+    } catch (error) {
+      messageApi.error(error instanceof ApiError ? error.message : '批量发布请求失败');
+    } finally {
+      markModelsPublishing(modelIds, false);
+    }
+  };
+
+  const confirmBatchPublish = () => {
+    if (selectedModelIds.length === 0 || selectedModelIds.length > MAX_BATCH_PUBLISH_COUNT) return;
+    if (publishableSelectedModels.length === 0) {
+      messageApi.info('所选模型均已发布，无需重复发布');
+      return;
+    }
+    const models = [...publishableSelectedModels];
+    const skippedModels = [...publishedSelectedModels];
+    modalApi.confirm({
+      rootClassName: 'business-overlay business-modal-overlay',
+      title: '批量发布模型',
+      width: 620,
+      okText: `发布 ${models.length} 个模型`,
+      cancelText: '取消',
+      content: (
+        <Alert
+          type="warning"
+          showIcon
+          message={`将发布 ${models.length} 个模型${skippedModels.length ? `，跳过已发布模型 ${skippedModels.length} 个` : ''}`}
+          description="发布会实时检查物理表；缺失的受管物理表将自动创建，外部表只校验、不创建。各模型独立执行，允许部分成功。"
+        />
+      ),
+      onOk: () => batchPublish(models, skippedModels),
     });
   };
 
@@ -399,21 +564,18 @@ export const DataModelPage = () => {
   };
 
   const lifecycleIcon = (status: DataModelStatus) => {
-    if (status === 'DRAFT') return <SendOutlined />;
-    if (status === 'PUBLISHED') return <PauseCircleOutlined />;
-    return <PlayCircleOutlined />;
+    return status === 'PUBLISHED' ? <PauseCircleOutlined /> : <SendOutlined />;
   };
 
   const lifecycleLabel = (status: DataModelStatus) => {
-    if (status === 'DRAFT') return '发布';
-    if (status === 'PUBLISHED') return '停用';
-    return '启用';
+    return status === 'PUBLISHED' ? '停用' : '发布';
   };
 
   const lifecycleLoading = (model: DataModel) => (
-    (model.status === 'DRAFT' && publishMutation.isPending && publishMutation.variables === model.id)
+    publishingModelIds.has(model.id)
+    || (model.status === 'DRAFT' && publishMutation.isPending && publishMutation.variables === model.id)
     || (model.status === 'PUBLISHED' && disableMutation.isPending && disableMutation.variables === model.id)
-    || (model.status === 'DISABLED' && enableMutation.isPending && enableMutation.variables === model.id)
+    || (model.status === 'DISABLED' && publishMutation.isPending && publishMutation.variables === model.id)
   );
 
   const columns: TableProps<DataModel>['columns'] = [
@@ -504,7 +666,12 @@ export const DataModelPage = () => {
                   disabled: refreshingModelIds.has(model.id),
                 },
                 ...(canUpdate ? [{ key: 'fields', label: model.status === 'DRAFT' ? '字段管理' : '查看字段', icon: <TableOutlined /> }, { key: 'edit', label: '修改模型', icon: <EditOutlined /> }] : []),
-                ...(canPublish ? [{ key: 'lifecycle', label: lifecycleLabel(model.status), icon: lifecycleIcon(model.status) }] : []),
+                ...(canPublish ? [{
+                  key: 'lifecycle',
+                  label: lifecycleLoading(model) ? `${lifecycleLabel(model.status)}中…` : lifecycleLabel(model.status),
+                  icon: lifecycleLoading(model) ? <LoadingOutlined spin /> : lifecycleIcon(model.status),
+                  disabled: lifecycleLoading(model),
+                }] : []),
                 ...(model.physicalTableMode === 'MANAGED'
                   ? [{ key: 'export', label: '导出 Excel 结构', icon: <DownloadOutlined /> }]
                   : []),
@@ -525,9 +692,9 @@ export const DataModelPage = () => {
                 className="management-row-actions-more"
                 type="text"
                 size="small"
-                icon={<MoreOutlined />}
+                icon={lifecycleLoading(model) ? <LoadingOutlined spin /> : <MoreOutlined />}
                 aria-label={`${model.name}的更多操作`}
-                loading={lifecycleLoading(model) || refreshingModelIds.has(model.id)}
+                loading={refreshingModelIds.has(model.id)}
               />
             </Tooltip>
           </Dropdown>
@@ -654,6 +821,33 @@ export const DataModelPage = () => {
             <div className="management-result-title">模型列表 <span className="management-result-count">共 {modelsQuery.data?.totalElements ?? 0} 项</span></div>
             <Space size={4} className="management-result-actions">
               <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新模型列表" onClick={() => void modelsQuery.refetch()} /></Tooltip>
+              {canPublish && (
+                <Tooltip title={
+                  selectedModelIds.length === 0
+                    ? '请先选择模型'
+                    : selectedModelIds.length > MAX_BATCH_PUBLISH_COUNT
+                      ? `一次最多批量发布 ${MAX_BATCH_PUBLISH_COUNT} 个模型`
+                      : publishableSelectedModels.length === 0
+                        ? '所选模型均已发布'
+                        : batchPublishMutation.isPending ? '正在批量发布模型' : '发布草稿和已停用模型'
+                }>
+                  <span>
+                    <Button
+                      icon={<SendOutlined />}
+                      loading={batchPublishMutation.isPending}
+                      disabled={
+                        selectedModelIds.length === 0
+                        || selectedModelIds.length > MAX_BATCH_PUBLISH_COUNT
+                        || publishableSelectedModels.length === 0
+                        || batchPublishMutation.isPending
+                      }
+                      onClick={confirmBatchPublish}
+                    >
+                      批量发布{selectedModelIds.length ? `（${selectedModelIds.length}）` : ''}
+                    </Button>
+                  </span>
+                </Tooltip>
+              )}
               <Tooltip title={
                 selectedModelIds.length === 0
                   ? '请先选择模型'
@@ -676,16 +870,6 @@ export const DataModelPage = () => {
                   </Button>
                 </span>
               </Tooltip>
-              {canCreate && canViewDataSources && canReadDataSourceMetadata && (
-                <Button icon={<DatabaseOutlined />} onClick={() => setImportDrawerOpen(true)}>
-                  从数据源导入
-                </Button>
-              )}
-              {canCreate && canViewDataSources && (
-                <Button icon={<FileExcelOutlined />} onClick={() => setMetadataImportDrawerOpen(true)}>
-                  导入 Excel
-                </Button>
-              )}
               <Tooltip title={
                 selectedIncludesExternal
                   ? '只能导出受管模型，当前选择中包含外部模型'
@@ -702,7 +886,13 @@ export const DataModelPage = () => {
                   </Button>
                 </span>
               </Tooltip>
-              {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>新建</Button>}
+              {canCreate && (
+                <Dropdown menu={{ items: createMenuItems }} trigger={['click']} placement="bottomRight">
+                  <Button type="primary" icon={<PlusOutlined />}>
+                    新建模型 <DownOutlined />
+                  </Button>
+                </Dropdown>
+              )}
             </Space>
             </div>
             <Table<DataModel>
@@ -767,6 +957,23 @@ export const DataModelPage = () => {
           onClose={() => setMetadataImportDrawerOpen(false)}
           onAdjustFields={(modelId) => {
             setMetadataImportDrawerOpen(false);
+            navigate(`/model/${modelId}?tab=fields`, { state: { fromModelList: true } });
+          }}
+        />
+      )}
+      {fileDatasetImportDrawerOpen && (
+        <FileDatasetModelImportDrawer
+          open
+          canViewDirectories={canViewDirectories}
+          initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
+          initialTargetStorageDataSourceId={filters.storageDataSourceId}
+          onClose={() => setFileDatasetImportDrawerOpen(false)}
+          onViewModel={(modelId) => {
+            setFileDatasetImportDrawerOpen(false);
+            navigate(`/model/${modelId}?tab=basic`, { state: { fromModelList: true } });
+          }}
+          onAdjustFields={(modelId) => {
+            setFileDatasetImportDrawerOpen(false);
             navigate(`/model/${modelId}?tab=fields`, { state: { fromModelList: true } });
           }}
         />

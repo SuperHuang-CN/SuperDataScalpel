@@ -14,6 +14,8 @@ import java.util.Objects;
 
 public record CanvasPreparedOutput(
         CanvasNodeDefinition node,
+        String writeId,
+        String sourceTableName,
         RuntimeDataSource runtimeDataSource,
         TableIdentifier targetTable,
         String qualifiedTableName,
@@ -26,6 +28,8 @@ public record CanvasPreparedOutput(
 ) {
     public CanvasPreparedOutput {
         Objects.requireNonNull(node, "node");
+        Objects.requireNonNull(writeId, "writeId");
+        Objects.requireNonNull(sourceTableName, "sourceTableName");
         Objects.requireNonNull(runtimeDataSource, "runtimeDataSource");
         Objects.requireNonNull(targetTable, "targetTable");
         Objects.requireNonNull(qualifiedTableName, "qualifiedTableName");

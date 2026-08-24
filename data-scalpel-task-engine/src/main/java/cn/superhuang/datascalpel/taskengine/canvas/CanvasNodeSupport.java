@@ -9,10 +9,13 @@ import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.function.Function;
 
 final class CanvasNodeSupport {
 
@@ -56,6 +59,43 @@ final class CanvasNodeSupport {
                 path,
                 issues
         );
+    }
+
+    static <T> boolean validateOutputWriteIds(
+            List<T> writes,
+            Function<T, String> writeIdExtractor,
+            CanvasNodeIssueSink issues
+    ) {
+        Set<UUID> writeIds = new HashSet<>();
+        boolean valid = true;
+        for (int index = 0; index < writes.size(); index++) {
+            T write = writes.get(index);
+            String path = "configuration.writes[" + index + "].writeId";
+            if (write == null) {
+                issues.error("OUTPUT_WRITE_ID_INVALID", "writeId 必须为 UUID", path);
+                valid = false;
+                continue;
+            }
+            String writeId = writeIdExtractor.apply(write);
+            if (blank(writeId)) {
+                issues.error("OUTPUT_WRITE_ID_INVALID", "writeId 必须为 UUID", path);
+                valid = false;
+                continue;
+            }
+            UUID parsed;
+            try {
+                parsed = UUID.fromString(writeId.trim());
+            } catch (IllegalArgumentException exception) {
+                issues.error("OUTPUT_WRITE_ID_INVALID", "writeId 必须为 UUID", path);
+                valid = false;
+                continue;
+            }
+            if (!writeIds.add(parsed)) {
+                issues.error("OUTPUT_WRITE_ID_INVALID", "writeId 必须在节点内唯一", path);
+                valid = false;
+            }
+        }
+        return valid;
     }
 
     private static UUID parseUuid(
@@ -159,21 +199,15 @@ final class CanvasNodeSupport {
             String path,
             CanvasNodeIssueSink issues
     ) {
-        if (writeMode != JdbcWriteMode.OVERWRITE || supportsOverwrite(databaseType)) {
+        if (writeMode != JdbcWriteMode.OVERWRITE || databaseType != CanvasJdbcDatabaseType.TDENGINE_WEBSOCKET
+                && databaseType != CanvasJdbcDatabaseType.TDENGINE_RESTFUL) {
             return;
         }
         issues.error(
                 "OVERWRITE_DATABASE_NOT_SUPPORTED",
-                "当前数据库暂不支持 OVERWRITE，请使用 APPEND",
+                "TDengine 不支持普通 JDBC OVERWRITE 输出",
                 path
         );
-    }
-
-    private static boolean supportsOverwrite(CanvasJdbcDatabaseType databaseType) {
-        return databaseType == CanvasJdbcDatabaseType.POSTGRESQL
-                || databaseType == CanvasJdbcDatabaseType.MYSQL
-                || databaseType == CanvasJdbcDatabaseType.OPENGAUSS
-                || databaseType == CanvasJdbcDatabaseType.KINGBASE;
     }
 
     static String quoteIdentifier(String value) {

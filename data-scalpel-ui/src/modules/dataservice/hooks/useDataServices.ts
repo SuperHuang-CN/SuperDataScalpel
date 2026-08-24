@@ -12,6 +12,7 @@ import {
   fetchDataService,
   fetchDataServiceFieldLineage,
   fetchDataServiceTableLineage,
+  queryDataServiceFieldLineage,
   fetchScriptCompletion,
   fetchStandardDataServiceModelCandidates,
   publishDataService,
@@ -64,6 +65,19 @@ export const useDataServiceLineage = (
     ? fetchDataServiceTableLineage(serviceId, depth)
     : fetchDataServiceFieldLineage(serviceId, fieldId as string, depth),
   enabled: enabled && (granularity === 'TABLE' || Boolean(fieldId)),
+});
+
+export const useDataServiceFieldLineage = (
+  serviceId: string,
+  fieldIds: string[] | null,
+  depth: 1 | 2,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataServicesQueryKey, serviceId, 'lineage', 'FIELD_BATCH', fieldIds, depth],
+  queryFn: ({ signal }) => queryDataServiceFieldLineage(serviceId, fieldIds, depth, signal),
+  enabled,
+  staleTime: 30_000,
+  placeholderData: (previous) => previous,
 });
 
 export const useCreateDataService = () => {

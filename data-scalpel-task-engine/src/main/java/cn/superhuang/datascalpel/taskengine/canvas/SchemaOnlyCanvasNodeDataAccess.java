@@ -3,10 +3,14 @@ package cn.superhuang.datascalpel.taskengine.canvas;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FileDatasetInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.FileOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.HttpApiInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.HttpApiInputResourceSelection;
 import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.SpatialServiceInputResourceSelection;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.JdbcIncrementalInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
@@ -15,6 +19,7 @@ import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelInputSelection;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
@@ -35,7 +40,11 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     }
 
     @Override
-    public Dataset<Row> readJdbcInput(JdbcInputNodeDefinition node, CanvasTableSchema logicalSchema) {
+    public Dataset<Row> readJdbcInput(
+            JdbcInputNodeDefinition node,
+            JdbcInputTableSelection table,
+            CanvasTableSchema logicalSchema
+    ) {
         return empty(logicalSchema);
     }
 
@@ -58,6 +67,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public Dataset<Row> readFileDatasetInput(
             FileDatasetInputNodeDefinition node,
+            FileDatasetInputTableSelection selection,
             MetadataIndex.FileDatasetTableEntry table,
             CanvasTableSchema logicalSchema
     ) {
@@ -65,12 +75,20 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     }
 
     @Override
-    public Dataset<Row> readHttpApiInput(HttpApiInputNodeDefinition node, CanvasTableSchema logicalSchema) {
+    public Dataset<Row> readHttpApiInput(
+            HttpApiInputNodeDefinition node,
+            HttpApiInputResourceSelection selection,
+            CanvasTableSchema logicalSchema
+    ) {
         return empty(logicalSchema);
     }
 
     @Override
-    public Dataset<Row> readSpatialServiceInput(SpatialServiceInputNodeDefinition node, CanvasTableSchema logicalSchema) {
+    public Dataset<Row> readSpatialServiceInput(
+            SpatialServiceInputNodeDefinition node,
+            SpatialServiceInputResourceSelection selection,
+            CanvasTableSchema logicalSchema
+    ) {
         return empty(logicalSchema);
     }
 
@@ -99,6 +117,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public Dataset<Row> readModelInput(
             ModelInputNodeDefinition node,
+            ModelInputSelection selection,
             MetadataIndex.ModelEntry model,
             CanvasTableSchema logicalSchema
     ) {
@@ -108,6 +127,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public CanvasPreparedOutput prepareJdbcOutput(
             JdbcOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.JdbcOutputWrite write,
             CanvasTableSchema targetSchema,
             Dataset<Row> dataset
     ) {
@@ -118,6 +138,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public CanvasPreparedOutput prepareModelOutput(
             ModelOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.ModelOutputWrite write,
             MetadataIndex.ModelEntry model,
             CanvasTableSchema targetSchema,
             Dataset<Row> dataset,
@@ -151,6 +172,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public CanvasPreparedKafkaOutput prepareKafkaOutput(
             KafkaOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.KafkaOutputWrite write,
             Dataset<Row> dataset
     ) {
         dataset.schema();
@@ -160,6 +182,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     @Override
     public CanvasPreparedFileOutput prepareFileOutput(
             FileOutputNodeDefinition node,
+            cn.superhuang.data.scalpel.contract.task.FileOutputWrite write,
             CanvasTableSchema sourceSchema,
             Dataset<Row> dataset
     ) {

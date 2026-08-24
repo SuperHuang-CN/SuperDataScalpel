@@ -361,7 +361,9 @@ class GeoJsonFileOutputWriterTest {
                         "districts", dataSourceId.toString(), "districts",
                         conflictPolicy, options));
         return new CanvasPreparedFileOutput(
-                node, runtimeDataSource, "s3a://exports/root/districts", schema, dataset);
+                node, UUID.randomUUID().toString(), "districts", runtimeDataSource,
+                "districts", "s3a://exports/root/districts", conflictPolicy, options,
+                schema, dataset);
     }
 
     private static CanvasPreparedFileOutput preparedOutput(
@@ -412,7 +414,9 @@ class GeoJsonFileOutputWriterTest {
                         FileOutputConflictPolicy.FAIL_IF_EXISTS, options)
         );
         return new CanvasPreparedFileOutput(
-                node, runtimeDataSource, "s3a://exports/root/districts", schema, dataset);
+                node, UUID.randomUUID().toString(), "districts", runtimeDataSource,
+                "districts", "s3a://exports/root/districts",
+                FileOutputConflictPolicy.FAIL_IF_EXISTS, options, schema, dataset);
     }
 
     private static CanvasColumnSchema scalar(

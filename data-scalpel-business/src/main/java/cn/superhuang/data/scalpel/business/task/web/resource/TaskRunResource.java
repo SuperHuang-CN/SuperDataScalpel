@@ -112,6 +112,14 @@ public class TaskRunResource {
         return service.cancel(runId);
     }
 
+    @PostMapping("/api/v1/task-runs/{runId}/actions/force-terminate")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasAuthority('task.execute')")
+    @Operation(summary = "强制终止 Spark 任务运行")
+    public TaskRunResponse forceTerminate(@PathVariable UUID runId) {
+        return service.forceTerminate(runId);
+    }
+
     private static ResponseEntity<byte[]> artifactResponse(TaskRunArtifact artifact) {
         return ResponseEntity.ok()
                 .contentType(MediaType.parseMediaType(artifact.contentType()))

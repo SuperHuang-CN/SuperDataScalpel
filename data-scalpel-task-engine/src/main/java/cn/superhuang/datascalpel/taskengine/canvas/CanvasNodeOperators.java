@@ -32,6 +32,7 @@ public final class CanvasNodeOperators {
                     new StreamJoinNodeOperator(),
                     new RenameNodeOperator(),
                     new FilterNodeOperator(),
+                    new SqlTransformNodeOperator(),
                     new SelectColumnsNodeOperator(),
                     new DeriveColumnsNodeOperator(),
                     new TypeCastNodeOperator(),

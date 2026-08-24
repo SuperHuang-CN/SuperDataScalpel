@@ -55,6 +55,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 @Service
 public class TaskStreamingService {
@@ -625,18 +626,31 @@ public class TaskStreamingService {
             CanvasDefinition definition,
             TaskStreamingDeployment deployment
     ) {
-        return definition.nodes().stream().filter(node ->
-                        node instanceof KafkaOutputNodeDefinition
-                                || node instanceof JdbcOutputNodeDefinition
-                                || node instanceof ModelOutputNodeDefinition)
-                .map(node -> TaskStreamingQuery.create(
-                        deployment.getId(),
-                        UUID.fromString(node.id()),
-                        node.name(),
-                        node instanceof KafkaOutputNodeDefinition
-                                ? StreamingSinkType.KAFKA : StreamingSinkType.JDBC,
-                        deployment.getCheckpointKeyPrefix() + "/outputs/" + node.id()
-                )).toList();
+        return definition.nodes().stream().flatMap(node -> outputWrites(node, deployment)).toList();
+    }
+
+    private static Stream<TaskStreamingQuery> outputWrites(
+            CanvasNodeDefinition node,
+            TaskStreamingDeployment deployment
+    ) {
+        UUID nodeId = UUID.fromString(node.id());
+        String checkpointPrefix = deployment.getCheckpointKeyPrefix() + "/outputs/" + node.id() + "/";
+        if (node instanceof KafkaOutputNodeDefinition output) {
+            return output.configuration().writes().stream().map(write -> TaskStreamingQuery.create(
+                    deployment.getId(), nodeId, UUID.fromString(write.writeId()), node.name(),
+                    StreamingSinkType.KAFKA, checkpointPrefix + write.writeId()));
+        }
+        if (node instanceof JdbcOutputNodeDefinition output) {
+            return output.configuration().writes().stream().map(write -> TaskStreamingQuery.create(
+                    deployment.getId(), nodeId, UUID.fromString(write.writeId()), node.name(),
+                    StreamingSinkType.JDBC, checkpointPrefix + write.writeId()));
+        }
+        if (node instanceof ModelOutputNodeDefinition output) {
+            return output.configuration().writes().stream().map(write -> TaskStreamingQuery.create(
+                    deployment.getId(), nodeId, UUID.fromString(write.writeId()), node.name(),
+                    StreamingSinkType.JDBC, checkpointPrefix + write.writeId()));
+        }
+        return Stream.empty();
     }
 
     private TaskStreamingStatusResponse status(UUID taskId, TaskStreamingDeployment deployment) {

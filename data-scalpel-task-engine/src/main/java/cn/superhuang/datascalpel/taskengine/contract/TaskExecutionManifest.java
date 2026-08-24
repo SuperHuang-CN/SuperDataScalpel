@@ -27,9 +27,9 @@ public record TaskExecutionManifest(
         SparkJarExecutionPayload sparkJarJob,
         SparkStreamingJarExecutionPayload streamingSparkJarJob
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 18;
+    public static final int CURRENT_MANIFEST_VERSION = 21;
     /** Retained as a symbolic value for diagnostics/tests; Runner does not accept it. */
-    public static final int PREVIOUS_MANIFEST_VERSION = 17;
+    public static final int PREVIOUS_MANIFEST_VERSION = 20;
 
     public TaskExecutionManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);

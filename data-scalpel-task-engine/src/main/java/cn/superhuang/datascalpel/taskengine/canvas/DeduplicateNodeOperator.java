@@ -7,11 +7,13 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.DeduplicateConfiguration;
+import cn.superhuang.data.scalpel.contract.task.DeduplicateOperation;
 import cn.superhuang.data.scalpel.contract.task.DeduplicateKeepStrategy;
 import cn.superhuang.data.scalpel.contract.task.DeduplicateNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.NullOrdering;
 import cn.superhuang.data.scalpel.contract.task.SortDirection;
 import cn.superhuang.data.scalpel.contract.task.SortField;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Column;
@@ -60,6 +62,19 @@ public final class DeduplicateNodeOperator implements CanvasNodeOperator {
         DeduplicateConfiguration configuration = node.configuration();
         if (configuration == null) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
+        }
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        DeduplicateOperation sourceOperation = (DeduplicateOperation) operation.operation();
+                        DeduplicateConfiguration single = new DeduplicateConfiguration(List.of(new DeduplicateOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()),
+                                sourceOperation.keyColumns(), sourceOperation.keepStrategy(), sourceOperation.orderBy()
+                        )));
+                        return apply(new DeduplicateNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
         }
 
         CanvasNodeIssueSink issues = context.issues();

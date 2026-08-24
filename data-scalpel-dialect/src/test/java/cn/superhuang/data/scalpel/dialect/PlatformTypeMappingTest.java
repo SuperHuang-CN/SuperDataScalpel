@@ -66,7 +66,7 @@ class PlatformTypeMappingTest {
     }
 
     @Test
-    void mapsClickHouseUnsignedTypesAndBlocksSemanticLossOnWrites() {
+    void mapsClickHouseUnsignedTypesAndKeepsLogicalStringLength() {
         DatabaseDialect dialect = BuiltInDialects.registry().require("CLICKHOUSE");
 
         var uint64 = dialect.mapToPlatformType(jdbc(Types.BIGINT, "UInt64", null, null, null));
@@ -77,8 +77,9 @@ class PlatformTypeMappingTest {
         assertEquals(PlatformDataType.TIMESTAMP, datetime.definition().type());
 
         var boundedString = dialect.mapToPhysicalType(PlatformTypeDefinition.string(64));
-        assertEquals(TypeMappingQuality.LOSSY, boundedString.quality());
-        assertFalse(boundedString.acceptable());
+        assertEquals(TypeMappingQuality.NORMALIZED, boundedString.quality());
+        assertTrue(boundedString.acceptable());
+        assertEquals(TableColumnType.TEXT, boundedString.definition().type());
 
         var unboundedString = dialect.mapToPhysicalType(PlatformTypeDefinition.string(null));
         assertTrue(unboundedString.acceptable());

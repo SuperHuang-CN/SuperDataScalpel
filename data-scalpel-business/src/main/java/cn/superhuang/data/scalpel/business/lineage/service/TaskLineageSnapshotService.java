@@ -374,7 +374,7 @@ public class TaskLineageSnapshotService {
             Map<String, TaskLineageSnapshotDraft.AssetDraft> assets,
             Map<FieldKey, TaskLineageSnapshotDraft.FieldDraft> fields
     ) {
-        if (fields.values().stream().anyMatch(field -> field.outputEffect() == LineageOutputFieldEffect.WRITTEN_UNKNOWN_SOURCE)) {
+        if (hasUnknownOutputSource(assets.keySet(), fields.values())) {
             throw new IllegalArgumentException("FIELD_COMPLETE 血缘不能包含未知来源字段");
         }
         for (TaskLineageSnapshotDraft.AssetDraft asset : assets.values()) {
@@ -389,6 +389,16 @@ public class TaskLineageSnapshotService {
                 throw new IllegalArgumentException("FIELD_COMPLETE 必须覆盖输出模型的全部字段");
             }
         }
+    }
+
+    static boolean hasUnknownOutputSource(
+            Set<String> assetKeys,
+            Collection<TaskLineageSnapshotDraft.FieldDraft> fields
+    ) {
+        return fields.stream()
+                .filter(field -> assetKeys.contains(field.assetKey()))
+                .anyMatch(field -> field.outputEffect()
+                        == LineageOutputFieldEffect.WRITTEN_UNKNOWN_SOURCE);
     }
 
     private void validateFlowCoverage(

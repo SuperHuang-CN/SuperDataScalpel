@@ -159,6 +159,25 @@ public class LocalDockerExecutionBackend implements TaskExecutionBackend {
         cancelInspection(inspection);
     }
 
+    @Override
+    public void forceTerminate(ExternalExecutionHandle handle, ExecutionIdentity identity) throws BackendException {
+        requireHandle(handle);
+        if (identity == null) throw new BackendException("INVALID_EXECUTION_IDENTITY", "执行身份不能为空");
+        Optional<DockerContainerInspection> direct = inspectIfPresent(handle.externalId());
+        if (direct.isPresent()) {
+            requireIdentity(direct.get(), identity);
+            forceTerminateInspection(direct.get());
+            return;
+        }
+        Optional<ExternalExecutionHandle> recovered = recover(identity);
+        if (recovered.isEmpty()) return;
+        DockerContainerInspection inspection = inspectIfPresent(recovered.get().externalId())
+                .orElseThrow(() -> new BackendException(
+                        "EXTERNAL_EXECUTION_NOT_FOUND", "恢复后未找到待强制终止的 Docker 容器"));
+        requireIdentity(inspection, identity);
+        forceTerminateInspection(inspection);
+    }
+
     private void cancelExisting(ExternalExecutionHandle handle, ExecutionIdentity identity) throws BackendException {
         requireHandle(handle);
         DockerContainerInspection inspection = inspectIfPresent(handle.externalId())
@@ -178,6 +197,19 @@ public class LocalDockerExecutionBackend implements TaskExecutionBackend {
                 properties.stopTimeout().plusSeconds(5), CONTROL_OUTPUT_BYTES);
         Optional<DockerContainerInspection> afterStop = inspectIfPresent(inspection.id());
         if (!stopped.successful() || afterStop.filter(value -> active(value.status(), value.running())).isPresent()) {
+            requireSuccess(commands.kill(inspection.id()), Duration.ofSeconds(10),
+                    "DOCKER_KILL_FAILED", "无法强制停止 Docker 容器");
+        }
+    }
+
+    private void forceTerminateInspection(DockerContainerInspection inspection) throws BackendException {
+        String state = inspection.status().toLowerCase(Locale.ROOT);
+        if ("created".equals(state)) {
+            requireSuccess(commands.remove(inspection.id()), properties.commandTimeout(),
+                    "DOCKER_REMOVE_FAILED", "无法删除未启动容器");
+            return;
+        }
+        if (active(state, inspection.running())) {
             requireSuccess(commands.kill(inspection.id()), Duration.ofSeconds(10),
                     "DOCKER_KILL_FAILED", "无法强制停止 Docker 容器");
         }

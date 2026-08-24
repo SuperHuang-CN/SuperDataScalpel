@@ -1,6 +1,7 @@
 package cn.superhuang.datascalpel.taskengine.compiler.canvas;
 
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationContext;
+import cn.superhuang.datascalpel.taskengine.canvas.CanvasRuntimeValues;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationResult;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperatorRegistry;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperators;
@@ -63,9 +64,7 @@ public final class CanvasTaskCompiler {
                 result.outputTables(output.displayedOutputTables());
                 if (!result.hasErrors()) {
                     propagated.set(entryIndex, output.propagatedTables());
-                    if (output.lineageOutputCandidate() != null) {
-                        lineageOutputs.add(output.lineageOutputCandidate());
-                    }
+                    lineageOutputs.addAll(output.lineageOutputCandidates());
                 }
             } catch (Exception exception) {
                 result.error("SPARK_ANALYSIS_ERROR", safeMessage(exception), "configuration");
@@ -102,13 +101,14 @@ public final class CanvasTaskCompiler {
                         metadataIndex,
                         result,
                         new SchemaOnlyCanvasNodeDataAccess(sparkSession),
-                        executionMode
+                        executionMode,
+                        CanvasRuntimeValues.forPreview()
                 )
         );
         Map<String, SparkCanvasTable> marked = markLineageBoundaries(
                 node, inputs, output.propagatedTables(), metadataIndex);
         return new NodeCompileOutput(
-                marked, output.displayedOutputTables(), output.lineageOutputCandidate());
+                marked, output.displayedOutputTables(), output.lineageOutputCandidates());
     }
 
     private Map<String, SparkCanvasTable> markLineageBoundaries(

@@ -84,6 +84,41 @@ class TaskCompilationContractTest {
     }
 
     @Test
+    void rejectsTheRemovedDerivationWriteModeProperty() {
+        String definition = """
+                {
+                  "schemaVersion": 4,
+                  "schemaMinorVersion": 0,
+                  "nodes": [{
+                    "id": "11111111-1111-4111-8111-111111111111",
+                    "type": "DERIVE_COLUMNS",
+                    "name": "派生字段",
+                    "layout": {"x": 0, "y": 0, "width": 240, "height": 120},
+                    "configuration": {
+                      "globalDerivations": [{
+                        "targetColumnName": "source_record_hash",
+                        "expression": {
+                          "kind": "LITERAL",
+                          "literal": {"dataType": "STRING", "value": "hash"}
+                        },
+                        "replaceExisting": false
+                      }],
+                      "operations": []
+                    }
+                  }],
+                  "edges": []
+                }
+                """;
+
+        UnrecognizedPropertyException exception = assertThrows(
+                UnrecognizedPropertyException.class,
+                () -> objectMapper.readValue(definition, CanvasDefinition.class)
+        );
+
+        assertEquals("replaceExisting", exception.getPropertyName());
+    }
+
+    @Test
     void rejectsDuplicateJsonProperties() throws Exception {
         String duplicateRequestId = example().replaceFirst(
                 "\"requestId\": \"9e43bb7f-532d-41f5-9f85-3e06aabb51c8\"",

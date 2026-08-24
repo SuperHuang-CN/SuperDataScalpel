@@ -27,7 +27,9 @@ public class AssistantToolExecutionService {
     private final AssistantToolCatalog catalog;
     private final AssistantDirectoryQueryService directoryQueryService;
     private final AssistantDataSourceQueryService dataSourceQueryService;
+    private final AssistantTaskCanvasQueryService taskCanvasQueryService;
     private final DirectoryChangePlanService directoryChangePlanService;
+    private final TaskCanvasProposalService taskCanvasProposalService;
     private final AssistantRunPersistenceService runPersistenceService;
     private final ObjectMapper objectMapper;
 
@@ -35,14 +37,18 @@ public class AssistantToolExecutionService {
             AssistantToolCatalog catalog,
             AssistantDirectoryQueryService directoryQueryService,
             AssistantDataSourceQueryService dataSourceQueryService,
+            AssistantTaskCanvasQueryService taskCanvasQueryService,
             DirectoryChangePlanService directoryChangePlanService,
+            TaskCanvasProposalService taskCanvasProposalService,
             AssistantRunPersistenceService runPersistenceService,
             ObjectMapper objectMapper
     ) {
         this.catalog = catalog;
         this.directoryQueryService = directoryQueryService;
         this.dataSourceQueryService = dataSourceQueryService;
+        this.taskCanvasQueryService = taskCanvasQueryService;
         this.directoryChangePlanService = directoryChangePlanService;
+        this.taskCanvasProposalService = taskCanvasProposalService;
         this.runPersistenceService = runPersistenceService;
         this.objectMapper = objectMapper;
     }
@@ -59,9 +65,10 @@ public class AssistantToolExecutionService {
         try {
             ToolValue value = executeValue(sessionId, runId, username, authentication, toolCall.name(), arguments);
             String resultJson = write(Map.of("ok", true, "result", value.response()));
+            String auditResultJson = safeResultForAudit(toolCall.name(), value.response(), resultJson);
             runPersistenceService.recordTool(
                     runId, toolCall.name(), catalog.risk(toolCall.name()), AssistantToolStatus.SUCCEEDED,
-                    auditArguments, resultJson
+                    auditArguments, auditResultJson
             );
             return new ToolExecution(resultJson, value.clientAction(), value.changeSet());
         } catch (AccessDeniedException exception) {
@@ -197,8 +204,122 @@ public class AssistantToolExecutionService {
                 );
                 yield ToolValue.action(AssistantClientActionResponse.testDataSource(target.id(), target.name()));
             }
+            case AssistantToolCatalog.TASK_SEARCH -> {
+                requireAuthority(authentication, "task.view");
+                AssistantTaskCanvasQueryService.TaskSearchArguments request = read(
+                        argumentsJson, AssistantTaskCanvasQueryService.TaskSearchArguments.class
+                );
+                yield ToolValue.response(taskCanvasQueryService.searchTasks(
+                        request, AssistantPageCatalog.hasAuthority(authentication, "directory.view")
+                ));
+            }
+            case AssistantToolCatalog.TASK_GET -> {
+                requireAuthority(authentication, "task.view");
+                yield ToolValue.response(taskCanvasQueryService.task(
+                        requiredUuid(arguments, "taskId"),
+                        AssistantPageCatalog.hasAuthority(authentication, "directory.view")
+                ));
+            }
+            case AssistantToolCatalog.TASK_GET_CANVAS_SUMMARY -> {
+                requireAuthority(authentication, "task.view");
+                yield ToolValue.response(taskCanvasQueryService.canvasSummary(requiredUuid(arguments, "taskId")));
+            }
+            case AssistantToolCatalog.TASK_CANVAS_MODEL_SEARCH -> {
+                requireAuthority(authentication, "model.view");
+                yield ToolValue.response(taskCanvasQueryService.searchModels(read(
+                        argumentsJson, AssistantTaskCanvasQueryService.ModelSearchArguments.class
+                )));
+            }
+            case AssistantToolCatalog.TASK_CANVAS_MODEL_SCHEMA -> {
+                requireAuthority(authentication, "model.view");
+                yield ToolValue.response(taskCanvasQueryService.modelSchema(
+                        requiredUuid(arguments, "modelId"), optionalInteger(arguments, "limit")
+                ));
+            }
+            case AssistantToolCatalog.TASK_CANVAS_FILE_DATASET_SEARCH -> {
+                requireAuthority(authentication, "filedataset.view");
+                yield ToolValue.response(taskCanvasQueryService.searchFileDatasets(read(
+                        argumentsJson, AssistantTaskCanvasQueryService.FileDatasetSearchArguments.class
+                )));
+            }
+            case AssistantToolCatalog.TASK_CANVAS_FILE_TABLE_SEARCH -> {
+                requireAuthority(authentication, "filedataset.view");
+                yield ToolValue.response(taskCanvasQueryService.searchFileTables(read(
+                        argumentsJson, AssistantTaskCanvasQueryService.FileTableSearchArguments.class
+                )));
+            }
+            case AssistantToolCatalog.TASK_CANVAS_FILE_TABLE_SCHEMA -> {
+                requireAuthority(authentication, "filedataset.view");
+                yield ToolValue.response(taskCanvasQueryService.fileTableSchema(
+                        requiredUuid(arguments, "fileDatasetId"),
+                        requiredUuid(arguments, "fileDatasetTableId"), optionalInteger(arguments, "limit")
+                ));
+            }
+            case AssistantToolCatalog.TASK_CANVAS_JDBC_TABLES -> {
+                requireAuthority(authentication, "datasource.view");
+                requireAuthority(authentication, "datasource.metadata");
+                yield ToolValue.response(taskCanvasQueryService.jdbcTables(
+                        requiredUuid(arguments, "dataSourceId"), optionalText(arguments, "keyword")
+                ));
+            }
+            case AssistantToolCatalog.TASK_CANVAS_JDBC_TABLE_SCHEMA -> {
+                requireAuthority(authentication, "datasource.view");
+                requireAuthority(authentication, "datasource.metadata");
+                yield ToolValue.response(taskCanvasQueryService.jdbcTableSchema(
+                        requiredUuid(arguments, "dataSourceId"), requiredText(arguments, "tableName"),
+                        optionalInteger(arguments, "limit")
+                ));
+            }
+            case AssistantToolCatalog.TASK_PROPOSE_CANVAS -> {
+                requireAuthority(authentication, "task.view");
+                requireAuthority(authentication, "task.update");
+                TaskCanvasPlan plan = read(argumentsJson, TaskCanvasPlan.class);
+                if (plan.target() != null && plan.target().taskId() == null) {
+                    requireAuthority(authentication, "task.create");
+                    if (plan.target().newTask() != null && plan.target().newTask().directoryId() != null) {
+                        requireAuthority(authentication, "directory.view");
+                    }
+                }
+                requireResourceAuthorities(authentication, plan);
+                AssistantChangeSet changeSet = taskCanvasProposalService.propose(
+                        sessionId, runId, username, plan
+                );
+                yield ToolValue.changeSetAction(
+                        changeSet,
+                        AssistantClientActionResponse.taskCanvasProposal(
+                                changeSet.getId(), plan.target().taskId(), plan.target().newTask()
+                        ),
+                        new ChangeSetResult(
+                                changeSet.getId(), changeSet.getSummary(), "PENDING",
+                                "提案仅保存到 AI 助手，尚未创建任务、替换或保存 Canvas。"
+                        )
+                );
+            }
             default -> throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "未知或当前不可用的助手工具");
         };
+    }
+
+    private static void requireResourceAuthorities(Authentication authentication, TaskCanvasPlan plan) {
+        if (plan == null) throw new IllegalArgumentException("Canvas 计划不能为空");
+        for (TaskCanvasPlan.Input input : plan.inputs()) {
+            if (input == null || input.type() == null) throw new IllegalArgumentException("Canvas 输入不完整");
+            switch (input.type()) {
+                case MODEL -> requireAuthority(authentication, "model.view");
+                case FILE_DATASET_TABLE -> requireAuthority(authentication, "filedataset.view");
+                case JDBC_TABLE -> {
+                    requireAuthority(authentication, "datasource.view");
+                    requireAuthority(authentication, "datasource.metadata");
+                }
+            }
+        }
+        if (plan.output() == null || plan.output().type() == null) throw new IllegalArgumentException("Canvas 输出不完整");
+        switch (plan.output().type()) {
+            case MODEL_OUTPUT -> requireAuthority(authentication, "model.view");
+            case JDBC_OUTPUT -> {
+                requireAuthority(authentication, "datasource.view");
+                requireAuthority(authentication, "datasource.metadata");
+            }
+        }
     }
 
     private static AssistantClientActionResponse navigate(Authentication authentication, String pageKey) {
@@ -258,6 +379,25 @@ public class AssistantToolExecutionService {
             case AssistantToolCatalog.DATA_SOURCE_PREPARE_UPDATE -> Set.of(
                     "dataSourceId", "name", "directoryId", "purposes", "enabled", "description"
             );
+            case AssistantToolCatalog.TASK_SEARCH -> Set.of("keyword", "status", "type", "limit");
+            case AssistantToolCatalog.TASK_GET,
+                    AssistantToolCatalog.TASK_GET_CANVAS_SUMMARY -> Set.of("taskId");
+            case AssistantToolCatalog.TASK_CANVAS_MODEL_SEARCH,
+                    AssistantToolCatalog.TASK_CANVAS_FILE_DATASET_SEARCH -> Set.of("keyword", "limit");
+            case AssistantToolCatalog.TASK_CANVAS_MODEL_SCHEMA -> Set.of("modelId", "limit");
+            case AssistantToolCatalog.TASK_CANVAS_FILE_TABLE_SEARCH -> Set.of(
+                    "fileDatasetId", "keyword", "limit"
+            );
+            case AssistantToolCatalog.TASK_CANVAS_FILE_TABLE_SCHEMA -> Set.of(
+                    "fileDatasetId", "fileDatasetTableId", "limit"
+            );
+            case AssistantToolCatalog.TASK_CANVAS_JDBC_TABLES -> Set.of(
+                    "dataSourceId", "keyword"
+            );
+            case AssistantToolCatalog.TASK_CANVAS_JDBC_TABLE_SCHEMA -> Set.of(
+                    "dataSourceId", "tableName", "limit"
+            );
+            case AssistantToolCatalog.TASK_PROPOSE_CANVAS -> Set.of();
             default -> null;
         };
         if (allowedFields == null) return argumentsJson;
@@ -268,6 +408,7 @@ public class AssistantToolExecutionService {
             List<String> orderedFields = List.of(
                     "dataSourceId", "code", "name", "directoryId", "purposes", "type", "enabled",
                     "description", "keyword", "purpose", "limit"
+                    , "taskId", "status", "modelId", "fileDatasetId", "fileDatasetTableId", "tableName"
             );
             for (String field : orderedFields) {
                 if (allowedFields.contains(field) && source.has(field)) safe.put(field, source.get(field));
@@ -276,6 +417,26 @@ public class AssistantToolExecutionService {
         } catch (RuntimeException exception) {
             return "{}";
         }
+    }
+
+    private String safeResultForAudit(String toolName, Object response, String fallback) {
+        if ((toolName.equals(AssistantToolCatalog.TASK_CANVAS_MODEL_SCHEMA)
+                || toolName.equals(AssistantToolCatalog.TASK_CANVAS_FILE_TABLE_SCHEMA)
+                || toolName.equals(AssistantToolCatalog.TASK_CANVAS_JDBC_TABLE_SCHEMA))
+                && response instanceof AssistantTaskCanvasQueryService.SafeSchema schema) {
+            return write(Map.of(
+                    "ok", true,
+                    "result", Map.of(
+                            "kind", schema.kind(),
+                            "resourceId", schema.resourceId(),
+                            "subResourceId", schema.subResourceId() == null ? "" : schema.subResourceId(),
+                            "fieldCount", schema.fields().size(),
+                            "schemaFingerprint", schema.fingerprint(),
+                            "truncated", schema.truncated()
+                    )
+            ));
+        }
+        return fallback;
     }
 
     private static String normalizeArguments(String value) {
@@ -299,6 +460,16 @@ public class AssistantToolExecutionService {
         } catch (IllegalArgumentException exception) {
             throw new IllegalArgumentException("参数 " + field + " 必须是有效 UUID", exception);
         }
+    }
+
+    private static Integer optionalInteger(JsonNode node, String field) {
+        return node.path(field).canConvertToInt() ? node.path(field).asInt() : null;
+    }
+
+    private static String optionalText(JsonNode node, String field) {
+        if (!node.path(field).isTextual()) return null;
+        String value = node.path(field).asText().trim();
+        return value.isEmpty() ? null : value;
     }
 
     private static DirectoryScope requiredScope(JsonNode node) {
@@ -355,6 +526,14 @@ public class AssistantToolExecutionService {
 
         static ToolValue changeSet(AssistantChangeSet changeSet, Object response) {
             return new ToolValue(response, null, changeSet);
+        }
+
+        static ToolValue changeSetAction(
+                AssistantChangeSet changeSet,
+                AssistantClientActionResponse action,
+                Object response
+        ) {
+            return new ToolValue(response, action, changeSet);
         }
     }
 }

@@ -212,6 +212,110 @@ class DispatcherRunnerResultIntegrationTest {
     }
 
     @Test
+    void acceptsV7MultiOutputWritesAsOneNodeResult() throws Exception {
+        Prepared prepared = prepare("v7-multi-output");
+        Instant now = Instant.now();
+        String nodeId = UUID.randomUUID().toString();
+        byte[] result = ("""
+                {
+                  "schemaVersion":7,"executionId":"%s","runId":"%s","attempt":1,
+                  "state":"SUCCESS","startedAt":"%s","endedAt":"%s","durationMs":2,
+                  "affectedRows":10723,"taskType":"SPARK_CANVAS",
+                  "nodeResults":[{
+                    "nodeId":"%s","nodeType":"MODEL_OUTPUT","nodeName":"模型输出",
+                    "state":"SUCCESS","phase":"WRITE","startedAt":"%s","endedAt":"%s",
+                    "durationMs":2,"rowsWritten":10723,
+                    "metrics":{"kind":"OUTPUT_WRITES","writes":[
+                      {"writeId":"%s","sourceTableName":"source_a","targetDisplayName":"target_a",
+                       "state":"SUCCESS","affectedRows":10562,"errorCode":null},
+                      {"writeId":"%s","sourceTableName":"source_b","targetDisplayName":"target_b",
+                       "state":"SUCCESS","affectedRows":161,"errorCode":null}
+                    ]},
+                    "message":"模型输出写入成功","error":null
+                  }],
+                  "error":null
+                }
+                """).formatted(
+                prepared.executionId(), prepared.runId(), now.minusMillis(2), now,
+                nodeId, now.minusMillis(2), now,
+                UUID.randomUUID(), UUID.randomUUID()).getBytes(StandardCharsets.UTF_8);
+        artifactService.store(prepared.resultKey(), result, "application/json");
+
+        assertThat(resultService.verify(prepared.executionId(), sha256(result)))
+                .isEqualTo(DispatcherResultResolution.VERIFIED);
+    }
+
+    @Test
+    void acceptsV7PartialOutputFailureAndRejectsDuplicateNodeIds() throws Exception {
+        Prepared prepared = prepare("v7-partial-output");
+        Instant now = Instant.now();
+        String nodeId = UUID.randomUUID().toString();
+        String diagnosticId = UUID.randomUUID().toString();
+        String error = """
+                {"code":"JDBC_WRITE_FAILED","message":"第二项目标写入失败",
+                 "category":"EXTERNAL_SYSTEM","retryable":false,"nodeId":"%s",
+                 "nodeType":"JDBC_OUTPUT","nodeName":"JDBC 输出","phase":"WRITE",
+                 "sqlState":null,"diagnosticId":"%s"}
+                """.formatted(nodeId, diagnosticId).strip();
+        String node = """
+                {"nodeId":"%s","nodeType":"JDBC_OUTPUT","nodeName":"JDBC 输出",
+                 "state":"FAILED","phase":"WRITE","startedAt":"%s","endedAt":"%s",
+                 "durationMs":2,"rowsWritten":42,
+                 "metrics":{"kind":"OUTPUT_WRITES","writes":[
+                   {"writeId":"%s","sourceTableName":"source_a","targetDisplayName":"target_a",
+                    "state":"SUCCESS","affectedRows":42,"errorCode":null},
+                   {"writeId":"%s","sourceTableName":"source_b","targetDisplayName":"target_b",
+                    "state":"FAILED","affectedRows":null,"errorCode":"JDBC_WRITE_FAILED"},
+                   {"writeId":"%s","sourceTableName":"source_c","targetDisplayName":"target_c",
+                    "state":"SKIPPED","affectedRows":null,"errorCode":null}
+                 ]},"message":"第二项目标写入失败","error":%s}
+                """.formatted(
+                nodeId, now.minusMillis(2), now,
+                UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), error).strip();
+        byte[] result = ("""
+                {"schemaVersion":7,"executionId":"%s","runId":"%s","attempt":1,
+                 "state":"FAILED","startedAt":"%s","endedAt":"%s","durationMs":2,
+                 "affectedRows":42,"taskType":"SPARK_CANVAS",
+                 "nodeResults":[%s],"error":%s}
+                """).formatted(
+                prepared.executionId(), prepared.runId(), now.minusMillis(2), now,
+                node, error).getBytes(StandardCharsets.UTF_8);
+        artifactService.store(prepared.resultKey(), result, "application/json");
+
+        assertThat(resultService.verify(prepared.executionId(), sha256(result)))
+                .isEqualTo(DispatcherResultResolution.VERIFIED);
+
+        byte[] unknownRowsResult = new String(result, StandardCharsets.UTF_8)
+                .replace("\"affectedRows\":42", "\"affectedRows\":null")
+                .replace("\"rowsWritten\":42", "\"rowsWritten\":null")
+                .getBytes(StandardCharsets.UTF_8);
+        artifactService.store(prepared.resultKey(), unknownRowsResult, "application/json");
+        assertThat(resultService.verify(prepared.executionId(), sha256(unknownRowsResult)))
+                .isEqualTo(DispatcherResultResolution.VERIFIED);
+
+        byte[] inconsistentTotalResult = new String(result, StandardCharsets.UTF_8)
+                .replaceFirst("\\\"affectedRows\\\":42", "\\\"affectedRows\\\":41")
+                .getBytes(StandardCharsets.UTF_8);
+        artifactService.store(prepared.resultKey(), inconsistentTotalResult, "application/json");
+        assertThat(resultService.verify(prepared.executionId(), sha256(inconsistentTotalResult)))
+                .isEqualTo(DispatcherResultResolution.ARTIFACT_INVALID);
+
+        byte[] invalidSequenceResult = new String(result, StandardCharsets.UTF_8)
+                .replaceFirst("\\\"state\\\":\\\"SUCCESS\\\"", "\\\"state\\\":\\\"SKIPPED\\\"")
+                .getBytes(StandardCharsets.UTF_8);
+        artifactService.store(prepared.resultKey(), invalidSequenceResult, "application/json");
+        assertThat(resultService.verify(prepared.executionId(), sha256(invalidSequenceResult)))
+                .isEqualTo(DispatcherResultResolution.ARTIFACT_INVALID);
+
+        byte[] duplicateNodeResult = new String(result, StandardCharsets.UTF_8)
+                .replace("\"nodeResults\":[" + node + "]", "\"nodeResults\":[" + node + "," + node + "]")
+                .getBytes(StandardCharsets.UTF_8);
+        artifactService.store(prepared.resultKey(), duplicateNodeResult, "application/json");
+        assertThat(resultService.verify(prepared.executionId(), sha256(duplicateNodeResult)))
+                .isEqualTo(DispatcherResultResolution.ARTIFACT_INVALID);
+    }
+
+    @Test
     void acceptsEveryNodeTypeDeclaredByTheStableCanvasContract() throws Exception {
         Prepared prepared = prepare("all-canvas-node-types");
         Instant now = Instant.now();

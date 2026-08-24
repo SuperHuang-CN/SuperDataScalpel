@@ -11,7 +11,8 @@ public record CanvasNodeOperationContext(
         MetadataIndex metadataIndex,
         CanvasNodeIssueSink issues,
         CanvasNodeDataAccess dataAccess,
-        CanvasExecutionMode executionMode
+        CanvasExecutionMode executionMode,
+        CanvasRuntimeValues runtimeValues
 ) {
     public CanvasNodeOperationContext {
         Objects.requireNonNull(sparkSession, "sparkSession");
@@ -19,6 +20,7 @@ public record CanvasNodeOperationContext(
         Objects.requireNonNull(issues, "issues");
         Objects.requireNonNull(dataAccess, "dataAccess");
         Objects.requireNonNull(executionMode, "executionMode");
+        Objects.requireNonNull(runtimeValues, "runtimeValues");
     }
 
     public CanvasNodeOperationContext(
@@ -32,7 +34,8 @@ public record CanvasNodeOperationContext(
                 metadataIndex,
                 issues,
                 dataAccess,
-                CanvasExecutionMode.BATCH
+                CanvasExecutionMode.BATCH,
+                CanvasRuntimeValues.forPreview()
         );
     }
 }

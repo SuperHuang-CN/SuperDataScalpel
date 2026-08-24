@@ -7,7 +7,7 @@
 - 节点类型：`SPATIAL_MEASURE`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：`BATCH`、`STREAMING`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `SPATIAL_MEASURE` 对一张逻辑表中的 Geometry 字段执行逐行空间测量，在保留来源行和字段
 的同时追加一个或多个 DOUBLE 指标。首期支持面积、长度、周长、两 Geometry 间距离以及

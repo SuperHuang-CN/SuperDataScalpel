@@ -145,11 +145,29 @@ public class DispatcherExecutionStateService {
     public void cancelled(UUID executionId) {
         DispatcherTaskExecution execution = locked(executionId);
         if (execution.getState().terminal()) return;
-        SafeExecutionError error = dispatcherError(
-                "EXECUTION_CANCELLED", "执行已取消", ExecutionErrorCategory.CANCELLED, false);
+        SafeExecutionError error = execution.isForceTerminateRequested()
+                ? dispatcherError("EXECUTION_FORCE_TERMINATED", "执行已被强制终止",
+                        ExecutionErrorCategory.CANCELLED, false)
+                : dispatcherError("EXECUTION_CANCELLED", "执行已取消",
+                        ExecutionErrorCategory.CANCELLED, false);
         execution.cancelled(error);
         executionRepository.save(execution);
         eventService.enqueue(execution, ExecutionMessageType.EXECUTION_CANCELLED, error, null);
+    }
+
+    @Transactional
+    public void forceTerminationUnconfirmed(UUID executionId) {
+        DispatcherTaskExecution execution = locked(executionId);
+        if (execution.getState().terminal()) return;
+        SafeExecutionError error = dispatcherError(
+                "EXECUTION_TERMINATION_UNCONFIRMED",
+                "强制终止后仍无法确认 Backend 终态，平台已停止跟踪该执行",
+                ExecutionErrorCategory.EXTERNAL_SYSTEM,
+                false
+        );
+        execution.lost(error);
+        executionRepository.save(execution);
+        eventService.enqueue(execution, ExecutionMessageType.EXECUTION_LOST, error, null);
     }
 
     @Transactional

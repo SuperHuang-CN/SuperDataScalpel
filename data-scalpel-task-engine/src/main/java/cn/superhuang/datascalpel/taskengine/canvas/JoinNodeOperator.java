@@ -10,12 +10,14 @@ import cn.superhuang.data.scalpel.contract.task.JoinCondition;
 import cn.superhuang.data.scalpel.contract.task.JoinConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JoinOperator;
+import cn.superhuang.data.scalpel.contract.task.JoinOutputColumnSource;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
+import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -102,13 +104,9 @@ public final class JoinNodeOperator implements CanvasNodeOperator {
 
         Map<String, CanvasColumnSchema> leftColumns = CanvasNodeSupport.columns(left.schema());
         Map<String, CanvasColumnSchema> rightColumns = CanvasNodeSupport.columns(right.schema());
-        leftColumns.keySet().stream().filter(rightColumns::containsKey).forEach(columnName ->
-                issues.error(
-                        "DUPLICATE_COLUMN_NAME",
-                        "Join 结果包含同名字段：" + columnName,
-                        "configuration"
-                ));
         validateConditions(configuration, leftColumns, rightColumns, issues);
+        List<JoinOutputColumnSupport.ResolvedOutputColumn> outputColumns = JoinOutputColumnSupport.validate(
+                configuration.outputColumns(), leftColumns, rightColumns, issues);
         if (issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
         }
@@ -127,14 +125,25 @@ public final class JoinNodeOperator implements CanvasNodeOperator {
                 expression,
                 configuration.joinType().name().toLowerCase()
         );
-        List<CanvasColumnSchema> fallback = CanvasNodeSupport.concatenatedColumns(left.schema(), right.schema());
+        List<Column> projections = new ArrayList<>(outputColumns.size());
+        List<CanvasColumnSchema> fallback = new ArrayList<>(outputColumns.size());
+        for (JoinOutputColumnSupport.ResolvedOutputColumn outputColumn : outputColumns) {
+            Dataset<Row> sourceDataset = outputColumn.sourceSide() == JoinOutputColumnSource.LEFT
+                    ? leftDataset : rightDataset;
+            projections.add(sourceDataset
+                    .col(CanvasNodeSupport.quoteIdentifier(outputColumn.sourceColumn().name()))
+                    .alias(outputColumn.outputColumnName()));
+            fallback.add(JoinOutputColumnSupport.copyWithName(
+                    outputColumn.sourceColumn(), outputColumn.outputColumnName()));
+        }
+        Dataset<Row> projected = joined.select(projections.toArray(Column[]::new));
         CanvasTableSchema joinedSchema = new CanvasTableSchema(
                 configuration.outputTableName(),
                 null,
-                SparkTypeMapper.fromStructType(joined.schema(), fallback)
+                SparkTypeMapper.fromStructType(projected.schema(), fallback)
         );
         Map<String, SparkCanvasTable> output = new LinkedHashMap<>(inputs);
-        output.put(joinedSchema.name(), new SparkCanvasTable(joinedSchema, joined));
+        output.put(joinedSchema.name(), new SparkCanvasTable(joinedSchema, projected));
         return CanvasNodeOperationResult.propagated(output, CanvasNodeSupport.schemas(output));
     }
 

@@ -3,7 +3,9 @@ package cn.superhuang.datascalpel.taskengine.contract;
 
 
 import java.time.Instant;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.UserJobObservabilitySnapshot;
@@ -24,10 +26,15 @@ public record TaskExecutionResult(
         UserJobObservabilitySnapshot userJobObservability,
         TaskExecutionError error
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 6;
+    public static final int CURRENT_SCHEMA_VERSION = 7;
 
     public TaskExecutionResult {
         nodeResults = nodeResults == null ? List.of() : List.copyOf(nodeResults);
+        Set<String> nodeIds = new HashSet<>();
+        if (nodeResults.stream().anyMatch(node -> node == null
+                || !nodeIds.add(node.nodeId().toLowerCase(java.util.Locale.ROOT)))) {
+            throw new IllegalArgumentException("任务执行结果包含空节点或重复 nodeId");
+        }
         if (schemaVersion == null || schemaVersion != CURRENT_SCHEMA_VERSION || executionId == null
                 || runId == null || attempt == null || attempt < 1 || state == null || !state.terminal()
                 || startedAt == null || endedAt == null || endedAt.isBefore(startedAt)

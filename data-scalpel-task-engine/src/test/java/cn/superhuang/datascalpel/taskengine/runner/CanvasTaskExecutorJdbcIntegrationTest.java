@@ -9,19 +9,24 @@ import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.JdbcOutputWrite;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.JoinCondition;
 import cn.superhuang.data.scalpel.contract.task.JoinConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JoinOperator;
+import cn.superhuang.data.scalpel.contract.task.JoinOutputColumn;
+import cn.superhuang.data.scalpel.contract.task.JoinOutputColumnSource;
 import cn.superhuang.data.scalpel.contract.task.JoinType;
 import cn.superhuang.data.scalpel.contract.task.MetadataDataSource;
 import cn.superhuang.data.scalpel.contract.task.MetadataSnapshot;
 import cn.superhuang.data.scalpel.contract.task.MetadataTable;
 import cn.superhuang.datascalpel.taskengine.contract.NodeExecutionState;
+import cn.superhuang.datascalpel.taskengine.contract.OutputWritesMetrics;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDataSource;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType;
@@ -112,7 +117,7 @@ class CanvasTaskExecutorJdbcIntegrationTest {
     }
 
     @Test
-    void executesACrossDatabaseJoinAndSumsRowsFromTwoOutputs() throws Exception {
+    void executesACrossDatabaseJoinAndGroupsTwoWritesIntoOneOutputNodeResult() throws Exception {
         TaskExecutionManifest manifest = manifest();
 
         TaskExecutionResult result = new CanvasTaskExecutor().execute(manifest);
@@ -121,14 +126,17 @@ class CanvasTaskExecutorJdbcIntegrationTest {
         assertEquals(TaskExecutionResult.CURRENT_SCHEMA_VERSION, result.schemaVersion());
         assertEquals(4L, result.affectedRows());
         assertNull(result.error());
-        assertEquals(5, result.nodeResults().size());
-        assertEquals(List.of("JDBC_INPUT", "JDBC_INPUT", "JOIN", "JDBC_OUTPUT", "JDBC_OUTPUT"),
+        assertEquals(4, result.nodeResults().size());
+        assertEquals(List.of("JDBC_INPUT", "JDBC_INPUT", "JOIN", "JDBC_OUTPUT"),
                 result.nodeResults().stream().map(node -> node.nodeType()).toList());
         assertEquals(List.of(NodeExecutionState.SUCCESS, NodeExecutionState.SUCCESS,
-                        NodeExecutionState.SUCCESS, NodeExecutionState.SUCCESS, NodeExecutionState.SUCCESS),
+                        NodeExecutionState.SUCCESS, NodeExecutionState.SUCCESS),
                 result.nodeResults().stream().map(node -> node.state()).toList());
-        assertEquals(2L, result.nodeResults().get(3).rowsWritten());
-        assertEquals(2L, result.nodeResults().get(4).rowsWritten());
+        assertEquals(4L, result.nodeResults().get(3).rowsWritten());
+        OutputWritesMetrics metrics = (OutputWritesMetrics) result.nodeResults().get(3).metrics();
+        assertEquals(2, metrics.writes().size());
+        assertEquals(List.of(2L, 2L), metrics.writes().stream()
+                .map(write -> write.affectedRows()).toList());
         assertOutputRows("dwd_order_customer");
         assertOutputRows("dwd_order_customer_archive");
     }
@@ -326,12 +334,16 @@ class CanvasTaskExecutorJdbcIntegrationTest {
             RuntimeDataSource inputRuntime,
             RuntimeDataSource outputRuntime
     ) {
-        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
+        CanvasDefinition definition = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
                 new JdbcInputNodeDefinition(
                         inputNodeId,
                         "订单输入",
                         layout(),
-                        new JdbcInputConfiguration(inputDataSourceId.toString(), "orders")),
+                        new JdbcInputConfiguration(
+                                inputDataSourceId.toString(), List.of(new JdbcInputTableSelection("orders")))),
                 new JdbcOutputNodeDefinition(
                         outputNodeId,
                         "订单输出",
@@ -375,12 +387,16 @@ class CanvasTaskExecutorJdbcIntegrationTest {
             String inputNodeId,
             String outputNodeId
     ) {
-        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
+        CanvasDefinition definition = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
                 new JdbcInputNodeDefinition(
                         inputNodeId,
                         "整数输入",
                         layout(),
-                        new JdbcInputConfiguration(postgresId.toString(), "short_source")),
+                        new JdbcInputConfiguration(
+                                postgresId.toString(), List.of(new JdbcInputTableSelection("short_source")))),
                 new JdbcOutputNodeDefinition(
                         outputNodeId,
                         "短整型输出",
@@ -444,34 +460,45 @@ class CanvasTaskExecutorJdbcIntegrationTest {
         String customersNode = "e059d8fd-5cfc-4b4c-968b-3cbfe171a70a";
         String joinNode = "e55c50d7-374d-4fe0-aede-e1648988af23";
         String outputNode = "79d6f66b-a007-4984-8042-a612cb38ba82";
-        String archiveOutputNode = "502d88d2-1683-4c9f-916d-9a7778b0dd6f";
-        CanvasDefinition definition = new CanvasDefinition(2, 0, List.of(
+        CanvasDefinition definition = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(
                 new JdbcInputNodeDefinition(
                         ordersNode, "订单输入", layout(),
-                        new JdbcInputConfiguration(postgresId.toString(), "orders")),
+                        new JdbcInputConfiguration(
+                                postgresId.toString(), List.of(new JdbcInputTableSelection("orders")))),
                 new JdbcInputNodeDefinition(
                         customersNode, "客户输入", layout(),
-                        new JdbcInputConfiguration(mysqlId.toString(), "customers")),
+                        new JdbcInputConfiguration(
+                                mysqlId.toString(), List.of(new JdbcInputTableSelection("customers")))),
                 new JoinNodeDefinition(
                         joinNode, "订单客户 Join", layout(),
                         new JoinConfiguration(
                                 "orders", "customers", "order_customer", JoinType.INNER,
-                                List.of(new JoinCondition("customer_id", JoinOperator.EQUALS, "customer_key")))),
+                                List.of(new JoinCondition("customer_id", JoinOperator.EQUALS, "customer_key")),
+                                List.of(
+                                        new JoinOutputColumn(JoinOutputColumnSource.LEFT, "order_id", "order_id", true),
+                                        new JoinOutputColumn(JoinOutputColumnSource.LEFT, "customer_id", "customer_id", true),
+                                        new JoinOutputColumn(JoinOutputColumnSource.RIGHT, "customer_key", "customer_key", true),
+                                        new JoinOutputColumn(JoinOutputColumnSource.RIGHT, "customer_name", "customer_name", true)))),
                 new JdbcOutputNodeDefinition(
                         outputNode, "结果输出", layout(),
                         new JdbcOutputConfiguration(
-                                "order_customer", postgresId.toString(), "dwd_order_customer",
-                                JdbcWriteMode.OVERWRITE, orderCustomerMappings(), List.of())),
-                new JdbcOutputNodeDefinition(
-                        archiveOutputNode, "归档输出", layout(),
-                        new JdbcOutputConfiguration(
-                                "order_customer", postgresId.toString(), "dwd_order_customer_archive",
-                                JdbcWriteMode.OVERWRITE, orderCustomerMappings(), List.of()))
+                                postgresId.toString(),
+                                List.of(
+                                        new JdbcOutputWrite(
+                                                UUID.randomUUID().toString(), "order_customer",
+                                                "dwd_order_customer", JdbcWriteMode.OVERWRITE,
+                                                orderCustomerMappings(), List.of()),
+                                        new JdbcOutputWrite(
+                                                UUID.randomUUID().toString(), "order_customer",
+                                                "dwd_order_customer_archive", JdbcWriteMode.OVERWRITE,
+                                                orderCustomerMappings(), List.of()))))
         ), List.of(
                 edge(ordersNode, joinNode),
                 edge(customersNode, joinNode),
-                edge(joinNode, outputNode),
-                edge(joinNode, archiveOutputNode)
+                edge(joinNode, outputNode)
         ));
         MetadataSnapshot metadata = new MetadataSnapshot(List.of(
                 new MetadataDataSource(

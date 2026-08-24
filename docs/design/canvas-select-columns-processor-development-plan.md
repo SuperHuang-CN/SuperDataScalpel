@@ -11,7 +11,7 @@
 - 同一节点同时支持 `BATCH`、`STREAMING`。
 - 预检与 Runner 使用唯一无状态 `SelectColumnsNodeOperator`。
 
-节点类别为 `PROCESSOR`。图规则为恰好一条入边、至少一条出边。
+节点类别为 `PROCESSOR`。图规则为至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 ## 2. 稳定配置协议
 

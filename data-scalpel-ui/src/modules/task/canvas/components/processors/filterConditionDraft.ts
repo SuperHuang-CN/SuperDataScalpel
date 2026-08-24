@@ -4,6 +4,8 @@ import type {
   CanvasLiteral,
 } from '../../canvasTypes';
 
+export { validateFilterSqlExpressionDraft } from '../../nodes/filter/filterSqlExpression';
+
 const createDefaultLiteral = (
   dataType: CanvasLiteral['dataType'] = 'STRING',
 ): CanvasLiteral => ({

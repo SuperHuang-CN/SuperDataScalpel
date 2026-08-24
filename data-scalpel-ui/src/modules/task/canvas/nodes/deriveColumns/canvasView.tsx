@@ -1,20 +1,24 @@
 import { CanvasNodeType } from '../../canvasTypes';
 import { NodeBadge, NodeBadges, NodeContent, NodeEmpty, NodeFlow, NodePreviewList } from '../../components/nodeView/CanvasNodePrimitives';
-import { expressionSignature, resolvedNodeSize } from '../canvasNodePresentation';
+import { resolvedNodeSize } from '../canvasNodePresentation';
 import type { CanvasNodeBodyProps, CanvasNodeCanvasView } from '../nodeSpec';
 
 const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.DeriveColumns>) => {
-  const { sourceTableName, outputTableName, derivations } = data.configuration;
-  if (!sourceTableName) return <NodeEmpty>请选择来源表并配置派生字段</NodeEmpty>;
-  const replaceCount = derivations.filter((item) => item.replaceExisting).length;
+  const operations = data.configuration.operations ?? [];
+  if (operations.length === 0) return <NodeEmpty>请选择来源表并配置派生字段</NodeEmpty>;
+  const globalDerivations = data.configuration.globalDerivations ?? [];
+  const localDerivationCount = operations.reduce(
+    (count, operation) => count + operation.derivations.length,
+    0,
+  );
   return <NodeContent variant="rules">
-    <NodeFlow source={sourceTableName} operation="DERIVE" target={outputTableName} />
-    <NodePreviewList items={derivations.slice(0, 2).map((item, index) => ({ key: `${index}`, label: item.targetColumnName || '目标字段', value: expressionSignature(item.expression), meta: item.replaceExisting ? '覆盖' : '新增' }))} total={derivations.length} />
-    <NodeBadges><NodeBadge tone="success">新增 {derivations.length - replaceCount}</NodeBadge><NodeBadge tone="warning">覆盖 {replaceCount}</NodeBadge></NodeBadges>
+    <NodeFlow source={operations[0].sourceTableName} operation="DERIVE" target={operations[0].output.outputTableName ?? operations[0].sourceTableName} />
+    <NodePreviewList items={operations.slice(0, 2).map((item) => ({ key: item.operationId, label: item.sourceTableName, value: `全局 ${globalDerivations.length} · 本表 ${item.derivations.length}`, meta: item.output.mode === 'REPLACE_SOURCE' ? '更新原表' : '生成新表' }))} total={operations.length} />
+    <NodeBadges><NodeBadge tone="info">全局 {globalDerivations.length}</NodeBadge><NodeBadge tone="success">本表 {localDerivationCount}</NodeBadge></NodeBadges>
   </NodeContent>;
 };
 
 export const deriveColumnsCanvasView: CanvasNodeCanvasView<typeof CanvasNodeType.DeriveColumns> = {
-  resolveSize: (configuration) => resolvedNodeSize({ width: 352, maxHeight: 224, configured: Boolean(configuration.sourceTableName), listCount: configuration.derivations.length }),
+  resolveSize: (configuration) => resolvedNodeSize({ width: 352, maxHeight: 224, configured: (configuration.operations ?? []).length > 0, listCount: (configuration.operations ?? []).length }),
   Body: body,
 };

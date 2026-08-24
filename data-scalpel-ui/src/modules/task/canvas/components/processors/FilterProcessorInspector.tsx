@@ -10,6 +10,7 @@ import {
   Card,
   Form,
   Input,
+  Radio,
   Select,
   Space,
   Tag,
@@ -18,12 +19,14 @@ import {
 import {
   useImperativeHandle,
   useMemo,
+  useRef,
   useState,
   type Ref,
 } from 'react';
 import {
   CANVAS_FILTER_MAX_CONDITION_NODES,
   CANVAS_FILTER_MAX_DEPTH,
+  CANVAS_FILTER_MAX_SQL_EXPRESSION_LENGTH,
   CanvasNodeType,
   type CanvasColumnSchema,
   type CanvasFieldPredicate,
@@ -34,10 +37,15 @@ import {
   type CanvasNodeDefinition,
   type CanvasNodeValidationResult,
   type FilterConfiguration,
+  type FilterConditionMode,
   type FilterOperator,
 } from '../../canvasTypes';
 import type { CanvasNodeInspectorHandle } from '../CanvasNodeInspector';
-import { validateFilterConditionDraft } from './filterConditionDraft';
+import {
+  createDefaultFilterCondition,
+  validateFilterConditionDraft,
+  validateFilterSqlExpressionDraft,
+} from './filterConditionDraft';
 import { ProcessorValidationIssues } from './ProcessorValidationIssues';
 
 interface FilterProcessorInspectorProps {
@@ -399,8 +407,15 @@ export const FilterProcessorInspector = ({
   inspectorRef,
 }: FilterProcessorInspectorProps) => {
   const [form] = Form.useForm<FilterFormValues>();
-  const [condition, setCondition] = useState<CanvasFilterCondition>(() => structuredClone(node.configuration.condition));
+  const [mode, setMode] = useState<FilterConditionMode>(
+    () => node.configuration.mode ?? 'STRUCTURED',
+  );
+  const [condition, setCondition] = useState<CanvasFilterCondition>(
+    () => structuredClone(node.configuration.condition ?? createDefaultFilterCondition()),
+  );
+  const [sqlExpression, setSqlExpression] = useState(node.configuration.sqlExpression ?? '');
   const [conditionError, setConditionError] = useState<string | null>(null);
+  const sqlSelectionRange = useRef({ start: 0, end: 0 });
   const sourceTableName = Form.useWatch('sourceTableName', form) ?? node.configuration.sourceTableName;
   const inputTables = useMemo(() => validation?.inputTables ?? [], [validation?.inputTables]);
   const sourceTable = inputTables.find((table) => table.name === sourceTableName);
@@ -421,20 +436,47 @@ export const FilterProcessorInspector = ({
     onDirtyChange(true);
   };
 
+  const updateMode = (nextMode: FilterConditionMode) => {
+    setMode(nextMode);
+    setConditionError(null);
+    onDirtyChange(true);
+  };
+
+  const updateSqlExpression = (nextExpression: string) => {
+    setSqlExpression(nextExpression);
+    setConditionError(null);
+    onDirtyChange(true);
+  };
+
+  const insertSqlField = (columnName: string) => {
+    const identifier = `\`${columnName.replaceAll('`', '``')}\``;
+    const start = Math.min(sqlSelectionRange.current.start, sqlExpression.length);
+    const end = Math.min(Math.max(start, sqlSelectionRange.current.end), sqlExpression.length);
+    const before = sqlExpression.slice(0, start);
+    const after = sqlExpression.slice(end);
+    const leading = before && !/\s$/.test(before) ? ' ' : '';
+    const trailing = after && !/^\s/.test(after) ? ' ' : '';
+    const nextExpression = `${before}${leading}${identifier}${trailing}${after}`;
+    const nextPosition = before.length + leading.length + identifier.length;
+    sqlSelectionRange.current = { start: nextPosition, end: nextPosition };
+    updateSqlExpression(nextExpression);
+  };
+
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
         const values = form.getFieldsValue(true);
         void form.validateFields().catch(() => undefined);
-        const draftIssue = validateFilterConditionDraft(condition);
-        if (draftIssue) {
-          setConditionError(draftIssue);
-
-        }
+        const draftIssue = mode === 'STRUCTURED'
+          ? validateFilterConditionDraft(condition)
+          : validateFilterSqlExpressionDraft(sqlExpression);
+        setConditionError(draftIssue);
         const configuration: FilterConfiguration = {
           sourceTableName: values.sourceTableName ?? '',
           outputTableName: (values.outputTableName ?? '').trim(),
+          mode,
           condition: structuredClone(condition),
+          sqlExpression,
         };
         onApply({ id: node.id, type: CanvasNodeType.Filter, configuration });
         onDirtyChange(false);
@@ -443,7 +485,7 @@ export const FilterProcessorInspector = ({
         return false;
       }
     },
-  }), [condition, form, node.id, onApply, onDirtyChange]);
+  }), [condition, form, mode, node.id, onApply, onDirtyChange, sqlExpression]);
 
   return (
     <Space orientation="vertical" size={12} className="canvas-inspector-content">
@@ -486,18 +528,73 @@ export const FilterProcessorInspector = ({
           <Input placeholder="例如 paid_orders" />
         </Form.Item>
       </Form>
-      <div className="canvas-filter-editor-heading">
-        <Typography.Text strong>筛选条件</Typography.Text>
-        <Typography.Text type="secondary">
-          {countConditions(condition)} / {CANVAS_FILTER_MAX_CONDITION_NODES} 个节点
-        </Typography.Text>
+      <div className="canvas-filter-mode-row">
+        <Typography.Text strong>配置方式</Typography.Text>
+        <Radio.Group
+          size="small"
+          optionType="button"
+          buttonStyle="solid"
+          value={mode}
+          options={[
+            { value: 'STRUCTURED', label: '可视化条件' },
+            { value: 'SQL_EXPRESSION', label: 'SQL 表达式' },
+          ]}
+          onChange={(event) => updateMode(event.target.value as FilterConditionMode)}
+        />
       </div>
       {conditionError && <Alert showIcon type="error" title={conditionError} />}
-      <FilterConditionTreeEditor
-        condition={condition}
-        columns={sourceTable?.columns ?? []}
-        onChange={updateCondition}
-      />
+      {mode === 'STRUCTURED' ? <>
+        <div className="canvas-filter-editor-heading">
+          <Typography.Text strong>筛选条件</Typography.Text>
+          <Typography.Text type="secondary">
+            {countConditions(condition)} / {CANVAS_FILTER_MAX_CONDITION_NODES} 个节点
+          </Typography.Text>
+        </div>
+        <FilterConditionTreeEditor
+          condition={condition}
+          columns={sourceTable?.columns ?? []}
+          onChange={updateCondition}
+        />
+      </> : (
+        <div className="canvas-filter-sql-expression">
+          <div className="canvas-filter-sql-toolbar">
+            <div>
+              <Typography.Text strong>布尔表达式</Typography.Text>
+              <Typography.Text type="secondary"> 只写条件，不要写 WHERE</Typography.Text>
+            </div>
+            <Select
+              showSearch
+              value={undefined}
+              optionFilterProp="label"
+              placeholder="插入字段"
+              options={(sourceTable?.columns ?? []).map((column) => ({
+                value: column.name,
+                label: `${column.name} · ${column.fieldType}`,
+              }))}
+              onSelect={insertSqlField}
+            />
+          </div>
+          <Input.TextArea
+            autoComplete="off"
+            name="canvas-filter-sql-expression"
+            className="canvas-filter-sql-textarea"
+            value={sqlExpression}
+            maxLength={CANVAS_FILTER_MAX_SQL_EXPRESSION_LENGTH}
+            showCount
+            placeholder={'例如：age >= 18\nAND status IN (\'ACTIVE\', \'PENDING\')'}
+            onChange={(event) => updateSqlExpression(event.target.value)}
+            onSelect={(event) => {
+              sqlSelectionRange.current = {
+                start: event.currentTarget.selectionStart,
+                end: event.currentTarget.selectionEnd,
+              };
+            }}
+          />
+          <Typography.Text type="secondary">
+            支持当前来源表字段和 Spark SQL 标量函数；不支持完整查询、子查询、注释或分号。
+          </Typography.Text>
+        </div>
+      )}
     </Space>
   );
 };

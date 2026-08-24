@@ -27,7 +27,7 @@ import java.util.UUID;
 /** Converts Spark-free Catalyst evidence into the immutable lineage ingestion contract. */
 @Component
 public class CanvasLineageDraftFactory {
-    public static final int GENERATOR_VERSION = 1;
+    public static final int GENERATOR_VERSION = 2;
 
     public TaskLineageSnapshotDraft create(
             UUID taskId,

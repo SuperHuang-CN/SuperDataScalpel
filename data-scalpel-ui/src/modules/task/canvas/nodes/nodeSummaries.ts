@@ -1,45 +1,38 @@
 import {
   CanvasNodeType,
-  type CanvasExpression,
-  type CanvasFilterCondition,
   type CanvasNodeRuntimeDataByType,
 } from '../canvasTypes';
 
-const filterPredicateCount = (condition: CanvasFilterCondition): number => (
-  condition.kind === 'PREDICATE'
-    ? 1
-    : condition.children.reduce((count, child) => count + filterPredicateCount(child), 0)
-);
-
-const collectExpressionFunctions = (expression: CanvasExpression, functions: Set<string>) => {
-  if (expression.kind === 'BINARY') {
-    collectExpressionFunctions(expression.left, functions);
-    collectExpressionFunctions(expression.right, functions);
-  } else if (expression.kind === 'FUNCTION') {
-    functions.add(expression.function);
-    expression.arguments.forEach((argument) => collectExpressionFunctions(argument, functions));
-  } else if (expression.kind === 'CASE_WHEN') {
-    expression.branches.forEach((branch) => collectExpressionFunctions(branch.result, functions));
-    if (expression.elseExpression) collectExpressionFunctions(expression.elseExpression, functions);
-  }
+const summarizeProcessorOperations = (
+  operations: Array<{ sourceTableName: string; output: { outputTableName: string | null } }>,
+  empty: string,
+) => {
+  if (operations.length === 0) return empty;
+  const preview = operations.slice(0, 2)
+    .map((operation) => `${operation.sourceTableName} → ${operation.output.outputTableName ?? operation.sourceTableName}`)
+    .join('、');
+  return operations.length > 2 ? `${preview} 等 ${operations.length} 张表` : preview;
 };
 
 export const summarizeModelInput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.ModelInput>,
 ) => {
-  if (!data.configuration.modelId) return '请选择来源模型';
-  return data.summary?.kind === 'MODEL'
-    ? `${data.summary.modelName} · ${data.summary.modelCode} · v${data.summary.modelSchemaVersion}`
-    : `模型 ${data.configuration.modelId}`;
+  const models = data.configuration.models;
+  if (models.length === 0) return '请选择来源模型';
+  const preview = models.slice(0, 2).map((model) => model.modelId).join('、');
+  return models.length <= 2 ? `模型 ${preview}` : `模型 ${preview} 等 ${models.length} 个`;
 };
 
 export const summarizeJdbcInput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.JdbcInput>,
 ) => {
-  if (!data.configuration.tableName) return '请选择来源表';
+  const { tables } = data.configuration;
+  if (tables.length === 0) return '请选择来源表';
+  const preview = tables.slice(0, 2).map((table) => table.tableName).join('、');
+  const tableText = tables.length <= 2 ? preview : `${preview} 等 ${tables.length} 张表`;
   return data.summary?.kind === 'JDBC'
-    ? `${data.summary.dataSourceName} · ${data.configuration.tableName}`
-    : `未知数据源 · ${data.configuration.tableName}`;
+    ? `${data.summary.dataSourceName} · ${tableText}`
+    : `未知数据源 · ${tableText}`;
 };
 
 export const summarizeJdbcIncrementalInput = (
@@ -64,33 +57,31 @@ export const summarizeJdbcQueryInput = (
 export const summarizeFileDatasetInput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.FileDatasetInput>,
 ) => {
-  if (!data.configuration.fileDatasetTableId) return '请选择文件数据集表';
-  if (data.summary?.kind !== 'FILE_DATASET') return `文件表 ${data.configuration.fileDatasetTableId}`;
+  if (data.configuration.tables.length === 0) return '请选择文件数据集表';
+  if (data.summary?.kind !== 'FILE_DATASET') return `文件表 ${data.configuration.tables.length} 张`;
   const geometry = data.summary.geometry;
   const spatial = geometry
     ? ` · ${geometry.fieldName}: ${geometry.kind} ${geometry.crs.authority}:${geometry.crs.code} ${geometry.dimension}`
     : '';
-  return `${data.summary.fileDatasetName} · ${data.summary.tableName} (${data.summary.tableCode}) · ${data.summary.status}${spatial}`;
+  return `${data.summary.fileDatasetName} · ${data.configuration.tables.length} 张表 · ${data.summary.status}${spatial}`;
 };
 
 export const summarizeHttpApiInput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.HttpApiInput>,
 ) => {
-  const { dataSourceId, resourceId, outputTableName } = data.configuration;
-  if (!dataSourceId || !resourceId || !outputTableName) return '请选择 API 资源并设置输出表';
-  return data.summary?.kind === 'HTTP_API'
-    ? `${data.summary.dataSourceName} · ${data.summary.qualifiedTableName} → ${outputTableName}`
-    : `${resourceId} → ${outputTableName}`;
+  const { dataSourceId, resources } = data.configuration;
+  if (!dataSourceId || resources.length === 0) return '请选择 API 资源并设置输出表';
+  const preview = resources.slice(0, 2).map((resource) => resource.outputTableName).join('、');
+  return `${data.summary?.kind === 'HTTP_API' ? data.summary.dataSourceName : 'API'} · ${preview}${resources.length > 2 ? ` 等 ${resources.length} 个` : ''}`;
 };
 
 export const summarizeSpatialServiceInput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialServiceInput>,
 ) => {
-  const { dataSourceId, resourceId, outputTableName } = data.configuration;
-  if (!dataSourceId || !resourceId || !outputTableName) return '请选择空间要素资源并设置输出表';
-  return data.summary?.kind === 'HTTP_API'
-    ? `${data.summary.dataSourceName} · ${data.summary.qualifiedTableName} → ${outputTableName}`
-    : `${resourceId} → ${outputTableName}`;
+  const { dataSourceId, resources } = data.configuration;
+  if (!dataSourceId || resources.length === 0) return '请选择空间要素资源并设置输出表';
+  const preview = resources.slice(0, 2).map((resource) => resource.outputTableName).join('、');
+  return `${data.summary?.kind === 'HTTP_API' ? data.summary.dataSourceName : '空间服务'} · ${preview}${resources.length > 2 ? ` 等 ${resources.length} 个` : ''}`;
 };
 
 export const summarizeKafkaInput = (
@@ -298,66 +289,53 @@ export const summarizeSpatialJoin = (
 export const summarizeStreamJoin = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.StreamJoin>,
 ) => {
-  const { leftTableName, rightTableName, outputTableName, joinType } = data.configuration;
+  const {
+    leftTableName,
+    rightTableName,
+    outputTableName,
+    joinType,
+    outputColumns,
+  } = data.configuration;
   return !leftTableName || !rightTableName || !outputTableName || !joinType
     ? '请配置流-维 Join'
-    : `${leftTableName} ${joinType} ${rightTableName} → ${outputTableName}`;
+    : `${leftTableName} ${joinType} ${rightTableName} → ${outputTableName} · ${outputColumns.filter((column) => column.included).length} 个输出字段`;
 };
 
 export const summarizeRename = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.Rename>,
-) => {
-  const { sourceTableName, outputTableName, columnMappings } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并设置输出表名';
-  const tableSummary = sourceTableName === outputTableName
-    ? sourceTableName
-    : `${sourceTableName} → ${outputTableName}`;
-  return columnMappings.length > 0
-    ? `${tableSummary} · ${columnMappings.length} 个字段`
-    : tableSummary;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并设置新名称');
 
 export const summarizeFilter = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.Filter>,
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并配置筛选条件');
+
+export const summarizeSqlTransform = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SqlTransform>,
 ) => {
-  const { sourceTableName, outputTableName, condition } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并配置筛选条件';
-  const conditionCount = filterPredicateCount(condition);
-  const rootOperator = condition.kind === 'GROUP' ? ` · 顶层 ${condition.operator}` : '';
-  return conditionCount > 0
-    ? `${sourceTableName} → ${outputTableName} · ${conditionCount} 个条件${rootOperator}`
-    : `${sourceTableName} → ${outputTableName} · 未配置条件`;
+  const { outputTableName, sql } = data.configuration;
+  if (!outputTableName || !sql.trim()) return '请设置输出表并配置 SELECT 查询';
+  const output = data.compilation?.outputTables.find((table) => table.name === outputTableName);
+  return `${outputTableName} · ${output?.columns.length ?? 0} 个字段`;
 };
 
 export const summarizeSelectColumns = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SelectColumns>,
-) => {
-  const { sourceTableName, outputTableName, columns } = data.configuration;
-  return !sourceTableName || !outputTableName
-    ? '请选择来源表和输出表名'
-    : `${sourceTableName} → ${outputTableName} · ${columns.length} 个字段`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表和保留字段');
 
 export const summarizeDeriveColumns = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.DeriveColumns>,
 ) => {
-  const { sourceTableName, outputTableName, derivations } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并配置派生字段';
-  const replaceCount = derivations.filter((item) => item.replaceExisting).length;
-  const functions = new Set<string>();
-  derivations.forEach((item) => collectExpressionFunctions(item.expression, functions));
-  const functionSummary = functions.size > 0 ? ` · ${[...functions].join('/')}` : '';
-  return `${sourceTableName} → ${outputTableName} · 新增 ${derivations.length - replaceCount} / 覆盖 ${replaceCount}${functionSummary}`;
+  const operations = data.configuration.operations ?? [];
+  const globalCount = data.configuration.globalDerivations?.length ?? 0;
+  const localCount = operations.reduce((count, operation) => count + operation.derivations.length, 0);
+  return operations.length === 0
+    ? '请选择来源表并配置派生字段'
+    : `${operations.length} 张处理表 · 全局 ${globalCount} 条 · 本表 ${localCount} 条`;
 };
 
 export const summarizeTypeCast = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TypeCast>,
-) => {
-  const { sourceTableName, outputTableName, casts } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并配置类型转换';
-  const setNullCount = casts.filter((item) => item.failureStrategy === 'SET_NULL').length;
-  return `${sourceTableName} → ${outputTableName} · ${casts.length} 个字段 · FAIL ${casts.length - setNullCount} / SET_NULL ${setNullCount}`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并配置类型转换');
 
 export const summarizeAggregate = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.Aggregate>,
@@ -379,57 +357,23 @@ export const summarizeUnion = (
 
 export const summarizeDeduplicate = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.Deduplicate>,
-) => {
-  const { sourceTableName, outputTableName, keyColumns, keepStrategy, orderBy } = data.configuration;
-  if (!sourceTableName || !outputTableName || !keepStrategy) return '请选择来源表并配置去重';
-  const keySummary = keyColumns.length === 0 ? '全部字段' : `${keyColumns.length} 个键`;
-  return `${sourceTableName} → ${outputTableName} · ${keySummary} · ${keepStrategy} · ${orderBy.length} 个排序`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并配置去重');
 
 export const summarizeNullHandling = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.NullHandling>,
-) => {
-  const { sourceTableName, outputTableName, rules } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并配置空值处理';
-  const dropCount = rules.filter((rule) => rule.kind === 'DROP_ROW').length;
-  return `${sourceTableName} → ${outputTableName} · 删除 ${dropCount} · 填充 ${rules.length - dropCount}`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并配置空值处理');
 
 export const summarizeValueMapping = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.ValueMapping>,
-) => {
-  const { sourceTableName, outputTableName, rules } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并配置值映射';
-  const entryCount = rules.reduce((count, rule) => count + rule.entries.length, 0);
-  const strategies = [...new Set(rules.map((rule) => rule.unmatchedStrategy))].join('/');
-  return `${sourceTableName} → ${outputTableName} · ${rules.length} 个字段 · ${entryCount} 项 · ${strategies || '未配置'}`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并配置值映射');
 
 export const summarizeMaskFields = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.MaskFields>,
-) => {
-  const { sourceTableName, outputTableName, fieldRules } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并配置字段脱敏';
-  const globalCount = fieldRules.filter((rule) => rule.ruleSource === 'GLOBAL').length;
-  const strategies = [...new Set(fieldRules.map((rule) => rule.definition.strategy))].join('/');
-  return `${sourceTableName} → ${outputTableName} · ${fieldRules.length} 个字段 · 全局 ${globalCount} / 自定义 ${fieldRules.length - globalCount} · ${strategies || '未配置'}`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并配置字段脱敏');
 
 export const summarizeJsonExtract = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.JsonExtract>,
-) => {
-  const {
-    sourceTableName,
-    outputTableName,
-    sourceColumnName,
-    extractions,
-    failureStrategy,
-  } = data.configuration;
-  if (!sourceTableName || !outputTableName || !sourceColumnName) {
-    return '请选择 JSON 来源字段并配置提取项';
-  }
-  return `${sourceTableName}.${sourceColumnName} → ${outputTableName} · ${extractions.length} 个字段 · ${failureStrategy}`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择 JSON 来源字段并配置提取项');
 
 export const summarizeWindow = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.Window>,
@@ -448,40 +392,32 @@ export const summarizeWindow = (
 
 export const summarizeTopN = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TopN>,
-) => {
-  const {
-    sourceTableName,
-    outputTableName,
-    partitionByColumns,
-    orderBy,
-    limit,
-    tieStrategy,
-  } = data.configuration;
-  if (!sourceTableName || !outputTableName) return '请选择来源表并配置 Top N';
-  const scope = partitionByColumns.length === 0 ? '全局' : `${partitionByColumns.length} 个分组字段`;
-  return `${sourceTableName} → ${outputTableName} · ${scope} · Top ${limit} · ${tieStrategy} · ${orderBy.length} 个排序`;
-};
+) => summarizeProcessorOperations(data.configuration.operations ?? [], '请选择来源表并配置 Top N');
 
 export const summarizeModelOutput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.ModelOutput>,
 ) => {
-  const { sourceTableName, targetModelId, writeMode } = data.configuration;
-  if (!sourceTableName || !targetModelId || !writeMode) return '请选择输出模型';
+  const writes = data.configuration.writes ?? [];
+  const first = writes[0];
+  if (!first) return '请至少配置一条模型写入';
   const target = data.summary?.kind === 'MODEL'
     ? `${data.summary.modelName} · ${data.summary.modelCode}`
-    : `模型 ${targetModelId}`;
-  return `${sourceTableName} → ${target} (${writeMode})`;
+    : `模型 ${first.targetModelId || '待选择'}`;
+  const preview = `${first.sourceTableName || '待选择来源'} → ${target} (${first.writeMode ?? '待设置'})`;
+  return writes.length > 1 ? `${preview}，另 ${writes.length - 1} 条写入` : preview;
 };
 
 export const summarizeJdbcOutput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.JdbcOutput>,
 ) => {
-  const { sourceTableName, targetTableName, writeMode } = data.configuration;
-  if (!sourceTableName || !targetTableName || !writeMode) return '请选择输出目标';
+  const writes = data.configuration.writes ?? [];
+  const first = writes[0];
+  if (!first) return '请至少配置一条 JDBC 写入';
   const target = data.summary?.kind === 'JDBC'
     ? data.summary.qualifiedTableName
-    : targetTableName;
-  return `${sourceTableName} → ${target} (${writeMode})`;
+    : first.targetTableName || '待选择目标表';
+  const preview = `${first.sourceTableName || '待选择来源'} → ${target} (${first.writeMode ?? '待设置'})`;
+  return writes.length > 1 ? `${preview}，另 ${writes.length - 1} 条写入` : preview;
 };
 
 const snapshotDeleteSummary = (action: 'KEEP' | 'DELETE') => (
@@ -517,19 +453,24 @@ export const summarizeModelSnapshotSyncOutput = (
 export const summarizeKafkaOutput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.KafkaOutput>,
 ) => {
-  const { sourceTableName, dataSourceId, topic, valueSchema } = data.configuration;
-  if (!sourceTableName || !dataSourceId || !topic || valueSchema.columns.length === 0) {
-    return '请配置 Kafka 输出';
-  }
-  return data.summary?.kind === 'KAFKA'
-    ? `${sourceTableName} → ${data.summary.dataSourceName} · ${topic} · ${valueSchema.columns.length} 字段`
-    : `${sourceTableName} → ${topic} · ${valueSchema.columns.length} 字段`;
+  const writes = data.configuration.writes ?? [];
+  const first = writes[0];
+  if (!first) return '请至少配置一条 Kafka 写入';
+  const target = data.summary?.kind === 'KAFKA'
+    ? `${data.summary.dataSourceName} · ${first.topic || '待选择 Topic'}`
+    : first.topic || '待选择 Topic';
+  const preview = `${first.sourceTableName || '待选择来源'} → ${target} · ${first.valueSchema.columns.length} 字段`;
+  return writes.length > 1 ? `${preview}，另 ${writes.length - 1} 条写入` : preview;
 };
 
 export const summarizeFileOutput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.FileOutput>,
 ) => {
-  const { sourceTableName, dataSourceId, targetPath, conflictPolicy, formatOptions } = data.configuration;
+  const { dataSourceId } = data.configuration;
+  const writes = data.configuration.writes ?? [];
+  const first = writes[0];
+  if (!first) return '请至少配置一条文件写入';
+  const { sourceTableName, targetPath, conflictPolicy, formatOptions } = first;
   const format = formatOptions.type === 'SHAPEFILE'
     ? `SHAPEFILE · ${formatOptions.targetShapeType || '未选类型'} · ${formatOptions.packageMode}`
     : formatOptions.type === 'GEOPARQUET'
@@ -537,7 +478,8 @@ export const summarizeFileOutput = (
       : formatOptions.type === 'GEOJSON'
         ? `GEOJSON · ${formatOptions.baseName || '未命名'}`
         : formatOptions.type;
-  return !sourceTableName || !dataSourceId || !targetPath
+  const preview = !sourceTableName || !dataSourceId || !targetPath
     ? '请配置文件输出'
     : `${sourceTableName} → ${format} · ${targetPath} (${conflictPolicy})`;
+  return writes.length > 1 ? `${preview}，另 ${writes.length - 1} 条写入` : preview;
 };

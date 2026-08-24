@@ -4,6 +4,7 @@ import org.junit.jupiter.api.Test;
 import org.locationtech.jts.io.ParseException;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -79,5 +80,17 @@ class RunnerLogSanitizerTest {
         assertTrue(stack.contains("[spatial-message-redacted]"));
         assertTrue(stack.contains("RunnerLogSanitizerTest"));
         assertTrue(stack.contains(ParseException.class.getName()));
+    }
+
+    @Test
+    void redactsConfiguredJdbcReadOptionValuesBeforeStackTruncation() {
+        String statement = "SET statement_timeout = '10min'";
+        RuntimeException failure = new RuntimeException("JDBC rejected " + statement + " " + "x".repeat(100_000));
+
+        String stack = RunnerLogSanitizer.jdbcReadOptionSafeStackTrace(failure, List.of(statement));
+
+        assertFalse(stack.contains(statement));
+        assertTrue(stack.contains("[redacted-jdbc-read-option-value]"));
+        assertTrue(stack.endsWith("...[STACK_TRUNCATED_AT_64_KIB]"));
     }
 }

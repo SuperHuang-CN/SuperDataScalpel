@@ -1,6 +1,8 @@
-import { ArrowRightOutlined } from '@ant-design/icons';
+import { ArrowRightOutlined, TableOutlined } from '@ant-design/icons';
 import { Tooltip } from 'antd';
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
+import type { CanvasTableSchema } from '../../canvasTypes';
+import { CanvasTableSchemaModal } from '../CanvasTableSchemaModal';
 
 const text = (value: ReactNode): string | undefined => (
   typeof value === 'string' || typeof value === 'number' ? String(value) : undefined
@@ -125,6 +127,101 @@ export const NodePreviewList = ({
       </div>
     )}
   </div>
+);
+
+interface NodeFieldCountProps {
+  table: CanvasTableSchema | undefined;
+  mappedCount?: number;
+  mappedColumnNames?: readonly string[];
+}
+
+const NodeFieldCountReady = ({
+  table,
+  mappedCount,
+  mappedColumnNames = [],
+}: {
+  table: CanvasTableSchema;
+  mappedCount?: number;
+  mappedColumnNames?: readonly string[];
+}) => {
+  const [open, setOpen] = useState(false);
+  const countLabel = mappedCount === undefined
+    ? `${table.columns.length} 字段`
+    : `映射 ${mappedCount}/${table.columns.length}`;
+  return (
+    <>
+      <button
+        type="button"
+        className="canvas-node-field-count"
+        aria-label={`${table.name}：${countLabel}`}
+        onClick={(event) => {
+          event.stopPropagation();
+          setOpen(true);
+        }}
+        onPointerDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+      >
+        <TableOutlined /> {countLabel}
+      </button>
+      <CanvasTableSchemaModal
+        open={open}
+        title={`${mappedCount === undefined ? '表结构' : '来源表结构'} · ${table.name}`}
+        tables={[table]}
+        initialTableName={table.name}
+        mappedColumnNames={mappedColumnNames}
+        mappedCount={mappedCount}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+};
+
+export const NodeFieldCount = ({
+  table,
+  mappedCount,
+  mappedColumnNames = [],
+}: NodeFieldCountProps) => {
+  if (table) {
+    return <NodeFieldCountReady
+      table={table}
+      mappedCount={mappedCount}
+      mappedColumnNames={mappedColumnNames}
+    />;
+  }
+  const countLabel = mappedCount === undefined
+    ? '字段待解析'
+    : `映射 ${mappedCount}`;
+  return (
+    <button
+      type="button"
+      className="canvas-node-field-count"
+      aria-label={`当前表：${countLabel}`}
+      disabled
+    >
+      <TableOutlined /> {countLabel}
+    </button>
+  );
+};
+
+export const NodeOutputTarget = ({
+  target,
+  sourceTable,
+  mappedCount,
+  mappedColumnNames,
+}: {
+  target: ReactNode;
+  sourceTable: CanvasTableSchema | undefined;
+  mappedCount?: number;
+  mappedColumnNames?: readonly string[];
+}) => (
+  <span className="canvas-node-output-target-summary">
+    <span>{target}</span>
+    <NodeFieldCount
+      table={sourceTable}
+      mappedCount={mappedCount}
+      mappedColumnNames={mappedColumnNames}
+    />
+  </span>
 );
 
 export const NodeSplit = ({

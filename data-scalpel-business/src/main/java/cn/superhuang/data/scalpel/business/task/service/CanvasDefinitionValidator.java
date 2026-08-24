@@ -47,26 +47,16 @@ public class CanvasDefinitionValidator {
                 invalid("nodes[" + index + "] 不能为空");
             }
             String path = "nodes[" + index + "]";
+            if (node.nodeType().introducedInMinorVersion() > definition.effectiveSchemaMinorVersion()) {
+                invalid(path + ".type 从 Canvas " + CanvasDefinition.CURRENT_SCHEMA_VERSION + "."
+                        + node.nodeType().introducedInMinorVersion() + " 开始支持");
+            }
             requireUuid(node.id(), path + ".id");
             if (!nodeIds.add(node.id())) {
                 invalid("节点 ID " + node.id() + " 重复");
             }
             requireName(node.name(), path + ".name");
             validateLayout(node.layout(), path + ".layout");
-            if (node.nodeType() == CanvasNodeType.TDENGINE_TMQ_INPUT
-                    && definition.effectiveSchemaMinorVersion() < 1) {
-                invalid(path + ".type 的 TDENGINE_TMQ_INPUT 从 Canvas 2.1 开始支持");
-            }
-            if (node.nodeType() == CanvasNodeType.JDBC_INCREMENTAL_INPUT
-                    && definition.effectiveSchemaMinorVersion() < 2) {
-                invalid(path + ".type 的 JDBC_INCREMENTAL_INPUT 从 Canvas 2.2 开始支持");
-            }
-            if (node instanceof ModelOutputNodeDefinition output
-                    && output.configuration() != null
-                    && output.configuration().writeMode() == JdbcWriteMode.UPSERT
-                    && definition.effectiveSchemaMinorVersion() < 3) {
-                invalid(path + ".configuration.writeMode 的 MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持");
-            }
             validateConfiguration(node, path + ".configuration");
         }
 
@@ -90,15 +80,84 @@ public class CanvasDefinitionValidator {
     }
 
     private static void validateConfiguration(CanvasNodeDefinition node, String path) {
+        if (node instanceof RenameNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof FilterNodeDefinition value) {
+            validateFilterConfiguration(value.configuration(), path);
+            return;
+        }
+        if (node instanceof SelectColumnsNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof DeriveColumnsNodeDefinition value) {
+            validateDeriveColumnsConfiguration(value.configuration(), path);
+            return;
+        }
+        if (node instanceof TypeCastNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof DeduplicateNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof NullHandlingNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof ValueMappingNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof MaskFieldsNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof JsonExtractNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
+        if (node instanceof TopNNodeDefinition value) {
+            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            return;
+        }
         switch (node) {
             case ModelInputNodeDefinition input -> {
                 if (input.configuration() == null) invalid(path + " 不能为空");
-                requireOptionalUuid(input.configuration().modelId(), path + ".modelId");
+                Set<String> modelIds = new HashSet<>();
+                for (int index = 0; index < input.configuration().models().size(); index++) {
+                    ModelInputSelection selection = input.configuration().models().get(index);
+                    if (selection == null) invalid(path + ".models[" + index + "] 不能为空");
+                    requireOptionalUuid(selection.modelId(), path + ".models[" + index + "].modelId");
+                    if (!selection.modelId().isBlank() && !modelIds.add(selection.modelId())) {
+                        invalid(path + ".models[" + index + "].modelId 重复");
+                    }
+                }
             }
             case JdbcInputNodeDefinition input -> {
                 if (input.configuration() == null) invalid(path + " 不能为空");
-                requireString(input.configuration().tableName(), path + ".tableName");
                 requireOptionalUuid(input.configuration().dataSourceId(), path + ".dataSourceId");
+                if (input.configuration().tables() == null) {
+                    invalid(path + ".tables 必须是数组");
+                }
+                for (int index = 0; index < input.configuration().tables().size(); index++) {
+                    JdbcInputTableSelection table = input.configuration().tables().get(index);
+                    if (table == null) invalid(path + ".tables[" + index + "] 不能为空");
+                    requireString(table.tableName(), path + ".tables[" + index + "].tableName");
+                    if (table.readOptions() == null) {
+                        invalid(path + ".tables[" + index + "].readOptions 必须是数组");
+                    }
+                    for (int optionIndex = 0; optionIndex < table.readOptions().size(); optionIndex++) {
+                        JdbcInputReadOption option = table.readOptions().get(optionIndex);
+                        if (option == null || option.name() == null || option.value() == null) {
+                            invalid(path + ".tables[" + index + "].readOptions[" + optionIndex
+                                    + "] 必须包含 name 和 value");
+                        }
+                    }
+                }
             }
             case JdbcIncrementalInputNodeDefinition input -> {
                 JdbcIncrementalInputConfiguration configuration = input.configuration();
@@ -158,35 +217,56 @@ public class CanvasDefinitionValidator {
             }
             case FileDatasetInputNodeDefinition input -> {
                 if (input.configuration() == null) invalid(path + " 不能为空");
-                requireOptionalUuid(
-                        input.configuration().fileDatasetTableId(),
-                        path + ".fileDatasetTableId"
-                );
+                requireOptionalUuid(input.configuration().fileDatasetId(), path + ".fileDatasetId");
+                Set<String> tableIds = new HashSet<>();
+                for (int index = 0; index < input.configuration().tables().size(); index++) {
+                    FileDatasetInputTableSelection selection = input.configuration().tables().get(index);
+                    if (selection == null) invalid(path + ".tables[" + index + "] 不能为空");
+                    requireOptionalUuid(selection.fileDatasetTableId(), path + ".tables[" + index + "].fileDatasetTableId");
+                    if (!selection.fileDatasetTableId().isBlank() && !tableIds.add(selection.fileDatasetTableId())) {
+                        invalid(path + ".tables[" + index + "].fileDatasetTableId 重复");
+                    }
+                }
             }
             case HttpApiInputNodeDefinition input -> {
                 if (input.configuration() == null) invalid(path + " 不能为空");
                 requireOptionalUuid(input.configuration().dataSourceId(), path + ".dataSourceId");
-                requireOptionalUuid(input.configuration().resourceId(), path + ".resourceId");
-                requireString(input.configuration().outputTableName(), path + ".outputTableName");
-                if (input.configuration().runtimeParameters() == null) {
-                    invalid(path + ".runtimeParameters 必须是数组");
-                }
-                Set<String> names = new HashSet<>();
-                for (int index = 0; index < input.configuration().runtimeParameters().size(); index++) {
-                    var parameter = input.configuration().runtimeParameters().get(index);
-                    if (parameter == null || parameter.name() == null || parameter.value() == null
-                            || !parameter.name().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")
-                            || SENSITIVE_RUNTIME_PARAMETER.matcher(parameter.name()).matches()
-                            || !names.add(parameter.name())) {
-                        invalid(path + ".runtimeParameters[" + index + "] 无效或名称重复");
+                Set<String> resourceIds = new HashSet<>();
+                for (int index = 0; index < input.configuration().resources().size(); index++) {
+                    HttpApiInputResourceSelection resource = input.configuration().resources().get(index);
+                    String resourcePath = path + ".resources[" + index + "]";
+                    if (resource == null) invalid(resourcePath + " 不能为空");
+                    requireOptionalUuid(resource.resourceId(), resourcePath + ".resourceId");
+                    requireString(resource.outputTableName(), resourcePath + ".outputTableName");
+                    if (!resource.resourceId().isBlank() && !resourceIds.add(resource.resourceId())) {
+                        invalid(resourcePath + ".resourceId 重复");
+                    }
+                    Set<String> names = new HashSet<>();
+                    for (int parameterIndex = 0; parameterIndex < resource.runtimeParameters().size(); parameterIndex++) {
+                        var parameter = resource.runtimeParameters().get(parameterIndex);
+                        if (parameter == null || parameter.name() == null || parameter.value() == null
+                                || !parameter.name().matches("[A-Za-z][A-Za-z0-9_.-]{0,127}")
+                                || SENSITIVE_RUNTIME_PARAMETER.matcher(parameter.name()).matches()
+                                || !names.add(parameter.name())) {
+                            invalid(resourcePath + ".runtimeParameters[" + parameterIndex + "] 无效或名称重复");
+                        }
                     }
                 }
             }
             case SpatialServiceInputNodeDefinition input -> {
                 if (input.configuration() == null) invalid(path + " 不能为空");
                 requireOptionalUuid(input.configuration().dataSourceId(), path + ".dataSourceId");
-                requireOptionalUuid(input.configuration().resourceId(), path + ".resourceId");
-                requireString(input.configuration().outputTableName(), path + ".outputTableName");
+                Set<String> resourceIds = new HashSet<>();
+                for (int index = 0; index < input.configuration().resources().size(); index++) {
+                    SpatialServiceInputResourceSelection resource = input.configuration().resources().get(index);
+                    String resourcePath = path + ".resources[" + index + "]";
+                    if (resource == null) invalid(resourcePath + " 不能为空");
+                    requireOptionalUuid(resource.resourceId(), resourcePath + ".resourceId");
+                    requireString(resource.outputTableName(), resourcePath + ".outputTableName");
+                    if (!resource.resourceId().isBlank() && !resourceIds.add(resource.resourceId())) {
+                        invalid(resourcePath + ".resourceId 重复");
+                    }
+                }
             }
             case KafkaInputNodeDefinition input -> {
                 if (input.configuration() == null) invalid(path + " 不能为空");
@@ -239,6 +319,14 @@ public class CanvasDefinitionValidator {
                     }
                     requireString(condition.leftColumnName(), path + ".conditions[" + index + "].leftColumnName");
                     requireString(condition.rightColumnName(), path + ".conditions[" + index + "].rightColumnName");
+                }
+                List<JoinOutputColumn> outputColumns = join.configuration().outputColumns();
+                if (outputColumns == null) invalid(path + ".outputColumns 必须是数组");
+                for (int index = 0; index < outputColumns.size(); index++) {
+                    JoinOutputColumn outputColumn = outputColumns.get(index);
+                    if (outputColumn == null) {
+                        invalid(path + ".outputColumns[" + index + "] 不能为空");
+                    }
                 }
             }
             case GeometryConstructNodeDefinition construct ->
@@ -375,6 +463,13 @@ public class CanvasDefinitionValidator {
                 requireString(join.configuration().rightTableName(), path + ".rightTableName");
                 requireString(join.configuration().outputTableName(), path + ".outputTableName");
                 validateJoinConditions(join.configuration().conditions(), path + ".conditions");
+                List<JoinOutputColumn> outputColumns = join.configuration().outputColumns();
+                if (outputColumns == null) invalid(path + ".outputColumns 必须是数组");
+                for (int index = 0; index < outputColumns.size(); index++) {
+                    if (outputColumns.get(index) == null) {
+                        invalid(path + ".outputColumns[" + index + "] 不能为空");
+                    }
+                }
             }
             case RenameNodeDefinition rename -> {
                 if (rename.configuration() == null) invalid(path + " 不能为空");
@@ -406,6 +501,8 @@ public class CanvasDefinitionValidator {
                         conditionNodes
                 );
             }
+            case SqlTransformNodeDefinition sqlTransform ->
+                    validateSqlTransform(sqlTransform.configuration(), path);
             case SelectColumnsNodeDefinition selectColumns -> {
                 if (selectColumns.configuration() == null) invalid(path + " 不能为空");
                 requireString(selectColumns.configuration().sourceTableName(), path + ".sourceTableName");
@@ -420,34 +517,8 @@ public class CanvasDefinitionValidator {
                     );
                 }
             }
-            case DeriveColumnsNodeDefinition deriveColumns -> {
-                if (deriveColumns.configuration() == null) invalid(path + " 不能为空");
-                requireString(deriveColumns.configuration().sourceTableName(), path + ".sourceTableName");
-                requireString(deriveColumns.configuration().outputTableName(), path + ".outputTableName");
-                List<ColumnDerivation> derivations =
-                        deriveColumns.configuration().derivations();
-                if (derivations == null) invalid(path + ".derivations 必须是数组");
-                if (derivations.size() > CanvasExpressionLimits.MAX_DERIVATIONS) {
-                    invalid(path + ".derivations 不能超过 "
-                            + CanvasExpressionLimits.MAX_DERIVATIONS + " 项");
-                }
-                int[] expressionNodes = {0};
-                for (int index = 0; index < derivations.size(); index++) {
-                    ColumnDerivation derivation = derivations.get(index);
-                    String derivationPath = path + ".derivations[" + index + "]";
-                    if (derivation == null) invalid(derivationPath + " 不能为空");
-                    requireString(derivation.targetColumnName(), derivationPath + ".targetColumnName");
-                    if (derivation.expression() == null) {
-                        invalid(derivationPath + ".expression 不能为空");
-                    }
-                    validateCanvasExpression(
-                            derivation.expression(),
-                            derivationPath + ".expression",
-                            1,
-                            expressionNodes
-                    );
-                }
-            }
+            case DeriveColumnsNodeDefinition deriveColumns ->
+                    validateDeriveColumnsConfiguration(deriveColumns.configuration(), path);
             case TypeCastNodeDefinition typeCast -> {
                 if (typeCast.configuration() == null) invalid(path + " 不能为空");
                 requireString(typeCast.configuration().sourceTableName(), path + ".sourceTableName");
@@ -560,24 +631,12 @@ public class CanvasDefinitionValidator {
                     validateTopN(topN.configuration(), path);
             case JdbcOutputNodeDefinition output -> {
                 if (output.configuration() == null) invalid(path + " 不能为空");
-                requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
                 requireOptionalUuid(output.configuration().dataSourceId(), path + ".dataSourceId");
-                requireString(output.configuration().targetTableName(), path + ".targetTableName");
-                List<JdbcColumnMapping> mappings = output.configuration().columnMappings();
-                if (mappings == null) invalid(path + ".columnMappings 必须是数组");
-                for (int index = 0; index < mappings.size(); index++) {
-                    JdbcColumnMapping mapping = mappings.get(index);
-                    if (mapping == null) invalid(path + ".columnMappings[" + index + "] 不能为空");
-                    requireString(mapping.sourceColumnName(), path + ".columnMappings[" + index + "].sourceColumnName");
-                    requireString(mapping.targetColumnName(), path + ".columnMappings[" + index + "].targetColumnName");
-                }
-                validateStringArray(output.configuration().upsertKeyColumns(), path + ".upsertKeyColumns");
+                validateJdbcOutputWrites(output.configuration().writes(), path + ".writes");
             }
             case ModelOutputNodeDefinition output -> {
                 if (output.configuration() == null) invalid(path + " 不能为空");
-                requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
-                requireOptionalUuid(output.configuration().targetModelId(), path + ".targetModelId");
-                validateMappings(output.configuration().columnMappings(), path + ".columnMappings");
+                validateModelOutputWrites(output.configuration().writes(), path + ".writes");
             }
             case JdbcSnapshotSyncOutputNodeDefinition output -> {
                 if (output.configuration() == null) invalid(path + " 不能为空");
@@ -594,61 +653,124 @@ public class CanvasDefinitionValidator {
             }
             case KafkaOutputNodeDefinition output -> {
                 if (output.configuration() == null) invalid(path + " 不能为空");
-                requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
                 requireOptionalUuid(output.configuration().dataSourceId(), path + ".dataSourceId");
-                requireString(output.configuration().topic(), path + ".topic");
-                validateKafkaValueSchema(output.configuration().valueSchema(), path + ".valueSchema");
-                requireString(output.configuration().keyColumnName(), path + ".keyColumnName");
-                validateMappings(output.configuration().columnMappings(), path + ".columnMappings");
+                validateKafkaOutputWrites(output.configuration().writes(), path + ".writes");
             }
             case FileOutputNodeDefinition output -> {
                 if (output.configuration() == null) invalid(path + " 不能为空");
-                requireString(output.configuration().sourceTableName(), path + ".sourceTableName");
                 requireOptionalUuid(output.configuration().dataSourceId(), path + ".dataSourceId");
-                validateFileOutputTargetPath(output.configuration().targetPath(), path + ".targetPath");
-                if (output.configuration().conflictPolicy() == null) {
-                    invalid(path + ".conflictPolicy 不能为空");
+                validateFileOutputWrites(output.configuration().writes(), path + ".writes");
+            }
+        }
+    }
+
+    private static void validateJdbcOutputWrites(List<JdbcOutputWrite> writes, String path) {
+        validateWriteList(writes, path);
+        for (int index = 0; index < writes.size(); index++) {
+            JdbcOutputWrite write = writes.get(index);
+            String writePath = path + "[" + index + "]";
+            requireString(write.sourceTableName(), writePath + ".sourceTableName");
+            requireString(write.targetTableName(), writePath + ".targetTableName");
+            validateMappings(write.columnMappings(), writePath + ".columnMappings");
+            validateStringArray(write.upsertKeyColumns(), writePath + ".upsertKeyColumns");
+        }
+    }
+
+    private static void validateModelOutputWrites(List<ModelOutputWrite> writes, String path) {
+        validateWriteList(writes, path);
+        for (int index = 0; index < writes.size(); index++) {
+            ModelOutputWrite write = writes.get(index);
+            String writePath = path + "[" + index + "]";
+            requireString(write.sourceTableName(), writePath + ".sourceTableName");
+            requireOptionalUuid(write.targetModelId(), writePath + ".targetModelId");
+            validateMappings(write.columnMappings(), writePath + ".columnMappings");
+        }
+    }
+
+    private static void validateKafkaOutputWrites(List<KafkaOutputWrite> writes, String path) {
+        validateWriteList(writes, path);
+        for (int index = 0; index < writes.size(); index++) {
+            KafkaOutputWrite write = writes.get(index);
+            String writePath = path + "[" + index + "]";
+            requireString(write.sourceTableName(), writePath + ".sourceTableName");
+            requireString(write.topic(), writePath + ".topic");
+            validateKafkaValueSchema(write.valueSchema(), writePath + ".valueSchema");
+            requireString(write.keyColumnName(), writePath + ".keyColumnName");
+            validateMappings(write.columnMappings(), writePath + ".columnMappings");
+        }
+    }
+
+    private static void validateFileOutputWrites(List<FileOutputWrite> writes, String path) {
+        validateWriteList(writes, path);
+        for (int index = 0; index < writes.size(); index++) {
+            FileOutputWrite write = writes.get(index);
+            String writePath = path + "[" + index + "]";
+            requireString(write.sourceTableName(), writePath + ".sourceTableName");
+            validateFileOutputTargetPath(write.targetPath(), writePath + ".targetPath");
+            if (write.conflictPolicy() == null) invalid(writePath + ".conflictPolicy 不能为空");
+            validateFileOutputFormatOptions(write.formatOptions(), writePath + ".formatOptions");
+        }
+    }
+
+    private static void validateWriteList(List<?> writes, String path) {
+        if (writes == null) invalid(path + " 必须是数组");
+        Set<String> ids = new HashSet<>();
+        for (int index = 0; index < writes.size(); index++) {
+            Object write = writes.get(index);
+            if (write == null) invalid(path + "[" + index + "] 不能为空");
+            String writeId = switch (write) {
+                case JdbcOutputWrite value -> value.writeId();
+                case ModelOutputWrite value -> value.writeId();
+                case KafkaOutputWrite value -> value.writeId();
+                case FileOutputWrite value -> value.writeId();
+                default -> throw new IllegalStateException("Unexpected output write type");
+            };
+            requireUuid(writeId, path + "[" + index + "].writeId");
+            if (!ids.add(writeId)) invalid(path + " 中 writeId 重复：" + writeId);
+        }
+    }
+
+    private static void validateFileOutputFormatOptions(FileOutputFormatOptions formatOptions, String path) {
+        if (formatOptions == null) invalid(path + " 不能为空");
+        switch (formatOptions) {
+            case FileOutputFormatOptions.Csv csv -> {
+                requireSingleCharacter(csv.delimiter(), path + ".delimiter");
+                requireSingleCharacter(csv.quote(), path + ".quote");
+                requireSingleCharacter(csv.escape(), path + ".escape");
+                requireString(csv.nullValue(), path + ".nullValue");
+            }
+            case FileOutputFormatOptions.JsonLines ignored -> { }
+            case FileOutputFormatOptions.Parquet ignored -> { }
+            case FileOutputFormatOptions.Shapefile ignored -> { }
+            case FileOutputFormatOptions.GeoParquet geoParquet -> {
+                requireString(geoParquet.geometryColumnName(), path + ".geometryColumnName");
+                if (geoParquet.compression() == null) invalid(path + ".compression 不能为空");
+                if (geoParquet.coveringMode() == null) invalid(path + ".coveringMode 不能为空");
+            }
+            case FileOutputFormatOptions.GeoJson geoJson -> {
+                requireString(geoJson.baseName(), path + ".baseName");
+                requireString(geoJson.geometryColumnName(), path + ".geometryColumnName");
+                if (geoJson.idColumnName() != null && geoJson.idColumnName().isBlank()) {
+                    invalid(path + ".idColumnName 必须为 null 或非空字符串");
                 }
-                if (output.configuration().formatOptions() == null) {
-                    invalid(path + ".formatOptions 不能为空");
-                }
-                switch (output.configuration().formatOptions()) {
-                    case FileOutputFormatOptions.Csv csv -> {
-                        requireSingleCharacter(csv.delimiter(), path + ".formatOptions.delimiter");
-                        requireSingleCharacter(csv.quote(), path + ".formatOptions.quote");
-                        requireSingleCharacter(csv.escape(), path + ".formatOptions.escape");
-                        requireString(csv.nullValue(), path + ".formatOptions.nullValue");
-                    }
-                    case FileOutputFormatOptions.JsonLines ignored -> {
-                    }
-                    case FileOutputFormatOptions.Parquet ignored -> {
-                    }
-                    case FileOutputFormatOptions.Shapefile ignored -> {
-                    }
-                    case FileOutputFormatOptions.GeoParquet geoParquet -> {
-                        requireString(
-                                geoParquet.geometryColumnName(),
-                                path + ".formatOptions.geometryColumnName"
-                        );
-                        if (geoParquet.compression() == null) {
-                            invalid(path + ".formatOptions.compression 不能为空");
-                        }
-                        if (geoParquet.coveringMode() == null) {
-                            invalid(path + ".formatOptions.coveringMode 不能为空");
-                        }
-                    }
-                    case FileOutputFormatOptions.GeoJson geoJson -> {
-                        requireString(geoJson.baseName(), path + ".formatOptions.baseName");
-                        requireString(
-                                geoJson.geometryColumnName(),
-                                path + ".formatOptions.geometryColumnName"
-                        );
-                        if (geoJson.idColumnName() != null && geoJson.idColumnName().isBlank()) {
-                            invalid(path + ".formatOptions.idColumnName 必须为 null 或非空字符串");
-                        }
-                    }
-                    case null -> invalid(path + ".formatOptions 不能为空");
-                }
+            }
+            case null -> invalid(path + " 不能为空");
+        }
+    }
+
+    private static void validateJdbcReadOptionsVersion(CanvasDefinition definition) {
+        if (definition.effectiveSchemaMinorVersion() >= 1 || definition.nodes() == null) return;
+        for (int index = 0; index < definition.nodes().size(); index++) {
+            CanvasNodeDefinition node = definition.nodes().get(index);
+            if (!(node instanceof JdbcInputNodeDefinition input)
+                    || input.configuration() == null || input.configuration().tables() == null) {
+                continue;
+            }
+            boolean configured = input.configuration().tables().stream()
+                    .filter(java.util.Objects::nonNull)
+                    .anyMatch(table -> table.readOptions() != null && !table.readOptions().isEmpty());
+            if (configured) {
+                invalid("nodes[" + index + "].configuration.tables.readOptions 从 Canvas 3.1 开始支持");
             }
         }
     }
@@ -943,14 +1065,24 @@ public class CanvasDefinitionValidator {
                         path + ".keepSuffixLength"
                 );
                 validateMaskCharacter(definition.maskCharacter(), path + ".maskCharacter");
-                if (definition.fixedValue() != null) {
-                    invalid(path + ".fixedValue 不适用于 PARTIAL_MASK");
+                if (definition.maskPosition() != null || definition.fixedValue() != null) {
+                    invalid(path + " 包含不适用于 PARTIAL_MASK 的参数");
+                }
+            }
+            case POSITION_MASK -> {
+                validateMaskPosition(definition.maskPosition(), path + ".maskPosition");
+                validateMaskCharacter(definition.maskCharacter(), path + ".maskCharacter");
+                if (definition.keepPrefixLength() != null
+                        || definition.keepSuffixLength() != null
+                        || definition.fixedValue() != null) {
+                    invalid(path + " 包含不适用于 POSITION_MASK 的参数");
                 }
             }
             case KEEP_LENGTH_MASK -> {
                 validateMaskCharacter(definition.maskCharacter(), path + ".maskCharacter");
                 if (definition.keepPrefixLength() != null
                         || definition.keepSuffixLength() != null
+                        || definition.maskPosition() != null
                         || definition.fixedValue() != null) {
                     invalid(path + " 包含不适用于 KEEP_LENGTH_MASK 的参数");
                 }
@@ -964,6 +1096,7 @@ public class CanvasDefinitionValidator {
                 }
                 if (definition.keepPrefixLength() != null
                         || definition.keepSuffixLength() != null
+                        || definition.maskPosition() != null
                         || definition.maskCharacter() != null) {
                     invalid(path + " 包含不适用于 FIXED_VALUE 的参数");
                 }
@@ -971,6 +1104,7 @@ public class CanvasDefinitionValidator {
             case NULLIFY -> {
                 if (definition.keepPrefixLength() != null
                         || definition.keepSuffixLength() != null
+                        || definition.maskPosition() != null
                         || definition.maskCharacter() != null
                         || definition.fixedValue() != null) {
                     invalid(path + " 包含不适用于 NULLIFY 的参数");
@@ -982,6 +1116,13 @@ public class CanvasDefinitionValidator {
     private static void validateKeepLength(Integer value, String path) {
         if (value == null || value < 0 || value > CanvasMaskingLimits.MAX_KEEP_LENGTH) {
             invalid(path + " 必须在 0.." + CanvasMaskingLimits.MAX_KEEP_LENGTH + " 之间");
+        }
+    }
+
+    private static void validateMaskPosition(Integer value, String path) {
+        int effective = value == null ? 2 : value;
+        if (effective < 1 || effective > CanvasMaskingLimits.MAX_MASK_POSITION) {
+            invalid(path + " 必须在 1.." + CanvasMaskingLimits.MAX_MASK_POSITION + " 之间");
         }
     }
 
@@ -1070,6 +1211,18 @@ public class CanvasDefinitionValidator {
         validateSortFields(configuration.orderBy(), path + ".orderBy");
         if (configuration.tieStrategy() == null) {
             invalid(path + ".tieStrategy 不能为空");
+        }
+    }
+
+    private static void validateSqlTransform(
+            SqlTransformConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) {
+            invalid(path + " 不能为空");
+        }
+        if (configuration.sql().length() > CanvasSqlTransformLimits.MAX_SQL_LENGTH) {
+            invalid(path + ".sql 不能超过 " + CanvasSqlTransformLimits.MAX_SQL_LENGTH + " 个字符");
         }
     }
 
@@ -1169,6 +1322,11 @@ public class CanvasDefinitionValidator {
             case LiteralExpression literal -> {
                 if (literal.literal() == null || literal.literal().dataType() == null) {
                     invalid(path + ".literal 不完整");
+                }
+            }
+            case RuntimeValueExpression runtime -> {
+                if (runtime.value() == null) {
+                    invalid(path + ".value 必须是受支持的运行时变量");
                 }
             }
             case BinaryExpression binary -> {
@@ -1332,6 +1490,97 @@ public class CanvasDefinitionValidator {
     private static void requireString(String value, String path) {
         if (value == null) {
             invalid(path + " 必须是字符串");
+        }
+    }
+
+    private static void validateProcessorOperations(
+            List<? extends ProcessorOperation> operations,
+            String path
+    ) {
+        if (operations == null) {
+            invalid(path + ".operations 必须是数组");
+        }
+        for (int index = 0; index < operations.size(); index++) {
+            ProcessorOperation operation = operations.get(index);
+            String operationPath = path + ".operations[" + index + "]";
+            if (operation == null) invalid(operationPath + " 不能为空");
+            requireUuid(operation.operationId(), operationPath + ".operationId");
+            requireString(operation.sourceTableName(), operationPath + ".sourceTableName");
+            if (operation.output() == null) invalid(operationPath + ".output 不能为空");
+            if (operation.output().outputTableName() != null) {
+                requireString(operation.output().outputTableName(), operationPath + ".output.outputTableName");
+            }
+        }
+    }
+
+    private static void validateFilterConfiguration(FilterConfiguration configuration, String path) {
+        if (configuration == null) {
+            invalid(path + " 不能为空");
+        }
+        validateProcessorOperations(configuration.operations(), path);
+        for (int index = 0; index < configuration.operations().size(); index++) {
+            FilterOperation operation = configuration.operations().get(index);
+            if (operation == null) continue;
+            String operationPath = path + ".operations[" + index + "]";
+            if (operation.mode() == FilterConditionMode.STRUCTURED) {
+                if (operation.condition() == null) {
+                    invalid(operationPath + ".condition 不能为空");
+                }
+                validateFilterCondition(operation.condition(), operationPath + ".condition", 1, new int[]{0});
+                continue;
+            }
+            FilterSqlExpressionPolicy.Violation violation =
+                    FilterSqlExpressionPolicy.findViolation(operation.sqlExpression());
+            if (violation == FilterSqlExpressionPolicy.Violation.TOO_LONG) {
+                invalid(operationPath + ".sqlExpression 不能超过 "
+                        + FilterSqlExpressionPolicy.MAX_EXPRESSION_LENGTH + " 个字符");
+            }
+            if (violation != null && violation != FilterSqlExpressionPolicy.Violation.REQUIRED) {
+                invalid(operationPath + ".sqlExpression 只能包含单个布尔谓词，不能包含 WHERE、完整 SQL、注释或分号");
+            }
+        }
+    }
+
+    private static void validateDeriveColumnsConfiguration(
+            DeriveColumnsConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) {
+            invalid(path + " 不能为空");
+        }
+        validateDerivations(configuration.globalDerivations(), path + ".globalDerivations");
+        validateProcessorOperations(configuration.operations(), path);
+        for (int index = 0; index < configuration.operations().size(); index++) {
+            DeriveColumnsOperation operation = configuration.operations().get(index);
+            if (operation == null) continue;
+            validateDerivations(
+                    operation.derivations(),
+                    path + ".operations[" + index + "].derivations"
+            );
+        }
+    }
+
+    private static void validateDerivations(List<ColumnDerivation> derivations, String path) {
+        if (derivations == null) {
+            invalid(path + " 必须是数组");
+        }
+        if (derivations.size() > CanvasExpressionLimits.MAX_DERIVATIONS) {
+            invalid(path + " 不能超过 " + CanvasExpressionLimits.MAX_DERIVATIONS + " 项");
+        }
+        int[] expressionNodes = {0};
+        for (int index = 0; index < derivations.size(); index++) {
+            ColumnDerivation derivation = derivations.get(index);
+            String derivationPath = path + "[" + index + "]";
+            if (derivation == null) {
+                invalid(derivationPath + " 不能为空");
+            }
+            requireString(derivation.targetColumnName(), derivationPath + ".targetColumnName");
+            if (derivation.expression() == null) {
+                invalid(derivationPath + ".expression 不能为空");
+            }
+            validateCanvasExpression(
+                    derivation.expression(), derivationPath + ".expression", 1, expressionNodes
+            );
         }
     }
 

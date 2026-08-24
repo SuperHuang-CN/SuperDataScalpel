@@ -1,9 +1,10 @@
-import { CopyOutlined, DeleteOutlined, EditOutlined, FileSearchOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { CopyOutlined, DeleteOutlined, EditOutlined, ExclamationCircleOutlined, FileSearchOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import {
   Alert,
   Button,
   Col,
+  Drawer,
   Form,
   Input,
   InputNumber,
@@ -18,7 +19,7 @@ import {
   Tooltip,
   message,
 } from 'antd';
-import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useState } from 'react';
+import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { useCurrentUser } from '../../system';
 import {
@@ -75,7 +76,7 @@ interface FieldFilters {
   fieldType?: PlatformDataType;
 }
 
-interface FieldEditorModalProps {
+interface FieldEditorDrawerProps {
   open: boolean;
   field: EditableField | null;
   nextSortOrder: number;
@@ -144,7 +145,7 @@ const fieldTypeDescription = (field: EditableField) => {
   return dataModelFieldTypeLabels[field.fieldType];
 };
 
-const FieldEditorModal = ({
+const FieldEditorDrawer = ({
   open,
   field,
   nextSortOrder,
@@ -154,7 +155,7 @@ const FieldEditorModal = ({
   onCancel,
   onDirtyChange,
   onSave,
-}: FieldEditorModalProps) => {
+}: FieldEditorDrawerProps) => {
   const [form] = Form.useForm<DataModelFieldInput>();
   const selectedType = Form.useWatch('fieldType', form);
   const selectedPrimaryKey = Form.useWatch('primaryKey', form);
@@ -220,17 +221,10 @@ const FieldEditorModal = ({
     });
   }, [field, form, nextSortOrder, onDirtyChange, open]);
 
-  useEffect(() => {
-    if (open && selectedType === 'STRING' && selectedCapability?.lengthParameterSupported === false) {
-      form.setFieldValue('length', undefined);
-    }
-  }, [form, open, selectedCapability, selectedType]);
-
   const changeType = (fieldType: PlatformDataType) => {
-    const capability = capabilities.get(fieldType);
     form.setFieldValue(
       'length',
-      fieldType === 'STRING' && capability?.lengthParameterSupported !== false ? form.getFieldValue('length') : undefined,
+      fieldType === 'STRING' ? form.getFieldValue('length') : undefined,
     );
     form.setFieldValue('precision', fieldType === 'DECIMAL' ? form.getFieldValue('precision') ?? 18 : undefined);
     form.setFieldValue('scale', fieldType === 'DECIMAL' ? form.getFieldValue('scale') ?? 2 : undefined);
@@ -287,148 +281,197 @@ const FieldEditorModal = ({
   };
 
   return (
-    <Modal
-      rootClassName="business-overlay business-modal-overlay"
-      title={structuralLocked ? '修改外部字段业务信息' : field ? '修改字段' : '新增字段'}
+    <Drawer
+      rootClassName="business-overlay business-drawer-overlay data-model-field-editor-drawer"
+      title={structuralLocked
+        ? `修改字段业务信息${field?.code ? ` · ${field.code}` : ''}`
+        : field ? `修改字段 · ${field.code}` : '新增字段'}
       open={open}
       width={620}
       destroyOnHidden
-      onCancel={onCancel}
-      onOk={() => void submit()}
-      okText="确定"
-      cancelText="取消"
+      onClose={onCancel}
+      footer={(
+        <Space className="data-model-field-editor-actions">
+          <Button onClick={onCancel}>取消</Button>
+          <Button type="primary" onClick={() => void submit()}>保存</Button>
+        </Space>
+      )}
     >
+      {structuralLocked && (
+        <Alert
+          className="data-model-field-editor-lock-alert"
+          type="info"
+          showIcon
+          title="当前字段的物理结构已锁定"
+          description="可以调整字段名称、排序、关联码表和说明；字段编码、类型及约束保持不变。"
+        />
+      )}
       <Form<DataModelFieldInput>
+        className="data-model-field-editor-form"
         autoComplete="off"
         form={form}
         layout="vertical"
         onValuesChange={() => onDirtyChange(true)}
       >
-        <Row gutter={12}>
-          <Col span={12}>
-            <Form.Item
-              label="字段编码"
-              name="code"
-              rules={[
-                { required: true, whitespace: true, message: '请输入字段编码' },
-                { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
-              ]}
-            >
-              <Input disabled={structuralLocked} placeholder="如：order_id" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item label="字段名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入字段名称' }]}>
-              <Input placeholder="如：订单ID" />
-            </Form.Item>
-          </Col>
-          <Col span={12}>
-            <Form.Item label="字段类型" name="fieldType" rules={[{ required: true }]}>
-              <Select
-                disabled={structuralLocked || capabilitiesQuery.isFetching}
-                loading={capabilitiesQuery.isFetching}
-                options={editorTypeOptions}
-                onChange={changeType}
-              />
-            </Form.Item>
-          </Col>
-          {selectedType === 'STRING' && (structuralLocked || selectedCapability?.lengthParameterSupported !== false) && (
+        <section className="data-model-field-editor-section">
+          <div className="data-model-field-editor-section-heading">
+            <span>基础定义</span>
+            <small>字段标识及其在目标数据存储中的类型</small>
+          </div>
+          <Row gutter={12}>
             <Col span={12}>
-              <Form.Item label="长度（可选）" name="length" extra="留空表示无长度上限，由目标数据库映射为 text、CLOB 或 String">
-                <InputNumber disabled={structuralLocked} min={1} precision={0} className="data-model-number-input" />
+              <Form.Item
+                label="字段编码"
+                name="code"
+                rules={[
+                  { required: true, whitespace: true, message: '请输入字段编码' },
+                  { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
+                ]}
+              >
+                <Input disabled={structuralLocked} placeholder="如：order_id" />
               </Form.Item>
             </Col>
-          )}
-          {selectedType === 'STRING' && !structuralLocked && selectedCapability?.lengthParameterSupported === false && (
             <Col span={12}>
-              <Alert type="info" showIcon title="该数据存储仅支持无长度上限的字符串" description={selectedCapability.message} />
+              <Form.Item label="字段名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入字段名称' }]}>
+                <Input placeholder="如：订单ID" />
+              </Form.Item>
             </Col>
-          )}
-          {selectedType === 'DECIMAL' && (
-            <>
-              <Col span={6}>
-                <Form.Item label="精度" name="precision" rules={[{ required: true, message: '请输入精度' }]}>
-                  <InputNumber disabled={structuralLocked} min={1} max={38} precision={0} className="data-model-number-input" />
-                </Form.Item>
-              </Col>
-              <Col span={6}>
-                <Form.Item label="小数位" name="scale" rules={[{ required: true, message: '请输入小数位' }]}>
-                  <InputNumber disabled={structuralLocked} min={0} max={38} precision={0} className="data-model-number-input" />
-                </Form.Item>
-              </Col>
-            </>
-          )}
-          {selectedType === 'GEOMETRY' && (
-            <>
+            <Col span={12}>
+              <Form.Item label="字段类型" name="fieldType" rules={[{ required: true }]}>
+                <Select
+                  disabled={structuralLocked || capabilitiesQuery.isFetching}
+                  loading={capabilitiesQuery.isFetching}
+                  options={editorTypeOptions}
+                  onChange={changeType}
+                />
+              </Form.Item>
+            </Col>
+            {selectedType === 'STRING' && (
               <Col span={12}>
-                <Form.Item label="几何类型" name={['geometry', 'kind']} rules={[{ required: true, message: '请选择几何类型' }]}>
-                  <Select disabled={structuralLocked} options={geometryKindOptions} />
+                <Form.Item label="长度（可选）" name="length" extra="留空表示无长度上限，由目标数据库映射为 text、CLOB 或 String">
+                  <div className="data-model-field-length-control">
+                    <InputNumber
+                      disabled={structuralLocked}
+                      min={1}
+                      precision={0}
+                    />
+                    {selectedCapability?.message && (
+                      <Tooltip title={selectedCapability.message}>
+                        <ExclamationCircleOutlined
+                          className="data-model-field-length-hint"
+                          aria-label="查看目标数据存储的长度说明"
+                          tabIndex={0}
+                        />
+                      </Tooltip>
+                    )}
+                  </div>
                 </Form.Item>
               </Col>
-              <Col span={6}>
-                <Form.Item label="CRS Authority" name={['geometry', 'crs', 'authority']} rules={[{ required: true }]}>
-                  <Input disabled />
-                </Form.Item>
-              </Col>
-              <Col span={6}>
-                <Form.Item label="EPSG Code" name={['geometry', 'crs', 'code']} rules={[{ required: true, message: '请输入 EPSG Code' }]}>
-                  <InputNumber disabled={structuralLocked} min={1} precision={0} className="data-model-number-input" />
-                </Form.Item>
-              </Col>
-              <Col span={12}>
-                <Form.Item label="坐标维度" name={['geometry', 'dimension']} rules={[{ required: true }]}>
-                  <Select disabled options={[{ value: 'XY', label: 'XY（二维坐标）' }]} />
-                </Form.Item>
-              </Col>
-            </>
-          )}
-          <Col span={8}>
-            <Form.Item label="允许为空" name="nullable" valuePropName="checked">
-              <Switch disabled={structuralLocked || selectedPrimaryKey} />
-            </Form.Item>
-          </Col>
-          <Col span={24}>
-            <Form.Item
-              label="关联码表"
-              name="standardDictionaryId"
-              extra={!canViewDictionaries
-                ? '当前账号没有查看码表权限，已有绑定会保持不变。'
-                : selectedDictionaryId && dictionaryOptions.find((option) => option.value === selectedDictionaryId)?.disabled
-                  ? '当前码表已停用或与字段类型不兼容，请清空或更换后保存。'
-                  : '物理表仍保存码表编码；该绑定仅作为字段业务元数据。'}
-            >
-              <Select
-                allowClear
-                showSearch
-                optionFilterProp="label"
-                disabled={!canViewDictionaries}
-                loading={dictionariesQuery.isFetching}
-                options={dictionaryOptions}
-                placeholder="可选"
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item label="主键" name="primaryKey" valuePropName="checked">
-              <Switch
-                disabled={structuralLocked || selectedType === 'GEOMETRY'}
-                onChange={(checked) => checked && form.setFieldValue('nullable', false)}
-              />
-            </Form.Item>
-          </Col>
-          <Col span={8}>
-            <Form.Item label="排序" name="sortOrder" rules={[{ required: true }]}>
-              <InputNumber min={0} precision={0} className="data-model-number-input" />
-            </Form.Item>
-          </Col>
-          <Col span={24}>
-            <Form.Item label="说明" name="description" rules={[{ max: 500 }]}>
-              <Input placeholder="可选" />
-            </Form.Item>
-          </Col>
-        </Row>
+            )}
+            {selectedType === 'DECIMAL' && (
+              <>
+                <Col span={12}>
+                  <Form.Item label="精度" name="precision" rules={[{ required: true, message: '请输入精度' }]}>
+                    <InputNumber disabled={structuralLocked} min={1} max={38} precision={0} className="data-model-number-input" />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="小数位" name="scale" rules={[{ required: true, message: '请输入小数位' }]}>
+                    <InputNumber disabled={structuralLocked} min={0} max={38} precision={0} className="data-model-number-input" />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
+            {selectedType === 'GEOMETRY' && (
+              <>
+                <Col span={12}>
+                  <Form.Item label="几何类型" name={['geometry', 'kind']} rules={[{ required: true, message: '请选择几何类型' }]}>
+                    <Select disabled={structuralLocked} options={geometryKindOptions} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="坐标维度" name={['geometry', 'dimension']} rules={[{ required: true }]}>
+                    <Select disabled options={[{ value: 'XY', label: 'XY（二维坐标）' }]} />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="CRS Authority" name={['geometry', 'crs', 'authority']} rules={[{ required: true }]}>
+                    <Input disabled />
+                  </Form.Item>
+                </Col>
+                <Col span={12}>
+                  <Form.Item label="EPSG Code" name={['geometry', 'crs', 'code']} rules={[{ required: true, message: '请输入 EPSG Code' }]}>
+                    <InputNumber disabled={structuralLocked} min={1} precision={0} className="data-model-number-input" />
+                  </Form.Item>
+                </Col>
+              </>
+            )}
+          </Row>
+        </section>
+
+        <section className="data-model-field-editor-section">
+          <div className="data-model-field-editor-section-heading">
+            <span>字段约束</span>
+            <small>约束会参与模型校验和后续物理表定义</small>
+          </div>
+          <Row gutter={12}>
+            <Col span={8}>
+              <Form.Item label="允许为空" name="nullable" valuePropName="checked">
+                <Switch disabled={structuralLocked || selectedPrimaryKey} />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="主键" name="primaryKey" valuePropName="checked">
+                <Switch
+                  disabled={structuralLocked || selectedType === 'GEOMETRY'}
+                  onChange={(checked) => checked && form.setFieldValue('nullable', false)}
+                />
+              </Form.Item>
+            </Col>
+            <Col span={8}>
+              <Form.Item label="排序" name="sortOrder" rules={[{ required: true }]}>
+                <InputNumber min={0} precision={0} className="data-model-number-input" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </section>
+
+        <section className="data-model-field-editor-section">
+          <div className="data-model-field-editor-section-heading">
+            <span>业务信息</span>
+            <small>补充字段含义和数据标准，不改变物理字段类型</small>
+          </div>
+          <Row gutter={12}>
+            <Col span={24}>
+              <Form.Item
+                label="关联码表"
+                name="standardDictionaryId"
+                extra={!canViewDictionaries
+                  ? '当前账号没有查看码表权限，已有绑定会保持不变。'
+                  : selectedDictionaryId && dictionaryOptions.find((option) => option.value === selectedDictionaryId)?.disabled
+                    ? '当前码表已停用或与字段类型不兼容，请清空或更换后保存。'
+                    : '物理表仍保存码表编码；该绑定仅作为字段业务元数据。'}
+              >
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  disabled={!canViewDictionaries}
+                  loading={dictionariesQuery.isFetching}
+                  options={dictionaryOptions}
+                  placeholder="可选"
+                />
+              </Form.Item>
+            </Col>
+            <Col span={24}>
+              <Form.Item label="说明" name="description" rules={[{ max: 500 }]}>
+                <Input.TextArea rows={3} showCount maxLength={500} placeholder="可选，例如字段口径、取值含义或使用约束" />
+              </Form.Item>
+            </Col>
+          </Row>
+        </section>
       </Form>
-    </Modal>
+    </Drawer>
   );
 };
 
@@ -447,6 +490,8 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
   const [selectedChange, setSelectedChange] = useState<DataModelPhysicalChange | null>(null);
   const [page, setPage] = useState(1);
   const [pageSize, setPageSize] = useState(20);
+  const [tableDataWidth, setTableDataWidth] = useState(1240);
+  const tableShellRef = useRef<HTMLDivElement>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const detailQuery = useDataModel(model.id, true);
@@ -489,6 +534,24 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
     && Boolean(inspectionQuery.data)
     && !directSaveAllowed
     && !requiresPhysicalChangePlan;
+  const fixedColumnsWidth = 604 + (readOnly ? 0 : 76);
+  const flexibleColumnWidth = (tableDataWidth - fixedColumnsWidth) / 4;
+  const descriptionColumnWidth = flexibleColumnWidth * 2;
+
+  useEffect(() => {
+    const shell = tableShellRef.current;
+    if (!shell) return undefined;
+    const updateWidth = () => {
+      const body = shell.querySelector<HTMLElement>('.ant-table-body');
+      const nextWidth = Math.max(1240, Math.floor(body?.clientWidth ?? shell.clientWidth));
+      setTableDataWidth((current) => current === nextWidth ? current : nextWidth);
+    };
+    const observer = new ResizeObserver(updateWidth);
+    observer.observe(shell);
+    const body = shell.querySelector<HTMLElement>('.ant-table-body');
+    if (body) observer.observe(body);
+    return () => observer.disconnect();
+  }, []);
 
   const discardChanges = useCallback(() => {
     setLocalFields(null);
@@ -507,7 +570,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
     modalApi.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
       title: '放弃当前字段修改？',
-      content: '字段编辑弹窗中的修改尚未应用，关闭后会丢失。',
+      content: '字段编辑抽屉中的修改尚未应用，关闭后会丢失。',
       okText: '放弃修改',
       okButtonProps: { danger: true },
       cancelText: '继续编辑',
@@ -634,24 +697,25 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
   };
 
   const columns: TableProps<EditableField>['columns'] = [
-    { title: '字段编码', dataIndex: 'code', width: 170, ellipsis: true, fixed: 'left', render: (value: string) => <code>{value}</code> },
-    { title: '字段名称', dataIndex: 'name', width: 170, ellipsis: true },
-    { title: '类型', key: 'type', width: 140, render: (_value, field) => fieldTypeDescription(field) },
+    { title: '字段编码', dataIndex: 'code', width: flexibleColumnWidth, ellipsis: true, fixed: 'left', render: (value: string) => <code>{value}</code> },
+    { title: '字段名称', dataIndex: 'name', width: flexibleColumnWidth, ellipsis: true },
+    { title: '类型', key: 'type', width: 136, ellipsis: true, render: (_value, field) => fieldTypeDescription(field) },
     {
       title: '物理角色',
       dataIndex: 'physicalColumnRole',
-      width: 100,
+      width: 96,
+      ellipsis: true,
       render: (value?: DataModelField['physicalColumnRole']) => value === 'TIME_KEY'
         ? <Tag color="blue">时间主列</Tag>
         : value === 'TAG' ? <Tag color="purple">TAG</Tag> : '普通列',
     },
-    { title: '主键', dataIndex: 'primaryKey', width: 72, render: (value: boolean) => value ? <Tag color="blue">是</Tag> : '—' },
-    { title: '允许为空', dataIndex: 'nullable', width: 90, render: (value: boolean) => value ? '是' : '否' },
-    { title: '排序', dataIndex: 'sortOrder', width: 72 },
+    { title: '主键', dataIndex: 'primaryKey', width: 56, align: 'center', render: (value: boolean) => value ? <Tag color="blue">是</Tag> : '—' },
+    { title: '允许为空', dataIndex: 'nullable', width: 80, align: 'center', render: (value: boolean) => value ? '是' : '否' },
+    { title: '排序', dataIndex: 'sortOrder', width: 56, align: 'center' },
     {
       title: '关联码表',
       key: 'standardDictionary',
-      width: 200,
+      width: 180,
       ellipsis: true,
       render: (_value, field) => field.standardDictionary
         ? (
@@ -663,7 +727,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
         )
         : '—',
     },
-    { title: '说明', dataIndex: 'description', width: 260, ellipsis: true, render: (value?: string) => value || '—' },
+    { title: '说明', dataIndex: 'description', width: descriptionColumnWidth, ellipsis: true, render: (value?: string) => value || '—' },
     ...(!readOnly ? [{
       title: '操作',
       key: 'actions',
@@ -703,14 +767,6 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
     <div className="model-detail-tab-panel model-fields-panel">
       {messageContext}
       {modalContext}
-      {readOnly && (
-        <Alert
-          banner
-          type="info"
-          showIcon
-          title={!canUpdate ? '当前账号没有修改模型的权限。' : '模型已发布，字段结构只读；请先停用模型后再修改。'}
-        />
-      )}
       {!readOnly && detailModel.status === 'DISABLED' && (
         <Alert
           banner
@@ -811,29 +867,32 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
           )}
         </Space>
       </div>
-      <Table<EditableField>
-        size="small"
-        className="management-table model-fields-table"
-        rowKey="rowKey"
-        columns={columns}
-        dataSource={visibleFields}
-        loading={detailQuery.isFetching}
-        scroll={{ x: 1240, y: '100%' }}
-        pagination={{
-          current: effectivePage,
-          pageSize,
-          total: visibleFields.length,
-          placement: ['bottomEnd'],
-          hideOnSinglePage: false,
-          showSizeChanger: true,
-          showTotal: (total) => `共 ${total} 项`,
-        }}
-        onChange={(pagination) => {
-          setPage(pagination.current ?? 1);
-          setPageSize(pagination.pageSize ?? 20);
-        }}
-      />
-      <FieldEditorModal
+      <div ref={tableShellRef} className="model-fields-table-shell">
+        <Table<EditableField>
+          size="small"
+          className="management-table model-fields-table"
+          rowKey="rowKey"
+          columns={columns}
+          dataSource={visibleFields}
+          loading={detailQuery.isFetching}
+          tableLayout="fixed"
+          scroll={{ x: tableDataWidth, y: '100%' }}
+          pagination={{
+            current: effectivePage,
+            pageSize,
+            total: visibleFields.length,
+            placement: ['bottomEnd'],
+            hideOnSinglePage: false,
+            showSizeChanger: true,
+            showTotal: (total) => `共 ${total} 项`,
+          }}
+          onChange={(pagination) => {
+            setPage(pagination.current ?? 1);
+            setPageSize(pagination.pageSize ?? 20);
+          }}
+        />
+      </div>
+      <FieldEditorDrawer
         open={editorOpen}
         field={editingField}
         nextSortOrder={nextSortOrder}

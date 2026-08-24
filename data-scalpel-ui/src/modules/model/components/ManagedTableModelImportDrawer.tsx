@@ -70,7 +70,7 @@ interface ManagedTableModelImportDrawerProps {
   onAdjustFields: (modelId: string) => void;
 }
 
-interface FieldEditorProps {
+interface ManagedImportFieldEditorProps {
   open: boolean;
   field: ManagedImportFieldDraft | null;
   storageDataSourceId?: string;
@@ -106,13 +106,13 @@ const errorMessage = (error: unknown, fallback: string): string => {
 const typeOptions = (Object.entries(dataModelFieldTypeLabels) as [PlatformDataType, string][])
   .map(([value, label]) => ({ value, label }));
 
-const FieldEditor = ({
+export const ManagedImportFieldEditor = ({
   open,
   field,
   storageDataSourceId,
   onCancel,
   onSave,
-}: FieldEditorProps) => {
+}: ManagedImportFieldEditorProps) => {
   const [form] = Form.useForm<ManagedImportFieldDraft>();
   const selectedType = Form.useWatch('fieldType', form);
   const primaryKey = Form.useWatch('primaryKey', form);
@@ -997,7 +997,7 @@ export const ManagedTableModelImportDrawer = ({
           </div>
         )}
       </Drawer>
-      <FieldEditor
+      <ManagedImportFieldEditor
         open={Boolean(editingField)}
         field={currentEditingField}
         storageDataSourceId={effectiveTargetStorageDataSourceId}

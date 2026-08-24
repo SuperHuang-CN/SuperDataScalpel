@@ -122,7 +122,6 @@ const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items
       label: '任务中心',
       children: [
         { key: '/task', label: '任务列表' },
-        { key: '/task/orchestration', label: '任务编排' },
         { key: '/task/masking-rules', label: '脱敏规则' },
       ],
     }] : []),

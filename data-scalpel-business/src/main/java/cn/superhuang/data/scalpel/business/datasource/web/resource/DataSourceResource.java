@@ -154,9 +154,16 @@ public class DataSourceResource {
             @RequestParam(required = false) String catalog,
             @RequestParam(required = false) String schema,
             @RequestParam(required = false) String keyword,
-            @RequestParam(defaultValue = "false") boolean includeViews
+            @RequestParam(defaultValue = "false") boolean includeViews,
+            @RequestParam(defaultValue = "500") int limit
     ) {
-        return service.listTables(id, catalog, schema, keyword, includeViews);
+        if (limit < 1 || limit > 500) {
+            throw new org.springframework.web.server.ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "物理表查询条数必须在 1 到 500 之间"
+            );
+        }
+        return service.listTables(id, catalog, schema, keyword, includeViews, limit);
     }
 
     @GetMapping("/{id}/table-metadata")

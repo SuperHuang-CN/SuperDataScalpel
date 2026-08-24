@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
 import cn.superhuang.data.scalpel.engine.config.EngineProperties;
 import cn.superhuang.data.scalpel.engine.deployment.EngineDeploymentRepository;
 import cn.superhuang.superops.api.studio.datasource.ApiDataSourceRegistry;
+import cn.superhuang.superops.api.studio.datasource.ClickHouseDataSource;
 import cn.superhuang.superops.api.studio.datasource.application.DataSourceService;
 import cn.superhuang.superops.api.studio.datasource.factory.ClickHouseDriver;
 import cn.superhuang.superops.api.studio.datasource.factory.DmDriver;
@@ -29,6 +30,7 @@ import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -124,5 +126,27 @@ class EngineApiStudioDataSourceServiceTest {
         DBConfig postgresql = byId.get(ids.get("POSTGRESQL").toString());
         assertEquals("prefer", postgresql.getDataSourceProperties().getProperty("sslmode"));
         assertNull(postgresql.getProperties().getProperty("sslmode"));
+    }
+
+    @Test
+    void resolvesClickHouseAsNonTransactionalJdbcDatasource() throws Exception {
+        UUID dataSourceId = UUID.randomUUID();
+        DBConfig config = DBConfig.builder().driver(ClickHouseDriver.class.getName()).build();
+        ClickHouseDataSource clickHouse = new ClickHouseDataSource();
+        when(apiDataSourceRegistry.require(dataSourceId.toString())).thenReturn(clickHouse);
+        when(dataSourceService.getDBConfigById(dataSourceId.toString())).thenReturn(config);
+
+        EngineApiStudioDataSourceService service = new EngineApiStudioDataSourceService(
+                dataSourceService,
+                apiDataSourceRegistry,
+                BuiltInDialects.registry(),
+                deploymentRepository,
+                new EngineProperties("engine_test", "token")
+        );
+
+        var runtimeDataSource = service.resolve(dataSourceId);
+
+        assertEquals("CLICKHOUSE", runtimeDataSource.databaseType());
+        assertInstanceOf(ClickHouseDataSource.class, runtimeDataSource.jdbcDataSource());
     }
 }

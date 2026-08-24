@@ -19,7 +19,7 @@ export const maskFieldsSpec = createCanvasNodeSpec({
   canvasView: maskFieldsCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
   introducedInMinor: 0,
-  graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: 1 },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createMaskFieldsConfiguration,
   summarize: summarizeMaskFields,
   collectMetadataReferences: collectNoMetadataReferences,

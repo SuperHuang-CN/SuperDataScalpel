@@ -203,7 +203,7 @@ export const SelectColumnsProcessorInspector = ({
       {selectionError && <Alert showIcon type="error" title={selectionError} />}
 
       <div className="canvas-select-columns-panel">
-        <div className="canvas-select-columns-section">
+        <div className="canvas-select-columns-section is-available">
           <div className="canvas-select-columns-section-heading">
             <Typography.Text strong>可用字段</Typography.Text>
             <Tag>{availableColumns.length}</Tag>
@@ -241,7 +241,7 @@ export const SelectColumnsProcessorInspector = ({
           </div>
         </div>
 
-        <div className="canvas-select-columns-section">
+        <div className="canvas-select-columns-section is-selected">
           <div className="canvas-select-columns-section-heading">
             <Typography.Text strong>已选字段</Typography.Text>
             <Tag color={columns.length > 0 ? 'blue' : 'error'}>{columns.length}</Tag>

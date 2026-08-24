@@ -571,6 +571,7 @@ final class ModelQualityTaskExecutor {
                 source,
                 new TableIdentifier(model.catalogName(), model.schemaName(), model.physicalTableName()),
                 schema,
+                java.util.List.of(),
                 null);
     }
 

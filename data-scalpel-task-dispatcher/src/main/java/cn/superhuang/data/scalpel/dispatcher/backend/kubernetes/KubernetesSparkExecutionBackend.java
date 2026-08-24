@@ -167,6 +167,17 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
     }
 
     @Override
+    public void forceTerminate(ExternalExecutionHandle handle, ExecutionIdentity identity) throws BackendException {
+        String podName = requireHandle(handle);
+        Optional<KubernetesPodParser.ParsedPod> pod = driverByName(podName);
+        if (pod.isPresent()) parser.requireIdentity(pod.get(), identity);
+        requireSuccess(commands.forceDeleteDriver(podName),
+                "KUBERNETES_FORCE_DELETE_FAILED", "无法强制删除 Driver Pod");
+        requireSuccess(commands.forceDeleteExecutors(identity),
+                "KUBERNETES_FORCE_DELETE_FAILED", "无法强制删除 Executor Pod");
+    }
+
+    @Override
     public BackendLog collectLog(ExternalExecutionHandle handle) throws BackendException {
         String podName = requireHandle(handle);
         CommandResult result = execute(commands.logs(podName), properties.commandTimeout(),

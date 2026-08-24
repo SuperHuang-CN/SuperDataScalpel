@@ -1,0 +1,65 @@
+{
+  "schemaVersion" : 7,
+  "executionId" : "6b9dd3d2-e6e8-4f6a-ba49-8e1c08bd0802",
+  "runId" : "54fd9608-5b9a-42f8-ac42-a5019fb4c1ae",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-21T06:11:07.153531168Z",
+  "endedAt" : "2026-08-21T06:11:14.242541546Z",
+  "durationMs" : 7089,
+  "affectedRows" : 428,
+  "nodeResults" : [ {
+    "nodeId" : "033a2fad-2279-472a-8621-e9d6e9fb92e7",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-08-21T06:11:09.876762086Z",
+    "endedAt" : "2026-08-21T06:11:11.102635711Z",
+    "durationMs" : 1225,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "JDBC 输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "8913adc0-b3ea-4940-9626-b69a64263b03",
+    "nodeType" : "JOIN",
+    "nodeName" : "Join 处理器",
+    "state" : "SUCCESS",
+    "phase" : "PROCESS",
+    "startedAt" : "2026-08-21T06:11:11.103990711Z",
+    "endedAt" : "2026-08-21T06:11:11.121795336Z",
+    "durationMs" : 17,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "Join 已准备",
+    "error" : null
+  }, {
+    "nodeId" : "618ee77b-16dc-4171-a4e4-4044ab8fbd9b",
+    "nodeType" : "MODEL_OUTPUT",
+    "nodeName" : "模型输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-08-21T06:11:11.122073628Z",
+    "endedAt" : "2026-08-21T06:11:14.242174171Z",
+    "durationMs" : 3120,
+    "rowsWritten" : 428,
+    "metrics" : {
+      "kind" : "OUTPUT_WRITES",
+      "writes" : [ {
+        "writeId" : "74afc084-d1bd-43c5-bd1b-d8ddf81a7d6a",
+        "sourceTableName" : "dim_user",
+        "targetDisplayName" : "用户全表 · dim_user",
+        "state" : "SUCCESS",
+        "affectedRows" : 428,
+        "errorCode" : null
+      } ]
+    },
+    "message" : "模型输出写入成功",
+    "error" : null
+  } ],
+  "taskType" : "SPARK_CANVAS",
+  "qualityResult" : null,
+  "userJobObservability" : null,
+  "error" : null
+}

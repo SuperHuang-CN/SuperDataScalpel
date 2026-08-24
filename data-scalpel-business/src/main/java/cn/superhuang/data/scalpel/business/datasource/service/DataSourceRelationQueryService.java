@@ -451,22 +451,36 @@ public class DataSourceRelationQueryService {
             Map<UUID, String> apiResourceNames,
             Map<UUID, String> spatialResourceNames
     ) {
-        if (node instanceof JdbcInputNodeDefinition input) return input.configuration().tableName();
+        if (node instanceof JdbcInputNodeDefinition input) {
+            List<JdbcInputTableSelection> tables = input.configuration().tables();
+            if (tables == null || tables.isEmpty()) return null;
+            List<String> names = tables.stream()
+                    .map(JdbcInputTableSelection::tableName)
+                    .filter(name -> name != null && !name.isBlank())
+                    .toList();
+            String preview = names.stream().limit(2).collect(java.util.stream.Collectors.joining("、"));
+            return names.size() <= 2 ? preview : preview + " 等 " + names.size() + " 张表";
+        }
         if (node instanceof JdbcQueryInputNodeDefinition input) return input.configuration().outputTableName();
         if (node instanceof HttpApiInputNodeDefinition input) {
-            return resourceName(input.configuration().resourceId(), apiResourceNames);
+            return resourcePreview(input.configuration().resources().stream()
+                    .map(selection -> resourceName(selection.resourceId(), apiResourceNames)).toList());
         }
         if (node instanceof SpatialServiceInputNodeDefinition input) {
-            return resourceName(input.configuration().resourceId(), spatialResourceNames);
+            return resourcePreview(input.configuration().resources().stream()
+                    .map(selection -> resourceName(selection.resourceId(), spatialResourceNames)).toList());
         }
         if (node instanceof KafkaInputNodeDefinition input) return input.configuration().topic();
         if (node instanceof TdEngineTmqInputNodeDefinition input) {
             return input.configuration().topicName() + " · " + input.configuration().supertableName();
         }
-        if (node instanceof JdbcOutputNodeDefinition output) return output.configuration().targetTableName();
+        if (node instanceof JdbcOutputNodeDefinition output) return outputPreview(
+                output.configuration().writes().stream().map(JdbcOutputWrite::targetTableName).toList());
         if (node instanceof JdbcSnapshotSyncOutputNodeDefinition output) return output.configuration().targetTableName();
-        if (node instanceof KafkaOutputNodeDefinition output) return output.configuration().topic();
-        if (node instanceof FileOutputNodeDefinition output) return output.configuration().targetPath();
+        if (node instanceof KafkaOutputNodeDefinition output) return outputPreview(
+                output.configuration().writes().stream().map(KafkaOutputWrite::topic).toList());
+        if (node instanceof FileOutputNodeDefinition output) return outputPreview(
+                output.configuration().writes().stream().map(FileOutputWrite::targetPath).toList());
         return null;
     }
 
@@ -475,14 +489,24 @@ public class DataSourceRelationQueryService {
         return resourceId == null ? id : names.getOrDefault(resourceId, id);
     }
 
+    private static String resourcePreview(List<String> names) {
+        List<String> populated = names.stream().filter(name -> name != null && !name.isBlank()).toList();
+        String preview = populated.stream().limit(2).collect(java.util.stream.Collectors.joining("、"));
+        return populated.size() <= 2 ? preview : preview + " 等 " + populated.size() + " 个资源";
+    }
+
+    private static String outputPreview(List<String> names) {
+        return resourcePreview(names);
+    }
+
     private static UUID apiResourceId(CanvasNodeDefinition node) {
-        return node instanceof HttpApiInputNodeDefinition input
-                ? uuidOrNull(input.configuration().resourceId()) : null;
+        return node instanceof HttpApiInputNodeDefinition input && !input.configuration().resources().isEmpty()
+                ? uuidOrNull(input.configuration().resources().getFirst().resourceId()) : null;
     }
 
     private static UUID spatialResourceId(CanvasNodeDefinition node) {
-        return node instanceof SpatialServiceInputNodeDefinition input
-                ? uuidOrNull(input.configuration().resourceId()) : null;
+        return node instanceof SpatialServiceInputNodeDefinition input && !input.configuration().resources().isEmpty()
+                ? uuidOrNull(input.configuration().resources().getFirst().resourceId()) : null;
     }
 
     private static DataSourceTaskReferenceLocationResponse modelLocation(

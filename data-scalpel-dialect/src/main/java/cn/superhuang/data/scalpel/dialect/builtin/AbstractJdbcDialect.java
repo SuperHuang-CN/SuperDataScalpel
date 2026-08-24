@@ -1021,8 +1021,10 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
                 DatabaseCapability.QUERY_METADATA,
                 DatabaseCapability.INSERT_SELECT
         );
-        if ("POSTGRESQL".equals(id)) {
+        if ("POSTGRESQL".equals(id) || "CLICKHOUSE".equals(id)) {
             capabilities.add(DatabaseCapability.SQL_SERVICE_QUERY);
+        }
+        if ("POSTGRESQL".equals(id)) {
             capabilities.add(DatabaseCapability.OVERWRITE_INSERT_SELECT);
         }
         if ("POSTGRESQL".equals(id) || "MYSQL".equals(id)) {

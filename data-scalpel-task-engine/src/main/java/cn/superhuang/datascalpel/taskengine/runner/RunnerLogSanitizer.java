@@ -3,6 +3,7 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import java.io.PrintWriter;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.regex.Pattern;
 
 final class RunnerLogSanitizer {
@@ -51,7 +52,23 @@ final class RunnerLogSanitizer {
         return stackTrace(throwable, containsSpatialThrowable(throwable));
     }
 
+    /**
+     * JDBC Driver exceptions can echo a custom option value, notably a session initialization
+     * statement. Those values are valid task configuration, but are never safe Runner log data.
+     */
+    static String jdbcReadOptionSafeStackTrace(Throwable throwable, Collection<String> optionValues) {
+        return stackTrace(throwable, containsSpatialThrowable(throwable), optionValues);
+    }
+
     private static String stackTrace(Throwable throwable, boolean redactExceptionMessages) {
+        return stackTrace(throwable, redactExceptionMessages, java.util.List.of());
+    }
+
+    private static String stackTrace(
+            Throwable throwable,
+            boolean redactExceptionMessages,
+            Collection<String> valuesToRedact
+    ) {
         StringWriter buffer = new StringWriter();
         throwable.printStackTrace(new PrintWriter(buffer));
         String stack = buffer.toString();
@@ -59,6 +76,13 @@ final class RunnerLogSanitizer {
             stack = THROWABLE_MESSAGE_LINE.matcher(stack).replaceAll("$1: [spatial-message-redacted]");
         }
         String safe = sanitize(stack);
+        if (valuesToRedact != null) {
+            for (String value : valuesToRedact) {
+                if (value != null && !value.isEmpty()) {
+                    safe = safe.replace(value, "[redacted-jdbc-read-option-value]");
+                }
+            }
+        }
         if (safe.getBytes(StandardCharsets.UTF_8).length <= MAX_STACK_BYTES) return safe;
         int limit = MAX_STACK_BYTES - TRUNCATED.getBytes(StandardCharsets.UTF_8).length;
         int end = 0;

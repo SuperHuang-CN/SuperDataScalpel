@@ -81,6 +81,8 @@ public record ColumnMetadata(
 
     public ColumnMetadata withDialectDetails(
             String nativeType,
+            Integer precision,
+            Integer scale,
             boolean nullable,
             String comment,
             SpatialColumnMetadata spatial

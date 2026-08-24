@@ -30,6 +30,7 @@ import type {
   NullHandlingConfiguration,
   RenameConfiguration,
   SelectColumnsConfiguration,
+  SqlTransformConfiguration,
   SpatialJoinConfiguration,
   SpatialClipConfiguration,
   SpatialAggregateConfiguration,
@@ -43,11 +44,11 @@ import type {
   WindowConfiguration,
 } from '../canvasTypes';
 
-export const createModelInputConfiguration = (): ModelInputConfiguration => ({ modelId: '' });
+export const createModelInputConfiguration = (): ModelInputConfiguration => ({ models: [] });
 
 export const createJdbcInputConfiguration = (): JdbcInputConfiguration => ({
   dataSourceId: '',
-  tableName: '',
+  tables: [],
 });
 
 export const createJdbcIncrementalInputConfiguration = (): JdbcIncrementalInputConfiguration => ({
@@ -71,18 +72,15 @@ export const createJdbcQueryInputConfiguration = (): JdbcQueryInputConfiguration
 });
 
 export const createFileDatasetInputConfiguration = (): FileDatasetInputConfiguration => ({
-  fileDatasetTableId: '',
+  fileDatasetId: '', tables: [],
 });
 
 export const createHttpApiInputConfiguration = (): HttpApiInputConfiguration => ({
-  dataSourceId: '',
-  resourceId: '',
-  outputTableName: '',
-  runtimeParameters: [],
+  dataSourceId: '', resources: [],
 });
 
 export const createSpatialServiceInputConfiguration = (): SpatialServiceInputConfiguration => ({
-  dataSourceId: '', resourceId: '', outputTableName: '',
+  dataSourceId: '', resources: [],
 });
 
 export const createKafkaInputConfiguration = (): KafkaInputConfiguration => ({
@@ -112,6 +110,7 @@ export const createJoinConfiguration = (): JoinConfiguration => ({
   outputTableName: '',
   joinType: null,
   conditions: [],
+  outputColumns: [],
 });
 
 export const createGeometryConstructConfiguration = (): GeometryConstructConfiguration => ({
@@ -205,37 +204,26 @@ export const createStreamJoinConfiguration = (): StreamJoinConfiguration => ({
   outputTableName: '',
   joinType: null,
   conditions: [],
+  outputColumns: [],
 });
 
-export const createRenameConfiguration = (): RenameConfiguration => ({
-  sourceTableName: '',
+export const createRenameConfiguration = (): RenameConfiguration => ({ operations: [] } as unknown as RenameConfiguration);
+
+export const createFilterConfiguration = (): FilterConfiguration => ({ operations: [] } as unknown as FilterConfiguration);
+
+export const createSqlTransformConfiguration = (): SqlTransformConfiguration => ({
   outputTableName: '',
-  columnMappings: [],
+  sql: '',
 });
 
-export const createFilterConfiguration = (): FilterConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  condition: { kind: 'GROUP', operator: 'AND', children: [] },
-});
-
-export const createSelectColumnsConfiguration = (): SelectColumnsConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  columns: [],
-});
+export const createSelectColumnsConfiguration = (): SelectColumnsConfiguration => ({ operations: [] } as unknown as SelectColumnsConfiguration);
 
 export const createDeriveColumnsConfiguration = (): DeriveColumnsConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  derivations: [],
-});
+  globalDerivations: [],
+  operations: [],
+} as unknown as DeriveColumnsConfiguration);
 
-export const createTypeCastConfiguration = (): TypeCastConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  casts: [],
-});
+export const createTypeCastConfiguration = (): TypeCastConfiguration => ({ operations: [] } as unknown as TypeCastConfiguration);
 
 export const createAggregateConfiguration = (): AggregateConfiguration => ({
   sourceTableName: '',
@@ -250,39 +238,15 @@ export const createUnionConfiguration = (): UnionConfiguration => ({
   mode: 'ALL',
 });
 
-export const createDeduplicateConfiguration = (): DeduplicateConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  keyColumns: [],
-  keepStrategy: 'ANY',
-  orderBy: [],
-});
+export const createDeduplicateConfiguration = (): DeduplicateConfiguration => ({ operations: [] } as unknown as DeduplicateConfiguration);
 
-export const createNullHandlingConfiguration = (): NullHandlingConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  rules: [],
-});
+export const createNullHandlingConfiguration = (): NullHandlingConfiguration => ({ operations: [] } as unknown as NullHandlingConfiguration);
 
-export const createValueMappingConfiguration = (): ValueMappingConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  rules: [],
-});
+export const createValueMappingConfiguration = (): ValueMappingConfiguration => ({ operations: [] } as unknown as ValueMappingConfiguration);
 
-export const createMaskFieldsConfiguration = (): MaskFieldsConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  fieldRules: [],
-});
+export const createMaskFieldsConfiguration = (): MaskFieldsConfiguration => ({ operations: [] } as unknown as MaskFieldsConfiguration);
 
-export const createJsonExtractConfiguration = (): JsonExtractConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  sourceColumnName: '',
-  extractions: [],
-  failureStrategy: 'ERROR',
-});
+export const createJsonExtractConfiguration = (): JsonExtractConfiguration => ({ operations: [] } as unknown as JsonExtractConfiguration);
 
 export const createWindowConfiguration = (): WindowConfiguration => ({
   sourceTableName: '',
@@ -292,29 +256,17 @@ export const createWindowConfiguration = (): WindowConfiguration => ({
   functions: [],
 });
 
-export const createTopNConfiguration = (): TopNConfiguration => ({
-  sourceTableName: '',
-  outputTableName: '',
-  partitionByColumns: [],
-  orderBy: [],
-  limit: 10,
-  tieStrategy: 'EXACT',
-});
+export const createTopNConfiguration = (): TopNConfiguration => ({ operations: [] } as unknown as TopNConfiguration);
 
 export const createModelOutputConfiguration = (): ModelOutputConfiguration => ({
-  sourceTableName: '',
-  targetModelId: '',
-  writeMode: null,
-  columnMappings: [],
+  writes: [],
+  sourceTableName: '', targetModelId: '', writeMode: 'OVERWRITE', columnMappings: [],
 });
 
 export const createJdbcOutputConfiguration = (): JdbcOutputConfiguration => ({
-  sourceTableName: '',
   dataSourceId: '',
-  targetTableName: '',
-  writeMode: null,
-  columnMappings: [],
-  upsertKeyColumns: [],
+  writes: [],
+  sourceTableName: '', targetTableName: '', writeMode: 'OVERWRITE', columnMappings: [], upsertKeyColumns: [],
 });
 
 const createSnapshotDeletePolicy = () => ({
@@ -343,25 +295,14 @@ export const createModelSnapshotSyncOutputConfiguration = (
 });
 
 export const createKafkaOutputConfiguration = (): KafkaOutputConfiguration => ({
-  sourceTableName: '',
   dataSourceId: '',
-  topic: '',
-  valueSchema: { columns: [] },
-  keyColumnName: '',
-  columnMappings: [],
+  writes: [],
+  sourceTableName: '', topic: '', valueSchema: { columns: [] }, keyColumnName: '', columnMappings: [],
 });
 
 export const createFileOutputConfiguration = (): FileOutputConfiguration => ({
-  sourceTableName: '',
   dataSourceId: '',
-  targetPath: '',
-  conflictPolicy: 'FAIL_IF_EXISTS',
-  formatOptions: {
-    type: 'CSV',
-    header: true,
-    delimiter: ',',
-    quote: '"',
-    escape: '\\',
-    nullValue: '',
-  },
+  writes: [],
+  sourceTableName: '', targetPath: '', conflictPolicy: 'FAIL_IF_EXISTS',
+  formatOptions: { type: 'CSV', header: true, delimiter: ',', quote: '"', escape: '\\', nullValue: '' },
 });

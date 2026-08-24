@@ -7,7 +7,7 @@
 - 节点类型：`SPATIAL_AGGREGATE`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：仅 `BATCH`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `SPATIAL_AGGREGATE` 对一张有界逻辑表按普通标量字段分组，并对 Geometry 执行空间聚合。
 首版提供 `UNION`、`INTERSECTION`、`COLLECT`、`ENVELOPE` 四种固定 Sedona 聚合，不接受

@@ -2,7 +2,11 @@ import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Modal, Space, Tag, message } from 'antd';
 import { useCallback, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { DataModelDataQueryPanel, type DataModelQueryRow } from '../../model';
+import {
+  DataModelDataQueryPanel,
+  type DataModelDataQueryRequest,
+  type DataModelQueryRow,
+} from '../../model';
 import { useCurrentUser } from '../../system';
 import { queryDataEntryData, queryDataEntryOptions } from '../api/dataEntryApi';
 import { useDeleteDataEntries } from '../hooks/useDataEntry';
@@ -20,6 +24,10 @@ export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFor
   const makeRowKey = useCallback((row: Record<string, unknown>, index: number) => (
     primaryKeys.length ? primaryKeys.map((field) => `${field.code}=${String(row[field.code])}`).join('|') : String(index)
   ), [primaryKeys]);
+  const executeDataQuery = useCallback(
+    (request: DataModelDataQueryRequest) => queryDataEntryData(detail.form.id, request),
+    [detail.form.id],
+  );
 
   const canonical = (value: unknown) => typeof value === 'object' ? JSON.stringify(value) : String(value);
   const loadLabels = async (rows: Record<string, unknown>[]) => {
@@ -81,7 +89,7 @@ export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFor
       {contextHolder}{modalContext}
       <DataModelDataQueryPanel
         fields={detail.fields.map((field) => ({ ...field, modelId: detail.form.modelId, createdAt: '', updatedAt: '' }))}
-        query={(request) => queryDataEntryData(detail.form.id, request)}
+        query={executeDataQuery}
         rowKey={makeRowKey}
         renderCell={renderCell}
         onResult={(result) => { setSelectedRows([]); void loadLabels(result.rows); }}

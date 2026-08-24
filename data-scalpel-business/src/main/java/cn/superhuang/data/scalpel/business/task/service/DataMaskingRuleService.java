@@ -113,6 +113,10 @@ public class DataMaskingRuleService {
                 requireKeepLength(definition.keepSuffixLength(), "保留后缀字符数");
                 requireMaskCharacter(definition.maskCharacter());
             }
+            case POSITION_MASK -> {
+                requireMaskPosition(definition.maskPosition());
+                requireMaskCharacter(definition.maskCharacter());
+            }
             case KEEP_LENGTH_MASK -> requireMaskCharacter(definition.maskCharacter());
             case FIXED_VALUE -> {
                 if (definition.fixedValue() == null) {
@@ -134,15 +138,21 @@ public class DataMaskingRuleService {
     private static void validateUnusedParameters(MaskingRuleDefinition definition) {
         MaskingStrategy strategy = definition.strategy();
         boolean invalid = switch (strategy) {
-            case PARTIAL_MASK -> definition.fixedValue() != null;
+            case PARTIAL_MASK -> definition.maskPosition() != null || definition.fixedValue() != null;
+            case POSITION_MASK -> definition.keepPrefixLength() != null
+                    || definition.keepSuffixLength() != null
+                    || definition.fixedValue() != null;
             case KEEP_LENGTH_MASK -> definition.keepPrefixLength() != null
                     || definition.keepSuffixLength() != null
+                    || definition.maskPosition() != null
                     || definition.fixedValue() != null;
             case FIXED_VALUE -> definition.keepPrefixLength() != null
                     || definition.keepSuffixLength() != null
+                    || definition.maskPosition() != null
                     || definition.maskCharacter() != null;
             case NULLIFY -> definition.keepPrefixLength() != null
                     || definition.keepSuffixLength() != null
+                    || definition.maskPosition() != null
                     || definition.maskCharacter() != null
                     || definition.fixedValue() != null;
         };
@@ -156,6 +166,15 @@ public class DataMaskingRuleService {
             throw new ResponseStatusException(
                     HttpStatus.BAD_REQUEST,
                     label + "必须在 0.." + CanvasMaskingLimits.MAX_KEEP_LENGTH + " 之间"
+            );
+        }
+    }
+
+    private static void requireMaskPosition(Integer value) {
+        if (value == null || value < 1 || value > CanvasMaskingLimits.MAX_MASK_POSITION) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "掩码位置必须在 1.." + CanvasMaskingLimits.MAX_MASK_POSITION + " 之间"
             );
         }
     }

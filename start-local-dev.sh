@@ -6,12 +6,15 @@
 # 可通过 --threads 4、--threads 1C 或 DATASCALPEL_MAVEN_THREADS 调整 Maven 并行度。
 #
 # Task Runner 是独立的 Uber JAR，由 Task Dispatcher 通过 Docker 启动。
+# 本地开发启动统一使用 maven.test.skip=true，既不执行测试，也不编译测试源码；
+# 避免协议开发期主代码已经调整、历史测试尚未同步时阻塞本地联调。
 
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREPARE_ONLY=false
 MAVEN_THREADS="${DATASCALPEL_MAVEN_THREADS:-1C}"
+MAVEN_SKIP_TESTS_ARGUMENT="-Dmaven.test.skip=true"
 
 # 本地开发进程统一直连，不继承终端或代理软件注入的代理配置。
 unset http_proxy https_proxy all_proxy no_proxy
@@ -175,6 +178,7 @@ cd "$ROOT_DIR"
 
 echo "正在并行编译后端（Maven 线程：${MAVEN_THREADS}，不执行 package）…"
 ./mvnw -q -T "$MAVEN_THREADS" \
+  "$MAVEN_SKIP_TESTS_ARGUMENT" \
   -pl data-scalpel-admin,data-scalpel-service-engine,data-scalpel-task-engine,data-scalpel-task-dispatcher \
   -am compile
 
@@ -189,6 +193,7 @@ runtime_classpath() {
 
   echo "正在解析 $application_module 的运行时 classpath…" >&2
   if ! ./mvnw -q -pl "$application_module" dependency:build-classpath \
+    "$MAVEN_SKIP_TESTS_ARGUMENT" \
     -DincludeScope=runtime \
     -Dmdep.regenerateFile=true \
     -Dmdep.outputFile=target/dev-runtime-classpath.txt >&2; then
@@ -232,6 +237,7 @@ reactor_runtime_classpath() {
   echo "正在从 Maven Reactor 解析 $application_module 的运行时 classpath…" >&2
   # exec:exec 会输出带边界标记的 classpath；这里保持单线程，避免并行 Reactor 日志插入标记内容。
   if ! reactor_output="$(./mvnw -q \
+    "$MAVEN_SKIP_TESTS_ARGUMENT" \
     -pl "$application_module" \
     -am \
     compile \
@@ -369,7 +375,7 @@ curl --fail --silent --show-error "$FILE_STORAGE_ENDPOINT/minio/health/live" >/d
 if [[ ! -f "$TASK_RUNNER_JAR" ]]; then
   echo "未找到 Task Runner Uber JAR：$TASK_RUNNER_JAR"
   echo "首次运行真实 Canvas 任务或修改 Runner 后，请单独执行："
-  echo "  ./mvnw -pl data-scalpel-task-engine -am package -DskipTests"
+  echo "  ./mvnw -pl data-scalpel-task-engine -am package -Dmaven.test.skip=true"
   exit 1
 fi
 if [[ -n "$(find \
@@ -386,7 +392,7 @@ if [[ -n "$(find \
   -type f -newer "$TASK_RUNNER_JAR" -print -quit)" ]]; then
   echo "Task Runner Uber JAR 已过期：$TASK_RUNNER_JAR"
   echo "请先重新执行："
-  echo "  ./mvnw -pl data-scalpel-task-engine -am package -DskipTests"
+  echo "  ./mvnw -pl data-scalpel-task-engine -am package -Dmaven.test.skip=true"
   exit 1
 fi
 mkdir -p "$DISPATCHER_WORK_DIR"

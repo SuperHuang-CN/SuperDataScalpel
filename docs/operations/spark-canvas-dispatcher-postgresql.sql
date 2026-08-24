@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS dispatcher_task_execution (
     log_key varchar(500) NOT NULL,
     deadline_at timestamptz NOT NULL,
     cancel_requested boolean NOT NULL,
+    force_terminate_requested_at timestamptz,
     event_sequence bigint NOT NULL,
     safe_error_code varchar(100),
     safe_error_message varchar(1000),

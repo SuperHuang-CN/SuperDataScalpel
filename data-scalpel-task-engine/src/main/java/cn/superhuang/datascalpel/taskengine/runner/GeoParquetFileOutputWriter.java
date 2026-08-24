@@ -30,7 +30,7 @@ final class GeoParquetFileOutputWriter {
 
     static void write(CanvasPreparedFileOutput output, Dataset<Row> dataset) {
         FileOutputFormatOptions.GeoParquet options =
-                (FileOutputFormatOptions.GeoParquet) output.node().configuration().formatOptions();
+                (FileOutputFormatOptions.GeoParquet) output.formatOptions();
         CanvasColumnSchema geometryColumn = output.sourceSchema().columns().stream()
                 .filter(column -> column.name().equals(options.geometryColumnName()))
                 .findFirst()
@@ -41,7 +41,7 @@ final class GeoParquetFileOutputWriter {
                 dataset, options.geometryColumnName(), geometryColumn.geometry().kind(), output.node().id());
         try {
             validated.write()
-                    .mode(output.node().configuration().conflictPolicy()
+                    .mode(output.conflictPolicy()
                             == FileOutputConflictPolicy.OVERWRITE
                             ? SaveMode.Overwrite : SaveMode.ErrorIfExists)
                     .format("geoparquet")

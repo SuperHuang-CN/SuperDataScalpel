@@ -19,7 +19,7 @@ export const spatialMeasureSpec = createCanvasNodeSpec({
   canvasView: spatialMeasureCanvasView,
   supportedModes: ['BATCH', 'STREAMING'],
   introducedInMinor: 0,
-  graph: { minInputs: 1, maxInputs: 1, minOutputs: 1, maxOutputs: null },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createSpatialMeasureConfiguration,
   summarize: summarizeSpatialMeasure,
   collectMetadataReferences: collectNoMetadataReferences,

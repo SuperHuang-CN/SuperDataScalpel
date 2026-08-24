@@ -1,13 +1,15 @@
 import { DatabaseOutlined, FieldStringOutlined } from '@ant-design/icons';
-import { Alert, Segmented, Select, Space, Tag } from 'antd';
-import { useState } from 'react';
+import { Segmented, Select, Space, Tag } from 'antd';
+import { useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {
   LineageGraphCanvas,
+  LineageFieldSelector,
+  LineageWarningHint,
   type LineageCoverage,
   type LineageGranularity,
 } from '../../model';
-import { useTaskLineage } from '../hooks/useTasks';
+import { useTaskFieldLineage, useTaskLineage } from '../hooks/useTasks';
 
 const coverageLabels: Record<LineageCoverage, string> = {
   MODEL_ONLY: '仅表级', FIELD_PARTIAL: '字段部分覆盖', FIELD_COMPLETE: '字段完整覆盖',
@@ -16,12 +18,21 @@ const coverageLabels: Record<LineageCoverage, string> = {
 export const TaskLineagePanel = ({ taskId }: { taskId: string }) => {
   const [granularity, setGranularity] = useState<LineageGranularity>('TABLE');
   const [flowKey, setFlowKey] = useState<string>();
-  const [fieldKey, setFieldKey] = useState<string>();
-  const query = useTaskLineage(taskId, granularity, flowKey, fieldKey);
-  const data = query.data;
+  const [fieldKeys, setFieldKeys] = useState<string[] | null>(null);
+  const [submittedFieldKeys, setSubmittedFieldKeys] = useState<string[] | null>(null);
+  useEffect(() => {
+    const timer = window.setTimeout(() => setSubmittedFieldKeys(fieldKeys), 250);
+    return () => window.clearTimeout(timer);
+  }, [fieldKeys]);
+  const tableQuery = useTaskLineage(taskId, 'TABLE', flowKey, undefined, granularity === 'TABLE');
+  const fieldQuery = useTaskFieldLineage(taskId, flowKey, submittedFieldKeys, granularity === 'FIELD');
+  const query = granularity === 'TABLE' ? tableQuery : fieldQuery;
+  const data = granularity === 'TABLE' ? tableQuery.data : fieldQuery.data;
   const effectiveFlow = data?.flows.find((flow) => flow.flowKey === data.selectedFlowKey)
     ?? data?.flows[0];
-  const graph = data?.graph;
+  const fieldResult = fieldQuery.data?.fieldGraph;
+  const graph = granularity === 'TABLE' ? tableQuery.data?.graph : fieldResult?.graph;
+  const effectiveFieldKeys = fieldKeys ?? fieldResult?.focusFields.map((field) => field.fieldKey) ?? [];
   const errorMessage = query.error instanceof ApiError
     ? query.error.message
     : query.error ? '任务血缘加载失败' : undefined;
@@ -30,10 +41,18 @@ export const TaskLineagePanel = ({ taskId }: { taskId: string }) => {
     : granularity === 'FIELD'
       ? '当前链路只有表级血缘或没有可展示的字段来源'
       : '当前链路暂无血缘节点';
+  const fieldCounts = fieldResult?.focusFields.reduce((counts, field) => {
+    if (field.truncated) counts.truncated += 1;
+    else if (!field.hasLineage) counts.empty += 1;
+    else if (field.coverage === 'FIELD_COMPLETE') counts.complete += 1;
+    else counts.partial += 1;
+    return counts;
+  }, { complete: 0, partial: 0, empty: 0, truncated: 0 });
 
   const onFlowChange = (next: string) => {
     setFlowKey(next);
-    setFieldKey(undefined);
+    setFieldKeys(null);
+    setSubmittedFieldKeys(null);
   };
 
   return (
@@ -42,7 +61,7 @@ export const TaskLineagePanel = ({ taskId }: { taskId: string }) => {
         <Space size={8} wrap>
           <Segmented<LineageGranularity>
             value={granularity}
-            onChange={(value) => { setGranularity(value); setFieldKey(undefined); }}
+            onChange={(value) => { setGranularity(value); setFieldKeys(null); setSubmittedFieldKeys(null); }}
             options={[
               { value: 'TABLE', label: '表级血缘', icon: <DatabaseOutlined /> },
               { value: 'FIELD', label: '字段级血缘', icon: <FieldStringOutlined /> },
@@ -58,32 +77,29 @@ export const TaskLineagePanel = ({ taskId }: { taskId: string }) => {
             }))}
           />
           {granularity === 'FIELD' && (
-            <Select
-              showSearch
-              value={fieldKey ?? data?.selectedOutputFieldKey ?? undefined}
+            <LineageFieldSelector
+              value={effectiveFieldKeys}
               placeholder="选择输出字段"
-              className="model-lineage-field-select"
-              optionFilterProp="label"
-              onChange={setFieldKey}
+              onChange={setFieldKeys}
               options={(effectiveFlow?.outputFields ?? []).map((field) => ({
-                value: field.fieldKey, label: `${field.name} (${field.code})`,
+                key: field.fieldKey, label: `${field.name} (${field.code})`,
               }))}
             />
           )}
           {effectiveFlow?.coverage && <Tag>{coverageLabels[effectiveFlow.coverage]}</Tag>}
+          <LineageWarningHint warnings={graph?.warnings} truncated={graph?.truncated} />
           {data?.definitionVersion != null && <Tag>定义 v{data.definitionVersion}</Tag>}
+          {granularity === 'FIELD' && fieldCounts && (
+            <span className="model-lineage-field-summary">
+              完整 {fieldCounts.complete} · 部分 {fieldCounts.partial} · 无路径 {fieldCounts.empty} · 截断 {fieldCounts.truncated}
+            </span>
+          )}
         </Space>
       </div>
-      {graph?.warnings.length ? (
-        <Alert
-          className="model-lineage-alert" type={graph.truncated ? 'warning' : 'info'} showIcon
-          message={graph.truncated ? '血缘图已截断' : '血缘提示'}
-          description={graph.warnings.join('；')}
-        />
-      ) : null}
       <LineageGraphCanvas
         graph={graph} loading={query.isFetching} errorMessage={errorMessage}
         emptyDescription={emptyDescription} ariaLabel="任务血缘关系图"
+        focusFields={fieldResult?.focusFields}
         onRetry={() => void query.refetch()}
         sideLabels={{ UPSTREAM: '输入', CURRENT: '任务', DOWNSTREAM: '输出' }}
         legend={[

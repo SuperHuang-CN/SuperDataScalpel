@@ -2,8 +2,8 @@
 
 ## 1. 范围
 
-本文定义当前 Canvas `2.x` 协议中的两个模型节点。它们属于 Canvas `2.0` 基础能力，
-`MODEL_OUTPUT` 的批流 UPSERT 从 Canvas `2.3` 开始支持：
+本文定义当前 Canvas `4.0` 协议中的两个模型节点。它们最初属于 Canvas `2.0` 基础能力，
+`MODEL_OUTPUT` 的批流 UPSERT 最初从 Canvas `2.3` 开始支持；`MODEL_INPUT` 在 `4.0` 改为多模型输入：
 
 - `MODEL_INPUT`：读取一个已发布数据模型对应的物理表。
 - `MODEL_OUTPUT`：把一个上游逻辑表写入一个已发布数据模型。
@@ -47,13 +47,20 @@ Definition 不保存模型名称、code、schemaVersion、字段、数据源 ID�
   "name": "订单模型输入",
   "layout": { "x": 120, "y": 160, "width": 240, "height": 120 },
   "configuration": {
-    "modelId": "4bbd56c6-5c4f-4af7-8860-5adecc1c29bd"
+    "models": [
+      { "modelId": "4bbd56c6-5c4f-4af7-8860-5adecc1c29bd" },
+      { "modelId": "aa9a0258-707e-4614-bbf0-c62a6df3356a" }
+    ]
   }
 }
 ```
 
 ```ts
 interface ModelInputConfiguration {
+  models: ModelInputSelection[];
+}
+
+interface ModelInputSelection {
   modelId: string;
 }
 ```
@@ -61,7 +68,7 @@ interface ModelInputConfiguration {
 - 类别：`INPUT`
 - 入边：必须为 `0`
 - 出边：至少为 `1`
-- 输出：只包含模型 `code` 对应的一个逻辑表
+- 输出：按选择顺序包含每个模型 `code` 对应的逻辑表；模型可以跨数据源选择，但同一模型不得重复
 - 执行阶段：`READ`
 
 ### 3.2 MODEL_OUTPUT
@@ -168,8 +175,8 @@ Geometry 写入。Kafka 内联 Value Schema 不接受 Geometry。Task Engine 的
 - 当前 Runner 支持该数据库产品。
 
 普通标量 `MODEL_INPUT` 支持 PostgreSQL、MySQL、openGauss、Kingbase、Oracle、SQL Server、
-ClickHouse 和达梦。`MODEL_OUTPUT` 对这些数据库开放 APPEND；OVERWRITE 仅支持 PostgreSQL、
-MySQL、openGauss 和 Kingbase，UPSERT 仅支持 PostgreSQL/MySQL，Geometry 仅支持
+ClickHouse 和达梦。`MODEL_OUTPUT` 对这些数据库开放 APPEND 和批处理 OVERWRITE；OVERWRITE
+固定执行 `TRUNCATE TABLE → APPEND`，不承诺两个步骤原子性，UPSERT 仅支持 PostgreSQL/MySQL，Geometry 仅支持
 PostgreSQL/PostGIS 和 MySQL 8。设计器根据模型存储数据源禁用不支持的模式，但必须保留并标红
 已保存的失效值，使无效草稿仍可应用和保存。
 
@@ -213,7 +220,7 @@ PostgreSQL/PostGIS 和 MySQL 8。设计器根据模型存储数据源禁用不�
 - `MODEL_DATA_SOURCE_UNAVAILABLE`
 - `UNSUPPORTED_MODEL_DATA_SOURCE`
 - `OVERWRITE_REQUIRES_MANAGED_MODEL`
-- `OVERWRITE_DATABASE_NOT_SUPPORTED`
+- `OVERWRITE_DATABASE_NOT_SUPPORTED`（仅 TDengine 或受篡改运行 Manifest 的防御性校验）
 - `UPSERT_DATABASE_NOT_SUPPORTED`
 - `UPSERT_KEY_REQUIRED`
 - `UPSERT_KEY_NOT_MAPPED`
@@ -261,10 +268,10 @@ Palette 在现有 HTTP API 输入节点之外增加“模型输入”和“模�
 
 ## 10. 版本与非目标
 
-- Canvas Definition 当前写出版本为 `2.3`；模型输入、模型输出和统一显式字段映射均属于 `2.0`，模型 UPSERT 属于 `2.3` 增量能力。
-- Execution manifest 当前版本为 `18`，`metadataSnapshot.models` 必填。
+- Canvas Definition 当前写出版本为 `4.0`；模型节点配置在本次大版本中保持原有业务语义。
+- Execution manifest 当前版本为 `21`，`metadataSnapshot.models` 必填。
 - Runner `result.json` 保持版本 `2`。
-- 当前系统把保存、返回、生成 Manifest 和导出统一规范化为 `2.3`；Canvas `1.x` 定义不反序列化、不迁移，由用户重新配置。Kafka 节点的“从模型导入 Schema”只是前端一次性复制，不创建本节定义的模型引用。
+- 当前系统把保存、返回、生成 Manifest 和导出统一规范化为 `3.0`；Canvas `1.x`、`2.x` 定义不反序列化、不迁移，由用户重新配置。Kafka 节点的“从模型导入 Schema”只是前端一次性复制，不创建本节定义的模型引用。
 - `MODEL_INPUT` 和 `MODEL_OUTPUT` 均为 Canvas `2.0` 的正式节点。
 - PostgreSQL 存量升级和模型引用回填使用
   [spark-canvas-admin-postgresql.sql](../operations/spark-canvas-admin-postgresql.sql)，不重建任务、运行记录或 Canvas 定义表。

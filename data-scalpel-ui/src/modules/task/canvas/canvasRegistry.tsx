@@ -6,6 +6,7 @@ import {
   DeleteOutlined,
   LockOutlined,
   SettingOutlined,
+  TableOutlined,
   WarningFilled,
 } from '@ant-design/icons';
 import type { Node } from '@antv/x6';
@@ -14,11 +15,13 @@ import { Button, Tooltip } from 'antd';
 import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { requestCanvasNodeDeletion } from './canvasNodeDeletion';
 import { CanvasNodeIcon } from './components/CanvasNodeIcons';
+import { CanvasTableSchemaModal } from './components/CanvasTableSchemaModal';
 import {
+  CanvasNodeCategory,
   type CanvasExecutionMode,
-  type CanvasNodeCategory,
   type CanvasNodeRuntimeData,
   type CanvasNodeValidationStatus,
+  type CanvasTableSchema,
 } from './canvasTypes';
 import { canvasNodeRegistry } from './nodes/nodeRegistry';
 import {
@@ -92,6 +95,45 @@ interface CanvasNodeViewProps {
   node: Node;
 }
 
+const CanvasNodeOutputSchemaTrigger = ({
+  nodeName,
+  tables,
+}: {
+  nodeName: string;
+  tables: readonly CanvasTableSchema[];
+}) => {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <Tooltip title={`查看输出结构 · ${tables.length} 张表`}>
+        <Button
+          type="text"
+          size="small"
+          className="canvas-node-output-schema-trigger"
+          aria-label={`查看节点 ${nodeName} 的输出结构，共 ${tables.length} 张表`}
+          icon={<TableOutlined />}
+          onMouseDown={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+          onDoubleClick={(event) => event.stopPropagation()}
+          onKeyDown={(event) => event.stopPropagation()}
+          onClick={(event) => {
+            event.stopPropagation();
+            setOpen(true);
+          }}
+        >
+          {tables.length}
+        </Button>
+      </Tooltip>
+      <CanvasTableSchemaModal
+        open={open}
+        title={`节点输出结构 · ${nodeName}`}
+        tables={tables}
+        onClose={() => setOpen(false)}
+      />
+    </>
+  );
+};
+
 export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
   const [data, setData] = useState<CanvasNodeRuntimeData>(() => node.getData<CanvasNodeRuntimeData>());
   const [size, setSize] = useState(() => node.getSize());
@@ -152,6 +194,10 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
     : validation;
   const validationStatus = 'status' in validation ? validation.status : 'UNCHECKED';
   const hasIssueBar = validationStatus === 'WARNING' || validationStatus === 'ERROR';
+  const outputTables = data.compilation?.outputTables ?? [];
+  const canViewOutputSchema = template.category !== CanvasNodeCategory.Output
+    && (validationStatus === 'VALID' || validationStatus === 'WARNING')
+    && outputTables.length > 0;
   const resolvedSize = useMemo(() => {
     const base = canvasNodeRegistry.resolveSize(data);
     return { width: base.width, height: base.height + (hasIssueBar ? 28 : 0) };
@@ -228,6 +274,16 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
             {data.name}
           </span>
         )}
+        {canViewOutputSchema && <CanvasNodeOutputSchemaTrigger nodeName={data.name} tables={outputTables} />}
+        <Tooltip title={`${data.readOnly ? '只读 · ' : ''}${validationPresentation.label}${data.validation?.message ? `：${data.validation.message}` : ''}`}>
+          <span
+            className={`canvas-node-validation-icon is-${validationPresentation.color}${data.readOnly ? ' is-readonly' : ''}`}
+            aria-label={`${data.readOnly ? '只读，' : ''}${validationPresentation.label}`}
+          >
+            {data.readOnly && <LockOutlined className="canvas-node-readonly-icon" />}
+            {validationIcon[validationStatus]}
+          </span>
+        </Tooltip>
         {!data.readOnly && (
           <Tooltip title="删除节点">
             <Button
@@ -246,15 +302,6 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
             />
           </Tooltip>
         )}
-        <Tooltip title={`${data.readOnly ? '只读 · ' : ''}${validationPresentation.label}${data.validation?.message ? `：${data.validation.message}` : ''}`}>
-          <span
-            className={`canvas-node-validation-icon is-${validationPresentation.color}${data.readOnly ? ' is-readonly' : ''}`}
-            aria-label={`${data.readOnly ? '只读，' : ''}${validationPresentation.label}`}
-          >
-            {data.readOnly && <LockOutlined className="canvas-node-readonly-icon" />}
-            {validationIcon[validationStatus]}
-          </span>
-        </Tooltip>
       </div>
       <div className="canvas-node-body">
         {body}

@@ -10,6 +10,7 @@ import java.util.UUID;
 public record TaskStreamingQueryResponse(
         UUID id,
         UUID outputNodeId,
+        UUID outputWriteId,
         String outputNodeName,
         StreamingSinkType sinkType,
         String checkpointKey,
@@ -25,7 +26,7 @@ public record TaskStreamingQueryResponse(
 ) {
     public static TaskStreamingQueryResponse from(TaskStreamingQuery query) {
         return new TaskStreamingQueryResponse(
-                query.getId(), query.getOutputNodeId(), query.getOutputNodeName(),
+                query.getId(), query.getOutputNodeId(), query.getOutputWriteId(), query.getOutputNodeName(),
                 query.getSinkType(), query.getCheckpointKey(), query.getState(),
                 query.getLatestBatchId(), query.getLatestInputRows(),
                 query.getInputRowsPerSecond(), query.getProcessedRowsPerSecond(),

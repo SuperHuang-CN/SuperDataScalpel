@@ -33,7 +33,7 @@ const inputDefinition = (tableName = ''): CanvasDefinition => ({
     type: 'JDBC_INPUT',
     name: '订单输入',
     layout: { x: 10, y: 20, width: 240, height: 120 },
-    configuration: { dataSourceId: '', tableName },
+    configuration: { dataSourceId: '', tables: tableName ? [{ tableName, readOptions: [] }] : [] },
   }],
   edges: [],
 });
@@ -164,7 +164,7 @@ describe('useCanvasTaskCompilation', () => {
     await act(async () => vi.advanceTimersByTimeAsync(1));
     expect(compileCanvasTask).toHaveBeenCalledTimes(1);
     expect(vi.mocked(compileCanvasTask).mock.calls[0][0].task.definition.nodes[0].configuration)
-      .toMatchObject({ tableName: 'customers' });
+      .toMatchObject({ tables: [{ tableName: 'customers' }] });
   });
 
   it('revalidates an applied configuration even when its semantic fingerprint is unchanged', async () => {

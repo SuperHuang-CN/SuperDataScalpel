@@ -91,6 +91,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     private Instant deadlineAt;
     @Column(name = "cancel_requested", nullable = false)
     private boolean cancelRequested;
+    @Column(name = "force_terminate_requested_at")
+    private Instant forceTerminateRequestedAt;
     @Column(name = "streaming_stop_requested_at")
     private Instant streamingStopRequestedAt;
     @Column(name = "streaming_force_stop_at")
@@ -255,6 +257,15 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
         if (state == DispatcherExecutionState.QUEUED) {
             cancelled("取消发生在提交前");
         } else if (state == DispatcherExecutionState.SUBMITTED || state == DispatcherExecutionState.RUNNING) {
+            state = DispatcherExecutionState.CANCEL_REQUESTED;
+        }
+    }
+
+    public void requestForceTerminate() {
+        if (state.terminal()) return;
+        if (forceTerminateRequestedAt == null) forceTerminateRequestedAt = Instant.now();
+        cancelRequested = true;
+        if (state == DispatcherExecutionState.SUBMITTED || state == DispatcherExecutionState.RUNNING) {
             state = DispatcherExecutionState.CANCEL_REQUESTED;
         }
     }
@@ -437,6 +448,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     public List<SparkConfigurationEntry> getSparkConf() { return decodeSparkConf(sparkConf); }
     public Instant getDeadlineAt() { return deadlineAt; }
     public boolean isCancelRequested() { return cancelRequested; }
+    public boolean isForceTerminateRequested() { return forceTerminateRequestedAt != null; }
+    public Instant getForceTerminateRequestedAt() { return forceTerminateRequestedAt; }
     public boolean isStreamingStopRequested() { return streamingStopRequestedAt != null; }
     public Instant getStreamingForceStopAt() { return streamingForceStopAt; }
     public long getEventSequence() { return eventSequence; }

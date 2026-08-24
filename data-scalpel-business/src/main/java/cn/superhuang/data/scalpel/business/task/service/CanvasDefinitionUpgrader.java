@@ -4,8 +4,6 @@ import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputConfiguration;
-import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
-import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputConfiguration;
 import org.springframework.http.HttpStatus;
@@ -33,17 +31,15 @@ public class CanvasDefinitionUpgrader {
                     + CanvasDefinition.LEGACY_SCHEMA_MINOR_VERSION + " 到 "
                     + CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION);
         }
-        if (schemaMinorVersion < 3
-                && definition.nodes() != null
-                && definition.nodes().stream().anyMatch(CanvasDefinitionUpgrader::usesModelOutputUpsert)) {
-            invalid("MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持");
+        if (definition.nodes() != null) {
+            definition.nodes().stream()
+                    .filter(java.util.Objects::nonNull)
+                    .filter(node -> node.nodeType().introducedInMinorVersion() > schemaMinorVersion)
+                    .findFirst()
+                    .ifPresent(node -> invalid(node.nodeType() + " 从 Canvas "
+                            + CanvasDefinition.CURRENT_SCHEMA_VERSION + "."
+                            + node.nodeType().introducedInMinorVersion() + " 开始支持"));
         }
-    }
-
-    private static boolean usesModelOutputUpsert(CanvasNodeDefinition node) {
-        return node instanceof ModelOutputNodeDefinition output
-                && output.configuration() != null
-                && output.configuration().writeMode() == JdbcWriteMode.UPSERT;
     }
 
     public CanvasDefinition upgradeToCurrent(CanvasDefinition definition) {
@@ -61,7 +57,8 @@ public class CanvasDefinitionUpgrader {
         java.util.List<CanvasNodeDefinition> nodes = definition.nodes().stream()
                 .map(node -> normalizeNodeInterval(node, normalizedLegacyInterval))
                 .toList();
-        if (definition.effectiveSchemaMinorVersion() == CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION
+        if (definition.schemaVersion() == CanvasDefinition.CURRENT_SCHEMA_VERSION
+                && definition.effectiveSchemaMinorVersion() == CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION
                 && nodes.equals(definition.nodes())) {
             return definition;
         }

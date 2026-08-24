@@ -1,6 +1,7 @@
 import type {
   LineageCoverage,
   LineageGraph,
+  LineageFieldGraph,
   LineageGraphNodeKind,
   LineageOutputFieldEffect,
   LineageWriteMode,
@@ -32,4 +33,13 @@ export interface TaskLineageGraph {
   selectedFlowKey: string | null;
   selectedOutputFieldKey: string | null;
   graph: LineageGraph;
+}
+
+export interface TaskFieldLineageGraph {
+  taskId: string;
+  definitionVersion: number | null;
+  coverage: LineageCoverage | null;
+  flows: TaskLineageFlow[];
+  selectedFlowKey: string | null;
+  fieldGraph: LineageFieldGraph;
 }

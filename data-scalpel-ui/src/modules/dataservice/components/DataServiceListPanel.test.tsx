@@ -1,14 +1,18 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLocation, MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { DataServiceSummary } from '../model/dataService';
+import type { ServiceEngine } from '../../serviceengine';
 
 const dataServiceMocks = vi.hoisted(() => ({
   content: [] as DataServiceSummary[],
   create: vi.fn(),
   unpublish: vi.fn(),
   disable: vi.fn(),
+}));
+const serviceEngineMocks = vi.hoisted(() => ({
+  content: [] as ServiceEngine[],
 }));
 
 vi.mock('../../directory', () => ({
@@ -19,7 +23,7 @@ vi.mock('../../directory', () => ({
 }));
 
 vi.mock('../../serviceengine', () => ({
-  useServiceEngines: () => ({ data: { content: [] }, isFetching: false }),
+  useServiceEngines: () => ({ data: { content: serviceEngineMocks.content }, isFetching: false }),
 }));
 
 vi.mock('../api/dataServiceApi', () => ({ fetchDataService: vi.fn() }));
@@ -87,6 +91,7 @@ describe('DataServiceListPanel creation menu', () => {
     dataServiceMocks.create.mockReset();
     dataServiceMocks.unpublish.mockReset();
     dataServiceMocks.disable.mockReset();
+    serviceEngineMocks.content = [];
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
@@ -179,5 +184,54 @@ describe('DataServiceListPanel creation menu', () => {
     await user.click(screen.getByRole('button', { name: '停用用户服务' }));
     expect(await screen.findByText(/再从 Service Engine 移除/)).toBeInTheDocument();
     expect(dataServiceMocks.disable).not.toHaveBeenCalled();
+  });
+
+  it('copies the Service Engine public URL joined with the service route', async () => {
+    const user = userEvent.setup();
+    const service: DataServiceSummary = {
+      id: 'service-1',
+      code: 'user',
+      name: '用户服务',
+      directoryId: null,
+      type: 'STANDARD_TABLE',
+      definitionConfigured: true,
+      definitionVersion: 1,
+      engineId: 'engine-1',
+      routePath: '/open-api/v1/users',
+      accessMode: 'PUBLIC',
+      status: 'ENABLED',
+      revision: 3,
+      deploymentStatus: 'DEPLOYED',
+      deploymentError: null,
+      deployedAt: '2026-07-27T10:00:00Z',
+      gatewayBindings: [],
+      description: null,
+      sourceId: 'model-1',
+      sourceName: '用户模型',
+      createdAt: '2026-07-27T09:00:00Z',
+      updatedAt: '2026-07-27T10:02:00Z',
+    };
+    dataServiceMocks.content = [service];
+    serviceEngineMocks.content = [{
+      id: 'engine-1',
+      code: 'local-engine',
+      name: '本地开发服务引擎',
+      adminUrl: 'http://engine-admin.test:8080',
+      publicUrl: 'https://engine.example.com/',
+      managementTokenConfigured: true,
+      enabled: true,
+      description: null,
+      createdAt: '2026-07-27T09:00:00Z',
+      updatedAt: '2026-07-27T09:00:00Z',
+    }];
+
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: '复制用户服务的完整访问地址' }));
+
+    await waitFor(async () => expect(await navigator.clipboard.readText()).toBe(
+      'https://engine.example.com/open-api/v1/users',
+    ));
+    expect(await screen.findByText('完整服务访问地址已复制')).toBeInTheDocument();
   });
 });

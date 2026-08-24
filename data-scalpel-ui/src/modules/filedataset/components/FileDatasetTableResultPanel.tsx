@@ -40,10 +40,8 @@ import {
 } from '../hooks/useFileDatasets';
 import {
   fileDatasetAccept,
-  fileDatasetParseStatusLabels,
   type FileDataset,
   type FileDatasetField,
-  type FileDatasetParseStatus,
   type FileDatasetTable,
   type FileDatasetTableSource,
 } from '../model/fileDataset';
@@ -58,13 +56,6 @@ interface PreviewRow {
   key: number;
   values: unknown[];
 }
-
-const parseStatusColors: Record<FileDatasetParseStatus, string> = {
-  QUEUED: 'blue',
-  PARSING: 'processing',
-  SCHEMA_READY: 'warning',
-  READY: 'success',
-};
 
 const formatPreviewValue = (value: unknown): string => {
   if (value === null || value === undefined) return '—';
@@ -85,13 +76,19 @@ const formatFieldType = (field: FileDatasetField): string => {
   return field.fieldType;
 };
 
-const previewColumns = (fields: FileDatasetField[]): TableProps<PreviewRow>['columns'] => fields.map((field, index) => ({
-  title: <Space size={4}>{field.name}<Tag>{formatFieldType(field)}</Tag></Space>,
-  key: `${field.sortOrder}-${field.name}`,
-  width: 180,
-  ellipsis: true,
-  render: (_value: unknown, row: PreviewRow) => formatPreviewValue(row.values[index]),
-}));
+const previewColumns = (
+  fields: FileDatasetField[],
+  omitGeometry: boolean,
+): TableProps<PreviewRow>['columns'] => fields
+  .map((field, index) => ({ field, index }))
+  .filter(({ field }) => !omitGeometry || field.fieldType !== 'GEOMETRY')
+  .map(({ field, index }) => ({
+    title: <Space size={4}>{field.name}<Tag>{formatFieldType(field)}</Tag></Space>,
+    key: `${field.sortOrder}-${field.name}`,
+    width: 180,
+    ellipsis: true,
+    render: (_value: unknown, row: PreviewRow) => formatPreviewValue(row.values[index]),
+  }));
 
 const metadataString = (metadata: Record<string, unknown>, key: string): string | null => {
   const value = metadata[key];
@@ -460,7 +457,7 @@ export const FileDatasetTableResultPanel = ({
         <Table<PreviewRow>
           size="small"
           rowKey="key"
-          columns={previewColumns(previewQuery.data?.fields ?? fields)}
+          columns={previewColumns(previewQuery.data?.fields ?? fields, spatialDataset)}
           dataSource={rows}
           loading={previewQuery.isFetching}
           pagination={false}
@@ -492,16 +489,6 @@ export const FileDatasetTableResultPanel = ({
       {messageContext}
       {modalContext}
       <div className="file-dataset-table-result-header">
-        <div className="file-dataset-table-result-identity">
-          <div>
-            <strong>{table.name}</strong>
-            <Tag color={parseStatusColors[table.parseStatus]}>
-              {fileDatasetParseStatusLabels[table.parseStatus]}
-              {table.currentLoadJobId ? ' · 正在追加/覆盖' : ''}
-            </Tag>
-          </div>
-          <span>稳定逻辑表 · 仅保留当前有效数据</span>
-        </div>
         <Space size={4}>
           <Tooltip title="刷新 Schema、预览和来源">
             <Button
@@ -582,14 +569,6 @@ export const FileDatasetTableResultPanel = ({
       )}
       {schemaReady && (
         <Alert type="warning" showIcon message="当前表仅支持 Schema" description={previewUnavailableReason} />
-      )}
-      {!tableLoadSupported && schemaAvailable && (
-        <Alert
-          type="info"
-          showIcon
-          message={`${dataset.type === 'EXCEL' ? 'Excel' : 'FileGDB'} 暂不开放表级追加与覆盖`}
-          description="当前阶段仍通过文件页执行整文件替换，后续再设计 Sheet/图层映射。"
-        />
       )}
       {ready && table.truncated && (
         <Alert type="info" showIcon message="预览样本已截断" description="Schema 已完成全量检查，管理端只保留有界预览样本。" />

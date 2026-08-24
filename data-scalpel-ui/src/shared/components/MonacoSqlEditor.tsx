@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { CSSProperties } from 'react';
 
 interface MonacoSqlEditorProps {
@@ -9,20 +9,32 @@ interface MonacoSqlEditorProps {
   onChange: (value: string) => void;
 }
 
+export interface MonacoSqlEditorHandle {
+  focus(): void;
+  insertText(value: string): void;
+}
+
 /** Shared SQL editor that keeps Monaco in a dynamic chunk. */
-export const MonacoSqlEditor = ({
+export const MonacoSqlEditor = forwardRef<MonacoSqlEditorHandle, MonacoSqlEditorProps>(({
   value = '',
   readOnly = false,
   height = 420,
   className,
   onChange,
-}: MonacoSqlEditorProps) => {
+}, ref) => {
   const containerRef = useRef<HTMLDivElement>(null);
+  const editorRef = useRef<import('monaco-editor').editor.IStandaloneCodeEditor | null>(null);
   const valueRef = useRef(value);
   const onChangeRef = useRef(onChange);
+  const applyingExternalValueRef = useRef(false);
 
   useEffect(() => {
     valueRef.current = value;
+    const editor = editorRef.current;
+    if (!editor || editor.getValue() === value) return;
+    applyingExternalValueRef.current = true;
+    editor.setValue(value);
+    applyingExternalValueRef.current = false;
   }, [value]);
 
   useEffect(() => {
@@ -45,13 +57,36 @@ export const MonacoSqlEditor = ({
         fontSize: 14,
         lineNumbersMinChars: 3,
       });
-      editorInstance.onDidChangeModelContent(() => onChangeRef.current(editorInstance?.getValue() ?? ''));
+      editorRef.current = editorInstance;
+      editorInstance.onDidChangeModelContent(() => {
+        if (!applyingExternalValueRef.current) {
+          onChangeRef.current(editorInstance?.getValue() ?? '');
+        }
+      });
     });
     return () => {
       disposed = true;
       editorInstance?.dispose();
+      if (editorRef.current === editorInstance) editorRef.current = null;
     };
   }, [readOnly]);
+
+  useImperativeHandle(ref, () => ({
+    focus: () => editorRef.current?.focus(),
+    insertText: (text) => {
+      if (!text || readOnly) return;
+      const editor = editorRef.current;
+      if (!editor) return;
+      const selection = editor.getSelection();
+      if (!selection) return;
+      editor.executeEdits('datascalpel-sql-reference', [{
+        range: selection,
+        text,
+        forceMoveMarkers: true,
+      }]);
+      editor.focus();
+    },
+  }), [readOnly]);
 
   return (
     <div
@@ -60,4 +95,6 @@ export const MonacoSqlEditor = ({
       style={{ height, border: '1px solid #d9d9d9', borderRadius: 6, overflow: 'hidden' }}
     />
   );
-};
+});
+
+MonacoSqlEditor.displayName = 'MonacoSqlEditor';

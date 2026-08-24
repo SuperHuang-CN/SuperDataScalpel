@@ -7,7 +7,7 @@
 - 节点类型：`GEOMETRY_EXPLODE`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：`BATCH`、`STREAMING`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `GEOMETRY_EXPLODE` 将一行中的 MultiGeometry 或 GeometryCollection 拆成多行，每个部件
 一行，并复制该行的全部原始属性。它用于规范 Repair、Buffer、Clip 等空间操作产生的多

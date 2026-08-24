@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CompilationIssue;
+import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 
 import java.util.ArrayDeque;
 import java.util.ArrayList;
@@ -113,29 +114,12 @@ public final class CanvasGraphPlan {
             predecessors.add(new ArrayList<>());
             successors.add(new ArrayList<>());
             validateCommonNode(entry);
-            if (node.nodeType() == CanvasNodeType.TDENGINE_TMQ_INPUT && schemaMinorVersion < 1) {
+            if (node.nodeType().introducedInMinorVersion() > schemaMinorVersion) {
                 entry.result().error(
                         "NODE_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
-                        "TDENGINE_TMQ_INPUT 从 Canvas 2.1 开始支持",
+                        node.nodeType() + " 从 Canvas " + CanvasDefinition.CURRENT_SCHEMA_VERSION + "."
+                                + node.nodeType().introducedInMinorVersion() + " 开始支持",
                         "type"
-                );
-            }
-            if (node.nodeType() == CanvasNodeType.JDBC_INCREMENTAL_INPUT && schemaMinorVersion < 2) {
-                entry.result().error(
-                        "NODE_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
-                        "JDBC_INCREMENTAL_INPUT 从 Canvas 2.2 开始支持",
-                        "type"
-                );
-            }
-            if (node instanceof cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition output
-                    && output.configuration() != null
-                    && output.configuration().writeMode()
-                    == cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.UPSERT
-                    && schemaMinorVersion < 3) {
-                entry.result().error(
-                        "WRITE_MODE_REQUIRES_SCHEMA_VERSION",
-                        "MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持",
-                        "configuration.writeMode"
                 );
             }
             if (!nodeOperators.supports(node.nodeType(), executionMode)) {
@@ -205,6 +189,8 @@ public final class CanvasGraphPlan {
             case cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition rename -> rename.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.FilterNodeDefinition filter ->
                     filter.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SqlTransformNodeDefinition sqlTransform ->
+                    sqlTransform.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.SelectColumnsNodeDefinition selectColumns ->
                     selectColumns.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.DeriveColumnsNodeDefinition deriveColumns ->
@@ -334,16 +320,13 @@ public final class CanvasGraphPlan {
                         FILE_DATASET_INPUT, HTTP_API_INPUT,
                         SPATIAL_SERVICE_INPUT, KAFKA_INPUT, TDENGINE_TMQ_INPUT ->
                         incoming == 0 && outgoing >= 1;
-                case JOIN, SPATIAL_CLIP, SPATIAL_JOIN, STREAM_JOIN ->
-                        incoming == 2 && outgoing >= 1;
-                case RENAME, FILTER, SELECT_COLUMNS, DERIVE_COLUMNS, TYPE_CAST, AGGREGATE,
+                case JOIN, SPATIAL_CLIP, SPATIAL_JOIN, STREAM_JOIN,
+                        RENAME, FILTER, SQL_TRANSFORM, SELECT_COLUMNS, DERIVE_COLUMNS, TYPE_CAST, AGGREGATE,
                         DEDUPLICATE, NULL_HANDLING, VALUE_MAPPING, JSON_EXTRACT, WINDOW, TOP_N,
                         GEOMETRY_CONSTRUCT, SPATIAL_TRANSFORM, GEOMETRY_VALIDATE,
                         GEOMETRY_REPAIR, GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
-                        SPATIAL_MEASURE, GEOMETRY_SERIALIZE, SPATIAL_AGGREGATE ->
-                        incoming == 1 && outgoing >= 1;
-                case MASK_FIELDS -> incoming == 1 && outgoing == 1;
-                case UNION -> incoming >= 1 && outgoing >= 1;
+                        SPATIAL_MEASURE, GEOMETRY_SERIALIZE, SPATIAL_AGGREGATE, UNION,
+                        MASK_FIELDS -> incoming >= 1;
                 case MODEL_OUTPUT, MODEL_SNAPSHOT_SYNC_OUTPUT,
                         JDBC_OUTPUT, JDBC_SNAPSHOT_SYNC_OUTPUT,
                         KAFKA_OUTPUT, FILE_OUTPUT -> incoming == 1 && outgoing == 0;
@@ -359,33 +342,13 @@ public final class CanvasGraphPlan {
                     case SPATIAL_SERVICE_INPUT -> "空间服务输入节点不能有入边，且至少需要一条出边";
                     case KAFKA_INPUT -> "Kafka 输入节点不能有入边，且至少需要一条出边";
                     case TDENGINE_TMQ_INPUT -> "TDengine TMQ 输入节点不能有入边，且至少需要一条出边";
-                    case JOIN -> "Join 节点必须有两条入边，且至少需要一条出边";
-                    case GEOMETRY_CONSTRUCT -> "Geometry 构造节点必须有一条入边，且至少需要一条出边";
-                    case SPATIAL_JOIN -> "空间连接节点必须有两条入边，且至少需要一条出边";
-                    case SPATIAL_TRANSFORM -> "空间转换节点必须有一条入边，且至少需要一条出边";
-                    case GEOMETRY_VALIDATE -> "Geometry 校验节点必须有一条入边，且至少需要一条出边";
-                    case GEOMETRY_REPAIR -> "Geometry 修复节点必须有一条入边，且至少需要一条出边";
-                    case GEOMETRY_BUFFER -> "Geometry Buffer 节点必须有一条入边，且至少需要一条出边";
-                    case GEOMETRY_EXPLODE -> "Geometry 拆分节点必须有一条入边，且至少需要一条出边";
-                    case SPATIAL_MEASURE -> "空间度量节点必须有一条入边，且至少需要一条出边";
-                    case GEOMETRY_SERIALIZE -> "Geometry 序列化节点必须有一条入边，且至少需要一条出边";
-                    case SPATIAL_CLIP -> "空间裁剪节点必须有两条入边，且至少需要一条出边";
-                    case SPATIAL_AGGREGATE -> "空间聚合节点必须有一条入边，且至少需要一条出边";
-                    case STREAM_JOIN -> "Stream Join 节点必须有两条入边，且至少需要一条出边";
-                    case RENAME -> "重命名节点必须有一条入边，且至少需要一条出边";
-                    case FILTER -> "筛选节点必须有一条入边，且至少需要一条出边";
-                    case SELECT_COLUMNS -> "选择字段节点必须有一条入边，且至少需要一条出边";
-                    case DERIVE_COLUMNS -> "派生字段节点必须有一条入边，且至少需要一条出边";
-                    case TYPE_CAST -> "类型转换节点必须有一条入边，且至少需要一条出边";
-                    case AGGREGATE -> "聚合节点必须有一条入边，且至少需要一条出边";
-                    case UNION -> "合并数据节点至少需要一条入边和一条出边";
-                    case DEDUPLICATE -> "去重节点必须有一条入边，且至少需要一条出边";
-                    case NULL_HANDLING -> "空值处理节点必须有一条入边，且至少需要一条出边";
-                    case VALUE_MAPPING -> "值映射节点必须有一条入边，且至少需要一条出边";
-                    case MASK_FIELDS -> "字段脱敏节点必须有一条入边和一条出边";
-                    case JSON_EXTRACT -> "JSON 提取节点必须有一条入边，且至少需要一条出边";
-                    case WINDOW -> "窗口计算节点必须有一条入边，且至少需要一条出边";
-                    case TOP_N -> "Top N 节点必须有一条入边，且至少需要一条出边";
+                    case JOIN, SPATIAL_CLIP, SPATIAL_JOIN, STREAM_JOIN,
+                            RENAME, FILTER, SQL_TRANSFORM, SELECT_COLUMNS, DERIVE_COLUMNS, TYPE_CAST, AGGREGATE,
+                            DEDUPLICATE, NULL_HANDLING, VALUE_MAPPING, MASK_FIELDS, JSON_EXTRACT,
+                            WINDOW, TOP_N, GEOMETRY_CONSTRUCT, SPATIAL_TRANSFORM,
+                            GEOMETRY_VALIDATE, GEOMETRY_REPAIR, GEOMETRY_BUFFER,
+                            GEOMETRY_EXPLODE, SPATIAL_MEASURE, GEOMETRY_SERIALIZE,
+                            SPATIAL_AGGREGATE, UNION -> "处理节点至少需要一条入边";
                     case MODEL_OUTPUT -> "模型输出节点必须有一条入边且不能有出边";
                     case MODEL_SNAPSHOT_SYNC_OUTPUT -> "模型快照同步输出节点必须有一条入边且不能有出边";
                     case JDBC_OUTPUT -> "JDBC 输出节点必须有一条入边且不能有出边";
@@ -394,6 +357,14 @@ public final class CanvasGraphPlan {
                     case FILE_OUTPUT -> "文件输出节点必须有一条入边且不能有出边";
                 };
                 entry.result().error("INVALID_NODE_DEGREE", message, "edges");
+            }
+            if (nodeOperators.require(type).category() == CanvasNodeCategory.PROCESSOR
+                    && outgoing == 0) {
+                entry.result().warning(
+                        "UNCONSUMED_PROCESSOR_OUTPUT",
+                        "处理结果未被任何下游节点使用，不会产生写入或流式查询",
+                        "edges"
+                );
             }
         }
     }
@@ -454,26 +425,30 @@ public final class CanvasGraphPlan {
         }
         for (Entry entry : entries) {
             if (entry.node() instanceof cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition output
-                    && output.configuration() != null
-                    && output.configuration().writeMode() != null
-                    && output.configuration().writeMode()
-                    == cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.OVERWRITE) {
-                entry.result().error(
-                        "STREAMING_JDBC_OUTPUT_OVERWRITE_NOT_SUPPORTED",
-                        "实时 JDBC_OUTPUT 不支持 OVERWRITE",
-                        "configuration.writeMode"
-                );
+                    && output.configuration() != null) {
+                for (int index = 0; index < output.configuration().writes().size(); index++) {
+                    if (output.configuration().writes().get(index).writeMode()
+                            == cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.OVERWRITE) {
+                        entry.result().error(
+                                "STREAMING_JDBC_OUTPUT_OVERWRITE_NOT_SUPPORTED",
+                                "实时 JDBC_OUTPUT 不支持 OVERWRITE",
+                                "configuration.writes[" + index + "].writeMode"
+                        );
+                    }
+                }
             }
             if (entry.node() instanceof cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition output
-                    && output.configuration() != null
-                    && output.configuration().writeMode() != null
-                    && output.configuration().writeMode()
-                    == cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.OVERWRITE) {
-                entry.result().error(
-                        "STREAMING_MODEL_OUTPUT_OVERWRITE_NOT_SUPPORTED",
-                        "实时 MODEL_OUTPUT 不支持 OVERWRITE",
-                        "configuration.writeMode"
-                );
+                    && output.configuration() != null) {
+                for (int index = 0; index < output.configuration().writes().size(); index++) {
+                    if (output.configuration().writes().get(index).writeMode()
+                            == cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.OVERWRITE) {
+                        entry.result().error(
+                                "STREAMING_MODEL_OUTPUT_OVERWRITE_NOT_SUPPORTED",
+                                "实时 MODEL_OUTPUT 不支持 OVERWRITE",
+                                "configuration.writes[" + index + "].writeMode"
+                        );
+                    }
+                }
             }
         }
     }

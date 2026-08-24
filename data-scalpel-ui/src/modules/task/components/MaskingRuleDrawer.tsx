@@ -29,6 +29,7 @@ interface MaskingRuleFormValues {
   strategy: MaskingStrategy;
   keepPrefixLength?: number;
   keepSuffixLength?: number;
+  maskPosition?: number;
   maskCharacter?: string;
   fixedValue?: string;
 }
@@ -45,6 +46,12 @@ const definitionFromValues = (values: MaskingRuleFormValues): MaskingRuleDefinit
         ...definition,
         keepPrefixLength: values.keepPrefixLength ?? 0,
         keepSuffixLength: values.keepSuffixLength ?? 0,
+        maskCharacter: values.maskCharacter ?? '*',
+      };
+    case 'POSITION_MASK':
+      return {
+        ...definition,
+        maskPosition: values.maskPosition ?? 2,
         maskCharacter: values.maskCharacter ?? '*',
       };
     case 'KEEP_LENGTH_MASK':
@@ -65,6 +72,7 @@ const valuesFromRule = (rule: DataMaskingRule | null): MaskingRuleFormValues => 
     strategy: definition.strategy,
     keepPrefixLength: definition.keepPrefixLength ?? undefined,
     keepSuffixLength: definition.keepSuffixLength ?? undefined,
+    maskPosition: definition.maskPosition ?? undefined,
     maskCharacter: definition.maskCharacter ?? undefined,
     fixedValue: definition.fixedValue ?? undefined,
   };
@@ -167,6 +175,7 @@ export const MaskingRuleDrawer = ({
                 strategy: changed.strategy,
                 keepPrefixLength: definition.keepPrefixLength ?? undefined,
                 keepSuffixLength: definition.keepSuffixLength ?? undefined,
+                maskPosition: definition.maskPosition ?? undefined,
                 maskCharacter: definition.maskCharacter ?? undefined,
                 fixedValue: definition.fixedValue ?? undefined,
               });
@@ -223,7 +232,19 @@ export const MaskingRuleDrawer = ({
               </Form.Item>
             </div>
           )}
-          {(strategy === 'PARTIAL_MASK' || strategy === 'KEEP_LENGTH_MASK') && (
+          {strategy === 'POSITION_MASK' && (
+            <Form.Item
+              name="maskPosition"
+              label="掩码位置"
+              extra="从 1 开始计数；文本长度不足时保留原值。"
+              rules={[{ required: true, message: '请输入掩码位置' }]}
+            >
+              <InputNumber min={1} max={1024} precision={0} style={{ width: 160 }} />
+            </Form.Item>
+          )}
+          {(strategy === 'PARTIAL_MASK'
+            || strategy === 'POSITION_MASK'
+            || strategy === 'KEEP_LENGTH_MASK') && (
             <Form.Item
               name="maskCharacter"
               label="掩码字符"

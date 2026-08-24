@@ -18,7 +18,7 @@ export const tdEngineTmqInputSpec = createCanvasNodeSpec({
   order: 20,
   canvasView: tdEngineTmqInputCanvasView,
   supportedModes: ['STREAMING'],
-  introducedInMinor: 1,
+  introducedInMinor: 0,
   graph: { minInputs: 0, maxInputs: 0, minOutputs: 1, maxOutputs: null },
   createDefaultConfiguration: createTdEngineTmqInputConfiguration,
   summarize: summarizeTdEngineTmqInput,

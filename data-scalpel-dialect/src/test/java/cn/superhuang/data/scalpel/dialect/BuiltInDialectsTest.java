@@ -46,6 +46,8 @@ class BuiltInDialectsTest {
         assertTrue(registry.require("POSTGRESQL").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("MYSQL").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("CLICKHOUSE").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
+        assertTrue(registry.require("CLICKHOUSE").definition().capabilities()
+                .contains(DatabaseCapability.SQL_SERVICE_QUERY));
         assertFalse(registry.require("ORACLE").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("TDENGINE_WEBSOCKET").definition().capabilities()
                 .contains(DatabaseCapability.READ_TABLE_METADATA));

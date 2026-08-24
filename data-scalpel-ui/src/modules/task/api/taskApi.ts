@@ -25,10 +25,24 @@ import type {
 } from '../model/task';
 import type { CanvasDefinition } from '../canvas/canvasTypes';
 import { parseTaskExecutionResultArtifact, type TaskExecutionResultArtifact } from '../model/taskExecutionResult';
-import type { TaskLineageGraph } from '../model/taskLineage';
+import type { TaskFieldLineageGraph, TaskLineageGraph } from '../model/taskLineage';
 import type { PlatformTypeDefinition } from '../../model';
+import type { TaskCanvasProposalChangeSet } from '../model/taskAssistant';
 
 const TASK_PATH = '/v1/tasks';
+const ASSISTANT_CHANGE_SET_PATH = '/v1/assistant/change-sets';
+
+export const fetchTaskCanvasProposal = (id: string): Promise<TaskCanvasProposalChangeSet> => (
+  requestJson<TaskCanvasProposalChangeSet>(`${ASSISTANT_CHANGE_SET_PATH}/${id}`)
+);
+
+export const acceptTaskCanvasProposal = (
+  id: string,
+  taskId: string,
+): Promise<TaskCanvasProposalChangeSet> => requestJson<TaskCanvasProposalChangeSet>(
+  `${ASSISTANT_CHANGE_SET_PATH}/${id}/actions/accept-task-canvas`,
+  { method: 'POST', body: JSON.stringify({ taskId }) },
+);
 
 export const fetchTasks = async (request: SearchRequest): Promise<PageResponse<DataTask>> => {
   const query = toSearchParams(request).toString();
@@ -109,6 +123,16 @@ export const fetchTaskFieldLineage = (
   const suffix = query.toString();
   return requestJson<TaskLineageGraph>(`${TASK_PATH}/${id}/lineage/fields${suffix ? `?${suffix}` : ''}`);
 };
+
+export const queryTaskFieldLineage = (
+  id: string,
+  flowKey: string | undefined,
+  outputFieldKeys: string[] | null,
+  signal?: AbortSignal,
+): Promise<TaskFieldLineageGraph> => requestJson<TaskFieldLineageGraph>(
+  `${TASK_PATH}/${id}/lineage/actions/query-fields`,
+  { method: 'POST', body: JSON.stringify({ flowKey, outputFieldKeys }), signal },
+);
 
 export const fetchModelRelatedTasks = async (
   modelId: string,
@@ -211,6 +235,10 @@ export const fetchTaskRun = (runId: string): Promise<TaskRun> => requestJson<Tas
 
 export const cancelTaskRun = (runId: string): Promise<TaskRun> => (
   requestJson<TaskRun>(`/v1/task-runs/${runId}/actions/cancel`, { method: 'POST' })
+);
+
+export const forceTerminateTaskRun = (runId: string): Promise<TaskRun> => (
+  requestJson<TaskRun>(`/v1/task-runs/${runId}/actions/force-terminate`, { method: 'POST' })
 );
 
 export type TaskRunArtifactKind = 'result' | 'log';

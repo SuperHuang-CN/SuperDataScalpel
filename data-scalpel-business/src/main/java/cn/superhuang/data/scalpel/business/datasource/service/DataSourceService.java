@@ -210,9 +210,20 @@ public class DataSourceService {
             String catalog,
             String schema,
             String keyword,
+            boolean includeViews,
+            int limit
+    ) {
+        return runtimeService.listTables(id, catalog, schema, keyword, includeViews, limit);
+    }
+
+    public TableListResponse listTables(
+            UUID id,
+            String catalog,
+            String schema,
+            String keyword,
             boolean includeViews
     ) {
-        return runtimeService.listTables(id, catalog, schema, keyword, includeViews);
+        return listTables(id, catalog, schema, keyword, includeViews, 500);
     }
 
     public TableMetadataResponse readTable(UUID id, String catalog, String schema, String table) {

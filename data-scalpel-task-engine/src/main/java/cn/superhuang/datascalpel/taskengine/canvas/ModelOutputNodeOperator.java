@@ -16,12 +16,14 @@ import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKey;
 import cn.superhuang.data.scalpel.contract.task.MetadataUniqueKeyType;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ModelOutputWrite;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
 import java.util.List;
+import java.util.ArrayList;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -58,36 +60,61 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
             return CanvasNodeOperationResult.outputOnly();
         }
         CanvasNodeIssueSink issues = context.issues();
+        if (configuration.writes().isEmpty()) {
+            issues.error("REQUIRED_CONFIGURATION", "至少配置一条写入", "configuration.writes");
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (!CanvasNodeSupport.validateOutputWriteIds(
+                configuration.writes(), write -> write.writeId(), issues)) {
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (context.executionMode() == CanvasExecutionMode.STREAMING && configuration.writes().size() > 32) {
+            issues.error("OUTPUT_WRITE_COUNT_EXCEEDED", "实时输出最多支持 32 条写入", "configuration.writes");
+            return CanvasNodeOperationResult.outputOnly();
+        }
+        if (configuration.writes().size() != 1) {
+            List<CanvasPreparedOutput> prepared = new ArrayList<>();
+            List<CanvasLineageOutputCandidate> lineage = new ArrayList<>();
+            for (var write : configuration.writes()) {
+                CanvasNodeOperationResult item = apply(new ModelOutputNodeDefinition(
+                        node.id(), node.name(), node.layout(), new ModelOutputConfiguration(List.of(write))), inputs, context);
+                prepared.addAll(item.preparedOutputs());
+                lineage.addAll(item.lineageOutputCandidates());
+            }
+            return issues.hasErrors() ? CanvasNodeOperationResult.outputOnly()
+                    : CanvasNodeOperationResult.outputs(prepared, lineage);
+        }
+        ModelOutputWrite write = configuration.writes().iterator().next();
         CanvasNodeSupport.required(
-                configuration.sourceTableName(),
+                write.sourceTableName(),
                 "请选择来源表",
                 "configuration.sourceTableName",
                 issues
         );
         UUID modelId = CanvasNodeSupport.parseModelUuid(
-                configuration.targetModelId(),
+                write.targetModelId(),
                 "configuration.targetModelId",
                 issues
         );
-        if (configuration.writeMode() == null) {
+        if (write.writeMode() == null) {
             issues.error("REQUIRED_CONFIGURATION", "请选择写入模式", "configuration.writeMode");
         } else if (context.executionMode() == CanvasExecutionMode.STREAMING
-                && configuration.writeMode() == JdbcWriteMode.OVERWRITE) {
+                && write.writeMode() == JdbcWriteMode.OVERWRITE) {
             issues.error(
                     "STREAMING_MODEL_OUTPUT_OVERWRITE_NOT_SUPPORTED",
                     "实时 MODEL_OUTPUT 不支持 OVERWRITE",
                     "configuration.writeMode"
             );
         }
-        if (configuration.columnMappings() == null) {
+        if (write.columnMappings() == null) {
             issues.error("REQUIRED_CONFIGURATION", "字段映射列表不能为空", "configuration.columnMappings");
         }
 
-        SparkCanvasTable source = inputs.get(configuration.sourceTableName());
-        if (!CanvasNodeSupport.blank(configuration.sourceTableName()) && source == null) {
+        SparkCanvasTable source = inputs.get(write.sourceTableName());
+        if (!CanvasNodeSupport.blank(write.sourceTableName()) && source == null) {
             issues.error(
                     "TABLE_NOT_FOUND",
-                    "来源表不在上游数据中：" + configuration.sourceTableName(),
+                    "来源表不在上游数据中：" + write.sourceTableName(),
                     "configuration.sourceTableName"
             );
         }
@@ -115,14 +142,14 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
         }
         if (dataSource != null) {
             CanvasNodeSupport.validateJdbcWriteMode(
-                    configuration.writeMode(),
+                    write.writeMode(),
                     dataSource.metadata().jdbcDatabaseType(),
                     "configuration.writeMode",
                     issues
             );
         }
         if (model != null
-                && configuration.writeMode() == JdbcWriteMode.OVERWRITE
+                && write.writeMode() == JdbcWriteMode.OVERWRITE
                 && model.metadata().physicalTableMode() != MetadataModelPhysicalTableMode.MANAGED) {
             issues.error(
                     "OVERWRITE_REQUIRES_MANAGED_MODEL",
@@ -130,7 +157,7 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
                     "configuration.writeMode"
             );
         }
-        List<String> upsertKeyColumns = configuration.writeMode() == JdbcWriteMode.UPSERT
+        List<String> upsertKeyColumns = write.writeMode() == JdbcWriteMode.UPSERT
                 ? validateUpsertConfiguration(model, dataSource, issues)
                 : List.of();
         if (source == null || model == null || issues.hasErrors()) {
@@ -147,8 +174,8 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
                 "configuration.targetModelId",
                 issues
         );
-        if (configuration.writeMode() == JdbcWriteMode.UPSERT) {
-            Set<String> mappedTargets = configuration.columnMappings().stream()
+        if (write.writeMode() == JdbcWriteMode.UPSERT) {
+            Set<String> mappedTargets = write.columnMappings().stream()
                     .filter(java.util.Objects::nonNull)
                     .map(cn.superhuang.data.scalpel.contract.task.JdbcColumnMapping::targetColumnName)
                     .filter(java.util.Objects::nonNull)
@@ -167,7 +194,7 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
         Dataset<Row> selected = mappingOperator.apply(
                 source,
                 targetSchema,
-                configuration.columnMappings(),
+                write.columnMappings(),
                 issues
         );
         if (selected == null || issues.hasErrors()) {
@@ -199,8 +226,8 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
         }
         CanvasPreparedOutput prepared =
                 context.dataAccess().prepareModelOutput(
-                        node, model, targetSchema, selected, upsertKeyColumns);
-        var lineageWriteMode = switch (configuration.writeMode()) {
+                        node, write, model, targetSchema, selected, upsertKeyColumns);
+        var lineageWriteMode = switch (write.writeMode()) {
             case APPEND -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.APPEND;
             case OVERWRITE -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.FULL_OVERWRITE;
             case UPSERT -> cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.UPSERT;
@@ -208,7 +235,8 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
         return CanvasNodeOperationResult.output(
                 prepared,
                 CanvasLineageOutputCandidate.model(
-                        node, selected, model.metadata(), targetSchema, lineageWriteMode
+                        node, selected, model.metadata(), targetSchema, lineageWriteMode,
+                        write.writeId()
                 )
         );
     }

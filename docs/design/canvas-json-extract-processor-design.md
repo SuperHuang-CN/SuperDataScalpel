@@ -7,7 +7,7 @@
 - 节点类型：`JSON_EXTRACT`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：`BATCH`、`STREAMING`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `JSON_EXTRACT` 从一张逻辑表的一个 STRING 字段中按 JSON Path 提取多个结构化字段，并以新的逻辑表名追加结果。该节点用于日志载荷、API 原始响应、Kafka JSON 文本等已经以字符串进入 Canvas 的场景。
 

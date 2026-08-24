@@ -8,6 +8,7 @@ interface TypedLiteralInputProps {
   disabled?: boolean;
   status?: 'error' | 'warning';
   placeholder?: string;
+  showTypeLabel?: boolean;
 }
 
 const literalPlaceholder = (dataType: PlatformDataType) => {
@@ -29,40 +30,43 @@ export const TypedLiteralInput = ({
   disabled = false,
   status,
   placeholder,
+  showTypeLabel = true,
 }: TypedLiteralInputProps) => {
   const effectiveType = dataType === 'GEOMETRY' ? 'STRING' : dataType;
   const effectiveValue = value.dataType === effectiveType
     ? value
     : { dataType: effectiveType, value: value.value ?? '' };
+  const editor = effectiveType === 'BOOLEAN' ? (
+    <Select
+      className={`canvas-typed-literal-value${showTypeLabel ? '' : ' is-type-hidden'}`}
+      disabled={disabled}
+      status={status}
+      value={effectiveValue.value ?? undefined}
+      placeholder="true / false"
+      options={[
+        { value: 'true', label: 'true' },
+        { value: 'false', label: 'false' },
+      ]}
+      onChange={(next) => onChange({ dataType: effectiveType, value: next })}
+    />
+  ) : (
+    <Input
+      className={`canvas-typed-literal-value${showTypeLabel ? '' : ' is-type-hidden'}`}
+      disabled={disabled}
+      status={status}
+      value={effectiveValue.value ?? ''}
+      placeholder={placeholder ?? literalPlaceholder(effectiveType)}
+      onChange={(event) => onChange({
+        dataType: effectiveType,
+        value: event.target.value,
+      })}
+    />
+  );
+  if (!showTypeLabel) return editor;
   return (
     <Space.Compact block className="canvas-typed-literal">
       <Tag className="canvas-typed-literal-type">{effectiveType}</Tag>
-      {effectiveType === 'BOOLEAN' ? (
-        <Select
-          className="canvas-typed-literal-value"
-          disabled={disabled}
-          status={status}
-          value={effectiveValue.value ?? undefined}
-          placeholder="true / false"
-          options={[
-            { value: 'true', label: 'true' },
-            { value: 'false', label: 'false' },
-          ]}
-          onChange={(next) => onChange({ dataType: effectiveType, value: next })}
-        />
-      ) : (
-        <Input
-          className="canvas-typed-literal-value"
-          disabled={disabled}
-          status={status}
-          value={effectiveValue.value ?? ''}
-          placeholder={placeholder ?? literalPlaceholder(effectiveType)}
-          onChange={(event) => onChange({
-            dataType: effectiveType,
-            value: event.target.value,
-          })}
-        />
-      )}
+      {editor}
     </Space.Compact>
   );
 };

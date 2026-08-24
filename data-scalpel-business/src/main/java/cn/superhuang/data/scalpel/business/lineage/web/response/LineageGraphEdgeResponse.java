@@ -13,9 +13,19 @@ public record LineageGraphEdgeResponse(
         LineageGraphEdgeType type,
         LineageFieldDerivationType derivationType,
         LineageOutputFieldEffect outputEffect,
-        List<LineageFieldUsageType> usages
+        List<LineageFieldUsageType> usages,
+        List<String> focusFieldKeys
 ) {
     public LineageGraphEdgeResponse {
         usages = usages == null ? List.of() : List.copyOf(usages);
+        focusFieldKeys = focusFieldKeys == null ? List.of() : List.copyOf(focusFieldKeys);
+    }
+
+    public LineageGraphEdgeResponse(
+            String id, String source, String target, LineageGraphEdgeType type,
+            LineageFieldDerivationType derivationType, LineageOutputFieldEffect outputEffect,
+            List<LineageFieldUsageType> usages
+    ) {
+        this(id, source, target, type, derivationType, outputEffect, usages, List.of());
     }
 }

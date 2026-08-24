@@ -8,10 +8,12 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasValueMappingLimits;
 import cn.superhuang.data.scalpel.contract.task.ValueMappingConfiguration;
+import cn.superhuang.data.scalpel.contract.task.ValueMappingOperation;
 import cn.superhuang.data.scalpel.contract.task.ValueMappingEntry;
 import cn.superhuang.data.scalpel.contract.task.ValueMappingNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ValueMappingRule;
 import cn.superhuang.data.scalpel.contract.task.ValueMappingUnmatchedStrategy;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -64,6 +66,18 @@ public final class ValueMappingNodeOperator implements CanvasNodeOperator {
         List<CanvasTableSchema> inputSchemas = CanvasNodeSupport.schemas(inputs);
         ValueMappingConfiguration configuration = node.configuration();
         if (configuration == null) return CanvasNodeOperationResult.invalid(inputSchemas);
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        ValueMappingOperation sourceOperation = (ValueMappingOperation) operation.operation();
+                        ValueMappingConfiguration single = new ValueMappingConfiguration(List.of(new ValueMappingOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()), sourceOperation.rules()
+                        )));
+                        return apply(new ValueMappingNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
+        }
 
         CanvasNodeIssueSink issues = context.issues();
         CanvasNodeSupport.required(

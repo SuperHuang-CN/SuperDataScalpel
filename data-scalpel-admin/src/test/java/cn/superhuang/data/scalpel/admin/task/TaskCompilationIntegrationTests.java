@@ -225,10 +225,10 @@ class TaskCompilationIntegrationTests {
         return """
                 {
                   "requestId":"%s",
-                  "task":{"type":"CANVAS","definition":{"schemaVersion":1,"schemaMinorVersion":28,"nodes":[
+                  "task":{"type":"CANVAS","definition":{"schemaVersion":3,"schemaMinorVersion":0,"nodes":[
                     {"id":"4add70a7-4948-42a5-af66-e56dbaccad3e","type":"JDBC_INPUT","name":"订单输入",
                      "layout":{"x":10,"y":10,"width":240,"height":120},
-                     "configuration":{"dataSourceId":"%s","tableName":"orders"}},
+                     "configuration":{"dataSourceId":"%s","tables":[{"tableName":"orders"}]}},
                     {"id":"c24d2459-aeaa-4de7-9562-dd078dcd864f","type":"JOIN","name":"订单关联",
                      "layout":{"x":350,"y":10,"width":240,"height":120},
                      "configuration":{"leftTableName":"orders","rightTableName":"customers","outputTableName":"joined",

@@ -12,7 +12,7 @@ Admin ← Kafka execution event ← Task Dispatcher ← Kafka runner event
 
 Admin负责读取权威元数据、调用 Task Engine最终预检、生成不可变 manifest，并原子持久化 `TaskRun + Kafka Outbox`。Task Engine只负责预检。Dispatcher使用自己的 PostgreSQL账本负责准入、调度、恢复和终态收敛；Runner负责一次真实 Spark作业，完成后退出。手动和定时触发复用同一条提交链路；定时 TaskRun 使用 `SCHEDULED + REAL`，并以 `(scheduleId, scheduledFireAt)` 幂等。`FORBID` 在存在活动实例时记录 `SKIPPED`，`ALLOW` 为每个触发点提交独立 Spark Application，不检查其他运行、任务或节点是否使用相同模型和物理 Sink。当前不支持自动重试和跨输出事务。
 
-同一次零行预检还基于 Spark Catalyst `analyzed LogicalPlan` 生成静态血缘预览。Input 属性只携带资源 UUID、Schema 版本、字段 UUID或安全哈希；每个 Output 从完成映射和 Cast 的 Writer 前 Dataset 独立反向追踪。该过程不触发 Action、不访问运行数据，也不改变执行计划。任务发布和重新启用把编译结果转换为不可变血缘快照并与任务状态原子提交；运行、重跑、实时启动、Checkpoint 与 Offset 不更新静态血缘。详细契约见[血缘接入契约 V2](lineage-integration-contract.md)。
+同一次零行预检还基于 Spark Catalyst `analyzed LogicalPlan` 生成静态血缘预览。Input 属性只携带资源 UUID、Schema 版本、字段 UUID或安全哈希；每个 Output 从完成映射和 Cast 的 Writer 前 Dataset 独立反向追踪。该过程不触发 Action、不访问运行数据，也不改变执行计划。任务发布和重新启用把编译结果转换为不可变血缘快照并与任务状态原子提交；运行、重跑、实时启动、Checkpoint 与 Offset 不更新静态血缘。任务详情固定选择一条输出链路，字段级按输入和输出资产组织表卡片，字段行连接到中间任务节点；默认展示该链路前 20 个输出字段并支持最多 50 个多选，不会把不同输出链路合并。详细契约见[血缘接入契约 V3](lineage-integration-contract.md)。
 
 JDBC 能力按节点而不是全局数据库白名单判定：
 
@@ -20,14 +20,14 @@ JDBC 能力按节点而不是全局数据库白名单判定：
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
 | PostgreSQL/MySQL | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
 | openGauss/Kingbase | 是 | 是 | 保持现状 | 否 | 否 | 是 | 否 | 否 |
-| Oracle/SQL Server/ClickHouse/达梦 | 是 | 是 | 否 | 否 | 否 | 否 | 否 | 否 |
+| Oracle/SQL Server/ClickHouse/达梦 | 是 | 是 | 是 | 否 | 否 | 否 | 否 | 否 |
 | TDengine | 保持现有超级表/TMQ 规则 | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 
 模型质检开放上述数据库的普通标量读取；Spark JAR 资源绑定开放普通标量读取和 APPEND。特殊能力仍在对应节点或 SDK 写入边界返回稳定配置错误，不再由发布阶段返回整张数据库产品白名单。
 
 ## 2. Manifest 边界
 
-manifest 当前写出 `manifestVersion: 18`；Runner 严格只读取 v18，不保留旧版本兼容分支。
+manifest 当前写出 `manifestVersion: 21`；Runner 严格只读取 v21，不保留旧版本兼容分支。
 顶层分为 `execution`、`task`、
 `metadataSnapshot`、`runtimeDataSources`、可空 `runtimeFileStorage`、`runtimeFileInputs` 和
 `snapshotSyncLimits`：
@@ -104,13 +104,24 @@ Runner读取 launch描述、下载 manifest、校验 SHA-256、严格反序列�
 Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output Operator，只分别注入零行
 无副作用 I/O 与真实运行 I/O。
 
-- `JDBC_INPUT`：使用对应数据库方言限定并引用物理表。普通标量读取支持能力矩阵中的 JDBC 数据库；
+- `JDBC_INPUT`：按配置顺序为同一数据源下的每张已选物理表分别建立 Dataset，并使用对应数据库
+  方言限定和引用物理表；节点输出一个以原始表名为 Key 的有序 Map。实际读取按“运行 Manifest 连接与凭据 →
+  数据源 JDBC Properties → 当前表 `readOptions` → 平台最终 `dbtable` → `load()`”应用参数；高级参数只影响
+  对应表，不能覆盖连接、目标表或分片参数。Compiler 不连接数据库或执行 `sessionInitStatement`，日志、节点摘要、
+  Spark 选项脱敏和错误摘要均不得输出读取参数值。普通标量读取支持能力矩阵中的 JDBC 数据库；
   Geometry 仅允许 PostgreSQL/PostGIS 和 MySQL 8，使用方言引用的受控查询执行 `ST_AsBinary`，
   Spark 读取 WKB 后通过 Sedona `ST_GeomFromWKB + ST_SetSRID` 生成 `GeometryUDT`。
 - `JDBC_QUERY_INPUT`：只支持 PostgreSQL/MySQL 的单条 `SELECT` 或 `WITH ... SELECT`。Compiler
   只使用定义中保存的字段快照创建零行 BOUNDED Dataset；Runner 再次校验只读语法和 SQL Hash，
   使用只读 Session 执行受控 Spark JDBC 查询，不比较运行时结果 Schema。实时任务只在启动时读取
   并缓存一次，运行期间不刷新；日志和错误链不包含 SQL。
+- `SQL_TRANSFORM`：仅支持批任务。每个节点为当前完整上游表 Map 创建独立 Spark 子 Session，
+  将各表的已分析 LogicalPlan 重新绑定并注册为节点本地临时视图，再执行一条受控 `SELECT` 或
+  `WITH ... SELECT` 并把分析后的结果计划重新绑定回执行 Session。视图在 `finally` 清理，多个
+  SQL 节点即使使用相同逻辑表 code 也不会冲突。Parser/Analyzer 只允许当前 Canvas 表与本查询
+  CTE，拒绝 DDL、DML、多语句、外部 Catalog、文件/JDBC Relation、显式视图操作和 TVF；不触发
+  Spark Action。节点安全摘要只记录 SQL SHA-256、长度、引用的安全逻辑表 code、输出表名和字段数，
+  不记录 SQL 正文或 Literal。
 - `FILE_DATASET_INPUT`：仅用于批任务，使用 Manifest 的私有 S3 配置和逻辑表运行快照读取提交时
   的有序来源，输出以逻辑表 code 命名的 `BOUNDED` Dataset。CSV/TSV/TXT/JSON/JSONL/Excel
   使用保存 Schema 做显式解析和类型转换；Parquet/Avro 按逻辑字段名投影并 Cast；SHP/GDB 按
@@ -118,7 +129,7 @@ Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output
   Geometry 字段。各来源按 Manifest 顺序 `unionByName`，语义为 `UNION ALL`。Runner 不比较文件
   指纹或整表字段数量、顺序、类型及 Geometry 元数据；实际值或 Geometry 无法转换时按真实解析
   错误失败。覆盖、替换或删除会立即清理旧对象，因此旧任务允许以文件读取错误失败。
-- `HTTP_API_INPUT`：按资源快照执行鉴权、签名、分页或异步轮询；每个结果页按最多 10,000 行分批转换，并立即通过 `DISK_ONLY` eager Local Checkpoint 物化到 Spark Executor 磁盘，全部批次成功后再按显式 Schema 合并为 DataFrame，以节点的 `outputTableName` 注册逻辑表。详细内存和失败语义见 [HTTP API 数据源第二阶段：分批读取设计](http-api-data-source-phase-two-batched-reading.md)。
+- `HTTP_API_INPUT`：按有序资源选择逐项执行鉴权、签名、分页或异步轮询；每个结果页按最多 10,000 行分批转换，并立即通过 `DISK_ONLY` eager Local Checkpoint 物化到 Spark Executor 磁盘，全部选择项完成配置与元数据校验后才开始读取，并以各自 `outputTableName` 注册逻辑表。详细内存和失败语义见 [HTTP API 数据源第二阶段：分批读取设计](http-api-data-source-phase-two-batched-reading.md)。
 - `MODEL_INPUT`：按模型快照的精确物理位置读取，以模型 code 作为逻辑表名。
 - `KAFKA_INPUT`：直接使用节点内联 Value Schema 解析消息并生成无界表；运行时连接只来自 Manifest，不查询数据模型。
 - `TDENGINE_TMQ_INPUT`：通过内置 Spark DataSource V2 MicroBatch Source 订阅 WebSocket TMQ，
@@ -160,9 +171,10 @@ Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output
   Streaming 通过 `foreachBatch` 提供键级重放收敛，整体仍是至少一次交付，不提供跨分区全局事务。
 - `JDBC_SNAPSHOT_SYNC_OUTPUT/MODEL_SNAPSHOT_SYNC_OUTPUT`：仅用于 BATCH 和 BOUNDED 小数据实体快照。来源映射并 Cast 为目标类型后，在 Driver 校验来源 Key；Runner 使用一条 JDBC 连接取得 PostgreSQL/MySQL 严格表锁，在同一事务中读取目标、校验目标 Key、执行拓扑 Geometry 比较和删除熔断，最后按 `DELETE → UPDATE → INSERT` 提交。模型节点只解析已发布 MANAGED 模型目标，比较与写入完全复用 JDBC 执行器。
 - `KAFKA_OUTPUT`：目标字段来自节点内联 Value Schema，与其他 Output 复用统一显式映射和 Cast；可选 Key 字段来自上游表。
-- `FILE_OUTPUT`：仅用于批任务，将来源表写到精确的 `s3a://{bucket}/{rootPrefix}/{targetPath}/`。CSV、JSON Lines 固定 UTF-8，普通 Parquet 固定 Snappy，并继续使用允许多个 `part-*` 和 `_SUCCESS` 的 Spark 目录数据集语义。Canvas `1.24` 的 Shapefile 使用 Driver 专用 Writer，通过 `toLocalIterator()` 流式生成唯一一套 SHP/SHX/DBF/PRJ/CPG；默认打成 ZIP，也可直接提交五个组件。Canvas `1.25` 的 GeoParquet 通过 Sedona 分布式写出 GeoParquet 1.1.0、WKB、显式 PROJJSON 和可选逐行 bbox；GeoJSON 使用 Driver 专用 Writer 生成唯一 RFC 7946 FeatureCollection，限 EPSG:4326 + XY 且达到 1.8GB 时失败。Shapefile/GeoJSON 制品先完整上传运行级临时前缀，再按冲突策略提交，`_SUCCESS` 始终最后写入；GeoParquet 复用 Spark/Hadoop 目录提交。S3 `OVERWRITE` 均不是原子替换。
-- `OVERWRITE`：仅在 PostgreSQL、MySQL、openGauss 和 Kingbase 保持现有 `TRUNCATE TABLE` 后
-  append/受控批量 INSERT 语义，不 drop/recreate；其他数据库在 Compiler 和 Runner 清表前拒绝。
+- `FILE_OUTPUT`：仅用于批任务，将来源表写到精确的 `s3a://{bucket}/{rootPrefix}/{targetPath}/`。CSV、JSON Lines 固定 UTF-8，普通 Parquet 固定 Snappy，并继续使用允许多个 `part-*` 和 `_SUCCESS` 的 Spark 目录数据集语义。Canvas `4.0` 的 Shapefile 使用 Driver 专用 Writer，通过 `toLocalIterator()` 流式生成唯一一套 SHP/SHX/DBF/PRJ/CPG；默认打成 ZIP，也可直接提交五个组件。GeoParquet 通过 Sedona 分布式写出 GeoParquet 1.1.0、WKB、显式 PROJJSON 和可选逐行 bbox；GeoJSON 使用 Driver 专用 Writer 生成唯一 RFC 7946 FeatureCollection，限 EPSG:4326 + XY 且达到 1.8GB 时失败。Shapefile/GeoJSON 制品先完整上传运行级临时前缀，再按冲突策略提交，`_SUCCESS` 始终最后写入；GeoParquet 复用 Spark/Hadoop 目录提交。S3 `OVERWRITE` 均不是原子替换。
+- `OVERWRITE`：普通关系型 JDBC 数据库均使用 `TRUNCATE TABLE` 后 append/受控批量 INSERT，
+  不 drop/recreate，也不承诺两个步骤为原子事务；TDengine 不支持普通 JDBC 输出。外键、权限、
+  ClickHouse 集群表及数据库版本造成的 TRUNCATE 失败由真实运行返回 JDBC 错误。
 
 Task Engine、Local Runner 和 Cluster Runner 在创建 SparkContext 前固定启用 Sedona 1.9.0、
 Kryo serializer 和 `SedonaKryoRegistrator`；每个 child SparkSession 都调用
@@ -175,9 +187,9 @@ Geometry Output 写入前通过 `data-scalpel-dialect` 读取生成写入 SQL �
 Geometry 字段或有效本地 SRID不可用时返回 `SPATIAL_TARGET_METADATA_UNAVAILABLE`；其余问题
 由真实写入结果判断。
 
-空间执行第一阶段只支持 PostgreSQL/PostGIS、MySQL 8、EPSG 和 XY。Canvas `1.21` 的四个
-空间基础 Processor 与 Canvas `1.22` 的修复、缓冲、拆分 Processor 同时支持有界和无界
-Dataset，完整继承来源的事件时间和 Watermark；Canvas `1.23` 的空间裁剪与空间聚合只接受
+空间执行第一阶段只支持 PostgreSQL/PostGIS、MySQL 8、EPSG 和 XY。Canvas `4.0` 的空间
+基础、修复、缓冲、拆分 Processor 同时支持有界和无界 Dataset，完整继承来源的事件时间和
+Watermark；空间裁剪与空间聚合只接受
 BOUNDED Dataset，输出同为 BOUNDED 并清空事件时间和 Watermark。所有空间 Processor 的
 Compiler 都只构造零行计划，不读取真实 Geometry。普通节点可以透明携带 Geometry，但普通
 Join 条件、排序/分区键、聚合/分组键、去重键和 Geometry/标量 Cast 均被拒绝；CSV、JSON
@@ -191,11 +203,13 @@ SHP/GDB 空间输入第一阶段使用单 Spark 分区，支持继续连接 `SPA
 
 Join 等 Processor 的兼容性只以共享 Operator 建立的真实 Spark 表达式及 Analyzer 结果为准，不按平台字段类型另建兼容矩阵或风险警告；Analyzer 接受即通过，拒绝才阻止任务。Output 继续使用专用的轻量转换风险策略：安全转换自动 Cast 且不提示，Spark 支持但可能因实际值失败的转换产生预检警告并继续发布/执行，Analyzer 不支持的 Cast 才阻止任务。Runner 保持 ANSI 模式，风险转换遇到非法值、溢出或精度问题时明确失败，不静默转成 null。
 
+Processor 允许没有下游出边。Compiler 仍构造并分析该节点的惰性 Dataset 计划、返回可用输出 Schema，同时产生 `UNCONSUMED_PROCESSOR_OUTPUT` 警告；Runner 不会因为悬空结果额外触发 Spark Action，也不会为其创建写入或 StreamingQuery。共享上游仍可能因其他有效输出链路或既有输入缓存语义而执行，但悬空 Processor 结果不会被消费，也不影响同一任务中的其他输出链路。实时任务如果整张图没有任何可启动的 Output，仍以 `STREAMING_OUTPUT_REQUIRED` 拒绝运行。
+
 普通输出通过 `Dataset.observe` 在同一次写入计划中采集输出行数，不为日志或统计单独触发 `count()`。Snapshot Sync 为执行规模和 Key 安全校验显式缓存并统计来源，结构化指标来自已提交 ChangeSet。多个 Output 按稳定拓扑顺序执行，先前成功写入不会因后续失败回滚；不同目标表或不同数据源之间没有分布式事务。JDBC OVERWRITE 先执行 `TRUNCATE`；普通 Spark 文件输出由 Spark 处理目标目录，Shapefile 则先完成本地与 S3 临时制品，提交阶段才删除目标前缀。后续失败可能留下空目标或部分数据，因此真实运行不自动重试，页面在提交真实运行前必须明确提示该风险。
 
 外部 S3 使用 `fs.s3a.bucket.<bucket>.*` 的 bucket 级 Hadoop 配置，不读取或覆盖平台 Spark 的默认 S3 连接。相同 bucket 在单次任务中不得出现 endpoint、region、path-style 或凭据不同的配置，也不得与平台文件输入存储发生同 bucket 配置冲突。执行身份至少需要目标前缀的列举、写入、删除和分片上传权限。
 
-Runner 的 `result.json` 固定使用 `schemaVersion: 3`，Dispatcher 兼容读取 v2/v3 并拒绝更早版本。`NodeExecutionResult.metrics` 是可空判别联合；成功的 Snapshot Sync 节点写入 `SNAPSHOT_SYNC` 指标，包含来源、目标、新增、更新、删除、未变化和保留目标独有行数。`rowsWritten` 及顶层 `affectedRows` 使用已提交的新增、更新、删除之和；失败或回滚不返回成功指标。所有 Input、Processor 和 Output 分别以 `READ`、`PROCESS`、`WRITE` 阶段记录节点开始、成功或失败；失败结果保留此前已完成的节点，并让顶层错误与失败节点错误共享同一个诊断 ID。结构化错误包含稳定错误码、类别、可重试标记、节点身份、SQLState和诊断 ID，不包含异常堆栈。
+Runner 的 `result.json` 当前固定使用 `schemaVersion: 7`，Dispatcher 兼容读取 v2～v7 并拒绝更早或未知版本。一个 Canvas 节点在 `nodeResults` 中只能出现一次。普通 JDBC、模型和文件多目标 Output 使用 `OUTPUT_WRITES` 指标，按稳定 `writeId` 保存每条写入的来源表、安全目标名称、终态、影响行数和错误码；全部成功时节点为 `SUCCESS`，中途失败时已提交项为 `SUCCESS`、当前项为 `FAILED`、同节点后续项为 `SKIPPED`。节点及任务影响行数是已成功提交项之和，只要任一成功项行数未知则为 `null`；失败不回滚已经提交的目标。成功的 Snapshot Sync 节点继续写入 `SNAPSHOT_SYNC` 指标，包含来源、目标、新增、更新、删除、未变化和保留目标独有行数，失败或回滚不返回成功指标。所有 Input、Processor 和 Output 分别以 `READ`、`PROCESS`、`WRITE` 阶段记录节点开始、成功或失败；普通多目标 Output 每个节点只记录一次节点生命周期，逐写入过程使用携带 `writeId` 的安全事件。失败结果保留此前已完成的节点，并让顶层错误、失败节点错误和失败写入错误码保持一致。结构化错误包含稳定错误码、类别、可重试标记、节点身份、SQLState和诊断 ID，不包含异常堆栈。
 
 HTTP API 请求在最终 URL、Header 和 Body 确定后签名，每页和每次重试重新生成时间戳、Nonce 和签名。OAuth2 Client Credentials 或自定义 Token Endpoint 的 Token 按有效期缓存；业务请求返回 `401/403` 时最多刷新并重试一次。同步分页支持页码、Offset/Limit、Cursor 和 Next URL；异步接口先提交并轮询，只有成功后才进入结果读取及分页。最大页数、行数、响应字节数、持续时间和重复游标/URL检测都是硬限制。
 
@@ -205,7 +219,8 @@ HTTP API 批次的 Local Checkpoint 用于限制 Driver 堆占用，不是容错
 
 ## 6. 管理端运行观察
 
-Canvas 与 LOCAL_SQL 共用任务运行记录和详情入口。活动状态包括 `QUEUED`、`RUNNING`、`CANCEL_REQUESTED`，详情页每 2 秒刷新；终态停止详情轮询，任务运行列表在无活动实例时降低到每 10 秒刷新。
+Canvas 与 LOCAL_SQL 共用任务运行记录和详情入口。活动状态包括 `QUEUED`、`RUNNING`、
+`CANCEL_REQUESTED`、`STOP_REQUESTED`，详情页每 2 秒刷新；终态停止详情轮询，任务运行列表在无活动实例时降低到每 10 秒刷新。
 
 `task_run` 为 Spark Canvas 保存结构化错误列：错误码、类别、可重试标记、阶段、SQLState、节点 ID/类型/名称和诊断 ID。现有 `message/error_detail` 继续服务 LOCAL_SQL 和通用错误表达。运行详情优先展示结构化错误，不展示 Java 调用栈；用户仍可下载原始 `result.json` 和经过脱敏的控制台日志。
 
@@ -215,7 +230,19 @@ Canvas 与 LOCAL_SQL 共用任务运行记录和详情入口。活动状态包�
 POST /api/v1/task-runs/{runId}/actions/cancel
 ```
 
-`CANCEL_REQUESTED`重复取消幂等；终态或不支持外部取消的运行返回 `409`。制品接口为：
+`CANCEL_REQUESTED`重复取消幂等；终态或不支持外部取消的运行返回 `409`。
+
+取消中或实时停止中的运行允许升级为强制终止：
+
+```http
+POST /api/v1/task-runs/{runId}/actions/force-terminate
+```
+
+该操作要求 `task.execute`，通过独立 Kafka 命令让 Dispatcher 立即杀死 Spark Application，不能只修改
+`task_run` 状态。确认终止后记录为 `CANCELLED`；Backend 终态无法确认时记录为 `FAILED`，避免运行记录
+无限停留在请求状态。
+
+制品接口为：
 
 ```http
 GET /api/v1/task-runs/{runId}/artifacts/result

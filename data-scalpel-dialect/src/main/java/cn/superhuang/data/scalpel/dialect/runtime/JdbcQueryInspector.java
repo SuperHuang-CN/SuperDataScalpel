@@ -86,10 +86,10 @@ public final class JdbcQueryInspector {
                         // Some drivers do not expose a JDBC statement timeout.
                     }
                     ResultSetMetaData metadata = statement.getMetaData();
-                    if (metadata != null) {
+                    if (metadata != null && !dialect.queryMetadataRequiresExecution()) {
                         return JdbcQueryMetadata.inspect(metadata, dialect);
                     }
-                    if (!allowExecutionFallback) {
+                    if (!allowExecutionFallback && !dialect.queryMetadataRequiresExecution()) {
                         throw new SQLException("JDBC driver did not provide prepared query metadata");
                     }
                     try (ResultSet resultSet = statement.executeQuery()) {

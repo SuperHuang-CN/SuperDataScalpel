@@ -12,18 +12,19 @@ import java.util.Map;
 record NodeCompileOutput(
         Map<String, SparkCanvasTable> propagatedTables,
         List<CanvasTableSchema> displayedOutputTables,
-        CanvasLineageOutputCandidate lineageOutputCandidate
+        List<CanvasLineageOutputCandidate> lineageOutputCandidates
 ) {
     NodeCompileOutput {
         propagatedTables = Collections.unmodifiableMap(new LinkedHashMap<>(propagatedTables));
         displayedOutputTables = List.copyOf(displayedOutputTables);
+        lineageOutputCandidates = lineageOutputCandidates == null ? List.of() : List.copyOf(lineageOutputCandidates);
     }
 
     static NodeCompileOutput invalid(List<CanvasTableSchema> displayedOutputTables) {
-        return new NodeCompileOutput(Map.of(), displayedOutputTables, null);
+        return new NodeCompileOutput(Map.of(), displayedOutputTables, List.of());
     }
 
     static NodeCompileOutput outputOnly() {
-        return new NodeCompileOutput(Map.of(), List.of(), null);
+        return new NodeCompileOutput(Map.of(), List.of(), List.of());
     }
 }

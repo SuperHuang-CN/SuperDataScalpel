@@ -11,44 +11,49 @@ import java.util.Map;
 public record CanvasNodeOperationResult(
         Map<String, SparkCanvasTable> propagatedTables,
         List<CanvasTableSchema> displayedOutputTables,
-        CanvasLineageOutputCandidate lineageOutputCandidate,
-        CanvasPreparedOutput preparedOutput,
+        List<CanvasLineageOutputCandidate> lineageOutputCandidates,
+        List<CanvasPreparedOutput> preparedOutputs,
         CanvasPreparedSnapshotSyncOutput preparedSnapshotSyncOutput,
-        CanvasPreparedKafkaOutput preparedKafkaOutput,
-        CanvasPreparedFileOutput preparedFileOutput
+        List<CanvasPreparedKafkaOutput> preparedKafkaOutputs,
+        List<CanvasPreparedFileOutput> preparedFileOutputs
 ) {
     public CanvasNodeOperationResult {
         propagatedTables = Collections.unmodifiableMap(new LinkedHashMap<>(propagatedTables));
         displayedOutputTables = List.copyOf(displayedOutputTables);
+        lineageOutputCandidates = lineageOutputCandidates == null ? List.of() : List.copyOf(lineageOutputCandidates);
+        preparedOutputs = preparedOutputs == null ? List.of() : List.copyOf(preparedOutputs);
+        preparedKafkaOutputs = preparedKafkaOutputs == null ? List.of() : List.copyOf(preparedKafkaOutputs);
+        preparedFileOutputs = preparedFileOutputs == null ? List.of() : List.copyOf(preparedFileOutputs);
     }
 
     public static CanvasNodeOperationResult propagated(
             Map<String, SparkCanvasTable> tables,
             List<CanvasTableSchema> displayedOutputTables
     ) {
-        return new CanvasNodeOperationResult(tables, displayedOutputTables, null, null, null, null, null);
+        return new CanvasNodeOperationResult(tables, displayedOutputTables, List.of(), List.of(), null, List.of(), List.of());
     }
 
     public static CanvasNodeOperationResult invalid(List<CanvasTableSchema> displayedOutputTables) {
-        return new CanvasNodeOperationResult(Map.of(), displayedOutputTables, null, null, null, null, null);
+        return new CanvasNodeOperationResult(Map.of(), displayedOutputTables, List.of(), List.of(), null, List.of(), List.of());
     }
 
     public static CanvasNodeOperationResult output(CanvasPreparedOutput preparedOutput) {
-        return new CanvasNodeOperationResult(Map.of(), List.of(), null, preparedOutput, null, null, null);
+        return new CanvasNodeOperationResult(Map.of(), List.of(), List.of(),
+                preparedOutput == null ? List.of() : List.of(preparedOutput), null, List.of(), List.of());
     }
 
     public static CanvasNodeOperationResult output(
             CanvasPreparedOutput preparedOutput,
-            CanvasLineageOutputCandidate lineageOutputCandidate
+        CanvasLineageOutputCandidate lineageOutputCandidate
     ) {
         return new CanvasNodeOperationResult(
-                Map.of(), List.of(), lineageOutputCandidate, preparedOutput, null, null, null);
+                Map.of(), List.of(), singleOrEmpty(lineageOutputCandidate), singleOrEmpty(preparedOutput), null, List.of(), List.of());
     }
 
     public static CanvasNodeOperationResult snapshotSyncOutput(
             CanvasPreparedSnapshotSyncOutput preparedOutput
     ) {
-        return new CanvasNodeOperationResult(Map.of(), List.of(), null, null, preparedOutput, null, null);
+        return new CanvasNodeOperationResult(Map.of(), List.of(), List.of(), List.of(), preparedOutput, List.of(), List.of());
     }
 
     public static CanvasNodeOperationResult snapshotSyncOutput(
@@ -56,34 +61,64 @@ public record CanvasNodeOperationResult(
             CanvasLineageOutputCandidate lineageOutputCandidate
     ) {
         return new CanvasNodeOperationResult(
-                Map.of(), List.of(), lineageOutputCandidate, null, preparedOutput, null, null);
+                Map.of(), List.of(), List.of(lineageOutputCandidate), List.of(), preparedOutput, List.of(), List.of());
     }
 
     public static CanvasNodeOperationResult kafkaOutput(CanvasPreparedKafkaOutput preparedOutput) {
-        return new CanvasNodeOperationResult(Map.of(), List.of(), null, null, null, preparedOutput, null);
+        return new CanvasNodeOperationResult(Map.of(), List.of(), List.of(), List.of(), null,
+                preparedOutput == null ? List.of() : List.of(preparedOutput), List.of());
     }
 
     public static CanvasNodeOperationResult kafkaOutput(
             CanvasPreparedKafkaOutput preparedOutput,
-            CanvasLineageOutputCandidate lineageOutputCandidate
+        CanvasLineageOutputCandidate lineageOutputCandidate
     ) {
         return new CanvasNodeOperationResult(
-                Map.of(), List.of(), lineageOutputCandidate, null, null, preparedOutput, null);
+                Map.of(), List.of(), singleOrEmpty(lineageOutputCandidate), List.of(), null, singleOrEmpty(preparedOutput), List.of());
     }
 
     public static CanvasNodeOperationResult fileOutput(CanvasPreparedFileOutput preparedOutput) {
-        return new CanvasNodeOperationResult(Map.of(), List.of(), null, null, null, null, preparedOutput);
+        return new CanvasNodeOperationResult(Map.of(), List.of(), List.of(), List.of(), null, List.of(),
+                preparedOutput == null ? List.of() : List.of(preparedOutput));
     }
 
     public static CanvasNodeOperationResult fileOutput(
             CanvasPreparedFileOutput preparedOutput,
-            CanvasLineageOutputCandidate lineageOutputCandidate
+        CanvasLineageOutputCandidate lineageOutputCandidate
     ) {
         return new CanvasNodeOperationResult(
-                Map.of(), List.of(), lineageOutputCandidate, null, null, null, preparedOutput);
+                Map.of(), List.of(), singleOrEmpty(lineageOutputCandidate), List.of(), null, List.of(), singleOrEmpty(preparedOutput));
     }
 
     public static CanvasNodeOperationResult outputOnly() {
         return output(null);
+    }
+
+    public static CanvasNodeOperationResult outputs(
+            List<CanvasPreparedOutput> preparedOutputs,
+            List<CanvasLineageOutputCandidate> lineageOutputCandidates
+    ) {
+        return new CanvasNodeOperationResult(Map.of(), List.of(), lineageOutputCandidates, preparedOutputs,
+                null, List.of(), List.of());
+    }
+
+    public static CanvasNodeOperationResult kafkaOutputs(
+            List<CanvasPreparedKafkaOutput> preparedOutputs,
+            List<CanvasLineageOutputCandidate> lineageOutputCandidates
+    ) {
+        return new CanvasNodeOperationResult(Map.of(), List.of(), lineageOutputCandidates, List.of(),
+                null, preparedOutputs, List.of());
+    }
+
+    public static CanvasNodeOperationResult fileOutputs(
+            List<CanvasPreparedFileOutput> preparedOutputs,
+            List<CanvasLineageOutputCandidate> lineageOutputCandidates
+    ) {
+        return new CanvasNodeOperationResult(Map.of(), List.of(), lineageOutputCandidates, List.of(),
+                null, List.of(), preparedOutputs);
+    }
+
+    private static <T> List<T> singleOrEmpty(T value) {
+        return value == null ? List.of() : List.of(value);
     }
 }

@@ -337,7 +337,8 @@ class GeoParquetFileOutputWriterTest {
                         conflictPolicy, options)
         );
         return new CanvasPreparedFileOutput(
-                node, runtimeDataSource, targetUri, schema, dataset);
+                node, UUID.randomUUID().toString(), "districts", runtimeDataSource,
+                "districts", targetUri, conflictPolicy, options, schema, dataset);
     }
 
     private static CanvasColumnSchema scalar(

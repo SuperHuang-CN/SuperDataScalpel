@@ -369,6 +369,8 @@ MinIO Secret 只通过环境变量或外部配置注入，不写入注册请求�
 - SUBMITTING 无 Handle：调用 Backend `recover(identity)`；找到则保存 Handle，找不到时经过配置的提交不确定宽限期后标记 LOST，禁止盲目重提。
 - SUBMITTED/RUNNING：使用 Handle 重新观测。
 - CANCEL_REQUESTED：继续取消。
+- 已请求强制终止：持续执行 Backend 硬终止；已有外部 Handle 时最多确认 30 秒，仍无法确认则进入
+  `LOST`，并使用 `EXECUTION_TERMINATION_UNCONFIRMED` 明确结束平台侧跟踪。
 - 终态：保持不变，只允许重发尚未完成的 Outbox。
 
 ## 12. 关闭顺序
@@ -403,6 +405,12 @@ data-scalpel.dispatcher.log-max-bytes=20MB
 Token 为空拒绝启动。一个进程只能配置一个 backend，不能由单次消息选择。
 
 Backend 单次观测失败只记录首次失败时间并继续重试；连续不可观测超过 `observation-failure-grace` 才进入 `LOST`。强制反注册先切换为 `DRAINING` 并请求取消全部活动执行，只有状态在 `deactivation-timeout` 内收敛后才能变为 `INACTIVE`；超时保持 `DRAINING` 并返回冲突。
+
+任务级强制终止与强制反注册不是同一操作。前者在执行账本记录
+`force_terminate_requested_at`：Local Docker 直接 kill，YARN 使用 application kill，Kubernetes 以零宽限期
+删除 Driver 和 Executor。确认终止后发布 `EXECUTION_CANCELLED` 和
+`EXECUTION_FORCE_TERMINATED`；确认超时则发布 `EXECUTION_LOST`，不得永久停留在
+`CANCEL_REQUESTED`。
 
 ## 14. 测试计划
 

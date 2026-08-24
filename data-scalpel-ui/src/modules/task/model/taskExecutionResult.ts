@@ -17,13 +17,31 @@ export interface SnapshotSyncExecutionMetrics {
   retainedTargetOnlyRows: number;
 }
 
+export type OutputWriteExecutionState = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'SKIPPED';
+
+export interface OutputWriteExecutionResult {
+  writeId: string;
+  sourceTableName: string;
+  targetDisplayName: string;
+  state: OutputWriteExecutionState;
+  affectedRows: number | null;
+  errorCode: string | null;
+}
+
+export interface OutputWritesExecutionMetrics {
+  kind: 'OUTPUT_WRITES';
+  writes: OutputWriteExecutionResult[];
+}
+
+export type TaskExecutionNodeMetrics = SnapshotSyncExecutionMetrics | OutputWritesExecutionMetrics;
+
 export interface TaskExecutionNodeResult {
   nodeId: string;
   nodeType: string;
   nodeName: string;
   state: 'SUCCESS' | 'FAILED';
   rowsWritten: number | null;
-  metrics: SnapshotSyncExecutionMetrics | null;
+  metrics: TaskExecutionNodeMetrics | null;
 }
 
 export interface QualityViolationMetric {
@@ -115,7 +133,7 @@ export interface QualityRuleTechnicalFailure {
 }
 
 export interface TaskExecutionResultArtifact {
-  schemaVersion: 2 | 3 | 4 | 5 | 6;
+  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7;
   taskType: 'SPARK_CANVAS' | 'SPARK_MODEL_QUALITY' | 'SPARK_JAR';
   nodeResults: TaskExecutionNodeResult[];
   qualityResult: ModelQualityExecutionResult | null;
@@ -257,41 +275,108 @@ const parseSnapshotMetrics = (value: unknown): SnapshotSyncExecutionMetrics | nu
   return metrics;
 };
 
+const parseOutputWritesMetrics = (value: unknown): OutputWritesExecutionMetrics | null => {
+  if (!isRecord(value) || value.kind !== 'OUTPUT_WRITES') return null;
+  if (!Array.isArray(value.writes) || value.writes.length === 0) {
+    throw new Error('输出逐写入指标不能为空');
+  }
+  const writeIds = new Set<string>();
+  let failed = false;
+  const writes = value.writes.map((write, index): OutputWriteExecutionResult => {
+    if (!isRecord(write) || typeof write.writeId !== 'string'
+      || !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(write.writeId)
+      || writeIds.has(write.writeId.toLowerCase()) || typeof write.sourceTableName !== 'string'
+      || write.sourceTableName.trim().length < 1 || write.sourceTableName.length > 256
+      || typeof write.targetDisplayName !== 'string' || write.targetDisplayName.trim().length < 1
+      || write.targetDisplayName.length > 1_024
+      || write.state !== 'PENDING' && write.state !== 'RUNNING' && write.state !== 'SUCCESS'
+        && write.state !== 'FAILED' && write.state !== 'SKIPPED'
+      || write.affectedRows !== null && !nonNegativeInteger(write.affectedRows)
+      || write.errorCode !== null && (typeof write.errorCode !== 'string'
+        || !/^[A-Z][A-Z0-9_]{0,99}$/.test(write.errorCode))) {
+      throw new Error(`输出写入指标 ${index + 1} 格式无效`);
+    }
+    writeIds.add(write.writeId.toLowerCase());
+    if (write.state === 'PENDING' || write.state === 'RUNNING') {
+      throw new Error('终态结果不能包含未完成写入');
+    }
+    if (write.state === 'SUCCESS') {
+      if (failed || write.errorCode !== null) throw new Error('输出逐写入顺序无效');
+    } else if (write.state === 'FAILED') {
+      if (failed || write.affectedRows !== null || write.errorCode === null) {
+        throw new Error('失败写入指标无效');
+      }
+      failed = true;
+    } else if (!failed || write.affectedRows !== null || write.errorCode !== null) {
+      throw new Error('跳过写入指标无效');
+    }
+    return write as unknown as OutputWriteExecutionResult;
+  });
+  return { kind: 'OUTPUT_WRITES', writes };
+};
+
 const parseNodeResults = (
   value: unknown,
-  schemaVersion: 2 | 3 | 4 | 5 | 6,
+  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7,
 ): TaskExecutionNodeResult[] => {
   if (!Array.isArray(value)) throw new Error('执行结果节点列表格式无效');
+  const nodeIds = new Set<string>();
   return value.map((item, index): TaskExecutionNodeResult => {
     if (!isRecord(item)
       || typeof item.nodeId !== 'string'
+      || item.nodeId.trim().length < 1
       || typeof item.nodeType !== 'string'
+      || item.nodeType.trim().length < 1
       || typeof item.nodeName !== 'string'
+      || item.nodeName.trim().length < 1
       || item.state !== 'SUCCESS' && item.state !== 'FAILED'
-      || item.rowsWritten !== null && !nonNegativeInteger(item.rowsWritten)) {
+      || item.rowsWritten !== null && !nonNegativeInteger(item.rowsWritten)
+      || nodeIds.has(item.nodeId.toLowerCase())) {
       throw new Error(`执行结果节点 ${index + 1} 格式无效`);
     }
+    nodeIds.add(item.nodeId.toLowerCase());
     if (schemaVersion === 2 && item.metrics !== undefined && item.metrics !== null) {
       throw new Error('Result v2 不应包含节点结构化指标');
     }
     const hasMetrics = item.metrics !== undefined && item.metrics !== null;
-    const metrics = schemaVersion >= 3 ? parseSnapshotMetrics(item.metrics) : null;
+    const snapshotMetrics = schemaVersion >= 3 ? parseSnapshotMetrics(item.metrics) : null;
+    const outputMetrics = schemaVersion === 7 ? parseOutputWritesMetrics(item.metrics) : null;
+    const metrics = snapshotMetrics ?? outputMetrics;
     const snapshotNode = item.nodeType === 'JDBC_SNAPSHOT_SYNC_OUTPUT'
       || item.nodeType === 'MODEL_SNAPSHOT_SYNC_OUTPUT';
     if (schemaVersion >= 3 && hasMetrics && !metrics) {
       throw new Error(`执行结果节点 ${index + 1} 包含未知指标类型`);
     }
-    if (item.state === 'FAILED' && metrics) {
-      throw new Error(`执行结果节点 ${index + 1} 失败时不能包含成功指标`);
+    if (item.state === 'FAILED' && metrics?.kind === 'SNAPSHOT_SYNC') {
+      throw new Error(`执行结果节点 ${index + 1} 失败时不能包含 Snapshot Sync 指标`);
     }
-    if (!snapshotNode && metrics) {
+    if (!snapshotNode && metrics?.kind === 'SNAPSHOT_SYNC') {
       throw new Error(`执行结果节点 ${index + 1} 不是 Snapshot Sync 节点`);
+    }
+    const ordinaryOutputNode = item.nodeType === 'JDBC_OUTPUT' || item.nodeType === 'MODEL_OUTPUT'
+      || item.nodeType === 'FILE_OUTPUT' || item.nodeType === 'KAFKA_OUTPUT';
+    if (metrics?.kind === 'OUTPUT_WRITES' && !ordinaryOutputNode) {
+      throw new Error(`执行结果节点 ${index + 1} 不是普通 Output 节点`);
     }
     if (schemaVersion >= 3 && item.state === 'SUCCESS' && snapshotNode && !metrics) {
       throw new Error(`执行结果节点 ${index + 1} 缺少 Snapshot Sync 指标`);
     }
-    if (metrics && item.rowsWritten !== metrics.insertedRows + metrics.updatedRows + metrics.deletedRows) {
+    if (metrics?.kind === 'SNAPSHOT_SYNC'
+      && item.rowsWritten !== metrics.insertedRows + metrics.updatedRows + metrics.deletedRows) {
       throw new Error(`执行结果节点 ${index + 1} 的写入行数与指标不一致`);
+    }
+    if (metrics?.kind === 'OUTPUT_WRITES') {
+      const failedWrite = metrics.writes.find((write) => write.state === 'FAILED');
+      if (item.state === 'SUCCESS' && failedWrite || item.state === 'FAILED' && !failedWrite) {
+        throw new Error(`执行结果节点 ${index + 1} 的状态与逐写入指标不一致`);
+      }
+      const successfulRows = metrics.writes.filter((write) => write.state === 'SUCCESS')
+        .map((write) => write.affectedRows);
+      const expectedRows = successfulRows.some((rows) => rows === null)
+        ? null : successfulRows.reduce<number>((total, rows) => total + (rows ?? 0), 0);
+      if (item.rowsWritten !== expectedRows) {
+        throw new Error(`执行结果节点 ${index + 1} 的写入行数与逐写入指标不一致`);
+      }
     }
     return {
       nodeId: item.nodeId,
@@ -385,7 +470,7 @@ const parseQualityMetric = (value: unknown): QualityRuleMetric => {
   throw new Error('质量规则包含未知指标类型');
 };
 
-const parseQualityResult = (value: unknown, schemaVersion: 4 | 5 | 6): ModelQualityExecutionResult => {
+const parseQualityResult = (value: unknown, schemaVersion: 4 | 5 | 6 | 7): ModelQualityExecutionResult => {
   if (!isRecord(value)
     || !Array.isArray(value.ruleResults)
     || !Array.isArray(value.skippedRuleResults)) {
@@ -498,7 +583,8 @@ const parseQualityResult = (value: unknown, schemaVersion: 4 | 5 | 6): ModelQual
 
 export const parseTaskExecutionResultArtifact = (value: unknown): TaskExecutionResultArtifact => {
   if (!isRecord(value) || value.schemaVersion !== 2 && value.schemaVersion !== 3
-    && value.schemaVersion !== 4 && value.schemaVersion !== 5 && value.schemaVersion !== 6) {
+    && value.schemaVersion !== 4 && value.schemaVersion !== 5
+    && value.schemaVersion !== 6 && value.schemaVersion !== 7) {
     throw new Error('执行结果制品版本或结构不受支持');
   }
   const schemaVersion = value.schemaVersion;
@@ -514,11 +600,12 @@ export const parseTaskExecutionResultArtifact = (value: unknown): TaskExecutionR
       userJobObservability: null,
     };
   }
-  if (schemaVersion !== 4 && schemaVersion !== 5 && schemaVersion !== 6) {
+  if (schemaVersion !== 4 && schemaVersion !== 5
+    && schemaVersion !== 6 && schemaVersion !== 7) {
     throw new Error('模型质检结果版本无效');
   }
   if (value.taskType === 'SPARK_MODEL_QUALITY') {
-    if (schemaVersion === 6 && value.userJobObservability !== null
+    if (schemaVersion >= 6 && value.userJobObservability !== null
       && value.userJobObservability !== undefined) {
       throw new Error('模型质检结果不能包含用户作业观测载荷');
     }
@@ -555,7 +642,7 @@ export const parseTaskExecutionResultArtifact = (value: unknown): TaskExecutionR
       taskType: 'SPARK_JAR',
       nodeResults: [],
       qualityResult: null,
-      userJobObservability: schemaVersion === 6
+      userJobObservability: schemaVersion >= 6
         ? parseUserJobObservability(value.userJobObservability)
         : null,
     };
@@ -563,7 +650,7 @@ export const parseTaskExecutionResultArtifact = (value: unknown): TaskExecutionR
   if (value.taskType !== 'SPARK_CANVAS' || value.qualityResult !== null && value.qualityResult !== undefined) {
     throw new Error('Canvas 结果载荷与任务类型不一致');
   }
-  if (schemaVersion === 6 && value.userJobObservability !== null
+  if (schemaVersion >= 6 && value.userJobObservability !== null
     && value.userJobObservability !== undefined) {
     throw new Error('Canvas结果不能包含用户作业观测载荷');
   }

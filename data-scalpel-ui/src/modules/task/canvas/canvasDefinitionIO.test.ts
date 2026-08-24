@@ -29,16 +29,215 @@ describe('canvas definition import and export', () => {
     if (parsed.success) expect(parsed.definition).toEqual(definition);
   });
 
-  it('rejects previous majors and future minors before parsing node configurations', () => {
-    const previousMajor = parseCanvasDefinitionJson(JSON.stringify({
-      schemaVersion: 1,
-      schemaMinorVersion: 28,
-      nodes: [{ type: 'LEGACY_NODE_WITH_UNKNOWN_CONFIGURATION' }],
+  it('round-trips SQL Transform drafts and rejects them in Canvas 4.0', () => {
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: CanvasNodeType.SqlTransform,
+        name: 'SQL 处理',
+        layout: { x: 80, y: 80, width: 320, height: 120 },
+        configuration: { outputTableName: '', sql: '' },
+      }],
       edges: [],
-    }));
-    expect(previousMajor).toEqual({
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
+      success: true,
+      definition,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      schemaMinorVersion: 0,
+    }))).toEqual(expect.objectContaining({
       success: false,
-      errors: [`schemaVersion 仅支持 ${CANVAS_SCHEMA_VERSION}`],
+      errors: expect.arrayContaining(['SQL_TRANSFORM 从 Canvas 4.1 开始支持']),
+    }));
+  });
+
+  it('normalizes missing Stream Join output columns and rejects malformed values', () => {
+    const source = JSON.parse(formatCanvasDefinition(exampleStreamingCanvasTopologyDefinition())) as {
+      nodes: Array<{ type: string; configuration: Record<string, unknown> }>;
+    };
+    const streamJoinIndex = source.nodes.findIndex((node) => node.type === CanvasNodeType.StreamJoin);
+    const streamJoin = source.nodes[streamJoinIndex];
+    expect(streamJoin).toBeDefined();
+    if (!streamJoin) return;
+
+    delete streamJoin.configuration.outputColumns;
+    const normalized = parseCanvasDefinitionJson(JSON.stringify(source));
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      const parsedJoin = normalized.definition.nodes.find(
+        (node) => node.type === CanvasNodeType.StreamJoin,
+      );
+      expect(parsedJoin?.configuration.outputColumns).toEqual([]);
+    }
+
+    streamJoin.configuration.outputColumns = 'invalid';
+    const malformed = parseCanvasDefinitionJson(JSON.stringify(source));
+    expect(malformed.success).toBe(false);
+    if (!malformed.success) {
+      expect(malformed.errors).toContain(
+        `nodes[${streamJoinIndex}].configuration.outputColumns 必须是数组`,
+      );
+    }
+  });
+
+  it('round-trips runtime value derivations and rejects unknown values', () => {
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: CanvasNodeType.DeriveColumns,
+        name: '派生技术字段',
+        layout: { x: 80, y: 80, width: 352, height: 224 },
+        configuration: {
+          globalDerivations: [{
+            targetColumnName: 'etl_batch_id',
+            expression: { kind: 'RUNTIME_VALUE', value: 'EXECUTION_ID' },
+          }],
+          operations: [{
+            operationId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'orders',
+            output: { mode: 'REPLACE_SOURCE', outputTableName: null },
+            derivations: [{
+              targetColumnName: 'etl_loaded_at',
+              expression: { kind: 'RUNTIME_VALUE', value: 'EXECUTION_STARTED_AT' },
+            }],
+          }],
+        },
+      }],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
+      success: true,
+      definition,
+    });
+    const invalid = parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      nodes: [{
+        ...definition.nodes[0],
+        configuration: {
+          ...definition.nodes[0].configuration,
+          globalDerivations: [{
+            ...definition.nodes[0].configuration.globalDerivations[0],
+            expression: { kind: 'RUNTIME_VALUE', value: 'CURRENT_TIMESTAMP' },
+          }],
+        },
+      }],
+    }));
+    expect(invalid.success).toBe(false);
+    if (!invalid.success) expect(invalid.errors).toContain(
+      'nodes[0].configuration.globalDerivations[0].expression.value 不是受支持的运行时变量',
+    );
+
+    const legacyWriteMode = parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      nodes: [{
+        ...definition.nodes[0],
+        configuration: {
+          ...definition.nodes[0].configuration,
+          globalDerivations: [{
+            ...definition.nodes[0].configuration.globalDerivations[0],
+            replaceExisting: false,
+          }],
+        },
+      }],
+    }));
+    expect(legacyWriteMode.success).toBe(false);
+    if (!legacyWriteMode.success) expect(legacyWriteMode.errors).toContain(
+      'nodes[0].configuration.globalDerivations[0].replaceExisting 已不再支持；派生字段会按目标字段名自动新增或覆盖',
+    );
+  });
+
+  it('round-trips ordered JDBC input table selections', () => {
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: CanvasNodeType.JdbcInput,
+        name: '业务库输入',
+        layout: { x: 80, y: 80, width: 344, height: 250 },
+        configuration: {
+          dataSourceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          tables: [
+            { tableName: 'orders', readOptions: [] },
+            { tableName: 'customers', readOptions: [] },
+          ],
+        },
+      }],
+      edges: [],
+    };
+
+    const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
+
+    expect(parsed).toEqual({ success: true, definition });
+    if (parsed.success) {
+      expect(parsed.definition.nodes[0]?.configuration).not.toHaveProperty('tableName');
+    }
+  });
+
+  it('normalizes 3.0 JDBC input selections and gates advanced read options to 3.1', () => {
+    const legacy = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: 0,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: CanvasNodeType.JdbcInput,
+        name: '业务库输入',
+        layout: { x: 80, y: 80, width: 344, height: 250 },
+        configuration: {
+          dataSourceId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+          tables: [{ tableName: 'orders' }],
+        },
+      }],
+      edges: [],
+    };
+
+    const normalized = parseCanvasDefinitionJson(JSON.stringify(legacy));
+    expect(normalized.success).toBe(true);
+    if (normalized.success) {
+      expect(normalized.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+      const jdbcInput = normalized.definition.nodes[0];
+      expect(jdbcInput?.type).toBe(CanvasNodeType.JdbcInput);
+      if (jdbcInput?.type === CanvasNodeType.JdbcInput) {
+        expect(jdbcInput.configuration.tables[0]?.readOptions).toEqual([]);
+      }
+    }
+
+    const incompatible = parseCanvasDefinitionJson(JSON.stringify({
+      ...legacy,
+      nodes: [{
+        ...legacy.nodes[0],
+        configuration: {
+          ...legacy.nodes[0].configuration,
+          tables: [{
+            tableName: 'orders',
+            readOptions: [{ name: 'fetchsize', value: '1000' }],
+          }],
+        },
+      }],
+    }));
+    expect(incompatible).toEqual({
+      success: false,
+      errors: [`JDBC_INPUT.readOptions 从 Canvas ${CANVAS_SCHEMA_VERSION}.1 开始支持`],
+    });
+  });
+
+  it('rejects previous majors and future minors before parsing node configurations', () => {
+    [1, 2].forEach((schemaVersion) => {
+      const previousMajor = parseCanvasDefinitionJson(JSON.stringify({
+        schemaVersion,
+        schemaMinorVersion: 28,
+        nodes: [{ type: 'LEGACY_NODE_WITH_UNKNOWN_CONFIGURATION' }],
+        edges: [],
+      }));
+      expect(previousMajor.success).toBe(false);
     });
 
     const futureMinor = parseCanvasDefinitionJson(JSON.stringify({
@@ -50,7 +249,7 @@ describe('canvas definition import and export', () => {
     expect(futureMinor.success).toBe(false);
   });
 
-  it('requires Canvas 2.3 for MODEL_OUTPUT UPSERT', () => {
+  it('round-trips MODEL_OUTPUT UPSERT in Canvas 3.0', () => {
     const modelOutput = {
       id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
       type: CanvasNodeType.ModelOutput,
@@ -63,12 +262,6 @@ describe('canvas definition import and export', () => {
         columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
       },
     };
-    const previous = parseCanvasDefinitionJson(JSON.stringify({
-      schemaVersion: CANVAS_SCHEMA_VERSION,
-      schemaMinorVersion: 2,
-      nodes: [modelOutput],
-      edges: [],
-    }));
     const current = parseCanvasDefinitionJson(JSON.stringify({
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -76,43 +269,12 @@ describe('canvas definition import and export', () => {
       edges: [],
     }));
 
-    expect(previous.success).toBe(false);
-    if (!previous.success) {
-      expect(previous.errors).toContain('MODEL_OUTPUT UPSERT 从 Canvas 2.3 开始支持');
-    }
     expect(current.success).toBe(true);
   });
 
-  it('loads Canvas 2.0 through 2.2 MODEL_OUTPUT definitions without UPSERT and normalizes them to 2.3', () => {
-    for (const schemaMinorVersion of [0, 1, 2]) {
-      const parsed = parseCanvasDefinitionJson(JSON.stringify({
-        schemaVersion: CANVAS_SCHEMA_VERSION,
-        schemaMinorVersion,
-        nodes: [{
-          id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
-          type: CanvasNodeType.ModelOutput,
-          name: '模型输出',
-          layout: { x: 0, y: 0, width: 240, height: 120 },
-          configuration: {
-            sourceTableName: 'orders',
-            targetModelId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-            writeMode: 'APPEND',
-            columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
-          },
-        }],
-        edges: [],
-      }));
-
-      expect(parsed.success).toBe(true);
-      if (parsed.success) {
-        expect(parsed.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
-      }
-    }
-  });
-
-  it('round-trips all Canvas 1.21 spatial foundation node configurations', () => {
+  it('round-trips spatial foundation node configurations in Canvas 3.0', () => {
     const definition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [
         {
@@ -200,9 +362,9 @@ describe('canvas definition import and export', () => {
     expect(JSON.parse(formatCanvasDefinition(parsed.definition))).toEqual(definition);
   });
 
-  it('round-trips all Canvas 1.22 spatial enrichment node configurations', () => {
+  it('round-trips spatial enrichment node configurations in Canvas 3.0', () => {
     const definition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [
         {
@@ -260,9 +422,9 @@ describe('canvas definition import and export', () => {
     expect(JSON.parse(formatCanvasDefinition(parsed.definition))).toEqual(definition);
   });
 
-  it('round-trips Canvas 1.23 spatial clip and aggregate configurations', () => {
+  it('round-trips spatial clip and aggregate configurations in Canvas 3.0', () => {
     const definition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [
         {
@@ -316,16 +478,9 @@ describe('canvas definition import and export', () => {
     ]);
     expect(JSON.parse(formatCanvasDefinition(parsed.definition))).toEqual(definition);
 
-    const incompatible = { ...definition, schemaMinorVersion: 22 };
-    const incompatibleResult = parseCanvasDefinitionJson(JSON.stringify(incompatible));
-    expect(incompatibleResult.success).toBe(false);
-    if (!incompatibleResult.success) {
-      expect(incompatibleResult.errors).toContain('SPATIAL_CLIP 从 Canvas 1.23 开始支持');
-      expect(incompatibleResult.errors).toContain('SPATIAL_AGGREGATE 从 Canvas 1.23 开始支持');
-    }
   });
 
-  it('round-trips Canvas 2.0 JDBC query input and JDBC output UPSERT', () => {
+  it('round-trips JDBC query input and JDBC output UPSERT in Canvas 3.0', () => {
     const definition = {
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -416,7 +571,7 @@ describe('canvas definition import and export', () => {
 
   it('rejects unsupported spatial aggregation kinds', () => {
     const definition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '11111111-1111-4111-8111-111111111111',
@@ -442,7 +597,7 @@ describe('canvas definition import and export', () => {
 
   it('rejects unknown spatial discriminators and serialization formats', () => {
     const definition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '11111111-1111-4111-8111-111111111111',
@@ -463,7 +618,7 @@ describe('canvas definition import and export', () => {
     expect(parseCanvasDefinitionJson(JSON.stringify(definition)).success).toBe(false);
   });
 
-  it('reads legacy 1.0 definitions and normalizes them to the current writer version', () => {
+  it('reads current definitions without an explicit minor and normalizes them to 3.0', () => {
     const legacy = JSON.parse(formatCanvasDefinition(exampleCanvasDefinition())) as Record<string, unknown>;
     delete legacy.schemaMinorVersion;
 
@@ -471,20 +626,20 @@ describe('canvas definition import and export', () => {
 
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
-    expect(parsed.definition.schemaVersion).toBe(1);
+    expect(parsed.definition.schemaVersion).toBe(CANVAS_SCHEMA_VERSION);
     expect(parsed.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
     expect(formatCanvasDefinition(parsed.definition))
       .toContain(`"schemaMinorVersion": ${CANVAS_SCHEMA_MINOR_VERSION}`);
   });
 
-  it('normalizes legacy nested table identifiers to data-source-scoped table names', () => {
+  it('does not infer JDBC input selections from legacy nested identifiers', () => {
     const legacy = JSON.parse(formatCanvasDefinition(exampleCanvasDefinition())) as {
       nodes: Array<{ type: string; configuration: Record<string, unknown> }>;
     };
     const input = legacy.nodes.find((node) => node.type === CanvasNodeType.JdbcInput);
     const output = legacy.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
     if (!input || !output) return;
-    delete input.configuration.tableName;
+    delete input.configuration.tables;
     input.configuration.table = { catalogName: 'demo', schemaName: 'public', tableName: 'orders' };
     delete output.configuration.targetTableName;
     output.configuration.targetTable = { catalogName: 'demo', schemaName: 'dw', tableName: 'dwd_order_customer' };
@@ -495,7 +650,7 @@ describe('canvas definition import and export', () => {
     if (!parsed.success) return;
     const parsedInput = parsed.definition.nodes.find((node) => node.type === CanvasNodeType.JdbcInput);
     const parsedOutput = parsed.definition.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
-    expect(parsedInput?.configuration.tableName).toBe('orders');
+    expect(parsedInput?.configuration.tables).toEqual([]);
     expect(parsedOutput?.configuration.targetTableName).toBe('dwd_order_customer');
     expect(formatCanvasDefinition(parsed.definition)).not.toContain('catalogName');
     expect(formatCanvasDefinition(parsed.definition)).not.toContain('schemaName');
@@ -514,8 +669,8 @@ describe('canvas definition import and export', () => {
 
   it('round-trips model nodes and validates nonblank model identifiers as UUIDs', () => {
     const definition = {
-      schemaVersion: 1 as const,
-      schemaMinorVersion: 28 as const,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [
         {
           id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
@@ -547,7 +702,7 @@ describe('canvas definition import and export', () => {
     const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(parsed).toEqual({
       success: true,
-      definition: { ...definition, schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION },
+      definition,
     });
 
     definition.nodes[0].configuration.modelId = 'not-a-uuid';
@@ -558,8 +713,8 @@ describe('canvas definition import and export', () => {
 
   it('round-trips an HTTP API input with typed runtime parameters', () => {
     const definition = {
-      schemaVersion: 1 as const,
-      schemaMinorVersion: 2 as const,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
         type: CanvasNodeType.HttpApiInput,
@@ -577,7 +732,7 @@ describe('canvas definition import and export', () => {
 
     expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
       success: true,
-      definition: { ...definition, schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION },
+      definition,
     });
 
     definition.nodes[0].configuration.runtimeParameters[0].name = 'invalid name';
@@ -611,10 +766,10 @@ describe('canvas definition import and export', () => {
       schemaVersion: number;
       schemaMinorVersion: number;
     };
-    unsupportedVersion.schemaVersion = 2;
+    unsupportedVersion.schemaVersion = CANVAS_SCHEMA_VERSION - 1;
     expect(parseCanvasDefinitionJson(JSON.stringify(unsupportedVersion)).success).toBe(false);
 
-    unsupportedVersion.schemaVersion = 1;
+    unsupportedVersion.schemaVersion = CANVAS_SCHEMA_VERSION;
     unsupportedVersion.schemaMinorVersion = CANVAS_SCHEMA_MINOR_VERSION + 1;
     expect(parseCanvasDefinitionJson(JSON.stringify(unsupportedVersion)).success).toBe(false);
 
@@ -633,31 +788,10 @@ describe('canvas definition import and export', () => {
     expect(parseCanvasDefinitionJson(JSON.stringify(unsafeLayout)).success).toBe(false);
   });
 
-  it('rejects model nodes that falsely declare the legacy 1.0 capability set', () => {
-    const modelDefinition = {
-      schemaVersion: 1,
-      nodes: [{
-        id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
-        type: CanvasNodeType.ModelInput,
-        name: '模型输入',
-        layout: { x: 10, y: 20, width: 240, height: 120 },
-        configuration: { modelId: '' },
-      }],
-      edges: [],
-    };
-
-    const parsed = parseCanvasDefinitionJson(JSON.stringify(modelDefinition));
-
-    expect(parsed.success).toBe(false);
-    if (!parsed.success) {
-      expect(parsed.errors).toContain('MODEL_INPUT 从 Canvas 1.1 开始支持');
-    }
-  });
-
-  it('upgrades Rename from 1.2 to the current writer and rejects older capability sets', () => {
+  it('round-trips Rename in Canvas 3.0', () => {
     const definition = {
-      schemaVersion: 1,
-      schemaMinorVersion: 2,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
         type: CanvasNodeType.Rename,
@@ -675,49 +809,21 @@ describe('canvas definition import and export', () => {
     const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.definition).toEqual({
-        ...definition,
-        schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
-      });
-    }
-
-    definition.schemaMinorVersion = 1;
-    const incompatible = parseCanvasDefinitionJson(JSON.stringify(definition));
-    expect(incompatible.success).toBe(false);
-    if (!incompatible.success) {
-      expect(incompatible.errors).toContain('RENAME 从 Canvas 1.2 开始支持');
+      expect(parsed.definition).toEqual(definition);
     }
   });
 
-  it('round-trips Canvas 1.5 streaming nodes and applies streaming capability gates', () => {
+  it('round-trips streaming nodes in the current Canvas version', () => {
     const definition = exampleStreamingCanvasTopologyDefinition();
     const parsed = parseCanvasDefinitionJson(formatCanvasDefinition(definition));
 
     expect(parsed).toEqual({ success: true, definition });
-
-    const incompatible = JSON.parse(formatCanvasDefinition(definition)) as {
-      schemaMinorVersion: number;
-    };
-    incompatible.schemaMinorVersion = 2;
-    const legacyResult = parseCanvasDefinitionJson(JSON.stringify(incompatible));
-    expect(legacyResult.success).toBe(false);
-    if (!legacyResult.success) {
-      expect(legacyResult.errors).toContain(
-        'STREAM_JOIN 从 Canvas 1.3 开始支持',
-      );
-      expect(legacyResult.errors).toContain(
-        'KAFKA_INPUT 从 Canvas 1.5 开始支持',
-      );
-      expect(legacyResult.errors).toContain(
-        'KAFKA_OUTPUT 从 Canvas 1.5 开始支持',
-      );
-    }
   });
 
-  it('round-trips file dataset input in 1.4 and rejects it from 1.3', () => {
+  it('round-trips file dataset input in Canvas 3.0', () => {
     const definition = {
-      schemaVersion: 1,
-      schemaMinorVersion: 4,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
         type: CanvasNodeType.FileDatasetInput,
@@ -732,21 +838,14 @@ describe('canvas definition import and export', () => {
 
     expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
       success: true,
-      definition: { ...definition, schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION },
+      definition,
     });
-
-    definition.schemaMinorVersion = 3;
-    const incompatible = parseCanvasDefinitionJson(JSON.stringify(definition));
-    expect(incompatible.success).toBe(false);
-    if (!incompatible.success) {
-      expect(incompatible.errors).toContain('FILE_DATASET_INPUT 从 Canvas 1.4 开始支持');
-    }
   });
 
   it('normalizes and round-trips a strict file output definition', () => {
     const definition = {
-      schemaVersion: 1,
-      schemaMinorVersion: 6,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
         type: CanvasNodeType.FileOutput,
@@ -785,10 +884,10 @@ describe('canvas definition import and export', () => {
     expect(exported).not.toContain('secretKey');
   });
 
-  it('round-trips Shapefile output in 1.24 and rejects it from 1.23', () => {
+  it('round-trips Shapefile output in Canvas 3.0', () => {
     const definition = {
-      schemaVersion: 1,
-      schemaMinorVersion: 24,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
         type: CanvasNodeType.FileOutput,
@@ -835,15 +934,6 @@ describe('canvas definition import and export', () => {
       });
     }
 
-    const incompatible = parseCanvasDefinitionJson(JSON.stringify({
-      ...definition,
-      schemaMinorVersion: 23,
-    }));
-    expect(incompatible.success).toBe(false);
-    if (!incompatible.success) {
-      expect(incompatible.errors).toContain('SHAPEFILE 文件输出从 Canvas 1.24 开始支持');
-    }
-
     const invalidDraft = parseCanvasDefinitionJson(JSON.stringify({
       ...definition,
       nodes: [{
@@ -861,7 +951,7 @@ describe('canvas definition import and export', () => {
     expect(invalidDraft.success).toBe(true);
   });
 
-  it('round-trips GeoParquet and GeoJSON output in 1.25 and rejects older definitions', () => {
+  it('round-trips GeoParquet and GeoJSON output in Canvas 3.0', () => {
     const nodes = [{
       id: 'd4fd15b7-f1ac-44d0-bfc8-a624d3192637',
       type: CanvasNodeType.FileOutput,
@@ -899,8 +989,8 @@ describe('canvas definition import and export', () => {
       },
     }];
     const definition = {
-      schemaVersion: 1,
-      schemaMinorVersion: 25,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes,
       edges: [],
     };
@@ -927,21 +1017,12 @@ describe('canvas definition import and export', () => {
       });
     }
 
-    const incompatible = parseCanvasDefinitionJson(JSON.stringify({
-      ...definition,
-      schemaMinorVersion: 24,
-    }));
-    expect(incompatible.success).toBe(false);
-    if (!incompatible.success) {
-      expect(incompatible.errors).toContain('GEOPARQUET 文件输出从 Canvas 1.25 开始支持');
-      expect(incompatible.errors).toContain('GEOJSON 文件输出从 Canvas 1.25 开始支持');
-    }
   });
 
-  it('round-trips Filter in 1.7 and rejects it from older capability sets', () => {
+  it('round-trips Filter in Canvas 3.0', () => {
     const definition = {
-      schemaVersion: 1,
-      schemaMinorVersion: 13,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes: [{
         id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
         type: CanvasNodeType.Filter,
@@ -968,21 +1049,11 @@ describe('canvas definition import and export', () => {
     const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(parsed.success).toBe(true);
     if (parsed.success) {
-      expect(parsed.definition).toEqual({
-        ...definition,
-        schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
-      });
-    }
-
-    definition.schemaMinorVersion = 6;
-    const incompatible = parseCanvasDefinitionJson(JSON.stringify(definition));
-    expect(incompatible.success).toBe(false);
-    if (!incompatible.success) {
-      expect(incompatible.errors).toContain('FILTER 从 Canvas 1.7 开始支持');
+      expect(parsed.definition).toEqual(definition);
     }
   });
 
-  it('round-trips Canvas 1.14-1.17 processors and enforces each capability gate', () => {
+  it('round-trips processor configurations in Canvas 3.0', () => {
     const nodes = [
       {
         id: '8e469064-3b2a-41fb-b95a-a392189fbf1b',
@@ -1074,7 +1145,7 @@ describe('canvas definition import and export', () => {
       },
     ];
     const definition = {
-      schemaVersion: 1,
+      schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
       nodes,
       edges: [],
@@ -1082,23 +1153,6 @@ describe('canvas definition import and export', () => {
 
     const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(parsed).toEqual({ success: true, definition });
-
-    const capabilityCases = [
-      [CanvasNodeType.NullHandling, 13, 'NULL_HANDLING 从 Canvas 1.14 开始支持'],
-      [CanvasNodeType.ValueMapping, 14, 'VALUE_MAPPING 从 Canvas 1.15 开始支持'],
-      [CanvasNodeType.Window, 15, 'WINDOW 从 Canvas 1.16 开始支持'],
-      [CanvasNodeType.TopN, 16, 'TOP_N 从 Canvas 1.17 开始支持'],
-    ] as const;
-    capabilityCases.forEach(([type, schemaMinorVersion, error]) => {
-      const incompatible = {
-        ...definition,
-        schemaMinorVersion,
-        nodes: nodes.filter((node) => node.type === type),
-      };
-      const result = parseCanvasDefinitionJson(JSON.stringify(incompatible));
-      expect(result.success).toBe(false);
-      if (!result.success) expect(result.errors).toContain(error);
-    });
   });
 
   it('does not mutate the current definition when parsing fails', () => {

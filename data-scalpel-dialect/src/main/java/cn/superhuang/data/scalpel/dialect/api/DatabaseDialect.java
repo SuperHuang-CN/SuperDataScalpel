@@ -95,6 +95,16 @@ public interface DatabaseDialect {
         return null;
     }
 
+    /**
+     * Whether JDBC query-column metadata is reliable only after a bounded query has executed.
+     *
+     * <p>Most drivers expose complete metadata from a prepared statement. ClickHouse's JDBC driver
+     * may instead expose the placeholder {@code Nothing} type until the first result is available.</p>
+     */
+    default boolean queryMetadataRequiresExecution() {
+        return false;
+    }
+
     LogicalType logicalType(int jdbcType, String nativeTypeName);
 
     /** Maps driver/JDBC metadata into the stable platform logical type system. */

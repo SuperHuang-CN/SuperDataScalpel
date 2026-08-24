@@ -112,7 +112,8 @@ public class CanvasFileDatasetReferenceService {
             Set<UUID> ids = new LinkedHashSet<>();
             for (CanvasNodeDefinition node : current.nodes()) {
                 if (node instanceof FileDatasetInputNodeDefinition input) {
-                    ids.add(UUID.fromString(input.configuration().fileDatasetTableId()));
+                    input.configuration().tables().forEach(selection ->
+                            ids.add(UUID.fromString(selection.fileDatasetTableId())));
                 }
             }
             return Set.copyOf(ids);

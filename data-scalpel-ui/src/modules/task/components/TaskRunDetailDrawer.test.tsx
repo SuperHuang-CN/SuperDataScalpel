@@ -93,8 +93,10 @@ describe('TaskRunDetailDrawer', () => {
         runId={run.id}
         canExecute
         cancelLoading={false}
+        forceTerminateLoading={false}
         onClose={vi.fn()}
         onCancel={onCancel}
+        onForceTerminate={vi.fn()}
       />,
     );
 
@@ -127,8 +129,10 @@ describe('TaskRunDetailDrawer', () => {
         runId={run.id}
         canExecute={false}
         cancelLoading={false}
+        forceTerminateLoading={false}
         onClose={vi.fn()}
         onCancel={vi.fn()}
+        onForceTerminate={vi.fn()}
       />,
     );
 
@@ -165,8 +169,10 @@ describe('TaskRunDetailDrawer', () => {
         runId={run.id}
         canExecute={false}
         cancelLoading={false}
+        forceTerminateLoading={false}
         onClose={vi.fn()}
         onCancel={vi.fn()}
+        onForceTerminate={vi.fn()}
       />,
     );
 
@@ -204,8 +210,10 @@ describe('TaskRunDetailDrawer', () => {
         runId={run.id}
         canExecute={false}
         cancelLoading={false}
+        forceTerminateLoading={false}
         onClose={vi.fn()}
         onCancel={vi.fn()}
+        onForceTerminate={vi.fn()}
       />,
     );
 

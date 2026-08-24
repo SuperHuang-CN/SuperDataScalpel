@@ -3,7 +3,10 @@ export { ModelWarehouseLayerPage } from './pages/ModelWarehouseLayerPage';
 export { ModelFieldTemplatePage } from './pages/ModelFieldTemplatePage';
 export { DataModelDataQueryPanel } from './components/DataModelDataQueryPanel';
 export { LineageGraphCanvas } from './components/LineageGraphCanvas';
+export { LineageFieldSelector } from './components/LineageFieldSelector';
+export { LineageWarningHint } from './components/LineageWarningHint';
 export type { DataModelDataQueryPanelProps, DataModelQueryRow } from './components/DataModelDataQueryPanel';
+export type { DataModelPreviewColumnSizing } from './model/dataModelPreviewColumnSizing';
 export {
   useDataModel,
   useDataModels,
@@ -57,6 +60,8 @@ export type {
   LineageFieldUsageType,
   LineageGranularity,
   LineageGraph,
+  LineageFieldGraph,
+  LineageFocusField,
   LineageGraphEdge,
   LineageGraphNode,
   LineageGraphNodeKind,

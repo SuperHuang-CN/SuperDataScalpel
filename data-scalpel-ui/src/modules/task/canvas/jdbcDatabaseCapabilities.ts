@@ -14,13 +14,6 @@ const databaseLabels: Partial<Record<DataSourceType, string>> = {
   TDENGINE_RESTFUL: 'TDengine',
 };
 
-const overwriteDatabases = new Set<DataSourceType>([
-  'POSTGRESQL',
-  'MYSQL',
-  'OPENGAUSS',
-  'KINGBASE',
-]);
-
 const upsertDatabases = new Set<DataSourceType>(['POSTGRESQL', 'MYSQL']);
 
 const tdEngineDatabases = new Set<DataSourceType>([
@@ -40,9 +33,6 @@ export const jdbcWriteModeUnavailableReason = (
   const database = databaseLabels[databaseType] ?? databaseType;
   if (tdEngineDatabases.has(databaseType)) {
     return `${database} 不支持普通 JDBC 输出`;
-  }
-  if (writeMode === 'OVERWRITE' && !overwriteDatabases.has(databaseType)) {
-    return `${database} 暂不支持 OVERWRITE，请使用 APPEND`;
   }
   if (writeMode === 'UPSERT' && !upsertDatabases.has(databaseType)) {
     return `${database} 暂不支持 UPSERT`;

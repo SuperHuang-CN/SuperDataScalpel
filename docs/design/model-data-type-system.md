@@ -12,7 +12,7 @@
 - `DATE`、`TIMESTAMP`、`TIMESTAMP_NTZ`
 - `GEOMETRY`
 
-`TIMESTAMP` 表示时间线上的时刻，对应 Spark `TimestampType`；`TIMESTAMP_NTZ` 表示不带时区的本地墙上时间，对应 Spark `TimestampNTZType`。`STRING` 的 `length` 可为空：指定长度表示保留物理长度约束，空值表示无长度上限。`DECIMAL` 精度限制为 1～38，小数位必须在 0～精度之间。
+`TIMESTAMP` 表示时间线上的时刻，对应 Spark `TimestampType`；`TIMESTAMP_NTZ` 表示不带时区的本地墙上时间，对应 Spark `TimestampNTZType`。`STRING` 的 `length` 可为空：指定长度表示模型逻辑长度，空值表示无长度上限；方言在数据库支持时将其落实为物理长度约束，不支持时仍保留模型元数据并明确提示物理层不强制。`DECIMAL` 精度限制为 1～38，小数位必须在 0～精度之间。
 
 `GEOMETRY` 使用 `GeometryTypeDefinition(kind, crs, dimension)` 表达。V1 业务范围固定为
 八种 GeometryKind、EPSG 正整数编码和 XY；Geometry 不能作为主键。数据库本地 SRID/SRS ID
@@ -50,7 +50,7 @@
 | `INTEGER` / `LONG` | `integer` / `bigint` | `INT` / `BIGINT` | `Int32` / `Int64` |
 | `FLOAT` / `DOUBLE` | `real` / `double precision` | `REAL` / `DOUBLE` | `Float32` / `Float64` |
 | `DECIMAL(p,s)` | `numeric(p,s)` | `DECIMAL(p,s)` | `Decimal(p,s)` |
-| 有长度 / 无长度 `STRING` | `varchar(n)` / `text` | `VARCHAR(n)` / `CLOB` | 有长度不支持 / `String` |
+| 有长度 / 无长度 `STRING` | `varchar(n)` / `text` | `VARCHAR(n)` / `CLOB` | `String`（逻辑长度保留，物理不强制） / `String` |
 | `BINARY` | `bytea` | `BLOB` | 暂不支持 |
 | `DATE` | `date` | `DATE` | `Date` |
 | `TIMESTAMP` | `timestamp with time zone` | `TIMESTAMP WITH TIME ZONE` | `DateTime64(6,'UTC')` |
@@ -58,6 +58,8 @@
 | `GEOMETRY` | PostGIS `geometry(KIND,localSrid)` | 暂不支持 | 原始 WKB `String` / `Nullable(String)` + comment marker |
 
 ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型归一：`UInt8 -> SHORT`、`UInt16 -> INTEGER`、`UInt32 -> LONG`、`UInt64 -> DECIMAL(20,0)`。
+
+ClickHouse 的普通 `String` 没有长度参数。模型可以继续配置 `STRING.length`，该值用于统一元数据管理、数据标准和后续跨库迁移；ClickHouse DDL 始终生成 `String`，不使用具有补零语义的 `FixedString`，字段编辑器通过紧凑提示明确物理表不会强制该长度。
 
 MySQL 8 的 Geometry 写入使用 `KIND SRID localSrsId` 并强制 Geometry 受管表为 InnoDB；
 读取通过空间 catalog 还原 subtype、EPSG 和 XY。MySQL 5.7、MariaDB、无 SRID restriction

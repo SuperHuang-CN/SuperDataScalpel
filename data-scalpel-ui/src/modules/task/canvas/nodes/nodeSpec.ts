@@ -39,6 +39,7 @@ export const CanvasNodeIconKey = {
   SpatialJoin: 'SPATIAL_JOIN',
   Rename: 'RENAME',
   Filter: 'FILTER',
+  SqlTransform: 'SQL_TRANSFORM',
   Columns: 'COLUMNS',
   Derive: 'DERIVE',
   Cast: 'CAST',

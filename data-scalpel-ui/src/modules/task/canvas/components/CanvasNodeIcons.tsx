@@ -138,6 +138,11 @@ const nodeGlyph = (iconKey: CanvasNodeIconKeyValue): ReactNode => {
         <path d="M3 5h18l-7 8v5l-4 2v-7z" />
         <path d="M8 8h8" />
       </>;
+    case CanvasNodeIconKey.SqlTransform:
+      return <>
+        <rect x="3" y="4" width="18" height="16" rx="2" />
+        <path d="m9 9-3 3 3 3M15 9l3 3-3 3M13 8l-2 8" />
+      </>;
     case CanvasNodeIconKey.Columns:
       return <>
         <rect x="3" y="4" width="18" height="16" rx="2" />

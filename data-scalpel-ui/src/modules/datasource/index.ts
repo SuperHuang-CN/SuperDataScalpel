@@ -27,6 +27,7 @@ export {
 export { buildDataSourceSearch } from './model/dataSourceSearch';
 export type {
   ApiResource,
+  SpatialFeatureResource,
   DataSource,
   DataSourceAssistantCreateDraft,
   DataSourceAssistantDraft,

@@ -3,6 +3,7 @@ import type {
   DataSourceAssistantCreateDraft,
   DataSourceAssistantUpdateDraft,
 } from '../../datasource';
+import type { CanvasDefinition, TaskAssistantCreateDraft } from '../../task';
 
 export type LlmProtocol = 'OPENAI_COMPATIBLE';
 export type LlmModelTestStatus = 'UNTESTED' | 'AVAILABLE' | 'UNAVAILABLE' | 'INCOMPATIBLE';
@@ -121,15 +122,12 @@ export interface DirectoryExecutionResult {
   deleted: Array<{ id: string; name: string }>;
 }
 
-export interface AssistantChangeSet {
+interface AssistantChangeSetBase {
   id: string;
   sessionId: string;
   runId: string;
-  changeType: 'DIRECTORY';
   status: AssistantChangeSetStatus;
   summary: string;
-  directoryPlan: DirectoryChangePlan;
-  directoryResult: DirectoryExecutionResult | null;
   approvedBy: string | null;
   approvedAt: string | null;
   executedAt: string | null;
@@ -137,6 +135,79 @@ export interface AssistantChangeSet {
   createdAt: string;
   updatedAt: string;
 }
+
+export interface TaskCanvasPlanSummary {
+  target: { taskId: string | null; newTask: TaskAssistantCreateDraft | null };
+  inputs: Array<{
+    ref: string;
+    name: string;
+    type: 'MODEL' | 'JDBC_TABLE' | 'FILE_DATASET_TABLE';
+  }>;
+  steps: Array<{
+    ref: string;
+    name: string;
+    type: 'FILTER' | 'SELECT_COLUMNS' | 'RENAME' | 'TYPE_CAST' | 'NULL_HANDLING' | 'DEDUPLICATE' | 'JOIN' | 'AGGREGATE';
+    inputRefs: string[];
+  }>;
+  output: {
+    name: string;
+    inputRef: string;
+    type: 'MODEL_OUTPUT' | 'JDBC_OUTPUT';
+  };
+  summary: string;
+  assumptions: string[];
+  needsUserInput: string[];
+}
+
+export interface TaskCanvasProposal {
+  plan: TaskCanvasPlanSummary;
+  definition: CanvasDefinition;
+  resources: Array<{
+    kind: string;
+    resourceId: string;
+    subResourceId: string | null;
+    code: string;
+    name: string;
+    fingerprint: string;
+  }>;
+  existingTask: {
+    taskId: string;
+    taskName: string;
+    definitionVersion: number;
+    definitionUpdatedAt: string | null;
+    taskUpdatedAt: string;
+    configured: boolean;
+  } | null;
+  newTaskDraft: TaskAssistantCreateDraft | null;
+  summary: string;
+  assumptions: string[];
+  needsUserInput: string[];
+  nodeCount: number;
+  edgeCount: number;
+}
+
+export interface TaskCanvasApplicationResult {
+  taskId: string;
+  mode: 'CLIENT_DRAFT';
+  definition: CanvasDefinition;
+}
+
+export type AssistantChangeSet = AssistantChangeSetBase & (
+  | {
+    changeType: 'DIRECTORY';
+    directoryPlan: DirectoryChangePlan;
+    directoryResult: DirectoryExecutionResult | null;
+    taskCanvasProposal: null;
+    taskCanvasResult: null;
+  }
+  | {
+    changeType: 'TASK_CANVAS';
+    directoryPlan: null;
+    directoryResult: null;
+    taskCanvasProposal: TaskCanvasProposal;
+    taskCanvasResult: TaskCanvasApplicationResult | null;
+  }
+);
 
 export interface AssistantSessionDetail {
   session: AssistantSession;
@@ -165,12 +236,13 @@ export interface AssistantRun {
 }
 
 export type AssistantClientAction =
-  | { type: 'NAVIGATE_PAGE'; pageKey: string; collapsed: null; scope: null; dataSourceId: null; dataSourceName: null; dataSourceDraft: null }
-  | { type: 'SET_APP_SIDEBAR_COLLAPSED'; pageKey: null; collapsed: boolean; scope: null; dataSourceId: null; dataSourceName: null; dataSourceDraft: null }
-  | { type: 'DOWNLOAD_DIRECTORY_EXPORT'; pageKey: null; collapsed: null; scope: DirectoryScope; dataSourceId: null; dataSourceName: null; dataSourceDraft: null }
-  | { type: 'OPEN_DATA_SOURCE_CREATE'; pageKey: null; collapsed: null; scope: null; dataSourceId: null; dataSourceName: null; dataSourceDraft: DataSourceAssistantCreateDraft }
-  | { type: 'OPEN_DATA_SOURCE_EDIT'; pageKey: null; collapsed: null; scope: null; dataSourceId: string; dataSourceName: string; dataSourceDraft: DataSourceAssistantUpdateDraft }
-  | { type: 'CONFIRM_DATA_SOURCE_TEST'; pageKey: null; collapsed: null; scope: null; dataSourceId: string; dataSourceName: string; dataSourceDraft: null };
+  | { type: 'NAVIGATE_PAGE'; pageKey: string; collapsed: null; scope: null; dataSourceId: null; dataSourceName: null; dataSourceDraft: null; changeSetId: null; taskId: null; taskDraft: null }
+  | { type: 'SET_APP_SIDEBAR_COLLAPSED'; pageKey: null; collapsed: boolean; scope: null; dataSourceId: null; dataSourceName: null; dataSourceDraft: null; changeSetId: null; taskId: null; taskDraft: null }
+  | { type: 'DOWNLOAD_DIRECTORY_EXPORT'; pageKey: null; collapsed: null; scope: DirectoryScope; dataSourceId: null; dataSourceName: null; dataSourceDraft: null; changeSetId: null; taskId: null; taskDraft: null }
+  | { type: 'OPEN_DATA_SOURCE_CREATE'; pageKey: null; collapsed: null; scope: null; dataSourceId: null; dataSourceName: null; dataSourceDraft: DataSourceAssistantCreateDraft; changeSetId: null; taskId: null; taskDraft: null }
+  | { type: 'OPEN_DATA_SOURCE_EDIT'; pageKey: null; collapsed: null; scope: null; dataSourceId: string; dataSourceName: string; dataSourceDraft: DataSourceAssistantUpdateDraft; changeSetId: null; taskId: null; taskDraft: null }
+  | { type: 'CONFIRM_DATA_SOURCE_TEST'; pageKey: null; collapsed: null; scope: null; dataSourceId: string; dataSourceName: string; dataSourceDraft: null; changeSetId: null; taskId: null; taskDraft: null }
+  | { type: 'OPEN_TASK_CANVAS_PROPOSAL'; pageKey: null; collapsed: null; scope: null; dataSourceId: null; dataSourceName: null; dataSourceDraft: null; changeSetId: string; taskId: string | null; taskDraft: TaskAssistantCreateDraft | null };
 
 export interface AssistantTurn {
   runId: string;
@@ -183,4 +255,5 @@ export interface SendAssistantMessageRequest {
   content: string;
   pageKey?: string;
   sidebarCollapsed: boolean;
+  currentTaskId?: string;
 }

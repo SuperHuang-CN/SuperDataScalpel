@@ -30,15 +30,11 @@ export interface ManagedImportFieldDraft {
   sourceIssues: string[];
 }
 
-export interface ManagedTableModelDraft {
+export interface ManagedModelDraftValues {
   key: string;
-  table: DataSourceTable;
   code: string;
-  modelCodePrefix?: string;
-  codeOverridden: boolean;
   name: string;
   warehouseLayerId?: string;
-  warehouseLayerOverridden: boolean;
   description: string;
   physicalTableName: string;
   fields: ManagedImportFieldDraft[];
@@ -47,6 +43,13 @@ export interface ManagedTableModelDraft {
   tableIssues: string[];
   previewIssues: string[];
   warnings: string[];
+}
+
+export interface ManagedTableModelDraft extends ManagedModelDraftValues {
+  table: DataSourceTable;
+  modelCodePrefix?: string;
+  codeOverridden: boolean;
+  warehouseLayerOverridden: boolean;
   modelValuesLocked: boolean;
 }
 
@@ -74,7 +77,7 @@ const lowerIdentifier = (value: string | null | undefined, pattern: RegExp): str
   return pattern.test(normalized) ? normalized : '';
 };
 
-const modelCodeCandidate = (
+export const modelCodeCandidate = (
   sourceName: string | null | undefined,
   modelCodePrefix?: string,
 ): string => {
@@ -111,7 +114,15 @@ export const managedTableKey = (table: DataSourceTable): string => JSON.stringif
   table.identifier.table,
 ]);
 
-const duplicateValues = (values: string[]): Set<string> => {
+export const physicalTableNameCandidate = (value: string | null | undefined): string => (
+  lowerIdentifier(value, PHYSICAL_TABLE_NAME)
+);
+
+export const fieldCodeCandidate = (value: string | null | undefined): string => (
+  lowerIdentifier(value, FIELD_CODE)
+);
+
+export const duplicateValues = (values: string[]): Set<string> => {
   const counts = new Map<string, number>();
   values.filter(Boolean).forEach((value) => counts.set(value, (counts.get(value) ?? 0) + 1));
   return new Set([...counts].filter(([, count]) => count > 1).map(([value]) => value));
@@ -213,7 +224,7 @@ export const applyManagedImportPreview = (
   draft: ManagedTableModelDraft,
   preview: ManagedImportPreview,
 ): ManagedTableModelDraft => {
-  const normalizedCodes = preview.columns.map((column) => lowerIdentifier(column.code ?? column.sourceName, FIELD_CODE));
+  const normalizedCodes = preview.columns.map((column) => fieldCodeCandidate(column.code ?? column.sourceName));
   const duplicateCodes = duplicateValues(normalizedCodes);
   const fields = preview.columns.map((column, index): ManagedImportFieldDraft => {
     const code = normalizedCodes[index];
@@ -249,7 +260,7 @@ export const applyManagedImportPreview = (
       : (preview.suggestedName?.trim() || draft.name).slice(0, 100),
     physicalTableName: draft.modelValuesLocked
       ? draft.physicalTableName
-      : lowerIdentifier(preview.suggestedPhysicalTableName ?? draft.physicalTableName, PHYSICAL_TABLE_NAME),
+      : physicalTableNameCandidate(preview.suggestedPhysicalTableName ?? draft.physicalTableName),
     fields,
     previewState: 'ready',
     previewError: undefined,
@@ -288,8 +299,8 @@ const fieldIssues = (
   return issues;
 };
 
-export const managedTableDraftIssues = (
-  drafts: ManagedTableModelDraft[],
+export const managedModelDraftIssues = (
+  drafts: ManagedModelDraftValues[],
 ): Map<string, ManagedTableDraftIssue> => {
   const duplicateModelCodes = duplicateValues(drafts.map((draft) => draft.code.trim().toLowerCase()));
   const duplicatePhysicalTableNames = duplicateValues(
@@ -326,6 +337,10 @@ export const managedTableDraftIssues = (
   }));
 };
 
+export const managedTableDraftIssues = (
+  drafts: ManagedTableModelDraft[],
+): Map<string, ManagedTableDraftIssue> => managedModelDraftIssues(drafts);
+
 export const hasManagedTableDraftIssues = (issues: Map<string, ManagedTableDraftIssue>): boolean => (
   [...issues.values()].some((item) => (
     Boolean(item.code || item.name || item.description || item.physicalTableName || item.preview)
@@ -334,7 +349,7 @@ export const hasManagedTableDraftIssues = (issues: Map<string, ManagedTableDraft
 );
 
 export const toManagedDataModelDraftRequest = (
-  draft: ManagedTableModelDraft,
+  draft: ManagedModelDraftValues,
   storageDataSourceId: string,
   directoryId?: string,
 ): CreateManagedDataModelDraftRequest | undefined => {

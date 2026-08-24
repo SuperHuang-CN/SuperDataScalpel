@@ -692,6 +692,12 @@ public class FileDatasetService {
             if (sources.isEmpty()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "逻辑表没有当前数据来源");
             }
+            List<FileDatasetFieldResponse> previewFields = parsedFields(tableId);
+            if (dataset.getType() == FileDatasetType.GDB || dataset.getType() == FileDatasetType.SHP) {
+                previewFields = previewFields.stream()
+                        .filter(field -> field.fieldType() != PlatformDataType.GEOMETRY)
+                        .toList();
+            }
             return new PreviewPreparation(
                     sources.stream().map(source -> parseInput(
                             dataset,
@@ -700,7 +706,7 @@ public class FileDatasetService {
                             table.getSpatialReferenceOverride() == null
                                     ? null : table.getSpatialReferenceOverride().code()
                     )).toList(),
-                    parsedFields(tableId)
+                    previewFields
             );
         }));
         try {

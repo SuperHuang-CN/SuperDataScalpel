@@ -4,16 +4,17 @@ import { resolvedNodeSize } from '../canvasNodePresentation';
 import type { CanvasNodeBodyProps, CanvasNodeCanvasView } from '../nodeSpec';
 
 const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.Rename>) => {
-  const { sourceTableName, outputTableName, columnMappings } = data.configuration;
-  if (!sourceTableName) return <NodeEmpty>请选择来源表并设置新名称</NodeEmpty>;
+  const operations = data.configuration.operations ?? [];
+  if (operations.length === 0) return <NodeEmpty>请选择来源表并设置新名称</NodeEmpty>;
+  const operation = operations[0];
   return <NodeContent variant="rules">
-    <NodeFlow source={sourceTableName} operation="RENAME" target={outputTableName} />
-    <NodePreviewList items={columnMappings.slice(0, 2).map((item, index) => ({ key: `${index}`, label: item.sourceColumnName || '原字段', value: '→', meta: item.targetColumnName || '新字段' }))} total={columnMappings.length} empty="仅重命名数据表" />
-    <NodeBadges><NodeBadge tone={sourceTableName === outputTableName ? 'neutral' : 'strong'}>{sourceTableName === outputTableName ? '表名不变' : '表已重命名'}</NodeBadge><NodeBadge>{columnMappings.length} 个字段</NodeBadge></NodeBadges>
+    <NodeFlow source={operation.sourceTableName} operation="RENAME" target={operation.output.outputTableName ?? operation.sourceTableName} />
+    <NodePreviewList items={operations.slice(0, 2).map((item) => ({ key: item.operationId, label: item.sourceTableName, value: item.output.outputTableName ?? '表名不变', meta: `${item.columnMappings.length} 个字段` }))} total={operations.length} empty="仅重命名数据表" />
+    <NodeBadges><NodeBadge tone="strong">{operations.length} 张表</NodeBadge><NodeBadge>{operations.reduce((total, item) => total + item.columnMappings.length, 0)} 个字段</NodeBadge></NodeBadges>
   </NodeContent>;
 };
 
 export const renameCanvasView: CanvasNodeCanvasView<typeof CanvasNodeType.Rename> = {
-  resolveSize: (configuration) => resolvedNodeSize({ width: 336, maxHeight: 210, configured: Boolean(configuration.sourceTableName), listCount: configuration.columnMappings.length }),
+  resolveSize: (configuration) => resolvedNodeSize({ width: 336, maxHeight: 210, configured: (configuration.operations ?? []).length > 0, listCount: (configuration.operations ?? []).length }),
   Body: body,
 };

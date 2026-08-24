@@ -111,9 +111,12 @@ public class DispatcherEventApplicationService {
             case EXECUTION_SUCCEEDED -> run.externalSucceed(
                     event.affectedRows(), event.startedAt(), event.endedAt(), event.qualitySummary()
             );
-            case EXECUTION_REJECTED, EXECUTION_FAILED, EXECUTION_LOST -> run.fail(error);
-            case EXECUTION_TIMED_OUT -> run.timeout(error);
-            case EXECUTION_CANCELLED -> run.cancel(error, event.startedAt(), event.endedAt());
+            case EXECUTION_REJECTED, EXECUTION_FAILED, EXECUTION_LOST -> run.fail(
+                    error, event.affectedRows(), event.startedAt(), event.endedAt());
+            case EXECUTION_TIMED_OUT -> run.timeout(
+                    error, event.affectedRows(), event.startedAt(), event.endedAt());
+            case EXECUTION_CANCELLED -> run.cancel(
+                    error, event.affectedRows(), event.startedAt(), event.endedAt());
             case STREAMING_PROGRESS -> run.startAt(
                     event.startedAt() == null ? event.occurredAt() : event.startedAt());
             case USER_OBSERVABILITY -> { }
@@ -155,10 +158,14 @@ public class DispatcherEventApplicationService {
                 deployment.recordProgress(event.occurredAt());
                 deployment.recordSourceProgress(event.streamingSourceProgress());
                 event.streamingProgress().forEach(progress -> {
-                    TaskStreamingQuery query = queryRepository
-                            .findByDeploymentIdAndOutputNodeId(
-                                    deployment.getId(), java.util.UUID.fromString(progress.outputNodeId()))
-                            .orElse(null);
+                    java.util.UUID outputNodeId = java.util.UUID.fromString(progress.outputNodeId());
+                    TaskStreamingQuery query = progress.outputWriteId() == null
+                            ? queryRepository.findByDeploymentIdAndOutputNodeId(deployment.getId(), outputNodeId)
+                                    .orElse(null)
+                            : queryRepository.findByDeploymentIdAndOutputNodeIdAndOutputWriteId(
+                                    deployment.getId(), outputNodeId,
+                                    java.util.UUID.fromString(progress.outputWriteId()))
+                                    .orElse(null);
                     if (query != null) {
                         query.recordProgress(
                                 progress.batchId(), progress.inputRows(),

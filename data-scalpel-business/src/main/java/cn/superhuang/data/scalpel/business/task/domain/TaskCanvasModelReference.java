@@ -15,8 +15,8 @@ import java.util.UUID;
 @Table(
         name = "task_canvas_model_reference",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_task_canvas_model_reference_task_node",
-                columnNames = {"task_id", "node_id"}
+                name = "uk_task_canvas_model_reference_location",
+                columnNames = {"task_id", "node_id", "model_id", "reference_role"}
         ),
         indexes = {
                 @Index(name = "idx_task_canvas_model_reference_task", columnList = "task_id"),

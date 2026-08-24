@@ -28,6 +28,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -186,7 +187,7 @@ class TaskExecutionContractTest {
     }
 
     @Test
-    void roundTripsSnapshotSyncMetricsInResultV3() throws Exception {
+    void roundTripsSnapshotSyncMetricsInCurrentResult() throws Exception {
         Instant startedAt = Instant.parse("2026-08-06T04:00:00Z");
         SnapshotSyncMetrics metrics = new SnapshotSyncMetrics(10, 9, 2, 1, 0, 7, 1);
         NodeExecutionResult node = new NodeExecutionResult(
@@ -210,7 +211,97 @@ class TaskExecutionContractTest {
     }
 
     @Test
-    void roundTripsStrictV6SparkJarObservabilityResultAndRunnerEvent() throws Exception {
+    void roundTripsV7MultiOutputWritesAsOneNodeResult() throws Exception {
+        Instant startedAt = Instant.parse("2026-08-20T01:40:55Z");
+        OutputWritesMetrics metrics = new OutputWritesMetrics(List.of(
+                new OutputWriteExecutionResult(
+                        UUID.randomUUID().toString(), "source_a", "target_a",
+                        OutputWriteExecutionState.SUCCESS, 10_562L, null),
+                new OutputWriteExecutionResult(
+                        UUID.randomUUID().toString(), "source_b", "target_b",
+                        OutputWriteExecutionState.SUCCESS, 161L, null)
+        ));
+        NodeExecutionResult node = new NodeExecutionResult(
+                UUID.randomUUID().toString(), "MODEL_OUTPUT", "模型输出",
+                NodeExecutionState.SUCCESS, ExecutionFailurePhase.WRITE,
+                startedAt, startedAt.plusSeconds(1), 1_000L, 10_723L, metrics,
+                "模型输出写入成功", null);
+        TaskExecutionResult result = new TaskExecutionResult(
+                TaskExecutionResult.CURRENT_SCHEMA_VERSION,
+                UUID.randomUUID(), UUID.randomUUID(), 1, TaskExecutionState.SUCCESS,
+                startedAt, startedAt.plusSeconds(1), 1_000L, 10_723L,
+                List.of(node), null);
+
+        String json = objectMapper.writeValueAsString(result);
+        TaskExecutionResult restored = objectMapper.readValue(json, TaskExecutionResult.class);
+
+        assertEquals(1, restored.nodeResults().size());
+        OutputWritesMetrics restoredMetrics = assertInstanceOf(
+                OutputWritesMetrics.class, restored.nodeResults().getFirst().metrics());
+        assertEquals(2, restoredMetrics.writes().size());
+        assertEquals(10_723L, restoredMetrics.rowsWritten());
+        assertTrue(json.contains("\"kind\":\"OUTPUT_WRITES\""));
+    }
+
+    @Test
+    void roundTripsV7PartialOutputFailureWithCommittedRows() throws Exception {
+        Instant startedAt = Instant.parse("2026-08-20T01:40:55Z");
+        String nodeId = UUID.randomUUID().toString();
+        UUID diagnosticId = UUID.randomUUID();
+        TaskExecutionError error = new TaskExecutionError(
+                "JDBC_WRITE_FAILED", "第二项目标写入失败",
+                ExecutionErrorCategory.EXTERNAL_SYSTEM, false,
+                nodeId, "JDBC_OUTPUT", "JDBC 输出",
+                ExecutionFailurePhase.WRITE, null, diagnosticId);
+        OutputWritesMetrics metrics = new OutputWritesMetrics(List.of(
+                new OutputWriteExecutionResult(
+                        UUID.randomUUID().toString(), "source_a", "target_a",
+                        OutputWriteExecutionState.SUCCESS, 42L, null),
+                new OutputWriteExecutionResult(
+                        UUID.randomUUID().toString(), "source_b", "target_b",
+                        OutputWriteExecutionState.FAILED, null, error.code()),
+                new OutputWriteExecutionResult(
+                        UUID.randomUUID().toString(), "source_c", "target_c",
+                        OutputWriteExecutionState.SKIPPED, null, null)
+        ));
+        NodeExecutionResult node = new NodeExecutionResult(
+                nodeId, "JDBC_OUTPUT", "JDBC 输出",
+                NodeExecutionState.FAILED, ExecutionFailurePhase.WRITE,
+                startedAt, startedAt.plusSeconds(1), 1_000L, 42L, metrics,
+                error.message(), error);
+        TaskExecutionResult result = new TaskExecutionResult(
+                TaskExecutionResult.CURRENT_SCHEMA_VERSION,
+                UUID.randomUUID(), UUID.randomUUID(), 1, TaskExecutionState.FAILED,
+                startedAt, startedAt.plusSeconds(1), 1_000L, 42L,
+                List.of(node), error);
+
+        TaskExecutionResult restored = objectMapper.readValue(
+                objectMapper.writeValueAsString(result), TaskExecutionResult.class);
+
+        OutputWritesMetrics restoredMetrics = assertInstanceOf(
+                OutputWritesMetrics.class, restored.nodeResults().getFirst().metrics());
+        assertEquals(42L, restored.affectedRows());
+        assertEquals(OutputWriteExecutionState.FAILED, restoredMetrics.writes().get(1).state());
+        assertNull(restoredMetrics.writes().get(2).affectedRows());
+    }
+
+    @Test
+    void rejectsDuplicateCanvasNodeResultsBeforeWritingArtifact() {
+        Instant now = Instant.parse("2026-08-20T01:40:55Z");
+        String nodeId = UUID.randomUUID().toString();
+        NodeExecutionResult node = new NodeExecutionResult(
+                nodeId, "FILTER", "筛选",
+                NodeExecutionState.SUCCESS, ExecutionFailurePhase.PROCESS,
+                now, now, 0L, null, "筛选已准备", null);
+
+        assertThrows(IllegalArgumentException.class, () -> new TaskExecutionResult(
+                TaskExecutionResult.CURRENT_SCHEMA_VERSION,
+                UUID.randomUUID(), UUID.randomUUID(), 1, TaskExecutionState.SUCCESS,
+                now, now, 0L, 0L, List.of(node, node), null));
+    }
+
+    @Test
+    void roundTripsStrictV7SparkJarObservabilityResultAndRunnerEvent() throws Exception {
         Instant capturedAt = Instant.parse("2026-08-14T06:00:00Z");
         UserJobObservabilitySnapshot snapshot = new UserJobObservabilitySnapshot(
                 capturedAt,
@@ -231,7 +322,7 @@ class TaskExecutionContractTest {
         TaskExecutionResult restored = objectMapper.readValue(
                 objectMapper.writeValueAsString(result), TaskExecutionResult.class);
 
-        assertEquals(6, restored.schemaVersion());
+        assertEquals(7, restored.schemaVersion());
         assertEquals("WRITE_OUTPUT", restored.userJobObservability().status().phase());
         assertEquals(List.of(
                         "datascalpel.model.write.successes", "orders.rows", "orders.write"),

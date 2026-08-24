@@ -1,20 +1,26 @@
 import { CanvasNodeType } from '../../canvasTypes';
-import { NodeBadge, NodeBadges, NodeContent, NodeEmpty, NodeFlow, NodeTitleLine } from '../../components/nodeView/CanvasNodePrimitives';
-import { fieldCountText, metadataObjectName, metadataSourceName, outputTable, resolvedNodeSize } from '../canvasNodePresentation';
+import { NodeBadge, NodeBadges, NodeContent, NodeEmpty, NodeFieldCount, NodePreviewList, NodeTitleLine } from '../../components/nodeView/CanvasNodePrimitives';
+import { metadataSourceName, outputTable, resourceListNodeSize } from '../canvasNodePresentation';
 import type { CanvasNodeBodyProps, CanvasNodeCanvasView } from '../nodeSpec';
 
 const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.HttpApiInput>) => {
-  const { dataSourceId, resourceId, outputTableName, runtimeParameters } = data.configuration;
-  if (!dataSourceId && !resourceId) return <NodeEmpty>请选择 HTTP API 资源</NodeEmpty>;
-  const result = outputTable(data, outputTableName);
+  const { dataSourceId, resources } = data.configuration;
+  if (!dataSourceId && resources.length === 0) return <NodeEmpty>请选择 HTTP API 资源</NodeEmpty>;
+  const parameterCount = resources.reduce((total, resource) => total + resource.runtimeParameters.length, 0);
+  const items = resources.map((resource) => ({
+    key: resource.resourceId,
+    label: resource.outputTableName || resource.resourceId.slice(0, 8),
+    value: resource.runtimeParameters.length > 0 ? `参数 ${resource.runtimeParameters.length}` : undefined,
+    meta: <NodeFieldCount table={outputTable(data, resource.outputTableName)} />,
+  }));
   return <NodeContent variant="source">
-    <NodeTitleLine primary={metadataSourceName(data)} secondary={metadataObjectName(data)} accent />
-    <NodeFlow source="HTTP API" operation="REQUEST" target={outputTableName || '待设置输出表'} />
-    <NodeBadges><NodeBadge tone="info">{runtimeParameters.length} 个运行参数</NodeBadge><NodeBadge>{fieldCountText(result)}</NodeBadge></NodeBadges>
+    <NodeTitleLine primary={metadataSourceName(data)} secondary={`${resources.length} 个 API 资源`} accent />
+    <NodePreviewList items={items} total={items.length} limit={3} moreLabel={(remaining) => `另 ${remaining} 个资源`} />
+    <NodeBadges><NodeBadge tone="info">HTTP API</NodeBadge><NodeBadge tone="strong">{resources.length} 张表</NodeBadge>{parameterCount > 0 && <NodeBadge tone="warning">参数 {parameterCount}</NodeBadge>}</NodeBadges>
   </NodeContent>;
 };
 
 export const httpApiInputCanvasView: CanvasNodeCanvasView<typeof CanvasNodeType.HttpApiInput> = {
-  resolveSize: (configuration) => resolvedNodeSize({ width: 320, maxHeight: 184, configured: Boolean(configuration.dataSourceId || configuration.resourceId) }),
+  resolveSize: (configuration) => resourceListNodeSize({ width: 344, count: configuration.resources.length }),
   Body: body,
 };

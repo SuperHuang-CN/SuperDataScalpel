@@ -19,7 +19,7 @@ export const streamJoinSpec = createCanvasNodeSpec({
   canvasView: streamJoinCanvasView,
   supportedModes: ['STREAMING'],
   introducedInMinor: 0,
-  graph: { minInputs: 2, maxInputs: 2, minOutputs: 1, maxOutputs: null },
+  graph: { minInputs: 1, maxInputs: null, minOutputs: 0, maxOutputs: null },
   createDefaultConfiguration: createStreamJoinConfiguration,
   summarize: summarizeStreamJoin,
   collectMetadataReferences: collectNoMetadataReferences,

@@ -20,7 +20,7 @@ export const jdbcIncrementalInputSpec = createCanvasNodeSpec<
   order: 5,
   canvasView: jdbcIncrementalInputCanvasView,
   supportedModes: ['STREAMING'],
-  introducedInMinor: 2,
+  introducedInMinor: 0,
   graph: { minInputs: 0, maxInputs: 0, minOutputs: 1, maxOutputs: 1 },
   createDefaultConfiguration: createJdbcIncrementalInputConfiguration,
   summarize: summarizeJdbcIncrementalInput,

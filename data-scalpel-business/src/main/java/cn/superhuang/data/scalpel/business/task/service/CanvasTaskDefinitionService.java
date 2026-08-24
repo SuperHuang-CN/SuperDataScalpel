@@ -21,8 +21,10 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -200,29 +202,40 @@ public class CanvasTaskDefinitionService {
 
     private void replaceModelReferences(UUID taskId, CanvasDefinition definition) {
         List<TaskCanvasModelReference> references = new ArrayList<>();
+        Set<ModelReferenceKey> referenceKeys = new LinkedHashSet<>();
         for (CanvasNodeDefinition node : definition.nodes()) {
-            String modelId = null;
-            TaskCanvasModelReferenceRole role = null;
             if (node instanceof ModelInputNodeDefinition input) {
-                modelId = input.configuration().modelId();
-                role = TaskCanvasModelReferenceRole.INPUT;
+                input.configuration().models().forEach(selection -> addModelReference(
+                        references, referenceKeys, taskId, node, selection.modelId(), TaskCanvasModelReferenceRole.INPUT));
             } else if (node instanceof ModelOutputNodeDefinition output) {
-                modelId = output.configuration().targetModelId();
-                role = TaskCanvasModelReferenceRole.OUTPUT;
+                output.configuration().writes().forEach(write -> addModelReference(
+                        references, referenceKeys, taskId, node, write.targetModelId(), TaskCanvasModelReferenceRole.OUTPUT));
             } else if (node instanceof ModelSnapshotSyncOutputNodeDefinition output) {
-                modelId = output.configuration().targetModelId();
-                role = TaskCanvasModelReferenceRole.OUTPUT;
+                addModelReference(references, referenceKeys, taskId, node, output.configuration().targetModelId(),
+                        TaskCanvasModelReferenceRole.OUTPUT);
             }
-            if (modelId == null || modelId.isBlank()) continue;
-            references.add(TaskCanvasModelReference.create(
-                    taskId,
-                    UUID.fromString(node.id()),
-                    UUID.fromString(modelId),
-                    role
-            ));
         }
         modelReferenceRepository.deleteAllByTaskId(taskId);
         modelReferenceRepository.saveAll(references);
+    }
+
+    private static void addModelReference(
+            List<TaskCanvasModelReference> references,
+            Set<ModelReferenceKey> referenceKeys,
+            UUID taskId,
+            CanvasNodeDefinition node,
+            String modelId,
+            TaskCanvasModelReferenceRole role
+    ) {
+        if (modelId == null || modelId.isBlank()) return;
+        UUID nodeId = UUID.fromString(node.id());
+        UUID parsedModelId = UUID.fromString(modelId);
+        if (!referenceKeys.add(new ModelReferenceKey(nodeId, parsedModelId, role))) return;
+        references.add(TaskCanvasModelReference.create(
+                taskId, nodeId, parsedModelId, role));
+    }
+
+    private record ModelReferenceKey(UUID nodeId, UUID modelId, TaskCanvasModelReferenceRole role) {
     }
 
     private CanvasTaskDefinitionResponse response(CanvasTaskDefinition definition) {

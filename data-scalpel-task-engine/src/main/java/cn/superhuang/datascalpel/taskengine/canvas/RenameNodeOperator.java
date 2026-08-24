@@ -8,7 +8,9 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.RenameColumnMapping;
 import cn.superhuang.data.scalpel.contract.task.RenameConfiguration;
+import cn.superhuang.data.scalpel.contract.task.RenameOperation;
 import cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.sql.Column;
@@ -55,6 +57,25 @@ public final class RenameNodeOperator implements CanvasNodeOperator {
         RenameConfiguration configuration = node.configuration();
         if (configuration == null) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
+        }
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, true,
+                    (operation, scopedContext) -> {
+                        RenameOperation sourceOperation = (RenameOperation) operation.operation();
+                        if (sourceOperation.output() instanceof ProcessorOutput.ReplaceSource replace
+                                && replace.outputTableName() == null
+                                && sourceOperation.columnMappings() != null
+                                && sourceOperation.columnMappings().isEmpty()) {
+                            scopedContext.issues().warning("RENAME_HAS_NO_EFFECT", "表名和字段名均未发生变化", "configuration");
+                        }
+                        RenameConfiguration single = new RenameConfiguration(List.of(new RenameOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()),
+                                sourceOperation.columnMappings()
+                        )));
+                        return apply(new RenameNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
         }
 
         CanvasNodeIssueSink issues = context.issues();

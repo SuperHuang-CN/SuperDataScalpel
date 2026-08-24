@@ -47,7 +47,7 @@ const definition: CanvasDefinition = {
       type: 'JDBC_INPUT',
       name: '订单输入',
       layout: { x: 10, y: 10, width: 240, height: 120 },
-      configuration: { dataSourceId, tableName: 'orders' },
+      configuration: { dataSourceId, tables: [{ tableName: 'orders', readOptions: [] }] },
     },
     {
       id: '8fd542d5-37c2-4769-8ea6-47dff963073a',
@@ -234,9 +234,7 @@ const httpApiDefinition: CanvasDefinition = {
     layout: { x: 10, y: 10, width: 240, height: 120 },
     configuration: {
       dataSourceId,
-      resourceId: apiResourceId,
-      outputTableName: 'api_orders',
-      runtimeParameters: [{ name: 'startDate', value: '2026-07-01' }],
+      resources: [{ resourceId: apiResourceId, outputTableName: 'api_orders', runtimeParameters: [{ name: 'startDate', value: '2026-07-01' }] }],
     },
   }],
   edges: [],
@@ -317,7 +315,7 @@ const modelDefinition: CanvasDefinition = {
     type: 'MODEL_INPUT',
     name: '模型输入',
     layout: { x: 10, y: 10, width: 240, height: 120 },
-    configuration: { modelId },
+    configuration: { models: [{ modelId }] },
   }, {
     id: '045e5399-b198-4ddd-959d-bf311732322c',
     type: 'MODEL_OUTPUT',
@@ -640,7 +638,7 @@ describe('useCanvasMetadataSnapshot', () => {
         type: 'FILE_DATASET_INPUT',
         name: '订单文件输入',
         layout: { x: 10, y: 10, width: 240, height: 120 },
-        configuration: { fileDatasetTableId },
+        configuration: { fileDatasetId: 'c2b31cf6-ee6b-44cc-81e7-19a85af8ef96', tables: [{ fileDatasetTableId }] },
       }],
       edges: [],
     };

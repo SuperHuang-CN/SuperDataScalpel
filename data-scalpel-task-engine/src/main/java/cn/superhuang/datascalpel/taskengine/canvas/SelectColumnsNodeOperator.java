@@ -6,7 +6,9 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.SelectColumnsConfiguration;
+import cn.superhuang.data.scalpel.contract.task.SelectColumnsOperation;
 import cn.superhuang.data.scalpel.contract.task.SelectColumnsNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Column;
@@ -52,6 +54,18 @@ public final class SelectColumnsNodeOperator implements CanvasNodeOperator {
         SelectColumnsConfiguration configuration = node.configuration();
         if (configuration == null) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
+        }
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        SelectColumnsOperation sourceOperation = (SelectColumnsOperation) operation.operation();
+                        SelectColumnsConfiguration single = new SelectColumnsConfiguration(List.of(new SelectColumnsOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()), sourceOperation.columns()
+                        )));
+                        return apply(new SelectColumnsNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
         }
 
         CanvasNodeIssueSink issues = context.issues();

@@ -6,6 +6,14 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
+import cn.superhuang.data.scalpel.business.filedataset.domain.FileDataset;
+import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetField;
+import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetParseStatus;
+import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetTable;
+import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetType;
+import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetFieldRepository;
+import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetRepository;
+import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableRepository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelPhysicalColumnRole;
@@ -32,6 +40,7 @@ import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryR
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryFilterInput;
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelFieldInput;
 import cn.superhuang.data.scalpel.business.model.web.request.ExecutePhysicalTableChangePlanRequest;
+import cn.superhuang.data.scalpel.business.model.web.request.FileDatasetImportPreviewRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ImportModelMetadataModelRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ImportModelMetadataRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.ManagedImportPreviewRequest;
@@ -46,6 +55,8 @@ import cn.superhuang.data.scalpel.business.model.web.response.DataModelPreviewRe
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImportColumnResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ExternalTableImportPreviewResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.FileDatasetImportColumnResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.FileDatasetImportPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportColumnResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ManagedImportPreviewResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.ImportedModelMetadataResponse;
@@ -136,6 +147,9 @@ public class DataModelService {
     private final DataModelPhysicalChangeRepository physicalChangeRepository;
     private final DataModelPhysicalStatisticsRepository physicalStatisticsRepository;
     private final DataSourceRepository dataSourceRepository;
+    private final FileDatasetRepository fileDatasetRepository;
+    private final FileDatasetTableRepository fileDatasetTableRepository;
+    private final FileDatasetFieldRepository fileDatasetFieldRepository;
     private final ModelWarehouseLayerRepository warehouseLayerRepository;
     private final DirectoryService directoryService;
     private final SearchEngine searchEngine;
@@ -153,6 +167,9 @@ public class DataModelService {
             DataModelPhysicalChangeRepository physicalChangeRepository,
             DataModelPhysicalStatisticsRepository physicalStatisticsRepository,
             DataSourceRepository dataSourceRepository,
+            FileDatasetRepository fileDatasetRepository,
+            FileDatasetTableRepository fileDatasetTableRepository,
+            FileDatasetFieldRepository fileDatasetFieldRepository,
             ModelWarehouseLayerRepository warehouseLayerRepository,
             DirectoryService directoryService,
             SearchEngine searchEngine,
@@ -169,6 +186,9 @@ public class DataModelService {
         this.physicalChangeRepository = physicalChangeRepository;
         this.physicalStatisticsRepository = physicalStatisticsRepository;
         this.dataSourceRepository = dataSourceRepository;
+        this.fileDatasetRepository = fileDatasetRepository;
+        this.fileDatasetTableRepository = fileDatasetTableRepository;
+        this.fileDatasetFieldRepository = fileDatasetFieldRepository;
         this.warehouseLayerRepository = warehouseLayerRepository;
         this.directoryService = directoryService;
         this.searchEngine = searchEngine;
@@ -306,6 +326,45 @@ public class DataModelService {
                 List.copyOf(tableIssues),
                 List.copyOf(issues),
                 warnings
+        );
+    }
+
+    @Transactional(readOnly = true)
+    public FileDatasetImportPreviewResponse previewFileDatasetImport(FileDatasetImportPreviewRequest request) {
+        FileDataset dataset = fileDatasetRepository.findById(request.fileDatasetId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文件数据集不存在"));
+        FileDatasetTable table = fileDatasetTableRepository
+                .findByIdAndFileDatasetId(request.fileDatasetTableId(), request.fileDatasetId())
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文件数据集逻辑表不存在"));
+        if (table.getParseStatus() != FileDatasetParseStatus.READY
+                && table.getParseStatus() != FileDatasetParseStatus.SCHEMA_READY) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "文件数据集逻辑表尚未完成结构解析");
+        }
+
+        List<FileDatasetField> sourceFields = fileDatasetFieldRepository
+                .findByFileDatasetTableIdOrderBySortOrderAsc(table.getId());
+        if (sourceFields.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "文件数据集逻辑表没有可创建模型的字段结构");
+        }
+
+        DataSource target = requireStorageDataSource(request.targetStorageDataSourceId(), true);
+        DatabaseDialect targetDialect = dialectRegistry.require(target.getType().name());
+        List<FileDatasetImportColumnResponse> columns = fileDatasetImportColumns(sourceFields, targetDialect);
+        LinkedHashSet<String> issues = new LinkedHashSet<>();
+        columns.forEach(column -> issues.addAll(column.issues()));
+
+        String normalizedTableCode = normalizeCode(table.getCode());
+        String suggestedCode = LOWER_FIELD_IDENTIFIER.matcher(normalizedTableCode).matches()
+                ? normalizedTableCode : "";
+        String suggestedPhysicalTableName = LOWER_TABLE_IDENTIFIER.matcher(normalizedTableCode).matches()
+                ? normalizedTableCode : "";
+        int unresolvedCount = (int) columns.stream().filter(column -> !column.importable()).count();
+        List<String> warnings = List.of(fileDatasetSchemaSourceWarning(dataset.getType()));
+        return new FileDatasetImportPreviewResponse(
+                dataset.getId(), dataset.getName(), dataset.getType(),
+                table.getId(), table.getCode(), table.getName(), table.getParseStatus(), table.getUpdatedAt(),
+                suggestedCode, truncateText(table.getName(), 100), suggestedPhysicalTableName,
+                true, issues.isEmpty(), unresolvedCount, columns, List.of(), List.copyOf(issues), warnings
         );
     }
 
@@ -1071,12 +1130,12 @@ public class DataModelService {
     }
 
     public DataModelDetailResponse publish(UUID id) {
-        ModelOperationPreparation preparation = requireTransactionResult(
-                transactionTemplate.execute(status -> prepareLifecycleOperation(id, DataModelStatus.DRAFT, true))
+        PublishPreparation preparation = requireTransactionResult(
+                transactionTemplate.execute(status -> preparePublish(id))
         );
-        requirePhysicalTableMatched(preparation.storage(), preparation.model(), preparation.fields());
+        ensurePhysicalTableReadyForPublish(preparation);
         return requireTransactionResult(transactionTemplate.execute(
-                status -> completeLifecycleOperation(preparation, DataModelStatus.DRAFT)
+                status -> completePublish(preparation)
         ));
     }
 
@@ -1090,42 +1149,50 @@ public class DataModelService {
         return detail(repository.saveAndFlush(model));
     }
 
-    public DataModelDetailResponse enable(UUID id) {
-        ModelOperationPreparation preparation = requireTransactionResult(
-                transactionTemplate.execute(status -> prepareLifecycleOperation(id, DataModelStatus.DISABLED, false))
-        );
-        requirePhysicalTableMatched(preparation.storage(), preparation.model(), preparation.fields());
-        return requireTransactionResult(transactionTemplate.execute(
-                status -> completeLifecycleOperation(preparation, DataModelStatus.DISABLED)
-        ));
-    }
-
-    private ModelOperationPreparation prepareLifecycleOperation(
-            UUID id,
-            DataModelStatus expectedStatus,
-            boolean requireFields
-    ) {
+    private PublishPreparation preparePublish(UUID id) {
         DataModel model = requireModel(id);
-        if (model.getStatus() != expectedStatus) {
-            String message = expectedStatus == DataModelStatus.DRAFT ? "只有草稿模型可以发布" : "只有已停用模型可以启用";
-            throw new ResponseStatusException(HttpStatus.CONFLICT, message);
+        DataModelStatus sourceStatus = model.getStatus();
+        if (sourceStatus != DataModelStatus.DRAFT && sourceStatus != DataModelStatus.DISABLED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有草稿或已停用模型可以发布");
         }
         List<DataModelField> fields = fieldsFor(id);
-        if (requireFields && fields.isEmpty()) {
+        if (fields.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "请先定义至少一个模型字段");
         }
         DataSource storage = requireModelDataSource(
                 model.getStorageDataSourceId(), true, model.getPhysicalTableMode()
         );
-        return new ModelOperationPreparation(model, model.getUpdatedAt(), storage, fields);
+        return new PublishPreparation(model, sourceStatus, model.getUpdatedAt(), storage, fields);
     }
 
-    private DataModelDetailResponse completeLifecycleOperation(
-            ModelOperationPreparation preparation,
-            DataModelStatus expectedStatus
-    ) {
+    private void ensurePhysicalTableReadyForPublish(PublishPreparation preparation) {
+        ModelPhysicalTableInspection inspection = physicalTablePort.inspect(
+                preparation.storage(), preparation.model(), preparation.fields()
+        );
+        if (inspection.state() == PhysicalTableState.MATCHED) {
+            return;
+        }
+        if (inspection.state() == PhysicalTableState.NOT_FOUND
+                && preparation.model().getPhysicalTableMode() == PhysicalTableMode.MANAGED) {
+            transactionTemplate.executeWithoutResult(
+                    status -> physicalStatisticsRepository.deleteByModelId(preparation.model().getId())
+            );
+            inspection = physicalTablePort.create(
+                    preparation.storage(), preparation.model(), preparation.fields()
+            );
+            if (inspection.state() == PhysicalTableState.MATCHED) {
+                return;
+            }
+        }
+        String reason = inspection.message() == null || inspection.message().isBlank()
+                ? inspection.state().name()
+                : inspection.message();
+        throw new ResponseStatusException(HttpStatus.CONFLICT, "物理表未就绪：" + reason);
+    }
+
+    private DataModelDetailResponse completePublish(PublishPreparation preparation) {
         DataModel model = requireModel(preparation.model().getId());
-        if (model.getStatus() != expectedStatus
+        if (model.getStatus() != preparation.sourceStatus()
                 || !Objects.equals(model.getUpdatedAt(), preparation.expectedUpdatedAt())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型状态已发生变化，请重试");
         }
@@ -1879,6 +1946,71 @@ public class DataModelService {
         return List.copyOf(result);
     }
 
+    private static List<FileDatasetImportColumnResponse> fileDatasetImportColumns(
+            List<FileDatasetField> sourceFields,
+            DatabaseDialect targetDialect
+    ) {
+        Map<String, Integer> normalizedCodeCounts = new LinkedHashMap<>();
+        for (FileDatasetField field : sourceFields) {
+            String normalized = normalizeCode(field.getName());
+            if (LOWER_FIELD_IDENTIFIER.matcher(normalized).matches()) {
+                normalizedCodeCounts.merge(normalized, 1, Integer::sum);
+            }
+        }
+
+        List<FileDatasetImportColumnResponse> result = new ArrayList<>(sourceFields.size());
+        for (FileDatasetField field : sourceFields) {
+            String normalizedCode = normalizeCode(field.getName());
+            List<String> issues = new ArrayList<>();
+            String code;
+            if (!LOWER_FIELD_IDENTIFIER.matcher(normalizedCode).matches()) {
+                code = "";
+                issues.add("字段名小写化后仍不符合模型编码规则：" + field.getName());
+            } else if (normalizedCodeCounts.getOrDefault(normalizedCode, 0) > 1) {
+                code = "";
+                issues.add("字段名小写化后重复：" + normalizedCode);
+            } else {
+                code = normalizedCode;
+            }
+
+            PlatformTypeDefinition sourceType = field.getTypeDefinition();
+            TypeMappingResult<PhysicalTypeDefinition> targetMapping = targetDialect.mapToPhysicalType(sourceType);
+            if (!targetMapping.acceptable()) {
+                issues.add("平台字段类型无法安全映射到目标数据存储：" + mappingMessage(targetMapping));
+            }
+            boolean safeType = targetMapping.acceptable();
+            result.add(new FileDatasetImportColumnResponse(
+                    field.getName(),
+                    sourceType,
+                    code,
+                    truncateText(field.getName(), 100),
+                    safeType ? sourceType.type() : null,
+                    safeType ? sourceType.length() : null,
+                    safeType ? sourceType.precision() : null,
+                    safeType ? sourceType.scale() : null,
+                    safeType ? sourceType.geometry() : null,
+                    field.isNullable(),
+                    false,
+                    field.getSortOrder(),
+                    null,
+                    targetMapping.quality(),
+                    targetMapping.message(),
+                    !code.isEmpty() && issues.isEmpty(),
+                    issues
+            ));
+        }
+        return List.copyOf(result);
+    }
+
+    private static String fileDatasetSchemaSourceWarning(FileDatasetType type) {
+        return switch (type) {
+            case CSV, TSV, TXT, JSON, JSONL, EXCEL ->
+                    "字段类型来自文件样本推断，创建模型前请确认类型、长度和精度";
+            case PARQUET, AVRO, GDB, SHP ->
+                    "字段类型主要来自文件声明 Schema，创建模型前仍建议核对目标数据库兼容性";
+        };
+    }
+
     private static List<String> managedImportWarnings(TableMetadata metadata) {
         List<String> warnings = new ArrayList<>();
         for (ColumnMetadata column : metadata.columns()) {
@@ -2004,13 +2136,6 @@ public class DataModelService {
                 normalizeOptional(dialect.resolveCatalog(connection, null)),
                 normalizeOptional(dialect.resolveSchema(connection, null))
         );
-    }
-
-    private void requirePhysicalTableMatched(DataSource storage, DataModel model, List<DataModelField> fields) {
-        ModelPhysicalTableInspection inspection = physicalTablePort.inspect(storage, model, fields);
-        if (inspection.state() != PhysicalTableState.MATCHED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "物理表未就绪：" + inspection.message());
-        }
     }
 
     private List<DataModelField> fieldsFor(UUID modelId) {
@@ -2484,6 +2609,15 @@ public class DataModelService {
 
     private record ModelOperationPreparation(
             DataModel model,
+            Instant expectedUpdatedAt,
+            DataSource storage,
+            List<DataModelField> fields
+    ) {
+    }
+
+    private record PublishPreparation(
+            DataModel model,
+            DataModelStatus sourceStatus,
             Instant expectedUpdatedAt,
             DataSource storage,
             List<DataModelField> fields

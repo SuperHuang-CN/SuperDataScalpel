@@ -9,9 +9,11 @@ import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.DropNullRowsRule;
 import cn.superhuang.data.scalpel.contract.task.FillNullLiteralRule;
 import cn.superhuang.data.scalpel.contract.task.NullHandlingConfiguration;
+import cn.superhuang.data.scalpel.contract.task.NullHandlingOperation;
 import cn.superhuang.data.scalpel.contract.task.NullHandlingNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.NullHandlingRule;
 import cn.superhuang.data.scalpel.contract.task.NullMatchMode;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -59,6 +61,18 @@ public final class NullHandlingNodeOperator implements CanvasNodeOperator {
         List<CanvasTableSchema> inputSchemas = CanvasNodeSupport.schemas(inputs);
         NullHandlingConfiguration configuration = node.configuration();
         if (configuration == null) return CanvasNodeOperationResult.invalid(inputSchemas);
+        if (!ProcessorOperationSupport.isInternalSingle(configuration.operations())) {
+            return ProcessorOperationSupport.apply(configuration.operations(), inputs, context, false,
+                    (operation, scopedContext) -> {
+                        NullHandlingOperation sourceOperation = (NullHandlingOperation) operation.operation();
+                        NullHandlingConfiguration single = new NullHandlingConfiguration(List.of(new NullHandlingOperation(
+                                ProcessorOperationSupport.INTERNAL_OPERATION_ID, operation.temporarySourceTableName(),
+                                new ProcessorOutput.CreateNewTable(operation.outputTableName()), sourceOperation.rules()
+                        )));
+                        return apply(new NullHandlingNodeDefinition(node.id(), node.name(), node.layout(), single),
+                                Map.of(operation.temporarySourceTableName(), operation.source()), scopedContext);
+                    });
+        }
 
         CanvasNodeIssueSink issues = context.issues();
         CanvasNodeSupport.required(

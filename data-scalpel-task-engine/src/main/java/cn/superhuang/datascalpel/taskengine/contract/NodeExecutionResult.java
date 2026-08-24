@@ -32,12 +32,29 @@ public record NodeExecutionResult(
                 || state == NodeExecutionState.FAILED && error == null) {
             throw new IllegalArgumentException("节点执行状态与错误对象不一致");
         }
-        if (state == NodeExecutionState.FAILED && metrics != null) {
-            throw new IllegalArgumentException("失败节点不能包含成功指标");
+        if (state == NodeExecutionState.FAILED && metrics != null
+                && !(metrics instanceof OutputWritesMetrics)) {
+            throw new IllegalArgumentException("失败节点只能包含逐写入指标");
         }
         if (metrics instanceof SnapshotSyncMetrics snapshot
                 && (rowsWritten == null || rowsWritten.longValue() != snapshot.rowsWritten())) {
             throw new IllegalArgumentException("Snapshot Sync rowsWritten 与指标不一致");
+        }
+        if (metrics instanceof OutputWritesMetrics outputWrites) {
+            if (!outputWrites.terminalSequenceValid()
+                    || rowsWritten != null && !rowsWritten.equals(outputWrites.rowsWritten())) {
+                throw new IllegalArgumentException("输出节点 rowsWritten 与逐写入指标不一致");
+            }
+            if (rowsWritten == null && outputWrites.rowsWritten() != null) {
+                throw new IllegalArgumentException("输出节点缺少可确定的 rowsWritten");
+            }
+            OutputWriteExecutionResult failedWrite = outputWrites.failedWrite();
+            if (state == NodeExecutionState.SUCCESS && !outputWrites.allSucceeded()
+                    || state == NodeExecutionState.FAILED && failedWrite == null
+                    || state == NodeExecutionState.FAILED
+                    && !failedWrite.errorCode().equals(error.code())) {
+                throw new IllegalArgumentException("输出节点状态与逐写入指标不一致");
+            }
         }
     }
 

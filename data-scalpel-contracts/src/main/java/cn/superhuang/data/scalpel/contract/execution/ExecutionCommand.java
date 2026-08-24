@@ -8,9 +8,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
 @JsonSubTypes({
         @JsonSubTypes.Type(value = SubmitExecutionCommand.class, name = "SUBMIT_EXECUTION"),
         @JsonSubTypes.Type(value = CancelExecutionCommand.class, name = "CANCEL_EXECUTION"),
+        @JsonSubTypes.Type(value = ForceTerminateExecutionCommand.class, name = "FORCE_TERMINATE_EXECUTION"),
         @JsonSubTypes.Type(value = StartStreamingExecutionCommand.class, name = "START_STREAMING_EXECUTION"),
         @JsonSubTypes.Type(value = StopStreamingExecutionCommand.class, name = "STOP_STREAMING_EXECUTION")
 })
 public sealed interface ExecutionCommand extends ExecutionMessageEnvelope permits SubmitExecutionCommand, CancelExecutionCommand,
-        StartStreamingExecutionCommand, StopStreamingExecutionCommand {
+        ForceTerminateExecutionCommand, StartStreamingExecutionCommand, StopStreamingExecutionCommand {
 }

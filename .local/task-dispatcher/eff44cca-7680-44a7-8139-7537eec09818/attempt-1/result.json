@@ -1,0 +1,27 @@
+{
+  "schemaVersion" : 7,
+  "executionId" : "eff44cca-7680-44a7-8139-7537eec09818",
+  "runId" : "56f40d51-312d-4688-8d00-97e3dc77cf5a",
+  "attempt" : 1,
+  "state" : "FAILED",
+  "startedAt" : "2026-08-20T01:40:57.283867293Z",
+  "endedAt" : "2026-08-20T01:41:03.270845629Z",
+  "durationMs" : 5986,
+  "affectedRows" : null,
+  "nodeResults" : [ ],
+  "taskType" : "SPARK_CANVAS",
+  "qualityResult" : null,
+  "userJobObservability" : null,
+  "error" : {
+    "code" : "RUNNER_INTERNAL_ERROR",
+    "message" : "Task Runner 内部错误",
+    "category" : "INTERNAL",
+    "retryable" : false,
+    "nodeId" : null,
+    "nodeType" : null,
+    "nodeName" : null,
+    "phase" : "PREPARE",
+    "sqlState" : null,
+    "diagnosticId" : "806e9d6f-90b2-450a-a04d-5291115ec29a"
+  }
+}

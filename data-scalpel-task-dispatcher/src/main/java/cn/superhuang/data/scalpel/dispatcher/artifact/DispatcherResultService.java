@@ -28,6 +28,10 @@ public class DispatcherResultService {
     private static final Set<String> SUPPORTED_NODE_TYPES = Arrays.stream(CanvasNodeType.values())
             .map(Enum::name)
             .collect(Collectors.toUnmodifiableSet());
+    private static final Set<String> ORDINARY_OUTPUT_NODE_TYPES = Set.of(
+            "JDBC_OUTPUT", "MODEL_OUTPUT", "FILE_OUTPUT", "KAFKA_OUTPUT");
+    private static final Set<String> SNAPSHOT_OUTPUT_NODE_TYPES = Set.of(
+            "JDBC_SNAPSHOT_SYNC_OUTPUT", "MODEL_SNAPSHOT_SYNC_OUTPUT");
 
     private final DispatcherArtifactService artifactService;
     private final DispatcherArtifactProperties properties;
@@ -87,10 +91,7 @@ public class DispatcherResultService {
 
     private void validate(DispatcherTaskExecution execution, DispatcherTaskResult result)
             throws BackendException {
-        if (result == null || result.schemaVersion() == null
-                || result.schemaVersion() != 2 && result.schemaVersion() != 3
-                && result.schemaVersion() != 4 && result.schemaVersion() != 5
-                && result.schemaVersion() != 6
+        if (result == null || !DispatcherTaskResult.supportsSchemaVersion(result.schemaVersion())
                 || !execution.getExecutionId().equals(result.executionId())
                 || !execution.getRunId().equals(result.runId())
                 || result.attempt() == null || execution.getAttempt() != result.attempt()
@@ -142,11 +143,15 @@ public class DispatcherResultService {
             throw new BackendException("INVALID_RUNNER_RESULT", "用户作业观测载荷只能属于 Spark JAR 批任务");
         }
 
-        Set<String> nodeIds = new HashSet<>();
+        Set<UUID> nodeIds = new HashSet<>();
         DispatcherTaskResult.NodeResult failedNode = null;
+        boolean outputNodeSeen = false;
+        boolean outputRowsUnknown = false;
+        long outputRows = 0L;
         for (DispatcherTaskResult.NodeResult node : result.nodeResults()) {
-            if (node == null || blank(node.nodeId()) || !nodeIds.add(node.nodeId())
-                    || !uuid(node.nodeId()) || blank(node.nodeType()) || blank(node.nodeName())
+            if (node == null || blank(node.nodeId()) || !uuid(node.nodeId())
+                    || !nodeIds.add(UUID.fromString(node.nodeId()))
+                    || blank(node.nodeType()) || blank(node.nodeName())
                     || node.nodeType().length() > 64 || node.nodeName().length() > 200
                     || node.state() == null || node.phase() == null || node.startedAt() == null
                     || node.endedAt() == null || node.endedAt().isBefore(node.startedAt())
@@ -157,6 +162,22 @@ public class DispatcherResultService {
             }
             if (!SUPPORTED_NODE_TYPES.contains(node.nodeType())) {
                 throw new BackendException("INVALID_RUNNER_RESULT", "Runner 节点类型无效");
+            }
+            if (ORDINARY_OUTPUT_NODE_TYPES.contains(node.nodeType())
+                    || SNAPSHOT_OUTPUT_NODE_TYPES.contains(node.nodeType())) {
+                outputNodeSeen = true;
+                if (node.rowsWritten() == null) {
+                    if (node.state() == DispatcherTaskResult.NodeState.SUCCESS
+                            || ORDINARY_OUTPUT_NODE_TYPES.contains(node.nodeType())) {
+                        outputRowsUnknown = true;
+                    }
+                } else if (!outputRowsUnknown) {
+                    try {
+                        outputRows = Math.addExact(outputRows, node.rowsWritten());
+                    } catch (ArithmeticException exception) {
+                        outputRowsUnknown = true;
+                    }
+                }
             }
             if (node.state() == DispatcherTaskResult.NodeState.SUCCESS && node.error() != null) {
                 throw new BackendException("INVALID_RUNNER_RESULT", "成功节点不能包含错误");
@@ -184,14 +205,26 @@ public class DispatcherResultService {
                 || !failedNode.nodeId().equals(result.error().nodeId()))) {
             throw new BackendException("INVALID_RUNNER_RESULT", "顶层错误与失败节点诊断 ID 不一致");
         }
+        if (result.schemaVersion() >= 7 && failedNode != null
+                && (!failedNode.error().code().equals(result.error().code())
+                || !failedNode.nodeType().equals(result.error().nodeType())
+                || !failedNode.nodeName().equals(result.error().nodeName())
+                || failedNode.phase() != result.error().phase())) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "顶层错误与失败节点错误不一致");
+        }
         if (result.error() != null && result.error().nodeId() != null && failedNode == null) {
             throw new BackendException("INVALID_RUNNER_RESULT", "顶层节点错误缺少失败节点结果");
+        }
+        if (result.schemaVersion() >= 7 && outputNodeSeen
+                && (outputRowsUnknown && result.affectedRows() != null
+                || !outputRowsUnknown && !Long.valueOf(outputRows).equals(result.affectedRows()))) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 总影响行数与输出节点不一致");
         }
     }
 
     private void validateQuality(DispatcherTaskExecution execution, DispatcherTaskResult result) throws BackendException {
         DispatcherTaskResult.QualityResult quality = result.qualityResult();
-        if (result.schemaVersion() != 4 && result.schemaVersion() != 5 && result.schemaVersion() != 6
+        if (result.schemaVersion() < 4
                 || result.state() != DispatcherTaskResult.State.SUCCESS
                 || quality == null || !result.nodeResults().isEmpty() || result.affectedRows() != null
                 || quality.conclusion() == null || quality.technicalFailure() != null
@@ -246,7 +279,7 @@ public class DispatcherResultService {
     private void validateQualityFailure(DispatcherTaskExecution execution, DispatcherTaskResult result)
             throws BackendException {
         DispatcherTaskResult.QualityResult quality = result.qualityResult();
-        if (result.schemaVersion() != 4 && result.schemaVersion() != 5 && result.schemaVersion() != 6
+        if (result.schemaVersion() < 4
                 || quality == null || !result.nodeResults().isEmpty()
                 || result.affectedRows() != null || quality.conclusion() != null
                 || quality.totalRules() != null || quality.passedRules() != null
@@ -428,33 +461,100 @@ public class DispatcherResultService {
             int schemaVersion,
             DispatcherTaskResult.NodeResult node
     ) throws BackendException {
-        boolean snapshotNode = "JDBC_SNAPSHOT_SYNC_OUTPUT".equals(node.nodeType())
-                || "MODEL_SNAPSHOT_SYNC_OUTPUT".equals(node.nodeType());
+        boolean snapshotNode = SNAPSHOT_OUTPUT_NODE_TYPES.contains(node.nodeType());
+        boolean ordinaryOutputNode = ORDINARY_OUTPUT_NODE_TYPES.contains(node.nodeType());
         if (schemaVersion == 2 && node.metrics() != null) {
             throw new BackendException("INVALID_RUNNER_RESULT", "result.json v2 不能包含节点指标");
-        }
-        if (node.state() == DispatcherTaskResult.NodeState.FAILED && node.metrics() != null) {
-            throw new BackendException("INVALID_RUNNER_RESULT", "失败节点不能包含成功指标");
         }
         if (schemaVersion >= 3 && node.state() == DispatcherTaskResult.NodeState.SUCCESS
                 && snapshotNode && node.metrics() == null) {
             throw new BackendException("INVALID_RUNNER_RESULT", "快照同步成功节点必须包含指标");
         }
-        if (!snapshotNode && node.metrics() != null) {
-            throw new BackendException("INVALID_RUNNER_RESULT", "非快照同步节点不能包含快照指标");
+        if (node.metrics() instanceof DispatcherTaskResult.SnapshotSyncMetrics metrics) {
+            if (!snapshotNode || node.state() == DispatcherTaskResult.NodeState.FAILED
+                    || metrics.sourceRows() < 0 || metrics.targetRows() < 0
+                    || metrics.insertedRows() < 0 || metrics.updatedRows() < 0
+                    || metrics.deletedRows() < 0 || metrics.unchangedRows() < 0
+                    || metrics.retainedTargetOnlyRows() < 0
+                    || metrics.sourceRows() != metrics.insertedRows()
+                    + metrics.updatedRows() + metrics.unchangedRows()
+                    || metrics.targetRows() != metrics.deletedRows()
+                    + metrics.retainedTargetOnlyRows() + metrics.updatedRows() + metrics.unchangedRows()
+                    || node.rowsWritten() == null
+                    || node.rowsWritten().longValue() != metrics.rowsWritten()) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "快照同步节点指标不一致");
+            }
+            return;
         }
-        if (!(node.metrics() instanceof DispatcherTaskResult.SnapshotSyncMetrics metrics)) return;
-        if (metrics.sourceRows() < 0 || metrics.targetRows() < 0
-                || metrics.insertedRows() < 0 || metrics.updatedRows() < 0
-                || metrics.deletedRows() < 0 || metrics.unchangedRows() < 0
-                || metrics.retainedTargetOnlyRows() < 0
-                || metrics.sourceRows() != metrics.insertedRows()
-                + metrics.updatedRows() + metrics.unchangedRows()
-                || metrics.targetRows() != metrics.deletedRows()
-                + metrics.retainedTargetOnlyRows() + metrics.updatedRows() + metrics.unchangedRows()
-                || node.rowsWritten() == null
-                || node.rowsWritten().longValue() != metrics.rowsWritten()) {
-            throw new BackendException("INVALID_RUNNER_RESULT", "快照同步节点指标不一致");
+        if (node.metrics() instanceof DispatcherTaskResult.OutputWritesMetrics metrics) {
+            validateOutputWritesMetrics(schemaVersion, node, ordinaryOutputNode, metrics);
+            return;
+        }
+        if (node.metrics() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 节点指标类型无效");
+        }
+        if (node.state() == DispatcherTaskResult.NodeState.FAILED && snapshotNode) return;
+    }
+
+    private static void validateOutputWritesMetrics(
+            int schemaVersion,
+            DispatcherTaskResult.NodeResult node,
+            boolean ordinaryOutputNode,
+            DispatcherTaskResult.OutputWritesMetrics metrics
+    ) throws BackendException {
+        if (schemaVersion != 7 || !ordinaryOutputNode || metrics.writes().isEmpty()) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "逐写入指标所属节点或版本无效");
+        }
+        Set<UUID> writeIds = new HashSet<>();
+        boolean failed = false;
+        Long rowsWritten = 0L;
+        String failedCode = null;
+        for (DispatcherTaskResult.OutputWriteResult write : metrics.writes()) {
+            if (write == null || !uuid(write.writeId())
+                    || !writeIds.add(UUID.fromString(write.writeId()))
+                    || blank(write.sourceTableName()) || write.sourceTableName().length() > 256
+                    || blank(write.targetDisplayName()) || write.targetDisplayName().length() > 1024
+                    || write.state() == null || write.affectedRows() != null && write.affectedRows() < 0
+                    || write.errorCode() != null
+                    && !write.errorCode().matches("[A-Z][A-Z0-9_]{0,99}")) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "Runner 逐写入结果字段无效");
+            }
+            switch (write.state()) {
+                case PENDING, RUNNING -> throw new BackendException(
+                        "INVALID_RUNNER_RESULT", "终态结果不能包含未完成写入");
+                case SUCCESS -> {
+                    if (failed || write.errorCode() != null) {
+                        throw new BackendException("INVALID_RUNNER_RESULT", "Runner 逐写入顺序无效");
+                    }
+                    if (write.affectedRows() == null || rowsWritten == null) {
+                        rowsWritten = null;
+                    } else {
+                        try {
+                            rowsWritten = Math.addExact(rowsWritten, write.affectedRows());
+                        } catch (ArithmeticException exception) {
+                            rowsWritten = null;
+                        }
+                    }
+                }
+                case FAILED -> {
+                    if (failed || write.affectedRows() != null || blank(write.errorCode())) {
+                        throw new BackendException("INVALID_RUNNER_RESULT", "Runner 失败写入结果无效");
+                    }
+                    failed = true;
+                    failedCode = write.errorCode();
+                }
+                case SKIPPED -> {
+                    if (!failed || write.affectedRows() != null || write.errorCode() != null) {
+                        throw new BackendException("INVALID_RUNNER_RESULT", "Runner 跳过写入结果无效");
+                    }
+                }
+            }
+        }
+        if (!java.util.Objects.equals(rowsWritten, node.rowsWritten())
+                || node.state() == DispatcherTaskResult.NodeState.SUCCESS && failed
+                || node.state() == DispatcherTaskResult.NodeState.FAILED && !failed
+                || failed && (node.error() == null || !failedCode.equals(node.error().code()))) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner 逐写入指标与节点状态不一致");
         }
     }
 

@@ -37,6 +37,7 @@ import {
   createNullHandlingConfiguration,
   createRenameConfiguration,
   createSelectColumnsConfiguration,
+  createSqlTransformConfiguration,
   createSpatialJoinConfiguration,
   createSpatialClipConfiguration,
   createSpatialAggregateConfiguration,
@@ -55,12 +56,13 @@ export type {
   MaskingStrategy,
 } from '../model/maskingRule';
 
-export const CANVAS_SCHEMA_VERSION = 2 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 3 as const;
+export const CANVAS_SCHEMA_VERSION = 4 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 1 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
 export const CANVAS_FILTER_MAX_DEPTH = 12 as const;
 export const CANVAS_FILTER_MAX_CONDITION_NODES = 256 as const;
 export const CANVAS_FILTER_MAX_VALUES_PER_PREDICATE = 100 as const;
+export const CANVAS_FILTER_MAX_SQL_EXPRESSION_LENGTH = 8_192 as const;
 export const CANVAS_EXPRESSION_MAX_DEPTH = 16 as const;
 export const CANVAS_EXPRESSION_MAX_NODES = 512 as const;
 export const CANVAS_EXPRESSION_MAX_CASE_BRANCHES = 64 as const;
@@ -104,6 +106,7 @@ export const CanvasNodeType = {
   StreamJoin: 'STREAM_JOIN',
   Rename: 'RENAME',
   Filter: 'FILTER',
+  SqlTransform: 'SQL_TRANSFORM',
   SelectColumns: 'SELECT_COLUMNS',
   DeriveColumns: 'DERIVE_COLUMNS',
   TypeCast: 'TYPE_CAST',
@@ -145,9 +148,19 @@ export interface CanvasNodeLayout {
   height: number;
 }
 
+export interface JdbcInputReadOption {
+  name: string;
+  value: string;
+}
+
+export interface JdbcInputTableSelection {
+  tableName: string;
+  readOptions: JdbcInputReadOption[];
+}
+
 export interface JdbcInputConfiguration {
   dataSourceId: string;
-  tableName: string;
+  tables: JdbcInputTableSelection[];
 }
 
 export type JdbcIncrementalStartPosition = 'LATEST' | 'EARLIEST' | 'AT_TIME';
@@ -172,12 +185,21 @@ export interface JdbcQueryInputConfiguration {
   outputColumns: CanvasColumnSchema[];
 }
 
-export interface FileDatasetInputConfiguration {
-  fileDatasetTableId: string;
+export interface ModelInputSelection {
+  modelId: string;
 }
 
 export interface ModelInputConfiguration {
-  modelId: string;
+  models: ModelInputSelection[];
+}
+
+export interface FileDatasetInputTableSelection {
+  fileDatasetTableId: string;
+}
+
+export interface FileDatasetInputConfiguration {
+  fileDatasetId: string;
+  tables: FileDatasetInputTableSelection[];
 }
 
 export interface HttpApiRuntimeParameter {
@@ -185,17 +207,25 @@ export interface HttpApiRuntimeParameter {
   value: string;
 }
 
-export interface HttpApiInputConfiguration {
-  dataSourceId: string;
+export interface HttpApiInputResourceSelection {
   resourceId: string;
   outputTableName: string;
   runtimeParameters: HttpApiRuntimeParameter[];
 }
 
-export interface SpatialServiceInputConfiguration {
+export interface HttpApiInputConfiguration {
   dataSourceId: string;
+  resources: HttpApiInputResourceSelection[];
+}
+
+export interface SpatialServiceInputResourceSelection {
   resourceId: string;
   outputTableName: string;
+}
+
+export interface SpatialServiceInputConfiguration {
+  dataSourceId: string;
+  resources: SpatialServiceInputResourceSelection[];
 }
 
 export type KafkaStartingOffsets = 'EARLIEST' | 'LATEST';
@@ -245,12 +275,22 @@ export interface JoinCondition {
   rightColumnName: string;
 }
 
+export type JoinOutputColumnSource = 'LEFT' | 'RIGHT';
+
+export interface JoinOutputColumn {
+  sourceSide: JoinOutputColumnSource;
+  sourceColumnName: string;
+  outputColumnName: string;
+  included: boolean;
+}
+
 export interface JoinConfiguration {
   leftTableName: string;
   rightTableName: string;
   outputTableName: string;
   joinType: JoinType | null;
   conditions: JoinCondition[];
+  outputColumns: JoinOutputColumn[];
 }
 
 export interface SpatialTransformConfiguration {
@@ -414,10 +454,25 @@ export interface StreamJoinConfiguration {
   outputTableName: string;
   joinType: StreamJoinType | null;
   conditions: JoinCondition[];
+  outputColumns: JoinOutputColumn[];
+}
+
+export type ProcessorOutput =
+  | { mode: 'REPLACE_SOURCE'; outputTableName: string | null }
+  | { mode: 'CREATE_NEW_TABLE'; outputTableName: string };
+
+export interface RenameOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  columnMappings: CanvasColumnMapping[];
 }
 
 export interface RenameConfiguration {
+  operations?: RenameOperation[];
+  /** @deprecated Inspector compatibility view; never serialized. */
   sourceTableName: string;
+  /** @deprecated Inspector compatibility view; never serialized. */
   outputTableName: string;
   columnMappings: CanvasColumnMapping[];
 }
@@ -459,13 +514,40 @@ export interface CanvasFieldPredicate {
   values: CanvasLiteral[];
 }
 
+export type FilterConditionMode = 'STRUCTURED' | 'SQL_EXPRESSION';
+
+export interface FilterOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  mode: FilterConditionMode;
+  condition: CanvasFilterCondition;
+  sqlExpression: string;
+}
+
 export interface FilterConfiguration {
+  operations?: FilterOperation[];
   sourceTableName: string;
   outputTableName: string;
+  mode: FilterConditionMode;
   condition: CanvasFilterCondition;
+  sqlExpression: string;
+}
+
+export interface SqlTransformConfiguration {
+  outputTableName: string;
+  sql: string;
+}
+
+export interface SelectColumnsOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  columns: string[];
 }
 
 export interface SelectColumnsConfiguration {
+  operations?: SelectColumnsOperation[];
   sourceTableName: string;
   outputTableName: string;
   columns: string[];
@@ -495,6 +577,7 @@ export type DeriveFunction =
 export type CanvasExpression =
   | CanvasColumnExpression
   | CanvasLiteralExpression
+  | CanvasRuntimeValueExpression
   | CanvasBinaryExpression
   | CanvasFunctionExpression
   | CanvasCaseWhenExpression;
@@ -507,6 +590,13 @@ export interface CanvasColumnExpression {
 export interface CanvasLiteralExpression {
   kind: 'LITERAL';
   literal: CanvasLiteral;
+}
+
+export type CanvasRuntimeValue = 'EXECUTION_ID' | 'EXECUTION_STARTED_AT';
+
+export interface CanvasRuntimeValueExpression {
+  kind: 'RUNTIME_VALUE';
+  value: CanvasRuntimeValue;
 }
 
 export interface CanvasBinaryExpression {
@@ -536,10 +626,18 @@ export interface CanvasCaseWhenExpression {
 export interface ColumnDerivation {
   targetColumnName: string;
   expression: CanvasExpression;
-  replaceExisting: boolean;
+}
+
+export interface DeriveColumnsOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  derivations: ColumnDerivation[];
 }
 
 export interface DeriveColumnsConfiguration {
+  globalDerivations?: ColumnDerivation[];
+  operations?: DeriveColumnsOperation[];
   sourceTableName: string;
   outputTableName: string;
   derivations: ColumnDerivation[];
@@ -553,7 +651,15 @@ export interface ColumnTypeCast {
   failureStrategy: CastFailureStrategy | null;
 }
 
+export interface TypeCastOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  casts: ColumnTypeCast[];
+}
+
 export interface TypeCastConfiguration {
+  operations?: TypeCastOperation[];
   sourceTableName: string;
   outputTableName: string;
   casts: ColumnTypeCast[];
@@ -593,7 +699,17 @@ export interface SortField {
   nullOrdering: NullOrdering | null;
 }
 
+export interface DeduplicateOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  keyColumns: string[];
+  keepStrategy: DeduplicateKeepStrategy | null;
+  orderBy: SortField[];
+}
+
 export interface DeduplicateConfiguration {
+  operations?: DeduplicateOperation[];
   sourceTableName: string;
   outputTableName: string;
   keyColumns: string[];
@@ -617,7 +733,15 @@ export interface FillNullLiteralRule {
   value: CanvasLiteral;
 }
 
+export interface NullHandlingOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  rules: NullHandlingRule[];
+}
+
 export interface NullHandlingConfiguration {
+  operations?: NullHandlingOperation[];
   sourceTableName: string;
   outputTableName: string;
   rules: NullHandlingRule[];
@@ -641,7 +765,15 @@ export interface ValueMappingRule {
   unmatchedValue: CanvasLiteral | null;
 }
 
+export interface ValueMappingOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  rules: ValueMappingRule[];
+}
+
 export interface ValueMappingConfiguration {
+  operations?: ValueMappingOperation[];
   sourceTableName: string;
   outputTableName: string;
   rules: ValueMappingRule[];
@@ -662,7 +794,15 @@ export interface MaskFieldRule {
   definition: MaskingRuleDefinition;
 }
 
+export interface MaskFieldsOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  fieldRules: MaskFieldRule[];
+}
+
 export interface MaskFieldsConfiguration {
+  operations?: MaskFieldsOperation[];
   sourceTableName: string;
   outputTableName: string;
   fieldRules: MaskFieldRule[];
@@ -676,7 +816,17 @@ export interface JsonExtraction {
   targetType: PlatformTypeDefinition;
 }
 
+export interface JsonExtractOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  sourceColumnName: string;
+  extractions: JsonExtraction[];
+  failureStrategy: JsonExtractFailureStrategy;
+}
+
 export interface JsonExtractConfiguration {
+  operations?: JsonExtractOperation[];
   sourceTableName: string;
   outputTableName: string;
   sourceColumnName: string;
@@ -741,7 +891,18 @@ export interface WindowConfiguration {
 
 export type TopNTieStrategy = 'EXACT' | 'WITH_TIES';
 
+export interface TopNOperation {
+  operationId: string;
+  sourceTableName: string;
+  output: ProcessorOutput;
+  partitionByColumns: string[];
+  orderBy: SortField[];
+  limit: number;
+  tieStrategy: TopNTieStrategy;
+}
+
 export interface TopNConfiguration {
+  operations?: TopNOperation[];
   sourceTableName: string;
   outputTableName: string;
   partitionByColumns: string[];
@@ -759,20 +920,41 @@ export interface CanvasColumnMapping {
 
 export type JdbcColumnMapping = CanvasColumnMapping;
 
-export interface JdbcOutputConfiguration {
+export interface JdbcOutputWrite {
+  writeId: string;
   sourceTableName: string;
-  dataSourceId: string;
   targetTableName: string;
   writeMode: JdbcWriteMode | null;
   columnMappings: CanvasColumnMapping[];
   upsertKeyColumns: string[];
 }
 
-export interface ModelOutputConfiguration {
+export interface JdbcOutputConfiguration {
+  dataSourceId: string;
+  writes?: JdbcOutputWrite[];
+  /** @deprecated Canvas 4.0 transitional editor field; normalized before persistence. */
+  sourceTableName: string;
+  targetTableName: string;
+  writeMode: JdbcWriteMode | null;
+  columnMappings: CanvasColumnMapping[];
+  upsertKeyColumns: string[];
+}
+
+export interface ModelOutputWrite {
+  writeId: string;
   sourceTableName: string;
   targetModelId: string;
   writeMode: JdbcWriteMode | null;
   columnMappings: CanvasColumnMapping[];
+}
+
+export interface ModelOutputConfiguration {
+  writes?: ModelOutputWrite[];
+  /** @deprecated Canvas 4.0 transitional editor field; normalized before persistence. */
+  sourceTableName?: string;
+  targetModelId?: string;
+  writeMode?: JdbcWriteMode | null;
+  columnMappings?: CanvasColumnMapping[];
 }
 
 export type SnapshotTargetOnlyAction = 'KEEP' | 'DELETE';
@@ -799,9 +981,20 @@ export interface ModelSnapshotSyncOutputConfiguration extends SnapshotSyncConfig
   targetModelId: string;
 }
 
-export interface KafkaOutputConfiguration {
+export interface KafkaOutputWrite {
+  writeId: string;
   sourceTableName: string;
+  topic: string;
+  valueSchema: KafkaValueSchema;
+  keyColumnName: string;
+  columnMappings: CanvasColumnMapping[];
+}
+
+export interface KafkaOutputConfiguration {
   dataSourceId: string;
+  writes?: KafkaOutputWrite[];
+  /** @deprecated Canvas 4.0 transitional editor field; normalized before persistence. */
+  sourceTableName: string;
   topic: string;
   valueSchema: KafkaValueSchema;
   keyColumnName: string;
@@ -862,9 +1055,19 @@ export type FileOutputFormatOptions =
     ignoreNullProperties: boolean;
   };
 
-export interface FileOutputConfiguration {
+export interface FileOutputWrite {
+  writeId: string;
   sourceTableName: string;
+  targetPath: string;
+  conflictPolicy: FileOutputConflictPolicy;
+  formatOptions: FileOutputFormatOptions;
+}
+
+export interface FileOutputConfiguration {
   dataSourceId: string;
+  writes?: FileOutputWrite[];
+  /** @deprecated Canvas 4.0 transitional editor field; normalized before persistence. */
+  sourceTableName: string;
   targetPath: string;
   conflictPolicy: FileOutputConflictPolicy;
   formatOptions: FileOutputFormatOptions;
@@ -993,6 +1196,11 @@ export type RenameNodeDefinition = CanvasNodeBase<typeof CanvasNodeType.Rename, 
 
 export type FilterNodeDefinition = CanvasNodeBase<typeof CanvasNodeType.Filter, FilterConfiguration>;
 
+export type SqlTransformNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SqlTransform,
+  SqlTransformConfiguration
+>;
+
 export type SelectColumnsNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.SelectColumns,
   SelectColumnsConfiguration
@@ -1108,6 +1316,7 @@ export type CanvasNodeDefinition =
   | StreamJoinNodeDefinition
   | RenameNodeDefinition
   | FilterNodeDefinition
+  | SqlTransformNodeDefinition
   | SelectColumnsNodeDefinition
   | DeriveColumnsNodeDefinition
   | TypeCastNodeDefinition
@@ -1158,6 +1367,7 @@ export type CanvasNodeConfigurationUpdate =
   | Pick<StreamJoinNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<RenameNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<FilterNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SqlTransformNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<SelectColumnsNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<DeriveColumnsNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<TypeCastNodeDefinition, 'id' | 'type' | 'configuration'>
@@ -1332,6 +1542,10 @@ export type CanvasNodeRuntimeSummary =
     dataSourceType: string;
     qualifiedTableName: string;
     primaryKeyColumns?: string[];
+    tables?: Array<{
+      tableName: string;
+      primaryKeyColumns: string[];
+    }>;
   }
   | {
     kind: 'MODEL';
@@ -1437,6 +1651,7 @@ export type CanvasNodeRuntimeData =
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.StreamJoin, StreamJoinConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.Rename, RenameConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.Filter, FilterConfiguration>
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SqlTransform, SqlTransformConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.SelectColumns, SelectColumnsConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.DeriveColumns, DeriveColumnsConfiguration>
   | CanvasNodeRuntimeBase<typeof CanvasNodeType.TypeCast, TypeCastConfiguration>
@@ -1493,6 +1708,7 @@ const emptyConfigurationFactories: Record<
   [CanvasNodeType.StreamJoin]: createStreamJoinConfiguration,
   [CanvasNodeType.Rename]: createRenameConfiguration,
   [CanvasNodeType.Filter]: createFilterConfiguration,
+  [CanvasNodeType.SqlTransform]: createSqlTransformConfiguration,
   [CanvasNodeType.SelectColumns]: createSelectColumnsConfiguration,
   [CanvasNodeType.DeriveColumns]: createDeriveColumnsConfiguration,
   [CanvasNodeType.TypeCast]: createTypeCastConfiguration,

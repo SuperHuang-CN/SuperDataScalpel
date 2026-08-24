@@ -105,7 +105,8 @@ public final class ModelSnapshotSyncOutputNodeOperator implements CanvasNodeOper
                 context.dataAccess().prepareModelSnapshotSyncOutput(node, model, targetSchema, selected),
                 CanvasLineageOutputCandidate.model(
                         node, selected, model.metadata(), targetSchema,
-                        cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.SNAPSHOT_SYNC
+                        cn.superhuang.data.scalpel.contract.task.CanvasLineageCompilation.WriteMode.SNAPSHOT_SYNC,
+                        null
                 )
         );
     }

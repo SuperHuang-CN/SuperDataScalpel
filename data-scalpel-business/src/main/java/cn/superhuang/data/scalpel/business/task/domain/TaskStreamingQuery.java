@@ -16,8 +16,8 @@ import java.util.UUID;
 @Table(
         name = "task_streaming_query",
         uniqueConstraints = @UniqueConstraint(
-                name = "uk_task_streaming_query_output",
-                columnNames = {"deployment_id", "output_node_id"}
+                name = "uk_task_streaming_query_output_write",
+                columnNames = {"deployment_id", "output_node_id", "output_write_id"}
         ),
         indexes = @Index(name = "idx_task_streaming_query_deployment_state", columnList = "deployment_id,state")
 )
@@ -28,6 +28,9 @@ public class TaskStreamingQuery extends BaseEntity {
 
     @Column(name = "output_node_id", nullable = false, updatable = false)
     private UUID outputNodeId;
+
+    @Column(name = "output_write_id", updatable = false)
+    private UUID outputWriteId;
 
     @Column(name = "output_node_name", nullable = false, length = 100)
     private String outputNodeName;
@@ -73,6 +76,7 @@ public class TaskStreamingQuery extends BaseEntity {
     public static TaskStreamingQuery create(
             UUID deploymentId,
             UUID outputNodeId,
+            UUID outputWriteId,
             String outputNodeName,
             StreamingSinkType sinkType,
             String checkpointKey
@@ -84,11 +88,22 @@ public class TaskStreamingQuery extends BaseEntity {
         TaskStreamingQuery query = new TaskStreamingQuery();
         query.deploymentId = deploymentId;
         query.outputNodeId = outputNodeId;
+        query.outputWriteId = outputWriteId;
         query.outputNodeName = outputNodeName.trim();
         query.sinkType = sinkType;
         query.checkpointKey = checkpointKey.trim();
         query.state = StreamingQueryState.STARTING;
         return query;
+    }
+
+    public static TaskStreamingQuery create(
+            UUID deploymentId,
+            UUID outputNodeId,
+            String outputNodeName,
+            StreamingSinkType sinkType,
+            String checkpointKey
+    ) {
+        return create(deploymentId, outputNodeId, null, outputNodeName, sinkType, checkpointKey);
     }
 
     public void beginStart() {
@@ -138,6 +153,7 @@ public class TaskStreamingQuery extends BaseEntity {
 
     public UUID getDeploymentId() { return deploymentId; }
     public UUID getOutputNodeId() { return outputNodeId; }
+    public UUID getOutputWriteId() { return outputWriteId; }
     public String getOutputNodeName() { return outputNodeName; }
     public StreamingSinkType getSinkType() { return sinkType; }
     public String getCheckpointKey() { return checkpointKey; }

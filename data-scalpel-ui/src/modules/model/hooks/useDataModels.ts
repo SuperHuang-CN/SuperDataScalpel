@@ -26,7 +26,9 @@ import {
   fetchDataModelReferences,
   fetchDataModelFieldLineage,
   fetchDataModelTableLineage,
+  queryDataModelFieldLineage,
   fetchExternalTableImportPreview,
+  fetchFileDatasetImportPreview,
   fetchManagedImportPreview,
   fetchModelFieldTemplate,
   fetchModelFieldTemplates,
@@ -54,6 +56,8 @@ import type {
   CreatePhysicalTableChangePlanRequest,
   ExecutePhysicalTableChangePlanRequest,
   DataModelDataQueryRequest,
+  FileDatasetImportPreview,
+  FileDatasetImportPreviewRequest,
   ManagedImportPreview,
   ManagedImportPreviewRequest,
   ImportModelMetadataRequest,
@@ -79,6 +83,16 @@ export interface ManagedImportPreviewResult extends ManagedImportPreviewItem {
   error?: unknown;
 }
 
+export interface FileDatasetImportPreviewItem {
+  key: string;
+  request: FileDatasetImportPreviewRequest;
+}
+
+export interface FileDatasetImportPreviewResult extends FileDatasetImportPreviewItem {
+  preview?: FileDatasetImportPreview;
+  error?: unknown;
+}
+
 export interface ManagedDataModelDraftItem {
   key: string;
   request: CreateManagedDataModelDraftRequest;
@@ -86,6 +100,16 @@ export interface ManagedDataModelDraftItem {
 
 export interface ManagedDataModelDraftResult extends ManagedDataModelDraftItem {
   detail?: Awaited<ReturnType<typeof createManagedDataModelDraft>>;
+  error?: unknown;
+}
+
+export interface BatchPublishDataModelItem {
+  id: string;
+  name: string;
+}
+
+export interface BatchPublishDataModelResult extends BatchPublishDataModelItem {
+  detail?: Awaited<ReturnType<typeof executeDataModelCommand>>;
   error?: unknown;
 }
 
@@ -256,6 +280,20 @@ export const useDataModelLineage = (
   enabled: enabled && (granularity === 'TABLE' || Boolean(fieldId)),
 });
 
+export const useDataModelFieldLineage = (
+  modelId: string,
+  fieldIds: string[] | null,
+  direction: LineageDirection,
+  depth: 1 | 2,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataModelsQueryKey, modelId, 'lineage', 'FIELD_BATCH', fieldIds, direction, depth],
+  queryFn: ({ signal }) => queryDataModelFieldLineage(modelId, fieldIds, direction, depth, signal),
+  enabled,
+  staleTime: 30_000,
+  placeholderData: (previous) => previous,
+});
+
 /** Callers decide when to refresh the list so a batch can finish with exactly one refetch. */
 export const useRefreshDataModelPhysicalStatistics = () => useMutation({
   mutationFn: refreshDataModelPhysicalStatistics,
@@ -335,6 +373,17 @@ const fetchManagedImportPreviews = async (
 
 export const useManagedImportPreviews = () => useMutation({
   mutationFn: fetchManagedImportPreviews,
+});
+
+const fetchFileDatasetImportPreviews = async (
+  items: FileDatasetImportPreviewItem[],
+): Promise<FileDatasetImportPreviewResult[]> => (
+  (await runManagedImportTasks(items, (item) => fetchFileDatasetImportPreview(item.request)))
+    .map(({ item, result, error }) => ({ ...item, preview: result, error }))
+);
+
+export const useFileDatasetImportPreviews = () => useMutation({
+  mutationFn: fetchFileDatasetImportPreviews,
 });
 
 export const useDownloadModelMetadataTemplate = () => useMutation({
@@ -482,6 +531,35 @@ export const useDataModelCommand = (command: DataModelCommand) => {
         queryClient.invalidateQueries({ queryKey: [modelQualityRulesQueryKey] }),
       ]);
     },
+  });
+};
+
+export const useBatchPublishDataModels = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (items: BatchPublishDataModelItem[]): Promise<BatchPublishDataModelResult[]> => {
+      const results: BatchPublishDataModelResult[] = items.map((item) => ({ ...item }));
+      let nextIndex = 0;
+      const workers = Array.from({ length: Math.min(3, items.length) }, async () => {
+        while (nextIndex < items.length) {
+          const index = nextIndex;
+          nextIndex += 1;
+          try {
+            results[index].detail = await executeDataModelCommand(items[index].id, 'publish');
+          } catch (error) {
+            results[index].error = error;
+          }
+        }
+      });
+      await Promise.all(workers);
+      return results;
+    },
+    onSuccess: () => Promise.all([
+      invalidateDataModels(queryClient),
+      invalidateTaskModelRelations(queryClient),
+      invalidateStandardDictionaries(queryClient),
+      queryClient.invalidateQueries({ queryKey: [modelQualityRulesQueryKey] }),
+    ]),
   });
 };
 

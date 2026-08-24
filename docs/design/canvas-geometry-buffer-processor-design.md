@@ -7,7 +7,7 @@
 - 节点类型：`GEOMETRY_BUFFER`。
 - 节点类别：`PROCESSOR`。
 - 执行模式：`BATCH`、`STREAMING`。
-- 图规则：恰好一条入边，至少一条出边。
+- 图规则：至少一条入边和一条出边；多个上游表 Map 先执行无覆盖合并。
 
 `GEOMETRY_BUFFER` 围绕一张逻辑表中的 Geometry 生成缓冲区，在保留来源行和原 Geometry
 的同时追加规范化的 MultiPolygon 字段。首版提供明确的 `PLANAR`、`SPHEROID` 两种

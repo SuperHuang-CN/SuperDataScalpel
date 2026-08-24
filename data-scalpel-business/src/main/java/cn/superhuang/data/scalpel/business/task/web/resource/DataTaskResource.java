@@ -8,6 +8,7 @@ import cn.superhuang.data.scalpel.business.task.service.ModelQualityTaskDefiniti
 import cn.superhuang.data.scalpel.business.task.service.SparkJarTaskDefinitionService;
 import cn.superhuang.data.scalpel.business.lineage.service.TaskLineageQueryService;
 import cn.superhuang.data.scalpel.business.lineage.web.response.TaskLineageGraphResponse;
+import cn.superhuang.data.scalpel.business.lineage.web.response.TaskFieldLineageGraphResponse;
 import cn.superhuang.data.scalpel.business.task.web.request.CreateDataTaskRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateCanvasTaskDefinitionRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateDataTaskRequest;
@@ -16,6 +17,7 @@ import cn.superhuang.data.scalpel.business.task.web.request.UpdateTaskStreamingC
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateModelQualityTaskDefinitionRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateSparkJarTaskDefinitionRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.StartStreamingTaskRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.QueryTaskFieldLineageRequest;
 import cn.superhuang.data.scalpel.business.task.web.response.DataTaskResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.CanvasTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.LocalSqlDefinitionValidationResponse;
@@ -160,6 +162,16 @@ public class DataTaskResource {
             @RequestParam(required = false) String outputFieldKey
     ) {
         return taskLineageQueryService.fields(id, flowKey, outputFieldKey);
+    }
+
+    @PostMapping("/{id}/lineage/actions/query-fields")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "批量查询任务当前输出链路的字段级血缘")
+    public TaskFieldLineageGraphResponse queryFieldLineage(
+            @PathVariable UUID id,
+            @Valid @RequestBody QueryTaskFieldLineageRequest request
+    ) {
+        return taskLineageQueryService.fieldLines(id, request.flowKey(), request.outputFieldKeys());
     }
 
     @GetMapping("/{id}/streaming-configuration")
