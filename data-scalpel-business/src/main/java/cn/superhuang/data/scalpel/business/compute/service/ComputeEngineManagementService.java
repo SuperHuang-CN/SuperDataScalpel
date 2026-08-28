@@ -11,6 +11,8 @@ import cn.superhuang.data.scalpel.business.compute.domain.ComputeEngine;
 import cn.superhuang.data.scalpel.business.compute.domain.ComputeEngineRegistrationState;
 import cn.superhuang.data.scalpel.business.compute.repository.ComputeEngineRepository;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.domain.TaskType;
 import cn.superhuang.data.scalpel.business.compute.web.request.CreateComputeEngineRequest;
 import cn.superhuang.data.scalpel.business.compute.web.request.DetachComputeEngineRequest;
 import cn.superhuang.data.scalpel.business.compute.web.request.UpdateComputeEngineRequest;
@@ -23,6 +25,8 @@ import cn.superhuang.data.scalpel.business.task.execution.service.ExecutionKafka
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -57,34 +61,40 @@ public class ComputeEngineManagementService {
 
     private final ComputeEngineRepository repository;
     private final DataTaskRepository taskRepository;
+    private final SparkJarTaskDefinitionRepository sparkJarDefinitionRepository;
     private final TaskRunRepository taskRunRepository;
     private final TaskExecutionOutboxRepository executionOutboxRepository;
     private final SearchEngine searchEngine;
     private final ComputeEngineCredentialCipher credentialCipher;
     private final ComputeEngineDispatcherClient client;
     private final ExecutionKafkaProperties executionKafkaProperties;
+    private final SparkExecutionResourceConfigurationService resourceConfigurationService;
     private final TransactionTemplate transactionTemplate;
     private final ConcurrentHashMap<UUID, ReentrantLock> reconfigurationLocks = new ConcurrentHashMap<>();
 
     public ComputeEngineManagementService(
             ComputeEngineRepository repository,
             DataTaskRepository taskRepository,
+            SparkJarTaskDefinitionRepository sparkJarDefinitionRepository,
             TaskRunRepository taskRunRepository,
             TaskExecutionOutboxRepository executionOutboxRepository,
             SearchEngine searchEngine,
             ComputeEngineCredentialCipher credentialCipher,
             ComputeEngineDispatcherClient client,
             ExecutionKafkaProperties executionKafkaProperties,
+            SparkExecutionResourceConfigurationService resourceConfigurationService,
             PlatformTransactionManager transactionManager
     ) {
         this.repository = repository;
         this.taskRepository = taskRepository;
+        this.sparkJarDefinitionRepository = sparkJarDefinitionRepository;
         this.taskRunRepository = taskRunRepository;
         this.executionOutboxRepository = executionOutboxRepository;
         this.searchEngine = searchEngine;
         this.credentialCipher = credentialCipher;
         this.client = client;
         this.executionKafkaProperties = executionKafkaProperties;
+        this.resourceConfigurationService = resourceConfigurationService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -92,14 +102,14 @@ public class ComputeEngineManagementService {
     public PageResponse<ComputeEngineResponse> search(SearchRequest request) {
         Page<ComputeEngine> result = searchEngine.search(request, ComputeEngine.class, repository);
         return new PageResponse<>(
-                result.getContent().stream().map(ComputeEngineResponse::from).toList(),
+                result.getContent().stream().map(this::response).toList(),
                 result.getTotalElements(), result.getTotalPages(), result.getNumber(), result.getSize()
         );
     }
 
     @Transactional(readOnly = true)
     public ComputeEngineResponse get(UUID id) {
-        return ComputeEngineResponse.from(requireEngine(id));
+        return response(requireEngine(id));
     }
 
     @Transactional
@@ -107,13 +117,15 @@ public class ComputeEngineManagementService {
         requireUniqueName(request.name(), null);
         requireUniqueTopics(request.commandTopic(), request.runnerEventTopic(), null);
         requireListenedAdminEventTopic(request.adminEventTopic());
+        SparkExecutionResourcePolicy resourcePolicy = requestedPolicy(request.resourcePolicy(), request.expectedBackendType());
         ComputeEngine engine = ComputeEngine.create(
                 request.name(), request.description(), request.dispatcherBaseUrl(),
                 credentialCipher.encrypt(request.accessToken()), request.expectedBackendType(),
                 request.commandTopic(), request.runnerEventTopic(), request.adminEventTopic(),
-                request.maxQueuedExecutions(), request.maxConcurrentSubmissions(), request.maxInFlightApplications()
+                request.maxQueuedExecutions(), request.maxConcurrentSubmissions(), request.maxInFlightApplications(),
+                resourceConfigurationService.write(resourcePolicy)
         );
-        return ComputeEngineResponse.from(repository.saveAndFlush(engine));
+        return response(repository.saveAndFlush(engine));
     }
 
     @Transactional
@@ -125,13 +137,18 @@ public class ComputeEngineManagementService {
         requireListenedAdminEventTopic(request.adminEventTopic());
         String ciphertext = request.accessToken() == null || request.accessToken().isBlank()
                 ? engine.getAccessTokenCiphertext() : credentialCipher.encrypt(request.accessToken());
+        SparkExecutionResourcePolicy resourcePolicy = request.resourcePolicy() == null
+                ? resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType())
+                : request.resourcePolicy();
+        assertJarTasksWithinMaximums(id, resourcePolicy.maximums());
         engine.update(
                 request.name(), request.description(), request.dispatcherBaseUrl(), ciphertext,
                 request.expectedBackendType(), request.commandTopic(), request.runnerEventTopic(),
                 request.adminEventTopic(), request.maxQueuedExecutions(),
-                request.maxConcurrentSubmissions(), request.maxInFlightApplications()
+                request.maxConcurrentSubmissions(), request.maxInFlightApplications(),
+                resourceConfigurationService.write(resourcePolicy)
         );
-        return ComputeEngineResponse.from(repository.saveAndFlush(engine));
+        return response(repository.saveAndFlush(engine));
     }
 
     public ComputeEngineResponse reconfigure(UUID id, UpdateComputeEngineRequest request) {
@@ -149,7 +166,7 @@ public class ComputeEngineManagementService {
     private ComputeEngineResponse reconfigureLocked(UUID id, UpdateComputeEngineRequest request) {
         ReconfigurationPlan plan = Objects.requireNonNull(transactionTemplate.execute(status -> prepareReconfiguration(id, request)));
         if (!plan.changed()) {
-            return ComputeEngineResponse.from(requireEngine(id));
+            return response(requireEngine(id));
         }
 
         preflightCandidate(plan.candidate());
@@ -204,7 +221,8 @@ public class ComputeEngineManagementService {
                             new DispatcherAdmissionPolicy(
                                     snapshot.maxQueuedExecutions(), snapshot.maxConcurrentSubmissions(),
                                     snapshot.maxInFlightApplications()
-                            )
+                            ),
+                            resourceConfigurationService.policy(snapshot.resourcePolicyJson(), snapshot.expectedBackendType())
                     )
             );
             requireRegistration(
@@ -292,7 +310,7 @@ public class ComputeEngineManagementService {
                 );
             }
             engine.detach(request.reason());
-            return ComputeEngineResponse.from(repository.saveAndFlush(engine));
+            return response(repository.saveAndFlush(engine));
         }));
     }
 
@@ -315,7 +333,7 @@ public class ComputeEngineManagementService {
             ComputeEngine engine = requireEngine(snapshot.id());
             requireUnchangedTarget(engine, snapshot);
             action.accept(engine);
-            return ComputeEngineResponse.from(repository.saveAndFlush(engine));
+            return response(repository.saveAndFlush(engine));
         }));
     }
 
@@ -330,11 +348,16 @@ public class ComputeEngineManagementService {
         requireListenedAdminEventTopic(request.adminEventTopic());
         String ciphertext = request.accessToken() == null || request.accessToken().isBlank()
                 ? engine.getAccessTokenCiphertext() : credentialCipher.encrypt(request.accessToken());
+        SparkExecutionResourcePolicy resourcePolicy = request.resourcePolicy() == null
+                ? resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType())
+                : request.resourcePolicy();
+        assertJarTasksWithinMaximums(id, resourcePolicy.maximums());
         ComputeEngine candidate = ComputeEngine.create(
                 request.name(), request.description(), request.dispatcherBaseUrl(), ciphertext,
                 request.expectedBackendType(), request.commandTopic(), request.runnerEventTopic(),
                 request.adminEventTopic(), request.maxQueuedExecutions(),
-                request.maxConcurrentSubmissions(), request.maxInFlightApplications()
+                request.maxConcurrentSubmissions(), request.maxInFlightApplications(),
+                resourceConfigurationService.write(resourcePolicy)
         );
         return new ReconfigurationPlan(snapshot(engine), candidate, !engine.sameConfigurationAs(candidate));
     }
@@ -406,7 +429,7 @@ public class ComputeEngineManagementService {
                     candidate.getAccessTokenCiphertext(), candidate.getExpectedBackendType(),
                     candidate.getCommandTopic(), candidate.getRunnerEventTopic(), candidate.getAdminEventTopic(),
                     candidate.getMaxQueuedExecutions(), candidate.getMaxConcurrentSubmissions(),
-                    candidate.getMaxInFlightApplications()
+                    candidate.getMaxInFlightApplications(), candidate.getResourcePolicyJson()
             );
             return repository.saveAndFlush(engine);
         }));
@@ -439,7 +462,7 @@ public class ComputeEngineManagementService {
         return info;
     }
 
-    private static void requireRegistration(
+    private void requireRegistration(
             EngineSnapshot snapshot,
             DispatcherRegistrationResponse response,
             DispatcherRegistrationState expected
@@ -447,7 +470,7 @@ public class ComputeEngineManagementService {
         requireRegistration(snapshot, response, expected, snapshot.dispatcherInstanceId());
     }
 
-    private static void requireRegistration(
+    private void requireRegistration(
             EngineSnapshot snapshot,
             DispatcherRegistrationResponse response,
             DispatcherRegistrationState expected,
@@ -460,7 +483,7 @@ public class ComputeEngineManagementService {
         }
     }
 
-    private static void requireOwnedRemoteRegistration(
+    private void requireOwnedRemoteRegistration(
             EngineSnapshot snapshot,
             DispatcherRegistrationResponse response
     ) {
@@ -475,7 +498,7 @@ public class ComputeEngineManagementService {
         }
     }
 
-    private static boolean sameRemoteConfiguration(
+    private boolean sameRemoteConfiguration(
             EngineSnapshot snapshot,
             DispatcherRegistrationResponse response
     ) {
@@ -490,7 +513,9 @@ public class ComputeEngineManagementService {
                 && policy != null
                 && policy.maxQueuedExecutions() == snapshot.maxQueuedExecutions()
                 && policy.maxConcurrentSubmissions() == snapshot.maxConcurrentSubmissions()
-                && policy.maxInFlightApplications() == snapshot.maxInFlightApplications();
+                && policy.maxInFlightApplications() == snapshot.maxInFlightApplications()
+                && Objects.equals(response.resourcePolicy(),
+                resourceConfigurationService.policy(snapshot.resourcePolicyJson(), snapshot.expectedBackendType()));
     }
 
     private static void requireUnchangedTarget(ComputeEngine engine, EngineSnapshot snapshot) {
@@ -509,6 +534,7 @@ public class ComputeEngineManagementService {
                 && engine.getMaxQueuedExecutions() == snapshot.maxQueuedExecutions()
                 && engine.getMaxConcurrentSubmissions() == snapshot.maxConcurrentSubmissions()
                 && engine.getMaxInFlightApplications() == snapshot.maxInFlightApplications()
+                && Objects.equals(engine.getResourcePolicyJson(), snapshot.resourcePolicyJson())
                 && Objects.equals(engine.getDispatcherInstanceId(), snapshot.dispatcherInstanceId());
     }
 
@@ -516,14 +542,48 @@ public class ComputeEngineManagementService {
         return snapshot(requireEngine(id));
     }
 
-    private static EngineSnapshot snapshot(ComputeEngine engine) {
+    private EngineSnapshot snapshot(ComputeEngine engine) {
         return new EngineSnapshot(
                 engine.getId(), engine.getName(), engine.getDispatcherBaseUrl(), engine.getAccessTokenCiphertext(),
                 engine.getExpectedBackendType(), engine.getRegistrationState(), engine.getCommandTopic(),
                 engine.getRunnerEventTopic(), engine.getAdminEventTopic(), engine.getMaxQueuedExecutions(),
                 engine.getMaxConcurrentSubmissions(), engine.getMaxInFlightApplications(),
-                engine.getDispatcherInstanceId()
+                engine.getResourcePolicyJson(), engine.getDispatcherInstanceId()
         );
+    }
+
+    private ComputeEngineResponse response(ComputeEngine engine) {
+        return ComputeEngineResponse.from(engine,
+                resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType()));
+    }
+
+    private SparkExecutionResourcePolicy requestedPolicy(
+            SparkExecutionResourcePolicy requested,
+            cn.superhuang.data.scalpel.business.compute.domain.ComputeBackendType backendType
+    ) {
+        return requested == null
+                ? SparkExecutionResourcePolicy.defaultsFor(SparkExecutionResourceConfigurationService.toExecutionBackend(backendType))
+                : requested;
+    }
+
+    private void assertJarTasksWithinMaximums(UUID engineId, SparkExecutionResourceSpec maximums) {
+        List<cn.superhuang.data.scalpel.business.task.domain.DataTask> tasks = taskRepository
+                .findAllByComputeEngineIdAndTypeIn(engineId, List.of(TaskType.SPARK_JAR, TaskType.SPARK_STREAMING_JAR));
+        List<String> affected = sparkJarDefinitionRepository.findAllByTaskIdIn(tasks.stream()
+                        .map(cn.superhuang.data.scalpel.business.task.domain.DataTask::getId).toList()).stream()
+                .filter(definition -> {
+                    SparkExecutionResourceSpec resources = resourceConfigurationService.resources(
+                            definition.getExecutionResourcesJson());
+                    return resources != null && resources.exceeds(maximums);
+                })
+                .map(definition -> tasks.stream().filter(task -> task.getId().equals(definition.getTaskId()))
+                        .findFirst().map(cn.superhuang.data.scalpel.business.task.domain.DataTask::getName)
+                        .orElse(definition.getTaskId().toString()))
+                .toList();
+        if (!affected.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "新的单次任务资源上限低于已绑定 Spark JAR 任务：" + String.join("、", affected));
+        }
     }
 
     private ComputeEngine requireEngine(UUID id) {
@@ -621,6 +681,7 @@ public class ComputeEngineManagementService {
             int maxQueuedExecutions,
             int maxConcurrentSubmissions,
             int maxInFlightApplications,
+            String resourcePolicyJson,
             String dispatcherInstanceId
     ) {
     }

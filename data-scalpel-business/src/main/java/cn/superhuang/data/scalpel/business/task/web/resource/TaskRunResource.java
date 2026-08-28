@@ -5,6 +5,8 @@ import cn.superhuang.data.scalpel.business.task.service.TaskRunService.TaskRunAr
 import cn.superhuang.data.scalpel.business.task.service.QualityFailureSampleService;
 import cn.superhuang.data.scalpel.business.task.web.response.QualityFailureSampleResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.TaskRunLineageResponse;
+import cn.superhuang.data.scalpel.business.task.service.SparkJarLineageQueryService;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -33,10 +35,13 @@ public class TaskRunResource {
 
     private final TaskRunService service;
     private final QualityFailureSampleService qualityFailureSampleService;
+    private final SparkJarLineageQueryService sparkJarLineageQueryService;
 
-    public TaskRunResource(TaskRunService service, QualityFailureSampleService qualityFailureSampleService) {
+    public TaskRunResource(TaskRunService service, QualityFailureSampleService qualityFailureSampleService,
+                           SparkJarLineageQueryService sparkJarLineageQueryService) {
         this.service = service;
         this.qualityFailureSampleService = qualityFailureSampleService;
+        this.sparkJarLineageQueryService = sparkJarLineageQueryService;
     }
 
     @PostMapping("/api/v1/tasks/{id}/actions/run")
@@ -62,6 +67,13 @@ public class TaskRunResource {
     @Operation(summary = "查询任务运行详情")
     public TaskRunResponse get(@PathVariable UUID runId) {
         return service.get(runId);
+    }
+
+    @GetMapping("/api/v1/task-runs/{runId}/lineage")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询 Spark JAR 运行血缘摄取状态")
+    public TaskRunLineageResponse lineage(@PathVariable UUID runId) {
+        return sparkJarLineageQueryService.get(runId);
     }
 
     @GetMapping("/api/v1/task-runs/{runId}/artifacts/result")

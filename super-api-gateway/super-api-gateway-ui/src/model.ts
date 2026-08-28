@@ -36,6 +36,7 @@ export interface Route {
   methods: GatewayHttpMethod[];
   order: number;
   stripPrefixSegments: number;
+  upstreamPath?: string;
   enabled: boolean;
   source: string;
   externalId?: string;

@@ -1,5 +1,14 @@
-export { ApiConsumerPage } from './pages/ApiConsumerPage';
-export { DataServicePage } from './pages/DataServicePage';
 export { buildDataServiceSearch } from './model/dataServiceSearch';
-export { dataServiceStatusLabels, dataServiceTypeLabels } from './model/dataService';
-export type { DataServiceStatus, DataServiceType } from './model/dataService';
+export { useDataServices } from './hooks/useDataServices';
+export {
+  dataServiceDeploymentStatusLabels,
+  dataServiceStatusLabels,
+  dataServiceTypeLabels,
+} from './model/dataService';
+export type {
+  DataServiceDeploymentStatus,
+  DataServiceFilters,
+  DataServiceStatus,
+  DataServiceSummary,
+  DataServiceType,
+} from './model/dataService';

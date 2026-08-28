@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.business.service.consumer.subscription.domain.
 import cn.superhuang.data.scalpel.business.service.consumer.subscription.domain.GatewaySubscriptionBinding;
 import cn.superhuang.data.scalpel.business.service.domain.DataService;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
+import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServiceBinding;
 
 import java.time.Instant;
 import java.util.Comparator;
@@ -32,6 +33,7 @@ public record ApiServiceSubscriptionResponse(
             ApiServiceSubscription subscription,
             ApiConsumer consumer,
             DataService dataService,
+            GatewayServiceBinding serviceBinding,
             List<GatewaySubscriptionBinding> bindings
     ) {
         return new ApiServiceSubscriptionResponse(
@@ -42,8 +44,8 @@ public record ApiServiceSubscriptionResponse(
                 subscription.getDataServiceId(),
                 dataService == null ? "已删除" : dataService.getCode(),
                 dataService == null ? "已删除的数据服务" : dataService.getName(),
-                dataService == null ? null : dataService.getRoutePath(),
-                dataService == null ? null : dataService.getAccessMode(),
+                serviceBinding == null ? null : serviceBinding.getGatewayRoutePath(),
+                serviceBinding == null ? null : serviceBinding.getAccessMode(),
                 subscription.getDesiredState(),
                 bindings.stream()
                         .sorted(Comparator.comparing(binding -> binding.getProvider().name()))

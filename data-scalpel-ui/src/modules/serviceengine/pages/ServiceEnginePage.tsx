@@ -11,7 +11,6 @@ export const ServiceEnginePage = () => {
       canUpdate={permissions.has('service.engine.update')}
       canDelete={permissions.has('service.engine.delete')}
       canTest={permissions.has('service.engine.test')}
-      canViewDataSources={permissions.has('datasource.view')}
     />
   );
 };

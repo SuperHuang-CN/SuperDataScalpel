@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.service.web.response;
 
 import cn.superhuang.data.scalpel.business.service.gateway.GatewayProvider;
+import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServiceBinding;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServicePublicationStatus;
 import cn.superhuang.data.scalpel.business.service.gateway.reconciliation.GatewayReconciliationReason;
@@ -14,6 +15,8 @@ public record GatewayServiceBindingResponse(
         GatewayProvider provider,
         String externalServiceId,
         String externalRouteId,
+        String gatewayRoutePath,
+        DataServiceAccessMode accessMode,
         long publishedRevision,
         GatewayServicePublicationStatus publicationStatus,
         String gatewayUrl,
@@ -36,6 +39,8 @@ public record GatewayServiceBindingResponse(
                 binding.getProvider(),
                 binding.getExternalServiceId(),
                 binding.getExternalRouteId(),
+                binding.getGatewayRoutePath(),
+                binding.getAccessMode(),
                 binding.getPublishedRevision(),
                 binding.getPublicationStatus(),
                 binding.getGatewayUrl(),

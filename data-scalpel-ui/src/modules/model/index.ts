@@ -2,6 +2,8 @@ export { DataModelPage } from './pages/DataModelPage';
 export { ModelWarehouseLayerPage } from './pages/ModelWarehouseLayerPage';
 export { ModelFieldTemplatePage } from './pages/ModelFieldTemplatePage';
 export { DataModelDataQueryPanel } from './components/DataModelDataQueryPanel';
+export { DataModelPickerModal } from './components/DataModelPickerModal';
+export type { DataModelPickerSelectionMode } from './components/DataModelPickerModal';
 export { LineageGraphCanvas } from './components/LineageGraphCanvas';
 export { LineageFieldSelector } from './components/LineageFieldSelector';
 export { LineageWarningHint } from './components/LineageWarningHint';

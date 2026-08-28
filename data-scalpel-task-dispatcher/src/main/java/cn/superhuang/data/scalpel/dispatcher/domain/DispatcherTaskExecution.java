@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.dispatcher.domain;
 
 import cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionErrorCategory;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
@@ -24,6 +25,7 @@ import cn.superhuang.data.scalpel.contract.quality.QualityConclusion;
 import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
 import cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 
 @Entity
 @Table(name = "dispatcher_task_execution", uniqueConstraints = {
@@ -71,6 +73,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     private String manifestSha256;
     @Column(name = "result_key", nullable = false, length = 500, updatable = false)
     private String resultKey;
+    @Column(name = "result_sha256", length = 64)
+    private String resultSha256;
     @Column(name = "log_key", nullable = false, length = 500, updatable = false)
     private String logKey;
     @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
@@ -87,6 +91,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(name = "spark_conf", updatable = false)
     private String sparkConf;
+    @Column(name = "execution_resources", nullable = false, length = 100, updatable = false)
+    private String executionResources;
     @Column(name = "deadline_at", updatable = false)
     private Instant deadlineAt;
     @Column(name = "cancel_requested", nullable = false)
@@ -163,7 +169,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     public static DispatcherTaskExecution queue(
             SubmitExecutionCommand command,
             String fingerprint,
-            ExecutionBackendType backendType
+            ExecutionBackendType backendType,
+            SparkExecutionResourceSpec resources
     ) {
         DispatcherTaskExecution execution = new DispatcherTaskExecution();
         execution.engineId = command.engineId();
@@ -189,6 +196,7 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
             execution.userJarSizeBytes = command.userJar().sizeBytes();
         }
         execution.sparkConf = encodeSparkConf(command.sparkConf());
+        execution.executionResources = encodeResources(resources);
         execution.deadlineAt = command.deadlineAt();
         execution.queuedAt = Instant.now();
         return execution;
@@ -197,7 +205,8 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     public static DispatcherTaskExecution queue(
             StartStreamingExecutionCommand command,
             String fingerprint,
-            ExecutionBackendType backendType
+            ExecutionBackendType backendType,
+            SparkExecutionResourceSpec resources
     ) {
         DispatcherTaskExecution execution = new DispatcherTaskExecution();
         execution.engineId = command.engineId();
@@ -222,6 +231,7 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
             execution.userJarSizeBytes = command.userJar().sizeBytes();
         }
         execution.sparkConf = encodeSparkConf(command.sparkConf());
+        execution.executionResources = encodeResources(resources);
         execution.deadlineAt = null;
         execution.queuedAt = Instant.now();
         return execution;
@@ -231,6 +241,16 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
         require(DispatcherExecutionState.QUEUED);
         state = DispatcherExecutionState.SUBMITTING;
         submissionStartedAt = Instant.now();
+    }
+
+    public void recordResultSha256(String value) {
+        if (value == null || !value.matches("[0-9a-f]{64}")) {
+            throw new IllegalArgumentException("结果 SHA-256 无效");
+        }
+        if (resultSha256 != null && !resultSha256.equals(value)) {
+            throw new IllegalStateException("同一执行报告了不同的结果 SHA-256");
+        }
+        resultSha256 = value;
     }
 
     public void submitted(String externalId, String trackingUrl) {
@@ -302,6 +322,29 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
                     java.util.Base64.getDecoder().decode(line.substring(split + 1)),
                     java.nio.charset.StandardCharsets.UTF_8));
         }).toList();
+    }
+
+    private static String encodeResources(SparkExecutionResourceSpec resources) {
+        if (resources == null) throw new IllegalArgumentException("执行运行资源不能为空");
+        return "%d,%d,%d,%d,%d".formatted(resources.driverCores(), resources.driverMemoryMiB(),
+                resources.executorInstances(), resources.executorCores(), resources.executorMemoryMiB());
+    }
+
+    private static SparkExecutionResourceSpec decodeResources(String value, ExecutionBackendType backendType) {
+        if (value == null || value.isBlank()) {
+            // Rows created before the resource snapshot column existed are
+            // resumable. New executions always persist an explicit value.
+            return cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy
+                    .defaultsFor(backendType).defaults();
+        }
+        try {
+            String[] parts = value.split(",");
+            if (parts.length != 5) throw new IllegalArgumentException();
+            return new SparkExecutionResourceSpec(Integer.parseInt(parts[0]), Integer.parseInt(parts[1]),
+                    Integer.parseInt(parts[2]), Integer.parseInt(parts[3]), Integer.parseInt(parts[4]));
+        } catch (RuntimeException exception) {
+            throw new IllegalStateException("执行运行资源损坏", exception);
+        }
     }
 
     public void succeed() { terminal(DispatcherExecutionState.SUCCESS, (String) null, null); }
@@ -435,6 +478,7 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     public String getManifestKey() { return manifestKey; }
     public String getManifestSha256() { return manifestSha256; }
     public String getResultKey() { return resultKey; }
+    public String getResultSha256() { return resultSha256; }
     public String getLogKey() { return logKey; }
     public List<UUID> getQualitySampleRuleIds() {
         return qualitySampleRuleIds == null || qualitySampleRuleIds.isBlank() ? List.of()
@@ -446,6 +490,7 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
                 : new ExecutionUserJarArtifact(userJarObjectKey, userJarSha256, userJarSizeBytes);
     }
     public List<SparkConfigurationEntry> getSparkConf() { return decodeSparkConf(sparkConf); }
+    public SparkExecutionResourceSpec getExecutionResources() { return decodeResources(executionResources, backendType); }
     public Instant getDeadlineAt() { return deadlineAt; }
     public boolean isCancelRequested() { return cancelRequested; }
     public boolean isForceTerminateRequested() { return forceTerminateRequestedAt != null; }

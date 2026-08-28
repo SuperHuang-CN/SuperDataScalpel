@@ -41,6 +41,15 @@ public class SparkJarTaskDefinition extends BaseEntity {
     @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
     @Column(name = "spark_conf_json", nullable = false)
     private String sparkConfJson;
+
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "execution_resources_json")
+    private String executionResourcesJson;
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "development_kit_config_json")
+    private String developmentKitConfigJson;
+    @Column(name = "current_development_kit_job_id")
+    private UUID currentDevelopmentKitJobId;
     @Column(name = "timeout_seconds", nullable = false)
     private int timeoutSeconds;
     @Column(nullable = false)
@@ -65,17 +74,24 @@ public class SparkJarTaskDefinition extends BaseEntity {
         return new SparkJarTaskDefinition(taskId, jobMode);
     }
 
-    public boolean updateConfiguration(String parametersJson, String sparkConfJson, int timeoutSeconds) {
+    public boolean updateConfiguration(
+            String parametersJson,
+            String sparkConfJson,
+            String executionResourcesJson,
+            int timeoutSeconds
+    ) {
         if (timeoutSeconds < 1 || timeoutSeconds > 86400) {
             throw new IllegalArgumentException("超时时间必须在 1 到 86400 秒之间");
         }
         if (Objects.equals(this.parametersJson, parametersJson)
                 && Objects.equals(this.sparkConfJson, sparkConfJson)
+                && Objects.equals(this.executionResourcesJson, executionResourcesJson)
                 && this.timeoutSeconds == timeoutSeconds) {
             return false;
         }
         this.parametersJson = Objects.requireNonNull(parametersJson);
         this.sparkConfJson = Objects.requireNonNull(sparkConfJson);
+        this.executionResourcesJson = executionResourcesJson;
         this.timeoutSeconds = timeoutSeconds;
         incrementVersion();
         return true;
@@ -102,6 +118,21 @@ public class SparkJarTaskDefinition extends BaseEntity {
 
     public void resourceBindingsChanged() { incrementVersion(); }
 
+    /**
+     * Local-development-kit settings are auxiliary authoring data.  They must not
+     * change the production Spark JAR definition version.
+     */
+    public void saveDevelopmentKitConfig(String configJson) {
+        this.developmentKitConfigJson = required(configJson);
+    }
+
+    /** Returns the replaced current package, if there was one. */
+    public UUID replaceCurrentDevelopmentKit(UUID jobId) {
+        UUID previous = currentDevelopmentKitJobId;
+        currentDevelopmentKitJobId = Objects.requireNonNull(jobId);
+        return previous;
+    }
+
     private void incrementVersion() {
         if (version == Integer.MAX_VALUE) throw new IllegalStateException("Spark JAR 定义版本已达到最大值");
         version++;
@@ -122,7 +153,10 @@ public class SparkJarTaskDefinition extends BaseEntity {
     public SparkJarJobMode getJobMode() { return jobMode; }
     public String getParametersJson() { return parametersJson; }
     public String getSparkConfJson() { return sparkConfJson; }
+    public String getExecutionResourcesJson() { return executionResourcesJson; }
     public int getTimeoutSeconds() { return timeoutSeconds; }
     public int getVersion() { return version; }
+    public String getDevelopmentKitConfigJson() { return developmentKitConfigJson; }
+    public UUID getCurrentDevelopmentKitJobId() { return currentDevelopmentKitJobId; }
     public boolean hasJar() { return jarObjectKey != null; }
 }

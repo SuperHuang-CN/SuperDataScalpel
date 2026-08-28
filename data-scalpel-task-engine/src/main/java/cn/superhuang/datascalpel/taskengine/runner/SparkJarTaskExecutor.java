@@ -59,7 +59,7 @@ final class SparkJarTaskExecutor {
                     TaskExecutionState.SUCCESS, startedAt, endedAt,
                     Duration.between(startedAt, endedAt).toMillis(), context.affectedRows(), List.of(),
                     ExecutionTaskType.SPARK_JAR, null,
-                    context.observabilityRuntime().snapshot(), null);
+                    context.observabilityRuntime().snapshot(), context.lineageEvidence(true), null);
         } catch (Throwable throwable) {
             Throwable actual = unwrap(throwable);
             TaskExecutionError error = failureClassifier.classify(actual,
@@ -71,7 +71,8 @@ final class SparkJarTaskExecutor {
                     Duration.between(startedAt, endedAt).toMillis(),
                     context == null ? null : context.affectedRows(), List.of(),
                     ExecutionTaskType.SPARK_JAR, null,
-                    context == null ? null : context.observabilityRuntime().snapshot(), error);
+                    context == null ? null : context.observabilityRuntime().snapshot(),
+                    context == null ? null : context.lineageEvidence(false), error);
         } finally {
             if (context != null) context.observabilityRuntime().close();
             if (spark != null) spark.stop();
@@ -86,7 +87,7 @@ final class SparkJarTaskExecutor {
         return new TaskExecutionResult(TaskExecutionResult.CURRENT_SCHEMA_VERSION,
                 executionId, runId, attempt, TaskExecutionState.FAILED, startedAt, endedAt,
                 Duration.between(startedAt, endedAt).toMillis(), null, List.of(),
-                ExecutionTaskType.SPARK_JAR, null, null, error);
+                ExecutionTaskType.SPARK_JAR, null, null, null, error);
     }
 
     private static void invoke(Path userJar, String className, SparkJarJobContextImpl context) throws Exception {

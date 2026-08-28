@@ -10,7 +10,8 @@ import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.StartStreamingExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionCommand;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherMessageInbox;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistration;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState;
@@ -91,7 +92,18 @@ public class DispatcherCommandService {
             inbox.rejected("实时执行请求指纹冲突");
             return Outcome.REJECTED;
         }
-        DispatcherTaskExecution execution = DispatcherTaskExecution.queue(command, fingerprint, registration.getBackendType());
+        SparkExecutionResourceSpec resources = resolveResources(command.executionResources(), registration);
+        DispatcherTaskExecution execution = DispatcherTaskExecution.queue(
+                command, fingerprint, registration.getBackendType(), resources);
+        if (resources.exceeds(registration.getResourcePolicy().maximums())) {
+            SafeExecutionError error = new SafeExecutionError(
+                    "RESOURCE_LIMIT_EXCEEDED", "任务运行资源超过计算引擎单次任务上限");
+            execution.fail(error);
+            executionRepository.save(execution);
+            eventService.enqueue(execution, ExecutionMessageType.EXECUTION_REJECTED, error, null);
+            inbox.processed();
+            return Outcome.REJECTED;
+        }
         if (registration.getState() == DispatcherRegistrationState.DRAINING) {
             SafeExecutionError error = new SafeExecutionError("ENGINE_DRAINING", "计算引擎正在排空");
             execution.fail(error);
@@ -174,7 +186,18 @@ public class DispatcherCommandService {
             return Outcome.REJECTED;
         }
 
-        DispatcherTaskExecution execution = DispatcherTaskExecution.queue(command, fingerprint, registration.getBackendType());
+        SparkExecutionResourceSpec resources = resolveResources(command.executionResources(), registration);
+        DispatcherTaskExecution execution = DispatcherTaskExecution.queue(
+                command, fingerprint, registration.getBackendType(), resources);
+        if (resources.exceeds(registration.getResourcePolicy().maximums())) {
+            SafeExecutionError error = new SafeExecutionError(
+                    "RESOURCE_LIMIT_EXCEEDED", "任务运行资源超过计算引擎单次任务上限");
+            execution.fail(error);
+            executionRepository.save(execution);
+            eventService.enqueue(execution, ExecutionMessageType.EXECUTION_REJECTED, error, null);
+            inbox.processed();
+            return Outcome.REJECTED;
+        }
         if (registration.getState() == DispatcherRegistrationState.DRAINING) {
             SafeExecutionError error = new SafeExecutionError("ENGINE_DRAINING", "计算引擎正在排空");
             execution.fail(error);
@@ -247,5 +270,14 @@ public class DispatcherCommandService {
         return new SafeExecutionError(
                 "EXECUTION_FORCE_TERMINATED", message, ExecutionErrorCategory.CANCELLED, false,
                 null, null, null, ExecutionFailurePhase.DISPATCH, null, UUID.randomUUID());
+    }
+
+    private static SparkExecutionResourceSpec resolveResources(
+            SparkExecutionResourceSpec requested,
+            DispatcherRegistration registration
+    ) {
+        SparkExecutionResourceSpec resources = requested == null
+                ? registration.getResourcePolicy().defaults() : requested;
+        return resources;
     }
 }

@@ -32,6 +32,7 @@ import {
   useDownloadQualityFailureSamples,
   useDownloadTaskRunArtifact,
   useTaskRun,
+  useTaskRunLineage,
   useTaskRunResultArtifact,
 } from '../hooks/useTasks';
 import {
@@ -78,6 +79,12 @@ const formatBytes = (value: number): string => {
   if (value >= 1024) return `${(value / 1024).toFixed(2)} KiB`;
   return `${value} B`;
 };
+
+const lineageCoverageLabels = {
+  MODEL_ONLY: '资产级',
+  FIELD_PARTIAL: '字段部分',
+  FIELD_COMPLETE: '字段完整',
+} as const;
 
 const qualityConclusion = (value: 'PASSED' | 'FAILED' | null) => {
   if (!value) return '—';
@@ -173,6 +180,10 @@ export const TaskRunDetailDrawer = ({
   const logDownload = useDownloadTaskRunArtifact();
   const sampleDownload = useDownloadQualityFailureSamples();
   const run = runQuery.data;
+  const lineageQuery = useTaskRunLineage(
+    run?.id,
+    open && run?.taskType === 'SPARK_JAR',
+  );
   const resultArtifactQuery = useTaskRunResultArtifact(
     run?.id,
     open && (run?.taskType === 'SPARK_CANVAS' || run?.taskType === 'SPARK_MODEL_QUALITY'
@@ -355,6 +366,14 @@ export const TaskRunDetailDrawer = ({
                     ? <Typography.Text code copyable ellipsis>{run.userJarSha256}</Typography.Text>
                     : '—'}
                 </Descriptions.Item>
+                <Descriptions.Item label="运行资源" span={2}>
+                  {run.executionResources
+                    ? `${run.executionResources.driverCores} Core / ${run.executionResources.driverMemoryMiB / 1024} GiB`
+                    + (run.taskType === 'SPARK_STREAMING_JAR' || run.executionResources.executorInstances > 1
+                      ? `；${run.executionResources.executorInstances} 个执行器 × ${run.executionResources.executorCores} Core / ${run.executionResources.executorMemoryMiB / 1024} GiB`
+                      : '')
+                    : '—'}
+                </Descriptions.Item>
               </>
             )}
             <Descriptions.Item label="排队时间">{formatTaskRunDateTime(run.queuedAt)}</Descriptions.Item>
@@ -367,6 +386,61 @@ export const TaskRunDetailDrawer = ({
 
           {(run.taskType === 'SPARK_JAR' || run.taskType === 'SPARK_STREAMING_JAR') && (
             <UserJobObservabilityPanel observability={run.userJobObservability} attemptScoped />
+          )}
+
+          {run.taskType === 'SPARK_JAR' && (
+            <Card size="small" title="运行血缘" loading={lineageQuery.isPending}>
+              {lineageQuery.isError ? (
+                <Alert
+                  showIcon
+                  type="warning"
+                  message="暂时无法读取运行血缘状态"
+                  action={<Button size="small" onClick={() => void lineageQuery.refetch()}>重试</Button>}
+                />
+              ) : lineageQuery.data ? (
+                <Space orientation="vertical" size="small" style={{ width: '100%' }}>
+                  <Space wrap>
+                    <Tag color={lineageQuery.data.status === 'SUCCEEDED'
+                      ? 'success'
+                      : lineageQuery.data.status === 'FAILED' ? 'error'
+                        : lineageQuery.data.status === 'STALE' ? 'warning' : 'processing'}>
+                      {{
+                        PENDING: '等待运行结果', NOT_AVAILABLE: '不可用', QUEUED: '等待摄取',
+                        RUNNING: '正在摄取', SUCCEEDED: '已完成', FAILED: '摄取失败', STALE: '定义已变化',
+                      }[lineageQuery.data.status]}
+                    </Tag>
+                    <Typography.Text>
+                      覆盖度：{lineageQuery.data.coverage
+                        ? lineageCoverageLabels[lineageQuery.data.coverage]
+                        : '—'}
+                    </Typography.Text>
+                    <Typography.Text>
+                      Flow：{lineageQuery.data.flowCount ?? '—'}
+                    </Typography.Text>
+                    <Typography.Text>
+                      正式快照：{lineageQuery.data.publishedSnapshot ? '已合并' : '未合并'}
+                    </Typography.Text>
+                  </Space>
+                  {lineageQuery.data.errorDetail && (
+                    <Alert
+                      showIcon
+                      type={lineageQuery.data.status === 'FAILED' ? 'error' : 'warning'}
+                      message={lineageQuery.data.errorCode ?? '运行血缘提示'}
+                      description={lineageQuery.data.errorDetail}
+                    />
+                  )}
+                  {lineageQuery.data.warnings.map((warning) => (
+                    <Alert
+                      key={`${warning.code}-${warning.flowKey ?? ''}`}
+                      showIcon
+                      type="warning"
+                      message={warning.code}
+                      description={warning.message}
+                    />
+                  ))}
+                </Space>
+              ) : <Typography.Text type="secondary">暂无运行血缘状态。</Typography.Text>}
+            </Card>
           )}
 
           {(run.taskType === 'SPARK_CANVAS'

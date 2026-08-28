@@ -41,6 +41,7 @@ import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarExecutionPayload;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
@@ -381,6 +382,8 @@ public class TaskRunService {
         UUID executionId = UUID.randomUUID();
         Instant createdAt = Instant.now();
         Instant deadline = createdAt.plusSeconds(source.definition().getTimeoutSeconds()).truncatedTo(ChronoUnit.SECONDS);
+        SparkExecutionResourceSpec executionResources = computeEngineExecutionService.resolveResources(route,
+                sparkJarDefinitionService.resolvedExecutionResources(taskId, source.definition()));
         String base = "task-runs/%s/attempts/1/".formatted(runId);
         String manifestKey = base + "manifest.json";
         String runJarKey = base + "user-job.jar";
@@ -409,11 +412,11 @@ public class TaskRunService {
                 source.definition().getJarSizeBytes(), source.definition().getJobClass(),
                 source.definition().getJobApiVersion(), preparation.payload().parameters(),
                 preparation.payload().sparkConf(), preparation.payload().resourceBindings(),
-                source.definition().getTimeoutSeconds()));
+                source.definition().getTimeoutSeconds(), executionResources));
         try {
             CanvasQueueResult result = requireTransactionResult(transactionTemplate.execute(status -> queueSparkJarRun(
                     runId, taskId, source, snapshot, executionId, deadline, route,
-                    manifestKey, manifestSha, runJarKey, resultKey, logKey, preparation, trigger)));
+                    manifestKey, manifestSha, runJarKey, resultKey, logKey, preparation, trigger, executionResources)));
             if (!result.dispatched()) {
                 deleteUnusedManifest(storage, manifestKey);
                 deleteUnusedManifest(storage, runJarKey);
@@ -430,7 +433,8 @@ public class TaskRunService {
             UUID runId, UUID taskId, SparkJarRunSource source, String snapshot, UUID executionId,
             Instant deadline, ExecutionRoute route, String manifestKey, String manifestSha,
             String runJarKey, String resultKey, String logKey,
-            SparkJarTaskRunPreparationService.Preparation preparation, CanvasRunTrigger trigger
+            SparkJarTaskRunPreparationService.Preparation preparation, CanvasRunTrigger trigger,
+            SparkExecutionResourceSpec executionResources
     ) {
         if (trigger.scheduled()) {
             TaskRun existing = runRepository.findByScheduleIdAndScheduledFireAt(
@@ -487,7 +491,7 @@ public class TaskRunService {
                 executionId, runId, 1, taskId, ExecutionTaskType.SPARK_JAR, source.definitionVersion(), deadline,
                 new ExecutionArtifactLocation(manifestKey, manifestSha, resultKey, logKey), List.of(), 0,
                 new ExecutionUserJarArtifact(runJarKey, current.getJarSha256(), current.getJarSizeBytes()),
-                preparation.payload().sparkConf()));
+                preparation.payload().sparkConf(), executionResources));
         return CanvasQueueResult.dispatched(saved);
     }
 
@@ -1335,6 +1339,7 @@ public class TaskRunService {
             List<SparkJarExecutionPayload.Parameter> parameters,
             List<cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry> sparkConf,
             List<SparkJarExecutionPayload.ResourceBinding> resourceBindings,
-            int timeoutSeconds
+            int timeoutSeconds,
+            SparkExecutionResourceSpec executionResources
     ) {}
 }

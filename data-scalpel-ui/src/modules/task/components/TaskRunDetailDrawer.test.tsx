@@ -18,6 +18,23 @@ vi.mock('../hooks/useTasks', () => ({
     error: null,
     refetch: vi.fn(),
   }),
+  useTaskRunLineage: () => ({
+    data: null,
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useTaskRunResultArtifact: () => ({
+    data: null,
+    isPending: false,
+    isError: false,
+    refetch: vi.fn(),
+  }),
+  useDownloadQualityFailureSamples: () => ({
+    mutateAsync: vi.fn(),
+    isPending: false,
+    variables: undefined,
+  }),
   useDownloadTaskRunArtifact: () => state.download,
 }));
 

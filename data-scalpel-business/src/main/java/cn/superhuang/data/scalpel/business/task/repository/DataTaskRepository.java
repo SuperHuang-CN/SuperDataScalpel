@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.task.repository;
 
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
+import cn.superhuang.data.scalpel.business.task.domain.TaskType;
 import cn.superhuang.data.scalpel.search.SearchRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.Lock;
@@ -17,6 +18,8 @@ public interface DataTaskRepository extends SearchRepository<DataTask, UUID> {
     boolean existsByDirectoryId(UUID directoryId);
 
     boolean existsByComputeEngineId(UUID computeEngineId);
+
+    List<DataTask> findAllByComputeEngineIdAndTypeIn(UUID computeEngineId, Collection<TaskType> types);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select task from DataTask task where task.id = :id")

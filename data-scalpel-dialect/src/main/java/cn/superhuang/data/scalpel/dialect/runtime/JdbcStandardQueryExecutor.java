@@ -22,6 +22,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Consumer;
 
 /** JDBC-only executor for compiled standard queries. It never accepts SQL text from callers. */
 public final class JdbcStandardQueryExecutor {
@@ -41,6 +42,36 @@ public final class JdbcStandardQueryExecutor {
         Long totalCount = query.countQuery() == null ? null : executeCount(connection, query.countQuery(), timeout);
         List<Map<String, Object>> rows = executeRows(connection, query.dataQuery(), maximumRows, timeout);
         return new StandardQueryResult(totalCount, rows);
+    }
+
+    public long count(Connection connection, CompiledStandardQuery query, Duration timeout) throws SQLException {
+        if (query.countQuery() == null) throw new IllegalArgumentException("Compiled query does not contain a count query");
+        if (timeout == null || timeout.isNegative() || timeout.isZero()) throw new IllegalArgumentException("timeout must be positive");
+        return executeCount(connection, query.countQuery(), timeout);
+    }
+
+    /** Streams raw JDBC rows for trusted model export without retaining the result set in memory. */
+    public void consume(Connection connection, CompiledStandardQuery query, int fetchSize,
+                        Duration timeout, Consumer<Map<String, Object>> consumer) throws SQLException {
+        if (fetchSize < 1 || timeout == null || timeout.isNegative() || timeout.isZero() || consumer == null) {
+            throw new IllegalArgumentException("Streaming query arguments are invalid");
+        }
+        PreparedQuery prepared = query.dataQuery();
+        try (PreparedStatement statement = connection.prepareStatement(prepared.sql())) {
+            statement.setFetchSize(fetchSize);
+            try { statement.setQueryTimeout(Math.max(1, Math.toIntExact(timeout.toSeconds()))); } catch (SQLException ignored) { }
+            bind(statement, prepared.parameters());
+            try (ResultSet resultSet = statement.executeQuery()) {
+                ResultSetMetaData metadata = resultSet.getMetaData();
+                List<String> labels = new ArrayList<>(metadata.getColumnCount());
+                for (int index = 1; index <= metadata.getColumnCount(); index++) labels.add(metadata.getColumnLabel(index));
+                while (resultSet.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (int index = 1; index <= labels.size(); index++) row.put(labels.get(index - 1), resultSet.getObject(index));
+                    consumer.accept(Collections.unmodifiableMap(row));
+                }
+            }
+        }
     }
 
     private Long executeCount(Connection connection, PreparedQuery query, Duration timeout) throws SQLException {

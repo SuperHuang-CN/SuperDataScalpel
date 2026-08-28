@@ -22,9 +22,34 @@ public record DispatcherExecutionResponse(
         Instant startedAt,
         Instant endedAt,
         Long affectedRows,
+        String resultSha256,
         QualitySummary qualitySummary,
         String errorCode,
         String errorMessage,
         SafeExecutionError executionError
 ) {
+    public DispatcherExecutionResponse(
+            UUID executionId,
+            UUID runId,
+            int attempt,
+            UUID engineId,
+            ExecutionBackendType backendType,
+            String state,
+            long sequence,
+            String externalExecutionId,
+            String trackingUrl,
+            Instant deadlineAt,
+            Instant queuedAt,
+            Instant startedAt,
+            Instant endedAt,
+            Long affectedRows,
+            QualitySummary qualitySummary,
+            String errorCode,
+            String errorMessage,
+            SafeExecutionError executionError
+    ) {
+        this(executionId, runId, attempt, engineId, backendType, state, sequence,
+                externalExecutionId, trackingUrl, deadlineAt, queuedAt, startedAt, endedAt,
+                affectedRows, null, qualitySummary, errorCode, errorMessage, executionError);
+    }
 }

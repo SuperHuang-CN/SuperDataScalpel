@@ -107,7 +107,7 @@ export const ApiConsumerAccessDrawer = ({
     page: 0,
     size: 500,
     sort: 'name',
-    search: 'accessMode:"SUBSCRIPTION_REQUIRED" AND status:"ENABLED"',
+    search: 'status:"ENABLED"',
   }), []);
   const credentialsQuery = useApiConsumerCredentials(consumerId, open);
   const subscriptionsQuery = useApiServiceSubscriptions(
@@ -136,7 +136,8 @@ export const ApiConsumerAccessDrawer = ({
           && binding.syncedRevision === consumer.revision
           && Boolean(binding.externalId),
       );
-      return publication && consumerSynchronized && !subscribedServiceIds.has(service.id);
+      return publication?.accessMode === 'SUBSCRIPTION_REQUIRED'
+        && consumerSynchronized && !subscribedServiceIds.has(service.id);
     })
     .map((service) => ({
       value: service.id,

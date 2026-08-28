@@ -84,7 +84,7 @@ public class KongGatewayServiceAdapter implements GatewayServicePort {
             return new GatewayServiceResult(
                     kongService.id(),
                     kongRoute.id(),
-                    gatewayUrl(service.routePath())
+                    gatewayUrl(service.gatewayRoutePath())
             );
         } catch (GatewayServiceOperationException exception) {
             throw exception;
@@ -177,15 +177,15 @@ public class KongGatewayServiceAdapter implements GatewayServicePort {
                 );
             }
             if (!serviceName(expected.id()).equals(service.name())
-                    || !matchesUpstreamUrl(expected.upstreamUrl(), service)
+                    || !matchesUpstreamUrl(joinUpstreamUrl(expected.upstreamUrl(), expected.upstreamPath()), service)
                     || !routeName(expected.id()).equals(route.name())
                     || route.paths() == null
-                    || !route.paths().equals(List.of(expected.routePath()))
+                    || !route.paths().equals(List.of(expected.gatewayRoutePath()))
                     || route.methods() == null
                     || !route.methods().equals(List.of("POST"))
                     || route.protocols() == null
                     || !route.protocols().containsAll(List.of("http", "https"))
-                    || route.stripPath()
+                    || !route.stripPath()
                     || route.preserveHost()
                     || hasText(reference.externalServiceId())
                     && !reference.externalServiceId().equals(service.id())
@@ -423,7 +423,7 @@ public class KongGatewayServiceAdapter implements GatewayServicePort {
     ) {
         return new KongServiceRequest(
                 serviceName(service.id()),
-                normalizeHttpUrl(service.upstreamUrl(), "Service Engine 公共地址"),
+                joinUpstreamUrl(service.upstreamUrl(), service.upstreamPath()),
                 managedTags(service.id(), existingTags)
         );
     }
@@ -434,10 +434,10 @@ public class KongGatewayServiceAdapter implements GatewayServicePort {
     ) {
         return new KongRouteRequest(
                 routeName(service.id()),
-                List.of(service.routePath()),
+                List.of(service.gatewayRoutePath()),
                 List.of("POST"),
                 List.of("http", "https"),
-                false,
+                true,
                 false,
                 managedTags(service.id(), existingTags)
         );
@@ -567,9 +567,9 @@ public class KongGatewayServiceAdapter implements GatewayServicePort {
         verifyOwnership(expected.id(), service.tags(), "Service");
         if (route == null || !hasText(route.id())
                 || !routeName(expected.id()).equals(route.name())
-                || route.paths() == null || !route.paths().equals(List.of(expected.routePath()))
+                || route.paths() == null || !route.paths().equals(List.of(expected.gatewayRoutePath()))
                 || route.methods() == null || !route.methods().contains("POST")
-                || route.stripPath()) {
+                || !route.stripPath()) {
             throw new GatewayServiceOperationException("Kong 未返回匹配的 Route 发布结果");
         }
         verifyOwnership(expected.id(), route.tags(), "Route");
@@ -823,6 +823,14 @@ public class KongGatewayServiceAdapter implements GatewayServicePort {
             throw new GatewayServiceOperationException(label + " 必须是 HTTP 或 HTTPS 地址");
         }
         return normalized;
+    }
+
+    private static String joinUpstreamUrl(String baseUrl, String path) {
+        String base = normalizeHttpUrl(baseUrl, "Service Engine 运行地址");
+        if (path == null || path.isBlank() || !path.startsWith("/")) {
+            throw new GatewayServiceOperationException("Service Engine 内部路径格式不正确");
+        }
+        return base + path;
     }
 
     private static GatewayServiceOperationException error(

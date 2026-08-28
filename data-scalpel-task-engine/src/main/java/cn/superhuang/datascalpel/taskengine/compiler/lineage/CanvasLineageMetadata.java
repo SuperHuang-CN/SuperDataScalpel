@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.contract.task.CanvasTableOrigin;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.MetadataModelField;
+import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Column;
@@ -59,55 +60,32 @@ public final class CanvasLineageMetadata {
                 ? metadataIndex.model(asset.modelId()).metadata().fields().stream()
                 .collect(Collectors.toMap(MetadataModelField::code, Function.identity()))
                 : Map.of();
-        Dataset<Row> source = table.dataset();
-        Column[] columns = table.schema().columns().stream().map(column -> {
-            MetadataModelField modelField = modelFields.get(column.name());
-            String fieldKey = modelField != null
-                    ? "model-field:" + modelField.id()
-                    : switch (asset.kind()) {
-                        case JDBC_TABLE -> "jdbc-column:" + sha256(column.name());
-                        case EXTERNAL_RESOURCE -> "external-field:" + sha256(column.name());
-                        case MODEL -> "model-code:" + column.name();
-                    };
-            MetadataBuilder builder = new MetadataBuilder()
-                    .putLong(MARKER_VERSION, 1)
-                    .putString(INPUT_NODE_ID, node.id())
-                    .putString(INPUT_ASSET_KEY, asset.localAssetKey())
-                    .putString(ASSET_KIND, asset.kind().name())
-                    .putString(COLUMN_KEY, fieldKey)
-                    .putString(DISPLAY_NAME, asset.safeDisplayName());
-            put(builder, EXTERNAL_RESOURCE_TYPE, asset.externalResourceType());
-            put(builder, MODEL_ID, asset.modelId());
-            if (asset.modelSchemaVersion() != null) {
-                builder.putLong(MODEL_SCHEMA_VERSION, asset.modelSchemaVersion());
-            }
-            put(builder, MODEL_FIELD_ID, modelField == null ? null : modelField.id());
-            put(builder, DATA_SOURCE_ID, asset.dataSourceId());
-            put(builder, RESOURCE_ID, asset.resourceId());
-            put(builder, RESOURCE_KEY_HASH, asset.resourceKeyHash());
-            put(builder, CATALOG_NAME, asset.catalogName());
-            put(builder, SCHEMA_NAME, asset.schemaName());
-            put(builder, PHYSICAL_TABLE_NAME, asset.physicalTableName());
-            return source.col(quote(column.name())).as(column.name(), builder.build());
-        }).toArray(Column[]::new);
-        return new SparkCanvasTable(table.schema(), source.select(columns));
+        Map<String, CatalystLineageMetadata.InputField> fields = modelFields.entrySet().stream()
+                .collect(Collectors.toMap(
+                        Map.Entry::getKey,
+                        entry -> new CatalystLineageMetadata.InputField(
+                                "model-field:" + entry.getValue().id(), entry.getValue().id()),
+                        (left, right) -> left,
+                        java.util.LinkedHashMap::new
+                ));
+        TaskLineageEvidence.Asset genericAsset = new TaskLineageEvidence.Asset(
+                asset.localAssetKey(), TaskLineageEvidence.AssetRole.INPUT,
+                TaskLineageEvidence.AssetKind.valueOf(asset.kind().name()),
+                asset.externalResourceType() == null ? null
+                        : TaskLineageEvidence.ExternalResourceType.valueOf(asset.externalResourceType().name()),
+                null, asset.modelId(), asset.modelSchemaVersion(), asset.dataSourceId(),
+                asset.catalogName(), asset.schemaName(), asset.physicalTableName(),
+                asset.resourceId(), asset.resourceKeyHash(), asset.safeDisplayName());
+        return new SparkCanvasTable(table.schema(), CatalystLineageMetadata.markInput(
+                table.dataset(), node.id(), genericAsset, fields));
     }
 
     public static SparkCanvasTable markBoundary(
             CanvasNodeDefinition node,
             SparkCanvasTable table
     ) {
-        Dataset<Row> source = table.dataset();
-        Column[] columns = table.schema().columns().stream()
-                .map(column -> source.col(quote(column.name())).as(
-                        column.name(),
-                        new MetadataBuilder()
-                                .putLong(MARKER_VERSION, 1)
-                                .putString(BOUNDARY_NODE_ID, node.id())
-                                .putString(BOUNDARY_NODE_TYPE, node.nodeType().name())
-                                .build()
-                )).toArray(Column[]::new);
-        return new SparkCanvasTable(table.schema(), source.select(columns));
+        return new SparkCanvasTable(table.schema(), CatalystLineageMetadata.markBoundary(
+                table.dataset(), node.id(), node.nodeType().name()));
     }
 
     public static CanvasLineageCompilation.Asset readAsset(Metadata metadata, String localAssetKey) {

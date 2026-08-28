@@ -11,9 +11,12 @@ import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataService
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.SqlServiceTestRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.QueryDataServiceFieldLineageRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.PublishDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceDetailResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceRelatedModelResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceSummaryResponse;
+import cn.superhuang.data.scalpel.business.service.web.response.GatewayDataServicePublicationResponse;
+import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
 import cn.superhuang.data.scalpel.business.service.web.response.SqlServiceTestResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.StandardDataServiceModelCandidateResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
@@ -66,6 +69,14 @@ public class DataServiceResource {
     @PreAuthorize("hasAuthority('service.view')")
     public DataServiceDetailResponse get(@PathVariable UUID id) {
         return service.get(id);
+    }
+
+    @GetMapping("/gateway-publications")
+    @PreAuthorize("hasAuthority('service.view')")
+    public List<GatewayDataServicePublicationResponse> publishedGatewayServices(
+            @RequestParam DataServiceAccessMode accessMode
+    ) {
+        return service.publishedGatewayServices(accessMode);
     }
 
     @PostMapping
@@ -150,8 +161,11 @@ public class DataServiceResource {
 
     @PostMapping("/{id}/actions/publish")
     @PreAuthorize("hasAuthority('service.publish')")
-    public DataServiceDetailResponse publish(@PathVariable UUID id) {
-        return service.publish(id);
+    public DataServiceDetailResponse publish(
+            @PathVariable UUID id,
+            @Valid @RequestBody PublishDataServiceRequest request
+    ) {
+        return service.publish(id, request);
     }
 
     @PostMapping("/{id}/actions/reconcile-gateway")

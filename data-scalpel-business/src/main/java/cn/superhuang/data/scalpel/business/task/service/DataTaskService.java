@@ -97,6 +97,7 @@ public class DataTaskService {
     private final CanvasLineageDraftFactory canvasLineageDraftFactory;
     private final ModelQualityTaskDefinitionService modelQualityTaskDefinitionService;
     private final SparkJarTaskDefinitionService sparkJarTaskDefinitionService;
+    private final SparkJarDevelopmentKitService sparkJarDevelopmentKitService;
     private final SparkJarTaskDefinitionRepository sparkJarDefinitionRepository;
     private final SparkJarTaskResourceBindingRepository sparkJarBindingRepository;
     private final TransactionTemplate readTransactionTemplate;
@@ -129,6 +130,7 @@ public class DataTaskService {
             CanvasLineageDraftFactory canvasLineageDraftFactory,
             ModelQualityTaskDefinitionService modelQualityTaskDefinitionService,
             SparkJarTaskDefinitionService sparkJarTaskDefinitionService,
+            SparkJarDevelopmentKitService sparkJarDevelopmentKitService,
             SparkJarTaskDefinitionRepository sparkJarDefinitionRepository,
             SparkJarTaskResourceBindingRepository sparkJarBindingRepository,
             PlatformTransactionManager transactionManager
@@ -159,6 +161,7 @@ public class DataTaskService {
         this.canvasLineageDraftFactory = canvasLineageDraftFactory;
         this.modelQualityTaskDefinitionService = modelQualityTaskDefinitionService;
         this.sparkJarTaskDefinitionService = sparkJarTaskDefinitionService;
+        this.sparkJarDevelopmentKitService = sparkJarDevelopmentKitService;
         this.sparkJarDefinitionRepository = sparkJarDefinitionRepository;
         this.sparkJarBindingRepository = sparkJarBindingRepository;
         this.readTransactionTemplate = new TransactionTemplate(transactionManager);
@@ -229,6 +232,12 @@ public class DataTaskService {
         if (task.getStatus() == TaskStatus.PUBLISHED
                 && !java.util.Objects.equals(task.getComputeEngineId(), request.computeEngineId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已发布任务不能更换计算引擎，请先停用");
+        }
+        if (task.getType().isJar()
+                && !java.util.Objects.equals(task.getComputeEngineId(), request.computeEngineId())) {
+            sparkJarDefinitionRepository.findByTaskId(id).ifPresent(definition ->
+                    sparkJarTaskDefinitionService.validateExecutionResourcesForEngine(
+                            definition, request.computeEngineId()));
         }
         task.update(request.name(), request.directoryId(), request.description(), request.computeEngineId());
         DataTask saved = taskRepository.saveAndFlush(task);
@@ -402,6 +411,7 @@ public class DataTaskService {
         definitionRepository.findByTaskId(taskId).ifPresent(definitionRepository::delete);
         canvasDefinitionRepository.findByTaskId(taskId).ifPresent(canvasDefinitionRepository::delete);
         modelQualityDefinitionRepository.findByTaskId(taskId).ifPresent(modelQualityDefinitionRepository::delete);
+        sparkJarDevelopmentKitService.deleteForTask(taskId);
         sparkJarBindingRepository.deleteAllByTaskId(taskId);
         sparkJarDefinitionRepository.findByTaskId(taskId).ifPresent(definition -> {
             sparkJarTaskDefinitionService.deleteObjectAfterCommit(taskId, definition.getJarObjectKey());
@@ -649,6 +659,9 @@ public class DataTaskService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新操作");
             }
             computeEngineExecutionService.assertUnchanged(route);
+            if (task.getType() == TaskType.SPARK_JAR) {
+                lineageSnapshotService.retireCurrentIfDefinitionChanged(taskId, current.getVersion());
+            }
             task.publish();
             return summary(taskRepository.saveAndFlush(task), null, null, null,
                     Map.of(), computeEngineNames(task));

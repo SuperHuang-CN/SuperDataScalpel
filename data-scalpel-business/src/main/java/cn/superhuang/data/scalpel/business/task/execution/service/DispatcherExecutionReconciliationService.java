@@ -175,6 +175,11 @@ public class DispatcherExecutionReconciliationService {
         };
         UUID messageId = UUID.nameUUIDFromBytes(("dispatcher-reconcile:" + response.executionId() + ":"
                 + response.sequence()).getBytes(StandardCharsets.UTF_8));
+        String resultSha256 = switch (type) {
+            case EXECUTION_SUCCEEDED, EXECUTION_FAILED, EXECUTION_TIMED_OUT, EXECUTION_CANCELLED ->
+                    response.resultSha256();
+            default -> null;
+        };
         return new DispatcherExecutionEvent(
                 1, messageId, type, Instant.now(), response.engineId(), response.executionId(), response.runId(),
                 response.attempt(), response.sequence(), response.backendType(), response.externalExecutionId(),
@@ -186,7 +191,7 @@ public class DispatcherExecutionReconciliationService {
                     case SPARK_MODEL_QUALITY -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_MODEL_QUALITY;
                     case SPARK_STREAMING_CANVAS -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_STREAMING_CANVAS;
                     default -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_CANVAS;
-                });
+                }, null, resultSha256);
     }
 
     static boolean dispatcherExecutionNotFound(Throwable throwable) {

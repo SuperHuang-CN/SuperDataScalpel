@@ -3,10 +3,13 @@ import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
   ComputeEngine,
+  ComputeEngineExecution,
+  ComputeEngineRuntimeOverview,
   ComputeEngineTestResult,
   CreateComputeEngineRequest,
   DetachComputeEngineRequest,
   UpdateComputeEngineRequest,
+  DispatcherExecutionScope,
 } from '../model/computeEngine';
 
 const COMPUTE_ENGINE_PATH = '/v1/compute-engines';
@@ -15,6 +18,25 @@ export const fetchComputeEngines = (request: SearchRequest): Promise<PageRespons
   const query = toSearchParams(request).toString();
   return requestJson<PageResponse<ComputeEngine>>(query ? `${COMPUTE_ENGINE_PATH}?${query}` : COMPUTE_ENGINE_PATH);
 };
+
+export const fetchComputeEngine = (id: string): Promise<ComputeEngine> => (
+  requestJson<ComputeEngine>(`${COMPUTE_ENGINE_PATH}/${id}`)
+);
+
+export const fetchComputeEngineRuntimeOverview = (id: string): Promise<ComputeEngineRuntimeOverview> => (
+  requestJson<ComputeEngineRuntimeOverview>(`${COMPUTE_ENGINE_PATH}/${id}/runtime-overview`)
+);
+
+export const fetchComputeEngineExecutions = (
+  id: string,
+  scope: DispatcherExecutionScope,
+  page: number,
+  size: number,
+): Promise<PageResponse<ComputeEngineExecution>> => (
+  requestJson<PageResponse<ComputeEngineExecution>>(
+    `${COMPUTE_ENGINE_PATH}/${id}/executions?scope=${scope}&page=${page}&size=${size}`,
+  )
+);
 
 export const createComputeEngine = (request: CreateComputeEngineRequest): Promise<ComputeEngine> => (
   requestJson<ComputeEngine>(COMPUTE_ENGINE_PATH, { method: 'POST', body: JSON.stringify(request) })

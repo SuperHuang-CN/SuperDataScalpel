@@ -1,6 +1,5 @@
 import { Descriptions, Tag, Typography } from 'antd';
 import {
-  dataServiceAccessModeLabels,
   dataServiceStatusLabels,
   dataServiceTypeLabels,
   type DataServiceDetail,
@@ -60,9 +59,8 @@ export const DataServiceBasicPanel = ({
         <div className="data-service-detail-section-title">接口配置</div>
         <Descriptions size="small" bordered column={3}>
           <Descriptions.Item label="Service Engine">{engineName ?? dataService.engineId}</Descriptions.Item>
-          <Descriptions.Item label="访问方式"><Tag>{dataServiceAccessModeLabels[dataService.accessMode]}</Tag></Descriptions.Item>
           <Descriptions.Item label="请求方法"><Tag color="blue">POST</Tag></Descriptions.Item>
-          <Descriptions.Item label="公开路由" span={2}><code>{dataService.routePath}</code></Descriptions.Item>
+          <Descriptions.Item label="Engine 内部路由" span={2}><code>{dataService.engineRoutePath}</code></Descriptions.Item>
           <Descriptions.Item label="来源资源">{sourceName ?? '—'}</Descriptions.Item>
         </Descriptions>
       </section>

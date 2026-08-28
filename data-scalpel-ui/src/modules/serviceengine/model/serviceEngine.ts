@@ -3,7 +3,7 @@ export interface ServiceEngine {
   code: string;
   name: string;
   adminUrl: string;
-  publicUrl: string;
+  runtimeUrl: string;
   managementTokenConfigured: boolean;
   enabled: boolean;
   description: string | null;
@@ -45,7 +45,7 @@ export interface ServiceEngineDataSourceTestResult {
 interface ServiceEngineWriteRequest {
   name: string;
   adminUrl: string;
-  publicUrl: string;
+  runtimeUrl: string;
   managementToken?: string;
   enabled?: boolean;
   description?: string;
@@ -70,4 +70,23 @@ export interface TestStoredServiceEngineRequest {
 export interface ServiceEngineFilters {
   keyword?: string;
   enabled?: boolean;
+}
+
+export type ServiceEngineAccessPolicyStatus = 'NOT_CONFIGURED' | 'PENDING' | 'READY' | 'FAILED' | 'OUTDATED';
+
+export interface ServiceEngineAccessPolicy {
+  engineId: string;
+  allowCidrs: string[];
+  denyCidrs: string[];
+  desiredRevision: number;
+  appliedRevision: number;
+  status: ServiceEngineAccessPolicyStatus;
+  lastError: string | null;
+  appliedAt: string | null;
+  updatedAt: string | null;
+}
+
+export interface UpdateServiceEngineAccessPolicyRequest {
+  allowCidrs: string[];
+  denyCidrs: string[];
 }

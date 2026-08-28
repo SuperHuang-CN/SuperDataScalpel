@@ -221,6 +221,14 @@ export interface SparkJarArtifact {
   jobMode: SparkJarJobMode;
 }
 
+export interface SparkExecutionResourceSpec {
+  driverCores: number;
+  driverMemoryMiB: number;
+  executorInstances: number;
+  executorCores: number;
+  executorMemoryMiB: number;
+}
+
 export interface SparkJarTaskDefinition {
   taskId: string;
   configured: boolean;
@@ -230,6 +238,7 @@ export interface SparkJarTaskDefinition {
   parameters: SparkJarDefinitionEntry[];
   sparkConf: SparkJarDefinitionEntry[];
   resourceBindings: SparkJarResourceBinding[];
+  executionResources: SparkExecutionResourceSpec;
   timeoutSeconds: number;
   updatedAt: string | null;
 }
@@ -238,7 +247,68 @@ export interface UpdateSparkJarTaskDefinitionRequest {
   parameters: SparkJarDefinitionEntry[];
   sparkConf: SparkJarDefinitionEntry[];
   resourceBindings: Array<Omit<SparkJarResourceBinding, 'resourceName'>>;
+  executionResources: SparkExecutionResourceSpec;
   timeoutSeconds: number;
+}
+
+export type SparkJarDevelopmentKitSampleMode = 'NONE' | 'ROW_COUNT' | 'PERCENTAGE' | 'ALL';
+export type SparkJarDevelopmentKitStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'EXPIRED';
+export type SparkJarDevelopmentKitStage = 'QUEUED' | 'VALIDATING' | 'COUNTING' | 'EXPORTING' | 'PACKAGING' | 'UPLOADING' | 'COMPLETED' | 'FAILED' | 'EXPIRED';
+
+export interface SparkJarDevelopmentKitInputSample {
+  bindingName: string;
+  mode: SparkJarDevelopmentKitSampleMode;
+  rowCount?: number;
+  percentage?: number;
+}
+
+export interface SparkJarDevelopmentKitJdbcTable {
+  bindingName: string;
+  catalog?: string | null;
+  schema?: string | null;
+  table: string;
+  mode: SparkJarDevelopmentKitSampleMode;
+  rowCount?: number;
+  percentage?: number;
+}
+
+export interface CreateSparkJarDevelopmentKitRequest {
+  definitionVersion: number;
+  samples: SparkJarDevelopmentKitInputSample[];
+  jdbcTables: SparkJarDevelopmentKitJdbcTable[];
+}
+
+export interface SparkJarDevelopmentKitGeneration {
+  id: string;
+  definitionVersion: number;
+  status: SparkJarDevelopmentKitStatus;
+  stage: SparkJarDevelopmentKitStage;
+  progressPercent: number;
+  currentModel: string | null;
+  attemptCount: number;
+  errorCode: string | null;
+  errorMessage: string | null;
+  createdAt: string;
+  startedAt: string | null;
+  completedAt: string | null;
+}
+
+export interface SparkJarDevelopmentKitArtifact {
+  sizeBytes: number;
+  sha256: string;
+  generatedAt: string;
+  matchesSavedConfiguration: boolean;
+}
+
+export interface SparkJarDevelopmentKit {
+  taskId: string;
+  definitionVersion: number;
+  configuration: {
+    samples: SparkJarDevelopmentKitInputSample[];
+    jdbcTables: SparkJarDevelopmentKitJdbcTable[];
+  };
+  generation: SparkJarDevelopmentKitGeneration | null;
+  artifact: SparkJarDevelopmentKitArtifact | null;
 }
 
 export interface UpdateLocalSqlTaskDefinitionRequest {
@@ -319,6 +389,7 @@ export interface TaskRun {
   userJarFileName: string | null;
   userJarSha256: string | null;
   userJarSizeBytes: number | null;
+  executionResources?: SparkExecutionResourceSpec | null;
   qualityConclusion?: 'PASSED' | 'FAILED' | null;
   qualityTotalRules?: number | null;
   qualityPassedRules?: number | null;
@@ -331,6 +402,28 @@ export interface TaskRun {
   executionError: TaskRunExecutionError | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type TaskRunLineageStatus =
+  | 'PENDING' | 'NOT_AVAILABLE' | 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'STALE';
+
+export interface TaskRunLineageWarning {
+  code: string;
+  message: string;
+  flowKey: string | null;
+}
+
+export interface TaskRunLineage {
+  runId: string;
+  status: TaskRunLineageStatus;
+  coverage: 'MODEL_ONLY' | 'FIELD_PARTIAL' | 'FIELD_COMPLETE' | null;
+  publishedSnapshot: boolean;
+  flowCount: number | null;
+  warningCount: number | null;
+  warnings: TaskRunLineageWarning[];
+  errorCode: string | null;
+  errorDetail: string | null;
+  completedAt: string | null;
 }
 
 export type UserJobMetricKind = 'COUNTER' | 'GAUGE' | 'TIMER';

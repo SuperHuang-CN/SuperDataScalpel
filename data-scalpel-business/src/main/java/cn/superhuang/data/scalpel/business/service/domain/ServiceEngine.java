@@ -28,8 +28,8 @@ public class ServiceEngine extends BaseEntity {
     @Column(name = "admin_url", nullable = false, length = 500)
     private String adminUrl;
 
-    @Column(name = "public_url", nullable = false, length = 500)
-    private String publicUrl;
+    @Column(name = "runtime_url", nullable = false, length = 500)
+    private String runtimeUrl;
 
     @Column(name = "management_token_ciphertext", nullable = false, length = 8192)
     private String managementTokenCiphertext;
@@ -47,40 +47,40 @@ public class ServiceEngine extends BaseEntity {
             String code,
             String name,
             String adminUrl,
-            String publicUrl,
+            String runtimeUrl,
             String managementTokenCiphertext,
             boolean enabled,
             String description
     ) {
         this.code = normalizeCode(code);
-        update(name, adminUrl, publicUrl, managementTokenCiphertext, enabled, description);
+        update(name, adminUrl, runtimeUrl, managementTokenCiphertext, enabled, description);
     }
 
     public static ServiceEngine create(
             String code,
             String name,
             String adminUrl,
-            String publicUrl,
+            String runtimeUrl,
             String managementTokenCiphertext,
             boolean enabled,
             String description
     ) {
         return new ServiceEngine(
-                code, name, adminUrl, publicUrl, managementTokenCiphertext, enabled, description
+                code, name, adminUrl, runtimeUrl, managementTokenCiphertext, enabled, description
         );
     }
 
     public void update(
             String name,
             String adminUrl,
-            String publicUrl,
+            String runtimeUrl,
             String managementTokenCiphertext,
             boolean enabled,
             String description
     ) {
         this.name = required(name, "名称");
         this.adminUrl = normalizeAdminUrl(adminUrl);
-        this.publicUrl = normalizeUrl(publicUrl, "公网地址");
+        this.runtimeUrl = normalizeRuntimeUrl(runtimeUrl);
         this.managementTokenCiphertext = required(managementTokenCiphertext, "Management Token 密文");
         this.enabled = enabled;
         this.description = optional(description);
@@ -106,8 +106,8 @@ public class ServiceEngine extends BaseEntity {
         return adminUrl;
     }
 
-    public String getPublicUrl() {
-        return publicUrl;
+    public String getRuntimeUrl() {
+        return runtimeUrl;
     }
 
     public String getManagementTokenCiphertext() {
@@ -132,6 +132,10 @@ public class ServiceEngine extends BaseEntity {
 
     public static String normalizeAdminUrl(String value) {
         return normalizeUrl(value, "管理地址");
+    }
+
+    public static String normalizeRuntimeUrl(String value) {
+        return normalizeUrl(value, "运行地址");
     }
 
     private static String normalizeUrl(String value, String label) {

@@ -26,7 +26,8 @@ public final class ExecutionRequestFingerprint {
                 command.userJar() == null ? "" : command.userJar().sha256(),
                 command.userJar() == null ? "" : Long.toString(command.userJar().sizeBytes()),
                 command.sparkConf().stream().map(entry -> entry.name() + "=" + entry.value())
-                        .collect(java.util.stream.Collectors.joining("\n"))
+                        .collect(java.util.stream.Collectors.joining("\n")),
+                resources(command.executionResources())
         );
         try {
             return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(stable.getBytes(StandardCharsets.UTF_8)));
@@ -46,7 +47,8 @@ public final class ExecutionRequestFingerprint {
                 command.userJar() == null ? "" : command.userJar().sha256(),
                 command.userJar() == null ? "" : Long.toString(command.userJar().sizeBytes()),
                 command.sparkConf().stream().map(entry -> entry.name() + "=" + entry.value())
-                        .collect(java.util.stream.Collectors.joining("\n"))
+                        .collect(java.util.stream.Collectors.joining("\n")),
+                resources(command.executionResources())
         );
         return sha256(stable);
     }
@@ -58,5 +60,10 @@ public final class ExecutionRequestFingerprint {
         } catch (NoSuchAlgorithmException exception) {
             throw new IllegalStateException("JDK 不支持 SHA-256", exception);
         }
+    }
+
+    private static String resources(cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec value) {
+        return value == null ? "" : "%d,%d,%d,%d,%d".formatted(value.driverCores(), value.driverMemoryMiB(),
+                value.executorInstances(), value.executorCores(), value.executorMemoryMiB());
     }
 }

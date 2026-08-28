@@ -16,6 +16,7 @@ public class EngineSecurityConfiguration {
     SecurityFilterChain engineSecurityFilterChain(
             HttpSecurity http,
             ManagementTokenFilter managementTokenFilter,
+            EngineServiceAccessPolicyFilter engineServiceAccessPolicyFilter,
             ProblemDetailWriter problemDetailWriter
     ) throws Exception {
         http
@@ -25,7 +26,7 @@ public class EngineSecurityConfiguration {
                         .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers("/modern-ui", "/modern-ui/**").permitAll()
                         .requestMatchers("/interface-ui/**").permitAll()
-                        .requestMatchers("/open-api/v1/**").permitAll()
+                        .requestMatchers("/runtime/v1/services/**").permitAll()
                         .requestMatchers("/internal/v1/**").hasAuthority("engine.manage")
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions
@@ -35,7 +36,8 @@ public class EngineSecurityConfiguration {
                         .accessDeniedHandler((request, response, exception) ->
                                 problemDetailWriter.write(request, response, ProblemType.ACCESS_DENIED,
                                         "当前请求无权访问该资源")))
-                .addFilterBefore(managementTokenFilter, AnonymousAuthenticationFilter.class);
+                .addFilterBefore(managementTokenFilter, AnonymousAuthenticationFilter.class)
+                .addFilterAfter(engineServiceAccessPolicyFilter, ManagementTokenFilter.class);
         return http.build();
     }
 }

@@ -9,29 +9,19 @@ public record GatewayServiceSpec(
         String code,
         String name,
         long revision,
-        String routePath,
+        String gatewayRoutePath,
         String upstreamUrl,
+        String upstreamPath,
         DataServiceAccessMode accessMode
 ) {
-
-    public GatewayServiceSpec(
-            UUID id,
-            String code,
-            String name,
-            long revision,
-            String routePath,
-            String upstreamUrl
-    ) {
-        this(id, code, name, revision, routePath, upstreamUrl, DataServiceAccessMode.PUBLIC);
-    }
-
     public GatewayServiceSpec {
         if (id == null) throw new IllegalArgumentException("Data service ID is required");
         code = required(code, "Data service code");
         name = required(name, "Data service name");
         if (revision <= 0) throw new IllegalArgumentException("Data service revision must be positive");
-        routePath = required(routePath, "Data service route path");
-        upstreamUrl = required(upstreamUrl, "Service Engine public URL");
+        gatewayRoutePath = required(gatewayRoutePath, "Gateway route path");
+        upstreamUrl = required(upstreamUrl, "Service Engine runtime URL");
+        upstreamPath = required(upstreamPath, "Service Engine route path");
         accessMode = accessMode == null ? DataServiceAccessMode.PUBLIC : accessMode;
     }
 

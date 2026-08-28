@@ -35,9 +35,10 @@ public class RouteResource {
     public Mono<List<RouteResponse>> list(
             @RequestParam(required = false) UUID serviceId,
             @RequestParam(required = false) String source,
-            @RequestParam(required = false) String externalId
+            @RequestParam(required = false) String externalId,
+            @RequestParam(required = false) String pathPattern
     ) {
-        return executor.execute(() -> service.listRoutes(serviceId, source, externalId));
+        return executor.execute(() -> service.listRoutes(serviceId, source, externalId, pathPattern));
     }
 
     @GetMapping("/{id}")

@@ -7,6 +7,8 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
 import jakarta.persistence.UniqueConstraint;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
 
 import java.net.URI;
 import java.time.Instant;
@@ -66,6 +68,10 @@ public class ComputeEngine extends BaseEntity {
     @Column(name = "max_in_flight_applications", nullable = false)
     private int maxInFlightApplications;
 
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "resource_policy_json")
+    private String resourcePolicyJson;
+
     @Column(name = "dispatcher_instance_id", length = 100)
     private String dispatcherInstanceId;
 
@@ -95,7 +101,8 @@ public class ComputeEngine extends BaseEntity {
             String adminEventTopic,
             int maxQueuedExecutions,
             int maxConcurrentSubmissions,
-            int maxInFlightApplications
+            int maxInFlightApplications,
+            String resourcePolicyJson
     ) {
         ComputeEngine engine = new ComputeEngine();
         engine.registrationState = ComputeEngineRegistrationState.CREATED;
@@ -103,7 +110,7 @@ public class ComputeEngine extends BaseEntity {
         engine.applyConfiguration(
                 name, description, dispatcherBaseUrl, accessTokenCiphertext, expectedBackendType,
                 commandTopic, runnerEventTopic, adminEventTopic,
-                maxQueuedExecutions, maxConcurrentSubmissions, maxInFlightApplications
+                maxQueuedExecutions, maxConcurrentSubmissions, maxInFlightApplications, resourcePolicyJson
         );
         return engine;
     }
@@ -119,7 +126,8 @@ public class ComputeEngine extends BaseEntity {
             String adminEventTopic,
             int maxQueuedExecutions,
             int maxConcurrentSubmissions,
-            int maxInFlightApplications
+            int maxInFlightApplications,
+            String resourcePolicyJson
     ) {
         String normalizedName = required(name, "名称");
         String normalizedDescription = optional(description);
@@ -141,12 +149,13 @@ public class ComputeEngine extends BaseEntity {
                 || !Objects.equals(this.adminEventTopic, normalizedAdminEventTopic)
                 || this.maxQueuedExecutions != maxQueuedExecutions
                 || this.maxConcurrentSubmissions != maxConcurrentSubmissions
-                || this.maxInFlightApplications != maxInFlightApplications;
+                || this.maxInFlightApplications != maxInFlightApplications
+                || !Objects.equals(this.resourcePolicyJson, resourcePolicyJson);
 
         applyConfiguration(
                 normalizedName, normalizedDescription, normalizedUrl, normalizedToken, normalizedBackend,
                 normalizedCommandTopic, normalizedRunnerEventTopic, normalizedAdminEventTopic,
-                maxQueuedExecutions, maxConcurrentSubmissions, maxInFlightApplications
+                maxQueuedExecutions, maxConcurrentSubmissions, maxInFlightApplications, resourcePolicyJson
         );
         if (changed) {
             healthState = ComputeEngineHealthState.UNKNOWN;
@@ -169,7 +178,8 @@ public class ComputeEngine extends BaseEntity {
                 && Objects.equals(adminEventTopic, other.adminEventTopic)
                 && maxQueuedExecutions == other.maxQueuedExecutions
                 && maxConcurrentSubmissions == other.maxConcurrentSubmissions
-                && maxInFlightApplications == other.maxInFlightApplications;
+                && maxInFlightApplications == other.maxInFlightApplications
+                && Objects.equals(resourcePolicyJson, other.resourcePolicyJson);
     }
 
     private void applyConfiguration(
@@ -183,7 +193,8 @@ public class ComputeEngine extends BaseEntity {
             String adminEventTopic,
             int maxQueuedExecutions,
             int maxConcurrentSubmissions,
-            int maxInFlightApplications
+            int maxInFlightApplications,
+            String resourcePolicyJson
     ) {
         this.name = required(name, "名称");
         this.description = optional(description);
@@ -197,6 +208,7 @@ public class ComputeEngine extends BaseEntity {
         this.maxQueuedExecutions = maxQueuedExecutions;
         this.maxConcurrentSubmissions = maxConcurrentSubmissions;
         this.maxInFlightApplications = maxInFlightApplications;
+        this.resourcePolicyJson = resourcePolicyJson;
     }
 
     public void beginRegistration() {
@@ -275,6 +287,7 @@ public class ComputeEngine extends BaseEntity {
     public int getMaxQueuedExecutions() { return maxQueuedExecutions; }
     public int getMaxConcurrentSubmissions() { return maxConcurrentSubmissions; }
     public int getMaxInFlightApplications() { return maxInFlightApplications; }
+    public String getResourcePolicyJson() { return resourcePolicyJson; }
     public String getDispatcherInstanceId() { return dispatcherInstanceId; }
     public Instant getLastCheckAt() { return lastCheckAt; }
     public String getLastError() { return lastError; }

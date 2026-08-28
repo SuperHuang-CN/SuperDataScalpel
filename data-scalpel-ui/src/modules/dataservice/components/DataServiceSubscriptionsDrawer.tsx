@@ -79,8 +79,8 @@ export const DataServiceSubscriptionsDrawer = ({
   const revokeMutation = useRevokeApiServiceSubscription();
   const subscriptions = subscriptionsQuery.data?.content ?? [];
   const publication = dataService ? publishedGatewayBinding(dataService) : undefined;
-  const subscriptionEligible = dataService?.accessMode === 'SUBSCRIPTION_REQUIRED'
-    && dataService.status === 'ENABLED'
+  const subscriptionEligible = publication?.accessMode === 'SUBSCRIPTION_REQUIRED'
+    && dataService?.status === 'ENABLED'
     && Boolean(publication);
   const subscribedConsumerIds = new Set(subscriptions.map((subscription) => subscription.consumerId));
   const consumerOptions = (consumersQuery.data?.content ?? [])
@@ -249,7 +249,7 @@ export const DataServiceSubscriptionsDrawer = ({
             <Alert
               type="info"
               showIcon
-              title={dataService?.accessMode !== 'SUBSCRIPTION_REQUIRED'
+              title={publication?.accessMode !== 'SUBSCRIPTION_REQUIRED'
                 ? '公开访问服务不需要消费者订阅。'
                 : '服务当前版本启用并发布到网关后，才可以新增消费者订阅。'}
             />

@@ -17,6 +17,7 @@ import cn.superhuang.data.scalpel.contract.quality.QualityConclusion;
 import cn.superhuang.data.scalpel.contract.quality.ViolationMetric;
 import java.math.BigDecimal;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
+import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
 
 public record DispatcherTaskResult(
         Integer schemaVersion,
@@ -32,13 +33,25 @@ public record DispatcherTaskResult(
         ExecutionTaskType taskType,
         QualityResult qualityResult,
         UserJobObservabilitySnapshot userJobObservability,
+        TaskLineageEvidence lineage,
         Error error
 ) {
     public static final int MIN_SUPPORTED_SCHEMA_VERSION = 2;
-    public static final int CURRENT_SCHEMA_VERSION = 7;
+    public static final int CURRENT_SCHEMA_VERSION = 8;
 
     public DispatcherTaskResult {
         nodeResults = nodeResults == null ? List.of() : List.copyOf(nodeResults);
+    }
+
+    public DispatcherTaskResult(
+            Integer schemaVersion, UUID executionId, UUID runId, Integer attempt,
+            State state, Instant startedAt, Instant endedAt, Long durationMs,
+            Long affectedRows, List<NodeResult> nodeResults, ExecutionTaskType taskType,
+            QualityResult qualityResult, UserJobObservabilitySnapshot userJobObservability,
+            Error error
+    ) {
+        this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
+                affectedRows, nodeResults, taskType, qualityResult, userJobObservability, null, error);
     }
 
     public static boolean supportsSchemaVersion(Integer schemaVersion) {

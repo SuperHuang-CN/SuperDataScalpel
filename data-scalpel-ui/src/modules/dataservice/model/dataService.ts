@@ -23,6 +23,8 @@ export interface GatewayServiceBinding extends GatewayReconciliationState {
   provider: GatewayProvider;
   externalServiceId: string | null;
   externalRouteId: string | null;
+  gatewayRoutePath: string;
+  accessMode: DataServiceAccessMode;
   publishedRevision: number;
   publicationStatus: GatewayServicePublicationStatus;
   gatewayUrl: string | null;
@@ -82,8 +84,7 @@ interface DataServiceBase {
   definitionConfigured: boolean;
   definitionVersion: number | null;
   engineId: string;
-  routePath: string;
-  accessMode: DataServiceAccessMode;
+  engineRoutePath: string;
   status: DataServiceStatus;
   revision: number;
   deploymentStatus: DataServiceDeploymentStatus | null;
@@ -127,8 +128,6 @@ interface DataServiceWriteRequest {
   name: string;
   directoryId?: string;
   engineId: string;
-  routePath: string;
-  accessMode: DataServiceAccessMode;
   type: DataServiceType;
   standardDefinition: StandardDataServiceDefinitionRequest | null;
   sqlDefinition: SqlDataServiceDefinitionRequest | null;
@@ -141,6 +140,11 @@ export interface CreateDataServiceRequest extends DataServiceWriteRequest {
 }
 
 export type UpdateDataServiceRequest = DataServiceWriteRequest;
+
+export interface PublishDataServiceRequest {
+  gatewayRoutePath: string;
+  accessMode: DataServiceAccessMode;
+}
 
 export interface UpdateDataServiceDefinitionRequest {
   standardDefinition: StandardDataServiceDefinitionRequest | null;

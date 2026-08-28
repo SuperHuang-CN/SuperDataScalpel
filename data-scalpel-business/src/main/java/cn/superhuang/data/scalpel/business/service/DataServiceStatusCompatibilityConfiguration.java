@@ -32,7 +32,6 @@ class DataServiceStatusCompatibilityConfiguration {
             }
             jdbcTemplate.execute("ALTER TABLE ds_data_service DROP CONSTRAINT IF EXISTS " + STATUS_CHECK_CONSTRAINT);
             jdbcTemplate.update("UPDATE ds_data_service SET status = 'ENABLED' WHERE status = 'PUBLISHED'");
-            jdbcTemplate.update("UPDATE ds_data_service SET access_mode = 'PUBLIC' WHERE access_mode IS NULL");
             jdbcTemplate.execute("ALTER TABLE ds_data_service ADD CONSTRAINT " + STATUS_CHECK_CONSTRAINT
                     + " CHECK (status IN (" + supportedStatuses() + "))");
             jdbcTemplate.execute("ALTER TABLE ds_data_service DROP CONSTRAINT IF EXISTS " + TYPE_CHECK_CONSTRAINT);

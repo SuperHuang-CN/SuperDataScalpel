@@ -1,4 +1,4 @@
-import { ReloadOutlined, TableOutlined } from '@ant-design/icons';
+import { EyeOutlined, InfoCircleOutlined, ReloadOutlined, SlidersOutlined, TableOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import {
   Alert,
@@ -13,6 +13,7 @@ import {
   Table,
   Tabs,
   Tag,
+  Tooltip,
   Typography,
 } from 'antd';
 import { useMemo, useState } from 'react';
@@ -85,6 +86,16 @@ const platformTypeDefinitionLabel = (column: ColumnMetadata) => {
   return definition.type;
 };
 
+const metadataCellText = (value: string | null | undefined) => {
+  if (!value) return '—';
+  return <Typography.Text className="metadata-cell-text" ellipsis={{ tooltip: value }}>{value}</Typography.Text>;
+};
+
+const tableTypeLabel = (table: DataSourceTable, tdEngine: boolean) => {
+  if (tdEngine || table.type === 'SUPERTABLE') return '超级表';
+  return table.type === 'VIEW' ? '视图' : '数据表';
+};
+
 export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetadataPanelProps) => {
   const tdEngine = dataSource.type === 'TDENGINE_WEBSOCKET' || dataSource.type === 'TDENGINE_RESTFUL';
   const [selectedNamespaceKey, setSelectedNamespaceKey] = useState<string>();
@@ -93,6 +104,7 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
   const [includeViews, setIncludeViews] = useState(false);
   const [selectedTableKey, setSelectedTableKey] = useState<string>();
   const [activeTab, setActiveTab] = useState('columns');
+  const [showAdvancedColumns, setShowAdvancedColumns] = useState(false);
   const namespacesQuery = useDataSourceNamespaces(dataSource.id, active);
   const effectiveNamespaceKey = selectedNamespaceKey ?? defaultNamespaceKey(namespacesQuery.data ?? []);
   const selectedNamespace = namespacesQuery.data?.find((namespace) => namespaceKey(namespace) === effectiveNamespaceKey);
@@ -107,10 +119,18 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
     ?? tablesQuery.data?.tables[0];
   const metadataQuery = useTableMetadata(dataSource.id, selectedTable?.identifier, active);
   const previewQuery = useTablePreview(dataSource.id, selectedTable?.identifier, active && activeTab === 'preview');
+  const primaryKeyColumns = new Set(metadataQuery.data?.primaryKey?.columns ?? []);
 
   const columnColumns: TableProps<ColumnMetadata>['columns'] = [
-    { title: '#', dataIndex: 'ordinal', width: 48 },
-    { title: '字段', dataIndex: 'name', width: 180, ellipsis: true, render: (value: string) => <code>{value}</code> },
+    { title: '#', dataIndex: 'ordinal', width: 48, align: 'right' },
+    {
+      title: '字段', dataIndex: 'name', width: 180,
+      render: (value: string) => (
+        <Typography.Text className="metadata-cell-text metadata-field-name" ellipsis={{ tooltip: value }}>
+          <code>{value}</code>
+        </Typography.Text>
+      ),
+    },
     ...(tdEngine ? [{
       title: '角色',
       dataIndex: 'role',
@@ -119,41 +139,51 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
         ? <Tag color="blue">时间主列</Tag>
         : value === 'TAG' ? <Tag color="purple">TAG</Tag> : <Tag>指标列</Tag>,
     }] : []),
-    { title: '数据库类型', dataIndex: 'nativeType', width: 140, ellipsis: true },
+    {
+      title: '数据库类型', dataIndex: 'nativeType', width: 140,
+      render: (value: string) => metadataCellText(value),
+    },
     {
       title: '平台类型',
       key: 'platformTypeDefinition',
-      width: 210,
-      ellipsis: true,
+      width: 200,
       render: (_: unknown, column: ColumnMetadata) => {
         const label = platformTypeDefinitionLabel(column);
-        return label ? <Tag color="blue">{label}</Tag> : <Tag color="error">不可映射</Tag>;
+        return label
+          ? <Tag bordered={false} className="metadata-platform-type">{label}</Tag>
+          : <Tag color="error" bordered={false}>不可映射</Tag>;
       },
     },
-    { title: '方言逻辑类型', dataIndex: 'logicalType', width: 120, render: (value: string) => <Tag>{value}</Tag> },
-    {
-      title: '长度/精度',
-      key: 'size',
-      width: 100,
-      render: (_: unknown, column: ColumnMetadata) => column.precision !== null
-        ? `${column.precision}${column.scale !== null ? `,${column.scale}` : ''}`
-        : column.length ?? '—',
-    },
+    ...(showAdvancedColumns ? [
+      { title: '方言逻辑类型', dataIndex: 'logicalType', width: 120, render: (value: string) => <Tag bordered={false}>{value}</Tag> },
+      {
+        title: '长度/精度',
+        key: 'size',
+        width: 100,
+        render: (_: unknown, column: ColumnMetadata) => column.precision !== null
+          ? `${column.precision}${column.scale !== null ? `,${column.scale}` : ''}`
+          : column.length ?? '—',
+      },
+    ] : []),
     { title: '可空', dataIndex: 'nullable', width: 64, render: (value: boolean) => value ? '是' : '否' },
-    { title: '默认值', dataIndex: 'defaultValue', width: 150, ellipsis: true, render: (value: string | null) => value ?? '—' },
+    {
+      title: '默认值', dataIndex: 'defaultValue', width: 150,
+      render: (value: string | null) => metadataCellText(value),
+    },
     {
       title: '特性',
       key: 'features',
-      width: 120,
+      width: 150,
       render: (_: unknown, column: ColumnMetadata) => (
-        <Space size={2}>
-          {column.autoIncrement && <Tag color="blue">自增</Tag>}
-          {column.generated && <Tag color="purple">生成</Tag>}
-          {!column.autoIncrement && !column.generated && '—'}
+        <Space className="metadata-feature-tags" size={2} wrap>
+          {primaryKeyColumns.has(column.name) && <Tag color="gold" bordered={false}>主键</Tag>}
+          {column.autoIncrement && <Tag color="blue" bordered={false}>自增</Tag>}
+          {column.generated && <Tag color="purple" bordered={false}>生成</Tag>}
+          {!primaryKeyColumns.has(column.name) && !column.autoIncrement && !column.generated && '—'}
         </Space>
       ),
     },
-    { title: '注释', dataIndex: 'comment', ellipsis: true, render: (value: string | null) => value ?? '—' },
+    { title: '注释', dataIndex: 'comment', render: (value: string | null) => metadataCellText(value) },
   ];
 
   const indexColumns: TableProps<IndexMetadata>['columns'] = [
@@ -181,9 +211,15 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
       <div className="metadata-detail-header">
         <Space size={6}>
           <TableOutlined />
-          <Typography.Text strong>{selectedTable.identifier.table}</Typography.Text>
-          <Tag color={tdEngine ? 'cyan' : undefined}>{tdEngine ? '超级表' : selectedTable.type}</Tag>
-          {selectedTable.comment && <Typography.Text type="secondary">{selectedTable.comment}</Typography.Text>}
+          <Typography.Text strong className="metadata-detail-title" ellipsis={{ tooltip: selectedTable.identifier.table }}>
+            {selectedTable.identifier.table}
+          </Typography.Text>
+          <Tag bordered={false} color={tdEngine ? 'cyan' : undefined}>{tableTypeLabel(selectedTable, tdEngine)}</Tag>
+          {selectedTable.comment && (
+            <Typography.Text type="secondary" className="metadata-detail-comment" ellipsis={{ tooltip: selectedTable.comment }}>
+              {selectedTable.comment}
+            </Typography.Text>
+          )}
         </Space>
       </div>
       {metadataQuery.isError && (
@@ -201,27 +237,47 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
         size="small"
         activeKey={activeTab}
         onChange={setActiveTab}
+        tabBarExtraContent={activeTab === 'columns' ? {
+          right: (
+            <Tooltip title={showAdvancedColumns ? '隐藏方言逻辑类型、长度/精度' : '显示方言逻辑类型、长度/精度'}>
+              <Button
+                type="text"
+                size="small"
+                className={showAdvancedColumns ? 'metadata-advanced-columns-button-active' : undefined}
+                icon={<SlidersOutlined />}
+                aria-label={showAdvancedColumns ? '隐藏详细字段列' : '显示详细字段列'}
+                aria-pressed={showAdvancedColumns}
+                onClick={() => setShowAdvancedColumns((value) => !value)}
+              >
+                详细列
+              </Button>
+            </Tooltip>
+          ),
+        } : undefined}
         items={[
           {
             key: 'columns',
             label: `字段（${metadataQuery.data?.columns.length ?? 0}）`,
             children: (
-              <Table<ColumnMetadata>
-                size="small"
-                rowKey="name"
-                columns={columnColumns}
-                dataSource={metadataQuery.data?.columns ?? []}
-                loading={metadataQuery.isFetching}
-                pagination={false}
-                scroll={{ x: 1380, y: 'calc(100vh - 245px)' }}
-              />
+              <div className="metadata-tab-content">
+                <Table<ColumnMetadata>
+                  className="metadata-detail-table management-table"
+                  size="small"
+                  rowKey="name"
+                  columns={columnColumns}
+                  dataSource={metadataQuery.data?.columns ?? []}
+                  loading={metadataQuery.isFetching}
+                  pagination={false}
+                  scroll={{ x: showAdvancedColumns ? 1380 : undefined, y: '100%' }}
+                />
+              </div>
             ),
           },
           {
             key: 'indexes',
             label: `索引（${metadataQuery.data?.indexes.length ?? 0}）`,
             children: (
-              <Space direction="vertical" size={8} className="metadata-index-content">
+              <div className="metadata-tab-content metadata-index-content">
                 {metadataQuery.data?.primaryKey && (
                   <Alert
                     type="info"
@@ -231,35 +287,47 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
                   />
                 )}
                 <Table<IndexMetadata>
+                  className="metadata-detail-table management-table"
                   size="small"
                   rowKey="name"
                   columns={indexColumns}
                   dataSource={metadataQuery.data?.indexes ?? []}
                   loading={metadataQuery.isFetching}
                   pagination={false}
-                  scroll={{ y: 'calc(100vh - 315px)' }}
+                  scroll={{ y: '100%' }}
                 />
-              </Space>
+              </div>
             ),
           },
           {
             key: 'preview',
-            label: '数据预览',
+            label: (
+              <Space size={4} className="metadata-preview-tab-label">
+                <span>数据预览</span>
+                {previewQuery.data?.truncated && (
+                  <Tooltip title={`仅显示前 ${previewQuery.data.limit} 行数据`}>
+                    <span className="metadata-preview-truncation-hint" tabIndex={0} aria-label="预览数据已截断">
+                      <InfoCircleOutlined />
+                    </span>
+                  </Tooltip>
+                )}
+              </Space>
+            ),
             children: previewQuery.isError ? (
               <Alert type="error" showIcon message={errorMessage(previewQuery.error, '预览数据失败')} />
             ) : (
-              <>
-                {previewQuery.data?.truncated && <Alert type="info" banner message="仅显示前 50 行数据" />}
+              <div className="metadata-tab-content metadata-preview-content">
                 <Table<PreviewRow>
+                  className="metadata-detail-table management-table"
                   size="small"
                   rowKey="key"
                   columns={previewColumns}
                   dataSource={previewRows}
                   loading={previewQuery.isFetching}
                   pagination={false}
-                  scroll={{ x: 'max-content', y: 'calc(100vh - 260px)' }}
+                  scroll={{ x: 'max-content', y: '100%' }}
                 />
-              </>
+              </div>
             ),
           },
         ].filter((item) => !tdEngine || item.key !== 'indexes')}
@@ -269,35 +337,6 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
 
   return (
     <div className="data-source-metadata-panel">
-      <div className="metadata-toolbar">
-        <Select
-          value={effectiveNamespaceKey}
-          loading={namespacesQuery.isFetching}
-          placeholder="选择库 / Schema"
-          className="metadata-namespace-select"
-          options={(namespacesQuery.data ?? []).map((namespace) => ({
-            value: namespaceKey(namespace),
-            label: namespace.displayName,
-          }))}
-          onChange={(value) => {
-            setSelectedNamespaceKey(value);
-            setSelectedTableKey(undefined);
-          }}
-        />
-        <Input.Search
-          allowClear
-          value={keyword}
-          placeholder={tdEngine ? '筛选超级表名' : '筛选表名'}
-          className="metadata-table-search"
-          onChange={(event) => setKeyword(event.target.value)}
-          onSearch={(value) => setSubmittedKeyword(value.trim())}
-        />
-        {!tdEngine && (
-          <Checkbox checked={includeViews} onChange={(event) => setIncludeViews(event.target.checked)}>包含视图</Checkbox>
-        )}
-        <Button icon={<ReloadOutlined />} onClick={() => void tablesQuery.refetch()}>刷新</Button>
-        {tablesQuery.data?.truncated && <Typography.Text type="warning">结果已截断为 500 个对象</Typography.Text>}
-      </div>
       {namespacesQuery.isError && (
         <Alert type="error" showIcon message={errorMessage(namespacesQuery.error, '读取库和 Schema 失败')} />
       )}
@@ -305,9 +344,55 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
         <Alert type="error" showIcon message={errorMessage(tablesQuery.error, tdEngine ? '读取超级表失败' : '读取数据表失败')} />
       )}
       <div className="metadata-workspace">
-        <div className="metadata-table-browser">
+        <aside className="metadata-table-browser">
+          <div className="metadata-browser-toolbar">
+            <div className="metadata-browser-heading">
+              <Typography.Text strong>数据对象 {tablesQuery.data?.tables.length ?? 0}</Typography.Text>
+              <Tooltip title="刷新数据对象">
+                <Button
+                  type="text"
+                  size="small"
+                  icon={<ReloadOutlined />}
+                  aria-label="刷新数据对象"
+                  loading={tablesQuery.isFetching}
+                  onClick={() => void tablesQuery.refetch()}
+                />
+              </Tooltip>
+            </div>
+            <Select
+              value={effectiveNamespaceKey}
+              loading={namespacesQuery.isFetching}
+              placeholder="选择库 / Schema"
+              className="metadata-namespace-select"
+              options={(namespacesQuery.data ?? []).map((namespace) => ({
+                value: namespaceKey(namespace),
+                label: namespace.displayName,
+              }))}
+              onChange={(value) => {
+                setSelectedNamespaceKey(value);
+                setSelectedTableKey(undefined);
+              }}
+            />
+            <Input.Search
+              allowClear
+              value={keyword}
+              placeholder={tdEngine ? '筛选超级表名' : '筛选表名'}
+              className="metadata-table-search"
+              onChange={(event) => setKeyword(event.target.value)}
+              onSearch={(value) => setSubmittedKeyword(value.trim())}
+            />
+            {(!tdEngine || tablesQuery.data?.truncated) && (
+              <div className="metadata-browser-options">
+                {!tdEngine && (
+                  <Checkbox checked={includeViews} onChange={(event) => setIncludeViews(event.target.checked)}>包含视图</Checkbox>
+                )}
+                {tablesQuery.data?.truncated && <Typography.Text type="warning">最多显示 500 个对象</Typography.Text>}
+              </div>
+            )}
+          </div>
           <Spin spinning={tablesQuery.isFetching}>
             <Table<DataSourceTable>
+              className="metadata-object-table management-table"
               size="small"
               showHeader={false}
               rowKey={(table) => identifierKey(table.identifier)}
@@ -317,10 +402,14 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
                 key: 'table',
                 render: (_: unknown, table: DataSourceTable) => (
                   <div className="metadata-table-item">
-                    <Typography.Text ellipsis>{table.identifier.table}</Typography.Text>
-                    <Tag bordered={false} color={table.type === 'SUPERTABLE' ? 'cyan' : undefined}>
-                      {table.type === 'SUPERTABLE' ? '超级表' : table.type === 'TABLE' ? '表' : '视图'}
-                    </Tag>
+                    <Tooltip title={tableTypeLabel(table, tdEngine)}>
+                      <span className={`metadata-table-kind${table.type === 'VIEW' ? ' metadata-table-kind-view' : ''}`}>
+                        {table.type === 'VIEW' ? <EyeOutlined /> : <TableOutlined />}
+                      </span>
+                    </Tooltip>
+                    <Typography.Text className="metadata-table-item-name" ellipsis={{ tooltip: table.identifier.table }}>
+                      {table.identifier.table}
+                    </Typography.Text>
                   </div>
                 ),
               }]}
@@ -328,10 +417,11 @@ export const DataSourceMetadataPanel = ({ dataSource, active }: DataSourceMetada
                 ? 'metadata-table-row-selected'
                 : ''}
               onRow={(table) => ({ onClick: () => setSelectedTableKey(identifierKey(table.identifier)) })}
-              scroll={{ y: 'calc(100vh - 175px)' }}
+              scroll={{ y: '100%' }}
+              locale={{ emptyText: tdEngine ? '当前条件下没有超级表' : '当前条件下没有数据表' }}
             />
           </Spin>
-        </div>
+        </aside>
         <div className="metadata-detail">{detailContent}</div>
       </div>
     </div>

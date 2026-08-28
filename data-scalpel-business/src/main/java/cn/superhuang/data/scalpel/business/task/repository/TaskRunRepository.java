@@ -27,6 +27,8 @@ public interface TaskRunRepository extends SearchRepository<TaskRun, UUID> {
 
     Optional<TaskRun> findFirstByStreamingDeploymentIdOrderByAttemptDesc(UUID streamingDeploymentId);
 
+    List<TaskRun> findAllByExternalExecutionIdIn(Collection<UUID> executionIds);
+
     List<TaskRun> findAllByStatusIn(Collection<TaskRunStatus> statuses);
 
     List<TaskRun> findAllByTaskTypeAndStatusIn(TaskType taskType, Collection<TaskRunStatus> statuses);

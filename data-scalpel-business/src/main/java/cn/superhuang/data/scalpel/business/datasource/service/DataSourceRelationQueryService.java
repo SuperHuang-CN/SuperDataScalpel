@@ -288,7 +288,7 @@ public class DataSourceRelationQueryService {
                         service.getId(), service.getCode(), service.getName(), service.getType(), service.getStatus(),
                         serviceDefinitionVersion(service.getId(), standards, sqlDefinitions, scripts),
                         List.copyOf(relations.getOrDefault(service.getId(), EnumSet.noneOf(DataSourceRelationKind.class))),
-                        service.getRoutePath(), service.getUpdatedAt()
+                        service.getEngineRoutePath(), service.getUpdatedAt()
                 ))
                 .toList();
         return pageResponse(page, content);

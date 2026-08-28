@@ -93,7 +93,7 @@ public class YarnSparkExecutionBackend implements TaskExecutionBackend {
         Path launchFile = launchFiles.create(properties.absoluteWorkDirectory(), launch, access);
         try {
             CommandResult result = execute(
-                    commands.submit(launch.identity(), launchFile, launch.sparkConf()), properties.submitTimeout(), CONTROL_BYTES);
+                    commands.submit(launch.identity(), launchFile, launch.sparkConf(), launch.executionResources()), properties.submitTimeout(), CONTROL_BYTES);
             if (result.successful()) {
                 try {
                     String applicationId = parser.uniqueApplicationId(result.outputText());

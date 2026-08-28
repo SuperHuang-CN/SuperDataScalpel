@@ -19,7 +19,6 @@ import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeployment;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentStatus;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
-import cn.superhuang.data.scalpel.business.service.domain.ServiceRoutePath;
 import cn.superhuang.data.scalpel.business.service.domain.ScriptDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceModelReference;
@@ -38,6 +37,7 @@ import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceMode
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceParameterRepository;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateDataServiceRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.PublishDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.ScriptDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.ScriptRequestExampleRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.ScriptRequestParameterRequest;
@@ -49,6 +49,7 @@ import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataService
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceDetailResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceSummaryResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.GatewayServiceBindingResponse;
+import cn.superhuang.data.scalpel.business.service.web.response.GatewayDataServicePublicationResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.ScriptDataServiceDefinitionResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.ScriptRequestExampleResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.ScriptRequestParameterResponse;
@@ -123,6 +124,7 @@ public class DataServiceManagementService {
     private final ServiceEngineClient engineClient;
     private final DataServiceGatewayPublicationService gatewayPublicationService;
     private final ServiceEngineDataSourceRegistrationService dataSourceRegistrationService;
+    private final ServiceEngineAccessPolicyService accessPolicyService;
     private final SqlServiceDefinitionInspector sqlInspector;
     private final DialectRegistry dialectRegistry;
     private final SearchEngine searchEngine;
@@ -149,6 +151,7 @@ public class DataServiceManagementService {
             ServiceEngineClient engineClient,
             DataServiceGatewayPublicationService gatewayPublicationService,
             ServiceEngineDataSourceRegistrationService dataSourceRegistrationService,
+            ServiceEngineAccessPolicyService accessPolicyService,
             SqlServiceDefinitionInspector sqlInspector,
             DialectRegistry dialectRegistry,
             SearchEngine searchEngine,
@@ -173,6 +176,7 @@ public class DataServiceManagementService {
         this.engineClient = engineClient;
         this.gatewayPublicationService = gatewayPublicationService;
         this.dataSourceRegistrationService = dataSourceRegistrationService;
+        this.accessPolicyService = accessPolicyService;
         this.sqlInspector = sqlInspector;
         this.dialectRegistry = dialectRegistry;
         this.searchEngine = searchEngine;
@@ -209,6 +213,28 @@ public class DataServiceManagementService {
         );
     }
 
+    @Transactional(readOnly = true)
+    public List<GatewayDataServicePublicationResponse> publishedGatewayServices(DataServiceAccessMode accessMode) {
+        if (accessMode == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "网关访问方式不能为空");
+        List<GatewayServiceBinding> bindings = gatewayBindingRepository.findAllByPublicationStatusAndAccessMode(
+                cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServicePublicationStatus.PUBLISHED,
+                accessMode
+        );
+        Map<UUID, DataService> services = repository.findAllByIdIn(
+                bindings.stream().map(GatewayServiceBinding::getDataServiceId).toList()
+        ).stream().collect(Collectors.toMap(DataService::getId, Function.identity()));
+        return bindings.stream()
+                .map(binding -> new GatewayDataServicePublicationResponse(
+                        binding.getDataServiceId(),
+                        services.get(binding.getDataServiceId()) == null ? null : services.get(binding.getDataServiceId()).getCode(),
+                        services.get(binding.getDataServiceId()) == null ? null : services.get(binding.getDataServiceId()).getName(),
+                        binding.getGatewayRoutePath(), binding.getAccessMode(), binding.getGatewayUrl()
+                ))
+                .filter(item -> item.dataServiceCode() != null)
+                .sorted(java.util.Comparator.comparing(GatewayDataServicePublicationResponse::dataServiceCode))
+                .toList();
+    }
+
     @Transactional
     public DataServiceDetailResponse create(CreateDataServiceRequest request) {
         boolean definitionPresent = validateDefinitionShape(
@@ -226,11 +252,8 @@ public class DataServiceManagementService {
                     request.scriptDefinition(), request.engineId()
             );
         }
-        String routePath = normalizeRoutePath(request.routePath());
-        requireRouteAvailable(routePath, null);
         DataService service = repository.saveAndFlush(DataService.create(
-                code, request.name(), request.directoryId(), request.type(), request.engineId(), routePath,
-                request.accessMode(), request.description()
+                code, request.name(), request.directoryId(), request.type(), request.engineId(), request.description()
         ));
         if (definitionPresent) {
             saveNewDefinition(
@@ -248,17 +271,6 @@ public class DataServiceManagementService {
         if (request.type() != service.getType()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务类型创建后不能修改");
         }
-        DataServiceAccessMode requestedAccessMode = request.accessMode() == null
-                ? service.getAccessMode()
-                : request.accessMode();
-        if (service.getAccessMode() == DataServiceAccessMode.SUBSCRIPTION_REQUIRED
-                && requestedAccessMode == DataServiceAccessMode.PUBLIC
-                && subscriptionRepository.existsByDataServiceId(id)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "数据服务仍有消费者订阅，请先撤回订阅后再改为公开访问"
-            );
-        }
         boolean definitionPresent = validateDefinitionShape(
                 request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(), false
         );
@@ -270,11 +282,8 @@ public class DataServiceManagementService {
                     request.scriptDefinition(), request.engineId()
             );
         }
-        String routePath = normalizeRoutePath(request.routePath());
-        requireRouteAvailable(routePath, id);
         service.update(
-                request.name(), request.directoryId(), request.engineId(), routePath,
-                request.accessMode(), request.description()
+                request.name(), request.directoryId(), request.engineId(), request.description()
         );
         if (definitionPresent) {
             upsertDefinition(
@@ -349,8 +358,8 @@ public class DataServiceManagementService {
         ));
     }
 
-    public DataServiceDetailResponse publish(UUID id) {
-        gatewayPublicationService.publish(id);
+    public DataServiceDetailResponse publish(UUID id, PublishDataServiceRequest request) {
+        gatewayPublicationService.publish(id, request.gatewayRoutePath(), request.accessMode());
         return requireTransactionResult(readTransactionTemplate.execute(
                 status -> detail(
                         requireService(id),
@@ -439,6 +448,7 @@ public class DataServiceManagementService {
             case SCRIPT_API -> requireScriptDefinition(service.getId());
         }
         ServiceEngine engine = requireEnabledEngine(service.getEngineId());
+        accessPolicyService.requireReadyPolicy(engine.getId());
         return switch (service.getType()) {
             case STANDARD_TABLE -> prepareStandardEnable(service, engine);
             case SQL_QUERY -> prepareSqlEnable(service, engine);
@@ -540,7 +550,7 @@ public class DataServiceManagementService {
         }
 
         String definitionJson = write(definition);
-        String definitionDigest = digest(service.getId() + "|" + service.getEngineId() + "|" + service.getRoutePath()
+        String definitionDigest = digest(service.getId() + "|" + service.getEngineId() + "|" + service.getEngineRoutePath()
                 + "|" + dataSource.getId() + "|" + digestModelIds + "|" + definitionJson);
         DataServiceDeployment deployment = deploymentRepository.findByDataServiceId(service.getId()).orElse(null);
         long revision;
@@ -568,7 +578,7 @@ public class DataServiceManagementService {
         return new EnableCommand(
                 engine,
                 new ServiceDeploymentRequest(
-                        service.getId(), service.getCode(), service.getRoutePath(),
+                        service.getId(), service.getCode(), service.getEngineRoutePath(),
                         definitionDigest, definition, dataSource.getId()
                 ),
                 revision
@@ -925,7 +935,7 @@ public class DataServiceManagementService {
         return new DataServiceDetailResponse(
                 service.getId(), service.getCode(), service.getName(), service.getDirectoryId(), service.getType(),
                 definitionVersion != null, definitionVersion,
-                standard, sql, script, service.getEngineId(), service.getRoutePath(), service.getAccessMode(),
+                standard, sql, script, service.getEngineId(), service.getEngineRoutePath(),
                 service.getStatus(), service.getRevision(),
                 deployment == null ? null : deployment.getStatus(), deployment == null ? null : deployment.getLastError(),
                 deployment == null ? null : deployment.getDeployedAt(),
@@ -949,7 +959,7 @@ public class DataServiceManagementService {
                 definition != null, definition == null ? null : definition.version(),
                 definition == null ? null : definition.sourceId(),
                 definition == null ? null : definition.sourceName(),
-                service.getEngineId(), service.getRoutePath(), service.getAccessMode(),
+                service.getEngineId(), service.getEngineRoutePath(),
                 service.getStatus(), service.getRevision(),
                 deployment == null ? null : deployment.getStatus(), deployment == null ? null : deployment.getLastError(),
                 deployment == null ? null : deployment.getDeployedAt(),
@@ -1049,21 +1059,6 @@ public class DataServiceManagementService {
                 ignored -> new ArrayList<>()
         ).add(binding));
         return grouped;
-    }
-
-    private void requireRouteAvailable(String routePath, UUID currentId) {
-        boolean exists = currentId == null
-                ? repository.existsByRoutePath(routePath)
-                : repository.existsByRoutePathAndIdNot(routePath, currentId);
-        if (exists) throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务请求路径已被占用");
-    }
-
-    private String normalizeRoutePath(String routePath) {
-        try {
-            return ServiceRoutePath.normalize(routePath);
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
-        }
     }
 
     private DataService requireService(UUID id) {
@@ -1249,7 +1244,7 @@ public class DataServiceManagementService {
 
     private static ServiceSnapshot snapshot(DataService service) {
         return new ServiceSnapshot(
-                service.getId(), service.getCode(), service.getType(), service.getEngineId(), service.getRoutePath(), service.getUpdatedAt()
+                service.getId(), service.getCode(), service.getType(), service.getEngineId(), service.getEngineRoutePath(), service.getUpdatedAt()
         );
     }
 

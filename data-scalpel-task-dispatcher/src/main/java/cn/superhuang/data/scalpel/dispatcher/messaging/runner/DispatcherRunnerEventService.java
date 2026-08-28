@@ -14,7 +14,7 @@ import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultResolution;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultService;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendException;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherMessageInbox;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
 import cn.superhuang.data.scalpel.dispatcher.messaging.MessageCoordinates;

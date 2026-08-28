@@ -96,6 +96,7 @@ public final class GatewayRuntimeSnapshot {
             PathPattern pathPattern,
             int order,
             int stripPrefixSegments,
+            String upstreamPath,
             Route gatewayRoute
     ) {
     }

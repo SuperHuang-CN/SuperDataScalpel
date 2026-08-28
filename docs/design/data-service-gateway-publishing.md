@@ -190,7 +190,7 @@ public interface GatewayServicePort {
 
 其中：
 
-- `GatewayServiceSpec` 包含稳定 DataService ID、code、name、revision、访问模式、网关路径和 Engine 公共基地址；
+- `GatewayServiceSpec` 包含稳定 DataService ID、code、name、revision、访问模式、网关公开路径、Engine 运行地址和固定 Engine 上游路径；
 - `GatewayServiceResult` 返回外部 Service ID、Route ID 和完整网关访问地址；
 - `GatewayServiceReference` 包含删除所需的稳定业务标识和外部 ID；
 - `GatewayServicePortRegistry` 选择当前写入 Provider，并能按历史 Binding 的 Provider 找到删除适配器。
@@ -205,7 +205,7 @@ public interface GatewayServicePort {
 | DataScalpel | Kong Service |
 |---|---|
 | `dataService.id` | 稳定名称 `datascalpel-service-{UUID}` |
-| `engine.publicUrl` | `url` |
+| `engine.runtimeUrl + /runtime/v1/services/{dataService.id}` | `url` |
 | 系统归属 | `tags` |
 
 Service 标签：
@@ -214,20 +214,20 @@ Service 标签：
 - `datascalpel-service`
 - `datascalpel-data-service-{dataServiceId}`
 
-第一阶段直接把 Kong Service 指向单个 Engine 的 `publicUrl`，不创建 Kong Upstream 和 Target。
+第一阶段直接把 Kong Service 指向单个 Engine 的 `runtimeUrl + /runtime/v1/services/{dataService.id}`，不创建 Kong Upstream 和 Target。
 
 ### 7.2 Kong Route
 
 | DataScalpel | Kong Route |
 |---|---|
 | `dataService.id` | 稳定名称 `datascalpel-route-{UUID}` |
-| `dataService.routePath` | `paths` 中唯一值 |
+| `gatewayBinding.gatewayRoutePath` | `paths` 中唯一值 |
 | 固定协议 | `http`、`https` |
 | 固定方法 | `POST` |
-| 路径转发 | `strip_path=false` |
+| 路径转发 | `strip_path=true` |
 | Host 行为 | `preserve_host=false` |
 
-Route 使用同一组归属标签。因为 `strip_path=false`，调用：
+Route 使用同一组归属标签。因为 Service URL 已携带固定 Engine 上游路径，而 Route 使用 `strip_path=true`，调用：
 
 ```text
 http://gateway-proxy/open-api/v1/orders
@@ -236,7 +236,7 @@ http://gateway-proxy/open-api/v1/orders
 会被转发为：
 
 ```text
-http://service-engine/open-api/v1/orders
+http://service-engine/runtime/v1/services/{dataService.id}
 ```
 
 ### 7.3 受保护服务
@@ -446,7 +446,7 @@ POST /api/v1/data-services/{id}/actions/cleanup-deployment
 | 已启用，无论是否已发布 | 停用 |
 | 网关已发布 | 复制网关访问 cURL |
 
-“复制 cURL”使用 Binding 中的 `gatewayUrl`，不再使用 Engine `publicUrl`。这样用户拿到的地址一定经过统一网关。
+“复制 cURL”使用 Binding 中的 `gatewayUrl`，不再使用 Engine `runtimeUrl`。这样用户拿到的地址一定经过统一网关。
 
 “取消发布”和“停用”必须二次确认并明确不同影响：取消发布只关闭网关入口，Engine、订阅和凭证保持不变；停用先关闭所有网关入口，再从 Engine 移除当前 revision。
 

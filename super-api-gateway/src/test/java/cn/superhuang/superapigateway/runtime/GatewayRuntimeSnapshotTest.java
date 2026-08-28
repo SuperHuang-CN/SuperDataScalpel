@@ -77,6 +77,7 @@ class GatewayRuntimeSnapshotTest {
                 parser.parse(path),
                 order,
                 0,
+                null,
                 gatewayRoute
         );
     }

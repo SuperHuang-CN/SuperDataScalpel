@@ -4,6 +4,9 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceRuntimeService;
+import cn.superhuang.data.scalpel.business.compute.domain.ComputeEngine;
+import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineSelectionService;
+import cn.superhuang.data.scalpel.business.compute.service.SparkExecutionResourceConfigurationService;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
@@ -13,6 +16,8 @@ import cn.superhuang.data.scalpel.business.task.web.request.UpdateSparkJarTaskDe
 import cn.superhuang.data.scalpel.business.task.web.response.SparkJarTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceType;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarJobMode;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -32,6 +37,7 @@ import java.time.Instant;
 import java.util.*;
 import java.util.jar.Attributes;
 import java.util.jar.JarInputStream;
+import java.util.regex.Pattern;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -40,6 +46,13 @@ public class SparkJarTaskDefinitionService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SparkJarTaskDefinitionService.class);
     public static final int JOB_API_VERSION = 1;
     public static final long MAX_JAR_BYTES = 100L * 1024 * 1024;
+    private static final Set<String> LEGACY_RESOURCE_KEYS = Set.of(
+            "spark.driver.cores", "spark.driver.memory", "spark.executor.instances",
+            "spark.executor.cores", "spark.executor.memory");
+    private static final String DRIVER_JVM_OPTIONS_KEY = "spark.driver.extrajavaoptions";
+    private static final Pattern DRIVER_JVM_OPTION = Pattern.compile(
+            "(?:-D[A-Za-z_][A-Za-z0-9_.-]*=[^\\s\"']+|-XX:[+-][A-Za-z][A-Za-z0-9_.]*"
+                    + "|-XX:[A-Za-z][A-Za-z0-9_.]*=[^\\s\"']+|--add-(?:opens|exports)=[^\\s\"']+)");
 
     private final DataTaskRepository taskRepository;
     private final SparkJarTaskDefinitionRepository definitionRepository;
@@ -47,6 +60,8 @@ public class SparkJarTaskDefinitionService {
     private final DataModelRepository modelRepository;
     private final DataSourceRepository dataSourceRepository;
     private final DataSourceRuntimeService dataSourceRuntimeService;
+    private final ComputeEngineSelectionService computeEngineSelectionService;
+    private final SparkExecutionResourceConfigurationService resourceConfigurationService;
     private final TaskRunArtifactStorage storage;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
@@ -58,6 +73,8 @@ public class SparkJarTaskDefinitionService {
             DataModelRepository modelRepository,
             DataSourceRepository dataSourceRepository,
             DataSourceRuntimeService dataSourceRuntimeService,
+            ComputeEngineSelectionService computeEngineSelectionService,
+            SparkExecutionResourceConfigurationService resourceConfigurationService,
             TaskRunArtifactStorage storage,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
@@ -68,6 +85,8 @@ public class SparkJarTaskDefinitionService {
         this.modelRepository = modelRepository;
         this.dataSourceRepository = dataSourceRepository;
         this.dataSourceRuntimeService = dataSourceRuntimeService;
+        this.computeEngineSelectionService = computeEngineSelectionService;
+        this.resourceConfigurationService = resourceConfigurationService;
         this.storage = storage;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -80,7 +99,14 @@ public class SparkJarTaskDefinitionService {
                 .map(this::response)
                 .orElseGet(() -> new SparkJarTaskDefinitionResponse(
                         taskId, false, 0, expectedMode(task), null,
-                        List.of(), List.of(), List.of(), 3600, null));
+                        List.of(), List.of(), List.of(), defaultResources(task), 3600, null));
+    }
+
+    @Transactional(readOnly = true)
+    public SparkExecutionResourceSpec resolvedExecutionResources(UUID taskId, SparkJarTaskDefinition definition) {
+        DataTask task = requireJarTask(taskId);
+        return resolvedResources(task, definition, null,
+                extractLegacyResources(parseEntries(definition.getSparkConfJson())).resources());
     }
 
     @Transactional
@@ -88,13 +114,20 @@ public class SparkJarTaskDefinitionService {
         DataTask task = requireJarTaskForUpdate(taskId);
         requireEditable(task);
         List<UpdateSparkJarTaskDefinitionRequest.Entry> parameters = normalizedEntries(request.parameters(), false);
-        List<UpdateSparkJarTaskDefinitionRequest.Entry> sparkConf = normalizedEntries(request.sparkConf(), true);
+        LegacyResources legacyResources = extractLegacyResources(request.sparkConf());
+        if (request.executionResources() != null && legacyResources.resources() != null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "运行资源不能同时通过 Spark Conf 与“运行资源”配置，请移除 Spark Conf 中的资源参数");
+        }
+        List<UpdateSparkJarTaskDefinitionRequest.Entry> sparkConf = normalizedEntries(legacyResources.sparkConf(), true);
         List<UpdateSparkJarTaskDefinitionRequest.ResourceBinding> bindings = normalizedBindings(request.resourceBindings());
         validateBindings(task, bindings, false);
 
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
                 .orElseGet(() -> SparkJarTaskDefinition.create(taskId, expectedMode(task)));
-        boolean changed = definition.updateConfiguration(json(parameters), json(sparkConf), request.timeoutSeconds());
+        SparkExecutionResourceSpec resources = resolvedResources(task, definition, request.executionResources(), legacyResources.resources());
+        boolean changed = definition.updateConfiguration(
+                json(parameters), json(sparkConf), resourceConfigurationService.write(resources), request.timeoutSeconds());
         List<SparkJarTaskResourceBinding> existing = bindingRepository.findAllByTaskIdOrderByCreatedAtAsc(taskId);
         if (!sameBindings(existing, bindings)) {
             bindingRepository.deleteAllByTaskId(taskId);
@@ -170,7 +203,24 @@ public class SparkJarTaskDefinitionService {
         if (definition.getJobMode() != expectedMode(task)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR Job Mode 与任务类型不匹配，请重新上传");
         }
+        // Publishing is another explicit boundary: a definition saved before an
+        // engine policy was lowered must not become runnable accidentally.
+        resolvedResources(task, definition, null,
+                extractLegacyResources(parseEntries(definition.getSparkConfJson())).resources());
         validateBindings(task, bindingRequests(taskId), true);
+    }
+
+    /** Validates an existing JAR definition before its task is moved to another engine. */
+    public void validateExecutionResourcesForEngine(SparkJarTaskDefinition definition, UUID computeEngineId) {
+        ComputeEngine engine = computeEngineSelectionService.requireExisting(computeEngineId);
+        SparkExecutionResourcePolicy policy = resourceConfigurationService.policy(
+                engine.getResourcePolicyJson(), engine.getExpectedBackendType());
+        SparkExecutionResourceSpec configured = resourceConfigurationService.resources(
+                definition.getExecutionResourcesJson());
+        if (configured != null && configured.exceeds(policy.maximums())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "任务运行资源超过计算引擎“" + engine.getName() + "”的单次任务上限");
+        }
     }
 
     public void validateArtifactAvailable(UUID taskId) {
@@ -252,8 +302,10 @@ public class SparkJarTaskDefinitionService {
     }
 
     private SparkJarTaskDefinitionResponse response(SparkJarTaskDefinition definition) {
+        DataTask task = requireJarTask(definition.getTaskId());
         List<UpdateSparkJarTaskDefinitionRequest.Entry> parameters = parseEntries(definition.getParametersJson());
-        List<UpdateSparkJarTaskDefinitionRequest.Entry> sparkConf = parseEntries(definition.getSparkConfJson());
+        LegacyResources legacyResources = extractLegacyResources(parseEntries(definition.getSparkConfJson()));
+        List<UpdateSparkJarTaskDefinitionRequest.Entry> sparkConf = legacyResources.sparkConf();
         List<SparkJarTaskResourceBinding> bindings = bindingRepository
                 .findAllByTaskIdOrderByCreatedAtAsc(definition.getTaskId());
         Map<UUID, String> modelNames = new HashMap<>();
@@ -274,6 +326,7 @@ public class SparkJarTaskDefinitionService {
                         binding.getResourceType() == SparkJarResourceType.MODEL
                                 ? modelNames.get(binding.getResourceId()) : sourceNames.get(binding.getResourceId()),
                         binding.getTopicName(), binding.getAccessMode())).toList(),
+                resolvedResources(task, definition, null, legacyResources.resources()),
                 definition.getTimeoutSeconds(), definition.getUpdatedAt());
     }
 
@@ -284,8 +337,13 @@ public class SparkJarTaskDefinitionService {
                 .toList();
         requireUnique(normalized.stream().map(UpdateSparkJarTaskDefinitionRequest.Entry::name).toList(),
                 conf ? "Spark Conf Key 不能重复" : "参数 Key 不能重复");
+        if (conf && normalized.stream().filter(entry -> DRIVER_JVM_OPTIONS_KEY.equals(
+                entry.name().trim().toLowerCase(Locale.ROOT))).count() > 1) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "spark.driver.extraJavaOptions 不能重复配置");
+        }
         if (conf) normalized.forEach(entry -> {
-            validateSparkConf(entry.name());
+            validateSparkConf(entry.name(), entry.value());
             if (entry.value().isBlank()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Spark Conf Value 不能为空");
             }
@@ -302,6 +360,74 @@ public class SparkJarTaskDefinitionService {
             }
         });
         return normalized;
+    }
+
+    private SparkExecutionResourceSpec defaultResources(DataTask task) {
+        ComputeEngine engine = computeEngineSelectionService.requireExisting(task.getComputeEngineId());
+        return resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType()).defaults();
+    }
+
+    private SparkExecutionResourceSpec resolvedResources(
+            DataTask task,
+            SparkJarTaskDefinition definition,
+            SparkExecutionResourceSpec requested,
+            SparkExecutionResourceSpec legacy
+    ) {
+        ComputeEngine engine = computeEngineSelectionService.requireExisting(task.getComputeEngineId());
+        SparkExecutionResourcePolicy policy = resourceConfigurationService.policy(
+                engine.getResourcePolicyJson(), engine.getExpectedBackendType());
+        SparkExecutionResourceSpec current = resourceConfigurationService.resources(definition.getExecutionResourcesJson());
+        SparkExecutionResourceSpec result = requested != null ? requested
+                : legacy != null ? legacy
+                : current != null ? current : policy.defaults();
+        if (result.exceeds(policy.maximums())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "任务运行资源超过计算引擎“" + engine.getName() + "”的单次任务上限");
+        }
+        return result;
+    }
+
+    private static LegacyResources extractLegacyResources(List<UpdateSparkJarTaskDefinitionRequest.Entry> entries) {
+        if (entries == null || entries.isEmpty()) return new LegacyResources(List.of(), null);
+        Map<String, String> legacy = new LinkedHashMap<>();
+        List<UpdateSparkJarTaskDefinitionRequest.Entry> remaining = new ArrayList<>();
+        for (UpdateSparkJarTaskDefinitionRequest.Entry entry : entries) {
+            String key = entry.name() == null ? "" : entry.name().trim().toLowerCase(Locale.ROOT);
+            if (LEGACY_RESOURCE_KEYS.contains(key)) legacy.put(key, entry.value());
+            else remaining.add(entry);
+        }
+        if (legacy.isEmpty()) return new LegacyResources(remaining, null);
+        try {
+            int driverCores = integer(legacy.getOrDefault("spark.driver.cores", "1"), "spark.driver.cores");
+            int driverMemory = memoryMiB(legacy.getOrDefault("spark.driver.memory", "2048m"), "spark.driver.memory");
+            int executorInstances = integer(legacy.getOrDefault("spark.executor.instances", "2"), "spark.executor.instances");
+            int executorCores = integer(legacy.getOrDefault("spark.executor.cores", "2"), "spark.executor.cores");
+            int executorMemory = memoryMiB(legacy.getOrDefault("spark.executor.memory", "2048m"), "spark.executor.memory");
+            return new LegacyResources(remaining,
+                    new SparkExecutionResourceSpec(driverCores, driverMemory, executorInstances,
+                            executorCores, executorMemory));
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "旧 Spark Conf 中的运行资源格式无效，请改用运行资源配置", exception);
+        }
+    }
+
+    private static int integer(String value, String key) {
+        if (value == null || !value.trim().matches("[1-9][0-9]*")) {
+            throw new IllegalArgumentException(key + " 必须是正整数");
+        }
+        return Integer.parseInt(value.trim());
+    }
+
+    private static int memoryMiB(String value, String key) {
+        if (value == null || !value.trim().matches("[1-9][0-9]*[mMgG]")) {
+            throw new IllegalArgumentException(key + " 必须使用 MiB 或 GiB 单位");
+        }
+        String normalized = value.trim().toLowerCase(Locale.ROOT);
+        long amount = Long.parseLong(normalized.substring(0, normalized.length() - 1));
+        long mib = normalized.endsWith("g") ? amount * 1024 : amount;
+        if (mib > Integer.MAX_VALUE) throw new IllegalArgumentException(key + " 过大");
+        return (int) mib;
     }
 
     private List<UpdateSparkJarTaskDefinitionRequest.ResourceBinding> normalizedBindings(
@@ -382,20 +508,51 @@ public class SparkJarTaskDefinitionService {
         if (publish) kafkaTopics.forEach(dataSourceRuntimeService::requireKafkaTopics);
     }
 
-    private static void validateSparkConf(String key) {
+    private static void validateSparkConf(String key, String configuredValue) {
         String value = key.toLowerCase(Locale.ROOT);
         if (!value.startsWith("spark.")) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Spark Conf Key 必须以 spark. 开头");
         if (containsControlCharacter(key) || key.indexOf('=') >= 0) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Spark Conf Key 包含不支持的字符");
+        }
+        if (DRIVER_JVM_OPTIONS_KEY.equals(value)) {
+            validateDriverJvmOptions(configuredValue);
+            return;
         }
         List<String> forbidden = List.of("spark.master", "spark.submit.deploymode", "spark.app.name", "spark.jars",
                 "spark.files", "spark.archives", "spark.jars.packages", "extraclasspath", "javaoptions", ".env.",
                 "spark.hadoop.", "spark.kubernetes.", "spark.yarn.queue", "spark.yarn.tags",
                 "spark.yarn.submit.waitappcompletion", "spark.driver.host", "spark.driver.bindaddress",
                 "spark.driver.port", "spark.blockmanager.port", "spark.network.", "spark.rpc.",
-                "spark.authenticate", "spark.ssl", "datascalpel");
+                "spark.authenticate", "spark.ssl", "datascalpel", "spark.driver.memoryoverhead",
+                "spark.executor.memoryoverhead", "spark.dynamicallocation.");
         if (forbidden.stream().anyMatch(value::startsWith) || forbidden.stream().anyMatch(value::contains)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "该 Spark 配置由平台控制：" + key);
+        }
+    }
+
+    private static void validateDriverJvmOptions(String value) {
+        if (value == null || value.isBlank() || value.length() > 2_000 || containsControlCharacter(value)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "Driver JVM 参数不能为空、不能包含控制字符且总长度不能超过 2000");
+        }
+        String[] options = value.split(" ", -1);
+        if (options.length > 100) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Driver JVM 参数最多 100 项");
+        }
+        for (String option : options) {
+            String normalized = option.toLowerCase(Locale.ROOT);
+            if (option.isBlank() || option.chars().anyMatch(Character::isWhitespace)
+                    || option.indexOf('\"') >= 0 || option.indexOf('\'') >= 0
+                    || normalized.startsWith("-ddatascalpel.")
+                    || normalized.startsWith("-djava.class.path")
+                    || normalized.contains("heapdump")
+                    || normalized.startsWith("-xx:onerror")
+                    || normalized.startsWith("-xx:onoutofmemoryerror")
+                    || normalized.startsWith("-xx:errorfile")
+                    || !DRIVER_JVM_OPTION.matcher(option).matches()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                        "Driver JVM 参数只允许 -D、-XX、--add-opens 或 --add-exports；不能覆盖内存、Agent、classpath 或错误转储配置");
+            }
         }
     }
 
@@ -509,7 +666,7 @@ public class SparkJarTaskDefinitionService {
         zip.putNextEntry(new ZipEntry(path)); zip.write(value.getBytes(StandardCharsets.UTF_8)); zip.closeEntry();
     }
 
-    private static String templatePom(SparkJarJobMode mode) {
+    static String templatePom(SparkJarJobMode mode) {
         String jobClass = mode == SparkJarJobMode.STREAMING
                 ? "com.example.datascalpel.ExampleSparkStreamingJob"
                 : "com.example.datascalpel.ExampleSparkJob";
@@ -561,7 +718,7 @@ public class SparkJarTaskDefinitionService {
                 """.formatted(mode, jobClass);
     }
 
-    private static String templateReadme(SparkJarJobMode mode) {
+    static String templateReadme(SparkJarJobMode mode) {
         if (mode == SparkJarJobMode.STREAMING) return templateStreamingReadme();
         return """
                 # DataScalpel Spark Job
@@ -591,6 +748,31 @@ public class SparkJarTaskDefinitionService {
                 `READ/WRITE/READ_WRITE` 会在每次 SDK调用时校验。字段映射顺序固定为
                 `map(目标字段, 来源字段)`；模型 UPSERT自动使用完整模型主键，JDBC UPSERT在代码中指定 Key。
 
+                ## JDBC 读取与分片
+
+                任务定义中的 `Spark Conf` 用于全局 Spark 参数。单次模型或 JDBC 表读取的分片、Fetch Size、
+                超时和下推参数由用户 JAR 中的 `JdbcReadOptions` 指定：
+
+                ```java
+                var options = JdbcReadOptions.builder()
+                        .partitionBy("id", "1", "10000000", 16)
+                        .fetchSize(10_000)
+                        .option("pushDownPredicate", "true")
+                        .build();
+                Dataset<Row> input = context.models().read("source_model", options);
+
+                Dataset<Row> summary = context.jdbc().readQuery(
+                        "erp_source",
+                        "SELECT customer_id, SUM(amount) AS total_amount "
+                                + "FROM sales.orders GROUP BY customer_id",
+                        options);
+                ```
+
+                `lowerBound/upperBound` 仅用于计算 JDBC 分片步长，不作为数据过滤条件；
+                `Dataset.repartition()` 只会在数据读入 Spark 后重新分区，不能替代 JDBC 源端分片。
+                `readQuery` 仍只允许单条 `SELECT/WITH`，SQL 在绑定的数据源中执行；启用分片时，分片列必须出现在
+                查询结果中。平台使用带别名的子查询实现 SQL 上推，因此可以与 `partitionBy` 同时使用。
+
                 ## 运行限制
 
                 平台负责 SparkSession生命周期；作业不得调用 `spark.stop()`、创建新的根 SparkSession或
@@ -612,6 +794,7 @@ public class SparkJarTaskDefinitionService {
 
                 import cn.superhuang.datascalpel.sdk.SparkBatchJob;
                 import cn.superhuang.datascalpel.sdk.SparkJobContext;
+                import cn.superhuang.datascalpel.sdk.JdbcReadOptions;
                 import org.apache.spark.sql.Dataset;
                 import org.apache.spark.sql.Row;
 
@@ -622,6 +805,15 @@ public class SparkJarTaskDefinitionService {
                     public void execute(SparkJobContext context) {
                         context.observability().status("READ_INPUT", "正在读取订单模型");
                         context.observability().info("orders.started", "开始处理订单");
+                        // 如需 JDBC 源端分片，可改用：
+                        // var options = JdbcReadOptions.builder()
+                        //         .partitionBy("order_id", "1", "10000000", 16)
+                        //         .fetchSize(10_000)
+                        //         .build();
+                        // Dataset<Row> input = context.models().read("source_model", options);
+                        // SQL 上推也支持同一组读取参数；分片列必须出现在查询结果中：
+                        // Dataset<Row> summary = context.jdbc().readQuery(
+                        //         "erp_source", "SELECT customer_id, SUM(amount) total FROM sales.orders GROUP BY customer_id", options);
                         Dataset<Row> input = context.models().read("source_model");
                         context.observability().status("WRITE_OUTPUT", "正在写入目标模型");
                         try (var operation = context.observability().operation("orders.model_write")) {
@@ -839,4 +1031,8 @@ public class SparkJarTaskDefinitionService {
     private record JarMetadata(int apiVersion, String jobClass, SparkJarJobMode jobMode) {}
     private record UploadResult(String previousKey, SparkJarTaskDefinitionResponse response) {}
     private record ArtifactValidation(String objectKey, String sha256, long sizeBytes) {}
+    private record LegacyResources(
+            List<UpdateSparkJarTaskDefinitionRequest.Entry> sparkConf,
+            SparkExecutionResourceSpec resources
+    ) {}
 }

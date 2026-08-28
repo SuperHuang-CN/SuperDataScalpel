@@ -1,5 +1,6 @@
-package cn.superhuang.data.scalpel.dispatcher.domain;
+package cn.superhuang.data.scalpel.contract.execution;
 
+/** Stable lifecycle state of one execution as observed by the Dispatcher. */
 public enum DispatcherExecutionState {
     QUEUED,
     SUBMITTING,

@@ -21,7 +21,8 @@ public record SubmitExecutionCommand(
         List<UUID> qualitySampleRuleIds,
         int qualitySampleLimit,
         ExecutionUserJarArtifact userJar,
-        List<SparkConfigurationEntry> sparkConf
+        List<SparkConfigurationEntry> sparkConf,
+        SparkExecutionResourceSpec executionResources
 ) implements ExecutionCommand {
     public SubmitExecutionCommand {
         qualitySampleRuleIds = qualitySampleRuleIds == null ? List.of() : qualitySampleRuleIds.stream().distinct().sorted().toList();
@@ -59,10 +60,22 @@ public record SubmitExecutionCommand(
             int messageVersion, UUID messageId, ExecutionMessageType messageType, Instant occurredAt,
             UUID engineId, UUID executionId, UUID runId, int attempt, UUID taskId,
             ExecutionTaskType taskType, int definitionVersion, Instant deadlineAt,
+            ExecutionArtifactLocation artifacts, List<UUID> qualitySampleRuleIds, int qualitySampleLimit,
+            ExecutionUserJarArtifact userJar, List<SparkConfigurationEntry> sparkConf
+    ) {
+        this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
+                attempt, taskId, taskType, definitionVersion, deadlineAt, artifacts,
+                qualitySampleRuleIds, qualitySampleLimit, userJar, sparkConf, null);
+    }
+
+    public SubmitExecutionCommand(
+            int messageVersion, UUID messageId, ExecutionMessageType messageType, Instant occurredAt,
+            UUID engineId, UUID executionId, UUID runId, int attempt, UUID taskId,
+            ExecutionTaskType taskType, int definitionVersion, Instant deadlineAt,
             ExecutionArtifactLocation artifacts
     ) {
         this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
-                attempt, taskId, taskType, definitionVersion, deadlineAt, artifacts, List.of(), 0, null, List.of());
+                attempt, taskId, taskType, definitionVersion, deadlineAt, artifacts, List.of(), 0, null, List.of(), null);
     }
 
     public SubmitExecutionCommand(
@@ -74,7 +87,7 @@ public record SubmitExecutionCommand(
         this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
                 attempt, taskId, taskType, definitionVersion, deadlineAt, artifacts,
                 qualitySampleRuleIds, qualitySampleRuleIds == null || qualitySampleRuleIds.isEmpty() ? 0 : 100,
-                null, List.of());
+                null, List.of(), null);
     }
 
     public SubmitExecutionCommand(
@@ -85,6 +98,6 @@ public record SubmitExecutionCommand(
     ) {
         this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
                 attempt, taskId, taskType, definitionVersion, deadlineAt, artifacts,
-                qualitySampleRuleIds, qualitySampleLimit, null, List.of());
+                qualitySampleRuleIds, qualitySampleLimit, null, List.of(), null);
     }
 }

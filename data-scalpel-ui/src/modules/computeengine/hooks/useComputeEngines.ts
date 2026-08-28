@@ -6,7 +6,10 @@ import {
   detachComputeEngine,
   deleteComputeEngine,
   executeComputeEngineCommand,
+  fetchComputeEngine,
+  fetchComputeEngineExecutions,
   fetchComputeEngines,
+  fetchComputeEngineRuntimeOverview,
   reconfigureComputeEngine,
   testComputeEngine,
   updateComputeEngine,
@@ -16,6 +19,7 @@ import type {
   CreateComputeEngineRequest,
   DetachComputeEngineRequest,
   UpdateComputeEngineRequest,
+  DispatcherExecutionScope,
 } from '../model/computeEngine';
 
 const computeEnginesKey = 'compute-engines';
@@ -28,6 +32,34 @@ export const useComputeEngines = (request: SearchRequest, enabled = true) => use
   queryKey: [computeEnginesKey, request],
   queryFn: () => fetchComputeEngines(request),
   enabled,
+});
+
+export const useComputeEngine = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [computeEnginesKey, 'detail', id],
+  queryFn: () => fetchComputeEngine(id!),
+  enabled: enabled && Boolean(id),
+});
+
+export const useComputeEngineRuntimeOverview = (id: string, enabled = true) => useQuery({
+  queryKey: [computeEnginesKey, id, 'runtime-overview'],
+  queryFn: () => fetchComputeEngineRuntimeOverview(id),
+  enabled,
+  refetchInterval: 5_000,
+  refetchIntervalInBackground: false,
+});
+
+export const useComputeEngineExecutions = (
+  id: string,
+  scope: DispatcherExecutionScope,
+  page: number,
+  size: number,
+  enabled = true,
+) => useQuery({
+  queryKey: [computeEnginesKey, id, 'executions', scope, page, size],
+  queryFn: () => fetchComputeEngineExecutions(id, scope, page, size),
+  enabled,
+  refetchInterval: scope === 'RECENT' ? 15_000 : 5_000,
+  refetchIntervalInBackground: false,
 });
 
 export const useCreateComputeEngine = () => {

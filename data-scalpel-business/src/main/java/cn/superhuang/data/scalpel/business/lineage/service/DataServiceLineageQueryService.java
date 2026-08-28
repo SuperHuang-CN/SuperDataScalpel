@@ -262,7 +262,7 @@ public class DataServiceLineageQueryService {
                 nodeId, LineageGraphNodeKind.DATA_SERVICE, LineageGraphNodeSide.CURRENT, 0,
                 service.getName(), service.getCode(), null, null, null, null, null, null,
                 null, stale, null, null, service.getId(), service.getType(), service.getStatus(),
-                service.getRoutePath()
+                service.getEngineRoutePath()
         );
         return new LineageGraphResponse(
                 nodeId, granularity, null, false, warnings, List.of(node), List.of()

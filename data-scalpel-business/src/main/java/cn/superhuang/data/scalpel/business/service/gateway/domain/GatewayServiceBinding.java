@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.service.gateway.domain;
 
+import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
+import cn.superhuang.data.scalpel.business.service.domain.ServiceRoutePath;
 import cn.superhuang.data.scalpel.business.service.gateway.GatewayProvider;
 import cn.superhuang.data.scalpel.business.service.gateway.reconciliation.GatewayInspectionResult;
 import cn.superhuang.data.scalpel.business.service.gateway.reconciliation.GatewayReconciliationReason;
@@ -37,6 +39,13 @@ public class GatewayServiceBinding extends BaseEntity {
 
     @Column(name = "external_route_id", length = 200)
     private String externalRouteId;
+
+    @Column(name = "gateway_route_path", nullable = false, length = 255)
+    private String gatewayRoutePath;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "access_mode", nullable = false, length = 32)
+    private DataServiceAccessMode accessMode;
 
     @Column(name = "published_revision", nullable = false)
     private long publishedRevision;
@@ -94,7 +103,9 @@ public class GatewayServiceBinding extends BaseEntity {
         return new GatewayServiceBinding(dataServiceId, provider);
     }
 
-    public void beginPublish() {
+    public void beginPublish(String gatewayRoutePath, DataServiceAccessMode accessMode) {
+        this.gatewayRoutePath = ServiceRoutePath.normalize(gatewayRoutePath);
+        this.accessMode = Objects.requireNonNull(accessMode, "Gateway access mode is required");
         resetReconciliation();
         publicationStatus = GatewayServicePublicationStatus.PUBLISHING;
         operationStartedAt = Instant.now();
@@ -121,6 +132,30 @@ public class GatewayServiceBinding extends BaseEntity {
         publicationStatus = GatewayServicePublicationStatus.PUBLISH_FAILED;
         operationStartedAt = null;
         lastError = limit(message, "网关服务发布失败");
+    }
+
+    public PublishedSnapshot publishedSnapshot() {
+        if (publicationStatus != GatewayServicePublicationStatus.PUBLISHED) return null;
+        return new PublishedSnapshot(
+                gatewayRoutePath, accessMode, lastError,
+                reconciliationStatus, reconciliationReason, reconciliationMessage,
+                reconciliationOperationId, reconciliationStartedAt, lastReconciledAt
+        );
+    }
+
+    public void restorePublished(PublishedSnapshot snapshot) {
+        if (snapshot == null) return;
+        gatewayRoutePath = snapshot.gatewayRoutePath();
+        accessMode = snapshot.accessMode();
+        publicationStatus = GatewayServicePublicationStatus.PUBLISHED;
+        operationStartedAt = null;
+        lastError = snapshot.lastError();
+        reconciliationStatus = snapshot.reconciliationStatus();
+        reconciliationReason = snapshot.reconciliationReason();
+        reconciliationMessage = snapshot.reconciliationMessage();
+        reconciliationOperationId = snapshot.reconciliationOperationId();
+        reconciliationStartedAt = snapshot.reconciliationStartedAt();
+        lastReconciledAt = snapshot.lastReconciledAt();
     }
 
     public void beginRemoval() {
@@ -193,6 +228,14 @@ public class GatewayServiceBinding extends BaseEntity {
 
     public String getExternalRouteId() {
         return externalRouteId;
+    }
+
+    public String getGatewayRoutePath() {
+        return gatewayRoutePath;
+    }
+
+    public DataServiceAccessMode getAccessMode() {
+        return accessMode;
     }
 
     public long getPublishedRevision() {
@@ -268,5 +311,18 @@ public class GatewayServiceBinding extends BaseEntity {
     private static String limit(String value, String fallback) {
         String normalized = value == null || value.isBlank() ? fallback : value.trim();
         return normalized.substring(0, Math.min(1000, normalized.length()));
+    }
+
+    public record PublishedSnapshot(
+            String gatewayRoutePath,
+            DataServiceAccessMode accessMode,
+            String lastError,
+            GatewayReconciliationStatus reconciliationStatus,
+            GatewayReconciliationReason reconciliationReason,
+            String reconciliationMessage,
+            UUID reconciliationOperationId,
+            Instant reconciliationStartedAt,
+            Instant lastReconciledAt
+    ) {
     }
 }

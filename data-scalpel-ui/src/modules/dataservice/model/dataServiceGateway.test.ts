@@ -12,6 +12,8 @@ const binding = (
   provider: 'KONG',
   externalServiceId: 'service-1',
   externalRouteId: 'route-1',
+  gatewayRoutePath: '/open-api/v1/orders',
+  accessMode: 'PUBLIC',
   publishedRevision,
   publicationStatus,
   gatewayUrl,

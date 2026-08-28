@@ -49,7 +49,6 @@ import {
 } from '../hooks/useDataServices';
 import {
   dataServiceDeploymentStatusLabels,
-  dataServiceAccessModeLabels,
   dataServiceStatusLabels,
   dataServiceTypeLabels,
   type DataServiceDeploymentStatus,
@@ -58,15 +57,17 @@ import {
   type DataServiceStatus,
   type DataServiceSummary,
   type DataServiceType,
+  type PublishDataServiceRequest,
 } from '../model/dataService';
 import { gatewayProviderLabels } from '../model/apiConsumer';
-import { buildDataServiceAccessUrl, buildDataServiceCurlCommand } from '../model/dataServiceCurl';
+import { buildDataServiceCurlCommand } from '../model/dataServiceCurl';
 import { gatewayOperationError, publishedGatewayBinding } from '../model/dataServiceGateway';
 import { parseDataServiceListRoute, serializeDataServiceListRoute } from '../model/dataServiceListRoute';
 import { buildDataServiceSearch } from '../model/dataServiceSearch';
 import { DataServiceCreateDrawer } from './DataServiceCreateDrawer';
 import { DataServiceSubscriptionsDrawer } from './DataServiceSubscriptionsDrawer';
 import { DataServiceTypeIcon } from './DataServiceTypeIcon';
+import { PublishDataServiceModal } from './PublishDataServiceModal';
 import { dataServiceTypeIconTones } from './dataServiceTypeIconTone';
 
 const DEFAULT_PAGE_SIZE = 20;
@@ -135,6 +136,7 @@ export const DataServiceListPanel = ({
   const [modalApi, modalContext] = Modal.useModal();
   const [creationType, setCreationType] = useState<DataServiceType | null>(null);
   const [subscriptionService, setSubscriptionService] = useState<DataServiceSummary | null>(null);
+  const [publishService, setPublishService] = useState<DataServiceSummary | null>(null);
   const directoriesQuery = useDirectoryTree('DATA_SERVICE', canViewDirectories);
   const enginesQuery = useServiceEngines({ page: 0, size: 500, sort: 'code' }, canViewEngines);
   const effectiveFilters = useMemo<DataServiceFilters>(() => {
@@ -156,7 +158,6 @@ export const DataServiceListPanel = ({
   const unpublishMutation = useUnpublishDataService();
   const disableMutation = useDisableDataService();
   const cleanupMutation = useCleanupDataServiceDeployment();
-  const enginesById = new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine]));
   const engineNames = new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine.name]));
 
   const syncRoute = (
@@ -260,11 +261,12 @@ export const DataServiceListPanel = ({
     }
   };
 
-  const publish = async (dataService: DataServiceSummary) => {
+  const publish = async (dataService: DataServiceSummary, request: PublishDataServiceRequest) => {
     try {
-      const response = await publishMutation.mutateAsync(dataService.id);
+      const response = await publishMutation.mutateAsync({ id: dataService.id, request });
       const binding = publishedGatewayBinding(response);
       if (binding) {
+        setPublishService(null);
         messageApi.success(`${dataService.name} 已发布到 ${gatewayProviderLabels[binding.provider]}`);
       } else {
         messageApi.error(gatewayOperationError(response) || '网关未确认发布结果');
@@ -363,26 +365,12 @@ export const DataServiceListPanel = ({
     }
     try {
       const detail = await fetchDataService(dataService.id);
-      await navigator.clipboard.writeText(buildDataServiceCurlCommand(binding.gatewayUrl, '', detail));
+      await navigator.clipboard.writeText(buildDataServiceCurlCommand(
+        binding.gatewayUrl,
+        '',
+        { ...detail, accessMode: binding.accessMode },
+      ));
       messageApi.success('网关访问 cURL 已复制');
-    } catch {
-      messageApi.error('复制失败，请检查浏览器的剪贴板权限');
-    }
-  };
-
-  const copyServiceAccessUrl = async (dataService: DataServiceSummary) => {
-    const engine = enginesById.get(dataService.engineId);
-    if (!engine) {
-      messageApi.error('未找到 Service Engine 公共地址，无法生成完整访问地址');
-      return;
-    }
-    if (!navigator.clipboard) {
-      messageApi.error('当前浏览器不支持自动复制，请使用 HTTPS 或 localhost 访问');
-      return;
-    }
-    try {
-      await navigator.clipboard.writeText(buildDataServiceAccessUrl(engine.publicUrl, dataService.routePath));
-      messageApi.success('完整服务访问地址已复制');
     } catch {
       messageApi.error('复制失败，请检查浏览器的剪贴板权限');
     }
@@ -407,34 +395,15 @@ export const DataServiceListPanel = ({
     {
       title: '路由 / 访问', width: 250,
       render: (_: unknown, service) => {
-        const engine = enginesById.get(service.engineId);
-        const accessUrl = engine && buildDataServiceAccessUrl(engine.publicUrl, service.routePath);
-        const copyUnavailableReason = !canViewEngines
-          ? '缺少 Service Engine 查看权限，无法生成完整访问地址'
-          : enginesQuery.isFetching
-            ? '正在加载 Service Engine 公共地址'
-            : '未找到 Service Engine 公共地址';
+        const binding = publishedGatewayBinding(service);
         return (
           <ManagementListCell
             primary={(
               <div className="data-service-route-address">
-                <ManagementCode value={service.routePath} />
-                <Tooltip title={accessUrl ? `复制完整访问地址：${accessUrl}` : copyUnavailableReason}>
-                  <span>
-                    <Button
-                      className="data-service-route-copy"
-                      type="text"
-                      size="small"
-                      icon={<CopyOutlined />}
-                      disabled={!accessUrl}
-                      aria-label={`复制${service.name}的完整访问地址`}
-                      onClick={() => void copyServiceAccessUrl(service)}
-                    />
-                  </span>
-                </Tooltip>
+                <ManagementCode value={binding?.gatewayRoutePath ?? '未发布到网关'} />
               </div>
             )}
-            secondary={dataServiceAccessModeLabels[service.accessMode]}
+            secondary={binding ? (binding.accessMode === 'PUBLIC' ? '公开访问' : '订阅访问') : '访问方式将在发布时配置'}
           />
         );
       },
@@ -456,7 +425,7 @@ export const DataServiceListPanel = ({
       title: '操作', key: 'action', width: 136,
       render: (_: unknown, dataService: DataServiceSummary) => {
         const moreItems: NonNullable<MenuProps['items']> = [
-          ...(dataService.accessMode === 'SUBSCRIPTION_REQUIRED' ? [{ key: 'subscriptions', label: '订阅消费者', icon: <TeamOutlined /> }] : []),
+          ...(publishedGatewayBinding(dataService)?.accessMode === 'SUBSCRIPTION_REQUIRED' ? [{ key: 'subscriptions', label: '订阅消费者', icon: <TeamOutlined /> }] : []),
           ...(publishedGatewayBinding(dataService) ? [{ key: 'curl', label: '复制网关访问 cURL', icon: <CopyOutlined /> }] : []),
           ...(canPublish && dataService.gatewayBindings.length > 0
             ? [{ key: 'reconcile', label: '对账网关状态', icon: <AuditOutlined /> }] : []),
@@ -515,8 +484,8 @@ export const DataServiceListPanel = ({
                   size="small"
                   aria-label={`发布${dataService.name}到网关`}
                   icon={<UploadOutlined />}
-                  loading={publishMutation.isPending && publishMutation.variables === dataService.id}
-                  onClick={() => void publish(dataService)}
+                  loading={publishMutation.isPending && publishMutation.variables?.id === dataService.id}
+                  onClick={() => setPublishService(dataService)}
                 />
               </Tooltip>
             )
@@ -526,7 +495,7 @@ export const DataServiceListPanel = ({
             if (key === 'subscriptions') setSubscriptionService(dataService);
             if (key === 'curl') void copyCurl(dataService);
             if (key === 'reconcile') void reconcileGateway(dataService);
-            if (key === 'republish') void publish(dataService);
+            if (key === 'republish') setPublishService(dataService);
             if (key === 'cleanup') void cleanup(dataService);
             if (key === 'delete') confirmRemove(dataService);
           } }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" size="small" aria-label={`${dataService.name}的更多操作`} icon={<MoreOutlined />} /></Tooltip></Dropdown>}
@@ -647,6 +616,12 @@ export const DataServiceListPanel = ({
         dataService={subscriptionService}
         canManage={canPublish}
         onClose={() => setSubscriptionService(null)}
+      />
+      <PublishDataServiceModal
+        service={publishService}
+        loading={publishMutation.isPending}
+        onCancel={() => setPublishService(null)}
+        onPublish={(request) => publish(publishService as DataServiceSummary, request)}
       />
     </>
   );

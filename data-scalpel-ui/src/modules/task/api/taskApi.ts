@@ -3,16 +3,19 @@ import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
   CreateDataTaskRequest,
+  CreateSparkJarDevelopmentKitRequest,
   CanvasTaskDefinition,
   DataTask,
   LocalSqlDefinitionValidation,
   LocalSqlTaskDefinition,
   ModelQualityTaskDefinition,
   SparkJarTaskDefinition,
+  SparkJarDevelopmentKit,
   StreamingCheckpointMode,
   ModelRelatedTask,
   ModelTaskRelationRole,
   TaskRun,
+  TaskRunLineage,
   TaskSchedule,
   TaskScheduleRequest,
   TaskStreamingConfiguration,
@@ -87,6 +90,22 @@ export const uploadSparkJar = (id: string, file: File): Promise<SparkJarTaskDefi
 
 export const downloadSparkJarTemplate = (id: string): Promise<Blob> => (
   requestBlob(`${TASK_PATH}/${id}/spark-jar-template`, {}, 60_000)
+);
+
+export const generateSparkJarDevelopmentKit = (
+  id: string,
+  request: CreateSparkJarDevelopmentKitRequest,
+): Promise<SparkJarDevelopmentKit> => requestJson<SparkJarDevelopmentKit>(
+  `${TASK_PATH}/${id}/spark-jar-development-kit/actions/generate`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export const fetchSparkJarDevelopmentKit = (id: string): Promise<SparkJarDevelopmentKit> => (
+  requestJson<SparkJarDevelopmentKit>(`${TASK_PATH}/${id}/spark-jar-development-kit`)
+);
+
+export const downloadSparkJarDevelopmentKit = (id: string): Promise<Blob> => (
+  requestBlob(`${TASK_PATH}/${id}/spark-jar-development-kit/artifact`, {}, 120_000)
 );
 
 export const updateModelQualityTaskDefinition = (
@@ -232,6 +251,10 @@ export const fetchTaskRuns = async (id: string, request: SearchRequest): Promise
 };
 
 export const fetchTaskRun = (runId: string): Promise<TaskRun> => requestJson<TaskRun>(`/v1/task-runs/${runId}`);
+
+export const fetchTaskRunLineage = (runId: string): Promise<TaskRunLineage> => (
+  requestJson<TaskRunLineage>(`/v1/task-runs/${runId}/lineage`)
+);
 
 export const cancelTaskRun = (runId: string): Promise<TaskRun> => (
   requestJson<TaskRun>(`/v1/task-runs/${runId}/actions/cancel`, { method: 'POST' })

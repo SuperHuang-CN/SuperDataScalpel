@@ -5,6 +5,7 @@ import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
+import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
 
@@ -33,6 +34,9 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
     private final Map<String, CopyOnWriteArrayList<CapturedModelWrite>> modelWrites = new ConcurrentHashMap<>();
     private final Map<String, CopyOnWriteArrayList<CapturedJdbcWrite>> jdbcWrites = new ConcurrentHashMap<>();
     private final Map<String, CopyOnWriteArrayList<String>> jdbcQueryCalls = new ConcurrentHashMap<>();
+    private final Map<String, CopyOnWriteArrayList<TestJdbcQueryReadCall>> jdbcQueryReadCalls = new ConcurrentHashMap<>();
+    private final Map<String, CopyOnWriteArrayList<TestModelReadCall>> modelReadCalls = new ConcurrentHashMap<>();
+    private final Map<String, CopyOnWriteArrayList<TestJdbcTableReadCall>> jdbcTableReadCalls = new ConcurrentHashMap<>();
     private final AtomicLong affectedRows = new AtomicLong();
     private final AtomicBoolean closed = new AtomicBoolean();
     private final TestJobObservability observability;
@@ -125,6 +129,18 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
         return List.copyOf(jdbcQueryCalls.getOrDefault(required(bindingName), new CopyOnWriteArrayList<>()));
     }
 
+    public List<TestJdbcQueryReadCall> jdbcQueryReadCalls(String bindingName) {
+        return List.copyOf(jdbcQueryReadCalls.getOrDefault(required(bindingName), new CopyOnWriteArrayList<>()));
+    }
+
+    public List<TestModelReadCall> modelReadCalls(String bindingName) {
+        return List.copyOf(modelReadCalls.getOrDefault(required(bindingName), new CopyOnWriteArrayList<>()));
+    }
+
+    public List<TestJdbcTableReadCall> jdbcTableReadCalls(String bindingName) {
+        return List.copyOf(jdbcTableReadCalls.getOrDefault(required(bindingName), new CopyOnWriteArrayList<>()));
+    }
+
     public long affectedRows() { return affectedRows.get(); }
 
     protected final Path workspaceRoot() { return workspaceRoot; }
@@ -151,10 +167,14 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
 
     private final class Models implements ModelResources {
         @Override
-        public Dataset<Row> read(String bindingName) {
-            RuntimeModelBinding binding = models.get(required(bindingName));
+        public Dataset<Row> read(String bindingName, JdbcReadOptions options) {
+            String name = required(bindingName);
+            options = Objects.requireNonNull(options, "options");
+            modelReadCalls.computeIfAbsent(name, ignored -> new CopyOnWriteArrayList<>())
+                    .add(new TestModelReadCall(name, options));
+            RuntimeModelBinding binding = models.get(name);
             if (binding == null || binding.input() == null) {
-                throw error("TESTKIT_MODEL_READ_NOT_BOUND", "Model read binding is not configured: " + bindingName);
+                throw error("TESTKIT_MODEL_READ_NOT_BOUND", "Model read binding is not configured: " + name);
             }
             return binding.input();
         }
@@ -172,10 +192,13 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
 
     private final class Jdbc implements JdbcResources {
         @Override
-        public Dataset<Row> readTable(String bindingName, JdbcTableIdentifier table) {
+        public Dataset<Row> readTable(String bindingName, JdbcTableIdentifier table, JdbcReadOptions options) {
             String name = required(bindingName);
+            table = Objects.requireNonNull(table, "table"); options = Objects.requireNonNull(options, "options");
+            jdbcTableReadCalls.computeIfAbsent(name, ignored -> new CopyOnWriteArrayList<>())
+                    .add(new TestJdbcTableReadCall(name, table, options));
             RuntimeJdbcBinding binding = jdbc.get(name);
-            Dataset<Row> result = binding == null ? null : binding.tables().get(Objects.requireNonNull(table));
+            Dataset<Row> result = binding == null ? null : binding.tables().get(table);
             if (result == null) {
                 throw error("TESTKIT_JDBC_TABLE_NOT_BOUND", "JDBC table is not configured: " + name + " / " + table);
             }
@@ -183,11 +206,14 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
         }
 
         @Override
-        public Dataset<Row> readQuery(String bindingName, String sql) {
+        public Dataset<Row> readQuery(String bindingName, String sql, JdbcReadOptions options) {
             String name = required(bindingName);
+            options = Objects.requireNonNull(options, "options");
             RuntimeJdbcBinding binding = jdbc.get(name);
             String normalized = TestContextConfiguration.normalizedSql(sql);
             jdbcQueryCalls.computeIfAbsent(name, ignored -> new CopyOnWriteArrayList<>()).add(normalized);
+            jdbcQueryReadCalls.computeIfAbsent(name, ignored -> new CopyOnWriteArrayList<>())
+                    .add(new TestJdbcQueryReadCall(name, normalized, options));
             Dataset<Row> result = binding == null ? null : binding.queries().get(normalized);
             if (result == null) {
                 throw error("TESTKIT_JDBC_QUERY_NOT_BOUND", "JDBC query is not configured: " + name + " / " + normalized);
@@ -220,6 +246,15 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
         @Override public ModelWriteOperation mode(ModelWriteMode value) { mode = Objects.requireNonNull(value); return this; }
         @Override public ModelWriteOperation map(String targetColumn, String sourceColumn) {
             putMapping(mappings, targetColumn, sourceColumn); return this;
+        }
+        @Override public ModelWriteOperation mapSameName() {
+            requireNoMappings(mappings);
+            for (String column : source.columns()) putMapping(mappings, column, column);
+            return this;
+        }
+        @Override public ModelWriteOperation checkSchema() {
+            validateModelSchema(source.schema(), target.schema());
+            return this;
         }
 
         @Override
@@ -382,6 +417,42 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
         });
     }
 
+    private static void requireNoMappings(LinkedHashMap<String, String> mappings) {
+        if (!mappings.isEmpty()) {
+            throw error("TESTKIT_SAME_NAME_MAPPING_AFTER_EXPLICIT_MAPPING",
+                    "mapSameName cannot be combined with explicit column mappings");
+        }
+    }
+
+    private static void validateModelSchema(StructType source, StructType target) {
+        Map<String, DataType> sourceColumns = schemaTypes(source);
+        Map<String, DataType> targetColumns = schemaTypes(target);
+        List<String> missing = targetColumns.keySet().stream().filter(name -> !sourceColumns.containsKey(name)).toList();
+        List<String> unexpected = sourceColumns.keySet().stream().filter(name -> !targetColumns.containsKey(name)).toList();
+        List<String> incompatible = targetColumns.keySet().stream()
+                .filter(sourceColumns::containsKey)
+                .filter(name -> !targetColumns.get(name).equals(sourceColumns.get(name)))
+                .map(name -> name + " (expected " + targetColumns.get(name).catalogString()
+                        + ", actual " + sourceColumns.get(name).catalogString() + ")")
+                .toList();
+        if (missing.isEmpty() && unexpected.isEmpty() && incompatible.isEmpty()) return;
+        List<String> details = new ArrayList<>();
+        if (!missing.isEmpty()) details.add("missing target columns: " + missing);
+        if (!unexpected.isEmpty()) details.add("unexpected source columns: " + unexpected);
+        if (!incompatible.isEmpty()) details.add("incompatible columns: " + incompatible);
+        throw error("TESTKIT_MODEL_SCHEMA_MISMATCH", String.join("; ", details));
+    }
+
+    private static Map<String, DataType> schemaTypes(StructType schema) {
+        LinkedHashMap<String, DataType> result = new LinkedHashMap<>();
+        for (StructField field : schema.fields()) {
+            if (result.putIfAbsent(field.name(), field.dataType()) != null) {
+                throw error("TESTKIT_MODEL_SCHEMA_MISMATCH", "duplicate schema column: " + field.name());
+            }
+        }
+        return result;
+    }
+
     private static void validateKeys(Dataset<Row> dataset, List<String> keys, Set<String> mappedTargets) {
         if (keys.isEmpty()) throw error("TESTKIT_UPSERT_KEY_REQUIRED", "UPSERT key is required");
         if (!mappedTargets.containsAll(keys)) {
@@ -517,12 +588,18 @@ public class SparkJobTestContext implements SparkJobContext, AutoCloseable {
         public Builder captureRowLimit(int value) { delegate.captureRowLimit(value); return this; }
         public Builder modelInput(String name, StructType schema, List<Row> rows) { delegate.modelInput(name, schema, rows); return this; }
         public Builder modelInput(String name, Dataset<Row> dataset) { delegate.modelInput(name, dataset); return this; }
+        public Builder modelInputParquet(String name, Path path, StructType expectedSchema) {
+            delegate.modelInputParquet(name, path, expectedSchema); return this;
+        }
         public Builder modelOutput(String name, TestModelTarget target) { delegate.modelOutput(name, target); return this; }
         public Builder jdbcTable(String name, JdbcTableIdentifier table, StructType schema, List<Row> rows) {
             delegate.jdbcTable(name, table, schema, rows); return this;
         }
         public Builder jdbcTable(String name, JdbcTableIdentifier table, Dataset<Row> dataset) {
             delegate.jdbcTable(name, table, dataset); return this;
+        }
+        public Builder jdbcTableParquet(String name, JdbcTableIdentifier table, Path path, StructType expectedSchema) {
+            delegate.jdbcTableParquet(name, table, path, expectedSchema); return this;
         }
         public Builder jdbcQuery(String name, String sql, StructType schema, List<Row> rows) {
             delegate.jdbcQuery(name, sql, schema, rows); return this;

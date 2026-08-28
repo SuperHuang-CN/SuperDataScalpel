@@ -1,13 +1,16 @@
-import { Alert, Button, Col, Drawer, Form, Input, InputNumber, Modal, Row, Select, Space, message } from 'antd';
+import { InfoCircleOutlined } from '@ant-design/icons';
+import { Alert, Button, Col, Drawer, Form, Input, InputNumber, Modal, Row, Segmented, Select, Space, Tooltip, Typography, message } from 'antd';
 import { useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { useCreateComputeEngine, useReconfigureComputeEngine, useUpdateComputeEngine } from '../hooks/useComputeEngines';
 import {
   computeBackendTypeLabels,
+  defaultSparkExecutionResourcePolicy,
   type ComputeBackendType,
   type ComputeEngine,
   type CreateComputeEngineRequest,
   type UpdateComputeEngineRequest,
+  type SparkExecutionResourcePolicy,
 } from '../model/computeEngine';
 
 interface ComputeEngineDrawerProps {
@@ -30,6 +33,7 @@ interface ComputeEngineFormValues {
   maxQueuedExecutions: number;
   maxConcurrentSubmissions: number;
   maxInFlightApplications: number;
+  resourcePolicy: SparkExecutionResourcePolicy;
 }
 
 const defaults: Pick<ComputeEngineFormValues,
@@ -51,6 +55,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const [drainingEngineId, setDrainingEngineId] = useState<string | null>(null);
+  const [memoryUnit, setMemoryUnit] = useState<'GiB' | 'MiB'>('GiB');
   const createMutation = useCreateComputeEngine();
   const updateMutation = useUpdateComputeEngine();
   const reconfigureMutation = useReconfigureComputeEngine();
@@ -70,7 +75,8 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
       maxQueuedExecutions: engine.maxQueuedExecutions,
       maxConcurrentSubmissions: engine.maxConcurrentSubmissions,
       maxInFlightApplications: engine.maxInFlightApplications,
-    } : defaults);
+      resourcePolicy: engine.resourcePolicy,
+    } : { ...defaults, resourcePolicy: defaultSparkExecutionResourcePolicy('LOCAL_DOCKER') });
   }, [engine, form, open]);
 
   const close = () => {
@@ -92,6 +98,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
       maxQueuedExecutions: values.maxQueuedExecutions,
       maxConcurrentSubmissions: values.maxConcurrentSubmissions,
       maxInFlightApplications: values.maxInFlightApplications,
+      resourcePolicy: values.resourcePolicy,
     };
     try {
       if (engine) {
@@ -123,8 +130,30 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
   const editingAllowed = engine === null
     || (engine.registrationState !== 'REGISTERING' && canUpdate && (!reconfiguring || canManage));
   const pending = createMutation.isPending || updateMutation.isPending || reconfigureMutation.isPending;
+  const selectedBackend = Form.useWatch('expectedBackendType', form);
+  const localDocker = selectedBackend === 'LOCAL_DOCKER';
+
+  const memoryProps = (value: number | undefined) => ({
+    value: value === undefined || memoryUnit === 'MiB' ? value : value / 1024,
+  });
+  const toMiB = (value: number | null) => {
+    if (value === null || value === undefined) return value;
+    return memoryUnit === 'MiB' ? Math.round(value) : Math.round(value * 1024);
+  };
 
   const submit = (values: ComputeEngineFormValues) => {
+    const { defaults: resourceDefaults, maximums: resourceMaximums } = values.resourcePolicy;
+    const invalidResourceLimit = (
+      resourceDefaults.driverCores > resourceMaximums.driverCores
+      || resourceDefaults.driverMemoryMiB > resourceMaximums.driverMemoryMiB
+      || resourceDefaults.executorInstances > resourceMaximums.executorInstances
+      || resourceDefaults.executorCores > resourceMaximums.executorCores
+      || resourceDefaults.executorMemoryMiB > resourceMaximums.executorMemoryMiB
+    );
+    if (invalidResourceLimit) {
+      messageApi.error('运行资源默认值不能超过单次最大值');
+      return;
+    }
     if (engine?.registrationState !== 'ACTIVE' || waitingForDrain) {
       void save(values);
       return;
@@ -176,7 +205,9 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
         />}
         <Row gutter={12}>
           <Col span={12}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true }, { max: 100 }]}><Input autoFocus /></Form.Item></Col>
-          <Col span={12}><Form.Item label="计算后端" name="expectedBackendType" rules={[{ required: true }]}><Select options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))} /></Form.Item></Col>
+          <Col span={12}><Form.Item label="计算后端" name="expectedBackendType" rules={[{ required: true }]}><Select options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))} onChange={(backend: ComputeBackendType) => {
+            if (!engine) form.setFieldValue('resourcePolicy', defaultSparkExecutionResourcePolicy(backend));
+          }} /></Form.Item></Col>
           <Col span={24}><Form.Item label="Dispatcher 地址" name="dispatcherBaseUrl" extra="Admin 仅通过该地址管理 Dispatcher 注册状态。" rules={[{ required: true, type: 'url', message: '请输入有效的 HTTP(S) 地址' }, { max: 500 }]}><Input placeholder="http://127.0.0.1:18092" /></Form.Item></Col>
           <Col span={24}><Form.Item label={engine ? '访问 Token（留空保持不变）' : '访问 Token'} name="accessToken" rules={engine ? [{ max: 1000 }] : [{ required: true, whitespace: true }, { max: 1000 }]}><Input.Password name="compute-engine-access-token" autoComplete="off" /></Form.Item></Col>
           <Col span={24}><Form.Item label="命令 Topic" name="commandTopic" rules={[{ required: true, whitespace: true }, { max: 249 }]}><Input /></Form.Item></Col>
@@ -185,6 +216,25 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
           <Col span={8}><Form.Item label="最大排队数" name="maxQueuedExecutions" rules={[{ required: true }]}><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
           <Col span={8}><Form.Item label="并发提交数" name="maxConcurrentSubmissions" rules={[{ required: true }]}><InputNumber min={1} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
           <Col span={8}><Form.Item label="最大运行数" name="maxInFlightApplications" extra="0 表示不额外限制"><InputNumber min={0} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
+          <Col span={24}>
+            <div className="compute-engine-resource-policy-header">
+              <Typography.Text strong>运行资源策略</Typography.Text>
+              <Space size={8}><Typography.Text type="secondary">内存单位</Typography.Text><Segmented size="small" value={memoryUnit} onChange={(value) => setMemoryUnit(value as 'GiB' | 'MiB')} options={['GiB', 'MiB']} /></Space>
+            </div>
+          </Col>
+          <Col span={24}><Typography.Text type="secondary">默认值会用于未单独设置资源的任务；单次任务申请不能超过最大值。</Typography.Text></Col>
+          <Col span={12}><Form.Item label={<span>默认驱动 CPU <Tooltip title="Spark Driver 可使用的 CPU 核数；Local Docker 映射为容器 --cpus。"><InfoCircleOutlined /></Tooltip></span>} name={['resourcePolicy', 'defaults', 'driverCores']} rules={[{ required: true }]}><InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" /></Form.Item></Col>
+          <Col span={12}><Form.Item label={<span>单次最大驱动 CPU <Tooltip title="任务申请的驱动 CPU 不能超过这个值。"><InfoCircleOutlined /></Tooltip></span>} name={['resourcePolicy', 'maximums', 'driverCores']} rules={[{ required: true }]}><InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" /></Form.Item></Col>
+          <Col span={12}><Form.Item label={<span>默认驱动内存 <Tooltip title="Spark Driver 内存；Local Docker 映射为容器 --memory。"><InfoCircleOutlined /></Tooltip></span>} name={['resourcePolicy', 'defaults', 'driverMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}><InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} /></Form.Item></Col>
+          <Col span={12}><Form.Item label="单次最大驱动内存" name={['resourcePolicy', 'maximums', 'driverMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}><InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} /></Form.Item></Col>
+          {!localDocker && <>
+            <Col span={8}><Form.Item label="默认执行器数量" name={['resourcePolicy', 'defaults', 'executorInstances']} rules={[{ required: true }]}><InputNumber min={1} max={10000} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col span={8}><Form.Item label="单次最大执行器数量" name={['resourcePolicy', 'maximums', 'executorInstances']} rules={[{ required: true }]}><InputNumber min={1} max={10000} precision={0} style={{ width: '100%' }} /></Form.Item></Col>
+            <Col span={8}><Form.Item label="默认单执行器 CPU" name={['resourcePolicy', 'defaults', 'executorCores']} rules={[{ required: true }]}><InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" /></Form.Item></Col>
+            <Col span={12}><Form.Item label="单次最大单执行器 CPU" name={['resourcePolicy', 'maximums', 'executorCores']} rules={[{ required: true }]}><InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" /></Form.Item></Col>
+            <Col span={12}><Form.Item label="默认单执行器内存" name={['resourcePolicy', 'defaults', 'executorMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}><InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} /></Form.Item></Col>
+            <Col span={12}><Form.Item label="单次最大单执行器内存" name={['resourcePolicy', 'maximums', 'executorMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}><InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} /></Form.Item></Col>
+          </>}
           <Col span={24}><Form.Item label="说明" name="description" rules={[{ max: 1000 }]}><Input.TextArea rows={3} maxLength={1000} showCount /></Form.Item></Col>
         </Row>
         {!editingAllowed && <div className="form-readonly-hint">{readonlyHint}</div>}

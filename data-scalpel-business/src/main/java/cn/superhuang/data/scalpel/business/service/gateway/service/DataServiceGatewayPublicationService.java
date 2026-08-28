@@ -1,10 +1,12 @@
 package cn.superhuang.data.scalpel.business.service.gateway.service;
 
 import cn.superhuang.data.scalpel.business.service.domain.DataService;
+import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeployment;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentStatus;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
+import cn.superhuang.data.scalpel.business.service.domain.ServiceRoutePath;
 import cn.superhuang.data.scalpel.business.service.gateway.GatewayProvider;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServiceBinding;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServicePublicationStatus;
@@ -13,6 +15,7 @@ import cn.superhuang.data.scalpel.business.service.gateway.reconciliation.Gatewa
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceDeploymentRepository;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
+import cn.superhuang.data.scalpel.business.service.consumer.subscription.repository.ApiServiceSubscriptionRepository;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -39,6 +42,7 @@ public class DataServiceGatewayPublicationService {
     private final DataServiceDeploymentRepository deploymentRepository;
     private final ServiceEngineRepository engineRepository;
     private final GatewayServiceBindingRepository bindingRepository;
+    private final ApiServiceSubscriptionRepository subscriptionRepository;
     private final GatewayServicePortRegistry portRegistry;
     private final TransactionTemplate transactionTemplate;
 
@@ -47,6 +51,7 @@ public class DataServiceGatewayPublicationService {
             DataServiceDeploymentRepository deploymentRepository,
             ServiceEngineRepository engineRepository,
             GatewayServiceBindingRepository bindingRepository,
+            ApiServiceSubscriptionRepository subscriptionRepository,
             GatewayServicePortRegistry portRegistry,
             PlatformTransactionManager transactionManager
     ) {
@@ -54,30 +59,37 @@ public class DataServiceGatewayPublicationService {
         this.deploymentRepository = deploymentRepository;
         this.engineRepository = engineRepository;
         this.bindingRepository = bindingRepository;
+        this.subscriptionRepository = subscriptionRepository;
         this.portRegistry = portRegistry;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    public void publish(UUID id) {
+    public void publish(UUID id, String gatewayRoutePath, DataServiceAccessMode accessMode) {
         GatewayProvider provider = portRegistry.activeProvider();
         PublishPreparation preparation = requireTransactionResult(transactionTemplate.execute(
-                status -> preparePublish(id, provider)
+                status -> preparePublish(id, provider, gatewayRoutePath, accessMode)
         ));
 
         GatewayServiceResult result = null;
         String failure = null;
+        RuntimeException failureCause = null;
         try {
             result = portRegistry.require(preparation.provider()).publish(preparation.spec());
             requireResult(result);
         } catch (RuntimeException exception) {
             failure = safeMessage(exception);
+            failureCause = exception;
         }
 
         GatewayServiceResult finalResult = result;
         String finalFailure = failure;
+        RuntimeException finalFailureCause = failureCause;
         transactionTemplate.executeWithoutResult(
-                status -> completePublish(preparation, finalResult, finalFailure)
+                status -> completePublish(preparation, finalResult, finalFailure, finalFailureCause)
         );
+        if (finalFailureCause instanceof GatewayServicePathConflictException) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, finalFailure, finalFailureCause);
+        }
     }
 
     public void reconcile(UUID id) {
@@ -151,7 +163,12 @@ public class DataServiceGatewayPublicationService {
         return List.copyOf(attempts);
     }
 
-    private PublishPreparation preparePublish(UUID id, GatewayProvider provider) {
+    private PublishPreparation preparePublish(
+            UUID id,
+            GatewayProvider provider,
+            String gatewayRoutePath,
+            DataServiceAccessMode accessMode
+    ) {
         DataService service = requireServiceForUpdate(id);
         if (service.getStatus() != DataServiceStatus.ENABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已启用服务可以发布到网关");
@@ -165,6 +182,11 @@ public class DataServiceGatewayPublicationService {
         if (!engine.isEnabled()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎已停用");
         }
+        String normalizedGatewayRoutePath = normalizeGatewayRoutePath(gatewayRoutePath);
+        if (accessMode == null) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "网关访问方式不能为空");
+        if (accessMode == DataServiceAccessMode.PUBLIC && subscriptionRepository.existsByDataServiceId(id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务仍有消费者订阅，请先撤回订阅后再改为公开访问");
+        }
 
         List<GatewayServiceBinding> bindings = bindingRepository.findAllByDataServiceIdForUpdate(id);
         assertNoRecentOperation(bindings);
@@ -172,21 +194,24 @@ public class DataServiceGatewayPublicationService {
                 .filter(candidate -> candidate.getProvider() == provider)
                 .findFirst()
                 .orElseGet(() -> GatewayServiceBinding.publishing(id, provider));
-        binding.beginPublish();
+        GatewayServiceBinding.PublishedSnapshot previousPublished = binding.publishedSnapshot();
+        binding.beginPublish(normalizedGatewayRoutePath, accessMode);
         bindingRepository.saveAndFlush(binding);
 
         return new PublishPreparation(
                 binding.getId(),
                 provider,
                 binding.getOperationStartedAt(),
+                previousPublished,
                 new GatewayServiceSpec(
                         service.getId(),
                         service.getCode(),
                         service.getName(),
                         service.getRevision(),
-                        service.getRoutePath(),
-                        engine.getPublicUrl(),
-                        service.getAccessMode()
+                        binding.getGatewayRoutePath(),
+                        engine.getRuntimeUrl(),
+                        service.getEngineRoutePath(),
+                        binding.getAccessMode()
                 )
         );
     }
@@ -194,7 +219,8 @@ public class DataServiceGatewayPublicationService {
     private void completePublish(
             PublishPreparation preparation,
             GatewayServiceResult result,
-            String failure
+            String failure,
+            RuntimeException failureCause
     ) {
         DataService service = requireServiceForUpdate(preparation.spec().id());
         GatewayServiceBinding binding = bindingRepository.findByIdForUpdate(preparation.bindingId())
@@ -212,6 +238,9 @@ public class DataServiceGatewayPublicationService {
                     result.gatewayUrl(),
                     preparation.spec().revision()
             );
+        } else if (failureCause instanceof GatewayServicePathConflictException
+                && preparation.previousPublished() != null) {
+            binding.restorePublished(preparation.previousPublished());
         } else {
             binding.publishFailed(failure);
         }
@@ -266,9 +295,10 @@ public class DataServiceGatewayPublicationService {
                     service.getCode(),
                     service.getName(),
                     service.getRevision(),
-                    service.getRoutePath(),
-                    engine.getPublicUrl(),
-                    service.getAccessMode()
+                    binding.getGatewayRoutePath(),
+                    engine.getRuntimeUrl(),
+                    service.getEngineRoutePath(),
+                    binding.getAccessMode()
             );
             preparations.add(new ReconciliationPreparation(
                     binding.getId(),
@@ -408,6 +438,14 @@ public class DataServiceGatewayPublicationService {
         return value != null && !value.isBlank();
     }
 
+    private static String normalizeGatewayRoutePath(String value) {
+        try {
+            return ServiceRoutePath.normalize(value);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
     private static <T> T requireTransactionResult(T value) {
         if (value == null) throw new IllegalStateException("事务未返回网关处理结果");
         return value;
@@ -417,6 +455,7 @@ public class DataServiceGatewayPublicationService {
             UUID bindingId,
             GatewayProvider provider,
             Instant operationStartedAt,
+            GatewayServiceBinding.PublishedSnapshot previousPublished,
             GatewayServiceSpec spec
     ) {
     }

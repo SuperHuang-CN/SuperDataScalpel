@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.business.task.service.TaskStreamingService;
 import cn.superhuang.data.scalpel.business.task.service.TaskModelRelationQueryService;
 import cn.superhuang.data.scalpel.business.task.service.ModelQualityTaskDefinitionService;
 import cn.superhuang.data.scalpel.business.task.service.SparkJarTaskDefinitionService;
+import cn.superhuang.data.scalpel.business.task.service.SparkJarDevelopmentKitService;
 import cn.superhuang.data.scalpel.business.lineage.service.TaskLineageQueryService;
 import cn.superhuang.data.scalpel.business.lineage.web.response.TaskLineageGraphResponse;
 import cn.superhuang.data.scalpel.business.lineage.web.response.TaskFieldLineageGraphResponse;
@@ -18,6 +19,7 @@ import cn.superhuang.data.scalpel.business.task.web.request.UpdateModelQualityTa
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateSparkJarTaskDefinitionRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.StartStreamingTaskRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.QueryTaskFieldLineageRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.CreateSparkJarDevelopmentKitRequest;
 import cn.superhuang.data.scalpel.business.task.web.response.DataTaskResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.CanvasTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.LocalSqlDefinitionValidationResponse;
@@ -27,6 +29,7 @@ import cn.superhuang.data.scalpel.business.task.web.response.TaskStreamingStatus
 import cn.superhuang.data.scalpel.business.task.web.response.TaskModelRelationsResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.ModelQualityTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.SparkJarTaskDefinitionResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarDevelopmentKitResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -49,6 +52,7 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.StreamingResponseBody;
 
 import java.util.UUID;
 
@@ -64,6 +68,7 @@ public class DataTaskResource {
     private final TaskLineageQueryService taskLineageQueryService;
     private final ModelQualityTaskDefinitionService modelQualityTaskDefinitionService;
     private final SparkJarTaskDefinitionService sparkJarTaskDefinitionService;
+    private final SparkJarDevelopmentKitService sparkJarDevelopmentKitService;
 
     public DataTaskResource(
             DataTaskService service,
@@ -72,7 +77,8 @@ public class DataTaskResource {
             TaskModelRelationQueryService taskModelRelationQueryService,
             TaskLineageQueryService taskLineageQueryService,
             ModelQualityTaskDefinitionService modelQualityTaskDefinitionService,
-            SparkJarTaskDefinitionService sparkJarTaskDefinitionService
+            SparkJarTaskDefinitionService sparkJarTaskDefinitionService,
+            SparkJarDevelopmentKitService sparkJarDevelopmentKitService
     ) {
         this.service = service;
         this.canvasDefinitionService = canvasDefinitionService;
@@ -81,6 +87,7 @@ public class DataTaskResource {
         this.taskLineageQueryService = taskLineageQueryService;
         this.modelQualityTaskDefinitionService = modelQualityTaskDefinitionService;
         this.sparkJarTaskDefinitionService = sparkJarTaskDefinitionService;
+        this.sparkJarDevelopmentKitService = sparkJarDevelopmentKitService;
     }
 
     @GetMapping
@@ -134,6 +141,39 @@ public class DataTaskResource {
                         "attachment; filename=\"datascalpel-spark-job-template.zip\"")
                 .contentType(MediaType.parseMediaType("application/zip"))
                 .body(sparkJarTaskDefinitionService.template(id));
+    }
+
+    @GetMapping("/{id}/spark-jar-development-kit")
+    @PreAuthorize("hasAuthority('task.update') and hasAuthority('model.view') and hasAuthority('datasource.metadata')")
+    @Operation(summary = "查询当前 Spark JAR 本地开发包")
+    public SparkJarDevelopmentKitResponse getSparkJarDevelopmentKit(@PathVariable UUID id) {
+        return sparkJarDevelopmentKitService.get(id);
+    }
+
+    @PostMapping("/{id}/spark-jar-development-kit/actions/generate")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasAuthority('task.update') and hasAuthority('model.view') and hasAuthority('datasource.metadata')")
+    @Operation(summary = "生成或重新生成 Spark JAR 本地开发包")
+    public SparkJarDevelopmentKitResponse generateSparkJarDevelopmentKit(
+            @PathVariable UUID id, @Valid @RequestBody CreateSparkJarDevelopmentKitRequest request) {
+        return sparkJarDevelopmentKitService.generate(id, request);
+    }
+
+    @GetMapping("/{id}/spark-jar-development-kit/artifact")
+    @PreAuthorize("hasAuthority('task.update') and hasAuthority('model.view') and hasAuthority('datasource.metadata')")
+    @Operation(summary = "下载当前 Spark JAR 本地开发包")
+    public ResponseEntity<StreamingResponseBody> downloadSparkJarDevelopmentKit(@PathVariable UUID id) {
+        SparkJarDevelopmentKitService.ArtifactDownload artifact = sparkJarDevelopmentKitService.artifact(id);
+        StreamingResponseBody body = output -> {
+            try (var content = artifact.content(); var input = content.inputStream()) {
+                input.transferTo(output);
+            }
+        };
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"" + artifact.fileName() + "\"")
+                .contentLength(artifact.size())
+                .contentType(MediaType.parseMediaType("application/zip"))
+                .body(body);
     }
 
     @GetMapping("/{id}/model-relations")

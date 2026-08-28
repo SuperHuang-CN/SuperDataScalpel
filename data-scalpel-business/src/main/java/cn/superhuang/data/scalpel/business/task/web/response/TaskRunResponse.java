@@ -11,6 +11,7 @@ import java.util.UUID;
 import cn.superhuang.data.scalpel.contract.quality.QualityConclusion;
 import cn.superhuang.data.scalpel.contract.execution.UserJobMetricSnapshot;
 import cn.superhuang.data.scalpel.contract.execution.UserJobStatus;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.DeserializationFeature;
 import tools.jackson.databind.ObjectMapper;
@@ -41,6 +42,7 @@ public record TaskRunResponse(
         String userJarFileName,
         String userJarSha256,
         Long userJarSizeBytes,
+        SparkExecutionResourceSpec executionResources,
         QualityConclusion qualityConclusion,
         Long qualityTotalRules,
         Long qualityPassedRules,
@@ -64,6 +66,7 @@ public record TaskRunResponse(
                 run.getExecutionMode(), run.getStatus(), run.getScheduledFireAt(), run.getQueuedAt(), run.getStartedAt(),
                 run.getEndedAt(), run.getDeadlineAt(), run.getAffectedRows(),
                 run.getUserJarFileName(), run.getUserJarSha256(), run.getUserJarSizeBytes(),
+                executionResourcesFrom(run),
                 run.getQualityConclusion(), run.getQualityTotalRules(), run.getQualityPassedRules(),
                 run.getQualityFailedRules(), run.getQualitySkippedRules(), run.getQualityCheckedRows(),
                 observabilityFrom(run),
@@ -89,5 +92,21 @@ public record TaskRunResponse(
         UserJobStatus status = run.getUserJobPhase() == null ? null : new UserJobStatus(
                 run.getUserJobPhase(), run.getUserJobStatusMessage(), run.getUserJobStatusAt());
         return new UserJobObservabilityResponse(status, metrics);
+    }
+
+    private static SparkExecutionResourceSpec executionResourcesFrom(TaskRun run) {
+        if (run == null || (!run.getTaskType().isJar()) || run.getDefinitionSnapshot() == null) return null;
+        try {
+            return OBSERVABILITY_MAPPER.readTree(run.getDefinitionSnapshot())
+                    .path("executionResources").isMissingNode()
+                    ? null
+                    : OBSERVABILITY_MAPPER.treeToValue(
+                            OBSERVABILITY_MAPPER.readTree(run.getDefinitionSnapshot()).path("executionResources"),
+                            SparkExecutionResourceSpec.class);
+        } catch (RuntimeException exception) {
+            // The detailed run API stays available for snapshots created before
+            // resource pinning. The persisted snapshot remains the authority.
+            return null;
+        }
     }
 }

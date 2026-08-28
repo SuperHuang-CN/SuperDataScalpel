@@ -2,6 +2,8 @@ package cn.superhuang.data.scalpel.business.compute.client;
 
 import cn.superhuang.data.scalpel.business.compute.domain.ComputeBackendType;
 import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineProperties;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionScope;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherRuntimeOverviewResponse;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import org.junit.jupiter.api.AfterEach;
@@ -56,6 +58,23 @@ class ComputeEngineDispatcherClientTest {
                   "lastError":null
                 }
                 """));
+        server.createContext("/api/v1/dispatcher/runtime-overview", exchange -> respond(exchange, """
+                {
+                  "engineId":"80f6dbd2-84a8-47d6-90ef-a9bcd4dd8928",
+                  "dispatcherInstanceId":"dispatcher-local",
+                  "backendType":"LOCAL_DOCKER",
+                  "version":"0.1.0-SNAPSHOT",
+                  "registrationState":"ACTIVE",
+                  "dependencies":[],
+                  "admissionCapacity":{"maxQueuedExecutions":20,"maxConcurrentSubmissions":2,"maxInFlightApplications":2},
+                  "admissionUsage":{"queued":0,"submitting":0,"submitted":0,"running":0,"cancelRequested":0,"inFlight":0},
+                  "resourceConfiguration":{"backendType":"LOCAL_DOCKER","image":"eclipse-temurin:21-jdk","containerCpuLimit":"2","containerMemoryLimit":"4g","runnerJvmHeap":"-Xmx3g","queue":null,"namespace":null,"driverMemory":null,"executorMemory":null,"executorCores":null,"executorInstances":null},
+                  "collectedAt":"2026-08-26T00:00:00Z"
+                }
+                """));
+        server.createContext("/api/v1/task-executions", exchange -> respond(exchange, """
+                {"content":[],"totalElements":0,"totalPages":0,"page":0,"size":20}
+                """));
         server.start();
         baseUrl = "http://" + server.getAddress().getHostString() + ":" + server.getAddress().getPort();
     }
@@ -91,6 +110,11 @@ class ComputeEngineDispatcherClientTest {
         assertFalse(requestBody.get().contains("configRevision"));
         assertFalse(requestBody.get().contains("protocolVersion"));
         assertTrue(requestBody.get().contains("\"commandTopic\":\"commands.local\""));
+
+        DispatcherRuntimeOverviewResponse overview = client.runtimeOverview(baseUrl, "secret-token");
+        assertEquals("ACTIVE", overview.registrationState());
+        assertEquals("2", overview.resourceConfiguration().containerCpuLimit());
+        assertTrue(client.executions(baseUrl, "secret-token", DispatcherExecutionScope.QUEUED, 0, 20).content().isEmpty());
     }
 
     private void respond(HttpExchange exchange, String body) throws IOException {

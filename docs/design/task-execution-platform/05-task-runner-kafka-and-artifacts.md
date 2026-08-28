@@ -205,7 +205,7 @@ result.json 已上传
 
 ```json
 {
-  "schemaVersion": 7,
+  "schemaVersion": 8,
   "taskType": "SPARK_CANVAS",
   "executionId": "uuid",
   "runId": "uuid",
@@ -291,9 +291,9 @@ result.json 已上传
 }
 ```
 
-Runner 当前只写 `schemaVersion: 7`。v4 增加顶层 `taskType` 和互斥载荷：Canvas 只能使用
+Runner 当前只写 `schemaVersion: 8`。v4 增加顶层 `taskType` 和互斥载荷：Canvas 只能使用
 `nodeResults`，模型质检只能使用 `qualityResult`，`SPARK_JAR` 的 `nodeResults` 必须为空且不含
-`qualityResult`；Dispatcher 兼容读取历史 v2～v7，以收敛
+`qualityResult`；Dispatcher 兼容读取历史 v2～v8，以收敛
 升级前已经运行的任务，并
 严格拒绝 v1、未知字段、身份或时间不一致、错误码/SQLState格式错误、节点状态与错误对象不一致，
 以及顶层/节点诊断 ID不一致的结果。节点结果按拓扑执行顺序保存；失败时保留已完成节点并追加
@@ -313,7 +313,11 @@ v5 为每条质检规则增加样本状态 `NOT_FAILED / NOT_APPLICABLE / DISABL
 行数、异常总数、是否截断、文件大小、SHA-256、行可定位性和字段元数据，不记录对象 Key 或业务值。
 Dispatcher 根据执行账本中的规则 ID 和运行身份推导固定对象 Key，并校验对象存在、20 MiB 单文件与
 100 MiB 单运行上限、SHA-256 和 Parquet `PAR1` 头尾。v6 增加 Spark JAR 用户作业观测快照；v7
-增加普通多目标 Output 的逐写入结果。新 Runner 不再写旧版本结果。
+增加普通多目标 Output 的逐写入结果；v8增加批处理 Spark JAR运行期 Catalyst血缘证据。成功的批处理
+JAR必须携带证据，无 SDK写入时使用 `UNAVAILABLE/NO_SDK_WRITES`；创建上下文前失败允许为空，其他任务
+类型禁止携带该字段。Dispatcher校验数量、字符串长度与 5 MiB结果上限，但不把完整血缘放进 Kafka，终态
+事件只携带已校验的 `resultSha256`。Business通过固定结果对象异步读取、核对摘要和发布正式快照。新 Runner
+不再写旧版本结果。
 
 v3 为节点结果增加可空的判别联合 `metrics`。成功的 JDBC/模型快照同步节点使用：
 

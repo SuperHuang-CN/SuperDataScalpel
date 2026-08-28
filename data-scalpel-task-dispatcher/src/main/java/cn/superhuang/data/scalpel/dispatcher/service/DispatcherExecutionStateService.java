@@ -14,7 +14,7 @@ import cn.superhuang.data.scalpel.dispatcher.backend.ExternalExecutionHandle;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherTaskResult;
 import cn.superhuang.data.scalpel.dispatcher.config.DispatcherRunnerKafkaProperties;
 import cn.superhuang.data.scalpel.dispatcher.config.DispatcherStreamingProperties;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistration;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
@@ -237,9 +237,10 @@ public class DispatcherExecutionStateService {
     }
 
     @Transactional
-    public void applyRunnerResult(UUID executionId, DispatcherTaskResult result) {
+    public void applyRunnerResult(UUID executionId, DispatcherTaskResult result, String resultSha256) {
         DispatcherTaskExecution execution = locked(executionId);
         if (execution.getState().terminal()) return;
+        execution.recordResultSha256(resultSha256);
         Long affectedRows = result.affectedRows();
         switch (result.state()) {
             case SUCCESS -> {
@@ -338,7 +339,8 @@ public class DispatcherExecutionStateService {
                                 "datascalpel-runner-control-" + execution.getExecutionId()
                                     + "-" + execution.getAttempt())
                         : null,
-                execution.getQualitySampleRuleIds(), execution.getUserJar(), execution.getSparkConf()
+                execution.getQualitySampleRuleIds(), execution.getUserJar(), execution.getSparkConf(),
+                execution.getExecutionResources()
         );
     }
 

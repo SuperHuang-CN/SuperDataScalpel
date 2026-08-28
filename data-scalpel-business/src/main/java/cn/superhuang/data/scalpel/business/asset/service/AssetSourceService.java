@@ -127,8 +127,13 @@ public class AssetSourceService {
     private AssetSourceSnapshot snapshot(DataServiceDetailResponse service) {
         Map<String, Object> metadata = new LinkedHashMap<>();
         metadata.put("serviceType", service.type().name());
-        metadata.put("accessMode", service.accessMode().name());
-        metadata.put("routePath", service.routePath());
+        service.gatewayBindings().stream()
+                .filter(binding -> "PUBLISHED".equals(binding.publicationStatus().name()))
+                .findFirst()
+                .ifPresent(binding -> {
+                    metadata.put("accessMode", binding.accessMode().name());
+                    metadata.put("routePath", binding.gatewayRoutePath());
+                });
         metadata.put("definitionVersion", service.definitionVersion());
         metadata.put("deploymentStatus", service.deploymentStatus() == null ? null : service.deploymentStatus().name());
         boolean available = "ENABLED".equals(service.status().name());

@@ -5,6 +5,8 @@ import cn.superhuang.data.scalpel.dispatcher.management.DispatcherInfoResponse;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherRegistrationRequest;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherRegistrationResponse;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherRegistrationService;
+import cn.superhuang.data.scalpel.dispatcher.management.DispatcherRuntimeService;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherRuntimeOverviewResponse;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -16,13 +18,18 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/api/v1/dispatcher")
 public class DispatcherManagementResource {
     private final DispatcherRegistrationService service;
+    private final DispatcherRuntimeService runtimeService;
 
-    public DispatcherManagementResource(DispatcherRegistrationService service) {
+    public DispatcherManagementResource(DispatcherRegistrationService service, DispatcherRuntimeService runtimeService) {
         this.service = service;
+        this.runtimeService = runtimeService;
     }
 
     @GetMapping("/info")
     public DispatcherInfoResponse info() { return service.info(); }
+
+    @GetMapping("/runtime-overview")
+    public DispatcherRuntimeOverviewResponse runtimeOverview() { return runtimeService.overview(); }
 
     @GetMapping("/registration")
     public DispatcherRegistrationResponse registration() { return service.current(); }

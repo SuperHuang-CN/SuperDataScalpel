@@ -14,6 +14,16 @@ export {
   useTdEngineTmqTopics,
 } from './hooks/useDataSources';
 export { ConnectionTestResultModal } from './components/ConnectionTestResultModal';
+export { JdbcResourcePickerModal } from './components/JdbcResourcePickerModal';
+export type { JdbcResourceSelection } from './components/JdbcResourcePickerModal';
+export {
+  JdbcTablePickerModal,
+} from './components/JdbcTablePickerModal';
+export {
+  jdbcTableIdentifierDisplayName,
+  jdbcTableIdentifierKey,
+} from './model/jdbcTableIdentifier';
+export type { JdbcTablePickerSelectionMode } from './components/JdbcTablePickerModal';
 export {
   fetchApiResource,
   fetchDataSource,

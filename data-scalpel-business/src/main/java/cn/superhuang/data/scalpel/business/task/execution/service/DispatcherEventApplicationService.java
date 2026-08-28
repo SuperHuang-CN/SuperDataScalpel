@@ -16,6 +16,7 @@ import cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionComma
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import tools.jackson.databind.ObjectMapper;
+import cn.superhuang.data.scalpel.business.task.service.SparkJarLineageIngestionService;
 
 import java.util.Objects;
 
@@ -29,6 +30,7 @@ public class DispatcherEventApplicationService {
     private final TaskStreamingDeploymentRepository deploymentRepository;
     private final TaskStreamingQueryRepository queryRepository;
     private final TaskExecutionOutboxService executionOutboxService;
+    private final SparkJarLineageIngestionService sparkJarLineageIngestionService;
     private final ObjectMapper objectMapper;
 
     public DispatcherEventApplicationService(
@@ -37,6 +39,7 @@ public class DispatcherEventApplicationService {
             TaskStreamingDeploymentRepository deploymentRepository,
             TaskStreamingQueryRepository queryRepository,
             TaskExecutionOutboxService executionOutboxService,
+            SparkJarLineageIngestionService sparkJarLineageIngestionService,
             ObjectMapper objectMapper
     ) {
         this.inboxRepository = inboxRepository;
@@ -44,6 +47,7 @@ public class DispatcherEventApplicationService {
         this.deploymentRepository = deploymentRepository;
         this.queryRepository = queryRepository;
         this.executionOutboxService = executionOutboxService;
+        this.sparkJarLineageIngestionService = sparkJarLineageIngestionService;
         this.objectMapper = objectMapper;
     }
 
@@ -72,6 +76,9 @@ public class DispatcherEventApplicationService {
         apply(run, event);
         applyObservability(run, event);
         applyStreaming(run, event);
+        if (run.getTaskType() == TaskType.SPARK_JAR && event.resultSha256() != null) {
+            sparkJarLineageIngestionService.enqueue(run, event);
+        }
         run.recordDispatcherEvent(event.sequence(), event.externalExecutionId(), event.trackingUrl());
         runRepository.save(run);
         inbox.processed();

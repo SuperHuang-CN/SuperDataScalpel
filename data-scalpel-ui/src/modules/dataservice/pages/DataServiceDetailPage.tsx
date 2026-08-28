@@ -28,6 +28,7 @@ import { DataServiceLineagePanel } from '../components/DataServiceLineagePanel';
 import { DataServiceRelatedModelsPanel } from '../components/DataServiceRelatedModelsPanel';
 import { DataServiceRuntimePanel } from '../components/DataServiceRuntimePanel';
 import { DataServiceSubscriptionsDrawer } from '../components/DataServiceSubscriptionsDrawer';
+import { PublishDataServiceModal } from '../components/PublishDataServiceModal';
 import { DataServiceTypeIcon } from '../components/DataServiceTypeIcon';
 import {
   useCleanupDataServiceDeployment,
@@ -49,6 +50,7 @@ import {
   type DataServiceDeploymentStatus,
   type DataServiceDetail,
   type DataServiceStatus,
+  type PublishDataServiceRequest,
   type GatewayServicePublicationStatus,
 } from '../model/dataService';
 import { buildDataServiceCurlCommand } from '../model/dataServiceCurl';
@@ -58,6 +60,8 @@ import './dataServiceDetail.css';
 
 interface DataServiceDetailLocationState {
   fromDataServiceList?: boolean;
+  returnTo?: string;
+  returnLabel?: string;
 }
 
 const serviceStatusColors: Record<DataServiceStatus, string> = {
@@ -99,6 +103,7 @@ export const DataServiceDetailPage = () => {
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const [subscriptionsOpen, setSubscriptionsOpen] = useState(false);
+  const [publishTarget, setPublishTarget] = useState<DataServiceDetail | null>(null);
   const detailQuery = useDataService(id, Boolean(id));
   const currentUserQuery = useCurrentUser();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
@@ -154,6 +159,10 @@ export const DataServiceDetailPage = () => {
 
   const backToList = () => {
     const state = location.state as DataServiceDetailLocationState | null;
+    if (state?.returnTo) {
+      navigate(state.returnTo);
+      return;
+    }
     if (state?.fromDataServiceList) navigate(-1);
     else navigate('/dataservice');
   };
@@ -195,11 +204,14 @@ export const DataServiceDetailPage = () => {
     },
   });
 
-  const publish = async (target: DataServiceDetail) => {
+  const publish = async (target: DataServiceDetail, request: PublishDataServiceRequest) => {
     try {
-      const response = await publishMutation.mutateAsync(target.id);
+      const response = await publishMutation.mutateAsync({ id: target.id, request });
       const binding = publishedGatewayBinding(response);
-      if (binding) messageApi.success(`数据服务已发布到 ${gatewayProviderLabels[binding.provider]}`);
+      if (binding) {
+        setPublishTarget(null);
+        messageApi.success(`数据服务已发布到 ${gatewayProviderLabels[binding.provider]}`);
+      }
       else messageApi.error(gatewayOperationError(response) || '网关未确认发布结果');
     } catch (error) {
       messageApi.error(problemMessage(error, '发布到网关失败'));
@@ -264,7 +276,11 @@ export const DataServiceDetailPage = () => {
       return;
     }
     try {
-      await navigator.clipboard.writeText(buildDataServiceCurlCommand(binding.gatewayUrl, '', target));
+      await navigator.clipboard.writeText(buildDataServiceCurlCommand(
+        binding.gatewayUrl,
+        '',
+        { ...target, accessMode: binding.accessMode },
+      ));
       messageApi.success('网关访问 cURL 已复制');
     } catch {
       messageApi.error('复制失败，请检查浏览器的剪贴板权限');
@@ -316,7 +332,7 @@ export const DataServiceDetailPage = () => {
     && dataService.gatewayBindings.length === 0
     && (!dataService.deploymentStatus || dataService.deploymentStatus === 'REMOVED');
   const moreItems: NonNullable<MenuProps['items']> = [
-    ...(dataService.accessMode === 'SUBSCRIPTION_REQUIRED'
+    ...(publishedBinding?.accessMode === 'SUBSCRIPTION_REQUIRED'
       ? [{ key: 'subscriptions', label: '订阅消费者', icon: <TeamOutlined /> }] : []),
     ...(publishedBinding ? [{ key: 'curl', label: '复制网关访问 cURL', icon: <CopyOutlined /> }] : []),
     ...(canPublish && dataService.gatewayBindings.length > 0
@@ -380,7 +396,7 @@ export const DataServiceDetailPage = () => {
       <header className="data-service-detail-header business-detail-header">
         <div className="data-service-detail-identity">
           <div className="data-service-detail-title-row">
-            <Button type="text" icon={<ArrowLeftOutlined />} onClick={backToList}>返回列表</Button>
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={backToList}>{(location.state as DataServiceDetailLocationState | null)?.returnLabel ?? '返回列表'}</Button>
             <span className="data-service-detail-type-icon business-detail-resource-icon business-detail-resource-icon-blue"><DataServiceTypeIcon type={dataService.type} /></span>
             <span className="data-service-detail-title">{dataService.name}</span>
             <code>{dataService.code}</code>
@@ -401,7 +417,7 @@ export const DataServiceDetailPage = () => {
             ))}
           </div>
           <div className="data-service-detail-subtitle">
-            <code>{dataService.routePath}</code>
+            <code>{dataService.engineRoutePath}</code>
             <span>·</span>
             <span>{engineNames.get(dataService.engineId) ?? dataService.engineId}</span>
             <span>·</span>
@@ -446,7 +462,7 @@ export const DataServiceDetailPage = () => {
             <Button danger icon={<StopOutlined />} loading={commandLoading} onClick={() => disable(dataService)}>停用</Button>
           )}
           {canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && !publishedBinding && (
-            <Button type="primary" icon={<UploadOutlined />} loading={gatewayCommandLoading} onClick={() => void publish(dataService)}>发布到网关</Button>
+            <Button type="primary" icon={<UploadOutlined />} loading={gatewayCommandLoading} onClick={() => setPublishTarget(dataService)}>发布到网关</Button>
           )}
           {canPublish && publishedBinding && (
             <Button danger icon={<RollbackOutlined />} loading={gatewayCommandLoading} onClick={() => unpublish(dataService)}>取消发布</Button>
@@ -460,7 +476,7 @@ export const DataServiceDetailPage = () => {
                   if (key === 'subscriptions') setSubscriptionsOpen(true);
                   if (key === 'curl') void copyCurl(dataService);
                   if (key === 'reconcile') void reconcile(dataService);
-                  if (key === 'republish') void publish(dataService);
+                  if (key === 'republish') setPublishTarget(dataService);
                   if (key === 'cleanup') void cleanup(dataService);
                   if (key === 'delete') remove(dataService);
                 },
@@ -486,6 +502,12 @@ export const DataServiceDetailPage = () => {
         dataService={dataService}
         canManage={canPublish}
         onClose={() => setSubscriptionsOpen(false)}
+      />
+      <PublishDataServiceModal
+        service={publishTarget}
+        loading={publishMutation.isPending}
+        onCancel={() => setPublishTarget(null)}
+        onPublish={(request) => publish(publishTarget as DataServiceDetail, request)}
       />
     </div>
   );

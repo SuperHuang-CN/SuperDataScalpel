@@ -5,7 +5,7 @@ import cn.superhuang.data.scalpel.dispatcher.backend.TaskExecutionBackend;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
 import cn.superhuang.data.scalpel.dispatcher.config.DispatcherProperties;
 import cn.superhuang.data.scalpel.dispatcher.config.DispatcherStreamingProperties;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistration;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherRegistrationRepository;
@@ -118,7 +118,8 @@ public class DispatcherRegistrationService {
                 if (existing.sameConfiguration(
                         topics.commandTopic(), topics.runnerEventTopic(), topics.adminEventTopic(),
                         topics.runnerControlTopic(),
-                        policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications()
+                        policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications(),
+                        request.resourcePolicy()
                 )) return existing;
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "活动注册不能直接替换配置，请先 Drain 并反注册");
             }
@@ -140,14 +141,16 @@ public class DispatcherRegistrationService {
                         request.engineId(), instanceId, properties.backend(),
                         topics.commandTopic(), topics.runnerEventTopic(), topics.adminEventTopic(),
                         topics.runnerControlTopic(),
-                        policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications()
+                        policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications(),
+                        request.resourcePolicy()
                 );
             } else {
                 existing.reactivate(
                         properties.backend(),
                         topics.commandTopic(), topics.runnerEventTopic(), topics.adminEventTopic(),
                         topics.runnerControlTopic(),
-                        policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications()
+                        policy.maxQueuedExecutions(), policy.maxConcurrentSubmissions(), policy.maxInFlightApplications(),
+                        request.resourcePolicy()
                 );
             }
             return repository.saveAndFlush(existing);

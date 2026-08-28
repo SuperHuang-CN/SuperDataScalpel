@@ -52,6 +52,9 @@ public final class SparkStreamingJobTestKit {
         public Builder jdbcTable(String name, JdbcTableIdentifier table, Dataset<Row> dataset) {
             delegate.jdbcTable(name, table, dataset); return this;
         }
+        public Builder jdbcTableParquet(String name, JdbcTableIdentifier table, Path path, StructType expectedSchema) {
+            delegate.jdbcTableParquet(name, table, path, expectedSchema); return this;
+        }
         public Builder jdbcQuery(String name, String sql, StructType schema, List<Row> rows) {
             delegate.jdbcQuery(name, sql, schema, rows); return this;
         }

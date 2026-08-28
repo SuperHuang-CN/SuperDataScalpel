@@ -143,10 +143,9 @@ public class GatewayDispatchFilter implements GlobalFilter, Ordered {
             );
         }
 
-        String rewrittenPath = stripPrefix(
-                exchange.getRequest().getPath().value(),
-                matched.stripPrefixSegments()
-        );
+        String rewrittenPath = matched.upstreamPath() != null
+                ? matched.upstreamPath()
+                : stripPrefix(exchange.getRequest().getPath().value(), matched.stripPrefixSegments());
         var consumerIdentity = consumer != null && consumer.enabled() ? consumer : null;
         registerAccessLog(
                 exchange,

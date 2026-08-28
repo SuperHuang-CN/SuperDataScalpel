@@ -3,13 +3,14 @@ package cn.superhuang.data.scalpel.dispatcher;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
+import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
 import cn.superhuang.data.scalpel.contract.execution.RunnerResultAvailableEvent;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultResolution;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultService;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherInboxState;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherAdmissionPolicy;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherRegistrationRequest;
@@ -32,6 +33,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -316,6 +318,85 @@ class DispatcherRunnerResultIntegrationTest {
     }
 
     @Test
+    void acceptsV8SparkJarLineageAndPublishesOnlyItsResultDigest() throws Exception {
+        Prepared prepared = prepare("v8-spark-jar-lineage", ExecutionTaskType.SPARK_JAR);
+        Instant now = Instant.now();
+        UUID dataSourceId = UUID.randomUUID();
+        byte[] result = ("""
+                {
+                  "schemaVersion":8,"executionId":"%s","runId":"%s","attempt":1,
+                  "state":"SUCCESS","startedAt":"%s","endedAt":"%s","durationMs":2,
+                  "affectedRows":2,"taskType":"SPARK_JAR","nodeResults":[],
+                  "lineage":{"analysisStatus":"PARTIAL","coverage":"MODEL_ONLY","flows":[{
+                    "flowKey":"jar:%s","producerKey":"jar:write:%s","producerType":"SDK_JDBC_WRITE",
+                    "coverage":"MODEL_ONLY",
+                    "outputAsset":{"localAssetKey":"output","role":"OUTPUT","kind":"JDBC_TABLE",
+                      "writeMode":"APPEND","dataSourceId":"%s","physicalTableName":"target_table",
+                      "safeDisplayName":"target_table"},
+                    "inputAssets":[{"localAssetKey":"input:source","role":"INPUT","kind":"JDBC_TABLE",
+                      "dataSourceId":"%s","physicalTableName":"source_table",
+                      "safeDisplayName":"source_table"}],
+                    "fields":[],"fieldEdges":[],"fieldUsages":[],"warnings":[]
+                  }],"warnings":[]},"error":null
+                }
+                """).formatted(
+                prepared.executionId(), prepared.runId(), now.minusMillis(2), now,
+                "a".repeat(64), "a".repeat(64), dataSourceId, dataSourceId
+        ).getBytes(StandardCharsets.UTF_8);
+        String digest = sha256(result);
+        artifactService.store(prepared.resultKey(), result, "application/json");
+
+        runnerEventService.accept(available(prepared, digest),
+                new MessageCoordinates("runner.v8-spark-jar-lineage", 0, 10));
+        coordinator.observe();
+        coordinator.observe();
+
+        var execution = executionRepository.findByExecutionId(prepared.executionId()).orElseThrow();
+        assertThat(execution.getResultSha256()).isEqualTo(digest);
+        var success = outboxRepository.findAll().stream()
+                .filter(event -> event.getExecutionId().equals(prepared.executionId()))
+                .filter(event -> event.getMessageType().equals(ExecutionMessageType.EXECUTION_SUCCEEDED.name()))
+                .findFirst().orElseThrow();
+        assertThat(success.getPayload()).contains("\"resultSha256\":\"" + digest + "\"");
+        assertThat(success.getPayload()).doesNotContain("source_table");
+    }
+
+    @Test
+    void degradesInvalidV8SparkJarLineageWithoutRejectingSuccessfulResult() throws Exception {
+        Prepared prepared = prepare("v8-invalid-spark-jar-lineage", ExecutionTaskType.SPARK_JAR);
+        Instant now = Instant.now();
+        UUID dataSourceId = UUID.randomUUID();
+        byte[] result = ("""
+                {
+                  "schemaVersion":8,"executionId":"%s","runId":"%s","attempt":1,
+                  "state":"SUCCESS","startedAt":"%s","endedAt":"%s","durationMs":2,
+                  "affectedRows":2,"taskType":"SPARK_JAR","nodeResults":[],
+                  "lineage":{"analysisStatus":"COMPLETE","coverage":"FIELD_COMPLETE","flows":[{
+                    "flowKey":"jar:%s","producerKey":"jar:write:%s","producerType":"SDK_JDBC_WRITE",
+                    "coverage":"FIELD_COMPLETE",
+                    "outputAsset":{"localAssetKey":"output","role":"OUTPUT","kind":"JDBC_TABLE",
+                      "writeMode":"APPEND","dataSourceId":"%s","physicalTableName":"target_table",
+                      "safeDisplayName":"target_table"},
+                    "inputAssets":[{"localAssetKey":"input:source","role":"INPUT","kind":"JDBC_TABLE",
+                      "dataSourceId":"%s","physicalTableName":"source_table",
+                      "safeDisplayName":"source_table"}],
+                    "fields":[],"fieldEdges":[],
+                    "fieldUsages":[{"field":{"localAssetKey":"input:source",
+                      "localFieldKey":"jdbc-column:id"},"nodeKey":null,"usageType":"JOIN_KEY"}],
+                    "warnings":[]
+                  }],"warnings":[]},"error":null
+                }
+                """).formatted(
+                prepared.executionId(), prepared.runId(), now.minusMillis(2), now,
+                "a".repeat(64), "a".repeat(64), dataSourceId, dataSourceId
+        ).getBytes(StandardCharsets.UTF_8);
+        artifactService.store(prepared.resultKey(), result, "application/json");
+
+        assertThat(resultService.verify(prepared.executionId(), sha256(result)))
+                .isEqualTo(DispatcherResultResolution.VERIFIED);
+    }
+
+    @Test
     void acceptsEveryNodeTypeDeclaredByTheStableCanvasContract() throws Exception {
         Prepared prepared = prepare("all-canvas-node-types");
         Instant now = Instant.now();
@@ -344,6 +425,10 @@ class DispatcherRunnerResultIntegrationTest {
     }
 
     private Prepared prepare(String suffix) {
+        return prepare(suffix, ExecutionTaskType.SPARK_CANVAS);
+    }
+
+    private Prepared prepare(String suffix, ExecutionTaskType taskType) {
         UUID engineId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
@@ -355,11 +440,15 @@ class DispatcherRunnerResultIntegrationTest {
                 new DispatcherAdmissionPolicy(20, 2, 2)));
         String prefix = "task-runs/" + runId + "/attempts/1/";
         Instant now = Instant.now();
+        ExecutionUserJarArtifact userJar = taskType == ExecutionTaskType.SPARK_JAR
+                ? new ExecutionUserJarArtifact(prefix + "user-job.jar", "b".repeat(64), 1)
+                : null;
         SubmitExecutionCommand command = new SubmitExecutionCommand(
                 1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, now,
-                engineId, executionId, runId, 1, UUID.randomUUID(), ExecutionTaskType.SPARK_CANVAS, 1,
+                engineId, executionId, runId, 1, UUID.randomUUID(), taskType, 1,
                 now.plusSeconds(3600), new ExecutionArtifactLocation(
-                prefix + "manifest.json", "a".repeat(64), prefix + "result.json", prefix + "console.log"));
+                prefix + "manifest.json", "a".repeat(64), prefix + "result.json", prefix + "console.log"),
+                List.of(), 0, userJar, List.of());
         commandService.accept(command, new MessageCoordinates(commandTopic, 0, 1));
         coordinator.admit();
         assertThat(executionRepository.findByExecutionId(executionId).orElseThrow().getState())

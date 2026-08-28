@@ -86,6 +86,7 @@ public class GatewayRuntimeSnapshotLoader {
                     pathPattern,
                     route.getOrder(),
                     route.getStripPrefixSegments(),
+                    route.getUpstreamPath(),
                     gatewayRoute
             );
             String firstSegment = GatewayRuntimeSnapshot.firstSegment(route.getPathPattern());

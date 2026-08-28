@@ -3,6 +3,8 @@ package cn.superhuang.data.scalpel.business.service;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.contract.service.ServiceDeploymentRequest;
 import cn.superhuang.data.scalpel.contract.service.ServiceDeploymentResponse;
+import cn.superhuang.data.scalpel.contract.service.EngineAccessPolicyApplyRequest;
+import cn.superhuang.data.scalpel.contract.service.EngineAccessPolicyApplyResponse;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationRequest;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationResponse;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRemovalRequest;
@@ -45,6 +47,14 @@ public class ServiceEngineClient {
     public ServiceDeploymentResponse remove(ServiceEngine engine, ServiceUndeploymentRequest request) {
         return client(engine).post().uri("/internal/v1/deployments/actions/remove").body(request)
                 .retrieve().body(ServiceDeploymentResponse.class);
+    }
+
+    public EngineAccessPolicyApplyResponse applyAccessPolicy(
+            ServiceEngine engine,
+            EngineAccessPolicyApplyRequest request
+    ) {
+        return client(engine).post().uri("/internal/v1/access-policy/actions/apply").body(request)
+                .retrieve().body(EngineAccessPolicyApplyResponse.class);
     }
 
     public EngineDataSourceRegistrationResponse registerDataSource(

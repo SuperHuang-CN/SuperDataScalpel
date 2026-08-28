@@ -35,6 +35,7 @@ public class ServiceEngineManagementService {
     private final ServiceEngineClient client;
     private final ServiceEngineCredentialCipher credentialCipher;
     private final ServiceEngineDataSourceRegistrationService dataSourceRegistrationService;
+    private final ServiceEngineAccessPolicyService accessPolicyService;
     private final TransactionTemplate transactionTemplate;
 
     public ServiceEngineManagementService(
@@ -44,6 +45,7 @@ public class ServiceEngineManagementService {
             ServiceEngineClient client,
             ServiceEngineCredentialCipher credentialCipher,
             ServiceEngineDataSourceRegistrationService dataSourceRegistrationService,
+            ServiceEngineAccessPolicyService accessPolicyService,
             PlatformTransactionManager transactionManager
     ) {
         this.repository = repository;
@@ -52,6 +54,7 @@ public class ServiceEngineManagementService {
         this.client = client;
         this.credentialCipher = credentialCipher;
         this.dataSourceRegistrationService = dataSourceRegistrationService;
+        this.accessPolicyService = accessPolicyService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
@@ -77,7 +80,7 @@ public class ServiceEngineManagementService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎编码已存在");
             }
             ServiceEngine engine = ServiceEngine.create(
-                    discovery.code(), request.name(), adminUrl, request.publicUrl(),
+                    discovery.code(), request.name(), adminUrl, request.runtimeUrl(),
                     credentialCipher.encrypt(request.managementToken()),
                     request.enabled() == null || request.enabled(), request.description()
             );
@@ -89,6 +92,7 @@ public class ServiceEngineManagementService {
         UpdatePreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
             ServiceEngine engine = requireEngine(id);
             String adminUrl = ServiceEngine.normalizeAdminUrl(request.adminUrl());
+            String runtimeUrl = ServiceEngine.normalizeRuntimeUrl(request.runtimeUrl());
             boolean tokenChanged = request.managementToken() != null && !request.managementToken().isBlank();
             String managementToken = tokenChanged
                     ? request.managementToken().trim()
@@ -96,9 +100,11 @@ public class ServiceEngineManagementService {
             String managementTokenCiphertext = tokenChanged
                     ? credentialCipher.encrypt(managementToken)
                     : engine.getManagementTokenCiphertext();
-            boolean identityChanged = !engine.getAdminUrl().equals(adminUrl) || tokenChanged;
+            boolean identityChanged = !engine.getAdminUrl().equals(adminUrl)
+                    || !engine.getRuntimeUrl().equals(runtimeUrl)
+                    || tokenChanged;
             return new UpdatePreparation(
-                    engine.getCode(), adminUrl, managementToken, managementTokenCiphertext, identityChanged
+                    engine.getCode(), adminUrl, runtimeUrl, managementToken, managementTokenCiphertext, identityChanged
             );
         }));
         if (preparation.identityChanged()) {
@@ -107,10 +113,12 @@ public class ServiceEngineManagementService {
         return requireTransactionResult(transactionTemplate.execute(status -> {
             ServiceEngine engine = requireEngine(id);
             engine.update(
-                    request.name(), preparation.adminUrl(), request.publicUrl(),
+                    request.name(), preparation.adminUrl(), preparation.runtimeUrl(),
                     preparation.managementTokenCiphertext(), request.enabled(), request.description()
             );
-            return ServiceEngineResponse.from(repository.saveAndFlush(engine));
+            ServiceEngineResponse response = ServiceEngineResponse.from(repository.saveAndFlush(engine));
+            if (preparation.identityChanged()) accessPolicyService.markOutdated(id);
+            return response;
         }));
     }
 
@@ -120,6 +128,7 @@ public class ServiceEngineManagementService {
         if (dataServiceRepository.existsByEngineId(id)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎已被数据服务使用，不能删除");
         }
+        accessPolicyService.deleteByEngineId(id);
         repository.delete(requireEngine(id));
     }
 
@@ -217,6 +226,7 @@ public class ServiceEngineManagementService {
     private record UpdatePreparation(
             String code,
             String adminUrl,
+            String runtimeUrl,
             String managementToken,
             String managementTokenCiphertext,
             boolean identityChanged

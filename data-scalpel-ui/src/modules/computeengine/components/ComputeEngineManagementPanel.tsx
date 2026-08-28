@@ -15,6 +15,7 @@ import {
 import type { MenuProps, TableProps } from 'antd';
 import { Alert, Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ManagementCode, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
@@ -165,7 +166,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const columns: TableProps<ComputeEngine>['columns'] = [
-    { title: '引擎', dataIndex: 'name', width: 220, render: (value: string, engine) => <ManagementListCell icon={<ThunderboltOutlined />} iconTone="violet" primary={value} secondary={computeBackendTypeLabels[engine.expectedBackendType]} /> },
+    { title: '引擎', dataIndex: 'name', width: 220, render: (value: string, engine) => <ManagementListCell icon={<ThunderboltOutlined />} iconTone="violet" primary={<Link to={`/compute-engine/${engine.id}`}>{value}</Link>} secondary={computeBackendTypeLabels[engine.expectedBackendType]} /> },
     { title: '注册 / 健康', width: 180, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={computeEngineRegistrationStateLabels[engine.registrationState]} tone={registrationTone(engine.registrationState)} />} secondary={<ManagementStatusIndicator label={computeEngineHealthStateLabels[engine.healthState]} tone={healthTone(engine.healthState)} />} /> },
     { title: 'Dispatcher', width: 290, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.dispatcherBaseUrl} />} secondary={engine.dispatcherInstanceId || '尚未注册实例'} /> },
     { title: '消息通道', width: 310, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.commandTopic} />} secondary={`Runner：${engine.runnerEventTopic} · Admin：${engine.adminEventTopic}`} /> },

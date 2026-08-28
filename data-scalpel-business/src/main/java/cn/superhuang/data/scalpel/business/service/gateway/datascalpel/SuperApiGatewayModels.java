@@ -47,6 +47,7 @@ final class SuperApiGatewayModels {
             Set<String> methods,
             int order,
             int stripPrefixSegments,
+            String upstreamPath,
             boolean enabled,
             String source,
             String externalId,
@@ -147,6 +148,7 @@ final class SuperApiGatewayModels {
             Set<String> methods,
             int order,
             int stripPrefixSegments,
+            String upstreamPath,
             boolean enabled,
             String source,
             String externalId
@@ -159,6 +161,7 @@ final class SuperApiGatewayModels {
             Set<String> methods,
             int order,
             int stripPrefixSegments,
+            String upstreamPath,
             boolean enabled
     ) {
     }

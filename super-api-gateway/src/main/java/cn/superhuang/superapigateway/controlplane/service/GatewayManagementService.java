@@ -174,11 +174,18 @@ public class GatewayManagementService {
     public List<RouteResponse> listRoutes(
             UUID serviceId,
             String source,
-            String externalId
+            String externalId,
+            String pathPattern
     ) {
         ExternalReference reference = externalReference(source, externalId);
         if (reference != null) {
             return routes.findBySourceAndExternalId(reference.source(), reference.externalId())
+                    .filter(route -> serviceId == null || serviceId.equals(route.getServiceId()))
+                    .map(route -> List.of(routeResponse(route)))
+                    .orElseGet(List::of);
+        }
+        if (hasText(pathPattern)) {
+            return routes.findByPathPattern(pathPattern.trim())
                     .filter(route -> serviceId == null || serviceId.equals(route.getServiceId()))
                     .map(route -> List.of(routeResponse(route)))
                     .orElseGet(List::of);
@@ -204,6 +211,7 @@ public class GatewayManagementService {
         if (routes.existsByPathPattern(path)) {
             throw new ResourceConflictException("路径模板已被其他路由使用");
         }
+        String upstreamPath = validateUpstreamPath(request.upstreamPath(), request.stripPrefixSegments());
         GatewayRouteEntity entity = new GatewayRouteEntity(
                 request.serviceId(),
                 request.code().trim(),
@@ -212,6 +220,7 @@ public class GatewayManagementService {
                 request.methods(),
                 request.order(),
                 request.stripPrefixSegments(),
+                upstreamPath,
                 request.enabled(),
                 source(request.source()),
                 optional(request.externalId())
@@ -228,12 +237,14 @@ public class GatewayManagementService {
         if (routes.existsByPathPatternAndIdNot(path, id)) {
             throw new ResourceConflictException("路径模板已被其他路由使用");
         }
+        String upstreamPath = validateUpstreamPath(request.upstreamPath(), request.stripPrefixSegments());
         entity.update(
                 request.name().trim(),
                 path,
                 request.methods(),
                 request.order(),
                 request.stripPrefixSegments(),
+                upstreamPath,
                 request.enabled()
         );
         revisions.bump();
@@ -553,9 +564,21 @@ public class GatewayManagementService {
         return new RouteResponse(
                 entity.getId(), entity.getServiceId(), entity.getCode(), entity.getName(),
                 entity.getPathPattern(), entity.getMethods(), entity.getOrder(),
-                entity.getStripPrefixSegments(), entity.isEnabled(), entity.getSource(),
+                entity.getStripPrefixSegments(), entity.getUpstreamPath(), entity.isEnabled(), entity.getSource(),
                 entity.getExternalId(), entity.getRevision(), entity.getCreatedAt(), entity.getUpdatedAt()
         );
+    }
+
+    private static String validateUpstreamPath(String value, int stripPrefixSegments) {
+        String path = optional(value);
+        if (path == null) return null;
+        if (stripPrefixSegments != 0) {
+            throw new IllegalArgumentException("设置上游路径时，去除前缀段数必须为 0");
+        }
+        if (!path.startsWith("/") || path.contains("//") || path.contains("?") || path.contains("#")) {
+            throw new IllegalArgumentException("上游路径必须是以 / 开头的固定路径，且不能包含查询参数或片段");
+        }
+        return path;
     }
 
     private ConsumerResponse consumerResponse(GatewayConsumerEntity entity) {

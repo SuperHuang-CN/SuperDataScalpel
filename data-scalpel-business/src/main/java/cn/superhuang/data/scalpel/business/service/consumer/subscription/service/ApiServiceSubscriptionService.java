@@ -114,12 +114,16 @@ public class ApiServiceSubscriptionService {
         Map<UUID, DataService> services = dataServiceRepository.findAllById(
                 subscriptions.stream().map(ApiServiceSubscription::getDataServiceId).distinct().toList()
         ).stream().collect(Collectors.toMap(DataService::getId, Function.identity()));
+        Map<UUID, GatewayServiceBinding> serviceBindings = publishedServiceBindingsByDataServiceId(
+                subscriptions.stream().map(ApiServiceSubscription::getDataServiceId).distinct().toList()
+        );
         Map<UUID, List<GatewaySubscriptionBinding>> bindings = bindingsBySubscriptionId(subscriptions);
         return new PageResponse<>(
                 subscriptions.stream().map(subscription -> ApiServiceSubscriptionResponse.from(
                         subscription,
                         consumers.get(subscription.getConsumerId()),
                         services.get(subscription.getDataServiceId()),
+                        serviceBindings.get(subscription.getDataServiceId()),
                         bindings.getOrDefault(subscription.getId(), List.of())
                 )).toList(),
                 page.getTotalElements(),
@@ -320,14 +324,14 @@ public class ApiServiceSubscriptionService {
             DataService dataService,
             GatewayProvider provider
     ) {
-        if (dataService.getAccessMode() != DataServiceAccessMode.SUBSCRIPTION_REQUIRED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "公开数据服务不需要订阅");
-        }
         if (dataService.getStatus() != DataServiceStatus.ENABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已启用数据服务可以订阅");
         }
         requireCurrentConsumerBinding(consumer, provider);
-        requireCurrentServiceBinding(dataService, provider);
+        GatewayServiceBinding binding = requireCurrentServiceBinding(dataService, provider);
+        if (binding.getAccessMode() != DataServiceAccessMode.SUBSCRIPTION_REQUIRED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "公开数据服务不需要订阅");
+        }
     }
 
     private GatewayConsumerBinding requireCurrentConsumerBinding(ApiConsumer consumer, GatewayProvider provider) {
@@ -520,8 +524,37 @@ public class ApiServiceSubscriptionService {
                 subscription,
                 consumer,
                 dataService,
+                publishedServiceBinding(subscription.getDataServiceId()),
                 bindingRepository.findAllBySubscriptionId(subscription.getId())
         );
+    }
+
+    private Map<UUID, GatewayServiceBinding> publishedServiceBindingsByDataServiceId(
+            List<UUID> dataServiceIds
+    ) {
+        if (dataServiceIds.isEmpty()) return Map.of();
+        Map<UUID, GatewayServiceBinding> result = new HashMap<>();
+        serviceBindingRepository.findAllByDataServiceIdIn(dataServiceIds).stream()
+                .filter(binding -> binding.getPublicationStatus() == GatewayServicePublicationStatus.PUBLISHED)
+                .forEach(binding -> result.merge(
+                        binding.getDataServiceId(), binding, this::newerPublishedBinding
+                ));
+        return result;
+    }
+
+    private GatewayServiceBinding publishedServiceBinding(UUID dataServiceId) {
+        return publishedServiceBindingsByDataServiceId(List.of(dataServiceId)).get(dataServiceId);
+    }
+
+    private GatewayServiceBinding newerPublishedBinding(
+            GatewayServiceBinding left,
+            GatewayServiceBinding right
+    ) {
+        Instant leftPublishedAt = left.getPublishedAt();
+        Instant rightPublishedAt = right.getPublishedAt();
+        if (leftPublishedAt == null) return right;
+        if (rightPublishedAt == null) return left;
+        return leftPublishedAt.compareTo(rightPublishedAt) >= 0 ? left : right;
     }
 
     private Map<UUID, List<GatewaySubscriptionBinding>> bindingsBySubscriptionId(

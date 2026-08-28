@@ -16,6 +16,7 @@ public interface GatewayRouteRepository extends JpaRepository<GatewayRouteEntity
     long countByServiceId(UUID serviceId);
     void deleteAllByServiceId(UUID serviceId);
     Optional<GatewayRouteEntity> findBySourceAndExternalId(String source, String externalId);
+    Optional<GatewayRouteEntity> findByPathPattern(String pathPattern);
 
     @EntityGraph(attributePaths = "methods")
     List<GatewayRouteEntity> findAllByEnabledTrue();

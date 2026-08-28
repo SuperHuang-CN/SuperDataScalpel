@@ -45,6 +45,7 @@ final class SparkJarJobContextImpl implements SparkJobContext {
     private final ModelResources modelResources = new Models();
     private final JdbcResources jdbcResources = new Jdbc();
     private final UserJobObservabilityRuntime observability;
+    private final SparkJarLineageRuntime lineage;
 
     SparkJarJobContextImpl(
             SparkSession spark,
@@ -80,6 +81,7 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                 MetadataModel::id, model -> model));
         this.observability = new UserJobObservabilityRuntime(
                 spark, identity, objectMapper, observabilityPublisher);
+        this.lineage = new SparkJarLineageRuntime(!streaming);
     }
 
     @Override public SparkSession spark() { return spark; }
@@ -90,6 +92,9 @@ final class SparkJarJobContextImpl implements SparkJobContext {
     @Override public JobObservability observability() { return observability; }
     UserJobObservabilityRuntime observabilityRuntime() { return observability; }
     Long affectedRows() { return affectedRows.value(); }
+    cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence lineageEvidence(boolean succeeded) {
+        return lineage.evidence(succeeded);
+    }
     SparkJarExecutionPayload.ResourceBinding requireBinding(
             String name, SparkJarResourceType type, boolean read) {
         return binding(name, type, read);
@@ -105,13 +110,14 @@ final class SparkJarJobContextImpl implements SparkJobContext {
 
     private final class Models implements ModelResources {
         @Override
-        public Dataset<Row> read(String bindingName) {
+        public Dataset<Row> read(String bindingName, JdbcReadOptions options) {
             SparkJarExecutionPayload.ResourceBinding binding = binding(bindingName, SparkJarResourceType.MODEL, true);
             MetadataModel model = model(binding.resourceId());
             RuntimeDataSource source = modelRuntime(model.dataSourceId(), true);
-            return CanvasTaskExecutor.reader(spark, source)
+            Dataset<Row> loaded = jdbcReader(source, options)
                     .option("dbtable", qualified(source, model.catalogName(), model.schemaName(), model.physicalTableName()))
                     .load();
+            return lineage.modelInput(binding.bindingName(), model, loaded);
         }
 
         @Override
@@ -123,15 +129,20 @@ final class SparkJarJobContextImpl implements SparkJobContext {
 
     private final class Jdbc implements JdbcResources {
         @Override
-        public Dataset<Row> readTable(String bindingName, JdbcTableIdentifier table) {
+        public Dataset<Row> readTable(String bindingName, JdbcTableIdentifier table, JdbcReadOptions options) {
             SparkJarExecutionPayload.ResourceBinding binding = binding(bindingName, SparkJarResourceType.JDBC_DATA_SOURCE, true);
             RuntimeDataSource source = jdbcRuntime(binding.resourceId(), true);
-            return CanvasTaskExecutor.reader(spark, source)
+            Dataset<Row> loaded = jdbcReader(source, options)
                     .option("dbtable", qualified(source, table.catalog(), table.schema(), table.table())).load();
+            JdbcTableIdentifier resolved = JdbcTableIdentifier.of(
+                    table.catalog() == null ? source.connection().catalogName() : table.catalog(),
+                    table.schema() == null ? source.connection().schemaName() : table.schema(),
+                    table.table());
+            return lineage.jdbcTableInput(binding.bindingName(), binding.resourceId(), resolved, loaded);
         }
 
         @Override
-        public Dataset<Row> readQuery(String bindingName, String sql) {
+        public Dataset<Row> readQuery(String bindingName, String sql, JdbcReadOptions options) {
             SparkJarExecutionPayload.ResourceBinding binding = binding(bindingName, SparkJarResourceType.JDBC_DATA_SOURCE, true);
             RuntimeDataSource source = jdbcRuntime(binding.resourceId(), true);
             String normalized;
@@ -140,8 +151,10 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                 throw new RunnerExecutionException("SDK_JDBC_QUERY_NOT_READ_ONLY",
                         "JDBC Query 只允许单条 SELECT/WITH 只读语句", null);
             }
-            return CanvasTaskExecutor.reader(spark, source)
+            Dataset<Row> loaded = jdbcReader(source, options)
                     .option("dbtable", "(" + normalized + ") datascalpel_sdk_query").load();
+            return lineage.jdbcQueryInput(
+                    binding.bindingName(), binding.resourceId(), normalized, loaded);
         }
 
         @Override
@@ -164,6 +177,15 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         }
         @Override public ModelWriteOperation mode(ModelWriteMode mode) { this.mode = Objects.requireNonNull(mode); return this; }
         @Override public ModelWriteOperation map(String target, String source) { putMapping(mappings, target, source); return this; }
+        @Override public ModelWriteOperation mapSameName() {
+            requireNoMappings(mappings);
+            for (String column : source.columns()) putMapping(mappings, column, column);
+            return this;
+        }
+        @Override public ModelWriteOperation checkSchema() {
+            // Production validates the mapped write through Spark casts and the real target system.
+            return this;
+        }
         @Override public WriteResult execute() {
             return observedWrite("model", bindingName, mode.name(), model.code(), () -> {
                 if (mode == ModelWriteMode.OVERWRITE && model.physicalTableMode() == MetadataModelPhysicalTableMode.EXTERNAL)
@@ -188,7 +210,11 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                         .findFirst().map(MetadataUniqueKey::columns).orElse(List.of());
                 if (mode == ModelWriteMode.UPSERT && (keys.isEmpty() || !mappings.keySet().containsAll(keys)))
                     throw new RunnerExecutionException("UPSERT_KEY_NOT_MAPPED", "模型完整主键必须完成映射", null);
-                return write(runtime, table, projected, mode.name(), keys);
+                SparkJarLineageRuntime.PreparedFlow flow = lineage.analyzeModelWrite(
+                        bindingName, model, mode.name(), projected);
+                WriteResult result = write(runtime, table, projected, mode.name(), keys);
+                lineage.confirm(flow);
+                return result;
             });
         }
     }
@@ -228,8 +254,17 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                         .map(entry -> org.apache.spark.sql.functions.col(entry.getValue()).as(entry.getKey()))
                         .toArray(Column[]::new));
                 requireStreamingWriteAllowed(mode.name(), hasGeometry(projected.schema()));
-                return write(runtime, new TableIdentifier(table.catalog(), table.schema(), table.table()),
+                JdbcTableIdentifier resolved = JdbcTableIdentifier.of(
+                        table.catalog() == null ? runtime.connection().catalogName() : table.catalog(),
+                        table.schema() == null ? runtime.connection().schemaName() : table.schema(),
+                        table.table());
+                SparkJarLineageRuntime.PreparedFlow flow = lineage.analyzeJdbcWrite(
+                        bindingName, runtime.dataSourceId(), resolved, mode.name(), projected);
+                WriteResult result = write(runtime,
+                        new TableIdentifier(resolved.catalog(), resolved.schema(), resolved.table()),
                         projected, mode.name(), keys);
+                lineage.confirm(flow);
+                return result;
             });
         }
     }
@@ -422,10 +457,32 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                 schema == null ? source.connection().schemaName() : schema, table));
     }
 
+    private DataFrameReader jdbcReader(RuntimeDataSource source, JdbcReadOptions options) {
+        Objects.requireNonNull(options, "options");
+        DataFrameReader reader = CanvasTaskExecutor.reader(spark, source);
+        options.partitioning().ifPresent(partitioning -> {
+            reader.option("partitionColumn", partitioning.column());
+            reader.option("lowerBound", partitioning.lowerBound());
+            reader.option("upperBound", partitioning.upperBound());
+            reader.option("numPartitions", partitioning.numPartitions());
+        });
+        options.fetchSize().ifPresent(value -> reader.option("fetchsize", value));
+        options.queryTimeoutSeconds().ifPresent(value -> reader.option("queryTimeout", value));
+        options.options().forEach(reader::option);
+        return reader;
+    }
+
     private static void putMapping(Map<String, String> mappings, String target, String source) {
         target = required(target); source = required(source);
         if (mappings.putIfAbsent(target, source) != null)
             throw new RunnerExecutionException("SDK_DUPLICATE_TARGET_MAPPING", "目标字段不能重复映射：" + target, null);
+    }
+
+    private static void requireNoMappings(Map<String, String> mappings) {
+        if (!mappings.isEmpty()) {
+            throw new RunnerExecutionException("SDK_SAME_NAME_MAPPING_AFTER_EXPLICIT_MAPPING",
+                    "mapSameName 不能与显式字段映射混用", null);
+        }
     }
 
     private static void requireMappings(Map<String, String> mappings, Set<String> targets, Dataset<Row> source) {

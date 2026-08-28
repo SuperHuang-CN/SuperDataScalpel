@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.dispatcher.management;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistration;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy;
 
 import java.util.UUID;
 
@@ -13,6 +14,7 @@ public record DispatcherRegistrationResponse(
         DispatcherRegistrationState state,
         DispatcherTopics topics,
         DispatcherAdmissionPolicy effectiveAdmissionPolicy,
+        SparkExecutionResourcePolicy resourcePolicy,
         String lastError
 ) {
     public static DispatcherRegistrationResponse from(DispatcherRegistration registration) {
@@ -26,7 +28,7 @@ public record DispatcherRegistrationResponse(
                 new DispatcherAdmissionPolicy(
                         registration.getMaxQueuedExecutions(), registration.getMaxConcurrentSubmissions(),
                         registration.getMaxInFlightApplications()
-                ), registration.getLastError()
+                ), registration.getResourcePolicy(), registration.getLastError()
         );
     }
 }

@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { useLocation, MemoryRouter } from 'react-router-dom';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
@@ -134,8 +134,7 @@ describe('DataServiceListPanel creation menu', () => {
       definitionConfigured: true,
       definitionVersion: 1,
       engineId: 'engine-1',
-      routePath: '/open-api/v1/users',
-      accessMode: 'PUBLIC',
+      engineRoutePath: '/runtime/v1/services/service-1',
       status: 'ENABLED',
       revision: 3,
       deploymentStatus: 'DEPLOYED',
@@ -146,6 +145,8 @@ describe('DataServiceListPanel creation menu', () => {
         provider: 'KONG',
         externalServiceId: 'kong-service-1',
         externalRouteId: 'kong-route-1',
+        gatewayRoutePath: '/open-api/v1/users',
+        accessMode: 'PUBLIC',
         publishedRevision: 3,
         publicationStatus: 'PUBLISHED',
         gatewayUrl: 'http://gateway.test/open-api/v1/users',
@@ -186,52 +187,4 @@ describe('DataServiceListPanel creation menu', () => {
     expect(dataServiceMocks.disable).not.toHaveBeenCalled();
   });
 
-  it('copies the Service Engine public URL joined with the service route', async () => {
-    const user = userEvent.setup();
-    const service: DataServiceSummary = {
-      id: 'service-1',
-      code: 'user',
-      name: '用户服务',
-      directoryId: null,
-      type: 'STANDARD_TABLE',
-      definitionConfigured: true,
-      definitionVersion: 1,
-      engineId: 'engine-1',
-      routePath: '/open-api/v1/users',
-      accessMode: 'PUBLIC',
-      status: 'ENABLED',
-      revision: 3,
-      deploymentStatus: 'DEPLOYED',
-      deploymentError: null,
-      deployedAt: '2026-07-27T10:00:00Z',
-      gatewayBindings: [],
-      description: null,
-      sourceId: 'model-1',
-      sourceName: '用户模型',
-      createdAt: '2026-07-27T09:00:00Z',
-      updatedAt: '2026-07-27T10:02:00Z',
-    };
-    dataServiceMocks.content = [service];
-    serviceEngineMocks.content = [{
-      id: 'engine-1',
-      code: 'local-engine',
-      name: '本地开发服务引擎',
-      adminUrl: 'http://engine-admin.test:8080',
-      publicUrl: 'https://engine.example.com/',
-      managementTokenConfigured: true,
-      enabled: true,
-      description: null,
-      createdAt: '2026-07-27T09:00:00Z',
-      updatedAt: '2026-07-27T09:00:00Z',
-    }];
-
-    renderPanel();
-
-    await user.click(screen.getByRole('button', { name: '复制用户服务的完整访问地址' }));
-
-    await waitFor(async () => expect(await navigator.clipboard.readText()).toBe(
-      'https://engine.example.com/open-api/v1/users',
-    ));
-    expect(await screen.findByText('完整服务访问地址已复制')).toBeInTheDocument();
-  });
 });

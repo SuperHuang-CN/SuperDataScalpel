@@ -95,6 +95,7 @@ data-scalpel-ui/src/modules/computeengine
 | `maxQueuedExecutions` | Integer | 队列上限，必须大于等于 0 |
 | `maxConcurrentSubmissions` | Integer | 同时执行外部提交命令的上限 |
 | `maxInFlightApplications` | Integer | 已提交但未终止的应用上限，0 表示不额外限制 |
+| `resourcePolicyJson` | text | Spark 运行资源的默认值与单次任务上限；不保存总容量或实时利用率 |
 | `dispatcherInstanceId` | String | 注册后锁定的 Dispatcher 稳定身份 |
 | `lastCheckAt` | Instant | 最近主动检查时间 |
 | `lastError` | String | 脱敏后的最近错误，最长 2000 |
@@ -174,6 +175,20 @@ lastDispatcherEventSequence
 
 TaskRun 必须保存本次实际路由的 `computeEngineId` 和命令 Topic 快照，不能在结果或取消处理时重新读取任务、计算引擎的当前值。
 
+### 6.1 Spark JAR 运行资源
+
+计算引擎保存 `SparkExecutionResourcePolicy`，其中 `defaults` 和 `maximums` 均包含 Driver CPU、
+Driver 内存（MiB）、Executor 数量、单 Executor CPU 和单 Executor 内存（MiB）。默认值必须逐项不超过
+最大值；最大值仅表示**单次执行**的申请上限，现有准入策略仍负责并发数量。
+
+- Local Docker 固定使用 `local[*]`，只应用 Driver CPU 与内存：分别映射 Docker `--cpus` 和 `--memory`；
+  Runner JVM 最大堆取容器内存的 75%。Executor 三项不在页面展示，也不会传给 Spark。
+- YARN 与 Kubernetes 固定使用各自后端，五项资源分别映射 Driver 与 Executor 的 `spark-submit` 参数。
+- Spark JAR 批任务和实时任务将自己的申请资源写入定义版本和 TaskRun 快照。定义未配置时继承计算引擎默认值；
+  保存后不再随默认值变化。Canvas 与质检任务继续使用计算引擎默认值。
+- 保存、发布、启动、切换计算引擎以及 Dispatcher 提交前都会校验不超过当前上限。降低上限会检查已绑定 JAR 任务，
+  存在超限任务时返回 409，不自动修改任务定义。
+
 ## 7. Admin 对外 API
 
 所有接口遵守现有 GET/POST 约定，错误使用 RFC 9457 Problem Detail。
@@ -181,6 +196,8 @@ TaskRun 必须保存本次实际路由的 `computeEngineId` 和命令 Topic 快�
 ```http
 GET  /api/v1/compute-engines
 GET  /api/v1/compute-engines/{id}
+GET  /api/v1/compute-engines/{id}/runtime-overview
+GET  /api/v1/compute-engines/{id}/executions?scope=ACTIVE|QUEUED|RECENT&page=0&size=20
 POST /api/v1/compute-engines
 POST /api/v1/compute-engines/{id}/actions/update
 POST /api/v1/compute-engines/{id}/actions/reconfigure
@@ -207,7 +224,31 @@ compute.engine.manage
 
 不扩展任务权限体系；任务编辑和运行仍使用现有 task 权限。
 
-### 7.1 创建请求
+### 7.1 运行态聚合查询
+
+计算引擎详情页只访问 Admin。Admin 在事务外使用该计算引擎已加密保存的 Token 调用
+Dispatcher，再将 Dispatcher 的执行账本与本地 `TaskRun`、`DataTask` 只读关联；不保存监控
+快照，也不让浏览器直接访问 Dispatcher。
+
+```http
+GET /api/v1/compute-engines/{id}/runtime-overview
+GET /api/v1/compute-engines/{id}/executions?scope=ACTIVE|QUEUED|RECENT&page=0&size=20
+```
+
+- `runtime-overview` 只要求 `compute.engine.view`，返回 Dispatcher 身份、注册状态、依赖健康、
+  准入容量与当前占用，以及当前后端的有效资源配置。
+- `executions` 同时要求 `compute.engine.view` 和 `task.view`。Admin 保持 Dispatcher 原始排序，
+  按 `executionId` 批量关联本地记录并补充任务名称、TaskRun 状态和触发方式。
+- Dispatcher 账本中的记录即使 Admin 尚未收到或已丢失对应事件，也必须保留并以
+  `synchronized=false` 标记；不存在本地关联时不提供任务详情链接。
+- Admin 必须核对响应的 Dispatcher instance ID、backend type 和 engine ID。控制面不可访问或
+  身份不匹配统一返回安全的 HTTP 502，不能误显示为“当前没有任务”。
+- CPU、内存等数值为**每次执行的生效配置上限**，不是实际使用率；第一阶段不引入 Docker、YARN
+  或 Kubernetes 的实时指标采集，也不展示历史曲线。
+- 队列和在途数量以 Dispatcher PostgreSQL 执行账本为准；Kafka 仅作为传递命令和事件的通道，
+  Kafka Consumer Lag 不是任务队列事实。
+
+### 7.2 创建请求
 
 ```json
 {
@@ -227,7 +268,7 @@ compute.engine.manage
 
 响应不包含明文 Token 或密文，只返回 `accessTokenConfigured: true`。
 
-### 7.2 更新请求
+### 7.3 更新请求
 
 Token 字段可选：
 
@@ -246,7 +287,7 @@ Token 字段可选：
 
 候选配置预检失败时不改变当前注册。Dispatcher 仍有排队或活动执行时返回 HTTP 409，计算引擎保持 `DRAINING` 且不保存候选配置；任务结束后由用户保留表单草稿并再次应用。流程不使用强制反注册。新配置保存后若重新注册失败，则保留新配置并进入 `ERROR`，由管理员修正后恢复。
 
-### 7.3 反注册与离线解除绑定
+### 7.4 反注册与离线解除绑定
 
 计算引擎提供三种语义不同的运维动作，界面和接口不得相互自动降级：
 
@@ -288,6 +329,8 @@ Dispatcher 返回 HTTP 错误、认证失败或业务错误时不允许离线解
 ```http
 GET  /api/v1/dispatcher/info
 GET  /api/v1/dispatcher/registration
+GET  /api/v1/dispatcher/runtime-overview
+GET  /api/v1/task-executions?scope=ACTIVE|QUEUED|RECENT&page=0&size=20
 POST /api/v1/dispatcher/registration/actions/activate
 POST /api/v1/dispatcher/registration/actions/drain
 POST /api/v1/dispatcher/registration/actions/deactivate
@@ -367,6 +410,7 @@ HTTP 调用不能发生在管理数据库长事务中：
 
 ```text
 /compute-engine
+/compute-engine/{engineId}
 ```
 
 列表列建议：名称、后端、注册状态、健康状态、Dispatcher 地址、队列/并发策略、最近检查时间、操作。
@@ -383,6 +427,27 @@ HTTP 调用不能发生在管理数据库长事务中：
 - `DETACHED` 可以修改配置和重新注册；重新注册确认框必须提醒管理员先停止原 Dispatcher。
 - 删除必须二次确认并展示引擎名称。
 - 任务编辑页仅列出 `ACTIVE` 计算引擎；已绑定但暂时不可用的引擎仍显示原值和状态，不能静默清空。
+
+### 10.1 计算引擎详情页
+
+列表中的计算引擎名称进入详情页，编辑仍复用现有配置 Drawer。详情页使用身份头和完整内容
+面板，身份头展示名称、后端、注册/健康状态、Dispatcher 地址和最近检查时间，并复用已有的
+刷新、检查、编辑、注册、Drain、反注册等权限与状态判断。
+
+固定页签如下：
+
+1. **概览**：依赖健康、准入容量和占用、运行数量、后端资源配置。
+2. **活动任务**：`SUBMITTING`、`SUBMITTED`、`RUNNING`、`CANCEL_REQUESTED`。
+3. **排队任务**：仅 `QUEUED`，展示稳定队列位置和等待时间。
+4. **最近执行**：终态执行、耗时、结果状态和安全错误摘要。
+5. **配置**：描述、Dispatcher、Topic、容量、实例 ID 和时间信息。
+
+没有 `task.view` 时隐藏三个执行页签，仍可访问概览和配置。有关联的执行记录可跳转到
+`/task/{taskId}?tab=runs&runId={taskRunId}`；无关联记录只展示 Dispatcher 身份信息。
+
+页面可见且浏览器窗口处于前台时，概览及当前可见的活动/排队页签每 5 秒刷新，最近执行每
+15 秒刷新；页面失焦或页签隐藏时停止轮询，并始终提供手动刷新。运行态读取失败时保留基础信息
+与配置，并在运行态区域给出错误和重试入口。
 
 ## 11. 配置与安全
 

@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.nio.file.Path;
 
 final class TestContextConfiguration {
     final SparkSession sparkSession;
@@ -79,6 +80,13 @@ final class TestContextConfiguration {
             return this;
         }
 
+        Builder modelInputParquet(String name, Path path, StructType expectedSchema) {
+            MutableModelBinding binding = model(name);
+            if (binding.input != null) throw new IllegalArgumentException("Duplicate model input: " + name);
+            binding.input = InputSpec.parquet(path, expectedSchema);
+            return this;
+        }
+
         Builder modelOutput(String name, TestModelTarget target) {
             MutableModelBinding binding = model(name);
             if (binding.target != null) throw new IllegalArgumentException("Duplicate model output: " + name);
@@ -98,6 +106,15 @@ final class TestContextConfiguration {
             MutableJdbcBinding binding = jdbc(name);
             inferSpark(dataset);
             if (binding.tables.putIfAbsent(java.util.Objects.requireNonNull(table), InputSpec.dataset(dataset)) != null) {
+                throw new IllegalArgumentException("Duplicate JDBC table: " + table);
+            }
+            return this;
+        }
+
+        Builder jdbcTableParquet(String name, JdbcTableIdentifier table, Path path, StructType expectedSchema) {
+            MutableJdbcBinding binding = jdbc(name);
+            if (binding.tables.putIfAbsent(java.util.Objects.requireNonNull(table),
+                    InputSpec.parquet(path, expectedSchema)) != null) {
                 throw new IllegalArgumentException("Duplicate JDBC table: " + table);
             }
             return this;
@@ -151,13 +168,18 @@ final class TestContextConfiguration {
         }
     }
 
-    record InputSpec(Dataset<Row> dataset, StructType schema, List<Row> rows) {
+    record InputSpec(Dataset<Row> dataset, StructType schema, List<Row> rows, Path parquetPath) {
         static InputSpec dataset(Dataset<Row> value) {
-            return new InputSpec(java.util.Objects.requireNonNull(value), null, List.of());
+            return new InputSpec(java.util.Objects.requireNonNull(value), null, List.of(), null);
         }
 
         static InputSpec rows(StructType schema, List<Row> values) {
-            return new InputSpec(null, java.util.Objects.requireNonNull(schema), List.copyOf(values));
+            return new InputSpec(null, java.util.Objects.requireNonNull(schema), List.copyOf(values), null);
+        }
+
+        static InputSpec parquet(Path path, StructType expectedSchema) {
+            return new InputSpec(null, java.util.Objects.requireNonNull(expectedSchema), List.of(),
+                    java.util.Objects.requireNonNull(path, "path").toAbsolutePath().normalize());
         }
 
         Dataset<Row> materialize(SparkSession spark) {
@@ -167,6 +189,25 @@ final class TestContextConfiguration {
                             "Bound Dataset belongs to a different SparkSession");
                 }
                 return dataset;
+            }
+            if (parquetPath != null) {
+                if (!java.nio.file.Files.isRegularFile(parquetPath)) {
+                    throw new SparkJobTestException("TESTKIT_PARQUET_NOT_FOUND",
+                            "Parquet sample file does not exist: " + parquetPath);
+                }
+                Dataset<Row> loaded;
+                try {
+                    loaded = spark.read().parquet(parquetPath.toString());
+                } catch (RuntimeException exception) {
+                    throw new SparkJobTestException("TESTKIT_PARQUET_READ_FAILED",
+                            "Unable to read Parquet sample: " + parquetPath, exception);
+                }
+                if (!loaded.schema().equals(schema)) {
+                    throw new SparkJobTestException("TESTKIT_PARQUET_SCHEMA_MISMATCH",
+                            "Parquet schema does not match expected schema. expected="
+                                    + schema.catalogString() + ", actual=" + loaded.schema().catalogString());
+                }
+                return loaded;
             }
             return spark.createDataFrame(rows, schema);
         }

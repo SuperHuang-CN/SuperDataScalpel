@@ -2,6 +2,7 @@ package cn.superhuang.datascalpel.taskengine.contract;
 
 import cn.superhuang.data.scalpel.contract.task.DataSourcePurpose;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
+import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
 
 import cn.superhuang.data.scalpel.contract.execution.ExecutionErrorCategory;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
@@ -211,7 +212,7 @@ class TaskExecutionContractTest {
     }
 
     @Test
-    void roundTripsV7MultiOutputWritesAsOneNodeResult() throws Exception {
+    void roundTripsV8MultiOutputWritesAsOneNodeResult() throws Exception {
         Instant startedAt = Instant.parse("2026-08-20T01:40:55Z");
         OutputWritesMetrics metrics = new OutputWritesMetrics(List.of(
                 new OutputWriteExecutionResult(
@@ -244,7 +245,7 @@ class TaskExecutionContractTest {
     }
 
     @Test
-    void roundTripsV7PartialOutputFailureWithCommittedRows() throws Exception {
+    void roundTripsV8PartialOutputFailureWithCommittedRows() throws Exception {
         Instant startedAt = Instant.parse("2026-08-20T01:40:55Z");
         String nodeId = UUID.randomUUID().toString();
         UUID diagnosticId = UUID.randomUUID();
@@ -301,7 +302,7 @@ class TaskExecutionContractTest {
     }
 
     @Test
-    void roundTripsStrictV7SparkJarObservabilityResultAndRunnerEvent() throws Exception {
+    void roundTripsStrictV8SparkJarObservabilityAndLineageResult() throws Exception {
         Instant capturedAt = Instant.parse("2026-08-14T06:00:00Z");
         UserJobObservabilitySnapshot snapshot = new UserJobObservabilitySnapshot(
                 capturedAt,
@@ -317,12 +318,14 @@ class TaskExecutionContractTest {
                 TaskExecutionResult.CURRENT_SCHEMA_VERSION,
                 executionId, runId, 1, TaskExecutionState.SUCCESS,
                 capturedAt, capturedAt.plusMillis(8), 8L, 12L, List.of(),
-                ExecutionTaskType.SPARK_JAR, null, snapshot, null);
+                ExecutionTaskType.SPARK_JAR, null, snapshot,
+                TaskLineageEvidence.unavailable("NO_SDK_WRITES", "用户作业没有执行 SDK 写入"), null);
 
         TaskExecutionResult restored = objectMapper.readValue(
                 objectMapper.writeValueAsString(result), TaskExecutionResult.class);
 
-        assertEquals(7, restored.schemaVersion());
+        assertEquals(8, restored.schemaVersion());
+        assertEquals("NO_SDK_WRITES", restored.lineage().warnings().getFirst().code());
         assertEquals("WRITE_OUTPUT", restored.userJobObservability().status().phase());
         assertEquals(List.of(
                         "datascalpel.model.write.successes", "orders.rows", "orders.write"),

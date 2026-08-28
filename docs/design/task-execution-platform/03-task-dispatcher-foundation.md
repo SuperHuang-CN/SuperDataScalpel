@@ -315,6 +315,8 @@ GET  /api/v1/dispatcher/registration
 POST /api/v1/dispatcher/registration/actions/activate
 POST /api/v1/dispatcher/registration/actions/drain
 POST /api/v1/dispatcher/registration/actions/deactivate
+GET  /api/v1/dispatcher/runtime-overview
+GET  /api/v1/task-executions?scope=ACTIVE|QUEUED|RECENT&page=0&size=20
 GET  /api/v1/task-executions/{executionId}
 ```
 
@@ -331,6 +333,32 @@ GET  /api/v1/task-executions/{executionId}
 - 强制模式取消排队和活动任务，完成状态收敛后变为 INACTIVE。
 
 所有错误使用 RFC 9457 Problem Detail。
+
+### 9.3 运行态只读投影
+
+`GET /api/v1/dispatcher/runtime-overview` 返回当前 Dispatcher 的稳定实例身份、版本、后端类型、
+注册状态、Backend/制品存储/Kafka/Kafka Listener 依赖健康、准入容量、各执行状态占用、采集
+时间和当前后端资源配置。资源配置按 backend type 判别：
+
+- Local Docker：镜像、容器 CPU/内存限制、Runner JVM Heap。
+- YARN：队列、Driver/Executor 内存、Executor Core 和数量。
+- Kubernetes：Namespace、镜像、Driver/Executor 内存、Executor Core 和实例数。
+
+响应不得包含 Token、工作目录、制品地址、凭据或任意动态执行参数。该接口中的资源值是 Dispatcher
+固定部署配置，不能解释为实时 CPU/内存使用率。具体执行则持久化其不可变的运行资源快照：JAR 请求缺省时
+使用注册计算引擎的默认值，超出注册上限的请求会在创建容器或提交 Spark 应用前以 `RESOURCE_LIMIT_EXCEEDED` 终态拒绝。
+
+`GET /api/v1/task-executions` 使用固定 `scope` 投影，并使用 `page`、`size` 分页：
+
+| scope | 状态范围 | 稳定排序 | 额外字段 |
+| --- | --- | --- | --- |
+| `ACTIVE` | `SUBMITTING`、`SUBMITTED`、`RUNNING`、`CANCEL_REQUESTED` | `queuedAt, executionId` 升序 | 无 |
+| `QUEUED` | `QUEUED` | `queuedAt, executionId` 升序 | 全局绝对 `queuePosition` |
+| `RECENT` | 所有终态 | `endedAt, executionId` 降序 | 无 |
+
+执行摘要包含任务、运行和执行身份，任务类型、定义版本、提交开始/提交完成/最后观测时间、
+状态、追踪地址和经过脱敏的错误摘要。该查询只以 Dispatcher PostgreSQL 执行账本为事实来源；
+Kafka Lag 不参与队列统计或排序。
 
 ## 10. MinIO 制品适配器
 

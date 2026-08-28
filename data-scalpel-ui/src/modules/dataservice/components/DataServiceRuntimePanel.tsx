@@ -72,6 +72,18 @@ export const DataServiceRuntimePanel = ({
       ),
     },
     {
+      title: '公开路由',
+      dataIndex: 'gatewayRoutePath',
+      width: 220,
+      render: (value: string) => <code>{value}</code>,
+    },
+    {
+      title: '访问方式',
+      dataIndex: 'accessMode',
+      width: 120,
+      render: (value: GatewayServiceBinding['accessMode']) => <Tag>{value === 'PUBLIC' ? '公开' : '订阅访问'}</Tag>,
+    },
+    {
       title: '网关地址',
       dataIndex: 'gatewayUrl',
       width: 320,
@@ -135,7 +147,7 @@ export const DataServiceRuntimePanel = ({
           <Descriptions.Item label="部署时间">{formatDateTime(dataService.deployedAt)}</Descriptions.Item>
           <Descriptions.Item label="当前 Revision">{dataService.revision}</Descriptions.Item>
           <Descriptions.Item label="请求方法"><Tag color="blue">POST</Tag></Descriptions.Item>
-          <Descriptions.Item label="公开路由"><code>{dataService.routePath}</code></Descriptions.Item>
+          <Descriptions.Item label="Engine 内部路由"><code>{dataService.engineRoutePath}</code></Descriptions.Item>
         </Descriptions>
       </section>
 

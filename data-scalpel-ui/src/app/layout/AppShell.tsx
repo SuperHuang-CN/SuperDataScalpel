@@ -52,6 +52,8 @@ const isBusinessDetailPath = (pathname: string) => (
   || /^\/model\/[^/]+$/.test(pathname)
   || /^\/data-entry\/[^/]+$/.test(pathname)
   || /^\/task\/[^/]+$/.test(pathname)
+  || /^\/service-engine\/[^/]+$/.test(pathname)
+  || /^\/compute-engine\/[^/]+$/.test(pathname)
   || /^\/dataservice\/[^/]+$/.test(pathname)
 );
 
@@ -216,7 +218,13 @@ const breadcrumbItems = (pathname: string): BreadcrumbProps['items'] => {
     return [{ title: '任务中心' }, { title: <Link to="/task">任务列表</Link> }, { title: '任务详情' }];
   }
   if (pathname.startsWith('/task')) return [{ title: '任务中心' }, { title: '任务列表' }];
+  if (/^\/service-engine\/[^/]+/.test(pathname)) {
+    return [{ title: '运行管理' }, { title: <Link to="/service-engine">服务引擎</Link> }, { title: '引擎详情' }];
+  }
   if (pathname.startsWith('/service-engine')) return [{ title: '运行管理' }, { title: '服务引擎' }];
+  if (/^\/compute-engine\/[^/]+/.test(pathname)) {
+    return [{ title: '运行管理' }, { title: <Link to="/compute-engine">计算引擎</Link> }, { title: '引擎详情' }];
+  }
   if (pathname.startsWith('/compute-engine')) return [{ title: '运行管理' }, { title: '计算引擎' }];
   if (pathname.startsWith('/dataservice/operations')) return [{ title: '数据服务' }, { title: '调用统计' }];
   if (pathname.startsWith('/dataservice/consumers')) return [{ title: '数据服务' }, { title: '消费者管理' }];

@@ -1,7 +1,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ComputeEngine } from '../model/computeEngine';
+import { defaultSparkExecutionResourcePolicy, type ComputeEngine } from '../model/computeEngine';
 
 const hooks = vi.hoisted(() => ({
   useComputeEngines: vi.fn(),
@@ -52,6 +52,7 @@ const engine = (
   maxQueuedExecutions: 20,
   maxConcurrentSubmissions: 2,
   maxInFlightApplications: 2,
+  resourcePolicy: defaultSparkExecutionResourcePolicy('LOCAL_DOCKER'),
   dispatcherInstanceId: registrationState === 'DETACHED' ? null : 'dispatcher-local',
   lastCheckAt: '2026-07-24T00:00:00Z',
   lastError: healthState === 'DOWN' ? '连接失败' : null,

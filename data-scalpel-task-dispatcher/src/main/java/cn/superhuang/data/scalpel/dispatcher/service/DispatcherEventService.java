@@ -119,6 +119,11 @@ public class DispatcherEventService {
             UserJobObservabilitySnapshot userJobObservability
     ) {
         long sequence = execution.nextEventSequence();
+        String resultSha256 = switch (type) {
+            case EXECUTION_SUCCEEDED, EXECUTION_FAILED, EXECUTION_TIMED_OUT, EXECUTION_CANCELLED ->
+                    execution.getResultSha256();
+            default -> null;
+        };
         DispatcherExecutionEvent event = new DispatcherExecutionEvent(
                 1, UUID.randomUUID(), type, Instant.now(), execution.getEngineId(), execution.getExecutionId(),
                 execution.getRunId(), execution.getAttempt(), sequence, execution.getBackendType(),
@@ -126,7 +131,7 @@ public class DispatcherEventService {
                 execution.getEndedAt(), affectedRows, error,
                 execution.getStreamingDeploymentId(), streamingQueries, streamingProgress,
                 streamingSourceProgress, qualitySummary,
-                execution.getTaskType(), userJobObservability
+                execution.getTaskType(), userJobObservability, resultSha256
         );
         String topic = registrationRepository.findFirstByOrderByCreatedAtAsc()
                 .orElseThrow(() -> new IllegalStateException("Dispatcher 尚未注册"))

@@ -102,7 +102,8 @@ public class LocalDockerExecutionBackend implements TaskExecutionBackend {
 
         DockerCommandResult created;
         try {
-            created = execute(commands.create(launch.identity(), workspace.directory(), workspace.environmentFile()),
+            created = execute(commands.create(launch.identity(), workspace.directory(), workspace.environmentFile(),
+                            launch.executionResources()),
                     properties.commandTimeout(), CONTROL_OUTPUT_BYTES);
         } catch (IllegalArgumentException exception) {
             throw new BackendException("INVALID_DOCKER_CONFIGURATION", "Local Docker 配置包含不支持的值", exception);

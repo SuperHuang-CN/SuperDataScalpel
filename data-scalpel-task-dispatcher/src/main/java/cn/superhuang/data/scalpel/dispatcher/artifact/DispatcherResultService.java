@@ -22,6 +22,7 @@ import cn.superhuang.data.scalpel.contract.quality.ModelQualityRuleType;
 import cn.superhuang.data.scalpel.contract.quality.ViolationMetric;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
 
 @Service
 public class DispatcherResultService {
@@ -79,14 +80,37 @@ public class DispatcherResultService {
         DispatcherTaskResult result;
         try {
             result = codec.read(content.get());
+            result = degradeInvalidSparkJarLineage(result);
             validate(snapshot, result);
         } catch (BackendException exception) {
             if (apply) stateService.runnerResultInvalid(executionId, exception.getMessage());
             return DispatcherResultResolution.ARTIFACT_INVALID;
         }
         if (!apply) return DispatcherResultResolution.VERIFIED;
-        stateService.applyRunnerResult(executionId, result);
+        stateService.applyRunnerResult(executionId, result, actualDigest);
         return DispatcherResultResolution.APPLIED;
+    }
+
+    private static DispatcherTaskResult degradeInvalidSparkJarLineage(
+            DispatcherTaskResult result
+    ) {
+        if (result == null || result.lineage() == null
+                || result.schemaVersion() == null || result.schemaVersion() < 8
+                || result.taskType() != ExecutionTaskType.SPARK_JAR) {
+            return result;
+        }
+        try {
+            validateLineage(result.lineage());
+            return result;
+        } catch (BackendException ignored) {
+            TaskLineageEvidence unavailable = TaskLineageEvidence.unavailable(
+                    "LINEAGE_RESULT_INVALID", "运行血缘结果无效，已降级且未影响用户作业");
+            return new DispatcherTaskResult(
+                    result.schemaVersion(), result.executionId(), result.runId(), result.attempt(),
+                    result.state(), result.startedAt(), result.endedAt(), result.durationMs(),
+                    result.affectedRows(), result.nodeResults(), result.taskType(),
+                    result.qualityResult(), result.userJobObservability(), unavailable, result.error());
+        }
     }
 
     private void validate(DispatcherTaskExecution execution, DispatcherTaskResult result)
@@ -122,6 +146,15 @@ public class DispatcherResultService {
         if (resultType != execution.getTaskType()) {
             throw new BackendException("INVALID_RUNNER_RESULT", "Runner 结果任务类型与执行账本不一致");
         }
+        if (result.schemaVersion() < 8 && result.lineage() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner v2～v7 结果不能包含运行血缘");
+        }
+        if (result.lineage() != null && resultType != ExecutionTaskType.SPARK_JAR
+                || result.schemaVersion() >= 8 && resultType == ExecutionTaskType.SPARK_JAR
+                && result.state() == DispatcherTaskResult.State.SUCCESS && result.lineage() == null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner v8 Spark JAR 血缘载荷无效");
+        }
+        if (result.lineage() != null) validateLineage(result.lineage());
         if (resultType == ExecutionTaskType.SPARK_MODEL_QUALITY) {
             if (result.userJobObservability() != null) {
                 throw new BackendException("INVALID_RUNNER_RESULT", "模型质检结果不能包含用户作业观测载荷");
@@ -219,6 +252,111 @@ public class DispatcherResultService {
                 && (outputRowsUnknown && result.affectedRows() != null
                 || !outputRowsUnknown && !Long.valueOf(outputRows).equals(result.affectedRows()))) {
             throw new BackendException("INVALID_RUNNER_RESULT", "Runner 总影响行数与输出节点不一致");
+        }
+    }
+
+    private static void validateLineage(TaskLineageEvidence evidence) throws BackendException {
+        if (evidence.analysisStatus() == null || evidence.flows().size() > 100
+                || evidence.warnings().size() > 2_000
+                || evidence.analysisStatus() == TaskLineageEvidence.AnalysisStatus.UNAVAILABLE
+                && (!evidence.flows().isEmpty() || evidence.coverage() != null)
+                || evidence.analysisStatus() != TaskLineageEvidence.AnalysisStatus.UNAVAILABLE
+                && (evidence.flows().isEmpty() || evidence.coverage() == null)) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘汇总无效");
+        }
+        long assets = 0;
+        long fields = 0;
+        long edges = 0;
+        long usages = 0;
+        Set<String> flowKeys = new HashSet<>();
+        for (TaskLineageEvidence.Flow flow : evidence.flows()) {
+            if (flow == null || blank(flow.flowKey()) || flow.flowKey().length() > 128
+                    || !flowKeys.add(flow.flowKey()) || blank(flow.producerKey())
+                    || flow.producerKey().length() > 128 || blank(flow.producerType())
+                    || flow.producerType().length() > 64 || flow.coverage() == null
+                    || flow.outputAsset() == null || flow.outputAsset().role() != TaskLineageEvidence.AssetRole.OUTPUT) {
+                throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘 Flow 无效");
+            }
+            assets += 1L + flow.inputAssets().size();
+            fields += flow.fields().size();
+            edges += flow.fieldEdges().size();
+            usages += flow.fieldUsages().size();
+            validateLineageAsset(flow.outputAsset());
+            for (TaskLineageEvidence.Asset asset : flow.inputAssets()) {
+                if (asset == null || asset.role() != TaskLineageEvidence.AssetRole.INPUT) {
+                    throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘输入资产无效");
+                }
+                validateLineageAsset(asset);
+            }
+            for (TaskLineageEvidence.Field field : flow.fields()) {
+                if (field == null || blank(field.localAssetKey()) || field.localAssetKey().length() > 128
+                        || blank(field.localFieldKey()) || field.localFieldKey().length() > 128
+                        || blank(field.columnCode()) || field.columnCode().length() > 128
+                        || field.columnName() != null && field.columnName().length() > 200
+                        || field.ordinal() < 0) {
+                    throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘字段无效");
+                }
+            }
+            for (TaskLineageEvidence.FieldEdge edge : flow.fieldEdges()) {
+                if (edge == null || edge.source() == null || edge.target() == null
+                        || blank(edge.derivationKey()) || edge.derivationKey().length() > 128
+                        || edge.derivationType() == null || blank(edge.transformNodeKey())
+                        || edge.transformNodeKey().length() > 128) {
+                    throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘字段边无效");
+                }
+                validateReference(edge.source());
+                validateReference(edge.target());
+            }
+            for (TaskLineageEvidence.FieldUsage usage : flow.fieldUsages()) {
+                if (usage == null || usage.field() == null || blank(usage.nodeKey())
+                        || usage.nodeKey().length() > 128 || usage.usageType() == null) {
+                    throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘字段用途无效");
+                }
+                validateReference(usage.field());
+            }
+            for (TaskLineageEvidence.Warning warning : flow.warnings()) validateLineageWarning(warning);
+        }
+        for (TaskLineageEvidence.Warning warning : evidence.warnings()) validateLineageWarning(warning);
+        if (assets > 2_000 || fields > 20_000 || edges > 50_000 || usages > 50_000) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘超过结果安全上限");
+        }
+    }
+
+    private static void validateLineageAsset(TaskLineageEvidence.Asset asset) throws BackendException {
+        if (asset.kind() == null || blank(asset.localAssetKey()) || asset.localAssetKey().length() > 128
+                || blank(asset.safeDisplayName()) || asset.safeDisplayName().length() > 255
+                || asset.role() == TaskLineageEvidence.AssetRole.OUTPUT && asset.writeMode() == null
+                || asset.role() == TaskLineageEvidence.AssetRole.INPUT && asset.writeMode() != null
+                || asset.kind() == TaskLineageEvidence.AssetKind.MODEL
+                && (asset.modelId() == null || asset.modelSchemaVersion() == null || asset.modelSchemaVersion() < 1)
+                || asset.kind() == TaskLineageEvidence.AssetKind.JDBC_TABLE
+                && (asset.dataSourceId() == null || blank(asset.physicalTableName()))
+                || asset.kind() == TaskLineageEvidence.AssetKind.EXTERNAL_RESOURCE
+                && (asset.externalResourceType() == null || blank(asset.resourceKeyHash()))) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘资产无效");
+        }
+        if (asset.catalogName() != null && asset.catalogName().length() > 128
+                || asset.schemaName() != null && asset.schemaName().length() > 128
+                || asset.physicalTableName() != null && asset.physicalTableName().length() > 128
+                || asset.resourceKeyHash() != null && asset.resourceKeyHash().length() > 128) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘资产标识过长");
+        }
+    }
+
+    private static void validateReference(TaskLineageEvidence.FieldReference reference) throws BackendException {
+        if (blank(reference.localAssetKey()) || reference.localAssetKey().length() > 128
+                || blank(reference.localFieldKey()) || reference.localFieldKey().length() > 128) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘字段引用无效");
+        }
+    }
+
+    private static void validateLineageWarning(TaskLineageEvidence.Warning warning) throws BackendException {
+        if (warning == null || blank(warning.code()) || warning.code().length() > 100
+                || blank(warning.message()) || warning.message().length() > 1_000
+                || warning.producerKey() != null && warning.producerKey().length() > 128
+                || warning.flowKey() != null && warning.flowKey().length() > 128
+                || warning.outputOrdinal() != null && warning.outputOrdinal() < 1) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "运行血缘警告无效");
         }
     }
 

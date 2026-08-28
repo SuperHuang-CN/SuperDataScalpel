@@ -13,6 +13,7 @@ import software.amazon.awssdk.services.s3.presigner.model.GetObjectPresignReques
 import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignRequest;
 
 import java.io.IOException;
+import java.nio.file.Path;
 import java.net.URI;
 import java.time.Duration;
 import java.util.Optional;
@@ -43,6 +44,12 @@ final class S3TaskRunArtifactStorage implements TaskRunArtifactStorage {
                         .contentType(contentType)
                         .build(),
                 RequestBody.fromBytes(content));
+    }
+
+    @Override
+    public void store(String objectKey, Path file, String contentType) {
+        client.putObject(PutObjectRequest.builder().bucket(bucket).key(resolve(objectKey)).contentType(contentType).build(),
+                RequestBody.fromFile(file));
     }
 
     @Override
@@ -94,6 +101,20 @@ final class S3TaskRunArtifactStorage implements TaskRunArtifactStorage {
             throw exception;
         } catch (IOException exception) {
             throw new IllegalStateException("无法读取任务运行制品", exception);
+        }
+    }
+
+    @Override
+    public Optional<ArtifactContent> openIfPresent(String objectKey) {
+        try {
+            var response = client.getObject(GetObjectRequest.builder().bucket(bucket).key(resolve(objectKey)).build());
+            return Optional.of(new ArtifactContent(response, response.response().contentLength(),
+                    response.response().contentType()));
+        } catch (NoSuchKeyException exception) {
+            return Optional.empty();
+        } catch (S3Exception exception) {
+            if (exception.statusCode() == 404) return Optional.empty();
+            throw exception;
         }
     }
 

@@ -15,6 +15,7 @@ public record RouteResponse(
         Set<GatewayHttpMethod> methods,
         int order,
         int stripPrefixSegments,
+        String upstreamPath,
         boolean enabled,
         String source,
         String externalId,

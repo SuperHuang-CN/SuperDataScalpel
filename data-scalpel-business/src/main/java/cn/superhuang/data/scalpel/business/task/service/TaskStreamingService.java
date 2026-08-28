@@ -38,6 +38,7 @@ import cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionComma
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
 import cn.superhuang.data.scalpel.contract.execution.SparkStreamingJarExecutionPayload;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import cn.superhuang.data.scalpel.contract.execution.StreamingCheckpointMode;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
@@ -251,6 +252,8 @@ public class TaskStreamingService {
         sparkJarDefinitionService.validatePublishable(taskId);
         sparkJarDefinitionService.validateArtifactAvailable(taskId);
         ExecutionRoute route = computeEngineExecutionService.requireStreamingRunnable(source.computeEngineId());
+        SparkExecutionResourceSpec executionResources = computeEngineExecutionService.resolveResources(route,
+                sparkJarDefinitionService.resolvedExecutionResources(taskId, source.definition()));
         TaskStreamingDeployment deployment = requireTransactionResult(transaction.execute(status ->
                 requireOrCreateJarDeployment(taskId, source, route, checkpointMode)));
         if (deployment.getActualState().active()) return status(taskId, deployment);
@@ -301,7 +304,7 @@ public class TaskStreamingService {
             requireTransactionResult(transaction.execute(status -> queueJarStart(
                     taskId, source, deployment.getId(), route, preparation,
                     runId, executionId, attempt, manifestKey, manifestSha256,
-                    runJarKey, resultKey, logKey)));
+                    runJarKey, resultKey, logKey, executionResources)));
             return status(taskId);
         } catch (RuntimeException exception) {
             try { storage.delete(manifestKey); } catch (RuntimeException cleanup) { exception.addSuppressed(cleanup); }
@@ -382,7 +385,8 @@ public class TaskStreamingService {
             String manifestSha256,
             String runJarKey,
             String resultKey,
-            String logKey
+            String logKey,
+            SparkExecutionResourceSpec executionResources
     ) {
         DataTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
@@ -406,7 +410,8 @@ public class TaskStreamingService {
                 "jarSha256", definition.getJarSha256(),
                 "jobClass", definition.getJobClass(),
                 "jobApiVersion", definition.getJobApiVersion(),
-                "checkpointMode", preparation.payload().checkpointMode().name()));
+                "checkpointMode", preparation.payload().checkpointMode().name(),
+                "executionResources", executionResources));
         TaskRun run = TaskRun.queueDispatchedStreaming(
                 runId, taskId, deploymentId, source.definitionVersion(), snapshot,
                 executionId, attempt, route.engineId(), route.commandTopic(),
@@ -427,7 +432,7 @@ public class TaskStreamingService {
                 new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey),
                 new ExecutionUserJarArtifact(runJarKey, definition.getJarSha256(),
                         definition.getJarSizeBytes()),
-                preparation.payload().sparkConf()));
+                preparation.payload().sparkConf(), executionResources));
         return saved;
     }
 

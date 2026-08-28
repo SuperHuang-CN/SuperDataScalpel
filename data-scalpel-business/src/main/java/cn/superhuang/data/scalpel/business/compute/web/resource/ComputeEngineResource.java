@@ -1,11 +1,15 @@
 package cn.superhuang.data.scalpel.business.compute.web.resource;
 
 import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineManagementService;
+import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineRuntimeService;
 import cn.superhuang.data.scalpel.business.compute.web.request.CreateComputeEngineRequest;
 import cn.superhuang.data.scalpel.business.compute.web.request.DeactivateComputeEngineRequest;
 import cn.superhuang.data.scalpel.business.compute.web.request.DetachComputeEngineRequest;
 import cn.superhuang.data.scalpel.business.compute.web.request.UpdateComputeEngineRequest;
 import cn.superhuang.data.scalpel.business.compute.web.response.ComputeEngineResponse;
+import cn.superhuang.data.scalpel.business.compute.web.response.ComputeEngineExecutionResponse;
+import cn.superhuang.data.scalpel.business.compute.web.response.ComputeEngineRuntimeOverviewResponse;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionScope;
 import cn.superhuang.data.scalpel.business.compute.web.response.ComputeEngineTestResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
@@ -19,6 +23,7 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -29,9 +34,11 @@ import java.util.UUID;
 public class ComputeEngineResource {
 
     private final ComputeEngineManagementService service;
+    private final ComputeEngineRuntimeService runtimeService;
 
-    public ComputeEngineResource(ComputeEngineManagementService service) {
+    public ComputeEngineResource(ComputeEngineManagementService service, ComputeEngineRuntimeService runtimeService) {
         this.service = service;
+        this.runtimeService = runtimeService;
     }
 
     @GetMapping
@@ -44,6 +51,24 @@ public class ComputeEngineResource {
     @PreAuthorize("hasAuthority('compute.engine.view')")
     public ComputeEngineResponse get(@PathVariable UUID id) {
         return service.get(id);
+    }
+
+    @GetMapping("/{id}/runtime-overview")
+    @PreAuthorize("hasAuthority('compute.engine.view')")
+    public ComputeEngineRuntimeOverviewResponse runtimeOverview(@PathVariable UUID id) {
+        return runtimeService.overview(id);
+    }
+
+    @GetMapping("/{id}/executions")
+    @PreAuthorize("hasAuthority('compute.engine.view') and hasAuthority('task.view')")
+    public PageResponse<ComputeEngineExecutionResponse> executions(
+            @PathVariable UUID id,
+            @RequestParam(defaultValue = "ACTIVE") DispatcherExecutionScope scope,
+            @RequestParam(defaultValue = "0") @jakarta.validation.constraints.Min(0) int page,
+            @RequestParam(defaultValue = "20") @jakarta.validation.constraints.Min(1)
+            @jakarta.validation.constraints.Max(100) int size
+    ) {
+        return runtimeService.executions(id, scope, page, size);
     }
 
     @PostMapping

@@ -24,7 +24,8 @@ public record StartStreamingExecutionCommand(
         ExecutionTaskType taskType,
         ExecutionArtifactLocation artifacts,
         ExecutionUserJarArtifact userJar,
-        List<SparkConfigurationEntry> sparkConf
+        List<SparkConfigurationEntry> sparkConf,
+        SparkExecutionResourceSpec executionResources
 ) implements ExecutionCommand {
     public StartStreamingExecutionCommand {
         sparkConf = sparkConf == null ? List.of() : List.copyOf(sparkConf);
@@ -52,10 +53,22 @@ public record StartStreamingExecutionCommand(
     public StartStreamingExecutionCommand(
             int messageVersion, UUID messageId, ExecutionMessageType messageType, Instant occurredAt,
             UUID engineId, UUID executionId, UUID runId, int attempt, UUID taskId,
+            UUID deploymentId, int definitionVersion, String checkpointKeyPrefix,
+            ExecutionTaskType taskType, ExecutionArtifactLocation artifacts,
+            ExecutionUserJarArtifact userJar, List<SparkConfigurationEntry> sparkConf
+    ) {
+        this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
+                attempt, taskId, deploymentId, definitionVersion, checkpointKeyPrefix,
+                taskType, artifacts, userJar, sparkConf, null);
+    }
+
+    public StartStreamingExecutionCommand(
+            int messageVersion, UUID messageId, ExecutionMessageType messageType, Instant occurredAt,
+            UUID engineId, UUID executionId, UUID runId, int attempt, UUID taskId,
             UUID deploymentId, int definitionVersion, ExecutionArtifactLocation artifacts
     ) {
         this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
                 attempt, taskId, deploymentId, definitionVersion, "deployments/" + deploymentId,
-                ExecutionTaskType.SPARK_STREAMING_CANVAS, artifacts, null, List.of());
+                ExecutionTaskType.SPARK_STREAMING_CANVAS, artifacts, null, List.of(), null);
     }
 }

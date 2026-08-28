@@ -24,7 +24,7 @@ interface ServiceEngineDrawerProps {
 interface ServiceEngineFormValues {
   name: string;
   adminUrl: string;
-  publicUrl: string;
+  runtimeUrl: string;
   managementToken?: string;
   enabled: boolean;
   description?: string;
@@ -63,7 +63,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
       form.setFieldsValue({
         name: engine.name,
         adminUrl: engine.adminUrl,
-        publicUrl: engine.publicUrl,
+        runtimeUrl: engine.runtimeUrl,
         managementToken: undefined,
         enabled: engine.enabled,
         description: engine.description ?? undefined,
@@ -83,7 +83,7 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
     const request: UpdateServiceEngineRequest = {
       name: values.name.trim(),
       adminUrl: values.adminUrl.trim(),
-      publicUrl: values.publicUrl.trim(),
+      runtimeUrl: values.runtimeUrl.trim(),
       managementToken: normalizedOptionalText(values.managementToken),
       enabled: values.enabled,
       description: normalizedOptionalText(values.description),
@@ -171,8 +171,8 @@ export const ServiceEngineDrawer = ({ open, engine, canTest, onClose }: ServiceE
               </Form.Item>
             </Col>
             <Col span={24}>
-              <Form.Item label="公共地址" name="publicUrl" extra="用于登记调用方访问的公开 API 根地址。" rules={[{ required: true, type: 'url', message: '请输入有效的 HTTP(S) 地址' }, { max: 500, message: '地址不能超过 500 个字符' }]}>
-                <Input placeholder="如：https://api.example.internal" />
+              <Form.Item label="运行地址" name="runtimeUrl" extra="网关将通过该地址转发到 Engine 的内部服务路由。" rules={[{ required: true, type: 'url', message: '请输入有效的 HTTP(S) 地址' }, { max: 500, message: '地址不能超过 500 个字符' }]}>
+                <Input placeholder="如：http://engine.internal:8081" />
               </Form.Item>
             </Col>
             <Col span={24}>

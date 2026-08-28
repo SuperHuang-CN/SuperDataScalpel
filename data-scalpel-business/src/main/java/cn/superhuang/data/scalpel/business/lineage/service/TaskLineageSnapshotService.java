@@ -12,6 +12,7 @@ import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.repository.CanvasTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import cn.superhuang.data.scalpel.business.task.repository.LocalSqlTaskDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskDefinitionRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -30,6 +31,7 @@ public class TaskLineageSnapshotService {
     private final DataTaskRepository taskRepository;
     private final LocalSqlTaskDefinitionRepository localDefinitionRepository;
     private final CanvasTaskDefinitionRepository canvasDefinitionRepository;
+    private final SparkJarTaskDefinitionRepository sparkJarDefinitionRepository;
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository modelFieldRepository;
     private final DataSourceRepository dataSourceRepository;
@@ -43,6 +45,7 @@ public class TaskLineageSnapshotService {
             DataTaskRepository taskRepository,
             LocalSqlTaskDefinitionRepository localDefinitionRepository,
             CanvasTaskDefinitionRepository canvasDefinitionRepository,
+            SparkJarTaskDefinitionRepository sparkJarDefinitionRepository,
             DataModelRepository modelRepository,
             DataModelFieldRepository modelFieldRepository,
             DataSourceRepository dataSourceRepository,
@@ -55,6 +58,7 @@ public class TaskLineageSnapshotService {
         this.taskRepository = taskRepository;
         this.localDefinitionRepository = localDefinitionRepository;
         this.canvasDefinitionRepository = canvasDefinitionRepository;
+        this.sparkJarDefinitionRepository = sparkJarDefinitionRepository;
         this.modelRepository = modelRepository;
         this.modelFieldRepository = modelFieldRepository;
         this.dataSourceRepository = dataSourceRepository;
@@ -117,10 +121,26 @@ public class TaskLineageSnapshotService {
         snapshotRepository.saveAll(currents);
     }
 
+    @Transactional
+    public void retireCurrentIfDefinitionChanged(UUID taskId, int definitionVersion) {
+        taskRepository.findByIdForUpdate(Objects.requireNonNull(taskId, "taskId"))
+                .orElseThrow(() -> new IllegalArgumentException("血缘引用的任务不存在"));
+        List<TaskLineageSnapshot> currents = snapshotRepository.findCurrentByTaskIdForUpdate(taskId);
+        Instant now = Instant.now();
+        currents.stream().filter(snapshot -> snapshot.getDefinitionVersion() != definitionVersion)
+                .forEach(snapshot -> snapshot.retire(now));
+        snapshotRepository.saveAll(currents);
+    }
+
     private int currentDefinitionVersion(DataTask task) {
         if (task.getType().isCanvas()) {
             return canvasDefinitionRepository.findByTaskId(task.getId())
                     .orElseThrow(() -> new IllegalArgumentException("Canvas 任务尚未保存定义"))
+                    .getVersion();
+        }
+        if (task.getType() == cn.superhuang.data.scalpel.business.task.domain.TaskType.SPARK_JAR) {
+            return sparkJarDefinitionRepository.findByTaskId(task.getId())
+                    .orElseThrow(() -> new IllegalArgumentException("Spark JAR 任务尚未保存定义"))
                     .getVersion();
         }
         return localDefinitionRepository.findByTaskId(task.getId())

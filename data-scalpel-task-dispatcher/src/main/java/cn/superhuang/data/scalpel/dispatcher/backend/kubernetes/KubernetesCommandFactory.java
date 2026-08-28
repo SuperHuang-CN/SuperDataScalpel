@@ -1,12 +1,14 @@
 package cn.superhuang.data.scalpel.dispatcher.backend.kubernetes;
 
 import cn.superhuang.data.scalpel.dispatcher.backend.ExecutionIdentity;
+import cn.superhuang.data.scalpel.dispatcher.backend.DriverJavaOptions;
 import cn.superhuang.data.scalpel.dispatcher.config.KubernetesProperties;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 
 public class KubernetesCommandFactory {
     private static final String RUNNER_MAIN = "cn.superhuang.datascalpel.taskengine.runner.TaskRunnerMain";
@@ -14,7 +16,7 @@ public class KubernetesCommandFactory {
 
     public KubernetesCommandFactory(KubernetesProperties properties) { this.properties = properties; }
 
-    public List<String> submit(ExecutionIdentity identity) {
+    public List<String> submit(ExecutionIdentity identity, SparkExecutionResourceSpec resources) {
         String secret = KubernetesNames.secret(identity);
         List<String> command = new ArrayList<>(List.of(
                 properties.sparkSubmit(),
@@ -40,19 +42,26 @@ public class KubernetesCommandFactory {
                 "--conf", "spark.kubernetes.driverEnv.DATASCALPEL_TASK_LAUNCH_FILE=/opt/datascalpel/runtime/launch.json",
                 "--conf", "spark.kubernetes.driverEnv.DATASCALPEL_TASK_WORK_DIRECTORY=/tmp/datascalpel",
                 "--conf", "spark.kubernetes.submission.waitAppCompletion=false",
-                "--conf", "spark.driver.memory=" + properties.driverMemory(),
-                "--conf", "spark.executor.memory=" + properties.executorMemory(),
-                "--conf", "spark.executor.cores=" + properties.executorCores(),
-                "--conf", "spark.executor.instances=" + properties.executorInstances(),
+                "--conf", "spark.driver.cores=" + resources.driverCores(),
+                "--conf", "spark.driver.memory=" + resources.driverMemoryMiB() + "m",
+                "--conf", "spark.executor.memory=" + resources.executorMemoryMiB() + "m",
+                "--conf", "spark.executor.cores=" + resources.executorCores(),
+                "--conf", "spark.executor.instances=" + resources.executorInstances(),
                 "local:///opt/datascalpel/task-runner-cluster.jar"
         ));
         return List.copyOf(command);
     }
 
-    public List<String> submit(ExecutionIdentity identity, List<SparkConfigurationEntry> sparkConf) {
-        List<String> command = new ArrayList<>(submit(identity));
+    public List<String> submit(ExecutionIdentity identity, List<SparkConfigurationEntry> sparkConf,
+                               SparkExecutionResourceSpec resources) {
+        List<String> command = new ArrayList<>(submit(identity, resources));
         int runnerIndex = command.size() - 1;
-        for (SparkConfigurationEntry entry : sparkConf) {
+        String driverJavaOptions = DriverJavaOptions.extract(sparkConf);
+        if (driverJavaOptions != null && !driverJavaOptions.isBlank()) {
+            command.add(runnerIndex++, "--driver-java-options");
+            command.add(runnerIndex++, driverJavaOptions);
+        }
+        for (SparkConfigurationEntry entry : DriverJavaOptions.withoutDriverJavaOptions(sparkConf)) {
             command.add(runnerIndex++, "--conf");
             command.add(runnerIndex++, entry.name() + "=" + entry.value());
         }

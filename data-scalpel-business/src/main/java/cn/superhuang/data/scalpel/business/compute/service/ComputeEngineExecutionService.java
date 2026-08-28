@@ -10,6 +10,8 @@ import cn.superhuang.data.scalpel.business.compute.domain.ComputeEngine;
 import cn.superhuang.data.scalpel.business.compute.domain.ComputeEngineHealthState;
 import cn.superhuang.data.scalpel.business.compute.domain.ComputeEngineRegistrationState;
 import cn.superhuang.data.scalpel.business.compute.repository.ComputeEngineRepository;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -25,17 +27,20 @@ public class ComputeEngineExecutionService {
     private final ComputeEngineRepository repository;
     private final ComputeEngineCredentialCipher credentialCipher;
     private final ComputeEngineDispatcherClient dispatcherClient;
+    private final SparkExecutionResourceConfigurationService resourceConfigurationService;
     private final TransactionTemplate readTransaction;
 
     public ComputeEngineExecutionService(
             ComputeEngineRepository repository,
             ComputeEngineCredentialCipher credentialCipher,
             ComputeEngineDispatcherClient dispatcherClient,
+            SparkExecutionResourceConfigurationService resourceConfigurationService,
             PlatformTransactionManager transactionManager
     ) {
         this.repository = repository;
         this.credentialCipher = credentialCipher;
         this.dispatcherClient = dispatcherClient;
+        this.resourceConfigurationService = resourceConfigurationService;
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
     }
@@ -81,7 +86,7 @@ public class ComputeEngineExecutionService {
                 snapshot.id(), snapshot.commandTopic(), snapshot.runnerEventTopic(), snapshot.adminEventTopic(),
                 snapshot.maxQueuedExecutions(), snapshot.maxConcurrentSubmissions(),
                 snapshot.maxInFlightApplications(), snapshot.backendType(), snapshot.dispatcherBaseUrl(),
-                snapshot.accessTokenCiphertext(), snapshot.dispatcherInstanceId());
+                snapshot.accessTokenCiphertext(), snapshot.dispatcherInstanceId(), snapshot.resourcePolicy());
     }
 
     /** Must be invoked inside the final TaskRun/Outbox transaction. */
@@ -95,6 +100,8 @@ public class ComputeEngineExecutionService {
                 || engine.getMaxQueuedExecutions() != expected.maxQueuedExecutions()
                 || engine.getMaxConcurrentSubmissions() != expected.maxConcurrentSubmissions()
                 || engine.getMaxInFlightApplications() != expected.maxInFlightApplications()
+                || !resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType())
+                .equals(expected.resourcePolicy())
                 || engine.getExpectedBackendType() != expected.backendType()
                 || !Objects.equals(engine.getDispatcherBaseUrl(), expected.dispatcherBaseUrl())
                 || !Objects.equals(engine.getAccessTokenCiphertext(), expected.accessTokenCiphertext())
@@ -105,6 +112,18 @@ public class ComputeEngineExecutionService {
 
     public String accessToken(ExecutionRoute route) {
         return credentialCipher.decrypt(route.accessTokenCiphertext());
+    }
+
+    /** Resolves missing values to the engine default and enforces the engine's per-run maximum. */
+    public SparkExecutionResourceSpec resolveResources(
+            ExecutionRoute route,
+            SparkExecutionResourceSpec requested
+    ) {
+        SparkExecutionResourceSpec result = requested == null ? route.resourcePolicy().defaults() : requested;
+        if (result.exceeds(route.resourcePolicy().maximums())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "任务运行资源超过计算引擎单次任务上限");
+        }
+        return result;
     }
 
     public DispatcherExecutionResponse execution(UUID engineId, UUID executionId) {
@@ -134,10 +153,12 @@ public class ComputeEngineExecutionService {
                 engine.getId(), engine.getCommandTopic(), engine.getRunnerEventTopic(), engine.getAdminEventTopic(),
                 engine.getMaxQueuedExecutions(), engine.getMaxConcurrentSubmissions(),
                 engine.getMaxInFlightApplications(), engine.getExpectedBackendType(),
-                engine.getDispatcherBaseUrl(), engine.getAccessTokenCiphertext(), engine.getDispatcherInstanceId());
+                engine.getDispatcherBaseUrl(), engine.getAccessTokenCiphertext(), engine.getDispatcherInstanceId(),
+                resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType()),
+                engine.getResourcePolicyJson());
     }
 
-    private static boolean sameRemoteConfiguration(
+    private boolean sameRemoteConfiguration(
             EngineSnapshot snapshot,
             DispatcherRegistrationResponse registration
     ) {
@@ -152,7 +173,8 @@ public class ComputeEngineExecutionService {
                 && policy != null
                 && policy.maxQueuedExecutions() == snapshot.maxQueuedExecutions()
                 && policy.maxConcurrentSubmissions() == snapshot.maxConcurrentSubmissions()
-                && policy.maxInFlightApplications() == snapshot.maxInFlightApplications();
+                && policy.maxInFlightApplications() == snapshot.maxInFlightApplications()
+                && Objects.equals(registration.resourcePolicy(), snapshot.resourcePolicy());
     }
 
     private static void requireRunnableState(ComputeEngine engine) {
@@ -179,7 +201,8 @@ public class ComputeEngineExecutionService {
             ComputeBackendType backendType,
             String dispatcherBaseUrl,
             String accessTokenCiphertext,
-            String dispatcherInstanceId
+            String dispatcherInstanceId,
+            SparkExecutionResourcePolicy resourcePolicy
     ) {
     }
 
@@ -194,7 +217,9 @@ public class ComputeEngineExecutionService {
             ComputeBackendType backendType,
             String dispatcherBaseUrl,
             String accessTokenCiphertext,
-            String dispatcherInstanceId
+            String dispatcherInstanceId,
+            SparkExecutionResourcePolicy resourcePolicy,
+            String resourcePolicyJson
     ) {
     }
 }

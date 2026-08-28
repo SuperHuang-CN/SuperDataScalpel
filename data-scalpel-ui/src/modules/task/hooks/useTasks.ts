@@ -5,12 +5,14 @@ import {
   cancelTaskRun,
   acceptTaskCanvasProposal,
   createTask,
+  generateSparkJarDevelopmentKit,
   createTaskSchedule,
   deleteTask,
   deleteTaskSchedule,
   downloadTaskRunArtifact,
   downloadQualityFailureSamples,
   downloadSparkJarTemplate,
+  downloadSparkJarDevelopmentKit,
   executeTaskCommand,
   executeTaskScheduleCommand,
   executeTaskStreamingCommand,
@@ -22,11 +24,13 @@ import {
   queryTaskFieldLineage,
   fetchModelRelatedTasks,
   fetchTaskRun,
+  fetchTaskRunLineage,
   fetchTaskRunResultArtifact,
   fetchQualityFailureSamples,
   fetchCanvasTaskDefinition,
   fetchModelQualityTaskDefinition,
   fetchSparkJarTaskDefinition,
+  fetchSparkJarDevelopmentKit,
   fetchTaskDefinition,
   fetchTaskRuns,
   fetchTaskSchedules,
@@ -52,6 +56,7 @@ import {
 import type { CanvasDefinition } from '../canvas/canvasTypes';
 import type {
   CreateDataTaskRequest,
+  CreateSparkJarDevelopmentKitRequest,
   ModelTaskRelationRole,
   TaskScheduleRequest,
   UpdateTaskStreamingConfigurationRequest,
@@ -137,7 +142,10 @@ export const useUpdateSparkJarTaskDefinition = () => {
     ),
     onSuccess: async (definition) => {
       queryClient.setQueryData([tasksKey, definition.taskId, 'spark-jar-definition'], definition);
-      await queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId] }),
+        queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId, 'spark-jar-development-kit'] }),
+      ]);
       await invalidateTasks(queryClient);
     },
   });
@@ -149,7 +157,10 @@ export const useUploadSparkJar = () => {
     mutationFn: ({ id, file }: { id: string; file: File }) => uploadSparkJar(id, file),
     onSuccess: async (definition) => {
       queryClient.setQueryData([tasksKey, definition.taskId, 'spark-jar-definition'], definition);
-      await queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId] });
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId] }),
+        queryClient.invalidateQueries({ queryKey: [tasksKey, definition.taskId, 'spark-jar-development-kit'] }),
+      ]);
       await invalidateTasks(queryClient);
     },
   });
@@ -157,6 +168,35 @@ export const useUploadSparkJar = () => {
 
 export const useDownloadSparkJarTemplate = () => useMutation({
   mutationFn: downloadSparkJarTemplate,
+});
+
+export const useSparkJarDevelopmentKit = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [tasksKey, id, 'spark-jar-development-kit'],
+  queryFn: () => fetchSparkJarDevelopmentKit(id as string),
+  enabled: Boolean(id) && enabled,
+  refetchInterval: (query) => {
+    const status = query.state.data?.generation?.status;
+    return status === 'QUEUED' || status === 'RUNNING'
+    ? 1_500
+      : false;
+  },
+});
+
+export const useGenerateSparkJarDevelopmentKit = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: CreateSparkJarDevelopmentKitRequest }) => (
+      generateSparkJarDevelopmentKit(id, request)
+    ),
+    onSuccess: async (developmentKit) => {
+      queryClient.setQueryData([tasksKey, developmentKit.taskId, 'spark-jar-development-kit'], developmentKit);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, developmentKit.taskId, 'spark-jar-development-kit'] });
+    },
+  });
+};
+
+export const useDownloadSparkJarDevelopmentKit = () => useMutation({
+  mutationFn: downloadSparkJarDevelopmentKit,
 });
 
 export const useUpdateModelQualityTaskDefinition = () => {
@@ -246,6 +286,16 @@ export const useTaskRun = (runId: string | undefined, enabled = true) => useQuer
       || run?.status === 'CANCEL_REQUESTED' || run?.status === 'STOP_REQUESTED';
     if (!active) return false;
     return run?.taskType === 'SPARK_JAR' || run?.taskType === 'SPARK_STREAMING_JAR' ? 5_000 : 2_000;
+  },
+});
+
+export const useTaskRunLineage = (runId: string | undefined, enabled = true) => useQuery({
+  queryKey: [taskRunsKey, runId, 'lineage'],
+  queryFn: () => fetchTaskRunLineage(runId as string),
+  enabled: Boolean(runId) && enabled,
+  refetchInterval: (query) => {
+    const status = query.state.data?.status;
+    return status === 'PENDING' || status === 'QUEUED' || status === 'RUNNING' ? 2_000 : false;
   },
 });
 

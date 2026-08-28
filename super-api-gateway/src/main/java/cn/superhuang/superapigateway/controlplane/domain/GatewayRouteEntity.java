@@ -55,6 +55,9 @@ public class GatewayRouteEntity extends BaseEntity {
     @Column(name = "strip_prefix_segments", nullable = false)
     private int stripPrefixSegments;
 
+    @Column(name = "upstream_path", length = 500)
+    private String upstreamPath;
+
     @Column(nullable = false)
     private boolean enabled;
 
@@ -78,6 +81,7 @@ public class GatewayRouteEntity extends BaseEntity {
             Set<GatewayHttpMethod> methods,
             int order,
             int stripPrefixSegments,
+            String upstreamPath,
             boolean enabled,
             String source,
             String externalId
@@ -86,7 +90,7 @@ public class GatewayRouteEntity extends BaseEntity {
         this.code = code;
         this.source = source;
         this.externalId = externalId;
-        update(name, pathPattern, methods, order, stripPrefixSegments, enabled);
+        update(name, pathPattern, methods, order, stripPrefixSegments, upstreamPath, enabled);
         this.revision = 1;
     }
 
@@ -96,6 +100,7 @@ public class GatewayRouteEntity extends BaseEntity {
             Set<GatewayHttpMethod> methods,
             int order,
             int stripPrefixSegments,
+            String upstreamPath,
             boolean enabled
     ) {
         this.name = name;
@@ -104,6 +109,7 @@ public class GatewayRouteEntity extends BaseEntity {
         this.methods.addAll(methods);
         this.order = order;
         this.stripPrefixSegments = stripPrefixSegments;
+        this.upstreamPath = upstreamPath;
         this.enabled = enabled;
         if (revision > 0) revision++;
     }
@@ -122,6 +128,7 @@ public class GatewayRouteEntity extends BaseEntity {
     public Set<GatewayHttpMethod> getMethods() { return Set.copyOf(methods); }
     public int getOrder() { return order; }
     public int getStripPrefixSegments() { return stripPrefixSegments; }
+    public String getUpstreamPath() { return upstreamPath; }
     public boolean isEnabled() { return enabled; }
     public String getSource() { return source; }
     public String getExternalId() { return externalId; }

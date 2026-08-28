@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.dispatcher.domain;
 
 import cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.StartStreamingExecutionCommand;
 import org.junit.jupiter.api.Test;

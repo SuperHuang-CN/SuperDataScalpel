@@ -1,6 +1,5 @@
 import {
   ApiOutlined,
-  ArrowLeftOutlined,
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
@@ -332,7 +331,6 @@ export const DataSourceDetailPage = () => {
       <div className="data-source-detail-header business-detail-header">
         <div className="data-source-detail-identity">
           <div className="data-source-detail-title-row">
-            <Button type="text" icon={<ArrowLeftOutlined />} onClick={backToList}>返回列表</Button>
             <span className="business-detail-resource-icon business-detail-resource-icon-blue">
               <DataSourceTypeIcon type={dataSource.type} />
             </span>

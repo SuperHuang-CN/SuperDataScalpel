@@ -46,6 +46,7 @@ interface RouteForm {
   methods: GatewayHttpMethod[];
   order: number;
   stripPrefixSegments: number;
+  upstreamPath?: string;
   enabled: boolean;
   source?: string;
   externalId?: string;
@@ -116,6 +117,7 @@ export const ServicesPage = () => {
           methods: values.methods,
           order: values.order,
           stripPrefixSegments: values.stripPrefixSegments,
+          upstreamPath: values.upstreamPath,
           enabled: values.enabled,
         })
       : post<Route>('/routes', values),
@@ -209,6 +211,7 @@ export const ServicesPage = () => {
           columns={[
             { title: 'Code', dataIndex: 'code', width: 140, ellipsis: true },
             { title: '路径模板', dataIndex: 'pathPattern', width: 220, ellipsis: true },
+            { title: '固定上游路径', dataIndex: 'upstreamPath', width: 180, ellipsis: true, render: (value?: string) => value || '—' },
             { title: '方法', dataIndex: 'methods', width: 160, render: (methods: string[]) => methods.map((method) => <Tag key={method}>{method}</Tag>) },
             { title: 'Order', dataIndex: 'order', width: 70 },
             { title: '状态', dataIndex: 'enabled', width: 75, render: (enabled: boolean) => <Tag color={enabled ? 'success' : 'default'}>{enabled ? '启用' : '停用'}</Tag> },
@@ -262,6 +265,9 @@ export const ServicesPage = () => {
             <Input placeholder="/open-api/v1/orders/{id}" />
           </Form.Item>
           <Form.Item label="HTTP 方法" name="methods" rules={[{ required: true }]}><Select mode="multiple" options={methodOptions} /></Form.Item>
+          <Form.Item label="固定上游路径" name="upstreamPath" extra="设置后以该路径转发，去除前缀段数必须为 0。">
+            <Input placeholder="/runtime/v1/services/{serviceId}" />
+          </Form.Item>
           <Space align="start">
             <Form.Item label="Order" name="order"><InputNumber min={-10000} max={10000} /></Form.Item>
             <Form.Item label="去除前缀段数" name="stripPrefixSegments"><InputNumber min={0} max={16} /></Form.Item>

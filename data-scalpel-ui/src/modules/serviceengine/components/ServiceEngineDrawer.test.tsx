@@ -30,7 +30,7 @@ const storedEngine: ServiceEngine = {
   code: 'engine_a',
   name: 'Engine A',
   adminUrl: 'http://engine-a.test:8081',
-  publicUrl: 'http://engine-a.test:8081',
+  runtimeUrl: 'http://engine-a.test:8081',
   managementTokenConfigured: true,
   enabled: true,
   description: '测试 Engine',
@@ -99,14 +99,14 @@ describe('ServiceEngineDrawer', () => {
 
     await user.type(screen.getByLabelText('名称'), 'Engine A');
     await user.type(screen.getByLabelText('管理地址'), 'http://candidate.test:8081');
-    await user.type(screen.getByLabelText('公共地址'), 'http://public.test:8081');
+    await user.type(screen.getByLabelText('运行地址'), 'http://public.test:8081');
     await user.type(screen.getByLabelText('Management Token'), 'candidate-token');
     await user.click(screen.getByRole('button', { name: /创\s*建/ }));
 
     await waitFor(() => expect(mutations.create).toHaveBeenCalledWith({
       name: 'Engine A',
       adminUrl: 'http://candidate.test:8081',
-      publicUrl: 'http://public.test:8081',
+      runtimeUrl: 'http://public.test:8081',
       managementToken: 'candidate-token',
       enabled: true,
       description: undefined,
@@ -146,7 +146,7 @@ describe('ServiceEngineDrawer', () => {
       request: {
         name: storedEngine.name,
         adminUrl: storedEngine.adminUrl,
-        publicUrl: storedEngine.publicUrl,
+        runtimeUrl: storedEngine.runtimeUrl,
         managementToken: undefined,
         enabled: true,
         description: storedEngine.description,

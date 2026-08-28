@@ -6,7 +6,6 @@ import type {
 import type {
   CreateDataServiceRequest,
   DataServiceDetail,
-  DataServiceAccessMode,
   DataServiceType,
   PlatformTypeDefinition,
   SqlServiceParameterDefinition,
@@ -41,7 +40,6 @@ export interface DataServiceFormValues {
   name?: string;
   directoryId?: string;
   type: DataServiceType;
-  accessMode: DataServiceAccessMode;
   modelId?: string;
   dataSourceId?: string;
   modelIds?: string[];
@@ -125,7 +123,6 @@ const normalizedScriptRequestExamples = (examples: ScriptRequestExample[]): Scri
   }))
 );
 
-export const routePathPattern = /^\/open-api\/v1\/[a-z0-9][a-z0-9/_-]*$/;
 export const parameterNamePattern = /^[A-Za-z][A-Za-z0-9_]{0,63}$/;
 export const parameterTypes: PlatformDataType[] = [
   'BOOLEAN', 'BYTE', 'SHORT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL', 'STRING',
@@ -171,8 +168,6 @@ export const initialDataServiceFormValues = (
 ): DataServiceFormValues => ({
   directoryId,
   type,
-  accessMode: 'PUBLIC',
-  routePath: '/open-api/v1/',
   modelIds: [],
   sqlText: '',
   script: 'return [message: "Hello DataScalpel"]',
@@ -185,12 +180,11 @@ export const detailToDataServiceFormValues = (detail: DataServiceDetail): DataSe
   name: detail.name,
   directoryId: detail.directoryId ?? undefined,
   type: detail.type,
-  accessMode: detail.accessMode,
   modelId: detail.standardDefinition?.modelId,
   dataSourceId: detail.sqlDefinition?.dataSourceId ?? detail.scriptDefinition?.dataSourceId,
   modelIds: detail.sqlDefinition?.modelIds ?? [],
   engineId: detail.engineId,
-  routePath: detail.routePath,
+  routePath: detail.engineRoutePath,
   sqlText: detail.sqlDefinition?.sqlText ?? '',
   script: detail.scriptDefinition?.script ?? 'return [message: "Hello DataScalpel"]',
   examples: detail.scriptDefinition?.examples?.length
@@ -205,8 +199,6 @@ export const buildDataServiceUpdateRequest = (values: DataServiceFormValues): Up
     name: values.name?.trim() ?? '',
     directoryId: values.directoryId,
     engineId: values.engineId ?? '',
-    routePath: values.routePath?.trim().toLowerCase() ?? '',
-    accessMode: values.accessMode,
     type: values.type,
     description: normalizedOptionalText(values.description),
   };

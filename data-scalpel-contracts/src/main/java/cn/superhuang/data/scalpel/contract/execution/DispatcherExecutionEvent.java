@@ -28,7 +28,8 @@ public record DispatcherExecutionEvent(
         StreamingSourceProgress streamingSourceProgress,
         QualitySummary qualitySummary,
         ExecutionTaskType taskType,
-        UserJobObservabilitySnapshot userJobObservability
+        UserJobObservabilitySnapshot userJobObservability,
+        String resultSha256
 ) implements ExecutionMessageEnvelope {
     public DispatcherExecutionEvent {
         ExecutionContractValidation.envelope(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId, attempt);
@@ -76,6 +77,30 @@ public record DispatcherExecutionEvent(
                 && taskType != ExecutionTaskType.SPARK_STREAMING_JAR) {
             throw new IllegalArgumentException("用户作业观测载荷只能属于 Spark JAR 任务");
         }
+        resultSha256 = ExecutionContractValidation.optional(resultSha256, 64, "结果 SHA-256");
+        boolean terminal = messageType == ExecutionMessageType.EXECUTION_SUCCEEDED
+                || messageType == ExecutionMessageType.EXECUTION_FAILED
+                || messageType == ExecutionMessageType.EXECUTION_TIMED_OUT
+                || messageType == ExecutionMessageType.EXECUTION_CANCELLED;
+        if (resultSha256 != null && (!terminal || !resultSha256.matches("[0-9a-f]{64}"))) {
+            throw new IllegalArgumentException("结果 SHA-256 只能出现在终态事件中");
+        }
+    }
+
+    public DispatcherExecutionEvent(
+            int messageVersion, UUID messageId, ExecutionMessageType messageType, Instant occurredAt,
+            UUID engineId, UUID executionId, UUID runId, int attempt, long sequence,
+            ExecutionBackendType backendType, String externalExecutionId, String trackingUrl,
+            Instant startedAt, Instant endedAt, Long affectedRows, SafeExecutionError error,
+            UUID streamingDeploymentId, List<StreamingQueryDescriptor> streamingQueries,
+            List<StreamingQueryProgress> streamingProgress,
+            StreamingSourceProgress streamingSourceProgress, QualitySummary qualitySummary,
+            ExecutionTaskType taskType, UserJobObservabilitySnapshot userJobObservability
+    ) {
+        this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
+                attempt, sequence, backendType, externalExecutionId, trackingUrl, startedAt, endedAt,
+                affectedRows, error, streamingDeploymentId, streamingQueries, streamingProgress,
+                streamingSourceProgress, qualitySummary, taskType, userJobObservability, null);
     }
 
     public DispatcherExecutionEvent(
@@ -105,7 +130,7 @@ public record DispatcherExecutionEvent(
         this(messageVersion, messageId, messageType, occurredAt, engineId, executionId, runId,
                 attempt, sequence, backendType, externalExecutionId, trackingUrl, startedAt, endedAt,
                 affectedRows, error, streamingDeploymentId, streamingQueries, streamingProgress,
-                streamingSourceProgress, qualitySummary, taskType, null);
+                streamingSourceProgress, qualitySummary, taskType, null, null);
     }
 
     public DispatcherExecutionEvent(

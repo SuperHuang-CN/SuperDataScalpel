@@ -5,7 +5,7 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherAdmissionPolicy;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherRegistrationRequest;

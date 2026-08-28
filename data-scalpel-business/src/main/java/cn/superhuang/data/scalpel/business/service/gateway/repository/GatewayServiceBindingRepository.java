@@ -2,6 +2,8 @@ package cn.superhuang.data.scalpel.business.service.gateway.repository;
 
 import cn.superhuang.data.scalpel.business.service.gateway.GatewayProvider;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServiceBinding;
+import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServicePublicationStatus;
+import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -18,6 +20,11 @@ public interface GatewayServiceBindingRepository extends JpaRepository<GatewaySe
     List<GatewayServiceBinding> findAllByDataServiceId(UUID dataServiceId);
 
     List<GatewayServiceBinding> findAllByDataServiceIdIn(Collection<UUID> dataServiceIds);
+
+    List<GatewayServiceBinding> findAllByPublicationStatusAndAccessMode(
+            GatewayServicePublicationStatus publicationStatus,
+            DataServiceAccessMode accessMode
+    );
 
     boolean existsByDataServiceId(UUID dataServiceId);
 

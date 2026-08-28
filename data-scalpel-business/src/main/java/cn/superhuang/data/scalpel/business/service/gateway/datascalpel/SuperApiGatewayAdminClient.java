@@ -129,6 +129,19 @@ final class SuperApiGatewayAdminClient {
         return unique(routes, "Route");
     }
 
+    Optional<RouteResponse> findRouteByPath(String pathPattern) {
+        List<RouteResponse> routes = exchange(
+                "查询 Route",
+                client().get().uri(uri -> uri.path("/admin-api/v1/routes")
+                        .queryParam("pathPattern", pathPattern)
+                        .build()),
+                ROUTE_LIST
+        );
+        return (routes == null ? List.<RouteResponse>of() : routes).stream()
+                .filter(route -> pathPattern.equals(route.pathPattern()))
+                .findFirst();
+    }
+
     RouteResponse createRoute(CreateRouteRequest request) {
         return exchange(
                 "创建 Route",

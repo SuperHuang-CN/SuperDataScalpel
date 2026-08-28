@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.business.service.gateway.reconciliation.Gatewa
 import cn.superhuang.data.scalpel.business.service.gateway.reconciliation.GatewayReconciliationReason;
 import cn.superhuang.data.scalpel.business.service.gateway.service.GatewayServiceInspectionSpec;
 import cn.superhuang.data.scalpel.business.service.gateway.service.GatewayServiceOperationException;
+import cn.superhuang.data.scalpel.business.service.gateway.service.GatewayServicePathConflictException;
 import cn.superhuang.data.scalpel.business.service.gateway.service.GatewayServicePort;
 import cn.superhuang.data.scalpel.business.service.gateway.service.GatewayServiceReference;
 import cn.superhuang.data.scalpel.business.service.gateway.service.GatewayServiceResult;
@@ -57,10 +58,8 @@ public class DataScalpelGatewayServiceAdapter implements GatewayServicePort {
             Optional<RouteResponse> existingRoute = client.findRoute(externalId);
             if (existingRoute.isPresent()) {
                 requireRouteOwnership(service.id(), existingRoute.get());
-                if (existingRoute.get().enabled()) {
-                    client.setRouteEnabled(existingRoute.get().id(), false);
-                }
             }
+            assertTargetPathAvailable(service, existingRoute);
 
             ServiceResponse gatewayService = upsertDisabledService(service);
             RouteResponse gatewayRoute = upsertDisabledRoute(service, gatewayService, existingRoute);
@@ -82,11 +81,17 @@ public class DataScalpelGatewayServiceAdapter implements GatewayServicePort {
             return new GatewayServiceResult(
                     verifiedService.id().toString(),
                     verifiedRoute.id().toString(),
-                    client.gatewayUrl(service.routePath())
+                    client.gatewayUrl(service.gatewayRoutePath())
             );
         } catch (GatewayServiceOperationException exception) {
             throw exception;
         } catch (SuperApiGatewayAdminException | IllegalArgumentException exception) {
+            if (exception instanceof SuperApiGatewayAdminException gatewayException
+                    && gatewayException.isConflict()) {
+                throw new GatewayServicePathConflictException(
+                        "网关公开路径已被其他路由使用：" + service.gatewayRoutePath(), exception
+                );
+            }
             throw operationFailure("服务发布", exception);
         }
     }
@@ -225,10 +230,11 @@ public class DataScalpelGatewayServiceAdapter implements GatewayServicePort {
                     gatewayService.id(),
                     service.code(),
                     service.name(),
-                    service.routePath(),
+                    service.gatewayRoutePath(),
                     METHODS,
                     ROUTE_ORDER,
                     STRIP_PREFIX_SEGMENTS,
+                    service.upstreamPath(),
                     false,
                     SuperApiGatewayAdminClient.SOURCE,
                     service.id().toString()
@@ -238,8 +244,8 @@ public class DataScalpelGatewayServiceAdapter implements GatewayServicePort {
                 throw exception;
             }
             RouteResponse concurrent = client.findRoute(service.id().toString())
-                    .orElseThrow(() -> new GatewayServiceOperationException(
-                            "Super API Gateway 中存在冲突的 Route，拒绝接管"
+                    .orElseThrow(() -> new GatewayServicePathConflictException(
+                            "网关公开路径已被其他路由使用：" + service.gatewayRoutePath(), exception
                     ));
             requireRouteOwnership(service.id(), concurrent);
             requireRouteCode(service, concurrent);
@@ -286,10 +292,11 @@ public class DataScalpelGatewayServiceAdapter implements GatewayServicePort {
                 || !service.enabled()
                 || !expected.code().equals(route.code())
                 || !expected.name().equals(route.name())
-                || !expected.routePath().equals(route.pathPattern())
+                || !expected.gatewayRoutePath().equals(route.pathPattern())
                 || !METHODS.equals(route.methods())
                 || route.order() != ROUTE_ORDER
                 || route.stripPrefixSegments() != STRIP_PREFIX_SEGMENTS
+                || !expected.upstreamPath().equals(route.upstreamPath())
                 || !route.enabled()) {
             return GatewayInspectionResult.drifted(
                     GatewayReconciliationReason.CONFIG_MISMATCH,
@@ -316,11 +323,25 @@ public class DataScalpelGatewayServiceAdapter implements GatewayServicePort {
     private static UpdateRouteRequest updateRouteRequest(GatewayServiceSpec service, boolean enabled) {
         return new UpdateRouteRequest(
                 service.name(),
-                service.routePath(),
+                service.gatewayRoutePath(),
                 METHODS,
                 ROUTE_ORDER,
                 STRIP_PREFIX_SEGMENTS,
+                service.upstreamPath(),
                 enabled
+        );
+    }
+
+    private void assertTargetPathAvailable(
+            GatewayServiceSpec service,
+            Optional<RouteResponse> currentRoute
+    ) {
+        Optional<RouteResponse> targetRoute = client.findRouteByPath(service.gatewayRoutePath());
+        if (targetRoute.isEmpty()) return;
+        if (currentRoute.isPresent() && currentRoute.get().id().equals(targetRoute.get().id())) return;
+        if (owned(targetRoute.get().source(), targetRoute.get().externalId(), service.id())) return;
+        throw new GatewayServicePathConflictException(
+                "网关公开路径已被其他路由使用：" + service.gatewayRoutePath()
         );
     }
 

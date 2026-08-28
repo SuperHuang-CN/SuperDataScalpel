@@ -5,23 +5,29 @@ import {
   createServiceEngineDataSourceRegistration,
   deleteServiceEngine,
   deleteServiceEngineDataSourceRegistration,
+  fetchServiceEngine,
   fetchServiceEngines,
   fetchServiceEngineDataSourceRegistrations,
+  fetchServiceEngineAccessPolicy,
   syncServiceEngineDataSourceRegistration,
   testNewServiceEngine,
   testServiceEngine,
   testServiceEngineDataSourceRegistration,
   updateServiceEngine,
+  updateServiceEngineAccessPolicy,
+  syncServiceEngineAccessPolicy,
 } from '../api/serviceEngineApi';
 import type {
   CreateServiceEngineRequest,
   TestServiceEngineRequest,
   TestStoredServiceEngineRequest,
   UpdateServiceEngineRequest,
+  UpdateServiceEngineAccessPolicyRequest,
 } from '../model/serviceEngine';
 
 const serviceEnginesQueryKey = 'service-engines';
 const serviceEngineDataSourcesQueryKey = 'service-engine-data-sources';
+const serviceEngineAccessPolicyQueryKey = 'service-engine-access-policy';
 
 const invalidateServiceEngines = (queryClient: ReturnType<typeof useQueryClient>) => (
   queryClient.invalidateQueries({ queryKey: [serviceEnginesQueryKey] })
@@ -31,6 +37,12 @@ export const useServiceEngines = (request: SearchRequest, enabled = true) => use
   queryKey: [serviceEnginesQueryKey, request],
   queryFn: () => fetchServiceEngines(request),
   enabled,
+});
+
+export const useServiceEngine = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [serviceEnginesQueryKey, id],
+  queryFn: () => fetchServiceEngine(id as string),
+  enabled: enabled && Boolean(id),
 });
 
 export const useCreateServiceEngine = () => {
@@ -69,6 +81,34 @@ export const useDeleteServiceEngine = () => {
         queryClient.invalidateQueries({ queryKey: ['data-services'] }),
       ]);
     },
+  });
+};
+
+export const useServiceEngineAccessPolicy = (engineId: string | undefined, enabled = true) => useQuery({
+  queryKey: [serviceEngineAccessPolicyQueryKey, engineId],
+  queryFn: () => fetchServiceEngineAccessPolicy(engineId as string),
+  enabled: enabled && Boolean(engineId),
+});
+
+export const useUpdateServiceEngineAccessPolicy = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: UpdateServiceEngineAccessPolicyRequest }) => (
+      updateServiceEngineAccessPolicy(id, request)
+    ),
+    onSettled: (_result, _error, variables) => queryClient.invalidateQueries({
+      queryKey: [serviceEngineAccessPolicyQueryKey, variables.id],
+    }),
+  });
+};
+
+export const useSyncServiceEngineAccessPolicy = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: syncServiceEngineAccessPolicy,
+    onSettled: (_result, _error, id) => queryClient.invalidateQueries({
+      queryKey: [serviceEngineAccessPolicyQueryKey, id],
+    }),
   });
 };
 

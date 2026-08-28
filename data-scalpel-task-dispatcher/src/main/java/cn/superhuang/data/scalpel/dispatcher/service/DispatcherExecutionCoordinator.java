@@ -12,7 +12,7 @@ import cn.superhuang.data.scalpel.dispatcher.config.DispatcherArtifactProperties
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultResolution;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultService;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherTaskExecutionRepository;
 import org.springframework.scheduling.annotation.Scheduled;

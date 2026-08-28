@@ -10,7 +10,7 @@ public record ServiceEngineResponse(
         String code,
         String name,
         String adminUrl,
-        String publicUrl,
+        String runtimeUrl,
         boolean managementTokenConfigured,
         boolean enabled,
         String description,
@@ -20,7 +20,7 @@ public record ServiceEngineResponse(
 
     public static ServiceEngineResponse from(ServiceEngine engine) {
         return new ServiceEngineResponse(
-                engine.getId(), engine.getCode(), engine.getName(), engine.getAdminUrl(), engine.getPublicUrl(),
+                engine.getId(), engine.getCode(), engine.getName(), engine.getAdminUrl(), engine.getRuntimeUrl(),
                 engine.getManagementTokenCiphertext() != null && !engine.getManagementTokenCiphertext().isBlank(),
                 engine.isEnabled(), engine.getDescription(), engine.getCreatedAt(), engine.getUpdatedAt()
         );

@@ -1,12 +1,12 @@
-import { ApiOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ApiOutlined, DatabaseOutlined, DeleteOutlined, EditOutlined, MoreOutlined, PlusOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ServiceEngineDrawer } from './ServiceEngineDrawer';
-import { ServiceEngineDataSourceDrawer } from './ServiceEngineDataSourceDrawer';
 import { useDeleteServiceEngine, useServiceEngines, useTestServiceEngine } from '../hooks/useServiceEngines';
 import type { ServiceEngine, ServiceEngineFilters } from '../model/serviceEngine';
 import { buildServiceEngineSearch } from '../model/serviceEngineSearch';
@@ -18,17 +18,16 @@ interface ServiceEngineManagementPanelProps {
   canUpdate: boolean;
   canDelete: boolean;
   canTest: boolean;
-  canViewDataSources: boolean;
 }
 
-export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, canTest, canViewDataSources }: ServiceEngineManagementPanelProps) => {
+export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, canTest }: ServiceEngineManagementPanelProps) => {
   const [filterForm] = Form.useForm<ServiceEngineFilters>();
   const [filters, setFilters] = useState<ServiceEngineFilters>({});
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(DEFAULT_PAGE_SIZE);
   const [editingEngine, setEditingEngine] = useState<ServiceEngine | null>(null);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
-  const [dataSourceEngine, setDataSourceEngine] = useState<ServiceEngine | null>(null);
+  const navigate = useNavigate();
   const [messageApi, messageContext] = message.useMessage();
   const request = useMemo(() => ({ search: buildServiceEngineSearch(filters), page, size, sort: '-updatedAt,code' }), [filters, page, size]);
   const enginesQuery = useServiceEngines(request);
@@ -48,6 +47,11 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   const closeDrawer = () => {
     setEditingEngine(null);
     setCreateDrawerOpen(false);
+  };
+
+  const openDetail = (engine: ServiceEngine, tab: 'basic' | 'services' | 'datasources' | 'access-policy' = 'basic') => {
+    const suffix = tab === 'basic' ? '' : `?tab=${tab}`;
+    navigate(`/service-engine/${engine.id}${suffix}`, { state: { fromServiceEngineList: true } });
   };
 
   const test = async (engine: ServiceEngine) => {
@@ -78,7 +82,19 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   });
 
   const columns: TableProps<ServiceEngine>['columns'] = [
-    { title: '引擎', dataIndex: 'name', width: 240, render: (value: string, engine) => <ManagementListCell icon={<ApiOutlined />} iconTone="cyan" primary={value} secondary={<ManagementCode value={engine.code} />} /> },
+    {
+      title: '引擎',
+      dataIndex: 'name',
+      width: 240,
+      render: (value: string, engine) => (
+        <ManagementListCell
+          icon={<ApiOutlined />}
+          iconTone="cyan"
+          primary={<Button type="link" size="small" className="data-service-name-button" onClick={() => openDetail(engine)}>{value}</Button>}
+          secondary={<ManagementCode value={engine.code} />}
+        />
+      ),
+    },
     {
       title: '说明',
       dataIndex: 'description',
@@ -89,7 +105,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         />
       ),
     },
-    { title: '访问地址', width: 390, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.adminUrl} title="管理地址" />} secondary={<ManagementCode value={engine.publicUrl} title="公共地址" />} /> },
+    { title: '访问地址', width: 390, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.adminUrl} title="管理地址" />} secondary={<ManagementCode value={engine.runtimeUrl} title="运行地址" />} /> },
     { title: '状态 / 凭据', width: 170, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={engine.enabled ? '启用' : '停用'} tone={engine.enabled ? 'success' : 'default'} />} secondary={engine.managementTokenConfigured ? '管理 Token 已配置' : '未配置管理 Token'} /> },
     { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
@@ -97,15 +113,16 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
       render: (_: unknown, engine: ServiceEngine) => (
         <div className="management-row-actions">
           <div className="management-row-actions-shortcuts">
-            <Tooltip title="管理数据源"><Button type="text" size="small" aria-label={`管理${engine.name}数据源`} icon={<DatabaseOutlined />} onClick={() => setDataSourceEngine(engine)} /></Tooltip>
             {canUpdate && <Tooltip title="修改"><Button type="text" size="small" aria-label={`修改${engine.name}`} icon={<EditOutlined />} onClick={() => setEditingEngine(engine)} /></Tooltip>}
           </div>
           <Dropdown trigger={['click']} menu={{ items: [
+            { key: 'services', label: '数据服务', icon: <ApiOutlined /> },
             { key: 'datasources', label: '管理数据源', icon: <DatabaseOutlined /> },
+            { key: 'access-policy', label: '访问策略', icon: <SafetyCertificateOutlined /> },
             ...(canUpdate ? [{ key: 'edit', label: '修改', icon: <EditOutlined /> }] : []),
             ...(canTest ? [{ key: 'test', label: '测试连接', icon: <ApiOutlined /> }] : []),
             ...(canDelete ? [{ type: 'divider' as const }, { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
-          ], onClick: ({ key }) => { if (key === 'datasources') setDataSourceEngine(engine); if (key === 'edit') setEditingEngine(engine); if (key === 'test') void test(engine); if (key === 'delete') confirmRemove(engine); } }}>
+          ], onClick: ({ key }) => { if (key === 'services') openDetail(engine, 'services'); if (key === 'datasources') openDetail(engine, 'datasources'); if (key === 'access-policy') openDetail(engine, 'access-policy'); if (key === 'edit') setEditingEngine(engine); if (key === 'test') void test(engine); if (key === 'delete') confirmRemove(engine); } }}>
             <Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" size="small" aria-label={`${engine.name}的更多操作`} icon={<MoreOutlined />} loading={testMutation.isPending && testMutation.variables?.id === engine.id} /></Tooltip>
           </Dropdown>
         </div>
@@ -142,7 +159,6 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         </div>
       </section>
       <ServiceEngineDrawer open={createDrawerOpen || Boolean(editingEngine)} engine={editingEngine} canTest={canTest} onClose={closeDrawer} />
-      <ServiceEngineDataSourceDrawer open={Boolean(dataSourceEngine)} engine={dataSourceEngine} canUpdate={canUpdate} canTest={canTest} canViewDataSources={canViewDataSources} onClose={() => setDataSourceEngine(null)} />
     </>
   );
 };

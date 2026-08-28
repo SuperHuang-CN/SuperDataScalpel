@@ -15,11 +15,9 @@ const sqlValues: DataServiceFormValues = {
   code: 'Customer_Query',
   name: '客户查询',
   type: 'SQL_QUERY',
-  accessMode: 'SUBSCRIPTION_REQUIRED',
   dataSourceId: 'source-1',
   modelIds: ['model-1', 'model-2'],
   engineId: 'engine-1',
-  routePath: '/open-api/v1/customers',
   sqlText: 'select * from customer where department_id = :departmentId',
   parameters: [{ name: 'departmentId', type: 'LONG', required: true }],
 };
@@ -29,7 +27,6 @@ describe('data-service editor model', () => {
     expect(buildDataServiceCreateRequest(sqlValues)).toMatchObject({
       code: 'customer_query',
       type: 'SQL_QUERY',
-      accessMode: 'SUBSCRIPTION_REQUIRED',
       standardDefinition: null,
       scriptDefinition: null,
       sqlDefinition: null,
@@ -57,7 +54,6 @@ describe('data-service editor model', () => {
       code: 'Customer_Script',
       name: '客户脚本',
       type: 'SCRIPT_API',
-      accessMode: 'PUBLIC',
       dataSourceId: 'source-1',
       engineId: 'engine-1',
       routePath: '/open-api/v1/customer-script',
@@ -117,9 +113,8 @@ describe('data-service editor model', () => {
   it('derives editable, read-only and deployment-locked page modes from server state', () => {
     const detail = (status: DataServiceStatus, deploymentStatus: DataServiceDeploymentStatus | null): DataServiceDetail => ({
       id: 'service-1', code: 'customer_query', name: '客户查询', directoryId: null,
-      type: 'SQL_QUERY', engineId: 'engine-1', routePath: '/open-api/v1/customers',
+      type: 'SQL_QUERY', engineId: 'engine-1', engineRoutePath: '/runtime/v1/services/service-1',
       definitionConfigured: true, definitionVersion: 1,
-      accessMode: 'PUBLIC',
       status, revision: 1, deploymentStatus, deploymentError: null, deployedAt: null,
       gatewayBindings: [],
       description: null, createdAt: '2026-01-01T00:00:00Z', updatedAt: '2026-01-01T00:00:00Z',

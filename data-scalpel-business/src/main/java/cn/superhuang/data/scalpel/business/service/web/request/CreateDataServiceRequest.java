@@ -1,7 +1,6 @@
 package cn.superhuang.data.scalpel.business.service.web.request;
 
 import cn.superhuang.data.scalpel.contract.service.DataServiceType;
-import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
@@ -15,8 +14,6 @@ public record CreateDataServiceRequest(
         @NotBlank @Size(max = 100) String name,
         UUID directoryId,
         @NotNull UUID engineId,
-        @NotBlank @Size(max = 255) String routePath,
-        DataServiceAccessMode accessMode,
         @NotNull DataServiceType type,
         @Valid StandardDataServiceDefinitionRequest standardDefinition,
         @Valid SqlDataServiceDefinitionRequest sqlDefinition,
@@ -24,21 +21,4 @@ public record CreateDataServiceRequest(
         @Size(max = 1000) String description
 ) {
 
-    public CreateDataServiceRequest(
-            String code,
-            String name,
-            UUID directoryId,
-            UUID engineId,
-            String routePath,
-            DataServiceAccessMode accessMode,
-            DataServiceType type,
-            StandardDataServiceDefinitionRequest standardDefinition,
-            SqlDataServiceDefinitionRequest sqlDefinition,
-            String description
-    ) {
-        this(
-                code, name, directoryId, engineId, routePath, accessMode, type,
-                standardDefinition, sqlDefinition, null, description
-        );
-    }
 }

@@ -24,6 +24,7 @@ public final class RouteRequests {
             @NotEmpty Set<GatewayHttpMethod> methods,
             @Min(-10000) @Max(10000) int order,
             @Min(0) @Max(16) int stripPrefixSegments,
+            @Size(max = 500) String upstreamPath,
             boolean enabled,
             @Size(max = 64) String source,
             @Size(max = 128) String externalId
@@ -36,6 +37,7 @@ public final class RouteRequests {
             @NotEmpty Set<GatewayHttpMethod> methods,
             @Min(-10000) @Max(10000) int order,
             @Min(0) @Max(16) int stripPrefixSegments,
+            @Size(max = 500) String upstreamPath,
             boolean enabled
     ) {
     }

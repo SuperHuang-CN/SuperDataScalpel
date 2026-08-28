@@ -1,8 +1,9 @@
 package cn.superhuang.data.scalpel.dispatcher.repository;
 
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Lock;
@@ -30,4 +31,8 @@ public interface DispatcherTaskExecutionRepository extends JpaRepository<Dispatc
     List<DispatcherTaskExecution> findQueuedForUpdate(Pageable pageable);
 
     List<DispatcherTaskExecution> findAllByStateIn(Collection<DispatcherExecutionState> states);
+
+    Page<DispatcherTaskExecution> findAllByStateIn(Collection<DispatcherExecutionState> states, Pageable pageable);
+
+    Page<DispatcherTaskExecution> findAllByState(DispatcherExecutionState state, Pageable pageable);
 }

@@ -582,7 +582,7 @@ register_local_engine() {
   engine_id="$(printf '%s' "$engine_list" | sed -nE 's/.*"id":"([0-9a-fA-F-]{36})".*/\1/p')"
 
   local engine_payload
-  engine_payload="{\"name\":\"本地开发服务引擎\",\"adminUrl\":\"http://localhost:$ENGINE_PORT\",\"publicUrl\":\"http://localhost:$ENGINE_PORT\",\"managementToken\":\"$(json_escape "$ENGINE_MANAGEMENT_TOKEN")\",\"enabled\":true,\"description\":\"由 start-local-dev.sh 自动登记，仅供本机开发测试。\"}"
+  engine_payload="{\"name\":\"本地开发服务引擎\",\"adminUrl\":\"http://localhost:$ENGINE_PORT\",\"runtimeUrl\":\"http://localhost:$ENGINE_PORT\",\"managementToken\":\"$(json_escape "$ENGINE_MANAGEMENT_TOKEN")\",\"enabled\":true,\"description\":\"由 start-local-dev.sh 自动登记，仅供本机开发测试。\"}"
   if [[ -z "$engine_id" ]]; then
     echo "正在登记本地服务引擎：$ENGINE_CODE"
     curl --fail --silent --show-error \
@@ -621,6 +621,14 @@ register_local_engine() {
     --request POST \
     --header "Authorization: Bearer $token" \
     "$backend_url/api/v1/service-engines/$engine_id/actions/test" >/dev/null
+
+  echo "正在同步本地服务引擎访问策略…"
+  curl --fail --silent --show-error \
+    --request POST \
+    --header "Authorization: Bearer $token" \
+    --header 'Content-Type: application/json' \
+    --data '{"allowCidrs":["127.0.0.1/32","::1/128"],"denyCidrs":[]}' \
+    "$backend_url/api/v1/service-engines/$engine_id/actions/update-access-policy" >/dev/null
 
   configure_task_engine "$backend_url" "$token"
 }

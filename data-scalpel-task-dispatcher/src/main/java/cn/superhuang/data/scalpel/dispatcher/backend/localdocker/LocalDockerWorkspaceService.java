@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.contract.execution.RunnerSparkMode;
 import cn.superhuang.data.scalpel.contract.execution.TaskExecutionLaunchDescriptor;
 import cn.superhuang.data.scalpel.dispatcher.artifact.ArtifactLaunchAccess;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendException;
+import cn.superhuang.data.scalpel.dispatcher.backend.DriverJavaOptions;
 import cn.superhuang.data.scalpel.dispatcher.backend.ExecutionLaunch;
 import cn.superhuang.data.scalpel.dispatcher.config.LocalDockerProperties;
 import org.springframework.stereotype.Component;
@@ -107,7 +108,7 @@ public class LocalDockerWorkspaceService {
         List<String> lines = List.of(
                 env("DATASCALPEL_TASK_LAUNCH_FILE", "/work/launch.json"),
                 env("DATASCALPEL_TASK_WORK_DIRECTORY", "/work"),
-                env("JAVA_TOOL_OPTIONS", properties.runnerJavaOptions())
+                env("JAVA_TOOL_OPTIONS", runnerJavaOptions(launch))
         );
         return String.join("\n", lines) + "\n";
     }
@@ -117,6 +118,16 @@ public class LocalDockerWorkspaceService {
             throw new IllegalArgumentException("Runner 环境变量包含不支持的字符: " + key);
         }
         return key + "=" + value;
+    }
+
+    private String runnerJavaOptions(ExecutionLaunch launch) {
+        int heapMiB = Math.max(256, launch.executionResources().driverMemoryMiB() * 3 / 4);
+        String preserved = properties.runnerJavaOptions()
+                .replaceAll("(?:^|\\s)-Xmx\\S+", "")
+                .trim();
+        String userOptions = DriverJavaOptions.extract(launch.sparkConf());
+        return (preserved + " -Xmx" + heapMiB + "m"
+                + (userOptions == null || userOptions.isBlank() ? "" : " " + userOptions)).trim();
     }
 
     private static void writeAtomic(Path target, byte[] content) throws IOException {

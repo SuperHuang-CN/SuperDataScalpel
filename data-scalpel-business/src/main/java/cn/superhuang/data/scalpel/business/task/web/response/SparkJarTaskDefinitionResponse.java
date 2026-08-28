@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.task.web.response;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceAccessMode;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceType;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarJobMode;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 
 import java.time.Instant;
 import java.util.List;
@@ -17,6 +18,7 @@ public record SparkJarTaskDefinitionResponse(
         List<Entry> parameters,
         List<Entry> sparkConf,
         List<ResourceBinding> resourceBindings,
+        SparkExecutionResourceSpec executionResources,
         int timeoutSeconds,
         Instant updatedAt
 ) {

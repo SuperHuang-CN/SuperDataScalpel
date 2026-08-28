@@ -9,6 +9,7 @@ import java.util.Set;
 import java.util.UUID;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.UserJobObservabilitySnapshot;
+import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
 
 public record TaskExecutionResult(
         Integer schemaVersion,
@@ -24,9 +25,10 @@ public record TaskExecutionResult(
         ExecutionTaskType taskType,
         ModelQualityExecutionResult qualityResult,
         UserJobObservabilitySnapshot userJobObservability,
+        TaskLineageEvidence lineage,
         TaskExecutionError error
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 7;
+    public static final int CURRENT_SCHEMA_VERSION = 8;
 
     public TaskExecutionResult {
         nodeResults = nodeResults == null ? List.of() : List.copyOf(nodeResults);
@@ -65,6 +67,23 @@ public record TaskExecutionResult(
         if (userJobObservability != null && taskType != ExecutionTaskType.SPARK_JAR) {
             throw new IllegalArgumentException("用户作业观测结果只能属于 Spark JAR 批任务");
         }
+        if (lineage != null && taskType != ExecutionTaskType.SPARK_JAR
+                || taskType == ExecutionTaskType.SPARK_JAR
+                && state == TaskExecutionState.SUCCESS && lineage == null) {
+            throw new IllegalArgumentException("运行血缘证据只能属于 Spark JAR 批任务，且成功结果必须携带证据");
+        }
+    }
+
+    public TaskExecutionResult(
+            Integer schemaVersion, UUID executionId, UUID runId, Integer attempt,
+            TaskExecutionState state, Instant startedAt, Instant endedAt, Long durationMs,
+            Long affectedRows, List<NodeExecutionResult> nodeResults, ExecutionTaskType taskType,
+            ModelQualityExecutionResult qualityResult,
+            UserJobObservabilitySnapshot userJobObservability,
+            TaskExecutionError error
+    ) {
+        this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
+                affectedRows, nodeResults, taskType, qualityResult, userJobObservability, null, error);
     }
 
     public TaskExecutionResult(
@@ -74,7 +93,7 @@ public record TaskExecutionResult(
             ModelQualityExecutionResult qualityResult, TaskExecutionError error
     ) {
         this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
-                affectedRows, nodeResults, taskType, qualityResult, null, error);
+                affectedRows, nodeResults, taskType, qualityResult, null, null, error);
     }
 
     public TaskExecutionResult(
@@ -83,6 +102,6 @@ public record TaskExecutionResult(
             Long affectedRows, List<NodeExecutionResult> nodeResults, TaskExecutionError error
     ) {
         this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
-                affectedRows, nodeResults, ExecutionTaskType.SPARK_CANVAS, null, null, error);
+                affectedRows, nodeResults, ExecutionTaskType.SPARK_CANVAS, null, null, null, error);
     }
 }

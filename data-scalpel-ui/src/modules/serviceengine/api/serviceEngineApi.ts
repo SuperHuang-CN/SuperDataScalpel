@@ -6,10 +6,12 @@ import type {
   ServiceEngine,
   ServiceEngineDataSourceRegistration,
   ServiceEngineDataSourceTestResult,
+  ServiceEngineAccessPolicy,
   ServiceEngineTestResult,
   TestServiceEngineRequest,
   TestStoredServiceEngineRequest,
   UpdateServiceEngineRequest,
+  UpdateServiceEngineAccessPolicyRequest,
 } from '../model/serviceEngine';
 
 const SERVICE_ENGINE_PATH = '/v1/service-engines';
@@ -22,6 +24,10 @@ const searchPath = (path: string, request: SearchRequest) => {
 
 export const fetchServiceEngines = (request: SearchRequest): Promise<PageResponse<ServiceEngine>> => (
   requestJson<PageResponse<ServiceEngine>>(searchPath(SERVICE_ENGINE_PATH, request))
+);
+
+export const fetchServiceEngine = (id: string): Promise<ServiceEngine> => (
+  requestJson<ServiceEngine>(`${SERVICE_ENGINE_PATH}/${id}`)
 );
 
 export const createServiceEngine = (request: CreateServiceEngineRequest): Promise<ServiceEngine> => (
@@ -51,6 +57,24 @@ export const testServiceEngine = (
 
 export const deleteServiceEngine = (id: string): Promise<void> => (
   requestJson<void>(`${SERVICE_ENGINE_PATH}/${id}/actions/delete`, { method: 'POST' })
+);
+
+export const fetchServiceEngineAccessPolicy = (id: string): Promise<ServiceEngineAccessPolicy> => (
+  requestJson<ServiceEngineAccessPolicy>(`${SERVICE_ENGINE_PATH}/${id}/access-policy`)
+);
+
+export const updateServiceEngineAccessPolicy = (
+  id: string,
+  request: UpdateServiceEngineAccessPolicyRequest,
+): Promise<ServiceEngineAccessPolicy> => requestJson<ServiceEngineAccessPolicy>(
+  `${SERVICE_ENGINE_PATH}/${id}/actions/update-access-policy`,
+  { method: 'POST', body: JSON.stringify(request) },
+);
+
+export const syncServiceEngineAccessPolicy = (id: string): Promise<ServiceEngineAccessPolicy> => (
+  requestJson<ServiceEngineAccessPolicy>(`${SERVICE_ENGINE_PATH}/${id}/actions/sync-access-policy`, {
+    method: 'POST', body: JSON.stringify({}),
+  })
 );
 
 export const fetchServiceEngineDataSourceRegistrations = (

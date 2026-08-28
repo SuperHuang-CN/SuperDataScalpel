@@ -159,6 +159,9 @@ modules/<module>/
 
 ### 表格与分页
 
+- 管理页面的单行 Table 和 List 默认使用紧凑密度：表头高度 `40px`、数据行高度 `38px`、纵向内边距 `4px`，并统一使用 `size="small"`。Table 使用 `management-table`，List 使用 `management-list`，不得在普通页面重复声明相同行高。
+- 名称/编码、名称/说明等双行身份信息，或包含 32～36px 资源图标时，使用共享 `ManagementListCell` 或 `management-table-comfortable` / `management-list-comfortable`，目标行高为 `52px`。只有健康状态、错误详情等确实需要多行内容的特殊表格才允许通过页面作用域覆盖为 `56～58px`。
+- 紧凑密度规则只能作用于上述管理组件作用域，不得无边界覆盖所有 `.ant-table`、`.ant-list-item`，避免影响 Canvas、弹窗、Inspector 和其他专业工作区。
 - 有分页的管理表格应始终在右下角显示分页，单页或数据较少时也不隐藏；默认显示总数和每页条数切换。无分页的静态或详情表格可例外。
 - 翻页和修改每页条数应触发服务端查询；修改每页条数后应防止当前页码超出有效范围。
 - 表头、分页保持可见，数据行在表体区域内部滚动。

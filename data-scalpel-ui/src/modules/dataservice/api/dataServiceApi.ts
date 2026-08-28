@@ -6,6 +6,7 @@ import type {
   DataServiceDetail,
   DataServiceRelatedModel,
   DataServiceSummary,
+  PublishDataServiceRequest,
   SqlServiceTestRequest,
   SqlServiceTestResponse,
   StandardDataServiceModelCandidate,
@@ -123,8 +124,10 @@ export const enableDataService = (id: string): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/enable`, { method: 'POST' })
 );
 
-export const publishDataService = (id: string): Promise<DataServiceDetail> => (
-  requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/publish`, { method: 'POST' })
+export const publishDataService = (id: string, request: PublishDataServiceRequest): Promise<DataServiceDetail> => (
+  requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}/actions/publish`, {
+    method: 'POST', body: JSON.stringify(request),
+  })
 );
 
 export const reconcileDataServiceGateway = (id: string): Promise<DataServiceDetail> => (

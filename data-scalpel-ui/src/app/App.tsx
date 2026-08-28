@@ -2,13 +2,14 @@ import { lazy, Suspense } from 'react';
 import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider } from 'react-router-dom';
 import { DashboardPage } from '../modules/dashboard';
 import { LlmModelManagementPage } from '../modules/assistant';
-import { ComputeEnginePage } from '../modules/computeengine';
+import { ComputeEngineDetailPage, ComputeEnginePage } from '../modules/computeengine';
 import { DataSourcePage } from '../modules/datasource';
-import { ApiConsumerPage, DataServicePage } from '../modules/dataservice';
+import { ApiConsumerPage } from '../modules/dataservice/pages/ApiConsumerPage';
+import { DataServicePage } from '../modules/dataservice/pages/DataServicePage';
 import { FileDatasetPage } from '../modules/filedataset';
 import { DataEntryPage } from '../modules/dataentry';
 import { DataModelPage, ModelFieldTemplatePage, ModelWarehouseLayerPage } from '../modules/model';
-import { ServiceEnginePage } from '../modules/serviceengine';
+import { ServiceEngineDetailPage, ServiceEnginePage } from '../modules/serviceengine';
 import { StandardDictionaryDetailPage, StandardDictionaryPage } from '../modules/standard';
 import {
   LoginPage,
@@ -217,8 +218,10 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="task/orchestration" element={<Suspense fallback="正在加载任务编排器…"><TaskOrchestrationPage /></Suspense>} />
             <Route path="task/*" element={<Navigate to="/task" replace />} />
             <Route path="service-engine" element={<RequirePermission permission="service.engine.view"><ServiceEnginePage /></RequirePermission>} />
+            <Route path="service-engine/:id" element={<RequirePermission permission="service.engine.view"><ServiceEngineDetailPage /></RequirePermission>} />
             <Route path="service-engine/*" element={<Navigate to="/service-engine" replace />} />
             <Route path="compute-engine" element={<RequirePermission permission="compute.engine.view"><ComputeEnginePage /></RequirePermission>} />
+            <Route path="compute-engine/:id" element={<RequirePermission permission="compute.engine.view"><ComputeEngineDetailPage /></RequirePermission>} />
             <Route path="compute-engine/*" element={<Navigate to="/compute-engine" replace />} />
             <Route path="dataservice" element={<RequirePermission permission="service.view"><DataServicePage /></RequirePermission>} />
             <Route path="dataservice/consumers" element={<RequirePermission permission="service.view"><ApiConsumerPage /></RequirePermission>} />

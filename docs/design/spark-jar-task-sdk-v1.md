@@ -6,7 +6,9 @@
 用户下载对应 Maven 模板，实现 `SparkBatchJob` 或 `SparkStreamingJob`并上传小型用户 JAR；平台固定
 Task Engine Runner、Spark运行时、调度、停止、日志和运行记录链路。
 
-第一版使用 Java 21，不支持任意 `main()`、JAR版本管理、历史重放、自动重试、代码扫描或代码血缘。
+第一版使用 Java 21，不支持任意 `main()`、JAR版本管理、历史重放、自动重试、JAR字节码扫描或静态代码血缘。
+批处理 `SPARK_JAR` 在 SDK Writer 写入前对实际 `Dataset.queryExecution().analyzed()` 做最佳努力的运行期
+Catalyst血缘分析；该分析不触发 Spark Action，失败或超限不会阻止真实写入。实时 JAR暂不接入该能力。
 实时SDK只封装 Kafka Topic，不提供 S3、HTTP、CDC、JDBC增量或Kafka JSON Schema解析。SDK资源绑定是
 授权声明和凭据最小化，不是 JVM沙箱；用户被视为可信实施人员。
 
@@ -58,10 +60,21 @@ Shade后的用户JAR。Batch与Streaming下载模板默认包含JUnit示例测�
 模板的测试作用域固定Servlet API 5.0，以兼容Spark 4.1.1内嵌指标Servlet仍使用的旧接口；该依赖不进入用户JAR。
 
 TestKit默认创建`local[2]` SparkSession，也允许使用测试已有Session。模型和JDBC输入可绑定Dataset或
-`StructType + Row`；JDBC Query按首尾去空白后的SQL精确匹配并保留调用记录。模型Output声明Target，JDBC Output
+`StructType + Row`；JDBC表还可使用`jdbcTableParquet(bindingName, table, path, expectedSchema)`读取生成的Parquet，
+并严格校验Schema后注册到已有JDBC Mock。JDBC Query按首尾去空白后的SQL精确匹配并保留调用记录。模型Output声明Target，JDBC Output
 声明完整目标表与目标Schema，Writer执行真实字段投影、Cast、必填字段和UPSERT Key校验后捕获行、Schema、Mode、
 映射和影响行数，不连接数据库。模型Target可声明主键、允许省略字段和EXTERNAL属性，单次写入默认最多捕获10,000行。
 批任务Context累计捕获写入影响行数；实时任务只在每个微批的`WriteResult`和捕获记录中保留行数，不累计任务总行数。
+
+批处理本地开发包使用 `modelInputParquet(bindingName, path, expectedSchema)` 和
+`jdbcTableParquet(bindingName, table, path, expectedSchema)` 注册模型或JDBC表输入。TestKit在创建自己的
+SparkSession后读取Parquet并严格校验实际 `StructType`；开发包生成的输入Parquet和对应输入`StructType`统一将字段
+标记为nullable，以匹配Spark文件源读取语义，字段名称、顺序和数据类型仍严格一致。用户也可以继续手工构造Row或Dataset，
+不需要自行创建SparkSession。
+带`JdbcReadOptions`的模型、JDBC表和JDBC Query读取继续返回同一Mock Dataset，并可通过
+`modelReadCalls(bindingName)`、`jdbcTableReadCalls(bindingName)`和`jdbcQueryReadCalls(bindingName)`断言绑定、
+表标识、规范化SQL和读取参数；原有`jdbcQueryCalls(bindingName)`保持兼容。TestKit不模拟真实JDBC连接数、
+驱动Fetch或源端分片并发。
 
 实时TestKit使用本地文件流模拟Kafka原始行，支持向假Topic推送消息以及EARLIEST/LATEST订阅语义；Kafka输出写入
 本地文件Sink供测试读取。所有查询仍通过SDK Registry注册，TestKit生成稳定Query Name和Checkpoint，验证逻辑名、
@@ -78,8 +91,13 @@ Exactly Once或Dispatcher Backend。生产Runner仍是最终执行语义来源�
 
 - `models().read(name)` 按模型快照读取物理表。
 - `models().write(name, dataset)` 支持 APPEND、OVERWRITE、UPSERT；UPSERT使用完整模型主键，
-  EXTERNAL模型禁止 OVERWRITE。
-- `jdbc().readTable()` 和 `readQuery()` 需要 READ；Query只允许单条 SELECT/WITH。
+  EXTERNAL模型禁止 OVERWRITE。`mapSameName()`可在尚未配置手工映射时按Dataset字段名生成同名映射；
+  `checkSchema()`仅由TestKit比较输入Dataset与模型Target的字段集合和Spark类型，忽略顺序、nullable和Metadata，
+  不触发Action。生产Runner将其作为无操作，真实Cast、数据库约束和写入结果仍在运行时决定。
+- `jdbc().readTable()` 和 `readQuery()` 需要 READ；`readTable(bindingName, table)`、
+  `readTable(bindingName, schema, table)` 是 `JdbcTableIdentifier` 的便捷重载，catalog场景仍显式使用
+  `JdbcTableIdentifier.of(catalog, schema, table)`。Query只允许单条 SELECT/WITH，并可通过
+  `readQuery(bindingName, sql, options)`设置该次查询的安全读取参数。
 - `jdbc().write()` 支持显式目标表、字段映射和 Key；PostgreSQL/MySQL支持 UPSERT。
 - 字段映射统一为 `map(targetColumnName, sourceColumnName)`。
 - `kafka().readStream()`返回Spark Kafka Connector标准原始列；Broker与认证参数由平台注入且不通过Map暴露。
@@ -91,10 +109,59 @@ Exactly Once或Dispatcher Backend。生产Runner仍是最终执行语义来源�
 写操作立即执行，多个写操作没有跨目标事务，后续异常可能留下部分写入。平台累计 SDK写入影响行数；
 没有 SDK写入为 0，任一指标未知则为 null。原生 Spark Writer不计入平台影响行数。
 
+### JDBC 读取参数与分片
+
+任务定义的`Spark Conf`负责全局Spark参数，例如AQE和Shuffle分区。Driver 与 Executor 的 CPU、内存和实例数由
+任务定义中的“运行资源”配置，并受计算引擎单次上限约束；不得通过 Spark Conf 重复设置这些资源键。单次模型或JDBC表读取使用
+`JdbcReadOptions`，不允许覆盖连接地址、驱动、账号、凭据或平台确定的表标识：
+
+```java
+var options = JdbcReadOptions.builder()
+        .partitionBy("id", "1", "10000000", 16)
+        .fetchSize(10_000)
+        .queryTimeoutSeconds(600)
+        .option("pushDownPredicate", "true")
+        .build();
+
+Dataset<Row> input = context.models().read("source_model", options);
+Dataset<Row> orders = context.jdbc().readTable("erp_source", "public", "orders", options);
+Dataset<Row> summary = context.jdbc().readQuery(
+        "erp_source",
+        "SELECT customer_id, SUM(amount) total_amount FROM orders GROUP BY customer_id",
+        options);
+```
+
+分片必须同时指定列、上下边界和1～256之间的分区数。边界由Spark按实际分片列类型解析；
+`lowerBound/upperBound`仅用于计算分片步长，不构成过滤条件。`fetchSize`与`queryTimeoutSeconds`分别支持0～1,000,000
+和0～86,400；0保留JDBC默认行为。通用选项只允许受控的下推参数、`preferTimestampNTZ`和非空的
+`sessionInitStatement`。平台不自动查询MIN/MAX推导分片边界。
+
+`readQuery`仍先校验单条只读`SELECT/WITH`，再由平台包装为带固定别名的`dbtable`子查询；不向用户开放底层
+`dbtable/query`覆盖能力。这样既能让数据库先完成过滤、聚合和Join，也能避开Spark原生`query`与
+`partitionColumn`不能同时使用的限制。启用分片时，查询结果必须包含分片列；SQL可访问范围由绑定数据源的
+数据库账号权限决定，不能通过SQL切换到其他资源绑定或连接。
+
+调用`Dataset.repartition()`发生在数据进入Spark之后，不能替代JDBC源端分片；`numPartitions`也是该次读取最多的
+JDBC并发连接数。
+
+### Driver JVM 参数
+
+批处理和实时 Spark JAR 的“高级 JVM 配置”提供 Driver JVM 参数输入。每行是一个完整参数，保存时收敛为
+`spark.driver.extraJavaOptions`，并随任务定义版本和 TaskRun 的 Spark Conf 快照固化；该键不在普通 Spark Conf
+编辑器重复出现。
+
+只允许 `-Dkey=value`、`-XX:+Flag`、`-XX:-Flag`、`-XX:Name=value`、`--add-opens=...` 和
+`--add-exports=...`。不支持带空格或引号的值，也不允许设置 `-Xms/-Xmx`、Java Agent、classpath、HeapDump、
+OnError、`datascalpel.*` 属性或任意 Executor JVM 参数。
+
+Local Docker 在创建容器前将平台固定参数、按 Driver 内存 75% 派生的唯一 `-Xmx`、用户参数依次合并到
+`JAVA_TOOL_OPTIONS`；用户参数无法覆盖堆内存策略。YARN 和 Kubernetes 使用 `spark-submit --driver-java-options`
+传递同一组参数，始终通过命令参数数组而非 Shell 拼接。
+
 ## 定义与制品
 
-`task_spark_jar_definition` 保存当前 JAR元数据、有序参数、有序 Spark Conf、超时和定义版本；
-`task_spark_jar_resource_binding` 保存资源声明。JAR、参数、Conf、绑定或超时变化才递增版本。
+`task_spark_jar_definition` 保存当前 JAR元数据、有序参数、有序 Spark Conf、运行资源、超时和定义版本；
+`task_spark_jar_resource_binding` 保存资源声明。JAR、参数、Conf、运行资源、绑定或超时变化才递增版本。
 
 上传只验证 100 MiB限制、JAR/ZIP结构、Manifest API版本、Job Class名称和对应 class条目；不加载类、
 不实例化、不执行、不扫描依赖或漏洞。发布校验当前 JAR、绑定资源和计算引擎，不连接业务表。
@@ -108,6 +175,37 @@ task-runs/<runId>/attempts/<attempt>/user-job.jar
 TaskRun保存文件名、SHA-256和大小，但不对外返回对象 Key。终态后幂等清理运行级 JAR；清理失败不改变
 运行终态。覆盖当前 JAR后删除旧当前对象，不保留版本列表或旧 Run重放能力。
 
+## 批处理本地开发包
+
+`SPARK_JAR`任务通过异步接口生成一个当前本地开发包；`SPARK_STREAMING_JAR`继续保留同步通用模板。页面提交前自动保存
+当前定义并携带定义版本。模型资源绑定是唯一来源：READ生成输入，WRITE生成输出Target，READ_WRITE同时生成两者。
+样例固定为Snappy Parquet，支持零行、指定条数、指定比例和全部数据；比例按总数向上取整。存在主键时按完整主键
+升序读取，否则保留数据库返回顺序并在README和元数据中标记顺序不稳定。输入样例Parquet及测试输入Schema的字段
+统一为nullable；输出模型Target和JSON元数据继续保留模型原始nullable约束。
+
+开发包还可以声明已保存的READ/READ_WRITE `JDBC_DATA_SOURCE`绑定下的物理表。数据源编码只用于页面默认绑定名和
+展示；用户作业始终以绑定名授权访问。每张表独立选择样例范围，表声明与模型样例配置保存为Spark JAR定义上的开发辅助JSON，
+不影响生产任务定义版本、发布状态或运行语义，也不限制生产JAR读取已授权数据源内的其他表。生成器读取真实表元数据，只接受精确的平台类型映射和普通标量/BINARY；
+LOSSY、UNSUPPORTED或Geometry字段会明确失败。
+
+生成任务使用独立的`task_spark_jar_development_kit_job`持久化队列，不复用TaskRun。Worker通过PostgreSQL
+`FOR UPDATE SKIP LOCKED`领取任务并维护租约与心跳；临时故障最多额外重试两次。每个模型最多1,000,000行，ZIP最多
+512 MiB。任务定义使用`development_kit_config_json`保存最近提交的规范化配置，使用`current_development_kit_job_id`
+指向唯一可下载的当前制品；生成记录只保留队列、重试和失败诊断。新制品成功上传后原子替换该指针，旧制品立即不可下载并进入
+异步清理；生成失败不影响原当前制品。当前制品不会因时间自动过期，直到被成功替换或任务删除。生成开始和上传提交前校验任务定义、模型和数据源版本；Geometry模型明确拒绝。
+
+接口为`GET /api/v1/tasks/{taskId}/spark-jar-development-kit`、
+`POST /api/v1/tasks/{taskId}/spark-jar-development-kit/actions/generate`和
+`GET /api/v1/tasks/{taskId}/spark-jar-development-kit/artifact`。查询返回保存配置、最近生成状态以及当前制品是否仍匹配
+任务定义和保存配置；定义变化后旧制品禁止下载。保存配置不同于当前成功制品时，旧制品仍可下载，但页面明确提示它是上一次成功
+生成的开发包。已有安装中配置或指针为空时，读取最近生成记录作为兼容回退；下一次成功生成后进入单一当前制品语义。
+
+开发包包含Maven工程、按真实绑定生成的示例作业、含完整StructType和输出Target声明的单元测试、
+`datascalpel-development-kit.json`以及各输入绑定的Parquet。JDBC表示例位于
+`src/test/resources/samples/{bindingName}-{table}-*.parquet`，测试通过`jdbcTableParquet`注册。元数据记录任务版本、模型Schema版本、
+JDBC绑定/表标识、抽样方式、实际行数、排序稳定性和文件摘要，不包含连接配置、凭据或对象Key。Parquet、ZIP、对象存储上传和HTTP下载均使用文件或流边界。
+示例作业和README保留`JdbcReadOptions`的可取消注释用法；读取参数属于用户代码，不写入任务定义或开发包生成请求。
+
 ## Runner
 
 Manifest v17使用互斥 `sparkJarJob/streamingSparkJarJob`；Launch使用独立 `userJar`短期下载描述。Dispatcher和Runner都
@@ -117,10 +215,29 @@ Runner下载 JAR后校验准确大小与 SHA-256，调用 `SparkContext.addJar()
 URLClassLoader加载 Job Class。Java默认父优先保证 Spark、Scala、Hadoop、SDK和 Task Engine类不能被
 用户 JAR覆盖。一个 Runner进程只执行一个用户作业，不热加载或复用 ClassLoader。
 
-批 Job Class必须 public、实现 `SparkBatchJob`并提供 public无参构造。执行结果使用 result v6，
+批 Job Class必须 public、实现 `SparkBatchJob`并提供 public无参构造。执行结果使用 result v8，
 `taskType=SPARK_JAR` 且 `nodeResults=[]`。JAR下载、摘要、类加载、构造和用户执行失败使用独立稳定错误码；
 Cause链中的真实 Spark/JDBC错误优先分类。所有日志和错误必须隐藏签名 URL、对象 Key、凭据和Manifest。
-Dispatcher继续读取v2～v7结果；v6及以上允许携带 `userJobObservability`。
+Dispatcher继续读取v2～v8结果；v6及以上允许携带 `userJobObservability`，v8为批处理 JAR增加可空的
+`lineage`运行证据。成功批任务必须返回证据；没有 SDK 写入时明确返回 `UNAVAILABLE/NO_SDK_WRITES`。
+
+模型与 JDBC读取会给 Catalyst属性附加稳定资源和字段身份。`readQuery`只使用数据源身份与规范化 SQL的
+SHA-256表示查询结果资产，不保存 SQL正文或 Literal。模型/JDBC Writer在字段映射和 Cast完成后分析投影
+Dataset，真实写入成功后才确认对应 Flow；写入失败或任务后来失败的 Flow只作为该次运行诊断。原生 Spark
+Reader/Writer、RDD截断、复杂 UDF和无法解释的计划只降低字段覆盖度，不猜测来源。
+
+血缘契约中的 `nodeKey` 表示通用的血缘操作标识，不限定为 Canvas节点 ID。Canvas继续使用真实节点 ID；
+JAR代码没有业务节点时，字段用途统一回退到当前 SDK Writer的稳定 `jar:output:{flowHash}` 写入边界。
+运行期元数据标记、Catalyst分析、Flow确认或最终证据组装发生异常时只降级血缘，不得阻止或推翻真实业务
+写入。Dispatcher仍校验不受信任的结果制品，但v8 Spark JAR的可选血缘片段不合规时只把该片段替换为
+`UNAVAILABLE/LINEAGE_RESULT_INVALID`，核心任务结果继续按 Runner声明的终态处理。
+
+Dispatcher仅在终态事件中传递经过校验的 `resultSha256`，完整证据不进入 Kafka。Business异步读取固定
+`resultObjectKey`并核对摘要；成功运行按 `taskId + definitionVersion + jarSha256` 合并已观察到的 Flow并集，
+内容变化时发布下一代不可变正式快照。失败运行只保留诊断；定义或 JAR已经变化的结果标记为过期，不更新
+正式血缘。上传新 JAR或定义版本变化后，旧当前快照退休，并等待首次成功运行重新积累。
+运行详情通过 `GET /api/v1/task-runs/{runId}/lineage` 查询摄取状态、覆盖度、Flow数量、安全警告及是否已
+并入正式快照；接口不返回完整结果证据、SQL正文、数据内容、对象 Key或连接信息。
 
 ## 实时查询托管与Checkpoint
 
@@ -138,8 +255,9 @@ Runner监控全部注册查询并上报明确的最新Progress字段，不保存
 
 ## Backend一致性
 
-Local Docker在创建 SparkSession前应用允许的 Spark Conf；YARN/Kubernetes在 `spark-submit --conf`
-追加同一快照，Runner再次应用相同配置。三种 Backend复用同一 Runner和 SDK执行实现。
+Local Docker固定使用 `local[*]`，将任务 Driver CPU/内存映射为 Docker `--cpus`、`--memory`，并以容器内存的
+75%派生 Runner `-Xmx`。YARN/Kubernetes 将五项运行资源映射为对应 `spark-submit` 的 Driver/Executor 参数。
+允许的 Spark Conf 在三种 Backend 中保持一致；三种 Backend复用同一 Runner和 SDK执行实现。
 
 立即运行、Cron、FORBID/ALLOW、超时、取消、日志、Tracking URL和任务运行记录复用现有 Spark批任务闭环。
 定时 JAR运行是真实执行，不使用 LOCAL_SQL计划的模拟成功路径。

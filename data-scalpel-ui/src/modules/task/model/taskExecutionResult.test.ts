@@ -142,4 +142,28 @@ describe('task execution result output writes', () => {
       userJobObservability: null,
     })).toThrow('写入行数与逐写入指标不一致');
   });
+
+  it('requires lineage evidence for a successful v8 Spark JAR result', () => {
+    const result = parseTaskExecutionResultArtifact({
+      schemaVersion: 8,
+      state: 'SUCCESS',
+      taskType: 'SPARK_JAR',
+      nodeResults: [],
+      qualityResult: null,
+      userJobObservability: null,
+      lineage: { analysisStatus: 'UNAVAILABLE', flows: [], warnings: [] },
+    });
+    expect(result.schemaVersion).toBe(8);
+    expect(result.taskType).toBe('SPARK_JAR');
+
+    expect(() => parseTaskExecutionResultArtifact({
+      schemaVersion: 8,
+      state: 'SUCCESS',
+      taskType: 'SPARK_JAR',
+      nodeResults: [],
+      qualityResult: null,
+      userJobObservability: null,
+      lineage: null,
+    })).toThrow('缺少运行血缘证据');
+  });
 });

@@ -2,7 +2,6 @@ package cn.superhuang.data.scalpel.business.service.web.response;
 
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentStatus;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
-import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
 import cn.superhuang.data.scalpel.contract.service.DataServiceType;
 
 import java.time.Instant;
@@ -20,8 +19,7 @@ public record DataServiceSummaryResponse(
         UUID sourceId,
         String sourceName,
         UUID engineId,
-        String routePath,
-        DataServiceAccessMode accessMode,
+        String engineRoutePath,
         DataServiceStatus status,
         long revision,
         DataServiceDeploymentStatus deploymentStatus,

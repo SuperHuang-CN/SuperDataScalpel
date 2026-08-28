@@ -10,6 +10,8 @@ import cn.superhuang.data.scalpel.dialect.query.StandardQueryResult;
 import java.sql.Connection;
 import java.sql.SQLException;
 import java.time.Duration;
+import java.util.Map;
+import java.util.function.Consumer;
 
 /**
  * Opens a short-lived read-only JDBC connection and executes one already-validated standard query.
@@ -46,6 +48,41 @@ public final class DatabaseStandardQueryExecutor {
         } catch (DatabaseAccessException exception) {
             throw exception;
         } catch (ClassNotFoundException | LinkageError exception) {
+            throw new DatabaseAccessException("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", exception);
+        } catch (IllegalArgumentException exception) {
+            throw new DatabaseAccessException("INVALID_QUERY", exception.getMessage(), exception);
+        } catch (SQLException exception) {
+            throw new DatabaseAccessException(errorCode(exception), safeMessage(exception), exception);
+        }
+    }
+
+    public void consume(String databaseType, JdbcConnectionConfig config, StandardQuery query,
+                        int fetchSize, Duration timeout, Consumer<Map<String, Object>> consumer) {
+        try {
+            DatabaseDialect dialect = registry.require(databaseType);
+            try (Connection connection = connectionFactory.open(dialect.createConnectionSpec(config))) {
+                try { connection.setReadOnly(true); } catch (SQLException ignored) { }
+                queryExecutor.consume(connection, dialect.compileStandardQuery(query), fetchSize, timeout, consumer);
+            }
+        } catch (DatabaseAccessException exception) { throw exception; }
+        catch (ClassNotFoundException | LinkageError exception) {
+            throw new DatabaseAccessException("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", exception);
+        } catch (IllegalArgumentException exception) {
+            throw new DatabaseAccessException("INVALID_QUERY", exception.getMessage(), exception);
+        } catch (SQLException exception) {
+            throw new DatabaseAccessException(errorCode(exception), safeMessage(exception), exception);
+        }
+    }
+
+    public long count(String databaseType, JdbcConnectionConfig config, StandardQuery query, Duration timeout) {
+        try {
+            DatabaseDialect dialect = registry.require(databaseType);
+            try (Connection connection = connectionFactory.open(dialect.createConnectionSpec(config))) {
+                try { connection.setReadOnly(true); } catch (SQLException ignored) { }
+                return queryExecutor.count(connection, dialect.compileStandardQuery(query), timeout);
+            }
+        } catch (DatabaseAccessException exception) { throw exception; }
+        catch (ClassNotFoundException | LinkageError exception) {
             throw new DatabaseAccessException("DRIVER_NOT_AVAILABLE", "数据库驱动未安装", exception);
         } catch (IllegalArgumentException exception) {
             throw new DatabaseAccessException("INVALID_QUERY", exception.getMessage(), exception);

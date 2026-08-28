@@ -25,6 +25,7 @@ import {
 } from '../api/dataServiceApi';
 import type {
   CreateDataServiceRequest,
+  PublishDataServiceRequest,
   SqlServiceTestRequest,
   UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
@@ -121,7 +122,7 @@ export const useStandardDataServiceModelCandidates = (
 export const usePublishDataService = () => {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: publishDataService,
+    mutationFn: ({ id, request }: { id: string; request: PublishDataServiceRequest }) => publishDataService(id, request),
     onSuccess: () => invalidateDataServices(queryClient),
   });
 };

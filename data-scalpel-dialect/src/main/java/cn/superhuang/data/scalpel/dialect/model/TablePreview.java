@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.dialect.model;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public record TablePreview(
@@ -11,6 +13,8 @@ public record TablePreview(
 ) {
     public TablePreview {
         columns = List.copyOf(columns);
-        rows = rows.stream().map(List::copyOf).toList();
+        rows = rows.stream()
+                .map(row -> Collections.unmodifiableList(new ArrayList<>(row)))
+                .toList();
     }
 }

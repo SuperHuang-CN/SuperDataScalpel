@@ -11,6 +11,31 @@ export type ComputeEngineRegistrationState =
 
 export type ComputeEngineHealthState = 'UNKNOWN' | 'UP' | 'DOWN';
 
+export interface SparkExecutionResourceSpec {
+  driverCores: number;
+  driverMemoryMiB: number;
+  executorInstances: number;
+  executorCores: number;
+  executorMemoryMiB: number;
+}
+
+export interface SparkExecutionResourcePolicy {
+  defaults: SparkExecutionResourceSpec;
+  maximums: SparkExecutionResourceSpec;
+}
+
+export const defaultSparkExecutionResourcePolicy = (backend: ComputeBackendType): SparkExecutionResourcePolicy => (
+  backend === 'LOCAL_DOCKER'
+    ? {
+      defaults: { driverCores: 2, driverMemoryMiB: 4096, executorInstances: 1, executorCores: 1, executorMemoryMiB: 1024 },
+      maximums: { driverCores: 8, driverMemoryMiB: 16384, executorInstances: 1, executorCores: 1, executorMemoryMiB: 1024 },
+    }
+    : {
+      defaults: { driverCores: 1, driverMemoryMiB: 2048, executorInstances: 2, executorCores: 2, executorMemoryMiB: 2048 },
+      maximums: { driverCores: 8, driverMemoryMiB: 16384, executorInstances: 20, executorCores: 8, executorMemoryMiB: 16384 },
+    }
+);
+
 export interface ComputeEngine {
   id: string;
   name: string;
@@ -27,6 +52,7 @@ export interface ComputeEngine {
   maxQueuedExecutions: number;
   maxConcurrentSubmissions: number;
   maxInFlightApplications: number;
+  resourcePolicy: SparkExecutionResourcePolicy;
   dispatcherInstanceId: string | null;
   lastCheckAt: string | null;
   lastError: string | null;
@@ -34,6 +60,103 @@ export interface ComputeEngine {
   detachReason: string | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type DispatcherExecutionScope = 'ACTIVE' | 'QUEUED' | 'RECENT';
+
+export type DispatcherExecutionState =
+  | 'QUEUED'
+  | 'SUBMITTING'
+  | 'SUBMITTED'
+  | 'RUNNING'
+  | 'CANCEL_REQUESTED'
+  | 'SUCCESS'
+  | 'FAILED'
+  | 'TIMED_OUT'
+  | 'CANCELLED'
+  | 'STOPPED'
+  | 'LOST';
+
+export type DispatcherTaskType =
+  | 'SPARK_CANVAS'
+  | 'SPARK_STREAMING_CANVAS'
+  | 'SPARK_MODEL_QUALITY'
+  | 'SPARK_JAR'
+  | 'SPARK_STREAMING_JAR';
+
+export interface DispatcherRuntimeDependency {
+  name: string;
+  state: 'UP' | 'DOWN' | string;
+  detail: string | null;
+}
+
+export interface DispatcherAdmissionCapacity {
+  maxQueuedExecutions: number;
+  maxConcurrentSubmissions: number;
+  maxInFlightApplications: number;
+  resourcePolicy: SparkExecutionResourcePolicy;
+}
+
+export interface DispatcherAdmissionUsage {
+  queued: number;
+  submitting: number;
+  submitted: number;
+  running: number;
+  cancelRequested: number;
+  inFlight: number;
+}
+
+export interface DispatcherResourceConfiguration {
+  backendType: ComputeBackendType;
+  image: string | null;
+  containerCpuLimit: string | null;
+  containerMemoryLimit: string | null;
+  runnerJvmHeap: string | null;
+  queue: string | null;
+  namespace: string | null;
+  driverMemory: string | null;
+  executorMemory: string | null;
+  executorCores: number | null;
+  executorInstances: number | null;
+}
+
+export interface ComputeEngineRuntimeOverview {
+  engineId: string | null;
+  dispatcherInstanceId: string;
+  backendType: ComputeBackendType;
+  version: string;
+  dispatcherRegistrationState: string;
+  dependencies: DispatcherRuntimeDependency[];
+  admissionCapacity: DispatcherAdmissionCapacity | null;
+  admissionUsage: DispatcherAdmissionUsage;
+  resourceConfiguration: DispatcherResourceConfiguration;
+  collectedAt: string;
+}
+
+export interface ComputeEngineExecution {
+  executionId: string;
+  executionRunId: string;
+  taskId: string;
+  taskName: string | null;
+  taskType: DispatcherTaskType;
+  definitionVersion: number;
+  dispatcherState: DispatcherExecutionState;
+  taskRunId: string | null;
+  taskRunStatus: string | null;
+  triggerType: 'MANUAL' | 'SCHEDULED' | null;
+  synchronized: boolean;
+  backendExecutionId: string | null;
+  trackingUrl: string | null;
+  deadlineAt: string | null;
+  queuedAt: string;
+  submissionStartedAt: string | null;
+  submittedAt: string | null;
+  startedAt: string | null;
+  endedAt: string | null;
+  lastObservedAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
+  queuePosition: number | null;
 }
 
 export interface DispatcherCapabilities {
@@ -68,6 +191,7 @@ export interface ComputeEngineWriteRequest {
   maxQueuedExecutions: number;
   maxConcurrentSubmissions: number;
   maxInFlightApplications: number;
+  resourcePolicy: SparkExecutionResourcePolicy;
 }
 
 export type CreateComputeEngineRequest = ComputeEngineWriteRequest & { accessToken: string };
@@ -121,6 +245,42 @@ export const computeEngineHealthStateColors: Record<ComputeEngineHealthState, st
   UNKNOWN: 'default',
   UP: 'success',
   DOWN: 'error',
+};
+
+export const dispatcherExecutionStateLabels: Record<DispatcherExecutionState, string> = {
+  QUEUED: '排队中',
+  SUBMITTING: '提交中',
+  SUBMITTED: '已提交',
+  RUNNING: '运行中',
+  CANCEL_REQUESTED: '取消请求中',
+  SUCCESS: '成功',
+  FAILED: '失败',
+  TIMED_OUT: '超时',
+  CANCELLED: '已取消',
+  STOPPED: '已停止',
+  LOST: '已丢失',
+};
+
+export const dispatcherExecutionStateColors: Record<DispatcherExecutionState, string> = {
+  QUEUED: 'default',
+  SUBMITTING: 'processing',
+  SUBMITTED: 'processing',
+  RUNNING: 'success',
+  CANCEL_REQUESTED: 'warning',
+  SUCCESS: 'success',
+  FAILED: 'error',
+  TIMED_OUT: 'error',
+  CANCELLED: 'default',
+  STOPPED: 'default',
+  LOST: 'error',
+};
+
+export const dispatcherTaskTypeLabels: Record<DispatcherTaskType, string> = {
+  SPARK_CANVAS: 'Canvas 批处理',
+  SPARK_STREAMING_CANVAS: 'Canvas 实时任务',
+  SPARK_MODEL_QUALITY: '模型质检',
+  SPARK_JAR: 'Spark JAR 批处理',
+  SPARK_STREAMING_JAR: 'Spark JAR 实时任务',
 };
 
 export const isComputeEngineSelectable = (engine: ComputeEngine) => (

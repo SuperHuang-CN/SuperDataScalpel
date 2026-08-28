@@ -12,6 +12,14 @@ public record JdbcTableIdentifier(String catalog, String schema, String table) {
         return new JdbcTableIdentifier(catalog, schema, table);
     }
 
+    public static JdbcTableIdentifier table(String table) {
+        return new JdbcTableIdentifier(null, null, table);
+    }
+
+    public static JdbcTableIdentifier schemaTable(String schema, String table) {
+        return new JdbcTableIdentifier(null, schema, table);
+    }
+
     private static String normalizeOptional(String value) {
         if (value == null) {
             return null;

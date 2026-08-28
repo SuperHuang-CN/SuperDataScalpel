@@ -3,10 +3,10 @@ package cn.superhuang.data.scalpel.engine.route;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** Runtime-side guard for the fixed V1 dynamic-route namespace. */
+/** Runtime-side guard for the Engine-private dynamic-route namespace. */
 final class EngineRoutePath {
 
-    private static final Pattern PATTERN = Pattern.compile("/open-api/v1/[a-z0-9][a-z0-9/_-]*");
+    private static final Pattern PATTERN = Pattern.compile("/runtime/v1/services/[0-9a-f-]{36}");
 
     private EngineRoutePath() {
     }
@@ -17,7 +17,7 @@ final class EngineRoutePath {
         }
         String normalized = value.trim().toLowerCase(Locale.ROOT);
         if (!PATTERN.matcher(normalized).matches() || normalized.endsWith("/") || normalized.contains("//")) {
-            throw new IllegalArgumentException("服务路径必须是 /open-api/v1/ 下的小写静态路径");
+            throw new IllegalArgumentException("服务路径必须是 /runtime/v1/services/{serviceId}");
         }
         return normalized;
     }

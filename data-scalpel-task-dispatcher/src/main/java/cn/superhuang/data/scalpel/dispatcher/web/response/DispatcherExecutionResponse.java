@@ -2,7 +2,7 @@ package cn.superhuang.data.scalpel.dispatcher.web.response;
 
 import cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
 
 import java.time.Instant;
@@ -24,6 +24,7 @@ public record DispatcherExecutionResponse(
         Instant startedAt,
         Instant endedAt,
         Long affectedRows,
+        String resultSha256,
         QualitySummary qualitySummary,
         String errorCode,
         String errorMessage,
@@ -35,7 +36,7 @@ public record DispatcherExecutionResponse(
                 execution.getBackendType(), execution.getState(), execution.getExternalExecutionId(),
                 execution.getTrackingUrl(), execution.getEventSequence(), execution.getDeadlineAt(),
                 execution.getQueuedAt(), execution.getStartedAt(), execution.getEndedAt(),
-                execution.getAffectedRows(), execution.getQualitySummary(),
+                execution.getAffectedRows(), execution.getResultSha256(), execution.getQualitySummary(),
                 execution.getSafeErrorCode(), execution.getSafeErrorMessage(),
                 execution.getSafeExecutionError()
         );

@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.dispatcher.backend.localdocker;
 
 import cn.superhuang.data.scalpel.dispatcher.backend.ExecutionIdentity;
 import cn.superhuang.data.scalpel.dispatcher.config.LocalDockerProperties;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import org.springframework.stereotype.Component;
 
 import java.nio.file.Path;
@@ -66,7 +67,8 @@ public class DockerCommandFactory {
     public List<String> create(
             ExecutionIdentity identity,
             Path executionWorkDirectory,
-            Path environmentFile
+            Path environmentFile,
+            SparkExecutionResourceSpec resources
     ) {
         Path runnerJar = safeMountPath(properties.absoluteRunnerJar());
         Path workDirectory = safeMountPath(executionWorkDirectory);
@@ -82,8 +84,8 @@ public class DockerCommandFactory {
         }
         result.addAll(List.of(
                 "--pull", properties.pull(),
-                "--memory", properties.memory(),
-                "--cpus", properties.cpus(),
+                "--memory", resources.driverMemoryMiB() + "m",
+                "--cpus", Integer.toString(resources.driverCores()),
                 "--add-host", "host.docker.internal:host-gateway",
                 "--label", MANAGED_LABEL + "=true",
                 "--label", ENGINE_ID_LABEL + "=" + identity.engineId(),

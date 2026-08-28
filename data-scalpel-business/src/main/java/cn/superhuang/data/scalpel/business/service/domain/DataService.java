@@ -7,8 +7,6 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
-import jakarta.persistence.UniqueConstraint;
-import org.hibernate.annotations.ColumnDefault;
 
 import java.util.Locale;
 import java.util.Objects;
@@ -16,13 +14,7 @@ import java.util.UUID;
 
 /** Common lifecycle and routing metadata for one data service. */
 @Entity
-@Table(
-        name = "ds_data_service",
-        uniqueConstraints = {
-                @UniqueConstraint(name = "uk_ds_data_service_code", columnNames = "code"),
-                @UniqueConstraint(name = "uk_ds_data_service_route", columnNames = "route_path")
-        }
-)
+@Table(name = "ds_data_service")
 public class DataService extends BaseEntity {
 
     @Column(nullable = false, updatable = false, length = 64)
@@ -40,14 +32,6 @@ public class DataService extends BaseEntity {
 
     @Column(name = "engine_id", nullable = false)
     private UUID engineId;
-
-    @Column(name = "route_path", nullable = false, length = 255)
-    private String routePath;
-
-    @Enumerated(EnumType.STRING)
-    @Column(name = "access_mode", nullable = false, length = 32)
-    @ColumnDefault("'PUBLIC'")
-    private DataServiceAccessMode accessMode;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -68,15 +52,12 @@ public class DataService extends BaseEntity {
             UUID directoryId,
             DataServiceType type,
             UUID engineId,
-            String routePath,
-            DataServiceAccessMode accessMode,
             String description
     ) {
         this.code = normalizeCode(code);
         this.type = Objects.requireNonNull(type, "数据服务类型不能为空");
         this.status = DataServiceStatus.DRAFT;
-        this.accessMode = accessMode == null ? DataServiceAccessMode.PUBLIC : accessMode;
-        update(name, directoryId, engineId, routePath, accessMode, description);
+        update(name, directoryId, engineId, description);
     }
 
     public static DataService create(
@@ -85,51 +66,21 @@ public class DataService extends BaseEntity {
             UUID directoryId,
             DataServiceType type,
             UUID engineId,
-            String routePath,
-            DataServiceAccessMode accessMode,
             String description
     ) {
-        return new DataService(code, name, directoryId, type, engineId, routePath, accessMode, description);
-    }
-
-    public static DataService create(
-            String code,
-            String name,
-            UUID directoryId,
-            DataServiceType type,
-            UUID engineId,
-            String routePath,
-            String description
-    ) {
-        return create(code, name, directoryId, type, engineId, routePath, DataServiceAccessMode.PUBLIC, description);
+        return new DataService(code, name, directoryId, type, engineId, description);
     }
 
     public void update(
             String name,
             UUID directoryId,
             UUID engineId,
-            String routePath,
-            DataServiceAccessMode accessMode,
             String description
     ) {
         this.name = required(name, "名称");
         this.directoryId = directoryId;
         this.engineId = requireId(engineId, "服务引擎");
-        this.routePath = ServiceRoutePath.normalize(routePath);
-        if (accessMode != null) {
-            this.accessMode = accessMode;
-        }
         this.description = optional(description);
-    }
-
-    public void update(
-            String name,
-            UUID directoryId,
-            UUID engineId,
-            String routePath,
-            String description
-    ) {
-        update(name, directoryId, engineId, routePath, null, description);
     }
 
     public long nextRevision() {
@@ -165,12 +116,8 @@ public class DataService extends BaseEntity {
         return engineId;
     }
 
-    public String getRoutePath() {
-        return routePath;
-    }
-
-    public DataServiceAccessMode getAccessMode() {
-        return accessMode == null ? DataServiceAccessMode.PUBLIC : accessMode;
+    public String getEngineRoutePath() {
+        return ServiceEngineRoutePath.forService(getId());
     }
 
     public DataServiceStatus getStatus() {

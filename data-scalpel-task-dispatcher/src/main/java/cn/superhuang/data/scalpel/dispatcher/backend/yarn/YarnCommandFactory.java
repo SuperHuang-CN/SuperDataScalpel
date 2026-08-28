@@ -1,12 +1,14 @@
 package cn.superhuang.data.scalpel.dispatcher.backend.yarn;
 
 import cn.superhuang.data.scalpel.dispatcher.backend.ExecutionIdentity;
+import cn.superhuang.data.scalpel.dispatcher.backend.DriverJavaOptions;
 import cn.superhuang.data.scalpel.dispatcher.config.YarnProperties;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry;
+import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 
 public class YarnCommandFactory {
     private static final String RUNNER_MAIN =
@@ -15,7 +17,7 @@ public class YarnCommandFactory {
 
     public YarnCommandFactory(YarnProperties properties) { this.properties = properties; }
 
-    public List<String> submit(ExecutionIdentity identity, Path launchFile) {
+    public List<String> submit(ExecutionIdentity identity, Path launchFile, SparkExecutionResourceSpec resources) {
         List<String> command = new ArrayList<>(List.of(
                 properties.sparkSubmit(),
                 "--master", "yarn",
@@ -23,10 +25,11 @@ public class YarnCommandFactory {
                 "--name", "datascalpel-" + identity.executionId(),
                 "--class", RUNNER_MAIN,
                 "--queue", properties.queue(),
-                "--driver-memory", properties.driverMemory(),
-                "--executor-memory", properties.executorMemory(),
-                "--executor-cores", Integer.toString(properties.executorCores()),
-                "--num-executors", Integer.toString(properties.numExecutors()),
+                "--driver-cores", Integer.toString(resources.driverCores()),
+                "--driver-memory", resources.driverMemoryMiB() + "m",
+                "--executor-memory", resources.executorMemoryMiB() + "m",
+                "--executor-cores", Integer.toString(resources.executorCores()),
+                "--num-executors", Integer.toString(resources.executorInstances()),
                 "--conf", "spark.yarn.tags=" + tag(identity),
                 "--conf", "spark.yarn.submit.waitAppCompletion=false",
                 "--files", launchFile.toUri() + "#launch.json",
@@ -37,10 +40,16 @@ public class YarnCommandFactory {
         return List.copyOf(command);
     }
 
-    public List<String> submit(ExecutionIdentity identity, Path launchFile, List<SparkConfigurationEntry> sparkConf) {
-        List<String> base = new ArrayList<>(submit(identity, launchFile));
+    public List<String> submit(ExecutionIdentity identity, Path launchFile, List<SparkConfigurationEntry> sparkConf,
+                                SparkExecutionResourceSpec resources) {
+        List<String> base = new ArrayList<>(submit(identity, launchFile, resources));
         int jarIndex = base.size() - 1;
-        for (SparkConfigurationEntry entry : sparkConf) {
+        String driverJavaOptions = DriverJavaOptions.extract(sparkConf);
+        if (driverJavaOptions != null && !driverJavaOptions.isBlank()) {
+            base.add(jarIndex++, "--driver-java-options");
+            base.add(jarIndex++, driverJavaOptions);
+        }
+        for (SparkConfigurationEntry entry : DriverJavaOptions.withoutDriverJavaOptions(sparkConf)) {
             base.add(jarIndex++, "--conf");
             base.add(jarIndex++, entry.name() + "=" + entry.value());
         }

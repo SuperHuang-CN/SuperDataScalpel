@@ -4,7 +4,7 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
-import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherExecutionState;
+import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.messaging.MessageCoordinates;
 import cn.superhuang.data.scalpel.dispatcher.messaging.command.DispatcherCommandService;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherTaskExecutionRepository;
@@ -124,6 +124,45 @@ class DispatcherManagementIntegrationTest {
 
         assertThat(executionRepository.findByExecutionId(executionId).orElseThrow().getState())
                 .isEqualTo(DispatcherExecutionState.CANCELLED);
+    }
+
+    @Test
+    void exposesRuntimeUsageAndStableQueuedExecutionProjection() throws Exception {
+        UUID engineId = UUID.randomUUID();
+        mockMvc.perform(post("/api/v1/dispatcher/registration/actions/activate")
+                        .header("Authorization", "Bearer test-dispatcher-token")
+                        .contentType(MediaType.APPLICATION_JSON).content(registration(engineId)))
+                .andExpect(status().isOk());
+
+        UUID executionId = UUID.randomUUID();
+        UUID runId = UUID.randomUUID();
+        Instant now = Instant.now();
+        String prefix = "task-runs/" + runId + "/attempts/1/";
+        SubmitExecutionCommand command = new SubmitExecutionCommand(
+                1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, now,
+                engineId, executionId, runId, 1, UUID.randomUUID(), ExecutionTaskType.SPARK_CANVAS,
+                1, now.plusSeconds(3600), new ExecutionArtifactLocation(
+                prefix + "manifest.json", "a".repeat(64), prefix + "result.json", prefix + "console.log"
+        ));
+        assertThat(commandService.accept(command, new MessageCoordinates("commands.local", 0, 3)))
+                .isEqualTo(DispatcherCommandService.Outcome.ACCEPTED);
+
+        mockMvc.perform(get("/api/v1/dispatcher/runtime-overview")
+                        .header("Authorization", "Bearer test-dispatcher-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.engineId").value(engineId.toString()))
+                .andExpect(jsonPath("$.registrationState").value("ACTIVE"))
+                .andExpect(jsonPath("$.admissionCapacity.maxQueuedExecutions").value(20))
+                .andExpect(jsonPath("$.admissionUsage.queued").value(1))
+                .andExpect(jsonPath("$.resourceConfiguration.backendType").value("LOCAL_DOCKER"))
+                .andExpect(jsonPath("$.resourceConfiguration.containerCpuLimit").value("2"));
+        mockMvc.perform(get("/api/v1/task-executions")
+                        .param("scope", "QUEUED")
+                        .header("Authorization", "Bearer test-dispatcher-token"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.content[0].executionId").value(executionId.toString()))
+                .andExpect(jsonPath("$.content[0].taskId").value(command.taskId().toString()))
+                .andExpect(jsonPath("$.content[0].queuePosition").value(1));
     }
 
     @Test
