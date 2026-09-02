@@ -1,10 +1,11 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import {
   ScriptWorkbench,
   type ScriptRequestExample,
   type ScriptRunRequest,
 } from '@superhuang/super-api-studio-script-workbench';
 import '@superhuang/super-api-studio-script-workbench/style.css';
-import { Alert, Form, Input, Select, Typography } from 'antd';
+import { Form, Input, Select, Typography } from 'antd';
 import { useState } from 'react';
 import { useDataSources } from '../../../datasource';
 import { useServiceEngineDataSourceRegistrations } from '../../../serviceengine';
@@ -48,7 +49,7 @@ export const ScriptServiceEditor = ({
   canViewEngines,
 }: ScriptServiceEditorProps) => {
   const selectedDataSourceId = Form.useWatch('dataSourceId', form);
-  const routePath = Form.useWatch('routePath', form);
+  const contextPath = Form.useWatch('contextPath', form);
   const script = Form.useWatch('script', form) ?? '';
   const examples = Form.useWatch('examples', form) ?? defaultScriptRequestExamples();
   const [activeExampleId, setActiveExampleId] = useState<string>();
@@ -77,11 +78,11 @@ export const ScriptServiceEditor = ({
     if (!canRun) {
       throw new Error('当前账号没有脚本调试权限');
     }
-    await form.validateFields(['dataSourceId', 'engineId', 'routePath', 'script']);
+    await form.validateFields(['dataSourceId', 'engineId', 'contextPath', 'script']);
     return executeMutation.mutateAsync({
       engineId,
       dataSourceId: selectedDataSourceId ?? '',
-      routePath: routePath ?? '',
+      routePath: contextPath ?? '',
       script,
       ...request,
     });

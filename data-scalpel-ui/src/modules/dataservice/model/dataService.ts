@@ -3,7 +3,7 @@ import type { GatewayProvider } from './apiConsumer';
 import type { GatewayReconciliationState } from './gatewayReconciliation';
 import type { ScriptRequestExample } from '@superhuang/super-api-studio-script-workbench';
 
-export type DataServiceType = 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API';
+export type DataServiceType = 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API' | 'SPATIAL_SERVICE';
 
 export type DataServiceStatus = 'DRAFT' | 'ENABLED' | 'DISABLED';
 
@@ -75,6 +75,11 @@ export interface ScriptDataServiceDefinition {
   version: number;
 }
 
+export interface SpatialDataServiceDefinition {
+  modelId: string;
+  version: number;
+}
+
 interface DataServiceBase {
   id: string;
   code: string;
@@ -84,7 +89,7 @@ interface DataServiceBase {
   definitionConfigured: boolean;
   definitionVersion: number | null;
   engineId: string;
-  engineRoutePath: string;
+  contextPath: string | null;
   status: DataServiceStatus;
   revision: number;
   deploymentStatus: DataServiceDeploymentStatus | null;
@@ -105,6 +110,7 @@ export interface DataServiceDetail extends DataServiceBase {
   standardDefinition: StandardDataServiceDefinition | null;
   sqlDefinition: SqlDataServiceDefinition | null;
   scriptDefinition: ScriptDataServiceDefinition | null;
+  spatialDefinition?: SpatialDataServiceDefinition | null;
 }
 
 export interface StandardDataServiceDefinitionRequest {
@@ -124,14 +130,20 @@ export interface ScriptDataServiceDefinitionRequest {
   examples: ScriptRequestExample[];
 }
 
+export interface SpatialDataServiceDefinitionRequest {
+  modelId: string;
+}
+
 interface DataServiceWriteRequest {
   name: string;
   directoryId?: string;
   engineId: string;
+  contextPath: string | null;
   type: DataServiceType;
   standardDefinition: StandardDataServiceDefinitionRequest | null;
   sqlDefinition: SqlDataServiceDefinitionRequest | null;
   scriptDefinition: ScriptDataServiceDefinitionRequest | null;
+  spatialDefinition?: SpatialDataServiceDefinitionRequest | null;
   description?: string;
 }
 
@@ -150,6 +162,27 @@ export interface UpdateDataServiceDefinitionRequest {
   standardDefinition: StandardDataServiceDefinitionRequest | null;
   sqlDefinition: SqlDataServiceDefinitionRequest | null;
   scriptDefinition: ScriptDataServiceDefinitionRequest | null;
+  spatialDefinition?: SpatialDataServiceDefinitionRequest | null;
+}
+
+export interface SpatialDataServiceModelCandidate {
+  id: string;
+  code: string;
+  name: string;
+  status: DataModelStatus;
+  dataSourceId: string;
+  dataSourceCode: string | null;
+  dataSourceName: string | null;
+  catalog: string | null;
+  schema: string | null;
+  table: string;
+  geometryColumn: string | null;
+  geometryKind: string | null;
+  epsg: number | null;
+  primaryKeyColumn: string | null;
+  selectable: boolean;
+  unavailableReason: string | null;
+  updatedAt: string;
 }
 
 export interface StandardDataServiceModelCandidate {
@@ -209,7 +242,7 @@ export interface ServiceQueryResponse {
   pageNo: number;
   pageSize: number;
   totalCount: number | null;
-  resultList: Record<string, unknown>[];
+  items: Record<string, unknown>[];
 }
 
 export interface SqlServiceTestProblem {
@@ -239,6 +272,7 @@ export const dataServiceTypeLabels: Record<DataServiceType, string> = {
   STANDARD_TABLE: '标准单表',
   SQL_QUERY: 'SQL 查询',
   SCRIPT_API: 'Groovy 脚本',
+  SPATIAL_SERVICE: '空间服务',
 };
 
 export const dataServiceStatusLabels: Record<DataServiceStatus, string> = {

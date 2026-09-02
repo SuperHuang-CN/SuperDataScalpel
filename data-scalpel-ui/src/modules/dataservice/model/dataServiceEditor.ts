@@ -44,7 +44,7 @@ export interface DataServiceFormValues {
   dataSourceId?: string;
   modelIds?: string[];
   engineId?: string;
-  routePath?: string;
+  contextPath?: string;
   sqlText?: string;
   script?: string;
   examples?: ScriptRequestExample[];
@@ -180,11 +180,11 @@ export const detailToDataServiceFormValues = (detail: DataServiceDetail): DataSe
   name: detail.name,
   directoryId: detail.directoryId ?? undefined,
   type: detail.type,
-  modelId: detail.standardDefinition?.modelId,
+  modelId: detail.standardDefinition?.modelId ?? detail.spatialDefinition?.modelId,
   dataSourceId: detail.sqlDefinition?.dataSourceId ?? detail.scriptDefinition?.dataSourceId,
   modelIds: detail.sqlDefinition?.modelIds ?? [],
   engineId: detail.engineId,
-  routePath: detail.engineRoutePath,
+  contextPath: detail.contextPath ?? undefined,
   sqlText: detail.sqlDefinition?.sqlText ?? '',
   script: detail.scriptDefinition?.script ?? 'return [message: "Hello DataScalpel"]',
   examples: detail.scriptDefinition?.examples?.length
@@ -199,6 +199,7 @@ export const buildDataServiceUpdateRequest = (values: DataServiceFormValues): Up
     name: values.name?.trim() ?? '',
     directoryId: values.directoryId,
     engineId: values.engineId ?? '',
+    contextPath: values.type === 'SPATIAL_SERVICE' ? null : values.contextPath?.trim() ?? '',
     type: values.type,
     description: normalizedOptionalText(values.description),
   };
@@ -207,6 +208,7 @@ export const buildDataServiceUpdateRequest = (values: DataServiceFormValues): Up
     standardDefinition: null,
     sqlDefinition: null,
     scriptDefinition: null,
+    spatialDefinition: null,
   };
 };
 
@@ -218,6 +220,7 @@ export const buildDataServiceDefinitionRequest = (
       standardDefinition: { modelId: values.modelId ?? '' },
       sqlDefinition: null,
       scriptDefinition: null,
+      spatialDefinition: null,
     };
   }
   if (values.type === 'SQL_QUERY') {
@@ -230,9 +233,10 @@ export const buildDataServiceDefinitionRequest = (
         parameters: (values.parameters ?? []).map(toParameterDefinition),
       },
       scriptDefinition: null,
+      spatialDefinition: null,
     };
   }
-  return {
+  if (values.type === 'SCRIPT_API') return {
     standardDefinition: null,
     sqlDefinition: null,
     scriptDefinition: {
@@ -240,6 +244,13 @@ export const buildDataServiceDefinitionRequest = (
       script: values.script ?? '',
       examples: normalizedScriptRequestExamples(values.examples ?? defaultScriptRequestExamples()),
     },
+    spatialDefinition: null,
+  };
+  return {
+    standardDefinition: null,
+    sqlDefinition: null,
+    scriptDefinition: null,
+    spatialDefinition: { modelId: values.modelId ?? '' },
   };
 };
 

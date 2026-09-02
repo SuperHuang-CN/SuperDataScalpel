@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DatabaseOutlined,
   DeleteOutlined,
@@ -15,25 +16,13 @@ import {
   TableOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import {
-  Button,
-  Dropdown,
-  Form,
-  Modal,
-  Alert,
-  Select,
-  Space,
-  Table,
-  Tooltip,
-  Typography,
-  message,
-} from 'antd';
+import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
-import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { useDataSources } from '../../datasource';
 import {
   DirectoryTreePanel,
@@ -257,26 +246,34 @@ export const DataModelPage = () => {
       warehouseLayerId: undefined,
     });
     advancedFilterForm.resetFields();
+    advancedFilterForm.setFieldsValue({ storageDataSourceId: undefined, warehouseLayerId: undefined });
     setAdvancedFilters({});
     setAdvancedFilterOpen(false);
     setDirectorySelection(undefined);
     search({}, undefined);
   };
 
-  const applyDirectFilters = (values: DataModelFilters) => search({
-    ...filters,
-    keyword: values.keyword,
-    status: values.status,
-    storageDataSourceId: advancedFilters.storageDataSourceId,
-    warehouseLayerId: advancedFilters.warehouseLayerId,
-  });
+  const applyDirectFilters = (values: DataModelFilters) => {
+    const advancedValues = advancedFilterForm.getFieldsValue();
+    const nextAdvancedFilters = {
+      storageDataSourceId: advancedValues.storageDataSourceId,
+      warehouseLayerId: advancedValues.warehouseLayerId,
+    };
+    setAdvancedFilters(nextAdvancedFilters);
+    search({
+      ...filters,
+      keyword: values.keyword,
+      status: values.status,
+      ...nextAdvancedFilters,
+    });
+  };
   const confirmAdvancedFilters = () => {
     const values = advancedFilterForm.getFieldsValue();
     setAdvancedFilters({ storageDataSourceId: values.storageDataSourceId, warehouseLayerId: values.warehouseLayerId });
     setAdvancedFilterOpen(false);
   };
   const clearAdvancedFilters = () => {
-    advancedFilterForm.resetFields();
+    advancedFilterForm.setFieldsValue({ storageDataSourceId: undefined, warehouseLayerId: undefined });
   };
 
   const selectDirectory = (selection: DirectorySelection) => {
@@ -774,7 +771,8 @@ export const DataModelPage = () => {
                     .map(([value, label]) => ({ value, label }))}
                 />
               </Form.Item>
-              <ManagementMoreFilters
+            </Form>
+              <ManagementAdaptiveMoreFilters
                 count={advancedFilterCount}
                 open={advancedFilterOpen}
                 onOpenChange={(open) => {
@@ -785,10 +783,13 @@ export const DataModelPage = () => {
                   }
                 }}
                 onClear={clearAdvancedFilters}
-                onCancel={() => setAdvancedFilterOpen(false)}
+                onCancel={() => {
+                  advancedFilterForm.setFieldsValue({ storageDataSourceId: advancedFilters.storageDataSourceId, warehouseLayerId: advancedFilters.warehouseLayerId });
+                  setAdvancedFilterOpen(false);
+                }}
                 onConfirm={confirmAdvancedFilters}
               >
-                    <Form<DataModelFilters> form={advancedFilterForm} layout="vertical" autoComplete="off">
+                    <Form<DataModelFilters> form={advancedFilterForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}>
                     <Form.Item name="storageDataSourceId" label="JDBC 数据源">
                       <Select
                         allowClear
@@ -797,7 +798,7 @@ export const DataModelPage = () => {
                         placeholder="全部 JDBC 数据源"
                         loading={dataSourcesQuery.isFetching}
                         options={dataSourceOptions}
-                        className="advanced-filter-select"
+                        className="advanced-filter-select management-inline-filter-wide"
                       />
                     </Form.Item>
                     <Form.Item name="warehouseLayerId" label="数仓分层">
@@ -812,8 +813,7 @@ export const DataModelPage = () => {
                       />
                     </Form.Item>
                     </Form>
-              </ManagementMoreFilters>
-            </Form>
+              </ManagementAdaptiveMoreFilters>
             <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0 || directorySelection !== undefined} loading={modelsQuery.isFetching} onReset={reset} />
           </div>
           <div className="management-results-surface">

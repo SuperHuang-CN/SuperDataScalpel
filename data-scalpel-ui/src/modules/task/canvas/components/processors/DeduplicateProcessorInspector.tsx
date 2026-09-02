@@ -1,21 +1,11 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   DownOutlined,
   PlusOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Form,
-  Input,
-  Modal,
-  Radio,
-  Select,
-  Space,
-  Tag,
-  Typography,
-} from 'antd';
+import { Button, Form, Input, Modal, Radio, Select, Space, Tag, Typography } from 'antd';
 import {
   useImperativeHandle,
   useMemo,

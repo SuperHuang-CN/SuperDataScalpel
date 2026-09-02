@@ -153,13 +153,13 @@ stateDiagram-v2
 
 ### 5.2 路由唯一性
 
-网关入口使用 `DataService.routePath`，因此它必须在整个 DataScalpel 中全局唯一，不再只要求同一 Engine 内唯一：
+`DataService.contextPath` 是服务在 Engine 上的实际地址，数据库仍映射到 `route_path`，只需在同一个 Engine 内唯一：
 
 ```text
-uk_ds_data_service_route(route_path)
+uk_ds_data_service_engine_context_path(engine_id, route_path)
 ```
 
-应用层在创建、修改时提前检查，数据库唯一约束负责并发兜底。Kong 适配器还会拒绝接管同名但归属标签不匹配的对象。
+`GatewayServiceBinding.gatewayRoutePath` 是独立的网关公开地址。首次发布默认带出服务 `contextPath`，用户可以修改；重新发布默认保留已发布的网关路径。网关路径冲突由网关侧唯一性约束处理。应用层在创建、修改服务时提前检查 Engine 路径，数据库唯一约束负责并发兜底。
 
 ## 6. 网关薄抽象
 
@@ -205,7 +205,7 @@ public interface GatewayServicePort {
 | DataScalpel | Kong Service |
 |---|---|
 | `dataService.id` | 稳定名称 `datascalpel-service-{UUID}` |
-| `engine.runtimeUrl + /runtime/v1/services/{dataService.id}` | `url` |
+| `engine.runtimeUrl + dataService.contextPath` | `url` |
 | 系统归属 | `tags` |
 
 Service 标签：
@@ -214,7 +214,7 @@ Service 标签：
 - `datascalpel-service`
 - `datascalpel-data-service-{dataServiceId}`
 
-第一阶段直接把 Kong Service 指向单个 Engine 的 `runtimeUrl + /runtime/v1/services/{dataService.id}`，不创建 Kong Upstream 和 Target。
+第一阶段直接把 Kong Service 指向单个 Engine 的 `runtimeUrl + dataService.contextPath`，不创建 Kong Upstream 和 Target。
 
 ### 7.2 Kong Route
 
@@ -236,7 +236,7 @@ http://gateway-proxy/open-api/v1/orders
 会被转发为：
 
 ```text
-http://service-engine/runtime/v1/services/{dataService.id}
+http://service-engine/{dataService.contextPath}
 ```
 
 ### 7.3 受保护服务

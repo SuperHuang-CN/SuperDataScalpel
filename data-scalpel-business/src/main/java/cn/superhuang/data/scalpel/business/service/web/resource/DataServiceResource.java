@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.business.lineage.web.response.LineageFieldGrap
 import cn.superhuang.data.scalpel.business.service.DataServiceManagementService;
 import cn.superhuang.data.scalpel.business.service.DataServiceRelatedModelService;
 import cn.superhuang.data.scalpel.business.service.StandardDataServiceModelCandidateService;
+import cn.superhuang.data.scalpel.business.service.SpatialDataServiceModelCandidateService;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceDefinitionRequest;
@@ -19,6 +20,7 @@ import cn.superhuang.data.scalpel.business.service.web.response.GatewayDataServi
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceAccessMode;
 import cn.superhuang.data.scalpel.business.service.web.response.SqlServiceTestResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.StandardDataServiceModelCandidateResponse;
+import cn.superhuang.data.scalpel.business.service.web.response.SpatialDataServiceModelCandidateResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import jakarta.validation.Valid;
@@ -45,18 +47,31 @@ public class DataServiceResource {
     private final DataServiceManagementService service;
     private final StandardDataServiceModelCandidateService modelCandidateService;
     private final DataServiceRelatedModelService relatedModelService;
+    private final SpatialDataServiceModelCandidateService spatialModelCandidateService;
     private final DataServiceLineageQueryService lineageQueryService;
 
     public DataServiceResource(
             DataServiceManagementService service,
             StandardDataServiceModelCandidateService modelCandidateService,
+            SpatialDataServiceModelCandidateService spatialModelCandidateService,
             DataServiceRelatedModelService relatedModelService,
             DataServiceLineageQueryService lineageQueryService
     ) {
         this.service = service;
         this.modelCandidateService = modelCandidateService;
+        this.spatialModelCandidateService = spatialModelCandidateService;
         this.relatedModelService = relatedModelService;
         this.lineageQueryService = lineageQueryService;
+    }
+
+    @GetMapping("/{id}/spatial-model-candidates")
+    @PreAuthorize("hasAuthority('service.view') and hasAuthority('model.view')")
+    public PageResponse<SpatialDataServiceModelCandidateResponse> spatialModelCandidates(
+            @PathVariable UUID id,
+            @ParameterObject @ModelAttribute SearchRequest request,
+            @RequestParam(defaultValue = "false") boolean includeUnavailable
+    ) {
+        return spatialModelCandidateService.search(id, request, includeUnavailable);
     }
 
     @GetMapping

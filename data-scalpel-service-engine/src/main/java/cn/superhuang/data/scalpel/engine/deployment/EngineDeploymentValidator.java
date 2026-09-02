@@ -32,6 +32,12 @@ public class EngineDeploymentValidator {
     }
 
     public void validate(ServiceDeploymentRequest request) {
+        if (request.definition().type() == DataServiceType.SPATIAL_SERVICE) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_REQUEST,
+                    "SPATIAL_SERVICE 由 GeoServer 承载，不能部署到 DataScalpel Service Engine"
+            );
+        }
         var dataSource = dataSourceService.resolve(request.dataSourceId());
         if (request.definition().type() != DataServiceType.SQL_QUERY) {
             return;

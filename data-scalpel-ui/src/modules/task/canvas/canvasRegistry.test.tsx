@@ -172,26 +172,30 @@ describe('CanvasNodeView', () => {
           crs: { authority: 'EPSG', code: 4326 },
           dimension: 'XY',
         },
-      },
-      compilation: {
-        inputTables: [],
-        outputTables: [{
-          name: 'orders_202607',
-          origin: null,
-          columns: [
-            canvasColumn('id', 'LONG', false),
-            {
-              ...canvasColumn('_geometry', 'GEOMETRY', false),
-              geometry: {
-                kind: 'POINT',
-                crs: { authority: 'EPSG', code: 4326 },
-                dimension: 'XY',
+        tables: [{
+          fileDatasetTableId: '04aee9c7-1877-47b4-a988-dd2968e4a85c',
+          tableName: '七月订单',
+          tableCode: 'orders_202607',
+          datasetType: 'SHAPEFILE',
+          status: 'READY',
+          schema: {
+            name: 'orders_202607',
+            origin: null,
+            columns: [
+              canvasColumn('id', 'LONG', false),
+              {
+                ...canvasColumn('_geometry', 'GEOMETRY', false),
+                geometry: {
+                  kind: 'POINT',
+                  crs: { authority: 'EPSG', code: 4326 },
+                  dimension: 'XY',
+                },
               },
-            },
-          ],
-          datasetKind: 'BOUNDED',
-          eventTimeColumn: null,
-          watermarkDelay: null,
+            ],
+            datasetKind: 'BOUNDED',
+            eventTimeColumn: null,
+            watermarkDelay: null,
+          },
         }],
       },
     });
@@ -428,6 +432,7 @@ describe('CanvasNodeView', () => {
         configuration: {
           sourceTableName: 'orders',
           outputTableName: 'valid_orders',
+          mode: 'STRUCTURED',
           condition: {
             kind: 'GROUP',
             operator: 'AND',
@@ -438,6 +443,7 @@ describe('CanvasNodeView', () => {
               values: [{ dataType: 'STRING', value: 'SECRET_LITERAL' }],
             }],
           },
+          sqlExpression: '',
         },
       },
       {
@@ -508,6 +514,11 @@ describe('CanvasNodeView', () => {
         name: '订单写库',
         configuration: {
           dataSourceId: 'jdbc-target',
+          sourceTableName: 'orders',
+          targetTableName: 'dwd_orders',
+          writeMode: 'UPSERT',
+          upsertKeyColumns: ['id'],
+          columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'order_id' }],
           writes: [{
             writeId: '11111111-1111-4111-8111-111111111111',
             sourceTableName: 'orders',
@@ -535,10 +546,17 @@ describe('CanvasNodeView', () => {
         name: '订单事件输出',
         configuration: {
           dataSourceId: 'kafka-target',
+          sourceTableName: 'orders',
+          topic: 'order-events',
+          valueSchema: { columns: [canvasColumn('id', 'LONG', false)] },
+          keyColumnName: 'id',
+          columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
           writes: [{
             writeId: '22222222-2222-4222-8222-222222222222',
             sourceTableName: 'orders',
             topic: 'order-events',
+            valueFormat: null,
+            valueColumnNames: [],
             valueSchema: { columns: [canvasColumn('id', 'LONG', false)] },
             keyColumnName: 'id',
             columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
@@ -550,6 +568,15 @@ describe('CanvasNodeView', () => {
         name: '区域 GeoParquet 输出',
         configuration: {
           dataSourceId: 's3-target',
+          sourceTableName: 'districts',
+          targetPath: 'exports/districts',
+          conflictPolicy: 'FAIL_IF_EXISTS',
+          formatOptions: {
+            type: 'GEOPARQUET',
+            geometryColumnName: 'geom',
+            compression: 'ZSTD',
+            coveringMode: 'ROW_BBOX',
+          },
           writes: [{
             writeId: '33333333-3333-4333-8333-333333333333',
             sourceTableName: 'districts',
@@ -627,6 +654,10 @@ describe('CanvasNodeView', () => {
         name: `${options.type} 输出`,
         configuration: {
           dataSourceId: 's3-target',
+          sourceTableName: 'districts',
+          targetPath: 'exports/districts',
+          conflictPolicy: 'FAIL_IF_EXISTS',
+          formatOptions: options,
           writes: [{
             writeId: `00000000-0000-4000-8000-${String(index).padStart(12, '0')}`,
             sourceTableName: 'districts',

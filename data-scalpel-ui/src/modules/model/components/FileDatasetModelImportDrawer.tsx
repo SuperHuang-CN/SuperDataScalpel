@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   CheckCircleOutlined,
   CloseCircleOutlined,
@@ -6,20 +7,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Drawer,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Steps,
-  Table,
-  Tag,
-  TreeSelect,
-  Typography,
-} from 'antd';
+import { Button, Drawer, Input, Modal, Select, Space, Steps, Table, Tag, TreeSelect, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { useDataSources } from '../../datasource';

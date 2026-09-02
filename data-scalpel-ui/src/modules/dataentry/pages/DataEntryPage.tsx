@@ -1,8 +1,9 @@
 import { DatabaseOutlined, MoreOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Button, Dropdown, Form, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
 import { useCurrentUser } from '../../system';
 import { useCreateDataEntryForm, useDataEntryCandidates, useDataEntryForms } from '../hooks/useDataEntry';
@@ -25,6 +26,12 @@ export const DataEntryPage = () => {
   const candidatesQuery = useDataEntryCandidates(createOpen);
   const createMutation = useCreateDataEntryForm();
 
+  const resetFilters = () => {
+    form.resetFields();
+    setFilters({});
+    setPage(0);
+  };
+
   const create = async () => {
     if (!candidateId) return;
     try {
@@ -40,23 +47,24 @@ export const DataEntryPage = () => {
   return (
     <div className="management-page data-entry-page">
       {contextHolder}
-      <div className="management-filter-panel">
-        <Form autoComplete="off" form={form} layout="inline" onFinish={(values) => { setFilters(values); setPage(0); }}>
-          <Form.Item name="keyword"><Input.Search allowClear placeholder="模型名称 / 编码" onSearch={() => form.submit()} /></Form.Item>
+      <section className="management-workbench">
+        <div className="management-filter-strip">
+        <Form autoComplete="off" form={form} layout="inline" className="management-filter-form" onFinish={(values) => { setFilters(values); setPage(0); }}>
+          <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索模型名称或编码" /></Form.Item>
           <Form.Item name="status"><Select allowClear placeholder="表单状态" style={{ width: 140 }} options={Object.entries(dataEntryStatusLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-          <Form.Item><Space><Button type="primary" htmlType="submit">查询</Button><Button onClick={() => { form.resetFields(); setFilters({}); setPage(0); }}>重置</Button></Space></Form.Item>
         </Form>
-      </div>
-      <div className="management-result-panel">
+          <ManagementFilterActions form={form} appliedFilters={filters} loading={formsQuery.isFetching} onReset={resetFilters} />
+        </div>
+      <div className="management-results-surface">
         <div className="management-result-toolbar">
-          <span>填报表单 · 共 {formsQuery.data?.totalElements ?? 0} 项</span>
-          <Space>
+          <span className="management-result-title">填报表单 <span className="management-result-count">共 {formsQuery.data?.totalElements ?? 0} 项</span></span>
+          <Space className="management-result-actions">
             <Tooltip title="刷新"><Button type="text" aria-label="刷新填报表单" icon={<ReloadOutlined />} loading={formsQuery.isFetching} onClick={() => void formsQuery.refetch()} /></Tooltip>
             {canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>创建填报表单</Button>}
           </Space>
         </div>
         <Table<DataEntryForm>
-          rowKey="id" size="small" loading={formsQuery.isFetching} dataSource={formsQuery.data?.content ?? []}
+          className="management-table" rowKey="id" size="small" loading={formsQuery.isFetching} dataSource={formsQuery.data?.content ?? []}
           columns={[
             { title: '模型', key: 'model', render: (_, row) => <ManagementListCell icon={<DatabaseOutlined />} primary={row.modelName ?? '模型已删除'} secondary={row.modelCode ?? row.modelId} /> },
             { title: '状态', dataIndex: 'status', width: 120, render: (value) => <Tag color={statusColor[value as DataEntryFormStatus]}>{dataEntryStatusLabels[value as DataEntryFormStatus]}</Tag> },
@@ -68,6 +76,7 @@ export const DataEntryPage = () => {
           pagination={{ current: page + 1, pageSize: size, total: formsQuery.data?.totalElements ?? 0, showSizeChanger: true, showTotal: (total) => `共 ${total} 项`, onChange: (next, nextSize) => { setPage(nextSize !== size ? 0 : next - 1); setSize(nextSize); } }}
         />
       </div>
+      </section>
       <Modal rootClassName="business-overlay business-modal-overlay" title="选择目标模型" open={createOpen} confirmLoading={createMutation.isPending} okButtonProps={{ disabled: !candidateId }} onOk={() => void create()} onCancel={() => { setCreateOpen(false); setCandidateId(undefined); }}>
         <Select
           showSearch optionFilterProp="label" value={candidateId} style={{ width: '100%' }} placeholder="选择尚未建立填报表单的模型"

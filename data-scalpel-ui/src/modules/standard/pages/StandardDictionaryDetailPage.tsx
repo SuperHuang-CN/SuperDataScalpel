@@ -1,5 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
+  BookOutlined,
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
@@ -7,28 +9,17 @@ import {
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SearchOutlined,
   SwapOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps, TabsProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Dropdown,
-  Form,
-  Input,
-  Modal,
-  Space,
-  Skeleton,
-  Table,
-  Tabs,
-  Tag,
-  Tooltip,
-  message,
-} from 'antd';
+import { Button, Descriptions, Dropdown, Form, Input, Modal, Space, Skeleton, Table, Tabs, Tag, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { dataModelStatusLabels, physicalTableModeLabels } from '../../model';
 import { useCurrentUser } from '../../system';
 import { MoveStandardDictionaryItemModal } from '../components/MoveStandardDictionaryItemModal';
@@ -266,19 +257,25 @@ export const StandardDictionaryDetailPage = () => {
       label: '基本信息',
       children: (
         <div className="standard-dictionary-detail-panel standard-dictionary-basic-panel">
-          <Descriptions size="small" bordered column={2}>
-            <Descriptions.Item label="码表编码"><code>{dictionary.code}</code></Descriptions.Item>
-            <Descriptions.Item label="码表名称">{dictionary.name}</Descriptions.Item>
-            <Descriptions.Item label="取值类型">{standardDictionaryValueTypeLabels[dictionary.valueType]}</Descriptions.Item>
-            <Descriptions.Item label="内容版本">v{dictionary.version}</Descriptions.Item>
-            <Descriptions.Item label="状态">
-              <Tag color={dictionary.enabled ? 'success' : 'default'}>{dictionary.enabled ? '启用' : '停用'}</Tag>
-            </Descriptions.Item>
-            <Descriptions.Item label="节点数量">{detail.itemCount}</Descriptions.Item>
-            <Descriptions.Item label="字段引用">{detail.fieldReferenceCount}</Descriptions.Item>
-            <Descriptions.Item label="模板字段引用">{detail.templateFieldReferenceCount}</Descriptions.Item>
-            <Descriptions.Item label="说明" span={2}>{dictionary.description || '—'}</Descriptions.Item>
-          </Descriptions>
+          <BusinessDetailSection
+            title="码表信息"
+            description="码表定义、版本状态与引用概况"
+            icon={<BookOutlined />}
+          >
+            <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
+              <Descriptions.Item label="码表编码"><code>{dictionary.code}</code></Descriptions.Item>
+              <Descriptions.Item label="码表名称">{dictionary.name}</Descriptions.Item>
+              <Descriptions.Item label="取值类型">{standardDictionaryValueTypeLabels[dictionary.valueType]}</Descriptions.Item>
+              <Descriptions.Item label="内容版本">v{dictionary.version}</Descriptions.Item>
+              <Descriptions.Item label="状态">
+                <Tag color={dictionary.enabled ? 'success' : 'default'}>{dictionary.enabled ? '启用' : '停用'}</Tag>
+              </Descriptions.Item>
+              <Descriptions.Item label="节点数量">{detail.itemCount}</Descriptions.Item>
+              <Descriptions.Item label="字段引用">{detail.fieldReferenceCount}</Descriptions.Item>
+              <Descriptions.Item label="模板字段引用">{detail.templateFieldReferenceCount}</Descriptions.Item>
+              <Descriptions.Item label="说明" span={4}>{dictionary.description || '—'}</Descriptions.Item>
+            </BusinessDetailDescriptions>
+          </BusinessDetailSection>
         </div>
       ),
     },
@@ -287,13 +284,13 @@ export const StandardDictionaryDetailPage = () => {
       label: `码表项（${detail.itemCount}）`,
       children: (
         <div className="standard-dictionary-detail-panel standard-dictionary-table-panel">
-          <div className="management-toolbar">
+          <div className="management-toolbar detail-table-filter-toolbar">
             <Alert
               showIcon
               type="info"
               title="所有实际启用的节点均可作为业务取值，包括包含子节点的父节点。"
             />
-            <Space>
+            <Space className="detail-table-filter-actions">
               <Button icon={<ReloadOutlined />} onClick={() => void treeQuery.refetch()}>刷新</Button>
               {canManage && (
                 <Button
@@ -336,8 +333,8 @@ export const StandardDictionaryDetailPage = () => {
       key: 'references',
       label: `引用字段（${detail.fieldReferenceCount}）`,
       children: (
-        <div className="standard-dictionary-detail-panel standard-dictionary-table-panel">
-          <div className="management-toolbar">
+        <div className="standard-dictionary-detail-panel standard-dictionary-table-panel detail-table-panel">
+          <div className="management-toolbar detail-table-filter-toolbar">
             <Form<ReferenceFilters>
               autoComplete="off"
               form={referenceForm}
@@ -347,18 +344,17 @@ export const StandardDictionaryDetailPage = () => {
                 setReferencePage(1);
               }}
             >
-              <Form.Item name="keyword" label="字段名称/编码">
-                <Input allowClear placeholder="筛选模型字段" />
+              <Form.Item name="keyword">
+                <Input allowClear prefix={<SearchOutlined />} placeholder="字段名称或编码" className="detail-table-filter-keyword" />
               </Form.Item>
             </Form>
-            <Space>
-              <Button type="primary" onClick={() => referenceForm.submit()}>查询</Button>
-              <Button onClick={() => {
+            <Space className="detail-table-filter-actions">
+              <Button type="primary" icon={<SearchOutlined />} onClick={() => referenceForm.submit()}>查询</Button>
+              <Button type="text" onClick={() => {
                 referenceForm.resetFields();
                 setReferenceFilters({});
                 setReferencePage(1);
               }}>重置</Button>
-              <Button icon={<ReloadOutlined />} onClick={() => void referencesQuery.refetch()}>刷新</Button>
             </Space>
           </div>
           {referencesQuery.error && (
@@ -369,6 +365,16 @@ export const StandardDictionaryDetailPage = () => {
               action={<Button onClick={() => void referencesQuery.refetch()}>重试</Button>}
             />
           )}
+          <DetailTableToolbar
+            title="引用字段"
+            total={referencesQuery.data?.totalElements ?? 0}
+            current={referencePage}
+            pageSize={referencePageSize}
+            onChange={(nextPage, nextPageSize) => { setReferencePage(nextPage); setReferencePageSize(nextPageSize); }}
+            onRefresh={() => void referencesQuery.refetch()}
+            refreshing={referencesQuery.isFetching}
+            refreshLabel="刷新引用字段"
+          />
           <Table<StandardDictionaryFieldReference>
             className="management-table"
             size="small"
@@ -377,18 +383,7 @@ export const StandardDictionaryDetailPage = () => {
             dataSource={referencesQuery.data?.content ?? []}
             loading={referencesQuery.isFetching}
             scroll={{ x: 1000, y: '100%' }}
-            pagination={{
-              current: referencePage,
-              pageSize: referencePageSize,
-              total: referencesQuery.data?.totalElements ?? 0,
-              showSizeChanger: true,
-              hideOnSinglePage: false,
-              showTotal: (total) => `共 ${total} 项`,
-            }}
-            onChange={(pagination) => {
-              setReferencePage(pagination.current ?? 1);
-              setReferencePageSize(pagination.pageSize ?? 20);
-            }}
+            pagination={false}
           />
         </div>
       ),

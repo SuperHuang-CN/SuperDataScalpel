@@ -8,20 +8,18 @@ import java.util.List;
 public record StandardServiceQueryRequest(
         Integer pageNo,
         Integer pageSize,
-        ConditionType conditionType,
-        List<String> columns,
-        List<@Valid StandardFilter> filters,
-        List<@Valid StandardOrder> orders,
-        List<String> groups,
-        List<@Valid StandardAggregator> aggregators,
+        List<String> fields,
+        @Valid StandardFilterNode filter,
+        List<@Valid StandardOrder> sort,
+        List<String> groupBy,
+        List<@Valid StandardAggregator> aggregates,
         Boolean returnCount
 ) {
 
     public StandardServiceQueryRequest {
-        columns = columns == null ? List.of() : List.copyOf(columns);
-        filters = filters == null ? List.of() : List.copyOf(filters);
-        orders = orders == null ? List.of() : List.copyOf(orders);
-        groups = groups == null ? List.of() : List.copyOf(groups);
-        aggregators = aggregators == null ? List.of() : List.copyOf(aggregators);
+        fields = fields == null ? List.of() : List.copyOf(fields);
+        sort = sort == null ? List.of() : List.copyOf(sort);
+        groupBy = groupBy == null ? List.of() : List.copyOf(groupBy);
+        aggregates = aggregates == null ? List.of() : List.copyOf(aggregates);
     }
 }

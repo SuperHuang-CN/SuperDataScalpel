@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.service;
 
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
+import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
@@ -19,11 +20,14 @@ import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeployment;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentStatus;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
+import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineType;
+import cn.superhuang.data.scalpel.business.service.domain.ServiceRoutePath;
 import cn.superhuang.data.scalpel.business.service.domain.ScriptDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceModelReference;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceParameter;
 import cn.superhuang.data.scalpel.business.service.domain.StandardDataServiceDefinition;
+import cn.superhuang.data.scalpel.business.service.domain.SpatialDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServiceBinding;
 import cn.superhuang.data.scalpel.business.service.gateway.repository.GatewayServiceBindingRepository;
 import cn.superhuang.data.scalpel.business.service.consumer.subscription.repository.ApiServiceSubscriptionRepository;
@@ -36,6 +40,7 @@ import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefi
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceModelReferenceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceParameterRepository;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
+import cn.superhuang.data.scalpel.business.service.repository.SpatialDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.PublishDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.ScriptDataServiceDefinitionRequest;
@@ -44,6 +49,7 @@ import cn.superhuang.data.scalpel.business.service.web.request.ScriptRequestPara
 import cn.superhuang.data.scalpel.business.service.web.request.SqlDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.SqlServiceTestRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.StandardDataServiceDefinitionRequest;
+import cn.superhuang.data.scalpel.business.service.web.request.SpatialDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateDataServiceDefinitionRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceDetailResponse;
@@ -57,6 +63,7 @@ import cn.superhuang.data.scalpel.business.service.web.response.SqlDataServiceDe
 import cn.superhuang.data.scalpel.business.service.web.response.SqlServiceTestProblem;
 import cn.superhuang.data.scalpel.business.service.web.response.SqlServiceTestResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.StandardDataServiceDefinitionResponse;
+import cn.superhuang.data.scalpel.business.service.web.response.SpatialDataServiceDefinitionResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.contract.service.DataServiceType;
@@ -70,6 +77,10 @@ import cn.superhuang.data.scalpel.contract.service.ScriptServiceDefinition;
 import cn.superhuang.data.scalpel.contract.service.SqlServiceDefinition;
 import cn.superhuang.data.scalpel.contract.service.SqlServiceParameterDefinition;
 import cn.superhuang.data.scalpel.contract.service.StandardServiceDefinition;
+import cn.superhuang.data.scalpel.contract.service.SpatialServiceDefinition;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.search.SearchEngine;
@@ -102,7 +113,7 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
-/** Control-plane CRUD and deployment lifecycle for all three data service types. */
+/** Control-plane CRUD and deployment lifecycle for all data service types. */
 @Service
 public class DataServiceManagementService {
 
@@ -113,6 +124,7 @@ public class DataServiceManagementService {
     private final StandardDataServiceDefinitionRepository standardDefinitionRepository;
     private final SqlDataServiceDefinitionRepository sqlDefinitionRepository;
     private final ScriptDataServiceDefinitionRepository scriptDefinitionRepository;
+    private final SpatialDataServiceDefinitionRepository spatialDefinitionRepository;
     private final SqlDataServiceModelReferenceRepository sqlModelReferenceRepository;
     private final SqlDataServiceParameterRepository sqlParameterRepository;
     private final ServiceEngineRepository engineRepository;
@@ -122,6 +134,7 @@ public class DataServiceManagementService {
     private final DirectoryService directoryService;
     private final ModelPhysicalTablePort physicalTablePort;
     private final ServiceEngineClient engineClient;
+    private final GeoServerClient geoServerClient;
     private final DataServiceGatewayPublicationService gatewayPublicationService;
     private final ServiceEngineDataSourceRegistrationService dataSourceRegistrationService;
     private final ServiceEngineAccessPolicyService accessPolicyService;
@@ -140,6 +153,7 @@ public class DataServiceManagementService {
             StandardDataServiceDefinitionRepository standardDefinitionRepository,
             SqlDataServiceDefinitionRepository sqlDefinitionRepository,
             ScriptDataServiceDefinitionRepository scriptDefinitionRepository,
+            SpatialDataServiceDefinitionRepository spatialDefinitionRepository,
             SqlDataServiceModelReferenceRepository sqlModelReferenceRepository,
             SqlDataServiceParameterRepository sqlParameterRepository,
             ServiceEngineRepository engineRepository,
@@ -149,6 +163,7 @@ public class DataServiceManagementService {
             DirectoryService directoryService,
             ModelPhysicalTablePort physicalTablePort,
             ServiceEngineClient engineClient,
+            GeoServerClient geoServerClient,
             DataServiceGatewayPublicationService gatewayPublicationService,
             ServiceEngineDataSourceRegistrationService dataSourceRegistrationService,
             ServiceEngineAccessPolicyService accessPolicyService,
@@ -165,6 +180,7 @@ public class DataServiceManagementService {
         this.standardDefinitionRepository = standardDefinitionRepository;
         this.sqlDefinitionRepository = sqlDefinitionRepository;
         this.scriptDefinitionRepository = scriptDefinitionRepository;
+        this.spatialDefinitionRepository = spatialDefinitionRepository;
         this.sqlModelReferenceRepository = sqlModelReferenceRepository;
         this.sqlParameterRepository = sqlParameterRepository;
         this.engineRepository = engineRepository;
@@ -174,6 +190,7 @@ public class DataServiceManagementService {
         this.directoryService = directoryService;
         this.physicalTablePort = physicalTablePort;
         this.engineClient = engineClient;
+        this.geoServerClient = geoServerClient;
         this.gatewayPublicationService = gatewayPublicationService;
         this.dataSourceRegistrationService = dataSourceRegistrationService;
         this.accessPolicyService = accessPolicyService;
@@ -238,27 +255,33 @@ public class DataServiceManagementService {
     @Transactional
     public DataServiceDetailResponse create(CreateDataServiceRequest request) {
         boolean definitionPresent = validateDefinitionShape(
-                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(), false
+                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(),
+                request.spatialDefinition(), false
         );
         String code = request.code().trim().toLowerCase(Locale.ROOT);
         if (repository.existsByCode(code)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务编码已存在");
         }
         directoryService.validateAssignment(DirectoryScope.DATA_SERVICE, request.directoryId());
-        requireEngine(request.engineId());
+        requireEngineCompatibility(request.engineId(), request.type());
+        String contextPath = contextPath(request.type(), request.contextPath());
+        if (contextPath != null && repository.existsByEngineIdAndContextPath(request.engineId(), contextPath)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前服务引擎上的服务路径已存在");
+        }
         if (definitionPresent) {
             validateDefinitionSource(
                     request.type(), request.standardDefinition(), request.sqlDefinition(),
-                    request.scriptDefinition(), request.engineId()
+                    request.scriptDefinition(), request.spatialDefinition(), request.engineId()
             );
         }
         DataService service = repository.saveAndFlush(DataService.create(
-                code, request.name(), request.directoryId(), request.type(), request.engineId(), request.description()
+                code, request.name(), request.directoryId(), request.type(), request.engineId(),
+                contextPath, request.description()
         ));
         if (definitionPresent) {
             saveNewDefinition(
                     service.getId(), request.type(), request.standardDefinition(),
-                    request.sqlDefinition(), request.scriptDefinition()
+                    request.sqlDefinition(), request.scriptDefinition(), request.spatialDefinition()
             );
         }
         return detail(service, null, List.of());
@@ -272,22 +295,28 @@ public class DataServiceManagementService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务类型创建后不能修改");
         }
         boolean definitionPresent = validateDefinitionShape(
-                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(), false
+                request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(),
+                request.spatialDefinition(), false
         );
         directoryService.validateAssignment(DirectoryScope.DATA_SERVICE, request.directoryId());
-        requireEngine(request.engineId());
+        requireEngineCompatibility(request.engineId(), request.type());
+        String contextPath = contextPath(request.type(), request.contextPath());
+        if (contextPath != null && repository.existsByEngineIdAndContextPathAndIdNot(request.engineId(), contextPath, id)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前服务引擎上的服务路径已存在");
+        }
         if (definitionPresent) {
             validateDefinitionSource(
                     request.type(), request.standardDefinition(), request.sqlDefinition(),
-                    request.scriptDefinition(), request.engineId()
+                    request.scriptDefinition(), request.spatialDefinition(), request.engineId()
             );
         }
         service.update(
-                request.name(), request.directoryId(), request.engineId(), request.description()
+                request.name(), request.directoryId(), request.engineId(), contextPath, request.description()
         );
         if (definitionPresent) {
             upsertDefinition(
-                    id, request.type(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+                    id, request.type(), request.standardDefinition(), request.sqlDefinition(),
+                    request.scriptDefinition(), request.spatialDefinition()
             );
         }
         return detail(
@@ -302,14 +331,16 @@ public class DataServiceManagementService {
         DataService service = requireServiceForUpdate(id);
         requireModifiable(service);
         validateDefinitionShape(
-                service.getType(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(), true
+                service.getType(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition(),
+                request.spatialDefinition(), true
         );
         validateDefinitionSource(
                 service.getType(), request.standardDefinition(), request.sqlDefinition(),
-                request.scriptDefinition(), service.getEngineId()
+                request.scriptDefinition(), request.spatialDefinition(), service.getEngineId()
         );
         upsertDefinition(
-                id, service.getType(), request.standardDefinition(), request.sqlDefinition(), request.scriptDefinition()
+                id, service.getType(), request.standardDefinition(), request.sqlDefinition(),
+                request.scriptDefinition(), request.spatialDefinition()
         );
         return detail(
                 repository.saveAndFlush(service),
@@ -345,9 +376,13 @@ public class DataServiceManagementService {
         );
         String failure = null;
         try {
-            ServiceDeploymentResponse response = engineClient.deploy(command.engine(), command.request());
-            if (response == null || response.status() != EngineDeploymentStatus.DEPLOYED) {
-                throw new IllegalStateException("服务引擎未确认部署结果");
+            if (command.engine().getType() == ServiceEngineType.GEOSERVER) {
+                geoServerClient.upsertLayer(command.engine(), command.layerSpec());
+            } else {
+                ServiceDeploymentResponse response = engineClient.deploy(command.engine(), command.request());
+                if (response == null || response.status() != EngineDeploymentStatus.DEPLOYED) {
+                    throw new IllegalStateException("服务引擎未确认部署结果");
+                }
             }
         } catch (RuntimeException exception) {
             failure = safeMessage(exception);
@@ -398,12 +433,9 @@ public class DataServiceManagementService {
             return get(id);
         }
         DataServiceGatewayPublicationService.EngineDisablePreparation ready = preparation.get();
-        RemovalCommand command = new RemovalCommand(
-                ready.serviceId(),
-                ready.engine(),
-                ready.revision(),
-                true
-        );
+        RemovalCommand command = requireTransactionResult(readTransactionTemplate.execute(
+                status -> removalCommand(ready.serviceId(), ready.engine(), ready.revision(), true)
+        ));
         return executeRemoval(command, true);
     }
 
@@ -433,6 +465,7 @@ public class DataServiceManagementService {
         sqlDefinitionRepository.deleteByDataServiceId(id);
         scriptDefinitionRepository.deleteByDataServiceId(id);
         standardDefinitionRepository.deleteByDataServiceId(id);
+        spatialDefinitionRepository.deleteByDataServiceId(id);
         if (deployment != null) deploymentRepository.delete(deployment);
         repository.delete(service);
     }
@@ -446,13 +479,18 @@ public class DataServiceManagementService {
             case STANDARD_TABLE -> requireStandardDefinition(service.getId());
             case SQL_QUERY -> requireSqlDefinition(service.getId());
             case SCRIPT_API -> requireScriptDefinition(service.getId());
+            case SPATIAL_SERVICE -> requireSpatialDefinition(service.getId());
         }
         ServiceEngine engine = requireEnabledEngine(service.getEngineId());
-        accessPolicyService.requireReadyPolicy(engine.getId());
+        requireEngineCompatibility(engine.getId(), service.getType());
+        if (engine.getType() == ServiceEngineType.DATASCALPEL) {
+            accessPolicyService.requireReadyPolicy(engine.getId());
+        }
         return switch (service.getType()) {
             case STANDARD_TABLE -> prepareStandardEnable(service, engine);
             case SQL_QUERY -> prepareSqlEnable(service, engine);
             case SCRIPT_API -> prepareScriptEnable(service, engine);
+            case SPATIAL_SERVICE -> prepareSpatialEnable(service, engine);
         };
     }
 
@@ -502,6 +540,28 @@ public class DataServiceManagementService {
         );
     }
 
+    private EnablePreparation prepareSpatialEnable(DataService service, ServiceEngine engine) {
+        SpatialDataServiceDefinition design = requireSpatialDefinition(service.getId());
+        SpatialModel spatialModel = requireSpatialModel(design.getModelId(), engine.getId());
+        dataSourceRegistrationService.requireReadyRegistration(engine.getId(), spatialModel.dataSource().getId());
+        SpatialServiceDefinition definition = new SpatialServiceDefinition(
+                1,
+                spatialModel.model().getCatalogName(),
+                spatialModel.model().getSchemaName(),
+                spatialModel.model().getPhysicalTableName(),
+                spatialModel.geometryField().getCode(),
+                spatialModel.geometryField().getGeometry().kind(),
+                spatialModel.geometryField().getGeometry().crs().code(),
+                spatialModel.primaryKeyField().getCode(),
+                GeoServerClient.layerName(service.getCode()),
+                service.getName()
+        );
+        return EnablePreparation.spatial(
+                snapshot(service), engine, spatialModel.dataSource(), design.getVersion(),
+                spatialModel.model().getUpdatedAt(), spatialModel.model(), spatialModel.fields(), definition
+        );
+    }
+
     private ServiceDefinitionSnapshot inspectForEnable(EnablePreparation preparation) {
         if (preparation.service().type() == DataServiceType.STANDARD_TABLE) {
             ModelPhysicalTableInspection inspection = physicalTablePort.inspect(
@@ -514,6 +574,15 @@ public class DataServiceManagementService {
         }
         if (preparation.service().type() == DataServiceType.SCRIPT_API) {
             return ServiceDefinitionSnapshot.script(new ScriptServiceDefinition(preparation.script()));
+        }
+        if (preparation.service().type() == DataServiceType.SPATIAL_SERVICE) {
+            ModelPhysicalTableInspection inspection = physicalTablePort.inspect(
+                    preparation.dataSource(), preparation.model(), preparation.modelFields()
+            );
+            if (inspection.state() != PhysicalTableState.MATCHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "空间模型物理表未就绪：" + inspection.message());
+            }
+            return ServiceDefinitionSnapshot.spatial(preparation.spatialDefinition());
         }
         SqlServiceInspection inspection = sqlInspector.inspect(
                 preparation.dataSource(), preparation.sqlText(), preparation.sqlParameters()
@@ -535,6 +604,7 @@ public class DataServiceManagementService {
             case STANDARD_TABLE -> requireStorageDataSource(preparation.dataSource().getId());
             case SQL_QUERY -> requireSqlDataSource(preparation.dataSource().getId());
             case SCRIPT_API -> requireScriptDataSource(preparation.dataSource().getId());
+            case SPATIAL_SERVICE -> requirePostGisDataSource(preparation.dataSource().getId());
         };
         if (!Objects.equals(dataSource.getUpdatedAt(), preparation.dataSource().getUpdatedAt())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "数据源定义已发生变化，请重新启用");
@@ -550,7 +620,7 @@ public class DataServiceManagementService {
         }
 
         String definitionJson = write(definition);
-        String definitionDigest = digest(service.getId() + "|" + service.getEngineId() + "|" + service.getEngineRoutePath()
+        String definitionDigest = digest(service.getId() + "|" + service.getEngineId() + "|" + service.getContextPath()
                 + "|" + dataSource.getId() + "|" + digestModelIds + "|" + definitionJson);
         DataServiceDeployment deployment = deploymentRepository.findByDataServiceId(service.getId()).orElse(null);
         long revision;
@@ -575,12 +645,25 @@ public class DataServiceManagementService {
         }
         repository.saveAndFlush(service);
         deploymentRepository.saveAndFlush(deployment);
+        if (service.getType() == DataServiceType.SPATIAL_SERVICE) {
+            SpatialServiceDefinition spatial = definition.spatialDefinition();
+            return new EnableCommand(
+                    engine,
+                    null,
+                    new GeoServerClient.LayerSpec(
+                            dataSource.getId(), service.getCode(), spatial.title(), spatial.table(),
+                            spatial.geometryColumn(), spatial.epsg(), styleName(spatial.geometryKind())
+                    ),
+                    revision
+            );
+        }
         return new EnableCommand(
                 engine,
                 new ServiceDeploymentRequest(
-                        service.getId(), service.getCode(), service.getEngineRoutePath(),
+                        service.getId(), service.getCode(), service.getContextPath(),
                         definitionDigest, definition, dataSource.getId()
                 ),
+                null,
                 revision
         );
     }
@@ -609,11 +692,19 @@ public class DataServiceManagementService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "SQL 服务定义已发生变化，请重新启用");
             }
             requireSqlModels(definition.getDataSourceId(), modelIds);
-        } else {
+        } else if (service.getType() == DataServiceType.SCRIPT_API) {
             ScriptDataServiceDefinition definition = requireScriptDefinition(service.getId());
             if (definition.getVersion() != preparation.definitionVersion()
                     || !Objects.equals(definition.getScript(), preparation.script())) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "脚本服务定义已发生变化，请重新启用");
+            }
+        } else {
+            SpatialDataServiceDefinition definition = requireSpatialDefinition(service.getId());
+            SpatialModel spatialModel = requireSpatialModel(definition.getModelId(), service.getEngineId());
+            if (definition.getVersion() != preparation.definitionVersion()
+                    || !Objects.equals(spatialModel.model().getUpdatedAt(), preparation.modelUpdatedAt())
+                    || spatialModel.model().getStatus() != DataModelStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "空间模型或空间服务定义已发生变化，请重新启用");
             }
         }
     }
@@ -649,17 +740,21 @@ public class DataServiceManagementService {
         ServiceEngine engine = requireEngine(deployment.getEngineId());
         deployment.beginRemoval();
         deploymentRepository.saveAndFlush(deployment);
-        return new RemovalCommand(id, engine, deployment.getRevision(), false);
+        return removalCommand(id, engine, deployment.getRevision(), false);
     }
 
     private DataServiceDetailResponse executeRemoval(RemovalCommand command, boolean disableService) {
         String failure = null;
         try {
-            ServiceDeploymentResponse response = engineClient.remove(
-                    command.engine(), new ServiceUndeploymentRequest(command.serviceId())
-            );
-            if (response == null || response.status() != EngineDeploymentStatus.REMOVED) {
-                throw new IllegalStateException("服务引擎未确认停用结果");
+            if (command.engine().getType() == ServiceEngineType.GEOSERVER) {
+                geoServerClient.removeLayer(command.engine(), command.dataSourceId(), command.serviceCode());
+            } else {
+                ServiceDeploymentResponse response = engineClient.remove(
+                        command.engine(), new ServiceUndeploymentRequest(command.serviceId())
+                );
+                if (response == null || response.status() != EngineDeploymentStatus.REMOVED) {
+                    throw new IllegalStateException("服务引擎未确认停用结果");
+                }
             }
         } catch (RuntimeException exception) {
             failure = safeMessage(exception);
@@ -688,12 +783,39 @@ public class DataServiceManagementService {
         );
     }
 
+    private RemovalCommand removalCommand(
+            UUID serviceId,
+            ServiceEngine engine,
+            long revision,
+            boolean disableService
+    ) {
+        DataService service = requireService(serviceId);
+        if (engine.getType() == ServiceEngineType.GEOSERVER) {
+            SpatialDataServiceDefinition definition = requireSpatialDefinition(serviceId);
+            DataModel model = requireModel(definition.getModelId());
+            return new RemovalCommand(
+                    serviceId, engine, revision, disableService, service.getCode(), model.getStorageDataSourceId()
+            );
+        }
+        return new RemovalCommand(serviceId, engine, revision, disableService, service.getCode(), null);
+    }
+
+    private static String styleName(GeometryKind kind) {
+        return switch (kind) {
+            case POINT, MULTIPOINT -> "point";
+            case LINESTRING, MULTILINESTRING -> "line";
+            case POLYGON, MULTIPOLYGON -> "polygon";
+            case GEOMETRY, GEOMETRYCOLLECTION -> "generic";
+        };
+    }
+
     private void saveNewDefinition(
             UUID serviceId,
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
             SqlDataServiceDefinitionRequest sql,
-            ScriptDataServiceDefinitionRequest script
+            ScriptDataServiceDefinitionRequest script,
+            SpatialDataServiceDefinitionRequest spatial
     ) {
         if (type == DataServiceType.STANDARD_TABLE) {
             standardDefinitionRepository.saveAndFlush(StandardDataServiceDefinition.create(serviceId, standard.modelId()));
@@ -701,7 +823,7 @@ public class DataServiceManagementService {
             sqlDefinitionRepository.saveAndFlush(SqlDataServiceDefinition.create(serviceId, sql.dataSourceId(), sql.sqlText()));
             replaceModelReferences(serviceId, sql.modelIds());
             replaceParameters(serviceId, sql.parameters());
-        } else {
+        } else if (type == DataServiceType.SCRIPT_API) {
             scriptDefinitionRepository.saveAndFlush(
                     ScriptDataServiceDefinition.create(
                             serviceId,
@@ -709,6 +831,10 @@ public class DataServiceManagementService {
                             script.script(),
                             writeScriptExamples(normalizeScriptExamples(script.examples()))
                     )
+            );
+        } else {
+            spatialDefinitionRepository.saveAndFlush(
+                    SpatialDataServiceDefinition.create(serviceId, spatial.modelId())
             );
         }
     }
@@ -718,7 +844,8 @@ public class DataServiceManagementService {
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
             SqlDataServiceDefinitionRequest sql,
-            ScriptDataServiceDefinitionRequest script
+            ScriptDataServiceDefinitionRequest script,
+            SpatialDataServiceDefinitionRequest spatial
     ) {
         if (type == DataServiceType.STANDARD_TABLE) {
             StandardDataServiceDefinition definition = requireStandardDefinition(serviceId);
@@ -734,6 +861,12 @@ public class DataServiceManagementService {
                     writeScriptExamples(normalizeScriptExamples(script.examples()))
             );
             scriptDefinitionRepository.saveAndFlush(definition);
+            return;
+        }
+        if (type == DataServiceType.SPATIAL_SERVICE) {
+            SpatialDataServiceDefinition definition = requireSpatialDefinition(serviceId);
+            definition.update(spatial.modelId());
+            spatialDefinitionRepository.saveAndFlush(definition);
             return;
         }
         SqlDataServiceDefinition definition = requireSqlDefinition(serviceId);
@@ -752,15 +885,17 @@ public class DataServiceManagementService {
             DataServiceType type,
             StandardDataServiceDefinitionRequest standard,
             SqlDataServiceDefinitionRequest sql,
-            ScriptDataServiceDefinitionRequest script
+            ScriptDataServiceDefinitionRequest script,
+            SpatialDataServiceDefinitionRequest spatial
     ) {
         boolean configured = switch (type) {
             case STANDARD_TABLE -> standardDefinitionRepository.findByDataServiceId(serviceId).isPresent();
             case SQL_QUERY -> sqlDefinitionRepository.findByDataServiceId(serviceId).isPresent();
             case SCRIPT_API -> scriptDefinitionRepository.findByDataServiceId(serviceId).isPresent();
+            case SPATIAL_SERVICE -> spatialDefinitionRepository.findByDataServiceId(serviceId).isPresent();
         };
-        if (configured) updateDefinition(serviceId, type, standard, sql, script);
-        else saveNewDefinition(serviceId, type, standard, sql, script);
+        if (configured) updateDefinition(serviceId, type, standard, sql, script, spatial);
+        else saveNewDefinition(serviceId, type, standard, sql, script, spatial);
     }
 
     private void replaceModelReferences(UUID serviceId, List<UUID> modelIds) {
@@ -788,17 +923,21 @@ public class DataServiceManagementService {
             StandardDataServiceDefinitionRequest standard,
             SqlDataServiceDefinitionRequest sql,
             ScriptDataServiceDefinitionRequest script,
+            SpatialDataServiceDefinitionRequest spatial,
             boolean required
     ) {
         boolean standardPresent = standard != null;
         boolean sqlPresent = sql != null;
         boolean scriptPresent = script != null;
-        int count = (standardPresent ? 1 : 0) + (sqlPresent ? 1 : 0) + (scriptPresent ? 1 : 0);
+        boolean spatialPresent = spatial != null;
+        int count = (standardPresent ? 1 : 0) + (sqlPresent ? 1 : 0)
+                + (scriptPresent ? 1 : 0) + (spatialPresent ? 1 : 0);
         if (!required && count == 0) return false;
         if (count != 1
                 || type == DataServiceType.STANDARD_TABLE && !standardPresent
                 || type == DataServiceType.SQL_QUERY && !sqlPresent
-                || type == DataServiceType.SCRIPT_API && !scriptPresent) {
+                || type == DataServiceType.SCRIPT_API && !scriptPresent
+                || type == DataServiceType.SPATIAL_SERVICE && !spatialPresent) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "数据服务类型与具体定义不匹配");
         }
         return true;
@@ -809,6 +948,7 @@ public class DataServiceManagementService {
             StandardDataServiceDefinitionRequest standard,
             SqlDataServiceDefinitionRequest sql,
             ScriptDataServiceDefinitionRequest script,
+            SpatialDataServiceDefinitionRequest spatial,
             UUID engineId
     ) {
         if (type == DataServiceType.STANDARD_TABLE) {
@@ -826,6 +966,11 @@ public class DataServiceManagementService {
         if (type == DataServiceType.SCRIPT_API) {
             DataSource dataSource = requireScriptDataSource(script.dataSourceId());
             dataSourceRegistrationService.requireReadyRegistration(engineId, dataSource.getId());
+            return;
+        }
+        if (type == DataServiceType.SPATIAL_SERVICE) {
+            SpatialModel model = requireSpatialModel(spatial.modelId(), engineId);
+            dataSourceRegistrationService.requireReadyRegistration(engineId, model.dataSource().getId());
             return;
         }
         DataSource dataSource = requireSqlDataSource(sql.dataSourceId());
@@ -883,6 +1028,80 @@ public class DataServiceManagementService {
         return dataSource;
     }
 
+    private DataSource requirePostGisDataSource(UUID id) {
+        DataSource dataSource = requireStorageDataSource(id);
+        if (dataSource.getType() != DataSourceType.POSTGRESQL) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "空间服务第一版只支持 PostgreSQL/PostGIS 数据源");
+        }
+        return dataSource;
+    }
+
+    private String contextPath(DataServiceType type, String value) {
+        if (type == DataServiceType.SPATIAL_SERVICE) {
+            if (value != null && !value.isBlank()) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "空间服务不配置 Engine Context Path");
+            }
+            return null;
+        }
+        try {
+            return ServiceRoutePath.normalize(value);
+        } catch (IllegalArgumentException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
+        }
+    }
+
+    private ServiceEngine requireEngineCompatibility(UUID engineId, DataServiceType serviceType) {
+        ServiceEngine engine = requireEngine(engineId);
+        ServiceEngineType expected = serviceType == DataServiceType.SPATIAL_SERVICE
+                ? ServiceEngineType.GEOSERVER
+                : ServiceEngineType.DATASCALPEL;
+        if (engine.getType() != expected) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    serviceType == DataServiceType.SPATIAL_SERVICE
+                            ? "空间服务只能绑定 GeoServer 空间引擎"
+                            : "普通数据服务只能绑定 DataScalpel 服务引擎"
+            );
+        }
+        return engine;
+    }
+
+    private SpatialModel requireSpatialModel(UUID modelId, UUID engineId) {
+        DataModel model = requireModel(modelId);
+        if (model.getStatus() != DataModelStatus.PUBLISHED) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "空间服务只能选择已发布模型");
+        }
+        DataSource dataSource = requirePostGisDataSource(model.getStorageDataSourceId());
+        dataSourceRegistrationService.requireReadyRegistration(engineId, dataSource.getId());
+        List<DataModelField> fields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(model.getId());
+        List<DataModelField> geometryFields = fields.stream()
+                .filter(field -> field.getFieldType() == PlatformDataType.GEOMETRY)
+                .toList();
+        if (geometryFields.size() != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "空间模型必须恰好包含一个 Geometry 字段");
+        }
+        DataModelField geometryField = geometryFields.getFirst();
+        if (geometryField.getGeometry() == null
+                || geometryField.getGeometry().dimension() != CoordinateDimension.XY
+                || !"EPSG".equalsIgnoreCase(geometryField.getGeometry().crs().authority())
+                || geometryField.getGeometry().crs().code() < 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "空间模型 Geometry 字段必须使用 XY 坐标和明确的 EPSG CRS");
+        }
+        List<DataModelField> primaryKeys = fields.stream()
+                .filter(DataModelField::isPrimaryKey)
+                .filter(field -> field.getFieldType() != PlatformDataType.GEOMETRY)
+                .toList();
+        if (primaryKeys.size() != 1 || fields.stream().anyMatch(
+                field -> field.isPrimaryKey() && field.getFieldType() == PlatformDataType.GEOMETRY
+        )) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "空间模型必须恰好包含一个非 Geometry 主键字段");
+        }
+        if (model.getSchemaName() == null || model.getSchemaName().isBlank()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "PostGIS 空间模型必须配置物理 Schema");
+        }
+        return new SpatialModel(model, dataSource, List.copyOf(fields), geometryField, primaryKeys.getFirst());
+    }
+
     private void requireModifiable(DataService service) {
         if (service.getStatus() == DataServiceStatus.ENABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已启用服务请先停用后再修改");
@@ -901,6 +1120,7 @@ public class DataServiceManagementService {
         StandardDataServiceDefinitionResponse standard = null;
         SqlDataServiceDefinitionResponse sql = null;
         ScriptDataServiceDefinitionResponse script = null;
+        SpatialDataServiceDefinitionResponse spatial = null;
         Integer definitionVersion = null;
         if (service.getType() == DataServiceType.STANDARD_TABLE) {
             StandardDataServiceDefinition definition = standardDefinitionRepository.findByDataServiceId(service.getId())
@@ -919,7 +1139,7 @@ public class DataServiceManagementService {
                         parameterDefinitions(service.getId()), definition.getVersion()
                 );
             }
-        } else {
+        } else if (service.getType() == DataServiceType.SCRIPT_API) {
             ScriptDataServiceDefinition definition = scriptDefinitionRepository.findByDataServiceId(service.getId())
                     .orElse(null);
             if (definition != null) {
@@ -931,11 +1151,18 @@ public class DataServiceManagementService {
                         definition.getVersion()
                 );
             }
+        } else {
+            SpatialDataServiceDefinition definition = spatialDefinitionRepository
+                    .findByDataServiceId(service.getId()).orElse(null);
+            if (definition != null) {
+                definitionVersion = definition.getVersion();
+                spatial = new SpatialDataServiceDefinitionResponse(definition.getModelId(), definition.getVersion());
+            }
         }
         return new DataServiceDetailResponse(
                 service.getId(), service.getCode(), service.getName(), service.getDirectoryId(), service.getType(),
                 definitionVersion != null, definitionVersion,
-                standard, sql, script, service.getEngineId(), service.getEngineRoutePath(),
+                standard, sql, script, spatial, service.getEngineId(), service.getContextPath(),
                 service.getStatus(), service.getRevision(),
                 deployment == null ? null : deployment.getStatus(), deployment == null ? null : deployment.getLastError(),
                 deployment == null ? null : deployment.getDeployedAt(),
@@ -959,7 +1186,7 @@ public class DataServiceManagementService {
                 definition != null, definition == null ? null : definition.version(),
                 definition == null ? null : definition.sourceId(),
                 definition == null ? null : definition.sourceName(),
-                service.getEngineId(), service.getEngineRoutePath(),
+                service.getEngineId(), service.getContextPath(),
                 service.getStatus(), service.getRevision(),
                 deployment == null ? null : deployment.getStatus(), deployment == null ? null : deployment.getLastError(),
                 deployment == null ? null : deployment.getDeployedAt(),
@@ -979,8 +1206,13 @@ public class DataServiceManagementService {
         List<SqlDataServiceDefinition> sqlDefinitions = sqlDefinitionRepository.findAllByDataServiceIdIn(serviceIds);
         List<ScriptDataServiceDefinition> scriptDefinitions =
                 scriptDefinitionRepository.findAllByDataServiceIdIn(serviceIds);
+        List<SpatialDataServiceDefinition> spatialDefinitions =
+                spatialDefinitionRepository.findAllByDataServiceIdIn(serviceIds);
         Map<UUID, DataModel> models = modelRepository.findAllById(
-                standards.stream().map(StandardDataServiceDefinition::getModelId).toList()
+                java.util.stream.Stream.concat(
+                        standards.stream().map(StandardDataServiceDefinition::getModelId),
+                        spatialDefinitions.stream().map(SpatialDataServiceDefinition::getModelId)
+                ).distinct().toList()
         ).stream().collect(Collectors.toMap(DataModel::getId, Function.identity()));
         Map<UUID, DataSource> dataSources = dataSourceRepository.findAllById(
                 java.util.stream.Stream.concat(
@@ -1007,6 +1239,12 @@ public class DataServiceManagementService {
             result.put(definition.getDataServiceId(), new DefinitionSummary(
                     definition.getDataSourceId(), dataSource == null ? "已删除" : dataSource.getName(),
                     definition.getVersion()
+            ));
+        }
+        for (SpatialDataServiceDefinition definition : spatialDefinitions) {
+            DataModel model = models.get(definition.getModelId());
+            result.put(definition.getDataServiceId(), new DefinitionSummary(
+                    definition.getModelId(), model == null ? "已删除" : model.getName(), definition.getVersion()
             ));
         }
         return result;
@@ -1089,6 +1327,11 @@ public class DataServiceManagementService {
     private ScriptDataServiceDefinition requireScriptDefinition(UUID serviceId) {
         return scriptDefinitionRepository.findByDataServiceId(serviceId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "数据服务定义未配置"));
+    }
+
+    private SpatialDataServiceDefinition requireSpatialDefinition(UUID serviceId) {
+        return spatialDefinitionRepository.findByDataServiceId(serviceId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "空间服务定义未配置"));
     }
 
     private List<ScriptRequestExampleRequest> normalizeScriptExamples(
@@ -1244,7 +1487,7 @@ public class DataServiceManagementService {
 
     private static ServiceSnapshot snapshot(DataService service) {
         return new ServiceSnapshot(
-                service.getId(), service.getCode(), service.getType(), service.getEngineId(), service.getEngineRoutePath(), service.getUpdatedAt()
+                service.getId(), service.getCode(), service.getType(), service.getEngineId(), service.getContextPath(), service.getUpdatedAt()
         );
     }
 
@@ -1293,7 +1536,8 @@ public class DataServiceManagementService {
             String sqlText,
             List<UUID> sqlModelIds,
             List<SqlServiceParameterDefinition> sqlParameters,
-            String script
+            String script,
+            SpatialServiceDefinition spatialDefinition
     ) {
         private static EnablePreparation standard(
                 ServiceSnapshot service,
@@ -1307,7 +1551,7 @@ public class DataServiceManagementService {
         ) {
             return new EnablePreparation(
                     service, engine, dataSource, definitionVersion, modelUpdatedAt, model,
-                    List.copyOf(fields), definition, null, List.of(), List.of(), null
+                    List.copyOf(fields), definition, null, List.of(), List.of(), null, null
             );
         }
 
@@ -1322,7 +1566,7 @@ public class DataServiceManagementService {
         ) {
             return new EnablePreparation(
                     service, engine, dataSource, definitionVersion, null, null,
-                    List.of(), null, sqlText, List.copyOf(modelIds), List.copyOf(parameters), null
+                    List.of(), null, sqlText, List.copyOf(modelIds), List.copyOf(parameters), null, null
             );
         }
 
@@ -1335,19 +1579,51 @@ public class DataServiceManagementService {
         ) {
             return new EnablePreparation(
                     service, engine, dataSource, definitionVersion, null, null,
-                    List.of(), null, null, List.of(), List.of(), script
+                    List.of(), null, null, List.of(), List.of(), script, null
+            );
+        }
+
+        private static EnablePreparation spatial(
+                ServiceSnapshot service,
+                ServiceEngine engine,
+                DataSource dataSource,
+                int definitionVersion,
+                Instant modelUpdatedAt,
+                DataModel model,
+                List<DataModelField> fields,
+                SpatialServiceDefinition definition
+        ) {
+            return new EnablePreparation(
+                    service, engine, dataSource, definitionVersion, modelUpdatedAt, model,
+                    List.copyOf(fields), null, null, List.of(), List.of(), null, definition
             );
         }
     }
 
-    private record EnableCommand(ServiceEngine engine, ServiceDeploymentRequest request, long revision) {
+    private record EnableCommand(
+            ServiceEngine engine,
+            ServiceDeploymentRequest request,
+            GeoServerClient.LayerSpec layerSpec,
+            long revision
+    ) {
     }
 
     private record RemovalCommand(
             UUID serviceId,
             ServiceEngine engine,
             long revision,
-            boolean disableService
+            boolean disableService,
+            String serviceCode,
+            UUID dataSourceId
+    ) {
+    }
+
+    private record SpatialModel(
+            DataModel model,
+            DataSource dataSource,
+            List<DataModelField> fields,
+            DataModelField geometryField,
+            DataModelField primaryKeyField
     ) {
     }
 

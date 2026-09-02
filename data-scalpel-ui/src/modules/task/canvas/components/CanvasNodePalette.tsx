@@ -1,12 +1,15 @@
 import {
   CloseOutlined,
   HolderOutlined,
+  LeftOutlined,
   PlusOutlined,
+  RightOutlined,
   SearchOutlined,
 } from '@ant-design/icons';
 import { Button, Empty, Input, Tag, Tooltip, Typography } from 'antd';
 import {
   forwardRef,
+  useCallback,
   useEffect,
   useMemo,
   useRef,
@@ -99,8 +102,10 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
   const [searchText, setSearchText] = useState('');
   const [activeGroup, setActiveGroup] = useState<CanvasNodeGroup | 'ALL'>('ALL');
   const searchInputRef = useRef<React.ComponentRef<typeof Input>>(null);
+  const groupTabsRef = useRef<HTMLDivElement>(null);
   const categoryButtonRefs = useRef<Partial<Record<CanvasNodeCategory, HTMLElement>>>({});
   const previousCategoryRef = useRef<CanvasNodeCategory | null>(null);
+  const [groupScrollState, setGroupScrollState] = useState({ canScrollLeft: false, canScrollRight: false });
 
   const availableTemplates = useMemo(
     () => templates.filter((template) => template.supportedModes.includes(executionMode)),
@@ -147,6 +152,21 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
     (count, group) => count + group.templates.length,
     0,
   );
+  const syncGroupScrollState = useCallback(() => {
+    const element = groupTabsRef.current;
+    const nextState = element
+      ? {
+        canScrollLeft: element.scrollLeft > 1,
+        canScrollRight: element.scrollLeft < element.scrollWidth - element.clientWidth - 1,
+      }
+      : { canScrollLeft: false, canScrollRight: false };
+    setGroupScrollState((current) => (
+      current.canScrollLeft === nextState.canScrollLeft
+        && current.canScrollRight === nextState.canScrollRight
+        ? current
+        : nextState
+    ));
+  }, []);
 
   useEffect(() => {
     setSearchText('');
@@ -172,6 +192,24 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
     document.addEventListener('keydown', closeOnEscape);
     return () => document.removeEventListener('keydown', closeOnEscape);
   }, [activeCategory, onActiveCategoryChange]);
+
+  useEffect(() => {
+    syncGroupScrollState();
+    const element = groupTabsRef.current;
+    if (!element || typeof ResizeObserver === 'undefined') return undefined;
+    const observer = new ResizeObserver(syncGroupScrollState);
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [activeCategory, activeGroups.length, syncGroupScrollState]);
+
+  const scrollGroupTabs = (direction: -1 | 1) => {
+    const element = groupTabsRef.current;
+    if (!element) return;
+    element.scrollBy({
+      left: direction * Math.max(120, Math.round(element.clientWidth * 0.72)),
+      behavior: 'smooth',
+    });
+  };
 
   const activePresentation = activeCategory ? categoryPresentation[activeCategory] : null;
 
@@ -242,28 +280,63 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
               onChange={(event) => setSearchText(event.target.value)}
             />
           </div>
-          <div className="canvas-node-palette-groups" role="tablist" aria-label="节点分组">
-            <Button
-              type="text"
-              size="small"
-              className={activeGroup === 'ALL' ? 'is-active' : ''}
-              aria-pressed={activeGroup === 'ALL'}
-              onClick={() => setActiveGroup('ALL')}
-            >
-              全部
-            </Button>
-            {activeGroups.map((group) => (
+          <div className="canvas-node-palette-groups-shell">
+            {groupScrollState.canScrollLeft && <Tooltip title="向左查看更多">
               <Button
-                key={group.id}
                 type="text"
                 size="small"
-                className={activeGroup === group.id ? 'is-active' : ''}
-                aria-pressed={activeGroup === group.id}
-                onClick={() => setActiveGroup(group.id)}
+                className="canvas-node-palette-group-scroll canvas-node-palette-group-scroll-left"
+                icon={<LeftOutlined />}
+                aria-label="向左查看更多节点分组"
+                onClick={() => scrollGroupTabs(-1)}
+              />
+            </Tooltip>}
+            <div
+              ref={groupTabsRef}
+              className="canvas-node-palette-groups"
+              role="tablist"
+              aria-label="节点分组"
+              onScroll={syncGroupScrollState}
+              onWheel={(event) => {
+                const element = event.currentTarget;
+                if (element.scrollWidth <= element.clientWidth
+                    || Math.abs(event.deltaY) <= Math.abs(event.deltaX)) return;
+                event.preventDefault();
+                element.scrollLeft += event.deltaY;
+              }}
+            >
+              <Button
+                type="text"
+                size="small"
+                className={activeGroup === 'ALL' ? 'is-active' : ''}
+                aria-pressed={activeGroup === 'ALL'}
+                onClick={() => setActiveGroup('ALL')}
               >
-                {group.label}
+                全部
               </Button>
-            ))}
+              {activeGroups.map((group) => (
+                <Button
+                  key={group.id}
+                  type="text"
+                  size="small"
+                  className={activeGroup === group.id ? 'is-active' : ''}
+                  aria-pressed={activeGroup === group.id}
+                  onClick={() => setActiveGroup(group.id)}
+                >
+                  {group.label}
+                </Button>
+              ))}
+            </div>
+            {groupScrollState.canScrollRight && <Tooltip title="向右查看更多">
+              <Button
+                type="text"
+                size="small"
+                className="canvas-node-palette-group-scroll canvas-node-palette-group-scroll-right"
+                icon={<RightOutlined />}
+                aria-label="向右查看更多节点分组"
+                onClick={() => scrollGroupTabs(1)}
+              />
+            </Tooltip>}
           </div>
           <div className="canvas-node-palette-list">
             {visibleTemplateCount === 0 ? (

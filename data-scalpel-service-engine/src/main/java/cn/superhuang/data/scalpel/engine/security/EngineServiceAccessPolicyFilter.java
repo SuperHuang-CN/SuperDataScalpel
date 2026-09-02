@@ -16,7 +16,7 @@ import java.io.IOException;
 @Component
 public class EngineServiceAccessPolicyFilter extends OncePerRequestFilter {
 
-    private static final String SERVICE_PREFIX = "/runtime/v1/services/";
+    private static final String SERVICE_PREFIX = "/open-api/v1/";
 
     private final EngineAccessPolicyService policyService;
     private final ProblemDetailWriter problemDetailWriter;

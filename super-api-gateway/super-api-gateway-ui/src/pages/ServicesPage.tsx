@@ -266,7 +266,7 @@ export const ServicesPage = () => {
           </Form.Item>
           <Form.Item label="HTTP 方法" name="methods" rules={[{ required: true }]}><Select mode="multiple" options={methodOptions} /></Form.Item>
           <Form.Item label="固定上游路径" name="upstreamPath" extra="设置后以该路径转发，去除前缀段数必须为 0。">
-            <Input placeholder="/runtime/v1/services/{serviceId}" />
+            <Input placeholder="/open-api/v1/customers" />
           </Form.Item>
           <Space align="start">
             <Form.Item label="Order" name="order"><InputNumber min={-10000} max={10000} /></Form.Item>

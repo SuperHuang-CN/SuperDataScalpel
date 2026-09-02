@@ -1,9 +1,10 @@
 import { DeleteOutlined } from '@ant-design/icons';
 import { Button, Modal, Space, Tag, message } from 'antd';
-import { useCallback, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {
   DataModelDataQueryPanel,
+  formatDataModelPreviewValue,
   type DataModelDataQueryRequest,
   type DataModelQueryRow,
 } from '../../model';
@@ -21,6 +22,10 @@ export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFor
   const currentUser = useCurrentUser();
   const canDeletePermission = new Set(currentUser.data?.permissions ?? []).has('dataentry.delete');
   const primaryKeys = detail.fields.filter((field) => field.primaryKey);
+  const fieldTypes = useMemo(
+    () => new Map(detail.fields.map((field) => [field.code, field.fieldType])),
+    [detail.fields],
+  );
   const makeRowKey = useCallback((row: Record<string, unknown>, index: number) => (
     primaryKeys.length ? primaryKeys.map((field) => `${field.code}=${String(row[field.code])}`).join('|') : String(index)
   ), [primaryKeys]);
@@ -54,12 +59,14 @@ export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFor
   const renderCell = useCallback((value: unknown, fieldCode: string) => {
     if (value === null || value === undefined) return '—';
     const resolved = labels[`${fieldCode}:${canonical(value)}`];
-    if (!resolved) return typeof value === 'object' ? JSON.stringify(value) : String(value);
+    if (!resolved) return typeof value === 'object'
+      ? JSON.stringify(value)
+      : formatDataModelPreviewValue(value, fieldTypes.get(fieldCode));
     const statusLabel = resolved.status === 'DISABLED' ? '已停用'
       : resolved.status === 'MISSING' ? '无匹配项'
         : resolved.status === 'SOURCE_UNAVAILABLE' ? '来源不可用' : null;
     return <span>{resolved.text}{statusLabel && <Tag color="warning" style={{ marginLeft: 6 }}>{statusLabel}</Tag>}</span>;
-  }, [labels]);
+  }, [fieldTypes, labels]);
 
   const remove = () => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',

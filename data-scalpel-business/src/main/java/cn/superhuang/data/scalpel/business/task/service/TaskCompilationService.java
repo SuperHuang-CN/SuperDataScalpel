@@ -3,6 +3,8 @@ package cn.superhuang.data.scalpel.business.task.service;
 import cn.superhuang.data.scalpel.business.system.configuration.service.SystemConfigurationService;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationResponse;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationRequest;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskCompilationCancellationResponse;
 import org.springframework.stereotype.Service;
 
@@ -31,6 +33,10 @@ public class TaskCompilationService {
 
     public TaskCompilationCancellationResponse cancel(UUID requestId) {
         return taskEngineClient.cancel(taskEngineBaseUrl(), requestId);
+    }
+
+    public SparkJarSourceCompilationResponse compileSparkJarSource(SparkJarSourceCompilationRequest request) {
+        return taskEngineClient.compileSparkJarSource(taskEngineBaseUrl(), request);
     }
 
     private String taskEngineBaseUrl() {

@@ -4,8 +4,7 @@ package cn.superhuang.data.scalpel.dialect.model;
 public record SpatialPreviewColumnMetadata(
         String name,
         boolean spatialIndexAvailable,
-        Long estimatedRowCount,
-        boolean previewAllowed,
+        boolean previewSupported,
         String message
 ) {
 }

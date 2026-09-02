@@ -34,7 +34,7 @@ public final class CanvasTaskCompiler {
             SparkSession sparkSession,
             AtomicBoolean cancelled
     ) {
-        return compile(definition, CanvasExecutionMode.BATCH, metadataIndex, sparkSession, cancelled);
+        return compile(definition, CanvasExecutionMode.BATCH, metadataIndex, sparkSession, cancelled, null);
     }
 
     public CanvasCompilation compile(
@@ -44,7 +44,31 @@ public final class CanvasTaskCompiler {
             SparkSession sparkSession,
         AtomicBoolean cancelled
     ) {
-        CanvasGraphPlan plan = CanvasGraphPlan.create(definition, executionMode);
+        return compile(definition, executionMode, metadataIndex, sparkSession, cancelled, null);
+    }
+
+    public CanvasCompilation compileTrial(
+            CanvasDefinition definition,
+            CanvasExecutionMode executionMode,
+            MetadataIndex metadataIndex,
+            SparkSession sparkSession,
+            AtomicBoolean cancelled,
+            String targetNodeId
+    ) {
+        return compile(definition, executionMode, metadataIndex, sparkSession, cancelled, targetNodeId);
+    }
+
+    private CanvasCompilation compile(
+            CanvasDefinition definition,
+            CanvasExecutionMode executionMode,
+            MetadataIndex metadataIndex,
+            SparkSession sparkSession,
+            AtomicBoolean cancelled,
+            String trialTargetNodeId
+    ) {
+        CanvasGraphPlan plan = trialTargetNodeId == null
+                ? CanvasGraphPlan.create(definition, executionMode)
+                : CanvasGraphPlan.createForTrial(definition, executionMode, trialTargetNodeId);
         List<Map<String, SparkCanvasTable>> propagated = new ArrayList<>();
         List<CanvasLineageOutputCandidate> lineageOutputs = new ArrayList<>();
         for (int index = 0; index < plan.entries().size(); index++) propagated.add(Map.of());

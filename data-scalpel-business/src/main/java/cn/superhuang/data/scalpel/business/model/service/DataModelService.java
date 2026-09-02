@@ -94,6 +94,7 @@ import cn.superhuang.data.scalpel.dialect.query.QuerySortDirection;
 import cn.superhuang.data.scalpel.dialect.query.QueryValueType;
 import cn.superhuang.data.scalpel.dialect.query.StandardQuery;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryField;
+import cn.superhuang.data.scalpel.dialect.query.StandardQueryFilterGroupInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryFilterInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryLimits;
@@ -139,7 +140,7 @@ public class DataModelService {
     private static final Duration MODEL_QUERY_TIMEOUT = Duration.ofSeconds(15);
     private static final StandardTableQueryCompiler STANDARD_QUERY_COMPILER = new StandardTableQueryCompiler();
     private static final StandardQueryLimits MODEL_QUERY_LIMITS = new StandardQueryLimits(
-            50, MODEL_QUERY_MAXIMUM_PAGE_SIZE, 20, 1_000, 3, 0, 0, 10_000
+            50, MODEL_QUERY_MAXIMUM_PAGE_SIZE, 20, 5, 1_000, 3, 0, 0, 10_000
     );
 
     private final DataModelRepository repository;
@@ -213,7 +214,9 @@ public class DataModelService {
                                 model,
                                 storageNames.get(model.getStorageDataSourceId()),
                                 ModelWarehouseLayerSummaryResponse.from(
-                                        warehouseLayers.get(model.getWarehouseLayerId())
+                                        model.getWarehouseLayerId() == null
+                                                ? null
+                                                : warehouseLayers.get(model.getWarehouseLayerId())
                                 ),
                                 physicalStatistics.get(model.getId())
                         ))
@@ -1011,13 +1014,6 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "当前模型没有可变更的字段结构");
         }
         List<NormalizedField> targetFields = normalizeFields(request.fields());
-        if (currentFields.stream().anyMatch(field -> field.getFieldType() == PlatformDataType.GEOMETRY)
-                || targetFields.stream().anyMatch(field -> field.input().fieldType() == PlatformDataType.GEOMETRY)) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "空间字段所在受管表第一版不支持物理结构变更"
-            );
-        }
         validateClickHouseOrderByFields(
                 storage,
                 model,
@@ -1353,7 +1349,8 @@ public class DataModelService {
                     || !Objects.equals(current.getLength(), requested.length())
                     || !Objects.equals(current.getPrecision(), requested.precision())
                     || !Objects.equals(current.getScale(), requested.scale())
-                    || !Objects.equals(current.getGeometry(), requested.geometry())
+                    || (current.getFieldType() != PlatformDataType.GEOMETRY
+                    && !Objects.equals(current.getGeometry(), requested.geometry()))
                     || current.isNullable() != requested.input().nullable()
                     || current.isPrimaryKey() != requested.input().primaryKey()) {
                 return false;
@@ -1456,7 +1453,7 @@ public class DataModelService {
         List<DataModelField> fields = preparation.fields();
         ModelPhysicalTableInspection inspection = requireQueryablePhysicalTable(storage, model, fields);
         StandardQueryInput input = new StandardQueryInput(
-                1, QUICK_PREVIEW_ROW_COUNT, ConditionConjunction.AND, List.of(), List.of(),
+                1, QUICK_PREVIEW_ROW_COUNT, List.of(), null,
                 defaultClickHouseOrders(storage, model, fields, List.of()), List.of(), List.of(), false
         );
         DataQueryResult result = executeDataQuery(storage, model, fields, inspection.table(), input);
@@ -1478,9 +1475,8 @@ public class DataModelService {
         ModelPhysicalTableInspection inspection = requireQueryablePhysicalTable(storage, model, fields);
         StandardQueryInput input = new StandardQueryInput(
                 request.pageNo(), request.pageSize(),
-                "OR".equals(request.conditionType()) ? ConditionConjunction.OR : ConditionConjunction.AND,
                 request.columns(),
-                request.filters().stream().map(this::queryFilter).toList(),
+                queryFilterGroup(request),
                 defaultClickHouseOrders(
                         storage,
                         model,
@@ -1553,11 +1549,41 @@ public class DataModelService {
         try {
             return new StandardQueryFilterInput(
                     input.field(), QueryFilterOperator.valueOf(input.operator().trim().toUpperCase(Locale.ROOT)),
-                    input.value(), input.secondValue(), input.values()
+                    queryFilterValue(input)
             );
         } catch (IllegalArgumentException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的过滤运算符：" + input.operator(), exception);
         }
+    }
+
+    private StandardQueryFilterGroupInput queryFilterGroup(DataModelDataQueryRequest request) {
+        var conditions = request.filters().stream().map(this::queryFilter).toList();
+        if (conditions.isEmpty()) {
+            return null;
+        }
+        return new StandardQueryFilterGroupInput(
+                "OR".equals(request.conditionType()) ? ConditionConjunction.OR : ConditionConjunction.AND,
+                List.copyOf(conditions)
+        );
+    }
+
+    private static Object queryFilterValue(DataModelDataQueryFilterInput input) {
+        if (!input.values().isEmpty()) {
+            if (input.value() != null || input.secondValue() != null) {
+                throw new ResponseStatusException(
+                        HttpStatus.BAD_REQUEST,
+                        "values 不能与 value 或 secondValue 同时使用"
+                );
+            }
+            return input.values();
+        }
+        if (input.value() instanceof java.util.Collection<?> && input.secondValue() == null) {
+            return input.value();
+        }
+        if (input.value() != null && input.secondValue() != null) {
+            return List.of(input.value(), input.secondValue());
+        }
+        return input.value();
     }
 
     private static List<StandardQueryOrderInput> defaultClickHouseOrders(
@@ -1602,7 +1628,7 @@ public class DataModelService {
 
     private static StandardQuery withLimit(StandardQuery source, int limit) {
         return new StandardQuery(
-                source.table(), source.projections(), source.conjunction(), source.filters(), source.groups(),
+                source.table(), source.projections(), source.filter(), source.groups(),
                 source.aggregates(), source.orders(), source.offset(), limit, source.returnCount()
         );
     }
@@ -1644,6 +1670,13 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "绑定已有表模式不允许执行物理表变更");
         }
         TableChangePlan plan = readChangePlan(change);
+        if (!change.getBeforeFingerprint().equals(plan.beforeFingerprint().value())
+                || !change.getTargetFingerprint().equals(plan.targetFingerprint().value())) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "物理表变更规则版本已变化，请重新生成计划"
+            );
+        }
         try {
             plan.requireExecutionOption(mode);
         } catch (IllegalArgumentException exception) {

@@ -51,6 +51,26 @@ public class SparkJarTaskRunPreparationService {
 
     public Preparation prepare(SparkJarTaskDefinition definition, SparkJarExecutionPayload.TriggerType triggerType,
                                UUID scheduleId, java.time.Instant scheduledFireAt) {
+        return prepare(definition, triggerType, scheduleId, scheduledFireAt,
+                definition.getJobApiVersion(), definition.getJobClass(),
+                SparkJarExecutionPayload.ExecutionPurpose.REAL);
+    }
+
+    public Preparation prepareTrial(SparkJarTaskDefinition definition) {
+        return prepare(definition, SparkJarExecutionPayload.TriggerType.MANUAL, null, null,
+                1, "com.example.datascalpel.ExampleSparkJob",
+                SparkJarExecutionPayload.ExecutionPurpose.TRIAL);
+    }
+
+    private Preparation prepare(
+            SparkJarTaskDefinition definition,
+            SparkJarExecutionPayload.TriggerType triggerType,
+            UUID scheduleId,
+            java.time.Instant scheduledFireAt,
+            int jobApiVersion,
+            String jobClass,
+            SparkJarExecutionPayload.ExecutionPurpose executionPurpose
+    ) {
         List<SparkJarTaskResourceBinding> bindings = bindingRepository
                 .findAllByTaskIdOrderByCreatedAtAsc(definition.getTaskId());
         Set<UUID> modelIds = bindings.stream().filter(binding -> binding.getResourceType() == SparkJarResourceType.MODEL)
@@ -76,14 +96,14 @@ public class SparkJarTaskRunPreparationService {
                         source.getPurposes().stream().map(purpose -> cn.superhuang.data.scalpel.contract.task.DataSourcePurpose.valueOf(purpose.name()))
                                 .collect(Collectors.toUnmodifiableSet()), List.of())).toList();
         SparkJarExecutionPayload payload = new SparkJarExecutionPayload(
-                definition.getJobApiVersion(), definition.getJobClass(),
+                jobApiVersion, jobClass,
                 parseEntries(definition.getParametersJson()).stream()
                         .map(entry -> new SparkJarExecutionPayload.Parameter(entry.name(), entry.value())).toList(),
                 parseEntries(definition.getSparkConfJson()).stream()
                         .map(entry -> new SparkConfigurationEntry(entry.name(), entry.value())).toList(),
                 bindings.stream().map(binding -> new SparkJarExecutionPayload.ResourceBinding(
                         binding.getBindingName(), binding.getResourceType(), binding.getResourceId(), binding.getAccessMode())).toList(),
-                triggerType, scheduleId, scheduledFireAt);
+                triggerType, scheduleId, scheduledFireAt, executionPurpose);
         return new Preparation(new MetadataSnapshot(metadataSources, metadataModels), runtimeSources, payload,
                 sources.values().stream().collect(Collectors.toUnmodifiableMap(DataSource::getId, DataSource::getUpdatedAt)),
                 models.values().stream().collect(Collectors.toUnmodifiableMap(DataModel::getId, DataModel::getUpdatedAt)));
@@ -134,8 +154,11 @@ public class SparkJarTaskRunPreparationService {
                                 .collect(Collectors.toUnmodifiableSet()),
                         List.of()))
                 .toList();
+        boolean trial = deployment.getExecutionMode()
+                == cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentExecutionMode.TRIAL;
         SparkStreamingJarExecutionPayload payload = new SparkStreamingJarExecutionPayload(
-                definition.getJobApiVersion(), definition.getJobClass(),
+                trial ? 1 : definition.getJobApiVersion(),
+                trial ? "com.example.datascalpel.ExampleSparkStreamingJob" : definition.getJobClass(),
                 parseEntries(definition.getParametersJson()).stream()
                         .map(entry -> new SparkJarExecutionPayload.Parameter(entry.name(), entry.value())).toList(),
                 parseEntries(definition.getSparkConfJson()).stream()
@@ -143,7 +166,10 @@ public class SparkJarTaskRunPreparationService {
                 bindings.stream().map(binding -> new SparkJarExecutionPayload.ResourceBinding(
                         binding.getBindingName(), binding.getResourceType(), binding.getResourceId(),
                         binding.getTopicName(), binding.getAccessMode())).toList(),
-                definition.getTimeoutSeconds(), deployment.getId(), deployment.getCheckpointKeyPrefix(),
+                definition.getTimeoutSeconds(), trial
+                        ? SparkJarExecutionPayload.ExecutionPurpose.TRIAL
+                        : SparkJarExecutionPayload.ExecutionPurpose.REAL,
+                deployment.getId(), deployment.getCheckpointKeyPrefix(),
                 deployment.getCheckpointStartMode(), deployment.getCheckpointSourceDeploymentId());
         return new StreamingPreparation(
                 new MetadataSnapshot(metadataSources, metadataModels), runtimeSources, payload,

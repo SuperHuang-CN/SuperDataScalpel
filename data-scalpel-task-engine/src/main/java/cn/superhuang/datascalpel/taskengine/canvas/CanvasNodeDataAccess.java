@@ -110,6 +110,7 @@ public interface CanvasNodeDataAccess extends AutoCloseable {
     CanvasPreparedKafkaOutput prepareKafkaOutput(
             KafkaOutputNodeDefinition node,
             KafkaOutputWrite write,
+            String keyColumnAlias,
             Dataset<Row> dataset
     );
 

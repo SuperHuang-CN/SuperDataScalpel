@@ -23,6 +23,8 @@ import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcSnapshotSyncOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.KafkaInputMetadataField;
+import cn.superhuang.data.scalpel.contract.task.KafkaInputValueFormat;
 import cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
@@ -50,12 +52,14 @@ import cn.superhuang.datascalpel.taskengine.spark.HttpApiBatchDatasetStager;
 import cn.superhuang.datascalpel.taskengine.spark.HttpApiBatchStagingException;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.functions;
 import org.apache.spark.sql.streaming.DataStreamReader;
 
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -66,6 +70,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     private final RuntimeFileStorage runtimeFileStorage;
     private final Map<UUID, RuntimeFileInput> runtimeFileInputs;
     private final String executionId;
+    private final String taskId;
     private final int attempt;
     private final String streamingSourceNodeId;
     private final String streamingSourceSignature;
@@ -78,7 +83,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             SparkSession spark,
             Map<UUID, RuntimeDataSource> runtimeSources
     ) {
-        this(spark, runtimeSources, null, List.of(), null, 0, null, null, null);
+        this(spark, runtimeSources, null, List.of(), null, null, 0, null, null, null);
     }
 
     RuntimeCanvasNodeDataAccess(
@@ -87,7 +92,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             RuntimeFileStorage runtimeFileStorage,
             List<RuntimeFileInput> runtimeFileInputs
     ) {
-        this(spark, runtimeSources, runtimeFileStorage, runtimeFileInputs, null, 0,
+        this(spark, runtimeSources, runtimeFileStorage, runtimeFileInputs, null, null, 0,
                 null, null, null);
     }
 
@@ -97,6 +102,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
             RuntimeFileStorage runtimeFileStorage,
             List<RuntimeFileInput> runtimeFileInputs,
             String executionId,
+            String taskId,
             int attempt,
             String streamingSourceNodeId,
             String streamingSourceSignature,
@@ -106,6 +112,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         this.runtimeSources = runtimeSources;
         this.runtimeFileStorage = runtimeFileStorage;
         this.executionId = executionId;
+        this.taskId = taskId;
         this.attempt = attempt;
         this.streamingSourceNodeId = streamingSourceNodeId;
         this.streamingSourceSignature = streamingSourceSignature;
@@ -177,6 +184,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 .format(JdbcIncrementalTableProvider.class.getName())
                 .schema(SparkTypeMapper.toStructType(logicalSchema.columns()))
                 .option("dataSourceId", dataSourceId.toString())
+                .option("taskId", taskId == null ? "unknown" : taskId)
                 .option("nodeId", node.id())
                 .option("sourceSignature", sourceSignature)
                 .option("databaseType", runtime.databaseType().name())
@@ -373,11 +381,48 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 .option("kafka.security.protocol", connection.securityProtocol().name());
         applyKafkaAuthentication(reader, connection);
         Dataset<Row> raw = reader.load();
-        return raw.select(functions.from_json(
-                        functions.col("value").cast("string"),
-                        SparkTypeMapper.toStructType(logicalSchema.columns()),
-                        Map.of("mode", "FAILFAST"))
-                .alias("data")).select("data.*");
+        return projectKafkaInput(raw, node, logicalSchema);
+    }
+
+    static Dataset<Row> projectKafkaInput(
+            Dataset<Row> raw,
+            KafkaInputNodeDefinition node,
+            CanvasTableSchema logicalSchema
+    ) {
+        KafkaInputValueFormat valueFormat = node.configuration().effectiveValueFormat();
+        List<Column> projections = new ArrayList<>();
+        Dataset<Row> decoded = raw;
+        if (valueFormat == KafkaInputValueFormat.JSON) {
+            String decodedColumnName = "__data_scalpel_kafka_value";
+            int valueColumnCount = node.configuration().valueSchema().columns().size();
+            decoded = raw.withColumn(decodedColumnName, functions.from_json(
+                    functions.col("value").cast("string"),
+                    SparkTypeMapper.toStructType(logicalSchema.columns().subList(0, valueColumnCount)),
+                    Map.of("mode", "FAILFAST")
+            ));
+            node.configuration().valueSchema().columns().forEach(column -> projections.add(
+                    functions.col(decodedColumnName).getField(column.name()).alias(column.name())
+            ));
+        } else if (valueFormat == KafkaInputValueFormat.TEXT) {
+            projections.add(functions.col("value").cast("string").alias("value"));
+        } else {
+            projections.add(functions.col("value").alias("value"));
+        }
+
+        LinkedHashSet<KafkaInputMetadataField> metadataFields = new LinkedHashSet<>(
+                node.configuration().effectiveMetadataFields()
+        );
+        for (KafkaInputMetadataField field : KafkaInputMetadataField.values()) {
+            if (!metadataFields.contains(field)) continue;
+            projections.add(switch (field) {
+                case KEY -> functions.col("key").alias("_kafka_key");
+                case TOPIC -> functions.col("topic").alias("_kafka_topic");
+                case PARTITION -> functions.col("partition").alias("_kafka_partition");
+                case OFFSET -> functions.col("offset").alias("_kafka_offset");
+                case TIMESTAMP -> functions.col("timestamp").alias("_kafka_timestamp");
+            });
+        }
+        return decoded.select(projections.toArray(Column[]::new));
     }
 
     @Override
@@ -397,10 +442,11 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                     node.id()
             );
         }
-        return spark.readStream()
+        DataStreamReader reader = spark.readStream()
                 .format(TdEngineTmqTableProvider.class.getName())
                 .schema(SparkTypeMapper.toStructType(logicalSchema.columns()))
                 .option("dataSourceId", dataSourceId.toString())
+                .option("taskId", taskId == null ? "unknown" : taskId)
                 .option("nodeId", node.id())
                 .option("executionId", executionId == null ? "unknown" : executionId)
                 .option("attempt", attempt)
@@ -413,8 +459,12 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 .option(
                         "maxOffsetsPerVGroupPerTrigger",
                         node.configuration().maxOffsetsPerVGroupPerTrigger()
-                )
-                .load();
+                );
+        if (node.id().equals(streamingSourceNodeId)
+                && initialSourceOffset != null && !initialSourceOffset.isBlank()) {
+            reader.option("initialSourceOffset", initialSourceOffset);
+        }
+        return reader.load();
     }
 
     @Override
@@ -594,6 +644,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
     public CanvasPreparedKafkaOutput prepareKafkaOutput(
             KafkaOutputNodeDefinition node,
             cn.superhuang.data.scalpel.contract.task.KafkaOutputWrite write,
+            String keyColumnAlias,
             Dataset<Row> dataset
     ) {
         RuntimeDataSource runtime = CanvasTaskExecutor.requireRuntimeSource(
@@ -615,6 +666,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 write.writeId(),
                 runtime,
                 write.topic(),
+                write.valueFormat(),
+                keyColumnAlias,
                 dataset
         );
     }

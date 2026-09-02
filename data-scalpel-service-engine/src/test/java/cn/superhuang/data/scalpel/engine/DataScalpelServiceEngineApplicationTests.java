@@ -162,8 +162,8 @@ class DataScalpelServiceEngineApplicationTests {
                 .andExpect(jsonPath("$.pageNo").value(1))
                 .andExpect(jsonPath("$.pageSize").value(1))
                 .andExpect(jsonPath("$.totalCount").value(2))
-                .andExpect(jsonPath("$.resultList.length()").value(1))
-                .andExpect(jsonPath("$.resultList[0].name").value("Alice"));
+                .andExpect(jsonPath("$.items.length()").value(1))
+                .andExpect(jsonPath("$.items[0].name").value("Alice"));
 
         mockMvc.perform(post(routePath)
                         .contentType("application/json")

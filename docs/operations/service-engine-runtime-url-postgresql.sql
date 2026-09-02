@@ -4,7 +4,9 @@
 -- public_url was renamed to runtime_url, nor can it safely add new non-null
 -- gateway-publication fields to a table that may already contain records. Run
 -- this once against the DataScalpel Admin PostgreSQL database before starting
--- the updated Admin application. The script is idempotent.
+-- the updated Admin application. DataService.route_path remains the service's
+-- own Context Path; only access_mode moves entirely to the gateway binding.
+-- The script is idempotent.
 
 BEGIN;
 
@@ -48,6 +50,22 @@ ALTER TABLE IF EXISTS public.ds_gateway_service_binding
     ADD COLUMN IF NOT EXISTS gateway_route_path varchar(255);
 ALTER TABLE IF EXISTS public.ds_gateway_service_binding
     ADD COLUMN IF NOT EXISTS access_mode varchar(32);
+
+-- A data service owns its Engine Context Path. Recreate and backfill the column
+-- as well, so databases that ran the short-lived route-removal migration can be
+-- repaired by rerunning this script.
+ALTER TABLE IF EXISTS public.ds_data_service
+    ADD COLUMN IF NOT EXISTS route_path varchar(255);
+
+UPDATE public.ds_data_service
+SET route_path = '/open-api/v1/' || lower(code)
+WHERE route_path IS NULL OR btrim(route_path) = '';
+
+UPDATE public.ds_data_service
+SET route_path = lower(btrim(route_path));
+
+ALTER TABLE IF EXISTS public.ds_data_service
+    ALTER COLUMN route_path SET NOT NULL;
 
 DO $migration$
 BEGIN
@@ -109,6 +127,31 @@ BEGIN
 END;
 $migration$;
 
+-- Context Path only needs to be unique inside one Engine. Gateway public paths
+-- have their own provider-side uniqueness rules.
+ALTER TABLE IF EXISTS public.ds_data_service
+    DROP CONSTRAINT IF EXISTS uk_ds_data_service_route;
+
+DO $migration$
+BEGIN
+    IF to_regclass('public.ds_data_service') IS NOT NULL
+       AND NOT EXISTS (
+           SELECT 1
+           FROM pg_constraint
+           WHERE conrelid = 'public.ds_data_service'::regclass
+             AND conname = 'uk_ds_data_service_engine_context_path'
+       ) THEN
+        ALTER TABLE public.ds_data_service
+            ADD CONSTRAINT uk_ds_data_service_engine_context_path UNIQUE (engine_id, route_path);
+    END IF;
+END;
+$migration$;
+
+-- Access mode is a gateway-publication concern and no longer belongs to the
+-- service definition itself.
+ALTER TABLE IF EXISTS public.ds_data_service
+    DROP COLUMN IF EXISTS access_mode;
+
 COMMIT;
 
 SELECT column_name, data_type, is_nullable, character_maximum_length
@@ -123,4 +166,11 @@ FROM information_schema.columns
 WHERE table_schema = 'public'
   AND table_name = 'ds_gateway_service_binding'
   AND column_name IN ('gateway_route_path', 'access_mode')
+ORDER BY column_name;
+
+SELECT column_name
+FROM information_schema.columns
+WHERE table_schema = 'public'
+  AND table_name = 'ds_data_service'
+  AND column_name IN ('route_path', 'access_mode')
 ORDER BY column_name;

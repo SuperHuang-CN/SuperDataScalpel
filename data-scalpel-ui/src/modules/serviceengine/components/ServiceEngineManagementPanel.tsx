@@ -57,7 +57,10 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   const test = async (engine: ServiceEngine) => {
     try {
       const result = await testMutation.mutateAsync({ id: engine.id });
-      messageApi.success(`${engine.name} 连接成功，支持：${result.databaseTypes.join('、') || '无'}`);
+      const support = (result.type ?? engine.type) === 'GEOSERVER'
+        ? `${result.version ?? '未知版本'}，${result.capabilities?.join(' / ') || '未返回协议能力'}`
+        : `支持：${result.databaseTypes.join('、') || '无'}`;
+      messageApi.success(`${engine.name} 连接成功，${support}，耗时 ${result.elapsedMs} ms`);
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '测试 Service Engine 失败');
     }
@@ -105,8 +108,14 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         />
       ),
     },
+    {
+      title: '类型',
+      dataIndex: 'type',
+      width: 150,
+      render: (value: ServiceEngine['type']) => value === 'GEOSERVER' ? 'GeoServer 空间引擎' : 'DataScalpel 引擎',
+    },
     { title: '访问地址', width: 390, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.adminUrl} title="管理地址" />} secondary={<ManagementCode value={engine.runtimeUrl} title="运行地址" />} /> },
-    { title: '状态 / 凭据', width: 170, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={engine.enabled ? '启用' : '停用'} tone={engine.enabled ? 'success' : 'default'} />} secondary={engine.managementTokenConfigured ? '管理 Token 已配置' : '未配置管理 Token'} /> },
+    { title: '状态 / 凭据', width: 170, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={engine.enabled ? '启用' : '停用'} tone={engine.enabled ? 'success' : 'default'} />} secondary={engine.type === 'GEOSERVER' ? engine.geoServerCredentialConfigured ? 'GeoServer 凭据已配置' : '未配置 GeoServer 凭据' : engine.managementTokenConfigured ? '管理 Token 已配置' : '未配置管理 Token'} /> },
     { title: '更新时间', dataIndex: 'updatedAt', width: 160, render: (value: string) => <ManagementDateTime value={value} /> },
     {
       title: '操作', key: 'action', width: 112,
@@ -118,7 +127,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
           <Dropdown trigger={['click']} menu={{ items: [
             { key: 'services', label: '数据服务', icon: <ApiOutlined /> },
             { key: 'datasources', label: '管理数据源', icon: <DatabaseOutlined /> },
-            { key: 'access-policy', label: '访问策略', icon: <SafetyCertificateOutlined /> },
+            ...(engine.type !== 'GEOSERVER' ? [{ key: 'access-policy', label: '访问策略', icon: <SafetyCertificateOutlined /> }] : []),
             ...(canUpdate ? [{ key: 'edit', label: '修改', icon: <EditOutlined /> }] : []),
             ...(canTest ? [{ key: 'test', label: '测试连接', icon: <ApiOutlined /> }] : []),
             ...(canDelete ? [{ type: 'divider' as const }, { key: 'delete', label: '删除', icon: <DeleteOutlined />, danger: true }] : []),
@@ -138,6 +147,7 @@ export const ServiceEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
           <Form<ServiceEngineFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
             <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索引擎名称或编码" className="data-source-keyword-input" /></Form.Item>
             <Form.Item name="enabled"><Select allowClear placeholder="全部状态" className="data-source-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
+            <Form.Item name="type"><Select allowClear placeholder="全部类型" className="data-source-filter-select" options={[{ value: 'DATASCALPEL', label: 'DataScalpel' }, { value: 'GEOSERVER', label: 'GeoServer' }]} /></Form.Item>
           </Form>
           <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={enginesQuery.isFetching} onReset={reset} />
         </div>

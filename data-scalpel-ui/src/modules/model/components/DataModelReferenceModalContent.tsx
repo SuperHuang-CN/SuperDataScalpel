@@ -1,4 +1,5 @@
-import { Alert, Button, Empty, Space, Table, Tag, Typography } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { Button, Empty, Space, Table, Tag, Typography } from 'antd';
 import type { DataModelReferences } from '../model/dataModel';
 
 interface DataModelReferenceModalContentProps {

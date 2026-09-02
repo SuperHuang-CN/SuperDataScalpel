@@ -1,16 +1,9 @@
-import { EditOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
+import { DeploymentUnitOutlined, EditOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Empty,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-} from 'antd';
+import { Button, Descriptions, Empty, Space, Spin, Table, Tag, Typography } from 'antd';
 import { ApiError } from '../../../shared/api/http';
 import { useNavigate } from 'react-router-dom';
 import { CanvasNodeType, type CanvasNodeDefinition } from '../canvas/canvasTypes';
@@ -153,26 +146,42 @@ export const TaskStreamingRuntimePanel = ({ task }: TaskStreamingRuntimePanelPro
     return <div className="task-detail-tab-panel"><Spin tip="正在加载实时运行状态…" /></div>;
   }
 
-  if (statusQuery.isError) {
-    return (
-      <div className="task-detail-tab-panel">
-        <Alert
-          type="error"
-          showIcon
-          message="实时运行状态加载失败"
-          description={statusQuery.error instanceof ApiError ? statusQuery.error.message : '请稍后重试。'}
-          action={<Button size="small" onClick={() => void statusQuery.refetch()}>重试</Button>}
-        />
-      </div>
-    );
-  }
+  if (statusQuery.isError) return (
+    <div className="task-detail-tab-panel">
+      <InlineFeedback
+        tone="error"
+        label="实时运行状态加载失败"
+        detail={statusQuery.error instanceof ApiError ? statusQuery.error.message : '请稍后重试。'}
+        action={<Button size="small" onClick={() => void statusQuery.refetch()}>重试</Button>}
+      />
+    </div>
+  );
 
   return (
     <div className="task-detail-tab-panel task-streaming-runtime-panel">
       <div className="task-detail-tab-toolbar">
         <Space size={8} wrap>
           <Typography.Text strong>实时运行</Typography.Text>
+          <ContextHelp
+            ariaLabel="实时任务运行说明"
+            presentation="popover"
+            content={streamingJar
+              ? '实时任务持续消费数据，不使用 Cron 定时计划。用户代码控制 Trigger、Output Mode 和处理逻辑；平台注册并监控全部查询，各查询使用独立 Checkpoint，任一查询失败会停止整个 Application。'
+              : '实时任务持续消费数据，不使用 Cron 定时计划。Kafka 与 JDBC Sink 均按至少一次处理，故障恢复可能产生重复；多个输出使用独立 Checkpoint，不提供跨 Sink 事务。'}
+          />
           <Tag color="processing">{source.kind}</Tag>
+          {(statusQuery.data?.tmqConsumerGroupCleanupPendingCount ?? 0) > 0
+            ? <Tag color="warning">TMQ Group 待清理 {statusQuery.data?.tmqConsumerGroupCleanupPendingCount}</Tag>
+            : null}
+          {(statusQuery.data?.tmqConsumerGroupCleanupFailedCount ?? 0) > 0
+            ? <>
+              <Tag color="error">TMQ Group 清理失败 {statusQuery.data?.tmqConsumerGroupCleanupFailedCount}</Tag>
+              <ContextHelp
+                ariaLabel="TMQ Consumer Group 清理失败说明"
+                content="旧 Consumer Group 的后台清理会自动退避重试，不影响当前实时任务启动、停止或运行。"
+              />
+            </>
+            : null}
           <Typography.Text>{source.name}</Typography.Text>
           {!streamingJar && <Typography.Text type="secondary">
             {source.interval === null ? '间隔 —' : `每 ${source.interval} 秒触发`}
@@ -197,31 +206,25 @@ export const TaskStreamingRuntimePanel = ({ task }: TaskStreamingRuntimePanelPro
           </Button>
         </Space>
       </div>
-      <Alert
-        type="info"
-        showIcon
-        message="实时任务持续消费数据，不使用 Cron 定时计划"
-        description={streamingJar
-          ? '用户代码控制 Trigger、Output Mode 和处理逻辑；平台注册并监控全部查询，各查询使用独立 Checkpoint，任一查询失败会停止整个 Application。'
-          : 'Kafka 与 JDBC Sink 均按至少一次处理，故障恢复可能产生重复；多个输出使用独立 Checkpoint，不提供跨 Sink 事务。'}
-      />
       {!deployment ? (
         <Empty description="当前定义尚未启动过，发布后可从页面顶部启动实时任务。" />
       ) : (
         <Space orientation="vertical" size={12} className="task-streaming-runtime-content">
-          {deployment.lastError && (
-            <Alert
-              type="error"
-              showIcon
-              message="实时部署失败"
-              description={deployment.lastError}
-            />
-          )}
-          <Descriptions size="small" bordered column={4}>
+          <BusinessDetailSection title="实时部署状态" description="当前 Deployment、Checkpoint 与处理进度" icon={<DeploymentUnitOutlined />}>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
             <Descriptions.Item label="部署状态">
-              <Tag color={streamingDeploymentStateColors[deployment.actualState]}>
-                {streamingDeploymentStateLabels[deployment.actualState]}
-              </Tag>
+              {deployment.lastError ? (
+                <InlineFeedback
+                  tone="error"
+                  label={streamingDeploymentStateLabels[deployment.actualState]}
+                  detail={deployment.lastError}
+                  ariaLabel="实时部署失败详情"
+                />
+              ) : (
+                <Tag color={streamingDeploymentStateColors[deployment.actualState]}>
+                  {streamingDeploymentStateLabels[deployment.actualState]}
+                </Tag>
+              )}
             </Descriptions.Item>
             <Descriptions.Item label="定义版本">v{deployment.definitionVersion}</Descriptions.Item>
             <Descriptions.Item label="当前 Attempt">{deployment.attempt ?? '—'}</Descriptions.Item>
@@ -237,27 +240,36 @@ export const TaskStreamingRuntimePanel = ({ task }: TaskStreamingRuntimePanelPro
                 ? <Typography.Text code copyable={{ text: deployment.checkpointSourceDeploymentId }}>{deployment.checkpointSourceDeploymentId}</Typography.Text>
                 : '—'}
             </Descriptions.Item>
-            {!streamingJar && <>
+            {!streamingJar && deployment.sourceKind === 'TDENGINE_TMQ' && <>
+              <Descriptions.Item label="最近批次行数">
+                {numberValue(deployment.rowCount, 0)}
+              </Descriptions.Item>
+              <Descriptions.Item label="VGroup 数量">
+                {numberValue(deployment.vGroupCount, 0)}
+              </Descriptions.Item>
+              <Descriptions.Item label="批次 Offset 跨度">
+                {numberValue(deployment.batchOffsetSpan, 0)}
+              </Descriptions.Item>
+              <Descriptions.Item label="批次处理耗时">
+                {durationValue(deployment.pollDurationMillis)}
+              </Descriptions.Item>
+              <Descriptions.Item label="最近轮询">
+                {formatTaskRunDateTime(deployment.pollTime)}
+              </Descriptions.Item>
+            </>}
+            {!streamingJar && deployment.sourceKind !== 'TDENGINE_TMQ' && <>
               <Descriptions.Item label="最近读取窗口" span={2}>
                 {deployment.windowEnd
                   ? `${deployment.windowStart ? formatTaskRunDateTime(deployment.windowStart) : '无下界'} ～ ${formatTaskRunDateTime(deployment.windowEnd)}`
                   : '—'}
               </Descriptions.Item>
-              <Descriptions.Item label="窗口读取行数">
-                {numberValue(deployment.rowCount, 0)}
-              </Descriptions.Item>
-              <Descriptions.Item label="窗口处理耗时">
-                {durationValue(deployment.pollDurationMillis)}
-              </Descriptions.Item>
-              <Descriptions.Item label="已提交时间">
-                {formatTaskRunDateTime(deployment.windowEnd)}
-              </Descriptions.Item>
-              <Descriptions.Item label="近似游标延迟">
-                {durationValue(deployment.cursorLagMillis)}
-              </Descriptions.Item>
-              <Descriptions.Item label="最近轮询">
-                {formatTaskRunDateTime(deployment.pollTime)}
-              </Descriptions.Item>
+              <Descriptions.Item label="窗口读取行数">{numberValue(deployment.rowCount, 0)}</Descriptions.Item>
+              <Descriptions.Item label="窗口处理耗时">{durationValue(deployment.pollDurationMillis)}</Descriptions.Item>
+              <Descriptions.Item label="已提交时间">{formatTaskRunDateTime(deployment.windowEnd)}</Descriptions.Item>
+              <Descriptions.Item label="近似游标延迟">{durationValue(deployment.cursorLagMillis)}</Descriptions.Item>
+              <Descriptions.Item label="最近轮询">{formatTaskRunDateTime(deployment.pollTime)}</Descriptions.Item>
+            </>}
+            {!streamingJar && <>
               <Descriptions.Item label="来源签名" span={2}>
                 {deployment.sourceSignature
                   ? <Typography.Text copyable={{ text: deployment.sourceSignature }} code>{deployment.sourceSignature.slice(0, 16)}…</Typography.Text>
@@ -288,7 +300,8 @@ export const TaskStreamingRuntimePanel = ({ task }: TaskStreamingRuntimePanelPro
                 )
                 : '—'}
             </Descriptions.Item>
-          </Descriptions>
+          </BusinessDetailDescriptions>
+          </BusinessDetailSection>
           {streamingJar && (
             <UserJobObservabilityPanel
               observability={deployment.userJobObservability}

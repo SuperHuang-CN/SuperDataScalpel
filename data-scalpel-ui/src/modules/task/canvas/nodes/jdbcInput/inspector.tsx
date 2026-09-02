@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   DownOutlined,
@@ -7,7 +8,7 @@ import {
   TableOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import { Alert, Badge, Button, Form, Popconfirm, Space, Spin, Tag, Tooltip, Typography } from 'antd';
+import { Badge, Button, Form, Popconfirm, Space, Spin, Tag, Tooltip, Typography } from 'antd';
 import { useImperativeHandle, useState } from 'react';
 import {
   useDataSource,

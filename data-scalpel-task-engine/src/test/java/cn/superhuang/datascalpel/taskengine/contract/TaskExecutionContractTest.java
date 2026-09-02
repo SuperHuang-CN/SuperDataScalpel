@@ -13,6 +13,7 @@ import cn.superhuang.data.scalpel.contract.execution.RunnerExecutionEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerUserObservabilityEvent;
 import cn.superhuang.data.scalpel.contract.execution.UserJobMetricSnapshot;
 import cn.superhuang.data.scalpel.contract.execution.UserJobObservabilitySnapshot;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview;
 import cn.superhuang.data.scalpel.contract.execution.UserJobStatus;
 import cn.superhuang.datascalpel.taskengine.http.JsonSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -324,7 +325,7 @@ class TaskExecutionContractTest {
         TaskExecutionResult restored = objectMapper.readValue(
                 objectMapper.writeValueAsString(result), TaskExecutionResult.class);
 
-        assertEquals(8, restored.schemaVersion());
+        assertEquals(TaskExecutionResult.CURRENT_SCHEMA_VERSION, restored.schemaVersion());
         assertEquals("NO_SDK_WRITES", restored.lineage().warnings().getFirst().code());
         assertEquals("WRITE_OUTPUT", restored.userJobObservability().status().phase());
         assertEquals(List.of(
@@ -343,6 +344,29 @@ class TaskExecutionContractTest {
         RunnerUserObservabilityEvent observabilityEvent = assertInstanceOf(
                 RunnerUserObservabilityEvent.class, restoredEvent);
         assertEquals(snapshot, observabilityEvent.observability());
+    }
+
+    @Test
+    void roundTripsSparkJarTrialPreviewWithoutAffectedRows() throws Exception {
+        Instant now = Instant.parse("2026-08-28T08:00:00Z");
+        SparkJarTrialPreview preview = new SparkJarTrialPreview(List.of(
+                new SparkJarTrialPreview.WritePreview(
+                        1, SparkJarTrialPreview.ResourceKind.MODEL, "dim_user", "dim_user",
+                        "APPEND", "{\"type\":\"struct\",\"fields\":[]}",
+                        List.of("{\"id\":1}"), false)), List.of());
+        TaskExecutionResult result = new TaskExecutionResult(
+                TaskExecutionResult.CURRENT_SCHEMA_VERSION,
+                UUID.randomUUID(), UUID.randomUUID(), 1, TaskExecutionState.SUCCESS,
+                now, now.plusMillis(10), 10L, null, List.of(),
+                ExecutionTaskType.SPARK_JAR, null, null,
+                TaskLineageEvidence.unavailable("NO_LINEAGE", "试运行证据不发布"), preview, null);
+
+        TaskExecutionResult restored = objectMapper.readValue(
+                objectMapper.writeValueAsString(result), TaskExecutionResult.class);
+
+        assertNull(restored.affectedRows());
+        assertEquals("dim_user", restored.trialPreview().writes().getFirst().bindingName());
+        assertEquals(1, restored.trialPreview().writes().getFirst().rowsJson().size());
     }
 
     @Test

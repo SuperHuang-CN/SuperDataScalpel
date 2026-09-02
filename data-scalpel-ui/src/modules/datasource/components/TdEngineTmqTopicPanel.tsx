@@ -1,8 +1,10 @@
-import { EyeOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Descriptions, Drawer, Form, Input, Space, Table, Tag, Tooltip } from 'antd';
+import { Button, Descriptions, Drawer, Form, Input, Space, Table, Tag, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { useTdEngineTmqTopic, useTdEngineTmqTopics } from '../hooks/useDataSources';
 import type { ColumnMetadata, DataSource, TdEngineTmqTopic } from '../model/dataSource';
 
@@ -70,26 +72,16 @@ export const TdEngineTmqTopicPanel = ({ dataSource, active }: TdEngineTmqTopicPa
 
   return (
     <div className="data-source-resource-panel tdengine-tmq-topic-panel">
-      <div className="data-source-resource-toolbar">
+      <div className="data-source-resource-toolbar detail-table-filter-toolbar">
         <Form form={form} layout="inline" autoComplete="off" onFinish={(values) => setKeyword(values.keyword?.trim() || undefined)}>
           <Form.Item name="keyword">
-            <Input allowClear prefix={<SearchOutlined />} placeholder="搜索 TMQ Topic" />
-          </Form.Item>
-          <Form.Item>
-            <Space size={4}>
-              <Button type="primary" htmlType="submit">查询</Button>
-              <Button type="text" onClick={() => { form.resetFields(); setKeyword(undefined); }}>重置</Button>
-            </Space>
+            <Input allowClear prefix={<SearchOutlined />} placeholder="TMQ Topic 名称" className="detail-table-filter-keyword" />
           </Form.Item>
         </Form>
-        <Tooltip title="刷新 Topic">
-          <Button
-            icon={<ReloadOutlined />}
-            aria-label="刷新 TDengine TMQ Topic"
-            loading={topicsQuery.isFetching}
-            onClick={() => void topicsQuery.refetch()}
-          />
-        </Tooltip>
+        <Space size={4} className="detail-table-filter-actions">
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()}>查询</Button>
+          <Button type="text" onClick={() => { form.resetFields(); setKeyword(undefined); }}>重置</Button>
+        </Space>
       </div>
       {topicsQuery.error && (
         <Alert
@@ -100,6 +92,15 @@ export const TdEngineTmqTopicPanel = ({ dataSource, active }: TdEngineTmqTopicPa
           action={<Button size="small" onClick={() => void topicsQuery.refetch()}>重试</Button>}
         />
       )}
+      <DetailTableToolbar
+        title="TMQ Topic 列表"
+        total={topicsQuery.data?.length ?? 0}
+        showPagination={false}
+        onRefresh={() => void topicsQuery.refetch()}
+        refreshing={topicsQuery.isFetching}
+        refreshLabel="刷新 TDengine TMQ Topic"
+        itemUnit="个"
+      />
       <Table<TdEngineTmqTopic>
         className="management-table"
         size="small"

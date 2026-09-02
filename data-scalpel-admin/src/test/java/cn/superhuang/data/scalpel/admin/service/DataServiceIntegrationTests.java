@@ -180,7 +180,7 @@ class DataServiceIntegrationTests {
                                 {
                                   "name":"受保护服务",
                                   "engineId":"%s",
-                                  "routePath":"/open-api/v1/protected-%s",
+                                  "contextPath":"/open-api/v1/protected-%s",
                                   "accessMode":"PUBLIC",
                                   "type":"SQL_QUERY",
                                   "standardDefinition":null,
@@ -253,7 +253,7 @@ class DataServiceIntegrationTests {
                                 {
                                   "name":"客户 SQL 查询",
                                   "engineId":"%s",
-                                  "routePath":"/open-api/v1/customer-%s",
+                                  "contextPath":"/open-api/v1/customer-%s",
                                   "type":"SQL_QUERY",
                                   "standardDefinition":null,
                                   "sqlDefinition":{
@@ -284,7 +284,7 @@ class DataServiceIntegrationTests {
                                 {
                                   "name":"禁止切换类型",
                                   "engineId":"%s",
-                                  "routePath":"/open-api/v1/customer-%s",
+                                  "contextPath":"/open-api/v1/customer-%s",
                                   "type":"STANDARD_TABLE",
                                   "standardDefinition":{"modelId":"%s"},
                                   "sqlDefinition":null
@@ -323,7 +323,7 @@ class DataServiceIntegrationTests {
                                   "code":"invalid_shape_%s",
                                   "name":"互斥定义",
                                   "engineId":"%s",
-                                  "routePath":"/open-api/v1/invalid-shape-%s",
+                                  "contextPath":"/open-api/v1/invalid-shape-%s",
                                   "type":"SQL_QUERY",
                                   "standardDefinition":{"modelId":"%s"},
                                   "sqlDefinition":{"dataSourceId":"%s","modelIds":["%s"],"sqlText":"select 1","parameters":[]}
@@ -520,7 +520,7 @@ class DataServiceIntegrationTests {
                   "code":"%s",
                   "name":"客户 SQL 查询",
                   "engineId":"%s",
-                  "routePath":"%s",
+                  "contextPath":"%s",
                   "type":"SQL_QUERY",
                   "standardDefinition":null,
                   "sqlDefinition":{

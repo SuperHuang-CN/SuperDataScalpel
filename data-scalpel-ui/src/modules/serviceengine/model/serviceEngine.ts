@@ -1,10 +1,16 @@
+export type ServiceEngineType = 'DATASCALPEL' | 'GEOSERVER';
+
 export interface ServiceEngine {
   id: string;
+  type?: ServiceEngineType;
   code: string;
   name: string;
   adminUrl: string;
   runtimeUrl: string;
   managementTokenConfigured: boolean;
+  geoServerUsername?: string | null;
+  geoServerWorkspace?: string | null;
+  geoServerCredentialConfigured?: boolean;
   enabled: boolean;
   description: string | null;
   createdAt: string;
@@ -12,8 +18,13 @@ export interface ServiceEngine {
 }
 
 export interface ServiceEngineTestResult {
+  type?: ServiceEngineType;
   code: string;
+  version?: string | null;
   databaseTypes: string[];
+  capabilities?: string[];
+  normalizedAdminUrl?: string | null;
+  normalizedRuntimeUrl?: string | null;
   elapsedMs: number;
 }
 
@@ -43,33 +54,49 @@ export interface ServiceEngineDataSourceTestResult {
 }
 
 interface ServiceEngineWriteRequest {
+  type?: ServiceEngineType;
+  code?: string;
   name: string;
   adminUrl: string;
   runtimeUrl: string;
   managementToken?: string;
+  geoServerUsername?: string;
+  geoServerPassword?: string;
+  geoServerWorkspace?: string;
   enabled?: boolean;
   description?: string;
 }
 
 export type CreateServiceEngineRequest = ServiceEngineWriteRequest & {
-  managementToken: string;
+  type: ServiceEngineType;
 };
 
 export type UpdateServiceEngineRequest = ServiceEngineWriteRequest & { enabled: boolean };
 
 export interface TestServiceEngineRequest {
+  type: ServiceEngineType;
+  code?: string;
   adminUrl: string;
-  managementToken: string;
+  runtimeUrl: string;
+  managementToken?: string;
+  geoServerUsername?: string;
+  geoServerPassword?: string;
+  geoServerWorkspace?: string;
 }
 
 export interface TestStoredServiceEngineRequest {
   adminUrl?: string;
+  runtimeUrl?: string;
   managementToken?: string;
+  geoServerUsername?: string;
+  geoServerPassword?: string;
+  geoServerWorkspace?: string;
 }
 
 export interface ServiceEngineFilters {
   keyword?: string;
   enabled?: boolean;
+  type?: ServiceEngineType;
 }
 
 export type ServiceEngineAccessPolicyStatus = 'NOT_CONFIGURED' | 'PENDING' | 'READY' | 'FAILED' | 'OUTDATED';

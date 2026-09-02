@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CopyOutlined } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Input, Modal, Space, message } from 'antd';
+import { Button, Descriptions, Input, Modal, Space, message } from 'antd';
 import type { ConnectionTestResult } from '../model/dataSource';
 
 interface ConnectionTestResultModalProps {

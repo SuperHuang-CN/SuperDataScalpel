@@ -173,6 +173,7 @@ public final class SchemaOnlyCanvasNodeDataAccess implements CanvasNodeDataAcces
     public CanvasPreparedKafkaOutput prepareKafkaOutput(
             KafkaOutputNodeDefinition node,
             cn.superhuang.data.scalpel.contract.task.KafkaOutputWrite write,
+            String keyColumnAlias,
             Dataset<Row> dataset
     ) {
         dataset.schema();

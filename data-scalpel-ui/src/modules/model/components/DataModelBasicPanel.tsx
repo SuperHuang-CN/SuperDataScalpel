@@ -1,6 +1,9 @@
-import { CheckCircleOutlined, CodeOutlined, DatabaseOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { CheckCircleOutlined, CodeOutlined, DatabaseOutlined, FileTextOutlined, ProfileOutlined, ReloadOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Descriptions, Modal, Space, Table, Tag, Typography, message } from 'antd';
+import { Button, Descriptions, Modal, Space, Table, Tag, Typography, message } from 'antd';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import {
   dataModelStatusLabels,
   physicalTableModeLabels,
@@ -101,9 +104,8 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
     <div className="model-detail-tab-panel model-basic-panel">
       {messageContext}
       {modalContext}
-    <div className="model-basic-section">
-      <div className="model-basic-section-title">基本标识</div>
-      <Descriptions size="small" bordered column={3}>
+    <BusinessDetailSection title="基本标识" description="模型身份、分层与生命周期信息" icon={<ProfileOutlined />}>
+      <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
         <Descriptions.Item label="模型名称">{model.name}</Descriptions.Item>
         <Descriptions.Item label="模型编码"><code>{model.code}</code></Descriptions.Item>
         <Descriptions.Item label="状态">
@@ -127,17 +129,15 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
         </Descriptions.Item>
         <Descriptions.Item label="创建时间">{formatDateTime(model.createdAt)}</Descriptions.Item>
         <Descriptions.Item label="更新时间">{formatDateTime(model.updatedAt)}</Descriptions.Item>
-      </Descriptions>
-    </div>
-    <div className="model-basic-section">
-      <div className="model-basic-section-title">存储位置</div>
-      <Descriptions size="small" bordered column={2}>
+      </BusinessDetailDescriptions>
+    </BusinessDetailSection>
+    <BusinessDetailSection title="存储位置" description="模型落地的数据源与物理对象" icon={<DatabaseOutlined />}>
+      <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }}>
         <Descriptions.Item label="JDBC 数据源">{model.storageDataSourceName}</Descriptions.Item>
         <Descriptions.Item label="物理表名"><code>{model.physicalTableName}</code></Descriptions.Item>
-      </Descriptions>
-    </div>
-    <div className="model-basic-section physical-table-section">
-      <div className="model-basic-section-title">物理表状态</div>
+      </BusinessDetailDescriptions>
+    </BusinessDetailSection>
+    <BusinessDetailSection title="物理表状态" description="物理表存在性、结构兼容性与受控操作" icon={<SafetyCertificateOutlined />} className="physical-table-section">
       {inspectionQuery.error && (
         <Alert
           showIcon
@@ -180,11 +180,10 @@ export const DataModelBasicPanel = ({ model, directoryName, canManagePhysicalTab
         </>
       )}
       {inspectionQuery.isPending && <Alert showIcon type="info" title="正在检查物理表结构…" />}
-    </div>
-    <div className="model-basic-section">
-      <div className="model-basic-section-title">业务说明</div>
+    </BusinessDetailSection>
+    <BusinessDetailSection title="业务说明" description="模型的业务用途与补充信息" icon={<FileTextOutlined />}>
       <div className="model-description-box">{model.description || '—'}</div>
-    </div>
+    </BusinessDetailSection>
     </div>
   );
 };

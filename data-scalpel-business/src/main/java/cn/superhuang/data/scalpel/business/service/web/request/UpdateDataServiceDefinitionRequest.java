@@ -6,6 +6,14 @@ import jakarta.validation.Valid;
 public record UpdateDataServiceDefinitionRequest(
         @Valid StandardDataServiceDefinitionRequest standardDefinition,
         @Valid SqlDataServiceDefinitionRequest sqlDefinition,
-        @Valid ScriptDataServiceDefinitionRequest scriptDefinition
+        @Valid ScriptDataServiceDefinitionRequest scriptDefinition,
+        @Valid SpatialDataServiceDefinitionRequest spatialDefinition
 ) {
+    public UpdateDataServiceDefinitionRequest(
+            StandardDataServiceDefinitionRequest standardDefinition,
+            SqlDataServiceDefinitionRequest sqlDefinition,
+            ScriptDataServiceDefinitionRequest scriptDefinition
+    ) {
+        this(standardDefinition, sqlDefinition, scriptDefinition, null);
+    }
 }

@@ -1,4 +1,5 @@
-import { Alert, Form, Input, InputNumber, Select, Space } from 'antd';
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { Form, Input, InputNumber, Select, Space } from 'antd';
 import type { Ref } from 'react';
 import { useImperativeHandle, useMemo } from 'react';
 import { useDataSource, useDataSourceTypes, useTableMetadata } from '../../../../datasource';

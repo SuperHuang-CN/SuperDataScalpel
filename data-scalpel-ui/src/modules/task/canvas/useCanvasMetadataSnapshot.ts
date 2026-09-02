@@ -391,6 +391,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
             catalogName: topic.databaseName,
             supertableName: topic.supertableName,
             definitionFingerprint: topic.definitionFingerprint,
+            legacyDefinitionFingerprint: topic.legacyDefinitionFingerprint,
             timePrecision: topic.timePrecision,
             columns: topic.columns.map(canvasColumnSchema),
           }];
@@ -480,6 +481,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
     (fileDatasetMetadataQuery.data?.tables ?? [])
       .map((table) => ({
         id: table.fileDatasetTableId,
+        fileDatasetId: table.fileDatasetId,
         code: table.code,
         name: table.name,
         datasetType: table.datasetType,
@@ -505,9 +507,44 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
   const nodeSummaries = new Map<string, CanvasNodeRuntimeSummary>();
   definition.nodes.forEach((node) => {
     if (node.type === CanvasNodeType.FileDatasetInput) {
-      const table = fileDatasetMetadataQuery.data?.tables.find(
-        (candidate) => candidate.fileDatasetTableId === node.configuration.tables[0]?.fileDatasetTableId,
+      const metadataById = new Map(
+        (fileDatasetMetadataQuery.data?.tables ?? [])
+          .map((table) => [table.fileDatasetTableId, table] as const),
       );
+      const selectedTables = node.configuration.tables.flatMap((selection) => {
+        const table = metadataById.get(selection.fileDatasetTableId);
+        if (!table) return [];
+        const columns = [...table.fields]
+          .sort((left, right) => left.sortOrder - right.sortOrder)
+          .map(fileDatasetColumnSchema);
+        return [{
+          metadata: table,
+          summary: {
+            fileDatasetTableId: table.fileDatasetTableId,
+            tableName: table.name,
+            tableCode: table.code,
+            datasetType: table.datasetType,
+            status: table.parseStatus,
+            schema: {
+              name: table.code,
+              origin: {
+                kind: 'FILE_DATASET' as const,
+                dataSourceId: null,
+                tableName: null,
+                modelId: null,
+                modelCode: null,
+                modelSchemaVersion: null,
+                fileDatasetTableId: table.fileDatasetTableId,
+              },
+              columns,
+              datasetKind: 'BOUNDED' as const,
+              eventTimeColumn: null,
+              watermarkDelay: null,
+            },
+          },
+        }];
+      });
+      const table = selectedTables[0]?.metadata;
       if (!table) return;
       const geometryField = table.fields.find(
         (field) => field.platformTypeDefinition.type === 'GEOMETRY'
@@ -527,6 +564,7 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
           crs: geometry.crs,
           dimension: geometry.dimension,
         } : null,
+        tables: selectedTables.map((item) => item.summary),
       });
       return;
     }
@@ -590,7 +628,9 @@ export const useCanvasMetadataSnapshot = (definition: CanvasDefinition) => {
         kind: 'KAFKA',
         dataSourceName: dataSource.name,
         qualifiedTableName: first.topic,
-        fieldCount: first.valueSchema.columns.length,
+        fieldCount: first.valueFormat == null
+          ? first.valueSchema?.columns.length ?? 0
+          : first.valueColumnNames.length,
       });
       return;
     }

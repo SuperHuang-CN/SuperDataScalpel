@@ -7,9 +7,9 @@ V1 完成以下结构管理闭环：
 ```text
 模型 Geometry 定义
   → 目标数据库空间存储能力解析
-  → PostGIS / MySQL 8 原生空间列或 ClickHouse WKB 列受控建表
+  → PostGIS / MySQL 8 通用 Geometry 列或 ClickHouse WKB 列受控建表
   → 整表空间元数据回读
-  → Encoding + GeometryKind + CRS + Dimension + nullable 精确比较
+  → 物理 Geometry 类型、存储编码、nullable 与其他表结构比较
 ```
 
 支持范围固定为：
@@ -33,8 +33,10 @@ WKB 仅表示物理存储编码，平台不读取、生成或校验 WKB 值。Sh
 字段上有效、就绪、非 partial、非 expression 的单列 GiST/SP-GiST 索引，但不把索引
 纳入模型结构、不自动创建索引。PostGIS 按当前视口在原字段上执行 `&&` 过滤，再转换、
 裁剪并简化到 EPSG:3857，返回 WKB 给业务层使用 JTS 和 Java2D 渲染透明 PNG；浏览器的
-MapLibre 仅显示图片，不接收 Geometry。没有索引时只允许数据库 `reltuples` 估算不超过
-50,000 行的小表预览；统计未知或超过阈值时拒绝。单图限制为 5 秒、5,000 个 Geometry、
+MapLibre 仅显示图片，不接收 Geometry。没有索引时只允许已保存模型物理统计行数不超过
+50,000 的小表预览；空间预览不单独采集。快照行数
+为空时页面提示并可调用既有刷新接口，刷新后仍不可用时才提示执行 `ANALYZE` 或创建空间
+索引；超过阈值时直接拒绝无索引预览。单图限制为 5 秒、5,000 个 Geometry、
 500,000 个坐标点和 16 MiB WKB。普通快速预览和条件查询仍排除 Geometry。
 
 ## Canvas/Sedona 空间执行扩展
@@ -147,9 +149,11 @@ CRS Code、坐标维度”。导入继续识别 V1 标量文件；模板和新�
 
 ## 方言元数据边界
 
-方言内部使用 `TableColumnType.GEOMETRY`。`PhysicalTypeDefinition`、`TableColumnDefinition`、
-`ColumnMetadata` 和 `JdbcTypeDescriptor` 在空间列上携带规范化后的 Geometry 定义或
-`SpatialColumnMetadata`。后者至少包含：
+方言内部使用 `TableColumnType.GEOMETRY`。`PhysicalTypeDefinition` 保留完整的模型
+Geometry 定义；`ColumnMetadata` 和 `JdbcTypeDescriptor` 在空间列上按可用性携带
+`SpatialColumnMetadata`。物理结构快照中的 `TableColumnDefinition.geometry` 可以为空：
+它表示已确认是通用物理 `GEOMETRY`，但数据库没有足够语义来反推出模型的 kind、CRS 或
+维度。`SpatialColumnMetadata` 至少包含：
 
 - 原生 Geometry 类型；
 - 数据库本地空间参考 ID；
@@ -160,36 +164,37 @@ CRS Code、坐标维度”。导入继续识别 V1 标量文件；模板和新�
 - 空间元数据强度 `NONE/DECLARED/ENFORCED` 以及无法映射的具体原因。
 
 普通 JDBC 列元数据先按整表读取，然后调用 `DatabaseDialect.enrichColumnMetadata` 一次性
-补充整张表的空间信息。实现不得逐列查询 catalog。建表同样使用连接感知的
-`planCreateTable(Connection, TableDefinition)`，DDL 预览与执行共享同一目标连接上的
-能力检查和 CRS 解析结果。
+补充整张表的空间信息。实现不得逐列查询 catalog。`COLUMN_SIZE` 只保留给有长度语义的
+字符列；Geometry、日期和时间列不把驱动返回的尺寸解释为字段长度。建表同样使用连接感知
+的 `planCreateTable(Connection, TableDefinition)`，用于检查目标库的空间能力。
 
-数据库本地空间参考 ID 只在原生空间方言边界存在。PostGIS/MySQL 必须通过目标库目录
-把 `EPSG:<code>` 反查为唯一的本地 ID；缺失、重复或非 EPSG 映射均拒绝导入或建表，
-不能假设本地 ID 等于 EPSG code。ClickHouse WKB 不使用数据库本地空间参考 ID，EPSG
-直接作为列 marker 中的平台声明保存。
+数据库本地空间参考 ID 只在原生空间方言边界存在。已有表导入只有在可完整读出 subtype、
+EPSG CRS 和二维定义时才会初始化模型字段；通用 Geometry 无法推断 CRS，不猜测也不导入为
+不完整模型定义。ClickHouse WKB 不使用数据库本地空间参考 ID，EPSG 直接作为列 marker 中
+的平台声明保存。
 
 ## PostGIS
 
 PostGIS 是 PostgreSQL 数据源的可选运行能力，不是新的数据源类型。
 
 - 建表前检查 `postgis` 扩展及其安装 schema，不自动执行 `CREATE EXTENSION`。
-- EPSG 通过扩展目录 `spatial_ref_sys` 反查本地 SRID。
-- DDL 使用扩展 schema 限定的 `"schema"."geometry"(KIND,localSrid)`。
+- DDL 使用扩展 schema 限定的通用 `"schema"."geometry"`，不写入 subtype 或 SRID 修饰符。
 - 元数据通过 PostGIS catalog、`geometry_columns` 和 typmod 信息整表读取，不依赖 JDBC
   `TYPE_NAME` 推断 subtype、SRID 或维度。
-- `geography`、Raster、无固定 subtype、无固定 SRID、非 EPSG 或非 XY 返回
-  `UNSUPPORTED`。
+- `geometry`、`public.geometry` 和 `"public"."geometry"` 都归一为 PostgreSQL Geometry；
+  `geography`、Raster 不等同于 Geometry。通用物理 Geometry 与任意模型 Geometry 定义在
+  物理结构检查中匹配。
 
 ## MySQL 8
 
 Geometry 结构能力只对数据库产品确认为 MySQL 8.x 时开放；MySQL 5.7 和 MariaDB 明确拒绝。
 
-- 使用 `INFORMATION_SCHEMA.ST_GEOMETRY_COLUMNS` 读取 subtype 和 SRS restriction。
-- 使用 `INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS` 反查 EPSG authority/code。
-- DDL 使用 `POINT SRID localSrsId` 等原生语法。
+- 使用 `INFORMATION_SCHEMA.ST_GEOMETRY_COLUMNS` 读取已有表的 subtype 和 SRS restriction，
+  仅供严格导入和运行期语义使用。
+- DDL 使用通用 `GEOMETRY`，不写入 subtype 或 SRID restriction。
 - 含 Geometry 的受管表显式生成 `ENGINE=InnoDB`。
-- 未声明 SRID restriction、未知 SRS、非 EPSG 或非 XY 返回 `UNSUPPORTED`。
+- `GEOMETRY`、`POINT`、`MULTIPOLYGON` 等 MySQL 空间类型都与模型 Geometry 在物理结构
+  检查中匹配；缺少完整语义的已有表仍不能自动导入为模型 Geometry。
 
 ## ClickHouse 单机 WKB
 
@@ -221,23 +226,24 @@ Geometry 不得作为 ClickHouse `MergeTree ORDER BY` 字段。受管 DDL 不生
 
 ## 映射、比较与指纹
 
-PostGIS/MySQL 空间映射只有在 subtype、EPSG CRS、XY 和原生物理约束都可精确确认时
-才返回 `EXACT`。ClickHouse 只有在物理列为 String、marker 完整并声明 WKB、具体 subtype、
-EPSG CRS 和 XY 时返回 `EXACT`；其元数据强度为 `DECLARED`，不声称存在值级数据库约束。
-Geometry 不降级为普通 `STRING`、`JSON` 或 `BINARY`，也没有允许导入/建表的 `LOSSY`
-路径。
+已有表导入的空间映射只有在 subtype、EPSG CRS、XY 和原生物理约束都可精确确认时
+才返回 `EXACT`。通用 Geometry 因无法获得完整模型语义而不能自动导入。ClickHouse 只有
+在物理列为 String、marker 完整并声明 WKB、具体 subtype、EPSG CRS 和 XY 时返回 `EXACT`；
+其元数据强度为 `DECLARED`，不声称存在值级数据库约束。Geometry 不降级为普通 `STRING`、
+`JSON` 或 `BINARY`，也没有允许导入/建表的 `LOSSY` 路径。
 
-结构比较包含：
+PostgreSQL/MySQL 的物理结构比较把所有原生空间 subtype 视为一个 `GEOMETRY` 类型族，
+不比较 kind、CRS、SRID 或维度；`geography`、Raster 和非空间类型仍不匹配。ClickHouse
+继续要求物理 `String/Nullable(String)` 与有效 WKB marker，但不比较 marker 中的 kind、CRS
+或维度。以下结构仍按原规则比较：
 
-- 精确 GeometryKind；
-- 规范化 `authority + code`；
-- CoordinateDimension；
 - SpatialStorageEncoding；
 - nullable；
-- 现有字段名、主键和其他标量结构规则。
+- 现有字段名、主键、存储配置和其他标量结构规则。
 
-含 Geometry 的表使用 V3 结构指纹。纯标量表继续使用既有 V2 算法，使已保存的标量
-物理变更计划不因本功能失效。
+含 Geometry 的表使用 V4 结构指纹，只记录 `GEOMETRY` 物理类型而不记录其模型语义；纯
+标量表继续使用既有 V2 算法。保存的 V3 Geometry 变更计划在执行前会被拒绝，并提示重新
+生成计划；系统不会自动重写或执行旧计划。
 
 V1 不扩展 `IndexMetadata`、`TableDefinition` 索引定义或 DDL 原子性。建表 SQL不得包含
 `GiST`、`SPATIAL INDEX` 或其他空间索引；受管导入仍统一提示源表索引未导入。
@@ -245,13 +251,14 @@ V1 不扩展 `IndexMetadata`、`TableDefinition` 索引定义或 DDL 原子性�
 ## 业务行为
 
 草稿可以保存合法 Geometry。查看 DDL、创建物理表、外部绑定和受管导入预览时，才连接
-目标数据库校验 PostGIS/MySQL 版本、运行能力和具体 EPSG 映射，或读取 ClickHouse
-`system.columns` 中的 WKB marker。外部调用继续采用“短事务读取快照 → 事务外 JDBC
-→ 短事务提交”的边界。
+目标数据库校验 PostGIS/MySQL 版本和运行能力，或读取 ClickHouse `system.columns` 中的
+WKB marker。已有表导入仍要求完整的空间语义，通用 Geometry 必须由用户明确补充模型
+Geometry 定义。外部调用继续采用“短事务读取快照 → 事务外 JDBC → 短事务提交”的边界。
 
-包含 Geometry 的受管物理表创建并匹配后，只允许修改字段显示名称、说明和展示顺序。
-不允许新增、删除、改名物理 Geometry 列，也不允许修改 kind、CRS、dimension、nullable
-或字段类型；整表物理结构变更入口在前端禁用，后端同样拒绝生成计划。
+包含 Geometry 的受管物理表创建并匹配后，修改字段显示名称、说明、展示顺序以及 Geometry
+的 kind、CRS、dimension 都不产生物理变更计划，可直接保存模型定义。新增、删除、改名
+物理列、修改 nullable、主键或字段类型仍属于物理结构变更；包含 Geometry 的整表物理变更
+在第一版继续拒绝。
 
 模型快速预览和标准条件查询默认排除 Geometry。客户端显式选择、筛选、排序、分组或
 聚合 Geometry 时返回查询参数错误。PostGIS 动态空间预览是独立的受控 PNG 渲染边界，
@@ -284,15 +291,15 @@ Geometry 定义，不转换为数据库原生字符串。
 
 ## 测试与真实库验收
 
-后续恢复验证时，自动化场景应覆盖契约 JSON/非法组合、八种 GeometryKind 双向映射、
-PostGIS/MySQL 原生 DDL、ClickHouse WKB DDL 与 marker、空间元数据增强、精确结构比较、
-无空间索引、标量 V2 指纹兼容、模型持久化/API、外部与受管导入、Excel V1/V2、查询排除、
-物理变更阻止、Canvas/Local SQL/服务边界和前端联动。
+后续恢复验证时，自动化场景应覆盖契约 JSON/非法组合、八种 GeometryKind 严格导入映射、
+PostGIS/MySQL 通用 Geometry DDL、ClickHouse WKB DDL 与 marker、空间元数据增强、物理
+Geometry 类型族比较、Geometry V4 指纹、标量 V2 指纹兼容、模型持久化/API、外部与受管
+导入、Excel V1/V2、查询排除、物理变更阻止、Canvas/Local SQL/服务边界和前端联动。
 
 ClickHouse 验收需确认八种 kind 均生成 `String` 或 `Nullable(String)`，合法 marker 可
 回读；普通 String 不误判；非法、重复、缺失参数或位于非 String 列的 marker 被拒绝；
-encoding、kind、CRS、dimension 或 nullable 任一变化产生结构不匹配；Geometry 不能作为
-主键或排序键；DDL 不包含原生 Geo 类型或空间索引。当前工程暂时禁用自动化测试、构建
+encoding 或 nullable 变化产生结构不匹配；kind、CRS、dimension 的 marker 变化不产生
+物理结构不匹配。Geometry 不能作为主键或排序键；DDL 不包含原生 Geo 类型或空间索引。当前工程暂时禁用自动化测试、构建
 和联调要求，本次实现不把上述清单表述为已经完成的真实数据库兼容性证明。
 
 真实数据库验收默认跳过，只能在可销毁的隔离数据库中开启：

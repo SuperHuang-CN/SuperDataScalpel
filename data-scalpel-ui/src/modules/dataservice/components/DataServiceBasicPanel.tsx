@@ -1,4 +1,7 @@
-import { Descriptions, Tag, Typography } from 'antd';
+import { ApiOutlined, ProfileOutlined } from '@ant-design/icons';
+import { Descriptions, Space, Tag, Typography } from 'antd';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import {
   dataServiceStatusLabels,
   dataServiceTypeLabels,
@@ -33,9 +36,8 @@ export const DataServiceBasicPanel = ({
 }: DataServiceBasicPanelProps) => {
   return (
     <div className="data-service-detail-tab-panel data-service-basic-panel">
-      <section className="data-service-detail-section">
-        <div className="data-service-detail-section-title">基本标识</div>
-        <Descriptions size="small" bordered column={3}>
+      <BusinessDetailSection title="基本标识" description="服务身份、类型与版本状态" icon={<ProfileOutlined />}>
+        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
           <Descriptions.Item label="服务名称">{dataService.name}</Descriptions.Item>
           <Descriptions.Item label="服务编码"><code>{dataService.code}</code></Descriptions.Item>
           <Descriptions.Item label="服务状态">
@@ -52,18 +54,17 @@ export const DataServiceBasicPanel = ({
           <Descriptions.Item label="说明" span={3}>
             {dataService.description || <Typography.Text type="secondary">未填写</Typography.Text>}
           </Descriptions.Item>
-        </Descriptions>
-      </section>
+        </BusinessDetailDescriptions>
+      </BusinessDetailSection>
 
-      <section className="data-service-detail-section">
-        <div className="data-service-detail-section-title">接口配置</div>
-        <Descriptions size="small" bordered column={3}>
-          <Descriptions.Item label="Service Engine">{engineName ?? dataService.engineId}</Descriptions.Item>
-          <Descriptions.Item label="请求方法"><Tag color="blue">POST</Tag></Descriptions.Item>
-          <Descriptions.Item label="Engine 内部路由" span={2}><code>{dataService.engineRoutePath}</code></Descriptions.Item>
+      <BusinessDetailSection title="接口配置" description="服务引擎、访问路由与来源资源" icon={<ApiOutlined />}>
+        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }}>
+          <Descriptions.Item label={dataService.type === 'SPATIAL_SERVICE' ? 'GeoServer Engine' : 'Service Engine'}>{engineName ?? dataService.engineId}</Descriptions.Item>
+          <Descriptions.Item label="协议">{dataService.type === 'SPATIAL_SERVICE' ? <Space><Tag>WMS</Tag><Tag>WFS</Tag></Space> : <Tag color="blue">POST</Tag>}</Descriptions.Item>
           <Descriptions.Item label="来源资源">{sourceName ?? '—'}</Descriptions.Item>
-        </Descriptions>
-      </section>
+          <Descriptions.Item label={dataService.type === 'SPATIAL_SERVICE' ? '发布方式' : '服务 Context Path'} span={3}><code>{dataService.type === 'SPATIAL_SERVICE' ? 'GeoServer Workspace 图层' : dataService.contextPath}</code></Descriptions.Item>
+        </BusinessDetailDescriptions>
+      </BusinessDetailSection>
     </div>
   );
 };

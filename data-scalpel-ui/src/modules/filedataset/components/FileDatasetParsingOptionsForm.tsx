@@ -1,4 +1,5 @@
-import { Alert, Col, Form, Input, InputNumber, Row, Select, Switch } from 'antd';
+import { CheckCircleOutlined } from '@ant-design/icons';
+import { Col, Form, Input, InputNumber, Row, Select, Switch, Typography } from 'antd';
 import type { FileDatasetType, FileRecordDelimiter } from '../model/fileDataset';
 
 const charsetOptions = ['UTF-8', 'GBK', 'GB18030', 'ISO-8859-1'].map((value) => ({ value, label: value }));
@@ -42,9 +43,9 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
           </Form.Item>
         </Col>
         <Col span={12}><RecordDelimiterField /></Col>
-        <Col span={6}><Form.Item label="引号字符" name="quoteCharacter" rules={[{ max: 1, message: '只能输入一个字符' }]}><Input /></Form.Item></Col>
-        <Col span={6}><Form.Item label="转义字符" name="escapeCharacter" rules={[{ max: 1, message: '只能输入一个字符' }]}><Input /></Form.Item></Col>
-        <Col span={12}><Form.Item label="首行为表头" name="firstRowHeader" valuePropName="checked"><Switch /></Form.Item></Col>
+        <Col span={6}><Form.Item label="引号字符" name="quoteCharacter" rules={[{ max: 1, message: '只能输入一个字符' }]}><Input name="file-dataset-quote-character" autoComplete="off" /></Form.Item></Col>
+        <Col span={6}><Form.Item label="转义字符" name="escapeCharacter" rules={[{ max: 1, message: '只能输入一个字符' }]}><Input name="file-dataset-escape-character" autoComplete="off" /></Form.Item></Col>
+        <Col span={12}><Form.Item label="首行为表头" name="firstRowHeader" valuePropName="checked"><Switch aria-label="首行为表头" /></Form.Item></Col>
       </Row>
     );
     case 'TXT':
@@ -54,45 +55,46 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
         <Col span={12}><CharsetField /></Col>
         <Col span={12}>
           <Form.Item label="数据根路径" name="rootPointer" extra="可选，使用 JSON Pointer，例如 /data/items。">
-            <Input placeholder="/data/items" />
+            <Input name="file-dataset-json-root-pointer" autoComplete="off" placeholder="/data/items" />
           </Form.Item>
         </Col>
       </Row>
     );
     case 'EXCEL': return (
       <Row gutter={12}>
-        <Col span={12}><Form.Item label="表头行" name="headerRowIndex" extra="从 0 开始。" rules={[{ required: true, message: '请输入表头行' }]}><InputNumber min={0} precision={0} className="file-dataset-number-input" /></Form.Item></Col>
-        <Col span={12}><Form.Item label="数据起始行" name="dataStartRowIndex" extra="必须在表头行之后。" rules={[{ required: true, message: '请输入数据起始行' }]}><InputNumber min={1} precision={0} className="file-dataset-number-input" /></Form.Item></Col>
+        <Col span={12}><Form.Item label="表头行" name="headerRowIndex" extra="从 0 开始。" rules={[{ required: true, message: '请输入表头行' }]}><InputNumber name="file-dataset-header-row-index" min={0} precision={0} className="file-dataset-number-input" /></Form.Item></Col>
+        <Col span={12}><Form.Item label="数据起始行" name="dataStartRowIndex" extra="必须在表头行之后。" rules={[{ required: true, message: '请输入数据起始行' }]}><InputNumber name="file-dataset-data-start-row-index" min={1} precision={0} className="file-dataset-number-input" /></Form.Item></Col>
       </Row>
     );
-    case 'PARQUET': return <Alert type="info" showIcon message="Parquet 自带字段类型和编码信息，无额外解析参数。" />;
-    case 'AVRO': return <Alert type="info" showIcon message="Avro Object Container File 自带 Schema 和 codec，无额外解析参数。" />;
+    case 'PARQUET': return (
+      <div className="file-dataset-native-parsing">
+        <CheckCircleOutlined aria-hidden="true" />
+        <span>
+          <strong>无需额外解析参数</strong>
+          <Typography.Text type="secondary">Parquet 文件自带字段类型和编码信息。</Typography.Text>
+        </span>
+      </div>
+    );
+    case 'AVRO': return (
+      <div className="file-dataset-native-parsing">
+        <CheckCircleOutlined aria-hidden="true" />
+        <span>
+          <strong>无需额外解析参数</strong>
+          <Typography.Text type="secondary">Avro Object Container File 自带 Schema 和 codec。</Typography.Text>
+        </span>
+      </div>
+    );
     case 'GDB': return (
-      <>
-        <Alert
-          type="info"
-          showIcon
-          className="file-dataset-form-alert"
-          message="系统会优先读取各图层 WKT 中明确声明的 EPSG；无法识别时使用下面的回退 EPSG。"
-        />
-        <Form.Item
-          label="回退 EPSG code"
-          name="epsgCode"
-          extra="可选；仅在图层 WKT 没有明确 EPSG 标识时使用，不执行坐标转换。"
-        >
-          <InputNumber min={1} precision={0} placeholder="例如 4490" className="file-dataset-number-input" />
-        </Form.Item>
-      </>
+      <Form.Item
+        label="回退 EPSG code"
+        name="epsgCode"
+        extra="可选；仅在图层 WKT 没有明确 EPSG 标识时使用，不执行坐标转换。"
+      >
+        <InputNumber name="file-dataset-gdb-epsg-code" min={1} precision={0} placeholder="例如 4490" className="file-dataset-number-input" />
+      </Form.Item>
     );
     case 'SHP': return (
-      <>
-        <Alert
-          type="info"
-          showIcon
-          className="file-dataset-form-alert"
-          message="每个 ZIP 必须包含一套同名 .shp/.shx/.dbf，可选携带 .cpg/.prj；常见索引和元数据辅助文件会自动忽略。"
-        />
-        <Row gutter={12}>
+      <Row gutter={12}>
           <Col span={12}>
             <Form.Item
               label="强制 DBF 编码"
@@ -118,11 +120,10 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
               name="epsgCode"
               extra="可选；仅在 PRJ 没有明确 EPSG 标识时使用，不执行坐标转换。"
             >
-              <InputNumber min={1} precision={0} placeholder="例如 4490" className="file-dataset-number-input" />
+              <InputNumber name="file-dataset-shp-epsg-code" min={1} precision={0} placeholder="例如 4490" className="file-dataset-number-input" />
             </Form.Item>
           </Col>
         </Row>
-      </>
     );
   }
 };

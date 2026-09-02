@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   CheckCircleOutlined,
   ClockCircleOutlined,
@@ -6,22 +7,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import { Line } from '@ant-design/plots';
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Empty,
-  Progress,
-  Row,
-  Segmented,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { Button, Card, Col, Empty, Progress, Row, Segmented, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';

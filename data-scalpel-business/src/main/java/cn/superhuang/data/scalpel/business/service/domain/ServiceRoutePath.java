@@ -3,7 +3,7 @@ package cn.superhuang.data.scalpel.business.service.domain;
 import java.util.Locale;
 import java.util.regex.Pattern;
 
-/** V1 public-route policy shared by service definition validation and Engine deployment. */
+/** V1 service Context Path policy shared by Admin validation and Engine deployment. */
 public final class ServiceRoutePath {
 
     private static final String PREFIX = "/open-api/v1/";

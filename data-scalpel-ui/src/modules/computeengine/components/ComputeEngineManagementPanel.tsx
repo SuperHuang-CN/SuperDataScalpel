@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
   DeleteOutlined,
@@ -13,11 +14,11 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Alert, Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
+import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ManagementCode, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import {
@@ -211,11 +212,16 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     },
   ];
   const applyDirect = (values: ComputeEngineFilters) => {
+    const advancedValues = advancedFilterForm.getFieldsValue();
+    const nextAdvancedFilters = {
+      expectedBackendType: advancedValues.expectedBackendType,
+      healthState: advancedValues.healthState,
+    };
+    setAdvancedFilters(nextAdvancedFilters);
     setFilters({
       keyword: values.keyword,
       registrationState: values.registrationState,
-      expectedBackendType: advancedFilters.expectedBackendType,
-      healthState: advancedFilters.healthState,
+      ...nextAdvancedFilters,
     });
     setPage(0);
   };
@@ -227,10 +233,11 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
     });
     setAdvancedFilterOpen(false);
   };
-  const clearAdvanced = () => advancedFilterForm.resetFields();
+  const clearAdvanced = () => advancedFilterForm.setFieldsValue({ expectedBackendType: undefined, healthState: undefined });
   const reset = () => {
     filterForm.resetFields();
     advancedFilterForm.resetFields();
+    advancedFilterForm.setFieldsValue({ expectedBackendType: undefined, healthState: undefined });
     setAdvancedFilters({});
     setAdvancedFilterOpen(false);
     setFilters({});
@@ -244,7 +251,8 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         <Form<ComputeEngineFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={applyDirect}>
           <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索计算引擎名称" /></Form.Item>
           <Form.Item name="registrationState"><Select allowClear placeholder="全部注册状态" style={{ width: 130 }} options={Object.entries(computeEngineRegistrationStateLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-          <ManagementMoreFilters
+        </Form>
+          <ManagementAdaptiveMoreFilters
             count={advancedFilterCount}
             open={advancedFilterOpen}
             onOpenChange={(open) => {
@@ -255,15 +263,17 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
               }
             }}
             onClear={clearAdvanced}
-            onCancel={() => setAdvancedFilterOpen(false)}
+            onCancel={() => {
+              advancedFilterForm.setFieldsValue({ expectedBackendType: advancedFilters.expectedBackendType, healthState: advancedFilters.healthState });
+              setAdvancedFilterOpen(false);
+            }}
             onConfirm={confirmAdvanced}
           >
-            <Form<ComputeEngineFilters> form={advancedFilterForm} layout="vertical" autoComplete="off">
-              <Form.Item name="expectedBackendType" label="后端"><Select allowClear placeholder="全部" className="advanced-filter-select" options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-              <Form.Item name="healthState" label="健康状态"><Select allowClear placeholder="全部" className="advanced-filter-select" options={Object.entries(computeEngineHealthStateLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+            <Form<ComputeEngineFilters> form={advancedFilterForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}>
+              <Form.Item name="expectedBackendType" label="后端"><Select allowClear placeholder="全部后端" className="advanced-filter-select" options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+              <Form.Item name="healthState" label="健康状态"><Select allowClear placeholder="全部健康状态" className="advanced-filter-select" options={Object.entries(computeEngineHealthStateLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
             </Form>
-          </ManagementMoreFilters>
-        </Form>
+          </ManagementAdaptiveMoreFilters>
         <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={enginesQuery.isFetching} onReset={reset} />
       </div>
       <div className="management-results-surface">

@@ -24,7 +24,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -45,16 +45,13 @@ class PostGisGeometryIntegrationTest {
             new DatabaseTableOperator(BuiltInDialects.registry(), connectionFactory);
 
     @Test
-    void createsReadsAndExactlyMatchesEveryGeometryKindAndRejectsUnknownCrs()
+    void createsGenericGeometryColumnsAndMatchesTheirPhysicalType()
             throws SQLException, ClassNotFoundException {
         JdbcConnectionConfig config = integrationConfig();
         ensureSchema(config);
         String suffix = UUID.randomUUID().toString().replace("-", "");
         TableIdentifier table = new TableIdentifier(
                 config.databaseName(), config.schemaName(), "geometry_types_" + suffix
-        );
-        TableIdentifier unknownCrsTable = new TableIdentifier(
-                config.databaseName(), config.schemaName(), "geometry_unknown_crs_" + suffix
         );
         TableDefinition definition = definition(table, 4326);
 
@@ -67,27 +64,10 @@ class PostGisGeometryIntegrationTest {
                     definition.structureFingerprint(),
                     dialect.snapshotTableDefinition(metadata).structureFingerprint()
             );
-            assertEquals(
-                    List.of(GeometryKind.values()),
-                    metadata.columns().stream()
-                            .map(column -> dialect.mapToPlatformType(
-                                    cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor.from(column)
-                            ))
-                            .map(mapping -> mapping.definition().geometry().kind())
-                            .toList()
-            );
-
-            DatabaseAccessException exception = assertThrows(
-                    DatabaseAccessException.class,
-                    () -> tableOperator.createTable(
-                            DATABASE_TYPE, config, definition(unknownCrsTable, Integer.MAX_VALUE)
-                    )
-            );
-            assertEquals("DDL_NOT_SUPPORTED", exception.code());
-            assertTrue(exception.getMessage().contains("EPSG:" + Integer.MAX_VALUE));
+            dialect.snapshotTableDefinition(metadata).columns()
+                    .forEach(column -> assertNull(column.geometry()));
         } finally {
             dropTable(config, table);
-            dropTable(config, unknownCrsTable);
         }
     }
 

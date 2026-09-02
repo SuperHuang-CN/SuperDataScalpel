@@ -44,7 +44,7 @@ public class SparkJarLineageQueryService {
                 .orElseGet(() -> new TaskRunLineageResponse(
                         runId, terminal(run) ? "NOT_AVAILABLE" : "PENDING",
                         null, false, null, null, List.of(), null,
-                        terminal(run) ? "当前运行没有可摄取的 v8 血缘结果" : null, null));
+                        terminal(run) ? "当前运行没有可摄取的运行血缘结果" : null, null));
     }
 
     private TaskRunLineageResponse response(SparkJarLineageIngestion value) {

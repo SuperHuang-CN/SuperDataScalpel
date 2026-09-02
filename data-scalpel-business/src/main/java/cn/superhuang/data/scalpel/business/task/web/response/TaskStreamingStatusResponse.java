@@ -4,6 +4,8 @@ import java.util.UUID;
 
 public record TaskStreamingStatusResponse(
         UUID taskId,
-        TaskStreamingDeploymentResponse deployment
+        TaskStreamingDeploymentResponse deployment,
+        long tmqConsumerGroupCleanupPendingCount,
+        long tmqConsumerGroupCleanupFailedCount
 ) {
 }

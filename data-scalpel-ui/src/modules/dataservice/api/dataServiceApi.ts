@@ -10,6 +10,7 @@ import type {
   SqlServiceTestRequest,
   SqlServiceTestResponse,
   StandardDataServiceModelCandidate,
+  SpatialDataServiceModelCandidate,
   UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
 } from '../model/dataService';
@@ -89,6 +90,19 @@ export const fetchStandardDataServiceModelCandidates = (
   const suffix = query.toString();
   return requestJson<PageResponse<StandardDataServiceModelCandidate>>(
     `${DATA_SERVICE_PATH}/${id}/standard-model-candidates${suffix ? `?${suffix}` : ''}`,
+  );
+};
+
+export const fetchSpatialDataServiceModelCandidates = (
+  id: string,
+  request: SearchRequest,
+  includeUnavailable: boolean,
+): Promise<PageResponse<SpatialDataServiceModelCandidate>> => {
+  const query = toSearchParams(request);
+  if (includeUnavailable) query.set('includeUnavailable', 'true');
+  const suffix = query.toString();
+  return requestJson<PageResponse<SpatialDataServiceModelCandidate>>(
+    `${DATA_SERVICE_PATH}/${id}/spatial-model-candidates${suffix ? `?${suffix}` : ''}`,
   );
 };
 

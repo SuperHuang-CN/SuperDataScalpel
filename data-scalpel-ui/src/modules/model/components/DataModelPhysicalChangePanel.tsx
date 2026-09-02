@@ -1,8 +1,10 @@
-import { EyeOutlined, ReloadOutlined, StopOutlined } from '@ant-design/icons';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { EyeOutlined, StopOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Empty, Modal, Space, Table, Tag, Tooltip, message } from 'antd';
-import { useState } from 'react';
+import { Button, Empty, Modal, Space, Table, Tag, Tooltip, message } from 'antd';
+import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { DataModelPhysicalChangeDrawer } from './DataModelPhysicalChangeDrawer';
 import { useCancelPhysicalTableChangePlan, usePhysicalTableChangePlans } from '../hooks/useDataModels';
 import {
@@ -21,12 +23,6 @@ interface DataModelPhysicalChangePanelProps {
   canUpdate: boolean;
 }
 
-const planSearchRequest = {
-  page: 0,
-  size: 100,
-  sort: '-createdAt',
-} as const;
-
 const formatDateTime = (value: string | null) => {
   if (!value) return '—';
   return new Intl.DateTimeFormat('zh-CN', {
@@ -39,6 +35,13 @@ const formatDateTime = (value: string | null) => {
 export const DataModelPhysicalChangePanel = ({ model, canUpdate }: DataModelPhysicalChangePanelProps) => {
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
+  const [page, setPage] = useState(1);
+  const [pageSize, setPageSize] = useState(20);
+  const planSearchRequest = useMemo(() => ({
+    page: page - 1,
+    size: pageSize,
+    sort: '-createdAt',
+  }), [page, pageSize]);
   const plansQuery = usePhysicalTableChangePlans(model.id, planSearchRequest, true);
   const cancelMutation = useCancelPhysicalTableChangePlan();
   const [selectedChange, setSelectedChange] = useState<DataModelPhysicalChange | null>(null);
@@ -142,12 +145,16 @@ export const DataModelPhysicalChangePanel = ({ model, canUpdate }: DataModelPhys
           action={<Button size="small" onClick={() => void plansQuery.refetch()}>重试</Button>}
         />
       )}
-      <div className="model-tab-toolbar">
-        <div className="model-plan-toolbar-caption">字段变更会先冻结为计划，执行成功后才同步模型字段。</div>
-        <Tooltip title="刷新计划列表">
-          <Button icon={<ReloadOutlined />} loading={plansQuery.isFetching} onClick={() => void plansQuery.refetch()}>刷新</Button>
-        </Tooltip>
-      </div>
+      <DetailTableToolbar
+        title={<span>变更计划 <span className="model-plan-toolbar-caption">字段变更执行成功后才同步模型字段</span></span>}
+        total={plansQuery.data?.totalElements ?? 0}
+        current={page}
+        pageSize={pageSize}
+        onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }}
+        onRefresh={() => void plansQuery.refetch()}
+        refreshing={plansQuery.isFetching}
+        refreshLabel="刷新计划列表"
+      />
       <Table<DataModelPhysicalChange>
         size="small"
         className="management-table model-physical-change-table"
@@ -156,15 +163,7 @@ export const DataModelPhysicalChangePanel = ({ model, canUpdate }: DataModelPhys
         dataSource={plansQuery.data?.content ?? []}
         loading={plansQuery.isPending}
         scroll={{ x: 980, y: '100%' }}
-        pagination={{
-          current: 1,
-          pageSize: planSearchRequest.size,
-          total: plansQuery.data?.totalElements ?? 0,
-          placement: ['bottomEnd'],
-          hideOnSinglePage: false,
-          showSizeChanger: false,
-          showTotal: (total) => `共 ${total} 项`,
-        }}
+        pagination={false}
         locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无物理表变更计划" /> }}
       />
       <DataModelPhysicalChangeDrawer

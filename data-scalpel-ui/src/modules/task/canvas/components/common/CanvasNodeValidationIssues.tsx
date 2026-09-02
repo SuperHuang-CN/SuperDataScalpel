@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import { ExclamationCircleFilled, RightOutlined } from '@ant-design/icons';
-import { Alert, Popover } from 'antd';
+import { Popover } from 'antd';
 import { useState } from 'react';
 import type { CanvasNodeValidationResult } from '../../canvasTypes';
 

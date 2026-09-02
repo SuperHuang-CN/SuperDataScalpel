@@ -1,21 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { EyeOutlined, InfoCircleOutlined, ReloadOutlined, SlidersOutlined, TableOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Checkbox,
-  Drawer,
-  Empty,
-  Input,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tabs,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { Button, Checkbox, Drawer, Empty, Input, Select, Space, Spin, Table, Tabs, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {

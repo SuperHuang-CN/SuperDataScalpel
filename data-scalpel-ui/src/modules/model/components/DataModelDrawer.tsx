@@ -1,7 +1,9 @@
+import { DatabaseOutlined, IdcardOutlined, TableOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Col, Drawer, Form, Input, Radio, Row, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Badge, Button, Col, Drawer, Form, Input, Radio, Row, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
   useDataSourceNamespaces,
   useDataSourceTables,
@@ -16,6 +18,8 @@ import {
 } from '../hooks/useDataModels';
 import {
   dataModelFieldTypeLabels,
+  dataModelStatusLabels,
+  physicalTableModeLabels,
   type CreateDataModelRequest,
   type DataModel,
   type ExternalTableImportColumn,
@@ -44,6 +48,41 @@ interface DataModelFormValues {
   clickHouseOrderByColumns?: string[];
   description?: string;
 }
+
+const DataModelFormSection = ({
+  title,
+  description,
+  icon,
+  help,
+  children,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+  help?: ReactNode;
+  children: ReactNode;
+}) => (
+  <section className="data-model-form-section">
+    <header className="data-model-form-section-header">
+      <span className="data-model-form-section-icon" aria-hidden="true">{icon}</span>
+      <span className="data-model-form-section-copy">
+        <span className="data-model-form-section-title-row">
+          <span className="data-model-form-section-title">{title}</span>
+          {help && (
+            <ContextHelp
+              ariaLabel={`${title}说明`}
+              content={help}
+              presentation="popover"
+              placement="bottomLeft"
+            />
+          )}
+        </span>
+        <Typography.Text type="secondary">{description}</Typography.Text>
+      </span>
+    </header>
+    <div className="data-model-form-section-body">{children}</div>
+  </section>
+);
 
 const jdbcDataSourceRequest = {
   page: 0,
@@ -123,6 +162,7 @@ export const DataModelDrawer = ({
 }: DataModelDrawerProps) => {
   const [form] = Form.useForm<DataModelFormValues>();
   const [messageApi, messageContext] = message.useMessage();
+  const [operationError, setOperationError] = useState<string | null>(null);
   const [externalTableKeyword, setExternalTableKeyword] = useState('');
   const autoFilledModelCodeRef = useRef<string | null>(null);
   const createMutation = useCreateDataModel();
@@ -238,10 +278,12 @@ export const DataModelDrawer = ({
 
   const closeDrawer = () => {
     setExternalTableKeyword('');
+    setOperationError(null);
     onClose();
   };
 
   const submit = async (values: DataModelFormValues) => {
+    setOperationError(null);
     try {
       const request: UpdateDataModelRequest = {
         name: values.name,
@@ -268,7 +310,9 @@ export const DataModelDrawer = ({
       }
       closeDrawer();
     } catch (error) {
-      messageApi.error(error instanceof ApiError ? error.message : '保存模型失败');
+      const errorMessage = error instanceof ApiError ? error.message : '保存模型失败';
+      setOperationError(errorMessage);
+      messageApi.error(errorMessage);
     }
   };
 
@@ -318,125 +362,177 @@ export const DataModelDrawer = ({
     }
   };
 
+  const effectivePhysicalMode = selectedPhysicalTableMode ?? model?.physicalTableMode ?? 'MANAGED';
+  const pending = createMutation.isPending || updateMutation.isPending;
+  const footerStatus = operationError ? (
+    <InlineFeedback
+      tone="error"
+      label={editing ? '保存失败' : '创建失败'}
+      detail={operationError}
+      ariaLabel={editing ? '查看模型保存失败详情' : '查看模型创建失败详情'}
+    />
+  ) : externalTableMode && externalTableImportBlocked ? (
+    <InlineFeedback
+      tone="warning"
+      label="请选择可导入的外部表"
+      detail={externalTableIssues.length > 0
+        ? externalTableIssues.join('；')
+        : '外部表字段预览完成并确认可导入后，才能创建模型。'}
+      ariaLabel="查看外部表导入条件"
+    />
+  ) : (
+    <Badge
+      status="default"
+      text={editing
+        ? `${dataModelStatusLabels[model?.status ?? 'DRAFT']} · Schema v${model?.schemaVersion ?? 1}`
+        : effectivePhysicalMode === 'EXTERNAL' ? '创建时同步导入外部表字段' : '创建后继续配置模型字段'}
+    />
+  );
+
   return (
     <>
       {messageContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title={editing ? '修改模型' : '新建模型'}
-        open={open}
-        size="large"
         className="data-model-drawer"
+        title={(
+          <div className="data-model-drawer-title">
+            <span className="data-model-drawer-title-icon" aria-hidden="true"><TableOutlined /></span>
+            <span className="data-model-drawer-title-copy">
+              <span>{editing ? '修改模型' : '新建模型'}</span>
+              <Typography.Text type="secondary">定义模型标识、业务归属与物理存储位置</Typography.Text>
+            </span>
+          </div>
+        )}
+        extra={(
+          <Tag className="data-model-drawer-header-tag">
+            {editing ? dataModelStatusLabels[model?.status ?? 'DRAFT'] : physicalTableModeLabels[effectivePhysicalMode]}
+          </Tag>
+        )}
+        open={open}
+        size="min(960px, 100vw)"
+        closable={pending ? false : { placement: 'end' }}
+        maskClosable={!pending}
         onClose={closeDrawer}
         destroyOnHidden
         footer={(
-          <Space>
-            <Button onClick={closeDrawer}>取消</Button>
-            <Button
-              type="primary"
-              loading={createMutation.isPending || updateMutation.isPending}
-              disabled={externalTableImportBlocked}
-              onClick={() => form.submit()}
-            >
-              保存
-            </Button>
-          </Space>
+          <div className="data-model-drawer-footer">
+            {footerStatus}
+            <Space>
+              <Button disabled={pending} onClick={closeDrawer}>取消</Button>
+              <Button
+                type="primary"
+                loading={pending}
+                disabled={externalTableImportBlocked}
+                onClick={() => form.submit()}
+              >
+                {editing ? '保存修改' : '创建模型'}
+              </Button>
+            </Space>
+          </div>
         )}
       >
-        <Alert
-          type="info"
-          showIcon
-          className="data-model-mode-alert"
-          title={externalTableMode
-            ? '选择已有表后会读取并导入字段；发布前仍会实时校验，系统不会修改该表。'
-            : '物理表会在发布前实时校验；已存在的受管物理表通过变更计划修改，不直接保存字段定义。'}
-        />
-        <Form<DataModelFormValues> autoComplete="off"
+        <Form<DataModelFormValues>
+          name="data-model-editor-form"
+          autoComplete="off"
           form={form}
           layout="vertical"
+          className="data-model-form"
           initialValues={{ physicalTableMode: 'MANAGED' }}
           onFinish={(values) => void submit(values)}
         >
-          <Row gutter={12}>
-            <Col span={12}>
-              <Form.Item
-                label="模型名称"
-                name="name"
-                rules={[{ required: true, whitespace: true, message: '请输入模型名称' }, { max: 100, message: '模型名称不能超过 100 个字符' }]}
-              >
-                <Input placeholder="如：订单事实模型" />
-              </Form.Item>
-            </Col>
-            <Col span={12}>
-              <Form.Item
-                label="模型编码"
-                name="code"
-                rules={editing ? [] : [
-                  { required: true, whitespace: true, message: '请输入模型编码' },
-                  { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
-                ]}
-              >
-                <Input
-                  disabled={editing}
-                  placeholder="如：order_fact"
-                  onChange={(event) => changeModelCode(event.target.value)}
-                  onBlur={fillPhysicalTableName}
-                />
-              </Form.Item>
-            </Col>
-            {canViewDirectories && (
-              <Col span={12}>
-                <Form.Item label="目录" name="directoryId">
-                  <TreeSelect
-                    allowClear
-                    treeDefaultExpandAll
-                    treeData={directoryTreeSelectData(directoriesQuery.data ?? [])}
-                    placeholder="未分类"
+          <DataModelFormSection
+            title="模型信息"
+            description="用于识别模型并建立目录与数仓分层归属"
+            icon={<IdcardOutlined />}
+          >
+            <Row gutter={14}>
+              <Col span={12} xs={24} sm={12}>
+                <Form.Item
+                  label="模型名称"
+                  name="name"
+                  rules={[{ required: true, whitespace: true, message: '请输入模型名称' }, { max: 100, message: '模型名称不能超过 100 个字符' }]}
+                >
+                  <Input name="data-model-display-name" autoComplete="off" placeholder="如：订单事实模型" autoFocus />
+                </Form.Item>
+              </Col>
+              <Col span={12} xs={24} sm={12}>
+                <Form.Item
+                  label="模型编码"
+                  name="code"
+                  rules={editing ? [] : [
+                    { required: true, whitespace: true, message: '请输入模型编码' },
+                    { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
+                  ]}
+                >
+                  <Input
+                    name="data-model-code"
+                    autoComplete="off"
+                    disabled={editing}
+                    placeholder="如：order_fact"
+                    onChange={(event) => changeModelCode(event.target.value)}
+                    onBlur={fillPhysicalTableName}
                   />
                 </Form.Item>
               </Col>
-            )}
-            <Col span={12}>
-              <Form.Item
-                label="数仓分层"
-                name="warehouseLayerId"
-                extra={model?.warehouseLayer && !model.warehouseLayer.enabled
-                  ? '当前分层已停用，可以保留或改选其他启用分层。'
-                  : '可选；分层只表达业务组织，不影响物理表结构。'}
-              >
-                <Select
-                  allowClear
-                  showSearch
-                  optionFilterProp="label"
-                  loading={warehouseLayersQuery.isFetching}
-                  options={warehouseLayerOptions}
-                  placeholder="未分层"
-                  onChange={selectWarehouseLayer}
-                />
-              </Form.Item>
-            </Col>
-            <Col span={canViewDirectories ? 24 : 12}>
-              <Form.Item
-                label={externalTableMode ? 'JDBC 数据源' : '数据存储'}
-                name="storageDataSourceId"
-                rules={[{ required: true, message: externalTableMode ? '请选择 JDBC 数据源' : '请选择数据存储' }]}
-              >
-                <Select
-                  showSearch
-                  optionFilterProp="label"
-                  loading={dataSourcesQuery.isFetching}
-                  disabled={physicalDefinitionLocked}
-                  options={storageOptions}
-                  placeholder={externalTableMode ? '选择已启用的 JDBC 数据源' : '选择具有数据存储用途的 JDBC 数据源'}
-                  onChange={selectStorage}
-                />
-              </Form.Item>
-            </Col>
-          </Row>
+              {canViewDirectories && (
+                <Col span={12} xs={24} sm={12}>
+                  <Form.Item label="目录" name="directoryId">
+                    <TreeSelect
+                      allowClear
+                      treeDefaultExpandAll
+                      treeData={directoryTreeSelectData(directoriesQuery.data ?? [])}
+                      placeholder="未分类"
+                    />
+                  </Form.Item>
+                </Col>
+              )}
+              <Col span={12} xs={24} sm={12}>
+                <Form.Item
+                  label="数仓分层"
+                  name="warehouseLayerId"
+                  extra={model?.warehouseLayer && !model.warehouseLayer.enabled
+                    ? '当前分层已停用，可以保留或改选其他启用分层。'
+                    : '可选；只表达业务组织，不影响物理表结构。'}
+                >
+                  <Select
+                    allowClear
+                    showSearch
+                    optionFilterProp="label"
+                    loading={warehouseLayersQuery.isFetching}
+                    options={warehouseLayerOptions}
+                    placeholder="未分层"
+                    onChange={selectWarehouseLayer}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={24}>
+                <Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}>
+                  <Input.TextArea name="data-model-description" autoComplete="off" rows={3} maxLength={1000} showCount />
+                </Form.Item>
+              </Col>
+            </Row>
+          </DataModelFormSection>
 
-          <div className="data-source-form-section-title">物理位置定义</div>
-          <Row gutter={12}>
-            <Col span={12}>
+          <DataModelFormSection
+            title="存储与物理表"
+            description="选择物理表的管理方式、存储数据源和实际表位置"
+            icon={<DatabaseOutlined />}
+            help={externalTableMode
+              ? '选择已有表后会读取并导入字段；发布前仍会实时校验，系统不会修改该表。'
+              : '物理表会在发布前实时校验；已存在的受管表通过变更计划修改，不直接保存字段定义。'}
+          >
+            {physicalDefinitionLocked && (
+              <InlineFeedback
+                className="data-model-physical-lock-feedback"
+                tone="warning"
+                label="物理位置定义已锁定"
+                detail="非草稿模型不能直接修改存储数据源、物理表来源和物理表名。"
+                ariaLabel="查看模型物理位置锁定原因"
+              />
+            )}
+            <Row gutter={14}>
+              <Col span={12} xs={24} sm={12}>
               <Form.Item
                 label="物理表来源"
                 name="physicalTableMode"
@@ -450,8 +546,25 @@ export const DataModelDrawer = ({
                   <Radio value="EXTERNAL">绑定已有表</Radio>
                 </Radio.Group>
               </Form.Item>
-            </Col>
-            <Col span={12}>
+              </Col>
+              <Col span={12} xs={24} sm={12}>
+                <Form.Item
+                  label={externalTableMode ? 'JDBC 数据源' : '数据存储'}
+                  name="storageDataSourceId"
+                  rules={[{ required: true, message: externalTableMode ? '请选择 JDBC 数据源' : '请选择数据存储' }]}
+                >
+                  <Select
+                    showSearch
+                    optionFilterProp="label"
+                    loading={dataSourcesQuery.isFetching}
+                    disabled={physicalDefinitionLocked}
+                    options={storageOptions}
+                    placeholder={externalTableMode ? '选择已启用的 JDBC 数据源' : '选择具有数据存储用途的 JDBC 数据源'}
+                    onChange={selectStorage}
+                  />
+                </Form.Item>
+              </Col>
+              <Col span={12} xs={24} sm={12}>
               {externalTableMode ? (
                 <Form.Item
                   label="已有物理表"
@@ -481,27 +594,29 @@ export const DataModelDrawer = ({
                     { pattern: /^[A-Za-z][A-Za-z0-9_]{0,127}$/, message: '表名以字母开头，只能包含字母、数字和下划线' },
                   ]}
                 >
-                  <Input disabled={physicalDefinitionLocked} placeholder="默认与模型编码一致" />
+                  <Input name="data-model-physical-table-name" autoComplete="off" disabled={physicalDefinitionLocked} placeholder="默认与模型编码一致" />
                 </Form.Item>
               )}
-            </Col>
+              </Col>
             {externalTableMode && (
               <Col span={24}>
-                {namespacesQuery.isError && <Alert showIcon type="error" title="读取 JDBC 数据源命名空间失败，无法选择已有表" />}
-                {tablesQuery.isError && <Alert showIcon type="error" title="读取已有表列表失败，请检查 JDBC 数据源连接" />}
+                <div className="data-model-external-feedbacks">
+                {namespacesQuery.isError && <InlineFeedback tone="error" label="读取 JDBC 数据源命名空间失败" detail="当前无法选择已有表，请检查数据源连接和元数据权限。" />}
+                {tablesQuery.isError && <InlineFeedback tone="error" label="读取已有表列表失败" detail="请检查 JDBC 数据源连接后重试。" />}
                 {tablesQuery.data?.truncated && (
-                  <Alert showIcon type="warning" title="可选表已截断为前 500 项，请在数据源管理中缩小连接范围后重试" />
+                  <InlineFeedback tone="warning" label="可选表仅显示前 500 项" detail="请在数据源管理中缩小连接范围后重试。" />
                 )}
-                {externalPreviewQuery.isFetching && <Alert showIcon type="info" title="正在读取并映射外部表字段…" />}
-                {externalPreviewQuery.isError && <Alert showIcon type="error" title="读取外部表导入预览失败，当前不能创建模型" />}
+                {externalPreviewQuery.isFetching && <InlineFeedback tone="info" label="正在读取并映射外部表字段…" />}
+                {externalPreviewQuery.isError && <InlineFeedback tone="error" label="读取外部表导入预览失败" detail="当前外部表不能导入为模型。" />}
                 {externalTableIssues.length > 0 && (
-                  <Alert
-                    showIcon
-                    type="warning"
-                    title="该表包含当前模型无法准确表达的字段，不能导入"
-                    description={externalTableIssues.join('；')}
+                  <InlineFeedback
+                    tone="warning"
+                    label="该表包含无法准确表达的字段"
+                    detail={externalTableIssues.join('；')}
+                    ariaLabel="查看外部表不可导入详情"
                   />
                 )}
+                </div>
                 {externalPreviewQuery.data && (
                   <Table<ExternalTableImportColumn>
                     size="small"
@@ -541,12 +656,8 @@ export const DataModelDrawer = ({
                 </Form.Item>
               </Col>
             )}
-            <Col span={12}>
-              <Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}>
-                <Input placeholder="可选" />
-              </Form.Item>
-            </Col>
-          </Row>
+            </Row>
+          </DataModelFormSection>
         </Form>
       </Drawer>
     </>

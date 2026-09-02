@@ -33,7 +33,6 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicReference;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 
 final class TaskRunnerApplication {
@@ -131,7 +130,9 @@ final class TaskRunnerApplication {
                 Path userJar = loaded.workDirectory().resolve("user-job.jar");
                 artifactClient.downloadToFile(launch.userJar().getUrl(), launch.userJar().sizeBytes(), userJar);
                 verifySha256(userJar, launch.userJar().sha256());
-                return runStreamingJar(launch, manifest, userJar, publisher);
+                result = new SparkStreamingJarTaskExecutor(objectMapper)
+                        .execute(manifest, launch.sparkMode(), launch, userJar, publisher);
+                requireResultIdentity(launch, result);
             } else if (manifest.executionTaskType() == ExecutionTaskType.SPARK_JAR) {
                 if (launch.userJar() == null) {
                     throw new RunnerExecutionException("USER_JAR_DOWNLOAD_MISSING", "启动描述缺少用户 JAR", null);
@@ -147,9 +148,7 @@ final class TaskRunnerApplication {
                         snapshot -> publishObservability(publisher, launch, snapshot));
                 requireResultIdentity(launch, result);
             } else if (manifest.executionTaskType() == ExecutionTaskType.SPARK_MODEL_QUALITY) {
-                AtomicReference<String> sparkApplicationId = new AtomicReference<>();
                 result = qualityTaskExecutor.execute(manifest, launch.sparkMode(), applicationId -> {
-                    sparkApplicationId.set(applicationId);
                     publishBestEffort(publisher, new RunnerStartedEvent(
                             ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
                             ExecutionMessageType.RUNNER_STARTED, Instant.now(), launch.engineId(),
@@ -157,30 +156,27 @@ final class TaskRunnerApplication {
                 }, launch, loaded.workDirectory(), artifactClient);
                 requireResultIdentity(launch, result);
             } else {
-            if (manifest.task() != null
-                    && manifest.task().executionMode() == CanvasExecutionMode.STREAMING) {
-                return runStreaming(launch, manifest, publisher);
-            }
-            if (launch.deadlineAt() == null) {
-                throw new RunnerExecutionException(
-                        "INVALID_LAUNCH", "批处理任务缺少执行截止时间", null);
-            }
-            AtomicReference<String> sparkApplicationId = new AtomicReference<>();
-            result = taskExecutor.execute(manifest, launch.sparkMode(), applicationId -> {
-                sparkApplicationId.set(applicationId);
-                publishBestEffort(publisher, new RunnerStartedEvent(
-                        ExecutionMessageEnvelope.CURRENT_VERSION,
-                        UUID.randomUUID(),
-                        ExecutionMessageType.RUNNER_STARTED,
-                        Instant.now(),
-                        launch.engineId(),
-                        launch.executionId(),
-                        launch.runId(),
-                        launch.attempt(),
-                        applicationId
-                ));
-            });
-            requireResultIdentity(launch, result);
+                if (manifest.task() != null
+                        && manifest.task().executionMode() == CanvasExecutionMode.STREAMING) {
+                    return runStreaming(launch, manifest, publisher);
+                }
+                if (launch.deadlineAt() == null) {
+                    throw new RunnerExecutionException(
+                            "INVALID_LAUNCH", "批处理任务缺少执行截止时间", null);
+                }
+                result = taskExecutor.execute(manifest, launch.sparkMode(), applicationId ->
+                        publishBestEffort(publisher, new RunnerStartedEvent(
+                                ExecutionMessageEnvelope.CURRENT_VERSION,
+                                UUID.randomUUID(),
+                                ExecutionMessageType.RUNNER_STARTED,
+                                Instant.now(),
+                                launch.engineId(),
+                                launch.executionId(),
+                                launch.runId(),
+                                launch.attempt(),
+                                applicationId
+                        )));
+                requireResultIdentity(launch, result);
             }
         } catch (Throwable throwable) {
             result = loadedManifest != null
@@ -189,6 +185,10 @@ final class TaskRunnerApplication {
                     launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt, throwable)
                     : loadedManifest != null && loadedManifest.executionTaskType() == ExecutionTaskType.SPARK_JAR
                     ? SparkJarTaskExecutor.failure(
+                    launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt, throwable)
+                    : loadedManifest != null
+                    && loadedManifest.executionTaskType() == ExecutionTaskType.SPARK_STREAMING_JAR
+                    ? SparkStreamingJarTaskExecutor.failure(
                     launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt, throwable)
                     : CanvasTaskExecutor.failure(
                     launch.executionId(), launch.runId(), launch.attempt(), runnerStartedAt, throwable);
@@ -218,6 +218,22 @@ final class TaskRunnerApplication {
                         launch.result().objectKey(),
                         digest
                 ));
+                if (loadedManifest != null
+                        && loadedManifest.executionTaskType() == ExecutionTaskType.SPARK_STREAMING_JAR) {
+                    if (result.state() == TaskExecutionState.STOPPED) {
+                        publisher.publish(new RunnerStreamingStoppedEvent(
+                                ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
+                                ExecutionMessageType.RUNNER_STREAMING_STOPPED, Instant.now(),
+                                launch.engineId(), launch.executionId(), launch.runId(), launch.attempt(),
+                                loadedManifest.execution().deploymentId(), Instant.now(),
+                                "实时 JAR 任务已正常停止"));
+                    } else {
+                        publisher.publish(new RunnerFailedEvent(
+                                ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
+                                ExecutionMessageType.RUNNER_FAILED, Instant.now(), launch.engineId(),
+                                launch.executionId(), launch.runId(), launch.attempt(), safeError(result.error())));
+                    }
+                }
             } catch (Exception eventFailure) {
                 TaskExecutionError deliveryError = failureClassifier.classify(
                         eventFailure, RunnerFailureContext.task(
@@ -225,7 +241,8 @@ final class TaskRunnerApplication {
                 logDeliveryFailure(launch, deliveryError, eventFailure);
                 return 3;
             }
-            return result.state() == TaskExecutionState.SUCCESS ? 0 : 1;
+            return result.state() == TaskExecutionState.SUCCESS
+                    || result.state() == TaskExecutionState.STOPPED ? 0 : 1;
         } catch (Throwable artifactOrEventFailure) {
             TaskExecutionError deliveryError = failureClassifier.classify(
                     artifactOrEventFailure, RunnerFailureContext.task(
@@ -293,36 +310,6 @@ final class TaskRunnerApplication {
             } catch (RuntimeException ignored) {
                 // The Dispatcher reconciles the backend after Runner shutdown.
             }
-        }
-    }
-
-    private int runStreamingJar(
-            TaskExecutionLaunchDescriptor launch,
-            TaskExecutionManifest manifest,
-            Path userJar,
-            RunnerEventPublisher publisher
-    ) {
-        try {
-            new SparkStreamingJarTaskExecutor(objectMapper)
-                    .execute(manifest, launch.sparkMode(), launch, userJar, publisher);
-            return 0;
-        } catch (Throwable throwable) {
-            TaskExecutionError error = failureClassifier.classify(
-                    throwable,
-                    RunnerFailureContext.task(
-                            cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase.PROCESS));
-            LOGGER.error(
-                    "event=TASK_FAILED executionId={} runId={} attempt={} code={} category={} phase={} diagnosticId={}\n{}",
-                    launch.executionId(), launch.runId(), launch.attempt(), error.code(),
-                    error.category(), error.phase(), error.diagnosticId(),
-                    RunnerLogSanitizer.stackTrace(throwable));
-            publishBestEffort(publisher, new RunnerFailedEvent(
-                    ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
-                    ExecutionMessageType.RUNNER_FAILED, Instant.now(), launch.engineId(),
-                    launch.executionId(), launch.runId(), launch.attempt(), safeError(error)));
-            return 1;
-        } finally {
-            try { publisher.close(); } catch (RuntimeException ignored) { }
         }
     }
 
@@ -449,11 +436,11 @@ final class TaskRunnerApplication {
     }
 
     private static void logTaskTerminal(TaskExecutionLaunchDescriptor launch, TaskExecutionResult result) {
-        if (result.state() == TaskExecutionState.SUCCESS) {
+        if (result.state() == TaskExecutionState.SUCCESS || result.state() == TaskExecutionState.STOPPED) {
             LOGGER.info(
-                    "event=TASK_SUCCESS executionId={} runId={} attempt={} durationMs={} affectedRows={}",
-                    launch.executionId(), launch.runId(), launch.attempt(), result.durationMs(),
-                    result.affectedRows());
+                    "event=TASK_TERMINAL executionId={} runId={} attempt={} state={} durationMs={} affectedRows={}",
+                    launch.executionId(), launch.runId(), launch.attempt(), result.state(),
+                    result.durationMs(), result.affectedRows());
             return;
         }
         LOGGER.error(

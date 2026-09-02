@@ -1,0 +1,62 @@
+{
+  "schemaVersion" : 11,
+  "executionId" : "b48f05c4-63b4-448c-bb23-e7dc124637dd",
+  "runId" : "bd1d42a0-c690-419f-be2c-813a2bbab9d4",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-31T14:13:21.841338584Z",
+  "endedAt" : "2026-08-31T14:13:26.301775378Z",
+  "durationMs" : 4460,
+  "affectedRows" : 100,
+  "nodeResults" : [ {
+    "nodeId" : "fe52b46b-1c58-4e27-81bf-249f8f895660",
+    "nodeType" : "JDBC_INPUT",
+    "nodeName" : "JDBC 输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-08-31T14:13:24.276228210Z",
+    "endedAt" : "2026-08-31T14:13:24.733768627Z",
+    "durationMs" : 457,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "JDBC 输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "ae2997c7-a333-4e7e-bd66-65190677580b",
+    "nodeType" : "MODEL_OUTPUT",
+    "nodeName" : "模型输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-08-31T14:13:24.734431710Z",
+    "endedAt" : "2026-08-31T14:13:26.301237295Z",
+    "durationMs" : 1566,
+    "rowsWritten" : 100,
+    "metrics" : {
+      "kind" : "OUTPUT_WRITES",
+      "writes" : [ {
+        "writeId" : "72861ddd-6bed-450f-a927-82b33ffb5909",
+        "sourceTableName" : "sys_dept",
+        "targetDisplayName" : "部门表 · ods_sys_dept",
+        "state" : "SUCCESS",
+        "affectedRows" : 50,
+        "errorCode" : null
+      }, {
+        "writeId" : "ae01c541-d433-4645-acb7-8de5434168fa",
+        "sourceTableName" : "sys_dept",
+        "targetDisplayName" : "部门表 · ods_sys_dept",
+        "state" : "SUCCESS",
+        "affectedRows" : 50,
+        "errorCode" : null
+      } ]
+    },
+    "message" : "模型输出写入成功",
+    "error" : null
+  } ],
+  "taskType" : "SPARK_CANVAS",
+  "qualityResult" : null,
+  "userJobObservability" : null,
+  "lineage" : null,
+  "trialPreview" : null,
+  "canvasTrialPreview" : null,
+  "error" : null
+}

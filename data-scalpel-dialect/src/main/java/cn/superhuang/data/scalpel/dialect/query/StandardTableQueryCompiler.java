@@ -52,12 +52,12 @@ public final class StandardTableQueryCompiler {
             throw invalid("分页偏移量不能超过 " + limits.maximumOffset() + "，请缩小查询范围");
         }
 
-        List<QueryProjection> projections = projections(input.columns(), fields);
-        List<QueryFilter> filters = filters(input.filters(), fields, limits);
-        List<String> groups = groups(input.groups(), fields, limits);
+        List<QueryProjection> projections = projections(input.fields(), fields);
+        QueryPredicate filter = filter(input.filter(), fields, limits);
+        List<String> groups = groups(input.groupBy(), fields, limits);
         List<QueryAggregate> aggregates = aggregates(input.aggregates(), fields, projections, groups, limits);
         validateGroupedProjection(projections, groups, aggregates);
-        List<QueryOrder> orders = orders(input.orders(), fields, aggregates, groups, projections, limits);
+        List<QueryOrder> orders = orders(input.sort(), fields, aggregates, groups, projections, limits);
         if (aggregates.isEmpty()) {
             Set<String> orderedColumns = orders.stream()
                     .filter(order -> order.targetType() == QueryOrderTarget.COLUMN)
@@ -76,8 +76,7 @@ public final class StandardTableQueryCompiler {
                 new StandardQuery(
                         table,
                         projections,
-                        input.conjunction() == null ? ConditionConjunction.AND : input.conjunction(),
-                        filters,
+                        filter,
                         groups,
                         aggregates,
                         orders,
@@ -97,7 +96,7 @@ public final class StandardTableQueryCompiler {
         for (String code : selected) {
             StandardQueryField field = requireQueryableField(code, fields, "返回字段");
             if (!seen.add(normalizeCode(field.code()))) {
-                throw invalid("columns 中包含重复字段：" + field.code());
+                throw invalid("fields 中包含重复字段：" + field.code());
             }
             result.add(new QueryProjection(field.physicalColumn(), field.code()));
         }
@@ -107,25 +106,50 @@ public final class StandardTableQueryCompiler {
         return result;
     }
 
-    private static List<QueryFilter> filters(
-            List<StandardQueryFilterInput> inputs,
+    private static QueryPredicate filter(
+            StandardQueryFilterGroupInput input,
             Map<String, StandardQueryField> fields,
             StandardQueryLimits limits
     ) {
-        if (inputs.size() > limits.maximumFilterCount()) {
-            throw invalid("filters 数量不能超过 " + limits.maximumFilterCount());
+        if (input == null) {
+            return null;
         }
-        List<QueryFilter> result = new ArrayList<>();
-        for (StandardQueryFilterInput input : inputs) {
-            if (input == null || input.operator() == null) {
-                throw invalid("过滤条件不能为空");
+        return predicate(input, fields, limits, 1, new FilterCounter());
+    }
+
+    private static QueryPredicate predicate(
+            StandardQueryPredicateInput input,
+            Map<String, StandardQueryField> fields,
+            StandardQueryLimits limits,
+            int depth,
+            FilterCounter counter
+    ) {
+        if (input == null) {
+            throw invalid("过滤条件不能为空");
+        }
+        if (depth > limits.maximumFilterDepth()) {
+            throw invalid("filter 嵌套深度不能超过 " + limits.maximumFilterDepth());
+        }
+        if (input instanceof StandardQueryFilterGroupInput group) {
+            if (group.conjunction() == null || group.conditions().isEmpty()) {
+                throw invalid("过滤条件组必须指定 AND 或 OR，并且至少包含一个条件");
             }
-            StandardQueryField field = requireQueryableField(input.field(), fields, "过滤字段");
-            result.add(new QueryFilter(
-                    field.physicalColumn(), field.valueType(), input.operator(), values(input, field.valueType(), limits)
-            ));
+            return new QueryFilterGroup(
+                    group.conjunction(),
+                    group.conditions().stream()
+                            .map(condition -> predicate(condition, fields, limits, depth + 1, counter))
+                            .toList()
+            );
         }
-        return result;
+        StandardQueryFilterInput leaf = (StandardQueryFilterInput) input;
+        if (leaf.operator() == null) {
+            throw invalid("过滤条件必须指定 operator");
+        }
+        counter.increment(limits.maximumFilterCount());
+        StandardQueryField field = requireQueryableField(leaf.field(), fields, "过滤字段");
+        return new QueryFilter(
+                field.physicalColumn(), field.valueType(), leaf.operator(), values(leaf, field.valueType(), limits)
+        );
     }
 
     private static List<String> groups(
@@ -134,14 +158,14 @@ public final class StandardTableQueryCompiler {
             StandardQueryLimits limits
     ) {
         if (inputs.size() > limits.maximumGroupCount()) {
-            throw invalid("groups 数量不能超过 " + limits.maximumGroupCount());
+            throw invalid("groupBy 数量不能超过 " + limits.maximumGroupCount());
         }
         Set<String> seen = new HashSet<>();
         List<String> result = new ArrayList<>();
         for (String input : inputs) {
             StandardQueryField field = requireQueryableField(input, fields, "分组字段");
             if (!seen.add(normalizeCode(field.code()))) {
-                throw invalid("groups 中包含重复字段：" + field.code());
+                throw invalid("groupBy 中包含重复字段：" + field.code());
             }
             result.add(field.physicalColumn());
         }
@@ -156,7 +180,7 @@ public final class StandardTableQueryCompiler {
             StandardQueryLimits limits
     ) {
         if (inputs.size() > limits.maximumAggregateCount()) {
-            throw invalid("aggregators 数量不能超过 " + limits.maximumAggregateCount());
+            throw invalid("aggregates 数量不能超过 " + limits.maximumAggregateCount());
         }
         Set<String> aliases = new HashSet<>();
         projections.forEach(projection -> aliases.add(projection.alias()));
@@ -197,7 +221,7 @@ public final class StandardTableQueryCompiler {
         Set<String> groupedColumns = Set.copyOf(groups);
         for (QueryProjection projection : projections) {
             if (!groupedColumns.contains(projection.column())) {
-                throw invalid("聚合查询中的普通返回字段必须同时出现在 groups 中");
+                throw invalid("聚合查询中的普通返回字段必须同时出现在 groupBy 中");
             }
         }
     }
@@ -211,7 +235,7 @@ public final class StandardTableQueryCompiler {
             StandardQueryLimits limits
     ) {
         if (inputs.size() > limits.maximumOrderCount()) {
-            throw invalid("orders 数量不能超过 " + limits.maximumOrderCount());
+            throw invalid("sort 数量不能超过 " + limits.maximumOrderCount());
         }
         Map<String, String> aggregateAliases = new HashMap<>();
         aggregates.forEach(aggregate -> aggregateAliases.put(aggregate.alias(), aggregate.alias()));
@@ -234,7 +258,7 @@ public final class StandardTableQueryCompiler {
                     throw invalid("聚合查询只能按分组字段或聚合别名排序");
                 }
                 if (!seen.add("column:" + normalizeCode(field.code()))) {
-                    throw invalid("orders 中包含重复字段：" + field.code());
+                    throw invalid("sort 中包含重复字段：" + field.code());
                 }
                 result.add(new QueryOrder(field.physicalColumn(), QueryOrderTarget.COLUMN, input.direction()));
                 continue;
@@ -244,7 +268,7 @@ public final class StandardTableQueryCompiler {
                 throw invalid("排序字段不存在：" + input.field());
             }
             if (!seen.add("aggregate:" + alias)) {
-                throw invalid("orders 中包含重复字段：" + alias);
+                throw invalid("sort 中包含重复字段：" + alias);
             }
             result.add(new QueryOrder(alias, QueryOrderTarget.AGGREGATE_ALIAS, input.direction()));
         }
@@ -258,7 +282,7 @@ public final class StandardTableQueryCompiler {
     ) {
         return switch (filter.operator()) {
             case IS_NULL, IS_NOT_NULL, IS_EMPTY, IS_NOT_EMPTY -> {
-                if (filter.value() != null || filter.secondValue() != null || !filter.values().isEmpty()) {
+                if (filter.value() != null) {
                     throw invalid(filter.operator() + " 不接受值");
                 }
                 if ((filter.operator() == QueryFilterOperator.IS_EMPTY || filter.operator() == QueryFilterOperator.IS_NOT_EMPTY)
@@ -282,7 +306,7 @@ public final class StandardTableQueryCompiler {
                 yield raw.stream().map(value -> convert(value, type)).toList();
             }
             default -> {
-                if (filter.value() == null || filter.secondValue() != null || !filter.values().isEmpty()) {
+                if (filter.value() == null || filter.value() instanceof Collection<?>) {
                     throw invalid(filter.operator() + " 必须提供一个 value");
                 }
                 if ((filter.operator() == QueryFilterOperator.LIKE || filter.operator() == QueryFilterOperator.NOT_LIKE)
@@ -295,19 +319,22 @@ public final class StandardTableQueryCompiler {
     }
 
     private static List<Object> listValues(StandardQueryFilterInput filter) {
-        if (!filter.values().isEmpty()) {
-            if (filter.value() != null || filter.secondValue() != null) {
-                throw invalid("values 不能与 value 或 secondValue 同时使用");
-            }
-            return filter.values();
-        }
-        if (filter.value() instanceof Collection<?> collection && filter.secondValue() == null) {
+        if (filter.value() instanceof Collection<?> collection) {
             return new ArrayList<>(collection);
         }
-        if (filter.value() != null && filter.secondValue() != null) {
-            return List.of(filter.value(), filter.secondValue());
-        }
         return List.of();
+    }
+
+    private static final class FilterCounter {
+
+        private int count;
+
+        private void increment(int maximum) {
+            count++;
+            if (count > maximum) {
+                throw invalid("filter 叶子条件数量不能超过 " + maximum);
+            }
+        }
     }
 
     private static Object convert(Object raw, QueryValueType type) {

@@ -9,6 +9,8 @@ import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedOutput;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedSnapshotSyncOutput;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasPreparedFileOutput;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialPreview;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialSpec;
 import cn.superhuang.data.scalpel.contract.execution.RunnerSparkMode;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.compiler.MetadataIndex;
@@ -91,6 +93,7 @@ import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import org.apache.spark.sql.DataFrameReader;
 import org.apache.spark.sql.DataFrameWriter;
+import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SaveMode;
@@ -110,10 +113,12 @@ import java.security.NoSuchAlgorithmException;
 import java.util.HexFormat;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.Set;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -158,12 +163,14 @@ final class CanvasTaskExecutor {
         try (SparkOutputMetricsCollector metricsCollector = new SparkOutputMetricsCollector(spark)) {
             sparkStarted.accept(spark.sparkContext().applicationId());
             MetadataIndex metadataIndex = MetadataIndex.create(manifest.metadataSnapshot());
-            CanvasCompilation compilation = compiler.compile(
-                    manifest.task().definition(),
-                    metadataIndex,
-                    SedonaSparkSupport.childSession(spark),
-                    new AtomicBoolean()
-            );
+            CanvasCompilation compilation = manifest.canvasTrial() == null
+                    ? compiler.compile(
+                    manifest.task().definition(), metadataIndex,
+                    SedonaSparkSupport.childSession(spark), new AtomicBoolean())
+                    : compiler.compileTrial(
+                    manifest.task().definition(), CanvasExecutionMode.BATCH, metadataIndex,
+                    SedonaSparkSupport.childSession(spark), new AtomicBoolean(),
+                    manifest.canvasTrial().targetNodeId());
             checkDeadline(manifest);
             if (!compilation.valid()) {
                 String message = compilation.canvasIssues().stream()
@@ -198,7 +205,11 @@ final class CanvasTaskExecutor {
             Instant startedAt,
             CanvasRuntimeValues runtimeValues
     ) {
-        CanvasGraphPlan plan = CanvasGraphPlan.create(manifest.task().definition());
+        CanvasGraphPlan plan = manifest.canvasTrial() == null
+                ? CanvasGraphPlan.create(manifest.task().definition())
+                : CanvasGraphPlan.createForTrial(
+                manifest.task().definition(), CanvasExecutionMode.BATCH,
+                manifest.canvasTrial().targetNodeId());
         Map<UUID, RuntimeDataSource> runtimeSources = runtimeSources(manifest.runtimeDataSources());
         List<Map<String, SparkCanvasTable>> propagated = new ArrayList<>();
         for (int ignored = 0; ignored < manifest.task().definition().nodes().size(); ignored++) propagated.add(Map.of());
@@ -210,6 +221,7 @@ final class CanvasTaskExecutor {
                 manifest.runtimeFileStorage(),
                 manifest.runtimeFileInputs(),
                 manifest.execution().executionId().toString(),
+                manifest.execution().taskId().toString(),
                 manifest.execution().attempt(),
                 null,
                 null,
@@ -265,6 +277,16 @@ final class CanvasTaskExecutor {
                             preparedOutputs.add(preparedFileOutput(output, nodeStartedAt)));
                 } else {
                     propagated.set(nodeIndex, operation.propagatedTables());
+                    if (manifest.canvasTrial() != null
+                            && manifest.canvasTrial().targetNodeId().equals(node.id())) {
+                        CanvasTrialPreview preview = createCanvasTrialPreview(
+                                node, operation.propagatedTables(), manifest.canvasTrial());
+                        nodeResults.add(success(
+                                node, phase, nodeStartedAt, null, "节点试运行完成"));
+                        logNodeSuccess(manifest, node, phase, nodeStartedAt, null);
+                        return successfulTrialResult(
+                                manifest, startedAt, orderedResults(plan, nodeResults), preview);
+                    }
                     nodeResults.add(success(
                             node, phase, nodeStartedAt, null, nodePreparedMessage(node)));
                     logNodeSuccess(manifest, node, phase, nodeStartedAt, null);
@@ -418,6 +440,92 @@ final class CanvasTaskExecutor {
         } catch (ArithmeticException overflow) {
             return null;
         }
+    }
+
+    private static CanvasTrialPreview createCanvasTrialPreview(
+            CanvasNodeDefinition node,
+            Map<String, SparkCanvasTable> outputTables,
+            CanvasTrialSpec trialSpec
+    ) {
+        SparkCanvasTable table = outputTables.get(trialSpec.tableName());
+        if (table == null) {
+            throw new RunnerExecutionException(
+                    "CANVAS_TRIAL_TABLE_NOT_FOUND", "试运行目标表已变化", node.id());
+        }
+        Set<String> requested = new HashSet<>(trialSpec.columnNames());
+        List<CanvasColumnSchema> selectedColumns = table.schema().columns().stream()
+                .filter(column -> requested.contains(column.name()))
+                .toList();
+        if (selectedColumns.size() != requested.size()) {
+            throw new RunnerExecutionException(
+                    "CANVAS_TRIAL_COLUMN_NOT_FOUND", "试运行目标字段已变化", node.id());
+        }
+        Column[] projection = selectedColumns.stream()
+                .map(column -> table.dataset().col(sparkIdentifier(column.name())))
+                .toArray(Column[]::new);
+        List<String> captured = table.dataset().select(projection)
+                .limit(CanvasTrialPreview.MAX_ROWS + 1)
+                .toJSON()
+                .collectAsList();
+        boolean truncated = captured.size() > CanvasTrialPreview.MAX_ROWS;
+        List<String> rows = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        int bytes = 0;
+        for (String row : captured.subList(0, Math.min(captured.size(), CanvasTrialPreview.MAX_ROWS))) {
+            int rowBytes = row.getBytes(StandardCharsets.UTF_8).length;
+            if (bytes + rowBytes > CanvasTrialPreview.MAX_CONTENT_CHARACTERS) {
+                truncated = true;
+                warnings.add("预览数据达到 4 MB 上限，部分数据行未返回");
+                break;
+            }
+            rows.add(row);
+            bytes += rowBytes;
+        }
+        warnings.add("未显式排序时，预览行顺序不保证稳定");
+        boolean eventTimeSelected = table.schema().eventTimeColumn() != null
+                && requested.contains(table.schema().eventTimeColumn());
+        CanvasTableSchema selectedSchema = new CanvasTableSchema(
+                table.schema().name(),
+                null,
+                selectedColumns,
+                table.schema().datasetKind(),
+                eventTimeSelected ? table.schema().eventTimeColumn() : null,
+                eventTimeSelected ? table.schema().watermarkDelay() : null
+        );
+        return new CanvasTrialPreview(
+                node.id(), node.name(), selectedSchema, rows, truncated, warnings);
+    }
+
+    private static String sparkIdentifier(String value) {
+        return "`" + value.replace("`", "``") + "`";
+    }
+
+    private static TaskExecutionResult successfulTrialResult(
+            TaskExecutionManifest manifest,
+            Instant startedAt,
+            List<NodeExecutionResult> nodeResults,
+            CanvasTrialPreview preview
+    ) {
+        Instant endedAt = Instant.now();
+        return new TaskExecutionResult(
+                TaskExecutionResult.CURRENT_SCHEMA_VERSION,
+                manifest.execution().executionId(),
+                manifest.execution().runId(),
+                manifest.execution().attempt(),
+                TaskExecutionState.SUCCESS,
+                startedAt,
+                endedAt,
+                Duration.between(startedAt, endedAt).toMillis(),
+                null,
+                nodeResults,
+                cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_CANVAS,
+                null,
+                null,
+                null,
+                null,
+                preview,
+                null
+        );
     }
 
     private CanvasNodeOperationResult executeNodeOperator(
@@ -828,6 +936,22 @@ final class CanvasTaskExecutor {
                 || manifest.snapshotSyncLimits() == null
                 || !manifest.runtimeFileInputs().isEmpty() && manifest.runtimeFileStorage() == null) {
             throw new RunnerExecutionException("INVALID_MANIFEST", "任务运行 manifest 不完整", null);
+        }
+        if (manifest.canvasTrial() != null) {
+            long targetCount = manifest.task().definition().nodes().stream()
+                    .filter(node -> manifest.canvasTrial().targetNodeId().equals(node.id()))
+                    .count();
+            boolean containsOutput = manifest.task().definition().nodes().stream()
+                    .anyMatch(node -> switch (node.nodeType()) {
+                        case MODEL_OUTPUT, MODEL_SNAPSHOT_SYNC_OUTPUT,
+                                JDBC_OUTPUT, JDBC_SNAPSHOT_SYNC_OUTPUT,
+                                KAFKA_OUTPUT, FILE_OUTPUT -> true;
+                        default -> false;
+                    });
+            if (targetCount != 1 || containsOutput) {
+                throw new RunnerExecutionException(
+                        "INVALID_MANIFEST", "Canvas 试运行闭包或目标节点无效", null);
+            }
         }
         checkDeadline(manifest);
     }
@@ -1259,9 +1383,7 @@ final class CanvasTaskExecutor {
                     "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
                             + " resourceCount=" + input.configuration().resources().size();
             case cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition input ->
-                    "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
-                            + " topic=" + safeLogValue(input.configuration().topic())
-                            + " outputTable=" + safeLogValue(input.configuration().outputTableName());
+                    kafkaInputSummary(input.configuration());
             case TdEngineTmqInputNodeDefinition input ->
                     "dataSourceId=" + safeLogValue(input.configuration().dataSourceId())
                             + " topic=" + safeLogValue(input.configuration().topicName())
@@ -1416,7 +1538,7 @@ final class CanvasTaskExecutor {
                         + safeLogValue(String.join(",", summary.runtimeValues()))
                         + " functions=" + safeLogValue(String.join(",", summary.functions()));
             }
-            case TypeCastNodeDefinition typeCast -> processorOperationsSummary(
+            case TypeCastNodeDefinition typeCast -> typeCastOperationsSummary(
                     typeCast.configuration().operations());
             case AggregateNodeDefinition aggregate -> {
                 String aggregationSummary = aggregate.configuration().aggregations().stream()
@@ -1608,6 +1730,81 @@ final class CanvasTaskExecutor {
         return values == null ? 0 : values.size();
     }
 
+    private static String kafkaInputSummary(
+            cn.superhuang.data.scalpel.contract.task.KafkaInputConfiguration configuration
+    ) {
+        if (configuration == null) return "valueFormat=UNCONFIGURED outputFieldCount=0 metadataFields=";
+        int payloadFieldCount = configuration.effectiveValueFormat()
+                == cn.superhuang.data.scalpel.contract.task.KafkaInputValueFormat.JSON
+                ? configuration.valueSchema() == null || configuration.valueSchema().columns() == null
+                ? 0 : configuration.valueSchema().columns().size()
+                : 1;
+        return "valueFormat=" + configuration.effectiveValueFormat()
+                + " outputFieldCount="
+                + (payloadFieldCount + configuration.effectiveMetadataFields().size())
+                + " metadataFields=" + safeLogValue(configuration.effectiveMetadataFields()
+                .stream().map(Enum::name).sorted()
+                .collect(java.util.stream.Collectors.joining(",")));
+    }
+
+    private static String typeCastOperationsSummary(
+            List<cn.superhuang.data.scalpel.contract.task.TypeCastOperation> operations
+    ) {
+        String base = processorOperationsSummary(operations);
+        if (operations == null) return base;
+        List<cn.superhuang.data.scalpel.contract.task.ColumnTypeCast> casts = operations.stream()
+                .filter(java.util.Objects::nonNull)
+                .flatMap(operation -> operation.casts() == null
+                        ? java.util.stream.Stream.<cn.superhuang.data.scalpel.contract.task.ColumnTypeCast>empty()
+                        : operation.casts().stream())
+                .filter(java.util.Objects::nonNull)
+                .toList();
+        String epochTimestampUnits = casts.stream()
+                .map(cast -> cast.epochTimestampUnit() == null
+                        ? "LEGACY_SECONDS" : cast.epochTimestampUnit().name())
+                .distinct()
+                .sorted()
+                .collect(java.util.stream.Collectors.joining(","));
+        List<cn.superhuang.data.scalpel.contract.task.ColumnTypeCast> temporalCasts = casts.stream()
+                .filter(cast -> cast.stringTemporalParseOptions() != null)
+                .toList();
+        String temporalTargetTypes = temporalCasts.stream()
+                .map(cast -> cast.targetType() == null || cast.targetType().type() == null
+                        ? "UNCONFIGURED" : cast.targetType().type().name())
+                .distinct().sorted().collect(java.util.stream.Collectors.joining(","));
+        String temporalZoneModes = temporalCasts.stream()
+                .map(cast -> cast.stringTemporalParseOptions().zoneMode() == null
+                        ? "UNCONFIGURED" : cast.stringTemporalParseOptions().zoneMode().name())
+                .distinct().sorted().collect(java.util.stream.Collectors.joining(","));
+        String sourceTimeZones = safePreview(temporalCasts.stream()
+                .map(cast -> cast.stringTemporalParseOptions().sourceTimeZone())
+                .filter(zone -> zone != null && !zone.isBlank()).toList());
+        String patternMetadata = temporalCasts.stream()
+                .map(cast -> cast.stringTemporalParseOptions().pattern())
+                .map(pattern -> pattern == null ? "UNCONFIGURED" : pattern.length() + ":" + sha256(pattern))
+                .collect(java.util.stream.Collectors.joining(","));
+        List<cn.superhuang.data.scalpel.contract.task.ColumnTypeCast> temporalStringCasts = casts.stream()
+                .filter(cast -> cast.temporalStringFormatOptions() != null)
+                .toList();
+        String temporalStringTargetTimeZones = safePreview(temporalStringCasts.stream()
+                .map(cast -> cast.temporalStringFormatOptions().targetTimeZone())
+                .filter(zone -> zone != null && !zone.isBlank()).toList());
+        String temporalStringPatternMetadata = temporalStringCasts.stream()
+                .map(cast -> cast.temporalStringFormatOptions().pattern())
+                .map(pattern -> pattern == null ? "UNCONFIGURED" : pattern.length() + ":" + sha256(pattern))
+                .collect(java.util.stream.Collectors.joining(","));
+        return base
+                + " epochTimestampUnits=" + safeLogValue(epochTimestampUnits)
+                + " stringTemporalParseCount=" + temporalCasts.size()
+                + " stringTemporalTargetTypes=" + safeLogValue(temporalTargetTypes)
+                + " stringTemporalZoneModes=" + safeLogValue(temporalZoneModes)
+                + " stringTemporalSourceTimeZones=" + safeLogValue(sourceTimeZones)
+                + " stringTemporalPatternMetadata=" + safeLogValue(patternMetadata)
+                + " temporalStringFormatCount=" + temporalStringCasts.size()
+                + " temporalStringTargetTimeZones=" + safeLogValue(temporalStringTargetTimeZones)
+                + " temporalStringPatternMetadata=" + safeLogValue(temporalStringPatternMetadata);
+    }
+
     private static String filterOperationsSummary(List<FilterOperation> operations) {
         String base = processorOperationsSummary(operations);
         if (operations == null) return base;
@@ -1662,15 +1859,27 @@ final class CanvasTaskExecutor {
             cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition output
     ) {
         var writes = output.configuration().writes();
-        int fields = writes.stream().mapToInt(write -> write.valueSchema() == null
-                ? 0 : size(write.valueSchema().columns())).sum();
+        int fields = writes.stream().mapToInt(write -> write.legacyMappingMode()
+                ? write.valueSchema() == null ? 0 : size(write.valueSchema().columns())
+                : size(write.valueColumnNames())).sum();
+        String formats = writes.stream()
+                .map(write -> write.legacyMappingMode()
+                        ? "LEGACY_JSON_MAPPING" : write.valueFormat().name())
+                .distinct().sorted().collect(java.util.stream.Collectors.joining(","));
+        List<String> valueColumnNames = writes.stream()
+                .flatMap(write -> write.legacyMappingMode()
+                        ? write.columnMappings().stream().map(mapping -> mapping.targetColumnName())
+                        : write.valueColumnNames().stream())
+                .toList();
         return "dataSourceId=" + safeLogValue(output.configuration().dataSourceId())
                 + " writeCount=" + writes.size()
                 + " sources=" + safeLogValue(safePreview(writes.stream()
                 .map(cn.superhuang.data.scalpel.contract.task.KafkaOutputWrite::sourceTableName).toList()))
                 + " topics=" + safeLogValue(safePreview(writes.stream()
                 .map(cn.superhuang.data.scalpel.contract.task.KafkaOutputWrite::topic).toList()))
-                + " schemaFieldCount=" + fields;
+                + " valueFormats=" + safeLogValue(formats)
+                + " valueFieldCount=" + fields
+                + " valueFields=" + safeLogValue(safePreview(valueColumnNames));
     }
 
     private static String writeModeSummary(List<JdbcWriteMode> modes) {

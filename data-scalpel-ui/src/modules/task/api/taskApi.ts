@@ -5,12 +5,18 @@ import type {
   CreateDataTaskRequest,
   CreateSparkJarDevelopmentKitRequest,
   CanvasTaskDefinition,
+  CanvasTrialPreviewResponse,
+  CanvasTrialRunRequest,
   DataTask,
   LocalSqlDefinitionValidation,
   LocalSqlTaskDefinition,
   ModelQualityTaskDefinition,
   SparkJarTaskDefinition,
   SparkJarDevelopmentKit,
+  SparkJarOnlineCompilation,
+  SparkJarOnlineSource,
+  SparkJarTrialRunSubmission,
+  SparkJarTrialPreviewResponse,
   StreamingCheckpointMode,
   ModelRelatedTask,
   ModelTaskRelationRole,
@@ -106,6 +112,35 @@ export const fetchSparkJarDevelopmentKit = (id: string): Promise<SparkJarDevelop
 
 export const downloadSparkJarDevelopmentKit = (id: string): Promise<Blob> => (
   requestBlob(`${TASK_PATH}/${id}/spark-jar-development-kit/artifact`, {}, 120_000)
+);
+
+export const fetchSparkJarOnlineSource = (id: string): Promise<SparkJarOnlineSource> => (
+  requestJson<SparkJarOnlineSource>(`${TASK_PATH}/${id}/spark-jar-online-source`)
+);
+
+export const saveSparkJarOnlineSource = (id: string, sourceCode: string): Promise<SparkJarOnlineSource> => (
+  requestJson<SparkJarOnlineSource>(`${TASK_PATH}/${id}/spark-jar-online-source/actions/save`, {
+    method: 'POST',
+    body: JSON.stringify({ sourceCode }),
+  })
+);
+
+export const compileSparkJarOnlineSource = (
+  id: string,
+  sourceCode: string,
+): Promise<SparkJarOnlineCompilation> => requestJson<SparkJarOnlineCompilation>(
+  `${TASK_PATH}/${id}/spark-jar-online-source/actions/compile`,
+  { method: 'POST', body: JSON.stringify({ sourceCode }) },
+  60_000,
+);
+
+export const trialRunSparkJarOnlineSource = (
+  id: string,
+  sourceCode: string,
+): Promise<SparkJarTrialRunSubmission> => requestJson<SparkJarTrialRunSubmission>(
+  `${TASK_PATH}/${id}/spark-jar-online-source/actions/trial-run`,
+  { method: 'POST', body: JSON.stringify({ sourceCode }) },
+  60_000,
 );
 
 export const updateModelQualityTaskDefinition = (
@@ -211,6 +246,15 @@ export const runTask = (id: string): Promise<TaskRun> => (
   requestJson<TaskRun>(`${TASK_PATH}/${id}/actions/run`, { method: 'POST' }, 60_000)
 );
 
+export const trialRunCanvas = (
+  id: string,
+  request: CanvasTrialRunRequest,
+): Promise<TaskRun> => requestJson<TaskRun>(
+  `${TASK_PATH}/${id}/canvas-definition/actions/trial-run`,
+  { method: 'POST', body: JSON.stringify(request) },
+  60_000,
+);
+
 export const fetchTaskStreamingConfiguration = (id: string): Promise<TaskStreamingConfiguration> => (
   requestJson<TaskStreamingConfiguration>(`${TASK_PATH}/${id}/streaming-configuration`)
 );
@@ -252,12 +296,29 @@ export const fetchTaskRuns = async (id: string, request: SearchRequest): Promise
 
 export const fetchTaskRun = (runId: string): Promise<TaskRun> => requestJson<TaskRun>(`/v1/task-runs/${runId}`);
 
+export const fetchSparkJarTrialPreview = (runId: string): Promise<SparkJarTrialPreviewResponse> => (
+  requestJson<SparkJarTrialPreviewResponse>(`/v1/task-runs/${runId}/trial-preview`)
+);
+
+export const fetchCanvasTrialPreview = (runId: string): Promise<CanvasTrialPreviewResponse> => (
+  requestJson<CanvasTrialPreviewResponse>(`/v1/task-runs/${runId}/canvas-trial-preview`)
+);
+
+export const fetchTaskRunLogText = async (runId: string): Promise<string> => {
+  const blob = await downloadTaskRunArtifact(runId, 'log');
+  return blob.text();
+};
+
 export const fetchTaskRunLineage = (runId: string): Promise<TaskRunLineage> => (
   requestJson<TaskRunLineage>(`/v1/task-runs/${runId}/lineage`)
 );
 
 export const cancelTaskRun = (runId: string): Promise<TaskRun> => (
   requestJson<TaskRun>(`/v1/task-runs/${runId}/actions/cancel`, { method: 'POST' })
+);
+
+export const stopTaskRun = (runId: string): Promise<TaskRun> => (
+  requestJson<TaskRun>(`/v1/task-runs/${runId}/actions/stop`, { method: 'POST' })
 );
 
 export const forceTerminateTaskRun = (runId: string): Promise<TaskRun> => (

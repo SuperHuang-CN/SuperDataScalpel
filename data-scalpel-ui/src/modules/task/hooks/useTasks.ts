@@ -3,6 +3,8 @@ import { invalidateDirectoryTree } from '../../directory';
 import type { SearchRequest } from '../../../shared/search';
 import {
   cancelTaskRun,
+  compileSparkJarOnlineSource,
+  trialRunSparkJarOnlineSource,
   acceptTaskCanvasProposal,
   createTask,
   generateSparkJarDevelopmentKit,
@@ -24,6 +26,9 @@ import {
   queryTaskFieldLineage,
   fetchModelRelatedTasks,
   fetchTaskRun,
+  fetchSparkJarTrialPreview,
+  fetchCanvasTrialPreview,
+  fetchTaskRunLogText,
   fetchTaskRunLineage,
   fetchTaskRunResultArtifact,
   fetchQualityFailureSamples,
@@ -31,6 +36,7 @@ import {
   fetchModelQualityTaskDefinition,
   fetchSparkJarTaskDefinition,
   fetchSparkJarDevelopmentKit,
+  fetchSparkJarOnlineSource,
   fetchTaskDefinition,
   fetchTaskRuns,
   fetchTaskSchedules,
@@ -39,6 +45,9 @@ import {
   fetchTasks,
   forceTerminateTaskRun,
   runTask,
+  trialRunCanvas,
+  saveSparkJarOnlineSource,
+  stopTaskRun,
   updateTask,
   updateCanvasTaskDefinition,
   updateTaskDefinition,
@@ -64,6 +73,7 @@ import type {
   UpdateDataTaskRequest,
   UpdateLocalSqlTaskDefinitionRequest,
   UpdateSparkJarTaskDefinitionRequest,
+  CanvasTrialRunRequest,
 } from '../model/task';
 
 const tasksKey = 'tasks';
@@ -199,6 +209,57 @@ export const useDownloadSparkJarDevelopmentKit = () => useMutation({
   mutationFn: downloadSparkJarDevelopmentKit,
 });
 
+export const useSparkJarOnlineSource = (id: string | undefined) => useQuery({
+  queryKey: [tasksKey, id, 'spark-jar-online-source'],
+  queryFn: () => fetchSparkJarOnlineSource(id as string),
+  enabled: Boolean(id),
+});
+
+export const useSaveSparkJarOnlineSource = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, sourceCode }: { id: string; sourceCode: string }) => (
+      saveSparkJarOnlineSource(id, sourceCode)
+    ),
+    onSuccess: (source) => {
+      queryClient.setQueryData([tasksKey, source.taskId, 'spark-jar-online-source'], source);
+    },
+  });
+};
+
+export const useCompileSparkJarOnlineSource = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, sourceCode }: { id: string; sourceCode: string }) => (
+      compileSparkJarOnlineSource(id, sourceCode)
+    ),
+    onSuccess: async (result) => {
+      queryClient.setQueryData([tasksKey, result.source.taskId, 'spark-jar-online-source'], result.source);
+      if (result.status === 'SUCCEEDED') {
+        await Promise.all([
+          queryClient.invalidateQueries({ queryKey: [tasksKey, result.source.taskId] }),
+          queryClient.invalidateQueries({ queryKey: [tasksKey, result.source.taskId, 'spark-jar-definition'] }),
+        ]);
+        await invalidateTasks(queryClient);
+      }
+    },
+  });
+};
+
+export const useTrialRunSparkJarOnlineSource = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, sourceCode }: { id: string; sourceCode: string }) => (
+      trialRunSparkJarOnlineSource(id, sourceCode)
+    ),
+    onSuccess: async (result) => {
+      queryClient.setQueryData([tasksKey, result.source.taskId, 'spark-jar-online-source'], result.source);
+      if (result.run) queryClient.setQueryData([taskRunsKey, result.run.id], result.run);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, result.source.taskId, 'runs'] });
+    },
+  });
+};
+
 export const useUpdateModelQualityTaskDefinition = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -276,6 +337,29 @@ export const useTaskRuns = (id: string | undefined, request: SearchRequest, poll
   },
 });
 
+export const useLatestCanvasNodeTrialRun = (
+  taskId: string | undefined,
+  nodeId: string | undefined,
+  enabled = true,
+) => useQuery({
+  queryKey: [tasksKey, taskId, 'runs', 'canvas-trial-node', nodeId],
+  queryFn: () => fetchTaskRuns(taskId as string, {
+    search: `executionMode:"TRIAL" AND canvasTrialTargetNodeId:"${nodeId}"`,
+    page: 0,
+    size: 1,
+    sort: '-queuedAt',
+  }),
+  enabled: Boolean(taskId) && Boolean(nodeId) && enabled,
+  staleTime: 5_000,
+  refetchInterval: (query) => {
+    const run = query.state.data?.content[0];
+    return run && (
+      run.status === 'QUEUED' || run.status === 'RUNNING'
+      || run.status === 'CANCEL_REQUESTED' || run.status === 'STOP_REQUESTED'
+    ) ? 2_000 : false;
+  },
+});
+
 export const useTaskRun = (runId: string | undefined, enabled = true) => useQuery({
   queryKey: [taskRunsKey, runId],
   queryFn: () => fetchTaskRun(runId as string),
@@ -287,6 +371,28 @@ export const useTaskRun = (runId: string | undefined, enabled = true) => useQuer
     if (!active) return false;
     return run?.taskType === 'SPARK_JAR' || run?.taskType === 'SPARK_STREAMING_JAR' ? 5_000 : 2_000;
   },
+});
+
+export const useSparkJarTrialPreview = (runId: string | undefined, enabled = true) => useQuery({
+  queryKey: [taskRunsKey, runId, 'trial-preview'],
+  queryFn: () => fetchSparkJarTrialPreview(runId as string),
+  enabled: Boolean(runId) && enabled,
+  retry: false,
+});
+
+export const useCanvasTrialPreview = (runId: string | undefined, enabled = true) => useQuery({
+  queryKey: [taskRunsKey, runId, 'canvas-trial-preview'],
+  queryFn: () => fetchCanvasTrialPreview(runId as string),
+  enabled: Boolean(runId) && enabled,
+  retry: false,
+});
+
+export const useTaskRunLogText = (runId: string | undefined, active: boolean) => useQuery({
+  queryKey: [taskRunsKey, runId, 'log-text'],
+  queryFn: () => fetchTaskRunLogText(runId as string),
+  enabled: Boolean(runId),
+  retry: false,
+  refetchInterval: active ? 2_000 : false,
 });
 
 export const useTaskRunLineage = (runId: string | undefined, enabled = true) => useQuery({
@@ -423,6 +529,19 @@ export const useRunTask = () => {
   });
 };
 
+export const useTrialRunCanvas = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, request }: { id: string; request: CanvasTrialRunRequest }) => (
+      trialRunCanvas(id, request)
+    ),
+    onSuccess: async (run) => {
+      queryClient.setQueryData([taskRunsKey, run.id], run);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, run.taskId, 'runs'] });
+    },
+  });
+};
+
 export const useUpdateTaskStreamingConfiguration = () => {
   const queryClient = useQueryClient();
   return useMutation({
@@ -465,6 +584,20 @@ export const useCancelTaskRun = () => {
     onSuccess: async (run) => {
       queryClient.setQueryData([taskRunsKey, run.id], run);
       await queryClient.invalidateQueries({ queryKey: [tasksKey, run.taskId, 'runs'] });
+    },
+  });
+};
+
+export const useStopTaskRun = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: stopTaskRun,
+    onSuccess: async (run) => {
+      queryClient.setQueryData([taskRunsKey, run.id], run);
+      await queryClient.invalidateQueries({ queryKey: [tasksKey, run.taskId, 'runs'] });
+      if (run.streamingDeploymentId) {
+        await queryClient.invalidateQueries({ queryKey: [tasksKey, run.taskId, 'streaming-status'] });
+      }
     },
   });
 };

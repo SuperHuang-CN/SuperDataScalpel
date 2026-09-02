@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CopyOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Input, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Input, Modal, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import type { StandardDictionarySummary } from '../../standard';
 import { useCurrentUser } from '../../system';

@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   DashboardOutlined,
@@ -7,7 +8,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Dropdown, Form, Modal, Select, Table, Tooltip, message } from 'antd';
+import { Button, Dropdown, Form, Modal, Select, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';

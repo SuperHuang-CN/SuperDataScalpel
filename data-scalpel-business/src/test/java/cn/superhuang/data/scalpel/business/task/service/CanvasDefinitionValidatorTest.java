@@ -102,6 +102,75 @@ class CanvasDefinitionValidatorTest {
     }
 
     @Test
+    void acceptsEpochTimestampUnitsOnlyFromCanvasFourDotTwoAndOnlyForTimestampTargets() {
+        TypeCastNodeDefinition validNode = epochTimestampTypeCast(PlatformDataType.TIMESTAMP);
+        CanvasDefinition current = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(validNode),
+                List.of()
+        );
+        CanvasDefinition fourDotOne = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                1,
+                List.of(validNode),
+                List.of()
+        );
+        TypeCastNodeDefinition invalidTarget = epochTimestampTypeCast(PlatformDataType.STRING);
+
+        assertDoesNotThrow(() -> validator.validate(current));
+        assertThrows(ResponseStatusException.class, () -> validator.validate(fourDotOne));
+        assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(fourDotOne));
+        assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(invalidTarget),
+                List.of()
+        )));
+    }
+
+    @Test
+    void acceptsStringTemporalParsingOnlyFromCanvasFourDotThree() {
+        TypeCastNodeDefinition validNode = new TypeCastNodeDefinition(
+                UUID.randomUUID().toString(),
+                "字符串时间转换",
+                layout(),
+                new TypeCastConfiguration(List.of(new TypeCastOperation(
+                        UUID.randomUUID().toString(),
+                        "events",
+                        new ProcessorOutput.CreateNewTable("typed_events"),
+                        List.of(new ColumnTypeCast(
+                                "created_at_text",
+                                new PlatformTypeDefinition(PlatformDataType.TIMESTAMP, null, null, null, null),
+                                CastFailureStrategy.SET_NULL,
+                                null,
+                                new StringTemporalParseOptions(
+                                        "yyyy-MM-dd HH:mm:ss",
+                                        StringTimestampZoneMode.SOURCE_TIME_ZONE,
+                                        "Asia/Shanghai"
+                                )
+                        ))
+                )))
+        );
+        CanvasDefinition current = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(validNode),
+                List.of()
+        );
+        CanvasDefinition fourDotTwo = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                2,
+                List.of(validNode),
+                List.of()
+        );
+
+        assertDoesNotThrow(() -> validator.validate(current));
+        assertThrows(ResponseStatusException.class, () -> validator.validate(fourDotTwo));
+        assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(fourDotTwo));
+    }
+
+    @Test
     void rejectsNonzeroMinorAndAcceptsModelOutputUpsertInThreeDotZero() {
         ModelOutputNodeDefinition output = new ModelOutputNodeDefinition(
                 UUID.randomUUID().toString(),
@@ -187,6 +256,67 @@ class CanvasDefinitionValidatorTest {
         String serialized = new ObjectMapper().writeValueAsString(current);
         assertFalse(serialized.contains("valueModelId"));
         assertFalse(serialized.contains("modelId"));
+    }
+
+    @Test
+    void acceptsKafkaInputFormatsOnlyFromFourDotFourAndNormalizesLegacyDefaults() {
+        KafkaInputNodeDefinition textInput = new KafkaInputNodeDefinition(
+                UUID.randomUUID().toString(),
+                "文本事件输入",
+                layout(),
+                new KafkaInputConfiguration(
+                        UUID.randomUUID().toString(),
+                        "text-events",
+                        new KafkaValueSchema(List.of()),
+                        "text_events",
+                        KafkaStartingOffsets.LATEST,
+                        10,
+                        KafkaInputValueFormat.TEXT,
+                        List.of(KafkaInputMetadataField.KEY, KafkaInputMetadataField.OFFSET)
+                )
+        );
+        CanvasDefinition current = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(textInput),
+                List.of()
+        );
+        CanvasDefinition previous = new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                3,
+                List.of(textInput),
+                List.of()
+        );
+
+        assertDoesNotThrow(() -> validator.validate(current));
+        assertThrows(ResponseStatusException.class, () -> validator.validate(previous));
+
+        KafkaInputNodeDefinition legacyInput = new KafkaInputNodeDefinition(
+                textInput.id(),
+                "JSON 事件输入",
+                layout(),
+                new KafkaInputConfiguration(
+                        UUID.randomUUID().toString(),
+                        "json-events",
+                        new KafkaValueSchema(List.of(new KafkaValueColumn(
+                                "event_id", PlatformDataType.LONG,
+                                null, null, null, false, null
+                        ))),
+                        "json_events",
+                        KafkaStartingOffsets.LATEST,
+                        10
+                )
+        );
+        CanvasDefinition upgraded = upgrader.upgradeToCurrent(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                3,
+                List.of(legacyInput),
+                List.of()
+        ));
+        KafkaInputConfiguration normalized = ((KafkaInputNodeDefinition) upgraded.nodes().getFirst())
+                .configuration();
+        assertEquals(KafkaInputValueFormat.JSON, normalized.valueFormat());
+        assertEquals(List.of(), normalized.metadataFields());
     }
 
     @Test
@@ -702,6 +832,25 @@ class CanvasDefinitionValidatorTest {
 
     private static CanvasNodeLayout layout() {
         return new CanvasNodeLayout(0d, 0d, 240d, 120d);
+    }
+
+    private static TypeCastNodeDefinition epochTimestampTypeCast(PlatformDataType targetType) {
+        return new TypeCastNodeDefinition(
+                UUID.randomUUID().toString(),
+                "Epoch 时间戳转换",
+                layout(),
+                new TypeCastConfiguration(List.of(new TypeCastOperation(
+                        UUID.randomUUID().toString(),
+                        "events",
+                        new ProcessorOutput.CreateNewTable("typed_events"),
+                        List.of(new ColumnTypeCast(
+                                "event_time",
+                                new PlatformTypeDefinition(targetType, null, null, null, null),
+                                CastFailureStrategy.FAIL,
+                                EpochTimestampUnit.MILLISECONDS
+                        ))
+                )))
+        );
     }
 
     private static CanvasDefinition definition(

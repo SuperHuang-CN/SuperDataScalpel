@@ -16,6 +16,7 @@ import cn.superhuang.data.scalpel.business.task.domain.LocalSqlTaskInput;
 import cn.superhuang.data.scalpel.business.task.domain.ModelQualityTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.SparkJarTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
+import cn.superhuang.data.scalpel.business.task.domain.TaskRunExecutionMode;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskOverlapPolicy;
 import cn.superhuang.data.scalpel.business.task.domain.TaskSchedule;
@@ -32,6 +33,9 @@ import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskScheduleRepository;
 import cn.superhuang.data.scalpel.business.task.execution.service.TaskExecutionOutboxService;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarTrialPreviewResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.CanvasTrialPreviewResponse;
+import cn.superhuang.data.scalpel.business.task.web.request.CanvasTrialRunRequest;
 import cn.superhuang.data.scalpel.contract.execution.CancelExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
@@ -41,9 +45,16 @@ import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import cn.superhuang.data.scalpel.contract.execution.SubmitExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionUserJarArtifact;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarExecutionPayload;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialPreview;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialSpec;
 import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
+import cn.superhuang.data.scalpel.contract.task.CanvasDefinition;
+import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
+import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.query.ReadOnlySelectQueryParser;
@@ -62,14 +73,19 @@ import org.springframework.web.server.ResponseStatusException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import tools.jackson.databind.ObjectMapper;
+import tools.jackson.databind.JsonNode;
 
 import java.time.Duration;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.security.MessageDigest;
+import java.nio.charset.StandardCharsets;
 import java.util.HexFormat;
 import java.util.ArrayList;
+import java.util.ArrayDeque;
 import java.util.Collection;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -271,6 +287,187 @@ public class TaskRunService {
         return readArtifact(runId, ArtifactKind.LOG);
     }
 
+    public SparkJarTrialPreviewResponse trialPreview(UUID runId) {
+        TrialPreviewRunReference run = requireTransactionResult(readTransactionTemplate.execute(status -> {
+            TaskRun entity = requireRun(runId);
+            return new TrialPreviewRunReference(
+                    entity.getExecutionMode(),
+                    entity.getStatus(),
+                    entity.getTaskType(),
+                    entity.getExecutionRunId(),
+                    entity.getExternalExecutionId(),
+                    entity.getAttempt());
+        }));
+        if (run.executionMode() != TaskRunExecutionMode.TRIAL) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前运行不是在线试运行");
+        }
+        if (run.status() == TaskRunStatus.QUEUED || run.status() == TaskRunStatus.RUNNING
+                || run.status() == TaskRunStatus.CANCEL_REQUESTED || run.status() == TaskRunStatus.STOP_REQUESTED) {
+            return new SparkJarTrialPreviewResponse(runId, run.status(), null);
+        }
+        byte[] result;
+        try {
+            result = resultArtifact(runId).content();
+        } catch (ResponseStatusException exception) {
+            if (exception.getStatusCode().value() == HttpStatus.NOT_FOUND.value()
+                    && run.status() != TaskRunStatus.SUCCESS) {
+                return new SparkJarTrialPreviewResponse(runId, run.status(), null);
+            }
+            throw exception;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(result);
+            if (!isCompatibleTrialPreviewResult(
+                    root, run.taskType(), run.executionRunId(), run.executionId(), run.attempt())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前试运行结果格式不受支持");
+            }
+            JsonNode previewNode = root.path("trialPreview");
+            SparkJarTrialPreview preview = previewNode.isMissingNode() || previewNode.isNull()
+                    ? null : objectMapper.treeToValue(previewNode, SparkJarTrialPreview.class);
+            return new SparkJarTrialPreviewResponse(runId, run.status(), preview);
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "无法解析试运行预览结果", exception);
+        }
+    }
+
+    public CanvasTrialPreviewResponse canvasTrialPreview(UUID runId) {
+        TrialPreviewRunReference run = trialPreviewRunReference(runId);
+        if (run.executionMode() != TaskRunExecutionMode.TRIAL
+                || run.taskType() != TaskType.SPARK_CANVAS) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前运行不是 Canvas 试运行");
+        }
+        if (active(run.status())) {
+            return new CanvasTrialPreviewResponse(runId, run.status(), null);
+        }
+        byte[] result;
+        try {
+            result = resultArtifact(runId).content();
+        } catch (ResponseStatusException exception) {
+            if (exception.getStatusCode().value() == HttpStatus.NOT_FOUND.value()
+                    && run.status() != TaskRunStatus.SUCCESS) {
+                return new CanvasTrialPreviewResponse(runId, run.status(), null);
+            }
+            throw exception;
+        }
+        try {
+            JsonNode root = objectMapper.readTree(result);
+            if (!isCompatibleCanvasTrialPreviewResult(
+                    root, run.taskType(), run.executionRunId(), run.executionId(), run.attempt())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前 Canvas 试运行结果格式不受支持");
+            }
+            JsonNode previewNode = root.path("canvasTrialPreview");
+            CanvasTrialPreview preview = previewNode.isMissingNode() || previewNode.isNull()
+                    ? null : objectMapper.treeToValue(previewNode, CanvasTrialPreview.class);
+            return new CanvasTrialPreviewResponse(runId, run.status(), preview);
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "无法解析 Canvas 试运行预览结果", exception);
+        }
+    }
+
+    public TaskRunResponse submitCanvasTrial(UUID taskId, CanvasTrialRunRequest request) {
+        if (request == null) throw new IllegalArgumentException("Canvas 试运行请求不能为空");
+        CanvasTrialSpec trialSpec = new CanvasTrialSpec(
+                request.targetNodeId(), request.tableName(), request.columnNames());
+        CanvasTrialRunSource source = requireTransactionResult(readTransactionTemplate.execute(status -> {
+            DataTask task = requireTask(taskId);
+            if (task.getType() != TaskType.SPARK_CANVAS) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "试运行仅支持批处理 Spark Canvas 任务");
+            }
+            if (task.getStatus() != TaskStatus.DRAFT && task.getStatus() != TaskStatus.DISABLED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务状态不允许 Canvas 试运行");
+            }
+            if (runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+            }
+            CanvasTaskDefinition persisted = canvasDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.CONFLICT, "请先至少保存一次 Canvas 定义后再试运行"));
+            if (persisted.getVersion() != request.baseDefinitionVersion()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 定义版本已变化，请刷新后重试");
+            }
+            return new CanvasTrialRunSource(
+                    persisted.getVersion(), task.getComputeEngineId(),
+                    pruneCanvasTrialDefinition(request.definition(), trialSpec.targetNodeId()), trialSpec);
+        }));
+        CanvasDefinition trialDefinition = canvasDefinitionService.validateTrialDraft(taskId, source.definition());
+        ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
+        CanvasTaskRunPreparationService.Preparation preparation =
+                canvasPreparationService.prepareTrial(trialDefinition, trialSpec);
+        TaskRunArtifactStorage storage = requireArtifactStorage();
+        UUID runId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        Instant deadline = createdAt.plus(canvasProperties.timeout()).truncatedTo(ChronoUnit.SECONDS);
+        String base = "task-runs/%s/attempts/1/".formatted(runId);
+        String manifestKey = base + "manifest.json";
+        String resultKey = base + "result.json";
+        String logKey = base + "console.log";
+        CanvasTaskRunManifest manifest = new CanvasTaskRunManifest(
+                CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
+                new CanvasTaskRunManifest.Execution(
+                        executionId, runId, taskId, 1, source.definitionVersion(), createdAt, deadline),
+                new CanvasTaskRunManifest.Task(
+                        cn.superhuang.data.scalpel.contract.task.TaskType.CANVAS,
+                        trialDefinition, cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode.BATCH),
+                preparation.metadataSnapshot(), preparation.runtimeDataSources(),
+                null, preparation.runtimeFileStorage(), preparation.runtimeFileInputs(),
+                snapshotSyncProperties.toManifestLimits(), ExecutionTaskType.SPARK_CANVAS,
+                null, null, null, trialSpec);
+        byte[] manifestBytes = writeBytes(manifest);
+        String manifestSha256 = sha256(manifestBytes);
+        try {
+            storage.store(manifestKey, manifestBytes, "application/json");
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "任务制品存储当前不可用", exception);
+        }
+        String snapshot = writeSnapshot(new CanvasRunSnapshotReference(
+                1, executionId, 1, source.definitionVersion(), route.engineId(), manifestKey, manifestSha256));
+        try {
+            TaskRun run = requireTransactionResult(transactionTemplate.execute(status -> {
+                DataTask currentTask = taskRepository.findByIdForUpdate(taskId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+                CanvasTaskDefinition currentDefinition = canvasDefinitionRepository.findByTaskId(taskId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Canvas 任务定义不存在"));
+                if (currentTask.getType() != TaskType.SPARK_CANVAS
+                        || currentTask.getStatus() != TaskStatus.DRAFT
+                        && currentTask.getStatus() != TaskStatus.DISABLED
+                        || currentDefinition.getVersion() != source.definitionVersion()) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态或 Canvas 定义已变化，请重试");
+                }
+                if (runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+                }
+                if (!route.engineId().equals(currentTask.getComputeEngineId())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重试");
+                }
+                computeEngineExecutionService.assertUnchanged(route);
+                canvasPreparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
+                canvasPreparationService.assertModelsUnchanged(preparation.modelVersions());
+                TaskRun queued = TaskRun.queueDispatchedCanvasTrial(
+                        runId, taskId, source.definitionVersion(), snapshot, executionId, 1,
+                        deadline, route.engineId(), route.commandTopic());
+                queued.captureCanvasTrialContext(source.trialSpec());
+                queued.attachArtifacts(manifestKey, resultKey, logKey);
+                TaskRun saved = runRepository.saveAndFlush(queued);
+                executionOutboxService.enqueue(route.commandTopic(), new SubmitExecutionCommand(
+                        1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, Instant.now(),
+                        route.engineId(), executionId, runId, 1, taskId, ExecutionTaskType.SPARK_CANVAS,
+                        source.definitionVersion(), deadline,
+                        new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey)));
+                return saved;
+            }));
+            return TaskRunResponse.from(run);
+        } catch (RuntimeException exception) {
+            deleteOrphanManifest(storage, manifestKey, exception);
+            throw exception;
+        }
+    }
+
     public TaskRunResponse cancel(UUID runId) {
         return requireTransactionResult(transactionTemplate.execute(status -> {
             TaskRun run = requireRunForUpdate(runId);
@@ -348,6 +545,115 @@ public class TaskRunService {
         TaskRunResponse response = submitSparkJar(taskId, CanvasRunTrigger.manual());
         if (response == null) throw new IllegalStateException("手动 Spark JAR 运行未创建任务实例");
         return response;
+    }
+
+    public TaskRunResponse submitSparkJarTrial(
+            UUID taskId,
+            String sourceSha256,
+            byte[] userJar,
+            String jarSha256
+    ) {
+        if (sourceSha256 == null || sourceSha256.isBlank() || userJar == null || userJar.length == 0
+                || !Objects.equals(jarSha256, sha256(userJar))) {
+            throw new IllegalArgumentException("试运行编译制品无效");
+        }
+        SparkJarRunSource source = requireTransactionResult(readTransactionTemplate.execute(status -> {
+            DataTask task = requireTask(taskId);
+            if (task.getType() != TaskType.SPARK_JAR) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "在线试运行仅支持批处理 Spark JAR 任务");
+            }
+            if (task.getStatus() != TaskStatus.DRAFT && task.getStatus() != TaskStatus.DISABLED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务状态不允许在线试运行");
+            }
+            if (runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+            }
+            SparkJarTaskDefinition definition = sparkJarDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR 任务定义不存在"));
+            String savedSource = definition.getOnlineSourceCode();
+            if (savedSource == null || !sourceSha256.equals(sha256(savedSource.getBytes(StandardCharsets.UTF_8)))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "在线源码已变化，请重新试运行");
+            }
+            return new SparkJarRunSource(definition.getVersion(), task.getComputeEngineId(), definition);
+        }));
+        ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
+        SparkJarTaskRunPreparationService.Preparation preparation = sparkJarPreparationService.prepareTrial(source.definition());
+        TaskRunArtifactStorage storage = requireArtifactStorage();
+        UUID runId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        Instant deadline = createdAt.plusSeconds(source.definition().getTimeoutSeconds()).truncatedTo(ChronoUnit.SECONDS);
+        SparkExecutionResourceSpec executionResources = computeEngineExecutionService.resolveResources(route,
+                sparkJarDefinitionService.resolvedExecutionResources(taskId, source.definition()));
+        String base = "task-runs/%s/attempts/1/".formatted(runId);
+        String manifestKey = base + "manifest.json";
+        String runJarKey = base + "user-job.jar";
+        String resultKey = base + "result.json";
+        String logKey = base + "console.log";
+        CanvasTaskRunManifest manifest = new CanvasTaskRunManifest(
+                CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
+                new CanvasTaskRunManifest.Execution(executionId, runId, taskId, 1,
+                        source.definitionVersion(), createdAt, deadline),
+                null, preparation.metadataSnapshot(), preparation.runtimeDataSources(),
+                null, null, List.of(), CanvasTaskRunManifest.SnapshotSyncLimits.defaults(),
+                ExecutionTaskType.SPARK_JAR, null, preparation.payload(), null);
+        byte[] manifestBytes = writeBytes(manifest);
+        String manifestSha = sha256(manifestBytes);
+        try {
+            storage.store(runJarKey, userJar, "application/java-archive");
+            storage.store(manifestKey, manifestBytes, "application/json");
+        } catch (RuntimeException exception) {
+            deleteUnusedManifest(storage, runJarKey);
+            deleteUnusedManifest(storage, manifestKey);
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE, "任务制品存储当前不可用", exception);
+        }
+        String fileName = "online-trial-" + sourceSha256.substring(0, 12) + ".jar";
+        String snapshot = writeSnapshot(new SparkJarRunSnapshotReference(
+                2, executionId, 1, source.definitionVersion(), route.engineId(), fileName,
+                jarSha256, userJar.length, "com.example.datascalpel.ExampleSparkJob", 1,
+                preparation.payload().parameters(), preparation.payload().sparkConf(),
+                preparation.payload().resourceBindings(), source.definition().getTimeoutSeconds(), executionResources));
+        try {
+            TaskRun run = requireTransactionResult(transactionTemplate.execute(status -> {
+                DataTask currentTask = taskRepository.findByIdForUpdate(taskId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+                SparkJarTaskDefinition current = sparkJarDefinitionRepository.findByTaskId(taskId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Spark JAR 任务定义不存在"));
+                if (currentTask.getType() != TaskType.SPARK_JAR
+                        || current.getVersion() != source.definitionVersion()
+                        || current.getOnlineSourceCode() == null
+                        || !sourceSha256.equals(sha256(current.getOnlineSourceCode().getBytes(StandardCharsets.UTF_8)))) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "任务定义或在线源码已变化，请重新试运行");
+                }
+                if (runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_STATUSES)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的实例");
+                }
+                if (!route.engineId().equals(currentTask.getComputeEngineId())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新试运行");
+                }
+                computeEngineExecutionService.assertUnchanged(route);
+                sparkJarPreparationService.assertUnchanged(preparation);
+                TaskRun queued = TaskRun.queueDispatchedSparkJarTrial(
+                        runId, taskId, source.definitionVersion(), snapshot, executionId, 1,
+                        deadline, route.engineId(), route.commandTopic());
+                queued.attachUserJar(fileName, jarSha256, userJar.length, runJarKey);
+                queued.attachArtifacts(manifestKey, resultKey, logKey);
+                TaskRun saved = runRepository.saveAndFlush(queued);
+                executionOutboxService.enqueue(route.commandTopic(), new SubmitExecutionCommand(
+                        1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, Instant.now(), route.engineId(),
+                        executionId, runId, 1, taskId, ExecutionTaskType.SPARK_JAR,
+                        source.definitionVersion(), deadline,
+                        new ExecutionArtifactLocation(manifestKey, manifestSha, resultKey, logKey), List.of(), 0,
+                        new ExecutionUserJarArtifact(runJarKey, jarSha256, userJar.length),
+                        preparation.payload().sparkConf(), executionResources));
+                return saved;
+            }));
+            return TaskRunResponse.from(run);
+        } catch (RuntimeException exception) {
+            deleteOrphanManifest(storage, manifestKey, exception);
+            deleteOrphanManifest(storage, runJarKey, exception);
+            throw exception;
+        }
     }
 
     private TaskRunResponse submitSparkJar(UUID taskId, CanvasRunTrigger trigger) {
@@ -1200,6 +1506,14 @@ public class TaskRunService {
     ) {
     }
 
+    private record CanvasTrialRunSource(
+            int definitionVersion,
+            UUID computeEngineId,
+            CanvasDefinition definition,
+            CanvasTrialSpec trialSpec
+    ) {
+    }
+
     private record QualityRunSource(
             int definitionVersion,
             UUID modelId,
@@ -1278,6 +1592,131 @@ public class TaskRunService {
     }
 
     private record ArtifactReference(UUID runId, String objectKey) {
+    }
+
+    static boolean isCompatibleTrialPreviewResult(
+            JsonNode root,
+            TaskType taskType,
+            UUID executionRunId,
+            UUID executionId,
+            Integer attempt
+    ) {
+        int schemaVersion = root == null ? -1 : root.path("schemaVersion").asInt();
+        return root != null
+                && schemaVersion >= 9 && schemaVersion <= 11
+                && (taskType == TaskType.SPARK_JAR || taskType == TaskType.SPARK_STREAMING_JAR)
+                && executionRunId != null
+                && executionId != null
+                && attempt != null
+                && executionRunId.toString().equals(root.path("runId").asText())
+                && executionId.toString().equals(root.path("executionId").asText())
+                && attempt == root.path("attempt").asInt(-1)
+                && taskType.name().equals(root.path("taskType").asText());
+    }
+
+    static boolean isCompatibleCanvasTrialPreviewResult(
+            JsonNode root,
+            TaskType taskType,
+            UUID executionRunId,
+            UUID executionId,
+            Integer attempt
+    ) {
+        int schemaVersion = root == null ? -1 : root.path("schemaVersion").asInt();
+        return root != null
+                && schemaVersion >= 10 && schemaVersion <= 11
+                && taskType == TaskType.SPARK_CANVAS
+                && executionRunId != null
+                && executionId != null
+                && attempt != null
+                && executionRunId.toString().equals(root.path("runId").asText())
+                && executionId.toString().equals(root.path("executionId").asText())
+                && attempt == root.path("attempt").asInt(-1)
+                && "SPARK_CANVAS".equals(root.path("taskType").asText());
+    }
+
+    private TrialPreviewRunReference trialPreviewRunReference(UUID runId) {
+        return requireTransactionResult(readTransactionTemplate.execute(status -> {
+            TaskRun entity = requireRun(runId);
+            return new TrialPreviewRunReference(
+                    entity.getExecutionMode(), entity.getStatus(), entity.getTaskType(),
+                    entity.getExecutionRunId(), entity.getExternalExecutionId(), entity.getAttempt());
+        }));
+    }
+
+    private static boolean active(TaskRunStatus status) {
+        return status == TaskRunStatus.QUEUED || status == TaskRunStatus.RUNNING
+                || status == TaskRunStatus.CANCEL_REQUESTED || status == TaskRunStatus.STOP_REQUESTED;
+    }
+
+    private static CanvasDefinition pruneCanvasTrialDefinition(
+            CanvasDefinition definition,
+            String targetNodeId
+    ) {
+        if (definition == null || definition.nodes() == null || definition.edges() == null) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Canvas 试运行定义不完整");
+        }
+        Map<String, CanvasNodeDefinition> nodesById = new LinkedHashMap<>();
+        for (CanvasNodeDefinition node : definition.nodes()) {
+            if (node == null || node.id() == null || node.id().isBlank()
+                    || nodesById.putIfAbsent(node.id(), node) != null) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Canvas 节点 ID 为空或重复");
+            }
+        }
+        CanvasNodeDefinition target = nodesById.get(targetNodeId);
+        if (target == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "试运行目标节点不存在");
+        }
+        if (isOutputNode(target.nodeType())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "第一阶段不支持试运行到 Output 节点");
+        }
+        Map<String, List<String>> predecessors = new LinkedHashMap<>();
+        nodesById.keySet().forEach(nodeId -> predecessors.put(nodeId, new ArrayList<>()));
+        for (CanvasEdgeDefinition edge : definition.edges()) {
+            if (edge == null || edge.sourceNodeId() == null || edge.targetNodeId() == null
+                    || !nodesById.containsKey(edge.sourceNodeId())
+                    || !nodesById.containsKey(edge.targetNodeId())) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Canvas 连线引用了无效节点");
+            }
+            predecessors.get(edge.targetNodeId()).add(edge.sourceNodeId());
+        }
+        Set<String> included = new HashSet<>();
+        ArrayDeque<String> pending = new ArrayDeque<>();
+        pending.add(targetNodeId);
+        while (!pending.isEmpty()) {
+            String nodeId = pending.removeFirst();
+            if (!included.add(nodeId)) continue;
+            predecessors.getOrDefault(nodeId, List.of()).forEach(pending::addLast);
+        }
+        return new CanvasDefinition(
+                definition.schemaVersion(),
+                definition.schemaMinorVersion(),
+                definition.nodes().stream().filter(node -> included.contains(node.id())).toList(),
+                definition.edges().stream().filter(edge -> included.contains(edge.sourceNodeId())
+                        && included.contains(edge.targetNodeId())).toList());
+    }
+
+    private static boolean isOutputNode(CanvasNodeType type) {
+        return switch (type) {
+            case MODEL_OUTPUT, MODEL_SNAPSHOT_SYNC_OUTPUT,
+                    JDBC_OUTPUT, JDBC_SNAPSHOT_SYNC_OUTPUT,
+                    KAFKA_OUTPUT, FILE_OUTPUT -> true;
+            default -> false;
+        };
+    }
+
+    /**
+     * Identity values in result.json are generated for the dispatched execution, not the
+     * management database row. Keep a scalar snapshot while the artifact is read outside the
+     * transaction so failed trial runs can safely expose an empty (or partial) preview.
+     */
+    private record TrialPreviewRunReference(
+            TaskRunExecutionMode executionMode,
+            TaskRunStatus status,
+            TaskType taskType,
+            UUID executionRunId,
+            UUID executionId,
+            Integer attempt
+    ) {
     }
 
     private enum ArtifactKind {

@@ -108,11 +108,6 @@
   min-height: 0;
 }
 
-.data-service-detail-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content,
-.data-service-detail-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane {
-  padding: 10px 12px 12px;
-}
-
 .data-service-detail-tab-panel {
   display: flex;
   flex-direction: column;

@@ -66,7 +66,7 @@ BEGIN
          AND attribute_row.attnum = ANY (constraint_row.conkey)
         WHERE constraint_row.conrelid = 'task_run'::regclass
           AND constraint_row.contype = 'c'
-          AND attribute_row.attname IN ('task_type', 'user_jar_cleanup_status')
+          AND attribute_row.attname IN ('task_type', 'user_jar_cleanup_status', 'execution_mode')
     LOOP
         EXECUTE format('ALTER TABLE task_run DROP CONSTRAINT %I', constraint_name);
     END LOOP;
@@ -81,6 +81,8 @@ ALTER TABLE task_run
     )),
     ADD CONSTRAINT task_run_user_jar_cleanup_status_check
     CHECK (user_jar_cleanup_status IS NULL OR user_jar_cleanup_status IN ('PENDING', 'COMPLETED')),
+    ADD CONSTRAINT task_run_execution_mode_check
+    CHECK (execution_mode IN ('REAL', 'SIMULATED', 'TRIAL')),
     ADD CONSTRAINT task_run_user_jar_metadata_check
     CHECK (
         task_type <> 'SPARK_JAR'
@@ -104,6 +106,8 @@ CREATE TABLE IF NOT EXISTS task_spark_jar_definition (
     job_api_version integer,
     parameters_json text NOT NULL DEFAULT '[]',
     spark_conf_json text NOT NULL DEFAULT '[]',
+    online_source_code text,
+    online_compiled_source_sha256 varchar(64),
     timeout_seconds integer NOT NULL DEFAULT 3600,
     version integer NOT NULL DEFAULT 1,
     CONSTRAINT task_spark_jar_definition_pkey PRIMARY KEY (id),
@@ -120,6 +124,13 @@ CREATE UNIQUE INDEX IF NOT EXISTS uk_task_spark_jar_definition_task
 CREATE UNIQUE INDEX IF NOT EXISTS uk_task_spark_jar_definition_object
     ON task_spark_jar_definition (jar_object_key)
     WHERE jar_object_key IS NOT NULL;
+
+-- Optional online Java authoring state. Draft saves do not change the
+-- production definition version; the compiled hash identifies the source of
+-- the current effective JAR.
+ALTER TABLE task_spark_jar_definition
+    ADD COLUMN IF NOT EXISTS online_source_code text,
+    ADD COLUMN IF NOT EXISTS online_compiled_source_sha256 varchar(64);
 
 CREATE TABLE IF NOT EXISTS task_spark_jar_resource_binding (
     id uuid NOT NULL,
@@ -145,4 +156,3 @@ CREATE INDEX IF NOT EXISTS idx_task_spark_jar_binding_resource
     ON task_spark_jar_resource_binding (resource_type, resource_id);
 
 COMMIT;
-

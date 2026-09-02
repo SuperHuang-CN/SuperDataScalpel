@@ -7,12 +7,22 @@ const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.FileDatasetInp
   if (data.configuration.tables.length === 0) return <NodeEmpty>请选择一个或多个文件数据集表</NodeEmpty>;
   const summary = data.summary?.kind === 'FILE_DATASET' ? data.summary : null;
   const items = data.configuration.tables.map((selection, index) => {
-    const table = data.compilation?.outputTables[index];
+    const metadataTable = summary?.tables?.find(
+      (table) => table.fileDatasetTableId === selection.fileDatasetTableId,
+    );
+    const compiledTable = data.compilation?.outputTables.find(
+      (table) => table.origin?.kind === 'FILE_DATASET'
+        && table.origin.fileDatasetTableId === selection.fileDatasetTableId,
+    ) ?? data.compilation?.outputTables[index];
+    const table = compiledTable ?? metadataTable?.schema;
     return {
       key: selection.fileDatasetTableId,
-      label: table?.name ?? (index === 0 ? summary?.tableCode : null) ?? selection.fileDatasetTableId.slice(0, 8),
-      value: geometryText(geometryColumn(table)) ?? (index === 0 ? summary?.datasetType : undefined),
-      meta: <NodeFieldCount table={table} />,
+      label: table?.name ?? metadataTable?.tableCode
+        ?? (index === 0 ? summary?.tableCode : null)
+        ?? selection.fileDatasetTableId.slice(0, 8),
+      value: geometryText(geometryColumn(table)) ?? metadataTable?.datasetType
+        ?? (index === 0 ? summary?.datasetType : undefined),
+      meta: <NodeFieldCount table={table} unresolvedLabel="字段加载中" />,
     };
   });
   return <NodeContent variant="source">

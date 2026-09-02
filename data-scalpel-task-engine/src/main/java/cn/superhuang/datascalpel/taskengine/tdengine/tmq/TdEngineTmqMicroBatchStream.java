@@ -41,6 +41,18 @@ public final class TdEngineTmqMicroBatchStream implements MicroBatchStream, Supp
     @Override
     public Offset initialOffset() {
         if (lastCommitted != null) return lastCommitted;
+        if (options.initialSourceOffset() != null) {
+            TdEngineTmqOffset restored = TdEngineTmqOffset.parse(options.initialSourceOffset());
+            if (!options.topic().equals(restored.topic())) {
+                throw new TdEngineTmqException(
+                        "TDENGINE_TMQ_TOPIC_CHANGED",
+                        "继承的 TMQ Offset 不属于当前 Topic",
+                        false
+                );
+            }
+            lastCommitted = restored;
+            return restored;
+        }
         try (TdEngineTmqConsumer consumer = consumerFactory.create(options,
                 groupId, options.clientId("offsets-" + TdEngineTmqOptions.attemptId()))) {
             Map<Integer, Long> offsets = vGroupOffsets(options.startingOffsets().equals("earliest")

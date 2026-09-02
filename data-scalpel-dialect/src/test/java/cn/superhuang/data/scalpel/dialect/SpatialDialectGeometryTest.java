@@ -14,6 +14,7 @@ import cn.superhuang.data.scalpel.dialect.model.PrimaryKeyMetadata;
 import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
+import cn.superhuang.data.scalpel.dialect.model.TableChangeStrategy;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
@@ -38,6 +39,7 @@ import java.util.function.Function;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -66,7 +68,7 @@ class SpatialDialectGeometryTest {
             assertEquals(
                     PlatformTypeDefinition.geometry(geometry),
                     postgres.mapToPlatformType(jdbcGeometry(
-                            "geometry", kind.name(), 990001, "epsg", 4326,
+                            "\"public\".\"geometry\"", kind.name(), 990001, "epsg", 4326,
                             CoordinateDimension.XY, true, true
                     )).definition(),
                     kind.name()
@@ -123,46 +125,31 @@ class SpatialDialectGeometryTest {
     }
 
     @Test
-    void resolvesDatabaseLocalSpatialIdsWhenPlanningDdlWithoutCreatingIndexes() throws Exception {
+    void createsGenericGeometryWithoutResolvingSpatialReferenceIds() throws Exception {
         Connection postgis = connection("PostgreSQL", 16, sql -> {
             if (sql.contains("pg_extension")) {
                 return List.of(Map.of("1", "postgis_runtime"));
-            }
-            if (sql.contains("spatial_ref_sys")) {
-                return List.of(Map.of(
-                        "srid", 990001,
-                        "auth_name", "EPSG",
-                        "auth_srid", 4326
-                ));
             }
             return List.of();
         });
         String postgresSql = postgres.planCreateTable(postgis, definition(
                 POSTGRES_TABLE, GeometryKind.POINT, 4326, true
         )).statements().getFirst();
-        assertTrue(postgresSql.contains("\"postgis_runtime\".\"geometry\"(POINT,990001)"));
+        assertTrue(postgresSql.contains("\"shape\" \"postgis_runtime\".\"geometry\""));
+        assertFalse(postgresSql.contains("POINT,"));
         assertNoSpatialIndex(postgresSql);
 
-        Connection mysql8 = connection("MySQL", 8, sql -> {
-            if (sql.contains("ST_SPATIAL_REFERENCE_SYSTEMS")) {
-                return List.of(Map.of(
-                        "SRS_ID", 880001,
-                        "ORGANIZATION", "EPSG",
-                        "ORGANIZATION_COORDSYS_ID", 4326
-                ));
-            }
-            return List.of();
-        });
+        Connection mysql8 = connection("MySQL", 8, ignored -> List.of());
         String mysqlSql = mysql.planCreateTable(mysql8, definition(
                 MYSQL_TABLE, GeometryKind.MULTIPOLYGON, 4326, false
         )).statements().getFirst();
-        assertTrue(mysqlSql.contains("`shape` MULTIPOLYGON SRID 880001 NOT NULL"));
+        assertTrue(mysqlSql.contains("`shape` GEOMETRY NOT NULL"));
         assertTrue(mysqlSql.endsWith(" ENGINE=InnoDB"));
         assertNoSpatialIndex(mysqlSql);
     }
 
     @Test
-    void rejectsMissingRuntimeCapabilityUnknownCrsAndDuplicateCrsMappings() {
+    void rejectsMissingPostGisAndUnsupportedMySqlVersions() {
         Connection noPostgis = connection("PostgreSQL", 16, ignored -> List.of());
         IllegalArgumentException missingPostgis = assertThrows(
                 IllegalArgumentException.class,
@@ -171,29 +158,6 @@ class SpatialDialectGeometryTest {
                 )
         );
         assertTrue(missingPostgis.getMessage().contains("PostGIS"));
-
-        Function<String, List<Map<String, Object>>> unknownCrsRows = sql ->
-                sql.contains("pg_extension") ? List.of(Map.of("1", "postgis")) : List.of();
-        IllegalArgumentException unknownPostgisCrs = assertThrows(
-                IllegalArgumentException.class,
-                () -> postgres.planCreateTable(
-                        connection("PostgreSQL", 16, unknownCrsRows),
-                        definition(POSTGRES_TABLE, GeometryKind.POINT, 999999, true)
-                )
-        );
-        assertTrue(unknownPostgisCrs.getMessage().contains("EPSG:999999"));
-
-        IllegalArgumentException duplicateMySqlCrs = assertThrows(
-                IllegalArgumentException.class,
-                () -> mysql.planCreateTable(
-                        connection("MySQL", 8, sql -> List.of(
-                                Map.of("SRS_ID", 880001, "ORGANIZATION", "EPSG", "ORGANIZATION_COORDSYS_ID", 4326),
-                                Map.of("SRS_ID", 880002, "ORGANIZATION", "EPSG", "ORGANIZATION_COORDSYS_ID", 4326)
-                        )),
-                        definition(MYSQL_TABLE, GeometryKind.POINT, 4326, true)
-                )
-        );
-        assertTrue(duplicateMySqlCrs.getMessage().contains("多个 SRS ID"));
 
         for (Connection unsupported : List.of(
                 connection("MySQL", 5, ignored -> List.of()),
@@ -210,24 +174,50 @@ class SpatialDialectGeometryTest {
     }
 
     @Test
-    void comparesGeometryKindCrsDimensionAndNullabilityExactly() {
+    void comparesGeometryAsOnePhysicalTypeAndStillChecksNullability() {
         TableDefinition expected = definition(POSTGRES_TABLE, GeometryKind.POINT, 4326, true);
         assertTrue(postgres.compareTable(expected, metadata(
                 POSTGRES_TABLE,
                 spatialColumn("POINT", 990001, "EPSG", 4326, CoordinateDimension.XY, true)
         )).compatible());
 
-        for (ColumnMetadata drifted : List.of(
+        for (ColumnMetadata compatible : List.of(
                 spatialColumn("GEOMETRY", 990001, "EPSG", 4326, CoordinateDimension.XY, true),
                 spatialColumn("LINESTRING", 990001, "EPSG", 4326, CoordinateDimension.XY, true),
                 spatialColumn("POINT", 990001, "EPSG", 3857, CoordinateDimension.XY, true),
                 spatialColumn("POINT", 990001, "EPSG", 4326, CoordinateDimension.XYZ, true)
         )) {
-            var comparison = postgres.compareTable(expected, metadata(POSTGRES_TABLE, drifted));
-            assertFalse(comparison.compatible());
-            assertTrue(comparison.differences().stream()
-                    .anyMatch(difference -> difference.type() == TableStructureDifferenceType.TYPE_MISMATCH));
+            assertTrue(postgres.compareTable(expected, metadata(POSTGRES_TABLE, compatible)).compatible());
         }
+
+        ColumnMetadata qualifiedGeometry = new ColumnMetadata(
+                "shape", 1, Types.OTHER, "\"public\".\"geometry\"", LogicalType.OTHER,
+                Integer.MAX_VALUE, null, null, true, null, false, false, null,
+                new SpatialColumnMetadata("geometry", null, null, null, null, false, false)
+        );
+        assertTrue(postgres.compareTable(expected, metadata(POSTGRES_TABLE, qualifiedGeometry)).compatible());
+        assertNull(postgres.snapshotTableDefinition(metadata(POSTGRES_TABLE, qualifiedGeometry))
+                .columns().getFirst().geometry());
+
+        ColumnMetadata nonGeometry = new ColumnMetadata(
+                "shape", 1, Types.VARCHAR, "varchar", LogicalType.STRING,
+                100, null, null, true, null, false, false, null
+        );
+        assertFalse(postgres.compareTable(expected, metadata(POSTGRES_TABLE, nonGeometry)).compatible());
+
+        for (String postGisNonGeometryType : List.of("geography", "raster")) {
+            ColumnMetadata postGisNonGeometry = new ColumnMetadata(
+                    "shape", 1, Types.OTHER, postGisNonGeometryType, LogicalType.OTHER,
+                    null, null, null, true, null, false, false, null
+            );
+            assertFalse(postgres.compareTable(expected, metadata(POSTGRES_TABLE, postGisNonGeometry)).compatible());
+        }
+
+        ColumnMetadata mysqlLineString = new ColumnMetadata(
+                "shape", 1, Types.OTHER, "LINESTRING", LogicalType.OTHER,
+                null, null, null, true, null, false, false, null
+        );
+        assertTrue(mysql.compareTable(expected, metadata(MYSQL_TABLE, mysqlLineString)).compatible());
 
         var nullability = postgres.compareTable(expected, metadata(
                 POSTGRES_TABLE,
@@ -239,7 +229,7 @@ class SpatialDialectGeometryTest {
     }
 
     @Test
-    void preservesScalarV2FingerprintAndVersionsGeometryFingerprintAttributes() {
+    void preservesScalarV2FingerprintAndIgnoresGeometrySemanticMetadata() {
         TableDefinition scalar = new TableDefinition(
                 new TableIdentifier(null, "public", "scalar_table"),
                 List.of(new TableColumnDefinition("id", TableColumnType.LONG, null, null, null, false)),
@@ -251,11 +241,11 @@ class SpatialDialectGeometryTest {
         );
 
         TableDefinition point = definition(POSTGRES_TABLE, GeometryKind.POINT, 4326, true);
-        assertNotEquals(
+        assertEquals(
                 point.structureFingerprint(),
                 definition(POSTGRES_TABLE, GeometryKind.LINESTRING, 4326, true).structureFingerprint()
         );
-        assertNotEquals(
+        assertEquals(
                 point.structureFingerprint(),
                 definition(POSTGRES_TABLE, GeometryKind.POINT, 3857, true).structureFingerprint()
         );
@@ -271,7 +261,24 @@ class SpatialDialectGeometryTest {
                 )),
                 List.of()
         );
-        assertNotEquals(point.structureFingerprint(), xyz.structureFingerprint());
+        assertEquals(point.structureFingerprint(), xyz.structureFingerprint());
+    }
+
+    @Test
+    void treatsGeometrySemanticChangesAsMetadataOnly() {
+        TableDefinition before = definition(POSTGRES_TABLE, GeometryKind.POINT, 4326, true);
+        TableDefinition target = definition(POSTGRES_TABLE, GeometryKind.MULTIPOLYGON, 4490, true);
+
+        assertEquals(
+                TableChangeStrategy.METADATA_ONLY,
+                postgres.planTableChange(
+                        before,
+                        target,
+                        metadata(POSTGRES_TABLE, spatialColumn(
+                                "LINESTRING", 990001, "EPSG", 3857, CoordinateDimension.XY, true
+                        ))
+                ).strategy()
+        );
     }
 
     private static TableDefinition definition(

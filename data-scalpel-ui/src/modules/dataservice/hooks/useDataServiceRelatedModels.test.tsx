@@ -15,7 +15,7 @@ const sqlService = (): DataServiceDetail => ({
   definitionConfigured: true,
   definitionVersion: 1,
   engineId: 'engine-1',
-  engineRoutePath: '/runtime/v1/services/service-1',
+  contextPath: '/open-api/v1/customer-query',
   status: 'DRAFT',
   revision: 0,
   deploymentStatus: null,

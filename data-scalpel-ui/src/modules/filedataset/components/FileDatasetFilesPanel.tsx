@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -7,7 +8,7 @@ import {
   UploadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Alert, Button, Dropdown, Modal, Space, Table, Tag, Tooltip, Upload, message } from 'antd';
+import { Button, Dropdown, Modal, Space, Table, Tag, Tooltip, Upload, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';

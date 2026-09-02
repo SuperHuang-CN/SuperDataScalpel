@@ -1,10 +1,14 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   AuditOutlined,
   ClearOutlined,
+  CloudServerOutlined,
   CopyOutlined,
   DeleteOutlined,
   DownOutlined,
   EditOutlined,
+  FormOutlined,
+  KeyOutlined,
   MoreOutlined,
   PlayCircleOutlined,
   PlusOutlined,
@@ -12,27 +16,15 @@ import {
   RollbackOutlined,
   StopOutlined,
   TeamOutlined,
+  UnlockOutlined,
   UploadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Dropdown,
-  Form,
-  Modal,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from 'antd';
+import { Button, Dropdown, Form, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ManagementCode, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
 import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type DirectorySelection } from '../../directory';
 import { useServiceEngines } from '../../serviceengine';
@@ -60,11 +52,11 @@ import {
   type PublishDataServiceRequest,
 } from '../model/dataService';
 import { gatewayProviderLabels } from '../model/apiConsumer';
-import { buildDataServiceCurlCommand } from '../model/dataServiceCurl';
+import { buildDataServiceAccessUrl, buildDataServiceCurlCommand } from '../model/dataServiceCurl';
 import { gatewayOperationError, publishedGatewayBinding } from '../model/dataServiceGateway';
 import { parseDataServiceListRoute, serializeDataServiceListRoute } from '../model/dataServiceListRoute';
 import { buildDataServiceSearch } from '../model/dataServiceSearch';
-import { DataServiceCreateDrawer } from './DataServiceCreateDrawer';
+import { DataServiceBasicDrawer } from './DataServiceBasicDrawer';
 import { DataServiceSubscriptionsDrawer } from './DataServiceSubscriptionsDrawer';
 import { DataServiceTypeIcon } from './DataServiceTypeIcon';
 import { PublishDataServiceModal } from './PublishDataServiceModal';
@@ -135,6 +127,7 @@ export const DataServiceListPanel = ({
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const [creationType, setCreationType] = useState<DataServiceType | null>(null);
+  const [editingService, setEditingService] = useState<DataServiceSummary | null>(null);
   const [subscriptionService, setSubscriptionService] = useState<DataServiceSummary | null>(null);
   const [publishService, setPublishService] = useState<DataServiceSummary | null>(null);
   const directoriesQuery = useDirectoryTree('DATA_SERVICE', canViewDirectories);
@@ -158,7 +151,7 @@ export const DataServiceListPanel = ({
   const unpublishMutation = useUnpublishDataService();
   const disableMutation = useDisableDataService();
   const cleanupMutation = useCleanupDataServiceDeployment();
-  const engineNames = new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine.name]));
+  const enginesById = new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine]));
 
   const syncRoute = (
     nextFilters: DataServiceFilters,
@@ -190,26 +183,31 @@ export const DataServiceListPanel = ({
       engineId: undefined,
     });
     advancedFilterForm.resetFields();
+    advancedFilterForm.setFieldValue('engineId', undefined);
     setAdvancedFilters({});
     setAdvancedFilterOpen(false);
     setDirectorySelection(undefined);
     search({}, undefined);
   };
 
-  const applyDirectFilters = (values: DataServiceFilters) => search({
-    ...filters,
-    keyword: values.keyword,
-    status: values.status,
-    type: values.type,
-    engineId: advancedFilters.engineId,
-  });
+  const applyDirectFilters = (values: DataServiceFilters) => {
+    const engineId = advancedFilterForm.getFieldValue('engineId');
+    setAdvancedFilters({ engineId });
+    search({
+      ...filters,
+      keyword: values.keyword,
+      status: values.status,
+      type: values.type,
+      engineId,
+    });
+  };
 
   const confirmAdvancedFilters = () => {
     setAdvancedFilters({ engineId: advancedFilterForm.getFieldValue('engineId') });
     setAdvancedFilterOpen(false);
   };
 
-  const clearAdvancedFilters = () => advancedFilterForm.resetFields();
+  const clearAdvancedFilters = () => advancedFilterForm.setFieldValue('engineId', undefined);
 
   const selectDirectory = (selection: DirectorySelection) => {
     setDirectorySelection(selection);
@@ -246,6 +244,10 @@ export const DataServiceListPanel = ({
       ),
       duration: 6,
     });
+  };
+
+  const completeBasicUpdate = () => {
+    setEditingService(null);
   };
 
   const enable = async (dataService: DataServiceSummary) => {
@@ -376,6 +378,19 @@ export const DataServiceListPanel = ({
     }
   };
 
+  const copyAddress = async (address: string, label: string) => {
+    if (!navigator.clipboard) {
+      messageApi.error('当前浏览器不支持自动复制，请使用 HTTPS 或 localhost 访问');
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(address);
+      messageApi.success(`${label}已复制`);
+    } catch {
+      messageApi.error('复制失败，请检查浏览器的剪贴板权限');
+    }
+  };
+
   const columns: TableProps<DataServiceSummary>['columns'] = [
     {
       title: '服务', dataIndex: 'name', width: 240,
@@ -384,27 +399,47 @@ export const DataServiceListPanel = ({
       ),
     },
     {
-      title: '数据来源 / 定义', width: 190,
-      render: (_: unknown, service) => (
-        <ManagementListCell
-          primary={service.sourceName || '尚未配置来源'}
-          secondary={service.definitionConfigured ? `定义 v${service.definitionVersion}` : '定义未配置'}
-        />
-      ),
-    },
-    {
-      title: '路由 / 访问', width: 250,
+      title: '服务地址 / 网关地址', width: 430,
       render: (_: unknown, service) => {
         const binding = publishedGatewayBinding(service);
+        const engine = enginesById.get(service.engineId);
+        const engineAddress = service.type === 'SPATIAL_SERVICE'
+          ? `${engine?.geoServerWorkspace ?? 'datascalpel'}:svc_${service.code}`
+          : engine
+            ? buildDataServiceAccessUrl(engine.runtimeUrl, service.contextPath ?? '')
+            : service.contextPath ?? '';
+        const gatewayPublic = binding?.accessMode === 'PUBLIC';
         return (
-          <ManagementListCell
-            primary={(
-              <div className="data-service-route-address">
-                <ManagementCode value={binding?.gatewayRoutePath ?? '未发布到网关'} />
-              </div>
+          <div className="data-service-route-addresses">
+            <Tooltip title={`${service.type === 'SPATIAL_SERVICE' ? 'GeoServer Qualified Layer Name' : engine ? 'Engine 服务地址' : '服务 Context Path'}：点击复制`}>
+              <button
+                type="button"
+                className="data-service-route-address data-service-route-address-engine"
+                aria-label={`复制 Engine 服务地址 ${engineAddress}`}
+                onClick={() => void copyAddress(engineAddress, service.type === 'SPATIAL_SERVICE' ? '图层名' : 'Engine 服务地址')}
+              >
+                <CloudServerOutlined className="data-service-route-address-icon" aria-hidden />
+                <code>{engineAddress}</code>
+                <CopyOutlined className="data-service-route-address-copy" aria-hidden />
+              </button>
+            </Tooltip>
+            {binding?.gatewayUrl && (
+              <Tooltip title={`${gatewayPublic ? '网关公开地址' : '网关订阅地址，需要 API Key'}：点击复制`}>
+                <button
+                  type="button"
+                  className={`data-service-route-address ${gatewayPublic ? 'data-service-route-address-public' : 'data-service-route-address-protected'}`}
+                  aria-label={`复制${gatewayPublic ? '网关公开地址' : '需要 API Key 的网关地址'} ${binding.gatewayUrl}`}
+                  onClick={() => void copyAddress(binding.gatewayUrl!, '网关地址')}
+                >
+                  {gatewayPublic
+                    ? <UnlockOutlined className="data-service-route-address-icon" aria-hidden />
+                    : <KeyOutlined className="data-service-route-address-icon" aria-hidden />}
+                  <code>{binding.gatewayUrl}</code>
+                  <CopyOutlined className="data-service-route-address-copy" aria-hidden />
+                </button>
+              </Tooltip>
             )}
-            secondary={binding ? (binding.accessMode === 'PUBLIC' ? '公开访问' : '订阅访问') : '访问方式将在发布时配置'}
-          />
+          </div>
         );
       },
     },
@@ -413,23 +448,27 @@ export const DataServiceListPanel = ({
       render: (_: unknown, dataService: DataServiceSummary) => <ManagementListCell
         primary={<ManagementStatusIndicator label={dataServiceStatusLabels[dataService.status]} tone={serviceStatusColors[dataService.status]} />}
         secondary={<div className="management-status-group">
+          <ManagementStatusIndicator
+            label={dataService.definitionConfigured ? `定义 v${dataService.definitionVersion}` : '定义未配置'}
+            tone={dataService.definitionConfigured ? 'success' : 'warning'}
+          />
           {dataService.deploymentStatus
             ? <ManagementStatusIndicator label={dataServiceDeploymentStatusLabels[dataService.deploymentStatus]} tone={deploymentStatusColors[dataService.deploymentStatus]} title={dataService.deploymentError || undefined} />
             : <ManagementStatusIndicator label="未部署" />}
-          <ManagementStatusIndicator label={dataService.gatewayBindings.length ? `网关 ${dataService.gatewayBindings.length}` : '未发布网关'} tone={dataService.gatewayBindings.length ? 'success' : 'default'} />
+          <ManagementStatusIndicator label={dataService.type === 'SPATIAL_SERVICE' ? 'GeoServer 直连' : dataService.gatewayBindings.length ? `网关 ${dataService.gatewayBindings.length}` : '未发布网关'} tone={dataService.type === 'SPATIAL_SERVICE' || dataService.gatewayBindings.length ? 'success' : 'default'} />
         </div>}
       />,
     },
-    { title: 'Engine / Revision', width: 190, render: (_: unknown, service) => <ManagementListCell primary={engineNames.get(service.engineId) ?? service.engineId} secondary={`revision ${service.revision} · ${formatDateTime(service.updatedAt)}`} /> },
+    { title: 'Engine / Revision', width: 190, render: (_: unknown, service) => <ManagementListCell primary={enginesById.get(service.engineId)?.name ?? service.engineId} secondary={`revision ${service.revision} · ${formatDateTime(service.updatedAt)}`} /> },
     {
       title: '操作', key: 'action', width: 136,
       render: (_: unknown, dataService: DataServiceSummary) => {
         const moreItems: NonNullable<MenuProps['items']> = [
-          ...(publishedGatewayBinding(dataService)?.accessMode === 'SUBSCRIPTION_REQUIRED' ? [{ key: 'subscriptions', label: '订阅消费者', icon: <TeamOutlined /> }] : []),
-          ...(publishedGatewayBinding(dataService) ? [{ key: 'curl', label: '复制网关访问 cURL', icon: <CopyOutlined /> }] : []),
-          ...(canPublish && dataService.gatewayBindings.length > 0
+          ...(dataService.type !== 'SPATIAL_SERVICE' && publishedGatewayBinding(dataService)?.accessMode === 'SUBSCRIPTION_REQUIRED' ? [{ key: 'subscriptions', label: '订阅消费者', icon: <TeamOutlined /> }] : []),
+          ...(dataService.type !== 'SPATIAL_SERVICE' && publishedGatewayBinding(dataService) ? [{ key: 'curl', label: '复制网关访问 cURL', icon: <CopyOutlined /> }] : []),
+          ...(dataService.type !== 'SPATIAL_SERVICE' && canPublish && dataService.gatewayBindings.length > 0
             ? [{ key: 'reconcile', label: '对账网关状态', icon: <AuditOutlined /> }] : []),
-          ...(canPublish && publishedGatewayBinding(dataService)
+          ...(dataService.type !== 'SPATIAL_SERVICE' && canPublish && publishedGatewayBinding(dataService)
             ? [{ key: 'republish', label: '重新发布到网关', icon: <UploadOutlined /> }] : []),
           ...(canPublish && dataService.status !== 'ENABLED' && (dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING')
             ? [{ key: 'cleanup', label: '清理失败部署', icon: <ClearOutlined /> }] : []),
@@ -441,17 +480,29 @@ export const DataServiceListPanel = ({
         return <div className="management-row-actions">
           <div className="management-row-actions-shortcuts">
           {canUpdate && (
-            <Tooltip title={editable ? (dataService.definitionConfigured ? '修改基础信息' : '继续配置服务定义') : '请先停用服务并完成部署清理'}>
+            <Tooltip title={editable ? '修改基础信息' : '请先停用服务并完成部署清理'}>
               <span>
                 <Button
                   type="text"
                   size="small"
                   disabled={!editable}
-                  aria-label={dataService.definitionConfigured ? `编辑${dataService.name}` : `继续配置${dataService.name}`}
+                  aria-label={`编辑${dataService.name}的基础信息`}
                   icon={<EditOutlined />}
-                  onClick={() => openEditor(dataService.definitionConfigured
-                    ? `/dataservice/${dataService.id}/edit`
-                    : `/dataservice/${dataService.id}/definition/edit`)}
+                  onClick={() => setEditingService(dataService)}
+                />
+              </span>
+            </Tooltip>
+          )}
+          {canUpdate && !dataService.definitionConfigured && (
+            <Tooltip title={editable ? '配置服务定义' : '请先停用服务并完成部署清理'}>
+              <span>
+                <Button
+                  type="text"
+                  size="small"
+                  disabled={!editable}
+                  aria-label={`配置${dataService.name}的服务定义`}
+                  icon={<FormOutlined />}
+                  onClick={() => openEditor(`/dataservice/${dataService.id}/definition/edit`)}
                 />
               </span>
             </Tooltip>
@@ -462,9 +513,9 @@ export const DataServiceListPanel = ({
             </Tooltip>
           )}
           {canPublish && dataService.status === 'ENABLED' && (
-            <Tooltip title="停用"><Button type="text" size="small" danger aria-label={`停用${dataService.name}`} icon={<StopOutlined />} loading={disableMutation.isPending && disableMutation.variables === dataService.id} onClick={() => modalApi.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '停用数据服务？', content: `将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`, okText: '停用', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => disable(dataService) })} /></Tooltip>
+            <Tooltip title="停用"><Button type="text" size="small" danger aria-label={`停用${dataService.name}`} icon={<StopOutlined />} loading={disableMutation.isPending && disableMutation.variables === dataService.id} onClick={() => modalApi.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '停用数据服务？', content: dataService.type === 'SPATIAL_SERVICE' ? `将从 GeoServer 删除“${dataService.name}”对应的 Layer 和 FeatureType，保留共享 DataStore 与 Workspace。` : `将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`, okText: '停用', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => disable(dataService) })} /></Tooltip>
           )}
-          {canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && (
+          {dataService.type !== 'SPATIAL_SERVICE' && canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && (
             dataService.gatewayBindings.length > 0 ? (
               <Tooltip title="取消发布">
                 <Button
@@ -508,6 +559,7 @@ export const DataServiceListPanel = ({
   const standardCreationDisabled = !canViewModels || !canViewEngines;
   const sqlCreationDisabled = standardCreationDisabled || !canViewDataSources;
   const scriptCreationDisabled = !canViewDataSources || !canViewEngines;
+  const spatialCreationDisabled = !canViewModels || !canViewEngines;
   const creationItems: MenuProps['items'] = [
     {
       key: 'standard',
@@ -530,6 +582,15 @@ export const DataServiceListPanel = ({
         scriptCreationDisabled ? '需要数据源和 Service Engine 查看权限' : '创建基础信息，稍后编写和调试脚本',
       ),
     },
+    {
+      key: 'spatial',
+      icon: <DataServiceTypeIcon type="SPATIAL_SERVICE" />,
+      disabled: spatialCreationDisabled,
+      label: creationLabel(
+        '空间服务',
+        spatialCreationDisabled ? '需要模型和 Service Engine 查看权限' : '选择 PostGIS 空间模型并发布只读 WMS/WFS',
+      ),
+    },
   ];
 
   return (
@@ -544,7 +605,8 @@ export const DataServiceListPanel = ({
               <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索服务名称或编码" className="data-source-keyword-input" /></Form.Item>
               <Form.Item name="status"><Select allowClear placeholder="全部服务状态" options={statusOptions} className="data-source-filter-select" /></Form.Item>
               <Form.Item name="type"><Select allowClear placeholder="全部类型" options={typeOptions} className="data-source-filter-select" /></Form.Item>
-              <ManagementMoreFilters
+            </Form>
+              <ManagementAdaptiveMoreFilters
                 count={advancedFilterCount}
                 open={advancedFilterOpen}
                 onOpenChange={(open) => {
@@ -555,12 +617,14 @@ export const DataServiceListPanel = ({
                   }
                 }}
                 onClear={clearAdvancedFilters}
-                onCancel={() => setAdvancedFilterOpen(false)}
+                onCancel={() => {
+                  advancedFilterForm.setFieldValue('engineId', advancedFilters.engineId);
+                  setAdvancedFilterOpen(false);
+                }}
                 onConfirm={confirmAdvancedFilters}
               >
-                <Form<DataServiceFilters> form={advancedFilterForm} layout="vertical" autoComplete="off"><Form.Item name="engineId" label="Service Engine"><Select allowClear showSearch optionFilterProp="label" options={(enginesQuery.data?.content ?? []).map((engine) => ({ value: engine.id, label: engine.name }))} className="advanced-filter-select" /></Form.Item></Form>
-              </ManagementMoreFilters>
-            </Form>
+                <Form<DataServiceFilters> form={advancedFilterForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}><Form.Item name="engineId" label="Service Engine"><Select allowClear showSearch optionFilterProp="label" placeholder="全部 Service Engine" options={(enginesQuery.data?.content ?? []).map((engine) => ({ value: engine.id, label: engine.name }))} className="advanced-filter-select management-inline-filter-wide" /></Form.Item></Form>
+              </ManagementAdaptiveMoreFilters>
             <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0 || directorySelection !== undefined} loading={dataServicesQuery.isFetching} onReset={reset} />
           </div>
           <div className="management-results-surface">
@@ -577,6 +641,7 @@ export const DataServiceListPanel = ({
                       if (key === 'standard') setCreationType('STANDARD_TABLE');
                       if (key === 'sql') setCreationType('SQL_QUERY');
                       if (key === 'script') setCreationType('SCRIPT_API');
+                      if (key === 'spatial') setCreationType('SPATIAL_SERVICE');
                     },
                   }}
                 >
@@ -602,14 +667,19 @@ export const DataServiceListPanel = ({
           </div>
         </section>
       </div>
-      <DataServiceCreateDrawer
-        open={creationType !== null}
+      <DataServiceBasicDrawer
+        open={creationType !== null || editingService !== null}
         type={creationType}
+        dataService={editingService}
         initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
         canViewDirectories={canViewDirectories}
         canViewEngines={canViewEngines}
-        onClose={() => setCreationType(null)}
+        onClose={() => {
+          setCreationType(null);
+          setEditingService(null);
+        }}
         onCreated={completeCreation}
+        onUpdated={completeBasicUpdate}
       />
       <DataServiceSubscriptionsDrawer
         open={Boolean(subscriptionService)}

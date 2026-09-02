@@ -27,10 +27,10 @@ JDBC 能力按节点而不是全局数据库白名单判定：
 
 ## 2. Manifest 边界
 
-manifest 当前写出 `manifestVersion: 21`；Runner 严格只读取 v21，不保留旧版本兼容分支。
+manifest 当前写出 `manifestVersion: 23`；Runner 严格只读取 v23，不保留旧版本兼容分支。
 顶层分为 `execution`、`task`、
 `metadataSnapshot`、`runtimeDataSources`、可空 `runtimeFileStorage`、`runtimeFileInputs` 和
-`snapshotSyncLimits`：
+`snapshotSyncLimits` 和可空的 `canvasTrial`：
 
 - `task.definition` 是原始稳定 Canvas 定义，绝不追加连接字段。
 - `metadataSnapshot` 是 Admin 在发布、启用或运行时生成的逻辑编译元数据；`models` 服务
@@ -46,6 +46,7 @@ manifest 当前写出 `manifestVersion: 21`；Runner 严格只读取 v21，不�
   解析参数，每个输入再保存按当前顺序排列的来源列表。来源项保存稳定来源 ID、文件 ID、格式、
   压缩、存储形态、私有读取位置和来源键。
 - `snapshotSyncLimits` 由 Admin 部署配置生成，默认限制每侧 100,000 行、来源与目标合计估算 256 MiB、锁等待 30 秒；限制不进入 Canvas JSON。
+- `canvasTrial` 只出现在批处理 Canvas 试运行，保存目标节点、目标逻辑表和按原 Schema 顺序排列的返回字段；普通运行、实时 Canvas、模型质检和 Spark JAR 必须为空。
 - `streaming` 保存唯一无界输入节点的触发间隔；JDBC 增量输入还保存来源节点、来源签名和可选的跨定义版本初始 Offset。该 Offset 只在新版本没有自身 Checkpoint 时生效，同版本始终以 Spark Checkpoint 为事实来源。
 
 manifest第一阶段为明文 JSON，存放于私有 Bucket，便于排查。生产环境的对象存储 Endpoint 和短期预签名 URL必须使用 TLS；Bucket不得开放匿名读取。Admin向 Dispatcher只发送对象 Key和 manifest SHA-256；Dispatcher在真正提交时生成短期预签名 URL。对象路径固定为：
@@ -82,6 +83,8 @@ QUEUED → RUNNING → SUCCESS | FAILED | TIMED_OUT
 ```
 
 Dispatcher和Runner不反向调用 Admin HTTP。Runner向 Kafka发送状态，Dispatcher校验并落账后通过 Admin事件 Topic发布；Admin按 engineId、runId、executionId、attempt和递增 sequence幂等应用。Admin低频通过 Dispatcher HTTP查询长期未收敛执行，作为 Kafka事件丢失时的修复路径。
+
+节点试运行复用同一 TaskRun、Dispatcher、Runner、取消、日志和制品链路，执行模式为 `TRIAL`。提交接口接收当前已应用的内存 Canvas 草稿及已保存定义版本，Admin 校验并发版本后只保留目标 Input/Processor 的上游闭包，所有 Output 和无关分支都不进入 Manifest，也不准备输出凭据。Runner 完整计算闭包，到达目标节点后按请求字段投影目标逻辑表并读取第 101 行判断截断；接口最多返回 100 行、总计 4 MiB。试运行不保存定义、不写外部目标、不发布血缘，`affectedRows` 固定为空。实时 Canvas、Output 目标、已发布任务及存在活动运行时拒绝提交。
 
 ## 4. Dispatcher 执行管理
 
@@ -131,11 +134,13 @@ Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output
   错误失败。覆盖、替换或删除会立即清理旧对象，因此旧任务允许以文件读取错误失败。
 - `HTTP_API_INPUT`：按有序资源选择逐项执行鉴权、签名、分页或异步轮询；每个结果页按最多 10,000 行分批转换，并立即通过 `DISK_ONLY` eager Local Checkpoint 物化到 Spark Executor 磁盘，全部选择项完成配置与元数据校验后才开始读取，并以各自 `outputTableName` 注册逻辑表。详细内存和失败语义见 [HTTP API 数据源第二阶段：分批读取设计](http-api-data-source-phase-two-batched-reading.md)。
 - `MODEL_INPUT`：按模型快照的精确物理位置读取，以模型 code 作为逻辑表名。
-- `KAFKA_INPUT`：直接使用节点内联 Value Schema 解析消息并生成无界表；运行时连接只来自 Manifest，不查询数据模型。
+- `KAFKA_INPUT`：JSON 使用节点内联 Value Schema 和 `FAILFAST` 解析；TEXT 按 UTF-8 输出固定 STRING `value`，BINARY 输出原始 BINARY `value`。选中的 Kafka 元数据按固定 `_kafka_*` 字段追加，tombstone 行保留且元数据仍可用；运行时连接只来自 Manifest，不查询数据模型或自动识别格式。
 - `TDENGINE_TMQ_INPUT`：通过内置 Spark DataSource V2 MicroBatch Source 订阅 WebSocket TMQ，
   以 Spark Checkpoint 保存每个 VGroup 的下一条待读 Offset。每个微批单 Consumer、单
   InputPartition，关闭自动提交且 `commit(end)` 不提交 TMQ Offset；消息只映射为超级表字段和 TAG。
-  Offset 过期、VGroup 改变、Topic 指纹变化或 Schema 不匹配均明确停止，不自动跳过。
+  Offset 过期、VGroup 改变、Topic v2 结构指纹变化或 Schema 不匹配均明确停止，不自动跳过。可选
+  事件时间必须显式选择 TIMESTAMP 字段并同时设置 Watermark，不自动猜测。Consumer Group 使用
+  `taskId + sourceNodeId + outputNodeId + writeId` 的稳定身份；旧 Group 由管理端后台非阻断清理。
 - `JOIN`：支持 INNER、LEFT、RIGHT、FULL；多个 EQUALS 条件固定使用 AND。
 - `GEOMETRY_CONSTRUCT`：批流共用一个无状态 Operator，从 WKT/WKB/GeoJSON/X-Y 构造
   Geometry，显式设置 SRID，并在真实值解析失败或 kind 不匹配时返回稳定安全错误。
@@ -170,7 +175,7 @@ Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output
   PostgreSQL 使用所选 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`。每分区独立事务，
   Streaming 通过 `foreachBatch` 提供键级重放收敛，整体仍是至少一次交付，不提供跨分区全局事务。
 - `JDBC_SNAPSHOT_SYNC_OUTPUT/MODEL_SNAPSHOT_SYNC_OUTPUT`：仅用于 BATCH 和 BOUNDED 小数据实体快照。来源映射并 Cast 为目标类型后，在 Driver 校验来源 Key；Runner 使用一条 JDBC 连接取得 PostgreSQL/MySQL 严格表锁，在同一事务中读取目标、校验目标 Key、执行拓扑 Geometry 比较和删除熔断，最后按 `DELETE → UPDATE → INSERT` 提交。模型节点只解析已发布 MANAGED 模型目标，比较与写入完全复用 JDBC 执行器。
-- `KAFKA_OUTPUT`：目标字段来自节点内联 Value Schema，与其他 Output 复用统一显式映射和 Cast；可选 Key 字段来自上游表。
+- `KAFKA_OUTPUT`：Canvas 4.6 新写入按 JSON/TEXT/BINARY 序列化上游字段。JSON 使用 `to_json(struct(...), ignoreNullFields=false)`，TEXT 原样发送 STRING，BINARY 原样发送字节；TEXT/BINARY 的 NULL 产生 tombstone。可选 Key 只允许 STRING/BINARY 且保持原类型。4.0～4.5 旧写入继续使用内联 Value Schema、映射、Cast 和字符串 Key 兼容语义。每条 `writeId` 仍启动独立 StreamingQuery/Checkpoint，整体按至少一次交付。
 - `FILE_OUTPUT`：仅用于批任务，将来源表写到精确的 `s3a://{bucket}/{rootPrefix}/{targetPath}/`。CSV、JSON Lines 固定 UTF-8，普通 Parquet 固定 Snappy，并继续使用允许多个 `part-*` 和 `_SUCCESS` 的 Spark 目录数据集语义。Canvas `4.0` 的 Shapefile 使用 Driver 专用 Writer，通过 `toLocalIterator()` 流式生成唯一一套 SHP/SHX/DBF/PRJ/CPG；默认打成 ZIP，也可直接提交五个组件。GeoParquet 通过 Sedona 分布式写出 GeoParquet 1.1.0、WKB、显式 PROJJSON 和可选逐行 bbox；GeoJSON 使用 Driver 专用 Writer 生成唯一 RFC 7946 FeatureCollection，限 EPSG:4326 + XY 且达到 1.8GB 时失败。Shapefile/GeoJSON 制品先完整上传运行级临时前缀，再按冲突策略提交，`_SUCCESS` 始终最后写入；GeoParquet 复用 Spark/Hadoop 目录提交。S3 `OVERWRITE` 均不是原子替换。
 - `OVERWRITE`：普通关系型 JDBC 数据库均使用 `TRUNCATE TABLE` 后 append/受控批量 INSERT，
   不 drop/recreate，也不承诺两个步骤为原子事务；TDengine 不支持普通 JDBC 输出。外键、权限、
@@ -209,7 +214,7 @@ Processor 允许没有下游出边。Compiler 仍构造并分析该节点的惰�
 
 外部 S3 使用 `fs.s3a.bucket.<bucket>.*` 的 bucket 级 Hadoop 配置，不读取或覆盖平台 Spark 的默认 S3 连接。相同 bucket 在单次任务中不得出现 endpoint、region、path-style 或凭据不同的配置，也不得与平台文件输入存储发生同 bucket 配置冲突。执行身份至少需要目标前缀的列举、写入、删除和分片上传权限。
 
-Runner 的 `result.json` 当前固定使用 `schemaVersion: 8`，Dispatcher 兼容读取 v2～v8 并拒绝更早或未知版本。v8增加批处理 Spark JAR运行期血缘证据；Canvas、模型质检及 Streaming任务不得携带该字段，因此 Canvas执行语义和发布期静态快照内容不变。一个 Canvas 节点在 `nodeResults` 中只能出现一次。普通 JDBC、模型和文件多目标 Output 使用 `OUTPUT_WRITES` 指标，按稳定 `writeId` 保存每条写入的来源表、安全目标名称、终态、影响行数和错误码；全部成功时节点为 `SUCCESS`，中途失败时已提交项为 `SUCCESS`、当前项为 `FAILED`、同节点后续项为 `SKIPPED`。节点及任务影响行数是已成功提交项之和，只要任一成功项行数未知则为 `null`；失败不回滚已经提交的目标。成功的 Snapshot Sync 节点继续写入 `SNAPSHOT_SYNC` 指标，包含来源、目标、新增、更新、删除、未变化和保留目标独有行数，失败或回滚不返回成功指标。所有 Input、Processor 和 Output 分别以 `READ`、`PROCESS`、`WRITE` 阶段记录节点开始、成功或失败；普通多目标 Output 每个节点只记录一次节点生命周期，逐写入过程使用携带 `writeId` 的安全事件。失败结果保留此前已完成的节点，并让顶层错误、失败节点错误和失败写入错误码保持一致。结构化错误包含稳定错误码、类别、可重试标记、节点身份、SQLState和诊断 ID，不包含异常堆栈。
+Runner 的 `result.json` 当前固定使用 `schemaVersion: 11`，Dispatcher 兼容读取 v2～v11 并拒绝更早或未知版本。v8增加批处理 Spark JAR运行期血缘证据，v9增加 Spark JAR写入试运行预览，v10增加互斥的 Canvas节点试运行预览，v11增加实时 Spark JAR 的正常停止终态、失败前部分试运行预览和执行观测结果。Canvas试运行查询兼容读取 v10～v11，并继续严格核对运行身份。Canvas试运行成功时必须携带所选 Schema、最多100条`rowsJson`、截断标记和安全警告；失败时不得携带预览，且任何终态的`affectedRows`都为空。一个 Canvas 节点在 `nodeResults` 中只能出现一次。普通 JDBC、模型和文件多目标 Output 使用 `OUTPUT_WRITES` 指标，按稳定 `writeId` 保存每条写入的来源表、安全目标名称、终态、影响行数和错误码；全部成功时节点为 `SUCCESS`，中途失败时已提交项为 `SUCCESS`、当前项为 `FAILED`、同节点后续项为 `SKIPPED`。节点及任务影响行数是已成功提交项之和，只要任一成功项行数未知则为 `null`；失败不回滚已经提交的目标。成功的 Snapshot Sync 节点继续写入 `SNAPSHOT_SYNC` 指标，包含来源、目标、新增、更新、删除、未变化和保留目标独有行数，失败或回滚不返回成功指标。所有 Input、Processor 和 Output 分别以 `READ`、`PROCESS`、`WRITE` 阶段记录节点开始、成功或失败；普通多目标 Output 每个节点只记录一次节点生命周期，逐写入过程使用携带 `writeId` 的安全事件。失败结果保留此前已完成的节点，并让顶层错误、失败节点错误和失败写入错误码保持一致。结构化错误包含稳定错误码、类别、可重试标记、节点身份、SQLState和诊断 ID，不包含异常堆栈。
 
 HTTP API 请求在最终 URL、Header 和 Body 确定后签名，每页和每次重试重新生成时间戳、Nonce 和签名。OAuth2 Client Credentials 或自定义 Token Endpoint 的 Token 按有效期缓存；业务请求返回 `401/403` 时最多刷新并重试一次。同步分页支持页码、Offset/Limit、Cursor 和 Next URL；异步接口先提交并轮询，只有成功后才进入结果读取及分页。最大页数、行数、响应字节数、持续时间和重复游标/URL检测都是硬限制。
 

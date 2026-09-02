@@ -8,10 +8,10 @@ public record ServiceQueryResponse(
         int pageNo,
         int pageSize,
         Long totalCount,
-        List<Map<String, Object>> resultList
+        List<Map<String, Object>> items
 ) {
 
     public ServiceQueryResponse {
-        resultList = List.copyOf(resultList);
+        items = List.copyOf(items);
     }
 }

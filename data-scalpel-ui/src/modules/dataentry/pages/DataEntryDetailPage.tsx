@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ArrowLeftOutlined, DeleteOutlined, PauseCircleOutlined, ReloadOutlined, SendOutlined } from '@ant-design/icons';
-import { Alert, Button, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
+import { Button, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
 import { useNavigate, useParams } from 'react-router-dom';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';

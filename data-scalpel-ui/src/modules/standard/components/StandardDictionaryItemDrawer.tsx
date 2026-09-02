@@ -1,6 +1,8 @@
-import { Alert, Button, Drawer, Form, Input, Space, Switch, message } from 'antd';
+import { NodeIndexOutlined, PartitionOutlined } from '@ant-design/icons';
+import { Badge, Button, Col, Drawer, Form, Input, Row, Space, Switch, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
   useCreateStandardDictionaryItem,
   useUpdateStandardDictionaryItem,
@@ -39,6 +41,7 @@ export const StandardDictionaryItemDrawer = ({
   const [form] = Form.useForm<FormValue>();
   const [messageApi, contextHolder] = message.useMessage();
   const [dirty, setDirty] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const createMutation = useCreateStandardDictionaryItem();
   const updateMutation = useUpdateStandardDictionaryItem();
 
@@ -55,6 +58,7 @@ export const StandardDictionaryItemDrawer = ({
 
   const discard = useCallback(() => {
     setDirty(false);
+    setOperationError(null);
     form.resetFields();
     onClose();
   }, [form, onClose]);
@@ -65,6 +69,7 @@ export const StandardDictionaryItemDrawer = ({
   });
 
   const submit = async (value: FormValue) => {
+    setOperationError(null);
     try {
       if (item) {
         await updateMutation.mutateAsync({
@@ -94,74 +99,138 @@ export const StandardDictionaryItemDrawer = ({
       form.resetFields();
       onClose();
     } catch (error) {
-      messageApi.error(error instanceof ApiError ? error.message : '保存码表节点失败');
+      const errorMessage = error instanceof ApiError ? error.message : '保存码表节点失败';
+      setOperationError(errorMessage);
+      messageApi.error(errorMessage);
     }
   };
+
+  const pending = createMutation.isPending || updateMutation.isPending;
+  const footerStatus = operationError ? (
+    <InlineFeedback
+      tone="error"
+      label={item ? '保存失败' : '创建失败'}
+      detail={operationError}
+      ariaLabel={item ? '查看节点保存失败详情' : '查看节点创建失败详情'}
+    />
+  ) : item && referenced ? (
+    <InlineFeedback
+      tone="warning"
+      label="节点编码已受引用保护"
+      detail="码表已被模型字段引用；可修改名称和说明，节点编码不可修改。"
+      ariaLabel="查看节点编码保护详情"
+    />
+  ) : dirty ? (
+    <Badge status="processing" text="有未保存的修改" />
+  ) : (
+    <Badge
+      status="default"
+      text={item ? `节点：${item.code}` : parent ? `父级：${parent.name}` : '将在根级创建节点'}
+    />
+  );
 
   return (
     <>
       {contextHolder}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title={item ? '修改码表节点' : parent ? `新增“${parent.name}”的子节点` : '新增根节点'}
+        className="standard-dictionary-drawer standard-dictionary-item-drawer"
+        title={(
+          <div className="standard-dictionary-drawer-title">
+            <span className="standard-dictionary-drawer-title-icon" aria-hidden="true"><NodeIndexOutlined /></span>
+            <span className="standard-dictionary-drawer-title-copy">
+              <span>{item ? '修改码表节点' : parent ? `新增“${parent.name}”的子节点` : '新增根节点'}</span>
+              <Typography.Text type="secondary">维护节点值、显示名称和在码表树中的业务含义</Typography.Text>
+            </span>
+          </div>
+        )}
+        extra={<Tag className="standard-dictionary-drawer-header-tag">{dictionary.code}</Tag>}
         open={open}
-        width={520}
+        size="min(600px, 100vw)"
         destroyOnHidden
+        closable={pending ? false : { placement: 'end' }}
+        maskClosable={!pending}
         onClose={close}
         footer={(
-          <Space>
-            <Button onClick={close}>取消</Button>
-            <Button
-              type="primary"
-              loading={createMutation.isPending || updateMutation.isPending}
-              onClick={() => form.submit()}
-            >
-              保存
-            </Button>
-          </Space>
+          <div className="standard-dictionary-drawer-footer">
+            {footerStatus}
+            <Space>
+              <Button disabled={pending} onClick={close}>取消</Button>
+              <Button type="primary" loading={pending} onClick={() => form.submit()}>
+                {item ? '保存修改' : '创建节点'}
+              </Button>
+            </Space>
+          </div>
         )}
       >
-        {item && referenced && (
-          <Alert
-            showIcon
-            type="info"
-            title="码表已被模型字段引用，节点编码不可修改；可修改名称、说明、位置和状态。"
-            style={{ marginBottom: 12 }}
-          />
-        )}
         <Form<FormValue>
+          name="standard-dictionary-item-editor-form"
           autoComplete="off"
           form={form}
           layout="vertical"
+          className="standard-dictionary-form standard-dictionary-item-form"
           onFieldsChange={() => setDirty(true)}
           onFinish={(value) => void submit(value)}
         >
-          <Form.Item
-            label="节点编码"
-            name="code"
-            rules={[
-              { required: true, whitespace: true, message: '请输入节点编码' },
-              { max: 256 },
-            ]}
-            extra={`当前码表按 ${dictionary.valueType} 规范化并在整张码表内校验唯一。`}
-          >
-            <Input disabled={Boolean(item && referenced)} />
-          </Form.Item>
-          <Form.Item
-            label="节点名称"
-            name="name"
-            rules={[{ required: true, whitespace: true, message: '请输入节点名称' }, { max: 100 }]}
-          >
-            <Input />
-          </Form.Item>
-          {!item && (
-            <Form.Item label="创建后启用" name="enabled" valuePropName="checked">
-              <Switch />
-            </Form.Item>
-          )}
-          <Form.Item label="说明" name="description" rules={[{ max: 500 }]}>
-            <Input.TextArea rows={4} showCount maxLength={500} />
-          </Form.Item>
+          <section className="standard-dictionary-form-section">
+            <header className="standard-dictionary-form-section-header">
+              <span className="standard-dictionary-form-section-icon" aria-hidden="true"><PartitionOutlined /></span>
+              <span className="standard-dictionary-form-section-copy">
+                <span>节点信息</span>
+                <Typography.Text type="secondary">
+                  {parent ? `归属父节点：${parent.name}` : '根节点可继续挂载多级子节点'}
+                </Typography.Text>
+              </span>
+              {!item && (
+                <span className="standard-dictionary-item-section-extra">
+                  <span>创建后启用</span>
+                  <Form.Item name="enabled" valuePropName="checked" noStyle>
+                    <Switch aria-label="创建后启用码表节点" />
+                  </Form.Item>
+                </span>
+              )}
+            </header>
+            <div className="standard-dictionary-form-section-body">
+              {item && referenced && (
+                <InlineFeedback
+                  className="standard-dictionary-item-reference-feedback"
+                  tone="warning"
+                  label="节点编码不可修改"
+                  detail="该码表已被模型字段引用，服务端会保护节点编码；名称和说明仍可修改。"
+                  ariaLabel="查看节点编码不可修改原因"
+                />
+              )}
+              <Row gutter={14}>
+                <Col span={12} xs={24} sm={12}>
+                  <Form.Item
+                    label="节点编码"
+                    name="code"
+                    rules={[
+                      { required: true, whitespace: true, message: '请输入节点编码' },
+                      { max: 256 },
+                    ]}
+                    extra={`按 ${dictionary.valueType} 规范化，并在整张码表内保持唯一。`}
+                  >
+                    <Input name="standard-dictionary-item-code" autoComplete="off" disabled={Boolean(item && referenced)} autoFocus />
+                  </Form.Item>
+                </Col>
+                <Col span={12} xs={24} sm={12}>
+                  <Form.Item
+                    label="节点名称"
+                    name="name"
+                    rules={[{ required: true, whitespace: true, message: '请输入节点名称' }, { max: 100 }]}
+                  >
+                    <Input name="standard-dictionary-item-display-name" autoComplete="off" />
+                  </Form.Item>
+                </Col>
+                <Col span={24}>
+                  <Form.Item label="说明" name="description" rules={[{ max: 500 }]}>
+                    <Input.TextArea name="standard-dictionary-item-description" autoComplete="off" rows={4} showCount maxLength={500} />
+                  </Form.Item>
+                </Col>
+              </Row>
+            </div>
+          </section>
         </Form>
       </Drawer>
     </>

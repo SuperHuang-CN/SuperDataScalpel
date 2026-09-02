@@ -76,9 +76,9 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 - launch 文件只读交付给 Runner，完成后由 Dispatcher/集群清理。
 - SASL 密码使用独立受限文件或环境变量引用，不直接放进 `spark-submit` 参数。
 
-## 4. Manifest v21
+## 4. Manifest v23
 
-Admin 当前写出 `manifestVersion: 21`；Runner 严格只接受 v21。升级时先停止或排空旧 Runner，
+Admin 当前写出 `manifestVersion: 23`；Runner 严格只接受 v23。升级时先停止或排空旧 Runner，
 再统一发布 Admin、Dispatcher 和 Runner：
 
 ```text
@@ -94,6 +94,7 @@ snapshotSyncLimits
 taskType
 modelQuality
 sparkJarJob
+canvasTrial
 ```
 
 边界：
@@ -120,6 +121,7 @@ sparkJarJob
 - `streaming` 从唯一无界输入提取触发间隔。JDBC 增量输入还可携带来源节点、SHA-256 来源签名和
   跨定义版本的初始 Offset；Runner 原样校验签名，但不会用它覆盖同版本已有 Spark Checkpoint。
 - Kafka、Dispatcher、Backend、预签名 URL不进入 manifest。
+- `canvasTrial` 只允许用于 `SPARK_CANVAS + BATCH + TRIAL`，保存目标节点、逻辑表和字段选择；其他执行类型必须为空。
 - v17 及更早版本不再兼容。Admin、Dispatcher 和 Task Engine 必须同步部署，升级前必须排空或取消
   旧版本任务；旧实时任务升级后按原定义重新部署并使用新版本 Checkpoint 前缀。
 - 第一阶段 manifest 保持明文并存放在私有 MinIO Bucket。文件存储凭据、对象 Key和物化前缀不得进入日志、Result、Kafka终态事件或管理端运行记录。
@@ -205,7 +207,7 @@ result.json 已上传
 
 ```json
 {
-  "schemaVersion": 8,
+  "schemaVersion": 11,
   "taskType": "SPARK_CANVAS",
   "executionId": "uuid",
   "runId": "uuid",
@@ -291,9 +293,9 @@ result.json 已上传
 }
 ```
 
-Runner 当前只写 `schemaVersion: 8`。v4 增加顶层 `taskType` 和互斥载荷：Canvas 只能使用
+Runner 当前只写 `schemaVersion: 11`。v4 增加顶层 `taskType` 和互斥载荷：Canvas 只能使用
 `nodeResults`，模型质检只能使用 `qualityResult`，`SPARK_JAR` 的 `nodeResults` 必须为空且不含
-`qualityResult`；Dispatcher 兼容读取历史 v2～v8，以收敛
+`qualityResult`；Dispatcher 兼容读取历史 v2～v11，以收敛
 升级前已经运行的任务，并
 严格拒绝 v1、未知字段、身份或时间不一致、错误码/SQLState格式错误、节点状态与错误对象不一致，
 以及顶层/节点诊断 ID不一致的结果。节点结果按拓扑执行顺序保存；失败时保留已完成节点并追加
@@ -313,7 +315,9 @@ v5 为每条质检规则增加样本状态 `NOT_FAILED / NOT_APPLICABLE / DISABL
 行数、异常总数、是否截断、文件大小、SHA-256、行可定位性和字段元数据，不记录对象 Key 或业务值。
 Dispatcher 根据执行账本中的规则 ID 和运行身份推导固定对象 Key，并校验对象存在、20 MiB 单文件与
 100 MiB 单运行上限、SHA-256 和 Parquet `PAR1` 头尾。v6 增加 Spark JAR 用户作业观测快照；v7
-增加普通多目标 Output 的逐写入结果；v8增加批处理 Spark JAR运行期 Catalyst血缘证据。成功的批处理
+增加普通多目标 Output 的逐写入结果；v8增加批处理 Spark JAR运行期 Catalyst血缘证据；v9增加
+Spark JAR试运行写入预览；v10增加 Canvas节点试运行预览；v11增加实时 Spark JAR 的正常停止终态、
+失败前部分试运行预览和执行观测结果。成功的批处理
 JAR必须携带证据，无 SDK写入时使用 `UNAVAILABLE/NO_SDK_WRITES`；创建上下文前失败允许为空，其他任务
 类型禁止携带该字段。Dispatcher校验数量、字符串长度与 5 MiB结果上限，但不把完整血缘放进 Kafka，终态
 事件只携带已校验的 `resultSha256`。Business通过固定结果对象异步读取、核对摘要和发布正式快照。新 Runner
@@ -364,6 +368,13 @@ v7 中普通 `JDBC_OUTPUT/MODEL_OUTPUT/FILE_OUTPUT` 无论包含一条还是多�
 `affectedRows` 汇总已成功提交项；只要任一成功项行数未知或汇总溢出，汇总即为 `null`。尚未开始
 的其他 Output 节点不伪造节点结果。Kafka 多目标实时写入继续按 `writeId` 隔离 StreamingQuery 与
 Checkpoint，其运行明细遵循实时查询事件，不把物理 Checkpoint 或连接信息写入 Result。
+
+Kafka Output 的新写入由 Prepared Output 显式携带 `JSON/TEXT/BINARY` 格式。Runner 对 JSON
+使用已选上游字段构造对象并保留 NULL 字段；TEXT 直接把唯一 STRING 列作为 Kafka Value，BINARY
+直接把唯一 BINARY 列作为 Value，二者的 NULL 均产生 tombstone。STRING/BINARY Key 保持原类型，
+不统一 Cast 为 STRING。Canvas 4.0～4.5 的旧写入继续按内联 Schema、映射和字符串 Key 运行，避免
+重新启用旧任务时改变已发布消息契约。格式、字段 code 和数量可进入安全摘要，实际消息、Key 和字段值
+不得进入日志、Result 或 Runner 事件。
 
 错误类别固定为 `CONFIGURATION/CONNECTION/AUTHENTICATION/PERMISSION/SCHEMA/CONSTRAINT/TIMEOUT/CANCELLED/RESOURCE/EXTERNAL_SYSTEM/INTERNAL`；阶段固定为 `PREPARE/READ/PROCESS/WRITE/DELIVERY/DISPATCH`。SQLState `08xxx/28xxx/42501/23xxx/57014` 分别映射连接、认证、权限、约束和超时错误。只有连接、网络超时和暂时性外部系统故障标记为可重试；本阶段不自动重试。
 

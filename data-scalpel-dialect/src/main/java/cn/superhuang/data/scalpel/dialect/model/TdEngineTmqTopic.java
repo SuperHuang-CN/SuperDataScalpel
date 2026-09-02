@@ -11,6 +11,7 @@ public record TdEngineTmqTopic(
         boolean supported,
         String unsupportedReason,
         String definitionFingerprint,
+        String legacyDefinitionFingerprint,
         String timePrecision,
         TableMetadata tableMetadata
 ) {

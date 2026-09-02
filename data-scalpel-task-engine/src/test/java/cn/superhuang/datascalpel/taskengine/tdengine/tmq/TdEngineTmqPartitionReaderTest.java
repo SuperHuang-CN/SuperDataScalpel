@@ -119,8 +119,11 @@ class TdEngineTmqPartitionReaderTest {
     ) {
         return new TdEngineTmqInputPartition(
                 new TdEngineTmqOptions(
-                        "11111111-1111-1111-1111-111111111111", "node-1", "execution-1", 1,
-                        "localhost:6041", "root", "secret", false, TOPIC, "earliest", 10_000
+                        "11111111-1111-1111-1111-111111111111",
+                        "22222222-2222-4222-8222-222222222222",
+                        "33333333-3333-4333-8333-333333333333",
+                        "execution-1", 1, "localhost:6041", "root", "secret", false,
+                        TOPIC, "earliest", 10_000, null
                 ),
                 SCHEMA,
                 "safe-group",

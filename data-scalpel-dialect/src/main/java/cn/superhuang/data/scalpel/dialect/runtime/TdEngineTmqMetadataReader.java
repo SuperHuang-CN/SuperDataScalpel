@@ -142,13 +142,22 @@ public final class TdEngineTmqMetadataReader {
             }
         }
 
-        String fingerprint = fingerprint(
+        String legacyFingerprint = fingerprint(
                 normalizedTopicType(topicType),
                 database == null ? catalogDatabase : database,
                 supertable,
                 normalizedDefinition,
                 topicId,
                 createdAt
+        );
+        String fingerprint = "v2:" + fingerprint(
+                normalizedTopicType(topicType),
+                database == null ? catalogDatabase : database,
+                supertable,
+                normalizedDefinition,
+                topicId,
+                createdAt,
+                schemaFingerprintValue(tableMetadata, timePrecision)
         );
         return new TdEngineTmqTopic(
                 topicName,
@@ -158,6 +167,7 @@ public final class TdEngineTmqMetadataReader {
                 reason == null,
                 reason,
                 fingerprint,
+                legacyFingerprint,
                 timePrecision,
                 tableMetadata
         );
@@ -253,6 +263,30 @@ public final class TdEngineTmqMetadataReader {
                 .map(type -> type.contains("(US)") ? "US" : type.contains("(NS)") ? "NS" : "MS")
                 .findFirst()
                 .orElse(null);
+    }
+
+    private String schemaFingerprintValue(TableMetadata metadata, String timePrecision) {
+        if (metadata == null) return "unsupported";
+        StringBuilder value = new StringBuilder();
+        value.append("timePrecision=").append(timePrecision == null ? "" : timePrecision).append('\n');
+        for (var column : metadata.columns()) {
+            var mapping = dialect.mapToPlatformType(JdbcTypeDescriptor.from(column));
+            value.append(column.ordinal()).append('|')
+                    .append(column.name()).append('|')
+                    .append(column.role()).append('|');
+            if (mapping.definition() == null) {
+                value.append("UNSUPPORTED");
+            } else {
+                var definition = mapping.definition();
+                value.append(definition.type()).append('|')
+                        .append(definition.length()).append('|')
+                        .append(definition.precision()).append('|')
+                        .append(definition.scale()).append('|')
+                        .append(definition.geometry());
+            }
+            value.append('\n');
+        }
+        return value.toString();
     }
 
     private static String fingerprint(Object... values) {

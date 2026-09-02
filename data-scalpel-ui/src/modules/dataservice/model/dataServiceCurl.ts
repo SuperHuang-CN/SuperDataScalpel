@@ -50,7 +50,7 @@ export const buildDataServiceCurlCommand = (
     }
     : service?.type === 'SCRIPT_API'
       ? {}
-      : { pageNo: 1, pageSize: 20 };
+      : { pageNo: 1, pageSize: 20, returnCount: false };
 
   const headers = [
     `  --header ${shellQuote('Content-Type: application/json')} \\`,

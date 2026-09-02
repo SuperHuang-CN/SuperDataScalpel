@@ -3,16 +3,96 @@ package cn.superhuang.datascalpel.taskengine.canvas;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.KafkaValueColumn;
 import cn.superhuang.data.scalpel.contract.task.KafkaValueSchema;
+import cn.superhuang.data.scalpel.contract.task.KafkaInputConfiguration;
+import cn.superhuang.data.scalpel.contract.task.KafkaInputMetadataField;
+import cn.superhuang.data.scalpel.contract.task.KafkaInputValueFormat;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 
 final class KafkaValueSchemaSupport {
 
     private KafkaValueSchemaSupport() {
+    }
+
+    static List<CanvasColumnSchema> inputColumns(
+            KafkaInputConfiguration configuration,
+            CanvasNodeIssueSink issues,
+            String path
+    ) {
+        KafkaInputValueFormat valueFormat = configuration.effectiveValueFormat();
+        List<CanvasColumnSchema> columns = new ArrayList<>();
+        if (valueFormat == KafkaInputValueFormat.JSON) {
+            columns.addAll(columns(configuration.valueSchema(), issues, path + ".valueSchema"));
+        } else {
+            KafkaValueSchema schema = configuration.valueSchema();
+            if (schema == null || schema.columns() == null) {
+                issues.error(
+                        "KAFKA_VALUE_SCHEMA_INVALID",
+                        "TEXT/BINARY 格式的 Value Schema 必须为空数组",
+                        path + ".valueSchema.columns"
+                );
+            } else if (!schema.columns().isEmpty()) {
+                issues.error(
+                        "KAFKA_VALUE_SCHEMA_NOT_APPLICABLE",
+                        "TEXT/BINARY 格式不使用 Value Schema",
+                        path + ".valueSchema.columns"
+                );
+            }
+            columns.add(new CanvasColumnSchema(
+                    "value",
+                    valueFormat == KafkaInputValueFormat.TEXT
+                            ? PlatformDataType.STRING : PlatformDataType.BINARY,
+                    null,
+                    null,
+                    null,
+                    true,
+                    null,
+                    false,
+                    false,
+                    "Kafka 消息 Value"
+            ));
+        }
+
+        List<KafkaInputMetadataField> configuredMetadataFields = configuration.effectiveMetadataFields();
+        Set<KafkaInputMetadataField> selected = new LinkedHashSet<>();
+        for (int index = 0; index < configuredMetadataFields.size(); index++) {
+            KafkaInputMetadataField field = configuredMetadataFields.get(index);
+            if (field == null) {
+                issues.error(
+                        "KAFKA_METADATA_FIELD_INVALID",
+                        "Kafka 元数据字段不能为空",
+                        path + ".metadataFields[" + index + "]"
+                );
+            } else if (!selected.add(field)) {
+                issues.error(
+                        "KAFKA_METADATA_FIELD_DUPLICATE",
+                        "Kafka 元数据字段重复配置：" + field,
+                        path + ".metadataFields[" + index + "]"
+                );
+            }
+        }
+
+        Set<String> names = new HashSet<>();
+        columns.forEach(column -> names.add(column.name()));
+        for (KafkaInputMetadataField field : KafkaInputMetadataField.values()) {
+            if (!selected.contains(field)) continue;
+            CanvasColumnSchema metadataColumn = metadataColumn(field);
+            if (!names.add(metadataColumn.name())) {
+                issues.error(
+                        "DUPLICATE_COLUMN_NAME",
+                        "Kafka Value 字段与元数据字段重名：" + metadataColumn.name(),
+                        path + ".metadataFields"
+                );
+                continue;
+            }
+            columns.add(metadataColumn);
+        }
+        return List.copyOf(columns);
     }
 
     static List<CanvasColumnSchema> columns(
@@ -143,5 +223,22 @@ final class KafkaValueSchemaSupport {
             return false;
         }
         return true;
+    }
+
+    private static CanvasColumnSchema metadataColumn(KafkaInputMetadataField field) {
+        return switch (field) {
+            case KEY -> scalar("_kafka_key", PlatformDataType.BINARY, "Kafka 消息 Key");
+            case TOPIC -> scalar("_kafka_topic", PlatformDataType.STRING, "Kafka Topic");
+            case PARTITION -> scalar("_kafka_partition", PlatformDataType.INTEGER, "Kafka Partition");
+            case OFFSET -> scalar("_kafka_offset", PlatformDataType.LONG, "Kafka Offset");
+            case TIMESTAMP -> scalar("_kafka_timestamp", PlatformDataType.TIMESTAMP, "Kafka 消息时间");
+        };
+    }
+
+    private static CanvasColumnSchema scalar(String name, PlatformDataType type, String comment) {
+        return new CanvasColumnSchema(
+                name, type, null, null, null, true,
+                null, false, false, comment
+        );
     }
 }

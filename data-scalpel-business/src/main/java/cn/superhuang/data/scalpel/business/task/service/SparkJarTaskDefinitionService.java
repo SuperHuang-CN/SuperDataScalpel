@@ -13,11 +13,16 @@ import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.task.domain.*;
 import cn.superhuang.data.scalpel.business.task.repository.*;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateSparkJarTaskDefinitionRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.SaveSparkJarOnlineSourceRequest;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarOnlineCompilationResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarOnlineSourceResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.SparkJarTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceType;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarJobMode;
 import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy;
 import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationRequest;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
@@ -46,6 +51,48 @@ public class SparkJarTaskDefinitionService {
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(SparkJarTaskDefinitionService.class);
     public static final int JOB_API_VERSION = 1;
     public static final long MAX_JAR_BYTES = 100L * 1024 * 1024;
+    private static final int MAX_ONLINE_SOURCE_BYTES = 256 * 1024;
+    private static final int MAX_ONLINE_JAR_BYTES = 5 * 1024 * 1024;
+    private static final String ONLINE_JOB_FILE_NAME = "datascalpel-online-spark-job.jar";
+    private static final String BATCH_ONLINE_JOB_CLASS = "com.example.datascalpel.ExampleSparkJob";
+    private static final String STREAMING_ONLINE_JOB_CLASS = "com.example.datascalpel.ExampleSparkStreamingJob";
+    private static final String DEFAULT_BATCH_ONLINE_SOURCE = """
+            package com.example.datascalpel;
+
+            import cn.superhuang.datascalpel.sdk.JdbcReadOptions;
+            import cn.superhuang.datascalpel.sdk.ModelWriteMode;
+            import cn.superhuang.datascalpel.sdk.SparkBatchJob;
+            import cn.superhuang.datascalpel.sdk.SparkJobContext;
+            import org.apache.spark.sql.Column;
+            import org.apache.spark.sql.Dataset;
+            import org.apache.spark.sql.RelationalGroupedDataset;
+            import org.apache.spark.sql.Row;
+            import org.apache.spark.sql.SparkSession;
+            import org.apache.spark.sql.expressions.Window;
+
+            import static org.apache.spark.sql.functions.*;
+
+            public final class ExampleSparkJob implements SparkBatchJob {
+                @Override
+                public void execute(SparkJobContext context) throws Exception {
+                    // 在这里读取绑定资源、转换 Dataset，并通过 SDK 写入目标。
+                }
+            }
+            """;
+    private static final String DEFAULT_STREAMING_ONLINE_SOURCE = """
+            package com.example.datascalpel;
+
+            import cn.superhuang.datascalpel.sdk.SparkStreamingJob;
+            import cn.superhuang.datascalpel.sdk.SparkStreamingJobContext;
+            import cn.superhuang.datascalpel.sdk.StreamingQueries;
+
+            public final class ExampleSparkStreamingJob implements SparkStreamingJob {
+                @Override
+                public void start(SparkStreamingJobContext context, StreamingQueries queries) throws Exception {
+                    // 在这里读取绑定资源、构建流式转换，并通过 queries 注册全部 StreamingQuery。
+                }
+            }
+            """;
     private static final Set<String> LEGACY_RESOURCE_KEYS = Set.of(
             "spark.driver.cores", "spark.driver.memory", "spark.executor.instances",
             "spark.executor.cores", "spark.executor.memory");
@@ -63,6 +110,7 @@ public class SparkJarTaskDefinitionService {
     private final ComputeEngineSelectionService computeEngineSelectionService;
     private final SparkExecutionResourceConfigurationService resourceConfigurationService;
     private final TaskRunArtifactStorage storage;
+    private final TaskCompilationService taskCompilationService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -76,6 +124,7 @@ public class SparkJarTaskDefinitionService {
             ComputeEngineSelectionService computeEngineSelectionService,
             SparkExecutionResourceConfigurationService resourceConfigurationService,
             TaskRunArtifactStorage storage,
+            TaskCompilationService taskCompilationService,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
     ) {
@@ -88,6 +137,7 @@ public class SparkJarTaskDefinitionService {
         this.computeEngineSelectionService = computeEngineSelectionService;
         this.resourceConfigurationService = resourceConfigurationService;
         this.storage = storage;
+        this.taskCompilationService = taskCompilationService;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -115,7 +165,9 @@ public class SparkJarTaskDefinitionService {
         requireEditable(task);
         List<UpdateSparkJarTaskDefinitionRequest.Entry> parameters = normalizedEntries(request.parameters(), false);
         LegacyResources legacyResources = extractLegacyResources(request.sparkConf());
-        if (request.executionResources() != null && legacyResources.resources() != null) {
+        SparkExecutionResourceSpec requestedResources = request.executionResources() == null
+                ? null : request.executionResources().toSpec();
+        if (requestedResources != null && legacyResources.resources() != null) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                     "运行资源不能同时通过 Spark Conf 与“运行资源”配置，请移除 Spark Conf 中的资源参数");
         }
@@ -125,7 +177,7 @@ public class SparkJarTaskDefinitionService {
 
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
                 .orElseGet(() -> SparkJarTaskDefinition.create(taskId, expectedMode(task)));
-        SparkExecutionResourceSpec resources = resolvedResources(task, definition, request.executionResources(), legacyResources.resources());
+        SparkExecutionResourceSpec resources = resolvedResources(task, definition, requestedResources, legacyResources.resources());
         boolean changed = definition.updateConfiguration(
                 json(parameters), json(sparkConf), resourceConfigurationService.write(resources), request.timeoutSeconds());
         List<SparkJarTaskResourceBinding> existing = bindingRepository.findAllByTaskIdOrderByCreatedAtAsc(taskId);
@@ -165,6 +217,7 @@ public class SparkJarTaskDefinitionService {
                 String previousKey = definition.getJarObjectKey();
                 definition.updateJar(objectKey, fileName, sha256, content.length,
                         metadata.jobClass(), metadata.apiVersion(), metadata.jobMode());
+                definition.markJarUploaded();
                 SparkJarTaskDefinition saved = definitionRepository.saveAndFlush(definition);
                 return new UploadResult(previousKey, response(saved));
             }));
@@ -191,6 +244,107 @@ public class SparkJarTaskDefinitionService {
             }
         }
         return result.response();
+    }
+
+    @Transactional(readOnly = true)
+    public SparkJarOnlineSourceResponse getOnlineSource(UUID taskId) {
+        DataTask task = requireJarTask(taskId);
+        String defaultSource = defaultOnlineSource(expectedMode(task));
+        return definitionRepository.findByTaskId(taskId)
+                .map(definition -> onlineSourceResponse(definition, definition.getOnlineSourceCode() != null))
+                .orElseGet(() -> new SparkJarOnlineSourceResponse(task.getId(), 0, defaultSource,
+                        sha256(defaultSource.getBytes(StandardCharsets.UTF_8)), null,
+                        false, true, null, null));
+    }
+
+    public SparkJarOnlineSourceResponse saveOnlineSource(
+            UUID taskId, SaveSparkJarOnlineSourceRequest request) {
+        String source = normalizeOnlineSource(request == null ? null : request.sourceCode());
+        return Objects.requireNonNull(transactionTemplate.execute(status -> {
+            DataTask task = requireJarTaskForUpdate(taskId);
+            requireEditable(task);
+            SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
+                    .orElseGet(() -> SparkJarTaskDefinition.create(taskId, expectedMode(task)));
+            definition.saveOnlineSource(source);
+            return onlineSourceResponse(definitionRepository.saveAndFlush(definition), true);
+        }));
+    }
+
+    public SparkJarOnlineCompilationResponse compileOnlineSource(
+            UUID taskId, SaveSparkJarOnlineSourceRequest request) {
+        SparkJarOnlineSourceResponse saved = saveOnlineSource(taskId, request);
+        String source = saved.sourceCode();
+        String expectedSourceSha = saved.sourceSha256();
+        SparkJarSourceCompilationResponse compilation = taskCompilationService.compileSparkJarSource(
+                new SparkJarSourceCompilationRequest(UUID.randomUUID(), source, savedJobMode(taskId)));
+        if (!expectedSourceSha.equals(compilation.sourceSha256())) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Task Engine 返回的源码摘要不一致");
+        }
+        List<SparkJarOnlineCompilationResponse.Diagnostic> diagnostics = compilation.diagnostics().stream()
+                .map(value -> new SparkJarOnlineCompilationResponse.Diagnostic(
+                        SparkJarOnlineCompilationResponse.Severity.valueOf(value.severity().name()),
+                        value.code(), value.message(), value.line(), value.column(), value.endLine(), value.endColumn()))
+                .toList();
+        if (!compilation.successful()) {
+            return new SparkJarOnlineCompilationResponse(SparkJarOnlineCompilationResponse.Status.FAILED,
+                    compilation.durationMs(), getOnlineSource(taskId), diagnostics);
+        }
+        byte[] jar = compilation.jarBytes();
+        if (jar == null || jar.length == 0 || jar.length > MAX_ONLINE_JAR_BYTES
+                || !Objects.equals(compilation.jarSha256(), sha256(jar))) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Task Engine 返回的在线编译制品无效");
+        }
+        JarMetadata metadata = inspectJar(jar);
+        SparkJarJobMode expectedMode = savedJobMode(taskId);
+        if (!onlineJobClass(expectedMode).equals(metadata.jobClass()) || metadata.jobMode() != expectedMode) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Task Engine 返回的在线作业元数据无效");
+        }
+        String objectKey = "tasks/%s/spark-jar/current/%s.jar".formatted(taskId, compilation.jarSha256());
+        boolean objectAlreadyReferenced = definitionRepository.existsByJarObjectKey(objectKey);
+        storage.store(objectKey, jar, "application/java-archive");
+        UploadResult result;
+        try {
+            result = Objects.requireNonNull(transactionTemplate.execute(status -> {
+                DataTask task = requireJarTaskForUpdate(taskId);
+                requireEditable(task);
+                SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "在线源码不存在，请重新保存"));
+                String currentSourceSha = sha256(definition.getOnlineSourceCode().getBytes(StandardCharsets.UTF_8));
+                if (!expectedSourceSha.equals(currentSourceSha)) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "在线源码在编译期间已发生变化，请重新编译");
+                }
+                String previousKey = definition.getJarObjectKey();
+                definition.updateJar(objectKey, ONLINE_JOB_FILE_NAME, compilation.jarSha256(), jar.length,
+                        metadata.jobClass(), metadata.apiVersion(), metadata.jobMode());
+                definition.markOnlineSourceCompiled(expectedSourceSha);
+                SparkJarTaskDefinition savedDefinition = definitionRepository.saveAndFlush(definition);
+                return new UploadResult(previousKey, response(savedDefinition));
+            }));
+        } catch (RuntimeException exception) {
+            if (!objectAlreadyReferenced && !definitionRepository.existsByJarObjectKey(objectKey)) {
+                try { storage.delete(objectKey); }
+                catch (RuntimeException cleanup) { exception.addSuppressed(cleanup); }
+            }
+            throw exception;
+        }
+        if (result.previousKey() != null && !result.previousKey().equals(objectKey)) {
+            try { storage.delete(result.previousKey()); }
+            catch (RuntimeException cleanup) {
+                log.warn("Replaced online Spark JAR cleanup failed: taskId={}", taskId, cleanup);
+            }
+        }
+        return new SparkJarOnlineCompilationResponse(SparkJarOnlineCompilationResponse.Status.SUCCEEDED,
+                compilation.durationMs(), getOnlineSource(taskId), diagnostics);
+    }
+
+    void validateOnlineTrialJar(UUID taskId, byte[] jar) {
+        JarMetadata metadata = inspectJar(jar);
+        SparkJarJobMode expectedMode = savedJobMode(taskId);
+        if (!onlineJobClass(expectedMode).equals(metadata.jobClass()) || metadata.apiVersion() != JOB_API_VERSION
+                || metadata.jobMode() != expectedMode) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
+                    "Task Engine 返回的在线试运行 JAR 元数据无效");
+        }
     }
 
     public void validatePublishable(UUID taskId) {
@@ -563,6 +717,33 @@ public class SparkJarTaskDefinitionService {
                         binding.getAccessMode())).toList();
     }
 
+    private SparkJarOnlineSourceResponse onlineSourceResponse(
+            SparkJarTaskDefinition definition, boolean persisted) {
+        String source = definition.getOnlineSourceCode() == null
+                ? defaultOnlineSource(definition.getJobMode()) : definition.getOnlineSourceCode();
+        String sourceSha = sha256(source.getBytes(StandardCharsets.UTF_8));
+        SparkJarTaskDefinitionResponse definitionResponse = response(definition);
+        SparkJarOnlineSourceResponse.JarOrigin origin = !definition.hasJar() ? null
+                : definition.getOnlineCompiledSourceSha256() == null
+                ? SparkJarOnlineSourceResponse.JarOrigin.UPLOADED
+                : SparkJarOnlineSourceResponse.JarOrigin.ONLINE_COMPILED;
+        return new SparkJarOnlineSourceResponse(definition.getTaskId(), definition.getVersion(), source,
+                sourceSha, definition.getOnlineCompiledSourceSha256(), persisted,
+                !sourceSha.equals(definition.getOnlineCompiledSourceSha256()), origin, definitionResponse.jar());
+    }
+
+    private static String normalizeOnlineSource(String value) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "在线源码不能为空");
+        }
+        String source = value.replace("\r\n", "\n").replace('\r', '\n');
+        if (source.indexOf('\0') >= 0 || source.getBytes(StandardCharsets.UTF_8).length > MAX_ONLINE_SOURCE_BYTES) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
+                    "在线源码不能包含 NUL 且 UTF-8 大小不能超过 256 KiB");
+        }
+        return source;
+    }
+
     private static boolean sameBindings(List<SparkJarTaskResourceBinding> existing,
                                         List<UpdateSparkJarTaskDefinitionRequest.ResourceBinding> requested) {
         if (existing.size() != requested.size()) return false;
@@ -587,6 +768,11 @@ public class SparkJarTaskDefinitionService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
         if (!task.getType().isJar()) throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务不是 Spark JAR 任务");
         return task;
+    }
+
+    @Transactional(readOnly = true)
+    public SparkJarJobMode savedJobMode(UUID taskId) {
+        return expectedMode(requireJarTask(taskId));
     }
 
     private static void requireEditable(DataTask task) {
@@ -1013,6 +1199,16 @@ public class SparkJarTaskDefinitionService {
     private static SparkJarJobMode expectedMode(DataTask task) {
         return task.getType() == TaskType.SPARK_STREAMING_JAR
                 ? SparkJarJobMode.STREAMING : SparkJarJobMode.BATCH;
+    }
+
+    private static String defaultOnlineSource(SparkJarJobMode mode) {
+        return mode == SparkJarJobMode.STREAMING
+                ? DEFAULT_STREAMING_ONLINE_SOURCE : DEFAULT_BATCH_ONLINE_SOURCE;
+    }
+
+    private static String onlineJobClass(SparkJarJobMode mode) {
+        return mode == SparkJarJobMode.STREAMING
+                ? STREAMING_ONLINE_JOB_CLASS : BATCH_ONLINE_JOB_CLASS;
     }
 
     private static String normalizeTopicName(SparkJarResourceType type, String value) {

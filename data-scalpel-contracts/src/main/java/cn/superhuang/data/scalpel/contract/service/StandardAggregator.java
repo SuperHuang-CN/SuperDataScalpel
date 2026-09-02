@@ -4,8 +4,8 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public record StandardAggregator(
-        @NotNull AggregateType type,
-        @NotBlank String column,
+        @NotNull AggregateType function,
+        @NotBlank String field,
         @NotBlank String alias
 ) {
 }

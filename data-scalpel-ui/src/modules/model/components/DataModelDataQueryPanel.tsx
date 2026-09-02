@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -9,7 +10,7 @@ import {
 } from '@ant-design/icons';
 import type { ReactNode } from 'react';
 import type { TableProps } from 'antd';
-import { Alert, Button, Form, Input, Modal, Popover, Select, Space, Table, Tooltip } from 'antd';
+import { Button, Form, Input, Modal, Popover, Select, Space, Table, Tooltip } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {
@@ -34,7 +35,12 @@ export interface DataModelDataQueryPanelProps {
   fields: DataModelField[];
   query: (request: DataModelDataQueryRequest) => Promise<DataModelDataQueryResponse>;
   rowKey?: (row: Record<string, unknown>, index: number) => string;
-  renderCell?: (value: unknown, fieldCode: string, row: Record<string, unknown>) => ReactNode;
+  renderCell?: (
+    value: unknown,
+    fieldCode: string,
+    row: Record<string, unknown>,
+    fieldType: DataModelField['fieldType'],
+  ) => ReactNode;
   rowSelection?: (rows: DataModelQueryRow[]) => TableProps<DataModelQueryRow>['rowSelection'];
   toolbar?: ReactNode;
   onResult?: (result: DataModelDataQueryResponse) => void;
@@ -85,9 +91,14 @@ const normalizeQueryValues = (values: QueryFormValues): QueryFormValues => ({
   orders: (values.orders ?? []).map((order) => ({ ...order })),
 });
 
-const defaultRenderCell = (value: unknown) => {
+const defaultRenderCell = (
+  value: unknown,
+  _fieldCode: string,
+  _row: Record<string, unknown>,
+  fieldType: DataModelField['fieldType'],
+) => {
   if (typeof value === 'object') return <code>{JSON.stringify(value)}</code>;
-  return dataModelPreviewCellText(value);
+  return dataModelPreviewCellText(value, fieldType);
 };
 
 const FilterValueInput = ({ index, form }: { index: number; form: ReturnType<typeof Form.useForm<QueryFormValues>>[0] }) => {
@@ -161,7 +172,9 @@ export const DataModelDataQueryPanel = ({
         key: column.code,
         width,
         ellipsis: true,
-        render: (value: unknown, record: DataModelQueryRow) => renderCell(value, column.code, record),
+        render: (value: unknown, record: DataModelQueryRow) => renderCell(
+          value, column.code, record, column.fieldType,
+        ),
       };
     })
   ), [autoColumnWidths, columnSizing, queryResult, renderCell]);
@@ -311,7 +324,7 @@ export const DataModelDataQueryPanel = ({
             <span className="model-data-query-summary-text">{appliedSummary}</span>
           </Tooltip>
         </div>
-        <Space size={6}>
+        <div className="model-data-query-summary-actions">
           {hasAppliedConditions && <Button type="link" size="small" onClick={() => void resetAndQuery()}>重置</Button>}
           <Popover
             trigger="click"
@@ -386,8 +399,55 @@ export const DataModelDataQueryPanel = ({
           >
             <Button size="small" icon={<EditOutlined />}>编辑条件{filterCount + orderCount > 0 ? ` · ${filterCount + orderCount}` : ''}</Button>
           </Popover>
-          <Button size="small" icon={<ReloadOutlined />} disabled={!lastRequest} loading={pending} onClick={() => lastRequest && void run(lastRequest)}>刷新</Button>
-        </Space>
+          <span className="model-data-query-control-divider" aria-hidden />
+          <Select
+            className="model-data-query-page-size"
+            size="small"
+            aria-label="每页条数"
+            disabled={pending || options.length === 0}
+            value={pageSize}
+            options={pageSizeOptions}
+            onChange={(value) => {
+              setPageSize(value);
+              if (lastRequest) void executeQuery(1, value);
+            }}
+          />
+          <Button
+            type="text"
+            size="small"
+            icon={<LeftOutlined />}
+            aria-label="上一页"
+            disabled={!queryResult || queryResult.pageNo <= 1}
+            onClick={() => queryResult && void executeQuery(queryResult.pageNo - 1)}
+          />
+          <span className="model-data-query-page-status">
+            {options.length === 0
+              ? '无可查询字段'
+              : pending
+                ? `第 ${lastRequest?.pageNo ?? queryResult?.pageNo ?? 1} 页`
+                : queryResult ? `第 ${queryResult.pageNo} 页` : '尚未查询'}
+          </span>
+          <Button
+            type="text"
+            size="small"
+            icon={<RightOutlined />}
+            aria-label="下一页"
+            disabled={!queryResult?.hasNext}
+            onClick={() => queryResult && void executeQuery(queryResult.pageNo + 1)}
+          />
+          <span className="model-data-query-control-divider" aria-hidden />
+          <Tooltip title="刷新查询结果">
+            <Button
+              type="text"
+              size="small"
+              icon={<ReloadOutlined />}
+              aria-label="刷新查询结果"
+              disabled={!lastRequest}
+              loading={pending}
+              onClick={() => lastRequest && void run(lastRequest)}
+            />
+          </Tooltip>
+        </div>
       </div>
       {Boolean(error) && <Alert type="warning" showIcon className="model-data-query-alert" title="条件查询失败" description={error instanceof ApiError ? error.message : '请检查查询条件后重试。'} />}
       {queryResult && !queryResult.stableOrder && <Alert type="info" showIcon className="model-data-query-alert" title="当前模型未定义主键或排序键，翻页结果可能不稳定。" />}
@@ -407,12 +467,6 @@ export const DataModelDataQueryPanel = ({
         }}
         scroll={{ x: tableWidth || undefined, y: '100%' }} pagination={false}
       />
-      <div className="model-data-query-pagination">
-        <span>{queryResult ? `第 ${queryResult.pageNo} 页` : pending ? '正在查询第 1 页' : options.length === 0 ? '无可查询字段' : '尚未查询'}</span>
-        <Select disabled={pending || options.length === 0} value={pageSize} options={pageSizeOptions} onChange={(value) => { setPageSize(value); if (lastRequest) void executeQuery(1, value); }} />
-        <Button icon={<LeftOutlined />} aria-label="上一页" disabled={!queryResult || queryResult.pageNo <= 1} onClick={() => queryResult && void executeQuery(queryResult.pageNo - 1)} />
-        <Button icon={<RightOutlined />} aria-label="下一页" disabled={!queryResult?.hasNext} onClick={() => queryResult && void executeQuery(queryResult.pageNo + 1)} />
-      </div>
     </div>
   );
 };

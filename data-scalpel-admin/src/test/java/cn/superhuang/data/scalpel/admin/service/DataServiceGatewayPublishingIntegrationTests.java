@@ -486,7 +486,7 @@ class DataServiceGatewayPublishingIntegrationTests {
                   "code":"%s",
                   "name":"网关发布服务",
                   "engineId":"%s",
-                  "routePath":"%s",
+                  "contextPath":"%s",
                   "type":"STANDARD_TABLE",
                   "standardDefinition":{"modelId":"%s"},
                   "sqlDefinition":null

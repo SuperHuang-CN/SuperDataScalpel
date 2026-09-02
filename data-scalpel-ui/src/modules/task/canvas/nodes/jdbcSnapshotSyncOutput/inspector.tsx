@@ -1,4 +1,5 @@
-import { Alert, Form, Space } from 'antd';
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { Form, Space } from 'antd';
 import { useImperativeHandle } from 'react';
 import {
   useDataSource,

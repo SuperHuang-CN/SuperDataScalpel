@@ -571,6 +571,8 @@ describe('useCanvasMetadataSnapshot', () => {
           },
           outputTableName: 'order_events',
           startingOffsets: 'LATEST',
+          valueFormat: 'JSON',
+          metadataFields: [],
         },
       }, {
         id: '42876302-e960-4e39-860a-9fe9bb90600e',
@@ -697,6 +699,7 @@ describe('useCanvasMetadataSnapshot', () => {
     expect(fetchFileDatasetCanvasMetadata).toHaveBeenCalledWith([fileDatasetTableId]);
     expect(result.current.metadataSnapshot.fileDatasetTables).toEqual([{
       id: fileDatasetTableId,
+      fileDatasetId: 'c2b31cf6-ee6b-44cc-81e7-19a85af8ef96',
       code: 'orders_202607',
       name: '七月订单',
       datasetType: 'SHP',
@@ -735,7 +738,7 @@ describe('useCanvasMetadataSnapshot', () => {
         },
       ],
     }]);
-    expect(result.current.nodeSummaries.get(fileDefinition.nodes[0].id)).toEqual({
+    expect(result.current.nodeSummaries.get(fileDefinition.nodes[0].id)).toMatchObject({
       kind: 'FILE_DATASET',
       fileDatasetName: '订单归档',
       tableName: '七月订单',
@@ -749,6 +752,13 @@ describe('useCanvasMetadataSnapshot', () => {
         dimension: 'XY',
       },
     });
+    const fileSummary = result.current.nodeSummaries.get(fileDefinition.nodes[0].id);
+    expect(fileSummary?.kind === 'FILE_DATASET' ? fileSummary.tables?.[0]?.schema : null)
+      .toMatchObject({
+        name: 'orders_202607',
+        datasetKind: 'BOUNDED',
+        columns: [{ name: 'order_id' }, { name: '_geometry' }],
+      });
     expect(result.current.error).toBe(false);
   });
 

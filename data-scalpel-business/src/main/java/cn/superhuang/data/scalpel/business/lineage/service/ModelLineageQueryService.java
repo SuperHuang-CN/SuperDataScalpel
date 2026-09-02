@@ -873,7 +873,7 @@ public class ModelLineageQueryService {
                 null, null, null, null, null,
                 item.definition().getVersion(), null, item.stale(), null, null,
                 item.service().getId(), item.service().getType(), item.service().getStatus(),
-                item.service().getEngineRoutePath()
+                item.service().getContextPath()
         );
     }
 

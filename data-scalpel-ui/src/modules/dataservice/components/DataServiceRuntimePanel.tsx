@@ -1,6 +1,9 @@
-import { CopyOutlined } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Empty, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { CopyOutlined, DeploymentUnitOutlined, GlobalOutlined } from '@ant-design/icons';
+import { Button, Descriptions, Empty, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { TableProps } from 'antd';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import { gatewayProviderLabels } from '../model/apiConsumer';
 import {
   dataServiceDeploymentStatusLabels,
@@ -11,10 +14,11 @@ import {
   type GatewayServicePublicationStatus,
 } from '../model/dataService';
 import { GatewayReconciliationTag } from './GatewayReconciliationTag';
+import type { ServiceEngine } from '../../serviceengine';
 
 interface DataServiceRuntimePanelProps {
   dataService: DataServiceDetail;
-  engineName?: string;
+  engine?: ServiceEngine;
   onCopyCurl: () => void;
 }
 
@@ -42,9 +46,19 @@ const formatDateTime = (value: string | null) => value ? new Intl.DateTimeFormat
 
 export const DataServiceRuntimePanel = ({
   dataService,
-  engineName,
+  engine,
   onCopyCurl,
 }: DataServiceRuntimePanelProps) => {
+  const geoBase = engine?.runtimeUrl.replace(/\/+$/, '') ?? '';
+  const workspace = engine?.geoServerWorkspace ?? 'datascalpel';
+  const layerName = `svc_${dataService.code}`;
+  const qualifiedLayerName = `${workspace}:${layerName}`;
+  const wmsEndpoint = `${geoBase}/${workspace}/wms`;
+  const wfsEndpoint = `${geoBase}/${workspace}/wfs`;
+  const wmsCapabilities = `${wmsEndpoint}?service=WMS&version=1.3.0&request=GetCapabilities`;
+  const wfsCapabilities = `${wfsEndpoint}?service=WFS&version=2.0.0&request=GetCapabilities`;
+  const geoJsonExample = `${wfsEndpoint}?service=WFS&version=2.0.0&request=GetFeature&typeNames=${encodeURIComponent(qualifiedLayerName)}&outputFormat=application%2Fjson&count=100`;
+  const wmsReflect = `${geoBase}/wms/reflect?layers=${encodeURIComponent(qualifiedLayerName)}`;
   const columns: TableProps<GatewayServiceBinding>['columns'] = [
     {
       title: '网关',
@@ -135,10 +149,13 @@ export const DataServiceRuntimePanel = ({
         />
       )}
 
-      <section className="data-service-detail-section">
-        <div className="data-service-detail-section-title">Service Engine 运行状态</div>
-        <Descriptions size="small" bordered column={3}>
-          <Descriptions.Item label="Service Engine">{engineName ?? dataService.engineId}</Descriptions.Item>
+      <BusinessDetailSection
+        title={dataService.type === 'SPATIAL_SERVICE' ? 'GeoServer 运行状态' : 'Service Engine 运行状态'}
+        description={dataService.type === 'SPATIAL_SERVICE' ? '图层部署状态与 GeoServer 资源标识' : '部署状态、版本与引擎内部访问地址'}
+        icon={<DeploymentUnitOutlined />}
+      >
+        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }}>
+          <Descriptions.Item label={dataService.type === 'SPATIAL_SERVICE' ? 'GeoServer Engine' : 'Service Engine'}>{engine?.name ?? dataService.engineId}</Descriptions.Item>
           <Descriptions.Item label="部署状态">
             {dataService.deploymentStatus
               ? <Tag color={deploymentStatusColors[dataService.deploymentStatus]}>{dataServiceDeploymentStatusLabels[dataService.deploymentStatus]}</Tag>
@@ -146,13 +163,23 @@ export const DataServiceRuntimePanel = ({
           </Descriptions.Item>
           <Descriptions.Item label="部署时间">{formatDateTime(dataService.deployedAt)}</Descriptions.Item>
           <Descriptions.Item label="当前 Revision">{dataService.revision}</Descriptions.Item>
-          <Descriptions.Item label="请求方法"><Tag color="blue">POST</Tag></Descriptions.Item>
-          <Descriptions.Item label="Engine 内部路由"><code>{dataService.engineRoutePath}</code></Descriptions.Item>
-        </Descriptions>
-      </section>
+          <Descriptions.Item label="协议">{dataService.type === 'SPATIAL_SERVICE' ? <Space><Tag>WMS</Tag><Tag>WFS</Tag></Space> : <Tag color="blue">POST</Tag>}</Descriptions.Item>
+          <Descriptions.Item label={dataService.type === 'SPATIAL_SERVICE' ? 'Qualified Layer Name' : '服务 Context Path'}><code>{dataService.type === 'SPATIAL_SERVICE' ? qualifiedLayerName : dataService.contextPath}</code></Descriptions.Item>
+        </BusinessDetailDescriptions>
+      </BusinessDetailSection>
 
-      <section className="data-service-detail-section data-service-gateway-section">
-        <div className="data-service-detail-section-title">API 网关发布</div>
+      {dataService.type === 'SPATIAL_SERVICE' ? (
+        <BusinessDetailSection title="GeoServer 服务入口" description="空间服务直连 GeoServer，不经过 API 网关" icon={<GlobalOutlined />}>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }}>
+            <Descriptions.Item label="WMS 端点"><Typography.Text copyable><code>{wmsEndpoint}</code></Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="WFS 端点"><Typography.Text copyable><code>{wfsEndpoint}</code></Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="WMS 预览"><Typography.Link href={wmsReflect} target="_blank" rel="noreferrer">打开 Reflect 预览</Typography.Link></Descriptions.Item>
+            <Descriptions.Item label="WMS GetCapabilities" span={3}><Typography.Text copyable={{ text: wmsCapabilities }}><code>{wmsCapabilities}</code></Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="WFS GetCapabilities" span={3}><Typography.Text copyable={{ text: wfsCapabilities }}><code>{wfsCapabilities}</code></Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="WFS GeoJSON 示例" span={3}><Typography.Text copyable={{ text: geoJsonExample }}><code>{geoJsonExample}</code></Typography.Text></Descriptions.Item>
+          </BusinessDetailDescriptions>
+        </BusinessDetailSection>
+      ) : <BusinessDetailSection title="API 网关发布" description="各网关实例的发布结果与访问入口" icon={<GlobalOutlined />} className="data-service-gateway-section">
         {dataService.gatewayBindings.length > 0 ? (
           <Table<GatewayServiceBinding>
             size="small"
@@ -165,7 +192,7 @@ export const DataServiceRuntimePanel = ({
         ) : (
           <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="当前服务尚未发布到 API 网关" />
         )}
-      </section>
+      </BusinessDetailSection>}
     </div>
   );
 };

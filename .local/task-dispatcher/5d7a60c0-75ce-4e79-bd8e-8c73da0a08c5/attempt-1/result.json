@@ -1,0 +1,76 @@
+{
+  "schemaVersion" : 11,
+  "executionId" : "5d7a60c0-75ce-4e79-bd8e-8c73da0a08c5",
+  "runId" : "0b842a69-2bdf-4bea-afa1-2bbe5680d5fe",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-30T15:15:37.492195339Z",
+  "endedAt" : "2026-08-30T15:15:47.363301052Z",
+  "durationMs" : 9871,
+  "affectedRows" : 33,
+  "nodeResults" : [ {
+    "nodeId" : "d9ee7dbd-5b8e-45da-b0a7-35fe9ee51725",
+    "nodeType" : "FILE_DATASET_INPUT",
+    "nodeName" : "文件数据集输入",
+    "state" : "SUCCESS",
+    "phase" : "READ",
+    "startedAt" : "2026-08-30T15:15:41.898697549Z",
+    "endedAt" : "2026-08-30T15:15:42.017079382Z",
+    "durationMs" : 118,
+    "rowsWritten" : null,
+    "metrics" : null,
+    "message" : "文件数据集输入已准备",
+    "error" : null
+  }, {
+    "nodeId" : "96cf668c-a44b-40b2-95cd-be59e147aea6",
+    "nodeType" : "MODEL_OUTPUT",
+    "nodeName" : "模型输出",
+    "state" : "SUCCESS",
+    "phase" : "WRITE",
+    "startedAt" : "2026-08-30T15:15:42.017766841Z",
+    "endedAt" : "2026-08-30T15:15:47.362439718Z",
+    "durationMs" : 5344,
+    "rowsWritten" : 33,
+    "metrics" : {
+      "kind" : "OUTPUT_WRITES",
+      "writes" : [ {
+        "writeId" : "73668b13-283e-4014-bee7-d55fa6c4aae6",
+        "sourceTableName" : "市政府",
+        "targetDisplayName" : "市政府 · ods_geo_gz_city_hall",
+        "state" : "SUCCESS",
+        "affectedRows" : 9,
+        "errorCode" : null
+      }, {
+        "writeId" : "019ed9f1-3ffd-48f9-961c-c946732588d2",
+        "sourceTableName" : "铁路线",
+        "targetDisplayName" : "铁路线 · ods_geo_gz_railway",
+        "state" : "SUCCESS",
+        "affectedRows" : 6,
+        "errorCode" : null
+      }, {
+        "writeId" : "6e1eb2e1-e990-462a-b6ae-98c09cf63723",
+        "sourceTableName" : "市级行政区划",
+        "targetDisplayName" : "市级行政区划 · ods_geo_gz_city",
+        "state" : "SUCCESS",
+        "affectedRows" : 9,
+        "errorCode" : null
+      }, {
+        "writeId" : "b63bfc74-9dd7-4ec6-a3ca-a39295e5fb82",
+        "sourceTableName" : "省级行政区划",
+        "targetDisplayName" : "省级行政区划 · ods_geo_gz_province",
+        "state" : "SUCCESS",
+        "affectedRows" : 9,
+        "errorCode" : null
+      } ]
+    },
+    "message" : "模型输出写入成功",
+    "error" : null
+  } ],
+  "taskType" : "SPARK_CANVAS",
+  "qualityResult" : null,
+  "userJobObservability" : null,
+  "lineage" : null,
+  "trialPreview" : null,
+  "canvasTrialPreview" : null,
+  "error" : null
+}

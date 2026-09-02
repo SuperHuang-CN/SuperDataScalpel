@@ -49,7 +49,7 @@ describe('TaskScheduleDrawer', () => {
     await user.type(name, '  每日凌晨  ');
     await user.clear(cron);
     await user.type(cron, '0 2 * * *');
-    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
+    await user.click(screen.getByRole('button', { name: /创\s*建计划/ }));
     expect(await screen.findByText('Quartz Cron 必须包含 6 或 7 个字段')).toBeInTheDocument();
     expect(onSubmit).not.toHaveBeenCalled();
 
@@ -57,7 +57,7 @@ describe('TaskScheduleDrawer', () => {
     await user.type(cron, '0 30 2 * * ?');
     await user.click(screen.getByLabelText('重叠策略'));
     await user.click(await screen.findByText('允许重叠：仍创建新的运行实例'));
-    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
+    await user.click(screen.getByRole('button', { name: /创\s*建计划/ }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith({
       name: '每日凌晨',
       cronExpression: '0 30 2 * * ?',

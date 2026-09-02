@@ -14,11 +14,29 @@ public record CreateDataServiceRequest(
         @NotBlank @Size(max = 100) String name,
         UUID directoryId,
         @NotNull UUID engineId,
+        @Size(max = 255) String contextPath,
         @NotNull DataServiceType type,
         @Valid StandardDataServiceDefinitionRequest standardDefinition,
         @Valid SqlDataServiceDefinitionRequest sqlDefinition,
         @Valid ScriptDataServiceDefinitionRequest scriptDefinition,
+        @Valid SpatialDataServiceDefinitionRequest spatialDefinition,
         @Size(max = 1000) String description
 ) {
-
+    public CreateDataServiceRequest(
+            String code,
+            String name,
+            UUID directoryId,
+            UUID engineId,
+            String contextPath,
+            DataServiceType type,
+            StandardDataServiceDefinitionRequest standardDefinition,
+            SqlDataServiceDefinitionRequest sqlDefinition,
+            ScriptDataServiceDefinitionRequest scriptDefinition,
+            String description
+    ) {
+        this(
+                code, name, directoryId, engineId, contextPath, type,
+                standardDefinition, sqlDefinition, scriptDefinition, null, description
+        );
+    }
 }

@@ -12,6 +12,7 @@ import cn.superhuang.data.scalpel.business.service.domain.DataService;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceModelReferenceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
+import cn.superhuang.data.scalpel.business.service.repository.SpatialDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceRelatedModelRole;
 import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
@@ -59,6 +60,7 @@ public class DataModelReferenceQueryService {
     private final DataServiceRepository dataServiceRepository;
     private final StandardDataServiceDefinitionRepository standardServiceRepository;
     private final SqlDataServiceModelReferenceRepository sqlServiceRepository;
+    private final SpatialDataServiceDefinitionRepository spatialServiceRepository;
     private final CanvasTaskDefinitionService canvasDefinitionService;
 
     public DataModelReferenceQueryService(
@@ -75,6 +77,7 @@ public class DataModelReferenceQueryService {
             DataServiceRepository dataServiceRepository,
             StandardDataServiceDefinitionRepository standardServiceRepository,
             SqlDataServiceModelReferenceRepository sqlServiceRepository,
+            SpatialDataServiceDefinitionRepository spatialServiceRepository,
             CanvasTaskDefinitionService canvasDefinitionService
     ) {
         this.modelRepository = modelRepository;
@@ -90,6 +93,7 @@ public class DataModelReferenceQueryService {
         this.dataServiceRepository = dataServiceRepository;
         this.standardServiceRepository = standardServiceRepository;
         this.sqlServiceRepository = sqlServiceRepository;
+        this.spatialServiceRepository = spatialServiceRepository;
         this.canvasDefinitionService = canvasDefinitionService;
     }
 
@@ -187,6 +191,9 @@ public class DataModelReferenceQueryService {
                 serviceReferences.add(new PendingServiceReference(
                         reference.getDataServiceId(), DataServiceRelatedModelRole.REFERENCE,
                         reference.getSortOrder() + 1)));
+        spatialServiceRepository.findAllByModelId(modelId).forEach(definition ->
+                serviceReferences.add(new PendingServiceReference(
+                        definition.getDataServiceId(), DataServiceRelatedModelRole.PRIMARY, null)));
         Map<UUID, DataService> servicesById = dataServiceRepository.findAllById(
                         serviceReferences.stream().map(PendingServiceReference::serviceId).distinct().toList())
                 .stream().collect(Collectors.toMap(DataService::getId, Function.identity()));

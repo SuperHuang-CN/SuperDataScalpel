@@ -99,6 +99,21 @@ vi.mock('../hooks/useDataModels', () => ({
   }),
 }));
 
+vi.mock('../../system', () => ({
+  useCurrentUser: () => ({
+    data: { permissions: [] },
+  }),
+}));
+
+vi.mock('../../standard', () => ({
+  isStandardDictionaryTypeFamilyCompatible: () => true,
+  standardDictionaryValueTypeLabels: {},
+  useStandardDictionaries: () => ({
+    data: { content: [] },
+    isFetching: false,
+  }),
+}));
+
 vi.mock('./DataModelPhysicalChangeDrawer', () => ({
   DataModelPhysicalChangeDrawer: () => null,
 }));
@@ -162,7 +177,7 @@ describe('DataModelFieldsPanel field editing boundaries', () => {
     const nameInput = screen.getByLabelText('字段名称');
     await user.clear(nameInput);
     await user.type(nameInput, '订单主键');
-    await user.click(screen.getByRole('button', { name: /确\s*定/ }));
+    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /保存字段/ })).toBeEnabled();
@@ -180,11 +195,34 @@ describe('DataModelFieldsPanel field editing boundaries', () => {
     const codeInput = screen.getByLabelText('字段编码');
     await user.clear(codeInput);
     await user.type(codeInput, 'business_order_id');
-    await user.click(screen.getByRole('button', { name: /确\s*定/ }));
+    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
 
     await waitFor(() => {
       expect(screen.getByRole('button', { name: /生成变更计划/ })).toBeEnabled();
     });
     expect(screen.queryByRole('button', { name: /保存字段/ })).not.toBeInTheDocument();
+  });
+
+  it('shows only the selected page of fields when using the top pagination controls', async () => {
+    const user = userEvent.setup();
+    detailFields = Array.from({ length: 21 }, (_, index) => ({
+      ...scalarFields[0],
+      id: `field-${index + 1}`,
+      code: `field_${index + 1}`,
+      name: `字段 ${index + 1}`,
+      sortOrder: (index + 1) * 10,
+    }));
+
+    render(<DataModelFieldsPanel model={detailModel} canUpdate={false} />);
+
+    expect(screen.getByText('字段 1')).toBeInTheDocument();
+    expect(screen.queryByText('字段 21')).not.toBeInTheDocument();
+
+    const nextPage = document.querySelector<HTMLButtonElement>('.detail-table-pagination .ant-pagination-next button');
+    expect(nextPage).not.toBeNull();
+    await user.click(nextPage!);
+
+    expect(await screen.findByText('字段 21')).toBeInTheDocument();
+    expect(screen.queryByText('字段 1')).not.toBeInTheDocument();
   });
 });

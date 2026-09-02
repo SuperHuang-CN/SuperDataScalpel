@@ -136,6 +136,7 @@ public class DynamicServiceRouteRegistry {
             case STANDARD_TABLE -> new HandlerBinding(standardHandlerProvider.getObject(), standardHandlerMethod);
             case SQL_QUERY -> new HandlerBinding(sqlHandlerProvider.getObject(), sqlHandlerMethod);
             case SCRIPT_API -> throw new IllegalArgumentException("SCRIPT_API routes are owned by API Studio");
+            case SPATIAL_SERVICE -> throw new IllegalArgumentException("SPATIAL_SERVICE routes are owned by GeoServer");
         };
     }
 

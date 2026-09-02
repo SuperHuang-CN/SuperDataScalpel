@@ -1,8 +1,15 @@
 package cn.superhuang.data.scalpel.dialect.builtin;
 
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
+import cn.superhuang.data.scalpel.contract.type.CrsReference;
+import cn.superhuang.data.scalpel.contract.type.GeometryKind;
+import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.model.PrimaryKeyMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
+import cn.superhuang.data.scalpel.dialect.model.SpatialMetadataStrength;
+import cn.superhuang.data.scalpel.dialect.model.SpatialStorageEncoding;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheckType;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeStrategy;
@@ -109,6 +116,39 @@ class ClickHouseTableChangePlanTest {
         assertTrue(plan.reasons().stream().anyMatch(reason -> reason.message().contains("排序键")));
     }
 
+    @Test
+    void acceptsAnyValidWkbGeometryMarkerButRejectsAnInvalidMarker() {
+        TableIdentifier table = new TableIdentifier("warehouse", null, "spatial_events");
+        TableDefinition expected = new TableDefinition(
+                table,
+                List.of(new TableColumnDefinition(
+                        "shape", TableColumnType.GEOMETRY, null, null, null, true, null,
+                        new GeometryTypeDefinition(
+                                GeometryKind.POINT, CrsReference.epsg(4326), CoordinateDimension.XY
+                        )
+                )),
+                List.of(),
+                TableStorageDefinition.mergeTree(List.of())
+        );
+        TableMetadata differentSemantics = new TableMetadata(
+                new TableSummary(table, "TABLE", null),
+                List.of(geometryColumn("MULTIPOLYGON", 3857, null)),
+                new PrimaryKeyMetadata(null, List.of()),
+                List.of(),
+                new TableStorageMetadata("MergeTree", List.of())
+        );
+        TableMetadata invalidMarker = new TableMetadata(
+                new TableSummary(table, "TABLE", null),
+                List.of(geometryColumn("MULTIPOLYGON", 3857, "空间 marker 损坏")),
+                new PrimaryKeyMetadata(null, List.of()),
+                List.of(),
+                new TableStorageMetadata("MergeTree", List.of())
+        );
+
+        assertTrue(dialect.compareTable(expected, differentSemantics).compatible());
+        assertFalse(dialect.compareTable(expected, invalidMarker).compatible());
+    }
+
     private static TableDefinition definition(String payloadName, boolean payloadNullable, List<String> orderByColumns) {
         return new TableDefinition(
                 new TableIdentifier("warehouse", null, "events"),
@@ -141,6 +181,25 @@ class ClickHouseTableChangePlanTest {
         return new ColumnMetadata(
                 name, ordinal, jdbcType, nativeType, LogicalType.STRING,
                 null, null, null, nullable, null, false, false, null
+        );
+    }
+
+    private static ColumnMetadata geometryColumn(String kind, int epsg, String issue) {
+        return new ColumnMetadata(
+                "shape", 1, Types.VARCHAR, "String", LogicalType.STRING,
+                null, null, null, true, null, false, false, null,
+                new SpatialColumnMetadata(
+                        kind,
+                        null,
+                        "EPSG",
+                        epsg,
+                        CoordinateDimension.XY,
+                        true,
+                        true,
+                        SpatialStorageEncoding.WKB,
+                        SpatialMetadataStrength.DECLARED,
+                        issue
+                )
         );
     }
 

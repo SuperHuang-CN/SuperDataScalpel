@@ -21,8 +21,10 @@ const configuredWrites = (configuration: KafkaOutputConfiguration): KafkaOutputW
     writeId: crypto.randomUUID(),
     sourceTableName: configuration.sourceTableName ?? '',
     topic: configuration.topic ?? '',
-    valueSchema: configuration.valueSchema ?? { columns: [] },
+    valueFormat: null,
+    valueColumnNames: [],
     keyColumnName: configuration.keyColumnName ?? '',
+    valueSchema: configuration.valueSchema ?? { columns: [] },
     columnMappings: configuration.columnMappings ?? [],
   }];
 };
@@ -35,7 +37,7 @@ const editorConfiguration = (
   writes: [write],
   sourceTableName: write.sourceTableName,
   topic: write.topic,
-  valueSchema: write.valueSchema,
+  valueSchema: write.valueSchema ?? { columns: [] },
   keyColumnName: write.keyColumnName,
   columnMappings: write.columnMappings,
 });
@@ -85,12 +87,15 @@ const KafkaOutputCanvasNodeInspector = ({
 
   const addWrite = () => {
     if (writes.length >= MAX_STREAMING_WRITES) return;
+    const source = validation?.inputTables.find((table) => table.datasetKind === 'UNBOUNDED');
     const write: KafkaOutputWrite = {
       writeId: crypto.randomUUID(),
-      sourceTableName: validation?.inputTables.find((table) => table.datasetKind === 'UNBOUNDED')?.name ?? '',
+      sourceTableName: source?.name ?? '',
       topic: '',
-      valueSchema: { columns: [] },
+      valueFormat: 'JSON',
+      valueColumnNames: source?.columns.map((column) => column.name) ?? [],
       keyColumnName: '',
+      valueSchema: null,
       columnMappings: [],
     };
     updateWrites([...writes, write]);
@@ -110,7 +115,7 @@ const KafkaOutputCanvasNodeInspector = ({
     Modal.confirm({
       title: '删除这条 Kafka 写入？',
       content: write.topic
-        ? `Topic ${write.topic} 的 Value Schema、Key 和字段映射会一并删除。`
+        ? `Topic ${write.topic} 的 Value 格式、字段选择和 Key 会一并删除。`
         : '未完成的写入配置会一并删除。',
       okText: '删除',
       cancelText: '取消',
@@ -154,8 +159,12 @@ const KafkaOutputCanvasNodeInspector = ({
             </Typography.Text>
             <Space size={4} wrap style={{ marginTop: 5 }}>
               <Tag color={write.keyColumnName ? 'blue' : 'default'}>{write.keyColumnName ? `Key · ${write.keyColumnName}` : '无 Key'}</Tag>
-              <Tag>{write.valueSchema.columns.length} 个 Schema 字段</Tag>
-              <Tag>{write.columnMappings.length} 个映射</Tag>
+              <Tag>{write.valueFormat ?? '旧版 JSON 映射'}</Tag>
+              <Tag>{write.valueFormat == null
+                ? `${write.valueSchema?.columns.length ?? 0} 个 Schema 字段`
+                : write.valueFormat === 'JSON'
+                  ? `${write.valueColumnNames.length} 个 Value 字段`
+                  : write.valueColumnNames[0] || '待选择 Value 字段'}</Tag>
             </Space>
           </div>
           <Tooltip title="上移"><Button type="text" size="small" icon={<ArrowUpOutlined />} disabled={index === 0}
@@ -169,7 +178,7 @@ const KafkaOutputCanvasNodeInspector = ({
         </div>
       </div>)}
       <Typography.Text type="secondary" style={{ fontSize: 12 }}>
-        每条写入独立配置来源和目标，并启动独立 StreamingQuery；节点内不提供跨 Topic 事务。
+        Kafka Output 只负责序列化和投递；字段改名、类型转换与自定义消息结构请在前置 Processor 完成。
       </Typography.Text>
     </Space>
     <Modal className="canvas-output-write-modal" open={Boolean(editingWrite)} width={1080} destroyOnHidden styles={{ body: { overflow: 'hidden' } }}

@@ -76,7 +76,7 @@ public class SparkJarDevelopmentKitService {
     public SparkJarDevelopmentKitResponse generate(UUID taskId, CreateSparkJarDevelopmentKitRequest request) {
         DataTask task = taskRepository.findByIdForUpdate(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
-        requireBatchJar(task);
+        requireJarTask(task);
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "请先保存 Spark JAR 任务定义"));
         if (definition.getVersion() != request.definitionVersion()) {
@@ -100,7 +100,7 @@ public class SparkJarDevelopmentKitService {
     public SparkJarDevelopmentKitResponse get(UUID taskId) {
         DataTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
-        requireBatchJar(task);
+        requireJarTask(task);
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "请先保存 Spark JAR 任务定义"));
         SparkJarDevelopmentKitGenerator.Request config = currentConfiguration(taskId, definition);
@@ -174,7 +174,7 @@ public class SparkJarDevelopmentKitService {
     protected SparkJarDevelopmentKitJob loadDownloadable(UUID taskId) {
         DataTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
-        requireBatchJar(task);
+        requireJarTask(task);
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "请先保存 Spark JAR 任务定义"));
         SparkJarDevelopmentKitJob job = currentArtifact(definition, taskId)
@@ -441,9 +441,9 @@ public class SparkJarDevelopmentKitService {
         return normalized.isEmpty() ? null : normalized;
     }
 
-    private static void requireBatchJar(DataTask task) {
-        if (task.getType() != TaskType.SPARK_JAR) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只有批处理 Spark JAR 任务可以生成开发包");
+    private static void requireJarTask(DataTask task) {
+        if (!task.getType().isJar()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "只有 Spark JAR 任务可以生成开发包");
         }
     }
 

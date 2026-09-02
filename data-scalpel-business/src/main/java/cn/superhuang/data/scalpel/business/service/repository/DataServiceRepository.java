@@ -18,6 +18,10 @@ public interface DataServiceRepository extends SearchRepository<DataService, UUI
 
     boolean existsByEngineId(UUID engineId);
 
+    boolean existsByEngineIdAndContextPath(UUID engineId, String contextPath);
+
+    boolean existsByEngineIdAndContextPathAndIdNot(UUID engineId, String contextPath, UUID id);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select service from DataService service where service.id = :id")
     java.util.Optional<DataService> findByIdForUpdate(@Param("id") UUID id);

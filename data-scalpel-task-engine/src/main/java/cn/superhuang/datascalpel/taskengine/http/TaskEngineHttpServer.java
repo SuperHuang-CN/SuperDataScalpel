@@ -8,6 +8,8 @@ import cn.superhuang.datascalpel.taskengine.contract.HealthResponse;
 import cn.superhuang.datascalpel.taskengine.contract.ProblemResponse;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationResponse;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationRequest;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationResponse;
 import cn.superhuang.datascalpel.taskengine.spark.SparkRuntime;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -37,6 +39,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 public final class TaskEngineHttpServer implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(TaskEngineHttpServer.class);
     private static final String COMPILATIONS_PATH = "/api/v1/task-compilations";
+    private static final String ONLINE_SOURCE_COMPILATIONS_PATH = "/api/v1/spark-jar-source-compilations";
     private static final String JSON = "application/json; charset=utf-8";
     private static final String PROBLEM_JSON = "application/problem+json; charset=utf-8";
 
@@ -66,6 +69,7 @@ public final class TaskEngineHttpServer implements AutoCloseable {
         server.createContext("/health/live", this::handleLive);
         server.createContext("/health/ready", this::handleReady);
         server.createContext(COMPILATIONS_PATH, this::handleCompilations);
+        server.createContext(ONLINE_SOURCE_COMPILATIONS_PATH, this::handleOnlineSourceCompilations);
         server.createContext("/api/v1", this::handleApiNotFound);
     }
 
@@ -146,6 +150,20 @@ public final class TaskEngineHttpServer implements AutoCloseable {
                 return;
             }
             throw problem(404, "NOT_FOUND", "接口不存在", "请求路径不存在");
+        });
+    }
+
+    private void handleOnlineSourceCompilations(HttpExchange exchange) throws IOException {
+        execute(exchange, () -> {
+            requireAuthentication(exchange);
+            requireExactPath(exchange, ONLINE_SOURCE_COMPILATIONS_PATH);
+            requireMethod(exchange, "POST");
+            requireJson(exchange);
+            SparkJarSourceCompilationRequest request = readRequest(exchange, SparkJarSourceCompilationRequest.class);
+            SparkJarSourceCompilationResponse response = compilationService.compileSparkJarSource(request);
+            log.info("Compiled online Spark JAR source request {}: successful={}, diagnostics={}, durationMs={}",
+                    response.requestId(), response.successful(), response.diagnostics().size(), response.durationMs());
+            sendJson(exchange, 200, response);
         });
     }
 

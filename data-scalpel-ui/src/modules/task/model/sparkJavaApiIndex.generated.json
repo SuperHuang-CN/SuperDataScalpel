@@ -1,0 +1,1226 @@
+[ {
+  "owner" : "Column",
+  "name" : "alias",
+  "signature" : "alias(String alias)",
+  "returnType" : "Column",
+  "summary" : "Column 的 alias 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "alias(${1:alias})"
+}, {
+  "owner" : "Column",
+  "name" : "and",
+  "signature" : "and(Column other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 and 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "and(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "asc",
+  "signature" : "asc()",
+  "returnType" : "Column",
+  "summary" : "Column 的 asc 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "asc()"
+}, {
+  "owner" : "Column",
+  "name" : "cast",
+  "signature" : "cast(DataType to)",
+  "returnType" : "Column",
+  "summary" : "Column 的 cast 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "cast(${1:to})"
+}, {
+  "owner" : "Column",
+  "name" : "cast",
+  "signature" : "cast(String to)",
+  "returnType" : "Column",
+  "summary" : "Column 的 cast 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "cast(${1:to})"
+}, {
+  "owner" : "Column",
+  "name" : "desc",
+  "signature" : "desc()",
+  "returnType" : "Column",
+  "summary" : "Column 的 desc 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "desc()"
+}, {
+  "owner" : "Column",
+  "name" : "equalTo",
+  "signature" : "equalTo(Object other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 equalTo 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "equalTo(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "geq",
+  "signature" : "geq(Object other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 geq 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "geq(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "gt",
+  "signature" : "gt(Object other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 gt 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "gt(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "isNotNull",
+  "signature" : "isNotNull()",
+  "returnType" : "Column",
+  "summary" : "Column 的 isNotNull 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "isNotNull()"
+}, {
+  "owner" : "Column",
+  "name" : "isNull",
+  "signature" : "isNull()",
+  "returnType" : "Column",
+  "summary" : "Column 的 isNull 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "isNull()"
+}, {
+  "owner" : "Column",
+  "name" : "leq",
+  "signature" : "leq(Object other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 leq 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "leq(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "lt",
+  "signature" : "lt(Object other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 lt 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "lt(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "notEqual",
+  "signature" : "notEqual(Object other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 notEqual 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "notEqual(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "or",
+  "signature" : "or(Column other)",
+  "returnType" : "Column",
+  "summary" : "Column 的 or 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "or(${1:other})"
+}, {
+  "owner" : "Column",
+  "name" : "over",
+  "signature" : "over()",
+  "returnType" : "Column",
+  "summary" : "Column 的 over 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "over()"
+}, {
+  "owner" : "Column",
+  "name" : "over",
+  "signature" : "over(WindowSpec window)",
+  "returnType" : "Column",
+  "summary" : "Column 的 over 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "over(${1:window})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "csv",
+  "signature" : "csv(Dataset csvDataset)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 csv 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "csv(${1:csvDataset})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "csv",
+  "signature" : "csv(String path)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 csv 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "csv(${1:path})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "csv",
+  "signature" : "csv(String... paths)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 csv 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "csv(${1:paths})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "format",
+  "signature" : "format(String source)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 format 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "format(${1:source})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "json",
+  "signature" : "json(Dataset jsonDataset)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 json 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "json(${1:jsonDataset})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "json",
+  "signature" : "json(JavaRDD jsonRDD)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 json 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "json(${1:jsonRDD})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "json",
+  "signature" : "json(RDD jsonRDD)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 json 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "json(${1:jsonRDD})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "json",
+  "signature" : "json(String path)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 json 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "json(${1:path})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "json",
+  "signature" : "json(String... paths)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 json 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "json(${1:paths})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "load",
+  "signature" : "load()",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 load 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "load()"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "load",
+  "signature" : "load(String path)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 load 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "load(${1:path})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "load",
+  "signature" : "load(String... paths)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 load 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "load(${1:paths})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "option",
+  "signature" : "option(String key, String value)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "option",
+  "signature" : "option(String key, boolean value)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "option",
+  "signature" : "option(String key, double value)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "option",
+  "signature" : "option(String key, long value)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "options",
+  "signature" : "options(Map opts)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 options 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "options(${1:opts})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "parquet",
+  "signature" : "parquet(String path)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 parquet 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "parquet(${1:path})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "parquet",
+  "signature" : "parquet(String... paths)",
+  "returnType" : "Dataset",
+  "summary" : "DataFrameReader 的 parquet 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "parquet(${1:paths})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "schema",
+  "signature" : "schema(String schemaString)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 schema 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "schema(${1:schemaString})"
+}, {
+  "owner" : "DataFrameReader",
+  "name" : "schema",
+  "signature" : "schema(StructType schema)",
+  "returnType" : "DataFrameReader",
+  "summary" : "DataFrameReader 的 schema 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "schema(${1:schema})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "csv",
+  "signature" : "csv(String path)",
+  "returnType" : "void",
+  "summary" : "DataFrameWriter 的 csv 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "csv(${1:path})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "format",
+  "signature" : "format(String source)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 format 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "format(${1:source})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "json",
+  "signature" : "json(String path)",
+  "returnType" : "void",
+  "summary" : "DataFrameWriter 的 json 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "json(${1:path})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "mode",
+  "signature" : "mode(SaveMode saveMode)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 mode 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "mode(${1:saveMode})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "mode",
+  "signature" : "mode(String saveMode)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 mode 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "mode(${1:saveMode})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "option",
+  "signature" : "option(String key, String value)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "option",
+  "signature" : "option(String key, boolean value)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "option",
+  "signature" : "option(String key, double value)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "option",
+  "signature" : "option(String key, long value)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 option 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "option(${1:key}, ${2:value})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "options",
+  "signature" : "options(Map options)",
+  "returnType" : "DataFrameWriter",
+  "summary" : "DataFrameWriter 的 options 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "options(${1:options})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "parquet",
+  "signature" : "parquet(String path)",
+  "returnType" : "void",
+  "summary" : "DataFrameWriter 的 parquet 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "parquet(${1:path})"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "save",
+  "signature" : "save()",
+  "returnType" : "void",
+  "summary" : "DataFrameWriter 的 save 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "save()"
+}, {
+  "owner" : "DataFrameWriter",
+  "name" : "save",
+  "signature" : "save(String path)",
+  "returnType" : "void",
+  "summary" : "DataFrameWriter 的 save 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "save(${1:path})"
+}, {
+  "owner" : "Dataset",
+  "name" : "agg",
+  "signature" : "agg(Column expr, Column... exprs)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 agg 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "agg(${1:expr}, ${2:exprs})"
+}, {
+  "owner" : "Dataset",
+  "name" : "agg",
+  "signature" : "agg(Map exprs)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 agg 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "agg(${1:exprs})"
+}, {
+  "owner" : "Dataset",
+  "name" : "cache",
+  "signature" : "cache()",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 cache 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "cache()"
+}, {
+  "owner" : "Dataset",
+  "name" : "coalesce",
+  "signature" : "coalesce(int numPartitions)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 coalesce 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "coalesce(${1:numPartitions})"
+}, {
+  "owner" : "Dataset",
+  "name" : "col",
+  "signature" : "col(String colName)",
+  "returnType" : "Column",
+  "summary" : "Dataset 的 col 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "col(${1:colName})"
+}, {
+  "owner" : "Dataset",
+  "name" : "distinct",
+  "signature" : "distinct()",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 distinct 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "distinct()"
+}, {
+  "owner" : "Dataset",
+  "name" : "drop",
+  "signature" : "drop(Column col)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 drop 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "drop(${1:col})"
+}, {
+  "owner" : "Dataset",
+  "name" : "drop",
+  "signature" : "drop(Column col, Column... cols)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 drop 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "drop(${1:col}, ${2:cols})"
+}, {
+  "owner" : "Dataset",
+  "name" : "drop",
+  "signature" : "drop(String colName)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 drop 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "drop(${1:colName})"
+}, {
+  "owner" : "Dataset",
+  "name" : "drop",
+  "signature" : "drop(String... colNames)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 drop 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "drop(${1:colNames})"
+}, {
+  "owner" : "Dataset",
+  "name" : "dropDuplicates",
+  "signature" : "dropDuplicates()",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 dropDuplicates 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "dropDuplicates()"
+}, {
+  "owner" : "Dataset",
+  "name" : "dropDuplicates",
+  "signature" : "dropDuplicates(String col1, String... cols)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 dropDuplicates 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "dropDuplicates(${1:col1}, ${2:cols})"
+}, {
+  "owner" : "Dataset",
+  "name" : "dropDuplicates",
+  "signature" : "dropDuplicates(String[] colNames)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 dropDuplicates 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "dropDuplicates(${1:colNames})"
+}, {
+  "owner" : "Dataset",
+  "name" : "filter",
+  "signature" : "filter(Column condition)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 filter 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "filter(${1:condition})"
+}, {
+  "owner" : "Dataset",
+  "name" : "filter",
+  "signature" : "filter(FilterFunction func)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 filter 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "filter(${1:func})"
+}, {
+  "owner" : "Dataset",
+  "name" : "filter",
+  "signature" : "filter(String conditionExpr)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 filter 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "filter(${1:conditionExpr})"
+}, {
+  "owner" : "Dataset",
+  "name" : "groupBy",
+  "signature" : "groupBy(Column... cols)",
+  "returnType" : "RelationalGroupedDataset",
+  "summary" : "按字段分组并进入聚合操作。",
+  "snippet" : "groupBy(${1:cols})"
+}, {
+  "owner" : "Dataset",
+  "name" : "groupBy",
+  "signature" : "groupBy(String col1, String... cols)",
+  "returnType" : "RelationalGroupedDataset",
+  "summary" : "按字段分组并进入聚合操作。",
+  "snippet" : "groupBy(${1:col1}, ${2:cols})"
+}, {
+  "owner" : "Dataset",
+  "name" : "join",
+  "signature" : "join(Dataset right)",
+  "returnType" : "Dataset",
+  "summary" : "连接两个Dataset。",
+  "snippet" : "join(${1:right})"
+}, {
+  "owner" : "Dataset",
+  "name" : "join",
+  "signature" : "join(Dataset right, Column joinExprs)",
+  "returnType" : "Dataset",
+  "summary" : "连接两个Dataset。",
+  "snippet" : "join(${1:right}, ${2:joinExprs})"
+}, {
+  "owner" : "Dataset",
+  "name" : "join",
+  "signature" : "join(Dataset right, Column joinExprs, String joinType)",
+  "returnType" : "Dataset",
+  "summary" : "连接两个Dataset。",
+  "snippet" : "join(${1:right}, ${2:joinExprs}, ${3:joinType})"
+}, {
+  "owner" : "Dataset",
+  "name" : "join",
+  "signature" : "join(Dataset right, String usingColumn)",
+  "returnType" : "Dataset",
+  "summary" : "连接两个Dataset。",
+  "snippet" : "join(${1:right}, ${2:usingColumn})"
+}, {
+  "owner" : "Dataset",
+  "name" : "join",
+  "signature" : "join(Dataset right, String usingColumn, String joinType)",
+  "returnType" : "Dataset",
+  "summary" : "连接两个Dataset。",
+  "snippet" : "join(${1:right}, ${2:usingColumn}, ${3:joinType})"
+}, {
+  "owner" : "Dataset",
+  "name" : "join",
+  "signature" : "join(Dataset right, String[] usingColumns)",
+  "returnType" : "Dataset",
+  "summary" : "连接两个Dataset。",
+  "snippet" : "join(${1:right}, ${2:usingColumns})"
+}, {
+  "owner" : "Dataset",
+  "name" : "join",
+  "signature" : "join(Dataset right, String[] usingColumns, String joinType)",
+  "returnType" : "Dataset",
+  "summary" : "连接两个Dataset。",
+  "snippet" : "join(${1:right}, ${2:usingColumns}, ${3:joinType})"
+}, {
+  "owner" : "Dataset",
+  "name" : "limit",
+  "signature" : "limit(int n)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 limit 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "limit(${1:n})"
+}, {
+  "owner" : "Dataset",
+  "name" : "orderBy",
+  "signature" : "orderBy(Column... sortExprs)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 orderBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "orderBy(${1:sortExprs})"
+}, {
+  "owner" : "Dataset",
+  "name" : "orderBy",
+  "signature" : "orderBy(String sortCol, String... sortCols)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 orderBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "orderBy(${1:sortCol}, ${2:sortCols})"
+}, {
+  "owner" : "Dataset",
+  "name" : "repartition",
+  "signature" : "repartition(Column... partitionExprs)",
+  "returnType" : "Dataset",
+  "summary" : "调整Spark侧分区，不会改变JDBC源端分片。",
+  "snippet" : "repartition(${1:partitionExprs})"
+}, {
+  "owner" : "Dataset",
+  "name" : "repartition",
+  "signature" : "repartition(int numPartitions)",
+  "returnType" : "Dataset",
+  "summary" : "调整Spark侧分区，不会改变JDBC源端分片。",
+  "snippet" : "repartition(${1:numPartitions})"
+}, {
+  "owner" : "Dataset",
+  "name" : "repartition",
+  "signature" : "repartition(int numPartitions, Column... partitionExprs)",
+  "returnType" : "Dataset",
+  "summary" : "调整Spark侧分区，不会改变JDBC源端分片。",
+  "snippet" : "repartition(${1:numPartitions}, ${2:partitionExprs})"
+}, {
+  "owner" : "Dataset",
+  "name" : "schema",
+  "signature" : "schema()",
+  "returnType" : "StructType",
+  "summary" : "返回Dataset Schema，不触发Action。",
+  "snippet" : "schema()"
+}, {
+  "owner" : "Dataset",
+  "name" : "select",
+  "signature" : "select(Column... cols)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 select 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "select(${1:cols})"
+}, {
+  "owner" : "Dataset",
+  "name" : "select",
+  "signature" : "select(String col, String... cols)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 select 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "select(${1:col}, ${2:cols})"
+}, {
+  "owner" : "Dataset",
+  "name" : "select",
+  "signature" : "select(TypedColumn c1)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 select 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "select(${1:c1})"
+}, {
+  "owner" : "Dataset",
+  "name" : "select",
+  "signature" : "select(TypedColumn c1, TypedColumn c2)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 select 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "select(${1:c1}, ${2:c2})"
+}, {
+  "owner" : "Dataset",
+  "name" : "select",
+  "signature" : "select(TypedColumn c1, TypedColumn c2, TypedColumn c3)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 select 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "select(${1:c1}, ${2:c2}, ${3:c3})"
+}, {
+  "owner" : "Dataset",
+  "name" : "select",
+  "signature" : "select(TypedColumn c1, TypedColumn c2, TypedColumn c3, TypedColumn c4)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 select 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "select(${1:c1}, ${2:c2}, ${3:c3}, ${4:c4})"
+}, {
+  "owner" : "Dataset",
+  "name" : "select",
+  "signature" : "select(TypedColumn c1, TypedColumn c2, TypedColumn c3, TypedColumn c4, TypedColumn c5)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 select 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "select(${1:c1}, ${2:c2}, ${3:c3}, ${4:c4}, ${5:c5})"
+}, {
+  "owner" : "Dataset",
+  "name" : "selectExpr",
+  "signature" : "selectExpr(String... exprs)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 selectExpr 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "selectExpr(${1:exprs})"
+}, {
+  "owner" : "Dataset",
+  "name" : "sparkSession",
+  "signature" : "sparkSession()",
+  "returnType" : "SparkSession",
+  "summary" : "Dataset 的 sparkSession 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "sparkSession()"
+}, {
+  "owner" : "Dataset",
+  "name" : "unionByName",
+  "signature" : "unionByName(Dataset other)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 unionByName 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "unionByName(${1:other})"
+}, {
+  "owner" : "Dataset",
+  "name" : "unionByName",
+  "signature" : "unionByName(Dataset other, boolean allowMissingColumns)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 unionByName 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "unionByName(${1:other}, ${2:allowMissingColumns})"
+}, {
+  "owner" : "Dataset",
+  "name" : "where",
+  "signature" : "where(Column condition)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 where 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "where(${1:condition})"
+}, {
+  "owner" : "Dataset",
+  "name" : "where",
+  "signature" : "where(String conditionExpr)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 where 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "where(${1:conditionExpr})"
+}, {
+  "owner" : "Dataset",
+  "name" : "withColumn",
+  "signature" : "withColumn(String colName, Column col)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 withColumn 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "withColumn(${1:colName}, ${2:col})"
+}, {
+  "owner" : "Dataset",
+  "name" : "withColumn",
+  "signature" : "withColumn(String colName, Column col, Metadata metadata)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 withColumn 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "withColumn(${1:colName}, ${2:col}, ${3:metadata})"
+}, {
+  "owner" : "Dataset",
+  "name" : "withColumnRenamed",
+  "signature" : "withColumnRenamed(String existingName, String newName)",
+  "returnType" : "Dataset",
+  "summary" : "Dataset 的 withColumnRenamed 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "withColumnRenamed(${1:existingName}, ${2:newName})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readQuery",
+  "signature" : "readQuery(String bindingName, String sql)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readQuery 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readQuery(${1:bindingName}, ${2:sql})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readQuery",
+  "signature" : "readQuery(String bindingName, String sql, JdbcReadOptions options)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readQuery 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readQuery(${1:bindingName}, ${2:sql}, ${3:options})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readTable",
+  "signature" : "readTable(String bindingName, JdbcTableIdentifier table)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readTable 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readTable(${1:bindingName}, ${2:table})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readTable",
+  "signature" : "readTable(String bindingName, JdbcTableIdentifier table, JdbcReadOptions options)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readTable 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readTable(${1:bindingName}, ${2:table}, ${3:options})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readTable",
+  "signature" : "readTable(String bindingName, String schema, String table)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readTable 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readTable(${1:bindingName}, ${2:schema}, ${3:table})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readTable",
+  "signature" : "readTable(String bindingName, String schema, String table, JdbcReadOptions options)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readTable 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readTable(${1:bindingName}, ${2:schema}, ${3:table}, ${4:options})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readTable",
+  "signature" : "readTable(String bindingName, String table)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readTable 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readTable(${1:bindingName}, ${2:table})"
+}, {
+  "owner" : "JdbcResources",
+  "name" : "readTable",
+  "signature" : "readTable(String bindingName, String table, JdbcReadOptions options)",
+  "returnType" : "Dataset",
+  "summary" : "JdbcResources 的 readTable 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "readTable(${1:bindingName}, ${2:table}, ${3:options})"
+}, {
+  "owner" : "ModelResources",
+  "name" : "read",
+  "signature" : "read(String bindingName)",
+  "returnType" : "Dataset",
+  "summary" : "ModelResources 的 read 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "read(${1:bindingName})"
+}, {
+  "owner" : "ModelResources",
+  "name" : "read",
+  "signature" : "read(String bindingName, JdbcReadOptions options)",
+  "returnType" : "Dataset",
+  "summary" : "ModelResources 的 read 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "read(${1:bindingName}, ${2:options})"
+}, {
+  "owner" : "ModelResources",
+  "name" : "write",
+  "signature" : "write(String bindingName, Dataset source)",
+  "returnType" : "ModelWriteOperation",
+  "summary" : "ModelResources 的 write 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "write(${1:bindingName}, ${2:source})"
+}, {
+  "owner" : "ModelWriteOperation",
+  "name" : "checkSchema",
+  "signature" : "checkSchema()",
+  "returnType" : "ModelWriteOperation",
+  "summary" : "在本地TestKit中检查字段集合和Spark类型；生产运行不提前校验。",
+  "snippet" : "checkSchema()"
+}, {
+  "owner" : "ModelWriteOperation",
+  "name" : "execute",
+  "signature" : "execute()",
+  "returnType" : "WriteResult",
+  "summary" : "ModelWriteOperation 的 execute 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "execute()"
+}, {
+  "owner" : "ModelWriteOperation",
+  "name" : "map",
+  "signature" : "map(String targetColumnName, String sourceColumnName)",
+  "returnType" : "ModelWriteOperation",
+  "summary" : "ModelWriteOperation 的 map 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "map(${1:targetColumnName}, ${2:sourceColumnName})"
+}, {
+  "owner" : "ModelWriteOperation",
+  "name" : "mapSameName",
+  "signature" : "mapSameName()",
+  "returnType" : "ModelWriteOperation",
+  "summary" : "将Dataset字段自动映射到同名目标模型字段。",
+  "snippet" : "mapSameName()"
+}, {
+  "owner" : "ModelWriteOperation",
+  "name" : "mode",
+  "signature" : "mode(ModelWriteMode mode)",
+  "returnType" : "ModelWriteOperation",
+  "summary" : "ModelWriteOperation 的 mode 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "mode(${1:mode})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "agg",
+  "signature" : "agg(Column expr, Column... exprs)",
+  "returnType" : "Dataset",
+  "summary" : "RelationalGroupedDataset 的 agg 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "agg(${1:expr}, ${2:exprs})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "agg",
+  "signature" : "agg(Map exprs)",
+  "returnType" : "Dataset",
+  "summary" : "RelationalGroupedDataset 的 agg 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "agg(${1:exprs})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "avg",
+  "signature" : "avg(String... colNames)",
+  "returnType" : "Dataset",
+  "summary" : "RelationalGroupedDataset 的 avg 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "avg(${1:colNames})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "count",
+  "signature" : "count()",
+  "returnType" : "Dataset",
+  "summary" : "RelationalGroupedDataset 的 count 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "count()"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "max",
+  "signature" : "max(String... colNames)",
+  "returnType" : "Dataset",
+  "summary" : "RelationalGroupedDataset 的 max 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "max(${1:colNames})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "min",
+  "signature" : "min(String... colNames)",
+  "returnType" : "Dataset",
+  "summary" : "RelationalGroupedDataset 的 min 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "min(${1:colNames})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "pivot",
+  "signature" : "pivot(Column pivotColumn)",
+  "returnType" : "RelationalGroupedDataset",
+  "summary" : "RelationalGroupedDataset 的 pivot 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "pivot(${1:pivotColumn})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "pivot",
+  "signature" : "pivot(Column pivotColumn, List values)",
+  "returnType" : "RelationalGroupedDataset",
+  "summary" : "RelationalGroupedDataset 的 pivot 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "pivot(${1:pivotColumn}, ${2:values})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "pivot",
+  "signature" : "pivot(String pivotColumn)",
+  "returnType" : "RelationalGroupedDataset",
+  "summary" : "RelationalGroupedDataset 的 pivot 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "pivot(${1:pivotColumn})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "pivot",
+  "signature" : "pivot(String pivotColumn, List values)",
+  "returnType" : "RelationalGroupedDataset",
+  "summary" : "RelationalGroupedDataset 的 pivot 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "pivot(${1:pivotColumn}, ${2:values})"
+}, {
+  "owner" : "RelationalGroupedDataset",
+  "name" : "sum",
+  "signature" : "sum(String... colNames)",
+  "returnType" : "Dataset",
+  "summary" : "RelationalGroupedDataset 的 sum 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "sum(${1:colNames})"
+}, {
+  "owner" : "Row",
+  "name" : "fieldIndex",
+  "signature" : "fieldIndex(String name)",
+  "returnType" : "int",
+  "summary" : "Row 的 fieldIndex 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "fieldIndex(${1:name})"
+}, {
+  "owner" : "Row",
+  "name" : "getAs",
+  "signature" : "getAs(String fieldName)",
+  "returnType" : "Object",
+  "summary" : "Row 的 getAs 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "getAs(${1:fieldName})"
+}, {
+  "owner" : "Row",
+  "name" : "getAs",
+  "signature" : "getAs(int i)",
+  "returnType" : "Object",
+  "summary" : "Row 的 getAs 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "getAs(${1:i})"
+}, {
+  "owner" : "Row",
+  "name" : "isNullAt",
+  "signature" : "isNullAt(int i)",
+  "returnType" : "boolean",
+  "summary" : "Row 的 isNullAt 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "isNullAt(${1:i})"
+}, {
+  "owner" : "Row",
+  "name" : "schema",
+  "signature" : "schema()",
+  "returnType" : "StructType",
+  "summary" : "Row 的 schema 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "schema()"
+}, {
+  "owner" : "SparkJobContext",
+  "name" : "jdbc",
+  "signature" : "jdbc()",
+  "returnType" : "JdbcResources",
+  "summary" : "SparkJobContext 的 jdbc 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "jdbc()"
+}, {
+  "owner" : "SparkJobContext",
+  "name" : "models",
+  "signature" : "models()",
+  "returnType" : "ModelResources",
+  "summary" : "SparkJobContext 的 models 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "models()"
+}, {
+  "owner" : "SparkJobContext",
+  "name" : "observability",
+  "signature" : "observability()",
+  "returnType" : "JobObservability",
+  "summary" : "SparkJobContext 的 observability 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "observability()"
+}, {
+  "owner" : "SparkJobContext",
+  "name" : "spark",
+  "signature" : "spark()",
+  "returnType" : "SparkSession",
+  "summary" : "SparkJobContext 的 spark 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "spark()"
+}, {
+  "owner" : "SparkSession",
+  "name" : "emptyDataFrame",
+  "signature" : "emptyDataFrame()",
+  "returnType" : "Dataset",
+  "summary" : "SparkSession 的 emptyDataFrame 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "emptyDataFrame()"
+}, {
+  "owner" : "SparkSession",
+  "name" : "read",
+  "signature" : "read()",
+  "returnType" : "DataFrameReader",
+  "summary" : "SparkSession 的 read 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "read()"
+}, {
+  "owner" : "SparkSession",
+  "name" : "sql",
+  "signature" : "sql(String sqlText)",
+  "returnType" : "Dataset",
+  "summary" : "SparkSession 的 sql 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "sql(${1:sqlText})"
+}, {
+  "owner" : "SparkSession",
+  "name" : "sql",
+  "signature" : "sql(String sqlText, Map args)",
+  "returnType" : "Dataset",
+  "summary" : "SparkSession 的 sql 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "sql(${1:sqlText}, ${2:args})"
+}, {
+  "owner" : "SparkSession",
+  "name" : "sql",
+  "signature" : "sql(String sqlText, Object args)",
+  "returnType" : "Dataset",
+  "summary" : "SparkSession 的 sql 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "sql(${1:sqlText}, ${2:args})"
+}, {
+  "owner" : "SparkSession",
+  "name" : "table",
+  "signature" : "table(String tableName)",
+  "returnType" : "Dataset",
+  "summary" : "SparkSession 的 table 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "table(${1:tableName})"
+}, {
+  "owner" : "Window",
+  "name" : "orderBy",
+  "signature" : "orderBy(Column... cols)",
+  "returnType" : "WindowSpec",
+  "summary" : "Window 的 orderBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "orderBy(${1:cols})"
+}, {
+  "owner" : "Window",
+  "name" : "orderBy",
+  "signature" : "orderBy(String colName, String... colNames)",
+  "returnType" : "WindowSpec",
+  "summary" : "Window 的 orderBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "orderBy(${1:colName}, ${2:colNames})"
+}, {
+  "owner" : "Window",
+  "name" : "partitionBy",
+  "signature" : "partitionBy(Column... cols)",
+  "returnType" : "WindowSpec",
+  "summary" : "Window 的 partitionBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "partitionBy(${1:cols})"
+}, {
+  "owner" : "Window",
+  "name" : "partitionBy",
+  "signature" : "partitionBy(String colName, String... colNames)",
+  "returnType" : "WindowSpec",
+  "summary" : "Window 的 partitionBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "partitionBy(${1:colName}, ${2:colNames})"
+}, {
+  "owner" : "Window",
+  "name" : "rangeBetween",
+  "signature" : "rangeBetween(long start, long end)",
+  "returnType" : "WindowSpec",
+  "summary" : "Window 的 rangeBetween 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "rangeBetween(${1:start}, ${2:end})"
+}, {
+  "owner" : "Window",
+  "name" : "rowsBetween",
+  "signature" : "rowsBetween(long start, long end)",
+  "returnType" : "WindowSpec",
+  "summary" : "Window 的 rowsBetween 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "rowsBetween(${1:start}, ${2:end})"
+}, {
+  "owner" : "WindowSpec",
+  "name" : "orderBy",
+  "signature" : "orderBy(Column... cols)",
+  "returnType" : "WindowSpec",
+  "summary" : "WindowSpec 的 orderBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "orderBy(${1:cols})"
+}, {
+  "owner" : "WindowSpec",
+  "name" : "orderBy",
+  "signature" : "orderBy(String colName, String... colNames)",
+  "returnType" : "WindowSpec",
+  "summary" : "WindowSpec 的 orderBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "orderBy(${1:colName}, ${2:colNames})"
+}, {
+  "owner" : "WindowSpec",
+  "name" : "partitionBy",
+  "signature" : "partitionBy(Column... cols)",
+  "returnType" : "WindowSpec",
+  "summary" : "WindowSpec 的 partitionBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "partitionBy(${1:cols})"
+}, {
+  "owner" : "WindowSpec",
+  "name" : "partitionBy",
+  "signature" : "partitionBy(String colName, String... colNames)",
+  "returnType" : "WindowSpec",
+  "summary" : "WindowSpec 的 partitionBy 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "partitionBy(${1:colName}, ${2:colNames})"
+}, {
+  "owner" : "WindowSpec",
+  "name" : "rangeBetween",
+  "signature" : "rangeBetween(long start, long end)",
+  "returnType" : "WindowSpec",
+  "summary" : "WindowSpec 的 rangeBetween 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "rangeBetween(${1:start}, ${2:end})"
+}, {
+  "owner" : "WindowSpec",
+  "name" : "rowsBetween",
+  "signature" : "rowsBetween(long start, long end)",
+  "returnType" : "WindowSpec",
+  "summary" : "WindowSpec 的 rowsBetween 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "rowsBetween(${1:start}, ${2:end})"
+}, {
+  "owner" : "functions",
+  "name" : "array",
+  "signature" : "array(Column... cols)",
+  "returnType" : "Column",
+  "summary" : "functions 的 array 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "array(${1:cols})"
+}, {
+  "owner" : "functions",
+  "name" : "array",
+  "signature" : "array(String colName, String... colNames)",
+  "returnType" : "Column",
+  "summary" : "functions 的 array 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "array(${1:colName}, ${2:colNames})"
+}, {
+  "owner" : "functions",
+  "name" : "avg",
+  "signature" : "avg(Column e)",
+  "returnType" : "Column",
+  "summary" : "functions 的 avg 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "avg(${1:e})"
+}, {
+  "owner" : "functions",
+  "name" : "avg",
+  "signature" : "avg(String columnName)",
+  "returnType" : "Column",
+  "summary" : "functions 的 avg 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "avg(${1:columnName})"
+}, {
+  "owner" : "functions",
+  "name" : "coalesce",
+  "signature" : "coalesce(Column... e)",
+  "returnType" : "Column",
+  "summary" : "functions 的 coalesce 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "coalesce(${1:e})"
+}, {
+  "owner" : "functions",
+  "name" : "col",
+  "signature" : "col(String colName)",
+  "returnType" : "Column",
+  "summary" : "functions 的 col 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "col(${1:colName})"
+}, {
+  "owner" : "functions",
+  "name" : "concat",
+  "signature" : "concat(Column... exprs)",
+  "returnType" : "Column",
+  "summary" : "functions 的 concat 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "concat(${1:exprs})"
+}, {
+  "owner" : "functions",
+  "name" : "count",
+  "signature" : "count(Column e)",
+  "returnType" : "Column",
+  "summary" : "functions 的 count 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "count(${1:e})"
+}, {
+  "owner" : "functions",
+  "name" : "count",
+  "signature" : "count(String columnName)",
+  "returnType" : "TypedColumn",
+  "summary" : "functions 的 count 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "count(${1:columnName})"
+}, {
+  "owner" : "functions",
+  "name" : "dense_rank",
+  "signature" : "dense_rank()",
+  "returnType" : "Column",
+  "summary" : "functions 的 dense_rank 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "dense_rank()"
+}, {
+  "owner" : "functions",
+  "name" : "lit",
+  "signature" : "lit(Object literal)",
+  "returnType" : "Column",
+  "summary" : "functions 的 lit 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "lit(${1:literal})"
+}, {
+  "owner" : "functions",
+  "name" : "max",
+  "signature" : "max(Column e)",
+  "returnType" : "Column",
+  "summary" : "functions 的 max 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "max(${1:e})"
+}, {
+  "owner" : "functions",
+  "name" : "max",
+  "signature" : "max(String columnName)",
+  "returnType" : "Column",
+  "summary" : "functions 的 max 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "max(${1:columnName})"
+}, {
+  "owner" : "functions",
+  "name" : "min",
+  "signature" : "min(Column e)",
+  "returnType" : "Column",
+  "summary" : "functions 的 min 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "min(${1:e})"
+}, {
+  "owner" : "functions",
+  "name" : "min",
+  "signature" : "min(String columnName)",
+  "returnType" : "Column",
+  "summary" : "functions 的 min 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "min(${1:columnName})"
+}, {
+  "owner" : "functions",
+  "name" : "rank",
+  "signature" : "rank()",
+  "returnType" : "Column",
+  "summary" : "functions 的 rank 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "rank()"
+}, {
+  "owner" : "functions",
+  "name" : "row_number",
+  "signature" : "row_number()",
+  "returnType" : "Column",
+  "summary" : "functions 的 row_number 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "row_number()"
+}, {
+  "owner" : "functions",
+  "name" : "struct",
+  "signature" : "struct(Column... cols)",
+  "returnType" : "Column",
+  "summary" : "functions 的 struct 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "struct(${1:cols})"
+}, {
+  "owner" : "functions",
+  "name" : "struct",
+  "signature" : "struct(String colName, String... colNames)",
+  "returnType" : "Column",
+  "summary" : "functions 的 struct 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "struct(${1:colName}, ${2:colNames})"
+}, {
+  "owner" : "functions",
+  "name" : "sum",
+  "signature" : "sum(Column e)",
+  "returnType" : "Column",
+  "summary" : "functions 的 sum 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "sum(${1:e})"
+}, {
+  "owner" : "functions",
+  "name" : "sum",
+  "signature" : "sum(String columnName)",
+  "returnType" : "Column",
+  "summary" : "functions 的 sum 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "sum(${1:columnName})"
+}, {
+  "owner" : "functions",
+  "name" : "when",
+  "signature" : "when(Column condition, Object value)",
+  "returnType" : "Column",
+  "summary" : "functions 的 when 方法（Spark 4.1.1 / DataScalpel Job API v1）。",
+  "snippet" : "when(${1:condition}, ${2:value})"
+} ]

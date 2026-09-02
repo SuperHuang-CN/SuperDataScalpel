@@ -14,6 +14,6 @@ ArcGIS REST 和 OGC WFS 虽然都基于 HTTP，却有稳定的服务发现、要
 
 ## Canvas 与运行期
 
-`SPATIAL_SERVICE_INPUT` 是批处理输入节点，引用一个数据源 ID 和有序空间资源选择数组；每项保存资源 ID 与输出表名。任务准备把无凭据的全部资源 Schema 与加密解密后的 HTTP 运行连接一并写入 Manifest v21；Runner 按数组顺序使用 ArcGIS Query 或 WFS GetFeature 拉取 GeoJSON 分页结果，并用 Sedona 转换 Geometry。任一资源无效时节点整体失败，不向下游传播部分表。Geometry 必须是 EPSG、XY 的明确类型，后续空间处理节点可直接消费。
+`SPATIAL_SERVICE_INPUT` 是批处理输入节点，引用一个数据源 ID 和有序空间资源选择数组；每项保存资源 ID 与输出表名。任务准备把无凭据的全部资源 Schema 与加密解密后的 HTTP 运行连接一并写入 Manifest v22；Runner 按数组顺序使用 ArcGIS Query 或 WFS GetFeature 拉取 GeoJSON 分页结果，并用 Sedona 转换 Geometry。任一资源无效时节点整体失败，不向下游传播部分表。Geometry 必须是 EPSG、XY 的明确类型，后续空间处理节点可直接消费。
 
 第一版边界：WFS 与 ArcGIS Runner 要求远端支持 GeoJSON 输出；WFS 1.x 在不支持可靠 offset 分页时只读取首批；空间服务运行期目前支持无鉴权、Basic、固定 Bearer 与 Header/Query API Key。对需要动态 Token 的服务，应先通过通用 HTTP API 接入或扩展空间运行期的 Token 机制。

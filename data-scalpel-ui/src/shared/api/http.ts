@@ -157,9 +157,15 @@ const toApiError = (body: string, status: number): ApiError => {
     const value: unknown = JSON.parse(body);
     if (typeof value === 'object' && value !== null) {
       const problem = value as ApiProblem;
-      const message = typeof problem.detail === 'string' && problem.detail
+      const detail = typeof problem.detail === 'string' && problem.detail
         ? problem.detail
         : body;
+      const violations = problem.violations
+        ?.filter((violation) => violation.field && violation.message)
+        .map((violation) => `${violation.field}：${violation.message}`);
+      const message = violations?.length
+        ? `${detail}：${violations.join('；')}`
+        : detail;
       return new ApiError(message, status, problem);
     }
   } catch {

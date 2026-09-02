@@ -1,5 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Col, Form, Input, InputNumber, Select, Space } from 'antd';
+import { Button, Col, Form, Input, InputNumber, Select, Space } from 'antd';
+import { BusinessSecretInput } from '../../../shared/components/BusinessSecretInput';
 import type { HttpApiAuthenticationType } from '../model/dataSource';
 
 const authenticationOptions: { value: HttpApiAuthenticationType; label: string }[] = [
@@ -59,14 +61,14 @@ const AuthenticationFields = ({ type }: { type: HttpApiAuthenticationType }) => 
         </Col>
         <Col span={12}>
           <Form.Item label="密码" name={['connection', 'authentication', 'password']} extra="修改时留空表示保留原密码。">
-            <Input.Password name="http-basic-secret" autoComplete="off" />
+            <BusinessSecretInput name="http-basic-secret" autoComplete="off" />
           </Form.Item>
         </Col>
       </>;
     case 'BEARER_TOKEN':
       return <Col span={24}>
         <Form.Item label="Bearer Token" name={['connection', 'authentication', 'token']} extra="修改时留空表示保留原 Token。">
-          <Input.Password name="http-bearer-token" autoComplete="off" />
+          <BusinessSecretInput name="http-bearer-token" autoComplete="off" />
         </Form.Item>
       </Col>;
     case 'API_KEY':
@@ -88,7 +90,7 @@ const AuthenticationFields = ({ type }: { type: HttpApiAuthenticationType }) => 
         </Col>
         <Col span={24}>
           <Form.Item label="API Key" name={['connection', 'authentication', 'apiKey']} extra="修改时留空表示保留原 API Key。">
-            <Input.Password name="http-api-key" autoComplete="off" />
+            <BusinessSecretInput name="http-api-key" autoComplete="off" />
           </Form.Item>
         </Col>
       </>;
@@ -106,7 +108,7 @@ const AuthenticationFields = ({ type }: { type: HttpApiAuthenticationType }) => 
         </Col>
         <Col span={12}>
           <Form.Item label="Client Secret" name={['connection', 'authentication', 'clientSecret']} extra="修改时留空表示保留原密钥。">
-            <Input.Password name="http-oauth-client-secret" autoComplete="off" />
+            <BusinessSecretInput name="http-oauth-client-secret" autoComplete="off" />
           </Form.Item>
         </Col>
         <Col span={12}>
@@ -140,7 +142,7 @@ const AuthenticationFields = ({ type }: { type: HttpApiAuthenticationType }) => 
         </Col>
         <Col span={12}>
           <Form.Item label="密码" name={['connection', 'authentication', 'password']} extra="模板中使用 ${credential.password}。">
-            <Input.Password name="http-token-secret" autoComplete="off" />
+            <BusinessSecretInput name="http-token-secret" autoComplete="off" />
           </Form.Item>
         </Col>
         <Col span={24}>
@@ -240,7 +242,7 @@ export const HttpApiConnectionFields = ({ authenticationType }: {
     <AuthenticationFields type={authenticationType} />
     <Col span={12}>
       <Form.Item label="签名密钥" name={['connection', 'signingSecret']} extra="HMAC/MD5 签名使用；修改时留空表示保留。">
-        <Input.Password name="http-signing-secret" autoComplete="off" />
+        <BusinessSecretInput name="http-signing-secret" autoComplete="off" />
       </Form.Item>
     </Col>
     <Col span={12}>

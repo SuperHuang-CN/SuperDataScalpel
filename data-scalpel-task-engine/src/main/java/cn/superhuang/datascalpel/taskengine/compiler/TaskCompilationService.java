@@ -6,6 +6,8 @@ import cn.superhuang.datascalpel.taskengine.config.EngineConfiguration;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationResponse;
 import cn.superhuang.data.scalpel.contract.task.TaskType;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationRequest;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationResponse;
 import cn.superhuang.datascalpel.taskengine.http.TaskEngineException;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCompilationScope;
 import cn.superhuang.datascalpel.taskengine.spark.SparkRuntime;
@@ -34,6 +36,7 @@ public final class TaskCompilationService implements AutoCloseable {
 
     private final SparkRuntime sparkRuntime;
     private final CanvasTaskCompiler canvasCompiler;
+    private final SparkJarOnlineSourceCompiler onlineSourceCompiler;
     private final Semaphore permits;
     private final Duration acquireTimeout;
     private final Duration compileTimeout;
@@ -44,6 +47,7 @@ public final class TaskCompilationService implements AutoCloseable {
     public TaskCompilationService(EngineConfiguration configuration, SparkRuntime sparkRuntime) {
         this.sparkRuntime = sparkRuntime;
         this.canvasCompiler = new CanvasTaskCompiler();
+        this.onlineSourceCompiler = new SparkJarOnlineSourceCompiler();
         this.permits = new Semaphore(configuration.maxCompileConcurrency(), true);
         this.acquireTimeout = configuration.acquireTimeout();
         this.compileTimeout = configuration.compileTimeout();
@@ -100,6 +104,50 @@ public final class TaskCompilationService implements AutoCloseable {
         }
     }
 
+    public SparkJarSourceCompilationResponse compileSparkJarSource(SparkJarSourceCompilationRequest request) {
+        if (request == null || request.requestId() == null) throw badRequest("requestId 不能为空");
+        ensureOpen();
+        UUID requestId = request.requestId();
+        ActiveCompilation active = new ActiveCompilation();
+        if (activeCompilations.putIfAbsent(requestId, active) != null) {
+            throw problem(409, "DUPLICATE_REQUEST_ID", "请求冲突", "相同 requestId 正在编译");
+        }
+
+        boolean acquired = false;
+        long startedNanos = System.nanoTime();
+        try {
+            acquired = permits.tryAcquire(acquireTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            if (!acquired) {
+                throw problem(429, "COMPILATION_BUSY", "编译资源繁忙", "任务编译资源繁忙，请稍后重试");
+            }
+            if (active.cancelled.get()) throw cancelled();
+            Future<SparkJarSourceCompilationResponse> future = compilerExecutor.submit(
+                    () -> onlineSourceCompiler.compile(request, startedNanos));
+            active.future.set(future);
+            try {
+                return future.get(compileTimeout.toMillis(), TimeUnit.MILLISECONDS);
+            } catch (CancellationException exception) {
+                throw cancelled();
+            } catch (TimeoutException exception) {
+                active.cancelled.set(true);
+                future.cancel(true);
+                throw problem(504, "COMPILATION_TIMEOUT", "在线编译超时", "在线源码编译超过允许时长");
+            } catch (ExecutionException exception) {
+                Throwable cause = exception.getCause();
+                if (cause instanceof TaskEngineException taskEngineException) throw taskEngineException;
+                log.error("Unexpected online Spark JAR compilation failure for request {}", requestId, cause);
+                throw problem(500, "INTERNAL_ERROR", "任务引擎内部错误", "在线源码编译失败");
+            }
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            active.cancelled.set(true);
+            throw cancelled();
+        } finally {
+            if (acquired) permits.release();
+            activeCompilations.remove(requestId, active);
+        }
+    }
+
     public boolean cancel(UUID requestId) {
         ActiveCompilation active = activeCompilations.get(requestId);
         if (active == null) return false;
@@ -137,9 +185,14 @@ public final class TaskCompilationService implements AutoCloseable {
     ) {
         try (SparkCompilationScope scope = sparkRuntime.openCompilation(request.requestId())) {
             if (active.cancelled.get()) throw new CompilationCancelledException();
-            CanvasCompilation compilation = canvasCompiler.compile(
+            CanvasCompilation compilation = request.canvasTrial() == null
+                    ? canvasCompiler.compile(
                     request.task().definition(), request.task().executionMode(),
-                    metadataIndex, scope.session(), active.cancelled);
+                    metadataIndex, scope.session(), active.cancelled)
+                    : canvasCompiler.compileTrial(
+                    request.task().definition(), request.task().executionMode(),
+                    metadataIndex, scope.session(), active.cancelled,
+                    request.canvasTrial().targetNodeId());
             return new TaskCompilationResponse(
                     request.requestId(),
                     TaskType.CANVAS,
@@ -159,6 +212,12 @@ public final class TaskCompilationService implements AutoCloseable {
         if (request.task() == null || request.task().type() == null) throw badRequest("task.type 不能为空");
         if (request.task().type() != TaskType.CANVAS) {
             throw problem(400, "UNKNOWN_TASK_TYPE", "任务类型不受支持", "第一阶段只支持 CANVAS 任务");
+        }
+        if (request.canvasTrial() != null
+                && request.task().executionMode()
+                != cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode.BATCH) {
+            throw problem(400, "CANVAS_TRIAL_STREAMING_NOT_SUPPORTED",
+                    "实时 Canvas 不支持试运行", "第一阶段只支持批处理 Canvas 节点试运行");
         }
     }
 

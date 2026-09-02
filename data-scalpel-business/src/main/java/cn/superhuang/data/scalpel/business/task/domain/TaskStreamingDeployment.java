@@ -11,6 +11,7 @@ import jakarta.persistence.UniqueConstraint;
 import org.hibernate.annotations.JdbcTypeCode;
 import org.hibernate.type.SqlTypes;
 import cn.superhuang.data.scalpel.contract.execution.StreamingSourceProgress;
+import cn.superhuang.data.scalpel.contract.execution.StreamingSourceKind;
 import cn.superhuang.data.scalpel.contract.execution.StreamingCheckpointMode;
 
 import java.time.Instant;
@@ -54,6 +55,10 @@ public class TaskStreamingDeployment extends BaseEntity {
 
     @Column(name = "checkpoint_source_deployment_id", updatable = false)
     private UUID checkpointSourceDeploymentId;
+
+    @Enumerated(EnumType.STRING)
+    @Column(name = "execution_mode", nullable = false, updatable = false, length = 16)
+    private StreamingDeploymentExecutionMode executionMode;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "desired_state", nullable = false, length = 16)
@@ -113,6 +118,16 @@ public class TaskStreamingDeployment extends BaseEntity {
     @Column(name = "cursor_lag_millis")
     private Long cursorLagMillis;
 
+    @Enumerated(EnumType.STRING)
+    @Column(name = "source_kind", length = 32)
+    private StreamingSourceKind sourceKind;
+
+    @Column(name = "last_vgroup_count")
+    private Integer lastVGroupCount;
+
+    @Column(name = "last_batch_offset_span")
+    private Long lastBatchOffsetSpan;
+
     protected TaskStreamingDeployment() {
     }
 
@@ -133,6 +148,7 @@ public class TaskStreamingDeployment extends BaseEntity {
         deployment.checkpointKeyPrefix = checkpointKeyPrefix.trim();
         deployment.checkpointGeneration = 1;
         deployment.checkpointStartMode = StreamingCheckpointMode.FRESH;
+        deployment.executionMode = StreamingDeploymentExecutionMode.REAL;
         deployment.desiredState = StreamingDeploymentDesiredState.STOPPED;
         deployment.actualState = StreamingDeploymentActualState.STOPPED;
         return deployment;
@@ -156,6 +172,20 @@ public class TaskStreamingDeployment extends BaseEntity {
         deployment.checkpointGeneration = checkpointGeneration;
         deployment.checkpointStartMode = checkpointStartMode;
         deployment.checkpointSourceDeploymentId = checkpointSourceDeploymentId;
+        return deployment;
+    }
+
+    public static TaskStreamingDeployment createTrial(
+            UUID taskId,
+            int definitionVersion,
+            UUID computeEngineId,
+            String checkpointKeyPrefix,
+            int checkpointGeneration
+    ) {
+        TaskStreamingDeployment deployment = create(
+                taskId, definitionVersion, computeEngineId, checkpointKeyPrefix,
+                checkpointGeneration, StreamingCheckpointMode.FRESH, null);
+        deployment.executionMode = StreamingDeploymentExecutionMode.TRIAL;
         return deployment;
     }
 
@@ -241,6 +271,9 @@ public class TaskStreamingDeployment extends BaseEntity {
         lastPollDurationMillis = progress.pollDurationMillis();
         lastPollAt = progress.pollTime();
         cursorLagMillis = progress.cursorLagMillis();
+        sourceKind = progress.sourceKind();
+        lastVGroupCount = progress.vGroupCount();
+        lastBatchOffsetSpan = progress.batchOffsetSpan();
     }
 
     public void requestStop() {
@@ -273,6 +306,7 @@ public class TaskStreamingDeployment extends BaseEntity {
     public int getCheckpointGeneration() { return checkpointGeneration; }
     public StreamingCheckpointMode getCheckpointStartMode() { return checkpointStartMode; }
     public UUID getCheckpointSourceDeploymentId() { return checkpointSourceDeploymentId; }
+    public StreamingDeploymentExecutionMode getExecutionMode() { return executionMode; }
     public StreamingDeploymentDesiredState getDesiredState() { return desiredState; }
     public StreamingDeploymentActualState getActualState() { return actualState; }
     public Instant getStartedAt() { return startedAt; }
@@ -291,6 +325,9 @@ public class TaskStreamingDeployment extends BaseEntity {
     public Long getLastPollDurationMillis() { return lastPollDurationMillis; }
     public Instant getLastPollAt() { return lastPollAt; }
     public Long getCursorLagMillis() { return cursorLagMillis; }
+    public StreamingSourceKind getSourceKind() { return sourceKind; }
+    public Integer getLastVGroupCount() { return lastVGroupCount; }
+    public Long getLastBatchOffsetSpan() { return lastBatchOffsetSpan; }
 
     private static String truncate(String value) {
         if (value == null || value.isBlank()) return null;

@@ -4,7 +4,7 @@ import { fieldCountText, metadataSourceName, outputTable, resolvedNodeSize } fro
 import type { CanvasNodeBodyProps, CanvasNodeCanvasView } from '../nodeSpec';
 
 const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.TdEngineTmqInput>) => {
-  const { dataSourceId, topicName, supertableName, outputTableName, startingOffsets } = data.configuration;
+  const { dataSourceId, topicName, supertableName, outputTableName, startingOffsets, eventTimeColumn } = data.configuration;
   if (!dataSourceId && !topicName) return <NodeEmpty>请选择 TDengine 数据源和 TMQ Topic</NodeEmpty>;
   const result = outputTable(data, outputTableName);
   return <NodeContent variant="source">
@@ -12,6 +12,7 @@ const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.TdEngineTmqInp
     <NodeFlow source={supertableName || '超级表'} operation="TMQ" target={outputTableName || '待设置输出表'} />
     <NodeBadges>
       <NodeBadge tone="info">{startingOffsets}</NodeBadge>
+      {eventTimeColumn ? <NodeBadge tone="info">事件时间 {eventTimeColumn}</NodeBadge> : null}
       <NodeBadge>{result ? fieldCountText(result) : `${data.summary?.kind === 'TDENGINE_TMQ' ? data.summary.fieldCount : 0} 个字段`}</NodeBadge>
     </NodeBadges>
   </NodeContent>;

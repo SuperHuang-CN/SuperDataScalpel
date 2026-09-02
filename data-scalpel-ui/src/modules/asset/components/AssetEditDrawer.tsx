@@ -1,6 +1,8 @@
-import { Alert, Button, Descriptions, Divider, Drawer, Form, Input, Select, Space, Switch, TreeSelect, Typography, message } from 'antd';
+import { CompassOutlined, DatabaseOutlined, FormOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { Badge, Button, Drawer, Form, Input, Select, Space, Switch, Tag, TreeSelect, Typography, message } from 'antd';
 import { useEffect } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory';
 import { useUpdateAsset } from '../hooks/useAssets';
 import { assetSyncStatusLabels, assetTypeLabels, type Asset, type AssetSensitivityLevel, type UpdateAssetRequest } from '../model/asset';
@@ -96,52 +98,120 @@ export const AssetEditDrawer = ({ open, asset, directories, readOnly = false, on
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay asset-edit-drawer"
-        title={readOnly ? '资产详情' : '编辑资产'}
+        rootClassName="business-overlay business-drawer-overlay"
+        className="data-model-drawer asset-edit-drawer"
+        title={(
+          <div className="data-model-drawer-title">
+            <span className="data-model-drawer-title-icon" aria-hidden="true"><CompassOutlined /></span>
+            <span className="data-model-drawer-title-copy">
+              <span>{readOnly ? '资产门户详情' : '编辑资产门户信息'}</span>
+              <Typography.Text type="secondary">{asset ? `${asset.sourceName}${asset.sourceCode ? ` · ${asset.sourceCode}` : ''}` : '维护门户呈现与治理属性'}</Typography.Text>
+            </span>
+          </div>
+        )}
+        extra={asset && <Tag className="data-model-drawer-header-tag">{assetTypeLabels[asset.assetType]}</Tag>}
         open={open}
-        width={720}
+        width={820}
         onClose={onClose}
+        forceRender
         destroyOnHidden
-        footer={readOnly ? <Button onClick={onClose}>关闭</Button> : <Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
+        footer={(
+          <div className="data-model-drawer-footer">
+            <Badge status={asset?.syncStatus === 'IN_SYNC' ? 'success' : 'warning'} text={asset ? `${assetSyncStatusLabels[asset.syncStatus]} · ${asset.portalName || asset.sourceName}` : '资产信息'} />
+            <Space>
+              <Button onClick={onClose}>{readOnly ? '关闭' : '取消'}</Button>
+              {!readOnly && <Button type="primary" loading={updateMutation.isPending} onClick={() => form.submit()}>保存修改</Button>}
+            </Space>
+          </div>
+        )}
       >
         {asset && (
-          <>
-            {asset.syncStatus !== 'IN_SYNC' && <Alert showIcon type="warning" message={assetSyncStatusLabels[asset.syncStatus]} description={asset.syncError ?? '来源元数据可能已变化，请检查或重新同步。'} />}
-            <Typography.Title level={5}>门户信息</Typography.Title>
-            <Form<AssetFormValues> autoComplete="off" form={form} layout="vertical" disabled={readOnly} onFinish={(values) => void submit(values)}>
-              <div className="asset-edit-form-grid">
-                <Form.Item label="业务领域" name="directoryId" rules={[{ required: true, message: '请选择业务领域' }]}>
-                  <TreeSelect treeDefaultExpandAll treeData={directoryTreeSelectData(directories)} placeholder="选择业务领域" />
-                </Form.Item>
-                <Form.Item label="资产负责人" name="ownerName" rules={[{ max: 100 }]}><Input /></Form.Item>
-                <Form.Item label="门户名称" name="portalName" extra={`留空使用来源名称：${asset.sourceName}`} rules={[{ max: 100 }]}><Input /></Form.Item>
-                <Form.Item label="更新频率" name="updateFrequency" rules={[{ max: 100 }]}><Input placeholder="例如：每日更新" /></Form.Item>
-                <Form.Item label="敏感级别" name="sensitivityLevel">
-                  <Select options={[{ value: 'PUBLIC', label: '公开' }, { value: 'INTERNAL', label: '内部' }, { value: 'SENSITIVE', label: '敏感' }]} />
-                </Form.Item>
-                <Form.Item label="门户推荐" name="featured" valuePropName="checked"><Switch /></Form.Item>
+          <Form<AssetFormValues>
+            name="asset-portal-editor-form"
+            className="data-model-form asset-edit-form"
+            autoComplete="off"
+            form={form}
+            layout="vertical"
+            disabled={readOnly}
+            onFinish={(values) => void submit(values)}
+          >
+            <section className="data-model-form-section">
+              <header className="data-model-form-section-header">
+                <span className="data-model-form-section-icon" aria-hidden="true"><FormOutlined /></span>
+                <span className="data-model-form-section-copy">
+                  <span className="data-model-form-section-title">门户呈现</span>
+                  <Typography.Text type="secondary">设置资产在门户中的名称、简介、领域与检索标签</Typography.Text>
+                </span>
+              </header>
+              <div className="data-model-form-section-body">
+                <div className="asset-edit-form-grid">
+                  <Form.Item label="业务领域" name="directoryId" rules={[{ required: true, message: '请选择业务领域' }]}>
+                    <TreeSelect treeDefaultExpandAll treeData={directoryTreeSelectData(directories)} placeholder="选择业务领域" />
+                  </Form.Item>
+                  <Form.Item
+                    label={<span className="data-model-form-label-with-help">门户名称<ContextHelp ariaLabel="门户名称说明" content={`留空时使用来源名称：${asset.sourceName}`} /></span>}
+                    name="portalName"
+                    rules={[{ max: 100 }]}
+                  >
+                    <Input name="asset-portal-name" autoComplete="off" placeholder={asset.sourceName} />
+                  </Form.Item>
+                </div>
+                <Form.Item label="门户简介" name="portalSummary" extra="留空时使用来源说明" rules={[{ max: 1000 }]}><Input.TextArea name="asset-portal-summary" autoComplete="off" rows={4} placeholder="概括资产用途、内容范围和适用场景" /></Form.Item>
+                <Form.Item label="检索标签" name="tags"><Select mode="tags" maxCount={10} tokenSeparators={[',', '，']} placeholder="输入标签后按 Enter，最多 10 个" /></Form.Item>
               </div>
-              <Form.Item label="门户简介" name="portalSummary" extra="留空使用来源说明" rules={[{ max: 1000 }]}><Input.TextArea rows={4} /></Form.Item>
-              <Form.Item label="标签" name="tags"><Select mode="tags" maxCount={10} tokenSeparators={[',', '，']} placeholder="最多 10 个标签" /></Form.Item>
-            </Form>
+            </section>
 
-            <Divider />
-            <Typography.Title level={5}>来源快照</Typography.Title>
-            <Descriptions bordered size="small" column={2}>
-              <Descriptions.Item label="资产类型">{assetTypeLabels[asset.assetType]}</Descriptions.Item>
-              <Descriptions.Item label="来源状态">{asset.sourceStatus}</Descriptions.Item>
-              <Descriptions.Item label="同步状态">{assetSyncStatusLabels[asset.syncStatus]}</Descriptions.Item>
-              <Descriptions.Item label="最后检查">{formatDateTime(asset.lastCheckedAt)}</Descriptions.Item>
-              <Descriptions.Item label="来源更新时间">{formatDateTime(asset.sourceUpdatedAt)}</Descriptions.Item>
-              <Descriptions.Item label="最后同步">{formatDateTime(asset.lastSyncedAt)}</Descriptions.Item>
-              <Descriptions.Item label="来源名称">{asset.sourceName}</Descriptions.Item>
-              <Descriptions.Item label="来源编码">{asset.sourceCode ?? '—'}</Descriptions.Item>
-              {Object.entries((asset.sourceSnapshot.metadata as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => (
-                <Descriptions.Item key={key} label={snapshotLabels[key] ?? key}>{snapshotText(value)}</Descriptions.Item>
-              ))}
-              <Descriptions.Item label="来源说明" span={2}>{asset.sourceDescription ?? '—'}</Descriptions.Item>
-            </Descriptions>
-          </>
+            <section className="data-model-form-section">
+              <header className="data-model-form-section-header">
+                <span className="data-model-form-section-icon" aria-hidden="true"><SafetyCertificateOutlined /></span>
+                <span className="data-model-form-section-copy">
+                  <span className="data-model-form-section-title">治理属性</span>
+                  <Typography.Text type="secondary">补充负责人、更新节奏与信息敏感等级</Typography.Text>
+                </span>
+                <span className="data-source-enabled-control">
+                  <span>门户推荐</span>
+                  <Form.Item name="featured" valuePropName="checked" noStyle><Switch aria-label="设为门户推荐资产" /></Form.Item>
+                </span>
+              </header>
+              <div className="data-model-form-section-body">
+                <div className="asset-edit-form-grid">
+                  <Form.Item label="资产负责人" name="ownerName" rules={[{ max: 100 }]}><Input name="asset-owner-name" autoComplete="off" placeholder="输入负责人或责任团队" /></Form.Item>
+                  <Form.Item label="更新频率" name="updateFrequency" rules={[{ max: 100 }]}><Input name="asset-update-frequency" autoComplete="off" placeholder="例如：每日更新" /></Form.Item>
+                  <Form.Item label="敏感级别" name="sensitivityLevel">
+                    <Select allowClear placeholder="选择敏感级别" options={[{ value: 'PUBLIC', label: '公开' }, { value: 'INTERNAL', label: '内部' }, { value: 'SENSITIVE', label: '敏感' }]} />
+                  </Form.Item>
+                </div>
+              </div>
+            </section>
+
+            <section className="data-model-form-section asset-source-section">
+              <header className="data-model-form-section-header">
+                <span className="data-model-form-section-icon" aria-hidden="true"><DatabaseOutlined /></span>
+                <span className="data-model-form-section-copy">
+                  <span className="data-model-form-section-title">来源快照</span>
+                  <Typography.Text type="secondary">只读展示当前登记资源的来源状态与同步元数据</Typography.Text>
+                </span>
+                <Tag className="data-model-drawer-header-tag">{assetSyncStatusLabels[asset.syncStatus]}</Tag>
+              </header>
+              <div className="asset-source-section-body">
+                {asset.syncStatus !== 'IN_SYNC' && <InlineFeedback className="asset-sync-feedback" tone="warning" label={assetSyncStatusLabels[asset.syncStatus]} detail={asset.syncError ?? '来源元数据可能已变化，请检查或重新同步。'} />}
+                <div className="asset-source-snapshot-grid">
+                  <div className="asset-source-snapshot-item"><span>资产类型</span><strong>{assetTypeLabels[asset.assetType]}</strong></div>
+                  <div className="asset-source-snapshot-item"><span>来源状态</span><strong>{asset.sourceStatus}</strong></div>
+                  <div className="asset-source-snapshot-item"><span>同步状态</span><strong>{assetSyncStatusLabels[asset.syncStatus]}</strong></div>
+                  <div className="asset-source-snapshot-item"><span>最后检查</span><strong>{formatDateTime(asset.lastCheckedAt)}</strong></div>
+                  <div className="asset-source-snapshot-item"><span>来源更新时间</span><strong>{formatDateTime(asset.sourceUpdatedAt)}</strong></div>
+                  <div className="asset-source-snapshot-item"><span>最后同步</span><strong>{formatDateTime(asset.lastSyncedAt)}</strong></div>
+                  <div className="asset-source-snapshot-item"><span>来源名称</span><strong>{asset.sourceName}</strong></div>
+                  <div className="asset-source-snapshot-item"><span>来源编码</span><strong className="asset-source-code">{asset.sourceCode ?? '—'}</strong></div>
+                  {Object.entries((asset.sourceSnapshot.metadata as Record<string, unknown> | undefined) ?? {}).map(([key, value]) => (
+                    <div className="asset-source-snapshot-item" key={key}><span>{snapshotLabels[key] ?? key}</span><strong>{snapshotText(value)}</strong></div>
+                  ))}
+                  <div className="asset-source-snapshot-item asset-source-snapshot-item-wide"><span>来源说明</span><strong>{asset.sourceDescription ?? '—'}</strong></div>
+                </div>
+              </div>
+            </section>
+          </Form>
         )}
       </Drawer>
     </>

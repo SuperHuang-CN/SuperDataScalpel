@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { DownloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Drawer, Empty, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import { Button, Drawer, Empty, Space, Spin, Table, Tag, Typography, message } from 'antd';
 import type { TableProps } from 'antd';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';

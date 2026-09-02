@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.service;
 
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
+import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineType;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineAccessPolicy;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineAccessPolicyStatus;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineAccessPolicyRepository;
@@ -56,7 +57,7 @@ public class ServiceEngineAccessPolicyService {
 
     @Transactional(readOnly = true)
     public ServiceEngineAccessPolicyResponse get(UUID engineId) {
-        requireEngine(engineId);
+        requireDataScalpelEngine(engineId);
         return repository.findByEngineId(engineId)
                 .map(this::response)
                 .orElseGet(() -> new ServiceEngineAccessPolicyResponse(
@@ -70,7 +71,7 @@ public class ServiceEngineAccessPolicyService {
             UpdateServiceEngineAccessPolicyRequest request
     ) {
         PolicyOperation operation = requireResult(transactionTemplate.execute(status -> {
-            ServiceEngine engine = requireEnabledEngine(engineId);
+            ServiceEngine engine = requireEnabledDataScalpelEngine(engineId);
             List<String> allowCidrs = normalizeRules(request.allowCidrs());
             if (allowCidrs.isEmpty()) throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "访问白名单不能为空");
             List<String> denyCidrs = normalizeRules(request.denyCidrs());
@@ -87,7 +88,7 @@ public class ServiceEngineAccessPolicyService {
 
     public ServiceEngineAccessPolicyResponse sync(UUID engineId) {
         PolicyOperation operation = requireResult(transactionTemplate.execute(status -> {
-            ServiceEngine engine = requireEnabledEngine(engineId);
+            ServiceEngine engine = requireEnabledDataScalpelEngine(engineId);
             ServiceEngineAccessPolicy policy = repository.findByEngineId(engineId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎尚未配置访问策略"));
             List<String> allowCidrs = read(policy.getAllowCidrsJson());
@@ -165,8 +166,16 @@ public class ServiceEngineAccessPolicyService {
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "服务引擎不存在"));
     }
 
-    private ServiceEngine requireEnabledEngine(UUID id) {
+    private ServiceEngine requireDataScalpelEngine(UUID id) {
         ServiceEngine engine = requireEngine(id);
+        if (engine.getType() != ServiceEngineType.DATASCALPEL) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "GeoServer 空间引擎不使用 Service Engine 访问策略");
+        }
+        return engine;
+    }
+
+    private ServiceEngine requireEnabledDataScalpelEngine(UUID id) {
+        ServiceEngine engine = requireDataScalpelEngine(id);
         if (!engine.isEnabled()) throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎已停用");
         return engine;
     }

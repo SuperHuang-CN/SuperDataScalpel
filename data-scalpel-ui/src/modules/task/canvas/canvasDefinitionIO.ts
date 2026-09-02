@@ -21,6 +21,10 @@ import {
   type ColumnDerivation,
   type ColumnTypeCast,
   type CastFailureStrategy,
+  type EpochTimestampUnit,
+  type StringTemporalParseOptions,
+  type StringTimestampZoneMode,
+  type TemporalStringFormatOptions,
   type AggregateFunction,
   type AggregateItem,
   type UnionMode,
@@ -45,6 +49,7 @@ import {
   type FileOutputFormatOptions,
 } from './canvasTypes';
 import { canvasNodeRegistry } from './nodes/nodeRegistry';
+import { isValidIanaZoneId } from '../model/taskScheduleValidation';
 
 export type CanvasDefinitionParseResult =
   | { success: true; definition: CanvasDefinition }
@@ -815,16 +820,204 @@ export const parseTypeCasts = (
       && failureStrategy === null) {
       errors.push(`${itemPath}.failureStrategy 仅支持 FAIL 或 SET_NULL`);
     }
+    const epochTimestampUnit = item.epochTimestampUnit === 'SECONDS'
+      || item.epochTimestampUnit === 'MILLISECONDS'
+      || item.epochTimestampUnit === 'MICROSECONDS'
+      ? item.epochTimestampUnit as EpochTimestampUnit
+      : item.epochTimestampUnit === null ? null : undefined;
+    if (item.epochTimestampUnit !== undefined && epochTimestampUnit === undefined) {
+      errors.push(`${itemPath}.epochTimestampUnit 仅支持 SECONDS、MILLISECONDS 或 MICROSECONDS`);
+    }
+    const targetType = parsePlatformTypeDefinition(
+      item.targetType,
+      `${itemPath}.targetType`,
+      errors,
+    );
+    const stringTemporalParseOptions = parseStringTemporalParseOptions(
+      item.stringTemporalParseOptions,
+      `${itemPath}.stringTemporalParseOptions`,
+      errors,
+    );
+    validateStringTemporalParseOptions(
+      stringTemporalParseOptions,
+      targetType,
+      epochTimestampUnit,
+      `${itemPath}.stringTemporalParseOptions`,
+      errors,
+    );
+    const temporalStringFormatOptions = parseTemporalStringFormatOptions(
+      item.temporalStringFormatOptions,
+      `${itemPath}.temporalStringFormatOptions`,
+      errors,
+    );
+    validateTemporalStringFormatOptions(
+      temporalStringFormatOptions,
+      targetType,
+      epochTimestampUnit,
+      stringTemporalParseOptions,
+      `${itemPath}.temporalStringFormatOptions`,
+      errors,
+    );
     return [{
       columnName: stringValue(item.columnName),
-      targetType: parsePlatformTypeDefinition(
-        item.targetType,
-        `${itemPath}.targetType`,
-        errors,
-      ),
+      targetType,
       failureStrategy,
+      ...(item.epochTimestampUnit === undefined ? {} : { epochTimestampUnit }),
+      ...(item.stringTemporalParseOptions === undefined ? {} : { stringTemporalParseOptions }),
+      ...(item.temporalStringFormatOptions === undefined ? {} : { temporalStringFormatOptions }),
     }];
   });
+};
+
+const parseTemporalStringFormatOptions = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): TemporalStringFormatOptions | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return undefined;
+  }
+  if (typeof value.pattern !== 'string') errors.push(`${path}.pattern 必须是字符串`);
+  const targetTimeZone = value.targetTimeZone === null || value.targetTimeZone === undefined
+    ? null
+    : typeof value.targetTimeZone === 'string' ? value.targetTimeZone : undefined;
+  if (targetTimeZone === undefined) errors.push(`${path}.targetTimeZone 必须是字符串或 null`);
+  return {
+    pattern: stringValue(value.pattern),
+    targetTimeZone: targetTimeZone ?? null,
+  };
+};
+
+const validateTemporalStringFormatOptions = (
+  options: TemporalStringFormatOptions | null | undefined,
+  targetType: PlatformTypeDefinition,
+  epochTimestampUnit: EpochTimestampUnit | null | undefined,
+  parseOptions: StringTemporalParseOptions | null | undefined,
+  path: string,
+  errors: string[],
+) => {
+  if (options == null) return;
+  if (epochTimestampUnit != null || parseOptions != null) {
+    errors.push(`${path} 不能与其他特殊时间转换配置同时使用`);
+  }
+  if (targetType.type !== 'STRING') {
+    errors.push(`${path} 仅支持 DATE、TIMESTAMP 或 TIMESTAMP_NTZ 转换为 STRING`);
+  }
+  if (!options.pattern.trim()) {
+    errors.push(`${path}.pattern 不能为空`);
+  } else if (options.pattern.length > 128) {
+    errors.push(`${path}.pattern 不能超过 128 个字符`);
+  } else if (containsUnquotedZonePatternSymbol(options.pattern)) {
+    errors.push(`${path}.pattern 不能包含时区或偏移符号`);
+  }
+  if (options.targetTimeZone !== null) {
+    if (!options.targetTimeZone.trim()) {
+      errors.push(`${path}.targetTimeZone 不能为空字符串`);
+    } else if (options.targetTimeZone.length > 64) {
+      errors.push(`${path}.targetTimeZone 不能超过 64 个字符`);
+    } else if (!isValidIanaZoneId(options.targetTimeZone)) {
+      errors.push(`${path}.targetTimeZone 必须是有效的 IANA Zone ID`);
+    }
+  }
+};
+
+const parseStringTemporalParseOptions = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): StringTemporalParseOptions | null | undefined => {
+  if (value === undefined) return undefined;
+  if (value === null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return undefined;
+  }
+  if (typeof value.pattern !== 'string') errors.push(`${path}.pattern 必须是字符串`);
+  const zoneMode = value.zoneMode === 'SOURCE_TIME_ZONE' || value.zoneMode === 'EMBEDDED_OFFSET'
+    ? value.zoneMode as StringTimestampZoneMode
+    : value.zoneMode === null || value.zoneMode === undefined ? null : undefined;
+  if (zoneMode === undefined) {
+    errors.push(`${path}.zoneMode 仅支持 SOURCE_TIME_ZONE 或 EMBEDDED_OFFSET`);
+  }
+  const sourceTimeZone = value.sourceTimeZone === null || value.sourceTimeZone === undefined
+    ? null
+    : typeof value.sourceTimeZone === 'string' ? value.sourceTimeZone : undefined;
+  if (sourceTimeZone === undefined) errors.push(`${path}.sourceTimeZone 必须是字符串或 null`);
+  return {
+    pattern: stringValue(value.pattern),
+    zoneMode: zoneMode ?? null,
+    sourceTimeZone: sourceTimeZone ?? null,
+  };
+};
+
+const validateStringTemporalParseOptions = (
+  options: StringTemporalParseOptions | null | undefined,
+  targetType: PlatformTypeDefinition,
+  epochTimestampUnit: EpochTimestampUnit | null | undefined,
+  path: string,
+  errors: string[],
+) => {
+  if (options == null) return;
+  if (epochTimestampUnit != null) {
+    errors.push(`${path} 不能与 epochTimestampUnit 同时配置`);
+  }
+  if (targetType.type !== 'DATE' && targetType.type !== 'TIMESTAMP') {
+    errors.push(`${path} 仅支持 STRING 转换为 DATE 或 TIMESTAMP`);
+    return;
+  }
+  if (!options.pattern.trim()) {
+    errors.push(`${path}.pattern 不能为空`);
+  } else if (options.pattern.length > 128) {
+    errors.push(`${path}.pattern 不能超过 128 个字符`);
+  }
+  if (targetType.type === 'DATE') {
+    if (options.zoneMode !== null || options.sourceTimeZone !== null) {
+      errors.push(`${path} 的 DATE 解析不能配置时区`);
+    }
+    return;
+  }
+  if (options.zoneMode === null) {
+    errors.push(`${path}.zoneMode 不能为空`);
+    return;
+  }
+  const patternContainsZone = containsUnquotedZonePatternSymbol(options.pattern);
+  if (options.zoneMode === 'SOURCE_TIME_ZONE') {
+    if ((options.sourceTimeZone?.length ?? 0) > 64) {
+      errors.push(`${path}.sourceTimeZone 不能超过 64 个字符`);
+    } else if (!isValidIanaZoneId(options.sourceTimeZone ?? '')) {
+      errors.push(`${path}.sourceTimeZone 必须是有效的 IANA Zone ID`);
+    }
+    if (patternContainsZone) {
+      errors.push(`${path}.pattern 在指定来源时区模式下不能包含时区或偏移符号`);
+    }
+    return;
+  }
+  if (options.sourceTimeZone !== null) {
+    errors.push(`${path}.sourceTimeZone 在字符串自带偏移模式下必须为空`);
+  }
+  if (!patternContainsZone) {
+    errors.push(`${path}.pattern 在字符串自带偏移模式下必须包含时区或偏移符号`);
+  }
+};
+
+const containsUnquotedZonePatternSymbol = (pattern: string) => {
+  let quoted = false;
+  for (let index = 0; index < pattern.length; index += 1) {
+    const symbol = pattern[index];
+    if (symbol === "'") {
+      if (quoted && pattern[index + 1] === "'") {
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
+      continue;
+    }
+    if (!quoted && 'XxZOVz'.includes(symbol)) return true;
+  }
+  return false;
 };
 
 const aggregateFunctions = new Set<AggregateFunction>([
@@ -1079,6 +1272,74 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
           && node.type === CanvasNodeType.JdbcInput
           && node.configuration.tables.some((table) => table.readOptions.length > 0)) {
         errors.push(`JDBC_INPUT.readOptions 从 Canvas ${CANVAS_SCHEMA_VERSION}.1 开始支持`);
+      }
+      if (sourceSchemaMinorVersion < 2
+          && node.type === CanvasNodeType.TypeCast
+          && (node.configuration.operations ?? []).some((operation) => (
+            operation.casts.some((cast) => cast.epochTimestampUnit != null)
+          ))) {
+        errors.push(`TYPE_CAST.epochTimestampUnit 从 Canvas ${CANVAS_SCHEMA_VERSION}.2 开始支持`);
+      }
+      if (sourceSchemaMinorVersion >= 2
+          && sourceSchemaMinorVersion < 8
+          && node.type === CanvasNodeType.TypeCast
+          && (node.configuration.operations ?? []).some((operation) => (
+            operation.casts.some((cast) => (
+              cast.epochTimestampUnit != null && cast.targetType.type === 'LONG'
+            ))
+          ))) {
+        errors.push(`TYPE_CAST DATE/TIMESTAMP 转 LONG 从 Canvas ${CANVAS_SCHEMA_VERSION}.8 开始支持`);
+      }
+      if (sourceSchemaMinorVersion < 3
+          && node.type === CanvasNodeType.TypeCast
+          && (node.configuration.operations ?? []).some((operation) => (
+            operation.casts.some((cast) => cast.stringTemporalParseOptions != null)
+          ))) {
+        errors.push(`TYPE_CAST.stringTemporalParseOptions 从 Canvas ${CANVAS_SCHEMA_VERSION}.3 开始支持`);
+      }
+      if (sourceSchemaMinorVersion < 7
+          && node.type === CanvasNodeType.TypeCast
+          && (node.configuration.operations ?? []).some((operation) => (
+            operation.casts.some((cast) => cast.temporalStringFormatOptions != null)
+          ))) {
+        errors.push(`TYPE_CAST.temporalStringFormatOptions 从 Canvas ${CANVAS_SCHEMA_VERSION}.7 开始支持`);
+      }
+      if (sourceSchemaMinorVersion < 4 && node.type === CanvasNodeType.KafkaInput) {
+        const rawNode = (value.nodes as unknown[]).find((candidate) => (
+          isRecord(candidate) && candidate.id === node.id
+        ));
+        const rawConfiguration = isRecord(rawNode) && isRecord(rawNode.configuration)
+          ? rawNode.configuration : null;
+        if (rawConfiguration
+          && (rawConfiguration.valueFormat != null || rawConfiguration.metadataFields != null)) {
+          errors.push(`KAFKA_INPUT.valueFormat/metadataFields 从 Canvas ${CANVAS_SCHEMA_VERSION}.4 开始支持`);
+        }
+      }
+      if (sourceSchemaMinorVersion < 5 && node.type === CanvasNodeType.TdEngineTmqInput) {
+        const rawNode = (value.nodes as unknown[]).find((candidate) => (
+          isRecord(candidate) && candidate.id === node.id
+        ));
+        const rawConfiguration = isRecord(rawNode) && isRecord(rawNode.configuration)
+          ? rawNode.configuration : null;
+        if (rawConfiguration
+          && (rawConfiguration.eventTimeColumn != null
+            || rawConfiguration.watermarkDelaySeconds != null)) {
+          errors.push(`TDENGINE_TMQ_INPUT 事件时间配置从 Canvas ${CANVAS_SCHEMA_VERSION}.5 开始支持`);
+        }
+      }
+      if (sourceSchemaMinorVersion < 6 && node.type === CanvasNodeType.KafkaOutput) {
+        const rawNode = (value.nodes as unknown[]).find((candidate) => (
+          isRecord(candidate) && candidate.id === node.id
+        ));
+        const rawConfiguration = isRecord(rawNode) && isRecord(rawNode.configuration)
+          ? rawNode.configuration : null;
+        const rawWrites = rawConfiguration && Array.isArray(rawConfiguration.writes)
+          ? rawConfiguration.writes : [];
+        if (rawWrites.some((write) => isRecord(write)
+          && (Object.prototype.hasOwnProperty.call(write, 'valueFormat')
+            || Object.prototype.hasOwnProperty.call(write, 'valueColumnNames')))) {
+          errors.push(`KAFKA_OUTPUT.valueFormat/valueColumnNames 从 Canvas ${CANVAS_SCHEMA_VERSION}.6 开始支持`);
+        }
       }
     });
   }

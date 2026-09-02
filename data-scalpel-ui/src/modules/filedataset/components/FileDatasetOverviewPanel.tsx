@@ -1,5 +1,9 @@
-import { Alert, Button, Descriptions, Tag } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { FileTextOutlined, SettingOutlined, TableOutlined } from '@ant-design/icons';
+import { Button, Tag } from 'antd';
 import type { DescriptionsProps } from 'antd';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import {
   fileDatasetParseStatusLabels,
   fileDatasetTypeLabels,
@@ -70,12 +74,18 @@ export const FileDatasetOverviewPanel = ({
           description="状态每 2 秒自动刷新，全部任务完成或失败后停止轮询。"
         />
       )}
-      <section className="file-dataset-detail-section">
-        <div className="file-dataset-detail-section-title">基础信息</div>
-        <Descriptions size="small" bordered column={2} items={basicItems} />
-      </section>
-      <section className="file-dataset-detail-section">
-        <div className="file-dataset-detail-section-title">共享解析参数</div>
+      <BusinessDetailSection
+        title="基础信息"
+        description="数据集类型、规模与归属信息"
+        icon={<FileTextOutlined />}
+      >
+        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }} items={basicItems} />
+      </BusinessDetailSection>
+      <BusinessDetailSection
+        title="共享解析参数"
+        description="应用于当前数据集全部逻辑表的解析规则"
+        icon={<SettingOutlined />}
+      >
         <Alert
           type="info"
           showIcon
@@ -84,10 +94,13 @@ export const FileDatasetOverviewPanel = ({
             ? '当前数据集已有文件、表或解析任务，解析参数已锁定；清空数据集后可再次修改。'
             : '上传文件时无需再次配置；开始上传后解析参数将锁定。'}
         />
-        <Descriptions size="small" bordered column={2} items={parsingItems} />
-      </section>
-      <section className="file-dataset-detail-section">
-        <div className="file-dataset-detail-section-title">表解析状态</div>
+        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }} items={parsingItems} />
+      </BusinessDetailSection>
+      <BusinessDetailSection
+        title="表解析状态"
+        description="逻辑表解析任务的当前分布"
+        icon={<TableOutlined />}
+      >
         <div className="file-dataset-status-summary" aria-busy={tablesLoading}>
           {(Object.keys(fileDatasetParseStatusLabels) as FileDatasetParseStatus[]).map((status) => (
             <Tag key={status} color={parseStatusColors[status]}>
@@ -95,7 +108,7 @@ export const FileDatasetOverviewPanel = ({
             </Tag>
           ))}
         </div>
-      </section>
+      </BusinessDetailSection>
     </div>
   );
 };

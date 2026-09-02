@@ -463,7 +463,6 @@ class ApiConsumerCredentialSubscriptionIntegrationTests {
                 DataServiceType.STANDARD_TABLE,
                 UUID.randomUUID(),
                 "/open-api/v1/subscription-" + suffix,
-                accessMode,
                 null
         );
         service.nextRevision();

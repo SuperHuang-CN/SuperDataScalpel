@@ -257,6 +257,13 @@ public class DispatcherExecutionStateService {
                 eventService.enqueueTerminal(execution, ExecutionMessageType.EXECUTION_SUCCEEDED, null,
                         affectedRows, qualitySummary, result.userJobObservability());
             }
+            case STOPPED -> {
+                execution.completeFromRunner(DispatcherExecutionState.STOPPED,
+                        result.startedAt(), result.endedAt(), affectedRows, null);
+                executionRepository.save(execution);
+                eventService.enqueueTerminal(execution, ExecutionMessageType.EXECUTION_STOPPED,
+                        null, affectedRows, null, result.userJobObservability());
+            }
             case FAILED -> {
                 SafeExecutionError safeError = safeError(result.error());
                 execution.completeFromRunner(DispatcherExecutionState.FAILED, result.startedAt(), result.endedAt(),

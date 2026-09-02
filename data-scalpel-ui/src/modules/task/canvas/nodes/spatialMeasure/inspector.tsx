@@ -1,10 +1,11 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   DownOutlined,
   PlusOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Card, Form, Input, Select, Space, Tag, Typography } from 'antd';
+import { Button, Card, Form, Input, Select, Space, Tag, Typography } from 'antd';
 import { useImperativeHandle, useState } from 'react';
 import {
   CANVAS_SPATIAL_MEASURE_MAX_MEASUREMENTS,

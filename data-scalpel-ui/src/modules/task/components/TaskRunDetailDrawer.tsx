@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DownloadOutlined,
   FileTextOutlined,
@@ -5,22 +6,7 @@ import {
   ReloadOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Card,
-  Collapse,
-  Descriptions,
-  Drawer,
-  Empty,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  message,
-} from 'antd';
+import { Button, Card, Collapse, Descriptions, Drawer, Empty, Space, Spin, Table, Tag, Tooltip, Typography, message } from 'antd';
 import type { TableProps } from 'antd';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { ApiError } from '../../../shared/api/http';

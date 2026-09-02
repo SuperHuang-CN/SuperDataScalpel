@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CloseOutlined, RobotOutlined, SaveOutlined } from '@ant-design/icons';
-import { Alert, Button, Modal, Space, Spin, Tag, Typography, message } from 'antd';
+import { Button, Modal, Space, Spin, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useBlocker, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -343,6 +344,11 @@ export const CanvasTaskDefinitionPanel = ({
         onDefinitionChange={setCurrentDefinition}
         onInspectorDirtyChange={setInspectorDirty}
         executionMode={streaming ? 'STREAMING' : 'BATCH'}
+        trialContext={{
+          taskId: task.id,
+          baseDefinitionVersion: definitionQuery.data.version,
+          taskStatus: task.status,
+        }}
         toolbarLeading={(
           <Space wrap size={8}>
             {toolbarContext ?? <Typography.Text strong>Canvas 定义</Typography.Text>}

@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -7,7 +8,7 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {

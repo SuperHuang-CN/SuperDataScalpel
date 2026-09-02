@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.DataTask;
 import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState;
 import cn.superhuang.data.scalpel.business.task.domain.StreamingSinkType;
+import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentExecutionMode;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStreamingConfiguration;
@@ -31,6 +32,7 @@ import cn.superhuang.data.scalpel.business.task.web.response.TaskStreamingConfig
 import cn.superhuang.data.scalpel.business.task.web.response.TaskStreamingDeploymentResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskStreamingQueryResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskStreamingStatusResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.StartStreamingExecutionCommand;
@@ -43,6 +45,7 @@ import cn.superhuang.data.scalpel.contract.execution.StreamingCheckpointMode;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -52,19 +55,29 @@ import tools.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.UUID;
 import java.util.stream.Stream;
 
 @Service
 public class TaskStreamingService {
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(TaskStreamingService.class);
     private static final List<StreamingDeploymentActualState> ACTIVE = List.of(
             StreamingDeploymentActualState.STARTING,
             StreamingDeploymentActualState.RUNNING,
             StreamingDeploymentActualState.STOPPING
     );
+    private static final List<cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus> ACTIVE_RUNS = List.of(
+            cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.QUEUED,
+            cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.RUNNING,
+            cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.CANCEL_REQUESTED,
+            cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.STOP_REQUESTED
+    );
+    private static final long STREAMING_TRIAL_SECONDS = 30 * 60;
 
     private final DataTaskRepository taskRepository;
     private final CanvasTaskDefinitionRepository definitionRepository;
@@ -83,6 +96,7 @@ public class TaskStreamingService {
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transaction;
     private final TransactionTemplate readTransaction;
+    private final TmqConsumerGroupCleanupService tmqCleanupService;
 
     public TaskStreamingService(
             DataTaskRepository taskRepository,
@@ -100,6 +114,7 @@ public class TaskStreamingService {
             TaskExecutionOutboxService executionOutboxService,
             ObjectProvider<TaskRunArtifactStorage> artifactStorageProvider,
             ObjectMapper objectMapper,
+            TmqConsumerGroupCleanupService tmqCleanupService,
             PlatformTransactionManager transactionManager
     ) {
         this.taskRepository = taskRepository;
@@ -117,6 +132,7 @@ public class TaskStreamingService {
         this.executionOutboxService = executionOutboxService;
         this.artifactStorageProvider = artifactStorageProvider;
         this.objectMapper = objectMapper;
+        this.tmqCleanupService = tmqCleanupService;
         this.transaction = new TransactionTemplate(transactionManager);
         this.readTransaction = new TransactionTemplate(transactionManager);
         this.readTransaction.setReadOnly(true);
@@ -158,7 +174,8 @@ public class TaskStreamingService {
     public TaskStreamingStatusResponse status(UUID taskId) {
         requireStreamingTask(taskId);
         TaskStreamingDeployment deployment = deploymentRepository
-                .findFirstByTaskIdOrderByDefinitionVersionDescCheckpointGenerationDesc(taskId).orElse(null);
+                .findFirstByTaskIdAndExecutionModeOrderByDefinitionVersionDescCheckpointGenerationDesc(
+                        taskId, StreamingDeploymentExecutionMode.REAL).orElse(null);
         return status(taskId, deployment);
     }
 
@@ -313,6 +330,147 @@ public class TaskStreamingService {
         }
     }
 
+    public TaskRunResponse submitStreamingJarTrial(
+            UUID taskId,
+            String sourceSha256,
+            byte[] userJar,
+            String jarSha256
+    ) {
+        if (sourceSha256 == null || sourceSha256.isBlank() || userJar == null || userJar.length == 0
+                || !Objects.equals(jarSha256, sha256(userJar))) {
+            throw new IllegalArgumentException("实时试运行编译制品无效");
+        }
+        SparkJarTaskDefinition definition = requireTransactionResult(readTransaction.execute(status -> {
+            DataTask task = requireStreamingTask(taskId);
+            if (task.getType() != TaskType.SPARK_STREAMING_JAR
+                    || task.getStatus() != TaskStatus.DRAFT && task.getStatus() != TaskStatus.DISABLED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务状态不允许实时在线试运行");
+            }
+            if (runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_RUNS)
+                    || deploymentRepository.existsByTaskIdAndActualStateIn(taskId, ACTIVE)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前任务已有正在执行的正式运行或试运行");
+            }
+            SparkJarTaskDefinition current = sparkJarDefinitionRepository.findByTaskId(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                            "Spark 实时 JAR 定义不存在"));
+            String savedSource = current.getOnlineSourceCode();
+            if (savedSource == null || !sourceSha256.equals(
+                    sha256(savedSource.getBytes(StandardCharsets.UTF_8)))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "在线源码已变化，请重新试运行");
+            }
+            return current;
+        }));
+        ExecutionRoute route = computeEngineExecutionService.requireStreamingRunnable(
+                requireStreamingTask(taskId).getComputeEngineId());
+        SparkExecutionResourceSpec resources = computeEngineExecutionService.resolveResources(
+                route, sparkJarDefinitionService.resolvedExecutionResources(taskId, definition));
+        UUID runId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        Instant createdAt = Instant.now();
+        Instant deadlineAt = createdAt.plusSeconds(STREAMING_TRIAL_SECONDS).truncatedTo(ChronoUnit.SECONDS);
+        TaskStreamingDeployment deployment = requireTransactionResult(transaction.execute(status -> {
+            DataTask task = taskRepository.findByIdForUpdate(taskId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+            if (task.getType() != TaskType.SPARK_STREAMING_JAR
+                    || task.getStatus() != TaskStatus.DRAFT && task.getStatus() != TaskStatus.DISABLED
+                    || runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_RUNS)
+                    || deploymentRepository.existsByTaskIdAndActualStateIn(taskId, ACTIVE)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "任务状态已变化，请重新试运行");
+            }
+            int generation = deploymentRepository
+                    .findFirstByTaskIdAndDefinitionVersionOrderByCheckpointGenerationDesc(
+                            taskId, definition.getVersion())
+                    .map(value -> value.getCheckpointGeneration() + 1).orElse(1);
+            return deploymentRepository.saveAndFlush(TaskStreamingDeployment.createTrial(
+                    taskId, definition.getVersion(), route.engineId(),
+                    "streaming-jar-trials/%s/%s".formatted(taskId, runId), generation));
+        }));
+        SparkJarTaskRunPreparationService.StreamingPreparation preparation =
+                sparkJarPreparationService.prepareStreaming(definition, deployment);
+        String base = "task-runs/%s/attempts/1/".formatted(runId);
+        String manifestKey = base + "manifest.json";
+        String runJarKey = base + "user-job.jar";
+        String resultKey = base + "result.json";
+        String logKey = base + "console.log";
+        CanvasTaskRunManifest manifest = new CanvasTaskRunManifest(
+                CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
+                new CanvasTaskRunManifest.Execution(
+                        executionId, runId, taskId, 1, definition.getVersion(),
+                        createdAt, null, deployment.getId()),
+                null, preparation.metadataSnapshot(), preparation.runtimeDataSources(),
+                null, null, List.of(), CanvasTaskRunManifest.SnapshotSyncLimits.defaults(),
+                ExecutionTaskType.SPARK_STREAMING_JAR, null, null, preparation.payload());
+        byte[] manifestBytes = objectMapper.writeValueAsString(manifest).getBytes(StandardCharsets.UTF_8);
+        String manifestSha256 = sha256(manifestBytes);
+        TaskRunArtifactStorage storage = requireArtifactStorage();
+        try {
+            storage.store(runJarKey, userJar, "application/java-archive");
+            storage.store(manifestKey, manifestBytes, "application/json");
+        } catch (RuntimeException exception) {
+            try { storage.delete(runJarKey); } catch (RuntimeException cleanup) { exception.addSuppressed(cleanup); }
+            try { storage.delete(manifestKey); } catch (RuntimeException cleanup) { exception.addSuppressed(cleanup); }
+            throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
+                    "任务制品存储当前不可用", exception);
+        }
+        String fileName = "online-streaming-trial-" + sourceSha256.substring(0, 12) + ".jar";
+        String snapshot = objectMapper.writeValueAsString(Map.of(
+                "manifestVersion", CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
+                "deploymentId", deployment.getId().toString(),
+                "executionMode", "TRIAL",
+                "jarFileName", fileName,
+                "jarSha256", jarSha256,
+                "jobClass", definition.getJobClass(),
+                "jobApiVersion", definition.getJobApiVersion(),
+                "checkpointMode", "FRESH",
+                "executionResources", resources));
+        try {
+            TaskRun saved = requireTransactionResult(transaction.execute(status -> {
+                DataTask task = taskRepository.findByIdForUpdate(taskId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
+                TaskStreamingDeployment locked = deploymentRepository.findByIdForUpdate(deployment.getId())
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "实时试运行部署不存在"));
+                SparkJarTaskDefinition current = sparkJarDefinitionRepository.findByTaskId(taskId)
+                        .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                                "Spark 实时 JAR 定义不存在"));
+                if (task.getType() != TaskType.SPARK_STREAMING_JAR
+                        || task.getStatus() != TaskStatus.DRAFT && task.getStatus() != TaskStatus.DISABLED
+                        || current.getVersion() != definition.getVersion()
+                        || current.getOnlineSourceCode() == null
+                        || !sourceSha256.equals(sha256(current.getOnlineSourceCode()
+                        .getBytes(StandardCharsets.UTF_8)))
+                        || runRepository.existsByTaskIdAndStatusIn(taskId, ACTIVE_RUNS)
+                        || locked.getActualState().active()) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT,
+                            "任务定义或在线源码已变化，请重新试运行");
+                }
+                computeEngineExecutionService.assertUnchanged(route);
+                sparkJarPreparationService.assertUnchanged(preparation);
+                TaskRun run = TaskRun.queueDispatchedStreamingTrial(
+                        runId, taskId, locked.getId(), current.getVersion(), snapshot,
+                        executionId, 1, deadlineAt, route.engineId(), route.commandTopic());
+                run.attachUserJar(fileName, jarSha256, userJar.length, runJarKey);
+                run.attachArtifacts(manifestKey, resultKey, logKey);
+                TaskRun queued = runRepository.saveAndFlush(run);
+                locked.beginStart(queued.getId());
+                deploymentRepository.save(locked);
+                executionOutboxService.enqueue(route.commandTopic(), new StartStreamingExecutionCommand(
+                        1, UUID.randomUUID(), ExecutionMessageType.START_STREAMING_EXECUTION, Instant.now(),
+                        route.engineId(), executionId, runId, 1, taskId, locked.getId(),
+                        current.getVersion(), locked.getCheckpointKeyPrefix(),
+                        ExecutionTaskType.SPARK_STREAMING_JAR,
+                        new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey),
+                        new ExecutionUserJarArtifact(runJarKey, jarSha256, userJar.length),
+                        preparation.payload().sparkConf(), resources));
+                return queued;
+            }));
+            return TaskRunResponse.from(saved);
+        } catch (RuntimeException exception) {
+            try { storage.delete(manifestKey); } catch (RuntimeException cleanup) { exception.addSuppressed(cleanup); }
+            try { storage.delete(runJarKey); } catch (RuntimeException cleanup) { exception.addSuppressed(cleanup); }
+            throw exception;
+        }
+    }
+
     private JarStartSource requireJarStartSource(UUID taskId) {
         return requireTransactionResult(readTransaction.execute(status -> {
             DataTask task = requireStreamingTask(taskId);
@@ -320,11 +478,17 @@ public class TaskStreamingService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT,
                         "只有已发布 Spark 实时 JAR 任务可以启动");
             }
+            if (deploymentRepository.existsByTaskIdAndExecutionModeAndActualStateIn(
+                    taskId, StreamingDeploymentExecutionMode.TRIAL, ACTIVE)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "当前任务存在活动的实时在线试运行，请先停止试运行");
+            }
             SparkJarTaskDefinition definition = sparkJarDefinitionRepository.findByTaskId(taskId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
                             "Spark 实时 JAR 定义不存在"));
             TaskStreamingDeployment latest = deploymentRepository
-                    .findFirstByTaskIdOrderByDefinitionVersionDescCheckpointGenerationDesc(taskId)
+                    .findFirstByTaskIdAndExecutionModeOrderByDefinitionVersionDescCheckpointGenerationDesc(
+                            taskId, StreamingDeploymentExecutionMode.REAL)
                     .orElse(null);
             return new JarStartSource(task.getComputeEngineId(), definition.getVersion(), definition,
                     latest, latest != null && latest.getActualState().active() ? latest : null);
@@ -342,13 +506,19 @@ public class TaskStreamingService {
         if (task.getType() != TaskType.SPARK_STREAMING_JAR || task.getStatus() != TaskStatus.PUBLISHED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "实时 JAR 任务状态已变化");
         }
+        if (deploymentRepository.existsByTaskIdAndExecutionModeAndActualStateIn(
+                taskId, StreamingDeploymentExecutionMode.TRIAL, ACTIVE)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "当前任务存在活动的实时在线试运行，请先停止试运行");
+        }
         SparkJarTaskDefinition currentDefinition = sparkJarDefinitionRepository.findByTaskId(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "Spark 实时 JAR 定义不存在"));
         if (currentDefinition.getVersion() != source.definitionVersion()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Spark 实时 JAR 定义已变化，请重新启动");
         }
         TaskStreamingDeployment latest = deploymentRepository
-                .findFirstByTaskIdOrderByDefinitionVersionDescCheckpointGenerationDesc(taskId)
+                .findFirstByTaskIdAndExecutionModeOrderByDefinitionVersionDescCheckpointGenerationDesc(
+                        taskId, StreamingDeploymentExecutionMode.REAL)
                 .orElse(null);
         if (latest != null && latest.getActualState().active()) return latest;
         if (checkpointMode == StreamingCheckpointMode.CONTINUE && latest == null) {
@@ -440,7 +610,8 @@ public class TaskStreamingService {
         requireTransactionResult(transaction.execute(status -> {
             DataTask task = requireStreamingTaskForUpdate(taskId);
             TaskStreamingDeployment deployment = deploymentRepository
-                    .findFirstByTaskIdOrderByDefinitionVersionDescCheckpointGenerationDesc(taskId)
+                    .findFirstByTaskIdAndExecutionModeOrderByDefinitionVersionDescCheckpointGenerationDesc(
+                            taskId, StreamingDeploymentExecutionMode.REAL)
                     .flatMap(item -> deploymentRepository.findByIdForUpdate(item.getId()))
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "实时任务从未启动"));
             if (deployment.getActualState() == StreamingDeploymentActualState.STOPPED
@@ -471,6 +642,61 @@ public class TaskStreamingService {
         return status(taskId);
     }
 
+    public TaskRunResponse stopTrial(UUID runId) {
+        return requireTransactionResult(transaction.execute(status -> {
+            TaskRun run = runRepository.findByIdForUpdate(runId)
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务运行不存在"));
+            if (run.getTaskType() != TaskType.SPARK_STREAMING_JAR
+                    || run.getExecutionMode()
+                    != cn.superhuang.data.scalpel.business.task.domain.TaskRunExecutionMode.TRIAL) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT,
+                        "只有 Spark 实时 JAR 在线试运行支持正常停止");
+            }
+            if (run.getStatus() == cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.STOP_REQUESTED
+                    || run.getStatus() == cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.STOPPED) {
+                return TaskRunResponse.from(run);
+            }
+            if (!ACTIVE_RUNS.contains(run.getStatus()) || run.getStreamingDeploymentId() == null
+                    || run.getExternalExecutionId() == null) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "当前实时试运行已经结束");
+            }
+            TaskStreamingDeployment deployment = deploymentRepository
+                    .findByIdForUpdate(run.getStreamingDeploymentId())
+                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT,
+                            "实时试运行部署不存在"));
+            if (deployment.getExecutionMode() != StreamingDeploymentExecutionMode.TRIAL) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "实时试运行部署模式无效");
+            }
+            deployment.requestStop();
+            run.requestStop();
+            runRepository.save(run);
+            deploymentRepository.save(deployment);
+            executionOutboxService.enqueue(run.getCommandTopicSnapshot(), new StopStreamingExecutionCommand(
+                    1, UUID.randomUUID(), ExecutionMessageType.STOP_STREAMING_EXECUTION, Instant.now(),
+                    run.getComputeEngineId(), run.getExternalExecutionId(), run.getExecutionRunId(),
+                    run.getAttempt(), deployment.getId(), "停止实时在线试运行", 60));
+            return TaskRunResponse.from(run);
+        }));
+    }
+
+    @Scheduled(fixedDelay = 5_000L)
+    public void stopExpiredStreamingJarTrials() {
+        List<TaskRun> expired = runRepository
+                .findAllByTaskTypeAndExecutionModeAndStatusInAndDeadlineAtLessThanEqual(
+                        TaskType.SPARK_STREAMING_JAR,
+                        cn.superhuang.data.scalpel.business.task.domain.TaskRunExecutionMode.TRIAL,
+                        List.of(cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.QUEUED,
+                                cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus.RUNNING),
+                        Instant.now());
+        for (TaskRun run : expired) {
+            try {
+                stopTrial(run.getId());
+            } catch (RuntimeException exception) {
+                log.warn("Expired streaming JAR trial stop failed: runId={}", run.getId(), exception);
+            }
+        }
+    }
+
     private StartSource requireStartSource(UUID taskId) {
         return requireTransactionResult(readTransaction.execute(status -> {
             DataTask task = requireStreamingTask(taskId);
@@ -480,7 +706,8 @@ public class TaskStreamingService {
             CanvasTaskDefinition persisted = definitionRepository.findByTaskId(taskId)
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "实时 Canvas 定义不存在"));
             TaskStreamingDeployment active = deploymentRepository
-                    .findFirstByTaskIdAndDefinitionVersionOrderByCheckpointGenerationDesc(taskId, persisted.getVersion())
+                    .findFirstByTaskIdAndDefinitionVersionAndExecutionModeOrderByCheckpointGenerationDesc(
+                            taskId, persisted.getVersion(), StreamingDeploymentExecutionMode.REAL)
                     .filter(item -> item.getActualState().active())
                     .orElse(null);
             return new StartSource(
@@ -504,11 +731,12 @@ public class TaskStreamingService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "实时任务状态已变化");
         }
         TaskStreamingDeployment deployment = deploymentRepository
-                .findFirstByTaskIdAndDefinitionVersionOrderByCheckpointGenerationDesc(taskId, source.definitionVersion())
+                .findFirstByTaskIdAndDefinitionVersionAndExecutionModeOrderByCheckpointGenerationDesc(
+                        taskId, source.definitionVersion(), StreamingDeploymentExecutionMode.REAL)
                 .flatMap(value -> deploymentRepository.findByIdForUpdate(value.getId())).orElse(null);
         String initialSourceOffset = sourceIdentity == null ? null : deploymentRepository
-                .findFirstByTaskIdAndDefinitionVersionLessThanOrderByDefinitionVersionDescCheckpointGenerationDesc(
-                        taskId, source.definitionVersion())
+                .findFirstByTaskIdAndDefinitionVersionLessThanAndExecutionModeOrderByDefinitionVersionDescCheckpointGenerationDesc(
+                        taskId, source.definitionVersion(), StreamingDeploymentExecutionMode.REAL)
                 .filter(previous -> sourceIdentity.signature().equals(previous.getSourceSignature()))
                 .map(TaskStreamingDeployment::getLastCommittedOffset)
                 .orElse(null);
@@ -533,7 +761,7 @@ public class TaskStreamingService {
                     || !sourceIdentity.signature().equals(deployment.getSourceSignature())) {
                 throw new ResponseStatusException(
                         HttpStatus.CONFLICT,
-                        "当前定义的 JDBC 增量来源与已有同版本部署不一致，请保存为新的定义版本"
+                        "当前定义的实时来源与已有同版本部署不一致，请保存为新的定义版本"
                 );
             }
         }
@@ -544,6 +772,27 @@ public class TaskStreamingService {
             CanvasDefinition definition,
             CanvasTaskRunPreparationService.Preparation preparation
     ) {
+        TdEngineTmqInputNodeDefinition tmqNode = definition.nodes().stream()
+                .filter(TdEngineTmqInputNodeDefinition.class::isInstance)
+                .map(TdEngineTmqInputNodeDefinition.class::cast)
+                .findFirst().orElse(null);
+        if (tmqNode != null) {
+            UUID dataSourceId = UUID.fromString(tmqNode.configuration().dataSourceId());
+            MetadataDataSource metadataDataSource = preparation.metadataSnapshot().dataSources().stream()
+                    .filter(value -> dataSourceId.equals(value.id()))
+                    .findFirst().orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.CONFLICT, "TDengine TMQ 数据源元数据不存在"));
+            MetadataTdEngineTmqTopic topic = metadataDataSource.tdEngineTmqTopics().stream()
+                    .filter(value -> tmqNode.configuration().topicName().equals(value.topicName()))
+                    .findFirst().orElseThrow(() -> new ResponseStatusException(
+                            HttpStatus.CONFLICT, "TDengine TMQ Topic 元数据不存在"));
+            String signatureSource = dataSourceId + "\0" + topic.topicName() + "\0"
+                    + topic.definitionFingerprint();
+            return new StreamingSourceIdentity(
+                    UUID.fromString(tmqNode.id()),
+                    sha256(signatureSource.getBytes(StandardCharsets.UTF_8))
+            );
+        }
         JdbcIncrementalInputNodeDefinition node = definition.nodes().stream()
                 .filter(JdbcIncrementalInputNodeDefinition.class::isInstance)
                 .map(JdbcIncrementalInputNodeDefinition.class::cast)
@@ -659,14 +908,17 @@ public class TaskStreamingService {
     }
 
     private TaskStreamingStatusResponse status(UUID taskId, TaskStreamingDeployment deployment) {
-        if (deployment == null) return new TaskStreamingStatusResponse(taskId, null);
+        TmqConsumerGroupCleanupService.CleanupCounts cleanupCounts = tmqCleanupService.counts(taskId);
+        if (deployment == null) return new TaskStreamingStatusResponse(
+                taskId, null, cleanupCounts.pending(), cleanupCounts.failed());
         TaskRun run = deployment.getCurrentRunId() == null
                 ? null : runRepository.findById(deployment.getCurrentRunId()).orElse(null);
         List<TaskStreamingQueryResponse> queries = queryRepository
                 .findAllByDeploymentIdOrderByOutputNodeNameAsc(deployment.getId())
                 .stream().map(TaskStreamingQueryResponse::from).toList();
         return new TaskStreamingStatusResponse(
-                taskId, TaskStreamingDeploymentResponse.from(deployment, run, queries));
+                taskId, TaskStreamingDeploymentResponse.from(deployment, run, queries),
+                cleanupCounts.pending(), cleanupCounts.failed());
     }
 
     private DataTask requireStreamingTask(UUID taskId) {

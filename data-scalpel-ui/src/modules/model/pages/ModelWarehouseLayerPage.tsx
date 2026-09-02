@@ -1,32 +1,18 @@
+import { CompactAlert as Alert, ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
+  ApartmentOutlined,
   DeleteOutlined,
   EditOutlined,
+  FileTextOutlined,
   MoreOutlined,
   PauseCircleOutlined,
   PlayCircleOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SafetyCertificateOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Col,
-  Drawer,
-  Dropdown,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Radio,
-  Row,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  message,
-} from 'antd';
+import { Badge, Button, Col, Drawer, Dropdown, Form, Input, InputNumber, Modal, Radio, Row, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
@@ -146,40 +132,66 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
       {messageContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title={layer ? '修改数仓分层' : '新建数仓分层'}
+        className="data-model-drawer warehouse-layer-drawer"
+        title={(
+          <div className="data-model-drawer-title">
+            <span className="data-model-drawer-title-icon" aria-hidden="true"><ApartmentOutlined /></span>
+            <span className="data-model-drawer-title-copy">
+              <span>{layer ? '修改数仓分层' : '新建数仓分层'}</span>
+              <Typography.Text type="secondary">维护分层身份、模型编码规范与允许的数据流向</Typography.Text>
+            </span>
+          </div>
+        )}
+        extra={<Tag className="data-model-drawer-header-tag">{layer?.code ?? '待创建'}</Tag>}
         open={open}
-        width={560}
+        width={720}
         onClose={onClose}
         destroyOnHidden
         footer={(
-          <Space>
-            <Button onClick={onClose}>取消</Button>
-            <Button
-              type="primary"
-              loading={createMutation.isPending || updateMutation.isPending}
-              onClick={() => form.submit()}
-            >
-              保存
-            </Button>
-          </Space>
+          <div className="data-model-drawer-footer">
+            <Badge
+              status={layer?.enabled === false ? 'default' : 'processing'}
+              text={layer ? `${layer.enabled ? '启用' : '停用'} · ${layer.referencedModelCount} 个模型引用` : '创建后默认启用'}
+            />
+            <Space>
+              <Button onClick={onClose}>取消</Button>
+              <Button
+                type="primary"
+                loading={createMutation.isPending || updateMutation.isPending}
+                onClick={() => form.submit()}
+              >
+                {layer ? '保存修改' : '创建分层'}
+              </Button>
+            </Space>
+          </div>
         )}
       >
-        {layer && layer.referencedModelCount > 0 && (
-          <Alert
-            showIcon
-            type="info"
-            title={`该分层已被 ${layer.referencedModelCount} 个模型引用，编码不可修改。`}
-            className="management-inline-alert"
-          />
-        )}
         <Form<CreateModelWarehouseLayerRequest>
+          name="warehouse-layer-editor-form"
           autoComplete="off"
           form={form}
           layout="vertical"
+          className="data-model-form warehouse-layer-form"
           onFinish={(values) => void submit(values)}
         >
-          <Row gutter={12}>
-            <Col span={12}>
+          <section className="data-model-form-section">
+            <header className="data-model-form-section-header">
+              <span className="data-model-form-section-icon" aria-hidden="true"><FileTextOutlined /></span>
+              <span className="data-model-form-section-copy">
+                <span className="data-model-form-section-title">分层信息</span>
+                <Typography.Text type="secondary">设置分层标识、展示顺序与业务语义</Typography.Text>
+              </span>
+            </header>
+            <div className="data-model-form-section-body">
+              {layer && layer.referencedModelCount > 0 && (
+                <InlineFeedback
+                  className="warehouse-layer-reference-feedback"
+                  tone="info"
+                  label={`已被 ${layer.referencedModelCount} 个模型引用，编码不可修改`}
+                />
+              )}
+              <Row gutter={14}>
+                <Col span={12} xs={24} sm={12}>
               <Form.Item
                 label="分层编码"
                 name="code"
@@ -188,10 +200,10 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
                   { pattern: /^[A-Za-z][A-Za-z0-9_]{0,31}$/, message: '编码以字母开头，只能包含字母、数字和下划线，最多 32 个字符' },
                 ]}
               >
-                <Input disabled={Boolean(layer && layer.referencedModelCount > 0)} placeholder="如：DWD" />
+                <Input name="warehouse-layer-code" autoComplete="off" disabled={Boolean(layer && layer.referencedModelCount > 0)} placeholder="如：DWD" />
               </Form.Item>
             </Col>
-            <Col span={12}>
+                <Col span={12} xs={24} sm={12}>
               <Form.Item
                 label="分层名称"
                 name="name"
@@ -200,19 +212,19 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
                   { max: 100, message: '名称不能超过 100 个字符' },
                 ]}
               >
-                <Input placeholder="如：明细数据层" />
+                <Input name="warehouse-layer-name" autoComplete="off" placeholder="如：明细数据层" />
               </Form.Item>
             </Col>
-            <Col span={12}>
+                <Col span={12} xs={24} sm={12}>
               <Form.Item
                 label="展示颜色"
                 name="color"
                 rules={[{ pattern: /^#[0-9A-Fa-f]{6}$/, message: '颜色必须是 #RRGGBB 格式' }]}
               >
-                <Input placeholder="#1677FF" />
+                <Input name="warehouse-layer-color" autoComplete="off" placeholder="#1677FF" />
               </Form.Item>
             </Col>
-            <Col span={12}>
+                <Col span={12} xs={24} sm={12}>
               <Form.Item
                 label="排序值"
                 name="sortOrder"
@@ -221,23 +233,41 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
                 <InputNumber min={0} max={9999} precision={0} className="data-model-number-input" />
               </Form.Item>
             </Col>
-            <Col span={24}>
+                <Col span={24}>
               <Form.Item
                 label="说明"
                 name="description"
                 rules={[{ max: 500, message: '说明不能超过 500 个字符' }]}
               >
-                <Input.TextArea rows={4} placeholder="说明该层的数据语义和使用范围" />
+                <Input.TextArea name="warehouse-layer-description" autoComplete="off" rows={3} showCount maxLength={500} placeholder="说明该层的数据语义和使用范围" />
               </Form.Item>
             </Col>
-          </Row>
-          <div className="data-source-form-section-title">建模规范</div>
-          <Row gutter={12}>
-            <Col span={12}>
+              </Row>
+            </div>
+          </section>
+
+          <section className="data-model-form-section">
+            <header className="data-model-form-section-header">
+              <span className="data-model-form-section-icon" aria-hidden="true"><SafetyCertificateOutlined /></span>
+              <span className="data-model-form-section-copy">
+                <span className="data-model-form-section-title">建模规范</span>
+                <Typography.Text type="secondary">约束新模型编码与跨层数据输入关系</Typography.Text>
+              </span>
+            </header>
+            <div className="data-model-form-section-body">
+              <Row gutter={14}>
+                <Col span={12} xs={24} sm={12}>
               <Form.Item
-                label="模型编码前缀"
+                label={(
+                  <span className="warehouse-layer-field-label">
+                    模型编码前缀
+                    <ContextHelp
+                      ariaLabel="查看模型编码前缀说明"
+                      content="用于新建模型和 JDBC 表结构导入的编码候选，不会修改已有模型，也不作为发布阻断条件。"
+                    />
+                  </span>
+                )}
                 name="modelCodePrefix"
-                extra="用于新建模型和 JDBC 表结构导入的编码候选，不会修改已有模型，也不作为发布阻断条件。"
                 rules={[
                   { max: 32, message: '前缀不能超过 32 个字符' },
                   {
@@ -246,10 +276,10 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
                   },
                 ]}
               >
-                <Input placeholder="如：dwd_" />
+                <Input name="warehouse-layer-model-code-prefix" autoComplete="off" placeholder="如：dwd_" />
               </Form.Item>
             </Col>
-            <Col span={12}>
+                <Col span={12} xs={24} sm={12}>
               <Form.Item
                 label="输入策略"
                 name="inputLayerPolicy"
@@ -268,9 +298,17 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
             {inputLayerPolicy === 'ALLOW_LIST' && (
               <Col span={24}>
                 <Form.Item
-                  label="允许输入分层"
+                  label={(
+                    <span className="warehouse-layer-field-label">
+                      允许输入分层
+                      <ContextHelp
+                        ariaLabel="查看允许输入分层说明"
+                        content="允许选择当前分层自身；留空表示不允许任何模型分层输入。已配置的停用分层可以保留或移除。"
+                        presentation="popover"
+                      />
+                    </span>
+                  )}
                   name="allowedInputLayerIds"
-                  extra="允许选择当前分层自身；留空表示不允许任何模型分层输入。已配置的停用分层可以保留或移除。"
                 >
                   <Select
                     mode="multiple"
@@ -284,7 +322,9 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
                 </Form.Item>
               </Col>
             )}
-          </Row>
+              </Row>
+            </div>
+          </section>
         </Form>
       </Drawer>
     </>

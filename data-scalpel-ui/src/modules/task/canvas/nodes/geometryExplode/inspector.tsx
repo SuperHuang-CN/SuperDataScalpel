@@ -1,4 +1,5 @@
-import { Alert, Form, Input, Select, Space, Switch, Tag, Typography } from 'antd';
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { Form, Input, Select, Space, Switch, Tag, Typography } from 'antd';
 import { useImperativeHandle } from 'react';
 import {
   CanvasNodeType,

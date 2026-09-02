@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ApartmentOutlined, FolderOutlined, InfoCircleOutlined } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Empty, Tag, Typography } from 'antd';
+import { Button, Descriptions, Empty, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { DirectoryTreePanel, useDirectoryTree, type DirectorySelection, type DirectoryTreeNode } from '../../directory';
 import { useCurrentUser } from '../../system';

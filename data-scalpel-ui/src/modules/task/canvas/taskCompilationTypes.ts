@@ -47,6 +47,7 @@ export interface TaskCompilationMetadataTdEngineTmqTopic {
   catalogName: string;
   supertableName: string;
   definitionFingerprint: string;
+  legacyDefinitionFingerprint: string;
   timePrecision: 'MS' | 'US';
   columns: CanvasColumnSchema[];
 }
@@ -68,6 +69,7 @@ export interface TaskCompilationMetadataModel {
 
 export interface TaskCompilationMetadataFileDatasetTable {
   id: string;
+  fileDatasetId: string;
   code: string;
   name: string;
   datasetType: 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'PARQUET' | 'AVRO' | 'EXCEL' | 'GDB' | 'SHP';

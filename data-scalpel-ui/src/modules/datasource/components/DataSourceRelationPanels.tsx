@@ -1,9 +1,11 @@
-import { ReloadOutlined } from '@ant-design/icons';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { SearchOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Form, Input, Select, Space, Table, Tag, Tooltip } from 'antd';
+import { Button, Form, Input, Select, Space, Table, Tag, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { buildDataModelSearch, dataModelStatusLabels, physicalTableModeLabels, type DataModelStatus, type PhysicalTableMode } from '../../model';
 import { buildTaskSearch, taskStatusColors, taskStatusLabels, taskTypeLabels, type TaskStatus, type TaskType } from '../../task';
 import { buildDataServiceSearch, dataServiceStatusLabels, dataServiceTypeLabels, type DataServiceStatus, type DataServiceType } from '../../dataservice';
@@ -83,25 +85,33 @@ export const DataSourceRelatedModelsPanel = ({ dataSourceId, active }: PanelProp
   ];
 
   return <div className="data-source-detail-tab-panel">
-    <div className="data-source-related-toolbar">
+    <div className="data-source-related-toolbar detail-table-filter-toolbar">
       <Form<ModelFilters> autoComplete="off" form={form} layout="inline" onFinish={(values) => { setFilters(values); setPage(1); }}>
-        <Form.Item name="keyword" label="名称"><Input allowClear placeholder="名称或编码" className="data-source-related-keyword" /></Form.Item>
-        <Form.Item name="status" label="状态"><Select allowClear placeholder="全部" className="data-source-related-select" options={(Object.entries(dataModelStatusLabels) as [DataModelStatus, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
-        <Form.Item name="physicalTableMode" label="模式"><Select allowClear placeholder="全部" className="data-source-related-select" options={(Object.entries(physicalTableModeLabels) as [PhysicalTableMode, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="keyword"><Input allowClear prefix={<SearchOutlined />} placeholder="模型名称或编码" className="detail-table-filter-keyword data-source-related-keyword" /></Form.Item>
+        <Form.Item name="status"><Select allowClear placeholder="全部状态" className="detail-table-filter-select data-source-related-select" options={(Object.entries(dataModelStatusLabels) as [DataModelStatus, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="physicalTableMode"><Select allowClear placeholder="全部模式" className="detail-table-filter-select data-source-related-select" options={(Object.entries(physicalTableModeLabels) as [PhysicalTableMode, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
       </Form>
-      <Space size={4}>
-        <Button type="primary" onClick={() => form.submit()}>查询</Button>
-        <Button onClick={() => { form.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
-        <Tooltip title="刷新关联模型"><Button icon={<ReloadOutlined />} aria-label="刷新关联模型" loading={query.isFetching} onClick={() => void query.refetch()} /></Tooltip>
+      <Space size={4} className="detail-table-filter-actions">
+        <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()}>查询</Button>
+        <Button type="text" onClick={() => { form.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
       </Space>
     </div>
     {query.error && errorAlert('关联模型加载失败', () => void query.refetch())}
+    <DetailTableToolbar
+      title="关联模型"
+      total={query.data?.totalElements ?? 0}
+      current={page}
+      pageSize={pageSize}
+      onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }}
+      onRefresh={() => void query.refetch()}
+      refreshing={query.isFetching}
+      refreshLabel="刷新关联模型"
+    />
     <Table<DataSourceRelatedModel>
       className="management-table" size="small" rowKey="modelId" loading={query.isFetching}
       dataSource={query.data?.content ?? []} columns={columns} scroll={{ x: 1_140, y: '100%' }}
-      pagination={{ current: page, pageSize, total: query.data?.totalElements ?? 0, showSizeChanger: true, showTotal: (total) => `共 ${total} 项` }}
-      onChange={(pagination, _filters, sorter) => {
-        setPage(pagination.current ?? 1); setPageSize(pagination.pageSize ?? 20);
+      pagination={false}
+      onChange={(_pagination, _filters, sorter) => {
         if (!Array.isArray(sorter) && sorter.field) {
           const fields: Record<string, string> = {
             modelName: 'name', status: 'status', physicalTableMode: 'physicalTableMode', updatedAt: 'updatedAt',
@@ -157,27 +167,35 @@ export const DataSourceRelatedTasksPanel = ({ dataSourceId, active }: PanelProps
   ];
 
   return <div className="data-source-detail-tab-panel">
-    <div className="data-source-related-toolbar">
+    <div className="data-source-related-toolbar detail-table-filter-toolbar">
       <Form<TaskFilters> autoComplete="off" form={form} layout="inline" onFinish={(values) => { setFilters(values); setPage(1); }}>
-        <Form.Item name="keyword" label="名称"><Input allowClear placeholder="筛选任务" className="data-source-related-keyword" /></Form.Item>
-        <Form.Item name="type" label="类型"><Select allowClear placeholder="全部" className="data-source-related-select" options={(Object.entries(taskTypeLabels) as [TaskType, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
-        <Form.Item name="status" label="状态"><Select allowClear placeholder="全部" className="data-source-related-select" options={(Object.entries(taskStatusLabels) as [TaskStatus, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
-        <Form.Item name="role" label="角色"><Select allowClear placeholder="全部" className="data-source-related-select" options={Object.entries(roleLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
-        <Form.Item name="relationKind" label="关系"><Select allowClear placeholder="全部" className="data-source-related-select" options={Object.entries(relationKindLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="keyword"><Input allowClear prefix={<SearchOutlined />} placeholder="任务名称或编码" className="detail-table-filter-keyword data-source-related-keyword" /></Form.Item>
+        <Form.Item name="type"><Select allowClear placeholder="全部类型" className="detail-table-filter-select data-source-related-select" options={(Object.entries(taskTypeLabels) as [TaskType, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="status"><Select allowClear placeholder="全部状态" className="detail-table-filter-select data-source-related-select" options={(Object.entries(taskStatusLabels) as [TaskStatus, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="role"><Select allowClear placeholder="全部角色" className="detail-table-filter-select data-source-related-select" options={Object.entries(roleLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="relationKind"><Select allowClear placeholder="全部关系" className="detail-table-filter-select data-source-related-select" options={Object.entries(relationKindLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
       </Form>
-      <Space size={4}>
-        <Button type="primary" onClick={() => form.submit()}>查询</Button>
-        <Button onClick={() => { form.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
-        <Tooltip title="刷新关联任务"><Button icon={<ReloadOutlined />} aria-label="刷新关联任务" loading={query.isFetching} onClick={() => void query.refetch()} /></Tooltip>
+      <Space size={4} className="detail-table-filter-actions">
+        <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()}>查询</Button>
+        <Button type="text" onClick={() => { form.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
       </Space>
     </div>
     {query.error && errorAlert('关联任务加载失败', () => void query.refetch())}
+    <DetailTableToolbar
+      title="关联任务"
+      total={query.data?.totalElements ?? 0}
+      current={page}
+      pageSize={pageSize}
+      onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }}
+      onRefresh={() => void query.refetch()}
+      refreshing={query.isFetching}
+      refreshLabel="刷新关联任务"
+    />
     <Table<DataSourceRelatedTask>
       className="management-table" size="small" rowKey="taskId" loading={query.isFetching}
       dataSource={query.data?.content ?? []} columns={columns} scroll={{ x: 1_400, y: '100%' }}
-      pagination={{ current: page, pageSize, total: query.data?.totalElements ?? 0, showSizeChanger: true, showTotal: (total) => `共 ${total} 项` }}
-      onChange={(pagination, _filters, sorter) => {
-        setPage(pagination.current ?? 1); setPageSize(pagination.pageSize ?? 20);
+      pagination={false}
+      onChange={(_pagination, _filters, sorter) => {
         if (!Array.isArray(sorter) && sorter.field) {
           const fields: Partial<Record<keyof DataSourceRelatedTask, string>> = { taskName: 'name', taskType: 'type', taskStatus: 'status', updatedAt: 'updatedAt' };
           setSort(`${sorter.order === 'descend' ? '-' : ''}${fields[sorter.field as keyof DataSourceRelatedTask] ?? 'updatedAt'},name`);
@@ -218,26 +236,34 @@ export const DataSourceRelatedServicesPanel = ({ dataSourceId, active }: PanelPr
   ];
 
   return <div className="data-source-detail-tab-panel">
-    <div className="data-source-related-toolbar">
+    <div className="data-source-related-toolbar detail-table-filter-toolbar">
       <Form<ServiceFilters> autoComplete="off" form={form} layout="inline" onFinish={(values) => { setFilters(values); setPage(1); }}>
-        <Form.Item name="keyword" label="名称"><Input allowClear placeholder="名称或编码" className="data-source-related-keyword" /></Form.Item>
-        <Form.Item name="type" label="类型"><Select allowClear placeholder="全部" className="data-source-related-select" options={(Object.entries(dataServiceTypeLabels) as [DataServiceType, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
-        <Form.Item name="status" label="状态"><Select allowClear placeholder="全部" className="data-source-related-select" options={(Object.entries(dataServiceStatusLabels) as [DataServiceStatus, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
-        <Form.Item name="relationKind" label="关系"><Select allowClear placeholder="全部" className="data-source-related-select" options={Object.entries(relationKindLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="keyword"><Input allowClear prefix={<SearchOutlined />} placeholder="服务名称或编码" className="detail-table-filter-keyword data-source-related-keyword" /></Form.Item>
+        <Form.Item name="type"><Select allowClear placeholder="全部类型" className="detail-table-filter-select data-source-related-select" options={(Object.entries(dataServiceTypeLabels) as [DataServiceType, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="status"><Select allowClear placeholder="全部状态" className="detail-table-filter-select data-source-related-select" options={(Object.entries(dataServiceStatusLabels) as [DataServiceStatus, string][]).map(([value, label]) => ({ value, label }))} /></Form.Item>
+        <Form.Item name="relationKind"><Select allowClear placeholder="全部关系" className="detail-table-filter-select data-source-related-select" options={Object.entries(relationKindLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
       </Form>
-      <Space size={4}>
-        <Button type="primary" onClick={() => form.submit()}>查询</Button>
-        <Button onClick={() => { form.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
-        <Tooltip title="刷新关联服务"><Button icon={<ReloadOutlined />} aria-label="刷新关联服务" loading={query.isFetching} onClick={() => void query.refetch()} /></Tooltip>
+      <Space size={4} className="detail-table-filter-actions">
+        <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()}>查询</Button>
+        <Button type="text" onClick={() => { form.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
       </Space>
     </div>
     {query.error && errorAlert('关联数据服务加载失败', () => void query.refetch())}
+    <DetailTableToolbar
+      title="关联数据服务"
+      total={query.data?.totalElements ?? 0}
+      current={page}
+      pageSize={pageSize}
+      onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }}
+      onRefresh={() => void query.refetch()}
+      refreshing={query.isFetching}
+      refreshLabel="刷新关联数据服务"
+    />
     <Table<DataSourceRelatedService>
       className="management-table" size="small" rowKey="serviceId" loading={query.isFetching}
       dataSource={query.data?.content ?? []} columns={columns} scroll={{ x: 1_320, y: '100%' }}
-      pagination={{ current: page, pageSize, total: query.data?.totalElements ?? 0, showSizeChanger: true, showTotal: (total) => `共 ${total} 项` }}
-      onChange={(pagination, _filters, sorter) => {
-        setPage(pagination.current ?? 1); setPageSize(pagination.pageSize ?? 20);
+      pagination={false}
+      onChange={(_pagination, _filters, sorter) => {
         if (!Array.isArray(sorter) && sorter.field) {
           const fields: Record<string, string> = { serviceName: 'name', serviceType: 'type', status: 'status', updatedAt: 'updatedAt' };
           setSort(`${sorter.order === 'descend' ? '-' : ''}${fields[String(sorter.field)] ?? 'updatedAt'},name`);

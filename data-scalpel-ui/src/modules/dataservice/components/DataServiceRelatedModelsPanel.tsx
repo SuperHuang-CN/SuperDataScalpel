@@ -1,4 +1,5 @@
-import { Alert, Button, Empty, Table, Tag, Typography } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { Button, Empty, Table, Tag, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {

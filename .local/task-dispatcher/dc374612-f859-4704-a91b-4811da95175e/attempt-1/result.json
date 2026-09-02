@@ -1,0 +1,383 @@
+{
+  "schemaVersion" : 11,
+  "executionId" : "dc374612-f859-4704-a91b-4811da95175e",
+  "runId" : "19026b50-e73b-4261-a7a8-606f2311e401",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-31T14:22:04.742352590Z",
+  "endedAt" : "2026-08-31T14:22:09.696367384Z",
+  "durationMs" : 4954,
+  "affectedRows" : 55,
+  "nodeResults" : [ ],
+  "taskType" : "SPARK_JAR",
+  "qualityResult" : null,
+  "userJobObservability" : {
+    "capturedAt" : "2026-08-31T14:22:09.697466718Z",
+    "status" : {
+      "phase" : "FINALIZING",
+      "message" : "正在完成用户作业",
+      "updatedAt" : "2026-08-31T14:22:09.696183759Z"
+    },
+    "metrics" : [ {
+      "name" : "datascalpel.model.write.attempts",
+      "kind" : "COUNTER",
+      "counterValue" : 1,
+      "gaugeValue" : null,
+      "count" : null,
+      "lastDurationMillis" : null,
+      "totalDurationMillis" : null,
+      "maxDurationMillis" : null
+    }, {
+      "name" : "datascalpel.model.write.duration",
+      "kind" : "TIMER",
+      "counterValue" : null,
+      "gaugeValue" : null,
+      "count" : 1,
+      "lastDurationMillis" : 733,
+      "totalDurationMillis" : 733,
+      "maxDurationMillis" : 733
+    }, {
+      "name" : "datascalpel.model.write.rows",
+      "kind" : "COUNTER",
+      "counterValue" : 55,
+      "gaugeValue" : null,
+      "count" : null,
+      "lastDurationMillis" : null,
+      "totalDurationMillis" : null,
+      "maxDurationMillis" : null
+    }, {
+      "name" : "datascalpel.model.write.successes",
+      "kind" : "COUNTER",
+      "counterValue" : 1,
+      "gaugeValue" : null,
+      "count" : null,
+      "lastDurationMillis" : null,
+      "totalDurationMillis" : null,
+      "maxDurationMillis" : null
+    } ]
+  },
+  "lineage" : {
+    "analysisStatus" : "PARTIAL",
+    "coverage" : "FIELD_PARTIAL",
+    "flows" : [ {
+      "flowKey" : "jar:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+      "producerKey" : "jar:write:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+      "producerType" : "SDK_MODEL_WRITE",
+      "coverage" : "FIELD_PARTIAL",
+      "outputAsset" : {
+        "localAssetKey" : "output",
+        "role" : "OUTPUT",
+        "kind" : "MODEL",
+        "externalResourceType" : null,
+        "writeMode" : "APPEND",
+        "modelId" : "8f1a9dbe-226d-4a15-9f73-947bd5661a64",
+        "modelSchemaVersion" : 3,
+        "dataSourceId" : null,
+        "catalogName" : null,
+        "schemaName" : null,
+        "physicalTableName" : null,
+        "resourceId" : null,
+        "resourceKeyHash" : null,
+        "safeDisplayName" : "部门性别统计表"
+      },
+      "inputAssets" : [ {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "role" : "INPUT",
+        "kind" : "MODEL",
+        "externalResourceType" : null,
+        "writeMode" : null,
+        "modelId" : "c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "modelSchemaVersion" : 1,
+        "dataSourceId" : null,
+        "catalogName" : null,
+        "schemaName" : null,
+        "physicalTableName" : null,
+        "resourceId" : null,
+        "resourceKeyHash" : null,
+        "safeDisplayName" : "sys_user"
+      } ],
+      "fields" : [ {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:325006a9-3181-496b-b874-0539ad423c4a",
+        "modelFieldId" : "325006a9-3181-496b-b874-0539ad423c4a",
+        "columnCode" : "id",
+        "columnName" : "id",
+        "ordinal" : 0,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:164bc687-e3e0-4399-85ec-6c55afc18ce6",
+        "modelFieldId" : "164bc687-e3e0-4399-85ec-6c55afc18ce6",
+        "columnCode" : "dept_id",
+        "columnName" : "dept_id",
+        "ordinal" : 1,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:0aa728db-5880-4214-b995-975f772a0307",
+        "modelFieldId" : "0aa728db-5880-4214-b995-975f772a0307",
+        "columnCode" : "user_no",
+        "columnName" : "user_no",
+        "ordinal" : 2,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:892ac759-66b9-4503-8ab5-a5cb05ed3efa",
+        "modelFieldId" : "892ac759-66b9-4503-8ab5-a5cb05ed3efa",
+        "columnCode" : "login_name",
+        "columnName" : "login_name",
+        "ordinal" : 3,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:8f20d3f2-230e-4baa-a7e6-beace2ce21c1",
+        "modelFieldId" : "8f20d3f2-230e-4baa-a7e6-beace2ce21c1",
+        "columnCode" : "password",
+        "columnName" : "password",
+        "ordinal" : 4,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:ecfe549b-67a7-4599-b84b-8e1adfe78c27",
+        "modelFieldId" : "ecfe549b-67a7-4599-b84b-8e1adfe78c27",
+        "columnCode" : "password2",
+        "columnName" : "password2",
+        "ordinal" : 5,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:6b44e5dc-164e-4370-8da2-856cc94a537c",
+        "modelFieldId" : "6b44e5dc-164e-4370-8da2-856cc94a537c",
+        "columnCode" : "user_name",
+        "columnName" : "user_name",
+        "ordinal" : 6,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:c362fdf4-06b3-4405-982b-05f7932a4992",
+        "modelFieldId" : "c362fdf4-06b3-4405-982b-05f7932a4992",
+        "columnCode" : "sex",
+        "columnName" : "sex",
+        "ordinal" : 7,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:d4266fe2-3064-41ac-bbec-fca97f6bbf26",
+        "modelFieldId" : "d4266fe2-3064-41ac-bbec-fca97f6bbf26",
+        "columnCode" : "position",
+        "columnName" : "position",
+        "ordinal" : 8,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:bf7bf6f4-3fb5-410f-a8d4-7ad6781d5f2d",
+        "modelFieldId" : "bf7bf6f4-3fb5-410f-a8d4-7ad6781d5f2d",
+        "columnCode" : "user_type",
+        "columnName" : "user_type",
+        "ordinal" : 9,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:a944fa06-2a2d-4844-9299-b72c25723de9",
+        "modelFieldId" : "a944fa06-2a2d-4844-9299-b72c25723de9",
+        "columnCode" : "email",
+        "columnName" : "email",
+        "ordinal" : 10,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:ed6d4939-0617-49b8-955a-2a23bca467e0",
+        "modelFieldId" : "ed6d4939-0617-49b8-955a-2a23bca467e0",
+        "columnCode" : "phone",
+        "columnName" : "phone",
+        "ordinal" : 11,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:66c01f65-b0c8-4cdd-9b82-ea7a2300dfba",
+        "modelFieldId" : "66c01f65-b0c8-4cdd-9b82-ea7a2300dfba",
+        "columnCode" : "mobile",
+        "columnName" : "mobile",
+        "ordinal" : 12,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:97aff1f4-5d7f-45c4-ab83-0f69b0df3968",
+        "modelFieldId" : "97aff1f4-5d7f-45c4-ab83-0f69b0df3968",
+        "columnCode" : "photo",
+        "columnName" : "photo",
+        "ordinal" : 13,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:d123f3f7-ce07-48f0-be0d-192a63131f44",
+        "modelFieldId" : "d123f3f7-ce07-48f0-be0d-192a63131f44",
+        "columnCode" : "photo_large",
+        "columnName" : "photo_large",
+        "ordinal" : 14,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:bb3f81e2-a15d-4dc7-abeb-2cbe68593c23",
+        "modelFieldId" : "bb3f81e2-a15d-4dc7-abeb-2cbe68593c23",
+        "columnCode" : "photo_small",
+        "columnName" : "photo_small",
+        "ordinal" : 15,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:1f2aac8e-d72d-441b-bbdf-6b34c2912449",
+        "modelFieldId" : "1f2aac8e-d72d-441b-bbdf-6b34c2912449",
+        "columnCode" : "photo_normal",
+        "columnName" : "photo_normal",
+        "ordinal" : 16,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:d5a1f570-bba3-4aa4-80d4-2c4a63f11f12",
+        "modelFieldId" : "d5a1f570-bba3-4aa4-80d4-2c4a63f11f12",
+        "columnCode" : "sort",
+        "columnName" : "sort",
+        "ordinal" : 17,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:d6833b95-9d38-4d6d-b8c5-c6def6fb7c19",
+        "modelFieldId" : "d6833b95-9d38-4d6d-b8c5-c6def6fb7c19",
+        "columnCode" : "login_flag",
+        "columnName" : "login_flag",
+        "ordinal" : 18,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:2ca5be79-afcc-4d57-bf85-60c32d866684",
+        "modelFieldId" : "2ca5be79-afcc-4d57-bf85-60c32d866684",
+        "columnCode" : "del_flag",
+        "columnName" : "del_flag",
+        "ordinal" : 19,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:e6429607-a039-4d86-b156-daf94ea3073d",
+        "modelFieldId" : "e6429607-a039-4d86-b156-daf94ea3073d",
+        "columnCode" : "tenant_id",
+        "columnName" : "tenant_id",
+        "ordinal" : 20,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:93256116-84bc-4e50-a8fe-07c4e1941489",
+        "modelFieldId" : "93256116-84bc-4e50-a8fe-07c4e1941489",
+        "columnCode" : "remarks",
+        "columnName" : "remarks",
+        "ordinal" : 21,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:53ef7ecc-03db-4810-bc00-b998e85a5996",
+        "modelFieldId" : "53ef7ecc-03db-4810-bc00-b998e85a5996",
+        "columnCode" : "status",
+        "columnName" : "status",
+        "ordinal" : 22,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+        "localFieldKey" : "model-field:13ac1524-396d-484c-820e-8966a6981680",
+        "modelFieldId" : "13ac1524-396d-484c-820e-8966a6981680",
+        "columnCode" : "age",
+        "columnName" : "age",
+        "ordinal" : 23,
+        "outputEffect" : null
+      }, {
+        "localAssetKey" : "output",
+        "localFieldKey" : "model-field:0aa63e3e-7491-4358-bb08-95dc12ea48d1",
+        "modelFieldId" : "0aa63e3e-7491-4358-bb08-95dc12ea48d1",
+        "columnCode" : "dept_id",
+        "columnName" : "部门ID",
+        "ordinal" : 0,
+        "outputEffect" : "DERIVED"
+      }, {
+        "localAssetKey" : "output",
+        "localFieldKey" : "model-field:f38f274b-f876-44d7-bac7-59c0cab52eb0",
+        "modelFieldId" : "f38f274b-f876-44d7-bac7-59c0cab52eb0",
+        "columnCode" : "dept_name",
+        "columnName" : "部门名称",
+        "ordinal" : 1,
+        "outputEffect" : "NOT_WRITTEN"
+      }, {
+        "localAssetKey" : "output",
+        "localFieldKey" : "model-field:cb9fc775-68fe-4f31-8c25-c4aa26f8b293",
+        "modelFieldId" : "cb9fc775-68fe-4f31-8c25-c4aa26f8b293",
+        "columnCode" : "sex",
+        "columnName" : "性别",
+        "ordinal" : 2,
+        "outputEffect" : "DERIVED"
+      }, {
+        "localAssetKey" : "output",
+        "localFieldKey" : "model-field:ba589023-0a11-4833-b3cd-f8d1b2382eef",
+        "modelFieldId" : "ba589023-0a11-4833-b3cd-f8d1b2382eef",
+        "columnCode" : "num",
+        "columnName" : "数量",
+        "ordinal" : 3,
+        "outputEffect" : "WRITTEN_UNKNOWN_SOURCE"
+      } ],
+      "fieldEdges" : [ {
+        "source" : {
+          "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+          "localFieldKey" : "model-field:164bc687-e3e0-4399-85ec-6c55afc18ce6"
+        },
+        "target" : {
+          "localAssetKey" : "output",
+          "localFieldKey" : "model-field:0aa63e3e-7491-4358-bb08-95dc12ea48d1"
+        },
+        "derivationKey" : "69ce8f4fbf12e74c7d63d038cf19cbc1c46f4bc98c204ad7efe49bf955f49e54",
+        "derivationType" : "CALCULATED",
+        "transformNodeKey" : "jar:output:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147"
+      }, {
+        "source" : {
+          "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+          "localFieldKey" : "model-field:c362fdf4-06b3-4405-982b-05f7932a4992"
+        },
+        "target" : {
+          "localAssetKey" : "output",
+          "localFieldKey" : "model-field:cb9fc775-68fe-4f31-8c25-c4aa26f8b293"
+        },
+        "derivationKey" : "48fc07e8eb00b09a5931dfac295e00e3dcbbb961009dcb43ce209d28ba348851",
+        "derivationType" : "CALCULATED",
+        "transformNodeKey" : "jar:output:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147"
+      } ],
+      "fieldUsages" : [ {
+        "field" : {
+          "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+          "localFieldKey" : "model-field:164bc687-e3e0-4399-85ec-6c55afc18ce6"
+        },
+        "nodeKey" : "jar:output:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+        "usageType" : "GROUP_KEY"
+      }, {
+        "field" : {
+          "localAssetKey" : "input:model:c0b937e9-3891-4c2b-9de1-8d903258f033",
+          "localFieldKey" : "model-field:c362fdf4-06b3-4405-982b-05f7932a4992"
+        },
+        "nodeKey" : "jar:output:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+        "usageType" : "GROUP_KEY"
+      } ],
+      "warnings" : [ {
+        "code" : "OUTPUT_SOURCE_UNKNOWN",
+        "message" : "无法可靠解析输出字段来源",
+        "producerKey" : "jar:write:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+        "flowKey" : "jar:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+        "outputOrdinal" : 4
+      } ]
+    } ],
+    "warnings" : [ {
+      "code" : "OUTPUT_SOURCE_UNKNOWN",
+      "message" : "无法可靠解析输出字段来源",
+      "producerKey" : "jar:write:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+      "flowKey" : "jar:179466d2e83accbad4f0a0110dd04331c1155ba1004ef9cc72d41ce319beb147",
+      "outputOrdinal" : 4
+    } ]
+  },
+  "trialPreview" : null,
+  "canvasTrialPreview" : null,
+  "error" : null
+}

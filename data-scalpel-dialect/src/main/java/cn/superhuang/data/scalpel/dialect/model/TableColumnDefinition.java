@@ -4,7 +4,7 @@ import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 
 import java.util.UUID;
 
-/** One portable column in a table definition. */
+/** One portable physical column; Geometry metadata is optional for JDBC structure snapshots. */
 public record TableColumnDefinition(
         String name,
         TableColumnType type,
@@ -58,11 +58,7 @@ public record TableColumnDefinition(
                 throw new IllegalArgumentException("Decimal scale must be between zero and precision");
             }
         }
-        if (type == TableColumnType.GEOMETRY) {
-            if (geometry == null) {
-                throw new IllegalArgumentException("Geometry column definition is required");
-            }
-        } else if (geometry != null) {
+        if (type != TableColumnType.GEOMETRY && geometry != null) {
             throw new IllegalArgumentException("Only GEOMETRY columns accept a geometry definition");
         }
     }

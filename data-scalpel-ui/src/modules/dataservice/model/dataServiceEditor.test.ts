@@ -56,7 +56,7 @@ describe('data-service editor model', () => {
       type: 'SCRIPT_API',
       dataSourceId: 'source-1',
       engineId: 'engine-1',
-      routePath: '/open-api/v1/customer-script',
+      contextPath: '/open-api/v1/customer-script',
       script: 'return request.body',
       examples: [{
         id: 'example-1',
@@ -113,7 +113,7 @@ describe('data-service editor model', () => {
   it('derives editable, read-only and deployment-locked page modes from server state', () => {
     const detail = (status: DataServiceStatus, deploymentStatus: DataServiceDeploymentStatus | null): DataServiceDetail => ({
       id: 'service-1', code: 'customer_query', name: '客户查询', directoryId: null,
-      type: 'SQL_QUERY', engineId: 'engine-1', engineRoutePath: '/runtime/v1/services/service-1',
+      type: 'SQL_QUERY', engineId: 'engine-1', contextPath: '/open-api/v1/customer-query',
       definitionConfigured: true, definitionVersion: 1,
       status, revision: 1, deploymentStatus, deploymentError: null, deployedAt: null,
       gatewayBindings: [],

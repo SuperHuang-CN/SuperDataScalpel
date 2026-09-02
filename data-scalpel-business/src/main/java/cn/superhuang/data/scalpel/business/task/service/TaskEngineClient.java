@@ -2,6 +2,8 @@ package cn.superhuang.data.scalpel.business.task.service;
 
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationResponse;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationRequest;
+import cn.superhuang.data.scalpel.contract.task.SparkJarSourceCompilationResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskCompilationCancellationResponse;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
@@ -62,6 +64,23 @@ public class TaskEngineClient {
             throw accessFailure(exception);
         } catch (RestClientException exception) {
             throw clientFailure(exception, "Task Engine 取消请求失败");
+        }
+    }
+
+    public SparkJarSourceCompilationResponse compileSparkJarSource(
+            String baseUrl, SparkJarSourceCompilationRequest request) {
+        try {
+            return client(baseUrl).post()
+                    .uri("/api/v1/spark-jar-source-compilations")
+                    .body(request)
+                    .retrieve()
+                    .body(SparkJarSourceCompilationResponse.class);
+        } catch (RestClientResponseException exception) {
+            throw remoteFailure(exception);
+        } catch (ResourceAccessException exception) {
+            throw accessFailure(exception);
+        } catch (RestClientException exception) {
+            throw clientFailure(exception, "Task Engine 在线源码编译失败");
         }
     }
 

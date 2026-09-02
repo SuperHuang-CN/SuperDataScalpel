@@ -3,6 +3,8 @@ package cn.superhuang.data.scalpel.business.task.web.response;
 import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState;
 import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentDesiredState;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStreamingDeployment;
+import cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentExecutionMode;
+import cn.superhuang.data.scalpel.contract.execution.StreamingSourceKind;
 import cn.superhuang.data.scalpel.contract.execution.StreamingCheckpointMode;
 
 import java.time.Instant;
@@ -18,6 +20,7 @@ public record TaskStreamingDeploymentResponse(
         int checkpointGeneration,
         StreamingCheckpointMode checkpointStartMode,
         UUID checkpointSourceDeploymentId,
+        StreamingDeploymentExecutionMode executionMode,
         StreamingDeploymentDesiredState desiredState,
         StreamingDeploymentActualState actualState,
         String applicationId,
@@ -38,6 +41,9 @@ public record TaskStreamingDeploymentResponse(
         Long pollDurationMillis,
         Instant pollTime,
         Long cursorLagMillis,
+        StreamingSourceKind sourceKind,
+        Integer vGroupCount,
+        Long batchOffsetSpan,
         UserJobObservabilityResponse userJobObservability,
         List<TaskStreamingQueryResponse> queries
 ) {
@@ -51,6 +57,7 @@ public record TaskStreamingDeploymentResponse(
                 deployment.getCurrentRunId(), deployment.getCheckpointKeyPrefix(),
                 deployment.getCheckpointGeneration(), deployment.getCheckpointStartMode(),
                 deployment.getCheckpointSourceDeploymentId(),
+                deployment.getExecutionMode(),
                 deployment.getDesiredState(), deployment.getActualState(),
                 run == null ? null : run.getBackendApplicationId(),
                 run == null ? null : run.getTrackingUrl(),
@@ -61,7 +68,8 @@ public record TaskStreamingDeploymentResponse(
                 deployment.getLastCommittedOffset(), deployment.getLastWindowStart(),
                 deployment.getLastWindowEnd(), deployment.getLastWindowRowCount(),
                 deployment.getLastPollDurationMillis(), deployment.getLastPollAt(),
-                deployment.getCursorLagMillis(),
+                deployment.getCursorLagMillis(), deployment.getSourceKind(),
+                deployment.getLastVGroupCount(), deployment.getLastBatchOffsetSpan(),
                 TaskRunResponse.observabilityFrom(run),
                 List.copyOf(queries)
         );

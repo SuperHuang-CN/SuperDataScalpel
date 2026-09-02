@@ -15,7 +15,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
-import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { DirectoryTreePanel, findDirectoryDescendantIds, useDirectoryTree, type DirectorySelection } from '../../directory';
 import { useCurrentUser } from '../../system';
@@ -147,6 +147,7 @@ export const DataSourcePage = () => {
   const reset = () => {
     filterForm.resetFields();
     advancedFilterForm.resetFields();
+    advancedFilterForm.setFieldsValue({ type: undefined, enabled: undefined });
     setAdvancedFilters({});
     setAdvancedFilterOpen(false);
     setDirectorySelection(undefined);
@@ -154,16 +155,18 @@ export const DataSourcePage = () => {
   };
 
   const clearAdvancedFilters = () => {
-    advancedFilterForm.resetFields();
+    advancedFilterForm.setFieldsValue({ type: undefined, enabled: undefined });
   };
 
   const applyDirectFilters = (values: DataSourceFilters) => {
+    const advancedValues = advancedFilterForm.getFieldsValue();
+    const nextAdvancedFilters = { type: advancedValues.type, enabled: advancedValues.enabled };
+    setAdvancedFilters(nextAdvancedFilters);
     search({
       ...filters,
       keyword: values.keyword,
       purpose: values.purpose,
-      type: advancedFilters.type,
-      enabled: advancedFilters.enabled,
+      ...nextAdvancedFilters,
     });
   };
 
@@ -358,7 +361,8 @@ export const DataSourcePage = () => {
               <Form.Item name="purpose">
                 <Select allowClear placeholder="全部用途" options={purposeFilterOptions} className="data-source-filter-select" />
               </Form.Item>
-              <ManagementMoreFilters
+            </Form>
+              <ManagementAdaptiveMoreFilters
                 count={advancedFilterCount}
                 open={advancedFilterOpen}
                 onOpenChange={(open) => {
@@ -369,15 +373,17 @@ export const DataSourcePage = () => {
                   }
                 }}
                 onClear={clearAdvancedFilters}
-                onCancel={() => setAdvancedFilterOpen(false)}
+                onCancel={() => {
+                  advancedFilterForm.setFieldsValue({ type: advancedFilters.type, enabled: advancedFilters.enabled });
+                  setAdvancedFilterOpen(false);
+                }}
                 onConfirm={confirmAdvancedFilters}
               >
-                <Form<DataSourceFilters> form={advancedFilterForm} layout="vertical" autoComplete="off">
+                <Form<DataSourceFilters> form={advancedFilterForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}>
                   <Form.Item name="type" label="连接类型"><Select allowClear placeholder="全部类型" options={dataSourceTypeOptions} className="advanced-filter-select" /></Form.Item>
                   <Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部状态" className="advanced-filter-select" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} /></Form.Item>
                 </Form>
-              </ManagementMoreFilters>
-            </Form>
+              </ManagementAdaptiveMoreFilters>
             <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0 || directorySelection !== undefined} loading={dataSourcesQuery.isFetching} onReset={reset} />
           </div>
           <div className="management-results-surface">

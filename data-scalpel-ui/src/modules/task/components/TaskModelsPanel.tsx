@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { EyeOutlined, ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Empty, Space, Table, Tag, Tooltip } from 'antd';
+import { Button, Empty, Space, Table, Tag, Tooltip } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import {
   dataModelStatusLabels,

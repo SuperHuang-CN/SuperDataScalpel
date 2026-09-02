@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
   AppstoreOutlined,
@@ -14,7 +15,7 @@ import {
   SearchOutlined,
   TeamOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Empty, Input, Skeleton, Tag, Typography } from 'antd';
+import { Button, Empty, Input, Skeleton, Tag, Typography } from 'antd';
 import type { ReactNode } from 'react';
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';

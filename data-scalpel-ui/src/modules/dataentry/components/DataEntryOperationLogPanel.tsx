@@ -1,5 +1,7 @@
-import { Alert, Button, Descriptions, Drawer, Table, Tag } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { Button, Descriptions, Drawer, Table, Tag } from 'antd';
 import { useMemo, useState } from 'react';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { useDataEntryOperationLog, useDataEntryOperationLogs } from '../hooks/useDataEntry';
 import { dataEntryOperationStatusLabels, type DataEntryOperationLog } from '../model/dataEntry';
 
@@ -19,6 +21,16 @@ export const DataEntryOperationLogPanel = ({ formId }: { formId: string }) => {
 
   return (
     <div className="data-entry-tab-panel">
+      <DetailTableToolbar
+        title="操作日志"
+        total={logsQuery.data?.totalElements ?? 0}
+        current={page + 1}
+        pageSize={size}
+        onChange={(nextPage, nextSize) => { setPage(nextPage - 1); setSize(nextSize); }}
+        onRefresh={() => void logsQuery.refetch()}
+        refreshing={logsQuery.isFetching}
+        refreshLabel="刷新操作日志"
+      />
       <Table<DataEntryOperationLog>
         size="small" rowKey="id" loading={logsQuery.isFetching} dataSource={logsQuery.data?.content ?? []}
         columns={[
@@ -30,7 +42,7 @@ export const DataEntryOperationLogPanel = ({ formId }: { formId: string }) => {
           { title: '完成时间', dataIndex: 'completedAt', width: 200, render: (value) => value ? new Date(value).toLocaleString() : '—' },
           { title: '操作', key: 'actions', width: 90, render: (_, row) => <Button type="link" onClick={() => setSelectedId(row.id)}>详情</Button> },
         ]}
-        pagination={{ current: page + 1, pageSize: size, total: logsQuery.data?.totalElements ?? 0, showSizeChanger: true, showTotal: (total) => `共 ${total} 项`, onChange: (next, nextSize) => { setPage(nextSize !== size ? 0 : next - 1); setSize(nextSize); } }}
+        pagination={false}
       />
       <Drawer rootClassName="business-overlay business-drawer-overlay" width={640} title="数据操作日志详情" open={Boolean(selectedId)} onClose={() => setSelectedId(undefined)}>
         {selected?.manualVerificationRequired && <Alert type="warning" showIcon title="操作结果待人工核对" description="目标数据库可能已完成部分或全部操作；请根据日志和目标数据核对，系统不会自动重放。" />}

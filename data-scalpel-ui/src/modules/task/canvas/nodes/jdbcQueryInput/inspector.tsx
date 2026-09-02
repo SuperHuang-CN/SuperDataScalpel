@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import { CheckCircleOutlined, SyncOutlined } from '@ant-design/icons';
-import { Alert, Button, Form, Input, Space, Tag, Typography, message } from 'antd';
+import { Button, Form, Input, Space, Tag, Typography, message } from 'antd';
 import { useImperativeHandle, useState } from 'react';
 import { inspectJdbcQuery, useDataSource } from '../../../../datasource';
 import { MonacoSqlEditor } from '../../../../../shared/components/MonacoSqlEditor';

@@ -25,8 +25,9 @@ TaskEngineDaemon
 ├─ EngineConfiguration
 ├─ SparkRuntime
 ├─ TaskCompilationService
-│  └─ CanvasTaskCompiler
-│     └─ CanvasGraphPlan
+│  ├─ CanvasTaskCompiler
+│  │  └─ CanvasGraphPlan
+│  └─ SparkJarOnlineSourceCompiler
 ├─ CanvasNodeOperatorRegistry
 │  ├─ ModelInputNodeOperator
 │  ├─ JdbcInputNodeOperator
@@ -163,7 +164,25 @@ JSON 未声明字段、未知任务类型、未知节点类型、非法 enum/UUI
 
 响应将画布级问题放在 `canvasIssues`，每个定义节点按原数组顺序返回一个 `nodeResults` 条目。`valid` 仅在所有问题都没有 `ERROR` 时为 true。编译问题不写回 Canvas 定义。
 
-### 4.3 取消
+### 4.3 Spark JAR在线源码编译
+
+内部接口`POST /api/v1/spark-jar-source-compilations`与Canvas预检共享有界线程池、并发许可和30秒超时，但不会创建
+SparkSession。请求只包含`requestId`和一个固定主类的完整Java源码。Task Engine通过JDK 21`JavaCompiler`使用受控的
+Spark 4.1.1、Scala及DataScalpel SDK classpath编译，并额外生成不入JAR的类型检查类，验证公开主类、无参构造器和
+`SparkBatchJob`契约。
+
+Annotation Processor被禁用，编译过程不联网、不解析Maven坐标，也不加载或执行用户类。成功响应返回确定性小型JAR及
+源码/JAR摘要；失败响应返回最多200条包含行列范围的诊断。
+
+在线源码试运行复用同一编译接口。Business不把成功制品应用为当前JAR，而是创建`executionMode=TRIAL`的TaskRun并把临时JAR
+保存到该次运行的制品目录。Manifest中的`sparkJarJob.executionPurpose`为`TRIAL`；Runner使用真实输入，在SDK Writer边界生成
+最多100行的快速预览并跳过数据库写入。result schema v9的`trialPreview`由Dispatcher校验后留在固定结果制品中，不进入事件消息。
+
+Canvas 节点试运行使用专用 `compileTrial` 入口，并继续复用同一节点 Registry 和 Operator。Business 根据目标节点计算上游闭包，
+Manifest v23 的 `canvasTrial` 保存目标节点、逻辑表和字段选择；Runner 执行到目标节点后再投影字段并读取最多 101 行，Result v10
+返回最多 100 行的 `canvasTrialPreview`。该入口只放宽目标 Input 作为终点以及目标 Processor 未消费提示，不改变正常 Canvas 编译规则。
+
+### 4.4 取消
 
 ```http
 POST /api/v1/task-compilations/{requestId}/actions/cancel
@@ -172,11 +191,11 @@ Authorization: Bearer <token>
 
 活动请求返回 `202` 和 `CANCEL_REQUESTED`；不存在的活动请求返回 `404` Problem Detail。请求完成后可以再次使用相同 requestId。
 
-### 4.4 HTTP 错误
+### 4.5 HTTP 错误
 
 所有 Engine HTTP 错误使用 `application/problem+json`，扩展字段固定为 `code` 和 `timestamp`。未预期异常记录完整堆栈，但响应不暴露类名、Spark 计划、元数据内容或文件路径。
 
-### 4.5 Admin 编译网关
+### 4.6 Admin 编译网关
 
 浏览器不直接访问 Task Engine。Canvas Designer 统一调用 Admin 的同路径网关：
 
@@ -254,7 +273,7 @@ Map 按定义边顺序无覆盖合并。重复 Key 返回 `DUPLICATE_TABLE_NAME`
 
 ### 6.3 KAFKA_INPUT
 
-检查启用且具有 `SOURCE` 用途的 Kafka 数据源、Topic、输出逻辑表名、首次启动位置和节点内联 Value Schema。Value Schema 必须非空、字段名唯一且类型参数合法；Operator 直接用这些字段创建零行无界 Dataset Schema，不查询模型快照。模型仅可由前端作为一次性字段复制来源，不进入编译请求的 Kafka 配置。
+检查启用且具有 `SOURCE` 用途的 Kafka 数据源、Topic、输出逻辑表名、首次启动位置、Value 格式和元数据字段选择。JSON 的内联 Value Schema 必须非空、字段名唯一且类型参数合法；TEXT/BINARY 固定产生 `value: STRING/BINARY`，不接受结构化 Schema。选中的 Kafka Key、Topic、Partition、Offset 和 Timestamp 使用固定 `_kafka_*` 字段名追加，重名和重复选择返回配置错误。Operator 只创建零行无界 Dataset Schema，不查询模型快照或 Topic 样本；Timestamp 不自动成为事件时间。
 
 ### 6.4 JOIN
 
@@ -299,7 +318,7 @@ Output 专用字段转换策略分为安全、风险和不支持三类：可证�
 
 ### 6.8 KAFKA_OUTPUT
 
-检查来源无界表、启用且具有 `DISTRIBUTION` 用途的 Kafka 数据源、Topic、可选 Key 字段以及显式映射。目标字段直接取自节点内联 Value Schema，并与其他 Output 复用同一个字段映射和显式 Spark Cast 实现。Compiler 不查询模型、不建立 Kafka Writer；Runner 才使用 Manifest 中的 Kafka 连接信息准备真实流式输出。
+检查来源无界表、启用且具有 `DISTRIBUTION` 用途的 Kafka 数据源、Topic、Value 格式、字段选择和可选 Key。新模式的 JSON 至少选择一个非 Geometry 字段；TEXT/BINARY 只能选择一个 STRING/BINARY 字段；Key 只能是 STRING/BINARY。Output 不在节点内改名、Cast 或拼装业务载荷，这些动作由前置 Processor 完成。Canvas 4.0～4.5 写入继续走旧版内联 Value Schema、映射和显式 Cast 路径。Compiler 不查询模型、不建立 Kafka Writer；Runner 才使用 Manifest 中的 Kafka 连接信息准备真实流式输出。
 
 ### 6.9 FILE_OUTPUT
 

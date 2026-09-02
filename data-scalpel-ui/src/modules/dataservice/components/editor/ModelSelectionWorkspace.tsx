@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { TableOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Empty, Form, Select, Space, Switch, Table, Tooltip } from 'antd';
+import { Button, Empty, Form, Select, Space, Switch, Table, Tooltip } from 'antd';
 import { useEffect, type ReactNode } from 'react';
 import {
   ManagementFilterActions,

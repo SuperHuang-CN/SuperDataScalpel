@@ -1,7 +1,10 @@
+import { CompactAlert as Alert, ContextHelp } from '../../../shared/components/ContextualFeedback';
 import {
   AppstoreOutlined,
+  BarsOutlined,
   DeleteOutlined,
   EditOutlined,
+  FileTextOutlined,
   MoreOutlined,
   MinusCircleOutlined,
   PauseCircleOutlined,
@@ -10,30 +13,11 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Card,
-  Col,
-  Drawer,
-  Dropdown,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tooltip,
-  Typography,
-  message,
-} from 'antd';
+import { Badge, Button, Card, Col, Drawer, Dropdown, Form, Input, InputNumber, Modal, Row, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
-import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import {
   isStandardDictionaryTypeFamilyCompatible,
   standardDictionaryValueTypeLabels,
@@ -250,39 +234,60 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
       {modalContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title={template ? '修改常用字段模板' : '新建常用字段模板'}
+        className="data-model-drawer field-template-drawer"
+        title={(
+          <div className="data-model-drawer-title">
+            <span className="data-model-drawer-title-icon" aria-hidden="true"><AppstoreOutlined /></span>
+            <span className="data-model-drawer-title-copy">
+              <span>{template ? '修改常用字段模板' : '新建常用字段模板'}</span>
+              <Typography.Text type="secondary">定义可复用的字段组合、类型约束与业务标准</Typography.Text>
+            </span>
+          </div>
+        )}
+        extra={<Tag className="data-model-drawer-header-tag">{template?.code ?? '待创建'}</Tag>}
         open={open}
-        width={920}
+        width={1040}
         destroyOnHidden
         onClose={() => close()}
         footer={(
-          <Space>
-            <Button onClick={() => close()}>取消</Button>
-            <Button
-              type="primary"
-              loading={createMutation.isPending || updateMutation.isPending}
-              onClick={() => form.submit()}
-            >
-              保存
-            </Button>
-          </Space>
+          <div className="data-model-drawer-footer">
+            <Badge
+              status={template?.enabled === false ? 'default' : 'processing'}
+              text={template ? `${template.enabled ? '启用' : '停用'} · v${template.version} · ${fieldValues.length} 个字段` : `${fieldValues.length} 个待创建字段`}
+            />
+            <Space>
+              <Button onClick={() => close()}>取消</Button>
+              <Button
+                type="primary"
+                loading={createMutation.isPending || updateMutation.isPending}
+                onClick={() => form.submit()}
+              >
+                {template ? '保存修改' : '创建模板'}
+              </Button>
+            </Space>
+          </div>
         )}
       >
-        <Alert
-          showIcon
-          type="info"
-          title="模板只在选用时复制字段快照；之后修改或删除模板都不会改变已有模型，也不会触发物理表操作。"
-          className="management-inline-alert"
-        />
         <Form<CreateModelFieldTemplateRequest>
+          name="model-field-template-editor-form"
           autoComplete="off"
           form={form}
           layout="vertical"
+          className="data-model-form field-template-form"
           onValuesChange={() => { dirtyRef.current = true; }}
           onFinish={(values) => void submit(values)}
         >
-          <Row gutter={12}>
-            <Col span={8}>
+          <section className="data-model-form-section">
+            <header className="data-model-form-section-header">
+              <span className="data-model-form-section-icon" aria-hidden="true"><FileTextOutlined /></span>
+              <span className="data-model-form-section-copy">
+                <span className="data-model-form-section-title">模板信息</span>
+                <Typography.Text type="secondary">设置模板身份、分类和适用场景</Typography.Text>
+              </span>
+            </header>
+            <div className="data-model-form-section-body">
+              <Row gutter={14}>
+                <Col span={8} xs={24} md={8}>
               <Form.Item
                 label="模板编码"
                 name="code"
@@ -291,30 +296,32 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
                   { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
                 ]}
               >
-                <Input placeholder="如：AUDIT_FIELDS" />
+                <Input name="model-field-template-code" autoComplete="off" placeholder="如：AUDIT_FIELDS" />
               </Form.Item>
             </Col>
-            <Col span={8}>
+                <Col span={8} xs={24} md={8}>
               <Form.Item label="模板名称" name="name" rules={[{ required: true, whitespace: true }]}>
-                <Input placeholder="如：审计字段组" />
+                <Input name="model-field-template-name" autoComplete="off" placeholder="如：审计字段组" />
               </Form.Item>
             </Col>
-            <Col span={8}>
+                <Col span={8} xs={24} md={8}>
               <Form.Item label="分类" name="category" rules={[{ max: 100 }]}>
-                <Input placeholder="可自由填写，如：系统字段" />
+                <Input name="model-field-template-category" autoComplete="off" placeholder="可自由填写，如：系统字段" />
               </Form.Item>
             </Col>
-            <Col span={6}>
+                <Col span={6} xs={24} md={6}>
               <Form.Item label="排序" name="sortOrder" rules={[{ required: true }]}>
                 <InputNumber min={0} max={9999} precision={0} style={{ width: '100%' }} />
               </Form.Item>
             </Col>
-            <Col span={18}>
+                <Col span={18} xs={24} md={18}>
               <Form.Item label="说明" name="description" rules={[{ max: 500 }]}>
-                <Input placeholder="说明适用场景和使用约定" />
+                <Input name="model-field-template-description" autoComplete="off" placeholder="说明适用场景和使用约定" />
               </Form.Item>
             </Col>
-          </Row>
+              </Row>
+            </div>
+          </section>
           <Form.List
             name="fields"
             rules={[{
@@ -324,10 +331,22 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
             }]}
           >
             {(items, { add, remove }, { errors }) => (
-              <Space direction="vertical" size={8} style={{ width: '100%' }}>
-                <div className="management-section-header">
-                  <Typography.Text strong>模板字段</Typography.Text>
+              <section className="data-model-form-section field-template-fields-section">
+                <header className="data-model-form-section-header">
+                  <span className="data-model-form-section-icon" aria-hidden="true"><BarsOutlined /></span>
+                  <span className="data-model-form-section-copy">
+                    <span className="data-model-form-section-title-row">
+                      <span className="data-model-form-section-title">模板字段</span>
+                      <ContextHelp
+                        ariaLabel="查看模板字段使用说明"
+                        content="模板只在选用时复制字段快照；之后修改或删除模板都不会改变已有模型，也不会触发物理表操作。"
+                        presentation="popover"
+                      />
+                    </span>
+                    <Typography.Text type="secondary">按使用顺序维护字段类型、约束和数据标准</Typography.Text>
+                  </span>
                   <Button
+                    className="field-template-add-field"
                     icon={<PlusOutlined />}
                     onClick={() => {
                       const nextSortOrder = fieldValues.length
@@ -341,8 +360,10 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
                   >
                     添加字段
                   </Button>
-                </div>
-                {items.map(({ key, name, ...restField }, index) => {
+                </header>
+                <div className="data-model-form-section-body field-template-fields-body">
+                  <Space direction="vertical" size={10} style={{ width: '100%' }}>
+                    {items.map(({ key, name, ...restField }, index) => {
                   const selectedType = fieldValues[index]?.fieldType;
                   const selectedPrimaryKey = fieldValues[index]?.primaryKey;
                   const selectedDictionaryId = fieldValues[index]?.standardDictionaryId;
@@ -356,8 +377,14 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
                   return (
                     <Card
                       key={key}
+                      className="field-template-field-card"
                       size="small"
-                      title={`字段 ${index + 1}`}
+                      title={(
+                        <span className="field-template-field-card-title">
+                          <span className="field-template-field-index">{index + 1}</span>
+                          <span>字段定义</span>
+                        </span>
+                      )}
                       extra={(
                         <Tooltip title={items.length === 1 ? '模板至少保留一个字段' : '移除字段'}>
                           <span>
@@ -385,12 +412,12 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
                               { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码格式不合法' },
                             ]}
                           >
-                            <Input placeholder="如：created_at" />
+                            <Input name={`model-field-template-field-${index}-code`} autoComplete="off" placeholder="如：created_at" />
                           </Form.Item>
                         </Col>
                         <Col span={6}>
                           <Form.Item {...restField} label="字段名称" name={[name, 'name']} rules={[{ required: true, whitespace: true }]}>
-                            <Input placeholder="如：创建时间" />
+                            <Input name={`model-field-template-field-${index}-name`} autoComplete="off" placeholder="如：创建时间" />
                           </Form.Item>
                         </Col>
                         <Col span={6}>
@@ -477,15 +504,17 @@ const TemplateDrawer = ({ open, template, onClose }: TemplateDrawerProps) => {
                         </Col>
                         <Col span={15}>
                           <Form.Item {...restField} label="说明" name={[name, 'description']} rules={[{ max: 500 }]}>
-                            <Input placeholder="可选" />
+                            <Input name={`model-field-template-field-${index}-description`} autoComplete="off" placeholder="可选" />
                           </Form.Item>
                         </Col>
                       </Row>
                     </Card>
                   );
-                })}
-                <Form.ErrorList errors={errors} />
-              </Space>
+                    })}
+                    <Form.ErrorList errors={errors} />
+                  </Space>
+                </div>
+              </section>
             )}
           </Form.List>
         </Form>
@@ -582,12 +611,14 @@ export const ModelFieldTemplatePage = () => {
     },
   ];
   const applyDirect = (values: TemplateFilters) => {
-    setFilters({ keyword: values.keyword, category: values.category, enabled: advancedFilters.enabled });
+    const enabled = advancedFilterForm.getFieldValue('enabled');
+    setAdvancedFilters({ enabled });
+    setFilters({ keyword: values.keyword, category: values.category, enabled });
     setPage(0);
   };
   const confirmAdvanced = () => { setAdvancedFilters({ enabled: advancedFilterForm.getFieldValue('enabled') }); setAdvancedFilterOpen(false); };
-  const clearAdvanced = () => advancedFilterForm.resetFields();
-  const reset = () => { filterForm.resetFields(); advancedFilterForm.resetFields(); setAdvancedFilters({}); setAdvancedFilterOpen(false); setFilters({}); setPage(0); };
+  const clearAdvanced = () => advancedFilterForm.setFieldValue('enabled', undefined);
+  const reset = () => { filterForm.resetFields(); advancedFilterForm.resetFields(); advancedFilterForm.setFieldValue('enabled', undefined); setAdvancedFilters({}); setAdvancedFilterOpen(false); setFilters({}); setPage(0); };
 
   return (
     <>
@@ -603,7 +634,8 @@ export const ModelFieldTemplatePage = () => {
           >
             <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索模板名称或编码" /></Form.Item>
             <Form.Item name="category"><Input allowClear placeholder="搜索分类" /></Form.Item>
-            <ManagementMoreFilters
+          </Form>
+            <ManagementAdaptiveMoreFilters
               count={advancedFilterCount}
               open={advancedFilterOpen}
               onOpenChange={(open) => {
@@ -614,12 +646,14 @@ export const ModelFieldTemplatePage = () => {
                 }
               }}
               onClear={clearAdvanced}
-              onCancel={() => setAdvancedFilterOpen(false)}
+              onCancel={() => {
+                advancedFilterForm.setFieldValue('enabled', advancedFilters.enabled);
+                setAdvancedFilterOpen(false);
+              }}
               onConfirm={confirmAdvanced}
             >
-              <Form<TemplateFilters> form={advancedFilterForm} layout="vertical" autoComplete="off"><Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} className="advanced-filter-select" /></Form.Item></Form>
-            </ManagementMoreFilters>
-          </Form>
+              <Form<TemplateFilters> form={advancedFilterForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}><Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部状态" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} className="advanced-filter-select" /></Form.Item></Form>
+            </ManagementAdaptiveMoreFilters>
           <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={templatesQuery.isFetching} onReset={reset} />
         </div>
         <div className="management-results-surface">

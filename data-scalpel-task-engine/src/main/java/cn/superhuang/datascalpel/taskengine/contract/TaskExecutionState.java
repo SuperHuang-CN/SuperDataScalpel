@@ -7,11 +7,13 @@ public enum TaskExecutionState {
     RUNNING,
     CANCEL_REQUESTED,
     SUCCESS,
+    STOPPED,
     FAILED,
     TIMED_OUT,
     CANCELLED;
 
     public boolean terminal() {
-        return this == SUCCESS || this == FAILED || this == TIMED_OUT || this == CANCELLED;
+        return this == SUCCESS || this == STOPPED || this == FAILED
+                || this == TIMED_OUT || this == CANCELLED;
     }
 }

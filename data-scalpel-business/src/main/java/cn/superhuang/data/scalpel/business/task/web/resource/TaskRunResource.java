@@ -1,11 +1,14 @@
 package cn.superhuang.data.scalpel.business.task.web.resource;
 
 import cn.superhuang.data.scalpel.business.task.service.TaskRunService;
+import cn.superhuang.data.scalpel.business.task.service.TaskStreamingService;
 import cn.superhuang.data.scalpel.business.task.service.TaskRunService.TaskRunArtifact;
 import cn.superhuang.data.scalpel.business.task.service.QualityFailureSampleService;
 import cn.superhuang.data.scalpel.business.task.web.response.QualityFailureSampleResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunLineageResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarTrialPreviewResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.CanvasTrialPreviewResponse;
 import cn.superhuang.data.scalpel.business.task.service.SparkJarLineageQueryService;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
@@ -36,12 +39,15 @@ public class TaskRunResource {
     private final TaskRunService service;
     private final QualityFailureSampleService qualityFailureSampleService;
     private final SparkJarLineageQueryService sparkJarLineageQueryService;
+    private final TaskStreamingService taskStreamingService;
 
     public TaskRunResource(TaskRunService service, QualityFailureSampleService qualityFailureSampleService,
-                           SparkJarLineageQueryService sparkJarLineageQueryService) {
+                           SparkJarLineageQueryService sparkJarLineageQueryService,
+                           TaskStreamingService taskStreamingService) {
         this.service = service;
         this.qualityFailureSampleService = qualityFailureSampleService;
         this.sparkJarLineageQueryService = sparkJarLineageQueryService;
+        this.taskStreamingService = taskStreamingService;
     }
 
     @PostMapping("/api/v1/tasks/{id}/actions/run")
@@ -74,6 +80,20 @@ public class TaskRunResource {
     @Operation(summary = "查询 Spark JAR 运行血缘摄取状态")
     public TaskRunLineageResponse lineage(@PathVariable UUID runId) {
         return sparkJarLineageQueryService.get(runId);
+    }
+
+    @GetMapping("/api/v1/task-runs/{runId}/trial-preview")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询 Spark JAR 在线试运行输出预览")
+    public SparkJarTrialPreviewResponse trialPreview(@PathVariable UUID runId) {
+        return service.trialPreview(runId);
+    }
+
+    @GetMapping("/api/v1/task-runs/{runId}/canvas-trial-preview")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询 Canvas 节点试运行数据预览")
+    public CanvasTrialPreviewResponse canvasTrialPreview(@PathVariable UUID runId) {
+        return service.canvasTrialPreview(runId);
     }
 
     @GetMapping("/api/v1/task-runs/{runId}/artifacts/result")
@@ -122,6 +142,14 @@ public class TaskRunResource {
     @Operation(summary = "取消 Canvas 任务运行")
     public TaskRunResponse cancel(@PathVariable UUID runId) {
         return service.cancel(runId);
+    }
+
+    @PostMapping("/api/v1/task-runs/{runId}/actions/stop")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasAuthority('task.execute')")
+    @Operation(summary = "正常停止 Spark 实时 JAR 在线试运行")
+    public TaskRunResponse stop(@PathVariable UUID runId) {
+        return taskStreamingService.stopTrial(runId);
     }
 
     @PostMapping("/api/v1/task-runs/{runId}/actions/force-terminate")

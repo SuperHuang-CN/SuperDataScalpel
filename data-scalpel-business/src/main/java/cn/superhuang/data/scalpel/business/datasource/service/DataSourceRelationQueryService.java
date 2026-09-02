@@ -53,6 +53,7 @@ public class DataSourceRelationQueryService {
     private final StandardDataServiceDefinitionRepository standardServiceRepository;
     private final SqlDataServiceDefinitionRepository sqlServiceRepository;
     private final ScriptDataServiceDefinitionRepository scriptServiceRepository;
+    private final SpatialDataServiceDefinitionRepository spatialServiceRepository;
     private final SqlDataServiceModelReferenceRepository sqlServiceModelRepository;
     private final SearchEngine searchEngine;
 
@@ -74,6 +75,7 @@ public class DataSourceRelationQueryService {
             StandardDataServiceDefinitionRepository standardServiceRepository,
             SqlDataServiceDefinitionRepository sqlServiceRepository,
             ScriptDataServiceDefinitionRepository scriptServiceRepository,
+            SpatialDataServiceDefinitionRepository spatialServiceRepository,
             SqlDataServiceModelReferenceRepository sqlServiceModelRepository,
             SearchEngine searchEngine
     ) {
@@ -94,6 +96,7 @@ public class DataSourceRelationQueryService {
         this.standardServiceRepository = standardServiceRepository;
         this.sqlServiceRepository = sqlServiceRepository;
         this.scriptServiceRepository = scriptServiceRepository;
+        this.spatialServiceRepository = spatialServiceRepository;
         this.sqlServiceModelRepository = sqlServiceModelRepository;
         this.searchEngine = searchEngine;
     }
@@ -264,6 +267,8 @@ public class DataSourceRelationQueryService {
         if ((relationKind == null || relationKind == DataSourceRelationKind.VIA_MODEL) && !modelIds.isEmpty()) {
             standardServiceRepository.findAllByModelIdIn(modelIds)
                     .forEach(item -> addRelation(relations, item.getDataServiceId(), DataSourceRelationKind.VIA_MODEL));
+            spatialServiceRepository.findAllByModelIdIn(modelIds)
+                    .forEach(item -> addRelation(relations, item.getDataServiceId(), DataSourceRelationKind.VIA_MODEL));
             sqlServiceModelRepository.findAllByModelIdIn(modelIds)
                     .forEach(item -> addRelation(relations, item.getDataServiceId(), DataSourceRelationKind.VIA_MODEL));
         }
@@ -283,12 +288,15 @@ public class DataSourceRelationQueryService {
         Map<UUID, ScriptDataServiceDefinition> scripts = scriptServiceRepository
                 .findAllByDataServiceIdIn(pageIds).stream()
                 .collect(Collectors.toMap(ScriptDataServiceDefinition::getDataServiceId, Function.identity()));
+        Map<UUID, SpatialDataServiceDefinition> spatialDefinitions = spatialServiceRepository
+                .findAllByDataServiceIdIn(pageIds).stream()
+                .collect(Collectors.toMap(SpatialDataServiceDefinition::getDataServiceId, Function.identity()));
         List<DataSourceRelatedServiceResponse> content = page.getContent().stream()
                 .map(service -> new DataSourceRelatedServiceResponse(
                         service.getId(), service.getCode(), service.getName(), service.getType(), service.getStatus(),
-                        serviceDefinitionVersion(service.getId(), standards, sqlDefinitions, scripts),
+                        serviceDefinitionVersion(service.getId(), standards, sqlDefinitions, scripts, spatialDefinitions),
                         List.copyOf(relations.getOrDefault(service.getId(), EnumSet.noneOf(DataSourceRelationKind.class))),
-                        service.getEngineRoutePath(), service.getUpdatedAt()
+                        service.getContextPath(), service.getUpdatedAt()
                 ))
                 .toList();
         return pageResponse(page, content);
@@ -589,11 +597,13 @@ public class DataSourceRelationQueryService {
             UUID serviceId,
             Map<UUID, StandardDataServiceDefinition> standards,
             Map<UUID, SqlDataServiceDefinition> sqlDefinitions,
-            Map<UUID, ScriptDataServiceDefinition> scripts
+            Map<UUID, ScriptDataServiceDefinition> scripts,
+            Map<UUID, SpatialDataServiceDefinition> spatialDefinitions
     ) {
         if (standards.containsKey(serviceId)) return standards.get(serviceId).getVersion();
         if (sqlDefinitions.containsKey(serviceId)) return sqlDefinitions.get(serviceId).getVersion();
         if (scripts.containsKey(serviceId)) return scripts.get(serviceId).getVersion();
+        if (spatialDefinitions.containsKey(serviceId)) return spatialDefinitions.get(serviceId).getVersion();
         return null;
     }
 

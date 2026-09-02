@@ -7,7 +7,10 @@ import { TaskDrawer } from './TaskDrawer';
 vi.mock('../../computeengine', () => ({
   computeEngineRegistrationStateLabels: { ACTIVE: '已激活' },
   isComputeEngineSelectable: () => true,
-  useComputeEngines: () => ({ data: { content: [] }, isFetching: false }),
+  useComputeEngines: () => ({
+    data: { content: [{ id: 'engine-1', name: '本地引擎', registrationState: 'ACTIVE' }] },
+    isFetching: false,
+  }),
 }));
 
 class ResizeObserverStub {
@@ -23,8 +26,8 @@ const sparkTask: DataTask = {
   type: 'SPARK_CANVAS',
   status: 'DRAFT',
   description: null,
-  computeEngineId: null,
-  computeEngineName: null,
+  computeEngineId: 'engine-1',
+  computeEngineName: '本地引擎',
   definitionConfigured: false,
   definitionVersion: null,
   outputModelId: null,
@@ -69,8 +72,13 @@ describe('TaskDrawer', () => {
     onSubmit.mockClear();
     await user.click(screen.getByLabelText('任务类型'));
     await user.click(await screen.findByText('Spark 编排'));
+    await user.click(screen.getByLabelText('计算引擎'));
+    await user.click(await screen.findByText('本地引擎 · 已激活'));
     await user.click(screen.getByRole('button', { name: /创\s*建/ }));
-    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ type: 'SPARK_CANVAS' })));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      type: 'SPARK_CANVAS',
+      computeEngineId: 'engine-1',
+    })));
   }, 30_000);
 
   it('shows the existing type as read-only while editing', async () => {
@@ -79,12 +87,18 @@ describe('TaskDrawer', () => {
     render(<TaskDrawer open task={sparkTask} directories={[]} onClose={vi.fn()} onSubmit={onSubmit} />);
 
     expect(await screen.findByLabelText('任务类型')).toBeDisabled();
-    expect(screen.getByText('Spark 编排')).toBeInTheDocument();
+    expect(screen.getAllByText('Spark 编排')).not.toHaveLength(0);
     expect(screen.queryByLabelText('任务编码')).not.toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /保\s*存/ }));
     await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
       name: '客户编排',
       type: 'SPARK_CANVAS',
     })));
+  });
+
+  it('keeps the complete task status semantics in the footer', async () => {
+    render(<TaskDrawer open task={{ ...sparkTask, status: 'DISABLED' }} directories={[]} onClose={vi.fn()} onSubmit={vi.fn()} />);
+
+    expect(await screen.findByText('已停用 · Spark 编排')).toBeInTheDocument();
   });
 });

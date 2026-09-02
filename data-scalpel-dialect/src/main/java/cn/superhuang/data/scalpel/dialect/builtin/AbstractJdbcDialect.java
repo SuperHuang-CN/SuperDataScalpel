@@ -35,9 +35,11 @@ import cn.superhuang.data.scalpel.dialect.query.PreparedQuery;
 import cn.superhuang.data.scalpel.dialect.query.PreparedSqlQuery;
 import cn.superhuang.data.scalpel.dialect.query.QueryAggregate;
 import cn.superhuang.data.scalpel.dialect.query.QueryFilter;
+import cn.superhuang.data.scalpel.dialect.query.QueryFilterGroup;
 import cn.superhuang.data.scalpel.dialect.query.QueryFilterOperator;
 import cn.superhuang.data.scalpel.dialect.query.QueryOrder;
 import cn.superhuang.data.scalpel.dialect.query.QueryParameter;
+import cn.superhuang.data.scalpel.dialect.query.QueryPredicate;
 import cn.superhuang.data.scalpel.dialect.query.QuerySortDirection;
 import cn.superhuang.data.scalpel.dialect.query.QueryValueType;
 import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
@@ -614,7 +616,7 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         query.aggregates().forEach(aggregate -> selections.add(renderAggregate(aggregate)));
         StringBuilder sql = new StringBuilder("SELECT ").append(String.join(", ", selections))
                 .append(" FROM ").append(qualifiedName(query.table()));
-        String where = renderWhere(query.filters(), query.conjunction(), parameters);
+        String where = renderWhere(query.filter(), parameters);
         if (!where.isEmpty()) {
             sql.append(" WHERE ").append(where);
         }
@@ -637,16 +639,21 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         };
     }
 
-    private String renderWhere(
-            List<QueryFilter> filters,
-            ConditionConjunction conjunction,
-            List<QueryParameter> parameters
-    ) {
-        if (filters.isEmpty()) {
+    private String renderWhere(QueryPredicate predicate, List<QueryParameter> parameters) {
+        if (predicate == null) {
             return "";
         }
-        String joiner = conjunction == ConditionConjunction.OR ? " OR " : " AND ";
-        return filters.stream().map(filter -> renderFilter(filter, parameters))
+        return renderPredicate(predicate, parameters);
+    }
+
+    private String renderPredicate(QueryPredicate predicate, List<QueryParameter> parameters) {
+        if (predicate instanceof QueryFilter filter) {
+            return renderFilter(filter, parameters);
+        }
+        QueryFilterGroup group = (QueryFilterGroup) predicate;
+        String joiner = group.conjunction() == ConditionConjunction.OR ? " OR " : " AND ";
+        return group.conditions().stream()
+                .map(condition -> renderPredicate(condition, parameters))
                 .collect(java.util.stream.Collectors.joining(joiner, "(", ")"));
     }
 
@@ -807,13 +814,20 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
             case BINARY -> jdbcType == Types.BINARY || jdbcType == Types.VARBINARY || jdbcType == Types.LONGVARBINARY
                     || jdbcType == Types.BLOB || containsAny(actual.nativeType(), "BLOB", "BINARY");
             case GEOMETRY -> {
-                TypeMappingResult<PlatformTypeDefinition> mapping =
-                        mapToPlatformType(JdbcTypeDescriptor.from(actual));
-                yield mapping.acceptable()
-                        && mapping.definition().type() == PlatformDataType.GEOMETRY
-                        && java.util.Objects.equals(expected.geometry(), mapping.definition().geometry());
+                yield matchesGeometryColumn(expected, actual);
             }
         };
+    }
+
+    /**
+     * Geometry semantics such as subtype and CRS are model metadata. Dialects may override this
+     * structural check when their native Geometry family can be identified without that metadata.
+     */
+    protected boolean matchesGeometryColumn(TableColumnDefinition expected, ColumnMetadata actual) {
+        TypeMappingResult<PlatformTypeDefinition> mapping = mapToPlatformType(JdbcTypeDescriptor.from(actual));
+        return mapping.acceptable()
+                && mapping.definition().type() == PlatformDataType.GEOMETRY
+                && java.util.Objects.equals(expected.geometry(), mapping.definition().geometry());
     }
 
     /** Returns whether a logical string length is a physical constraint for this dialect. */
@@ -847,14 +861,11 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         if (type == TableColumnType.GEOMETRY) {
             TypeMappingResult<PlatformTypeDefinition> mapping =
                     mapToPlatformType(JdbcTypeDescriptor.from(actual));
-            if (!mapping.acceptable() || mapping.definition().type() != PlatformDataType.GEOMETRY) {
-                throw new UnsupportedOperationException(
-                        mapping.message() == null ? "Unsupported geometry column: " + actual.name() : mapping.message()
-                );
-            }
             return new TableColumnDefinition(
                     actual.name(), type, null, null, null, actual.nullable(), null,
-                    mapping.definition().geometry()
+                    mapping.acceptable() && mapping.definition().type() == PlatformDataType.GEOMETRY
+                            ? mapping.definition().geometry()
+                            : null
             );
         }
         return new TableColumnDefinition(actual.name(), type, length, precision, scale, actual.nullable());

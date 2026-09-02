@@ -171,7 +171,7 @@ public class DataModelResource {
     }
 
     @GetMapping("/external-table-import-preview")
-    @PreAuthorize("hasAuthority('model.create')")
+    @PreAuthorize("hasAnyAuthority('model.create', 'model.update')")
     @Operation(summary = "预览已有物理表导入后的平台字段类型")
     public ExternalTableImportPreviewResponse previewExternalTableImport(
             @RequestParam UUID storageDataSourceId,

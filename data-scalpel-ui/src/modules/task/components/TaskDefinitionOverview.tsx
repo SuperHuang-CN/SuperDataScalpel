@@ -1,8 +1,11 @@
-import { EditOutlined, SettingOutlined } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { CodeOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
+import { Button, Descriptions, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd';
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { MonacoSqlEditor } from '../../../shared/components/MonacoSqlEditor';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import { CanvasDesigner } from '../canvas/CanvasDesigner';
 import {
   useCanvasTaskDefinition,
@@ -81,15 +84,17 @@ const SparkJarDefinitionOverview = ({
         <DefinitionEditAction task={task} canUpdate={canUpdate} configured streamingActive={streamingActive} />
       </div>
       <div className="spark-jar-overview-scroll">
-        <Descriptions bordered size="small" column={3} title="用户作业 JAR">
-          <Descriptions.Item label="文件名">{definition.jar.fileName}</Descriptions.Item>
-          <Descriptions.Item label="大小">{formatBytes(definition.jar.sizeBytes)}</Descriptions.Item>
-          <Descriptions.Item label="Job API">v{definition.jar.jobApiVersion}</Descriptions.Item>
-          <Descriptions.Item label="Job Class" span={2}><Typography.Text code copyable>{definition.jar.jobClass}</Typography.Text></Descriptions.Item>
-          <Descriptions.Item label="作业模式">{definition.jobMode}</Descriptions.Item>
-          <Descriptions.Item label={streaming ? '作业启动超时' : '执行超时'}>{definition.timeoutSeconds} 秒</Descriptions.Item>
-          <Descriptions.Item label="SHA-256" span={3}><Typography.Text code copyable ellipsis>{definition.jar.sha256}</Typography.Text></Descriptions.Item>
-        </Descriptions>
+        <BusinessDetailSection title="用户作业 JAR" description="作业入口、兼容版本与文件指纹" icon={<CodeOutlined />}>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }}>
+            <Descriptions.Item label="文件名">{definition.jar.fileName}</Descriptions.Item>
+            <Descriptions.Item label="大小">{formatBytes(definition.jar.sizeBytes)}</Descriptions.Item>
+            <Descriptions.Item label="Job API">v{definition.jar.jobApiVersion}</Descriptions.Item>
+            <Descriptions.Item label="Job Class" span={2}><Typography.Text code copyable>{definition.jar.jobClass}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="作业模式">{definition.jobMode}</Descriptions.Item>
+            <Descriptions.Item label={streaming ? '作业启动超时' : '执行超时'}>{definition.timeoutSeconds} 秒</Descriptions.Item>
+            <Descriptions.Item label="SHA-256" span={3}><Typography.Text code copyable ellipsis>{definition.jar.sha256}</Typography.Text></Descriptions.Item>
+          </BusinessDetailDescriptions>
+        </BusinessDetailSection>
         <Table
           size="small"
           rowKey={(entry) => entry.name}
@@ -331,6 +336,11 @@ const CanvasDefinitionOverview = ({
         mode="VIEW"
         initialDefinition={canvasDefinition}
         executionMode={streaming ? 'STREAMING' : 'BATCH'}
+        trialContext={{
+          taskId: task.id,
+          baseDefinitionVersion: definition.version,
+          taskStatus: task.status,
+        }}
         toolbarLeading={(
           <Space size={8} wrap>
             <Typography.Text strong>{streaming ? '实时 Canvas 定义' : '批处理 Canvas 定义'}</Typography.Text>

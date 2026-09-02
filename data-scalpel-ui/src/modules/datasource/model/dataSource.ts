@@ -305,6 +305,7 @@ export interface TdEngineTmqTopic {
   supported: boolean;
   unsupportedReason: string | null;
   definitionFingerprint: string;
+  legacyDefinitionFingerprint: string;
 }
 
 export interface TdEngineTmqTopicDetail extends TdEngineTmqTopic {

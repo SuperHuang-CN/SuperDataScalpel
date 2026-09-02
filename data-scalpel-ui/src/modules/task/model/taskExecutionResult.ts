@@ -133,12 +133,14 @@ export interface QualityRuleTechnicalFailure {
 }
 
 export interface TaskExecutionResultArtifact {
-  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7 | 8;
-  taskType: 'SPARK_CANVAS' | 'SPARK_MODEL_QUALITY' | 'SPARK_JAR';
+  schemaVersion: SupportedTaskExecutionSchemaVersion;
+  taskType: 'SPARK_CANVAS' | 'SPARK_MODEL_QUALITY' | 'SPARK_JAR' | 'SPARK_STREAMING_JAR';
   nodeResults: TaskExecutionNodeResult[];
   qualityResult: ModelQualityExecutionResult | null;
   userJobObservability: UserJobObservability | null;
 }
+
+type SupportedTaskExecutionSchemaVersion = 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 | 11;
 
 const qualityRuleTypes = new Set<ModelQualityRuleType>([
   'NOT_NULL', 'UNIQUE', 'VALUE_RANGE', 'STRING_LENGTH', 'DICTIONARY_MEMBERSHIP',
@@ -317,7 +319,7 @@ const parseOutputWritesMetrics = (value: unknown): OutputWritesExecutionMetrics 
 
 const parseNodeResults = (
   value: unknown,
-  schemaVersion: 2 | 3 | 4 | 5 | 6 | 7 | 8,
+  schemaVersion: SupportedTaskExecutionSchemaVersion,
 ): TaskExecutionNodeResult[] => {
   if (!Array.isArray(value)) throw new Error('执行结果节点列表格式无效');
   const nodeIds = new Set<string>();
@@ -340,7 +342,7 @@ const parseNodeResults = (
     }
     const hasMetrics = item.metrics !== undefined && item.metrics !== null;
     const snapshotMetrics = schemaVersion >= 3 ? parseSnapshotMetrics(item.metrics) : null;
-    const outputMetrics = schemaVersion === 7 ? parseOutputWritesMetrics(item.metrics) : null;
+    const outputMetrics = schemaVersion >= 7 ? parseOutputWritesMetrics(item.metrics) : null;
     const metrics = snapshotMetrics ?? outputMetrics;
     const snapshotNode = item.nodeType === 'JDBC_SNAPSHOT_SYNC_OUTPUT'
       || item.nodeType === 'MODEL_SNAPSHOT_SYNC_OUTPUT';
@@ -470,7 +472,10 @@ const parseQualityMetric = (value: unknown): QualityRuleMetric => {
   throw new Error('质量规则包含未知指标类型');
 };
 
-const parseQualityResult = (value: unknown, schemaVersion: 4 | 5 | 6 | 7 | 8): ModelQualityExecutionResult => {
+const parseQualityResult = (
+  value: unknown,
+  schemaVersion: Exclude<SupportedTaskExecutionSchemaVersion, 2 | 3>,
+): ModelQualityExecutionResult => {
   if (!isRecord(value)
     || !Array.isArray(value.ruleResults)
     || !Array.isArray(value.skippedRuleResults)) {
@@ -584,7 +589,8 @@ const parseQualityResult = (value: unknown, schemaVersion: 4 | 5 | 6 | 7 | 8): M
 export const parseTaskExecutionResultArtifact = (value: unknown): TaskExecutionResultArtifact => {
   if (!isRecord(value) || value.schemaVersion !== 2 && value.schemaVersion !== 3
     && value.schemaVersion !== 4 && value.schemaVersion !== 5
-    && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8) {
+    && value.schemaVersion !== 6 && value.schemaVersion !== 7 && value.schemaVersion !== 8
+    && value.schemaVersion !== 9 && value.schemaVersion !== 10 && value.schemaVersion !== 11) {
     throw new Error('执行结果制品版本或结构不受支持');
   }
   const schemaVersion = value.schemaVersion;
@@ -601,7 +607,8 @@ export const parseTaskExecutionResultArtifact = (value: unknown): TaskExecutionR
     };
   }
   if (schemaVersion !== 4 && schemaVersion !== 5
-    && schemaVersion !== 6 && schemaVersion !== 7 && schemaVersion !== 8) {
+    && schemaVersion !== 6 && schemaVersion !== 7 && schemaVersion !== 8
+    && schemaVersion !== 9 && schemaVersion !== 10 && schemaVersion !== 11) {
     throw new Error('模型质检结果版本无效');
   }
   if (value.taskType === 'SPARK_MODEL_QUALITY') {
@@ -630,19 +637,21 @@ export const parseTaskExecutionResultArtifact = (value: unknown): TaskExecutionR
       userJobObservability: null,
     };
   }
-  if (value.taskType === 'SPARK_JAR') {
+  if (value.taskType === 'SPARK_JAR' || value.taskType === 'SPARK_STREAMING_JAR') {
     if (!Array.isArray(value.nodeResults) || value.nodeResults.length !== 0
       || value.qualityResult !== null && value.qualityResult !== undefined
       || schemaVersion < 6 && value.userJobObservability !== null
-      && value.userJobObservability !== undefined) {
+      && value.userJobObservability !== undefined
+      || value.taskType === 'SPARK_STREAMING_JAR' && schemaVersion < 11) {
       throw new Error('Spark JAR 结果载荷与任务类型不一致');
     }
-    if (schemaVersion >= 8 && value.state === 'SUCCESS' && !isRecord(value.lineage)) {
+    if (value.taskType === 'SPARK_JAR'
+      && schemaVersion >= 8 && value.state === 'SUCCESS' && !isRecord(value.lineage)) {
       throw new Error('Spark JAR v8 成功结果缺少运行血缘证据');
     }
     return {
       schemaVersion,
-      taskType: 'SPARK_JAR',
+      taskType: value.taskType,
       nodeResults: [],
       qualityResult: null,
       userJobObservability: schemaVersion >= 6

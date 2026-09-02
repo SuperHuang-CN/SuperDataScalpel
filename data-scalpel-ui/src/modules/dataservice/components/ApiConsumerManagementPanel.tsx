@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   AuditOutlined,
   DeleteOutlined,
@@ -10,17 +11,7 @@ import {
   UsergroupAddOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Dropdown,
-  Form,
-  Modal,
-  Space,
-  Table,
-  Tooltip,
-  message,
-} from 'antd';
+import { Button, Dropdown, Form, Modal, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';

@@ -1,6 +1,8 @@
 import { EditOutlined, FileTextOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Empty, Space, Table, Tag, Typography } from 'antd';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import { dataModelStatusLabels, useDataModel, type DataModelField } from '../../model';
 import type { DataServiceRelatedModelView } from '../hooks/useDataServiceRelatedModels';
 import type { DataServiceDetail, SqlServiceParameterDefinition } from '../model/dataService';
@@ -25,7 +27,7 @@ export const DataServiceDefinitionPanel = ({
 }: DataServiceDefinitionPanelProps) => {
   const navigate = useNavigate();
   const location = useLocation();
-  const standardModelId = dataService.standardDefinition?.modelId;
+  const standardModelId = dataService.standardDefinition?.modelId ?? dataService.spatialDefinition?.modelId;
   const modelQuery = useDataModel(standardModelId, canViewModels && Boolean(standardModelId));
   const openEditor = () => navigate(`/dataservice/${dataService.id}/definition/edit`, { state: location.state });
   const editButton = canUpdate ? (
@@ -62,20 +64,16 @@ export const DataServiceDefinitionPanel = ({
 
   return (
     <div className="data-service-definition-panel">
-      <div className="data-service-detail-section-toolbar">
-        <div>
-          <Space size={8} wrap>
-            <Typography.Title level={5}>已保存服务定义</Typography.Title>
-            <Tag color="success">v{dataService.definitionVersion}</Tag>
-          </Space>
-          <Typography.Text type="secondary">启用时会基于该版本生成不可变部署快照。</Typography.Text>
-        </div>
-        {editButton}
-      </div>
+      <BusinessDetailSection
+        title={<Space size={8}>已保存服务定义<Tag color="success">v{dataService.definitionVersion}</Tag></Space>}
+        description="启用时会基于该版本生成不可变部署快照"
+        icon={<FileTextOutlined />}
+        extra={editButton}
+      >
 
       {dataService.type === 'STANDARD_TABLE' && (
         <>
-          <Descriptions bordered size="small" column={{ xs: 1, md: 2, xl: 4 }}>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
             <Descriptions.Item label="发布模型">{standardModel?.name ?? relatedModels[0]?.name ?? '模型已删除'}</Descriptions.Item>
             <Descriptions.Item label="模型编码"><Typography.Text code>{standardModel?.code ?? relatedModels[0]?.code ?? standardModelId}</Typography.Text></Descriptions.Item>
             <Descriptions.Item label="模型状态">{standardModel ? dataModelStatusLabels[standardModel.status] : '—'}</Descriptions.Item>
@@ -83,7 +81,7 @@ export const DataServiceDefinitionPanel = ({
             <Descriptions.Item label="存储数据源">{standardModel?.storageDataSourceName ?? '—'}</Descriptions.Item>
             <Descriptions.Item label="物理表" span={3}>{standardModel?.physicalTableName ?? '—'}</Descriptions.Item>
             <Descriptions.Item label="字段 / 主键">{standardFields.length} / {standardFields.filter((field) => field.primaryKey).length}</Descriptions.Item>
-          </Descriptions>
+          </BusinessDetailDescriptions>
           <Table<DataModelField>
             rowKey="id"
             size="small"
@@ -101,13 +99,26 @@ export const DataServiceDefinitionPanel = ({
         </>
       )}
 
+      {dataService.type === 'SPATIAL_SERVICE' && dataService.spatialDefinition && (
+        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
+          <Descriptions.Item label="空间模型">{standardModel?.name ?? relatedModels[0]?.name ?? '模型已删除'}</Descriptions.Item>
+          <Descriptions.Item label="模型编码"><Typography.Text code>{standardModel?.code ?? relatedModels[0]?.code ?? standardModelId}</Typography.Text></Descriptions.Item>
+          <Descriptions.Item label="存储数据源">{standardModel?.storageDataSourceName ?? relatedModels[0]?.storageDataSourceName ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label="物理表"><Typography.Text code>{standardModel ? `${standardModel.schemaName ?? 'public'}.${standardModel.physicalTableName}` : '—'}</Typography.Text></Descriptions.Item>
+          <Descriptions.Item label="Geometry">{standardFields.find((field) => field.fieldType === 'GEOMETRY')?.geometry?.kind ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label="EPSG">{standardFields.find((field) => field.fieldType === 'GEOMETRY')?.geometry?.crs.code ?? '—'}</Descriptions.Item>
+          <Descriptions.Item label="主键"><Typography.Text code>{standardFields.find((field) => field.primaryKey)?.code ?? '—'}</Typography.Text></Descriptions.Item>
+          <Descriptions.Item label="发布协议"><Space><Tag>只读 WMS</Tag><Tag>只读 WFS</Tag></Space></Descriptions.Item>
+        </BusinessDetailDescriptions>
+      )}
+
       {dataService.type === 'SQL_QUERY' && dataService.sqlDefinition && (
         <>
-          <Descriptions bordered size="small" column={{ xs: 1, md: 2, xl: 3 }}>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }}>
             <Descriptions.Item label="数据源">{sourceName ?? dataService.sqlDefinition.dataSourceId}</Descriptions.Item>
             <Descriptions.Item label="关联模型">{dataService.sqlDefinition.modelIds.length} 个</Descriptions.Item>
             <Descriptions.Item label="参数">{dataService.sqlDefinition.parameters.length} 个</Descriptions.Item>
-          </Descriptions>
+          </BusinessDetailDescriptions>
           <div className="data-service-definition-code-block">
             <Typography.Text strong>SQL 模板</Typography.Text>
             <pre>{dataService.sqlDefinition.sqlText}</pre>
@@ -129,16 +140,17 @@ export const DataServiceDefinitionPanel = ({
 
       {dataService.type === 'SCRIPT_API' && dataService.scriptDefinition && (
         <>
-          <Descriptions bordered size="small" column={{ xs: 1, md: 2 }}>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 3 }}>
             <Descriptions.Item label="默认数据源">{sourceName ?? dataService.scriptDefinition.dataSourceId}</Descriptions.Item>
             <Descriptions.Item label="请求 Example">{dataService.scriptDefinition.examples.length} 个</Descriptions.Item>
-          </Descriptions>
+          </BusinessDetailDescriptions>
           <div className="data-service-definition-code-block">
             <Typography.Text strong>Groovy 脚本</Typography.Text>
             <pre>{dataService.scriptDefinition.script}</pre>
           </div>
         </>
       )}
+      </BusinessDetailSection>
     </div>
   );
 };

@@ -5,6 +5,10 @@ import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout;
 import cn.superhuang.data.scalpel.contract.task.CompilationSeverity;
+import cn.superhuang.data.scalpel.contract.task.CastFailureStrategy;
+import cn.superhuang.data.scalpel.contract.task.ColumnTypeCast;
+import cn.superhuang.data.scalpel.contract.task.EpochTimestampUnit;
+import cn.superhuang.data.scalpel.contract.task.ProcessorOutput;
 import cn.superhuang.data.scalpel.contract.task.SpatialClipConfiguration;
 import cn.superhuang.data.scalpel.contract.task.SpatialClipNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.SpatialAggregateConfiguration;
@@ -31,6 +35,11 @@ import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputWrite;
 import cn.superhuang.data.scalpel.contract.task.RenameConfiguration;
 import cn.superhuang.data.scalpel.contract.task.RenameNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.TypeCastConfiguration;
+import cn.superhuang.data.scalpel.contract.task.TypeCastNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.TypeCastOperation;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import org.junit.jupiter.api.Test;
 
 import java.util.List;
@@ -126,6 +135,187 @@ class CanvasGraphPlanTest {
         assertTrue(hasCanvasIssue(legacyMajor, "UNSUPPORTED_SCHEMA_VERSION"));
         assertTrue(hasCanvasIssue(futureMinor, "UNSUPPORTED_SCHEMA_MINOR_VERSION"));
         assertTrue(hasCanvasIssue(futureMajor, "UNSUPPORTED_SCHEMA_VERSION"));
+    }
+
+    @Test
+    void rejectsEpochTimestampUnitsInDefinitionsBeforeCanvasFourDotTwo() {
+        TypeCastNodeDefinition typeCast = new TypeCastNodeDefinition(
+                UUID.randomUUID().toString(),
+                "毫秒时间戳转换",
+                new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                new TypeCastConfiguration(List.of(new TypeCastOperation(
+                        UUID.randomUUID().toString(),
+                        "events",
+                        new ProcessorOutput.CreateNewTable("typed_events"),
+                        List.of(new ColumnTypeCast(
+                                "event_time_ms",
+                                new PlatformTypeDefinition(PlatformDataType.TIMESTAMP, null, null, null, null),
+                                CastFailureStrategy.FAIL,
+                                EpochTimestampUnit.MILLISECONDS
+                        ))
+                )))
+        );
+
+        CanvasGraphPlan fourDotOne = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                1,
+                List.of(typeCast),
+                List.of()
+        ));
+        CanvasGraphPlan current = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(typeCast),
+                List.of()
+        ));
+
+        assertTrue(hasNodeIssueAtPath(
+                fourDotOne,
+                0,
+                "EPOCH_TIMESTAMP_UNIT_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                "configuration.operations[0].casts[0].epochTimestampUnit"
+        ));
+        assertFalse(hasNodeIssue(current, 0, "EPOCH_TIMESTAMP_UNIT_SCHEMA_MINOR_VERSION_NOT_SUPPORTED"));
+    }
+
+    @Test
+    void rejectsStringTemporalParsingInDefinitionsBeforeCanvasFourDotThree() {
+        TypeCastNodeDefinition typeCast = new TypeCastNodeDefinition(
+                UUID.randomUUID().toString(),
+                "字符串时间转换",
+                new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                new TypeCastConfiguration(List.of(new TypeCastOperation(
+                        UUID.randomUUID().toString(),
+                        "events",
+                        new ProcessorOutput.CreateNewTable("typed_events"),
+                        List.of(new ColumnTypeCast(
+                                "created_at_text",
+                                new PlatformTypeDefinition(PlatformDataType.TIMESTAMP, null, null, null, null),
+                                CastFailureStrategy.FAIL,
+                                null,
+                                new cn.superhuang.data.scalpel.contract.task.StringTemporalParseOptions(
+                                        "yyyy-MM-dd HH:mm:ss",
+                                        cn.superhuang.data.scalpel.contract.task.StringTimestampZoneMode.SOURCE_TIME_ZONE,
+                                        "Asia/Shanghai"
+                                )
+                        ))
+                )))
+        );
+
+        CanvasGraphPlan fourDotTwo = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                2,
+                List.of(typeCast),
+                List.of()
+        ));
+        CanvasGraphPlan current = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(typeCast),
+                List.of()
+        ));
+
+        assertTrue(hasNodeIssueAtPath(
+                fourDotTwo,
+                0,
+                "STRING_TEMPORAL_PARSE_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                "configuration.operations[0].casts[0].stringTemporalParseOptions"
+        ));
+        assertFalse(hasNodeIssue(current, 0, "STRING_TEMPORAL_PARSE_SCHEMA_MINOR_VERSION_NOT_SUPPORTED"));
+    }
+
+    @Test
+    void rejectsTemporalStringFormattingInDefinitionsBeforeCanvasFourDotSeven() {
+        TypeCastNodeDefinition typeCast = new TypeCastNodeDefinition(
+                UUID.randomUUID().toString(),
+                "时间字符串格式化",
+                new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                new TypeCastConfiguration(List.of(new TypeCastOperation(
+                        UUID.randomUUID().toString(),
+                        "events",
+                        new ProcessorOutput.CreateNewTable("typed_events"),
+                        List.of(new ColumnTypeCast(
+                                "created_at",
+                                new PlatformTypeDefinition(PlatformDataType.STRING, null, null, null, null),
+                                CastFailureStrategy.FAIL,
+                                null,
+                                null,
+                                new cn.superhuang.data.scalpel.contract.task.TemporalStringFormatOptions(
+                                        "yyyy-MM-dd HH:mm:ss", "UTC"
+                                )
+                        ))
+                )))
+        );
+
+        CanvasGraphPlan fourDotSix = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                6,
+                List.of(typeCast),
+                List.of()
+        ));
+        CanvasGraphPlan current = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(typeCast),
+                List.of()
+        ));
+
+        assertTrue(hasNodeIssueAtPath(
+                fourDotSix,
+                0,
+                "TEMPORAL_STRING_FORMAT_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                "configuration.operations[0].casts[0].temporalStringFormatOptions"
+        ));
+        assertFalse(hasNodeIssue(
+                current,
+                0,
+                "TEMPORAL_STRING_FORMAT_SCHEMA_MINOR_VERSION_NOT_SUPPORTED"
+        ));
+    }
+
+    @Test
+    void rejectsTemporalToEpochLongInDefinitionsBeforeCanvasFourDotEight() {
+        TypeCastNodeDefinition typeCast = new TypeCastNodeDefinition(
+                UUID.randomUUID().toString(),
+                "时间转 Epoch",
+                new CanvasNodeLayout(0d, 0d, 240d, 120d),
+                new TypeCastConfiguration(List.of(new TypeCastOperation(
+                        UUID.randomUUID().toString(),
+                        "events",
+                        new ProcessorOutput.CreateNewTable("typed_events"),
+                        List.of(new ColumnTypeCast(
+                                "created_at",
+                                new PlatformTypeDefinition(PlatformDataType.LONG, null, null, null, null),
+                                CastFailureStrategy.FAIL,
+                                EpochTimestampUnit.MILLISECONDS
+                        ))
+                )))
+        );
+
+        CanvasGraphPlan fourDotSeven = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                7,
+                List.of(typeCast),
+                List.of()
+        ));
+        CanvasGraphPlan current = CanvasGraphPlan.create(new CanvasDefinition(
+                CanvasDefinition.CURRENT_SCHEMA_VERSION,
+                CanvasDefinition.CURRENT_SCHEMA_MINOR_VERSION,
+                List.of(typeCast),
+                List.of()
+        ));
+
+        assertTrue(hasNodeIssueAtPath(
+                fourDotSeven,
+                0,
+                "TEMPORAL_TO_EPOCH_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                "configuration.operations[0].casts[0].epochTimestampUnit"
+        ));
+        assertFalse(hasNodeIssue(
+                current,
+                0,
+                "TEMPORAL_TO_EPOCH_SCHEMA_MINOR_VERSION_NOT_SUPPORTED"
+        ));
     }
 
     @Test

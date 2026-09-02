@@ -17,6 +17,24 @@ export type DataModelPreviewColumnWidths = Record<string, number>;
 export type DataModelPreviewTextRole = 'header' | 'type' | 'cell';
 export type DataModelPreviewTextMeasurer = (text: string, role: DataModelPreviewTextRole) => number;
 
+const chinaDateFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+});
+
+const chinaDateTimeFormatter = new Intl.DateTimeFormat('zh-CN', {
+  timeZone: 'Asia/Shanghai',
+  year: 'numeric',
+  month: '2-digit',
+  day: '2-digit',
+  hour: '2-digit',
+  minute: '2-digit',
+  second: '2-digit',
+  hourCycle: 'h23',
+});
+
 export interface DataModelPreviewColumnSizing {
   manualWidths: DataModelPreviewColumnWidths;
   onManualWidthChange: (code: string, width: number) => void;
@@ -52,8 +70,40 @@ const createBrowserTextMeasurer = (): DataModelPreviewTextMeasurer => {
   };
 };
 
-export const dataModelPreviewCellText = (value: unknown): string => {
+const dateParts = (date: Date, includeTime: boolean) => {
+  const formatter = includeTime ? chinaDateTimeFormatter : chinaDateFormatter;
+  const parts = new Map(formatter.formatToParts(date)
+    .filter((part) => part.type !== 'literal')
+    .map((part) => [part.type, part.value]));
+  const dateText = `${parts.get('year')}-${parts.get('month')}-${parts.get('day')}`;
+  return includeTime
+    ? `${dateText} ${parts.get('hour')}:${parts.get('minute')}:${parts.get('second')}`
+    : dateText;
+};
+
+const localDateTimeText = (value: string) => {
+  const matched = value.trim().match(/^(\d{4}-\d{2}-\d{2})(?:[T\s](\d{2}):(\d{2})(?::(\d{2}))?)?/);
+  if (!matched) return undefined;
+  return `${matched[1]} ${matched[2] ?? '00'}:${matched[3] ?? '00'}:${matched[4] ?? '00'}`;
+};
+
+export const formatDataModelPreviewValue = (value: unknown, fieldType?: PlatformDataType): string => {
   if (value === null || value === undefined) return '—';
+  if (fieldType === 'DATE') {
+    if (typeof value === 'string') {
+      const matched = value.trim().match(/^\d{4}-\d{2}-\d{2}/);
+      if (matched) return matched[0];
+    }
+    const date = value instanceof Date ? value : new Date(String(value));
+    if (!Number.isNaN(date.getTime())) return dateParts(date, false);
+  }
+  if (fieldType === 'TIMESTAMP_NTZ' && typeof value === 'string') {
+    return localDateTimeText(value) ?? value.trimEnd();
+  }
+  if (fieldType === 'TIMESTAMP') {
+    const date = value instanceof Date ? value : new Date(String(value));
+    if (!Number.isNaN(date.getTime())) return dateParts(date, true);
+  }
   if (typeof value === 'string') return value.trimEnd();
   if (typeof value !== 'object') return String(value);
   try {
@@ -62,6 +112,8 @@ export const dataModelPreviewCellText = (value: unknown): string => {
     return String(value);
   }
 };
+
+export const dataModelPreviewCellText = formatDataModelPreviewValue;
 
 const clampAutoWidth = (width: number) => Math.min(
   DATA_MODEL_PREVIEW_COLUMN_MAX_AUTO_WIDTH,
@@ -85,7 +137,10 @@ export const calculateDataModelPreviewColumnWidths = (
   );
   if (width < DATA_MODEL_PREVIEW_COLUMN_MAX_AUTO_WIDTH) {
     for (const row of rows) {
-      width = Math.max(width, measureText(dataModelPreviewCellText(row[column.code]), 'cell') + CELL_HORIZONTAL_SPACE);
+      width = Math.max(
+        width,
+        measureText(dataModelPreviewCellText(row[column.code], column.fieldType), 'cell') + CELL_HORIZONTAL_SPACE,
+      );
       if (width >= DATA_MODEL_PREVIEW_COLUMN_MAX_AUTO_WIDTH) break;
     }
   }

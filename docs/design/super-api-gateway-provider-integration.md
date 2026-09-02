@@ -49,8 +49,8 @@ data-scalpel:
 
 具体配置：
 
-- Service 使用 DataService code/name、Service Engine `runtimeUrl` 与固定
-  `/runtime/v1/services/{dataService.id}` 上游路径，以及访问模式；
+- Service 使用 DataService code/name、Service Engine `runtimeUrl` 与
+  `dataService.contextPath` 上游路径，以及访问模式；
 - Route 使用相同 code/name、Gateway Binding 的公开路径、`POST`、`order=0` 和
   `stripPrefixSegments=0`，并通过 `upstreamPath` 固定转发到 Engine 内部路由；
 - Consumer 使用本地 code/name/description 并保持启用；

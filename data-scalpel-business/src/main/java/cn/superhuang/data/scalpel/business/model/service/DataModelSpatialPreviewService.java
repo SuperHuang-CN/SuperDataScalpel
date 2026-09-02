@@ -5,7 +5,9 @@ import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.domain.DataModelPhysicalStatistics;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
+import cn.superhuang.data.scalpel.business.model.repository.DataModelPhysicalStatisticsRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelSpatialPreviewResponse;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
@@ -43,12 +45,9 @@ public class DataModelSpatialPreviewService {
     private static final double WEB_MERCATOR_LIMIT = 20_037_508.342789244d;
     private static final Duration QUERY_TIMEOUT = Duration.ofSeconds(5);
     private static final List<Double> INITIAL_BOUNDS = List.of(113.5d, 24.4d, 118.6d, 30.2d);
-    private static final SpatialPreviewLimits DIALECT_LIMITS = new SpatialPreviewLimits(
-            MAXIMUM_FEATURES, MAXIMUM_WKB_BYTES, UNINDEXED_MAXIMUM_ROWS
-    );
-
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
+    private final DataModelPhysicalStatisticsRepository statisticsRepository;
     private final DataSourceRepository dataSourceRepository;
     private final ModelPhysicalTablePort physicalTablePort;
     private final TransactionTemplate transactionTemplate;
@@ -57,12 +56,14 @@ public class DataModelSpatialPreviewService {
     public DataModelSpatialPreviewService(
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
+            DataModelPhysicalStatisticsRepository statisticsRepository,
             DataSourceRepository dataSourceRepository,
             ModelPhysicalTablePort physicalTablePort,
             PlatformTransactionManager transactionManager
     ) {
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
+        this.statisticsRepository = statisticsRepository;
         this.dataSourceRepository = dataSourceRepository;
         this.physicalTablePort = physicalTablePort;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -90,7 +91,9 @@ public class DataModelSpatialPreviewService {
             Map<String, SpatialPreviewColumnMetadata> runtimeByName = metadata.columns().stream()
                     .collect(Collectors.toMap(SpatialPreviewColumnMetadata::name, Function.identity()));
             List<DataModelSpatialPreviewResponse.GeometryField> fields = preparation.fields().stream()
-                    .map(field -> responseField(field, runtimeByName.get(field.getCode())))
+                    .map(field -> responseField(
+                            field, runtimeByName.get(field.getCode()), preparation.statistics()
+                    ))
                     .toList();
             return response(metadata.supported(), metadata.message(), fields);
         } catch (DatabaseAccessException exception) {
@@ -123,7 +126,7 @@ public class DataModelSpatialPreviewService {
         try {
             SpatialPreviewData data = physicalTablePort.readSpatialPreview(
                     preparation.storage(), preparation.model(), previewColumn(field),
-                    viewport, DIALECT_LIMITS, QUERY_TIMEOUT
+                    viewport, dialectLimits(preparation.statistics()), QUERY_TIMEOUT
             );
             SpatialPreviewPngRenderer.RenderedSpatialPreview rendered = renderer.render(
                     data.geometries(), viewport, MAXIMUM_COORDINATES, data.skippedCount(), data.truncated()
@@ -156,7 +159,10 @@ public class DataModelSpatialPreviewService {
             List<DataModelField> geometryFields = allFields.stream()
                     .filter(field -> field.getFieldType() == PlatformDataType.GEOMETRY && field.getGeometry() != null)
                     .toList();
-            return new Preparation(model, storage, allFields, geometryFields);
+            PhysicalStatisticsSnapshot statistics = statisticsRepository.findByModelId(modelId)
+                    .map(PhysicalStatisticsSnapshot::from)
+                    .orElse(null);
+            return new Preparation(model, storage, allFields, geometryFields, statistics);
         });
         if (result == null) {
             throw new IllegalStateException("读取空间预览模型快照失败");
@@ -203,19 +209,44 @@ public class DataModelSpatialPreviewService {
     }
 
     private static List<DataModelSpatialPreviewResponse.GeometryField> fieldsWithoutRuntime(List<DataModelField> fields) {
-        return fields.stream().map(field -> responseField(field, null)).toList();
+        return fields.stream().map(field -> responseField(field, null, null)).toList();
     }
 
     private static DataModelSpatialPreviewResponse.GeometryField responseField(
             DataModelField field,
-            SpatialPreviewColumnMetadata runtime
+            SpatialPreviewColumnMetadata runtime,
+            PhysicalStatisticsSnapshot statistics
     ) {
+        boolean indexed = runtime != null && runtime.spatialIndexAvailable();
+        Long rowCount = statistics == null ? null : statistics.rowCount();
+        boolean runtimeSupported = runtime != null && runtime.previewSupported();
+        boolean statisticsRefreshRequired = runtimeSupported && !indexed && rowCount == null;
+        boolean previewAllowed = runtimeSupported
+                && (indexed || (rowCount != null && rowCount <= UNINDEXED_MAXIMUM_ROWS));
+        String message = runtime == null ? null : runtime.message();
+        if (runtimeSupported && !indexed) {
+            if (statistics == null) {
+                message = "未发现可用空间索引，请先刷新模型物理统计";
+            } else if (rowCount == null) {
+                message = "未发现可用空间索引，最近一次刷新未能获取行数；请执行 ANALYZE 后重新刷新，或创建 GiST/SP-GiST 索引";
+            } else if (rowCount > UNINDEXED_MAXIMUM_ROWS) {
+                message = "未发现可用空间索引，模型统计行数超过 50,000；请创建 GiST/SP-GiST 索引";
+            } else {
+                message = "未发现可用空间索引，将依据模型物理统计进行小表受限预览";
+            }
+        }
         return new DataModelSpatialPreviewResponse.GeometryField(
                 field.getCode(), field.getName(), field.getGeometry().kind(), field.getGeometry().crs(),
-                runtime != null && runtime.spatialIndexAvailable(),
-                runtime == null ? null : runtime.estimatedRowCount(),
-                runtime != null && runtime.previewAllowed(),
-                runtime == null ? null : runtime.message()
+                indexed, rowCount, statisticsRefreshRequired, previewAllowed, message
+        );
+    }
+
+    private static SpatialPreviewLimits dialectLimits(PhysicalStatisticsSnapshot statistics) {
+        return new SpatialPreviewLimits(
+                MAXIMUM_FEATURES,
+                MAXIMUM_WKB_BYTES,
+                statistics == null ? null : statistics.rowCount(),
+                UNINDEXED_MAXIMUM_ROWS
         );
     }
 
@@ -237,7 +268,14 @@ public class DataModelSpatialPreviewService {
             DataModel model,
             DataSource storage,
             List<DataModelField> allFields,
-            List<DataModelField> fields
+            List<DataModelField> fields,
+            PhysicalStatisticsSnapshot statistics
     ) {
+    }
+
+    private record PhysicalStatisticsSnapshot(Long rowCount) {
+        private static PhysicalStatisticsSnapshot from(DataModelPhysicalStatistics statistics) {
+            return new PhysicalStatisticsSnapshot(statistics.getRowCount());
+        }
     }
 }

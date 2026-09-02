@@ -1,8 +1,10 @@
-import { EyeOutlined, ReloadOutlined } from '@ant-design/icons';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { EyeOutlined, SearchOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Form, Input, Select, Space, Table, Tag, Tooltip } from 'antd';
+import { Button, Form, Input, Select, Space, Table, Tag, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import {
   buildTaskSearch,
   taskStatusColors,
@@ -190,7 +192,7 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
 
   return (
     <div className="model-detail-tab-panel">
-      <div className="model-tab-toolbar">
+      <div className="model-tab-toolbar detail-table-filter-toolbar">
         <Form<TaskFilters> autoComplete="off"
           form={form}
           layout="inline"
@@ -199,42 +201,42 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
             setPage(1);
           }}
         >
-          <Form.Item name="keyword" label="名称">
-            <Input allowClear placeholder="筛选任务" className="model-task-keyword-input" />
+          <Form.Item name="keyword">
+            <Input allowClear prefix={<SearchOutlined />} placeholder="任务名称或编码" className="detail-table-filter-keyword model-task-keyword-input" />
           </Form.Item>
-          <Form.Item name="role" label="角色">
+          <Form.Item name="role">
             <Select
               allowClear
-              placeholder="全部"
-              className="model-task-filter-select"
+              placeholder="全部角色"
+              className="detail-table-filter-select model-task-filter-select"
               options={[
                 { value: 'INPUT', label: '任务输入' },
                 { value: 'OUTPUT', label: '任务输出' },
               ]}
             />
           </Form.Item>
-          <Form.Item name="type" label="类型">
+          <Form.Item name="type">
             <Select
               allowClear
-              placeholder="全部"
-              className="model-task-filter-select"
+              placeholder="全部任务类型"
+              className="detail-table-filter-select model-task-filter-select"
               options={(Object.entries(taskTypeLabels) as [TaskType, string][])
                 .map(([value, label]) => ({ value, label }))}
             />
           </Form.Item>
-          <Form.Item name="status" label="状态">
+          <Form.Item name="status">
             <Select
               allowClear
-              placeholder="全部"
-              className="model-task-filter-select"
+              placeholder="全部任务状态"
+              className="detail-table-filter-select model-task-filter-select"
               options={(Object.entries(taskStatusLabels) as [TaskStatus, string][])
                 .map(([value, label]) => ({ value, label }))}
             />
           </Form.Item>
         </Form>
-        <Space size={4}>
-          <Button type="primary" onClick={() => form.submit()}>查询</Button>
-          <Button onClick={() => {
+        <Space size={4} className="detail-table-filter-actions">
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()}>查询</Button>
+          <Button type="text" onClick={() => {
             form.resetFields();
             setFilters({});
             setPage(1);
@@ -242,14 +244,6 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
           >
             重置
           </Button>
-          <Tooltip title="刷新关联任务">
-            <Button
-              icon={<ReloadOutlined />}
-              aria-label="刷新关联任务"
-              loading={relatedTasksQuery.isFetching}
-              onClick={() => void relatedTasksQuery.refetch()}
-            />
-          </Tooltip>
         </Space>
       </div>
       {relatedTasksQuery.error && (
@@ -261,6 +255,16 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
           action={<Button size="small" onClick={() => void relatedTasksQuery.refetch()}>重试</Button>}
         />
       )}
+      <DetailTableToolbar
+        title="关联任务"
+        total={relatedTasksQuery.data?.totalElements ?? 0}
+        current={page}
+        pageSize={pageSize}
+        onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }}
+        onRefresh={() => void relatedTasksQuery.refetch()}
+        refreshing={relatedTasksQuery.isFetching}
+        refreshLabel="刷新关联任务"
+      />
       <Table<ModelRelatedTask>
         size="small"
         className="management-table"
@@ -269,19 +273,8 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
         dataSource={relatedTasksQuery.data?.content ?? []}
         loading={relatedTasksQuery.isPending}
         scroll={{ x: 1250, y: '100%' }}
-        pagination={{
-          current: page,
-          pageSize,
-          total: relatedTasksQuery.data?.totalElements ?? 0,
-          placement: ['bottomEnd'],
-          hideOnSinglePage: false,
-          showSizeChanger: true,
-          showTotal: (total) => `共 ${total} 项`,
-        }}
-        onChange={(pagination, _tableFilters, sorter) => {
-          const nextPageSize = pagination.pageSize ?? 20;
-          setPage(nextPageSize === pageSize ? pagination.current ?? 1 : 1);
-          setPageSize(nextPageSize);
+        pagination={false}
+        onChange={(_pagination, _tableFilters, sorter) => {
           const activeSorter = Array.isArray(sorter) ? sorter[0] : sorter;
           const field = activeSorter?.columnKey as RelatedTaskSortField | undefined;
           if (!field || !activeSorter.order) {

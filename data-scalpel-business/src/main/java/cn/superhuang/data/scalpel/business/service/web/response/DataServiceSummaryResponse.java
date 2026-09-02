@@ -19,7 +19,7 @@ public record DataServiceSummaryResponse(
         UUID sourceId,
         String sourceName,
         UUID engineId,
-        String engineRoutePath,
+        String contextPath,
         DataServiceStatus status,
         long revision,
         DataServiceDeploymentStatus deploymentStatus,

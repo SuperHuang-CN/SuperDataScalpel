@@ -1,6 +1,6 @@
-import { ApiOutlined, ReloadOutlined } from '@ant-design/icons';
+import { ApiOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Form, Select, Space, Table, Tooltip } from 'antd';
+import { Button, Form, Select, Table } from 'antd';
 import { useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { buildDataServiceSearch, dataServiceDeploymentStatusLabels, dataServiceStatusLabels, dataServiceTypeLabels, useDataServices } from '../../dataservice';
@@ -12,11 +12,13 @@ import type {
 } from '../../dataservice';
 import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 
 const DEFAULT_PAGE_SIZE = 20;
 
 interface ServiceEngineServicesPanelProps {
   engineId: string;
+  geoServerWorkspace?: string | null;
 }
 
 const serviceStatusTones: Record<DataServiceStatus, ManagementStatusTone> = {
@@ -36,7 +38,7 @@ const deploymentStatusTones: Record<DataServiceDeploymentStatus, ManagementStatu
 const typeOptions = Object.entries(dataServiceTypeLabels).map(([value, label]) => ({ value, label }));
 const statusOptions = Object.entries(dataServiceStatusLabels).map(([value, label]) => ({ value, label }));
 
-export const ServiceEngineServicesPanel = ({ engineId }: ServiceEngineServicesPanelProps) => {
+export const ServiceEngineServicesPanel = ({ engineId, geoServerWorkspace }: ServiceEngineServicesPanelProps) => {
   const [filterForm] = Form.useForm<DataServiceFilters>();
   const [filters, setFilters] = useState<DataServiceFilters>({});
   const [page, setPage] = useState(0);
@@ -94,9 +96,11 @@ export const ServiceEngineServicesPanel = ({ engineId }: ServiceEngineServicesPa
     },
     {
       title: 'Engine 路由',
-      dataIndex: 'engineRoutePath',
+      dataIndex: 'contextPath',
       width: 230,
-      render: (value: string) => <ManagementCode value={value} />,
+      render: (value: string | null, service) => <ManagementCode value={service.type === 'SPATIAL_SERVICE'
+        ? `${geoServerWorkspace ?? 'datascalpel'}:svc_${service.code}`
+        : value ?? '—'} />,
     },
     {
       title: '服务状态',
@@ -131,21 +135,25 @@ export const ServiceEngineServicesPanel = ({ engineId }: ServiceEngineServicesPa
 
   return (
     <section className="service-engine-tab-panel service-engine-services-panel">
-      <div className="management-filter-strip">
+      <div className="management-filter-strip detail-table-filter-toolbar">
         <Form<DataServiceFilters> autoComplete="off" form={filterForm} layout="inline" className="management-filter-form" onFinish={search}>
-          <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索服务名称或编码" className="data-source-keyword-input" /></Form.Item>
-          <Form.Item name="type"><Select allowClear placeholder="全部类型" className="data-source-filter-select" options={typeOptions} /></Form.Item>
-          <Form.Item name="status"><Select allowClear placeholder="全部状态" className="data-source-filter-select" options={statusOptions} /></Form.Item>
+          <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="服务名称或编码" className="detail-table-filter-keyword data-source-keyword-input" /></Form.Item>
+          <Form.Item name="type"><Select allowClear placeholder="全部类型" className="detail-table-filter-select data-source-filter-select" options={typeOptions} /></Form.Item>
+          <Form.Item name="status"><Select allowClear placeholder="全部状态" className="detail-table-filter-select data-source-filter-select" options={statusOptions} /></Form.Item>
         </Form>
         <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={servicesQuery.isFetching} onReset={reset} />
       </div>
       <div className="management-results-surface service-engine-tab-results">
-        <div className="management-result-toolbar">
-          <div className="management-result-title">数据服务 <span className="management-result-count">共 {servicesQuery.data?.totalElements ?? 0} 项</span></div>
-          <Space size={4} className="management-result-actions">
-            <Tooltip title="刷新服务列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新引擎数据服务" onClick={() => void servicesQuery.refetch()} /></Tooltip>
-          </Space>
-        </div>
+        <DetailTableToolbar
+          title="数据服务"
+          total={servicesQuery.data?.totalElements ?? 0}
+          current={page + 1}
+          pageSize={size}
+          onChange={(nextPage, nextSize) => { setPage(nextPage - 1); setSize(nextSize); }}
+          onRefresh={() => void servicesQuery.refetch()}
+          refreshing={servicesQuery.isFetching}
+          refreshLabel="刷新服务列表"
+        />
         <Table<DataServiceSummary>
           className="management-table"
           size="small"
@@ -154,20 +162,7 @@ export const ServiceEngineServicesPanel = ({ engineId }: ServiceEngineServicesPa
           dataSource={servicesQuery.data?.content ?? []}
           loading={servicesQuery.isFetching}
           scroll={{ y: '100%' }}
-          pagination={{
-            current: page + 1,
-            pageSize: size,
-            total: servicesQuery.data?.totalElements ?? 0,
-            size: 'small',
-            position: ['bottomRight'],
-            hideOnSinglePage: false,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 项`,
-          }}
-          onChange={(pagination) => {
-            setPage((pagination.current ?? 1) - 1);
-            setSize(pagination.pageSize ?? DEFAULT_PAGE_SIZE);
-          }}
+          pagination={false}
         />
       </div>
     </section>

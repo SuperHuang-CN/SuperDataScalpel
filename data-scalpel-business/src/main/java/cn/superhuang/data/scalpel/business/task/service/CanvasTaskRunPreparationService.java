@@ -29,6 +29,7 @@ import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTab
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableSourceRepository;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetParsingOptionsResponse;
 import cn.superhuang.data.scalpel.contract.task.*;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialSpec;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasEdgeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
@@ -205,12 +206,25 @@ public class CanvasTaskRunPreparationService {
     }
 
     public Preparation prepare(CanvasDefinition definition) {
-        return prepare(definition, CanvasExecutionMode.BATCH);
+        return prepare(definition, CanvasExecutionMode.BATCH, null);
     }
 
     public Preparation prepare(
             CanvasDefinition definition,
             CanvasExecutionMode executionMode
+    ) {
+        return prepare(definition, executionMode, null);
+    }
+
+    public Preparation prepareTrial(CanvasDefinition definition, CanvasTrialSpec trialSpec) {
+        if (trialSpec == null) throw new IllegalArgumentException("Canvas 试运行目标不能为空");
+        return prepare(definition, CanvasExecutionMode.BATCH, trialSpec);
+    }
+
+    private Preparation prepare(
+            CanvasDefinition definition,
+            CanvasExecutionMode executionMode,
+            CanvasTrialSpec trialSpec
     ) {
         Map<UUID, RequestedModel> modelRequests = referencedModels(definition);
         Map<UUID, DataModel> models = loadModels(modelRequests.keySet());
@@ -356,7 +370,8 @@ public class CanvasTaskRunPreparationService {
                         definition,
                         executionMode
                 ),
-                metadata
+                metadata,
+                trialSpec
         );
         TaskCompilationResponse compilation = compilationService.compile(compilationRequest);
         if (!compilation.valid()) {
@@ -370,6 +385,7 @@ public class CanvasTaskRunPreparationService {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     problems.isBlank() ? "Canvas 定义未通过 Task Engine 预检" : problems);
         }
+        if (trialSpec != null) validateTrialCompilation(compilation, trialSpec);
         Map<UUID, Instant> sourceVersions = sources.values().stream()
                 .collect(Collectors.toUnmodifiableMap(DataSource::getId, DataSource::getUpdatedAt));
         Map<UUID, ModelVersion> modelVersions = models.values().stream()
@@ -383,6 +399,29 @@ public class CanvasTaskRunPreparationService {
                 fileDatasets.runtimeStorage(),
                 fileDatasets.runtimeInputs()
         );
+    }
+
+    private static void validateTrialCompilation(
+            TaskCompilationResponse compilation,
+            CanvasTrialSpec trialSpec
+    ) {
+        List<NodeCompilationResult> targets = compilation.nodeResults().stream()
+                .filter(result -> trialSpec.targetNodeId().equals(result.nodeId()))
+                .toList();
+        if (targets.size() != 1) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "试运行目标节点不存在或不唯一");
+        }
+        CanvasTableSchema table = targets.getFirst().outputTables().stream()
+                .filter(candidate -> trialSpec.tableName().equals(candidate.name()))
+                .findFirst()
+                .orElseThrow(() -> new ResponseStatusException(
+                        HttpStatus.CONFLICT, "试运行目标表已变化，请重新选择"));
+        Set<String> availableColumns = table.columns().stream()
+                .map(CanvasColumnSchema::name)
+                .collect(Collectors.toUnmodifiableSet());
+        if (trialSpec.columnNames().stream().anyMatch(column -> !availableColumns.contains(column))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "试运行目标字段已变化，请重新选择");
+        }
     }
 
     private MetadataTable metadataTable(
@@ -449,7 +488,8 @@ public class CanvasTaskRunPreparationService {
                     "TDENGINE_TMQ_TOPIC_UNSUPPORTED：" + topic.unsupportedReason()
             );
         }
-        if (!requested.definitionFingerprint().equals(topic.definitionFingerprint())) {
+        if (!requested.definitionFingerprint().equals(topic.definitionFingerprint())
+                && !requested.definitionFingerprint().equals(topic.legacyDefinitionFingerprint())) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "TDENGINE_TMQ_TOPIC_CHANGED：Topic 定义已变化，请重新选择 Topic"
@@ -470,7 +510,7 @@ public class CanvasTaskRunPreparationService {
         }
         return new MetadataTdEngineTmqTopic(
                 topic.topicName(), topic.databaseName(), topic.supertableName(),
-                topic.definitionFingerprint(), topic.timePrecision(),
+                topic.definitionFingerprint(), topic.legacyDefinitionFingerprint(), topic.timePrecision(),
                 topic.columns().stream()
                         .sorted(Comparator.comparingInt(ColumnMetadataResponse::ordinal))
                         .map(CanvasTaskRunPreparationService::columnSchema)

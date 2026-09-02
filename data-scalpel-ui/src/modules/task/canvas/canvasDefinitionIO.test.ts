@@ -56,6 +56,300 @@ describe('canvas definition import and export', () => {
     }));
   });
 
+  it('round-trips Epoch timestamp units and preserves legacy cast semantics', () => {
+    const typeCastNode = {
+      id: '11111111-1111-4111-8111-111111111111',
+      type: CanvasNodeType.TypeCast,
+      name: '毫秒时间戳转换',
+      layout: { x: 80, y: 80, width: 320, height: 120 },
+      configuration: {
+        operations: [{
+          operationId: '22222222-2222-4222-8222-222222222222',
+          sourceTableName: 'events',
+          output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'typed_events' },
+          casts: [{
+            columnName: 'event_time_ms',
+            targetType: {
+              type: 'TIMESTAMP', length: null, precision: null, scale: null, geometry: null,
+            },
+            failureStrategy: 'FAIL',
+            epochTimestampUnit: 'MILLISECONDS',
+          }],
+        }],
+      },
+    };
+    const currentMinorVersion: number = CANVAS_SCHEMA_MINOR_VERSION;
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: currentMinorVersion,
+      nodes: [typeCastNode],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
+      success: true,
+      definition,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      schemaMinorVersion: 1,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining(['TYPE_CAST.epochTimestampUnit 从 Canvas 4.2 开始支持']),
+    }));
+
+    const legacyTypeCastNode = {
+      ...typeCastNode,
+      configuration: {
+        ...typeCastNode.configuration,
+        operations: typeCastNode.configuration.operations.map((operation) => ({
+          ...operation,
+          casts: operation.casts.map((cast) => ({
+            columnName: cast.columnName,
+            targetType: cast.targetType,
+            failureStrategy: cast.failureStrategy,
+          })),
+        })),
+      },
+    };
+    const legacy = {
+      ...definition,
+      schemaMinorVersion: 1,
+      nodes: [legacyTypeCastNode],
+    };
+    const parsedLegacy = parseCanvasDefinitionJson(JSON.stringify(legacy));
+    expect(parsedLegacy.success).toBe(true);
+    if (parsedLegacy.success) {
+      expect(parsedLegacy.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+      const parsedNode = parsedLegacy.definition.nodes.find(
+        (node) => node.type === CanvasNodeType.TypeCast,
+      );
+      if (parsedNode?.type === CanvasNodeType.TypeCast) {
+        expect(parsedNode.configuration.operations?.[0]?.casts[0]?.epochTimestampUnit).toBeUndefined();
+      }
+    }
+
+    const unknown = {
+      ...definition,
+      nodes: [{
+        ...typeCastNode,
+        configuration: {
+          ...typeCastNode.configuration,
+          operations: typeCastNode.configuration.operations.map((operation) => ({
+            ...operation,
+            casts: operation.casts.map((cast) => ({
+              ...cast,
+              epochTimestampUnit: 'NANOSECONDS',
+            })),
+          })),
+        },
+      }],
+    };
+    expect(parseCanvasDefinitionJson(JSON.stringify(unknown))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.operations[0].casts[0].epochTimestampUnit 仅支持 SECONDS、MILLISECONDS 或 MICROSECONDS',
+      ]),
+    }));
+  });
+
+  it('round-trips Kafka Input formats and keeps pre-4.4 inputs schema-compatible', () => {
+    const kafkaNode = {
+      id: '11111111-1111-4111-8111-111111111111',
+      type: CanvasNodeType.KafkaInput,
+      name: 'Kafka 文本输入',
+      layout: { x: 80, y: 80, width: 320, height: 120 },
+      configuration: {
+        dataSourceId: '',
+        topic: 'events',
+        valueSchema: { columns: [] },
+        outputTableName: 'events',
+        startingOffsets: 'LATEST',
+        triggerIntervalSeconds: 10,
+        valueFormat: 'TEXT',
+        metadataFields: ['KEY', 'OFFSET', 'TIMESTAMP'],
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [kafkaNode],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 3,
+    })).success).toBe(false);
+
+    const legacy = JSON.parse(JSON.stringify(current)) as {
+      schemaMinorVersion: number;
+      nodes: Array<{ configuration: Record<string, unknown> }>;
+    };
+    legacy.schemaMinorVersion = 3;
+    const legacyConfiguration = legacy.nodes[0].configuration;
+    delete legacyConfiguration.valueFormat;
+    delete legacyConfiguration.metadataFields;
+    const parsedLegacy = parseCanvasDefinitionJson(JSON.stringify(legacy));
+    expect(parsedLegacy.success).toBe(true);
+    if (!parsedLegacy.success) return;
+    const parsedKafka = parsedLegacy.definition.nodes[0];
+    expect(parsedKafka.type).toBe(CanvasNodeType.KafkaInput);
+    if (parsedKafka.type !== CanvasNodeType.KafkaInput) return;
+    expect(parsedKafka.configuration.valueFormat).toBe('JSON');
+    expect(parsedKafka.configuration.metadataFields).toEqual([]);
+  });
+
+  it('round-trips string temporal parsing and rejects it before Canvas 4.3', () => {
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: CanvasNodeType.TypeCast,
+        name: '字符串时间转换',
+        layout: { x: 80, y: 80, width: 320, height: 120 },
+        configuration: {
+          operations: [{
+            operationId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'events',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'typed_events' },
+            casts: [{
+              columnName: 'created_at_text',
+              targetType: {
+                type: 'TIMESTAMP', length: null, precision: null, scale: null, geometry: null,
+              },
+              failureStrategy: 'SET_NULL',
+              stringTemporalParseOptions: {
+                pattern: 'yyyy-MM-dd HH:mm:ss.SSS',
+                zoneMode: 'SOURCE_TIME_ZONE',
+                sourceTimeZone: 'Asia/Shanghai',
+              },
+            }],
+          }],
+        },
+      }],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
+      success: true,
+      definition,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      schemaMinorVersion: 2,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'TYPE_CAST.stringTemporalParseOptions 从 Canvas 4.3 开始支持',
+      ]),
+    }));
+
+    const unknownZoneMode = structuredClone(definition);
+    unknownZoneMode.nodes[0].configuration.operations[0].casts[0]
+      .stringTemporalParseOptions.zoneMode = 'SESSION_TIME_ZONE';
+    expect(parseCanvasDefinitionJson(JSON.stringify(unknownZoneMode))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.operations[0].casts[0].stringTemporalParseOptions.zoneMode 仅支持 SOURCE_TIME_ZONE 或 EMBEDDED_OFFSET',
+      ]),
+    }));
+  });
+
+  it('round-trips temporal string formatting and rejects it before Canvas 4.7', () => {
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: CanvasNodeType.TypeCast,
+        name: '时间字符串格式化',
+        layout: { x: 80, y: 80, width: 320, height: 120 },
+        configuration: {
+          operations: [{
+            operationId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'events',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'typed_events' },
+            casts: [{
+              columnName: 'created_at',
+              targetType: {
+                type: 'STRING', length: null, precision: null, scale: null, geometry: null,
+              },
+              failureStrategy: 'FAIL',
+              temporalStringFormatOptions: {
+                pattern: 'yyyy-MM-dd HH:mm:ss.SSS',
+                targetTimeZone: 'Asia/Shanghai',
+              },
+            }],
+          }],
+        },
+      }],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
+      success: true,
+      definition,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      schemaMinorVersion: 6,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'TYPE_CAST.temporalStringFormatOptions 从 Canvas 4.7 开始支持',
+      ]),
+    }));
+  });
+
+  it('round-trips temporal to Epoch LONG and rejects it before Canvas 4.8', () => {
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [{
+        id: '11111111-1111-4111-8111-111111111111',
+        type: CanvasNodeType.TypeCast,
+        name: '时间转 Epoch',
+        layout: { x: 80, y: 80, width: 320, height: 120 },
+        configuration: {
+          operations: [{
+            operationId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'events',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'typed_events' },
+            casts: [{
+              columnName: 'created_at',
+              targetType: {
+                type: 'LONG', length: null, precision: null, scale: null, geometry: null,
+              },
+              failureStrategy: 'FAIL',
+              epochTimestampUnit: 'MILLISECONDS',
+            }],
+          }],
+        },
+      }],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(definition))).toEqual({
+      success: true,
+      definition,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      schemaMinorVersion: 7,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'TYPE_CAST DATE/TIMESTAMP 转 LONG 从 Canvas 4.8 开始支持',
+      ]),
+    }));
+  });
+
   it('normalizes missing Stream Join output columns and rejects malformed values', () => {
     const source = JSON.parse(formatCanvasDefinition(exampleStreamingCanvasTopologyDefinition())) as {
       nodes: Array<{ type: string; configuration: Record<string, unknown> }>;
@@ -618,7 +912,7 @@ describe('canvas definition import and export', () => {
     expect(parseCanvasDefinitionJson(JSON.stringify(definition)).success).toBe(false);
   });
 
-  it('reads current definitions without an explicit minor and normalizes them to 3.0', () => {
+  it('reads current definitions without an explicit minor and normalizes them to 4.4', () => {
     const legacy = JSON.parse(formatCanvasDefinition(exampleCanvasDefinition())) as Record<string, unknown>;
     delete legacy.schemaMinorVersion;
 

@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.service;
 
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
+import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineType;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateServiceEngineRequest;
@@ -33,6 +34,7 @@ public class ServiceEngineManagementService {
     private final DataServiceRepository dataServiceRepository;
     private final SearchEngine searchEngine;
     private final ServiceEngineClient client;
+    private final GeoServerClient geoServerClient;
     private final ServiceEngineCredentialCipher credentialCipher;
     private final ServiceEngineDataSourceRegistrationService dataSourceRegistrationService;
     private final ServiceEngineAccessPolicyService accessPolicyService;
@@ -43,6 +45,7 @@ public class ServiceEngineManagementService {
             DataServiceRepository dataServiceRepository,
             SearchEngine searchEngine,
             ServiceEngineClient client,
+            GeoServerClient geoServerClient,
             ServiceEngineCredentialCipher credentialCipher,
             ServiceEngineDataSourceRegistrationService dataSourceRegistrationService,
             ServiceEngineAccessPolicyService accessPolicyService,
@@ -52,6 +55,7 @@ public class ServiceEngineManagementService {
         this.dataServiceRepository = dataServiceRepository;
         this.searchEngine = searchEngine;
         this.client = client;
+        this.geoServerClient = geoServerClient;
         this.credentialCipher = credentialCipher;
         this.dataSourceRegistrationService = dataSourceRegistrationService;
         this.accessPolicyService = accessPolicyService;
@@ -73,6 +77,10 @@ public class ServiceEngineManagementService {
     }
 
     public ServiceEngineResponse create(CreateServiceEngineRequest request) {
+        if (request.type() == ServiceEngineType.GEOSERVER) {
+            return createGeoServer(request);
+        }
+        requireText(request.managementToken(), "Management Token");
         String adminUrl = ServiceEngine.normalizeAdminUrl(request.adminUrl());
         ServiceEngineTestResponse discovery = testConnection(null, adminUrl, request.managementToken());
         return requireTransactionResult(transactionTemplate.execute(status -> {
@@ -88,7 +96,35 @@ public class ServiceEngineManagementService {
         }));
     }
 
+    private ServiceEngineResponse createGeoServer(CreateServiceEngineRequest request) {
+        String code = ServiceEngine.normalizeCode(requireText(request.code(), "GeoServer Engine Code"));
+        requireText(request.geoServerUsername(), "GeoServer 用户名");
+        requireText(request.geoServerPassword(), "GeoServer 密码");
+        if (repository.existsByCode(code)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎编码已存在");
+        }
+        GeoServerClient.Discovery discovery = geoServerClient.discover(
+                code, request.adminUrl(), request.runtimeUrl(), request.geoServerUsername(),
+                request.geoServerPassword(), request.geoServerWorkspace(), true
+        );
+        return requireTransactionResult(transactionTemplate.execute(status -> {
+            if (repository.existsByCode(discovery.code())) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎编码已存在");
+            }
+            ServiceEngine engine = ServiceEngine.createGeoServer(
+                    discovery.code(), request.name(), discovery.adminUrl(), discovery.runtimeUrl(),
+                    request.geoServerUsername(), credentialCipher.encrypt(request.geoServerPassword()),
+                    discovery.workspace(), request.enabled() == null || request.enabled(), request.description()
+            );
+            return ServiceEngineResponse.from(repository.saveAndFlush(engine));
+        }));
+    }
+
     public ServiceEngineResponse update(UUID id, UpdateServiceEngineRequest request) {
+        ServiceEngine stored = requireEngine(id);
+        if (stored.getType() == ServiceEngineType.GEOSERVER) {
+            return updateGeoServer(id, request);
+        }
         UpdatePreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
             ServiceEngine engine = requireEngine(id);
             String adminUrl = ServiceEngine.normalizeAdminUrl(request.adminUrl());
@@ -122,6 +158,50 @@ public class ServiceEngineManagementService {
         }));
     }
 
+    private ServiceEngineResponse updateGeoServer(UUID id, UpdateServiceEngineRequest request) {
+        GeoServerUpdatePreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
+            ServiceEngine engine = requireEngine(id);
+            String adminUrl = ServiceEngine.normalizeAdminUrl(request.adminUrl());
+            String runtimeUrl = ServiceEngine.normalizeRuntimeUrl(request.runtimeUrl());
+            String workspace = ServiceEngine.normalizeWorkspace(request.geoServerWorkspace());
+            String username = request.geoServerUsername() == null || request.geoServerUsername().isBlank()
+                    ? engine.getGeoServerUsername()
+                    : request.geoServerUsername().trim();
+            boolean passwordChanged = request.geoServerPassword() != null && !request.geoServerPassword().isBlank();
+            String password = passwordChanged
+                    ? request.geoServerPassword().trim()
+                    : credentialCipher.decrypt(engine.getGeoServerPasswordCiphertext());
+            boolean managedIdentityChanged = !engine.getAdminUrl().equals(adminUrl)
+                    || !Objects.equals(engine.getGeoServerWorkspace(), workspace);
+            if (managedIdentityChanged
+                    && (dataSourceRegistrationService.hasRegistrations(id)
+                    || dataServiceRepository.existsByEngineId(id))) {
+                throw new ResponseStatusException(
+                        HttpStatus.CONFLICT,
+                        "GeoServer 已有关联数据源或数据服务，不能修改管理地址或 Workspace"
+                );
+            }
+            return new GeoServerUpdatePreparation(
+                    engine.getCode(), adminUrl, runtimeUrl, username, password,
+                    passwordChanged ? credentialCipher.encrypt(password) : engine.getGeoServerPasswordCiphertext(),
+                    workspace
+            );
+        }));
+        GeoServerClient.Discovery discovery = geoServerClient.discover(
+                preparation.code(), preparation.adminUrl(), preparation.runtimeUrl(),
+                preparation.username(), preparation.password(), preparation.workspace(), true
+        );
+        return requireTransactionResult(transactionTemplate.execute(status -> {
+            ServiceEngine engine = requireEngine(id);
+            engine.update(
+                    request.name(), discovery.adminUrl(), discovery.runtimeUrl(), null,
+                    preparation.username(), preparation.passwordCiphertext(), discovery.workspace(),
+                    request.enabled(), request.description()
+            );
+            return ServiceEngineResponse.from(repository.saveAndFlush(engine));
+        }));
+    }
+
     @Transactional
     public void delete(UUID id) {
         dataSourceRegistrationService.assertEngineDeletable(id);
@@ -133,6 +213,16 @@ public class ServiceEngineManagementService {
     }
 
     public ServiceEngineTestResponse test(TestServiceEngineRequest request) {
+        if (request.type() == ServiceEngineType.GEOSERVER) {
+            long startedAt = System.nanoTime();
+            GeoServerClient.Discovery discovery = geoServerClient.discover(
+                    requireText(request.code(), "GeoServer Engine Code"), request.adminUrl(), request.runtimeUrl(),
+                    requireText(request.geoServerUsername(), "GeoServer 用户名"),
+                    requireText(request.geoServerPassword(), "GeoServer 密码"),
+                    request.geoServerWorkspace(), false
+            );
+            return geoServerTestResponse(discovery, startedAt);
+        }
         return testConnection(
                 null,
                 ServiceEngine.normalizeAdminUrl(request.adminUrl()),
@@ -142,6 +232,22 @@ public class ServiceEngineManagementService {
 
     public ServiceEngineTestResponse test(UUID id, TestStoredServiceEngineRequest request) {
         ServiceEngine engine = requireEngine(id);
+        if (engine.getType() == ServiceEngineType.GEOSERVER) {
+            String adminUrl = request == null || request.adminUrl() == null || request.adminUrl().isBlank()
+                    ? engine.getAdminUrl() : request.adminUrl();
+            String runtimeUrl = request == null || request.runtimeUrl() == null || request.runtimeUrl().isBlank()
+                    ? engine.getRuntimeUrl() : request.runtimeUrl();
+            String username = request == null || request.geoServerUsername() == null || request.geoServerUsername().isBlank()
+                    ? engine.getGeoServerUsername() : request.geoServerUsername();
+            String password = request == null || request.geoServerPassword() == null || request.geoServerPassword().isBlank()
+                    ? credentialCipher.decrypt(engine.getGeoServerPasswordCiphertext()) : request.geoServerPassword();
+            String workspace = request == null || request.geoServerWorkspace() == null || request.geoServerWorkspace().isBlank()
+                    ? engine.getGeoServerWorkspace() : request.geoServerWorkspace();
+            long startedAt = System.nanoTime();
+            return geoServerTestResponse(geoServerClient.discover(
+                    engine.getCode(), adminUrl, runtimeUrl, username, password, workspace, false
+            ), startedAt);
+        }
         String adminUrl = request == null || request.adminUrl() == null || request.adminUrl().isBlank()
                 ? engine.getAdminUrl()
                 : ServiceEngine.normalizeAdminUrl(request.adminUrl());
@@ -182,7 +288,21 @@ public class ServiceEngineManagementService {
         }
         List<String> databaseTypes = response.databaseTypes() == null ? List.of() : response.databaseTypes();
         long elapsedMs = Math.max(0, (System.nanoTime() - startedAt) / 1_000_000);
-        return new ServiceEngineTestResponse(actualCode, databaseTypes, elapsedMs);
+        return new ServiceEngineTestResponse(
+                ServiceEngineType.DATASCALPEL, actualCode, null, databaseTypes,
+                List.of("STANDARD_TABLE", "SQL_QUERY", "SCRIPT_API"), adminUrl, null, elapsedMs
+        );
+    }
+
+    private static ServiceEngineTestResponse geoServerTestResponse(
+            GeoServerClient.Discovery discovery,
+            long startedAt
+    ) {
+        return new ServiceEngineTestResponse(
+                ServiceEngineType.GEOSERVER, discovery.code(), discovery.version(), discovery.databaseTypes(),
+                discovery.capabilities(), discovery.adminUrl(), discovery.runtimeUrl(),
+                Math.max(0, (System.nanoTime() - startedAt) / 1_000_000)
+        );
     }
 
     private static ResponseStatusException testFailure(RuntimeException exception) {
@@ -223,6 +343,13 @@ public class ServiceEngineManagementService {
         return Objects.requireNonNull(value, "Transaction result is required");
     }
 
+    private static String requireText(String value, String label) {
+        if (value == null || value.isBlank()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, label + "不能为空");
+        }
+        return value.trim();
+    }
+
     private record UpdatePreparation(
             String code,
             String adminUrl,
@@ -230,6 +357,17 @@ public class ServiceEngineManagementService {
             String managementToken,
             String managementTokenCiphertext,
             boolean identityChanged
+    ) {
+    }
+
+    private record GeoServerUpdatePreparation(
+            String code,
+            String adminUrl,
+            String runtimeUrl,
+            String username,
+            String password,
+            String passwordCiphertext,
+            String workspace
     ) {
     }
 }

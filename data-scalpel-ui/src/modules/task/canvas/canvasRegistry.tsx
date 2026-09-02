@@ -14,8 +14,8 @@ import { register } from '@antv/x6-react-shape';
 import { Button, Tooltip } from 'antd';
 import { createElement, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { requestCanvasNodeDeletion } from './canvasNodeDeletion';
+import { requestCanvasNodeOutputSchema } from './canvasNodeTrial';
 import { CanvasNodeIcon } from './components/CanvasNodeIcons';
-import { CanvasTableSchemaModal } from './components/CanvasTableSchemaModal';
 import {
   CanvasNodeCategory,
   type CanvasExecutionMode,
@@ -96,41 +96,35 @@ interface CanvasNodeViewProps {
 }
 
 const CanvasNodeOutputSchemaTrigger = ({
+  node,
   nodeName,
   tables,
 }: {
+  node: Node;
   nodeName: string;
   tables: readonly CanvasTableSchema[];
 }) => {
-  const [open, setOpen] = useState(false);
   return (
-    <>
-      <Tooltip title={`查看输出结构 · ${tables.length} 张表`}>
-        <Button
-          type="text"
-          size="small"
-          className="canvas-node-output-schema-trigger"
-          aria-label={`查看节点 ${nodeName} 的输出结构，共 ${tables.length} 张表`}
-          icon={<TableOutlined />}
-          onMouseDown={(event) => event.stopPropagation()}
-          onPointerDown={(event) => event.stopPropagation()}
-          onDoubleClick={(event) => event.stopPropagation()}
-          onKeyDown={(event) => event.stopPropagation()}
-          onClick={(event) => {
-            event.stopPropagation();
-            setOpen(true);
-          }}
-        >
-          {tables.length}
-        </Button>
-      </Tooltip>
-      <CanvasTableSchemaModal
-        open={open}
-        title={`节点输出结构 · ${nodeName}`}
-        tables={tables}
-        onClose={() => setOpen(false)}
-      />
-    </>
+    <Tooltip title={`查看输出结构 · ${tables.length} 张表`}>
+      <Button
+        type="text"
+        size="small"
+        className="canvas-node-output-schema-trigger"
+        aria-label={`查看节点 ${nodeName} 的输出结构，共 ${tables.length} 张表`}
+        icon={<TableOutlined />}
+        onMouseDown={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+        onDoubleClick={(event) => event.stopPropagation()}
+        onKeyDown={(event) => event.stopPropagation()}
+        onClick={(event) => {
+          event.stopPropagation();
+          const graph = node.model?.graph;
+          if (graph) requestCanvasNodeOutputSchema(graph, node);
+        }}
+      >
+        {tables.length}
+      </Button>
+    </Tooltip>
   );
 };
 
@@ -274,7 +268,9 @@ export const CanvasNodeView = ({ node }: CanvasNodeViewProps) => {
             {data.name}
           </span>
         )}
-        {canViewOutputSchema && <CanvasNodeOutputSchemaTrigger nodeName={data.name} tables={outputTables} />}
+        {canViewOutputSchema && (
+          <CanvasNodeOutputSchemaTrigger node={node} nodeName={data.name} tables={outputTables} />
+        )}
         <Tooltip title={`${data.readOnly ? '只读 · ' : ''}${validationPresentation.label}${data.validation?.message ? `：${data.validation.message}` : ''}`}>
           <span
             className={`canvas-node-validation-icon is-${validationPresentation.color}${data.readOnly ? ' is-readonly' : ''}`}

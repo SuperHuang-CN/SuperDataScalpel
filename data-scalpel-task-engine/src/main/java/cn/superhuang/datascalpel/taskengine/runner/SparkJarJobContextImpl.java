@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.contract.execution.SparkJarExecutionPayload;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceAccessMode;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceType;
 import cn.superhuang.data.scalpel.contract.execution.SparkStreamingJarExecutionPayload;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview;
 import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
@@ -41,11 +42,15 @@ final class SparkJarJobContextImpl implements SparkJobContext {
     private final Map<UUID, RuntimeDataSource> runtimeSources;
     private final Map<UUID, MetadataModel> models;
     private final boolean streaming;
+    private final boolean trial;
     private final AffectedRowsAccumulator affectedRows = new AffectedRowsAccumulator();
     private final ModelResources modelResources = new Models();
     private final JdbcResources jdbcResources = new Jdbc();
     private final UserJobObservabilityRuntime observability;
     private final SparkJarLineageRuntime lineage;
+    private final List<SparkJarTrialPreview.WritePreview> trialWrites = new ArrayList<>();
+    private final LinkedHashSet<String> trialWarnings = new LinkedHashSet<>();
+    private int trialPreviewCharacters;
 
     SparkJarJobContextImpl(
             SparkSession spark,
@@ -60,6 +65,9 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         if ((payload == null) == (streamingPayload == null)) {
             throw new IllegalArgumentException("Spark JAR 执行载荷无效");
         }
+        this.trial = streaming
+                ? streamingPayload.executionPurpose() == SparkJarExecutionPayload.ExecutionPurpose.TRIAL
+                : payload.executionPurpose() == SparkJarExecutionPayload.ExecutionPurpose.TRIAL;
         this.identity = new Identity(
                 manifest,
                 streaming ? TaskTriggerType.STREAMING_START
@@ -91,7 +99,15 @@ final class SparkJarJobContextImpl implements SparkJobContext {
     @Override public JdbcResources jdbc() { return jdbcResources; }
     @Override public JobObservability observability() { return observability; }
     UserJobObservabilityRuntime observabilityRuntime() { return observability; }
-    Long affectedRows() { return affectedRows.value(); }
+    Long affectedRows() { return trial ? null : affectedRows.value(); }
+    SparkJarTrialPreview trialPreview() {
+        return trial ? new SparkJarTrialPreview(trialWrites, new ArrayList<>(trialWarnings)) : null;
+    }
+    boolean trial() { return trial; }
+    void previewKafka(String bindingName, String topicName, Dataset<Row> dataset) {
+        capturePreview(SparkJarTrialPreview.ResourceKind.KAFKA, bindingName, topicName,
+                "STREAM", dataset);
+    }
     cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence lineageEvidence(boolean succeeded) {
         return lineage.evidence(succeeded);
     }
@@ -212,7 +228,10 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                     throw new RunnerExecutionException("UPSERT_KEY_NOT_MAPPED", "模型完整主键必须完成映射", null);
                 SparkJarLineageRuntime.PreparedFlow flow = lineage.analyzeModelWrite(
                         bindingName, model, mode.name(), projected);
-                WriteResult result = write(runtime, table, projected, mode.name(), keys);
+                WriteResult result = trial
+                        ? preview(SparkJarTrialPreview.ResourceKind.MODEL, bindingName, model.code(),
+                                mode.name(), runtime, projected)
+                        : write(runtime, table, projected, mode.name(), keys);
                 lineage.confirm(flow);
                 return result;
             });
@@ -260,9 +279,12 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                         table.table());
                 SparkJarLineageRuntime.PreparedFlow flow = lineage.analyzeJdbcWrite(
                         bindingName, runtime.dataSourceId(), resolved, mode.name(), projected);
-                WriteResult result = write(runtime,
-                        new TableIdentifier(resolved.catalog(), resolved.schema(), resolved.table()),
-                        projected, mode.name(), keys);
+                WriteResult result = trial
+                        ? preview(SparkJarTrialPreview.ResourceKind.JDBC, bindingName, resolved.table(),
+                                mode.name(), runtime, projected)
+                        : write(runtime,
+                                new TableIdentifier(resolved.catalog(), resolved.schema(), resolved.table()),
+                                projected, mode.name(), keys);
                 lineage.confirm(flow);
                 return result;
             });
@@ -324,6 +346,50 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         } catch (RunnerExecutionException exception) { throw exception; }
         catch (Exception exception) { throw new RuntimeException(exception); }
         finally { cached.unpersist(); }
+    }
+
+    private WriteResult preview(
+            SparkJarTrialPreview.ResourceKind kind,
+            String bindingName,
+            String target,
+            String mode,
+            RuntimeDataSource runtime,
+            Dataset<Row> dataset
+    ) {
+        requireJdbcWriteSupported(runtime, mode, dataset.schema());
+        capturePreview(kind, bindingName, target, mode, dataset);
+        return WriteResult.unknown();
+    }
+
+    private synchronized void capturePreview(
+            SparkJarTrialPreview.ResourceKind kind,
+            String bindingName,
+            String target,
+            String mode,
+            Dataset<Row> dataset
+    ) {
+        List<String> captured = dataset.limit(SparkJarTrialPreview.MAX_ROWS_PER_WRITE + 1)
+                .toJSON().collectAsList();
+        boolean truncated = captured.size() > SparkJarTrialPreview.MAX_ROWS_PER_WRITE;
+        if (trialWrites.size() >= SparkJarTrialPreview.MAX_WRITES) {
+            trialWarnings.add("输出写入超过 20 次，仅保留前 20 次预览");
+            return;
+        }
+        List<String> rows = new ArrayList<>();
+        for (String row : captured.subList(0, Math.min(captured.size(), SparkJarTrialPreview.MAX_ROWS_PER_WRITE))) {
+            if (trialPreviewCharacters + row.length() > 4 * 1024 * 1024) {
+                truncated = true;
+                trialWarnings.add("试运行预览接近结果大小上限，部分数据行未返回");
+                break;
+            }
+            rows.add(row);
+            trialPreviewCharacters += row.length();
+        }
+        String schemaJson = dataset.schema().json();
+        trialPreviewCharacters += schemaJson.length();
+        trialWrites.add(new SparkJarTrialPreview.WritePreview(
+                trialWrites.size() + 1, kind, bindingName, target, mode,
+                schemaJson, rows, truncated));
     }
 
     private static void requireJdbcWriteSupported(
@@ -459,6 +525,13 @@ final class SparkJarJobContextImpl implements SparkJobContext {
 
     private DataFrameReader jdbcReader(RuntimeDataSource source, JdbcReadOptions options) {
         Objects.requireNonNull(options, "options");
+        if (trial && options.options().keySet().stream()
+                .anyMatch("sessionInitStatement"::equalsIgnoreCase)) {
+            throw new RunnerExecutionException(
+                    "TRIAL_SESSION_INIT_STATEMENT_NOT_ALLOWED",
+                    "试运行不允许使用 sessionInitStatement",
+                    null);
+        }
         DataFrameReader reader = CanvasTaskExecutor.reader(spark, source);
         options.partitioning().ifPresent(partitioning -> {
             reader.option("partitionColumn", partitioning.column());

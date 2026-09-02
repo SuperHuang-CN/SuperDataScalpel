@@ -73,8 +73,7 @@ public class SparkJarDevelopmentKitGenerator {
     public GeneratedKit generate(SparkJarDevelopmentKitJob job, Progress progress) throws IOException {
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(job.getTaskId())
                 .orElseThrow(() -> failure("DEFINITION_NOT_FOUND", "Spark JAR 任务定义不存在"));
-        if (definition.getJobMode() != SparkJarJobMode.BATCH)
-            throw failure("DEFINITION_NOT_BATCH", "Spark JAR 任务不再是批处理任务");
+        SparkJarJobMode jobMode = definition.getJobMode();
         List<SparkJarTaskResourceBinding> bindings = bindingRepository.findAllByTaskIdOrderByCreatedAtAsc(job.getTaskId());
         Request request = readRequest(job.getRequestJson());
         Map<String, Sample> samples = request.samples().stream().collect(java.util.stream.Collectors.toMap(
@@ -139,13 +138,25 @@ public class SparkJarDevelopmentKitGenerator {
                 tableValue.put("sha256", sampleValue.get("sha256")); jdbcTableMetadata.add(tableValue);
             }
             progress.update(SparkJarDevelopmentKitStage.PACKAGING, 75, null);
-            writeText(root.resolve("pom.xml"), SparkJarTaskDefinitionService.templatePom(SparkJarJobMode.BATCH));
-            writeText(root.resolve("README.md"), readme(models, jdbcTables));
-            writeText(root.resolve("src/main/java/com/example/datascalpel/ExampleSparkJob.java"), jobSource(models, jdbcTables));
-            writeText(root.resolve("src/test/java/com/example/datascalpel/ExampleSparkJobTest.java"), testSource(models, jdbcTables));
+            List<SparkJarTaskResourceBinding> kafkaBindings = bindings.stream()
+                    .filter(binding -> binding.getResourceType() == SparkJarResourceType.KAFKA_TOPIC).toList();
+            boolean streaming = jobMode == SparkJarJobMode.STREAMING;
+            writeText(root.resolve("pom.xml"), SparkJarTaskDefinitionService.templatePom(jobMode));
+            writeText(root.resolve("README.md"), readme(models, jdbcTables, jobMode));
+            String exampleJobSource = definition.getOnlineSourceCode() == null
+                    ? streaming ? streamingJobSource(models, jdbcTables, kafkaBindings)
+                    : jobSource(models, jdbcTables)
+                    : definition.getOnlineSourceCode();
+            String className = streaming ? "ExampleSparkStreamingJob" : "ExampleSparkJob";
+            writeText(root.resolve("src/main/java/com/example/datascalpel/" + className + ".java"), exampleJobSource);
+            writeText(root.resolve("src/test/java/com/example/datascalpel/" + className + "Test.java"),
+                    streaming ? streamingTestSource(models, jdbcTables, kafkaBindings)
+                            : testSource(models, jdbcTables));
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("taskId", job.getTaskId()); metadata.put("taskName", job.getTaskNameSnapshot());
             metadata.put("definitionVersion", job.getDefinitionVersion()); metadata.put("format", "PARQUET_SNAPPY");
+            metadata.put("jobMode", jobMode.name());
+            metadata.put("exampleJobSource", definition.getOnlineSourceCode() == null ? "GENERATED" : "ONLINE_DRAFT");
             metadata.put("generatedAt", Instant.now()); metadata.put("samples", sampleMetadata);
             metadata.put("models", models.stream().map(this::modelMetadata).toList());
             metadata.put("jdbcTables", jdbcTableMetadata);
@@ -265,7 +276,7 @@ public class SparkJarDevelopmentKitGenerator {
         List<QueryOrder> orders = input.primaryKeys().stream().map(field ->
                 new QueryOrder(field.code(), QueryOrderTarget.COLUMN, QuerySortDirection.ASC)).toList();
         return new StandardQuery(input.table(),
-                projections, ConditionConjunction.AND, List.of(), List.of(), List.of(), orders, offset, limit, count);
+                projections, null, List.of(), List.of(), orders, offset, limit, count);
     }
 
     private static MessageType parquetSchema(List<SampleField> fields) {
@@ -383,19 +394,188 @@ public class SparkJarDevelopmentKitGenerator {
         return value;
     }
 
-    private static String readme(List<ModelBundle> models, List<JdbcTableBundle> jdbcTables) {
+    private static String readme(
+            List<ModelBundle> models,
+            List<JdbcTableBundle> jdbcTables,
+            SparkJarJobMode jobMode
+    ) {
         StringBuilder warnings = new StringBuilder(); models.stream().filter(ModelBundle::readable).filter(m -> m.primaryKeys().isEmpty())
                 .forEach(m -> warnings.append("- 输入绑定 `").append(m.bindingName()).append("` 的模型没有主键，样例顺序不稳定。\n"));
         jdbcTables.stream().filter(table -> table.primaryKeys().isEmpty()).forEach(table -> warnings
                 .append("- JDBC 表 `").append(table.bindingName()).append(":").append(table.displayName())
                 .append("` 没有主键，样例顺序不稳定。\n"));
-        return SparkJarTaskDefinitionService.templateReadme(SparkJarJobMode.BATCH)
+        String streamingGuide = jobMode == SparkJarJobMode.STREAMING
+                ? "\n实时开发包不会读取线上Kafka消息。每个READ绑定使用可编辑UTF-8假消息，"
+                + "每个WRITE绑定使用独立TestKafkaTopic；READ_WRITE的输入和输出Topic也彼此隔离。\n"
+                : "";
+        return SparkJarTaskDefinitionService.templateReadme(jobMode)
                 + "\n## 本开发包\n\n样例固定为 Snappy Parquet。作为本地输入 Mock，Parquet 和输入 StructType 的字段均允许 null；"
                 + "模型原始 nullable 仍记录在元数据中，输出 Target 继续按模型约束校验。JDBC 表的 SDK 参数始终是资源绑定名，不是数据源编码。\n\n"
                 + "当处理结果与输出模型字段同名时，可以使用 `mapSameName()` 代替逐字段 `map(...)`。随后调用 `checkSchema()`，"
                 + "TestKit 会在本地比较字段集合和 Spark 类型（忽略顺序、nullable 与 Metadata）；生产运行不做此前置检查，"
                 + "仍由 Spark 和实际目标系统处理类型转换与约束。\n\n"
+                + streamingGuide
                 + warnings;
+    }
+
+    private static String streamingJobSource(
+            List<ModelBundle> models,
+            List<JdbcTableBundle> jdbcTables,
+            List<SparkJarTaskResourceBinding> kafkaBindings
+    ) {
+        SparkJarTaskResourceBinding input = kafkaBindings.stream()
+                .filter(binding -> binding.getAccessMode().canRead()).findFirst().orElse(null);
+        List<SparkJarTaskResourceBinding> outputs = kafkaBindings.stream()
+                .filter(binding -> binding.getAccessMode().canWrite()).toList();
+        StringBuilder body = new StringBuilder("""
+                package com.example.datascalpel;
+
+                import cn.superhuang.datascalpel.sdk.*;
+                import org.apache.spark.sql.Dataset;
+                import org.apache.spark.sql.Row;
+                import org.apache.spark.sql.streaming.Trigger;
+
+                public final class ExampleSparkStreamingJob implements SparkStreamingJob {
+                  @Override public void start(SparkStreamingJobContext context) throws Exception {
+                """);
+        if (input == null) {
+            body.append("    // TODO 使用 context.kafka().readStream(...) 创建实时输入。\n");
+        } else {
+            body.append("    Dataset<Row> input = context.kafka().readStream(\"")
+                    .append(javaString(input.getBindingName()))
+                    .append("\", KafkaStartingOffsets.EARLIEST);\n");
+        }
+        if (input != null) {
+            for (SparkJarTaskResourceBinding output : outputs) {
+                body.append("    context.queries().start(\"")
+                        .append(javaString("kafka-" + output.getBindingName()))
+                        .append("\", StreamingSinkType.KAFKA, spec -> context.kafka().writeStream(\"")
+                        .append(javaString(output.getBindingName()))
+                        .append("\", input.selectExpr(\"key\", \"value\"))\n")
+                        .append("        .queryName(spec.queryName())\n")
+                        .append("        .option(\"checkpointLocation\", spec.checkpointLocation())\n")
+                        .append("        .trigger(Trigger.ProcessingTime(\"100 milliseconds\"))\n")
+                        .append("        .start());\n");
+            }
+        }
+        models.stream().filter(ModelBundle::readable).forEach(model -> body
+                .append("    // 启动时静态模型样例：context.models().read(\"")
+                .append(javaString(model.bindingName())).append("\");\n"));
+        models.stream().filter(ModelBundle::writable).forEach(model -> body
+                .append("    // 在 foreachBatch 中通过 context.models().write(\"")
+                .append(javaString(model.bindingName()))
+                .append("\", batch).mapSameName().checkSchema().execute() 写入模型。\n"));
+        jdbcTables.forEach(table -> body.append("    // 启动时静态 JDBC 样例：")
+                .append(jdbcReadCall(table)).append(";\n"));
+        if (outputs.isEmpty() && input != null) {
+            body.append("    // 开发包兜底查询：请在 foreachBatch 中替换为模型或 JDBC SDK 写入。\n")
+                    .append("    context.queries().start(\"development-preview\", StreamingSinkType.CUSTOM, spec -> input.writeStream()\n")
+                    .append("        .queryName(spec.queryName())\n")
+                    .append("        .option(\"checkpointLocation\", spec.checkpointLocation())\n")
+                    .append("        .foreachBatch((org.apache.spark.api.java.function.VoidFunction2<Dataset<Row>, Long>) "
+                            + "(batch, batchId) -> { /* TODO SDK output */ })\n")
+                    .append("        .trigger(Trigger.ProcessingTime(\"100 milliseconds\"))\n")
+                    .append("        .start());\n");
+        } else if (outputs.isEmpty()) {
+            body.append("    // TODO 绑定 Kafka READ 资源，并通过 context.queries().start(...) 注册输出查询。\n");
+        }
+        return body.append("  }\n}\n").toString();
+    }
+
+    private static String streamingTestSource(
+            List<ModelBundle> models,
+            List<JdbcTableBundle> jdbcTables,
+            List<SparkJarTaskResourceBinding> kafkaBindings
+    ) {
+        StringBuilder text = new StringBuilder("""
+                package com.example.datascalpel;
+
+                import cn.superhuang.datascalpel.sdk.testkit.*;
+                import org.apache.spark.sql.types.*;
+                import org.junit.jupiter.api.Test;
+                import java.nio.file.Path;
+                import static org.junit.jupiter.api.Assertions.assertFalse;
+
+                class ExampleSparkStreamingJobTest {
+                """);
+        models.stream().filter(ModelBundle::readable).forEach(model -> text
+                .append("  private static final StructType ").append(inputSchemaName(model))
+                .append(" = new StructType()\n").append(schemaSource(model.fields(), true)).append(";\n"));
+        models.stream().filter(ModelBundle::writable).forEach(model -> text
+                .append("  private static final StructType ").append(outputSchemaName(model))
+                .append(" = new StructType()\n").append(schemaSource(model.fields(), false)).append(";\n"));
+        for (JdbcTableBundle table : jdbcTables) text.append("  private static final StructType ")
+                .append(jdbcInputSchemaName(table)).append(" = new StructType()\n")
+                .append(schemaSource(table.fields(), true)).append(";\n");
+        text.append("  @Test void runsWithGeneratedBindings() {\n");
+        List<String> topicDeclarations = new ArrayList<>();
+        kafkaBindings.forEach(binding -> {
+            if (binding.getAccessMode().canRead()) topicDeclarations.add("TestKafkaTopic "
+                    + javaName("input_" + binding.getBindingName()) + " = TestKafkaTopic.create(\""
+                    + javaString(binding.getBindingName() + "-input") + "\")");
+            if (binding.getAccessMode().canWrite()) topicDeclarations.add("TestKafkaTopic "
+                    + javaName("output_" + binding.getBindingName()) + " = TestKafkaTopic.create(\""
+                    + javaString(binding.getBindingName() + "-output") + "\")");
+        });
+        if (!topicDeclarations.isEmpty()) {
+            text.append("    try (").append(String.join(";\n         ", topicDeclarations)).append(") {\n");
+        }
+        text.append("      var builder = SparkStreamingJobTestKit.builder();\n")
+                .append(streamingBuilderSource(models, jdbcTables, kafkaBindings))
+                .append("      // 可编辑假消息：替换 key/value 为符合业务 Schema 的 UTF-8 内容。\n")
+                .append(streamingPublishSource(kafkaBindings))
+                .append("      try (SparkStreamingJobTestRun run = builder.start(new ExampleSparkStreamingJob())) {\n")
+                .append("        run.processAllAvailable();\n        run.assertHealthy();\n");
+        kafkaBindings.stream().filter(binding -> binding.getAccessMode().canWrite()).forEach(binding -> text
+                .append("        assertFalse(run.kafkaOutputRecords(\"")
+                .append(javaString(binding.getBindingName())).append("\").isEmpty());\n"));
+        text.append("        run.stop();\n      }\n");
+        if (!topicDeclarations.isEmpty()) text.append("    }\n");
+        return text.append("  }\n}\n").toString();
+    }
+
+    private static String streamingBuilderSource(
+            List<ModelBundle> models,
+            List<JdbcTableBundle> jdbcTables,
+            List<SparkJarTaskResourceBinding> kafkaBindings
+    ) {
+        StringBuilder value = new StringBuilder();
+        models.stream().filter(ModelBundle::readable).forEach(model -> value
+                .append("      builder.modelInputParquet(\"").append(javaString(model.bindingName()))
+                .append("\", Path.of(\"src/test/resources/samples/")
+                .append(safeFile(model.bindingName())).append(".parquet\"), ")
+                .append(inputSchemaName(model)).append(");\n"));
+        models.stream().filter(ModelBundle::writable).forEach(model -> value
+                .append("      builder.modelOutput(\"").append(javaString(model.bindingName()))
+                .append("\", TestModelTarget.builder(").append(outputSchemaName(model)).append(")")
+                .append(stringArrayCall("primaryKeyColumns",
+                        model.primaryKeys().stream().map(SampleField::code).toList()))
+                .append(stringArrayCall("omittableColumns",
+                        model.fields().stream().filter(SampleField::nullable).map(SampleField::code).toList()))
+                .append(".external(")
+                .append(model.model().getPhysicalTableMode() == PhysicalTableMode.EXTERNAL)
+                .append(").build());\n"));
+        jdbcTables.forEach(table -> value.append("      builder.jdbcTableParquet(\"")
+                .append(javaString(table.bindingName())).append("\", ")
+                .append(jdbcTableIdentifierSource(table.table())).append(", Path.of(\"src/test/resources/samples/")
+                .append(jdbcFileName(table)).append("\"), ").append(jdbcInputSchemaName(table)).append(");\n"));
+        kafkaBindings.forEach(binding -> {
+            if (binding.getAccessMode().canRead()) value.append("      builder.kafkaInput(\"")
+                    .append(javaString(binding.getBindingName())).append("\", ")
+                    .append(javaName("input_" + binding.getBindingName())).append(");\n");
+            if (binding.getAccessMode().canWrite()) value.append("      builder.kafkaOutput(\"")
+                    .append(javaString(binding.getBindingName())).append("\", ")
+                    .append(javaName("output_" + binding.getBindingName())).append(");\n");
+        });
+        return value.toString();
+    }
+
+    private static String streamingPublishSource(List<SparkJarTaskResourceBinding> kafkaBindings) {
+        StringBuilder value = new StringBuilder();
+        kafkaBindings.stream().filter(binding -> binding.getAccessMode().canRead()).forEach(binding -> value
+                .append("      ").append(javaName("input_" + binding.getBindingName()))
+                .append(".publishUtf8(\"sample-key\", \"{\\\"message\\\":\\\"replace me\\\"}\");\n"));
+        return value.toString();
     }
 
     private static String jobSource(List<ModelBundle> models, List<JdbcTableBundle> jdbcTables) {

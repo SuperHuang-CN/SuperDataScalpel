@@ -54,7 +54,7 @@ X6 Shape、Palette 分组、图标和校验结果不属于持久化协议。
 Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳定 JSON。X6 只负责编辑和展示，不得直接持久化 X6 Cell、Shape、Port 或运行时状态。
 
 AI 助手生成任务定义时同样不能直接产生任意 Canvas JSON。助手只提交受限的强类型语义方案，
-由后端 Builder 生成当前 Canvas 4.1 的节点 UUID、边、逻辑表名和布局，并通过本文相同的持久化结构
+由后端 Builder 生成当前 Canvas 4.8 的节点 UUID、边、逻辑表名和布局，并通过本文相同的持久化结构
 校验。提案接受后只替换前端内存画布并触发 dirty 与既有自动编译；最终保存仍使用原任务定义接口。
 AI V1 只生成批任务完整替换方案，不支持自动生成自由 SQL 节点、节点级 Patch、实时任务、发布或执行；
 已人工配置的 `SQL_TRANSFORM` 可正常加载、保存和展示。
@@ -69,7 +69,7 @@ AI V1 只生成批任务完整替换方案，不支持自动生成自由 SQL 节
 - 一个 `HTTP_API_INPUT` 节点绑定一个数据源，可读取多个已声明 Schema 的 API 资源。
 - 一个 `SPATIAL_SERVICE_INPUT` 节点绑定一个空间服务数据源，可读取多个要素资源。
 - 一个 `MODEL_INPUT` 节点可读取多个已发布数据模型（允许跨数据源）。
-- 一个 `KAFKA_INPUT` 节点只读取一个 Topic，并持有自己的 Value Schema。
+- 一个 `KAFKA_INPUT` 节点只读取一个 Topic，并持有自己的 Value 格式、可选内联 Schema 和元数据字段选择。
 - 一个 `TDENGINE_TMQ_INPUT` 节点只订阅一个由外部系统管理的完整超级表 TMQ Topic。
 - 一个 `JOIN` 节点只执行一次两表连接。
 - 一个 `GEOMETRY_CONSTRUCT` 节点只从普通字段构造一个明确 kind/CRS/dimension 的 Geometry 字段。
@@ -102,7 +102,7 @@ AI V1 只生成批任务完整替换方案，不支持自动生成自由 SQL 节
 - 一个 `JDBC_OUTPUT` 节点只描述一次向一张目标表的写入。
 - 一个 `JDBC_SNAPSHOT_SYNC_OUTPUT` 节点只对比并同步一张 JDBC 目标表的完整实体快照。
 - 一个 `MODEL_SNAPSHOT_SYNC_OUTPUT` 节点只对比并同步一个 MANAGED 模型的完整实体快照。
-- 一个 `KAFKA_OUTPUT` 节点只描述一次向一个 Topic 的写入，并持有自己的 Value Schema。
+- 一个 `KAFKA_OUTPUT` 节点可以包含多条按 `writeId` 独立寻址的 Topic 写入；每条写入独立选择来源表、Topic、Value 格式和可选 Key。
 - 一个 `FILE_OUTPUT` 节点只描述一次向用户指定的外部存储目录写入。
 - 跨数据源输入、多次 Join 或多个输出目标使用多个图节点表达。同一数据源下批量选择物理表不再要求重复创建 JDBC Input。
 
@@ -157,7 +157,7 @@ Canvas 定义只保存数据源 UUID、模型 UUID、文件数据集表 UUID、A
 零行计划，不在编译期连接外部数据库；发布、重新启用和运行准备不重新分析或比较查询结果结构。
 快照是逻辑规划依据，SQL 文本变化仍必须重新分析和保存，且不得由后端静默更新。
 
-Kafka Value Schema 是消息反序列化和序列化契约，归 `KAFKA_INPUT/KAFKA_OUTPUT` 节点自身所有，因此必须以内联 `valueSchema.columns` 保存。设计器可以把某个已发布模型的当前字段一次性复制进节点，也允许手工编辑或粘贴扁平 JSON Schema；复制完成后不保存模型 ID，后续模型修改不会自动改变 Kafka 节点。
+Kafka Input 的 JSON Value Schema 是消息反序列化契约，归 `KAFKA_INPUT` 节点自身所有，因此以内联 `valueSchema.columns` 保存；TEXT/BINARY 不使用内联 Schema，消息固定输出到 `value` 字段。Canvas 4.6 的新 Kafka Output 不再维护第二份目标 Schema 或字段映射，而是直接从上游 Schema 选择字段并按 JSON/TEXT/BINARY 序列化。Canvas 4.0～4.5 已保存的 Kafka Output 继续保留内联 Schema 与显式映射兼容路径，升级时不改变其 Cast、字段名或 Key 语义。
 
 设计器通过现有接口读取数据源、普通 JDBC 表元数据和已保存模型字段，用于配置和组装单次编译
 的 `metadataSnapshot`，不进入导出的 Canvas 定义。数据源名称、数据库、Schema、字段列表和元数据
@@ -167,7 +167,7 @@ Task Engine 的编译请求使用独立的 `metadataSnapshot` 携带本次分析
 
 ### 2.4 不保存数据源凭据
 
-Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输入只保存一个 `fileDatasetId` 和表选择，HTTP API 与空间服务节点只保存数据源 ID 和资源选择，模型节点只保存模型选择/目标模型 ID，Kafka 节点只保存数据源 ID、Topic、节点自有 Value Schema 和映射配置，TMQ 节点只保存数据源 ID、Topic、数据库、超级表和定义指纹，文件输出只保存数据源 ID 与相对目录。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
+Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输入只保存一个 `fileDatasetId` 和表选择，HTTP API 与空间服务节点只保存数据源 ID 和资源选择，模型节点只保存模型选择/目标模型 ID，Kafka 节点只保存数据源 ID、Topic、Value 格式、逻辑字段选择和必要的兼容 Schema/映射，TMQ 节点只保存数据源 ID、Topic、数据库、超级表和定义指纹，文件输出只保存数据源 ID 与相对目录。URL、Broker 地址、对象 Key、物化前缀、用户名、密码、Token、API Key、Secret、签名密钥和其他凭据不得进入 Canvas JSON、节点配置或前端状态持久化结果。
 
 `HTTP_API_INPUT.runtimeParameters` 会随 Canvas 定义明文持久化，只允许保存日期、业务筛选条件、初始游标等非敏感值。动态 Token 必须由 HTTP API 数据源的 OAuth2 或 Token Endpoint 鉴权在执行时生成，不能作为运行时参数绕过凭据边界。
 
@@ -178,7 +178,7 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输
 ```json
 {
   "schemaVersion": 4,
-  "schemaMinorVersion": 1,
+  "schemaMinorVersion": 8,
   "nodes": [],
   "edges": []
 }
@@ -187,16 +187,21 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `4` |
-| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；当前写出版本为 `1` |
+| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；当前写出版本为 `8` |
 | `nodes` | array | 节点定义，按照前端保存顺序持久化；业务逻辑不得依赖数组顺序 |
 | `edges` | array | 有向边定义，业务逻辑不得依赖数组顺序 |
 
-当前写出版本统一为 `4.1`。`4.0` 将 `MODEL_INPUT`、`FILE_DATASET_INPUT`、`HTTP_API_INPUT` 和
+当前写出版本统一为 `4.8`。`4.0` 将 `MODEL_INPUT`、`FILE_DATASET_INPUT`、`HTTP_API_INPUT` 和
 `SPATIAL_SERVICE_INPUT` 从单资源结构改为有序资源数组；这是破坏性协议变化，所有 `3.x` 定义均不导入、
 不迁移或猜测旧字段语义，必须重新配置后保存。一个 Input 节点的唯一输出端口传递完整表 Map，数组中每个资源产生一张表。
 
-`SQL_TRANSFORM` 从 `4.1` 引入。`4.0` 定义继续读取，并在保存和导出时规范化为 `4.1`；标记为
-`4.0` 却含有 `SQL_TRANSFORM` 的定义必须拒绝，不能因为升级而猜测其语义。
+`SQL_TRANSFORM` 从 `4.1` 引入；`TYPE_CAST.epochTimestampUnit` 从 `4.2` 引入；
+`TYPE_CAST.stringTemporalParseOptions` 从 `4.3` 引入；`KAFKA_INPUT.valueFormat/metadataFields` 从 `4.4` 引入；
+`TDENGINE_TMQ_INPUT.eventTimeColumn/watermarkDelaySeconds` 从 `4.5` 引入；
+`KAFKA_OUTPUT.valueFormat/valueColumnNames` 从 `4.6` 引入；`TYPE_CAST.temporalStringFormatOptions`
+从 `4.7` 引入；带 Epoch 单位的 `DATE/TIMESTAMP → LONG` 从 `4.8` 引入。较低小版本定义继续读取，
+并在保存和导出时规范化为 `4.8`；标记为低于引入版本却携带对应能力的定义必须拒绝，
+不能因为升级而猜测其语义。
 
 同一大版本内，小版本只允许新增节点类型、可选字段或其他不改变已有定义语义的能力，并必须向下兼容；读取受支持的较低小版本后，保存和导出统一规范化为当前小版本。高于当前实现的小版本必须拒绝。删除或重命名字段、改变已有字段或节点语义、修改核心图规则等不兼容变化必须升级大版本，并将小版本重置为 `0`。版本不得使用 JSON 小数表示，避免 `2.1`、`2.10` 的比较歧义。
 
@@ -743,7 +748,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 - 类别为 `PROCESSOR`，支持 `BATCH/STREAMING`，协议引入版本为 `1.21`。
 - NULL Geometry 输出 NULL；GeoJSON 只接受 EPSG:4326。
 - 不执行隐式坐标转换、精度裁剪，也不支持 EWKT/EWKB/KML/GML。
-- Kafka Value Schema 仍不接受 Geometry；写 Kafka 前按需使用 `SELECT_COLUMNS` 移除原字段。
+- Kafka JSON Value 不接受 Geometry；写 Kafka 前先使用本节点转换为 WKT/WKB/GeoJSON，再在 Kafka Output 中选择序列化后的字段。
 - 完整配置见 [Geometry 序列化设计](canvas-geometry-serialize-processor-design.md)。
 
 ## 7.11 `GEOMETRY_REPAIR` 节点
@@ -1022,7 +1027,7 @@ orders INNER customers → order_customer
 
 ### 9.9 `TYPE_CAST` 面板
 
-顶部选择来源表和输出表名，下方维护转换项。每项配置来源字段、目标平台类型、STRING/DECIMAL 参数和 `FAIL/SET_NULL` 策略。GEOMETRY 不在可选类型中；上游字段失效时保留原字段名和类型配置。
+顶部选择来源表和输出表名，下方维护转换项。每项配置来源字段、目标平台类型、STRING/DECIMAL 参数和 `FAIL/SET_NULL` 策略。`LONG → TIMESTAMP` 以及 `DATE/TIMESTAMP → LONG` 额外配置 Epoch 单位：秒、毫秒或微秒；新建或重新选择这些组合时默认毫秒。来源字段为 `STRING` 且目标类型为 `DATE` 或 `TIMESTAMP` 时可指定 Spark datetime pattern：DATE 默认 `yyyy-MM-dd`；TIMESTAMP 默认 `yyyy-MM-dd HH:mm:ss`，并必须明确选择来源 IANA 时区，或选择字符串内含的 `Z` / 偏移。DATE、TIMESTAMP 或 TIMESTAMP_NTZ 转 STRING 时可指定输出 pattern；TIMESTAMP 还必须明确目标 IANA 时区，新规则默认 UTC。GEOMETRY 不在可选类型中；上游字段失效时保留原字段名、类型及其时间转换配置。
 
 `SET_NULL` 明确提示真实值转换失败后会变为 NULL，预检不会读取真实数据或统计影响行数。流模式选择事件时间字段时立即标错。节点卡片只显示转换数量与两种策略数量。
 
@@ -1254,7 +1259,7 @@ Task Engine 中的 Schema 校验按拓扑顺序执行：
 17. `JSON_EXTRACT` 使用 Spark VARIANT JSON 解析和 Path 提取追加结构化字段，继承来源表有界性。
 18. `SPATIAL_CLIP` 合并两个上游 Map，校验 BOUNDED、CRS、dimension 和 Mask kind，追加只含来源属性与裁剪结果的有界表。
 19. `SPATIAL_AGGREGATE` 对 BOUNDED 来源执行全局或分组空间聚合，追加清空事件时间和 Watermark 的有界结果表。
-20. `JDBC_OUTPUT`、`MODEL_OUTPUT` 和 `KAFKA_OUTPUT` 检查源表、目标及字段映射，但不执行真实写入。
+20. `JDBC_OUTPUT`、`MODEL_OUTPUT` 检查源表、目标及字段映射；`KAFKA_OUTPUT` 检查来源、格式、Value 字段和可选 Key，但均不执行真实写入。
 21. 每个节点返回独立校验摘要；图级错误放入单独的 `canvasIssues`，不制造 `@canvas` 伪节点。
 
 建议稳定错误码：
@@ -1417,6 +1422,9 @@ Task Engine 中的 Schema 校验按拓扑顺序执行：
 | `KAFKA_VALUE_SCHEMA_REQUIRED` | Kafka 节点缺少内联 Value Schema |
 | `KAFKA_VALUE_SCHEMA_EMPTY` | Kafka Value Schema 没有字段 |
 | `KAFKA_VALUE_SCHEMA_INVALID` | Kafka Value Schema 字段或类型参数无效 |
+| `KAFKA_VALUE_SCHEMA_NOT_APPLICABLE` | TEXT/BINARY 格式错误地携带结构化 Value Schema |
+| `KAFKA_METADATA_FIELD_INVALID` | Kafka 元数据字段为空或无效 |
+| `KAFKA_METADATA_FIELD_DUPLICATE` | Kafka 元数据字段重复配置 |
 
 ## 12. 稳定协议与运行时边界
 
@@ -1610,7 +1618,7 @@ Rename 必须放在同名表分支合并之前；上游 Map 已经发生名称�
 
 Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Inspector 先选择文件数据集，再通过双栏面板批量选择 `READY/SCHEMA_READY` 逻辑表；已选项完整保留、可排序、查看字段和删除。已经保存的表失效、删除或变为不可用时保留原 UUID，等待 Compiler 展示权威错误，不静默清空配置。
 
-## 16. Kafka 节点内联 Value Schema
+## 16. Kafka Value 格式与内联 Schema
 
 ### 16.1 稳定配置
 
@@ -1638,28 +1646,38 @@ Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Ins
         }
       ]
     },
+    "valueFormat": "JSON",
+    "metadataFields": ["KEY", "TOPIC", "PARTITION", "OFFSET", "TIMESTAMP"],
     "outputTableName": "order_events",
-    "startingOffsets": "LATEST"
+    "startingOffsets": "LATEST",
+    "triggerIntervalSeconds": 10
   }
 }
 ```
 
-`KAFKA_OUTPUT` 使用相同的 `valueSchema` 结构，并额外配置 `sourceTableName`、可选 `keyColumnName` 和 `columnMappings`。Value Schema 至少包含一个字段，字段名必须唯一；`STRING` 可设置正整数 `length`，`DECIMAL` 必须设置 `precision: 1..38` 和 `scale: 0..precision`，其他类型不得携带这三个参数。
+`KAFKA_INPUT.valueFormat` 只允许 `JSON/TEXT/BINARY`。JSON 使用非空 `valueSchema`；TEXT 固定输出 `value: STRING NULL`，BINARY 固定输出 `value: BINARY NULL`，后两者的正式 `valueSchema.columns` 必须为空。TEXT 固定使用 Spark UTF-8 解码，不自动识别字符集；BINARY 保留原始字节。
+
+`metadataFields` 可选择 `KEY/TOPIC/PARTITION/OFFSET/TIMESTAMP`，按固定顺序追加为 `_kafka_key`、`_kafka_topic`、`_kafka_partition`、`_kafka_offset`、`_kafka_timestamp`，类型依次为 BINARY、STRING、INTEGER、LONG、TIMESTAMP，均使用保守的 nullable 声明。Key 不做文本解码；Timestamp 是普通字段，不自动成为事件时间或附加 Watermark。Value 字段与已选元数据字段重名时编译失败。Kafka tombstone 不被过滤，Value 解析结果为空但元数据继续输出。
+
+Canvas 4.6 新建的 `KAFKA_OUTPUT` 写入使用 `valueFormat + valueColumnNames`：JSON 至少选择一个上游字段并按上游 Schema 顺序组成对象；TEXT 必须且只能选择一个 STRING 字段并按 UTF-8 原样发送；BINARY 必须且只能选择一个 BINARY 字段并原样发送字节。TEXT/BINARY 的 NULL Value 产生 Kafka tombstone。可选 Key 只允许 STRING 或 BINARY；是否同时进入 JSON Value 由字段选择决定。JSON Array、XML、CSV 和自定义文本应由前置 Processor 生成 STRING 后使用 TEXT；Avro、Protobuf、压缩或加密载荷应由前置 Processor 生成 BINARY 后使用 BINARY。Kafka Output 不负责 Schema Registry 或业务编码。
+
+Canvas 4.0～4.5 的写入以 `valueFormat: null` 识别，继续使用 `valueSchema + columnMappings` 的旧版 JSON 映射和显式 Cast。4.6 可以读取并原样保存这种兼容模式；新建写入不再创建旧模式，也不会自动迁移旧图结构。
 
 配置中不再存在 `valueModelId`。Kafka 节点不是模型节点，不创建任务模型引用，也不会在发布、编译或运行准备时查询模型。没有历史 Kafka 定义需要迁移，因此 `1.4` 及更低版本携带 Kafka 节点时直接拒绝，不保留旧字段兼容分支。
 
 ### 16.2 设计器与编译语义
 
-- Inspector 支持手工增删、排序和编辑字段。
+- Inspector 支持选择 JSON、TEXT 或 BINARY；新节点默认 JSON 并选择全部五个元数据字段，4.0～4.3 旧节点按 JSON 且无元数据兼容读取。
+- JSON 支持手工增删、排序和编辑字段；TEXT/BINARY 只读展示固定 `value` 字段。
 - “从模型 Schema 导入”只读取一次当前已发布模型字段并复制成内联列；选择结果和模型 ID 不进入定义。
 - “粘贴 JSON Schema”第一阶段只接受根类型为 object 的扁平 properties，支持 boolean、integer、number、string、date 和 date-time；嵌套 object、array 明确拒绝。
-- `KAFKA_INPUT` Operator 直接把内联列转为 Spark Schema，并输出 `UNBOUNDED` 表；Compiler 和 Runner 不需要模型元数据。
-- `KAFKA_OUTPUT` Operator 直接把内联列作为目标 Schema，与 JDBC/模型 Output 复用字段映射和显式 Spark Cast。
+- `KAFKA_INPUT` Operator 根据 Value 格式和元数据选择生成 Spark Schema，并输出 `UNBOUNDED` 表；Compiler 和 Runner 不需要模型元数据。JSON 继续使用 `from_json(..., FAILFAST)`，TEXT/BINARY 不进行结构化字段解析。
+- `KAFKA_OUTPUT` 新模式直接使用上游字段：JSON 由已选字段组成对象，TEXT/BINARY 直接输出单字段；旧版模式继续使用内联目标 Schema、映射和显式 Spark Cast。
 - Schema 缺失、空字段、重复字段、非法类型参数属于 Compiler `ERROR`；模型是否仍存在、是否变更与节点有效性无关。
 
 ## 16A. `TDENGINE_TMQ_INPUT`
 
-该节点在 Canvas `3.0` 中提供，只支持 `STREAMING`：
+该节点只支持 `STREAMING`；事件时间与 Watermark 配置从 Canvas `4.5` 提供：
 
 ```json
 {
@@ -1667,10 +1685,13 @@ Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Ins
   "topicName": "meters_topic",
   "catalogName": "power",
   "supertableName": "meters",
-  "topicDefinitionFingerprint": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+  "topicDefinitionFingerprint": "v2:0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
   "outputTableName": "meter_events",
   "startingOffsets": "EARLIEST",
-  "maxOffsetsPerVGroupPerTrigger": 10000
+  "maxOffsetsPerVGroupPerTrigger": 10000,
+  "triggerIntervalSeconds": 10,
+  "eventTimeColumn": "ts",
+  "watermarkDelaySeconds": 60
 }
 ```
 
@@ -1683,6 +1704,8 @@ Batch Palette 展示“文件数据集输入”，Streaming Palette 隐藏。Ins
 - `maxOffsetsPerVGroupPerTrigger` 默认 `10000`，范围 `1..1000000`，表示 TMQ 消息块 Offset 跨度，
   不承诺等于行数。
 - `triggerIntervalSeconds` 默认 `10`，范围 `1..300`；实时任务的触发间隔只从唯一无界输入节点读取。
+- `eventTimeColumn` 与 `watermarkDelaySeconds` 必须同时留空或同时配置；事件时间字段必须是
+  `TIMESTAMP`，Watermark 延迟范围为 `1..2592000` 秒。平台不自动猜测事件时间。
 - 节点入边为 0、出边至少 1，产生以 `outputTableName` 为 Key 的 `UNBOUNDED` 表；Schema 来自超级表
   字段与 TAG，不增加 Topic、子表、VGroup 或 Offset 技术列。
 - Consumer Group、Client ID、自动提交和任意 TMQ Properties 均不是用户配置；完整运行及 Offset
@@ -1863,52 +1886,110 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 
 ```json
 {
-  "sourceTableName": "orders",
-  "outputTableName": "typed_orders",
-  "casts": [
-    {
-      "columnName": "amount_text",
-      "targetType": {
-        "type": "DECIMAL",
-        "length": null,
-        "precision": 18,
-        "scale": 2,
-        "geometry": null
-      },
-      "failureStrategy": "FAIL"
+  "operations": [{
+    "operationId": "8c46bb6d-3a58-4ee4-9c6e-96a9fbcdcb04",
+    "sourceTableName": "orders",
+    "output": {
+      "mode": "CREATE_NEW_TABLE",
+      "outputTableName": "typed_orders"
     },
-    {
-      "columnName": "submitted_at_text",
-      "targetType": {
-        "type": "TIMESTAMP",
-        "length": null,
-        "precision": null,
-        "scale": null,
-        "geometry": null
+    "casts": [
+      {
+        "columnName": "amount_text",
+        "targetType": {
+          "type": "DECIMAL",
+          "length": null,
+          "precision": 18,
+          "scale": 2,
+          "geometry": null
+        },
+        "failureStrategy": "FAIL"
       },
-      "failureStrategy": "SET_NULL"
-    }
-  ]
+      {
+        "columnName": "submitted_at_ms",
+        "targetType": {
+          "type": "TIMESTAMP",
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "geometry": null
+        },
+        "failureStrategy": "SET_NULL",
+        "epochTimestampUnit": "MILLISECONDS"
+      },
+      {
+        "columnName": "created_at_text",
+        "targetType": {
+          "type": "TIMESTAMP",
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "geometry": null
+        },
+        "failureStrategy": "SET_NULL",
+        "stringTemporalParseOptions": {
+          "pattern": "yyyy-MM-dd HH:mm:ss.SSS",
+          "zoneMode": "SOURCE_TIME_ZONE",
+          "sourceTimeZone": "Asia/Shanghai"
+        }
+      },
+      {
+        "columnName": "completed_at",
+        "targetType": {
+          "type": "STRING",
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "geometry": null
+        },
+        "failureStrategy": "FAIL",
+        "temporalStringFormatOptions": {
+          "pattern": "yyyy-MM-dd HH:mm:ss.SSS",
+          "targetTimeZone": "Asia/Shanghai"
+        }
+      },
+      {
+        "columnName": "submitted_at",
+        "targetType": {
+          "type": "LONG",
+          "length": null,
+          "precision": null,
+          "scale": null,
+          "geometry": null
+        },
+        "failureStrategy": "FAIL",
+        "epochTimestampUnit": "MILLISECONDS"
+      }
+    ]
+  }]
 }
 ```
 
-- `casts` 至少一项，同一字段只能配置一次。
+- 每个处理表的 `casts` 至少一项，同一字段只能配置一次；`operationId` 保持稳定，`output` 使用既有的“更新当前表 / 生成新表”结构。
 - `targetType` 直接使用稳定 `PlatformTypeDefinition`；STRING 可设置正整数 length，DECIMAL 必须设置 `precision: 1..38` 和 `scale: 0..precision`，其他标量类型不携带参数。
 - Spark Canvas 首期不支持 GEOMETRY 转换，Inspector 不展示，Operator 返回 `INVALID_TARGET_PLATFORM_TYPE`。
 - `FAIL` 使用开启 ANSI 语义的普通 Spark cast；真实值无法转换时节点运行失败。
 - `SET_NULL` 使用 Spark `Column.try_cast(DataType)`；真实值无法转换时结果为 NULL。
+- `epochTimestampUnit` 可选值为 `SECONDS`、`MILLISECONDS`、`MICROSECONDS`，允许 `LONG → TIMESTAMP` 以及 `DATE/TIMESTAMP → LONG`。`TIMESTAMP_NTZ` 不支持 Epoch 转换，单位也不按数值位数自动推断。
+- `LONG → TIMESTAMP` 使用 Spark 的 `timestamp_seconds`、`timestamp_millis` 或 `timestamp_micros`；`TIMESTAMP → LONG` 使用对应的 `unix_seconds`、`unix_millis` 或 `unix_micros`。`DATE → LONG` 固定按该日期的 UTC `00:00:00` 计算。输入 NULL 始终输出 NULL；`SET_NULL` 在日期转时间戳超出可表示范围时输出 NULL。
+- 缺少 Epoch 单位的旧规则继续使用原有 Spark Cast 语义；只打开并保存不会自动改写。新建或重新选择支持的 Epoch 转换组合时默认 `MILLISECONDS`。
+- `stringTemporalParseOptions` 仅允许 `STRING → DATE/TIMESTAMP`，最多包含 128 个字符的 Spark datetime pattern。DATE 必须只配置 `pattern`。TIMESTAMP 的 `SOURCE_TIME_ZONE` 必须提供有效 IANA Zone ID，且 pattern 不得含有时区符号；`EMBEDDED_OFFSET` 不得填写来源时区，且 pattern 必须含未加引号的 `X/x/Z/O/V/z` 时区或偏移符号。两类特殊配置互斥，`TIMESTAMP_NTZ` 继续采用普通 Spark cast。
+- 对字符串日期时间解析，`FAIL` 使用 ANSI 语义下的 `to_date` / `to_timestamp`，格式错误、非法日期和不能解析的 DST 本地时间会终止节点；`SET_NULL` 使用 `try_to_date` / `try_to_timestamp`，失败结果为 NULL。指定来源时区时，Spark 固定 UTC Session 先解析本地时间，再按该 Zone ID 归一为 UTC；自带偏移时直接遵从字符串中的 `Z` 或 `+08:00` 语义。
+- `temporalStringFormatOptions` 仅允许 `DATE/TIMESTAMP/TIMESTAMP_NTZ → STRING`，pattern 最长 128 个字符。DATE 默认 `yyyy-MM-dd`；TIMESTAMP 和 TIMESTAMP_NTZ 默认 `yyyy-MM-dd HH:mm:ss`。TIMESTAMP 必须提供目标 IANA 时区，新规则默认 UTC；DATE 与 TIMESTAMP_NTZ 不允许配置时区。
+- TIMESTAMP 先从 UTC Session 转为目标时区的显示墙钟时间，再按 pattern 格式化；DATE 与 TIMESTAMP_NTZ 不做时区换算。输出 pattern 禁止未加引号的 `X/x/Z/O/V/z`，避免生成与实际瞬时语义不一致的偏移文本。NULL 始终输出 NULL。
+- 缺少 `temporalStringFormatOptions` 的旧规则继续使用 Spark 默认 Cast：DATE 通常为 `yyyy-MM-dd`，TIMESTAMP/TIMESTAMP_NTZ 为 Spark 默认日期时间文本；不会因为打开或保存配置而自动改写格式。
 
 ### 20.2 Map、Schema 与批流语义
 
 - 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边，支持 `BATCH` 和 `STREAMING`。
 - Operator 基于来源 Dataset 构造一次 `select`；未转换字段直接投影，转换字段在原位置使用原字段名 alias。
-- 复制全部输入 Map，以 `outputTableName` 追加结果；输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
+- 复制全部输入 Map；`REPLACE_SOURCE` 替换该来源表，`CREATE_NEW_TABLE` 以配置的输出名追加结果，输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 未转换字段完整继承元数据。转换字段类型来自目标平台类型和 Analyzer，物理默认值、自增、生成列和注释清空。
 - `FAIL` 的 nullable 取 Analyzer 结果；`SET_NULL` 固定 nullable 为 true。
 - Origin、有界性、事件时间和 Watermark 默认继承来源表；流模式禁止转换事件时间字段。
 - Cast 能否建立计划只由 Spark Analyzer 判断；Compiler 不读取真实值，也不承诺运行时数据一定可转换。
 - Compiler 与 Runner 使用同一个无状态 `TypeCastNodeOperator`，不修改全局 ANSI 配置，不拼接用户 SQL。
-- 安全摘要只记录来源/输出表、字段名、目标平台类型和失败策略，不记录字段值、失败值或生成 SQL。
+- 安全摘要只记录来源/输出表、字段名、目标平台类型、失败策略、Epoch 单位，以及时间解析/格式化的时区模式、IANA Zone ID、pattern 长度和 SHA-256，不记录字段值、失败值、pattern 正文或生成 SQL。
 
 ## 21. `AGGREGATE` 处理器
 

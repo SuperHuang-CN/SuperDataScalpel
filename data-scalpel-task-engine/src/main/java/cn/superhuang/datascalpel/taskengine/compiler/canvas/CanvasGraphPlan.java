@@ -29,11 +29,17 @@ public final class CanvasGraphPlan {
     private final List<CompilationIssue> canvasIssues = new ArrayList<>();
     private final Map<String, List<Integer>> entriesById = new LinkedHashMap<>();
     private final CanvasExecutionMode executionMode;
+    private final String trialTargetNodeId;
     private final cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperatorRegistry nodeOperators =
             cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperators.builtInRegistry();
 
-    private CanvasGraphPlan(CanvasDefinition definition, CanvasExecutionMode executionMode) {
+    private CanvasGraphPlan(
+            CanvasDefinition definition,
+            CanvasExecutionMode executionMode,
+            String trialTargetNodeId
+    ) {
         this.executionMode = executionMode == null ? CanvasExecutionMode.BATCH : executionMode;
+        this.trialTargetNodeId = trialTargetNodeId;
         initializeNodes(definition);
         validateNodeIds();
         initializeEdges(definition);
@@ -43,11 +49,19 @@ public final class CanvasGraphPlan {
     }
 
     public static CanvasGraphPlan create(CanvasDefinition definition) {
-        return new CanvasGraphPlan(definition, CanvasExecutionMode.BATCH);
+        return new CanvasGraphPlan(definition, CanvasExecutionMode.BATCH, null);
     }
 
     public static CanvasGraphPlan create(CanvasDefinition definition, CanvasExecutionMode executionMode) {
-        return new CanvasGraphPlan(definition, executionMode);
+        return new CanvasGraphPlan(definition, executionMode, null);
+    }
+
+    public static CanvasGraphPlan createForTrial(
+            CanvasDefinition definition,
+            CanvasExecutionMode executionMode,
+            String targetNodeId
+    ) {
+        return new CanvasGraphPlan(definition, executionMode, targetNodeId);
     }
 
     public CanvasNodeDefinition nodeAt(int index) {
@@ -122,6 +136,7 @@ public final class CanvasGraphPlan {
                         "type"
                 );
             }
+            validateMinorVersionFeatures(entry, schemaMinorVersion);
             if (!nodeOperators.supports(node.nodeType(), executionMode)) {
                 entry.result().error(
                         "NODE_EXECUTION_MODE_NOT_SUPPORTED",
@@ -131,6 +146,88 @@ public final class CanvasGraphPlan {
             }
             if (!blank(node.id())) {
                 entriesById.computeIfAbsent(node.id(), ignored -> new ArrayList<>()).add(entry.index());
+            }
+        }
+    }
+
+    private static void validateMinorVersionFeatures(Entry entry, int schemaMinorVersion) {
+        if (schemaMinorVersion < 5
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TdEngineTmqInputNodeDefinition input
+                && input.configuration() != null
+                && (input.configuration().eventTimeColumn() != null
+                || input.configuration().watermarkDelaySeconds() != null)) {
+            entry.result().error(
+                    "TDENGINE_TMQ_EVENT_TIME_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                    "TMQ 事件时间配置从 Canvas " + CanvasDefinition.CURRENT_SCHEMA_VERSION
+                            + ".5 开始支持",
+                    "configuration.eventTimeColumn"
+            );
+        }
+        if (schemaMinorVersion < 4
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.KafkaInputNodeDefinition input
+                && input.configuration() != null
+                && (input.configuration().valueFormat() != null
+                || input.configuration().metadataFields() != null)) {
+            entry.result().error(
+                    "KAFKA_INPUT_FORMAT_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                    "Kafka Input valueFormat/metadataFields 从 Canvas "
+                            + CanvasDefinition.CURRENT_SCHEMA_VERSION + ".4 开始支持",
+                    "configuration.valueFormat"
+            );
+        }
+        if (!(entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TypeCastNodeDefinition typeCast)
+                || typeCast.configuration() == null
+                || typeCast.configuration().operations() == null) {
+            return;
+        }
+        for (int operationIndex = 0;
+             operationIndex < typeCast.configuration().operations().size();
+             operationIndex++) {
+            cn.superhuang.data.scalpel.contract.task.TypeCastOperation operation =
+                    typeCast.configuration().operations().get(operationIndex);
+            if (operation == null || operation.casts() == null) continue;
+            for (int castIndex = 0; castIndex < operation.casts().size(); castIndex++) {
+                cn.superhuang.data.scalpel.contract.task.ColumnTypeCast cast = operation.casts().get(castIndex);
+                if (cast != null && cast.epochTimestampUnit() != null) {
+                    if (schemaMinorVersion < 2) {
+                        entry.result().error(
+                                "EPOCH_TIMESTAMP_UNIT_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                                "epochTimestampUnit 从 Canvas " + CanvasDefinition.CURRENT_SCHEMA_VERSION
+                                        + ".2 开始支持",
+                                "configuration.operations[" + operationIndex + "].casts[" + castIndex
+                                        + "].epochTimestampUnit"
+                        );
+                    } else if (schemaMinorVersion < 8
+                            && cast.targetType() != null
+                            && cast.targetType().type()
+                            == cn.superhuang.data.scalpel.contract.type.PlatformDataType.LONG) {
+                        entry.result().error(
+                                "TEMPORAL_TO_EPOCH_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                                "DATE/TIMESTAMP 转 LONG Epoch 单位从 Canvas "
+                                        + CanvasDefinition.CURRENT_SCHEMA_VERSION + ".8 开始支持",
+                                "configuration.operations[" + operationIndex + "].casts[" + castIndex
+                                        + "].epochTimestampUnit"
+                        );
+                    }
+                }
+                if (cast != null && schemaMinorVersion < 3 && cast.stringTemporalParseOptions() != null) {
+                    entry.result().error(
+                            "STRING_TEMPORAL_PARSE_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                            "stringTemporalParseOptions 从 Canvas " + CanvasDefinition.CURRENT_SCHEMA_VERSION
+                                    + ".3 开始支持",
+                            "configuration.operations[" + operationIndex + "].casts[" + castIndex
+                                    + "].stringTemporalParseOptions"
+                    );
+                }
+                if (cast != null && schemaMinorVersion < 7 && cast.temporalStringFormatOptions() != null) {
+                    entry.result().error(
+                            "TEMPORAL_STRING_FORMAT_SCHEMA_MINOR_VERSION_NOT_SUPPORTED",
+                            "temporalStringFormatOptions 从 Canvas "
+                                    + CanvasDefinition.CURRENT_SCHEMA_VERSION + ".7 开始支持",
+                            "configuration.operations[" + operationIndex + "].casts[" + castIndex
+                                    + "].temporalStringFormatOptions"
+                    );
+                }
             }
         }
     }
@@ -315,11 +412,13 @@ public final class CanvasGraphPlan {
             int incoming = predecessors.get(entry.index()).size();
             int outgoing = successors.get(entry.index()).size();
             CanvasNodeType type = entry.node().nodeType();
+            boolean trialTarget = trialTargetNodeId != null
+                    && trialTargetNodeId.equals(entry.node().id());
             boolean valid = switch (type) {
                 case MODEL_INPUT, JDBC_INPUT, JDBC_INCREMENTAL_INPUT, JDBC_QUERY_INPUT,
                         FILE_DATASET_INPUT, HTTP_API_INPUT,
                         SPATIAL_SERVICE_INPUT, KAFKA_INPUT, TDENGINE_TMQ_INPUT ->
-                        incoming == 0 && outgoing >= 1;
+                        incoming == 0 && (outgoing >= 1 || trialTarget && outgoing == 0);
                 case JOIN, SPATIAL_CLIP, SPATIAL_JOIN, STREAM_JOIN,
                         RENAME, FILTER, SQL_TRANSFORM, SELECT_COLUMNS, DERIVE_COLUMNS, TYPE_CAST, AGGREGATE,
                         DEDUPLICATE, NULL_HANDLING, VALUE_MAPPING, JSON_EXTRACT, WINDOW, TOP_N,
@@ -359,7 +458,7 @@ public final class CanvasGraphPlan {
                 entry.result().error("INVALID_NODE_DEGREE", message, "edges");
             }
             if (nodeOperators.require(type).category() == CanvasNodeCategory.PROCESSOR
-                    && outgoing == 0) {
+                    && outgoing == 0 && !trialTarget) {
                 entry.result().warning(
                         "UNCONSUMED_PROCESSOR_OUTPUT",
                         "处理结果未被任何下游节点使用，不会产生写入或流式查询",

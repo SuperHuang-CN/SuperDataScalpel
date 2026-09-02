@@ -13,13 +13,15 @@ public record SparkJarExecutionPayload(
         List<ResourceBinding> resourceBindings,
         TriggerType triggerType,
         UUID scheduleId,
-        Instant scheduledFireAt
+        Instant scheduledFireAt,
+        ExecutionPurpose executionPurpose
 ) {
     public SparkJarExecutionPayload {
         jobClass = require(jobClass, 500, "Job Class");
         parameters = parameters == null ? List.of() : List.copyOf(parameters);
         sparkConf = sparkConf == null ? List.of() : List.copyOf(sparkConf);
         resourceBindings = resourceBindings == null ? List.of() : List.copyOf(resourceBindings);
+        executionPurpose = executionPurpose == null ? ExecutionPurpose.REAL : executionPurpose;
         if (jobApiVersion != 1 || triggerType == null || parameters.size() > 100
                 || sparkConf.size() > 100 || resourceBindings.size() > 200
                 || hasDuplicate(parameters.stream().map(Parameter::name).toList())
@@ -29,6 +31,15 @@ public record SparkJarExecutionPayload(
                 || triggerType == TriggerType.SCHEDULED && (scheduleId == null || scheduledFireAt == null)) {
             throw new IllegalArgumentException("Spark JAR 执行载荷无效");
         }
+    }
+
+    public SparkJarExecutionPayload(
+            int jobApiVersion, String jobClass, List<Parameter> parameters,
+            List<SparkConfigurationEntry> sparkConf, List<ResourceBinding> resourceBindings,
+            TriggerType triggerType, UUID scheduleId, Instant scheduledFireAt
+    ) {
+        this(jobApiVersion, jobClass, parameters, sparkConf, resourceBindings, triggerType,
+                scheduleId, scheduledFireAt, ExecutionPurpose.REAL);
     }
 
     private static boolean hasDuplicate(List<String> values) {
@@ -46,6 +57,11 @@ public record SparkJarExecutionPayload(
     public enum TriggerType {
         MANUAL,
         SCHEDULED
+    }
+
+    public enum ExecutionPurpose {
+        REAL,
+        TRIAL
     }
 
     public record Parameter(String name, String value) {

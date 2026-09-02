@@ -1,19 +1,27 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
+  ApartmentOutlined,
   ArrowLeftOutlined,
+  DashboardOutlined,
   EditOutlined,
   MoreOutlined,
   PauseCircleOutlined,
   ReloadOutlined,
   SendOutlined,
+  SettingOutlined,
   StopOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Alert, Button, Descriptions, Dropdown, Progress, Skeleton, Space, Table, Tabs, Tag, Tooltip, Typography, message, Modal } from 'antd';
+import { Button, Dropdown, Progress, Skeleton, Space, Table, Tabs, Tag, Tooltip, Typography, message, Modal } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../../shared/api/http';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { useCurrentUser } from '../../system';
 import { ComputeEngineDrawer } from '../components/ComputeEngineDrawer';
@@ -24,6 +32,7 @@ import {
   useComputeEngineRuntimeOverview,
   useDeactivateComputeEngine,
   useTestComputeEngine,
+  computeEnginesKey,
 } from '../hooks/useComputeEngines';
 import {
   computeBackendTypeLabels,
@@ -42,6 +51,12 @@ import {
 type DetailTab = 'overview' | 'active' | 'queue' | 'recent' | 'configuration';
 
 const detailTabs: DetailTab[] = ['overview', 'active', 'queue', 'recent', 'configuration'];
+
+const executionScopeByTab: Partial<Record<DetailTab, DispatcherExecutionScope>> = {
+  active: 'ACTIVE',
+  queue: 'QUEUED',
+  recent: 'RECENT',
+};
 
 const formatDuration = (startedAt: string | null, endedAt: string | null, queuedAt: string) => {
   const started = new Date(startedAt ?? queuedAt).getTime();
@@ -121,32 +136,29 @@ const RuntimeOverviewPanel = ({
 
   return <div className="compute-engine-detail-panel">
     {Boolean(error) && <Alert type="warning" showIcon message="显示的是上次成功获取的运行态信息" action={<Button size="small" onClick={onRetry}>重试</Button>} />}
-    <section className="compute-engine-overview-section">
-      <div className="compute-engine-overview-heading"><Typography.Text strong>任务准入与占用</Typography.Text><Typography.Text type="secondary">实时状态 · {formatManagementDateTime(overview.collectedAt)}</Typography.Text></div>
+    <BusinessDetailSection title="任务准入与占用" description={`实时状态 · ${formatManagementDateTime(overview.collectedAt)}`} icon={<DashboardOutlined />}>
       <div className="compute-engine-capacity-list">
         {capacityRows.map(([label, used, limit]) => <div className="compute-engine-capacity-row" key={label}>
           <div><Typography.Text>{label}</Typography.Text><Typography.Text type="secondary">{limit === undefined || limit === null ? `${used} 个` : `${used} / ${limit}`}</Typography.Text></div>
           <Progress percent={percentage(used, limit)} showInfo={false} status={limit !== undefined && limit > 0 && used >= limit ? 'exception' : 'normal'} />
         </div>)}
       </div>
-      <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }} bordered items={[
+      <BusinessDetailDescriptions column={{ xs: 1, sm: 2, lg: 3 }} items={[
         { key: 'running', label: '运行中', children: `${usage.running} 个` },
         { key: 'submitted', label: '已提交待运行', children: `${usage.submitted} 个` },
         { key: 'cancelling', label: '取消请求中', children: `${usage.cancelRequested} 个` },
       ]} />
-    </section>
-    <section className="compute-engine-overview-section">
-      <div className="compute-engine-overview-heading"><Typography.Text strong>运行依赖</Typography.Text><Typography.Text type="secondary">Dispatcher {overview.dispatcherInstanceId}</Typography.Text></div>
-      <Descriptions size="small" column={{ xs: 1, sm: 2 }} bordered items={overview.dependencies.map((dependency) => ({
+    </BusinessDetailSection>
+    <BusinessDetailSection title="运行依赖" description={`Dispatcher ${overview.dispatcherInstanceId}`} icon={<ApartmentOutlined />}>
+      <BusinessDetailDescriptions column={{ xs: 1, sm: 2, xl: 3 }} items={overview.dependencies.map((dependency) => ({
         key: dependency.name,
         label: dependency.name,
         children: <Space size={6}><Tag color={dependencyState(dependency.state)}>{dependency.state === 'UP' ? '正常' : '不可用'}</Tag>{dependency.detail && <Typography.Text type="secondary">{dependency.detail}</Typography.Text>}</Space>,
       }))} />
-    </section>
-    <section className="compute-engine-overview-section">
-      <div className="compute-engine-overview-heading"><Typography.Text strong>每次执行资源配置</Typography.Text><Typography.Text type="secondary">配置上限，不代表实时使用量</Typography.Text></div>
-      <Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }} bordered items={resourceItems} />
-    </section>
+    </BusinessDetailSection>
+    <BusinessDetailSection title="每次执行资源配置" description="配置上限，不代表实时使用量" icon={<ThunderboltOutlined />}>
+      <BusinessDetailDescriptions column={{ xs: 1, sm: 2, lg: 3 }} items={resourceItems} />
+    </BusinessDetailSection>
   </div>;
 };
 
@@ -183,12 +195,20 @@ const ExecutionListPanel = ({ engineId, scope }: { engineId: string; scope: Disp
         : value.backendExecutionId ?? '—',
     },
   ], [scope]);
-  return <div className="compute-engine-detail-panel compute-engine-execution-panel">
+  const title = scope === 'ACTIVE' ? '活动任务' : scope === 'QUEUED' ? '排队任务' : '最近执行';
+  return <div className="compute-engine-detail-panel compute-engine-execution-panel detail-table-panel">
     {executionsQuery.isError && <Alert type="error" showIcon message="加载执行记录失败" description={executionsQuery.error instanceof ApiError ? executionsQuery.error.message : undefined} action={<Button size="small" onClick={() => void executionsQuery.refetch()}>重试</Button>} />}
-    <div className="compute-engine-execution-toolbar">
-      <Typography.Text type="secondary">{scope === 'ACTIVE' ? '提交中、已提交、运行中和取消请求中的执行' : scope === 'QUEUED' ? '按进入 Dispatcher 队列的稳定顺序展示' : '按结束时间倒序展示'}</Typography.Text>
-      <Tooltip title="刷新"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新执行记录" loading={executionsQuery.isFetching} onClick={() => void executionsQuery.refetch()} /></Tooltip>
-    </div>
+    <DetailTableToolbar
+      title={title}
+      total={executionsQuery.data?.totalElements ?? 0}
+      current={page + 1}
+      pageSize={size}
+      itemUnit="条"
+      onChange={(nextPage, nextSize) => { setPage(nextPage - 1); setSize(nextSize); }}
+      onRefresh={() => void executionsQuery.refetch()}
+      refreshing={executionsQuery.isFetching}
+      refreshLabel={`刷新${title}`}
+    />
     <Table<ComputeEngineExecution>
       className="management-table"
       size="small"
@@ -196,21 +216,15 @@ const ExecutionListPanel = ({ engineId, scope }: { engineId: string; scope: Disp
       loading={executionsQuery.isLoading}
       columns={columns}
       dataSource={executionsQuery.data?.content ?? []}
-      scroll={{ x: 1_140, y: 'calc(100vh - 370px)' }}
-      pagination={{
-        current: page + 1,
-        pageSize: size,
-        total: executionsQuery.data?.totalElements ?? 0,
-        showSizeChanger: true,
-        showTotal: (total) => `共 ${total} 条`,
-        onChange: (nextPage, nextSize) => { setPage(nextPage - 1); setSize(nextSize); },
-      }}
+      scroll={{ x: 1_140, y: 'calc(100% - 44px)' }}
+      pagination={false}
     />
   </div>;
 };
 
 const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
   const navigate = useNavigate();
+  const queryClient = useQueryClient();
   const currentUserQuery = useCurrentUser();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
   const canViewTasks = permissions.has('task.view');
@@ -221,6 +235,7 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
   const runtimeQuery = useComputeEngineRuntimeOverview(engineId);
   const [activeTab, setActiveTab] = useState<DetailTab>('overview');
   const [editing, setEditing] = useState(false);
+  const [manualRefreshing, setManualRefreshing] = useState(false);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const testMutation = useTestComputeEngine();
@@ -236,6 +251,24 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
   const remotelyManageable = ['ACTIVE', 'DRAINING'].includes(engine.registrationState)
     || (engine.registrationState === 'ERROR' && engine.dispatcherInstanceId !== null);
   const showError = (error: unknown, fallback: string) => messageApi.error(error instanceof ApiError ? error.message : fallback);
+  const refresh = async () => {
+    const executionScope = executionScopeByTab[activeTab];
+    setManualRefreshing(true);
+    try {
+      await Promise.all([
+        engineQuery.refetch(),
+        runtimeQuery.refetch(),
+        executionScope
+          ? queryClient.refetchQueries({
+            queryKey: [computeEnginesKey, engine.id, 'executions', executionScope],
+            type: 'active',
+          })
+          : Promise.resolve(),
+      ]);
+    } finally {
+      setManualRefreshing(false);
+    }
+  };
   const test = async () => {
     try {
       await testMutation.mutateAsync(engine.id);
@@ -291,23 +324,36 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
       { key: 'queue', label: '排队任务', children: <ExecutionListPanel engineId={engine.id} scope="QUEUED" /> },
       { key: 'recent', label: '最近执行', children: <ExecutionListPanel engineId={engine.id} scope="RECENT" /> },
     ] : []),
-    { key: 'configuration', label: '配置', children: <div className="compute-engine-detail-panel"><Space orientation="vertical" size={16} style={{ width: '100%' }}><Descriptions size="small" column={{ xs: 1, sm: 2, lg: 3 }} bordered items={[
-      { key: 'description', label: '说明', children: engine.description ?? '—', span: 3 },
-      { key: 'dispatcher', label: 'Dispatcher 地址', children: engine.dispatcherBaseUrl, span: 2 },
-      { key: 'instance', label: '实例 ID', children: engine.dispatcherInstanceId ?? '—' },
-      { key: 'command', label: '命令 Topic', children: engine.commandTopic, span: 2 },
-      { key: 'runner', label: 'Runner 事件 Topic', children: engine.runnerEventTopic },
-      { key: 'admin', label: 'Admin 事件 Topic', children: engine.adminEventTopic, span: 3 },
-      { key: 'queue', label: '最大排队数', children: engine.maxQueuedExecutions },
-      { key: 'submit', label: '最大并发提交数', children: engine.maxConcurrentSubmissions },
-      { key: 'flight', label: '最大在途数', children: engine.maxInFlightApplications },
-      { key: 'created', label: '创建时间', children: formatManagementDateTime(engine.createdAt) },
-      { key: 'updated', label: '更新时间', children: formatManagementDateTime(engine.updatedAt) },
-      { key: 'checked', label: '最近检查', children: formatManagementDateTime(engine.lastCheckAt) },
-    ]} /><section className="compute-engine-overview-section"><div className="compute-engine-overview-heading"><Typography.Text strong>运行资源策略</Typography.Text><Typography.Text type="secondary">单次任务不得超过最大值</Typography.Text></div><Descriptions size="small" bordered column={{ xs: 1, md: 2 }} items={[
-      { key: 'resource-default', label: '默认资源', children: formatResourceSpec(engine.resourcePolicy.defaults, engine.expectedBackendType) },
-      { key: 'resource-maximum', label: '单次最大资源', children: formatResourceSpec(engine.resourcePolicy.maximums, engine.expectedBackendType) },
-    ]} /></section></Space></div> },
+    {
+      key: 'configuration',
+      label: '配置',
+      children: (
+        <div className="compute-engine-detail-panel">
+          <BusinessDetailSection title="基础配置" description="Dispatcher 通道、容量限制与维护时间" icon={<SettingOutlined />}>
+            <BusinessDetailDescriptions column={{ xs: 1, sm: 2, lg: 3 }} items={[
+              { key: 'description', label: '说明', children: engine.description ?? '—', span: 3 },
+              { key: 'dispatcher', label: 'Dispatcher 地址', children: engine.dispatcherBaseUrl, span: 2 },
+              { key: 'instance', label: '实例 ID', children: engine.dispatcherInstanceId ?? '—' },
+              { key: 'command', label: '命令 Topic', children: engine.commandTopic, span: 2 },
+              { key: 'runner', label: 'Runner 事件 Topic', children: engine.runnerEventTopic },
+              { key: 'admin', label: 'Admin 事件 Topic', children: engine.adminEventTopic, span: 3 },
+              { key: 'queue', label: '最大排队数', children: engine.maxQueuedExecutions },
+              { key: 'submit', label: '最大并发提交数', children: engine.maxConcurrentSubmissions },
+              { key: 'flight', label: '最大在途数', children: engine.maxInFlightApplications },
+              { key: 'created', label: '创建时间', children: formatManagementDateTime(engine.createdAt) },
+              { key: 'updated', label: '更新时间', children: formatManagementDateTime(engine.updatedAt) },
+              { key: 'checked', label: '最近检查', children: formatManagementDateTime(engine.lastCheckAt) },
+            ]} />
+          </BusinessDetailSection>
+          <BusinessDetailSection title="运行资源策略" description="单次任务不得超过最大值" icon={<ThunderboltOutlined />}>
+            <BusinessDetailDescriptions column={{ xs: 1, md: 2 }} items={[
+              { key: 'resource-default', label: '默认资源', children: formatResourceSpec(engine.resourcePolicy.defaults, engine.expectedBackendType) },
+              { key: 'resource-maximum', label: '单次最大资源', children: formatResourceSpec(engine.resourcePolicy.maximums, engine.expectedBackendType) },
+            ]} />
+          </BusinessDetailSection>
+        </div>
+      ),
+    },
   ];
   const normalizedTab = detailTabs.includes(activeTab) && (!['active', 'queue', 'recent'].includes(activeTab) || canViewTasks) ? activeTab : 'overview';
 
@@ -325,7 +371,7 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
         <div className="compute-engine-detail-subtitle"><span>{computeBackendTypeLabels[engine.expectedBackendType]}</span><code>{engine.dispatcherBaseUrl}</code><span>最近检查：{formatManagementDateTime(engine.lastCheckAt)}</span></div>
       </div>
       <Space className="compute-engine-detail-actions" size={8}>
-        <Tooltip title="刷新运行态"><Button icon={<ReloadOutlined />} aria-label="刷新计算引擎运行态" loading={runtimeQuery.isFetching} onClick={() => void Promise.all([engineQuery.refetch(), runtimeQuery.refetch()])} /></Tooltip>
+        <Button type="text" icon={<ReloadOutlined />} loading={manualRefreshing} onClick={() => void refresh()}>刷新</Button>
         {canTest && <Tooltip title="测试连接"><Button icon={<ApiOutlined />} aria-label="测试计算引擎连接" loading={testMutation.isPending} onClick={() => void test()} /></Tooltip>}
         {editable && <Button type="primary" icon={<EditOutlined />} onClick={() => setEditing(true)}>编辑</Button>}
         {menuItems.length > 0 && <Dropdown menu={{ items: menuItems }} trigger={['click']}><Button icon={<MoreOutlined />} aria-label="计算引擎更多操作" /></Dropdown>}

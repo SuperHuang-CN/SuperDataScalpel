@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { SaveOutlined } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Empty, InputNumber, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
+import { Button, Descriptions, Empty, InputNumber, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
+import { useMemo, useState } from 'react';
 import { useDataModels } from '../../model';
 import { ApiError } from '../../../shared/api/http';
 import { useModelQualityTaskDefinition, useUpdateModelQualityTaskDefinition } from '../hooks/useTasks';
@@ -16,18 +17,25 @@ export const ModelQualityTaskDefinitionPanel = ({
   canUpdate,
 }: ModelQualityTaskDefinitionPanelProps) => {
   const [messageApi, messageContext] = message.useMessage();
-  const [modelId, setModelId] = useState<string>();
-  const [failureSampleLimit, setFailureSampleLimit] = useState(100);
+  const [draft, setDraft] = useState<{
+    definitionKey: string;
+    modelId?: string;
+    failureSampleLimit: number;
+  }>();
   const definitionQuery = useModelQualityTaskDefinition(task.id);
   const modelsQuery = useDataModels({ page: 0, size: 500, sort: 'code' });
   const updateMutation = useUpdateModelQualityTaskDefinition();
   const definition = definitionQuery.data;
   const editable = canUpdate && task.status !== 'PUBLISHED';
-
-  useEffect(() => {
-    setModelId(definition?.targetModel?.modelId);
-    setFailureSampleLimit(definition?.failureSampleLimit ?? 100);
-  }, [definition?.targetModel?.modelId, definition?.failureSampleLimit]);
+  const definitionKey = `${definition?.targetModel?.modelId ?? ''}:${definition?.failureSampleLimit ?? 100}`;
+  const activeDraft = draft?.definitionKey === definitionKey
+    ? draft
+    : {
+      definitionKey,
+      modelId: definition?.targetModel?.modelId,
+      failureSampleLimit: definition?.failureSampleLimit ?? 100,
+    };
+  const { modelId, failureSampleLimit } = activeDraft;
 
   const options = useMemo(() => {
     const items = (modelsQuery.data?.content ?? []).map((model) => ({
@@ -41,7 +49,7 @@ export const ModelQualityTaskDefinitionPanel = ({
       });
     }
     return items;
-  }, [definition?.targetModel, modelsQuery.data?.content]);
+  }, [definition, modelsQuery.data?.content]);
 
   const save = async () => {
     if (!modelId) return;
@@ -78,7 +86,7 @@ export const ModelQualityTaskDefinitionPanel = ({
               precision={0}
               value={failureSampleLimit}
               disabled={!editable}
-              onChange={(value) => setFailureSampleLimit(value ?? 0)}
+              onChange={(value) => setDraft({ ...activeDraft, failureSampleLimit: value ?? 0 })}
             />
           </div>
           <Typography.Text type="secondary">
@@ -103,7 +111,7 @@ export const ModelQualityTaskDefinitionPanel = ({
             loading={modelsQuery.isFetching}
             placeholder="请选择要完整质检的模型"
             options={options}
-            onChange={setModelId}
+            onChange={(value) => setDraft({ ...activeDraft, modelId: value })}
             className="task-quality-model-select"
           />
         </div>

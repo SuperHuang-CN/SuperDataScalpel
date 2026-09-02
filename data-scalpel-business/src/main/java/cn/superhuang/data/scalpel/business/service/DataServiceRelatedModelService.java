@@ -12,6 +12,7 @@ import cn.superhuang.data.scalpel.business.service.domain.DataService;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceModelReferenceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
+import cn.superhuang.data.scalpel.business.service.repository.SpatialDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceRelatedModelResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.DataServiceRelatedModelRole;
 import cn.superhuang.data.scalpel.contract.service.DataServiceType;
@@ -33,6 +34,7 @@ public class DataServiceRelatedModelService {
     private final DataServiceRepository serviceRepository;
     private final StandardDataServiceDefinitionRepository standardDefinitionRepository;
     private final SqlDataServiceModelReferenceRepository sqlModelReferenceRepository;
+    private final SpatialDataServiceDefinitionRepository spatialDefinitionRepository;
     private final DataModelRepository modelRepository;
     private final DirectoryRepository directoryRepository;
     private final ModelWarehouseLayerRepository warehouseLayerRepository;
@@ -42,6 +44,7 @@ public class DataServiceRelatedModelService {
             DataServiceRepository serviceRepository,
             StandardDataServiceDefinitionRepository standardDefinitionRepository,
             SqlDataServiceModelReferenceRepository sqlModelReferenceRepository,
+            SpatialDataServiceDefinitionRepository spatialDefinitionRepository,
             DataModelRepository modelRepository,
             DirectoryRepository directoryRepository,
             ModelWarehouseLayerRepository warehouseLayerRepository,
@@ -50,6 +53,7 @@ public class DataServiceRelatedModelService {
         this.serviceRepository = serviceRepository;
         this.standardDefinitionRepository = standardDefinitionRepository;
         this.sqlModelReferenceRepository = sqlModelReferenceRepository;
+        this.spatialDefinitionRepository = spatialDefinitionRepository;
         this.modelRepository = modelRepository;
         this.directoryRepository = directoryRepository;
         this.warehouseLayerRepository = warehouseLayerRepository;
@@ -101,6 +105,13 @@ public class DataServiceRelatedModelService {
                             reference.getSortOrder() + 1
                     ))
                     .toList();
+        }
+        if (service.getType() == DataServiceType.SPATIAL_SERVICE) {
+            return spatialDefinitionRepository.findByDataServiceId(service.getId())
+                    .map(definition -> List.of(new ModelReference(
+                            definition.getModelId(), DataServiceRelatedModelRole.PRIMARY, 1
+                    )))
+                    .orElseGet(List::of);
         }
         return List.of();
     }

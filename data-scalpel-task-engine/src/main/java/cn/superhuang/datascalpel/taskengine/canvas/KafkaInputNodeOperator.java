@@ -56,7 +56,7 @@ public final class KafkaInputNodeOperator implements CanvasNodeOperator {
         );
         CanvasNodeSupport.required(configuration.topic(), "请输入 Kafka Topic", "configuration.topic", issues);
         List<cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema> columns =
-                KafkaValueSchemaSupport.columns(configuration.valueSchema(), issues, "configuration.valueSchema");
+                KafkaValueSchemaSupport.inputColumns(configuration, issues, "configuration");
         CanvasNodeSupport.required(
                 configuration.outputTableName(), "请输入输出表名", "configuration.outputTableName", issues);
         if (configuration.startingOffsets() == null) {

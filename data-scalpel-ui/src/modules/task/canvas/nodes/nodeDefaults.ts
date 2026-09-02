@@ -90,6 +90,8 @@ export const createKafkaInputConfiguration = (): KafkaInputConfiguration => ({
   outputTableName: '',
   startingOffsets: null,
   triggerIntervalSeconds: 10,
+  valueFormat: 'JSON',
+  metadataFields: ['KEY', 'TOPIC', 'PARTITION', 'OFFSET', 'TIMESTAMP'],
 });
 
 export const createTdEngineTmqInputConfiguration = (): TdEngineTmqInputConfiguration => ({
@@ -102,6 +104,8 @@ export const createTdEngineTmqInputConfiguration = (): TdEngineTmqInputConfigura
   startingOffsets: 'EARLIEST',
   maxOffsetsPerVGroupPerTrigger: 10_000,
   triggerIntervalSeconds: 10,
+  eventTimeColumn: null,
+  watermarkDelaySeconds: null,
 });
 
 export const createJoinConfiguration = (): JoinConfiguration => ({

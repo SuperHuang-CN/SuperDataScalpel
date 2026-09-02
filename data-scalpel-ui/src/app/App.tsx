@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react';
-import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider } from 'react-router-dom';
+import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider, useParams } from 'react-router-dom';
 import { DashboardPage } from '../modules/dashboard';
 import { LlmModelManagementPage } from '../modules/assistant';
 import { ComputeEngineDetailPage, ComputeEnginePage } from '../modules/computeengine';
@@ -40,6 +40,11 @@ const TaskDefinitionEditorPage = lazy(async () => {
   return { default: module.TaskDefinitionEditorPage };
 });
 
+const SparkJarOnlineEditorPage = lazy(async () => {
+  const module = await import('../modules/task/pages/SparkJarOnlineEditorPage');
+  return { default: module.SparkJarOnlineEditorPage };
+});
+
 const MaskingRulePage = lazy(async () => {
   const module = await import('../modules/task/pages/MaskingRulePage');
   return { default: module.MaskingRulePage };
@@ -63,11 +68,6 @@ const DataSourceDetailPage = lazy(async () => {
 const FileDatasetDetailPage = lazy(async () => {
   const module = await import('../modules/filedataset/pages/FileDatasetDetailPage');
   return { default: module.FileDatasetDetailPage };
-});
-
-const DataServiceEditorPage = lazy(async () => {
-  const module = await import('../modules/dataservice/pages/DataServiceEditorPage');
-  return { default: module.DataServiceEditorPage };
 });
 
 const DataServiceDefinitionEditorPage = lazy(async () => {
@@ -104,6 +104,11 @@ const AssetManagementPage = lazy(async () => {
   const module = await import('../modules/asset');
   return { default: module.AssetManagementPage };
 });
+
+const LegacyDataServiceEditRedirect = () => {
+  const { id } = useParams<{ id: string }>();
+  return <Navigate to={id ? `/dataservice/${id}?tab=basic` : '/dataservice'} replace />;
+};
 
 const router = createBrowserRouter(createRoutesFromElements(
   <>
@@ -200,6 +205,14 @@ const router = createBrowserRouter(createRoutesFromElements(
               )}
             />
             <Route
+              path="task/:taskId/online-code"
+              element={(
+                <RequirePermission permission="task.update">
+                  <Suspense fallback="正在加载在线开发工作台…"><SparkJarOnlineEditorPage /></Suspense>
+                </RequirePermission>
+              )}
+            />
+            <Route
               path="task/:taskId/definition"
               element={(
                 <RequirePermission permission="task.update">
@@ -236,8 +249,8 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route
               path="dataservice/:id/edit"
               element={(
-                <RequirePermission permission="service.update">
-                  <Suspense fallback="正在加载数据服务编辑器…"><DataServiceEditorPage /></Suspense>
+                <RequirePermission permission="service.view">
+                  <LegacyDataServiceEditRedirect />
                 </RequirePermission>
               )}
             />

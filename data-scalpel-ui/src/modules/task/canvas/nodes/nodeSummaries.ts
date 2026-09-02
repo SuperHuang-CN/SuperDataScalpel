@@ -88,12 +88,17 @@ export const summarizeKafkaInput = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.KafkaInput>,
 ) => {
   const { dataSourceId, topic, valueSchema, outputTableName } = data.configuration;
-  if (!dataSourceId || !topic || valueSchema.columns.length === 0 || !outputTableName) {
+  const valueFormat = data.configuration.valueFormat ?? 'JSON';
+  const metadataFields = data.configuration.metadataFields ?? [];
+  const payloadFieldCount = valueFormat === 'JSON' ? valueSchema.columns.length : 1;
+  if (!dataSourceId || !topic
+    || (valueFormat === 'JSON' && payloadFieldCount === 0) || !outputTableName) {
     return '请配置 Kafka 输入';
   }
+  const fieldCount = payloadFieldCount + metadataFields.length;
   return data.summary?.kind === 'KAFKA'
-    ? `${data.summary.dataSourceName} · ${topic} → ${outputTableName} · ${valueSchema.columns.length} 字段`
-    : `${topic} → ${outputTableName} · ${valueSchema.columns.length} 字段`;
+    ? `${data.summary.dataSourceName} · ${topic} → ${outputTableName} · ${valueFormat} · ${fieldCount} 字段`
+    : `${topic} → ${outputTableName} · ${valueFormat} · ${fieldCount} 字段`;
 };
 
 export const summarizeTdEngineTmqInput = (
@@ -459,7 +464,10 @@ export const summarizeKafkaOutput = (
   const target = data.summary?.kind === 'KAFKA'
     ? `${data.summary.dataSourceName} · ${first.topic || '待选择 Topic'}`
     : first.topic || '待选择 Topic';
-  const preview = `${first.sourceTableName || '待选择来源'} → ${target} · ${first.valueSchema.columns.length} 字段`;
+  const fieldCount = first.valueFormat == null
+    ? first.valueSchema?.columns.length ?? 0
+    : first.valueColumnNames.length;
+  const preview = `${first.sourceTableName || '待选择来源'} → ${target} · ${first.valueFormat ?? '旧版 JSON'} · ${fieldCount} 字段`;
   return writes.length > 1 ? `${preview}，另 ${writes.length - 1} 条写入` : preview;
 };
 

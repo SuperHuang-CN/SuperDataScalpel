@@ -8,8 +8,9 @@ export interface DataServiceRelatedModelView extends DataServiceRelatedModel {
 }
 
 const relatedModelReferences = (dataService: DataServiceDetail | undefined): DataServiceRelatedModel[] => {
-  if (dataService?.standardDefinition) {
-    return [unresolvedModel(dataService.standardDefinition.modelId, 'PRIMARY', 1)];
+  const primaryModelId = dataService?.standardDefinition?.modelId ?? dataService?.spatialDefinition?.modelId;
+  if (primaryModelId) {
+    return [unresolvedModel(primaryModelId, 'PRIMARY', 1)];
   }
   return (dataService?.sqlDefinition?.modelIds ?? []).map((modelId, index) => (
     unresolvedModel(modelId, 'REFERENCE', index + 1)

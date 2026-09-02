@@ -118,14 +118,14 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     ) throws SQLException {
         String sql = """
                 WITH RECURSIVE target AS (
-                    SELECT c.oid, c.relkind
+                    SELECT c.oid, c.relkind, c.reltuples
                     FROM pg_catalog.pg_class c
                     JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
                     WHERE n.nspname = ? AND c.relname = ?
                 ), relations AS (
-                    SELECT oid, relkind FROM target
+                    SELECT oid, relkind, reltuples FROM target
                     UNION ALL
-                    SELECT child.oid, child.relkind
+                    SELECT child.oid, child.relkind, child.reltuples
                     FROM relations parent
                     JOIN pg_catalog.pg_inherits inheritance ON inheritance.inhparent = parent.oid
                     JOIN pg_catalog.pg_class child ON child.oid = inheritance.inhrelid
@@ -176,8 +176,6 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             return SpatialPreviewMetadata.unsupported("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
         }
         Set<String> indexedColumns = spatialPreviewIndexedColumns(connection, table, timeout);
-        TablePhysicalStatistics statistics = readTablePhysicalStatistics(connection, table, timeout);
-        Long estimatedRows = statistics.rowCount();
         List<SpatialPreviewColumnMetadata> result = new ArrayList<>();
         for (SpatialPreviewColumn column : columns) {
             String issue = SpatialTypeSupport.validateV1Geometry(column.geometry());
@@ -192,17 +190,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                 }
             }
             boolean indexed = indexedColumns.contains(normalizeSpatialName(column.name()));
-            boolean allowed = issue == null && (indexed || (estimatedRows != null && estimatedRows <= 50_000L));
-            String message = issue;
-            if (message == null && !indexed) {
-                message = estimatedRows == null
-                        ? "未发现可用空间索引，且表统计不可用；请创建 GiST/SP-GiST 索引或执行 ANALYZE"
-                        : estimatedRows > 50_000L
-                        ? "未发现可用空间索引，估算行数超过 50,000；请创建 GiST/SP-GiST 索引"
-                        : "未发现可用空间索引，将仅对小表执行受限预览";
-            }
             result.add(new SpatialPreviewColumnMetadata(
-                    column.name(), indexed, estimatedRows, allowed, message
+                    column.name(), indexed, issue == null, issue
             ));
         }
         return new SpatialPreviewMetadata(true, null, result);
@@ -228,10 +217,10 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
         boolean indexed = spatialPreviewIndexedColumns(connection, table, timeout)
                 .contains(normalizeSpatialName(column.name()));
         if (!indexed) {
-            Long estimatedRows = readTablePhysicalStatistics(connection, table, timeout).rowCount();
+            Long estimatedRows = limits.unindexedTableRowCount();
             if (estimatedRows == null) {
                 throw new IllegalArgumentException(
-                        "未发现可用空间索引，且表统计不可用；请创建 GiST/SP-GiST 索引或执行 ANALYZE"
+                        "未发现可用空间索引，且模型物理统计行数不可用；请先刷新物理统计，仍不可用时执行 ANALYZE"
                 );
             }
             if (estimatedRows > limits.unindexedMaximumRows()) {
@@ -446,16 +435,20 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             case TIMESTAMP -> "timestamp with time zone";
             case TIMESTAMP_NTZ, DATETIME -> "timestamp";
             case BINARY -> "bytea";
-            case GEOMETRY -> "geometry(" + column.geometry().kind().name() + ","
-                    + column.geometry().crs().code() + ")";
+            case GEOMETRY -> "geometry";
         };
+    }
+
+    @Override
+    protected boolean matchesGeometryColumn(TableColumnDefinition expected, ColumnMetadata actual) {
+        return "geometry".equals(postGisNativeType(actual.nativeType()));
     }
 
     @Override
     protected Optional<TypeMappingResult<PlatformTypeDefinition>> mapDialectTypeToPlatform(
             JdbcTypeDescriptor physicalType
     ) {
-        String nativeType = physicalType.nativeTypeName().toLowerCase(Locale.ROOT);
+        String nativeType = postGisNativeType(physicalType.nativeTypeName());
         if ("geography".equals(nativeType)) {
             return Optional.of(TypeMappingResult.unsupported("PostGIS geography 第一版不支持"));
         }
@@ -514,7 +507,7 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             TableIdentifier table,
             List<ColumnMetadata> columns
     ) throws SQLException {
-        if (columns.stream().noneMatch(PostgreSqlDialect::isPostGisNativeType)) {
+        if (columns.stream().noneMatch(PostgreSqlDialect::isPostGisGeometryNativeType)) {
             return List.copyOf(columns);
         }
         String extensionSchema = postGisSchema(connection);
@@ -551,7 +544,7 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             }
         }
         return columns.stream().map(column -> {
-            if (!isPostGisNativeType(column)) {
+            if (!isPostGisGeometryNativeType(column)) {
                 return column;
             }
             SpatialColumnMetadata spatial = spatialByColumn.get(normalizeSpatialName(column.name()));
@@ -562,7 +555,7 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     @Override
     public DdlPlan planCreateTable(TableDefinition definition) {
         if (SpatialTypeSupport.containsGeometry(definition)) {
-            throw new IllegalArgumentException("PostGIS Geometry 建表规划需要连接目标数据库解析 CRS");
+            throw new IllegalArgumentException("PostGIS Geometry 建表规划需要连接目标数据库确认 PostGIS 扩展");
         }
         return super.planCreateTable(definition);
     }
@@ -576,11 +569,10 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
         if (extensionSchema == null) {
             throw new IllegalArgumentException("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
         }
-        Map<CrsReference, Integer> localSrids = resolvePostGisSrids(connection, extensionSchema, definition);
         List<String> clauses = new ArrayList<>();
         for (TableColumnDefinition column : definition.columns()) {
             String typeSql = column.type() == TableColumnType.GEOMETRY
-                    ? postGisGeometryType(extensionSchema, column.geometry(), localSrids)
+                    ? quoteIdentifier(extensionSchema) + "." + quoteIdentifier("geometry")
                     : columnTypeSql(column);
             clauses.add(quoteIdentifier(column.name()) + " " + typeSql
                     + (column.nullable() ? "" : " NOT NULL"));
@@ -595,6 +587,15 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     @Override
     public TableChangePlan planTableChange(TableDefinition before, TableDefinition target, TableMetadata actual) {
         if (SpatialTypeSupport.containsGeometry(before) || SpatialTypeSupport.containsGeometry(target)) {
+            if (!compareTable(before, actual).compatible()) {
+                throw new IllegalArgumentException("Physical table structure has drifted from the source definition");
+            }
+            if (before.structureFingerprint().equals(target.structureFingerprint())) {
+                return new TableChangePlan(
+                        before, target, TableChangeStrategy.METADATA_ONLY, TableChangeRisk.SAFE,
+                        TableDdlAtomicity.NOT_APPLICABLE, List.of(), List.of(), List.of(), List.of()
+                );
+            }
             throw new UnsupportedOperationException("空间字段所在受管表第一版不支持物理结构变更");
         }
         if (!compareTable(before, actual).compatible()) {
@@ -1522,22 +1523,25 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
         )));
     }
 
-    private static boolean isPostGisNativeType(ColumnMetadata column) {
-        return isPostGisNativeType(column.nativeType());
+    private static boolean isPostGisGeometryNativeType(ColumnMetadata column) {
+        return isPostGisGeometryNativeType(column.nativeType());
     }
 
-    private static boolean isPostGisNativeType(String nativeType) {
-        if (nativeType == null) {
-            return false;
+    private static boolean isPostGisGeometryNativeType(String nativeType) {
+        return "geometry".equals(postGisNativeType(nativeType));
+    }
+
+    private static String postGisNativeType(String nativeType) {
+        if (nativeType == null || nativeType.isBlank()) {
+            return "";
         }
-        return switch (nativeType.trim().toLowerCase(Locale.ROOT)) {
-            case "geometry", "geography", "raster" -> true;
-            default -> false;
-        };
+        String unquoted = nativeType.trim().replace("\"", "");
+        int separator = unquoted.lastIndexOf('.');
+        return (separator < 0 ? unquoted : unquoted.substring(separator + 1)).trim().toLowerCase(Locale.ROOT);
     }
 
     private static ColumnMetadata unresolvedSpatialColumn(ColumnMetadata column) {
-        if (!isPostGisNativeType(column)) {
+        if (!isPostGisGeometryNativeType(column)) {
             return column;
         }
         return column.withSpatial(new SpatialColumnMetadata(
@@ -1644,68 +1648,6 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                 return resultSet.next() ? resultSet.getString(1) : null;
             }
         }
-    }
-
-    private Map<CrsReference, Integer> resolvePostGisSrids(
-            Connection connection,
-            String extensionSchema,
-            TableDefinition definition
-    ) throws SQLException {
-        Set<Integer> codes = definition.columns().stream()
-                .filter(column -> column.type() == TableColumnType.GEOMETRY)
-                .map(column -> column.geometry().crs().code())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        String placeholders = codes.stream().map(ignored -> "?")
-                .collect(java.util.stream.Collectors.joining(", "));
-        String sql = "SELECT srid, auth_name, auth_srid FROM " + quoteIdentifier(extensionSchema)
-                + ".spatial_ref_sys WHERE UPPER(auth_name) = 'EPSG' AND auth_srid IN (" + placeholders + ")";
-        Map<CrsReference, Integer> result = new LinkedHashMap<>();
-        Set<CrsReference> duplicates = new HashSet<>();
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            int parameter = 1;
-            for (Integer code : codes) {
-                statement.setInt(parameter++, code);
-            }
-            try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) {
-                    CrsReference crs = new CrsReference(
-                            resultSet.getString("auth_name"), resultSet.getInt("auth_srid")
-                    );
-                    Integer previous = result.putIfAbsent(crs, resultSet.getInt("srid"));
-                    if (previous != null) {
-                        duplicates.add(crs);
-                    }
-                }
-            }
-        }
-        for (Integer code : codes) {
-            CrsReference crs = CrsReference.epsg(code);
-            if (duplicates.contains(crs)) {
-                throw new IllegalArgumentException("目标 PostGIS 中 EPSG:" + code + " 对应多个本地 SRID");
-            }
-            if (!result.containsKey(crs)) {
-                throw new IllegalArgumentException("目标 PostGIS 中不存在 EPSG:" + code);
-            }
-        }
-        return Map.copyOf(result);
-    }
-
-    private String postGisGeometryType(
-            String extensionSchema,
-            GeometryTypeDefinition geometry,
-            Map<CrsReference, Integer> localSrids
-    ) {
-        String issue = SpatialTypeSupport.validateV1Geometry(geometry);
-        if (issue != null) {
-            throw new IllegalArgumentException(issue);
-        }
-        Integer localSrid = localSrids.get(geometry.crs());
-        if (localSrid == null) {
-            throw new IllegalArgumentException("目标 PostGIS 中不存在 "
-                    + geometry.crs().authority() + ":" + geometry.crs().code());
-        }
-        return quoteIdentifier(extensionSchema) + "." + quoteIdentifier("geometry")
-                + "(" + geometry.kind().name() + "," + localSrid + ")";
     }
 
     private void appendPrimaryKey(TableDefinition definition, List<String> clauses) {

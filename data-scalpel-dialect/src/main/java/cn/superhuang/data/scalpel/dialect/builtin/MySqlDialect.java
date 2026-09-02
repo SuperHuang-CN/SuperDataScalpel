@@ -36,9 +36,6 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -267,8 +264,13 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
             case TIMESTAMP -> "timestamp";
             case TIMESTAMP_NTZ, DATETIME -> "datetime";
             case BINARY -> "blob";
-            case GEOMETRY -> column.geometry().kind().name() + " SRID " + column.geometry().crs().code();
+            case GEOMETRY -> "GEOMETRY";
         };
+    }
+
+    @Override
+    protected boolean matchesGeometryColumn(TableColumnDefinition expected, ColumnMetadata actual) {
+        return isMySqlSpatialColumn(actual);
     }
 
     @Override
@@ -379,7 +381,7 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
     @Override
     public DdlPlan planCreateTable(TableDefinition definition) {
         if (SpatialTypeSupport.containsGeometry(definition)) {
-            throw new IllegalArgumentException("MySQL Geometry 建表规划需要连接目标数据库解析 CRS");
+            throw new IllegalArgumentException("MySQL Geometry 建表规划需要连接目标数据库确认版本");
         }
         return super.planCreateTable(definition);
     }
@@ -392,12 +394,9 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
         if (!isMySql8(connection)) {
             throw new IllegalArgumentException("空间字段第一版只支持 MySQL 8.x，不支持 MySQL 5.7 或 MariaDB");
         }
-        Map<CrsReference, Integer> localSrsIds = resolveMySqlSrsIds(connection, definition);
         List<String> clauses = new ArrayList<>();
         for (TableColumnDefinition column : definition.columns()) {
-            String typeSql = column.type() == TableColumnType.GEOMETRY
-                    ? mySqlGeometryType(column.geometry(), localSrsIds)
-                    : columnTypeSql(column);
+            String typeSql = columnTypeSql(column);
             clauses.add(quoteIdentifier(column.name()) + " " + typeSql
                     + (column.nullable() ? "" : " NOT NULL"));
         }
@@ -413,70 +412,6 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
         String productName = connection.getMetaData().getDatabaseProductName();
         return "MySQL".equalsIgnoreCase(productName)
                 && connection.getMetaData().getDatabaseMajorVersion() == 8;
-    }
-
-    private Map<CrsReference, Integer> resolveMySqlSrsIds(
-            Connection connection,
-            TableDefinition definition
-    ) throws SQLException {
-        Set<Integer> codes = definition.columns().stream()
-                .filter(column -> column.type() == TableColumnType.GEOMETRY)
-                .map(column -> column.geometry().crs().code())
-                .collect(java.util.stream.Collectors.toCollection(LinkedHashSet::new));
-        String placeholders = codes.stream().map(ignored -> "?")
-                .collect(java.util.stream.Collectors.joining(", "));
-        String sql = """
-                SELECT SRS_ID, ORGANIZATION, ORGANIZATION_COORDSYS_ID
-                  FROM INFORMATION_SCHEMA.ST_SPATIAL_REFERENCE_SYSTEMS
-                 WHERE UPPER(ORGANIZATION) = 'EPSG'
-                   AND ORGANIZATION_COORDSYS_ID IN (%s)
-                """.formatted(placeholders);
-        Map<CrsReference, Integer> result = new LinkedHashMap<>();
-        Set<CrsReference> duplicates = new HashSet<>();
-        try (PreparedStatement statement = connection.prepareStatement(sql)) {
-            int parameter = 1;
-            for (Integer code : codes) {
-                statement.setInt(parameter++, code);
-            }
-            try (ResultSet resultSet = statement.executeQuery()) {
-                while (resultSet.next()) {
-                    CrsReference crs = new CrsReference(
-                            resultSet.getString("ORGANIZATION"),
-                            resultSet.getInt("ORGANIZATION_COORDSYS_ID")
-                    );
-                    Integer previous = result.putIfAbsent(crs, resultSet.getInt("SRS_ID"));
-                    if (previous != null) {
-                        duplicates.add(crs);
-                    }
-                }
-            }
-        }
-        for (Integer code : codes) {
-            CrsReference crs = CrsReference.epsg(code);
-            if (duplicates.contains(crs)) {
-                throw new IllegalArgumentException("目标 MySQL 中 EPSG:" + code + " 对应多个 SRS ID");
-            }
-            if (!result.containsKey(crs)) {
-                throw new IllegalArgumentException("目标 MySQL 中不存在 EPSG:" + code);
-            }
-        }
-        return Map.copyOf(result);
-    }
-
-    private static String mySqlGeometryType(
-            GeometryTypeDefinition geometry,
-            Map<CrsReference, Integer> localSrsIds
-    ) {
-        String issue = SpatialTypeSupport.validateV1Geometry(geometry);
-        if (issue != null) {
-            throw new IllegalArgumentException(issue);
-        }
-        Integer localSrsId = localSrsIds.get(geometry.crs());
-        if (localSrsId == null) {
-            throw new IllegalArgumentException("目标 MySQL 中不存在 "
-                    + geometry.crs().authority() + ":" + geometry.crs().code());
-        }
-        return geometry.kind().name() + " SRID " + localSrsId;
     }
 
     private void appendPrimaryKey(TableDefinition definition, List<String> clauses) {

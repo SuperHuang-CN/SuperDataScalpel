@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.task.domain;
 import cn.superhuang.data.scalpel.business.shared.persistence.BaseEntity;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionErrorCategory;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialSpec;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -30,6 +31,10 @@ import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
         indexes = {
                 @Index(name = "idx_task_run_task_queued", columnList = "task_id,queued_at"),
                 @Index(name = "idx_task_run_task_status", columnList = "task_id,status"),
+                @Index(
+                        name = "idx_task_run_canvas_trial_target_queued",
+                        columnList = "task_id,canvas_trial_target_node_id,queued_at"
+                ),
                 @Index(name = "idx_task_run_quality_model_queued", columnList = "quality_target_model_id,queued_at"),
                 @Index(name = "idx_task_run_quality_model_ended", columnList = "quality_target_model_id,status,ended_at")
         }
@@ -116,6 +121,16 @@ public class TaskRun extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "execution_mode", nullable = false, updatable = false, length = 32)
     private TaskRunExecutionMode executionMode;
+
+    /** Immutable Canvas-node identity captured for a persisted trial-run session. */
+    @Column(name = "canvas_trial_target_node_id", length = 100, updatable = false)
+    private String canvasTrialTargetNodeId;
+
+    @Column(name = "canvas_trial_table_name", length = 255, updatable = false)
+    private String canvasTrialTableName;
+
+    @Column(name = "canvas_trial_selected_column_count", updatable = false)
+    private Integer canvasTrialSelectedColumnCount;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
@@ -292,6 +307,32 @@ public class TaskRun extends BaseEntity {
         return run;
     }
 
+    public static TaskRun queueDispatchedCanvasTrial(
+            UUID runId, UUID taskId, int definitionVersion, String definitionSnapshot,
+            UUID executionId, int attempt, Instant deadlineAt, UUID computeEngineId,
+            String commandTopicSnapshot
+    ) {
+        TaskRun run = queueDispatchedCanvas(
+                runId, taskId, definitionVersion, definitionSnapshot, executionId, attempt,
+                deadlineAt, computeEngineId, commandTopicSnapshot);
+        run.executionMode = TaskRunExecutionMode.TRIAL;
+        return run;
+    }
+
+    public void captureCanvasTrialContext(CanvasTrialSpec trialSpec) {
+        if (getTaskType() != TaskType.SPARK_CANVAS
+                || executionMode != TaskRunExecutionMode.TRIAL
+                || trialSpec == null
+                || canvasTrialTargetNodeId != null
+                || canvasTrialTableName != null
+                || canvasTrialSelectedColumnCount != null) {
+            throw new IllegalStateException("Canvas 试运行上下文无效");
+        }
+        canvasTrialTargetNodeId = trialSpec.targetNodeId();
+        canvasTrialTableName = trialSpec.tableName();
+        canvasTrialSelectedColumnCount = trialSpec.columnNames().size();
+    }
+
     public static TaskRun queueScheduledDispatchedCanvas(
             UUID runId,
             UUID taskId,
@@ -380,6 +421,17 @@ public class TaskRun extends BaseEntity {
         return run;
     }
 
+    public static TaskRun queueDispatchedSparkJarTrial(
+            UUID runId, UUID taskId, int definitionVersion, String definitionSnapshot,
+            UUID executionId, int attempt, Instant deadlineAt, UUID computeEngineId,
+            String commandTopicSnapshot
+    ) {
+        TaskRun run = queueDispatchedSparkJar(runId, taskId, definitionVersion, definitionSnapshot,
+                executionId, attempt, deadlineAt, computeEngineId, commandTopicSnapshot);
+        run.executionMode = TaskRunExecutionMode.TRIAL;
+        return run;
+    }
+
     public static TaskRun queueScheduledDispatchedSparkJar(
             UUID runId, UUID taskId, UUID scheduleId, Instant scheduledFireAt,
             int definitionVersion, String definitionSnapshot, UUID executionId, int attempt,
@@ -457,6 +509,30 @@ public class TaskRun extends BaseEntity {
         run.computeEngineId = computeEngineId;
         run.commandTopicSnapshot = commandTopicSnapshot.trim();
         run.deadlineAt = null;
+        return run;
+    }
+
+    public static TaskRun queueDispatchedStreamingTrial(
+            UUID runId,
+            UUID taskId,
+            UUID streamingDeploymentId,
+            int definitionVersion,
+            String definitionSnapshot,
+            UUID executionId,
+            int attempt,
+            Instant deadlineAt,
+            UUID computeEngineId,
+            String commandTopicSnapshot
+    ) {
+        if (deadlineAt == null) {
+            throw new IllegalArgumentException("实时试运行截止时间不能为空");
+        }
+        TaskRun run = queueDispatchedStreaming(
+                runId, taskId, streamingDeploymentId, definitionVersion, definitionSnapshot,
+                executionId, attempt, computeEngineId, commandTopicSnapshot,
+                TaskType.SPARK_STREAMING_JAR);
+        run.executionMode = TaskRunExecutionMode.TRIAL;
+        run.deadlineAt = deadlineAt;
         return run;
     }
 
@@ -859,6 +935,12 @@ public class TaskRun extends BaseEntity {
     public TaskRunExecutionMode getExecutionMode() {
         return executionMode;
     }
+
+    public String getCanvasTrialTargetNodeId() { return canvasTrialTargetNodeId; }
+
+    public String getCanvasTrialTableName() { return canvasTrialTableName; }
+
+    public Integer getCanvasTrialSelectedColumnCount() { return canvasTrialSelectedColumnCount; }
 
     public TaskRunStatus getStatus() {
         return status;

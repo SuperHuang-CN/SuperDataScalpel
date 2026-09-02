@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
-import { Alert, Button, Checkbox, Form, Input, Popconfirm, Space, Tag, Typography } from 'antd';
+import { Button, Checkbox, Form, Input, Popconfirm, Space, Tag, Typography } from 'antd';
 import type {
   CanvasNodeValidationResult,
   JoinCondition,

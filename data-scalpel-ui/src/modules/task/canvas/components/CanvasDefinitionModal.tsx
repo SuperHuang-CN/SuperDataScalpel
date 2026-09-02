@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Input, List, Modal, Space, Statistic, Tag, message } from 'antd';
+import { Button, Input, List, Modal, Space, Statistic, Tag, message } from 'antd';
 import { downloadCanvasDefinition, formatCanvasDefinition } from '../canvasDefinitionIO';
 import { canvasCompilationIssues } from '../canvasCompilationPresentation';
 import type { CanvasDefinition, CanvasValidationResult } from '../canvasTypes';

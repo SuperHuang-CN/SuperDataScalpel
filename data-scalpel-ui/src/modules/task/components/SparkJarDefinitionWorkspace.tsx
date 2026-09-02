@@ -1,5 +1,6 @@
 import {
   DownloadOutlined,
+  CodeOutlined,
   EditOutlined,
   EyeOutlined,
   ExperimentOutlined,
@@ -37,6 +38,7 @@ interface SparkJarArtifactSummaryProps {
   beforeUpload: NonNullable<UploadProps['beforeUpload']>;
   onClearSelection: () => void;
   onUpload: () => void;
+  onOpenOnlineEditor: () => void;
 }
 
 export const SparkJarArtifactSummary = ({
@@ -46,6 +48,7 @@ export const SparkJarArtifactSummary = ({
   beforeUpload,
   onClearSelection,
   onUpload,
+  onOpenOnlineEditor,
 }: SparkJarArtifactSummaryProps) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const pendingFile = uploadFiles[0];
@@ -87,6 +90,7 @@ export const SparkJarArtifactSummary = ({
           </>
         ) : (
           <>
+            <Button icon={<CodeOutlined />} onClick={onOpenOnlineEditor}>在线开发</Button>
             {jar && (
               <Button icon={<EyeOutlined />} onClick={() => setDetailOpen(true)}>查看详情</Button>
             )}
@@ -244,6 +248,7 @@ interface SparkJarRuntimeConfigurationProps {
     environment: string;
     resources: string;
     timeout: string;
+    timeoutLabel?: string;
   };
 }
 
@@ -315,19 +320,20 @@ export const SparkJarRuntimeConfiguration = ({
         <span>上运行，使用</span>
         <strong>{overview.resources}</strong>
         <span className="spark-jar-runtime-sentence-separator" aria-hidden="true">·</span>
-        <span>最长运行</span>
+        <span>{overview.timeoutLabel ?? '最长运行'}</span>
         <strong>{overview.timeout}</strong>
       </div>
 
-      {primaryOpen && (
-        <div className="spark-jar-runtime-primary-editor">
+      <div
+        className="spark-jar-runtime-primary-editor"
+        hidden={!primaryOpen}
+      >
           {primaryItems.map((item) => (
             <div key={item.key} className={`spark-jar-runtime-primary-item spark-jar-runtime-primary-item-${item.key}`}>
               {item.children}
             </div>
           ))}
-        </div>
-      )}
+      </div>
 
       {advancedItems.length > 0 && (
         <div className="spark-jar-runtime-advanced-bar">
@@ -360,7 +366,7 @@ export const SparkJarRuntimeConfiguration = ({
       <Drawer
         rootClassName="business-overlay business-drawer-overlay spark-jar-runtime-drawer"
         title="高级运行配置"
-        width={720}
+        width={960}
         open={Boolean(activeAdvanced)}
         onClose={closeAdvanced}
       >

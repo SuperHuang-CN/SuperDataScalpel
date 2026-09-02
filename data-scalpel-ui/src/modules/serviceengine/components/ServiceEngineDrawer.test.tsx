@@ -87,8 +87,10 @@ describe('ServiceEngineDrawer', () => {
       adminUrl: 'http://candidate.test:8081',
       managementToken: 'candidate-token',
     }));
-    expect(await screen.findByText('连接测试成功')).toBeInTheDocument();
-    expect(screen.getByText('engine_a')).toBeInTheDocument();
+    const testFeedback = await screen.findByLabelText('Service Engine 连接测试详情');
+    expect(screen.getByText('连接测试成功')).toBeInTheDocument();
+    await user.hover(testFeedback);
+    expect(await screen.findByText('engine_a')).toBeInTheDocument();
     expect(screen.getByText('响应时间：12 ms')).toBeInTheDocument();
     expect(screen.getByText('支持数据库：POSTGRESQL')).toBeInTheDocument();
   });

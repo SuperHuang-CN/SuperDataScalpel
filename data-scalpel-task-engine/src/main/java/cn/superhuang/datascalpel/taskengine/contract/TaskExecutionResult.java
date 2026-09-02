@@ -9,6 +9,8 @@ import java.util.Set;
 import java.util.UUID;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 import cn.superhuang.data.scalpel.contract.execution.UserJobObservabilitySnapshot;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialPreview;
 import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
 
 public record TaskExecutionResult(
@@ -26,9 +28,11 @@ public record TaskExecutionResult(
         ModelQualityExecutionResult qualityResult,
         UserJobObservabilitySnapshot userJobObservability,
         TaskLineageEvidence lineage,
+        SparkJarTrialPreview trialPreview,
+        CanvasTrialPreview canvasTrialPreview,
         TaskExecutionError error
 ) {
-    public static final int CURRENT_SCHEMA_VERSION = 8;
+    public static final int CURRENT_SCHEMA_VERSION = 11;
 
     public TaskExecutionResult {
         nodeResults = nodeResults == null ? List.of() : List.copyOf(nodeResults);
@@ -43,8 +47,9 @@ public record TaskExecutionResult(
                 || durationMs == null || durationMs < 0 || affectedRows != null && affectedRows < 0) {
             throw new IllegalArgumentException("任务执行结果字段无效");
         }
-        if (state == TaskExecutionState.SUCCESS && error != null
-                || state != TaskExecutionState.SUCCESS && error == null) {
+        boolean normalTerminalState = state == TaskExecutionState.SUCCESS
+                || state == TaskExecutionState.STOPPED;
+        if (normalTerminalState && error != null || !normalTerminalState && error == null) {
             throw new IllegalArgumentException("任务执行状态与错误对象不一致");
         }
         taskType = taskType == null ? ExecutionTaskType.SPARK_CANVAS : taskType;
@@ -64,14 +69,57 @@ public record TaskExecutionResult(
         if (taskType == ExecutionTaskType.SPARK_JAR && !nodeResults.isEmpty()) {
             throw new IllegalArgumentException("Spark JAR 执行结果不能包含 Canvas 节点结果");
         }
-        if (userJobObservability != null && taskType != ExecutionTaskType.SPARK_JAR) {
-            throw new IllegalArgumentException("用户作业观测结果只能属于 Spark JAR 批任务");
+        if (userJobObservability != null && taskType != ExecutionTaskType.SPARK_JAR
+                && taskType != ExecutionTaskType.SPARK_STREAMING_JAR) {
+            throw new IllegalArgumentException("用户作业观测结果只能属于 Spark JAR 任务");
         }
         if (lineage != null && taskType != ExecutionTaskType.SPARK_JAR
                 || taskType == ExecutionTaskType.SPARK_JAR
                 && state == TaskExecutionState.SUCCESS && lineage == null) {
             throw new IllegalArgumentException("运行血缘证据只能属于 Spark JAR 批任务，且成功结果必须携带证据");
         }
+        if (trialPreview != null && taskType != ExecutionTaskType.SPARK_JAR
+                && taskType != ExecutionTaskType.SPARK_STREAMING_JAR
+                || trialPreview != null && affectedRows != null) {
+            throw new IllegalArgumentException("试运行预览只能属于 Spark JAR，且不能携带真实影响行数");
+        }
+        if (canvasTrialPreview != null && taskType != ExecutionTaskType.SPARK_CANVAS
+                || canvasTrialPreview != null && affectedRows != null
+                || canvasTrialPreview != null && trialPreview != null
+                || canvasTrialPreview != null && state != TaskExecutionState.SUCCESS
+                || canvasTrialPreview != null && nodeResults.stream().noneMatch(node ->
+                canvasTrialPreview.targetNodeId().equals(node.nodeId())
+                        && node.state() == NodeExecutionState.SUCCESS)) {
+            throw new IllegalArgumentException("Canvas 试运行预览载荷无效");
+        }
+    }
+
+    public TaskExecutionResult(
+            Integer schemaVersion, UUID executionId, UUID runId, Integer attempt,
+            TaskExecutionState state, Instant startedAt, Instant endedAt, Long durationMs,
+            Long affectedRows, List<NodeExecutionResult> nodeResults, ExecutionTaskType taskType,
+            ModelQualityExecutionResult qualityResult,
+            UserJobObservabilitySnapshot userJobObservability,
+            TaskLineageEvidence lineage, SparkJarTrialPreview trialPreview,
+            TaskExecutionError error
+    ) {
+        this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
+                affectedRows, nodeResults, taskType, qualityResult, userJobObservability,
+                lineage, trialPreview, null, error);
+    }
+
+    public TaskExecutionResult(
+            Integer schemaVersion, UUID executionId, UUID runId, Integer attempt,
+            TaskExecutionState state, Instant startedAt, Instant endedAt, Long durationMs,
+            Long affectedRows, List<NodeExecutionResult> nodeResults, ExecutionTaskType taskType,
+            ModelQualityExecutionResult qualityResult,
+            UserJobObservabilitySnapshot userJobObservability,
+            TaskLineageEvidence lineage,
+            TaskExecutionError error
+    ) {
+        this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
+                affectedRows, nodeResults, taskType, qualityResult, userJobObservability,
+                lineage, null, null, error);
     }
 
     public TaskExecutionResult(
@@ -83,7 +131,8 @@ public record TaskExecutionResult(
             TaskExecutionError error
     ) {
         this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
-                affectedRows, nodeResults, taskType, qualityResult, userJobObservability, null, error);
+                affectedRows, nodeResults, taskType, qualityResult, userJobObservability,
+                null, null, null, error);
     }
 
     public TaskExecutionResult(
@@ -93,7 +142,7 @@ public record TaskExecutionResult(
             ModelQualityExecutionResult qualityResult, TaskExecutionError error
     ) {
         this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
-                affectedRows, nodeResults, taskType, qualityResult, null, null, error);
+                affectedRows, nodeResults, taskType, qualityResult, null, null, null, null, error);
     }
 
     public TaskExecutionResult(
@@ -102,6 +151,7 @@ public record TaskExecutionResult(
             Long affectedRows, List<NodeExecutionResult> nodeResults, TaskExecutionError error
     ) {
         this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
-                affectedRows, nodeResults, ExecutionTaskType.SPARK_CANVAS, null, null, null, error);
+                affectedRows, nodeResults, ExecutionTaskType.SPARK_CANVAS,
+                null, null, null, null, null, error);
     }
 }

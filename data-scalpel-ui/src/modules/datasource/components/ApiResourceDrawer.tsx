@@ -1,7 +1,20 @@
-import { DeleteOutlined, PlusOutlined } from '@ant-design/icons';
-import { Alert, Button, Col, Collapse, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, message } from 'antd';
-import { useEffect } from 'react';
+import {
+  ApiOutlined,
+  DashboardOutlined,
+  DeleteOutlined,
+  IdcardOutlined,
+  OrderedListOutlined,
+  PlusOutlined,
+  SafetyCertificateOutlined,
+  SendOutlined,
+  SyncOutlined,
+  TableOutlined,
+} from '@ant-design/icons';
+import { Badge, Button, Card, Col, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Typography, message } from 'antd';
+import type { ReactNode } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import type { PlatformDataType } from '../../model';
 import { useCreateApiResource, useUpdateApiResource } from '../hooks/useDataSources';
 import type {
@@ -102,6 +115,18 @@ interface ApiResourceFormValues {
   };
 }
 
+type ApiResourceFormSection = 'identity' | 'request' | 'async' | 'pagination' | 'signing' | 'schema' | 'limits';
+
+const FormSectionTitle = ({ title, description, icon }: { title: string; description: string; icon: ReactNode }) => (
+  <span className="data-source-section-title">
+    <span className="data-source-section-title-icon" aria-hidden="true">{icon}</span>
+    <span className="data-source-section-title-copy">
+      <span>{title}</span>
+      <Typography.Text type="secondary">{description}</Typography.Text>
+    </span>
+  </span>
+);
+
 const locationOptions = [
   { value: 'HEADER', label: 'Header' },
   { value: 'QUERY', label: 'Query' },
@@ -176,7 +201,13 @@ const RequestTemplateFields = ({ prefix, method }: {
 </Row>;
 
 const PaginationFields = ({ type }: { type: PaginationFormValue['type'] }) => {
-  if (!type || type === 'NONE') return <Alert showIcon type="info" title="不对结果请求进行分页" />;
+  if (!type || type === 'NONE') return (
+    <InlineFeedback
+      tone="info"
+      label="当前按单次响应读取，不发送分页参数"
+      className="api-resource-inline-feedback"
+    />
+  );
   if (type === 'NEXT_URL') return <Row gutter={12}>
     <Col span={16}><Form.Item label="下一页 URL Pointer" name={['pagination', 'nextUrlPointer']} rules={[{ required: true }]}><Input placeholder="/links/next" /></Form.Item></Col>
     <Col span={8}><Form.Item label="仅允许同源 URL" name={['pagination', 'sameOriginOnly']} valuePropName="checked"><Switch /></Form.Item></Col>
@@ -328,8 +359,12 @@ const buildRequest = (values: ApiResourceFormValues): ApiResourceWriteRequest =>
 export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: ApiResourceDrawerProps) => {
   const [form] = Form.useForm<ApiResourceFormValues>();
   const [messageApi, contextHolder] = message.useMessage();
+  const [activeSection, setActiveSection] = useState<ApiResourceFormSection>('identity');
+  const contentRef = useRef<HTMLDivElement>(null);
   const createMutation = useCreateApiResource(dataSourceId);
   const updateMutation = useUpdateApiResource(dataSourceId);
+  const enabled = Form.useWatch('enabled', form) ?? true;
+  const outputFields = Form.useWatch('outputFields', form) ?? [];
   const invocationType = Form.useWatch('invocationType', form) ?? 'SINGLE_REQUEST';
   const paginationType = Form.useWatch(['pagination', 'type'], form) ?? 'NONE';
   const signingType = Form.useWatch(['signing', 'type'], form) ?? 'NONE';
@@ -359,32 +394,138 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
     }
   };
 
+  const closeDrawer = () => {
+    setActiveSection('identity');
+    onClose();
+  };
+
+  const sections: { key: ApiResourceFormSection; label: string }[] = [
+    { key: 'identity', label: '资源身份' },
+    { key: 'request', label: invocationType === 'ASYNC_JOB' ? '提交请求' : '数据请求' },
+    ...(invocationType === 'ASYNC_JOB' ? [{ key: 'async' as const, label: '异步轮询' }] : []),
+    { key: 'pagination', label: '分页策略' },
+    { key: 'signing', label: '请求签名' },
+    { key: 'schema', label: '输出 Schema' },
+    { key: 'limits', label: '保护限制' },
+  ];
+
+  const scrollToSection = (section: ApiResourceFormSection) => {
+    const target = contentRef.current?.querySelector<HTMLElement>(`#api-resource-${section}`);
+    target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+    setActiveSection(section);
+  };
+
+  const updateActiveSection = () => {
+    const container = contentRef.current;
+    if (!container) return;
+    if (container.scrollTop + container.clientHeight >= container.scrollHeight - 8) {
+      setActiveSection(sections.at(-1)?.key ?? 'identity');
+      return;
+    }
+    const containerTop = container.getBoundingClientRect().top;
+    const visible = sections.filter(({ key }) => {
+      const target = container.querySelector<HTMLElement>(`#api-resource-${key}`);
+      return target && target.getBoundingClientRect().top - containerTop <= 40;
+    });
+    setActiveSection(visible.at(-1)?.key ?? 'identity');
+  };
+
   return <>
     {contextHolder}
     <Drawer
       rootClassName="business-overlay business-drawer-overlay"
       open={open}
-      title={resource ? `修改 API 资源 · ${resource.name}` : '新建 API 资源'}
-      width={980}
+      title={(
+        <div className="data-source-drawer-title">
+          <span className="data-source-drawer-title-icon" aria-hidden="true"><ApiOutlined /></span>
+          <span className="data-source-drawer-title-copy">
+            <span>{resource ? `修改 API 资源 · ${resource.name}` : '新建 API 资源'}</span>
+            <Typography.Text type="secondary">定义请求协议、结果结构与安全执行边界</Typography.Text>
+          </span>
+        </div>
+      )}
+      extra={<span className="data-source-drawer-header-status"><Tag color={enabled ? 'success' : undefined}>{enabled ? '已启用' : '已停用'}</Tag></span>}
+      size="min(1120px, 100vw)"
+      className="data-source-drawer api-resource-drawer"
       destroyOnHidden
-      onClose={onClose}
-      footer={<Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>保存</Button></Space>}
+      onClose={closeDrawer}
+      footer={(
+        <div className="data-source-drawer-footer">
+          <Badge
+            status={enabled ? 'processing' : 'default'}
+            text={`${invocationType === 'SINGLE_REQUEST' ? '单次请求' : invocationType === 'PAGINATED_REQUEST' ? '同步分页请求' : '异步任务'} · ${outputFields.length} 个输出字段`}
+          />
+          <Space>
+            <Button onClick={closeDrawer}>取消</Button>
+            <Button type="primary" loading={createMutation.isPending || updateMutation.isPending} onClick={() => form.submit()}>
+              {resource ? '保存修改' : '创建资源'}
+            </Button>
+          </Space>
+        </div>
+      )}
     >
-      <Form<ApiResourceFormValues> autoComplete="off" form={form} layout="vertical" onFinish={(values) => void submit(values)}>
-        <Row gutter={12}>
-          <Col span={10}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true }]}><Input /></Form.Item></Col>
-          <Col span={8}><Form.Item label="编码" name="code" rules={resource ? [] : [{ required: true }, { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/ }]}><Input disabled={Boolean(resource)} /></Form.Item></Col>
-          <Col span={6}><Form.Item label="启用" name="enabled" valuePropName="checked"><Switch /></Form.Item></Col>
-          <Col span={12}><Form.Item label="调用模式" name="invocationType" rules={[{ required: true }]}><Select options={[
-            { value: 'SINGLE_REQUEST', label: '单次请求' }, { value: 'PAGINATED_REQUEST', label: '同步分页请求' },
-            { value: 'ASYNC_JOB', label: '异步任务（提交/轮询/结果）' },
-          ]} /></Form.Item></Col>
-          <Col span={12}><Form.Item label="记录数组 JSON Pointer" name="recordsPointer"><Input placeholder="/data/items；根数组使用空字符串" /></Form.Item></Col>
-        </Row>
-        <Collapse defaultActiveKey={['request', 'schema']} items={[
-          { key: 'request', label: invocationType === 'ASYNC_JOB' ? '1. 提交请求' : '1. 数据请求', children: <RequestTemplateFields prefix={['request']} method={mainMethod} /> },
-          ...(invocationType === 'ASYNC_JOB' ? [{
-            key: 'async', label: '2. 异步任务轮询与结果请求', children: <>
+      <div className="data-source-drawer-layout">
+        <nav className="data-source-section-nav api-resource-section-nav" aria-label="API 资源配置分区">
+          {sections.map((section, index) => (
+            <Button
+              key={section.key}
+              type="text"
+              className={activeSection === section.key ? 'is-active' : undefined}
+              onClick={() => scrollToSection(section.key)}
+            >
+              <span className="data-source-section-step" aria-hidden="true">{index + 1}</span>
+              <span className="data-source-section-step-label">{section.label}</span>
+            </Button>
+          ))}
+        </nav>
+        <div className="data-source-form-scroll" ref={contentRef} onScroll={updateActiveSection}>
+          <Form<ApiResourceFormValues>
+            name="api-resource-editor-form"
+            className="api-resource-form"
+            autoComplete="off"
+            form={form}
+            layout="vertical"
+            onFinish={(values) => void submit(values)}
+          >
+            <Card
+              id="api-resource-identity"
+              size="small"
+              className="data-source-section-card"
+              title={<FormSectionTitle title="资源身份" description="建立稳定标识并选择请求运行方式" icon={<IdcardOutlined />} />}
+              extra={(
+                <span className="data-source-enabled-control">
+                  <span>启用</span>
+                  <Form.Item name="enabled" valuePropName="checked" noStyle><Switch aria-label="启用 API 资源" /></Form.Item>
+                </span>
+              )}
+            >
+              <Row gutter={14}>
+                <Col span={12}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入资源名称' }]}><Input name="api-resource-name" autoComplete="off" placeholder="如：订单增量查询" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="编码" name="code" rules={resource ? [] : [{ required: true, whitespace: true, message: '请输入资源编码' }, { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '以字母开头，仅支持字母、数字和下划线' }]}><Input name="api-resource-code" autoComplete="off" disabled={Boolean(resource)} placeholder="如：order_increment" /></Form.Item></Col>
+                <Col span={12}><Form.Item label="调用模式" name="invocationType" rules={[{ required: true }]}><Select options={[
+                  { value: 'SINGLE_REQUEST', label: '单次请求' }, { value: 'PAGINATED_REQUEST', label: '同步分页请求' },
+                  { value: 'ASYNC_JOB', label: '异步任务（提交 / 轮询 / 结果）' },
+                ]} /></Form.Item></Col>
+                <Col span={12}><Form.Item label="记录数组 JSON Pointer" name="recordsPointer"><Input name="api-resource-records-pointer" autoComplete="off" placeholder="/data/items；根数组使用空字符串" /></Form.Item></Col>
+              </Row>
+            </Card>
+
+            <Card
+              id="api-resource-request"
+              size="small"
+              className="data-source-section-card"
+              title={<FormSectionTitle title={invocationType === 'ASYNC_JOB' ? '提交请求' : '数据请求'} description="配置业务接口的路径、参数、Header 与请求体" icon={<SendOutlined />} />}
+            >
+              <RequestTemplateFields prefix={['request']} method={mainMethod} />
+            </Card>
+
+            {invocationType === 'ASYNC_JOB' && (
+              <Card
+                id="api-resource-async"
+                size="small"
+                className="data-source-section-card"
+                title={<FormSectionTitle title="异步轮询与结果" description="定义任务状态判断、轮询节奏和结果获取方式" icon={<SyncOutlined />} />}
+              >
               <Row gutter={12}>
                 <Col span={8}><Form.Item label="Job ID Pointer" name={['asyncJob', 'jobIdPointer']} rules={[{ required: true }]}><Input /></Form.Item></Col>
                 <Col span={8}><Form.Item label="状态 Pointer" name={['asyncJob', 'statusPointer']} rules={[{ required: true }]}><Input /></Form.Item></Col>
@@ -394,23 +535,39 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
                 <Col span={8}><Form.Item label="成功状态" name={['asyncJob', 'successStatuses']} rules={[{ required: true }]}><Select mode="tags" tokenSeparators={[',']} /></Form.Item></Col>
                 <Col span={8}><Form.Item label="失败状态" name={['asyncJob', 'failureStatuses']} rules={[{ required: true }]}><Select mode="tags" tokenSeparators={[',']} /></Form.Item></Col>
               </Row>
-              <div className="data-source-form-section-title">状态请求（可使用 ${'{jobId}'}）</div>
+              <div className="api-resource-subsection-title">状态请求 <Typography.Text type="secondary">可使用 ${'{jobId}'}</Typography.Text></div>
               <RequestTemplateFields prefix={['asyncJob', 'statusRequest']} method={statusMethod} />
-              <div className="data-source-form-section-title">结果请求（可使用 ${'{jobId}'}）</div>
+              <div className="api-resource-subsection-title">结果请求 <Typography.Text type="secondary">可使用 ${'{jobId}'}</Typography.Text></div>
               <RequestTemplateFields prefix={['asyncJob', 'resultRequest']} method={resultMethod} />
-            </>,
-          }] : []),
-          { key: 'pagination', label: `${invocationType === 'ASYNC_JOB' ? '3' : '2'}. 分页策略`, children: <>
-            <Form.Item label="分页类型" name={['pagination', 'type']} rules={[{ required: true }]}>
-              <Select disabled={invocationType === 'SINGLE_REQUEST'} options={[
-                { value: 'NONE', label: '不分页' }, { value: 'PAGE_NUMBER', label: 'Page Number' },
-                { value: 'OFFSET_LIMIT', label: 'Offset / Limit' }, { value: 'CURSOR', label: 'Cursor' },
-                { value: 'NEXT_URL', label: '响应返回 Next URL' },
-              ]} />
-            </Form.Item>
-            <PaginationFields type={invocationType === 'SINGLE_REQUEST' ? 'NONE' : paginationType} />
-          </> },
-          { key: 'signing', label: `${invocationType === 'ASYNC_JOB' ? '4' : '3'}. 请求签名`, children: <>
+              </Card>
+            )}
+
+            <Card
+              id="api-resource-pagination"
+              size="small"
+              className="data-source-section-card"
+              title={<FormSectionTitle title="分页策略" description="声明连续拉取数据时的翻页协议" icon={<OrderedListOutlined />} />}
+            >
+              <Row gutter={12}>
+                <Col span={12}>
+                  <Form.Item label="分页类型" name={['pagination', 'type']} rules={[{ required: true }]}>
+                    <Select disabled={invocationType === 'SINGLE_REQUEST'} options={[
+                      { value: 'NONE', label: '不分页' }, { value: 'PAGE_NUMBER', label: 'Page Number' },
+                      { value: 'OFFSET_LIMIT', label: 'Offset / Limit' }, { value: 'CURSOR', label: 'Cursor' },
+                      { value: 'NEXT_URL', label: '响应返回 Next URL' },
+                    ]} />
+                  </Form.Item>
+                </Col>
+              </Row>
+              <PaginationFields type={invocationType === 'SINGLE_REQUEST' ? 'NONE' : paginationType} />
+            </Card>
+
+            <Card
+              id="api-resource-signing"
+              size="small"
+              className="data-source-section-card"
+              title={<FormSectionTitle title="请求签名" description="按目标系统协议生成并注入请求签名" icon={<SafetyCertificateOutlined />} />}
+            >
             <Row gutter={12}>
               <Col span={8}><Form.Item label="算法" name={['signing', 'type']}><Select options={['NONE', 'MD5', 'HMAC_SHA256', 'HMAC_SHA512', 'RSA_SHA256'].map((value) => ({ value, label: value }))} /></Form.Item></Col>
               {signingType !== 'NONE' && <>
@@ -426,8 +583,15 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
                 <Col span={24}><Form.Item label="签名输出模板" name={['signing', 'outputValueTemplate']}><Input placeholder="可选，例如 v1:${signature}" /></Form.Item></Col>
               </>}
             </Row>
-          </> },
-          { key: 'schema', label: `${invocationType === 'ASYNC_JOB' ? '5' : '4'}. 输出 Schema`, children: <Form.List name="outputFields">
+            </Card>
+
+            <Card
+              id="api-resource-schema"
+              size="small"
+              className="data-source-section-card"
+              title={<FormSectionTitle title="输出 Schema" description="把响应字段映射为稳定的平台数据结构" icon={<TableOutlined />} />}
+            >
+              <Form.List name="outputFields">
             {(fields, { add, remove }) => <Space orientation="vertical" size={8} className="http-api-output-fields">
               {fields.map((field, index) => <Row gutter={8} key={field.key} align="middle">
                 <Col span={4}><Form.Item label={index === 0 ? '字段名' : undefined} name={[field.name, 'name']} rules={[{ required: true }, { pattern: /^[A-Za-z_][A-Za-z0-9_]{0,127}$/ }]}><Input /></Form.Item></Col>
@@ -441,15 +605,25 @@ export const ApiResourceDrawer = ({ dataSourceId, resource, open, onClose }: Api
               </Row>)}
               <Button type="dashed" icon={<PlusOutlined />} onClick={() => add({ fieldType: 'STRING', nullable: true })}>添加输出字段</Button>
             </Space>}
-          </Form.List> },
-          { key: 'limits', label: `${invocationType === 'ASYNC_JOB' ? '6' : '5'}. 执行保护限制`, children: <Row gutter={12}>
-            <Col span={6}><Form.Item label="最大页数" name={['limits', 'maxPages']} rules={[{ required: true }]}><InputNumber min={1} max={100000} precision={0} /></Form.Item></Col>
-            <Col span={6}><Form.Item label="最大记录数" name={['limits', 'maxRows']} rules={[{ required: true }]}><InputNumber min={1} max={100000000} precision={0} /></Form.Item></Col>
-            <Col span={6}><Form.Item label="最大响应字节" name={['limits', 'maxResponseBytes']} rules={[{ required: true }]}><InputNumber min={1} max={10737418240} precision={0} /></Form.Item></Col>
-            <Col span={6}><Form.Item label="最大持续秒数" name={['limits', 'maxDurationSeconds']} rules={[{ required: true }]}><InputNumber min={1} max={86400} precision={0} /></Form.Item></Col>
-          </Row> },
-        ]} />
-      </Form>
+              </Form.List>
+            </Card>
+
+            <Card
+              id="api-resource-limits"
+              size="small"
+              className="data-source-section-card"
+              title={<FormSectionTitle title="执行保护限制" description="限制单次采集的页数、数据量、响应体积和持续时间" icon={<DashboardOutlined />} />}
+            >
+              <Row gutter={12}>
+                <Col span={6}><Form.Item label="最大页数" name={['limits', 'maxPages']} rules={[{ required: true }]}><InputNumber min={1} max={100000} precision={0} /></Form.Item></Col>
+                <Col span={6}><Form.Item label="最大记录数" name={['limits', 'maxRows']} rules={[{ required: true }]}><InputNumber min={1} max={100000000} precision={0} /></Form.Item></Col>
+                <Col span={6}><Form.Item label="最大响应字节" name={['limits', 'maxResponseBytes']} rules={[{ required: true }]}><InputNumber min={1} max={10737418240} precision={0} /></Form.Item></Col>
+                <Col span={6}><Form.Item label="最大持续秒数" name={['limits', 'maxDurationSeconds']} rules={[{ required: true }]}><InputNumber min={1} max={86400} precision={0} /></Form.Item></Col>
+              </Row>
+            </Card>
+          </Form>
+        </div>
+      </div>
     </Drawer>
   </>;
 };

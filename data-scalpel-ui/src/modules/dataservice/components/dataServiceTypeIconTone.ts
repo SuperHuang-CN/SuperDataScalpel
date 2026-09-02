@@ -6,4 +6,5 @@ export const dataServiceTypeIconTones = {
   STANDARD_TABLE: 'blue',
   SQL_QUERY: 'cyan',
   SCRIPT_API: 'violet',
+  SPATIAL_SERVICE: 'cyan',
 } satisfies Record<DataServiceType, DataServiceTypeIconTone>;

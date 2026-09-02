@@ -3,10 +3,15 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import cn.superhuang.data.scalpel.contract.execution.*;
 import cn.superhuang.datascalpel.sdk.*;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
+import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionResult;
+import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionState;
+import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionError;
 import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.streaming.StreamingQuery;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Modifier;
@@ -22,6 +27,7 @@ import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicReference;
 
 final class SparkStreamingJarTaskExecutor {
+    private static final Logger log = LoggerFactory.getLogger(SparkStreamingJarTaskExecutor.class);
     private static final Duration CONTROL_POLL_INTERVAL = Duration.ofSeconds(1);
     private static final Duration PROGRESS_INTERVAL = Duration.ofSeconds(10);
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
@@ -34,13 +40,14 @@ final class SparkStreamingJarTaskExecutor {
         this.objectMapper = objectMapper;
     }
 
-    void execute(
+    TaskExecutionResult execute(
             TaskExecutionManifest manifest,
             RunnerSparkMode sparkMode,
             TaskExecutionLaunchDescriptor launch,
             Path userJar,
             RunnerEventPublisher publisher
     ) {
+        Instant executionStartedAt = Instant.now();
         validate(manifest, launch, userJar);
         SparkSession.Builder builder = SedonaSparkSupport.builder()
                 .appName("DataScalpel Spark Streaming JAR " + manifest.execution().executionId())
@@ -112,11 +119,11 @@ final class SparkStreamingJarTaskExecutor {
                 cleaned = true;
             }
         } catch (Throwable throwable) {
-            primary = unwrap(throwable);
-            if (primary instanceof RunnerExecutionException runner) throw runner;
-            throw new RunnerExecutionException(
+            Throwable actual = unwrap(throwable);
+            primary = actual instanceof RunnerExecutionException ? actual
+                    : new RunnerExecutionException(
                     "USER_STREAMING_JOB_EXECUTION_FAILED",
-                    "用户 Spark Streaming 作业执行失败", null, primary);
+                    "用户 Spark Streaming 作业执行失败", null, actual);
         } finally {
             RuntimeException cleanupFailure = null;
             if (!cleaned) {
@@ -164,9 +171,65 @@ final class SparkStreamingJarTaskExecutor {
                     else cleanupFailure.addSuppressed(cleanup);
                 }
             }
-            if (cleanupFailure != null) throw cleanupFailure;
+            deleteTrialCheckpointBestEffort(spark, manifest, launch);
+            if (cleanupFailure != null) {
+                if (primary == null) primary = cleanupFailure;
+                else primary.addSuppressed(cleanupFailure);
+            }
         }
-        publishStopped(manifest, launch, publisher);
+        Instant endedAt = Instant.now();
+        TaskExecutionError error = primary == null ? null : new RunnerFailureClassifier().classify(
+                primary, RunnerFailureContext.task(ExecutionFailurePhase.PROCESS));
+        return new TaskExecutionResult(
+                TaskExecutionResult.CURRENT_SCHEMA_VERSION,
+                manifest.execution().executionId(), manifest.execution().runId(),
+                manifest.execution().attempt(),
+                primary == null ? TaskExecutionState.STOPPED : TaskExecutionState.FAILED,
+                executionStartedAt, endedAt, Duration.between(executionStartedAt, endedAt).toMillis(),
+                null, List.of(), ExecutionTaskType.SPARK_STREAMING_JAR, null,
+                context.observabilityRuntime().snapshot(), null, context.trialPreview(),
+                null, error);
+    }
+
+    static TaskExecutionResult failure(
+            UUID executionId,
+            UUID runId,
+            int attempt,
+            Instant startedAt,
+            Throwable throwable
+    ) {
+        TaskExecutionError error = new RunnerFailureClassifier().classify(
+                throwable, RunnerFailureContext.task(ExecutionFailurePhase.PREPARE));
+        Instant endedAt = Instant.now();
+        return new TaskExecutionResult(
+                TaskExecutionResult.CURRENT_SCHEMA_VERSION, executionId, runId, attempt,
+                TaskExecutionState.FAILED, startedAt, endedAt,
+                Duration.between(startedAt, endedAt).toMillis(), null, List.of(),
+                ExecutionTaskType.SPARK_STREAMING_JAR, null, null, null, null, null, error);
+    }
+
+    private static void deleteTrialCheckpointBestEffort(
+            SparkSession spark,
+            TaskExecutionManifest manifest,
+            TaskExecutionLaunchDescriptor launch
+    ) {
+        if (manifest.streamingSparkJarJob().executionPurpose()
+                != SparkJarExecutionPayload.ExecutionPurpose.TRIAL) {
+            return;
+        }
+        try {
+            org.apache.hadoop.fs.Path checkpoint =
+                    new org.apache.hadoop.fs.Path(launch.checkpointUriPrefix());
+            org.apache.hadoop.fs.FileSystem fileSystem = checkpoint.getFileSystem(
+                    spark.sparkContext().hadoopConfiguration());
+            if (fileSystem.exists(checkpoint) && !fileSystem.delete(checkpoint, true)) {
+                log.warn("event=STREAMING_TRIAL_CHECKPOINT_DELETE_SKIPPED runId={} checkpoint={}",
+                        launch.runId(), checkpoint.toUri());
+            }
+        } catch (Exception exception) {
+            log.warn("event=STREAMING_TRIAL_CHECKPOINT_DELETE_FAILED runId={} message={}",
+                    launch.runId(), RunnerLogSanitizer.sanitize(exception.getMessage()));
+        }
     }
 
     private StartOutcome startJob(
@@ -300,18 +363,6 @@ final class SparkStreamingJarTaskExecutor {
         } finally {
             thread.setContextClassLoader(previous);
         }
-    }
-
-    private static void publishStopped(
-            TaskExecutionManifest manifest,
-            TaskExecutionLaunchDescriptor launch,
-            RunnerEventPublisher publisher
-    ) {
-        publish(publisher, new RunnerStreamingStoppedEvent(
-                ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
-                ExecutionMessageType.RUNNER_STREAMING_STOPPED, Instant.now(),
-                launch.engineId(), launch.executionId(), launch.runId(), launch.attempt(),
-                manifest.execution().deploymentId(), Instant.now(), "实时 JAR 任务已正常停止"));
     }
 
     private static void publish(RunnerEventPublisher publisher, RunnerExecutionEvent event) {

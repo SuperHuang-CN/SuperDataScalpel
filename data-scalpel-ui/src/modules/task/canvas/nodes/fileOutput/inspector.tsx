@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   DownOutlined,
@@ -7,20 +8,7 @@ import {
   SettingOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Empty,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Select,
-  Space,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { Button, Empty, Form, Input, InputNumber, Modal, Popconfirm, Select, Space, Tooltip, Typography } from 'antd';
 import { useImperativeHandle, useRef, useState } from 'react';
 import { useDataSource } from '../../../../datasource';
 import {

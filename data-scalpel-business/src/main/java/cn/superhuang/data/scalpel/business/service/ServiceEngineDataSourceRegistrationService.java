@@ -8,17 +8,20 @@ import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
+import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineType;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineDataSourceRegistration;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngineDataSourceRegistrationStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ScriptDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.StandardDataServiceDefinition;
+import cn.superhuang.data.scalpel.business.service.domain.SpatialDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineDataSourceRegistrationRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ServiceEngineRepository;
 import cn.superhuang.data.scalpel.business.service.repository.ScriptDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.StandardDataServiceDefinitionRepository;
+import cn.superhuang.data.scalpel.business.service.repository.SpatialDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateServiceEngineDataSourceRegistrationRequest;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineDataSourceRegistrationResponse;
 import cn.superhuang.data.scalpel.business.service.web.response.ServiceEngineDataSourceTestResponse;
@@ -33,6 +36,7 @@ import cn.superhuang.data.scalpel.contract.service.JdbcDataSourceSnapshot;
 import cn.superhuang.data.scalpel.contract.service.ServiceEngineInfoResponse;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
+import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.springframework.data.domain.Page;
 import org.springframework.http.HttpStatus;
@@ -45,6 +49,7 @@ import org.springframework.web.server.ResponseStatusException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.sql.SQLException;
 import java.util.Collection;
 import java.util.List;
 import java.util.LinkedHashSet;
@@ -63,8 +68,11 @@ public class ServiceEngineDataSourceRegistrationService {
     private final StandardDataServiceDefinitionRepository standardDefinitionRepository;
     private final SqlDataServiceDefinitionRepository sqlDefinitionRepository;
     private final ScriptDataServiceDefinitionRepository scriptDefinitionRepository;
+    private final SpatialDataServiceDefinitionRepository spatialDefinitionRepository;
     private final DialectRegistry dialectRegistry;
+    private final JdbcConnectionFactory connectionFactory;
     private final ServiceEngineClient engineClient;
+    private final GeoServerClient geoServerClient;
     private final SearchEngine searchEngine;
     private final TransactionTemplate transactionTemplate;
 
@@ -77,8 +85,11 @@ public class ServiceEngineDataSourceRegistrationService {
             StandardDataServiceDefinitionRepository standardDefinitionRepository,
             SqlDataServiceDefinitionRepository sqlDefinitionRepository,
             ScriptDataServiceDefinitionRepository scriptDefinitionRepository,
+            SpatialDataServiceDefinitionRepository spatialDefinitionRepository,
             DialectRegistry dialectRegistry,
+            JdbcConnectionFactory connectionFactory,
             ServiceEngineClient engineClient,
+            GeoServerClient geoServerClient,
             SearchEngine searchEngine,
             PlatformTransactionManager transactionManager
     ) {
@@ -90,8 +101,11 @@ public class ServiceEngineDataSourceRegistrationService {
         this.standardDefinitionRepository = standardDefinitionRepository;
         this.sqlDefinitionRepository = sqlDefinitionRepository;
         this.scriptDefinitionRepository = scriptDefinitionRepository;
+        this.spatialDefinitionRepository = spatialDefinitionRepository;
         this.dialectRegistry = dialectRegistry;
+        this.connectionFactory = connectionFactory;
         this.engineClient = engineClient;
+        this.geoServerClient = geoServerClient;
         this.searchEngine = searchEngine;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -115,7 +129,10 @@ public class ServiceEngineDataSourceRegistrationService {
     public ServiceEngineDataSourceRegistrationResponse create(CreateServiceEngineDataSourceRegistrationRequest request) {
         UUID registrationId = requireTransactionResult(transactionTemplate.execute(status -> {
             ServiceEngine engine = requireEnabledEngine(request.engineId());
-            requireRuntimeDataSource(request.dataSourceId());
+            DataSource dataSource = requireRuntimeDataSource(request.dataSourceId());
+            if (engine.getType() == ServiceEngineType.GEOSERVER) {
+                requireGeoServerDataSource(dataSource);
+            }
             if (repository.findByEngineIdAndDataSourceId(engine.getId(), request.dataSourceId()).isPresent()) {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "该数据源已注册到服务引擎");
             }
@@ -135,6 +152,13 @@ public class ServiceEngineDataSourceRegistrationService {
                 transactionTemplate.execute(status -> prepareTest(id))
         );
         try {
+            if (preparation.engine().getType() == ServiceEngineType.GEOSERVER) {
+                geoServerClient.testDataStore(preparation.engine(), preparation.dataSourceId());
+                return new ServiceEngineDataSourceTestResponse(
+                        preparation.registrationId(), preparation.engine().getCode(),
+                        preparation.dataSourceId(), DataSourceType.POSTGRESQL.name()
+                );
+            }
             EngineDataSourceTestResponse response = engineClient.testDataSource(
                     preparation.engine(), preparation.dataSourceId()
             );
@@ -166,6 +190,11 @@ public class ServiceEngineDataSourceRegistrationService {
                 transactionTemplate.execute(status -> prepareDelete(id))
         );
         try {
+            if (preparation.engine().getType() == ServiceEngineType.GEOSERVER) {
+                geoServerClient.removeDataStore(preparation.engine(), preparation.dataSourceId());
+                transactionTemplate.executeWithoutResult(status -> completeDelete(preparation));
+                return;
+            }
             EngineDataSourceRegistrationResponse response = engineClient.removeDataSource(
                     preparation.engine(),
                     new EngineDataSourceRemovalRequest(preparation.dataSourceId())
@@ -202,17 +231,27 @@ public class ServiceEngineDataSourceRegistrationService {
         String failure = null;
         String snapshotDigest = null;
         try {
-            verifyEngineCapability(preparation.engine(), preparation.dataSource());
-            EngineDataSourceRegistrationResponse response = engineClient.registerDataSource(
-                    preparation.engine(),
-                    new EngineDataSourceRegistrationRequest(
-                            preparation.dataSourceId(), preparation.snapshot()
-                    )
-            );
-            if (response == null || !preparation.engine().matchesCode(response.engineCode())
-                    || !preparation.dataSourceId().equals(response.dataSourceId())
-                    || response.status() != EngineDataSourceStatus.READY) {
-                throw new IllegalStateException("服务引擎未确认数据源同步结果");
+            if (preparation.engine().getType() == ServiceEngineType.GEOSERVER) {
+                requireGeoServerDataSource(preparation.dataSource());
+                requirePostGis(preparation.dataSource());
+                JdbcDataSourceSnapshot snapshot = preparation.snapshot();
+                geoServerClient.upsertDataStore(preparation.engine(), new GeoServerClient.DataStoreSpec(
+                        preparation.dataSourceId(), snapshot.host(), snapshot.port(), snapshot.databaseName(),
+                        snapshot.schemaName(), snapshot.username(), snapshot.password(), snapshot.options()
+                ));
+            } else {
+                verifyEngineCapability(preparation.engine(), preparation.dataSource());
+                EngineDataSourceRegistrationResponse response = engineClient.registerDataSource(
+                        preparation.engine(),
+                        new EngineDataSourceRegistrationRequest(
+                                preparation.dataSourceId(), preparation.snapshot()
+                        )
+                );
+                if (response == null || !preparation.engine().matchesCode(response.engineCode())
+                        || !preparation.dataSourceId().equals(response.dataSourceId())
+                        || response.status() != EngineDataSourceStatus.READY) {
+                    throw new IllegalStateException("服务引擎未确认数据源同步结果");
+                }
             }
             snapshotDigest = digest(preparation.snapshot());
         } catch (RuntimeException exception) {
@@ -277,6 +316,15 @@ public class ServiceEngineDataSourceRegistrationService {
             Collection<DataSourcePurpose> nextPurposes,
             boolean nextEnabled
     ) {
+        if (hasGeoServerRegistration(dataSource.getId())
+                && (!nextEnabled
+                || nextType != DataSourceType.POSTGRESQL
+                || !nextPurposes.contains(DataSourcePurpose.STORAGE))) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "数据源已注册到 GeoServer；请先解除注册，再停用或移除 PostgreSQL 存储能力"
+            );
+        }
         boolean nextJdbcEnabled = nextEnabled && nextType.isJdbc();
         if (!nextJdbcEnabled && hasEnabledServiceForDataSource(dataSource.getId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已有已启用服务使用该数据源，不能停用或移除 JDBC 能力");
@@ -321,6 +369,11 @@ public class ServiceEngineDataSourceRegistrationService {
         if (repository.existsByEngineId(engineId)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "服务引擎仍有已注册数据源，不能删除");
         }
+    }
+
+    @Transactional(readOnly = true)
+    public boolean hasRegistrations(UUID engineId) {
+        return repository.existsByEngineId(engineId);
     }
 
     public String runtimeSignature(DataSource dataSource) {
@@ -377,10 +430,21 @@ public class ServiceEngineDataSourceRegistrationService {
         return !serviceIds.isEmpty() && dataServiceRepository.existsByIdInAndStatus(serviceIds, DataServiceStatus.ENABLED);
     }
 
+    private boolean hasGeoServerRegistration(UUID dataSourceId) {
+        List<UUID> engineIds = repository.findAllByDataSourceId(dataSourceId).stream()
+                .map(ServiceEngineDataSourceRegistration::getEngineId)
+                .distinct()
+                .toList();
+        if (engineIds.isEmpty()) return false;
+        return engineRepository.findAllById(engineIds).stream()
+                .anyMatch(engine -> engine.getType() == ServiceEngineType.GEOSERVER);
+    }
+
     private List<UUID> serviceIdsForDataSource(UUID dataSourceId) {
         LinkedHashSet<UUID> serviceIds = new LinkedHashSet<>(standardServiceIdsForDataSource(dataSourceId));
         serviceIds.addAll(sqlServiceIdsForDataSource(dataSourceId));
         serviceIds.addAll(scriptServiceIdsForDataSource(dataSourceId));
+        serviceIds.addAll(spatialServiceIdsForDataSource(dataSourceId));
         return List.copyOf(serviceIds);
     }
 
@@ -405,6 +469,15 @@ public class ServiceEngineDataSourceRegistrationService {
     private List<UUID> scriptServiceIdsForDataSource(UUID dataSourceId) {
         return scriptDefinitionRepository.findAllByDataSourceId(dataSourceId).stream()
                 .map(ScriptDataServiceDefinition::getDataServiceId)
+                .toList();
+    }
+
+    private List<UUID> spatialServiceIdsForDataSource(UUID dataSourceId) {
+        List<UUID> modelIds = modelRepository.findAllByStorageDataSourceId(dataSourceId).stream()
+                .map(DataModel::getId).toList();
+        if (modelIds.isEmpty()) return List.of();
+        return spatialDefinitionRepository.findAllByModelIdIn(modelIds).stream()
+                .map(SpatialDataServiceDefinition::getDataServiceId)
                 .toList();
     }
 
@@ -458,10 +531,53 @@ public class ServiceEngineDataSourceRegistrationService {
         return dataSource.isEnabled() && supportsServiceEngine(dataSource.getType());
     }
 
+    private static void requireGeoServerDataSource(DataSource dataSource) {
+        if (dataSource.getType() != DataSourceType.POSTGRESQL) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "GeoServer 第一版只支持 PostgreSQL/PostGIS 数据源"
+            );
+        }
+        if (!dataSource.isEnabled()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "GeoServer 只能注册已启用的数据源");
+        }
+        if (!dataSource.getPurposes().contains(DataSourcePurpose.STORAGE)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "GeoServer 数据源必须启用存储用途");
+        }
+    }
+
     private boolean supportsServiceEngine(DataSourceType type) {
         return type.isJdbc()
                 && dialectRegistry.require(type.name()).definition().capabilities()
                 .contains(DatabaseCapability.SQL_SERVICE_QUERY);
+    }
+
+    private void requirePostGis(DataSource dataSource) {
+        var dialect = dialectRegistry.require(DataSourceType.POSTGRESQL.name());
+        try (var connection = connectionFactory.open(
+                dialect.createConnectionSpec(dataSource.getConnection().toJdbcConnectionConfig())
+        ); var statement = connection.prepareStatement(
+                "select extversion from pg_extension where extname = 'postgis'"
+        )) {
+            connection.setReadOnly(true);
+            statement.setQueryTimeout(10);
+            try (var result = statement.executeQuery()) {
+                if (!result.next() || result.getString(1) == null || result.getString(1).isBlank()) {
+                    throw new ResponseStatusException(
+                            HttpStatus.CONFLICT,
+                            "目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展"
+                    );
+                }
+            }
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (SQLException | ClassNotFoundException exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "PostGIS 能力检查失败：" + safeMessage(exception),
+                    exception
+            );
+        }
     }
 
     private static JdbcDataSourceSnapshot snapshot(DataSource dataSource) {

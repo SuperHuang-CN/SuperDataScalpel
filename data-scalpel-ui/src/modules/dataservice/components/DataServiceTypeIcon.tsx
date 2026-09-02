@@ -26,6 +26,13 @@ const glyphs = {
       <path fill="#E7DEFF" d="m15.4 16.2 4.1 2.35-4.1 2.35v-4.7Z" />
     </svg>
   ),
+  SPATIAL_SERVICE: (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="3" width="19" height="18" rx="4" fill="#23856D" />
+      <path d="M5.5 17.5 9 8l4.2 5 2.4-3.2 3 7.7H5.5Z" fill="#D8FFF2" stroke="#fff" strokeWidth="1" />
+      <circle cx="9" cy="8" r="2" fill="#fff" />
+    </svg>
+  ),
 } satisfies Record<DataServiceType, ReactNode>;
 
 export const DataServiceTypeIcon = ({ type }: { type: DataServiceType }) => (

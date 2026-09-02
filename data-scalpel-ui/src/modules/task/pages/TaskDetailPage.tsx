@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
   DeleteOutlined,
@@ -10,21 +11,7 @@ import {
   SendOutlined,
   StopOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Dropdown,
-  Modal,
-  Radio,
-  Result,
-  Skeleton,
-  Space,
-  Tabs,
-  Tag,
-  Tooltip,
-  message,
-  Typography,
-} from 'antd';
+import { Button, Dropdown, Modal, Radio, Result, Skeleton, Space, Tabs, Tag, Tooltip, message, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import {
   useNavigate,

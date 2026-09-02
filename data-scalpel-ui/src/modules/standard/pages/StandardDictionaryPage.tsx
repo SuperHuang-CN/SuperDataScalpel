@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -10,23 +11,11 @@ import {
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Dropdown,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Table,
-  Tooltip,
-  message,
-} from 'antd';
+import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
-import { ManagementFilterActions, ManagementMoreFilters, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useCurrentUser } from '../../system';
@@ -187,7 +176,10 @@ export const StandardDictionaryPage = () => {
     }] : []),
   ];
   const applyDirect = (values: Filters) => {
-    setFilters({ code: values.code, name: values.name, valueType: advancedFilters.valueType, enabled: advancedFilters.enabled });
+    const advancedValues = advancedForm.getFieldsValue();
+    const nextAdvancedFilters = { valueType: advancedValues.valueType, enabled: advancedValues.enabled };
+    setAdvancedFilters(nextAdvancedFilters);
+    setFilters({ code: values.code, name: values.name, ...nextAdvancedFilters });
     setPage(1);
   };
   const confirmAdvanced = () => {
@@ -195,8 +187,8 @@ export const StandardDictionaryPage = () => {
     setAdvancedFilters({ valueType: values.valueType, enabled: values.enabled });
     setAdvancedOpen(false);
   };
-  const clearAdvanced = () => advancedForm.resetFields();
-  const reset = () => { form.resetFields(); advancedForm.resetFields(); setAdvancedFilters({}); setAdvancedOpen(false); setFilters({}); setPage(1); };
+  const clearAdvanced = () => advancedForm.setFieldsValue({ valueType: undefined, enabled: undefined });
+  const reset = () => { form.resetFields(); advancedForm.resetFields(); advancedForm.setFieldsValue({ valueType: undefined, enabled: undefined }); setAdvancedFilters({}); setAdvancedOpen(false); setFilters({}); setPage(1); };
 
   return (
     <div className="management-page">
@@ -211,7 +203,8 @@ export const StandardDictionaryPage = () => {
           >
             <Form.Item name="code"><ManagementSearchInput allowClear placeholder="搜索码表编码" /></Form.Item>
             <Form.Item name="name"><Input allowClear placeholder="搜索码表名称" /></Form.Item>
-            <ManagementMoreFilters
+          </Form>
+            <ManagementAdaptiveMoreFilters
               count={advancedFilterCount}
               open={advancedOpen}
               onOpenChange={(open) => {
@@ -222,15 +215,17 @@ export const StandardDictionaryPage = () => {
                 }
               }}
               onClear={clearAdvanced}
-              onCancel={() => setAdvancedOpen(false)}
+              onCancel={() => {
+                advancedForm.setFieldsValue({ valueType: advancedFilters.valueType, enabled: advancedFilters.enabled });
+                setAdvancedOpen(false);
+              }}
               onConfirm={confirmAdvanced}
             >
-              <Form<Filters> form={advancedForm} layout="vertical" autoComplete="off">
-                <Form.Item name="valueType" label="类型"><Select allowClear placeholder="全部" options={valueTypeOptions} className="advanced-filter-select" /></Form.Item>
-                <Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} className="advanced-filter-select" /></Form.Item>
+              <Form<Filters> form={advancedForm} layout="vertical" autoComplete="off" initialValues={advancedFilters}>
+                <Form.Item name="valueType" label="类型"><Select allowClear placeholder="全部类型" options={valueTypeOptions} className="advanced-filter-select" /></Form.Item>
+                <Form.Item name="enabled" label="状态"><Select allowClear placeholder="全部状态" options={[{ value: true, label: '启用' }, { value: false, label: '停用' }]} className="advanced-filter-select" /></Form.Item>
               </Form>
-            </ManagementMoreFilters>
-          </Form>
+            </ManagementAdaptiveMoreFilters>
           <ManagementFilterActions form={form} appliedFilters={filters} additionalActive={advancedFilterCount > 0} loading={dictionariesQuery.isFetching} onReset={reset} />
         </div>
         <div className="management-results-surface">

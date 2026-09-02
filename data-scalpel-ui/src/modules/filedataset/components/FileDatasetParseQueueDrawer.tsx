@@ -1,18 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { DescriptionsProps, TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Drawer,
-  Form,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-} from 'antd';
+import { Button, Descriptions, Drawer, Form, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import {
   useFileDatasetParseJobs,

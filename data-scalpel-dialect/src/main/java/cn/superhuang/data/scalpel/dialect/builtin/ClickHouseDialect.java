@@ -249,6 +249,15 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
         requireMergeTreeDefinition(before);
         requireMergeTreeDefinition(target);
         if (containsGeometry(before) || containsGeometry(target)) {
+            if (!compareTable(before, actual).compatible()) {
+                throw new IllegalArgumentException("Physical ClickHouse table structure has drifted from the source definition");
+            }
+            if (before.structureFingerprint().equals(target.structureFingerprint())) {
+                return new TableChangePlan(
+                        before, target, TableChangeStrategy.METADATA_ONLY, TableChangeRisk.SAFE,
+                        TableDdlAtomicity.NOT_APPLICABLE, List.of(), List.of(), List.of(), List.of()
+                );
+            }
             throw new UnsupportedOperationException("ClickHouse Geometry 受管表第一版不支持物理结构变更");
         }
         if (!compareTable(before, actual).compatible()) {
@@ -448,7 +457,7 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
             case TIMESTAMP, DATETIME -> type.startsWith("DateTime");
             case TIMESTAMP_NTZ -> false;
             case BINARY -> false;
-            case GEOMETRY -> matchesWkbGeometry(expected, actual);
+            case GEOMETRY -> matchesWkbGeometry(actual);
         };
     }
 
@@ -926,13 +935,13 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
         }
     }
 
-    private static boolean matchesWkbGeometry(TableColumnDefinition expected, ColumnMetadata actual) {
+    private static boolean matchesWkbGeometry(ColumnMetadata actual) {
         SpatialColumnMetadata spatial = actual.spatial();
         if (spatial == null || spatial.storageEncoding() != SpatialStorageEncoding.WKB) {
             return false;
         }
         TypeMappingResult<PlatformTypeDefinition> mapping = mapWkbToPlatform(actual.nativeType(), spatial);
-        return mapping.acceptable() && expected.geometry().equals(mapping.definition().geometry());
+        return mapping.acceptable() && mapping.definition().type() == PlatformDataType.GEOMETRY;
     }
 
     private static boolean isWkbStringType(String nativeType) {

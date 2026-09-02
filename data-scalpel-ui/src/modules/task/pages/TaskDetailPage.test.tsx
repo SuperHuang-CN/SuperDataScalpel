@@ -327,6 +327,8 @@ describe('TaskDetailPage', () => {
     await waitFor(() => expect(state.startStreamingMutation.mutateAsync).toHaveBeenCalledWith(
       '67cc5990-074c-4724-9420-6ddcc331c1c0',
     ));
-    expect(await screen.findByText('实时任务持续消费数据，不使用 Cron 定时计划')).toBeInTheDocument();
+    const helpButton = await screen.findByRole('button', { name: '实时任务运行说明' });
+    await user.click(helpButton);
+    expect(await screen.findByText(/实时任务持续消费数据，不使用 Cron 定时计划/)).toBeInTheDocument();
   });
 });

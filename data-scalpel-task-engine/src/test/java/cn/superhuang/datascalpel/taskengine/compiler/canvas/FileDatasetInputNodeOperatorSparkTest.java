@@ -12,6 +12,7 @@ import cn.superhuang.data.scalpel.contract.task.DatabaseObjectType;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetFileStatus;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputConfiguration;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetInputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.FileDatasetInputTableSelection;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetParseStatus;
 import cn.superhuang.data.scalpel.contract.task.FileDatasetType;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputConfiguration;
@@ -50,6 +51,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 class FileDatasetInputNodeOperatorSparkTest {
     private static final String TABLE_CODE = "orders_file";
+    private static final UUID FILE_DATASET_ID = UUID.fromString("93020638-bac7-42ec-a2b4-f52d88e71479");
     private static final List<CanvasColumnSchema> COLUMNS = List.of(new CanvasColumnSchema(
             "order_id",
             PlatformDataType.LONG,
@@ -242,7 +244,10 @@ class FileDatasetInputNodeOperatorSparkTest {
                                 inputId,
                                 "订单文件输入",
                                 new CanvasNodeLayout(0D, 0D, 240D, 120D),
-                                new FileDatasetInputConfiguration(tableId)
+                                new FileDatasetInputConfiguration(
+                                        FILE_DATASET_ID.toString(),
+                                        List.of(new FileDatasetInputTableSelection(tableId))
+                                )
                         ),
                         new JdbcOutputNodeDefinition(
                                 outputId,
@@ -283,6 +288,7 @@ class FileDatasetInputNodeOperatorSparkTest {
                 List.of(),
                 List.of(new MetadataFileDatasetTable(
                         tableId,
+                        FILE_DATASET_ID,
                         TABLE_CODE,
                         "订单文件表",
                         datasetType,

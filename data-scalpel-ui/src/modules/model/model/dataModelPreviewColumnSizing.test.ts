@@ -3,6 +3,7 @@ import {
   calculateDataModelPreviewColumnWidths,
   dataModelPreviewCellText,
   effectiveDataModelPreviewColumnWidth,
+  formatDataModelPreviewValue,
   normalizeDataModelPreviewManualWidth,
   type DataModelPreviewSizingColumn,
 } from './dataModelPreviewColumnSizing';
@@ -43,6 +44,13 @@ describe('data model preview column sizing', () => {
     expect(dataModelPreviewCellText(12.5)).toBe('12.5');
     expect(dataModelPreviewCellText('0'.padEnd(100))).toBe('0');
     expect(dataModelPreviewCellText({ enabled: true })).toBe('{"enabled":true}');
+  });
+
+  it('formats platform temporal values for Chinese data-table reading', () => {
+    expect(formatDataModelPreviewValue('2026-08-30T00:00:00', 'DATE')).toBe('2026-08-30');
+    expect(formatDataModelPreviewValue('1994-03-09T00:00', 'TIMESTAMP_NTZ')).toBe('1994-03-09 00:00:00');
+    expect(formatDataModelPreviewValue('1988-04-16 16:00:12.123', 'TIMESTAMP_NTZ')).toBe('1988-04-16 16:00:12');
+    expect(formatDataModelPreviewValue('2026-08-29T16:30:45Z', 'TIMESTAMP')).toBe('2026-08-30 00:30:45');
   });
 
   it('ignores fixed-width character padding when calculating an automatic width', () => {

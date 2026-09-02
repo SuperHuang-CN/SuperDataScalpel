@@ -50,6 +50,11 @@ public class SparkJarTaskDefinition extends BaseEntity {
     private String developmentKitConfigJson;
     @Column(name = "current_development_kit_job_id")
     private UUID currentDevelopmentKitJobId;
+    @JdbcTypeCode(SqlTypes.LONG32VARCHAR)
+    @Column(name = "online_source_code")
+    private String onlineSourceCode;
+    @Column(name = "online_compiled_source_sha256", length = 64)
+    private String onlineCompiledSourceSha256;
     @Column(name = "timeout_seconds", nullable = false)
     private int timeoutSeconds;
     @Column(nullable = false)
@@ -116,6 +121,21 @@ public class SparkJarTaskDefinition extends BaseEntity {
         return true;
     }
 
+    /** Authoring drafts are persisted independently from the production definition version. */
+    public void saveOnlineSource(String sourceCode) {
+        if (sourceCode == null || sourceCode.isBlank()) throw new IllegalArgumentException("在线源码不能为空");
+        this.onlineSourceCode = sourceCode;
+    }
+
+    public void markOnlineSourceCompiled(String sourceSha256) {
+        this.onlineCompiledSourceSha256 = required(sourceSha256);
+    }
+
+    /** A manually uploaded JAR becomes authoritative without discarding the saved online draft. */
+    public void markJarUploaded() {
+        this.onlineCompiledSourceSha256 = null;
+    }
+
     public void resourceBindingsChanged() { incrementVersion(); }
 
     /**
@@ -158,5 +178,7 @@ public class SparkJarTaskDefinition extends BaseEntity {
     public int getVersion() { return version; }
     public String getDevelopmentKitConfigJson() { return developmentKitConfigJson; }
     public UUID getCurrentDevelopmentKitJobId() { return currentDevelopmentKitJobId; }
+    public String getOnlineSourceCode() { return onlineSourceCode; }
+    public String getOnlineCompiledSourceSha256() { return onlineCompiledSourceSha256; }
     public boolean hasJar() { return jarObjectKey != null; }
 }

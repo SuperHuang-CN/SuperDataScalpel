@@ -175,9 +175,9 @@ task-runs/<runId>/attempts/<attempt>/user-job.jar
 TaskRun保存文件名、SHA-256和大小，但不对外返回对象 Key。终态后幂等清理运行级 JAR；清理失败不改变
 运行终态。覆盖当前 JAR后删除旧当前对象，不保留版本列表或旧 Run重放能力。
 
-## 批处理本地开发包
+## 批流本地开发包
 
-`SPARK_JAR`任务通过异步接口生成一个当前本地开发包；`SPARK_STREAMING_JAR`继续保留同步通用模板。页面提交前自动保存
+`SPARK_JAR`和`SPARK_STREAMING_JAR`通过同一异步接口、队列和制品存储生成当前本地开发包。页面提交前自动保存
 当前定义并携带定义版本。模型资源绑定是唯一来源：READ生成输入，WRITE生成输出Target，READ_WRITE同时生成两者。
 样例固定为Snappy Parquet，支持零行、指定条数、指定比例和全部数据；比例按总数向上取整。存在主键时按完整主键
 升序读取，否则保留数据库返回顺序并在README和元数据中标记顺序不稳定。输入样例Parquet及测试输入Schema的字段
@@ -196,8 +196,8 @@ LOSSY、UNSUPPORTED或Geometry字段会明确失败。
 
 接口为`GET /api/v1/tasks/{taskId}/spark-jar-development-kit`、
 `POST /api/v1/tasks/{taskId}/spark-jar-development-kit/actions/generate`和
-`GET /api/v1/tasks/{taskId}/spark-jar-development-kit/artifact`。查询返回保存配置、最近生成状态以及当前制品是否仍匹配
-任务定义和保存配置；定义变化后旧制品禁止下载。保存配置不同于当前成功制品时，旧制品仍可下载，但页面明确提示它是上一次成功
+`GET /api/v1/tasks/{taskId}/spark-jar-development-kit/artifact`。查询返回保存配置、最近生成状态以及当前制品是否匹配
+保存配置。任务定义变化不主动禁用已有开发包；保存配置不同于当前成功制品时，旧制品仍可下载，但页面明确提示它是上一次成功
 生成的开发包。已有安装中配置或指针为空时，读取最近生成记录作为兼容回退；下一次成功生成后进入单一当前制品语义。
 
 开发包包含Maven工程、按真实绑定生成的示例作业、含完整StructType和输出Target声明的单元测试、
@@ -205,6 +205,56 @@ LOSSY、UNSUPPORTED或Geometry字段会明确失败。
 `src/test/resources/samples/{bindingName}-{table}-*.parquet`，测试通过`jdbcTableParquet`注册。元数据记录任务版本、模型Schema版本、
 JDBC绑定/表标识、抽样方式、实际行数、排序稳定性和文件摘要，不包含连接配置、凭据或对象Key。Parquet、ZIP、对象存储上传和HTTP下载均使用文件或流边界。
 示例作业和README保留`JdbcReadOptions`的可取消注释用法；读取参数属于用户代码，不写入任务定义或开发包生成请求。
+
+实时开发包生成`ExampleSparkStreamingJob`及对应TestKit测试。模型和JDBC输入仍使用Parquet样例；Kafka不会读取
+线上消息，而是为每个READ绑定创建独立输入`TestKafkaTopic`，为每个WRITE绑定创建独立输出`TestKafkaTopic`。
+READ_WRITE必须分别使用输入和输出Topic，避免回读自身输出。生成代码中的UTF-8 key/value是假消息并明确标记可编辑；
+测试使用EARLIEST读取、统一注册StreamingQuery、处理当前可用数据并断言Kafka输出。模型输出Target同样注册到
+`SparkStreamingJobTestKit.Builder`，以便在线草稿放入开发包后仍可本地运行。
+
+## 批流在线 Java 开发
+
+两类Spark JAR任务共用全页在线Java工作台。批处理固定编辑
+`com.example.datascalpel.ExampleSparkJob`并实现`SparkBatchJob`；实时固定编辑
+`com.example.datascalpel.ExampleSparkStreamingJob`并实现`SparkStreamingJob`。主类必须公开并提供公开无参构造器。在线草稿保存在
+`task_spark_jar_definition.online_source_code`，保存草稿不增加生产定义版本；最后一次成功成为当前JAR的源码摘要保存在
+`online_compiled_source_sha256`。上传本地JAR会清除已编译摘要但保留草稿，因此同一个任务始终只有一个当前生效JAR，同时可以在
+在线编译与本地上传之间切换。
+
+接口为`GET /api/v1/tasks/{taskId}/spark-jar-online-source`、
+`POST /api/v1/tasks/{taskId}/spark-jar-online-source/actions/save`和
+`POST /api/v1/tasks/{taskId}/spark-jar-online-source/actions/compile`。编译操作先保存完整草稿，再在管理数据库事务外请求Task Engine；
+编译成功后校验固定Manifest、JAR大小和摘要，最后锁定任务并确认源码在编译期间没有变化，再原子替换当前JAR。编译错误作为带行列
+范围的正常失败结果返回；超时、Task Engine不可用或对象存储失败均不覆盖之前的可运行JAR。
+
+Task Engine使用JDK 21`JavaCompiler`、受控Spark 4.1.1/SDK classpath、禁用Annotation Processor且不执行用户代码。
+源码上限256 KiB、诊断最多200条、编译超时30秒、产物上限5 MiB。在线工作台的Monaco提示来自锁定版本的常用Spark/SDK
+API索引和任务资源元数据，支持绑定名、模型字段及已配置JDBC本地表字段；它是轻量提示层，不替代完整Java语言服务，最终以平台
+编译结果为准。生成新的本地开发包时，如果存在在线草稿，会把草稿作为`ExampleSparkJob.java`写入工程，便于继续转为本地开发。
+实时模式对应写入`ExampleSparkStreamingJob.java`，编译请求显式携带`BATCH/STREAMING`模式，Task Engine按模式校验
+固定类名和接口，并在Manifest写入匹配的`DataScalpel-Job-Mode`，不通过源码内容猜测。
+
+### 在线源码真实数据试运行
+
+在线工作台可以把当前草稿保存并临时编译为一次`TRIAL` TaskRun。临时JAR只属于该次运行，不替换当前生效JAR，也不增加
+`definitionVersion`。运行使用任务当前保存的真实模型、JDBC凭据、计算引擎、运行资源、参数和超时。
+
+模型和JDBC Writer继续完成字段映射、Cast、主键规则、目标数据库能力检查和Catalyst分析，但在真实写入前被预览采集器拦截。
+每次调用执行`limit(101).toJSON().collectAsList()`，展示前100行并标记是否截断；最多保留20次写入。试运行的
+`affectedRows`为空，血缘证据只留在运行结果中，不创建正式血缘摄取任务。`sessionInitStatement`在试运行中被拒绝。
+
+用户代码显式调用`show/count/collect`仍按真实Spark语义执行，聚合和Join可能扫描完整输入。无写入保证只覆盖平台SDK Writer；
+用户自行携带连接信息产生的外部副作用不属于第一版拦截范围。
+
+实时在线试运行同样读取任务绑定的真实模型、JDBC和Kafka输入，但平台SDK的模型/JDBC写入会采集映射后的Dataset，
+Kafka SDK Writer会改为本地`foreachBatch`采集，不连接输出Topic。每次最多100行、最多20次写入，整体结果仍受4 MiB限制。
+正常停止和执行失败都生成v11 `result.json`；正常停止状态为`STOPPED`，失败可返回失败前已采集的部分预览。
+Runner先上传结果并报告结果可用，再报告停止或失败；强制终止可能来不及生成最新预览。
+
+每次实时Trial固定创建新的`TRIAL + FRESH` Deployment，Checkpoint前缀为
+`streaming-jar-trials/{taskId}/{runId}`，最长运行30分钟。Trial与正式`REAL` Deployment互斥且Checkpoint完全隔离，
+不会成为正式`CONTINUE`来源。到期由Admin发起正常停止并给予60秒宽限，仍未停止时沿用Dispatcher Backend强制终止。
+正常停止或失败后Runner最佳努力删除Trial Checkpoint；强杀残留由运维按`streaming-jar-trials/`前缀定期清理。
 
 ## Runner
 
@@ -215,11 +265,12 @@ Runner下载 JAR后校验准确大小与 SHA-256，调用 `SparkContext.addJar()
 URLClassLoader加载 Job Class。Java默认父优先保证 Spark、Scala、Hadoop、SDK和 Task Engine类不能被
 用户 JAR覆盖。一个 Runner进程只执行一个用户作业，不热加载或复用 ClassLoader。
 
-批 Job Class必须 public、实现 `SparkBatchJob`并提供 public无参构造。执行结果使用 result v8，
+批 Job Class必须 public、实现 `SparkBatchJob`并提供 public无参构造。执行结果使用 result v9，
 `taskType=SPARK_JAR` 且 `nodeResults=[]`。JAR下载、摘要、类加载、构造和用户执行失败使用独立稳定错误码；
 Cause链中的真实 Spark/JDBC错误优先分类。所有日志和错误必须隐藏签名 URL、对象 Key、凭据和Manifest。
-Dispatcher继续读取v2～v8结果；v6及以上允许携带 `userJobObservability`，v8为批处理 JAR增加可空的
+Dispatcher继续读取v2～v9结果；v6及以上允许携带 `userJobObservability`，v8为批处理 JAR增加可空的
 `lineage`运行证据。成功批任务必须返回证据；没有 SDK 写入时明确返回 `UNAVAILABLE/NO_SDK_WRITES`。
+v9增加仅供在线试运行使用的可空`trialPreview`，该载荷不会进入Dispatcher终态事件。
 
 模型与 JDBC读取会给 Catalyst属性附加稳定资源和字段身份。`readQuery`只使用数据源身份与规范化 SQL的
 SHA-256表示查询结果资产，不保存 SQL正文或 Literal。模型/JDBC Writer在字段映射和 Cast完成后分析投影

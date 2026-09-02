@@ -1,4 +1,7 @@
-import { Descriptions, Space, Table, Tag, Typography } from 'antd';
+import { DatabaseOutlined, ProfileOutlined } from '@ant-design/icons';
+import { Space, Table, Tag } from 'antd';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import type { DataSource, HttpApiAuthentication, HttpApiNamedValue } from '../model/dataSource';
 import { dataSourcePurposeLabels, dataSourceTypeLabels } from '../model/dataSource';
@@ -97,24 +100,35 @@ const connectionItems = (dataSource: DataSource) => {
 
 export const DataSourceBasicPanel = ({ dataSource, directoryName }: DataSourceBasicPanelProps) => (
   <div className="data-source-detail-tab-panel data-source-basic-panel">
-    <Descriptions
-      bordered
-      size="small"
-      column={2}
+    <BusinessDetailSection
       title="管理信息"
-      items={[
-        { key: 'name', label: '名称', children: dataSource.name },
-        { key: 'code', label: '编码', children: <code>{dataSource.code}</code> },
-        { key: 'type', label: '类型', children: dataSourceTypeLabels[dataSource.type] },
-        { key: 'status', label: '状态', children: <Tag color={dataSource.enabled ? 'success' : 'default'}>{dataSource.enabled ? '启用' : '停用'}</Tag> },
-        { key: 'purposes', label: '用途', children: <Space size={4}>{dataSource.purposes.map((purpose) => <Tag key={purpose}>{dataSourcePurposeLabels[purpose]}</Tag>)}</Space> },
-        { key: 'directory', label: '目录', children: directoryName || '未分类' },
-        { key: 'description', label: '说明', span: 2, children: dataSource.description || '—' },
-        { key: 'createdAt', label: '创建时间', children: formatManagementDateTime(dataSource.createdAt) },
-        { key: 'updatedAt', label: '更新时间', children: formatManagementDateTime(dataSource.updatedAt) },
-      ]}
-    />
-    <Typography.Title level={5}>连接配置</Typography.Title>
-    <Descriptions bordered size="small" column={2} items={connectionItems(dataSource)} />
+      description="数据源的基础属性与归属信息"
+      icon={<ProfileOutlined />}
+    >
+      <BusinessDetailDescriptions
+        column={{ xs: 1, md: 2, xl: 4 }}
+        items={[
+          { key: 'name', label: '名称', children: dataSource.name },
+          { key: 'code', label: '编码', children: <code>{dataSource.code}</code> },
+          { key: 'type', label: '类型', children: dataSourceTypeLabels[dataSource.type] },
+          { key: 'status', label: '状态', children: <Tag color={dataSource.enabled ? 'success' : 'default'}>{dataSource.enabled ? '启用' : '停用'}</Tag> },
+          { key: 'purposes', label: '用途', children: <Space size={4}>{dataSource.purposes.map((purpose) => <Tag key={purpose}>{dataSourcePurposeLabels[purpose]}</Tag>)}</Space> },
+          { key: 'directory', label: '目录', children: directoryName || '未分类' },
+          { key: 'description', label: '说明', span: 2, children: dataSource.description || '—' },
+          { key: 'createdAt', label: '创建时间', children: formatManagementDateTime(dataSource.createdAt) },
+          { key: 'updatedAt', label: '更新时间', children: formatManagementDateTime(dataSource.updatedAt) },
+        ]}
+      />
+    </BusinessDetailSection>
+    <BusinessDetailSection
+      title="连接配置"
+      description="访问外部资源所需的连接参数"
+      icon={<DatabaseOutlined />}
+    >
+      <BusinessDetailDescriptions
+        column={{ xs: 1, md: 2, xl: 3 }}
+        items={connectionItems(dataSource)}
+      />
+    </BusinessDetailSection>
   </div>
 );

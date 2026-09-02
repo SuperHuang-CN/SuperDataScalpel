@@ -8,6 +8,7 @@ import type { ServiceEngine } from '../../serviceengine';
 const dataServiceMocks = vi.hoisted(() => ({
   content: [] as DataServiceSummary[],
   create: vi.fn(),
+  update: vi.fn(),
   unpublish: vi.fn(),
   disable: vi.fn(),
 }));
@@ -37,6 +38,7 @@ vi.mock('../hooks/useDataServices', () => ({
   }),
   useCleanupDataServiceDeployment: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useCreateDataService: () => ({ isPending: false, mutateAsync: dataServiceMocks.create }),
+  useUpdateDataService: () => ({ isPending: false, mutateAsync: dataServiceMocks.update }),
   useDeleteDataService: () => ({ isPending: false, mutateAsync: vi.fn() }),
   useDisableDataService: () => ({ isPending: false, variables: undefined, mutateAsync: dataServiceMocks.disable }),
   useEnableDataService: () => ({ isPending: false, mutateAsync: vi.fn() }),
@@ -89,6 +91,7 @@ describe('DataServiceListPanel creation menu', () => {
   beforeEach(() => {
     dataServiceMocks.content = [];
     dataServiceMocks.create.mockReset();
+    dataServiceMocks.update.mockReset();
     dataServiceMocks.unpublish.mockReset();
     dataServiceMocks.disable.mockReset();
     serviceEngineMocks.content = [];
@@ -134,7 +137,7 @@ describe('DataServiceListPanel creation menu', () => {
       definitionConfigured: true,
       definitionVersion: 1,
       engineId: 'engine-1',
-      engineRoutePath: '/runtime/v1/services/service-1',
+      contextPath: '/open-api/v1/user',
       status: 'ENABLED',
       revision: 3,
       deploymentStatus: 'DEPLOYED',

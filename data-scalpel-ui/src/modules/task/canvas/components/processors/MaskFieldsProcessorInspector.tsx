@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   PlusOutlined,
@@ -6,21 +7,7 @@ import {
   SwapOutlined,
 } from '@ant-design/icons';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
-import {
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  InputNumber,
-  Popover,
-  Radio,
-  Select,
-  Space,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Button, Card, Form, Input, InputNumber, Popover, Radio, Select, Space, Tag, Typography, message } from 'antd';
 import {
   useImperativeHandle,
   useMemo,

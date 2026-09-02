@@ -1,35 +1,14 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
-  DownloadOutlined,
   ExclamationCircleOutlined,
   InfoCircleOutlined,
-  InboxOutlined,
   PlusOutlined,
   SaveOutlined,
-  UploadOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Descriptions,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Tooltip,
-  Typography,
-  Upload,
-  message,
-  type UploadFile,
-  type UploadProps,
-} from 'antd';
+import { Button, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tag, Tooltip, Typography, Upload, message, type UploadFile, type UploadProps } from 'antd';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useBlocker, type BlockerFunction } from 'react-router-dom';
+import { useBlocker, useNavigate, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { DataModelPickerModal, useDataModel } from '../../model';
@@ -43,7 +22,6 @@ import {
 } from '../../datasource';
 import { CanvasKafkaTopicSelect } from '../canvas/components/CanvasKafkaSelectors';
 import {
-  useDownloadSparkJarTemplate,
   useGenerateSparkJarDevelopmentKit,
   useDownloadSparkJarDevelopmentKit,
   useSparkJarDevelopmentKit,
@@ -69,7 +47,6 @@ import {
   SparkJarDevelopmentKitPanel,
   SparkJarRuntimeConfiguration,
 } from './SparkJarDefinitionWorkspace';
-import { formatSparkJarBytes } from './sparkJarDefinitionWorkspaceModel';
 
 interface SparkJarDefinitionFormValues {
   parameters: SparkJarDefinitionEntry[];
@@ -158,10 +135,15 @@ const driverJavaOptionsFromSparkConf = (sparkConf: SparkJarDefinitionEntry[]) =>
   };
 };
 
+const containsControlCharacter = (value: string): boolean => Array.from(value).some((character) => {
+  const codePoint = character.codePointAt(0) ?? 0;
+  return codePoint <= 0x1f || codePoint === 0x7f;
+});
+
 const normalizeDriverJavaOptions = (value: string | undefined): string[] => {
   if (!value || !value.trim()) return [];
   const lines = value.split(/\r?\n/).map((line) => line.trim());
-  if (lines.length > 100 || lines.some((line) => !line || /\s/.test(line) || /[\u0000-\u001F\u007F]/.test(line))) {
+  if (lines.length > 100 || lines.some((line) => !line || /\s/.test(line) || containsControlCharacter(line))) {
     throw new Error('每行填写一个不含空白字符的 Driver JVM 参数，最多 100 项');
   }
   if (lines.join(' ').length > 2_000) throw new Error('Driver JVM 参数总长度不能超过 2000 个字符');
@@ -498,6 +480,7 @@ export const SparkJarTaskDefinitionPanel = ({
   toolbarContext,
   protectNavigation = true,
 }: SparkJarTaskDefinitionPanelProps) => {
+  const navigate = useNavigate();
   const [form] = Form.useForm<SparkJarDefinitionFormValues>();
   const [messageApi, messageContext] = message.useMessage();
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
@@ -516,10 +499,9 @@ export const SparkJarTaskDefinitionPanel = ({
   const dataSourcesQuery = useDataSources({ page: 0, size: 500, sort: 'code' }, task.type === 'SPARK_STREAMING_JAR');
   const updateMutation = useUpdateSparkJarTaskDefinition();
   const uploadMutation = useUploadSparkJar();
-  const templateMutation = useDownloadSparkJarTemplate();
   const createKitMutation = useGenerateSparkJarDevelopmentKit();
   const downloadKitMutation = useDownloadSparkJarDevelopmentKit();
-  const kitQuery = useSparkJarDevelopmentKit(task.id, task.type === 'SPARK_JAR');
+  const kitQuery = useSparkJarDevelopmentKit(task.id, task.type === 'SPARK_JAR' || task.type === 'SPARK_STREAMING_JAR');
   const watchedParameters = Form.useWatch('parameters', form);
   const watchedSparkConf = Form.useWatch('sparkConf', form);
   const watchedDriverJavaOptions = Form.useWatch('driverJavaOptions', form);
@@ -676,8 +658,11 @@ export const SparkJarTaskDefinitionPanel = ({
         parameters: values.parameters ?? [],
         sparkConf,
         resourceBindings: values.resourceBindings ?? [],
-        executionResources: values.executionResources,
-        timeoutSeconds: values.timeoutSeconds,
+        executionResources: {
+          ...definition?.executionResources,
+          ...values.executionResources,
+        },
+        timeoutSeconds: values.timeoutSeconds ?? definition?.timeoutSeconds ?? 3_600,
       };
       const saved = await updateMutation.mutateAsync({ id: task.id, request });
       const savedRuntimeOptions = driverJavaOptionsFromSparkConf(saved.sparkConf);
@@ -832,14 +817,6 @@ export const SparkJarTaskDefinitionPanel = ({
     }
   };
 
-  const downloadTemplate = async () => {
-    try {
-      downloadBlob(await templateMutation.mutateAsync(task.id), 'datascalpel-spark-job-template.zip');
-    } catch (error) {
-      messageApi.error(error instanceof ApiError ? error.message : '下载 Maven 模板失败');
-    }
-  };
-
   const renderLocalDevelopmentConfiguration = (
     binding: Omit<SparkJarResourceBinding, 'resourceName'> | undefined,
   ) => {
@@ -907,6 +884,14 @@ export const SparkJarTaskDefinitionPanel = ({
         </div>
       );
     }
+    if (binding.resourceType === 'KAFKA_TOPIC') {
+      if (binding.accessMode === 'READ_WRITE') {
+        return <Typography.Text type="secondary">UTF-8 假消息 · 输入/输出 Test Topic 隔离</Typography.Text>;
+      }
+      return <Typography.Text type="secondary">
+        {binding.accessMode === 'READ' ? '生成可编辑 UTF-8 假消息' : '生成独立输出 Test Topic'}
+      </Typography.Text>;
+    }
     return <Typography.Text type="secondary">—</Typography.Text>;
   };
 
@@ -934,105 +919,31 @@ export const SparkJarTaskDefinitionPanel = ({
         {toolbarContext ?? <Typography.Text strong>Spark JAR 定义</Typography.Text>}
         <Space wrap>
           {dirty && <Tag color="warning">任务配置未保存</Tag>}
-          {!streaming && kitConfigDirty && <Tag color="orange">开发配置待生成</Tag>}
-          {streaming && (
-            <Button icon={<DownloadOutlined />} loading={templateMutation.isPending} onClick={() => void downloadTemplate()}>
-              下载 Maven 模板
-            </Button>
-          )}
+          {kitConfigDirty && <Tag color="orange">开发配置待生成</Tag>}
           <Button type="primary" icon={<SaveOutlined />} loading={updateMutation.isPending} onClick={() => void save()}>
             保存配置
           </Button>
         </Space>
       </div>
       <div className="spark-jar-definition-scroll">
-        {streaming ? (
-          <section className="spark-jar-definition-section">
-            <div className="spark-jar-definition-section-title">用户作业 JAR</div>
-            {definition.jar ? (
-              <Descriptions bordered size="small" column={3}>
-                <Descriptions.Item label="文件名">{definition.jar.fileName}</Descriptions.Item>
-                <Descriptions.Item label="大小">{formatSparkJarBytes(definition.jar.sizeBytes)}</Descriptions.Item>
-                <Descriptions.Item label="Job API">v{definition.jar.jobApiVersion}</Descriptions.Item>
-                <Descriptions.Item label="Job Class" span={2}><Typography.Text code copyable>{definition.jar.jobClass}</Typography.Text></Descriptions.Item>
-                <Descriptions.Item label="作业模式"><Tag color="processing">STREAMING</Tag></Descriptions.Item>
-                <Descriptions.Item label="定义版本">v{definition.definitionVersion}</Descriptions.Item>
-                <Descriptions.Item label="SHA-256" span={3}><Typography.Text code copyable ellipsis>{definition.jar.sha256}</Typography.Text></Descriptions.Item>
-              </Descriptions>
-            ) : <Alert type="warning" showIcon message="尚未上传用户作业 JAR" />}
-            <div className="spark-jar-upload-row">
-              <Upload.Dragger
-                accept=".jar,application/java-archive,application/zip"
-                maxCount={1}
-                fileList={uploadFiles}
-                beforeUpload={beforeJarUpload}
-                onRemove={() => { setUploadFiles([]); return true; }}
-              >
-                <p className="ant-upload-drag-icon"><InboxOutlined /></p>
-                <p className="ant-upload-text">选择或拖入 JAR 文件</p>
-                <p className="ant-upload-hint">平台只读取 Manifest 和类条目，不会在上传阶段加载或执行用户代码。</p>
-              </Upload.Dragger>
-              <Button
-                icon={<UploadOutlined />}
-                loading={uploadMutation.isPending || updateMutation.isPending}
-                disabled={uploadFiles.length === 0}
-                onClick={() => void upload()}
-              >
-                {definition.jar ? '覆盖当前 JAR' : '上传 JAR'}
-              </Button>
-            </div>
-          </section>
-        ) : (
-          <SparkJarArtifactSummary
-            definition={definition}
-            uploadFiles={uploadFiles}
-            uploading={uploadMutation.isPending || updateMutation.isPending}
-            beforeUpload={beforeJarUpload}
-            onClearSelection={() => setUploadFiles([])}
-            onUpload={() => void upload()}
-          />
-        )}
+        <SparkJarArtifactSummary
+          definition={definition}
+          uploadFiles={uploadFiles}
+          uploading={uploadMutation.isPending || updateMutation.isPending}
+          beforeUpload={beforeJarUpload}
+          onClearSelection={() => setUploadFiles([])}
+          onUpload={() => void upload()}
+          onOpenOnlineEditor={() => navigate(`/task/${task.id}/online-code`)}
+        />
 
         <Form<SparkJarDefinitionFormValues>
-          className={!streaming ? 'spark-jar-workspace-stack' : undefined}
+          className="spark-jar-workspace-stack"
           autoComplete="off"
           form={form}
           layout="vertical"
           initialValues={{ parameters: [], sparkConf: [], driverJavaOptions: '', resourceBindings: [], timeoutSeconds: 3600 }}
           onValuesChange={() => setDirty(true)}
         >
-          {streaming && (
-            <div className="spark-jar-entry-grid">
-              <section className="spark-jar-definition-section spark-jar-entry-section">
-                <div className="spark-jar-definition-section-title">运行参数</div>
-                <EntryEditor
-                  name="parameters"
-                  addLabel="添加参数"
-                  keyPlaceholder="例如 processingDate"
-                  valueMax={4000}
-                  valueRequired={false}
-                  keyRules={[{ required: true, message: '请输入参数 Key' }, { max: 100 }]}
-                />
-              </section>
-
-              <section className="spark-jar-definition-section spark-jar-entry-section">
-                <div className="spark-jar-definition-section-title">Spark Conf</div>
-                <EntryEditor
-                  name="sparkConf"
-                  addLabel="添加 Spark Conf"
-                  keyPlaceholder="spark.sql.shuffle.partitions"
-                  valueMax={2000}
-                  valueRequired
-                  keyRules={[
-                    { required: true, message: '请输入 Spark Conf Key' },
-                    { max: 500 },
-                    { pattern: /^spark\./, message: 'Key 必须以 spark. 开头' },
-                  ]}
-                />
-              </section>
-            </div>
-          )}
-
           <section className="spark-jar-definition-section spark-jar-resource-bindings-section">
             <div className="spark-jar-definition-section-title">资源绑定</div>
             <Form.List name="resourceBindings">
@@ -1123,13 +1034,13 @@ export const SparkJarTaskDefinitionPanel = ({
                           );
                         },
                       }] : []),
-                      ...(!streaming ? [{
+                      ...([{
                         title: '本地开发',
                         width: 390,
                         render: (_: unknown, field: { name: number }) => (
                           renderLocalDevelopmentConfiguration(resourceBindings[field.name])
                         ),
-                      }] : []),
+                      }]),
                       {
                         title: '访问方式', width: 130,
                         render: (_, field) => <Form.Item name={[field.name, 'accessMode']} rules={[{ required: true, message: '请选择访问方式' }]} noStyle><Select options={accessModeOptions} onChange={(accessMode: SparkJarResourceAccessMode) => {
@@ -1153,8 +1064,7 @@ export const SparkJarTaskDefinitionPanel = ({
             </Form.List>
           </section>
 
-          {!streaming && (
-            <SparkJarDevelopmentKitPanel
+          <SparkJarDevelopmentKitPanel
               status={developmentKitStatus}
               generation={developmentKitGeneration}
               artifact={developmentKitArtifact}
@@ -1167,17 +1077,16 @@ export const SparkJarTaskDefinitionPanel = ({
               downloading={downloadKitMutation.isPending}
               onGenerate={() => void generateDevelopmentKit()}
               onDownload={() => void downloadDevelopmentKit()}
-            />
-          )}
+          />
 
-          {!streaming && (
-            <SparkJarRuntimeConfiguration
+          <SparkJarRuntimeConfiguration
               activeKeys={runtimeConfigurationKeys}
               onChange={setRuntimeConfigurationKeys}
               overview={{
                 environment: resourceEnvironment,
                 resources: resourceSummary,
                 timeout: timeoutSummary,
+                timeoutLabel: streaming ? '查询注册超时' : '最长运行',
               }}
               items={[
                 {
@@ -1189,19 +1098,23 @@ export const SparkJarTaskDefinitionPanel = ({
                 },
                 {
                   key: 'timeout',
-                  label: '执行超时',
+                  label: streaming ? '查询注册超时' : '执行超时',
                   summary: timeoutSummary,
                   placement: 'primary',
                   children: (
                     <div className="spark-jar-runtime-timeout-editor">
                       <Form.Item
                         name="timeoutSeconds"
-                        label="执行超时"
+                        label={streaming ? 'start() 查询注册超时' : '执行超时'}
                         rules={[{ required: true }, { type: 'number', min: 1, max: 86400 }]}
                       >
                         <SparkJarExecutionTimeoutEditor />
                       </Form.Item>
-                      <Typography.Text type="secondary">达到时限后，平台会终止本次任务运行。</Typography.Text>
+                      <Typography.Text type="secondary">
+                        {streaming
+                          ? 'start() 必须在时限内完成全部查询注册并返回；Trigger 和 Output Mode 由用户代码控制。'
+                          : '达到时限后，平台会终止本次任务运行。'}
+                      </Typography.Text>
                     </div>
                   ),
                 },
@@ -1212,68 +1125,35 @@ export const SparkJarTaskDefinitionPanel = ({
                   children: <SparkJarDriverJvmOptionsEditor backend={resourceBackend} />,
                 },
                 {
-                  key: 'parameters',
-                  label: '启动参数',
-                  summary: `${watchedParameters?.length ?? 0} 项`,
+                  key: 'arguments',
+                  label: '参数与 Spark Conf',
+                  summary: `参数 ${watchedParameters?.length ?? 0} 项 · Conf ${watchedSparkConf?.length ?? 0} 项`,
                   children: (
-                    <EntryEditor
-                      name="parameters"
-                      addLabel="添加参数"
-                      keyPlaceholder="例如 processingDate"
-                      valueMax={4000}
-                      valueRequired={false}
-                      keyRules={[{ required: true, message: '请输入参数 Key' }, { max: 100 }]}
-                    />
-                  ),
-                },
-                {
-                  key: 'sparkConf',
-                  label: 'Spark Conf',
-                  summary: `${watchedSparkConf?.length ?? 0} 项`,
-                  children: (
-                    <EntryEditor
-                      name="sparkConf"
-                      addLabel="添加 Spark Conf"
-                      keyPlaceholder="spark.sql.shuffle.partitions"
-                      valueMax={2000}
-                      valueRequired
-                      keyRules={[
-                        { required: true, message: '请输入 Spark Conf Key' },
-                        { max: 500 },
-                        { pattern: /^spark\./, message: 'Key 必须以 spark. 开头' },
-                      ]}
-                    />
+                    <div className="spark-jar-runtime-entry-columns">
+                      <div>
+                        <Typography.Text strong>启动参数</Typography.Text>
+                        <EntryEditor
+                          name="parameters" addLabel="添加参数" keyPlaceholder="例如 processingDate"
+                          valueMax={4000} valueRequired={false}
+                          keyRules={[{ required: true, message: '请输入参数 Key' }, { max: 100 }]}
+                        />
+                      </div>
+                      <div>
+                        <Typography.Text strong>Spark Conf</Typography.Text>
+                        <EntryEditor
+                          name="sparkConf" addLabel="添加 Spark Conf" keyPlaceholder="spark.sql.shuffle.partitions"
+                          valueMax={2000} valueRequired
+                          keyRules={[
+                            { required: true, message: '请输入 Spark Conf Key' }, { max: 500 },
+                            { pattern: /^spark\./, message: 'Key 必须以 spark. 开头' },
+                          ]}
+                        />
+                      </div>
+                    </div>
                   ),
                 },
               ]}
-            />
-          )}
-
-          {streaming && (
-            <section className="spark-jar-definition-section spark-jar-runtime-options">
-              <div className="spark-jar-definition-section-title">运行资源</div>
-              <SparkJarExecutionResourcesEditor backend={resourceBackend} maximums={resourceMaximums} />
-              <Form.Item name="timeoutSeconds" label="作业启动超时（秒）" rules={[{ required: true }, { type: 'number', min: 1, max: 86400 }]}>
-                <InputNumber min={1} max={86400} precision={0} />
-              </Form.Item>
-              <Typography.Text type="secondary">
-                start() 必须完成查询注册后返回。Trigger 与 Output Mode 由用户代码控制，Checkpoint 由平台分配。
-              </Typography.Text>
-            </section>
-          )}
-
-          {streaming && (
-            <SparkJarRuntimeConfiguration
-              activeKeys={runtimeConfigurationKeys}
-              onChange={setRuntimeConfigurationKeys}
-              items={[{
-                key: 'jvm',
-                label: '高级 JVM 配置',
-                summary: driverJavaOptionsCount === 0 ? '未配置' : `已配置 ${driverJavaOptionsCount} 项`,
-                children: <SparkJarDriverJvmOptionsEditor backend={resourceBackend} />,
-              }]}
-            />
-          )}
+          />
         </Form>
       </div>
       <Modal
@@ -1311,8 +1191,8 @@ export const SparkJarTaskDefinitionPanel = ({
             : null,
         } : null}
         purposes={jdbcPickerBinding?.accessMode === 'WRITE' ? ['DISTRIBUTION'] : ['SOURCE', ...(jdbcPickerBinding?.accessMode === 'READ_WRITE' ? ['DISTRIBUTION' as const] : [])]}
-        requireTable={!streaming && readableBinding(jdbcPickerBinding)}
-        title={!streaming && readableBinding(jdbcPickerBinding) ? '选择 JDBC 数据源和表' : '选择 JDBC 数据源'}
+        requireTable={readableBinding(jdbcPickerBinding)}
+        title={readableBinding(jdbcPickerBinding) ? '选择 JDBC 数据源和表' : '选择 JDBC 数据源'}
         rootClassName="business-overlay business-modal-overlay"
         onCancel={() => setJdbcPickerFieldIndex(null)}
         onConfirm={applyJdbcSelection}

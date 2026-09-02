@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, PlusOutlined, ReloadOutlined, SyncOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Form, Popconfirm, Select, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Button, Form, Popconfirm, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { useMemo } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
@@ -67,7 +68,9 @@ export const ServiceEngineDataSourcePanel = ({
     [registrationsQuery.data?.content],
   );
   const availableDataSources = (dataSourcesQuery.data?.content ?? []).filter((dataSource) => (
-    dataSource.connectionKind === 'JDBC' && dataSource.purposes.includes('STORAGE')
+    dataSource.connectionKind === 'JDBC'
+      && dataSource.purposes.includes('STORAGE')
+      && (engine.type !== 'GEOSERVER' || dataSource.type === 'POSTGRESQL')
   ));
 
   const register = async (values: RegistrationFormValues) => {
@@ -158,7 +161,7 @@ export const ServiceEngineDataSourcePanel = ({
             optionFilterProp="label"
             loading={dataSourcesQuery.isFetching}
             disabled={!canUpdate || !canViewDataSources || !engine.enabled}
-            placeholder="选择已启用的 JDBC 数据存储"
+            placeholder={engine.type === 'GEOSERVER' ? '选择 PostgreSQL/PostGIS 数据存储' : '选择已启用的 JDBC 数据存储'}
             className="service-engine-data-source-select"
             options={availableDataSources.map((dataSource) => ({
               value: dataSource.id,

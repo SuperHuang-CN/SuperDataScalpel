@@ -8,7 +8,7 @@ public record QueryFilter(
         QueryValueType valueType,
         QueryFilterOperator operator,
         List<Object> values
-) {
+) implements QueryPredicate {
 
     public QueryFilter {
         if (column == null || column.isBlank()) {

@@ -19,7 +19,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class SqlServiceRequestCompilerTest {
 
     private final SqlServiceRequestCompiler compiler = new SqlServiceRequestCompiler(
-            new EngineQueryProperties(20, 100, 50, 1000, 100_000, 30)
+            new EngineQueryProperties(20, 100, 50, 5, 1000, 100_000, 30)
     );
 
     @Test
@@ -53,7 +53,7 @@ class SqlServiceRequestCompilerTest {
                 definition(false), new SqlServiceQueryRequest(1, 101, Map.of(), false)
         ));
         SqlServiceRequestCompiler integerOffsetCompiler = new SqlServiceRequestCompiler(
-                new EngineQueryProperties(20, 100, 50, 1000, Integer.MAX_VALUE, 30)
+                new EngineQueryProperties(20, 100, 50, 5, 1000, Integer.MAX_VALUE, 30)
         );
         assertThrows(EngineQueryValidationException.class, () -> integerOffsetCompiler.compile(
                 definition(false), new SqlServiceQueryRequest(Integer.MAX_VALUE, 100, Map.of(), false)

@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Form, Input, Modal, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Empty, Form, Input, Modal, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { useImperativeHandle, useMemo, useState } from 'react';
 import { useApiResources, type ApiResource } from '../../../../datasource';

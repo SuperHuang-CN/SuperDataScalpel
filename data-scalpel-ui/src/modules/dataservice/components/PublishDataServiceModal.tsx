@@ -1,5 +1,7 @@
-import { Form, Input, Modal, Select } from 'antd';
+import { ApiOutlined, CloudUploadOutlined } from '@ant-design/icons';
+import { Button, Form, Input, Modal, Select, Space, Tag, Typography } from 'antd';
 import { useEffect } from 'react';
+import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
   dataServiceAccessModeLabels,
   type GatewayServiceBinding,
@@ -7,14 +9,13 @@ import {
 } from '../model/dataService';
 
 interface PublishDataServiceModalProps {
-  service: { code: string; name: string; gatewayBindings: GatewayServiceBinding[] } | null;
+  service: { code: string; name: string; contextPath: string | null; gatewayBindings: GatewayServiceBinding[] } | null;
   loading?: boolean;
   onCancel: () => void;
   onPublish: (request: PublishDataServiceRequest) => void | Promise<void>;
 }
 
-interface PublishFormValues extends PublishDataServiceRequest {
-}
+type PublishFormValues = PublishDataServiceRequest;
 
 export const PublishDataServiceModal = ({
   service,
@@ -28,26 +29,54 @@ export const PublishDataServiceModal = ({
     if (!service) return;
     const existing = service.gatewayBindings[0];
     form.setFieldsValue({
-      gatewayRoutePath: existing?.gatewayRoutePath ?? `/open-api/v1/${service.code}`,
+      gatewayRoutePath: existing?.gatewayRoutePath ?? service.contextPath ?? '',
       accessMode: existing?.accessMode ?? 'PUBLIC',
     });
   }, [form, service]);
 
   return (
     <Modal
-      rootClassName="business-overlay business-modal-overlay"
-      title={service ? `发布“${service.name}”到网关` : '发布到网关'}
+      rootClassName="business-overlay business-modal-overlay publish-data-service-modal"
+      title={(
+        <div className="publish-data-service-title">
+          <span className="publish-data-service-title-icon" aria-hidden="true"><CloudUploadOutlined /></span>
+          <span className="publish-data-service-title-copy">
+            <span>发布数据服务到网关</span>
+            <Typography.Text type="secondary">配置稳定公开路径与调用方访问模式</Typography.Text>
+          </span>
+        </div>
+      )}
       open={Boolean(service)}
-      okText="发布"
-      cancelText="取消"
-      confirmLoading={loading}
+      closable={!loading}
+      maskClosable={!loading}
       onCancel={onCancel}
-      onOk={() => form.submit()}
+      footer={(
+        <div className="publish-data-service-footer">
+          <InlineFeedback tone="info" label={service ? `发布 ${service.name} · ${service.code}` : '等待选择数据服务'} />
+          <Space>
+            <Button disabled={loading} onClick={onCancel}>取消</Button>
+            <Button type="primary" loading={loading} onClick={() => form.submit()}>确认发布</Button>
+          </Space>
+        </div>
+      )}
       destroyOnHidden
     >
-      <Form<PublishFormValues> form={form} layout="vertical" autoComplete="off" onFinish={onPublish}>
+      <div className="publish-data-service-context">
+        <span className="publish-data-service-context-icon" aria-hidden="true"><ApiOutlined /></span>
+        <span>
+          <strong>{service?.name ?? '—'}</strong>
+          <Typography.Text type="secondary">{service?.code ?? '—'}</Typography.Text>
+        </span>
+        <Tag>{service?.gatewayBindings.length ? '更新发布配置' : '首次发布'}</Tag>
+      </div>
+      <Form<PublishFormValues> form={form} layout="vertical" autoComplete="off" className="publish-data-service-form" onFinish={onPublish}>
         <Form.Item
-          label="网关公开路径"
+          label={(
+            <span className="publish-data-service-field-label">
+              网关公开路径
+              <ContextHelp ariaLabel="查看网关公开路径规则" content="路径必须位于 /open-api/v1/，使用小写字母、数字、斜杠、下划线或连字符；不能使用动态参数、连续斜杠或以斜杠结尾。" presentation="popover" placement="bottomLeft" />
+            </span>
+          )}
           name="gatewayRoutePath"
           rules={[
             { required: true, whitespace: true, message: '请输入网关公开路径' },
@@ -61,7 +90,7 @@ export const PublishDataServiceModal = ({
             },
           ]}
         >
-          <Input placeholder="如：/open-api/v1/customers" />
+          <Input name="data-service-gateway-route-path" autoComplete="off" prefix={<ApiOutlined />} placeholder="如：/open-api/v1/customers" />
         </Form.Item>
         <Form.Item label="访问方式" name="accessMode" rules={[{ required: true, message: '请选择访问方式' }]}>
           <Select options={Object.entries(dataServiceAccessModeLabels).map(([value, label]) => ({ value, label }))} />

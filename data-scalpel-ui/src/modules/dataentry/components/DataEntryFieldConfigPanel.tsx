@@ -1,4 +1,5 @@
-import { Alert, Button, Select, Table, Tag, message } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { Button, Select, Table, Tag, message } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { fetchDataModel, useDataModels, type DataModelDetail } from '../../model';

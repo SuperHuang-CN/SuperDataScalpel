@@ -9,20 +9,18 @@ import java.util.List;
 public record StandardQueryInput(
         Integer pageNo,
         Integer pageSize,
-        ConditionConjunction conjunction,
-        List<String> columns,
-        List<StandardQueryFilterInput> filters,
-        List<StandardQueryOrderInput> orders,
-        List<String> groups,
+        List<String> fields,
+        StandardQueryFilterGroupInput filter,
+        List<StandardQueryOrderInput> sort,
+        List<String> groupBy,
         List<StandardQueryAggregateInput> aggregates,
         Boolean returnCount
 ) {
 
     public StandardQueryInput {
-        columns = columns == null ? List.of() : List.copyOf(columns);
-        filters = filters == null ? List.of() : List.copyOf(filters);
-        orders = orders == null ? List.of() : List.copyOf(orders);
-        groups = groups == null ? List.of() : List.copyOf(groups);
+        fields = fields == null ? List.of() : List.copyOf(fields);
+        sort = sort == null ? List.of() : List.copyOf(sort);
+        groupBy = groupBy == null ? List.of() : List.copyOf(groupBy);
         aggregates = aggregates == null ? List.of() : List.copyOf(aggregates);
     }
 }

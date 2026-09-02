@@ -90,7 +90,7 @@ DataScalpel 是模块化单体。接口响应应当直接、可预测，不引�
 
 业务代码可继续使用 `ResponseStatusException` 表达直接、预期的业务失败。新代码必须选择准确状态码；不要为了复用错误结构创建无业务价值的异常层级。不可恢复的内部异常不应直接携带敏感上下文给调用方。
 
-Admin 的认证失败和无权限访问、Service Engine 的管理 Token 过滤和安全拒绝都必须使用公共 Writer。Engine 对 `/runtime/v1/services/**` 的 IP 策略拒绝使用 `403 ACCESS_DENIED`，`detail` 必须指出实际 TCP 来源 IP，并说明它命中黑名单或未命中白名单；不得信任代理转发头。Task Engine 回执 Filter 仅处理 `/api/v1/internal/task-runs/**`；作为 Servlet Filter 注册时，必须显式跳过所有其他路径，不能影响登录或普通业务接口。禁止手工拼装错误 JSON，禁止对 API 使用 `HttpServletResponse.sendError`。
+Admin 的认证失败和无权限访问、Service Engine 的管理 Token 过滤和安全拒绝都必须使用公共 Writer。Engine 对 `/open-api/v1/**` 动态服务路由的 IP 策略拒绝使用 `403 ACCESS_DENIED`，`detail` 必须指出实际 TCP 来源 IP，并说明它命中黑名单或未命中白名单；不得信任代理转发头。Task Engine 回执 Filter 仅处理 `/api/v1/internal/task-runs/**`；作为 Servlet Filter 注册时，必须显式跳过所有其他路径，不能影响登录或普通业务接口。禁止手工拼装错误 JSON，禁止对 API 使用 `HttpServletResponse.sendError`。
 
 ## 前端消费规则
 

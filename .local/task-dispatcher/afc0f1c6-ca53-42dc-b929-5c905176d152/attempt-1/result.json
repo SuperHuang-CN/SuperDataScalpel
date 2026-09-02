@@ -1,0 +1,40 @@
+{
+  "schemaVersion" : 9,
+  "executionId" : "afc0f1c6-ca53-42dc-b929-5c905176d152",
+  "runId" : "84c55f53-433f-457a-9714-3da795705374",
+  "attempt" : 1,
+  "state" : "SUCCESS",
+  "startedAt" : "2026-08-28T15:00:15.607686254Z",
+  "endedAt" : "2026-08-28T15:00:37.225831389Z",
+  "durationMs" : 21618,
+  "affectedRows" : null,
+  "nodeResults" : [ ],
+  "taskType" : "SPARK_JAR",
+  "qualityResult" : null,
+  "userJobObservability" : {
+    "capturedAt" : "2026-08-28T15:00:37.227055181Z",
+    "status" : {
+      "phase" : "FINALIZING",
+      "message" : "正在完成用户作业",
+      "updatedAt" : "2026-08-28T15:00:37.223974431Z"
+    },
+    "metrics" : [ ]
+  },
+  "lineage" : {
+    "analysisStatus" : "UNAVAILABLE",
+    "coverage" : null,
+    "flows" : [ ],
+    "warnings" : [ {
+      "code" : "NO_SDK_WRITES",
+      "message" : "用户作业没有执行 SDK 写入",
+      "producerKey" : null,
+      "flowKey" : null,
+      "outputOrdinal" : null
+    } ]
+  },
+  "trialPreview" : {
+    "writes" : [ ],
+    "warnings" : [ ]
+  },
+  "error" : null
+}

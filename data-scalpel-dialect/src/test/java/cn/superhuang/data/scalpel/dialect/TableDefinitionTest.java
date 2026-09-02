@@ -71,17 +71,16 @@ class TableDefinitionTest {
     }
 
     @Test
-    void geometryCannotBeDeclaredWithoutItsSpatialDefinitionOrAttachedToAScalarColumn() {
+    void geometrySnapshotMayOmitSemanticDefinitionButScalarsCannotCarryOne() {
         GeometryTypeDefinition geometry = new GeometryTypeDefinition(
                 GeometryKind.POINT, CrsReference.epsg(4326), CoordinateDimension.XY
         );
 
-        assertThrows(
-                IllegalArgumentException.class,
-                () -> new TableColumnDefinition(
-                        "shape", TableColumnType.GEOMETRY, null, null, null, true, null, null
-                )
+        TableColumnDefinition snapshot = new TableColumnDefinition(
+                "shape", TableColumnType.GEOMETRY, null, null, null, true, null, null
         );
+        assertEquals(TableColumnType.GEOMETRY, snapshot.type());
+        assertEquals(null, snapshot.geometry());
         assertThrows(
                 IllegalArgumentException.class,
                 () -> new TableColumnDefinition(

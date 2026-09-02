@@ -1,4 +1,5 @@
-import { Alert, Empty, Table, Tag } from 'antd';
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
+import { Empty, Table, Tag } from 'antd';
 import type { SqlServiceTestResponse } from '../../model/dataService';
 import { typeDescription } from '../../model/dataServiceEditor';
 
@@ -22,7 +23,7 @@ export const SqlTestPanel = ({ result }: SqlTestPanelProps) => {
     ellipsis: true,
     render: (value: unknown) => value === null || value === undefined ? '—' : String(value),
   }));
-  const previewRows = result.preview?.resultList ?? [];
+  const previewRows = result.preview?.items ?? [];
 
   return (
     <div className="data-service-test-result">

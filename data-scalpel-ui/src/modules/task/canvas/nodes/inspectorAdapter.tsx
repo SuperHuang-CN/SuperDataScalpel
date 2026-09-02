@@ -116,7 +116,7 @@ const filterPredicateCount = (condition: unknown): number => {
   const value = condition as { kind?: string; children?: unknown[] };
   if (value.kind === 'PREDICATE') return 1;
   return Array.isArray(value.children)
-    ? value.children.reduce((count, child) => count + filterPredicateCount(child), 0)
+    ? value.children.reduce<number>((count, child) => count + filterPredicateCount(child), 0)
     : 0;
 };
 

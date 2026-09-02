@@ -12,6 +12,7 @@ export const buildServiceEngineSearch = (filters: ServiceEngineFilters): string 
       ? `(${contains('name', filters.keyword.trim())} OR ${contains('code', filters.keyword.trim())})`
       : undefined,
     filters.enabled === undefined ? undefined : equals('enabled', filters.enabled),
+    filters.type ? equals('type', filters.type) : undefined,
   ].filter((condition): condition is string => Boolean(condition));
 
   return conditions.length ? conditions.join(' AND ') : undefined;

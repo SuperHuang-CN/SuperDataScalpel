@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ApiOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Drawer, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, message } from 'antd';
+import { Button, Drawer, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, message } from 'antd';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {

@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Segmented, Table, Tooltip } from 'antd';
+import { Button, Segmented, Table, Tooltip } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { useDataModelDataQuery, useDataModelPreview } from '../hooks/useDataModels';
@@ -31,9 +32,9 @@ type PreviewMode = 'QUICK' | 'CONDITION' | 'SPATIAL';
 type QueryRow = Record<string, unknown> & { key: string };
 type QueryColumn = Pick<DataModelPreview['columns'][number], 'code' | 'name' | 'fieldType'>;
 
-const renderCell = (value: unknown) => {
+const renderCell = (value: unknown, fieldType: QueryColumn['fieldType']) => {
   if (typeof value === 'object') return <code>{JSON.stringify(value)}</code>;
-  return dataModelPreviewCellText(value);
+  return dataModelPreviewCellText(value, fieldType);
 };
 
 const toRows = (rows: Record<string, unknown>[]): QueryRow[] => rows.map((row, index) => ({
@@ -66,7 +67,7 @@ const toColumns = (
     key: column.code,
     width,
     ellipsis: true,
-    render: renderCell,
+    render: (value: unknown) => renderCell(value, column.fieldType),
   };
 });
 

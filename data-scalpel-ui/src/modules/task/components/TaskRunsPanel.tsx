@@ -1,8 +1,10 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { EyeOutlined, ReloadOutlined, SearchOutlined, StopOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Form, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Form, Modal, Select, Space, Table, Tag, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { useCancelTaskRun, useForceTerminateTaskRun, useTaskRuns } from '../hooks/useTasks';
 import {
   taskRunExecutionModeLabels,
@@ -184,8 +186,7 @@ export const TaskRunsPanel = ({
     <div className="task-detail-tab-panel task-runs-panel">
       {messageContext}
       {modalContext}
-      <div className="task-detail-tab-toolbar">
-        <Typography.Text strong>运行记录</Typography.Text>
+      <div className="task-detail-tab-toolbar detail-table-filter-toolbar">
         <Form<TaskRunFilters> autoComplete="off"
           form={form}
           layout="inline"
@@ -196,7 +197,7 @@ export const TaskRunsPanel = ({
             <Select
               allowClear
               placeholder="全部状态"
-              className="task-run-filter-select"
+              className="detail-table-filter-select task-run-filter-select"
               options={Object.entries(taskRunStatusLabels).map(([value, label]) => ({ value, label }))}
             />
           </Form.Item>
@@ -204,7 +205,7 @@ export const TaskRunsPanel = ({
             <Select
               allowClear
               placeholder="全部触发方式"
-              className="task-run-filter-select"
+              className="detail-table-filter-select task-run-filter-select"
               options={Object.entries(taskRunTriggerTypeLabels).map(([value, label]) => ({ value, label }))}
             />
           </Form.Item>
@@ -212,22 +213,15 @@ export const TaskRunsPanel = ({
             <Select
               allowClear
               placeholder="全部执行模式"
-              className="task-run-filter-select"
+              className="detail-table-filter-select task-run-filter-select"
               options={Object.entries(taskRunExecutionModeLabels).map(([value, label]) => ({ value, label }))}
             />
           </Form.Item>
-          <Space size={8}>
-            <Button type="primary" htmlType="submit" icon={<SearchOutlined />}>查询</Button>
-            <Button onClick={() => { form.resetFields(); setFilters({}); setPage(0); }}>重置</Button>
-            <Button
-              icon={<ReloadOutlined />}
-              loading={runsQuery.isFetching}
-              onClick={() => void runsQuery.refetch()}
-            >
-              刷新
-            </Button>
-          </Space>
         </Form>
+        <Space size={8} className="detail-table-filter-actions">
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()}>查询</Button>
+          <Button type="text" onClick={() => { form.resetFields(); setFilters({}); setPage(0); }}>重置</Button>
+        </Space>
       </div>
       {runsQuery.isError && (
         <Alert
@@ -237,6 +231,17 @@ export const TaskRunsPanel = ({
           action={<Button size="small" icon={<ReloadOutlined />} onClick={() => void runsQuery.refetch()}>重试</Button>}
         />
       )}
+      <DetailTableToolbar
+        title="运行记录"
+        total={runsQuery.data?.totalElements ?? 0}
+        current={page + 1}
+        pageSize={size}
+        itemUnit="条"
+        onChange={(nextPage, nextSize) => { setPage(nextPage - 1); setSize(nextSize); }}
+        onRefresh={() => void runsQuery.refetch()}
+        refreshing={runsQuery.isFetching}
+        refreshLabel="刷新运行记录"
+      />
       <Table<TaskRun>
         rowKey="id"
         size="small"
@@ -244,17 +249,7 @@ export const TaskRunsPanel = ({
         columns={columns}
         dataSource={runsQuery.data?.content ?? []}
         scroll={{ x: task.type === 'SPARK_MODEL_QUALITY' ? 1_760 : 1_660, y: 'calc(100vh - 330px)' }}
-        pagination={{
-          current: page + 1,
-          pageSize: size,
-          total: runsQuery.data?.totalElements ?? 0,
-          showSizeChanger: true,
-          showTotal: (total) => `共 ${total} 条`,
-          onChange: (nextPage, nextSize) => {
-            setPage(nextPage - 1);
-            setSize(nextSize);
-          },
-        }}
+        pagination={false}
       />
       <TaskRunDetailDrawer
         open={Boolean(detailRunId)}

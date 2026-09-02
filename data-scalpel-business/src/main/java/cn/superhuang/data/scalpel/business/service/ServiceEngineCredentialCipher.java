@@ -31,7 +31,7 @@ public class ServiceEngineCredentialCipher {
 
     public String encrypt(String plaintext) {
         if (plaintext == null || plaintext.isBlank()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Service Engine Management Token 不能为空");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Service Engine 凭据不能为空");
         }
         try {
             byte[] iv = new byte[IV_BYTES];
@@ -43,7 +43,7 @@ public class ServiceEngineCredentialCipher {
             System.arraycopy(encrypted, 0, payload, iv.length, encrypted.length);
             return PREFIX + Base64.getEncoder().encodeToString(payload);
         } catch (GeneralSecurityException exception) {
-            throw unavailable("无法加密 Service Engine Management Token", exception);
+            throw unavailable("无法加密 Service Engine 凭据", exception);
         }
     }
 
@@ -60,7 +60,7 @@ public class ServiceEngineCredentialCipher {
             byte[] encrypted = Arrays.copyOfRange(payload, IV_BYTES, payload.length);
             return new String(cipher(Cipher.DECRYPT_MODE, iv).doFinal(encrypted), StandardCharsets.UTF_8);
         } catch (GeneralSecurityException | IllegalArgumentException exception) {
-            throw unavailable("无法解密 Service Engine Management Token", exception);
+            throw unavailable("无法解密 Service Engine 凭据", exception);
         }
     }
 

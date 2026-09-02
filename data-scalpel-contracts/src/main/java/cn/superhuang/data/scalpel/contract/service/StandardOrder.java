@@ -4,7 +4,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 public record StandardOrder(
-        @NotBlank String column,
+        @NotBlank String field,
         @NotNull SortDirection direction
 ) {
 }

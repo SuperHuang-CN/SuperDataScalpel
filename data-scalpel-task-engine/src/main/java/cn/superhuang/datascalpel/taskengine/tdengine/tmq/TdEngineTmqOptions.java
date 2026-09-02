@@ -2,6 +2,7 @@ package cn.superhuang.datascalpel.taskengine.tdengine.tmq;
 
 import com.taosdata.jdbc.tmq.MapDeserializer;
 import com.taosdata.jdbc.tmq.TaosConsumer;
+import cn.superhuang.data.scalpel.contract.task.TdEngineTmqConsumerGroupIdentity;
 import org.apache.spark.sql.util.CaseInsensitiveStringMap;
 
 import java.io.Serializable;
@@ -15,6 +16,7 @@ import java.util.UUID;
 
 record TdEngineTmqOptions(
         String dataSourceId,
+        String taskId,
         String nodeId,
         String executionId,
         int attempt,
@@ -24,13 +26,15 @@ record TdEngineTmqOptions(
         boolean useSsl,
         String topic,
         String startingOffsets,
-        int maxOffsetsPerVGroupPerTrigger
+        int maxOffsetsPerVGroupPerTrigger,
+        String initialSourceOffset
 ) implements Serializable {
 
     @Override
     public String toString() {
         return "TdEngineTmqOptions["
                 + "dataSourceId=" + dataSourceId
+                + ", taskId=" + taskId
                 + ", nodeId=" + nodeId
                 + ", executionIdHash=" + sha256(executionId).substring(0, 12)
                 + ", attempt=" + attempt
@@ -62,11 +66,13 @@ record TdEngineTmqOptions(
             throw new IllegalArgumentException("attempt must be an integer", exception);
         }
         return new TdEngineTmqOptions(
-                required(options, "dataSourceId"), required(options, "nodeId"),
+                required(options, "dataSourceId"), required(options, "taskId"),
+                required(options, "nodeId"),
                 required(options, "executionId"), attempt,
                 required(options, "bootstrapServers"), required(options, "username"),
                 required(options, "password"), Boolean.parseBoolean(options.getOrDefault("useSsl", "false")),
-                required(options, "topic"), startingOffsets, maximum
+                required(options, "topic"), startingOffsets, maximum,
+                optional(options, "initialSourceOffset")
         );
     }
 
@@ -81,14 +87,26 @@ record TdEngineTmqOptions(
         properties.setProperty("group.id", groupId);
         properties.setProperty("client.id", clientId);
         properties.setProperty("enable.auto.commit", "false");
-        properties.setProperty("auto.offset.reset", "earliest");
+        properties.setProperty("auto.offset.reset", startingOffsets);
         properties.setProperty("value.deserializer", MapDeserializer.class.getName());
-        properties.setProperty("msg.with.table.name", "true");
         return new TaosConsumer<>(properties);
     }
 
     String groupId(String checkpointLocation) {
-        return "datascalpel-" + sha256(dataSourceId + "\0" + nodeId + "\0" + checkpointLocation).substring(0, 40);
+        java.util.regex.Matcher matcher = java.util.regex.Pattern.compile(
+                "(?:^|/)outputs/([0-9a-fA-F-]{36})/([0-9a-fA-F-]{36})(?:/|$)")
+                .matcher(checkpointLocation == null ? "" : checkpointLocation);
+        if (!matcher.find()) {
+            throw new IllegalArgumentException("TMQ checkpointLocation 缺少输出节点和 writeId 身份");
+        }
+        try {
+            return TdEngineTmqConsumerGroupIdentity.groupId(
+                    UUID.fromString(taskId), UUID.fromString(nodeId),
+                    UUID.fromString(matcher.group(1)), UUID.fromString(matcher.group(2))
+            );
+        } catch (IllegalArgumentException exception) {
+            throw new IllegalArgumentException("TMQ 消费组身份无效", exception);
+        }
     }
 
     String clientId(String suffix) {
@@ -100,6 +118,11 @@ record TdEngineTmqOptions(
         String value = options.get(key);
         if (value == null || value.isBlank()) throw new IllegalArgumentException(key + " is required");
         return value;
+    }
+
+    private static String optional(CaseInsensitiveStringMap options, String key) {
+        String value = options.get(key);
+        return value == null || value.isBlank() ? null : value;
     }
 
     private static String sha256(String value) {

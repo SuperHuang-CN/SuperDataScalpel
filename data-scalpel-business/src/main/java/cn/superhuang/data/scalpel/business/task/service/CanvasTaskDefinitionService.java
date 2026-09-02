@@ -41,6 +41,7 @@ public class CanvasTaskDefinitionService {
             streamingConfigurationRepository;
     private final CanvasDefinitionValidator validator;
     private final CanvasDefinitionUpgrader upgrader;
+    private final TmqConsumerGroupCleanupService tmqCleanupService;
     private final ObjectMapper objectMapper;
 
     public CanvasTaskDefinitionService(
@@ -53,6 +54,7 @@ public class CanvasTaskDefinitionService {
                     streamingConfigurationRepository,
             CanvasDefinitionValidator validator,
             CanvasDefinitionUpgrader upgrader,
+            TmqConsumerGroupCleanupService tmqCleanupService,
             ObjectMapper objectMapper
     ) {
         this.taskRepository = taskRepository;
@@ -63,6 +65,7 @@ public class CanvasTaskDefinitionService {
         this.streamingConfigurationRepository = streamingConfigurationRepository;
         this.validator = validator;
         this.upgrader = upgrader;
+        this.tmqCleanupService = tmqCleanupService;
         this.objectMapper = objectMapper;
     }
 
@@ -105,6 +108,8 @@ public class CanvasTaskDefinitionService {
             dataSourceReferenceIndexService.replaceCanvasReferences(taskId, persisted.getVersion(), definition);
             return response(persisted);
         }
+        CanvasDefinition previousDefinition = persisted == null ? null : requireReadable(persisted);
+        tmqCleanupService.enqueueRemovedGroups(taskId, previousDefinition, definition);
         if (persisted == null) {
             persisted = CanvasTaskDefinition.create(
                     taskId, definition.schemaVersion(), definition.schemaMinorVersion(), serialized);
@@ -114,6 +119,19 @@ public class CanvasTaskDefinitionService {
         CanvasTaskDefinition saved = definitionRepository.saveAndFlush(persisted);
         dataSourceReferenceIndexService.replaceCanvasReferences(taskId, saved.getVersion(), definition);
         return response(saved);
+    }
+
+    @Transactional(readOnly = true)
+    public CanvasDefinition validateTrialDraft(UUID taskId, CanvasDefinition sourceDefinition) {
+        requireCanvasTask(taskId);
+        CanvasDefinition definition = upgrader.upgradeToCurrent(
+                sourceDefinition, legacyTriggerInterval(taskId));
+        validator.validate(definition);
+        String serialized = serialize(definition);
+        if (serialized.getBytes(StandardCharsets.UTF_8).length > MAX_DEFINITION_BYTES) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Canvas 定义不能超过 5 MiB");
+        }
+        return definition;
     }
 
     @Transactional
@@ -177,7 +195,8 @@ public class CanvasTaskDefinitionService {
                 yield new KafkaInputNodeDefinition(input.id(), input.name(), input.layout(),
                         new KafkaInputConfiguration(
                                 value.dataSourceId(), value.topic(), value.valueSchema(),
-                                value.outputTableName(), value.startingOffsets(), triggerIntervalSeconds));
+                                value.outputTableName(), value.startingOffsets(), triggerIntervalSeconds,
+                                value.valueFormat(), value.metadataFields()));
             }
             case TdEngineTmqInputNodeDefinition input -> {
                 TdEngineTmqInputConfiguration value = input.configuration();
@@ -186,7 +205,8 @@ public class CanvasTaskDefinitionService {
                                 value.dataSourceId(), value.topicName(), value.catalogName(),
                                 value.supertableName(), value.topicDefinitionFingerprint(),
                                 value.outputTableName(), value.startingOffsets(),
-                                value.maxOffsetsPerVGroupPerTrigger(), triggerIntervalSeconds));
+                                value.maxOffsetsPerVGroupPerTrigger(), triggerIntervalSeconds,
+                                value.eventTimeColumn(), value.watermarkDelaySeconds()));
             }
             case JdbcIncrementalInputNodeDefinition input -> {
                 JdbcIncrementalInputConfiguration value = input.configuration();

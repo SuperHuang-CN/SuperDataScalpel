@@ -7,6 +7,8 @@ import cn.superhuang.data.scalpel.business.task.service.TaskModelRelationQuerySe
 import cn.superhuang.data.scalpel.business.task.service.ModelQualityTaskDefinitionService;
 import cn.superhuang.data.scalpel.business.task.service.SparkJarTaskDefinitionService;
 import cn.superhuang.data.scalpel.business.task.service.SparkJarDevelopmentKitService;
+import cn.superhuang.data.scalpel.business.task.service.SparkJarTrialRunService;
+import cn.superhuang.data.scalpel.business.task.service.TaskRunService;
 import cn.superhuang.data.scalpel.business.lineage.service.TaskLineageQueryService;
 import cn.superhuang.data.scalpel.business.lineage.web.response.TaskLineageGraphResponse;
 import cn.superhuang.data.scalpel.business.lineage.web.response.TaskFieldLineageGraphResponse;
@@ -20,6 +22,8 @@ import cn.superhuang.data.scalpel.business.task.web.request.UpdateSparkJarTaskDe
 import cn.superhuang.data.scalpel.business.task.web.request.StartStreamingTaskRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.QueryTaskFieldLineageRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.CreateSparkJarDevelopmentKitRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.SaveSparkJarOnlineSourceRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.CanvasTrialRunRequest;
 import cn.superhuang.data.scalpel.business.task.web.response.DataTaskResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.CanvasTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.LocalSqlDefinitionValidationResponse;
@@ -30,6 +34,10 @@ import cn.superhuang.data.scalpel.business.task.web.response.TaskModelRelationsR
 import cn.superhuang.data.scalpel.business.task.web.response.ModelQualityTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.SparkJarTaskDefinitionResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.SparkJarDevelopmentKitResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarOnlineCompilationResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarOnlineSourceResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.SparkJarTrialRunResponse;
+import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
@@ -69,6 +77,8 @@ public class DataTaskResource {
     private final ModelQualityTaskDefinitionService modelQualityTaskDefinitionService;
     private final SparkJarTaskDefinitionService sparkJarTaskDefinitionService;
     private final SparkJarDevelopmentKitService sparkJarDevelopmentKitService;
+    private final SparkJarTrialRunService sparkJarTrialRunService;
+    private final TaskRunService taskRunService;
 
     public DataTaskResource(
             DataTaskService service,
@@ -78,7 +88,9 @@ public class DataTaskResource {
             TaskLineageQueryService taskLineageQueryService,
             ModelQualityTaskDefinitionService modelQualityTaskDefinitionService,
             SparkJarTaskDefinitionService sparkJarTaskDefinitionService,
-            SparkJarDevelopmentKitService sparkJarDevelopmentKitService
+            SparkJarDevelopmentKitService sparkJarDevelopmentKitService,
+            SparkJarTrialRunService sparkJarTrialRunService,
+            TaskRunService taskRunService
     ) {
         this.service = service;
         this.canvasDefinitionService = canvasDefinitionService;
@@ -88,6 +100,8 @@ public class DataTaskResource {
         this.modelQualityTaskDefinitionService = modelQualityTaskDefinitionService;
         this.sparkJarTaskDefinitionService = sparkJarTaskDefinitionService;
         this.sparkJarDevelopmentKitService = sparkJarDevelopmentKitService;
+        this.sparkJarTrialRunService = sparkJarTrialRunService;
+        this.taskRunService = taskRunService;
     }
 
     @GetMapping
@@ -118,6 +132,17 @@ public class DataTaskResource {
         return canvasDefinitionService.get(id);
     }
 
+    @PostMapping("/{id}/canvas-definition/actions/trial-run")
+    @ResponseStatus(HttpStatus.ACCEPTED)
+    @PreAuthorize("hasAuthority('task.execute')")
+    @Operation(summary = "使用真实数据试运行 Canvas 到指定节点")
+    public TaskRunResponse trialRunCanvas(
+            @PathVariable UUID id,
+            @Valid @RequestBody CanvasTrialRunRequest request
+    ) {
+        return taskRunService.submitCanvasTrial(id, request);
+    }
+
     @GetMapping("/{id}/model-quality-definition")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询 Spark 模型质检任务定义")
@@ -130,6 +155,39 @@ public class DataTaskResource {
     @Operation(summary = "查询 Spark JAR 任务定义")
     public SparkJarTaskDefinitionResponse getSparkJarDefinition(@PathVariable UUID id) {
         return sparkJarTaskDefinitionService.get(id);
+    }
+
+    @GetMapping("/{id}/spark-jar-online-source")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询 Spark JAR 在线 Java 源码")
+    public SparkJarOnlineSourceResponse getSparkJarOnlineSource(@PathVariable UUID id) {
+        return sparkJarTaskDefinitionService.getOnlineSource(id);
+    }
+
+    @PostMapping("/{id}/spark-jar-online-source/actions/save")
+    @PreAuthorize("hasAuthority('task.update')")
+    @Operation(summary = "保存 Spark JAR 在线 Java 源码草稿")
+    public SparkJarOnlineSourceResponse saveSparkJarOnlineSource(
+            @PathVariable UUID id, @Valid @RequestBody SaveSparkJarOnlineSourceRequest request) {
+        return sparkJarTaskDefinitionService.saveOnlineSource(id, request);
+    }
+
+    @PostMapping("/{id}/spark-jar-online-source/actions/compile")
+    @PreAuthorize("hasAuthority('task.update')")
+    @Operation(summary = "编译并应用 Spark JAR 在线 Java 源码")
+    public SparkJarOnlineCompilationResponse compileSparkJarOnlineSource(
+            @PathVariable UUID id, @Valid @RequestBody SaveSparkJarOnlineSourceRequest request) {
+        return sparkJarTaskDefinitionService.compileOnlineSource(id, request);
+    }
+
+    @PostMapping("/{id}/spark-jar-online-source/actions/trial-run")
+    @PreAuthorize("hasAuthority('task.update') and hasAuthority('task.execute')")
+    @Operation(summary = "使用真实数据试运行 Spark JAR 在线 Java 源码")
+    public ResponseEntity<SparkJarTrialRunResponse> trialRunSparkJarOnlineSource(
+            @PathVariable UUID id, @Valid @RequestBody SaveSparkJarOnlineSourceRequest request) {
+        SparkJarTrialRunResponse response = sparkJarTrialRunService.run(id, request);
+        return ResponseEntity.status(response.status() == SparkJarTrialRunResponse.Status.QUEUED
+                ? HttpStatus.ACCEPTED : HttpStatus.OK).body(response);
     }
 
     @GetMapping("/{id}/spark-jar-template")

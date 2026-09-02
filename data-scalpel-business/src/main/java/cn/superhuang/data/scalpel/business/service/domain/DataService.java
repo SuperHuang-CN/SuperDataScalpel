@@ -7,6 +7,7 @@ import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 import jakarta.persistence.Table;
+import jakarta.persistence.UniqueConstraint;
 
 import java.util.Locale;
 import java.util.Objects;
@@ -14,7 +15,13 @@ import java.util.UUID;
 
 /** Common lifecycle and routing metadata for one data service. */
 @Entity
-@Table(name = "ds_data_service")
+@Table(
+        name = "ds_data_service",
+        uniqueConstraints = @UniqueConstraint(
+                name = "uk_ds_data_service_engine_context_path",
+                columnNames = {"engine_id", "route_path"}
+        )
+)
 public class DataService extends BaseEntity {
 
     @Column(nullable = false, updatable = false, length = 64)
@@ -32,6 +39,9 @@ public class DataService extends BaseEntity {
 
     @Column(name = "engine_id", nullable = false)
     private UUID engineId;
+
+    @Column(name = "route_path", length = 255)
+    private String contextPath;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 16)
@@ -52,12 +62,13 @@ public class DataService extends BaseEntity {
             UUID directoryId,
             DataServiceType type,
             UUID engineId,
+            String contextPath,
             String description
     ) {
         this.code = normalizeCode(code);
         this.type = Objects.requireNonNull(type, "数据服务类型不能为空");
         this.status = DataServiceStatus.DRAFT;
-        update(name, directoryId, engineId, description);
+        update(name, directoryId, engineId, contextPath, description);
     }
 
     public static DataService create(
@@ -66,20 +77,25 @@ public class DataService extends BaseEntity {
             UUID directoryId,
             DataServiceType type,
             UUID engineId,
+            String contextPath,
             String description
     ) {
-        return new DataService(code, name, directoryId, type, engineId, description);
+        return new DataService(code, name, directoryId, type, engineId, contextPath, description);
     }
 
     public void update(
             String name,
             UUID directoryId,
             UUID engineId,
+            String contextPath,
             String description
     ) {
         this.name = required(name, "名称");
         this.directoryId = directoryId;
         this.engineId = requireId(engineId, "服务引擎");
+        this.contextPath = type == DataServiceType.SPATIAL_SERVICE
+                ? null
+                : ServiceRoutePath.normalize(contextPath);
         this.description = optional(description);
     }
 
@@ -116,8 +132,8 @@ public class DataService extends BaseEntity {
         return engineId;
     }
 
-    public String getEngineRoutePath() {
-        return ServiceEngineRoutePath.forService(getId());
+    public String getContextPath() {
+        return contextPath;
     }
 
     public DataServiceStatus getStatus() {

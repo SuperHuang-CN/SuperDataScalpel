@@ -1,34 +1,17 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
   CopyOutlined,
   DatabaseOutlined,
   HddOutlined,
+  IdcardOutlined,
+  SettingOutlined,
   ShareAltOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Badge,
-  Button,
-  Card,
-  Checkbox,
-  Col,
-  Collapse,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Tag,
-  Tooltip,
-  TreeSelect,
-  Typography,
-  message,
-} from 'antd';
-import { useEffect, useRef, useState } from 'react';
+import { Badge, Button, Card, Checkbox, Col, Collapse, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
+import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { BusinessSecretInput } from '../../../shared/components/BusinessSecretInput';
 import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
 import {
   useCreateDataSource,
@@ -208,10 +191,21 @@ const jdbcUrlPreview = (
   }
 };
 
-const FormSectionTitle = ({ title, description }: { title: string; description: string }) => (
+const FormSectionTitle = ({
+  title,
+  description,
+  icon,
+}: {
+  title: string;
+  description: string;
+  icon: ReactNode;
+}) => (
   <div className="data-source-section-title">
-    <span>{title}</span>
-    <Typography.Text type="secondary">{description}</Typography.Text>
+    <span className="data-source-section-title-icon" aria-hidden="true">{icon}</span>
+    <span className="data-source-section-title-copy">
+      <span>{title}</span>
+      <Typography.Text type="secondary">{description}</Typography.Text>
+    </span>
   </div>
 );
 
@@ -448,7 +442,7 @@ const JdbcConnectionFields = ({ definition, editing }: { definition?: DataSource
     </Col>
     <Col span={12}>
       <Form.Item label="密码" name={['connection', 'password']}>
-        <Input.Password name="jdbc-secret" autoComplete="off" placeholder={editing ? '留空表示不修改' : '请输入数据库密码'} />
+        <BusinessSecretInput name="jdbc-secret" autoComplete="off" placeholder={editing ? '留空表示不修改' : '请输入数据库密码'} />
       </Form.Item>
     </Col>
   </>
@@ -478,7 +472,7 @@ const KafkaConnectionFields = () => (
     </Col>
     <Col span={12}>
       <Form.Item label="密码" name={['connection', 'password']} extra="修改时留空表示不修改已保存的密码。">
-        <Input.Password name="kafka-secret" autoComplete="off" />
+        <BusinessSecretInput name="kafka-secret" autoComplete="off" />
       </Form.Item>
     </Col>
   </>
@@ -513,7 +507,7 @@ const S3ConnectionFields = () => (
     </Col>
     <Col span={12}>
       <Form.Item label="SecretKey" name={['connection', 'secretKey']} extra="修改时留空表示不修改已保存的 SecretKey。">
-        <Input.Password name="s3-secret-key" autoComplete="off" />
+        <BusinessSecretInput name="s3-secret-key" autoComplete="off" />
       </Form.Item>
     </Col>
     <Col span={12}>
@@ -727,14 +721,18 @@ export const DataSourceDrawer = ({
         rootClassName="business-overlay business-drawer-overlay"
         title={(
           <div className="data-source-drawer-title">
-            <span>{editing ? '编辑数据源' : '新建数据源'}</span>
-            <Typography.Text type="secondary">配置连接信息并验证可用性</Typography.Text>
+            <span className="data-source-drawer-title-icon" aria-hidden="true"><DatabaseOutlined /></span>
+            <span className="data-source-drawer-title-copy">
+              <span>{editing ? '编辑数据源' : '新建数据源'}</span>
+              <Typography.Text type="secondary">配置连接信息并验证可用性</Typography.Text>
+            </span>
           </div>
         )}
-        extra={headerStatus}
+        extra={<span className="data-source-drawer-header-status">{headerStatus}</span>}
         open={open}
         size="min(1180px, 100vw)"
         className="data-source-drawer"
+        closable={{ placement: 'end' }}
         onClose={closeDrawer}
         destroyOnHidden
         footer={(
@@ -750,14 +748,15 @@ export const DataSourceDrawer = ({
       >
         <div className="data-source-drawer-layout">
           <nav className="data-source-section-nav" aria-label="数据源配置分区">
-            {sections.map((section) => (
+            {sections.map((section, index) => (
               <Button
                 key={section.key}
                 type="text"
                 className={activeSection === section.key ? 'is-active' : undefined}
                 onClick={() => scrollToSection(section.key)}
               >
-                {section.label}
+                <span className="data-source-section-step" aria-hidden="true">{index + 1}</span>
+                <span className="data-source-section-step-label">{section.label}</span>
               </Button>
             ))}
           </nav>
@@ -775,14 +774,21 @@ export const DataSourceDrawer = ({
                 id="data-source-basic"
                 size="small"
                 className="data-source-section-card"
-                title={<FormSectionTitle title="基本信息" description="填写数据源的基本信息，便于识别与管理" />}
+                title={<FormSectionTitle title="基本信息" description="填写数据源的基本信息，便于识别与管理" icon={<IdcardOutlined />} />}
+                extra={(
+                  <span className="data-source-enabled-control">
+                    <span>启用</span>
+                    <Form.Item name="enabled" valuePropName="checked" noStyle>
+                      <Switch aria-label="启用数据源" />
+                    </Form.Item>
+                  </span>
+                )}
               >
                 <Row gutter={12}>
                   <Col span={12}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}><Input placeholder="如：业务系统 PostgreSQL" /></Form.Item></Col>
                   <Col span={12}><Form.Item label="编码" name="code" rules={editing ? [] : [{ required: true, whitespace: true, message: '请输入编码' }, { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' }]}><Input disabled={editing} placeholder="如：business_postgresql" /></Form.Item></Col>
-                  <Col span={canViewDirectories ? 11 : 20}><Form.Item label="数据源类型" name="type" rules={[{ required: true, message: '请选择数据源类型' }]}><Select options={typeOptions} onChange={changeType} /></Form.Item></Col>
-                  {canViewDirectories && <Col span={9}><Form.Item label="目录" name="directoryId"><TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} placeholder="未分类" /></Form.Item></Col>}
-                  <Col span={4}><Form.Item className="data-source-enabled-field" label="启用" name="enabled" valuePropName="checked"><Switch /></Form.Item></Col>
+                  <Col span={canViewDirectories ? 12 : 24}><Form.Item label="数据源类型" name="type" rules={[{ required: true, message: '请选择数据源类型' }]}><Select options={typeOptions} onChange={changeType} /></Form.Item></Col>
+                  {canViewDirectories && <Col span={12}><Form.Item label="目录" name="directoryId"><TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} placeholder="未分类" /></Form.Item></Col>}
                   <Col span={24}>
                     <Form.Item label="用途" name="purposes" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个用途' }]}>
                       <Checkbox.Group className="data-source-purpose-options">
@@ -811,8 +817,8 @@ export const DataSourceDrawer = ({
                 id="data-source-connection"
                 size="small"
                 className="data-source-section-card"
-                title={<FormSectionTitle title="连接配置" description="填写连接信息并验证可用性" />}
-                extra={<Badge status={testStatus.status} text={testStatus.text} />}
+                title={<FormSectionTitle title="连接配置" description="填写连接信息并验证可用性" icon={<ApiOutlined />} />}
+                extra={<span className="data-source-section-status"><Badge status={testStatus.status} text={testStatus.text} /></span>}
               >
                 <Row gutter={12}>
                   {selectedType === 'TDENGINE_WEBSOCKET' && (
@@ -878,7 +884,7 @@ export const DataSourceDrawer = ({
                     defaultActiveKey={['advanced']}
                     items={[{
                       key: 'advanced',
-                      label: <FormSectionTitle title="高级设置" description="SSL、驱动参数与连接选项" />,
+                      label: <FormSectionTitle title="高级设置" description="SSL、驱动参数与连接选项" icon={<SettingOutlined />} />,
                       children: <JdbcConnectionOptionsFields definitions={selectedDefinition?.connectionOptions ?? []} />,
                     }]}
                   />

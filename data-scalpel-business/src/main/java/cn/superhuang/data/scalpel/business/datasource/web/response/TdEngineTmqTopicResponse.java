@@ -11,12 +11,14 @@ public record TdEngineTmqTopicResponse(
         Instant createdAt,
         boolean supported,
         String unsupportedReason,
-        String definitionFingerprint
+        String definitionFingerprint,
+        String legacyDefinitionFingerprint
 ) {
     public static TdEngineTmqTopicResponse from(TdEngineTmqTopic topic) {
         return new TdEngineTmqTopicResponse(
                 topic.topicName(), topic.databaseName(), topic.supertableName(), topic.createdAt(),
-                topic.supported(), topic.unsupportedReason(), topic.definitionFingerprint()
+                topic.supported(), topic.unsupportedReason(), topic.definitionFingerprint(),
+                topic.legacyDefinitionFingerprint()
         );
     }
 }

@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { DownOutlined, LinkOutlined, RightOutlined } from '@ant-design/icons';
-import { Alert, Button, Empty, Space, Table, Tag, Typography } from 'antd';
+import { Button, Empty, Space, Table, Tag, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { ManagementCode } from '../../../../shared/components/ManagementListCells';
 import {

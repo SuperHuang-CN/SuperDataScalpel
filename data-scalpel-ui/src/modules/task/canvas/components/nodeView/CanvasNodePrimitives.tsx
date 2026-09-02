@@ -133,6 +133,7 @@ interface NodeFieldCountProps {
   table: CanvasTableSchema | undefined;
   mappedCount?: number;
   mappedColumnNames?: readonly string[];
+  unresolvedLabel?: string;
 }
 
 const NodeFieldCountReady = ({
@@ -180,6 +181,7 @@ export const NodeFieldCount = ({
   table,
   mappedCount,
   mappedColumnNames = [],
+  unresolvedLabel = '字段待解析',
 }: NodeFieldCountProps) => {
   if (table) {
     return <NodeFieldCountReady
@@ -189,7 +191,7 @@ export const NodeFieldCount = ({
     />;
   }
   const countLabel = mappedCount === undefined
-    ? '字段待解析'
+    ? unresolvedLabel
     : `映射 ${mappedCount}`;
   return (
     <button

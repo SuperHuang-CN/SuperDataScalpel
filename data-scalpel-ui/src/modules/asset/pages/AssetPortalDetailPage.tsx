@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
   ArrowLeftOutlined,
@@ -8,7 +9,7 @@ import {
   ReloadOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import { Alert, Button, Descriptions, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
+import { Button, Descriptions, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
 import type { ReactNode } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError, hasAccessToken } from '../../../shared/api/http';

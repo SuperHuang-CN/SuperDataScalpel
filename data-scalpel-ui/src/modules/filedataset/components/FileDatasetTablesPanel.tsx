@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Table, Tag } from 'antd';
+import { Button, Table, Tag } from 'antd';
 import {
   fileDatasetParseStatusLabels,
   type FileDataset,

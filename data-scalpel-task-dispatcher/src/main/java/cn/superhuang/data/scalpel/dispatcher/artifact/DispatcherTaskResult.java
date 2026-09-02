@@ -18,6 +18,8 @@ import cn.superhuang.data.scalpel.contract.quality.ViolationMetric;
 import java.math.BigDecimal;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialPreview;
 
 public record DispatcherTaskResult(
         Integer schemaVersion,
@@ -34,10 +36,12 @@ public record DispatcherTaskResult(
         QualityResult qualityResult,
         UserJobObservabilitySnapshot userJobObservability,
         TaskLineageEvidence lineage,
+        SparkJarTrialPreview trialPreview,
+        CanvasTrialPreview canvasTrialPreview,
         Error error
 ) {
     public static final int MIN_SUPPORTED_SCHEMA_VERSION = 2;
-    public static final int CURRENT_SCHEMA_VERSION = 8;
+    public static final int CURRENT_SCHEMA_VERSION = 11;
 
     public DispatcherTaskResult {
         nodeResults = nodeResults == null ? List.of() : List.copyOf(nodeResults);
@@ -48,10 +52,23 @@ public record DispatcherTaskResult(
             State state, Instant startedAt, Instant endedAt, Long durationMs,
             Long affectedRows, List<NodeResult> nodeResults, ExecutionTaskType taskType,
             QualityResult qualityResult, UserJobObservabilitySnapshot userJobObservability,
+            TaskLineageEvidence lineage, SparkJarTrialPreview trialPreview, Error error
+    ) {
+        this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
+                affectedRows, nodeResults, taskType, qualityResult, userJobObservability,
+                lineage, trialPreview, null, error);
+    }
+
+    public DispatcherTaskResult(
+            Integer schemaVersion, UUID executionId, UUID runId, Integer attempt,
+            State state, Instant startedAt, Instant endedAt, Long durationMs,
+            Long affectedRows, List<NodeResult> nodeResults, ExecutionTaskType taskType,
+            QualityResult qualityResult, UserJobObservabilitySnapshot userJobObservability,
             Error error
     ) {
         this(schemaVersion, executionId, runId, attempt, state, startedAt, endedAt, durationMs,
-                affectedRows, nodeResults, taskType, qualityResult, userJobObservability, null, error);
+                affectedRows, nodeResults, taskType, qualityResult, userJobObservability,
+                null, null, null, error);
     }
 
     public static boolean supportsSchemaVersion(Integer schemaVersion) {
@@ -158,10 +175,11 @@ public record DispatcherTaskResult(
     }
 
     public enum State {
-        ACCEPTED, RUNNING, CANCEL_REQUESTED, SUCCESS, FAILED, TIMED_OUT, CANCELLED;
+        ACCEPTED, RUNNING, CANCEL_REQUESTED, SUCCESS, STOPPED, FAILED, TIMED_OUT, CANCELLED;
 
         public boolean terminal() {
-            return this == SUCCESS || this == FAILED || this == TIMED_OUT || this == CANCELLED;
+            return this == SUCCESS || this == STOPPED || this == FAILED
+                    || this == TIMED_OUT || this == CANCELLED;
         }
     }
 

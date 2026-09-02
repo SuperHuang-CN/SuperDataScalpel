@@ -61,7 +61,8 @@ public class SparkJarLineageIngestionWorker {
                         "LINEAGE_RESULT_SHA_MISMATCH", "运行结果制品摘要不一致");
             }
             ResultEnvelope result = objectMapper.readValue(content, ResultEnvelope.class);
-            if (result.schemaVersion() == null || result.schemaVersion() != 8
+            if (result.schemaVersion() == null
+                    || result.schemaVersion() != 8 && result.schemaVersion() != 9
                     || !job.getExecutionRunId().equals(result.runId())
                     || result.taskType() != ExecutionTaskType.SPARK_JAR
                     || job.isRunSucceeded() != "SUCCESS".equals(result.state())) {

@@ -1,15 +1,5 @@
-import {
-  Alert,
-  Button,
-  Card,
-  Checkbox,
-  Collapse,
-  Input,
-  InputNumber,
-  Select,
-  Space,
-  Typography,
-} from 'antd';
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
+import { Button, Card, Checkbox, Collapse, Input, InputNumber, Select, Space, Typography } from 'antd';
 import { useState } from 'react';
 import { useDataModel, type PlatformDataType } from '../../../model';
 import {

@@ -4,5 +4,6 @@ package cn.superhuang.data.scalpel.contract.service;
 public enum DataServiceType {
     STANDARD_TABLE,
     SQL_QUERY,
-    SCRIPT_API
+    SCRIPT_API,
+    SPATIAL_SERVICE
 }

@@ -109,7 +109,8 @@ public class DispatcherResultService {
                     result.schemaVersion(), result.executionId(), result.runId(), result.attempt(),
                     result.state(), result.startedAt(), result.endedAt(), result.durationMs(),
                     result.affectedRows(), result.nodeResults(), result.taskType(),
-                    result.qualityResult(), result.userJobObservability(), unavailable, result.error());
+                    result.qualityResult(), result.userJobObservability(), unavailable,
+                    result.trialPreview(), result.canvasTrialPreview(), result.error());
         }
     }
 
@@ -126,11 +127,12 @@ public class DispatcherResultService {
                 || result.affectedRows() != null && result.affectedRows() < 0) {
             throw new BackendException("INVALID_RUNNER_RESULT", "Runner result.json 身份或状态无效");
         }
-        if (result.state() == DispatcherTaskResult.State.SUCCESS && result.error() != null) {
-            throw new BackendException("INVALID_RUNNER_RESULT", "成功结果不能包含错误");
+        boolean normalTerminalState = result.state() == DispatcherTaskResult.State.SUCCESS
+                || result.state() == DispatcherTaskResult.State.STOPPED;
+        if (normalTerminalState && result.error() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "正常终态结果不能包含错误");
         }
-        if (result.state() != DispatcherTaskResult.State.SUCCESS
-                && result.error() == null) {
+        if (!normalTerminalState && result.error() == null) {
             throw new BackendException("INVALID_RUNNER_RESULT", "失败结果必须包含安全错误");
         }
         if (result.error() != null) validateError(result.error());
@@ -148,6 +150,24 @@ public class DispatcherResultService {
         }
         if (result.schemaVersion() < 8 && result.lineage() != null) {
             throw new BackendException("INVALID_RUNNER_RESULT", "Runner v2～v7 结果不能包含运行血缘");
+        }
+        if (result.schemaVersion() < 9 && result.trialPreview() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner v2～v8 结果不能包含试运行预览");
+        }
+        if (result.schemaVersion() < 10 && result.canvasTrialPreview() != null) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Runner v2～v9 结果不能包含 Canvas 试运行预览");
+        }
+        if (result.trialPreview() != null
+                && (resultType != ExecutionTaskType.SPARK_JAR
+                && resultType != ExecutionTaskType.SPARK_STREAMING_JAR
+                || result.affectedRows() != null)) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Spark JAR 试运行预览载荷无效");
+        }
+        if (result.canvasTrialPreview() != null
+                && (resultType != ExecutionTaskType.SPARK_CANVAS || result.affectedRows() != null
+                || result.trialPreview() != null
+                || result.state() != DispatcherTaskResult.State.SUCCESS)) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Canvas 试运行预览载荷无效");
         }
         if (result.lineage() != null && resultType != ExecutionTaskType.SPARK_JAR
                 || result.schemaVersion() >= 8 && resultType == ExecutionTaskType.SPARK_JAR
@@ -172,8 +192,9 @@ public class DispatcherResultService {
         if (resultType == ExecutionTaskType.SPARK_JAR && !result.nodeResults().isEmpty()) {
             throw new BackendException("INVALID_RUNNER_RESULT", "Spark JAR 结果不能包含 Canvas 节点结果");
         }
-        if (result.userJobObservability() != null && resultType != ExecutionTaskType.SPARK_JAR) {
-            throw new BackendException("INVALID_RUNNER_RESULT", "用户作业观测载荷只能属于 Spark JAR 批任务");
+        if (result.userJobObservability() != null && resultType != ExecutionTaskType.SPARK_JAR
+                && resultType != ExecutionTaskType.SPARK_STREAMING_JAR) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "用户作业观测载荷只能属于 Spark JAR 任务");
         }
 
         Set<UUID> nodeIds = new HashSet<>();
@@ -252,6 +273,11 @@ public class DispatcherResultService {
                 && (outputRowsUnknown && result.affectedRows() != null
                 || !outputRowsUnknown && !Long.valueOf(outputRows).equals(result.affectedRows()))) {
             throw new BackendException("INVALID_RUNNER_RESULT", "Runner 总影响行数与输出节点不一致");
+        }
+        if (result.canvasTrialPreview() != null && result.nodeResults().stream().noneMatch(node ->
+                node.nodeId().equals(result.canvasTrialPreview().targetNodeId())
+                        && node.state() == DispatcherTaskResult.NodeState.SUCCESS)) {
+            throw new BackendException("INVALID_RUNNER_RESULT", "Canvas 试运行目标节点结果缺失");
         }
     }
 
@@ -640,7 +666,7 @@ public class DispatcherResultService {
             boolean ordinaryOutputNode,
             DispatcherTaskResult.OutputWritesMetrics metrics
     ) throws BackendException {
-        if (schemaVersion != 7 || !ordinaryOutputNode || metrics.writes().isEmpty()) {
+        if (schemaVersion < 7 || !ordinaryOutputNode || metrics.writes().isEmpty()) {
             throw new BackendException("INVALID_RUNNER_RESULT", "逐写入指标所属节点或版本无效");
         }
         Set<UUID> writeIds = new HashSet<>();

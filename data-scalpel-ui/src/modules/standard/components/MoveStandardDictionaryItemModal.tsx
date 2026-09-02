@@ -1,6 +1,8 @@
-import { Form, InputNumber, Modal, TreeSelect, message } from 'antd';
+import { NodeIndexOutlined, SwapOutlined } from '@ant-design/icons';
+import { Button, Form, InputNumber, Modal, Space, Tag, TreeSelect, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { useMoveStandardDictionaryItem } from '../hooks/useStandardDictionaries';
 import { useStandardFormLeaveGuard } from '../hooks/useStandardFormLeaveGuard';
 import type {
@@ -50,6 +52,7 @@ export const MoveStandardDictionaryItemModal = ({
   const [form] = Form.useForm<FormValue>();
   const [messageApi, contextHolder] = message.useMessage();
   const [dirty, setDirty] = useState(false);
+  const [operationError, setOperationError] = useState<string | null>(null);
   const mutation = useMoveStandardDictionaryItem();
   const treeData = useMemo<TreeOption[]>(() => [
     { value: ROOT_VALUE, title: '根节点' },
@@ -66,6 +69,7 @@ export const MoveStandardDictionaryItemModal = ({
   }, [form, item, open]);
   const discard = useCallback(() => {
     setDirty(false);
+    setOperationError(null);
     form.resetFields();
     onClose();
   }, [form, onClose]);
@@ -77,6 +81,7 @@ export const MoveStandardDictionaryItemModal = ({
 
   const submit = async (value: FormValue) => {
     if (!item) return;
+    setOperationError(null);
     try {
       await mutation.mutateAsync({
         dictionaryId: dictionary.id,
@@ -91,7 +96,9 @@ export const MoveStandardDictionaryItemModal = ({
       setDirty(false);
       onClose();
     } catch (error) {
-      messageApi.error(error instanceof ApiError ? error.message : '移动节点失败');
+      const errorMessage = error instanceof ApiError ? error.message : '移动节点失败';
+      setOperationError(errorMessage);
+      messageApi.error(errorMessage);
     }
   };
 
@@ -99,20 +106,48 @@ export const MoveStandardDictionaryItemModal = ({
     <>
       {contextHolder}
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
-        title={item ? `移动“${item.name}”` : '移动节点'}
+        rootClassName="business-overlay business-modal-overlay standard-dictionary-move-modal"
+        title={(
+          <div className="standard-dictionary-move-title">
+            <span className="standard-dictionary-move-title-icon" aria-hidden="true"><SwapOutlined /></span>
+            <span className="standard-dictionary-move-title-copy">
+              <span>调整码表节点位置</span>
+              <Typography.Text type="secondary">选择新的父节点和同级排序位置</Typography.Text>
+            </span>
+          </div>
+        )}
         open={open}
         destroyOnHidden
-        okText="移动"
-        cancelText="取消"
-        confirmLoading={mutation.isPending}
+        closable={!mutation.isPending}
+        maskClosable={!mutation.isPending}
         onCancel={requestClose}
-        onOk={() => form.submit()}
+        footer={(
+          <div className="standard-dictionary-move-footer">
+            {operationError ? (
+              <InlineFeedback tone="error" label="节点移动失败" detail={operationError} />
+            ) : (
+              <InlineFeedback tone="info" label={item ? `移动 ${item.name} · ${item.code}` : '等待选择节点'} />
+            )}
+            <Space>
+              <Button disabled={mutation.isPending} onClick={requestClose}>取消</Button>
+              <Button type="primary" loading={mutation.isPending} onClick={() => form.submit()}>确认移动</Button>
+            </Space>
+          </div>
+        )}
       >
+        <div className="standard-dictionary-move-context">
+          <span className="standard-dictionary-move-context-icon" aria-hidden="true"><NodeIndexOutlined /></span>
+          <span>
+            <strong>{item?.name ?? '—'}</strong>
+            <Typography.Text type="secondary">{item?.code ?? '—'}</Typography.Text>
+          </span>
+          <Tag>{dictionary.code}</Tag>
+        </div>
         <Form<FormValue>
           autoComplete="off"
           form={form}
           layout="vertical"
+          className="standard-dictionary-move-form"
           onFieldsChange={() => setDirty(true)}
           onFinish={(value) => void submit(value)}
         >
@@ -120,10 +155,14 @@ export const MoveStandardDictionaryItemModal = ({
             <TreeSelect treeData={treeData} treeDefaultExpandAll showSearch treeNodeFilterProp="title" />
           </Form.Item>
           <Form.Item
-            label="目标同级位置"
+            label={(
+              <span className="standard-dictionary-move-field-label">
+                目标同级位置
+                <ContextHelp ariaLabel="查看同级位置规则" content="从 0 开始，不能超过目标父节点当前的子节点数量。" />
+              </span>
+            )}
             name="targetIndex"
             rules={[{ required: true, message: '请输入同级位置' }]}
-            extra="从 0 开始，不能超过目标父节点当前子节点数量。"
           >
             <InputNumber min={0} precision={0} style={{ width: '100%' }} />
           </Form.Item>

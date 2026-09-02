@@ -10,6 +10,7 @@ import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingStoppedEvent
 import cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionCommand;
 import cn.superhuang.data.scalpel.contract.execution.StreamingQueryProgress;
 import cn.superhuang.data.scalpel.contract.execution.StreamingSourceProgress;
+import cn.superhuang.data.scalpel.contract.execution.StreamingSourceKind;
 import cn.superhuang.data.scalpel.contract.execution.TaskExecutionLaunchDescriptor;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationContext;
 import cn.superhuang.datascalpel.taskengine.canvas.CanvasNodeOperationResult;
@@ -30,10 +31,12 @@ import cn.superhuang.data.scalpel.contract.task.JdbcQueryInputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.JdbcWriteMode;
 import cn.superhuang.data.scalpel.contract.task.KafkaOutputNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.KafkaOutputValueFormat;
 import cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeKafkaConnection;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
 import cn.superhuang.datascalpel.taskengine.jdbc.incremental.JdbcIncrementalOffset;
+import cn.superhuang.datascalpel.taskengine.tdengine.tmq.TdEngineTmqOffset;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -66,7 +69,6 @@ final class StreamingCanvasTaskExecutor {
     private static final Duration CONTROL_POLL_INTERVAL = Duration.ofSeconds(1);
     private static final Duration PROGRESS_INTERVAL = Duration.ofSeconds(10);
     private static final Duration HEARTBEAT_INTERVAL = Duration.ofSeconds(30);
-    private static final String HIDDEN_KEY_COLUMN = "__datascalpel_kafka_key";
 
     private final ObjectMapper objectMapper;
     private final CanvasTaskCompiler compiler = new CanvasTaskCompiler();
@@ -106,6 +108,7 @@ final class StreamingCanvasTaskExecutor {
                 null,
                 List.of(),
                 manifest.execution().executionId().toString(),
+                manifest.execution().taskId().toString(),
                 manifest.execution().attempt(),
                 manifest.streaming().sourceNodeId(),
                 manifest.streaming().sourceSignature(),
@@ -277,15 +280,29 @@ final class StreamingCanvasTaskExecutor {
             String checkpoint
     ) {
         List<String> valueColumns = new ArrayList<>(List.of(output.dataset().columns()));
-        boolean hasKey = valueColumns.remove(HIDDEN_KEY_COLUMN);
-        Column[] structColumns = valueColumns.stream()
-                .map(name -> functions.col("`" + name.replace("`", "``") + "`"))
-                .toArray(Column[]::new);
+        String keyColumnAlias = output.keyColumnAlias();
+        if (keyColumnAlias != null) valueColumns.remove(keyColumnAlias);
+        Column key = keyColumnAlias == null
+                ? functions.lit(null).cast("binary").alias("key")
+                : output.legacyMappingMode()
+                ? functions.col(quoteIdentifier(keyColumnAlias)).cast("string").alias("key")
+                : functions.col(quoteIdentifier(keyColumnAlias)).alias("key");
+        Column value;
+        if (output.legacyMappingMode()) {
+            value = functions.to_json(functions.struct(valueColumns.stream()
+                    .map(name -> functions.col(quoteIdentifier(name)))
+                    .toArray(Column[]::new))).alias("value");
+        } else if (output.valueFormat() == KafkaOutputValueFormat.JSON) {
+            value = functions.to_json(functions.struct(valueColumns.stream()
+                            .map(name -> functions.col(quoteIdentifier(name)))
+                            .toArray(Column[]::new)),
+                    Map.of("ignoreNullFields", "false")).alias("value");
+        } else {
+            value = functions.col(quoteIdentifier("value")).alias("value");
+        }
         Dataset<Row> kafkaRows = output.dataset().select(
-                hasKey
-                        ? functions.col(HIDDEN_KEY_COLUMN).cast("string").alias("key")
-                        : functions.lit(null).cast("string").alias("key"),
-                functions.to_json(functions.struct(structColumns)).alias("value")
+                key,
+                value
         );
         RuntimeKafkaConnection connection = output.runtimeDataSource().kafkaConnection();
         DataStreamWriter<Row> writer = kafkaRows.writeStream()
@@ -314,6 +331,10 @@ final class StreamingCanvasTaskExecutor {
                     exception
             );
         }
+    }
+
+    private static String quoteIdentifier(String value) {
+        return "`" + value.replace("`", "``") + "`";
     }
 
     private void monitor(
@@ -417,13 +438,13 @@ final class StreamingCanvasTaskExecutor {
                     parseTimestamp(progress.timestamp())
             ));
             if (sourceProgress == null) {
-                sourceProgress = jdbcIncrementalSourceProgress(manifest, progress);
+                sourceProgress = sourceProgress(manifest, progress);
             }
         }
         return new ProgressSnapshot(List.copyOf(result), sourceProgress);
     }
 
-    private static StreamingSourceProgress jdbcIncrementalSourceProgress(
+    private static StreamingSourceProgress sourceProgress(
             TaskExecutionManifest manifest,
             org.apache.spark.sql.streaming.StreamingQueryProgress progress
     ) {
@@ -453,7 +474,38 @@ final class StreamingCanvasTaskExecutor {
                         Math.max(0L, Duration.between(end.endTime(), pollTime).toMillis())
                 );
             } catch (RuntimeException ignored) {
-                // Only the sanitized, versioned JDBC incremental offset is allowed to cross this boundary.
+                // Try the sanitized, versioned TMQ offset next.
+            }
+            try {
+                TdEngineTmqOffset end = TdEngineTmqOffset.parse(source.endOffset());
+                long span = 0L;
+                if (source.startOffset() != null && !source.startOffset().isBlank()) {
+                    TdEngineTmqOffset start = TdEngineTmqOffset.parse(source.startOffset());
+                    if (!start.topic().equals(end.topic())
+                            || !start.vGroups().keySet().equals(end.vGroups().keySet())) {
+                        continue;
+                    }
+                    for (int vGroup : end.vGroups().keySet()) {
+                        span = Math.addExact(span, Math.max(
+                                0L, end.vGroups().get(vGroup) - start.vGroups().get(vGroup)));
+                    }
+                }
+                return new StreamingSourceProgress(
+                        manifest.streaming().sourceNodeId(),
+                        manifest.streaming().sourceSignature(),
+                        end.json(),
+                        null,
+                        null,
+                        source.numInputRows(),
+                        Math.max(0L, progress.batchDuration()),
+                        pollTime,
+                        null,
+                        StreamingSourceKind.TDENGINE_TMQ,
+                        end.vGroups().size(),
+                        span
+                );
+            } catch (RuntimeException ignored) {
+                // Raw or unrecognized Spark offsets never cross the execution contract boundary.
             }
         }
         return null;

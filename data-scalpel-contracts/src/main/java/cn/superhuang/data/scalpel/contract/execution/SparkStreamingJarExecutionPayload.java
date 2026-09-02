@@ -11,6 +11,7 @@ public record SparkStreamingJarExecutionPayload(
         List<SparkConfigurationEntry> sparkConf,
         List<SparkJarExecutionPayload.ResourceBinding> resourceBindings,
         int startupTimeoutSeconds,
+        SparkJarExecutionPayload.ExecutionPurpose executionPurpose,
         UUID deploymentId,
         String checkpointKeyPrefix,
         StreamingCheckpointMode checkpointMode,
@@ -21,6 +22,8 @@ public record SparkStreamingJarExecutionPayload(
         parameters = parameters == null ? List.of() : List.copyOf(parameters);
         sparkConf = sparkConf == null ? List.of() : List.copyOf(sparkConf);
         resourceBindings = resourceBindings == null ? List.of() : List.copyOf(resourceBindings);
+        executionPurpose = executionPurpose == null
+                ? SparkJarExecutionPayload.ExecutionPurpose.REAL : executionPurpose;
         if (jobApiVersion != 1 || startupTimeoutSeconds < 1 || startupTimeoutSeconds > 86400
                 || parameters.size() > 100 || sparkConf.size() > 100 || resourceBindings.size() > 200
                 || deploymentId == null || checkpointMode == null

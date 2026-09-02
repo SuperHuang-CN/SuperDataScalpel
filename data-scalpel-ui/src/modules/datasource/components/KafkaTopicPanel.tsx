@@ -1,8 +1,10 @@
-import { ReloadOutlined, SearchOutlined } from '@ant-design/icons';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { SearchOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Alert, Button, Checkbox, Form, Input, Space, Table, Tag, Tooltip, Typography } from 'antd';
+import { Button, Checkbox, Form, Input, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { useKafkaTopics } from '../hooks/useDataSources';
 import type { DataSource, KafkaTopic } from '../model/dataSource';
 
@@ -43,7 +45,7 @@ export const KafkaTopicPanel = ({ dataSource, active }: KafkaTopicPanelProps) =>
   const [keyword, setKeyword] = useState<string>();
   const [includeInternal, setIncludeInternal] = useState(false);
   const topicsQuery = useKafkaTopics(dataSource.id, keyword, includeInternal, active);
-  const topics = topicsQuery.data ?? [];
+  const topics = useMemo(() => topicsQuery.data ?? [], [topicsQuery.data]);
   const summary = useMemo(() => {
     const metadataCount = topics.filter((topic) => topic.metadataAvailable).length;
     const partitionCount = topics.reduce((total, topic) => total + (topic.partitionCount ?? 0), 0);
@@ -85,7 +87,7 @@ export const KafkaTopicPanel = ({ dataSource, active }: KafkaTopicPanelProps) =>
 
   return (
     <div className="data-source-resource-panel kafka-topic-panel">
-      <div className="data-source-resource-toolbar">
+      <div className="data-source-resource-toolbar detail-table-filter-toolbar">
         <Form<KafkaTopicFilters>
           autoComplete="off"
           form={form}
@@ -101,31 +103,21 @@ export const KafkaTopicPanel = ({ dataSource, active }: KafkaTopicPanelProps) =>
               allowClear
               prefix={<SearchOutlined />}
               placeholder="搜索 Topic 名称"
-              className="kafka-topic-keyword"
+              className="detail-table-filter-keyword kafka-topic-keyword"
             />
           </Form.Item>
           <Form.Item name="includeInternal" valuePropName="checked">
             <Checkbox>包含内部 Topic</Checkbox>
           </Form.Item>
-          <Form.Item>
-            <Space size={4}>
-              <Button type="primary" htmlType="submit">查询</Button>
-              <Button type="text" onClick={() => {
-                form.resetFields();
-                setKeyword(undefined);
-                setIncludeInternal(false);
-              }}>重置</Button>
-            </Space>
-          </Form.Item>
         </Form>
-        <Tooltip title="刷新 Topic">
-          <Button
-            icon={<ReloadOutlined />}
-            aria-label="刷新 Kafka Topic"
-            loading={topicsQuery.isFetching}
-            onClick={() => void topicsQuery.refetch()}
-          />
-        </Tooltip>
+        <Space size={4} className="detail-table-filter-actions">
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => form.submit()}>查询</Button>
+          <Button type="text" onClick={() => {
+            form.resetFields();
+            setKeyword(undefined);
+            setIncludeInternal(false);
+          }}>重置</Button>
+        </Space>
       </div>
       {topicsQuery.error && (
         <Alert
@@ -156,6 +148,15 @@ export const KafkaTopicPanel = ({ dataSource, active }: KafkaTopicPanelProps) =>
           )}
         </div>
       )}
+      <DetailTableToolbar
+        title="Topic 列表"
+        total={topics.length}
+        showPagination={false}
+        onRefresh={() => void topicsQuery.refetch()}
+        refreshing={topicsQuery.isFetching}
+        refreshLabel="刷新 Kafka Topic"
+        itemUnit="个"
+      />
       <Table<KafkaTopic>
         className="management-table kafka-topic-table"
         size="small"

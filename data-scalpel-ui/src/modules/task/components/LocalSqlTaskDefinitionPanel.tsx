@@ -1,20 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { SaveOutlined } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Divider,
-  Form,
-  InputNumber,
-  List,
-  Modal,
-  Select,
-  Space,
-  Spin,
-  Table,
-  Tag,
-  Typography,
-  message,
-} from 'antd';
+import { Button, Divider, Form, InputNumber, List, Modal, Select, Space, Spin, Table, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { useBlocker, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';

@@ -176,7 +176,8 @@ public class DispatcherExecutionReconciliationService {
         UUID messageId = UUID.nameUUIDFromBytes(("dispatcher-reconcile:" + response.executionId() + ":"
                 + response.sequence()).getBytes(StandardCharsets.UTF_8));
         String resultSha256 = switch (type) {
-            case EXECUTION_SUCCEEDED, EXECUTION_FAILED, EXECUTION_TIMED_OUT, EXECUTION_CANCELLED ->
+            case EXECUTION_SUCCEEDED, EXECUTION_STOPPED, EXECUTION_FAILED,
+                    EXECUTION_TIMED_OUT, EXECUTION_CANCELLED ->
                     response.resultSha256();
             default -> null;
         };

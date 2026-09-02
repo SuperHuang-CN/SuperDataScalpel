@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.business.service.domain.DataServiceDeploymentS
 import cn.superhuang.data.scalpel.business.service.domain.DataServiceStatus;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import cn.superhuang.data.scalpel.business.service.domain.ServiceRoutePath;
+import cn.superhuang.data.scalpel.contract.service.DataServiceType;
 import cn.superhuang.data.scalpel.business.service.gateway.GatewayProvider;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServiceBinding;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServicePublicationStatus;
@@ -173,6 +174,9 @@ public class DataServiceGatewayPublicationService {
         if (service.getStatus() != DataServiceStatus.ENABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已启用服务可以发布到网关");
         }
+        if (service.getType() == DataServiceType.SPATIAL_SERVICE) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "空间服务直接使用 GeoServer，不发布到 API Gateway");
+        }
         DataServiceDeployment deployment = requireDeploymentForUpdate(id);
         if (deployment.getStatus() != DataServiceDeploymentStatus.DEPLOYED
                 || deployment.getRevision() != service.getRevision()) {
@@ -210,7 +214,7 @@ public class DataServiceGatewayPublicationService {
                         service.getRevision(),
                         binding.getGatewayRoutePath(),
                         engine.getRuntimeUrl(),
-                        service.getEngineRoutePath(),
+                        service.getContextPath(),
                         binding.getAccessMode()
                 )
         );
@@ -297,7 +301,7 @@ public class DataServiceGatewayPublicationService {
                     service.getRevision(),
                     binding.getGatewayRoutePath(),
                     engine.getRuntimeUrl(),
-                    service.getEngineRoutePath(),
+                    service.getContextPath(),
                     binding.getAccessMode()
             );
             preparations.add(new ReconciliationPreparation(

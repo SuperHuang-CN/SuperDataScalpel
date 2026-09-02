@@ -64,6 +64,11 @@
 - 实时 JAR 的全部 `StreamingQuery` 必须通过 `StreamingQueries.start()` 注册。平台生成稳定 Query UUID、Spark Query Name 和 Checkpoint位置；用户 Starter必须使用平台提供的 Query Name和Checkpoint，`SparkStreamingJob.start()`完成注册后返回且不得调用 `awaitTermination()`。零查询、重名、非 Active查询或绕过SDK启动查询都必须使整个Application失败。
 - 实时 JAR由用户代码控制 Trigger、Output Mode和处理逻辑；平台只负责查询集合、进度、停止和Checkpoint生命周期。任一查询失败或意外停止时停止其他查询；正常停止先停止查询再调用一次 `onStop()`，原始执行错误优先于清理错误。
 - 实时 JAR首次启动必须使用 `FRESH`；后续可选 `CONTINUE`复用最近Checkpoint或 `FRESH`创建新世代。跨定义版本继续由实施人员确认代码、查询集合和状态Schema兼容性，平台不得自动转换、删除或复制历史Checkpoint。
+- 在线源码编译必须按任务模式校验固定入口：批处理只接受 `com.example.datascalpel.ExampleSparkJob + SparkBatchJob`，实时只接受 `com.example.datascalpel.ExampleSparkStreamingJob + SparkStreamingJob`；产物 Manifest 必须写入匹配的 `DataScalpel-Job-Mode`，不得根据源码内容猜测模式。
+- 批流本地开发包共用一套生成队列和制品流程。实时开发包使用独立的 Kafka Input/Output `TestKafkaTopic`，`READ_WRITE` 也不得复用同一个假 Topic；假消息只使用明确可编辑的 UTF-8 样例，不连接线上 Kafka。
+- 实时在线试运行固定创建 `TRIAL + FRESH` Deployment，并使用与正式运行隔离的 Checkpoint 前缀；正式 `CONTINUE`、最新正式状态和恢复来源只能查询 `REAL` Deployment。正常停止或失败后 Runner 最佳努力删除 Trial Checkpoint，强制终止残留由运维按专属前缀清理。
+- 实时试运行允许真实读取已绑定的模型、JDBC和Kafka输入，但只拦截平台SDK的模型、JDBC和Kafka输出。原生Spark Writer、自带凭据或其他客户端副作用不在拦截范围内；不得宣称试运行是JVM沙箱。试运行最长30分钟，到期先正常停止，60秒宽限后才沿用Backend强制终止。
+- 实时 JAR 正常停止和失败都必须先生成并上传 result.json，再报告停止或失败事件。结果协议当前为 v11，正常停止使用 `STOPPED` 且不携带错误；失败结果允许保留失败前已采集的部分 Trial Preview，强制终止可能没有最新预览。
 - 用户作业观测由 `SparkJobContext.observability()`统一提供，只支持结构化事件、最新阶段、Counter、Gauge和Operation Timer。Runner最多每5秒上报完整最新快照并在终态刷新；Streaming指标属于当前Application/Attempt且不得写入Checkpoint。
 - 用户作业观测对象只允许Driver端使用，不得设计为可序列化对象或支持捕获到Executor闭包；Operation必须在创建线程关闭并恢复原Spark Job Description。
 - SDK模型/JDBC写入和StreamingQuery注册应自动形成安全事件与保留指标，但不得为了观测增加`count()`、采样或其他Spark Action。自定义事件内容由用户负责，平台自动事件不得包含SQL、数据值、凭据、签名地址、对象Key或Checkpoint物理地址。

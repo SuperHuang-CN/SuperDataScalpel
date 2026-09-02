@@ -7,6 +7,7 @@ public record MetadataTdEngineTmqTopic(
         String catalogName,
         String supertableName,
         String definitionFingerprint,
+        String legacyDefinitionFingerprint,
         String timePrecision,
         List<CanvasColumnSchema> columns
 ) {

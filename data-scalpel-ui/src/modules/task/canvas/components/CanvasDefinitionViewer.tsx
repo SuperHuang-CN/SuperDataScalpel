@@ -12,6 +12,11 @@ import { Button, Descriptions, Input, Space, Tag, Tooltip, Typography } from 'an
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { isCanvasZoomWheel } from '../canvasInteraction';
 import { canvasNodeCompilationBadge } from '../canvasCompilationPresentation';
+import {
+  registerCanvasNodeOutputSchemaController,
+  type CanvasNodeOutputSchemaTarget,
+  type CanvasNodeTrialTarget,
+} from '../canvasNodeTrial';
 import { canvasNodeTemplate, registerCanvasNodes } from '../canvasRegistry';
 import { loadCanvasDefinition, runtimeDataFromDefinition } from '../canvasSerialization';
 import {
@@ -19,12 +24,15 @@ import {
   type CanvasDefinition,
   type CanvasExecutionMode,
   type CanvasNodeDefinition,
+  type CanvasNodeRuntimeData,
 } from '../canvasTypes';
 import { canvasNodeRegistry } from '../nodes/nodeRegistry';
 import { taskCompilationValidation } from '../taskCompilationTypes';
 import { useCanvasMetadataSnapshot } from '../useCanvasMetadataSnapshot';
 import { useCanvasTaskCompilation } from '../useCanvasTaskCompilation';
 import { CanvasDefinitionModal } from './CanvasDefinitionModal';
+import { CanvasTableSchemaModal } from './CanvasTableSchemaModal';
+import type { TaskStatus } from '../../model/task';
 
 interface CanvasDefinitionViewerProps {
   definition: CanvasDefinition;
@@ -33,6 +41,11 @@ interface CanvasDefinitionViewerProps {
   toolbarTrailing?: ReactNode;
   fullscreen: boolean;
   onToggleFullscreen: () => void;
+  trialContext?: {
+    taskId: string;
+    baseDefinitionVersion: number;
+    taskStatus: TaskStatus;
+  };
 }
 
 const categoryLabels: Record<CanvasNodeCategory, string> = {
@@ -48,12 +61,14 @@ export const CanvasDefinitionViewer = ({
   toolbarTrailing,
   fullscreen,
   onToggleFullscreen,
+  trialContext,
 }: CanvasDefinitionViewerProps) => {
   const graphContainerRef = useRef<HTMLDivElement>(null);
   const minimapContainerRef = useRef<HTMLDivElement>(null);
   const graphRef = useRef<Graph | null>(null);
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [definitionOpen, setDefinitionOpen] = useState(false);
+  const [outputSchemaTarget, setOutputSchemaTarget] = useState<CanvasNodeOutputSchemaTarget | null>(null);
   const metadata = useCanvasMetadataSnapshot(definition);
   const compilation = useCanvasTaskCompilation({
     definition,
@@ -70,7 +85,6 @@ export const CanvasDefinitionViewer = ({
     () => definition.nodes.find((node) => node.id === selectedNodeId) ?? null,
     [definition.nodes, selectedNodeId],
   );
-
   useEffect(() => {
     const container = graphContainerRef.current;
     const minimapContainer = minimapContainerRef.current;
@@ -130,6 +144,19 @@ export const CanvasDefinitionViewer = ({
       setSelectedNodeId(undefined);
     });
     loadCanvasDefinition(graph, definition, { readOnly: true });
+    const unregisterOutputSchemaController = registerCanvasNodeOutputSchemaController(graph, {
+      openOutputSchema: (node) => {
+        const runtime = node.getData<CanvasNodeRuntimeData>();
+        const nodeCompilation = runtime.compilation;
+        if (!nodeCompilation || nodeCompilation.outputTables.length === 0) return;
+        setOutputSchemaTarget({
+          nodeId: node.id,
+          nodeName: runtime.name,
+          inputTables: nodeCompilation.inputTables,
+          outputTables: nodeCompilation.outputTables,
+        });
+      },
+    });
     graphRef.current = graph;
     window.requestAnimationFrame(() => {
       if (definition.nodes.length > 0) graph.zoomToFit({ padding: 40, maxScale: 1 });
@@ -137,10 +164,11 @@ export const CanvasDefinitionViewer = ({
 
     return () => {
       container.removeEventListener('wheel', panCanvasWithWheel);
+      unregisterOutputSchemaController();
       graphRef.current = null;
       graph.dispose();
     };
-  }, [definition]);
+  }, [definition, executionMode]);
 
   useEffect(() => {
     const graph = graphRef.current;
@@ -164,6 +192,29 @@ export const CanvasDefinitionViewer = ({
     graphRef.current?.cleanSelection();
     setSelectedNodeId(undefined);
   };
+
+  const trialActionVisible = Boolean(trialContext && executionMode === 'BATCH');
+  const trialActionDisabledReason = !trialActionVisible
+    ? undefined
+    : trialContext?.taskStatus === 'PUBLISHED'
+      ? '已发布任务不能发起 Canvas 试运行，请先停用任务'
+      : (trialContext?.baseDefinitionVersion ?? 0) < 1
+        ? '请先保存一次 Canvas 定义，再发起试运行'
+        : !engineValidation
+          ? '正在等待最新的 Task Engine 编译结果'
+          : undefined;
+  const createTrialTarget = outputSchemaTarget && trialContext && trialActionVisible
+    ? (tableName: string): CanvasNodeTrialTarget => ({
+      taskId: trialContext.taskId,
+      baseDefinitionVersion: trialContext.baseDefinitionVersion,
+      definition,
+      nodeId: outputSchemaTarget.nodeId,
+      nodeName: outputSchemaTarget.nodeName,
+      inputTables: outputSchemaTarget.inputTables,
+      outputTables: outputSchemaTarget.outputTables,
+      initialTableName: tableName,
+    })
+    : undefined;
 
   return (
     <div className={`canvas-designer canvas-designer-view${fullscreen ? ' canvas-designer-fullscreen' : ''}`}>
@@ -224,6 +275,18 @@ export const CanvasDefinitionViewer = ({
         validationStatus="只读预览不调用 Task Engine 校验"
         onClose={() => setDefinitionOpen(false)}
       />
+      {outputSchemaTarget && (
+        <CanvasTableSchemaModal
+          key={outputSchemaTarget.nodeId}
+          open
+          title={`节点输出结构 · ${outputSchemaTarget.nodeName}`}
+          tables={outputSchemaTarget.outputTables}
+          createTrialTarget={createTrialTarget}
+          trialRunDisabled={trialActionDisabledReason !== undefined}
+          trialRunDisabledReason={trialActionDisabledReason}
+          onClose={() => setOutputSchemaTarget(null)}
+        />
+      )}
     </div>
   );
 };

@@ -8,12 +8,10 @@ import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
-import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
-import cn.superhuang.data.scalpel.dialect.model.TypeMappingQuality;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
 
@@ -26,6 +24,7 @@ import java.util.Map;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /** Opt-in acceptance test for a disposable MySQL 8.x database. */
@@ -42,15 +41,12 @@ class MySqlGeometryIntegrationTest {
             new DatabaseTableOperator(BuiltInDialects.registry(), connectionFactory);
 
     @Test
-    void createsReadsAndExactlyMatchesEveryGeometryKindAndRejectsUnrestrictedSrid()
+    void createsGenericGeometryColumnsAndMatchesTheirPhysicalType()
             throws SQLException, ClassNotFoundException {
         JdbcConnectionConfig config = integrationConfig();
         String suffix = UUID.randomUUID().toString().replace("-", "");
         TableIdentifier managedTable = new TableIdentifier(
                 config.databaseName(), null, "geometry_types_" + suffix
-        );
-        TableIdentifier unrestrictedTable = new TableIdentifier(
-                config.databaseName(), null, "geometry_unrestricted_" + suffix
         );
         TableDefinition definition = definition(managedTable);
 
@@ -63,25 +59,10 @@ class MySqlGeometryIntegrationTest {
                     definition.structureFingerprint(),
                     dialect.snapshotTableDefinition(metadata).structureFingerprint()
             );
-            assertEquals(
-                    List.of(GeometryKind.values()),
-                    metadata.columns().stream()
-                            .map(column -> dialect.mapToPlatformType(JdbcTypeDescriptor.from(column)))
-                            .map(mapping -> mapping.definition().geometry().kind())
-                            .toList()
-            );
-
-            execute(config, "CREATE TABLE " + qualified(unrestrictedTable)
-                    + " (`shape` POINT) ENGINE=InnoDB");
-            var unrestricted = inspector.readTable(DATABASE_TYPE, config, unrestrictedTable);
-            var mapping = dialect.mapToPlatformType(JdbcTypeDescriptor.from(
-                    unrestricted.columns().getFirst()
-            ));
-            assertEquals(TypeMappingQuality.UNSUPPORTED, mapping.quality());
-            assertTrue(mapping.message().contains("SRID"));
+            dialect.snapshotTableDefinition(metadata).columns()
+                    .forEach(column -> assertNull(column.geometry()));
         } finally {
             dropTable(config, managedTable);
-            dropTable(config, unrestrictedTable);
         }
     }
 

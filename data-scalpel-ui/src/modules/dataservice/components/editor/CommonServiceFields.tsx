@@ -31,12 +31,23 @@ export const CommonServiceFields = ({
               { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '以字母开头，仅支持字母、数字和下划线，最长 64 位' },
             ]}
           >
-            <Input autoFocus={creating} disabled={readOnly || !creating} placeholder="如：customer_query" />
+            <Input
+              name="data-service-code"
+              autoComplete="off"
+              autoFocus={creating}
+              disabled={readOnly || !creating}
+              placeholder="如：customer_query"
+            />
           </Form.Item>
         </Col>
         <Col xs={24} md={12}>
           <Form.Item<DataServiceFormValues> label="服务名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入服务名称' }, { max: 100 }]}>
-            <Input autoFocus={!creating} disabled={readOnly} />
+            <Input
+              name="data-service-display-name"
+              autoComplete="off"
+              autoFocus={!creating}
+              disabled={readOnly}
+            />
           </Form.Item>
         </Col>
         {canViewDirectories && (
@@ -56,7 +67,14 @@ export const CommonServiceFields = ({
         {includeDescription && (
           <Col span={24}>
             <Form.Item<DataServiceFormValues> label="说明" name="description" rules={[{ max: 1000 }]}>
-              <Input.TextArea disabled={readOnly} rows={3} maxLength={1000} showCount />
+              <Input.TextArea
+                name="data-service-description"
+                autoComplete="off"
+                disabled={readOnly}
+                autoSize={{ minRows: 2, maxRows: 5 }}
+                maxLength={1000}
+                showCount
+              />
             </Form.Item>
           </Col>
         )}
@@ -66,7 +84,14 @@ export const CommonServiceFields = ({
 
   return includeDescription ? (
     <Form.Item<DataServiceFormValues> label="说明" name="description" rules={[{ max: 1000 }]}>
-      <Input.TextArea disabled={readOnly} rows={3} maxLength={1000} showCount />
+      <Input.TextArea
+        name="data-service-description"
+        autoComplete="off"
+        disabled={readOnly}
+        autoSize={{ minRows: 2, maxRows: 5 }}
+        maxLength={1000}
+        showCount
+      />
     </Form.Item>
   ) : null;
 };

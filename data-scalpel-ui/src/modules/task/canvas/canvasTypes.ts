@@ -57,7 +57,7 @@ export type {
 } from '../model/maskingRule';
 
 export const CANVAS_SCHEMA_VERSION = 4 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 1 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 8 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
 export const CANVAS_FILTER_MAX_DEPTH = 12 as const;
 export const CANVAS_FILTER_MAX_CONDITION_NODES = 256 as const;
@@ -244,6 +244,9 @@ export interface KafkaValueSchema {
   columns: KafkaValueColumn[];
 }
 
+export type KafkaInputValueFormat = 'JSON' | 'TEXT' | 'BINARY';
+export type KafkaInputMetadataField = 'KEY' | 'TOPIC' | 'PARTITION' | 'OFFSET' | 'TIMESTAMP';
+
 export interface KafkaInputConfiguration {
   dataSourceId: string;
   topic: string;
@@ -251,6 +254,8 @@ export interface KafkaInputConfiguration {
   outputTableName: string;
   startingOffsets: KafkaStartingOffsets | null;
   triggerIntervalSeconds?: number;
+  valueFormat: KafkaInputValueFormat;
+  metadataFields: KafkaInputMetadataField[];
 }
 
 export type TdEngineTmqStartingOffsets = 'EARLIEST' | 'LATEST';
@@ -265,6 +270,8 @@ export interface TdEngineTmqInputConfiguration {
   startingOffsets: TdEngineTmqStartingOffsets;
   maxOffsetsPerVGroupPerTrigger: number;
   triggerIntervalSeconds: number;
+  eventTimeColumn: string | null;
+  watermarkDelaySeconds: number | null;
 }
 
 export type JoinType = 'INNER' | 'LEFT' | 'RIGHT' | 'FULL';
@@ -645,10 +652,32 @@ export interface DeriveColumnsConfiguration {
 
 export type CastFailureStrategy = 'FAIL' | 'SET_NULL';
 
+export type EpochTimestampUnit = 'SECONDS' | 'MILLISECONDS' | 'MICROSECONDS';
+
+export type StringTimestampZoneMode = 'SOURCE_TIME_ZONE' | 'EMBEDDED_OFFSET';
+
+export interface StringTemporalParseOptions {
+  pattern: string;
+  zoneMode: StringTimestampZoneMode | null;
+  sourceTimeZone: string | null;
+}
+
+export interface TemporalStringFormatOptions {
+  pattern: string;
+  /** Only TIMESTAMP uses a target zone; DATE and TIMESTAMP_NTZ keep this null. */
+  targetTimeZone: string | null;
+}
+
 export interface ColumnTypeCast {
   columnName: string;
   targetType: PlatformTypeDefinition;
   failureStrategy: CastFailureStrategy | null;
+  /** LONG→TIMESTAMP since 4.2; DATE/TIMESTAMP→LONG since 4.8. */
+  epochTimestampUnit?: EpochTimestampUnit | null;
+  /** Absent on pre-4.3 definitions, which retain Spark's legacy STRING cast semantics. */
+  stringTemporalParseOptions?: StringTemporalParseOptions | null;
+  /** Absent on pre-4.7 definitions, which retain Spark's legacy temporal STRING format. */
+  temporalStringFormatOptions?: TemporalStringFormatOptions | null;
 }
 
 export interface TypeCastOperation {
@@ -981,12 +1010,17 @@ export interface ModelSnapshotSyncOutputConfiguration extends SnapshotSyncConfig
   targetModelId: string;
 }
 
+export type KafkaOutputValueFormat = 'JSON' | 'TEXT' | 'BINARY';
+
 export interface KafkaOutputWrite {
   writeId: string;
   sourceTableName: string;
   topic: string;
-  valueSchema: KafkaValueSchema;
+  /** Null identifies the Canvas 4.0-4.5 JSON schema/mapping compatibility mode. */
+  valueFormat: KafkaOutputValueFormat | null;
+  valueColumnNames: string[];
   keyColumnName: string;
+  valueSchema: KafkaValueSchema | null;
   columnMappings: CanvasColumnMapping[];
 }
 
@@ -1585,6 +1619,14 @@ export type CanvasNodeRuntimeSummary =
       crs: GeometryTypeDefinition['crs'];
       dimension: GeometryTypeDefinition['dimension'];
     } | null;
+    tables?: Array<{
+      fileDatasetTableId: string;
+      tableName: string;
+      tableCode: string;
+      datasetType: string;
+      status: string;
+      schema: CanvasTableSchema;
+    }>;
   }
   | {
     kind: 'S3';

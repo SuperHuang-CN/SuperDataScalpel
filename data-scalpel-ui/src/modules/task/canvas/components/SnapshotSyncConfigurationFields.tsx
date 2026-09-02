@@ -1,4 +1,5 @@
-import { Alert, Card, Form, InputNumber, Modal, Select, Switch } from 'antd';
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
+import { Card, Form, InputNumber, Modal, Select, Switch } from 'antd';
 import type { ReactNode } from 'react';
 import type { CanvasColumnSchema, CanvasTableSchema, SnapshotSyncConfiguration } from '../canvasTypes';
 import type { TaskCompilationMetadataUniqueKey } from '../taskCompilationTypes';

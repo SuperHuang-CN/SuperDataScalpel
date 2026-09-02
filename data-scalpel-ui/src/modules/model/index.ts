@@ -9,11 +9,13 @@ export { LineageFieldSelector } from './components/LineageFieldSelector';
 export { LineageWarningHint } from './components/LineageWarningHint';
 export type { DataModelDataQueryPanelProps, DataModelQueryRow } from './components/DataModelDataQueryPanel';
 export type { DataModelPreviewColumnSizing } from './model/dataModelPreviewColumnSizing';
+export { formatDataModelPreviewValue } from './model/dataModelPreviewColumnSizing';
 export {
   useDataModel,
   useDataModels,
   useDataModelReferences,
   usePhysicalTableInspection,
+  useDataModelSpatialPreview,
   useModelWarehouseLayers,
   invalidateDataModelLineage,
 } from './hooks/useDataModels';

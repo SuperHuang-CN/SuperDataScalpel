@@ -108,7 +108,7 @@ const Harness = ({
       initialValues={{
         type: 'SQL_QUERY',
         engineId: 'engine-1',
-        routePath: '/open-api/v1/customers',
+        contextPath: '/open-api/v1/customers',
         dataSourceId: initialDataSourceId,
         modelIds: initialModelIds,
         parameters: [],

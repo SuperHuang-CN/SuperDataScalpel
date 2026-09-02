@@ -1,21 +1,11 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   DownOutlined,
   PlusOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Card,
-  Form,
-  Input,
-  Radio,
-  Select,
-  Space,
-  Tag,
-  Typography,
-} from 'antd';
+import { Button, Card, Form, Input, Radio, Select, Space, Tag, Typography } from 'antd';
 import {
   useImperativeHandle,
   useMemo,
@@ -562,7 +552,7 @@ export const FilterProcessorInspector = ({
               <Typography.Text strong>布尔表达式</Typography.Text>
               <Typography.Text type="secondary"> 只写条件，不要写 WHERE</Typography.Text>
             </div>
-            <Select
+            <Select<string>
               showSearch
               value={undefined}
               optionFilterProp="label"

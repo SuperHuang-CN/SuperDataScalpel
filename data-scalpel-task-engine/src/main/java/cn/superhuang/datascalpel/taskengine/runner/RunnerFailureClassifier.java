@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionError;
 import cn.superhuang.datascalpel.taskengine.tdengine.tmq.TdEngineTmqException;
 import cn.superhuang.datascalpel.taskengine.jdbc.incremental.JdbcIncrementalException;
+import org.apache.spark.sql.AnalysisException;
 
 import java.io.IOException;
 import java.net.ConnectException;
@@ -15,9 +16,12 @@ import java.sql.SQLFeatureNotSupportedException;
 import java.sql.SQLTimeoutException;
 import java.sql.SQLTransientException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
+import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 
@@ -89,6 +93,20 @@ final class RunnerFailureClassifier {
             };
             return new Classification(
                     incrementalFailure.code(), category, incrementalFailure.retryable());
+        }
+        AnalysisException analysisFailure = findCause(throwable, AnalysisException.class);
+        if (analysisFailure != null && !analysisFailure.isInternalError()) {
+            String condition = analysisFailure.getCondition();
+            if (condition != null && condition.startsWith("UNRESOLVED_COLUMN.")) {
+                return failure("SPARK_UNRESOLVED_COLUMN", ExecutionErrorCategory.SCHEMA);
+            }
+            if (condition != null && condition.startsWith("AMBIGUOUS_REFERENCE")) {
+                return failure("SPARK_AMBIGUOUS_REFERENCE", ExecutionErrorCategory.SCHEMA);
+            }
+            if (condition != null && condition.startsWith("DATATYPE_MISMATCH")) {
+                return failure("SPARK_DATATYPE_MISMATCH", ExecutionErrorCategory.SCHEMA);
+            }
+            return failure("SPARK_ANALYSIS_FAILED", ExecutionErrorCategory.SCHEMA);
         }
         RunnerExecutionException declaredRunnerFailure = findCause(
                 throwable, RunnerExecutionException.class);
@@ -419,6 +437,11 @@ final class RunnerFailureClassifier {
             case "JDBC_TIMEOUT" -> "数据源操作超时";
             case "JDBC_CONSTRAINT_VIOLATION" -> "写入目标表时违反数据库约束";
             case "JDBC_UNSUPPORTED_TYPE" -> "数据源字段类型不受支持";
+            case "SPARK_UNRESOLVED_COLUMN" -> unresolvedColumnMessage(
+                    findCause(throwable, AnalysisException.class));
+            case "SPARK_AMBIGUOUS_REFERENCE" -> "Spark 代码引用的字段存在歧义，请使用 Dataset alias 限定来源";
+            case "SPARK_DATATYPE_MISMATCH" -> "Spark 代码中的字段或表达式类型不匹配，请检查参与计算的字段类型";
+            case "SPARK_ANALYSIS_FAILED" -> "Spark 无法分析当前代码，请检查字段、表达式和数据类型";
             case "JDBC_STATEMENT_FAILED" -> context.phase() == ExecutionFailurePhase.READ
                     ? withResource("读取数据源表失败", resource)
                     : withResource("写入目标表失败", resource);
@@ -529,6 +552,50 @@ final class RunnerFailureClassifier {
                             ? null : findCause(throwable, RunnerExecutionException.class).getMessage(),
                     "任务执行失败");
         };
+    }
+
+    /**
+     * Spark's formatted exception message can contain a logical plan, SQL text and literals. The
+     * condition parameters for an unresolved column only carry schema identifiers, so expose a
+     * deliberately small, validated subset instead of the raw Spark message.
+     */
+    private static String unresolvedColumnMessage(AnalysisException exception) {
+        Map<String, String> parameters = exception == null || exception.getMessageParameters() == null
+                ? Map.of() : exception.getMessageParameters();
+        String column = safeSparkIdentifier(parameters.get("objectName"));
+        if (column == null) {
+            return "Spark 代码引用了不存在的字段，请检查 Dataset Schema";
+        }
+        List<String> proposals = safeSparkIdentifiers(parameters.get("proposal"), 5);
+        if (proposals.isEmpty()) {
+            return "Spark 代码引用的字段 %s 不存在，请检查 Dataset Schema".formatted(column);
+        }
+        return "Spark 代码引用的字段 %s 不存在。可用字段建议：%s。"
+                .formatted(column, String.join("、", proposals));
+    }
+
+    private static List<String> safeSparkIdentifiers(String value, int maximum) {
+        if (value == null || value.isBlank() || maximum < 1) return List.of();
+        List<String> result = new ArrayList<>();
+        for (String token : value.split(",")) {
+            String identifier = safeSparkIdentifier(token);
+            if (identifier != null && !result.contains(identifier)) {
+                result.add(identifier);
+                if (result.size() == maximum) break;
+            }
+        }
+        return List.copyOf(result);
+    }
+
+    private static String safeSparkIdentifier(String value) {
+        if (value == null) return null;
+        String identifier = value.trim();
+        while (identifier.length() >= 2
+                && ((identifier.startsWith("`") && identifier.endsWith("`"))
+                || (identifier.startsWith("[") && identifier.endsWith("]")))) {
+            identifier = identifier.substring(1, identifier.length() - 1).trim();
+        }
+        return identifier.matches("[\\p{L}\\p{N}_$]{1,128}") ? identifier : null;
     }
 
     private static String withResource(String prefix, String resource) {

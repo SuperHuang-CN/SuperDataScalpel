@@ -62,7 +62,7 @@ const isDataServiceEditorPath = (pathname: string) => (
 );
 
 const isTaskDefinitionEditorPath = (pathname: string) => (
-  /^\/task\/[^/]+\/definition$/.test(pathname)
+  /^\/task\/[^/]+\/(definition|online-code)$/.test(pathname)
 );
 
 const readSidebarCollapsedPreference = (): boolean => {
@@ -211,6 +211,9 @@ const breadcrumbItems = (pathname: string): BreadcrumbProps['items'] => {
   if (pathname.startsWith('/data-entry')) return [{ title: '数据管理' }, { title: '数据填报' }];
   if (pathname.startsWith('/task/masking-rules')) return [{ title: '任务中心' }, { title: '脱敏规则' }];
   if (pathname.startsWith('/task/orchestration')) return [{ title: '任务中心' }, { title: '任务编排' }];
+  if (/^\/task\/[^/]+\/online-code$/.test(pathname)) {
+    return [{ title: '任务中心' }, { title: <Link to="/task">任务列表</Link> }, { title: '在线 Java 开发' }];
+  }
   if (isTaskDefinitionEditorPath(pathname)) {
     return [{ title: '任务中心' }, { title: <Link to="/task">任务列表</Link> }, { title: '任务定义' }];
   }

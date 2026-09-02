@@ -23,6 +23,7 @@ import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { useServiceEngines } from '../../serviceengine';
 import { useCurrentUser } from '../../system';
 import { DataServiceBasicPanel } from '../components/DataServiceBasicPanel';
+import { DataServiceBasicDrawer } from '../components/DataServiceBasicDrawer';
 import { DataServiceDefinitionPanel } from '../components/DataServiceDefinitionPanel';
 import { DataServiceLineagePanel } from '../components/DataServiceLineagePanel';
 import { DataServiceRelatedModelsPanel } from '../components/DataServiceRelatedModelsPanel';
@@ -103,6 +104,7 @@ export const DataServiceDetailPage = () => {
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const [subscriptionsOpen, setSubscriptionsOpen] = useState(false);
+  const [basicEditorOpen, setBasicEditorOpen] = useState(false);
   const [publishTarget, setPublishTarget] = useState<DataServiceDetail | null>(null);
   const detailQuery = useDataService(id, Boolean(id));
   const currentUserQuery = useCurrentUser();
@@ -155,6 +157,10 @@ export const DataServiceDetailPage = () => {
     () => new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine.name])),
     [enginesQuery.data?.content],
   );
+  const enginesById = useMemo(
+    () => new Map((enginesQuery.data?.content ?? []).map((engine) => [engine.id, engine])),
+    [enginesQuery.data?.content],
+  );
   const sourceName = dataSourceQuery.data?.name ?? relatedModels[0]?.storageDataSourceName;
 
   const backToList = () => {
@@ -175,7 +181,9 @@ export const DataServiceDetailPage = () => {
       if (response.status === 'ENABLED' && response.deploymentStatus === 'DEPLOYED') {
         messageApi.success(target.status === 'DISABLED' ? '数据服务已重新启用' : '数据服务已启用');
       } else {
-        messageApi.error(response.deploymentError || 'Engine 未确认启用，请查看运行与发布');
+        messageApi.error(response.deploymentError || (target.type === 'SPATIAL_SERVICE'
+          ? 'GeoServer 未确认图层发布，请查看运行与发布'
+          : 'Engine 未确认启用，请查看运行与发布'));
       }
     } catch (error) {
       messageApi.error(problemMessage(error, '启用数据服务失败'));
@@ -185,7 +193,9 @@ export const DataServiceDetailPage = () => {
   const disable = (target: DataServiceDetail) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
     title: '停用数据服务？',
-    content: `将先从所有网关撤回“${target.name}”，再从 Service Engine 移除；停用成功后才能修改定义。`,
+    content: target.type === 'SPATIAL_SERVICE'
+      ? `将从 GeoServer 删除“${target.name}”对应的 Layer 和 FeatureType，保留共享 DataStore 与 Workspace。`
+      : `将先从所有网关撤回“${target.name}”，再从 Service Engine 移除；停用成功后才能修改定义。`,
     okText: '停用',
     cancelText: '返回',
     okButtonProps: { danger: true },
@@ -332,12 +342,12 @@ export const DataServiceDetailPage = () => {
     && dataService.gatewayBindings.length === 0
     && (!dataService.deploymentStatus || dataService.deploymentStatus === 'REMOVED');
   const moreItems: NonNullable<MenuProps['items']> = [
-    ...(publishedBinding?.accessMode === 'SUBSCRIPTION_REQUIRED'
+    ...(dataService.type !== 'SPATIAL_SERVICE' && publishedBinding?.accessMode === 'SUBSCRIPTION_REQUIRED'
       ? [{ key: 'subscriptions', label: '订阅消费者', icon: <TeamOutlined /> }] : []),
-    ...(publishedBinding ? [{ key: 'curl', label: '复制网关访问 cURL', icon: <CopyOutlined /> }] : []),
-    ...(canPublish && dataService.gatewayBindings.length > 0
+    ...(dataService.type !== 'SPATIAL_SERVICE' && publishedBinding ? [{ key: 'curl', label: '复制网关访问 cURL', icon: <CopyOutlined /> }] : []),
+    ...(dataService.type !== 'SPATIAL_SERVICE' && canPublish && dataService.gatewayBindings.length > 0
       ? [{ key: 'reconcile', label: '对账网关状态', icon: <AuditOutlined /> }] : []),
-    ...(canPublish && publishedBinding
+    ...(dataService.type !== 'SPATIAL_SERVICE' && canPublish && publishedBinding
       ? [{ key: 'republish', label: '重新发布到网关', icon: <UploadOutlined /> }] : []),
     ...(canPublish && dataService.status !== 'ENABLED'
         && (dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING')
@@ -377,7 +387,7 @@ export const DataServiceDetailPage = () => {
       label: `关联模型 ${relatedModels.length}`,
       children: <DataServiceRelatedModelsPanel dataService={dataService} relatedModels={relatedModels} canViewModels={canViewModels} />,
     },
-    ...(canViewModels && canViewTasks ? [{
+    ...(dataService.type !== 'SPATIAL_SERVICE' && canViewModels && canViewTasks ? [{
       key: 'lineage',
       label: '血缘分析',
       children: <DataServiceLineagePanel dataService={dataService} />,
@@ -385,7 +395,7 @@ export const DataServiceDetailPage = () => {
     {
       key: 'runtime',
       label: '运行与发布',
-      children: <DataServiceRuntimePanel dataService={dataService} engineName={engineNames.get(dataService.engineId)} onCopyCurl={() => void copyCurl(dataService)} />,
+      children: <DataServiceRuntimePanel dataService={dataService} engine={enginesById.get(dataService.engineId)} onCopyCurl={() => void copyCurl(dataService)} />,
     },
   ];
 
@@ -417,7 +427,9 @@ export const DataServiceDetailPage = () => {
             ))}
           </div>
           <div className="data-service-detail-subtitle">
-            <code>{dataService.engineRoutePath}</code>
+            <code>{dataService.type === 'SPATIAL_SERVICE'
+              ? `${enginesById.get(dataService.engineId)?.geoServerWorkspace ?? 'datascalpel'}:svc_${dataService.code}`
+              : dataService.contextPath}</code>
             <span>·</span>
             <span>{engineNames.get(dataService.engineId) ?? dataService.engineId}</span>
             <span>·</span>
@@ -434,9 +446,7 @@ export const DataServiceDetailPage = () => {
                 <Button
                   icon={<EditOutlined />}
                   disabled={!editable}
-                  onClick={() => navigate(`/dataservice/${dataService.id}/edit`, {
-                    state: location.state,
-                  })}
+                  onClick={() => setBasicEditorOpen(true)}
                 >
                   编辑
                 </Button>
@@ -461,10 +471,10 @@ export const DataServiceDetailPage = () => {
           {canPublish && dataService.status === 'ENABLED' && (
             <Button danger icon={<StopOutlined />} loading={commandLoading} onClick={() => disable(dataService)}>停用</Button>
           )}
-          {canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && !publishedBinding && (
+          {dataService.type !== 'SPATIAL_SERVICE' && canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && !publishedBinding && (
             <Button type="primary" icon={<UploadOutlined />} loading={gatewayCommandLoading} onClick={() => setPublishTarget(dataService)}>发布到网关</Button>
           )}
-          {canPublish && publishedBinding && (
+          {dataService.type !== 'SPATIAL_SERVICE' && canPublish && publishedBinding && (
             <Button danger icon={<RollbackOutlined />} loading={gatewayCommandLoading} onClick={() => unpublish(dataService)}>取消发布</Button>
           )}
           {moreItems.length > 0 && (
@@ -502,6 +512,15 @@ export const DataServiceDetailPage = () => {
         dataService={dataService}
         canManage={canPublish}
         onClose={() => setSubscriptionsOpen(false)}
+      />
+      <DataServiceBasicDrawer
+        open={basicEditorOpen}
+        type={null}
+        dataService={dataService}
+        canViewDirectories={canViewDirectories}
+        canViewEngines={canViewEngines}
+        onClose={() => setBasicEditorOpen(false)}
+        onUpdated={() => setBasicEditorOpen(false)}
       />
       <PublishDataServiceModal
         service={publishTarget}

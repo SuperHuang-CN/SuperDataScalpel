@@ -15,6 +15,7 @@ import {
   queryDataServiceFieldLineage,
   fetchScriptCompletion,
   fetchStandardDataServiceModelCandidates,
+  fetchSpatialDataServiceModelCandidates,
   publishDataService,
   reconcileDataServiceGateway,
   testSqlDataService,
@@ -115,6 +116,18 @@ export const useStandardDataServiceModelCandidates = (
 ) => useQuery({
   queryKey: [dataServicesQueryKey, id, 'standard-model-candidates', request, includeUnavailable],
   queryFn: () => fetchStandardDataServiceModelCandidates(id as string, request, includeUnavailable),
+  enabled: enabled && Boolean(id),
+  placeholderData: (previous) => previous,
+});
+
+export const useSpatialDataServiceModelCandidates = (
+  id: string | undefined,
+  request: SearchRequest,
+  includeUnavailable: boolean,
+  enabled = true,
+) => useQuery({
+  queryKey: [dataServicesQueryKey, id, 'spatial-model-candidates', request, includeUnavailable],
+  queryFn: () => fetchSpatialDataServiceModelCandidates(id as string, request, includeUnavailable),
   enabled: enabled && Boolean(id),
   placeholderData: (previous) => previous,
 });

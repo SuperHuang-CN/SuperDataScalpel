@@ -7,6 +7,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
+import cn.superhuang.data.scalpel.contract.execution.CanvasTrialSpec;
 import cn.superhuang.data.scalpel.contract.quality.ModelQualityExecutionPayload;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarExecutionPayload;
 import cn.superhuang.data.scalpel.contract.execution.SparkStreamingJarExecutionPayload;
@@ -25,11 +26,12 @@ public record TaskExecutionManifest(
         @JsonProperty("taskType") ExecutionTaskType executionTaskType,
         ModelQualityExecutionPayload modelQuality,
         SparkJarExecutionPayload sparkJarJob,
-        SparkStreamingJarExecutionPayload streamingSparkJarJob
+        SparkStreamingJarExecutionPayload streamingSparkJarJob,
+        CanvasTrialSpec canvasTrial
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 21;
+    public static final int CURRENT_MANIFEST_VERSION = 23;
     /** Retained as a symbolic value for diagnostics/tests; Runner does not accept it. */
-    public static final int PREVIOUS_MANIFEST_VERSION = 20;
+    public static final int PREVIOUS_MANIFEST_VERSION = 22;
 
     public TaskExecutionManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);
@@ -52,6 +54,24 @@ public record TaskExecutionManifest(
         } else if (sparkJarJob != null || streamingSparkJarJob != null) {
             throw new IllegalArgumentException("非 Spark JAR Manifest 不得包含 JAR 载荷");
         }
+        if (canvasTrial != null && (executionTaskType != ExecutionTaskType.SPARK_CANVAS
+                || task == null
+                || task.executionMode() != cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode.BATCH)) {
+            throw new IllegalArgumentException("Canvas 试运行 Manifest 载荷无效");
+        }
+    }
+
+    public TaskExecutionManifest(
+            Integer manifestVersion, Execution execution, TaskDefinition task,
+            MetadataSnapshot metadataSnapshot, List<RuntimeDataSource> runtimeDataSources,
+            Streaming streaming, RuntimeFileStorage runtimeFileStorage,
+            List<RuntimeFileInput> runtimeFileInputs, SnapshotSyncLimits snapshotSyncLimits,
+            ExecutionTaskType executionTaskType, ModelQualityExecutionPayload modelQuality,
+            SparkJarExecutionPayload sparkJarJob, SparkStreamingJarExecutionPayload streamingSparkJarJob
+    ) {
+        this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources, streaming,
+                runtimeFileStorage, runtimeFileInputs, snapshotSyncLimits, executionTaskType,
+                modelQuality, sparkJarJob, streamingSparkJarJob, null);
     }
 
     public TaskExecutionManifest(
@@ -62,7 +82,7 @@ public record TaskExecutionManifest(
             List<RuntimeDataSource> runtimeDataSources
     ) {
         this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources,
-                null, null, List.of(), SnapshotSyncLimits.defaults(), null, null, null, null);
+                null, null, List.of(), SnapshotSyncLimits.defaults(), null, null, null, null, null);
     }
 
     public TaskExecutionManifest(
@@ -74,7 +94,7 @@ public record TaskExecutionManifest(
             Streaming streaming
     ) {
         this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources,
-                streaming, null, List.of(), SnapshotSyncLimits.defaults(), null, null, null, null);
+                streaming, null, List.of(), SnapshotSyncLimits.defaults(), null, null, null, null, null);
     }
 
     public TaskExecutionManifest(
@@ -88,7 +108,7 @@ public record TaskExecutionManifest(
             List<RuntimeFileInput> runtimeFileInputs
     ) {
         this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources,
-                streaming, runtimeFileStorage, runtimeFileInputs, SnapshotSyncLimits.defaults(), null, null, null, null);
+                streaming, runtimeFileStorage, runtimeFileInputs, SnapshotSyncLimits.defaults(), null, null, null, null, null);
     }
 
     public TaskExecutionManifest(
@@ -103,7 +123,7 @@ public record TaskExecutionManifest(
             SnapshotSyncLimits snapshotSyncLimits
     ) {
         this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources, streaming,
-                runtimeFileStorage, runtimeFileInputs, snapshotSyncLimits, null, null, null, null);
+                runtimeFileStorage, runtimeFileInputs, snapshotSyncLimits, null, null, null, null, null);
     }
 
     public TaskExecutionManifest(
@@ -115,7 +135,7 @@ public record TaskExecutionManifest(
     ) {
         this(manifestVersion, execution, task, metadataSnapshot, runtimeDataSources, streaming,
                 runtimeFileStorage, runtimeFileInputs, snapshotSyncLimits, executionTaskType,
-                modelQuality, null, null);
+                modelQuality, null, null, null);
     }
 
     public record Execution(

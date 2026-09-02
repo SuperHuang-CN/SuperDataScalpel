@@ -65,7 +65,7 @@
   background: rgb(255 255 255 / 86%);
   border-color: rgb(77 96 166 / 13%);
   border-radius: 14px;
-  box-shadow: 0 9px 28px rgb(42 63 128 / 9%);
+  box-shadow: var(--ds-panel-shadow);
   backdrop-filter: blur(12px);
 }
 

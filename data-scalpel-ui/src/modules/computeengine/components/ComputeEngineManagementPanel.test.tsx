@@ -1,6 +1,7 @@
 import { cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { MemoryRouter } from 'react-router-dom';
 import { defaultSparkExecutionResourcePolicy, type ComputeEngine } from '../model/computeEngine';
 
 const hooks = vi.hoisted(() => ({
@@ -69,13 +70,15 @@ const renderPanel = (value: ComputeEngine) => {
     refetch: vi.fn(),
   });
   return render(
-    <ComputeEngineManagementPanel
-      canCreate={false}
-      canUpdate
-      canDelete
-      canTest={false}
-      canManage
-    />,
+    <MemoryRouter>
+      <ComputeEngineManagementPanel
+        canCreate={false}
+        canUpdate
+        canDelete
+        canTest={false}
+        canManage
+      />
+    </MemoryRouter>,
   );
 };
 
@@ -109,7 +112,7 @@ describe('ComputeEngineManagementPanel', () => {
     renderPanel(engine());
 
     expect(screen.queryByText('配置版本')).not.toBeInTheDocument();
-    await user.click(await screen.findByLabelText('更多计算引擎操作：本地 Docker 计算引擎'));
+    await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
 
     expect(await screen.findByText('安全反注册')).toBeInTheDocument();
     expect(screen.getByText('强制反注册并取消任务')).toBeInTheDocument();
@@ -120,7 +123,7 @@ describe('ComputeEngineManagementPanel', () => {
     const user = userEvent.setup();
     renderPanel(engine());
 
-    await user.click(await screen.findByLabelText('更多计算引擎操作：本地 Docker 计算引擎'));
+    await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
     await user.click(await screen.findByText('强制反注册并取消任务'));
     await user.click((await screen.findAllByRole('button', { name: '强制反注册并取消任务' })).at(-1)!);
 
@@ -139,7 +142,7 @@ describe('ComputeEngineManagementPanel', () => {
       reportedBackendType: null,
     });
 
-    await user.click(await screen.findByLabelText('更多计算引擎操作：本地 Docker 计算引擎'));
+    await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
 
     expect(await screen.findByText('注册并激活')).toBeInTheDocument();
     expect(screen.queryByText('安全反注册')).not.toBeInTheDocument();
@@ -151,7 +154,7 @@ describe('ComputeEngineManagementPanel', () => {
     const user = userEvent.setup();
     renderPanel(engine());
 
-    await user.click(await screen.findByLabelText('更多计算引擎操作：本地 Docker 计算引擎'));
+    await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
     await user.click(await screen.findByText('离线解除绑定'));
     expect(await screen.findByText('这是 Dispatcher 不可达时的灾难恢复操作')).toBeInTheDocument();
 
@@ -181,7 +184,7 @@ describe('ComputeEngineManagementPanel', () => {
     const user = userEvent.setup();
     renderPanel(engine('DETACHED'));
 
-    await user.click(await screen.findByLabelText('更多计算引擎操作：本地 Docker 计算引擎'));
+    await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
     await user.click(await screen.findByText('注册并激活'));
 
     expect(await screen.findByText(/请先确认原 Dispatcher 进程已经永久停止/)).toBeInTheDocument();

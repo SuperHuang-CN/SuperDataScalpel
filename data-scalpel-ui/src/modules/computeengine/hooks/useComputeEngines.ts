@@ -22,7 +22,7 @@ import type {
   DispatcherExecutionScope,
 } from '../model/computeEngine';
 
-const computeEnginesKey = 'compute-engines';
+export const computeEnginesKey = 'compute-engines';
 
 const invalidateComputeEngines = (queryClient: ReturnType<typeof useQueryClient>) => (
   queryClient.invalidateQueries({ queryKey: [computeEnginesKey] })

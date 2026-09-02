@@ -1,11 +1,15 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Select, Space, Spin, Tag } from 'antd';
+import { Button, Select, Space, Spin, Tag } from 'antd';
 import maplibregl, { type Coordinates, type ImageSource, type Map as MapLibreMap } from 'maplibre-gl';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { fetchDataModelSpatialPreviewMap } from '../api/dataModelApi';
-import { useDataModelSpatialPreview } from '../hooks/useDataModels';
+import {
+  useDataModelSpatialPreview,
+  useRefreshDataModelPhysicalStatistics,
+} from '../hooks/useDataModels';
 import type { DataModelSpatialPreviewMap } from '../model/dataModel';
 
 interface DataModelSpatialPreviewPanelProps {
@@ -28,12 +32,16 @@ const latitudeToMercator = (latitude: number) => {
 
 export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPreviewPanelProps) => {
   const metadataQuery = useDataModelSpatialPreview(modelId, true);
+  const refreshStatisticsMutation = useRefreshDataModelPhysicalStatistics();
   const metadata = metadataQuery.data;
   const availableFields = useMemo(
     () => metadata?.geometryFields.filter((field) => field.previewAllowed) ?? [],
     [metadata],
   );
-  const [geometryField, setGeometryField] = useState<string>();
+  const [requestedGeometryField, setGeometryField] = useState<string>();
+  const geometryField = availableFields.some((field) => field.code === requestedGeometryField)
+    ? requestedGeometryField
+    : availableFields[0]?.code;
   const [loading, setLoading] = useState(false);
   const [mapError, setMapError] = useState<string>();
   const [mapResult, setMapResult] = useState<DataModelSpatialPreviewMap>();
@@ -44,12 +52,6 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
   const requestVersionRef = useRef(0);
   const resizeTimeoutRef = useRef<number | undefined>(undefined);
   const requestImageRef = useRef<() => Promise<void>>(async () => undefined);
-
-  useEffect(() => {
-    if (!geometryField || !availableFields.some((field) => field.code === geometryField)) {
-      setGeometryField(availableFields[0]?.code);
-    }
-  }, [availableFields, geometryField]);
 
   const requestImage = useCallback(async () => {
     const map = mapRef.current;
@@ -128,7 +130,8 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
       pitchWithRotate: false,
       touchPitch: false,
       maxPitch: 0,
-      maxBounds: [[-180, -WEB_MERCATOR_MAX_LATITUDE], [180, WEB_MERCATOR_MAX_LATITUDE]],
+      renderWorldCopies: false,
+      trackResize: false,
       attributionControl: false,
     });
     map.touchZoomRotate.disableRotation();
@@ -145,8 +148,13 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
     const observer = new ResizeObserver(() => {
       window.clearTimeout(resizeTimeoutRef.current);
       resizeTimeoutRef.current = window.setTimeout(() => {
+        if (
+          mapRef.current !== map
+          || !containerRef.current
+          || containerRef.current.clientWidth <= 0
+          || containerRef.current.clientHeight <= 0
+        ) return;
         map.resize();
-        void requestImageRef.current();
       }, 250);
     });
     observer.observe(containerRef.current);
@@ -166,6 +174,19 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
   }, [geometryField, requestImage]);
 
   const selectedField = metadata?.geometryFields.find((field) => field.code === geometryField);
+  const statisticsRefreshRequired = metadata?.geometryFields.some(
+    (field) => field.physicalStatisticsRefreshRequired,
+  ) ?? false;
+
+  const refreshPhysicalStatistics = async () => {
+    setMapError(undefined);
+    try {
+      await refreshStatisticsMutation.mutateAsync(modelId);
+      await metadataQuery.refetch();
+    } catch (error: unknown) {
+      setMapError(error instanceof ApiError ? error.message : '模型物理统计刷新失败');
+    }
+  };
 
   const resetView = () => {
     if (!mapRef.current || !metadata) return;
@@ -186,8 +207,21 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
         type="info"
         showIcon
         title="当前模型暂不能空间预览"
-        description={metadata?.message ?? fieldMessage ?? '没有可预览的 Geometry 字段'}
-        action={<Button size="small" onClick={() => void metadataQuery.refetch()}>重新检查</Button>}
+        description={mapError ?? metadata?.message ?? fieldMessage ?? '没有可预览的 Geometry 字段'}
+        action={(
+          <Space size={6}>
+            {statisticsRefreshRequired && (
+              <Button
+                size="small"
+                loading={refreshStatisticsMutation.isPending}
+                onClick={() => void refreshPhysicalStatistics()}
+              >
+                刷新物理统计
+              </Button>
+            )}
+            <Button size="small" onClick={() => void metadataQuery.refetch()}>重新检查</Button>
+          </Space>
+        )}
       />
     );
   }
@@ -216,6 +250,15 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
           )}
         </Space>
         <Space size={6}>
+          {statisticsRefreshRequired && (
+            <Button
+              size="small"
+              loading={refreshStatisticsMutation.isPending}
+              onClick={() => void refreshPhysicalStatistics()}
+            >
+              刷新物理统计
+            </Button>
+          )}
           <Button size="small" onClick={resetView}>复位</Button>
           <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => void requestImage()}>刷新</Button>
         </Space>

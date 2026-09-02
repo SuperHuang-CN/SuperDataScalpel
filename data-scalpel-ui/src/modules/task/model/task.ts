@@ -1,4 +1,4 @@
-import type { CanvasDefinition } from '../canvas/canvasTypes';
+import type { CanvasDefinition, CanvasTableSchema } from '../canvas/canvasTypes';
 import type { DataModelStatus, PhysicalTableMode } from '../../model';
 
 export type TaskType =
@@ -27,7 +27,7 @@ export type TaskRunStatus =
 
 export type TaskRunTriggerType = 'MANUAL' | 'SCHEDULED';
 
-export type TaskRunExecutionMode = 'REAL' | 'SIMULATED';
+export type TaskRunExecutionMode = 'REAL' | 'SIMULATED' | 'TRIAL';
 
 export type ExecutionErrorCategory =
   | 'CONFIGURATION'
@@ -174,6 +174,29 @@ export interface CanvasTaskDefinition {
   updatedAt: string | null;
 }
 
+export interface CanvasTrialRunRequest {
+  baseDefinitionVersion: number;
+  definition: CanvasDefinition;
+  targetNodeId: string;
+  tableName: string;
+  columnNames: string[];
+}
+
+export interface CanvasTrialPreview {
+  targetNodeId: string;
+  targetNodeName: string;
+  tableSchema: CanvasTableSchema;
+  rowsJson: string[];
+  truncated: boolean;
+  warnings: string[];
+}
+
+export interface CanvasTrialPreviewResponse {
+  runId: string;
+  status: TaskRunStatus;
+  preview: CanvasTrialPreview | null;
+}
+
 export interface ModelQualityTaskDefinitionSkippedRule {
   ruleId: string;
   ruleName: string;
@@ -311,6 +334,69 @@ export interface SparkJarDevelopmentKit {
   artifact: SparkJarDevelopmentKitArtifact | null;
 }
 
+export type SparkJarOnlineJarOrigin = 'UPLOADED' | 'ONLINE_COMPILED';
+
+export interface SparkJarOnlineSource {
+  taskId: string;
+  definitionVersion: number;
+  sourceCode: string;
+  sourceSha256: string;
+  compiledSourceSha256: string | null;
+  persisted: boolean;
+  hasUncompiledChanges: boolean;
+  currentJarOrigin: SparkJarOnlineJarOrigin | null;
+  currentJar: SparkJarArtifact | null;
+}
+
+export type SparkJarOnlineDiagnosticSeverity = 'ERROR' | 'WARNING' | 'NOTE';
+
+export interface SparkJarOnlineDiagnostic {
+  severity: SparkJarOnlineDiagnosticSeverity;
+  code: string;
+  message: string;
+  line: number;
+  column: number;
+  endLine: number;
+  endColumn: number;
+}
+
+export interface SparkJarOnlineCompilation {
+  status: 'SUCCEEDED' | 'FAILED';
+  durationMs: number;
+  source: SparkJarOnlineSource;
+  diagnostics: SparkJarOnlineDiagnostic[];
+}
+
+export interface SparkJarTrialRunSubmission {
+  status: 'COMPILE_FAILED' | 'QUEUED';
+  compilationDurationMs: number;
+  source: SparkJarOnlineSource;
+  diagnostics: SparkJarOnlineDiagnostic[];
+  run: TaskRun | null;
+}
+
+export interface SparkJarTrialWritePreview {
+  index: number;
+  resourceKind: 'MODEL' | 'JDBC' | 'KAFKA';
+  bindingName: string;
+  target: string;
+  writeMode: string;
+  schemaJson: string;
+  rowsJson: string[];
+  truncated: boolean;
+}
+
+export interface SparkJarTrialPreview {
+  writes: SparkJarTrialWritePreview[];
+  warnings: string[];
+}
+
+export interface SparkJarTrialPreviewResponse {
+  runId: string;
+  status: TaskRunStatus;
+  preview: SparkJarTrialPreview | null;
+}
+
 export interface UpdateLocalSqlTaskDefinitionRequest {
   sql: string;
   inputModelIds: string[];
@@ -379,6 +465,9 @@ export interface TaskRun {
   definitionVersion: number;
   triggerType: TaskRunTriggerType;
   executionMode: TaskRunExecutionMode;
+  canvasTrialTargetNodeId: string | null;
+  canvasTrialTableName: string | null;
+  canvasTrialSelectedColumnCount: number | null;
   status: TaskRunStatus;
   scheduledFireAt: string | null;
   queuedAt: string;
@@ -507,6 +596,7 @@ export interface TaskStreamingDeployment {
   checkpointGeneration: number;
   checkpointStartMode: StreamingCheckpointMode;
   checkpointSourceDeploymentId: string | null;
+  executionMode: 'REAL' | 'TRIAL';
   desiredState: StreamingDeploymentDesiredState;
   actualState: StreamingDeploymentActualState;
   applicationId: string | null;
@@ -527,6 +617,9 @@ export interface TaskStreamingDeployment {
   pollDurationMillis: number | null;
   pollTime: string | null;
   cursorLagMillis: number | null;
+  sourceKind: 'JDBC_INCREMENTAL' | 'TDENGINE_TMQ' | null;
+  vGroupCount: number | null;
+  batchOffsetSpan: number | null;
   userJobObservability?: UserJobObservability | null;
   queries: TaskStreamingQuery[];
 }
@@ -534,6 +627,8 @@ export interface TaskStreamingDeployment {
 export interface TaskStreamingStatus {
   taskId: string;
   deployment: TaskStreamingDeployment | null;
+  tmqConsumerGroupCleanupPendingCount: number;
+  tmqConsumerGroupCleanupFailedCount: number;
 }
 
 export interface TaskSchedule {
@@ -630,6 +725,7 @@ export const taskRunTriggerTypeLabels: Record<TaskRunTriggerType, string> = {
 export const taskRunExecutionModeLabels: Record<TaskRunExecutionMode, string> = {
   REAL: '真实执行',
   SIMULATED: '模拟执行',
+  TRIAL: '试运行',
 };
 
 export const executionErrorCategoryLabels: Record<ExecutionErrorCategory, string> = {

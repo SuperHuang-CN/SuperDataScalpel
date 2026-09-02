@@ -298,15 +298,23 @@ public final class TdEngineTmqPartitionReader implements PartitionReader<Interna
         }
         LOGGER.info(
                 "TDengine TMQ batch reader closed: dataSourceId={}, topic={}, vGroupCount={}, "
-                        + "startOffsets={}, endOffsets={}, rowCount={}, elapsedMs={}",
+                        + "offsetSpan={}, rowCount={}, elapsedMs={}",
                 partition.options().dataSourceId(),
                 partition.options().topic(),
                 partition.startOffsets().size(),
-                partition.startOffsets(),
-                partition.endOffsets(),
+                offsetSpan(),
                 deliveredRows,
                 Math.max(0L, (System.nanoTime() - startedAtNanos) / 1_000_000L)
         );
         if (failure != null) throw new IOException("关闭 TMQ Consumer 失败", failure);
+    }
+
+    private long offsetSpan() {
+        long result = 0L;
+        for (Map.Entry<Integer, Long> end : partition.endOffsets().entrySet()) {
+            long start = partition.startOffsets().getOrDefault(end.getKey(), end.getValue());
+            result = Math.addExact(result, Math.max(0L, end.getValue() - start));
+        }
+        return result;
     }
 }

@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.contract.execution.ExecutionErrorCategory;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionFailurePhase;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionError;
 import org.apache.spark.SparkException;
+import org.apache.spark.sql.AnalysisException;
 import org.junit.jupiter.api.Test;
 import org.locationtech.jts.geom.TopologyException;
 import org.locationtech.jts.io.ParseException;
@@ -14,6 +15,7 @@ import java.net.SocketTimeoutException;
 import java.nio.file.FileAlreadyExistsException;
 import java.sql.SQLException;
 import java.sql.SQLTimeoutException;
+import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -501,6 +503,59 @@ class RunnerFailureClassifierTest {
         assertEquals("行政区文件输入", error.nodeName());
         assertEquals("文件数据集内容解析失败", error.message());
         assertFalse(error.message().contains("secret"));
+    }
+
+    @Test
+    void classifiesUnresolvedSparkColumnsWithoutLeakingSparkPlanOrLiterals() {
+        TaskExecutionError error = classifier.classify(new SparkException(
+                "SELECT secret_literal FROM sensitive_table",
+                analysisException(
+                        "UNRESOLVED_COLUMN.WITH_SUGGESTION",
+                        Map.of(
+                                "objectName", "`dept_name`",
+                                "proposal", "`dept_id`, `user_name`, `sex`, `created_at`, `status`, `ignored`"
+                        )
+                )
+        ), RunnerFailureContext.task(ExecutionFailurePhase.PROCESS));
+
+        assertEquals("SPARK_UNRESOLVED_COLUMN", error.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+        assertFalse(error.retryable());
+        assertEquals("Spark 代码引用的字段 dept_name 不存在。可用字段建议：dept_id、user_name、sex、created_at、status。", error.message());
+        assertFalse(error.message().contains("secret_literal"));
+        assertFalse(error.message().contains("sensitive_table"));
+    }
+
+    @Test
+    void classifiesOtherUserCatalystAnalysisFailuresAsSchemaErrors() {
+        TaskExecutionError ambiguous = classifier.classify(
+                analysisException(
+                        "AMBIGUOUS_REFERENCE",
+                        Map.of("name", "`id`", "referenceNames", "[`left`.`id`, `right`.`id`]")),
+                input);
+        TaskExecutionError dataType = classifier.classify(
+                analysisException(
+                        "DATATYPE_MISMATCH.BINARY_OP_DIFF_TYPES",
+                        Map.of("sqlExpr", "`a` + `b`", "left", "STRING", "right", "INT")),
+                input);
+        TaskExecutionError generic = classifier.classify(
+                analysisException("UNSUPPORTED_FEATURE.ANALYZE_VIEW", Map.of()), input);
+
+        assertEquals("SPARK_AMBIGUOUS_REFERENCE", ambiguous.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, ambiguous.category());
+        assertEquals("Spark 代码引用的字段存在歧义，请使用 Dataset alias 限定来源", ambiguous.message());
+        assertEquals("SPARK_DATATYPE_MISMATCH", dataType.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, dataType.category());
+        assertEquals("SPARK_ANALYSIS_FAILED", generic.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, generic.category());
+    }
+
+    private static AnalysisException analysisException(String condition, Map<String, String> parameters) {
+        return new AnalysisException(
+                condition,
+                scala.collection.immutable.Map$.MODULE$.from(
+                        scala.jdk.javaapi.CollectionConverters.asScala(parameters)),
+                scala.Option.empty());
     }
 
     private void assertClassified(

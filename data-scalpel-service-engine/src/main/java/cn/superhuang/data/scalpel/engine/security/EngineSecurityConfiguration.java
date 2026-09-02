@@ -26,7 +26,7 @@ public class EngineSecurityConfiguration {
                         .requestMatchers("/actuator/health/**").permitAll()
                         .requestMatchers("/modern-ui", "/modern-ui/**").permitAll()
                         .requestMatchers("/interface-ui/**").permitAll()
-                        .requestMatchers("/runtime/v1/services/**").permitAll()
+                        .requestMatchers("/open-api/v1/**").permitAll()
                         .requestMatchers("/internal/v1/**").hasAuthority("engine.manage")
                         .anyRequest().denyAll())
                 .exceptionHandling(exceptions -> exceptions

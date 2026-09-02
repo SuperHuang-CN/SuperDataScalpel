@@ -1,4 +1,5 @@
-import { Alert, Button, Empty, Modal, Space, Table, Tag, Typography } from 'antd';
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { Button, Empty, Modal, Space, Table, Tag, Typography } from 'antd';
 import { useState } from 'react';
 import {
   modelQualityRuleSeverityLabels,

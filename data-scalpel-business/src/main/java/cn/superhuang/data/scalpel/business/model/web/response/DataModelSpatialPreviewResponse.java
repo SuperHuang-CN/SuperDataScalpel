@@ -25,6 +25,7 @@ public record DataModelSpatialPreviewResponse(
             CrsReference sourceCrs,
             boolean spatialIndexAvailable,
             Long estimatedRowCount,
+            boolean physicalStatisticsRefreshRequired,
             boolean previewAllowed,
             String message
     ) {

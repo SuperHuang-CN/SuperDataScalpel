@@ -40,17 +40,23 @@ ALTER TABLE task_spark_jar_resource_binding
 ALTER TABLE task_streaming_deployment
     ADD COLUMN IF NOT EXISTS checkpoint_generation integer,
     ADD COLUMN IF NOT EXISTS checkpoint_start_mode varchar(16),
-    ADD COLUMN IF NOT EXISTS checkpoint_source_deployment_id uuid;
+    ADD COLUMN IF NOT EXISTS checkpoint_source_deployment_id uuid,
+    ADD COLUMN IF NOT EXISTS execution_mode varchar(16);
 UPDATE task_streaming_deployment
 SET checkpoint_generation = 1,
     checkpoint_start_mode = 'FRESH',
-    checkpoint_source_deployment_id = NULL
-WHERE checkpoint_generation IS NULL OR checkpoint_start_mode IS NULL;
+    checkpoint_source_deployment_id = NULL,
+    execution_mode = COALESCE(execution_mode, 'REAL')
+WHERE checkpoint_generation IS NULL
+   OR checkpoint_start_mode IS NULL
+   OR execution_mode IS NULL;
 ALTER TABLE task_streaming_deployment
     ALTER COLUMN checkpoint_generation SET DEFAULT 1,
     ALTER COLUMN checkpoint_generation SET NOT NULL,
     ALTER COLUMN checkpoint_start_mode SET DEFAULT 'FRESH',
-    ALTER COLUMN checkpoint_start_mode SET NOT NULL;
+    ALTER COLUMN checkpoint_start_mode SET NOT NULL,
+    ALTER COLUMN execution_mode SET DEFAULT 'REAL',
+    ALTER COLUMN execution_mode SET NOT NULL;
 
 DO $migration$
 DECLARE
@@ -72,7 +78,10 @@ BEGIN
             OR constraint_row.conrelid = 'task_spark_jar_resource_binding'::regclass
                AND attribute_row.attname IN ('resource_type', 'topic_name')
             OR constraint_row.conrelid = 'task_streaming_deployment'::regclass
-               AND attribute_row.attname IN ('checkpoint_generation', 'checkpoint_start_mode', 'checkpoint_source_deployment_id')
+               AND attribute_row.attname IN (
+                    'checkpoint_generation', 'checkpoint_start_mode',
+                    'checkpoint_source_deployment_id', 'execution_mode'
+               )
             OR constraint_row.conrelid = 'task_streaming_query'::regclass
                AND attribute_row.attname = 'sink_type'
           )
@@ -129,7 +138,9 @@ ALTER TABLE task_streaming_deployment
     CHECK (
         checkpoint_start_mode = 'CONTINUE' AND checkpoint_source_deployment_id IS NOT NULL
         OR checkpoint_start_mode = 'FRESH' AND checkpoint_source_deployment_id IS NULL
-    );
+    ),
+    ADD CONSTRAINT task_streaming_deployment_execution_mode_check
+    CHECK (execution_mode IN ('REAL', 'TRIAL'));
 
 ALTER TABLE task_streaming_deployment
     DROP CONSTRAINT IF EXISTS uk_task_streaming_deployment_version;

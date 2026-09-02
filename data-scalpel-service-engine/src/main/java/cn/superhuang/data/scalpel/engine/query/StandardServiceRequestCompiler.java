@@ -1,10 +1,9 @@
 package cn.superhuang.data.scalpel.engine.query;
 
-import cn.superhuang.data.scalpel.contract.service.ConditionType;
 import cn.superhuang.data.scalpel.contract.service.ServiceFieldDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.service.StandardAggregator;
-import cn.superhuang.data.scalpel.contract.service.StandardFilter;
+import cn.superhuang.data.scalpel.contract.service.StandardFilterNode;
 import cn.superhuang.data.scalpel.contract.service.StandardFilterOperator;
 import cn.superhuang.data.scalpel.contract.service.StandardOrder;
 import cn.superhuang.data.scalpel.contract.service.StandardServiceDefinition;
@@ -16,10 +15,12 @@ import cn.superhuang.data.scalpel.dialect.query.QuerySortDirection;
 import cn.superhuang.data.scalpel.dialect.query.QueryValueType;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryAggregateInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryField;
+import cn.superhuang.data.scalpel.dialect.query.StandardQueryFilterGroupInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryFilterInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryLimits;
 import cn.superhuang.data.scalpel.dialect.query.StandardQueryOrderInput;
+import cn.superhuang.data.scalpel.dialect.query.StandardQueryPredicateInput;
 import cn.superhuang.data.scalpel.dialect.query.StandardTableQueryCompiler;
 import org.springframework.stereotype.Component;
 
@@ -43,7 +44,8 @@ public class StandardServiceRequestCompiler {
                     input(request),
                     new StandardQueryLimits(
                             properties.defaultPageSize(), properties.maximumPageSize(), properties.maximumFilterCount(),
-                            properties.maximumInValues(), 10, 20, 20, Integer.MAX_VALUE
+                            properties.maximumFilterDepth(), properties.maximumInValues(), 10, 20, 20,
+                            properties.maximumOffset()
                     )
             );
             return new CompiledServiceRequest(compiled.pageNo(), compiled.pageSize(), compiled.query());
@@ -68,35 +70,64 @@ public class StandardServiceRequestCompiler {
         return new StandardQueryInput(
                 request.pageNo(),
                 request.pageSize(),
-                request.conditionType() == ConditionType.OR ? ConditionConjunction.OR : ConditionConjunction.AND,
-                request.columns(),
-                request.filters().stream().map(StandardServiceRequestCompiler::filter).toList(),
-                request.orders().stream().map(StandardServiceRequestCompiler::order).toList(),
-                request.groups(),
-                request.aggregators().stream().map(StandardServiceRequestCompiler::aggregate).toList(),
-                request.returnCount() == null || request.returnCount()
+                request.fields(),
+                rootFilter(request.filter()),
+                request.sort().stream().map(StandardServiceRequestCompiler::order).toList(),
+                request.groupBy(),
+                request.aggregates().stream().map(StandardServiceRequestCompiler::aggregate).toList(),
+                Boolean.TRUE.equals(request.returnCount())
         );
     }
 
-    private static StandardQueryFilterInput filter(StandardFilter input) {
-        try {
-            return new StandardQueryFilterInput(
-                    input.name(), QueryFilterOperator.valueOf(StandardFilterOperator.fromValue(input.operator()).name()),
-                    input.value(), input.secondValue(), input.values()
-            );
-        } catch (IllegalArgumentException exception) {
-            throw new EngineQueryValidationException(exception.getMessage());
+    private static StandardQueryFilterGroupInput rootFilter(StandardFilterNode input) {
+        if (input == null) {
+            return null;
         }
+        StandardQueryPredicateInput predicate = filter(input);
+        if (predicate instanceof StandardQueryFilterGroupInput group) {
+            return group;
+        }
+        throw new EngineQueryValidationException("filter 根节点必须是 AND 或 OR 条件组");
+    }
+
+    private static StandardQueryPredicateInput filter(StandardFilterNode input) {
+        if (input == null || input.operator() == null) {
+            throw new EngineQueryValidationException("过滤条件必须指定 operator");
+        }
+        if (input.operator() == StandardFilterOperator.AND || input.operator() == StandardFilterOperator.OR) {
+            if (input.field() != null || input.value() != null || input.conditions().isEmpty()) {
+                throw new EngineQueryValidationException("条件组只能包含 operator 和非空 conditions");
+            }
+            return new StandardQueryFilterGroupInput(
+                    input.operator() == StandardFilterOperator.OR
+                            ? ConditionConjunction.OR
+                            : ConditionConjunction.AND,
+                    input.conditions().stream().map(StandardServiceRequestCompiler::filter).toList()
+            );
+        }
+        if (input.field() == null || input.field().isBlank() || !input.conditions().isEmpty()) {
+            throw new EngineQueryValidationException("叶子条件必须包含 field 和比较 operator，且不能包含 conditions");
+        }
+        return new StandardQueryFilterInput(input.field(), filterOperator(input.operator()), input.value());
+    }
+
+    private static QueryFilterOperator filterOperator(StandardFilterOperator operator) {
+        return switch (operator) {
+            case AND, OR -> throw new EngineQueryValidationException("逻辑操作符只能用于条件组");
+            case GTE -> QueryFilterOperator.GE;
+            case LTE -> QueryFilterOperator.LE;
+            default -> QueryFilterOperator.valueOf(operator.name());
+        };
     }
 
     private static StandardQueryOrderInput order(StandardOrder input) {
-        return new StandardQueryOrderInput(input.column(), QuerySortDirection.valueOf(input.direction().name()));
+        return new StandardQueryOrderInput(input.field(), QuerySortDirection.valueOf(input.direction().name()));
     }
 
     private static StandardQueryAggregateInput aggregate(StandardAggregator input) {
         return new StandardQueryAggregateInput(
-                cn.superhuang.data.scalpel.dialect.query.AggregateFunction.valueOf(input.type().name()),
-                input.column(), input.alias()
+                cn.superhuang.data.scalpel.dialect.query.AggregateFunction.valueOf(input.function().name()),
+                input.field(), input.alias()
         );
     }
 

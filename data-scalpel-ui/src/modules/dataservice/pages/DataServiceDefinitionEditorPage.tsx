@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ArrowLeftOutlined, ExperimentOutlined, SaveOutlined } from '@ant-design/icons';
 import type { FormProps } from 'antd';
-import { Alert, Button, Form, Modal, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
+import { Button, Form, Modal, Result, Skeleton, Space, Tag, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBlocker, useLocation, useNavigate, useParams, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -8,6 +9,7 @@ import { useCurrentUser } from '../../system';
 import { ScriptServiceEditor } from '../components/editor/ScriptServiceEditor';
 import { SqlServiceEditor } from '../components/editor/SqlServiceEditor';
 import { StandardServiceEditor } from '../components/editor/StandardServiceEditor';
+import { SpatialServiceEditor } from '../components/editor/SpatialServiceEditor';
 import {
   useDataService,
   useTestSqlDataService,
@@ -72,7 +74,8 @@ export const DataServiceDefinitionEditorPage = () => {
   const dependencyUnavailable = !canViewEngines
     || detail?.type === 'STANDARD_TABLE' && !canViewModels
     || detail?.type === 'SQL_QUERY' && (!canViewModels || !canViewDataSources)
-    || detail?.type === 'SCRIPT_API' && !canViewDataSources;
+    || detail?.type === 'SCRIPT_API' && !canViewDataSources
+    || detail?.type === 'SPATIAL_SERVICE' && !canViewModels;
   const canSave = editable && !dependencyUnavailable;
   const canTest = detail?.type === 'SQL_QUERY' && editable && !dependencyUnavailable;
   const canRunScript = detail?.type === 'SCRIPT_API' && editable && !dependencyUnavailable;
@@ -190,7 +193,7 @@ export const DataServiceDefinitionEditorPage = () => {
   const onFinishFailed: FormProps<DataServiceFormValues>['onFinishFailed'] = ({ errorFields }) => applyValidationErrors(errorFields);
 
   return (
-    <div className={`data-service-editor-page data-service-definition-editor-page data-service-editor-${detail.type === 'STANDARD_TABLE' ? 'standard' : detail.type === 'SQL_QUERY' ? 'sql' : 'script'}`}>
+    <div className={`data-service-editor-page data-service-definition-editor-page data-service-editor-${detail.type === 'STANDARD_TABLE' ? 'standard' : detail.type === 'SQL_QUERY' ? 'sql' : detail.type === 'SPATIAL_SERVICE' ? 'spatial' : 'script'}`}>
       {messageContext}
       <header className="data-service-editor-header">
         <div className="data-service-editor-heading">
@@ -205,7 +208,9 @@ export const DataServiceDefinitionEditorPage = () => {
               </Tag>
               {dirty && <Tag color="processing">有未保存修改</Tag>}
             </Space>
-            <Typography.Text type="secondary"><code>{detail.code}</code> · Engine 和公开路由由基础信息维护</Typography.Text>
+            <Typography.Text type="secondary"><code>{detail.code}</code> · {detail.type === 'SPATIAL_SERVICE'
+              ? 'GeoServer Engine 由基础信息维护，图层名由服务编码确定'
+              : 'Engine 和服务 Context Path 由基础信息维护'}</Typography.Text>
           </div>
         </div>
         <Space>
@@ -233,7 +238,7 @@ export const DataServiceDefinitionEditorPage = () => {
       >
         <Form.Item name="type" hidden><input /></Form.Item>
         <Form.Item name="engineId" hidden><input /></Form.Item>
-        <Form.Item name="routePath" hidden><input /></Form.Item>
+        <Form.Item name="contextPath" hidden><input /></Form.Item>
         {detail.type === 'STANDARD_TABLE' ? (
           <StandardServiceEditor
             form={form}
@@ -259,6 +264,13 @@ export const DataServiceDefinitionEditorPage = () => {
             onTestValuesChange={setTestValues}
             onResetTest={() => setTestResult(null)}
             onResultCollapsedChange={setSqlResultCollapsed}
+          />
+        ) : detail.type === 'SPATIAL_SERVICE' ? (
+          <SpatialServiceEditor
+            form={form}
+            serviceId={detail.id}
+            readOnly={!editable}
+            canViewModels={canViewModels}
           />
         ) : (
           <ScriptServiceEditor

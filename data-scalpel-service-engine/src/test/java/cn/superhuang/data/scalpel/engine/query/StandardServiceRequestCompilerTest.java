@@ -1,9 +1,9 @@
 package cn.superhuang.data.scalpel.engine.query;
 
-import cn.superhuang.data.scalpel.contract.service.ConditionType;
 import cn.superhuang.data.scalpel.contract.service.ServiceFieldDefinition;
 import cn.superhuang.data.scalpel.contract.service.SortDirection;
-import cn.superhuang.data.scalpel.contract.service.StandardFilter;
+import cn.superhuang.data.scalpel.contract.service.StandardFilterNode;
+import cn.superhuang.data.scalpel.contract.service.StandardFilterOperator;
 import cn.superhuang.data.scalpel.contract.service.StandardOrder;
 import cn.superhuang.data.scalpel.contract.service.StandardServiceDefinition;
 import cn.superhuang.data.scalpel.contract.service.StandardServiceQueryRequest;
@@ -18,14 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 class StandardServiceRequestCompilerTest {
 
     private final StandardServiceRequestCompiler compiler = new StandardServiceRequestCompiler(
-            new EngineQueryProperties(20, 100, 50, 1000, 100_000, 30)
+            new EngineQueryProperties(20, 100, 50, 5, 1000, 100_000, 30)
     );
 
     @Test
     void excludesGeometryFromDefaultProjectionAndRejectsExplicitUse() {
         CompiledServiceRequest defaultRequest = compiler.compile(
                 definition(),
-                request(List.of(), List.of(), List.of())
+                request(List.of(), null, List.of())
         );
 
         assertEquals(
@@ -34,7 +34,7 @@ class StandardServiceRequestCompilerTest {
         );
         assertThrows(
                 EngineQueryValidationException.class,
-                () -> compiler.compile(definition(), request(List.of("shape"), List.of(), List.of()))
+                () -> compiler.compile(definition(), request(List.of("shape"), null, List.of()))
         );
         assertThrows(
                 EngineQueryValidationException.class,
@@ -42,7 +42,14 @@ class StandardServiceRequestCompilerTest {
                         definition(),
                         request(
                                 List.of("id"),
-                                List.of(new StandardFilter("shape", "=", "POINT (0 0)", null, List.of())),
+                                new StandardFilterNode(
+                                        null,
+                                        StandardFilterOperator.AND,
+                                        null,
+                                        List.of(new StandardFilterNode(
+                                                "shape", StandardFilterOperator.EQ, "POINT (0 0)", List.of()
+                                        ))
+                                ),
                                 List.of()
                         )
                 )
@@ -53,7 +60,7 @@ class StandardServiceRequestCompilerTest {
                         definition(),
                         request(
                                 List.of("id"),
-                                List.of(),
+                                null,
                                 List.of(new StandardOrder("shape", SortDirection.ASC))
                         )
                 )
@@ -74,17 +81,16 @@ class StandardServiceRequestCompilerTest {
     }
 
     private static StandardServiceQueryRequest request(
-            List<String> columns,
-            List<StandardFilter> filters,
-            List<StandardOrder> orders
+            List<String> fields,
+            StandardFilterNode filter,
+            List<StandardOrder> sort
     ) {
         return new StandardServiceQueryRequest(
                 1,
                 20,
-                ConditionType.AND,
-                columns,
-                filters,
-                orders,
+                fields,
+                filter,
+                sort,
                 List.of(),
                 List.of(),
                 false

@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskType;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunJarCleanupStatus;
+import cn.superhuang.data.scalpel.business.task.domain.TaskRunExecutionMode;
 import cn.superhuang.data.scalpel.search.SearchRepository;
 import jakarta.persistence.LockModeType;
 import org.springframework.data.jpa.repository.Lock;
@@ -32,6 +33,13 @@ public interface TaskRunRepository extends SearchRepository<TaskRun, UUID> {
     List<TaskRun> findAllByStatusIn(Collection<TaskRunStatus> statuses);
 
     List<TaskRun> findAllByTaskTypeAndStatusIn(TaskType taskType, Collection<TaskRunStatus> statuses);
+
+    List<TaskRun> findAllByTaskTypeAndExecutionModeAndStatusInAndDeadlineAtLessThanEqual(
+            TaskType taskType,
+            TaskRunExecutionMode executionMode,
+            Collection<TaskRunStatus> statuses,
+            Instant deadlineAt
+    );
 
     List<TaskRun> findAllByTaskTypeAndUserJarCleanupStatusAndStatusIn(
             TaskType taskType, TaskRunJarCleanupStatus cleanupStatus, Collection<TaskRunStatus> statuses);

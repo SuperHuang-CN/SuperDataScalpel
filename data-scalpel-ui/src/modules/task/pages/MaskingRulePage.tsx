@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ClearOutlined,
   ColumnWidthOutlined,
@@ -10,7 +11,7 @@ import {
   SwapOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Alert, Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
+import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState, type ReactNode } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';

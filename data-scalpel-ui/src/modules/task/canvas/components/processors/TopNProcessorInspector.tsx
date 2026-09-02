@@ -1,13 +1,5 @@
-import {
-  Alert,
-  Form,
-  Input,
-  InputNumber,
-  Radio,
-  Select,
-  Space,
-  Typography,
-} from 'antd';
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { Form, Input, InputNumber, Radio, Select, Space, Typography } from 'antd';
 import {
   useImperativeHandle,
   useMemo,

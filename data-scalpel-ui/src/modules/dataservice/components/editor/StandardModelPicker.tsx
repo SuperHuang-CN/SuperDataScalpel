@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { LinkOutlined } from '@ant-design/icons';
-import { Alert, Button, Space, Typography } from 'antd';
+import { Button, Space, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ManagementCode, ManagementStatusIndicator } from '../../../../shared/components/ManagementListCells';

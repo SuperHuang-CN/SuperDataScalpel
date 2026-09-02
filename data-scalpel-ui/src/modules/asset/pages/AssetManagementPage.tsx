@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   CloudSyncOutlined,
   DeleteOutlined,
@@ -10,26 +11,12 @@ import {
   ReloadOutlined,
   SafetyCertificateOutlined,
 } from '@ant-design/icons';
-import {
-  Alert,
-  Button,
-  Dropdown,
-  Form,
-  Input,
-  Modal,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  TreeSelect,
-  Typography,
-  message,
-} from 'antd';
+import { Button, Dropdown, Form, Modal, Select, Space, Table, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
 import type { MenuProps, TableProps } from 'antd';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
+import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { directoryTreeSelectData, findDirectoryDescendantIds, useDirectoryTree, type DirectoryTreeNode } from '../../directory';
 import { useCurrentUser } from '../../system';
 import { AssetEditDrawer } from '../components/AssetEditDrawer';
@@ -247,14 +234,14 @@ export const AssetManagementPage = () => {
       {modalContext}
       <section className="management-workbench">
         <div className="management-filter-strip">
-          <Form<AssetFilters> autoComplete="off" form={form} layout="inline" onFinish={applyFilters}>
-            <Form.Item name="keyword"><Input allowClear placeholder="搜索名称或编码" /></Form.Item>
+          <Form<AssetFilters> autoComplete="off" form={form} layout="inline" className="management-filter-form" onFinish={applyFilters}>
+            <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索名称或编码" /></Form.Item>
             <Form.Item name="assetType"><Select allowClear placeholder="全部类型" options={(Object.entries(assetTypeLabels) as Array<[AssetType, string]>).map(([value, label]) => ({ value, label }))} /></Form.Item>
             <Form.Item name="status"><Select allowClear placeholder="发布状态" options={(Object.entries(assetStatusLabels) as Array<[AssetStatus, string]>).map(([value, label]) => ({ value, label }))} /></Form.Item>
             <Form.Item name="syncStatus"><Select allowClear placeholder="同步状态" options={(Object.entries(assetSyncStatusLabels) as Array<[AssetSyncStatus, string]>).map(([value, label]) => ({ value, label }))} /></Form.Item>
             {canViewDirectories && <Form.Item name="directoryId"><TreeSelect allowClear treeDefaultExpandAll placeholder="业务领域" treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} /></Form.Item>}
-            <Form.Item><Space size={4}><Button type="primary" htmlType="submit" loading={assetsQuery.isFetching}>查询</Button>{Object.values(filters).some(Boolean) && <Button type="text" onClick={reset}>重置</Button>}</Space></Form.Item>
           </Form>
+          <ManagementFilterActions form={form} appliedFilters={filters} loading={assetsQuery.isFetching} onReset={reset} />
         </div>
         <div className="management-results-surface">
           <div className="management-result-toolbar">

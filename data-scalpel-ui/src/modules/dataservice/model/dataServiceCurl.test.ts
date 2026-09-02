@@ -23,7 +23,7 @@ describe('buildDataServiceCurlCommand', () => {
         'curl --request POST \\',
         "  --url 'https://engine.example.com/open-api/v1/orders' \\",
         "  --header 'Content-Type: application/json' \\",
-        "  --data '{\"pageNo\":1,\"pageSize\":20}'",
+        "  --data '{\"pageNo\":1,\"pageSize\":20,\"returnCount\":false}'",
       ].join('\n'),
     );
   });

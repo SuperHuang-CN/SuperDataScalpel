@@ -795,7 +795,9 @@ public class ModelQualityRuleService {
         Map<UUID, StandardDictionarySummaryResponse> dictionaries = dictionaryValueSupport.summaries(dictionaryIds);
         return ids.stream().map(fieldsById::get).filter(Objects::nonNull)
                 .map(field -> ModelQualityRuleFieldResponse.from(
-                        field, dictionaries.get(field.getStandardDictionaryId())
+                        field, field.getStandardDictionaryId() == null
+                                ? null
+                                : dictionaries.get(field.getStandardDictionaryId())
                 ))
                 .toList();
     }

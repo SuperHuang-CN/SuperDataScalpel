@@ -200,13 +200,14 @@ final class JdbcMetadataReader {
                 Integer columnSize = nullableInteger(resultSet, "COLUMN_SIZE");
                 Integer scale = nullableInteger(resultSet, "DECIMAL_DIGITS");
                 boolean numeric = isNumeric(jdbcType);
+                boolean lengthBearing = isLengthBearingCharacterType(jdbcType);
                 columns.add(new ColumnMetadata(
                         resultSet.getString("COLUMN_NAME"),
                         resultSet.getInt("ORDINAL_POSITION"),
                         jdbcType,
                         resultSet.getString("TYPE_NAME"),
                         dialect.logicalType(jdbcType, resultSet.getString("TYPE_NAME")),
-                        numeric ? null : columnSize,
+                        lengthBearing ? columnSize : null,
                         numeric ? columnSize : null,
                         numeric ? scale : null,
                         resultSet.getInt("NULLABLE") != DatabaseMetaData.columnNoNulls,
@@ -329,5 +330,10 @@ final class JdbcMetadataReader {
         return jdbcType == Types.TINYINT || jdbcType == Types.SMALLINT || jdbcType == Types.INTEGER
                 || jdbcType == Types.BIGINT || jdbcType == Types.NUMERIC || jdbcType == Types.DECIMAL
                 || jdbcType == Types.FLOAT || jdbcType == Types.REAL || jdbcType == Types.DOUBLE;
+    }
+
+    private static boolean isLengthBearingCharacterType(int jdbcType) {
+        return jdbcType == Types.CHAR || jdbcType == Types.VARCHAR
+                || jdbcType == Types.NCHAR || jdbcType == Types.NVARCHAR;
     }
 }

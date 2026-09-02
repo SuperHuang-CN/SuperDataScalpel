@@ -1,0 +1,51 @@
+{
+  "schemaVersion" : 9,
+  "executionId" : "89b1b326-2df0-4ef3-a5e2-82e5ff362db9",
+  "runId" : "40787c4b-e9ac-4939-a790-3d5938d7025d",
+  "attempt" : 1,
+  "state" : "FAILED",
+  "startedAt" : "2026-08-28T16:11:34.577135834Z",
+  "endedAt" : "2026-08-28T16:11:37.534008252Z",
+  "durationMs" : 2956,
+  "affectedRows" : null,
+  "nodeResults" : [ ],
+  "taskType" : "SPARK_JAR",
+  "qualityResult" : null,
+  "userJobObservability" : {
+    "capturedAt" : "2026-08-28T16:11:37.534810044Z",
+    "status" : {
+      "phase" : "RUNNING",
+      "message" : "正在执行用户作业",
+      "updatedAt" : "2026-08-28T16:11:36.843534168Z"
+    },
+    "metrics" : [ ]
+  },
+  "lineage" : {
+    "analysisStatus" : "UNAVAILABLE",
+    "coverage" : null,
+    "flows" : [ ],
+    "warnings" : [ {
+      "code" : "NO_SDK_WRITES",
+      "message" : "用户作业没有执行 SDK 写入",
+      "producerKey" : null,
+      "flowKey" : null,
+      "outputOrdinal" : null
+    } ]
+  },
+  "trialPreview" : {
+    "writes" : [ ],
+    "warnings" : [ ]
+  },
+  "error" : {
+    "code" : "RUNNER_INTERNAL_ERROR",
+    "message" : "Task Runner 内部错误",
+    "category" : "INTERNAL",
+    "retryable" : false,
+    "nodeId" : null,
+    "nodeType" : null,
+    "nodeName" : null,
+    "phase" : "PROCESS",
+    "sqlState" : null,
+    "diagnosticId" : "d055c443-b89e-4935-b729-90f218a68bdb"
+  }
+}

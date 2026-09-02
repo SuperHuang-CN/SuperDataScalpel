@@ -22,7 +22,7 @@ const result = (rows: Record<string, unknown>[]): SqlServiceTestResponse => ({
     pageNo: 0,
     pageSize: 20,
     totalCount: rows.length,
-    resultList: rows,
+    items: rows,
   },
   elapsedMs: 12,
 });

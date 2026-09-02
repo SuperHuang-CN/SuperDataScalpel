@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CheckCircleOutlined, CloseOutlined, ReloadOutlined, WarningOutlined } from '@ant-design/icons';
 import type { CollapseProps, TableProps } from 'antd';
-import { Alert, Button, Collapse, Descriptions, Drawer, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Collapse, Descriptions, Drawer, Empty, Modal, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { ApiError } from '../../../shared/api/http';
 import {
   useCancelPhysicalTableChangePlan,

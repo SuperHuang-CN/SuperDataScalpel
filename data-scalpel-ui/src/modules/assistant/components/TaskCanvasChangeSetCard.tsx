@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { ApartmentOutlined, CloseOutlined, EditOutlined, RobotOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Divider, Space, Tag, Typography } from 'antd';
+import { Button, Card, Divider, Space, Tag, Typography } from 'antd';
 import type { AssistantChangeSet } from '../model/assistant';
 
 interface TaskCanvasChangeSetCardProps {

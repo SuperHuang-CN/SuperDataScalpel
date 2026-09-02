@@ -18,7 +18,7 @@ SQL 服务关联的模型只用于来源说明、血缘记录、编辑辅助和�
 
 ## 管理领域模型
 
-`DataService` 只保存编码、名称、目录、不可修改的类型、Engine、路由和生命周期状态。具体定义分表保存：
+`DataService` 只保存编码、名称、目录、不可修改的类型、Engine、`contextPath` 和生命周期状态。`contextPath` 是服务在 Engine 上的实际访问路径，映射到数据库 `route_path`，同一 Engine 内唯一。具体定义分表保存：
 
 - `StandardDataServiceDefinition`：`dataServiceId`、`modelId`、定义版本。
 - `SqlDataServiceDefinition`：`dataServiceId`、`dataSourceId`、大文本 `sqlText`、定义版本。
@@ -70,7 +70,7 @@ SQL 定义示例：
   "code": "customer_query",
   "name": "客户查询",
   "engineId": "00000000-0000-0000-0000-000000000001",
-  "routePath": "/open-api/v1/customers",
+  "contextPath": "/open-api/v1/customers",
   "type": "SQL_QUERY",
   "standardDefinition": null,
   "sqlDefinition": {
@@ -99,7 +99,7 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
   "code": "customer_script",
   "name": "客户复合服务",
   "engineId": "00000000-0000-0000-0000-000000000001",
-  "routePath": "/open-api/v1/customer-script",
+  "contextPath": "/open-api/v1/customer-script",
   "type": "SCRIPT_API",
   "standardDefinition": null,
   "sqlDefinition": null,
@@ -114,7 +114,7 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
 
 ## 管理端创建与详情工作台
 
-数据服务列表的“新建服务”使用类型下拉菜单，不预设默认类型。选择类型后在列表右侧 Drawer 中维护编码、名称、目录、说明、Service Engine、公开路由和访问方式；确认后立即形成可恢复草稿并留在当前列表，不自动进入服务定义页。用户随后从创建成功提示、列表“继续配置”或详情“服务定义”页签手动进入定义编辑器。列表和详情明确展示“定义未配置”并禁止启用。
+数据服务列表的“新建服务”使用类型下拉菜单，不预设默认类型。选择类型后在列表右侧 Drawer 中维护编码、名称、目录、说明、Service Engine 和服务 `contextPath`；确认后立即形成可恢复草稿并留在当前列表，不自动进入服务定义页。访问方式不属于服务定义，仅在发布网关时配置。用户随后从创建成功提示、列表“继续配置”或详情“服务定义”页签手动进入定义编辑器。列表和详情明确展示“定义未配置”并禁止启用。
 
 对应前端路由为：
 
@@ -122,7 +122,8 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
 | --- | --- | --- |
 | `/dataservice` | 数据服务列表 | `service.view` |
 | `/dataservice/:id` | 查看详情和执行生命周期操作 | `service.view` |
-| `/dataservice/:id/edit` | 修改基础信息 | `service.update` |
+| 数据服务列表或详情中的基础信息 Drawer | 新增或修改基础信息，保存后留在当前上下文 | `service.create` / `service.update` |
+| `/dataservice/:id/edit` | 旧地址兼容跳转到基本信息详情 | `service.view` |
 | `/dataservice/:id/definition/edit` | 配置或修改服务定义 | `service.update` |
 
 创建 Drawer 主操作为“创建服务”，不提供“保存并启用”。创建成功后关闭 Drawer、刷新列表，并在成功提示中提供“配置定义”快捷入口；不改变当前筛选、目录和分页上下文。列表将 `keyword`、`status`、`type`、`engine`、`directory`、`page` 和 `size` 写入 URL；`directory=uncategorized` 表示未分类。进入详情或定义编辑器再返回时，筛选、目录和分页位置能够恢复。
@@ -144,7 +145,7 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
 
 权限会继续叠加到以上状态：保存要求 `service.update`，详情页 SQL 测试要求 `service.update`，启用、发布到网关、停用、重试和清理要求 `service.publish`。标准服务创建还要求模型和 Engine 查看权限；SQL 服务创建还要求数据源查看权限。缺少依赖资源查看权限时页面持续显示提示，并禁用相关选择和维护操作。
 
-SQL 工作台在桌面端采用左右布局。左侧顶部固定当前 Engine 中已就绪的 PostgreSQL 或 ClickHouse 数据源和关联模型操作区，下方在独立滚动区域直接展示全部已选模型的名称、编码、状态和可复制物理位置，不再截断为前若干项；数据源不会随模型列表滚动。每个有效模型可以就地展开字段结构，同一时间只展开一个，首次展开时通过模型详情接口按需加载并缓存字段、平台类型、可空性、主键和说明，不批量请求所有模型字段。常驻解释性提示不占用左栏空间，仅在模型引用失效、数据源与 Engine 不兼容或权限不足等需要处理的状态下显示问题。更多模型通过约 1080px、窄屏自适应的选择 Drawer 管理。关联模型仍只用于来源说明和血缘，不构成 SQL 访问白名单。右侧使用可拖动的上下分栏，上层维护 Monaco SQL、参数定义和临时测试值，下层展示测试状态、问题和预览数据。预览表列头以两行合并展示字段名、平台类型与可空性，不再单独展示输出字段表。下层可整体收起并保留紧凑状态栏，展开高度由浏览器保存并可双击分隔条复位；编辑器外层不滚动，左侧、上层和结果表分别管理内部滚动。Engine、公开路由等基础信息在第一步或基础信息编辑页维护，窄屏仍使用安全的上下布局。SQL 编辑页面及 Monaco 均通过路由动态加载，不进入数据服务列表首屏包。
+SQL 工作台在桌面端采用左右布局。左侧顶部固定当前 Engine 中已就绪的 PostgreSQL 或 ClickHouse 数据源和关联模型操作区，下方在独立滚动区域直接展示全部已选模型的名称、编码、状态和可复制物理位置，不再截断为前若干项；数据源不会随模型列表滚动。每个有效模型可以就地展开字段结构，同一时间只展开一个，首次展开时通过模型详情接口按需加载并缓存字段、平台类型、可空性、主键和说明，不批量请求所有模型字段。常驻解释性提示不占用左栏空间，仅在模型引用失效、数据源与 Engine 不兼容或权限不足等需要处理的状态下显示问题。更多模型通过约 1080px、窄屏自适应的选择 Drawer 管理。关联模型仍只用于来源说明和血缘，不构成 SQL 访问白名单。右侧使用可拖动的上下分栏，上层维护 Monaco SQL、参数定义和临时测试值，下层展示测试状态、问题和预览数据。预览表列头以两行合并展示字段名、平台类型与可空性，不再单独展示输出字段表。下层可整体收起并保留紧凑状态栏，展开高度由浏览器保存并可双击分隔条复位；编辑器外层不滚动，左侧、上层和结果表分别管理内部滚动。Engine 等基础信息在新增或编辑 Drawer 中维护，窄屏仍使用安全的单列布局。SQL 编辑页面及 Monaco 均通过路由动态加载，不进入数据服务列表首屏包。
 
 脚本工作台由 API Studio 的 `@superhuang/super-api-studio-script-workbench` 包提供，DataScalpel 通过固定在 `data-scalpel-ui/vendor` 的 `3.0.0-SNAPSHOT` tarball 使用，不使用 iframe，也不复制 Monaco Groovy 语言实现。定义页左栏选择当前 Engine 中已就绪的默认 JDBC 数据源并维护请求 Example，右侧完整宽度交给受控 `ScriptWorkbench` 管理脚本编辑、执行结果、日志、SQL Trace、耗时和错误定位；执行时使用左栏当前选中的 Example。脚本编辑器与执行结果之间支持上下拖动调整高度、键盘微调和双击恢复默认值，并在本地记忆高度偏好。补全和执行均由浏览器访问 Admin，再由 Admin 访问目标 Engine，浏览器不直接接触 Engine 地址或 Management Token。
 

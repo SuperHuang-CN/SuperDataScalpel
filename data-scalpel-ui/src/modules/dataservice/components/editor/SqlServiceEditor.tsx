@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { DownOutlined, UpOutlined } from '@ant-design/icons';
-import { Alert, Button, Form, Modal, Select, Splitter, Tag, Typography } from 'antd';
+import { Button, Form, Modal, Select, Splitter, Tag, Typography } from 'antd';
 import { useRef, useState } from 'react';
 import { MonacoSqlEditor } from '../../../../shared/components/MonacoSqlEditor';
 import { useDataSources } from '../../../datasource';
@@ -145,7 +146,7 @@ export const SqlServiceEditor = ({
       ? (
         <Tag color="success">
           <span>SQL 测试通过，耗时 {testResult.elapsedMs} ms</span>
-          <span> · {testResult.resultFields.length} 列 · {testResult.preview?.resultList.length ?? 0} 行</span>
+          <span> · {testResult.resultFields.length} 列 · {testResult.preview?.items.length ?? 0} 行</span>
         </Tag>
       )
       : <Tag color="error">SQL 测试未通过 · {testResult.problems.length} 个问题</Tag>;

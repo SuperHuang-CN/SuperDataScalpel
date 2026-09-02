@@ -6,6 +6,7 @@ import cn.superhuang.datascalpel.sdk.*;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeDataSource;
 import cn.superhuang.datascalpel.taskengine.contract.RuntimeKafkaConnection;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
+import org.apache.spark.api.java.function.VoidFunction2;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
@@ -42,6 +43,9 @@ final class SparkStreamingJarJobContextImpl implements SparkStreamingJobContext 
     @Override public KafkaResources kafka() { return kafka; }
     @Override public StreamingQueries queries() { return queries; }
     UserJobObservabilityRuntime observabilityRuntime() { return delegate.observabilityRuntime(); }
+    cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview trialPreview() {
+        return delegate.trialPreview();
+    }
 
     private final class Kafka implements KafkaResources {
         private final SparkSession spark;
@@ -69,6 +73,11 @@ final class SparkStreamingJarJobContextImpl implements SparkStreamingJobContext 
         public DataStreamWriter<Row> writeStream(String bindingName, Dataset<Row> source) {
             SparkJarExecutionPayload.ResourceBinding binding = delegate.requireBinding(
                     bindingName, SparkJarResourceType.KAFKA_TOPIC, false);
+            if (delegate.trial()) {
+                Dataset<Row> value = Objects.requireNonNull(source);
+                return value.writeStream().foreachBatch((VoidFunction2<Dataset<Row>, Long>) (batch, batchId) ->
+                        delegate.previewKafka(binding.bindingName(), binding.topicName(), batch));
+            }
             RuntimeKafkaConnection connection = kafkaConnection(binding);
             DataStreamWriter<Row> writer = Objects.requireNonNull(source).writeStream()
                     .format("kafka")

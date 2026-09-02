@@ -1,26 +1,10 @@
-import { CopyOutlined, DeleteOutlined, EditOutlined, ExclamationCircleOutlined, FileSearchOutlined, PlusOutlined, ReloadOutlined, SaveOutlined } from '@ant-design/icons';
+import { CompactAlert as Alert, InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { CopyOutlined, DeleteOutlined, EditOutlined, ExclamationCircleOutlined, FileSearchOutlined, FontSizeOutlined, PlusOutlined, ProfileOutlined, SafetyCertificateOutlined, SaveOutlined, SearchOutlined, TagsOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Col,
-  Drawer,
-  Form,
-  Input,
-  InputNumber,
-  Modal,
-  Popconfirm,
-  Row,
-  Select,
-  Space,
-  Switch,
-  Table,
-  Tag,
-  Tooltip,
-  message,
-} from 'antd';
+import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Modal, Popconfirm, Row, Select, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
 import { useCurrentUser } from '../../system';
 import {
   isStandardDictionaryTypeFamilyCompatible,
@@ -283,42 +267,62 @@ const FieldEditorDrawer = ({
   return (
     <Drawer
       rootClassName="business-overlay business-drawer-overlay data-model-field-editor-drawer"
-      title={structuralLocked
-        ? `修改字段业务信息${field?.code ? ` · ${field.code}` : ''}`
-        : field ? `修改字段 · ${field.code}` : '新增字段'}
+      className="data-model-drawer data-model-field-editor-surface"
+      title={(
+        <div className="data-model-drawer-title">
+          <span className="data-model-drawer-title-icon" aria-hidden="true"><FontSizeOutlined /></span>
+          <span className="data-model-drawer-title-copy">
+            <span>{structuralLocked ? '修改字段业务信息' : field ? '修改模型字段' : '新增模型字段'}</span>
+            <Typography.Text type="secondary">
+              {structuralLocked ? '物理结构保持不变，仅维护字段的业务语义' : '定义字段标识、数据类型、约束与业务元数据'}
+            </Typography.Text>
+          </span>
+        </div>
+      )}
+      extra={<Tag className="data-model-drawer-header-tag">{field?.code ?? '待创建'}</Tag>}
       open={open}
-      width={620}
+      width={760}
       destroyOnHidden
       onClose={onCancel}
       footer={(
-        <Space className="data-model-field-editor-actions">
-          <Button onClick={onCancel}>取消</Button>
-          <Button type="primary" onClick={() => void submit()}>保存</Button>
-        </Space>
+        <div className="data-model-drawer-footer">
+          <Badge
+            status={structuralLocked ? 'default' : 'processing'}
+            text={structuralLocked ? '仅业务信息可修改' : field ? '字段修改待应用' : '新字段待应用'}
+          />
+          <Space className="data-model-field-editor-actions">
+            <Button onClick={onCancel}>取消</Button>
+            <Button type="primary" onClick={() => void submit()}>保存字段</Button>
+          </Space>
+        </div>
       )}
     >
-      {structuralLocked && (
-        <Alert
-          className="data-model-field-editor-lock-alert"
-          type="info"
-          showIcon
-          title="当前字段的物理结构已锁定"
-          description="可以调整字段名称、排序、关联码表和说明；字段编码、类型及约束保持不变。"
-        />
-      )}
       <Form<DataModelFieldInput>
-        className="data-model-field-editor-form"
+        name="data-model-field-editor-form"
+        className="data-model-form data-model-field-editor-form"
         autoComplete="off"
         form={form}
         layout="vertical"
         onValuesChange={() => onDirtyChange(true)}
       >
-        <section className="data-model-field-editor-section">
-          <div className="data-model-field-editor-section-heading">
-            <span>基础定义</span>
-            <small>字段标识及其在目标数据存储中的类型</small>
-          </div>
-          <Row gutter={12}>
+        <section className="data-model-form-section data-model-field-editor-section">
+          <header className="data-model-form-section-header">
+            <span className="data-model-form-section-icon" aria-hidden="true"><ProfileOutlined /></span>
+            <span className="data-model-form-section-copy">
+              <span className="data-model-form-section-title">基础定义</span>
+              <Typography.Text type="secondary">字段标识及其在目标数据存储中的类型</Typography.Text>
+            </span>
+          </header>
+          <div className="data-model-form-section-body">
+            {structuralLocked && (
+              <InlineFeedback
+                className="data-model-field-editor-lock-feedback"
+                tone="info"
+                label="物理结构已锁定"
+                detail="可以调整字段名称、排序、关联码表和说明；字段编码、类型及约束保持不变。"
+              />
+            )}
+            <Row gutter={14}>
             <Col span={12}>
               <Form.Item
                 label="字段编码"
@@ -328,12 +332,12 @@ const FieldEditorDrawer = ({
                   { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
                 ]}
               >
-                <Input disabled={structuralLocked} placeholder="如：order_id" />
+                <Input name="data-model-field-code" autoComplete="off" disabled={structuralLocked} placeholder="如：order_id" />
               </Form.Item>
             </Col>
             <Col span={12}>
               <Form.Item label="字段名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入字段名称' }]}>
-                <Input placeholder="如：订单ID" />
+                <Input name="data-model-field-name" autoComplete="off" placeholder="如：订单ID" />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -406,15 +410,20 @@ const FieldEditorDrawer = ({
                 </Col>
               </>
             )}
-          </Row>
+            </Row>
+          </div>
         </section>
 
-        <section className="data-model-field-editor-section">
-          <div className="data-model-field-editor-section-heading">
-            <span>字段约束</span>
-            <small>约束会参与模型校验和后续物理表定义</small>
-          </div>
-          <Row gutter={12}>
+        <section className="data-model-form-section data-model-field-editor-section">
+          <header className="data-model-form-section-header">
+            <span className="data-model-form-section-icon" aria-hidden="true"><SafetyCertificateOutlined /></span>
+            <span className="data-model-form-section-copy">
+              <span className="data-model-form-section-title">字段约束</span>
+              <Typography.Text type="secondary">约束会参与模型校验和后续物理表定义</Typography.Text>
+            </span>
+          </header>
+          <div className="data-model-form-section-body">
+            <Row gutter={14}>
             <Col span={8}>
               <Form.Item label="允许为空" name="nullable" valuePropName="checked">
                 <Switch disabled={structuralLocked || selectedPrimaryKey} />
@@ -433,15 +442,20 @@ const FieldEditorDrawer = ({
                 <InputNumber min={0} precision={0} className="data-model-number-input" />
               </Form.Item>
             </Col>
-          </Row>
+            </Row>
+          </div>
         </section>
 
-        <section className="data-model-field-editor-section">
-          <div className="data-model-field-editor-section-heading">
-            <span>业务信息</span>
-            <small>补充字段含义和数据标准，不改变物理字段类型</small>
-          </div>
-          <Row gutter={12}>
+        <section className="data-model-form-section data-model-field-editor-section">
+          <header className="data-model-form-section-header">
+            <span className="data-model-form-section-icon" aria-hidden="true"><TagsOutlined /></span>
+            <span className="data-model-form-section-copy">
+              <span className="data-model-form-section-title">业务信息</span>
+              <Typography.Text type="secondary">补充字段含义和数据标准，不改变物理字段类型</Typography.Text>
+            </span>
+          </header>
+          <div className="data-model-form-section-body">
+            <Row gutter={14}>
             <Col span={24}>
               <Form.Item
                 label="关联码表"
@@ -465,10 +479,11 @@ const FieldEditorDrawer = ({
             </Col>
             <Col span={24}>
               <Form.Item label="说明" name="description" rules={[{ max: 500 }]}>
-                <Input.TextArea rows={3} showCount maxLength={500} placeholder="可选，例如字段口径、取值含义或使用约束" />
+                <Input.TextArea name="data-model-field-description" autoComplete="off" rows={3} showCount maxLength={500} placeholder="可选，例如字段口径、取值含义或使用约束" />
               </Form.Item>
             </Col>
-          </Row>
+            </Row>
+          </div>
         </section>
       </Form>
     </Drawer>
@@ -599,6 +614,10 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
 
   const maxPage = Math.max(1, Math.ceil(visibleFields.length / pageSize));
   const effectivePage = Math.min(page, maxPage);
+  const pagedFields = useMemo(
+    () => visibleFields.slice((effectivePage - 1) * pageSize, effectivePage * pageSize),
+    [effectivePage, pageSize, visibleFields],
+  );
 
   const saveField = (field: EditableField) => {
     setLocalFields((current) => {
@@ -826,70 +845,71 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
           description="字段名称、说明、展示排序和关联码表仍可直接保存；请先修复物理表状态，再调整字段结构。"
         />
       )}
-      <div className="model-tab-toolbar">
+      <div className="model-tab-toolbar detail-table-filter-toolbar">
         <Form<FieldFilters> autoComplete="off"
           form={filterForm}
           layout="inline"
           initialValues={filters}
           onFinish={(values) => { setFilters(values); setPage(1); }}
         >
-          <Form.Item name="keyword" label="名称/编码">
-            <Input allowClear placeholder="筛选字段" className="model-field-keyword-input" />
+          <Form.Item name="keyword">
+            <Input allowClear prefix={<SearchOutlined />} placeholder="字段名称或编码" className="detail-table-filter-keyword model-field-keyword-input" />
           </Form.Item>
-          <Form.Item name="fieldType" label="类型">
-            <Select allowClear placeholder="全部" options={fieldTypeOptions} className="model-field-type-select" />
+          <Form.Item name="fieldType">
+            <Select allowClear placeholder="全部字段类型" options={fieldTypeOptions} className="detail-table-filter-select model-field-type-select" />
           </Form.Item>
         </Form>
-        <Space size={4}>
-          {hasUnsavedChanges && <Tag color="processing">有未保存修改</Tag>}
-          <Button type="primary" onClick={() => filterForm.submit()}>查询</Button>
-          <Button onClick={() => { filterForm.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
-          <Button icon={<ReloadOutlined />} onClick={refreshFields}>刷新</Button>
-          {!readOnly && directSaveAllowed && (
-            <Button icon={<SaveOutlined />} disabled={!dirty} loading={updateMutation.isPending} onClick={() => void saveAll()}>
-              保存字段
-            </Button>
-          )}
-          {!readOnly && requiresPhysicalChangePlan && !metadataOnlyChange && (
-            <Button type="primary" icon={<FileSearchOutlined />} disabled={!dirty} loading={createPlanMutation.isPending} onClick={() => void createPlan()}>
-              生成变更计划
-            </Button>
-          )}
-          {!readOnly && !externalModel && !geometryPhysicalLocked && (
-            <Button icon={<CopyOutlined />} onClick={() => setTemplatePickerOpen(true)}>
-              从模板添加
-            </Button>
-          )}
-          {!readOnly && !externalModel && !geometryPhysicalLocked && (
-            <Button type={requiresPhysicalChangePlan ? 'default' : 'primary'} icon={<PlusOutlined />} onClick={() => { setEditingField(null); setEditorOpen(true); }}>
-              新增字段
-            </Button>
-          )}
+        <Space size={4} className="detail-table-filter-actions">
+          <Button type="primary" icon={<SearchOutlined />} onClick={() => filterForm.submit()}>查询</Button>
+          <Button type="text" onClick={() => { filterForm.resetFields(); setFilters({}); setPage(1); }}>重置</Button>
         </Space>
       </div>
+      <DetailTableToolbar
+        title="字段列表"
+        total={visibleFields.length}
+        current={effectivePage}
+        pageSize={pageSize}
+        onChange={(nextPage, nextPageSize) => { setPage(nextPage); setPageSize(nextPageSize); }}
+        onRefresh={refreshFields}
+        refreshing={detailQuery.isFetching}
+        refreshLabel="刷新字段列表"
+        extra={(
+          <Space size={4}>
+            {hasUnsavedChanges && <Tag color="processing">有未保存修改</Tag>}
+            {!readOnly && directSaveAllowed && (
+              <Button icon={<SaveOutlined />} disabled={!dirty} loading={updateMutation.isPending} onClick={() => void saveAll()}>
+                保存字段
+              </Button>
+            )}
+            {!readOnly && requiresPhysicalChangePlan && !metadataOnlyChange && (
+              <Button type="primary" icon={<FileSearchOutlined />} disabled={!dirty} loading={createPlanMutation.isPending} onClick={() => void createPlan()}>
+                生成变更计划
+              </Button>
+            )}
+            {!readOnly && !externalModel && !geometryPhysicalLocked && (
+              <Button icon={<CopyOutlined />} onClick={() => setTemplatePickerOpen(true)}>
+                从模板添加
+              </Button>
+            )}
+            {!readOnly && !externalModel && !geometryPhysicalLocked && (
+              <Button type={requiresPhysicalChangePlan ? 'default' : 'primary'} icon={<PlusOutlined />} onClick={() => { setEditingField(null); setEditorOpen(true); }}>
+                新增字段
+              </Button>
+            )}
+          </Space>
+        )}
+      />
       <div ref={tableShellRef} className="model-fields-table-shell">
         <Table<EditableField>
           size="small"
           className="management-table model-fields-table"
           rowKey="rowKey"
           columns={columns}
-          dataSource={visibleFields}
+          dataSource={pagedFields}
           loading={detailQuery.isFetching}
           tableLayout="fixed"
           scroll={{ x: tableDataWidth, y: '100%' }}
-          pagination={{
-            current: effectivePage,
-            pageSize,
-            total: visibleFields.length,
-            placement: ['bottomEnd'],
-            hideOnSinglePage: false,
-            showSizeChanger: true,
-            showTotal: (total) => `共 ${total} 项`,
-          }}
-          onChange={(pagination) => {
-            setPage(pagination.current ?? 1);
-            setPageSize(pagination.pageSize ?? 20);
-          }}
+          pagination={false}
         />
       </div>
       <FieldEditorDrawer

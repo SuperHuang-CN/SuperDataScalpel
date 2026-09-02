@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CodeOutlined } from '@ant-design/icons';
-import { Alert, Button, Modal, Space, Typography, message } from 'antd';
+import { Button, Modal, Space, Typography, message } from 'antd';
 import { ApiError } from '../../../shared/api/http';
 import { fetchPhysicalTableDdlPlan } from '../api/dataModelApi';
 import type { DataModel } from '../model/dataModel';

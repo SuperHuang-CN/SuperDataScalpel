@@ -11,8 +11,7 @@ import java.util.List;
 public record StandardQuery(
         TableIdentifier table,
         List<QueryProjection> projections,
-        ConditionConjunction conjunction,
-        List<QueryFilter> filters,
+        QueryPredicate filter,
         List<String> groups,
         List<QueryAggregate> aggregates,
         List<QueryOrder> orders,
@@ -26,15 +25,11 @@ public record StandardQuery(
             throw new IllegalArgumentException("Table is required");
         }
         projections = projections == null ? List.of() : List.copyOf(projections);
-        filters = filters == null ? List.of() : List.copyOf(filters);
         groups = groups == null ? List.of() : List.copyOf(groups);
         aggregates = aggregates == null ? List.of() : List.copyOf(aggregates);
         orders = orders == null ? List.of() : List.copyOf(orders);
         if (projections.isEmpty() && aggregates.isEmpty()) {
             throw new IllegalArgumentException("At least one projection or aggregate is required");
-        }
-        if (conjunction == null) {
-            conjunction = ConditionConjunction.AND;
         }
         if (offset < 0 || limit < 1 || limit > 1000) {
             throw new IllegalArgumentException("Pagination is outside the allowed range");

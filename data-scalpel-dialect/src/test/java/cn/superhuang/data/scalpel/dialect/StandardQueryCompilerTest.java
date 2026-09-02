@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.dialect.query.AggregateFunction;
 import cn.superhuang.data.scalpel.dialect.query.ConditionConjunction;
 import cn.superhuang.data.scalpel.dialect.query.QueryAggregate;
 import cn.superhuang.data.scalpel.dialect.query.QueryFilter;
+import cn.superhuang.data.scalpel.dialect.query.QueryFilterGroup;
 import cn.superhuang.data.scalpel.dialect.query.QueryFilterOperator;
 import cn.superhuang.data.scalpel.dialect.query.QueryOrder;
 import cn.superhuang.data.scalpel.dialect.query.QueryOrderTarget;
@@ -47,8 +48,7 @@ class StandardQueryCompilerTest {
         StandardQuery ungrouped = new StandardQuery(
                 new TableIdentifier("sales", "dbo", "order_fact"),
                 List.of(new QueryProjection("id", "id")),
-                ConditionConjunction.AND,
-                List.of(), List.of(), List.of(), List.of(), 0, 10, false
+                null, List.of(), List.of(), List.of(), 0, 10, false
         );
 
         assertEquals(
@@ -66,12 +66,11 @@ class StandardQueryCompilerTest {
         return new StandardQuery(
                 new TableIdentifier("warehouse", "sales", "order_fact"),
                 List.of(new QueryProjection("department", "department")),
-                ConditionConjunction.AND,
-                List.of(
+                new QueryFilterGroup(ConditionConjunction.AND, List.of(
                         new QueryFilter("status", QueryValueType.STRING, QueryFilterOperator.EQ, List.of("OPEN")),
                         new QueryFilter("amount", QueryValueType.DECIMAL, QueryFilterOperator.BETWEEN,
                                 List.of(new BigDecimal("10.00"), new BigDecimal("50.00")))
-                ),
+                )),
                 List.of("department"),
                 List.of(new QueryAggregate(AggregateFunction.SUM, "amount", "total_amount")),
                 List.of(new QueryOrder("total_amount", QueryOrderTarget.AGGREGATE_ALIAS, QuerySortDirection.DESC)),

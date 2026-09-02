@@ -39,6 +39,11 @@ import {
   registerCanvasNodeDeletionRequestHandler,
   requestCanvasNodeDeletion,
 } from './canvasNodeDeletion';
+import {
+  registerCanvasNodeOutputSchemaController,
+  type CanvasNodeOutputSchemaTarget,
+  type CanvasNodeTrialTarget,
+} from './canvasNodeTrial';
 import { canvasNodePorts } from './canvasPorts';
 import { canvasNodeCenterPlacement } from './canvasNodePlacement';
 import { canvasNodeTemplate, canvasNodeTemplates, registerCanvasNodes, type CanvasNodeTemplate } from './canvasRegistry';
@@ -68,6 +73,7 @@ import { CanvasDefinitionModal } from './components/CanvasDefinitionModal';
 import { CanvasDefinitionViewer } from './components/CanvasDefinitionViewer';
 import { CanvasNodeInspector, type CanvasNodeInspectorHandle } from './components/CanvasNodeInspector';
 import { CanvasNodePalette } from './components/CanvasNodePalette';
+import { CanvasTableSchemaModal } from './components/CanvasTableSchemaModal';
 import { useCanvasMetadataSnapshot } from './useCanvasMetadataSnapshot';
 import {
   isCanvasTaskCompilationBlocking,
@@ -75,6 +81,7 @@ import {
   type CanvasTaskCompilationState,
 } from './useCanvasTaskCompilation';
 import './canvasDesigner.css';
+import type { TaskStatus } from '../model/task';
 
 export type CanvasDesignerMode = 'VIEW' | 'EDIT';
 
@@ -86,6 +93,13 @@ export interface CanvasDesignerProps {
   toolbarLeading?: ReactNode;
   toolbarTrailing?: ReactNode;
   executionMode?: CanvasExecutionMode;
+  trialContext?: CanvasDesignerTrialContext;
+}
+
+export interface CanvasDesignerTrialContext {
+  taskId: string;
+  baseDefinitionVersion: number;
+  taskStatus: TaskStatus;
 }
 
 export interface CanvasDesignerHandle {
@@ -180,6 +194,7 @@ const EditableCanvasDesigner = ({
   toolbarLeading,
   toolbarTrailing,
   executionMode = 'BATCH',
+  trialContext,
   fullscreen,
   onToggleFullscreen,
   designerRef,
@@ -210,6 +225,7 @@ const EditableCanvasDesigner = ({
   const [compilationDefinition, setCompilationDefinition] = useState<CanvasDefinition>(initialDefinition);
   const [deferredNodeIds, setDeferredNodeIds] = useState<ReadonlySet<string>>(() => new Set());
   const [activePaletteCategory, setActivePaletteCategory] = useState<CanvasNodeCategory | null>(null);
+  const [outputSchemaTarget, setOutputSchemaTarget] = useState<CanvasNodeOutputSchemaTarget | null>(null);
   const metadata = useCanvasMetadataSnapshot(definition);
   const taskCompilation = useCanvasTaskCompilation({
     definition: compilationDefinition,
@@ -518,10 +534,24 @@ const EditableCanvasDesigner = ({
       }
       action();
     });
+    const unregisterOutputSchemaController = registerCanvasNodeOutputSchemaController(graph, {
+      openOutputSchema: (node) => {
+        const runtime = node.getData<CanvasNodeRuntimeData>();
+        const compilation = runtime.compilation;
+        if (!compilation || compilation.outputTables.length === 0) return;
+        setOutputSchemaTarget({
+          nodeId: node.id,
+          nodeName: runtime.name,
+          inputTables: compilation.inputTables,
+          outputTables: compilation.outputTables,
+        });
+      },
+    });
     refresh();
 
     return () => {
       unregisterDeletionRequest();
+      unregisterOutputSchemaController();
       container.removeEventListener('wheel', panCanvasWithWheel);
       refreshDefinitionRef.current = () => undefined;
       refreshCompilationDefinitionRef.current = () => undefined;
@@ -746,6 +776,31 @@ const EditableCanvasDesigner = ({
     action.execute();
   };
 
+  const trialActionVisible = Boolean(trialContext && executionMode === 'BATCH');
+  const trialActionDisabledReason = !trialActionVisible
+    ? undefined
+    : trialContext?.taskStatus === 'PUBLISHED'
+      ? '已发布任务不能发起 Canvas 试运行，请先停用任务'
+      : (trialContext?.baseDefinitionVersion ?? 0) < 1
+        ? '请先保存一次 Canvas 定义，再发起试运行'
+        : inspectorDirty
+          ? '请先应用或放弃当前节点配置'
+          : !engineValidation
+            ? '正在等待最新的 Task Engine 编译结果'
+            : undefined;
+  const createTrialTarget = outputSchemaTarget && trialContext && trialActionVisible
+    ? (tableName: string): CanvasNodeTrialTarget => ({
+      taskId: trialContext.taskId,
+      baseDefinitionVersion: trialContext.baseDefinitionVersion,
+      definition,
+      nodeId: outputSchemaTarget.nodeId,
+      nodeName: outputSchemaTarget.nodeName,
+      inputTables: outputSchemaTarget.inputTables,
+      outputTables: outputSchemaTarget.outputTables,
+      initialTableName: tableName,
+    })
+    : undefined;
+
   return (
     <div className={`canvas-designer${fullscreen ? ' canvas-designer-fullscreen' : ''}`}>
       <div className="canvas-toolbar">
@@ -877,6 +932,18 @@ const EditableCanvasDesigner = ({
         validationStatus={[compilationStatus.text, compilationStatus.detail].filter(Boolean).join('：')}
         onClose={() => setDefinitionOpen(false)}
       />
+      {outputSchemaTarget && (
+        <CanvasTableSchemaModal
+          key={outputSchemaTarget.nodeId}
+          open
+          title={`节点输出结构 · ${outputSchemaTarget.nodeName}`}
+          tables={outputSchemaTarget.outputTables}
+          createTrialTarget={createTrialTarget}
+          trialRunDisabled={trialActionDisabledReason !== undefined}
+          trialRunDisabledReason={trialActionDisabledReason}
+          onClose={() => setOutputSchemaTarget(null)}
+        />
+      )}
       <Modal
         open={pendingInspectorAction !== null}
         title="节点配置尚未应用"
@@ -934,6 +1001,7 @@ export const CanvasDesigner = forwardRef<CanvasDesignerHandle, CanvasDesignerPro
         toolbarTrailing={props.toolbarTrailing}
         fullscreen={fullscreen}
         onToggleFullscreen={toggleFullscreen}
+        trialContext={props.trialContext}
       />
     )
     : (

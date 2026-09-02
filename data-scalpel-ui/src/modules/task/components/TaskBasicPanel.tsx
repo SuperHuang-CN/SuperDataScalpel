@@ -1,4 +1,7 @@
+import { DeploymentUnitOutlined, FileTextOutlined, ProfileOutlined } from '@ant-design/icons';
 import { Descriptions, Tag, Typography } from 'antd';
+import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
+import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import {
   taskStatusColors,
   taskStatusLabels,
@@ -20,9 +23,8 @@ const dateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 
 export const TaskBasicPanel = ({ task, directoryName }: TaskBasicPanelProps) => (
   <div className="task-detail-tab-panel task-basic-panel">
-    <section className="task-basic-section">
-      <div className="task-basic-section-title">基本标识</div>
-      <Descriptions size="small" bordered column={3}>
+    <BusinessDetailSection title="基本标识" description="任务身份、类型与生命周期信息" icon={<ProfileOutlined />}>
+      <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
         <Descriptions.Item label="任务名称">{task.name}</Descriptions.Item>
         <Descriptions.Item label="任务类型">
           <Tag color={taskTypeColors[task.type]}>{taskTypeLabels[task.type]}</Tag>
@@ -38,12 +40,11 @@ export const TaskBasicPanel = ({ task, directoryName }: TaskBasicPanelProps) => 
         </Descriptions.Item>
         <Descriptions.Item label="创建时间">{dateTime(task.createdAt)}</Descriptions.Item>
         <Descriptions.Item label="更新时间">{dateTime(task.updatedAt)}</Descriptions.Item>
-      </Descriptions>
-    </section>
+      </BusinessDetailDescriptions>
+    </BusinessDetailSection>
 
-    <section className="task-basic-section">
-      <div className="task-basic-section-title">执行与定义概览</div>
-      <Descriptions size="small" bordered column={3}>
+    <BusinessDetailSection title="执行与定义概览" description="执行方式、定义版本和资源绑定摘要" icon={<DeploymentUnitOutlined />}>
+      <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
         <Descriptions.Item label="定义状态">
           <Tag color={task.definitionConfigured ? 'success' : 'default'}>
             {task.definitionConfigured ? '已配置' : '未配置'}
@@ -55,7 +56,7 @@ export const TaskBasicPanel = ({ task, directoryName }: TaskBasicPanelProps) => 
         {task.type === 'LOCAL_SQL' ? (
           <>
             <Descriptions.Item label="执行方式">本地 JDBC</Descriptions.Item>
-            <Descriptions.Item label="输出模型" span={3}>{task.outputModelName ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="输出模型" span={4}>{task.outputModelName ?? '—'}</Descriptions.Item>
           </>
         ) : (
           <>
@@ -69,12 +70,11 @@ export const TaskBasicPanel = ({ task, directoryName }: TaskBasicPanelProps) => 
             </Descriptions.Item>
           </>
         )}
-      </Descriptions>
-    </section>
+      </BusinessDetailDescriptions>
+    </BusinessDetailSection>
 
-    <section className="task-basic-section">
-      <div className="task-basic-section-title">业务说明</div>
+    <BusinessDetailSection title="业务说明" description="任务目标、运行范围与补充信息" icon={<FileTextOutlined />}>
       <div className="task-description-box">{task.description || '—'}</div>
-    </section>
+    </BusinessDetailSection>
   </div>
 );

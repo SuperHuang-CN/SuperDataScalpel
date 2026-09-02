@@ -18,7 +18,7 @@ public final class TableStructureFingerprintCalculator {
         StringBuilder canonical = new StringBuilder();
         boolean containsGeometry = definition.columns().stream()
                 .anyMatch(column -> column.type() == TableColumnType.GEOMETRY);
-        append(canonical, "definition", containsGeometry ? "table-structure-v3" : "table-structure-v2");
+        append(canonical, "definition", containsGeometry ? "table-structure-v4" : "table-structure-v2");
         List<TableColumnDefinition> columns = definition.columns().stream()
                 .sorted(Comparator.comparing(column -> normalize(column.name())))
                 .toList();
@@ -28,12 +28,6 @@ public final class TableStructureFingerprintCalculator {
             append(canonical, "length", column.length());
             append(canonical, "precision", column.precision());
             append(canonical, "scale", column.scale());
-            if (column.geometry() != null) {
-                append(canonical, "geometry-kind", column.geometry().kind().name());
-                append(canonical, "crs-authority", column.geometry().crs().authority());
-                append(canonical, "crs-code", column.geometry().crs().code());
-                append(canonical, "coordinate-dimension", column.geometry().dimension().name());
-            }
             append(canonical, "nullable", column.nullable());
         }
         for (String primaryKeyColumn : definition.primaryKeyColumns()) {

@@ -967,6 +967,7 @@ export interface DataModelSpatialPreviewGeometryField {
   sourceCrs: CrsReference;
   spatialIndexAvailable: boolean;
   estimatedRowCount: number | null;
+  physicalStatisticsRefreshRequired: boolean;
   previewAllowed: boolean;
   message: string | null;
 }

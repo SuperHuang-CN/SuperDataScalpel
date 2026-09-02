@@ -429,7 +429,24 @@ public class AssistantToolCatalog {
         return object(Map.of(
                 "columnName", Map.of("type", "string", "maxLength", 128),
                 "targetType", platformTypeSchema(),
-                "failureStrategy", enumString(Arrays.stream(CastFailureStrategy.values()).map(Enum::name).toList())
+                "failureStrategy", enumString(Arrays.stream(CastFailureStrategy.values()).map(Enum::name).toList()),
+                "epochTimestampUnit", Map.of(
+                        "type", "string",
+                        "enum", Arrays.stream(EpochTimestampUnit.values()).map(Enum::name).toList()
+                ),
+                "stringTemporalParseOptions", nullableObject(Map.of(
+                        "pattern", Map.of("type", "string", "maxLength", 128),
+                        "zoneMode", enumString(Arrays.stream(StringTimestampZoneMode.values())
+                                .map(Enum::name).toList()),
+                        "sourceTimeZone", Map.of("type", "string", "maxLength", 64)
+                ), List.of("pattern", "zoneMode", "sourceTimeZone")),
+                "temporalStringFormatOptions", nullableObject(Map.of(
+                        "pattern", Map.of("type", "string", "maxLength", 128),
+                        "targetTimeZone", Map.of(
+                                "type", List.of("string", "null"),
+                                "maxLength", 64
+                        )
+                ), List.of("pattern", "targetTimeZone"))
         ), List.of("columnName", "targetType", "failureStrategy"));
     }
 

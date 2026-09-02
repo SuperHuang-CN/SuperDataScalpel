@@ -14,6 +14,7 @@ public record TdEngineTmqTopicDetailResponse(
         boolean supported,
         String unsupportedReason,
         String definitionFingerprint,
+        String legacyDefinitionFingerprint,
         List<ColumnMetadataResponse> columns,
         String timePrecision
 ) {
@@ -26,7 +27,7 @@ public record TdEngineTmqTopicDetailResponse(
         return new TdEngineTmqTopicDetailResponse(
                 topic.topicName(), topic.databaseName(), topic.supertableName(), topic.createdAt(),
                 topic.supported(), topic.unsupportedReason(), topic.definitionFingerprint(),
-                columns, topic.timePrecision()
+                topic.legacyDefinitionFingerprint(), columns, topic.timePrecision()
         );
     }
 }

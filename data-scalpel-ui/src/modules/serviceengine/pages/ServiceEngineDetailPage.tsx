@@ -50,8 +50,10 @@ export const ServiceEngineDetailPage = () => {
   const requestedTab = normalizeServiceEngineDetailTab(searchParams.get('tab'));
   const tabParameter = searchParams.get('tab');
   const servicesUnavailable = requestedTab === 'services' && (!permissionsLoaded || !canViewServices);
-  const activeTab = servicesUnavailable ? 'basic' : requestedTab;
   const engine = detailQuery.data;
+  const activeTab = servicesUnavailable || (engine?.type === 'GEOSERVER' && requestedTab === 'access-policy')
+    ? 'basic'
+    : requestedTab;
 
   useEffect(() => {
     if (permissionsLoaded && requestedTab === 'services' && !canViewServices) {
@@ -75,7 +77,10 @@ export const ServiceEngineDetailPage = () => {
     if (!engine) return;
     try {
       const result = await testMutation.mutateAsync({ id: engine.id });
-      messageApi.success(`${engine.name} 连接成功，支持：${result.databaseTypes.join('、') || '无'}，耗时 ${result.elapsedMs} ms`);
+      const support = result.type === 'GEOSERVER'
+        ? `${result.version ?? '未知版本'}，${result.capabilities?.join(' / ') || '未返回协议能力'}`
+        : `支持：${result.databaseTypes.join('、') || '无'}`;
+      messageApi.success(`${engine.name} 连接成功，${support}，耗时 ${result.elapsedMs} ms`);
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '测试 Service Engine 失败');
     }
@@ -103,9 +108,10 @@ export const ServiceEngineDetailPage = () => {
     });
   };
 
-  const openApiStudio = () => {
+  const openRuntimeConsole = () => {
     if (!engine) return;
-    window.open(`${engine.adminUrl.replace(/\/+$/, '')}/modern-ui/`, '_blank', 'noopener,noreferrer');
+    const suffix = engine.type === 'GEOSERVER' ? '/web/' : '/modern-ui/';
+    window.open(`${engine.adminUrl.replace(/\/+$/, '')}${suffix}`, '_blank', 'noopener,noreferrer');
   };
 
   if (!id) {
@@ -130,17 +136,17 @@ export const ServiceEngineDetailPage = () => {
 
   const tabItems = [
     { key: 'basic', label: '基本信息', children: <ServiceEngineBasicPanel engine={engine} /> },
-    ...(canViewServices ? [{ key: 'services', label: '数据服务', children: <ServiceEngineServicesPanel engineId={engine.id} /> }] : []),
+    ...(canViewServices ? [{ key: 'services', label: '数据服务', children: <ServiceEngineServicesPanel engineId={engine.id} geoServerWorkspace={engine.geoServerWorkspace} /> }] : []),
     {
       key: 'datasources',
       label: '数据源',
       children: <ServiceEngineDataSourcePanel engine={engine} canUpdate={canUpdate} canTest={canTest} canViewDataSources={canViewDataSources} />,
     },
-    {
+    ...(engine.type !== 'GEOSERVER' ? [{
       key: 'access-policy',
       label: '访问策略',
       children: <ServiceEngineAccessPolicyPanel engine={engine} canUpdate={canUpdate} />,
-    },
+    }] : []),
   ];
 
   return (
@@ -155,8 +161,11 @@ export const ServiceEngineDetailPage = () => {
             <span className="service-engine-detail-title">{engine.name}</span>
             <code>{engine.code}</code>
             <Tag color={engine.enabled ? 'success' : 'default'}>{engine.enabled ? '启用' : '停用'}</Tag>
-            <Tag color={engine.managementTokenConfigured ? 'success' : 'default'}>
-              {engine.managementTokenConfigured ? 'Management Token 已配置' : 'Management Token 未配置'}
+            <Tag color="blue">{engine.type === 'GEOSERVER' ? 'GeoServer 空间引擎' : 'DataScalpel 服务引擎'}</Tag>
+            <Tag color={(engine.type === 'GEOSERVER' ? engine.geoServerCredentialConfigured : engine.managementTokenConfigured) ? 'success' : 'default'}>
+              {engine.type === 'GEOSERVER'
+                ? engine.geoServerCredentialConfigured ? 'GeoServer 凭据已配置' : 'GeoServer 凭据未配置'
+                : engine.managementTokenConfigured ? 'Management Token 已配置' : 'Management Token 未配置'}
             </Tag>
           </div>
           <div className="service-engine-detail-subtitle">
@@ -164,7 +173,7 @@ export const ServiceEngineDetailPage = () => {
           </div>
         </div>
         <Space size={4} wrap>
-          <Button icon={<ExportOutlined />} onClick={openApiStudio}>打开 API Studio</Button>
+          <Button icon={<ExportOutlined />} onClick={openRuntimeConsole}>{engine.type === 'GEOSERVER' ? '打开 GeoServer' : '打开 API Studio'}</Button>
           <Tooltip title="刷新服务引擎详情"><Button icon={<ReloadOutlined />} aria-label="刷新服务引擎详情" onClick={() => void detailQuery.refetch()} /></Tooltip>
           {canTest && <Button icon={<ApiOutlined />} loading={testMutation.isPending} onClick={() => void test()}>测试连接</Button>}
           {canUpdate && <Button icon={<EditOutlined />} onClick={() => setEditing(true)}>修改</Button>}

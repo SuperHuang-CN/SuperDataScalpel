@@ -1,3 +1,4 @@
+import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   FolderOutlined,
   HistoryOutlined,
@@ -7,7 +8,7 @@ import {
   SettingOutlined,
 } from '@ant-design/icons';
 import { useQueryClient } from '@tanstack/react-query';
-import { Alert, Button, Collapse, Drawer, Empty, Input, Modal, Select, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
+import { Button, Collapse, Drawer, Empty, Input, Modal, Select, Space, Spin, Tag, Tooltip, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';

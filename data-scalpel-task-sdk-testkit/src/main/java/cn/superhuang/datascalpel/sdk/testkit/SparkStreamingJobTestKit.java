@@ -45,6 +45,9 @@ public final class SparkStreamingJobTestKit {
         public Builder captureRowLimit(int value) { delegate.captureRowLimit(value); return this; }
         public Builder modelInput(String name, StructType schema, List<Row> rows) { delegate.modelInput(name, schema, rows); return this; }
         public Builder modelInput(String name, Dataset<Row> dataset) { delegate.modelInput(name, dataset); return this; }
+        public Builder modelInputParquet(String name, Path path, StructType expectedSchema) {
+            delegate.modelInputParquet(name, path, expectedSchema); return this;
+        }
         public Builder modelOutput(String name, TestModelTarget target) { delegate.modelOutput(name, target); return this; }
         public Builder jdbcTable(String name, JdbcTableIdentifier table, StructType schema, List<Row> rows) {
             delegate.jdbcTable(name, table, schema, rows); return this;

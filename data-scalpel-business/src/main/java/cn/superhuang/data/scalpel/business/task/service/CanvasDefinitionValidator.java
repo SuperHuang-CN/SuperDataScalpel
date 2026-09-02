@@ -14,6 +14,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.time.ZoneId;
 import java.time.DateTimeException;
+import java.time.format.DateTimeFormatter;
 import java.util.regex.Pattern;
 
 /** Validates only the stable structure needed to persist and safely reload an incomplete Canvas draft. */
@@ -39,7 +40,6 @@ public class CanvasDefinitionValidator {
         if (definition.nodes() == null || definition.edges() == null) {
             invalid("Canvas nodes 和 edges 必须是数组");
         }
-
         Set<String> nodeIds = new HashSet<>();
         for (int index = 0; index < definition.nodes().size(); index++) {
             CanvasNodeDefinition node = definition.nodes().get(index);
@@ -97,7 +97,7 @@ public class CanvasDefinitionValidator {
             return;
         }
         if (node instanceof TypeCastNodeDefinition value) {
-            validateProcessorOperations(value.configuration() == null ? null : value.configuration().operations(), path);
+            validateTypeCastConfiguration(value.configuration(), path);
             return;
         }
         if (node instanceof DeduplicateNodeDefinition value) {
@@ -269,15 +269,7 @@ public class CanvasDefinitionValidator {
                 }
             }
             case KafkaInputNodeDefinition input -> {
-                if (input.configuration() == null) invalid(path + " 不能为空");
-                requireOptionalUuid(input.configuration().dataSourceId(), path + ".dataSourceId");
-                requireString(input.configuration().topic(), path + ".topic");
-                validateKafkaValueSchema(input.configuration().valueSchema(), path + ".valueSchema");
-                requireString(input.configuration().outputTableName(), path + ".outputTableName");
-                validateTriggerInterval(
-                        input.configuration().triggerIntervalSeconds(),
-                        path + ".triggerIntervalSeconds"
-                );
+                validateKafkaInputConfiguration(input.configuration(), path);
             }
             case TdEngineTmqInputNodeDefinition input -> {
                 TdEngineTmqInputConfiguration configuration = input.configuration();
@@ -694,9 +686,49 @@ public class CanvasDefinitionValidator {
             String writePath = path + "[" + index + "]";
             requireString(write.sourceTableName(), writePath + ".sourceTableName");
             requireString(write.topic(), writePath + ".topic");
-            validateKafkaValueSchema(write.valueSchema(), writePath + ".valueSchema");
-            requireString(write.keyColumnName(), writePath + ".keyColumnName");
-            validateMappings(write.columnMappings(), writePath + ".columnMappings");
+            if (write.legacyMappingMode()) {
+                if (write.valueColumnNames() != null && !write.valueColumnNames().isEmpty()) {
+                    invalid(writePath + ".valueColumnNames 在旧版 JSON 映射模式下必须为空");
+                }
+                validateKafkaValueSchema(write.valueSchema(), writePath + ".valueSchema");
+                validateMappings(write.columnMappings(), writePath + ".columnMappings");
+                continue;
+            }
+            if (write.valueSchema() != null
+                    && write.valueSchema().columns() != null
+                    && !write.valueSchema().columns().isEmpty()) {
+                invalid(writePath + ".valueSchema.columns 在新 Kafka Value 模式下必须为空");
+            }
+            if (write.columnMappings() != null && !write.columnMappings().isEmpty()) {
+                invalid(writePath + ".columnMappings 在新 Kafka Value 模式下必须为空");
+            }
+            validateKafkaOutputValueColumns(write, writePath);
+        }
+    }
+
+    private static void validateKafkaOutputValueColumns(KafkaOutputWrite write, String path) {
+        List<String> columns = write.valueColumnNames();
+        if (columns == null) invalid(path + ".valueColumnNames 必须是数组");
+        Set<String> unique = new HashSet<>();
+        for (int index = 0; index < columns.size(); index++) {
+            String column = columns.get(index);
+            if (column == null || column.isBlank()) {
+                invalid(path + ".valueColumnNames[" + index + "] 不能为空");
+            }
+            if (!unique.add(column)) {
+                invalid(path + ".valueColumnNames 中字段重复：" + column);
+            }
+        }
+        int requiredCount = switch (write.valueFormat()) {
+            case JSON -> -1;
+            case TEXT, BINARY -> 1;
+        };
+        if (write.valueFormat() == cn.superhuang.data.scalpel.contract.task.KafkaOutputValueFormat.JSON
+                && columns.isEmpty()) {
+            invalid(path + ".valueColumnNames 至少需要一个 JSON 字段");
+        }
+        if (requiredCount == 1 && columns.size() != 1) {
+            invalid(path + ".valueColumnNames 在 " + write.valueFormat() + " 格式下必须且只能有一个字段");
         }
     }
 
@@ -1428,6 +1460,62 @@ public class CanvasDefinitionValidator {
         }
     }
 
+    private static void validateKafkaInputConfiguration(
+            KafkaInputConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireOptionalUuid(configuration.dataSourceId(), path + ".dataSourceId");
+        requireString(configuration.topic(), path + ".topic");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        validateTriggerInterval(configuration.triggerIntervalSeconds(), path + ".triggerIntervalSeconds");
+
+        KafkaInputValueFormat valueFormat = configuration.effectiveValueFormat();
+        KafkaValueSchema valueSchema = configuration.valueSchema();
+        if (valueFormat == KafkaInputValueFormat.JSON) {
+            validateKafkaValueSchema(valueSchema, path + ".valueSchema");
+        } else if (valueSchema == null || valueSchema.columns() == null) {
+            invalid(path + ".valueSchema.columns 必须是数组");
+        } else if (!valueSchema.columns().isEmpty()) {
+            invalid(path + ".valueSchema.columns 在 TEXT/BINARY 格式下必须为空");
+        }
+
+        Set<KafkaInputMetadataField> metadataFields = new HashSet<>();
+        List<KafkaInputMetadataField> configuredMetadataFields = configuration.effectiveMetadataFields();
+        for (int index = 0; index < configuredMetadataFields.size(); index++) {
+            KafkaInputMetadataField metadataField = configuredMetadataFields.get(index);
+            if (metadataField == null) {
+                invalid(path + ".metadataFields[" + index + "] 不能为空");
+            }
+            if (!metadataFields.add(metadataField)) {
+                invalid(path + ".metadataFields[" + index + "] 重复配置：" + metadataField);
+            }
+        }
+
+        if (valueFormat == KafkaInputValueFormat.JSON && valueSchema != null) {
+            Set<String> metadataColumnNames = metadataFields.stream()
+                    .map(CanvasDefinitionValidator::kafkaMetadataColumnName)
+                    .collect(java.util.stream.Collectors.toSet());
+            for (int index = 0; index < valueSchema.columns().size(); index++) {
+                KafkaValueColumn column = valueSchema.columns().get(index);
+                if (column != null && metadataColumnNames.contains(column.name())) {
+                    invalid(path + ".valueSchema.columns[" + index + "].name 与 Kafka 元数据字段重名："
+                            + column.name());
+                }
+            }
+        }
+    }
+
+    private static String kafkaMetadataColumnName(KafkaInputMetadataField field) {
+        return switch (field) {
+            case KEY -> "_kafka_key";
+            case TOPIC -> "_kafka_topic";
+            case PARTITION -> "_kafka_partition";
+            case OFFSET -> "_kafka_offset";
+            case TIMESTAMP -> "_kafka_timestamp";
+        };
+    }
+
     private static void validateJoinConditions(List<JoinCondition> conditions, String path) {
         if (conditions == null) invalid(path + " 必须是数组");
         for (int index = 0; index < conditions.size(); index++) {
@@ -1511,6 +1599,143 @@ public class CanvasDefinitionValidator {
                 requireString(operation.output().outputTableName(), operationPath + ".output.outputTableName");
             }
         }
+    }
+
+    private static void validateTypeCastConfiguration(
+            TypeCastConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) {
+            invalid(path + " 不能为空");
+        }
+        validateProcessorOperations(configuration.operations(), path);
+        for (int operationIndex = 0; operationIndex < configuration.operations().size(); operationIndex++) {
+            TypeCastOperation operation = configuration.operations().get(operationIndex);
+            if (operation == null || operation.casts() == null) continue;
+            for (int castIndex = 0; castIndex < operation.casts().size(); castIndex++) {
+                ColumnTypeCast cast = operation.casts().get(castIndex);
+                if (cast == null) continue;
+                String castPath = path + ".operations[" + operationIndex + "].casts[" + castIndex + "]";
+                if (cast.epochTimestampUnit() != null
+                        && (cast.targetType() == null
+                        || cast.targetType().type() != PlatformDataType.TIMESTAMP
+                        && cast.targetType().type() != PlatformDataType.LONG)) {
+                    invalid(path + ".operations[" + operationIndex + "].casts[" + castIndex
+                            + "].epochTimestampUnit 仅支持 LONG 转 TIMESTAMP，或 DATE/TIMESTAMP 转 LONG");
+                }
+                validateStringTemporalParseOptions(cast, castPath);
+                validateTemporalStringFormatOptions(cast, castPath);
+            }
+        }
+    }
+
+    private static void validateStringTemporalParseOptions(ColumnTypeCast cast, String castPath) {
+        StringTemporalParseOptions options = cast.stringTemporalParseOptions();
+        if (options == null) return;
+        String optionsPath = castPath + ".stringTemporalParseOptions";
+        if (cast.epochTimestampUnit() != null || cast.temporalStringFormatOptions() != null) {
+            invalid(optionsPath + " 不能与其他特殊时间转换配置同时使用");
+        }
+        if (cast.targetType() == null || (cast.targetType().type() != PlatformDataType.DATE
+                && cast.targetType().type() != PlatformDataType.TIMESTAMP)) {
+            invalid(optionsPath + " 仅支持 STRING 转换为 DATE 或 TIMESTAMP");
+        }
+        if (options.pattern() == null || options.pattern().isBlank()) {
+            invalid(optionsPath + ".pattern 不能为空");
+        }
+        if (options.pattern() != null && options.pattern().length() > 128) {
+            invalid(optionsPath + ".pattern 不能超过 128 个字符");
+        }
+        if (cast.targetType().type() == PlatformDataType.DATE) {
+            if (options.zoneMode() != null || options.sourceTimeZone() != null) {
+                invalid(optionsPath + " 的 DATE 解析不能配置时区");
+            }
+            return;
+        }
+        if (options.zoneMode() == null) {
+            invalid(optionsPath + ".zoneMode 不能为空");
+        }
+        if (options.sourceTimeZone() != null && options.sourceTimeZone().length() > 64) {
+            invalid(optionsPath + ".sourceTimeZone 不能超过 64 个字符");
+        }
+        if (options.zoneMode() == StringTimestampZoneMode.SOURCE_TIME_ZONE) {
+            if (options.sourceTimeZone() == null || options.sourceTimeZone().isBlank()) {
+                invalid(optionsPath + ".sourceTimeZone 不能为空");
+            }
+            try {
+                ZoneId.of(options.sourceTimeZone());
+            } catch (DateTimeException exception) {
+                invalid(optionsPath + ".sourceTimeZone 必须是有效的 IANA Zone ID");
+            }
+            if (containsUnquotedZonePatternSymbol(options.pattern())) {
+                invalid(optionsPath + ".pattern 在指定来源时区模式下不能包含时区或偏移符号");
+            }
+        } else if (options.zoneMode() == StringTimestampZoneMode.EMBEDDED_OFFSET
+                && options.sourceTimeZone() != null) {
+            invalid(optionsPath + ".sourceTimeZone 在字符串自带偏移模式下必须为空");
+        } else if (options.zoneMode() == StringTimestampZoneMode.EMBEDDED_OFFSET
+                && !containsUnquotedZonePatternSymbol(options.pattern())) {
+            invalid(optionsPath + ".pattern 在字符串自带偏移模式下必须包含时区或偏移符号");
+        }
+    }
+
+    private static void validateTemporalStringFormatOptions(ColumnTypeCast cast, String castPath) {
+        TemporalStringFormatOptions options = cast.temporalStringFormatOptions();
+        if (options == null) return;
+        String optionsPath = castPath + ".temporalStringFormatOptions";
+        if (cast.epochTimestampUnit() != null || cast.stringTemporalParseOptions() != null) {
+            invalid(optionsPath + " 不能与其他特殊时间转换配置同时使用");
+        }
+        if (cast.targetType() == null || cast.targetType().type() != PlatformDataType.STRING) {
+            invalid(optionsPath + " 仅支持 DATE、TIMESTAMP 或 TIMESTAMP_NTZ 转换为 STRING");
+        }
+        if (options.pattern() == null || options.pattern().isBlank()) {
+            invalid(optionsPath + ".pattern 不能为空");
+        }
+        if (options.pattern() != null && options.pattern().length() > 128) {
+            invalid(optionsPath + ".pattern 不能超过 128 个字符");
+        }
+        if (options.pattern() != null && !options.pattern().isBlank()) {
+            try {
+                DateTimeFormatter.ofPattern(options.pattern());
+            } catch (IllegalArgumentException exception) {
+                invalid(optionsPath + ".pattern 不是有效的日期时间 pattern");
+            }
+            if (containsUnquotedZonePatternSymbol(options.pattern())) {
+                invalid(optionsPath + ".pattern 不能包含时区或偏移符号");
+            }
+        }
+        if (options.targetTimeZone() != null) {
+            if (options.targetTimeZone().isBlank()) {
+                invalid(optionsPath + ".targetTimeZone 不能为空字符串");
+            }
+            if (options.targetTimeZone().length() > 64) {
+                invalid(optionsPath + ".targetTimeZone 不能超过 64 个字符");
+            }
+            try {
+                ZoneId.of(options.targetTimeZone());
+            } catch (DateTimeException exception) {
+                invalid(optionsPath + ".targetTimeZone 必须是有效的 IANA Zone ID");
+            }
+        }
+    }
+
+    private static boolean containsUnquotedZonePatternSymbol(String pattern) {
+        if (pattern == null) return false;
+        boolean quoted = false;
+        for (int index = 0; index < pattern.length(); index++) {
+            char symbol = pattern.charAt(index);
+            if (symbol == '\'') {
+                if (quoted && index + 1 < pattern.length() && pattern.charAt(index + 1) == '\'') {
+                    index++;
+                } else {
+                    quoted = !quoted;
+                }
+                continue;
+            }
+            if (!quoted && "XxZOVz".indexOf(symbol) >= 0) return true;
+        }
+        return false;
     }
 
     private static void validateFilterConfiguration(FilterConfiguration configuration, String path) {

@@ -1064,7 +1064,6 @@ const configurationParsers = {
         errors.push(`${path}.analyzedSqlSha256 必须是 64 位小写 SHA-256`);
       }
       return {
-        sourceTableName: stringValue(configuration.sourceTableName),
         dataSourceId: validateOptionalUuid(
           stringValue(configuration.dataSourceId),
           `${path}.dataSourceId`,
@@ -1115,22 +1114,71 @@ const configurationParsers = {
         && configuration.startingOffsets !== null
         && configuration.startingOffsets !== ''
         && configuration.startingOffsets !== 'EARLIEST'
-        && configuration.startingOffsets !== 'LATEST') {
+      && configuration.startingOffsets !== 'LATEST') {
         errors.push(`${path}.startingOffsets 仅支持 EARLIEST 或 LATEST`);
       }
+      const valueFormat = configuration.valueFormat === undefined || configuration.valueFormat === null
+        ? 'JSON'
+        : configuration.valueFormat === 'JSON'
+          || configuration.valueFormat === 'TEXT'
+          || configuration.valueFormat === 'BINARY'
+          ? configuration.valueFormat
+          : null;
+      if (valueFormat === null) {
+        errors.push(`${path}.valueFormat 仅支持 JSON、TEXT 或 BINARY`);
+      }
+      const metadataFields = configuration.metadataFields === undefined
+        || configuration.metadataFields === null
+        ? []
+        : Array.isArray(configuration.metadataFields)
+          ? configuration.metadataFields.flatMap((item, index) => {
+            if (item === 'KEY' || item === 'TOPIC' || item === 'PARTITION'
+              || item === 'OFFSET' || item === 'TIMESTAMP') return [item];
+            errors.push(`${path}.metadataFields[${index}] 不是受支持的 Kafka 元数据字段`);
+            return [];
+          })
+          : [];
+      if (configuration.metadataFields !== undefined
+        && configuration.metadataFields !== null
+        && !Array.isArray(configuration.metadataFields)) {
+        errors.push(`${path}.metadataFields 必须是数组`);
+      }
+      const duplicateMetadataFields = metadataFields.filter(
+        (field, index) => metadataFields.indexOf(field) !== index,
+      );
+      if (duplicateMetadataFields.length > 0) {
+        errors.push(`${path}.metadataFields 不能重复配置：${duplicateMetadataFields[0]}`);
+      }
+      const valueSchema = parseKafkaValueSchema(
+        configuration.valueSchema,
+        `${path}.valueSchema`,
+        errors,
+      );
+      if (valueFormat !== null && valueFormat !== 'JSON' && valueSchema.columns.length > 0) {
+        errors.push(`${path}.valueSchema.columns 在 TEXT/BINARY 格式下必须为空`);
+      }
+      const metadataColumnNames: Record<string, string> = {
+        KEY: '_kafka_key',
+        TOPIC: '_kafka_topic',
+        PARTITION: '_kafka_partition',
+        OFFSET: '_kafka_offset',
+        TIMESTAMP: '_kafka_timestamp',
+      };
+      if (valueFormat === 'JSON') {
+        valueSchema.columns.forEach((column, index) => {
+          if (metadataFields.some((field) => metadataColumnNames[field] === column.name)) {
+            errors.push(`${path}.valueSchema.columns[${index}].name 与 Kafka 元数据字段重名`);
+          }
+        });
+      }
       return {
-        sourceTableName: stringValue(configuration.sourceTableName),
         dataSourceId: validateOptionalUuid(
           stringValue(configuration.dataSourceId),
           `${path}.dataSourceId`,
           errors,
         ),
         topic: stringValue(configuration.topic),
-        valueSchema: parseKafkaValueSchema(
-          configuration.valueSchema,
-          `${path}.valueSchema`,
-          errors,
-        ),
+        valueSchema,
         outputTableName: stringValue(configuration.outputTableName),
         startingOffsets: configuration.startingOffsets === 'EARLIEST'
           || configuration.startingOffsets === 'LATEST'
@@ -1138,20 +1186,30 @@ const configurationParsers = {
           : null,
         triggerIntervalSeconds: typeof configuration.triggerIntervalSeconds === 'number'
           ? configuration.triggerIntervalSeconds : 10,
+        valueFormat: valueFormat ?? 'JSON',
+        metadataFields,
       };
     })
   ),
   [CanvasNodeType.TdEngineTmqInput]: (value, path) => (
     parseConfiguration<Configuration<'TDENGINE_TMQ_INPUT'>>(value, path, (configuration, errors) => {
       const fingerprint = stringValue(configuration.topicDefinitionFingerprint);
-      if (fingerprint && !/^[0-9a-f]{64}$/.test(fingerprint)) {
-        errors.push(`${path}.topicDefinitionFingerprint 必须是 64 位小写 SHA-256`);
+      if (fingerprint && !/^(?:[0-9a-f]{64}|v2:[0-9a-f]{64})$/.test(fingerprint)) {
+        errors.push(`${path}.topicDefinitionFingerprint 必须是旧版 SHA-256 或 v2 指纹`);
       }
       const maximum = typeof configuration.maxOffsetsPerVGroupPerTrigger === 'number'
         ? configuration.maxOffsetsPerVGroupPerTrigger
         : 10_000;
       if (!Number.isInteger(maximum) || maximum < 1 || maximum > 1_000_000) {
         errors.push(`${path}.maxOffsetsPerVGroupPerTrigger 必须是 1 到 1000000 的整数`);
+      }
+      const watermarkDelaySeconds = configuration.watermarkDelaySeconds === null
+        || configuration.watermarkDelaySeconds === undefined
+        ? null : Number(configuration.watermarkDelaySeconds);
+      if (watermarkDelaySeconds !== null
+        && (!Number.isInteger(watermarkDelaySeconds)
+          || watermarkDelaySeconds < 1 || watermarkDelaySeconds > 2_592_000)) {
+        errors.push(`${path}.watermarkDelaySeconds 必须是 1 到 2592000 的整数`);
       }
       return {
         dataSourceId: validateOptionalUuid(stringValue(configuration.dataSourceId), `${path}.dataSourceId`, errors),
@@ -1164,6 +1222,10 @@ const configurationParsers = {
         maxOffsetsPerVGroupPerTrigger: maximum,
         triggerIntervalSeconds: typeof configuration.triggerIntervalSeconds === 'number'
           ? configuration.triggerIntervalSeconds : 10,
+        eventTimeColumn: configuration.eventTimeColumn === null
+          || configuration.eventTimeColumn === undefined
+          ? null : stringValue(configuration.eventTimeColumn),
+        watermarkDelaySeconds,
       };
     })
   ),
@@ -1707,14 +1769,63 @@ const configurationParsers = {
   ),
   [CanvasNodeType.KafkaOutput]: (value, path) => (
     parseConfiguration<Configuration<'KAFKA_OUTPUT'>>(value, path, (configuration, errors) => {
-      const writes = parseOutputWrites(configuration.writes, `${path}.writes`, errors, (write, writePath) => ({
-        writeId: validateOptionalUuid(stringValue(write.writeId), `${writePath}.writeId`, errors),
-        sourceTableName: stringValue(write.sourceTableName),
-        topic: stringValue(write.topic),
-        valueSchema: parseKafkaValueSchema(write.valueSchema, `${writePath}.valueSchema`, errors),
-        keyColumnName: stringValue(write.keyColumnName),
-        columnMappings: parseMappings(write.columnMappings, `${writePath}.columnMappings`, errors),
-      }));
+      const writes = parseOutputWrites(configuration.writes, `${path}.writes`, errors, (write, writePath) => {
+        const rawFormat = write.valueFormat;
+        const valueFormat = rawFormat == null
+          ? null
+          : rawFormat === 'JSON' || rawFormat === 'TEXT' || rawFormat === 'BINARY'
+            ? rawFormat
+            : null;
+        if (rawFormat != null && valueFormat === null) {
+          errors.push(`${writePath}.valueFormat 不是支持的 Kafka Value 格式`);
+        }
+        const valueColumnNames = parseStringArray(
+          write.valueColumnNames, `${writePath}.valueColumnNames`, errors,
+        );
+        const valueSchema = write.valueSchema == null
+          ? null
+          : parseKafkaValueSchema(write.valueSchema, `${writePath}.valueSchema`, errors);
+        const columnMappings = parseMappings(
+          write.columnMappings, `${writePath}.columnMappings`, errors,
+        );
+        valueColumnNames.forEach((columnName, index) => {
+          if (!columnName.trim()) {
+            errors.push(`${writePath}.valueColumnNames[${index}] 不能为空`);
+          }
+        });
+        if (valueFormat === null) {
+          if (valueSchema === null) errors.push(`${writePath}.valueSchema 不能为空`);
+          if (valueColumnNames.length > 0) {
+            errors.push(`${writePath}.valueColumnNames 在旧版 JSON 映射模式下必须为空`);
+          }
+        } else {
+          if (valueSchema && valueSchema.columns.length > 0) {
+            errors.push(`${writePath}.valueSchema.columns 在新 Kafka Value 模式下必须为空`);
+          }
+          if (columnMappings.length > 0) {
+            errors.push(`${writePath}.columnMappings 在新 Kafka Value 模式下必须为空`);
+          }
+          if (valueColumnNames.length === 0) {
+            errors.push(`${writePath}.valueColumnNames 至少需要一个字段`);
+          }
+          if (new Set(valueColumnNames).size !== valueColumnNames.length) {
+            errors.push(`${writePath}.valueColumnNames 不能包含重复字段`);
+          }
+          if (valueFormat !== 'JSON' && valueColumnNames.length !== 1) {
+            errors.push(`${writePath}.valueColumnNames 在 ${valueFormat} 格式下必须且只能有一个字段`);
+          }
+        }
+        return {
+          writeId: validateOptionalUuid(stringValue(write.writeId), `${writePath}.writeId`, errors),
+          sourceTableName: stringValue(write.sourceTableName),
+          topic: stringValue(write.topic),
+          valueFormat,
+          valueColumnNames,
+          keyColumnName: stringValue(write.keyColumnName),
+          valueSchema,
+          columnMappings,
+        };
+      });
       return {
         dataSourceId: validateOptionalUuid(
           stringValue(configuration.dataSourceId), `${path}.dataSourceId`, errors,

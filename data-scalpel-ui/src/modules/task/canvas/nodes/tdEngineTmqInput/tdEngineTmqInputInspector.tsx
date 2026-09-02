@@ -1,6 +1,7 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import { InfoCircleOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
-import { Alert, Button, Empty, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tag, Tooltip } from 'antd';
+import { Button, Empty, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tag, Tooltip } from 'antd';
 import type { Ref } from 'react';
 import { useImperativeHandle, useMemo, useState } from 'react';
 import {
@@ -40,6 +41,8 @@ export const TdEngineTmqInputInspector = ({ node, validation, validationUnavaila
   const [fieldModal, setFieldModal] = useState(false);
   const dataSourceId = Form.useWatch('dataSourceId', form) ?? '';
   const topicName = Form.useWatch('topicName', form) ?? '';
+  const eventTimeColumn = Form.useWatch('eventTimeColumn', form);
+  const watermarkDelaySeconds = Form.useWatch('watermarkDelaySeconds', form);
   const selectedSourceQuery = useDataSource(dataSourceId || undefined, Boolean(dataSourceId));
   const dataSourceTypesQuery = useDataSourceTypes();
   const tmqTypes = useMemo(() => new Set(
@@ -74,6 +77,8 @@ export const TdEngineTmqInputInspector = ({ node, validation, validationUnavaila
     startingOffsets: values.startingOffsets ?? 'EARLIEST',
     maxOffsetsPerVGroupPerTrigger: values.maxOffsetsPerVGroupPerTrigger ?? 10_000,
     triggerIntervalSeconds: values.triggerIntervalSeconds ?? 10,
+    eventTimeColumn: values.eventTimeColumn?.trim() || null,
+    watermarkDelaySeconds: values.watermarkDelaySeconds ?? null,
   });
   const submit = (values: FormValues) => {
     onApply({ id: node.id, type: node.type, configuration: toConfiguration(values) });
@@ -87,6 +92,13 @@ export const TdEngineTmqInputInspector = ({ node, validation, validationUnavaila
   const topics = topicsQuery.data ?? [];
   const topicOptions = topicName && !topics.some((topic) => topic.topicName === topicName)
     ? [{ topicName, supported: true } as TdEngineTmqTopic, ...topics] : topics;
+  const timestampColumns = (detailQuery.data?.columns ?? [])
+    .filter((column) => column.platformTypeDefinition?.type === 'TIMESTAMP');
+  const eventTimeOptions = eventTimeColumn
+    && !timestampColumns.some((column) => column.name === eventTimeColumn)
+    ? [{ value: eventTimeColumn, label: `${eventTimeColumn}（当前不可用）`, disabled: true },
+      ...timestampColumns.map((column) => ({ value: column.name, label: column.name }))]
+    : timestampColumns.map((column) => ({ value: column.name, label: column.name }));
 
   return <Space orientation="vertical" size={12} className="canvas-inspector-content">
     {(validationUnavailableMessage || validation?.issues.length) ? <Alert type="warning" showIcon message={validationUnavailableMessage ?? validation?.issues[0]?.message} /> : null}
@@ -110,6 +122,36 @@ export const TdEngineTmqInputInspector = ({ node, validation, validationUnavaila
       <Form.Item name="startingOffsets" label="首次启动位置" rules={[{ required: true }]}><Select options={[{ value: 'EARLIEST', label: 'EARLIEST · 从 WAL 最早位置开始' }, { value: 'LATEST', label: 'LATEST · 从最新位置开始' }]} /></Form.Item>
       <Form.Item name="maxOffsetsPerVGroupPerTrigger" label="每 VGroup 每批最大 Offset 跨度" rules={[{ required: true }]}><InputNumber min={1} max={1_000_000} precision={0} style={{ width: '100%' }} /></Form.Item>
       <Form.Item name="triggerIntervalSeconds" label="微批间隔（秒）" rules={[{ required: true }]}><InputNumber min={1} max={300} precision={0} style={{ width: '100%' }} /></Form.Item>
+      <Form.Item
+        name="eventTimeColumn"
+        label={<Space size={4}>事件时间字段（可选）<Tooltip title="只从 TIMESTAMP 字段中选择。配置后会在来源处建立 Watermark，供后续窗口和有状态处理使用。"><InfoCircleOutlined /></Tooltip></Space>}
+      >
+        <Select
+          allowClear
+          showSearch
+          loading={detailQuery.isFetching}
+          disabled={!topicName}
+          placeholder="不指定事件时间"
+          options={eventTimeOptions}
+        />
+      </Form.Item>
+      {(eventTimeColumn || watermarkDelaySeconds != null) ? <Form.Item
+        name="watermarkDelaySeconds"
+        label="Watermark 延迟（秒）"
+        rules={[{
+          validator: (_, value) => {
+            if (eventTimeColumn && value == null) {
+              return Promise.reject(new Error('配置事件时间后必须填写 Watermark 延迟'));
+            }
+            if (!eventTimeColumn && value != null) {
+              return Promise.reject(new Error('配置 Watermark 延迟后必须选择事件时间字段'));
+            }
+            return Promise.resolve();
+          },
+        }]}
+      >
+        <InputNumber min={1} max={2_592_000} precision={0} style={{ width: '100%' }} />
+      </Form.Item> : null}
       <Alert type="info" showIcon message="首次启动位置仅在没有 Spark Checkpoint 时生效；Offset 跨度不等于行数。" />
     </Form>
     <Modal rootClassName="business-overlay business-modal-overlay" title={`超级表字段 · ${detailQuery.data?.supertableName ?? ''}`} open={fieldModal} footer={null} width={760} onCancel={() => setFieldModal(false)}>

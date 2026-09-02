@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import { EyeOutlined } from '@ant-design/icons';
-import { Alert, Button, Form, Space, Tooltip } from 'antd';
+import { Button, Form, Space, Tooltip } from 'antd';
 import { useImperativeHandle, useState } from 'react';
 import {
   dataModelStatusLabels,

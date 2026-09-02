@@ -1,24 +1,16 @@
 import {
   AuditOutlined,
   DeleteOutlined,
+  EllipsisOutlined,
+  LinkOutlined,
   PlusOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
-import type { TableProps } from 'antd';
-import {
-  Alert,
-  Button,
-  Drawer,
-  Popconfirm,
-  Select,
-  Space,
-  Table,
-  Tag,
-  Tooltip,
-  message,
-} from 'antd';
+import type { MenuProps, TableProps } from 'antd';
+import { Button, Drawer, Dropdown, Modal, Select, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
   useApiServiceSubscriptions,
   useCreateApiServiceSubscription,
@@ -64,7 +56,9 @@ export const DataServiceSubscriptionsDrawer = ({
   onClose,
 }: DataServiceSubscriptionsDrawerProps) => {
   const [selectedConsumerId, setSelectedConsumerId] = useState<string>();
+  const [operationError, setOperationError] = useState<string | null>(null);
   const [messageApi, messageContext] = message.useMessage();
+  const [modalApi, modalContext] = Modal.useModal();
   const request = useMemo(() => ({ page: 0, size: 500, sort: '-updatedAt' }), []);
   const consumerRequest = useMemo(() => ({ page: 0, size: 500, sort: 'name' }), []);
   const subscriptionsQuery = useApiServiceSubscriptions(
@@ -97,6 +91,7 @@ export const DataServiceSubscriptionsDrawer = ({
 
   const create = async () => {
     if (!dataService || !selectedConsumerId) return;
+    setOperationError(null);
     try {
       const response = await createMutation.mutateAsync({
         consumerId: selectedConsumerId,
@@ -107,31 +102,40 @@ export const DataServiceSubscriptionsDrawer = ({
       if (failure) messageApi.error(failure.lastError || '订阅已保存，但网关授权失败');
       else messageApi.success('消费者订阅已授权');
     } catch (error) {
-      messageApi.error(errorMessage(error, '新增消费者订阅失败'));
+      const failure = errorMessage(error, '新增消费者订阅失败');
+      setOperationError(failure);
+      messageApi.error(failure);
     }
   };
 
   const sync = async (subscription: ApiServiceSubscription) => {
+    setOperationError(null);
     try {
       const response = await syncMutation.mutateAsync(subscription.id);
       const failure = response.gatewayBindings.find((binding) => binding.status === 'GRANT_FAILED');
       if (failure) messageApi.error(failure.lastError || '订阅授权同步失败');
       else messageApi.success('订阅授权已同步');
     } catch (error) {
-      messageApi.error(errorMessage(error, '同步订阅授权失败'));
+      const failure = errorMessage(error, '同步订阅授权失败');
+      setOperationError(failure);
+      messageApi.error(failure);
     }
   };
 
   const remove = async (subscription: ApiServiceSubscription) => {
+    setOperationError(null);
     try {
       await revokeMutation.mutateAsync(subscription.id);
       messageApi.success('消费者订阅已撤回');
     } catch (error) {
-      messageApi.error(errorMessage(error, '撤回消费者订阅失败'));
+      const failure = errorMessage(error, '撤回消费者订阅失败');
+      setOperationError(failure);
+      messageApi.error(failure);
     }
   };
 
   const reconcile = async (subscription: ApiServiceSubscription) => {
+    setOperationError(null);
     try {
       const response = await reconcileMutation.mutateAsync(subscription.id);
       const drift = response.gatewayBindings.find(
@@ -144,118 +148,136 @@ export const DataServiceSubscriptionsDrawer = ({
       else if (failure) messageApi.error(failure.reconciliationMessage || '订阅网关状态检查失败');
       else messageApi.success('订阅网关状态一致');
     } catch (error) {
-      messageApi.error(errorMessage(error, '订阅网关状态对账失败'));
+      const failureMessage = errorMessage(error, '订阅网关状态对账失败');
+      setOperationError(failureMessage);
+      messageApi.error(failureMessage);
     }
   };
 
+  const subscriptionMenu = (subscription: ApiServiceSubscription): MenuProps => ({
+    items: [
+      { key: 'reconcile', icon: <AuditOutlined />, label: '对账网关状态' },
+      ...(subscription.desiredState === 'GRANTED'
+        ? [{ key: 'sync', icon: <ReloadOutlined />, label: '同步授权' }]
+        : []),
+      { type: 'divider' },
+      { key: 'revoke', icon: <DeleteOutlined />, label: '撤回订阅', danger: true },
+    ],
+    onClick: ({ key }) => {
+      if (key === 'reconcile') void reconcile(subscription);
+      if (key === 'sync') void sync(subscription);
+      if (key === 'revoke') {
+        modalApi.confirm({
+          rootClassName: 'business-overlay business-modal-overlay',
+          title: '撤回消费者订阅',
+          content: `确认撤回“${subscription.consumerName}”对当前服务的调用权限吗？`,
+          okText: '撤回',
+          okButtonProps: { danger: true },
+          cancelText: '取消',
+          onOk: () => remove(subscription),
+        });
+      }
+    },
+  });
+
   const columns: TableProps<ApiServiceSubscription>['columns'] = [
-    { title: '消费者名称', dataIndex: 'consumerName', width: 170, ellipsis: true },
-    { title: '消费者编码', dataIndex: 'consumerCode', width: 160, ellipsis: true, render: (value: string) => <code>{value}</code> },
     {
-      title: '业务状态',
-      dataIndex: 'desiredState',
-      width: 100,
-      render: (value: ApiServiceSubscription['desiredState']) => (
-        <Tag color={value === 'GRANTED' ? 'success' : 'warning'}>
-          {apiServiceSubscriptionDesiredStateLabels[value]}
-        </Tag>
+      title: '消费者',
+      key: 'consumer',
+      width: 230,
+      render: (_value, row) => (
+        <span className="data-service-subscription-identity">
+          <strong title={row.consumerName}>{row.consumerName}</strong>
+          <code title={row.consumerCode}>{row.consumerCode}</code>
+        </span>
       ),
     },
     {
-      title: '网关授权',
-      dataIndex: 'gatewayBindings',
-      width: 280,
-      render: (bindings: ApiServiceSubscription['gatewayBindings']) => bindings.length ? (
-        <Space size={[0, 4]} wrap>
-          {bindings.map((binding) => (
-            <Space key={binding.id} size={[2, 2]} wrap>
+      title: '订阅与网关状态',
+      key: 'status',
+      render: (_value, row) => (
+        <span className="data-service-subscription-statuses">
+          <Tag color={row.desiredState === 'GRANTED' ? 'success' : 'warning'}>
+            {apiServiceSubscriptionDesiredStateLabels[row.desiredState]}
+          </Tag>
+          {row.gatewayBindings.length ? row.gatewayBindings.map((binding) => (
+            <span key={binding.id}>
               <Tooltip title={binding.lastError || undefined}>
                 <Tag color={statusColors[binding.status]}>
                   {gatewayProviderLabels[binding.provider]} · {gatewaySubscriptionStatusLabels[binding.status]}
                 </Tag>
               </Tooltip>
               <GatewayReconciliationTag state={binding} />
-            </Space>
-          ))}
-        </Space>
-      ) : <Tag>未授权</Tag>,
+            </span>
+          )) : <Tag>未授权</Tag>}
+        </span>
+      ),
     },
     {
       title: '操作',
       key: 'actions',
-      width: 122,
-      fixed: 'right',
+      width: 58,
+      align: 'center',
       render: (_: unknown, subscription: ApiServiceSubscription) => canManage ? (
-        <Space size={2}>
-          <Tooltip title="立即对账网关状态">
-            <Button
-              type="text"
-              size="small"
-              icon={<AuditOutlined />}
-              aria-label={`对账${subscription.consumerName}订阅的网关状态`}
-              loading={reconcileMutation.isPending
-                && reconcileMutation.variables === subscription.id}
-              onClick={() => void reconcile(subscription)}
-            />
+        <Dropdown menu={subscriptionMenu(subscription)} trigger={['click']}>
+          <Tooltip title="管理订阅">
+            <span>
+              <Button
+                type="text"
+                size="small"
+                icon={<EllipsisOutlined />}
+                aria-label={`管理${subscription.consumerName}订阅`}
+                loading={(reconcileMutation.isPending && reconcileMutation.variables === subscription.id)
+                  || (syncMutation.isPending && syncMutation.variables === subscription.id)
+                  || (revokeMutation.isPending && revokeMutation.variables === subscription.id)}
+              />
+            </span>
           </Tooltip>
-          {subscription.desiredState === 'GRANTED' && (
-            <Tooltip title="同步授权">
-              <Button
-                type="text"
-                size="small"
-                icon={<ReloadOutlined />}
-                aria-label={`同步${subscription.consumerName}订阅`}
-                loading={syncMutation.isPending && syncMutation.variables === subscription.id}
-                onClick={() => void sync(subscription)}
-              />
-            </Tooltip>
-          )}
-          <Popconfirm
-            title="撤回消费者订阅"
-            description={`确认撤回“${subscription.consumerName}”的调用权限吗？`}
-            okText="撤回"
-            cancelText="取消"
-            onConfirm={() => remove(subscription)}
-          >
-            <Tooltip title="撤回">
-              <Button
-                type="text"
-                size="small"
-                danger
-                icon={<DeleteOutlined />}
-                aria-label={`撤回${subscription.consumerName}订阅`}
-                loading={revokeMutation.isPending && revokeMutation.variables === subscription.id}
-              />
-            </Tooltip>
-          </Popconfirm>
-        </Space>
+        </Dropdown>
       ) : '—',
     },
   ];
 
   return (
     <>
-      {messageContext}
+      {messageContext}{modalContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
-        title={dataService ? `${dataService.name} · 订阅消费者` : '订阅消费者'}
+        className="data-service-subscriptions-drawer"
+        title={(
+          <div className="data-service-subscriptions-title">
+            <span className="data-service-subscriptions-title-icon" aria-hidden="true"><LinkOutlined /></span>
+            <span className="data-service-subscriptions-title-copy">
+              <span>管理服务订阅</span>
+              <Typography.Text type="secondary">{dataService?.name ?? '数据服务'} · 管理消费者调用授权与网关同步</Typography.Text>
+            </span>
+          </div>
+        )}
+        extra={<Tag className="data-service-subscriptions-header-tag">{subscriptions.length} 个消费者</Tag>}
         open={open}
         width={780}
-        onClose={onClose}
+        onClose={() => { setSelectedConsumerId(undefined); setOperationError(null); onClose(); }}
         destroyOnHidden
       >
-        <Space direction="vertical" size={12} style={{ width: '100%' }}>
+        <div className="data-service-subscriptions-workspace">
+          <div className="data-service-subscriptions-toolbar">
+            <span className="data-service-subscriptions-toolbar-copy">
+              <span>
+                <strong>已授权消费者</strong>
+                <ContextHelp ariaLabel="查看服务订阅说明" content="只有已启用、以订阅访问方式发布且已同步到同一网关的消费者才能新增订阅。" presentation="popover" placement="bottomLeft" />
+              </span>
+              <Typography.Text type="secondary">授权变更会同步到服务当前发布的 API 网关</Typography.Text>
+            </span>
           {!subscriptionEligible && (
-            <Alert
-              type="info"
-              showIcon
-              title={publication?.accessMode !== 'SUBSCRIPTION_REQUIRED'
+            <InlineFeedback
+              tone="info"
+              label={publication?.accessMode !== 'SUBSCRIPTION_REQUIRED'
                 ? '公开访问服务不需要消费者订阅。'
                 : '服务当前版本启用并发布到网关后，才可以新增消费者订阅。'}
             />
           )}
           {canManage && subscriptionEligible && (
-            <Space.Compact style={{ width: '100%' }}>
+            <Space.Compact className="data-service-subscriptions-create">
               <Select
                 showSearch
                 allowClear
@@ -278,16 +300,18 @@ export const DataServiceSubscriptionsDrawer = ({
               </Button>
             </Space.Compact>
           )}
+          </div>
+          {operationError && <InlineFeedback className="data-service-subscriptions-error" tone="error" label="订阅操作失败" detail={operationError} />}
           <Table<ApiServiceSubscription>
             size="small"
+            className="management-table management-table-comfortable data-service-subscriptions-table"
             rowKey="id"
             columns={columns}
             dataSource={subscriptions}
             loading={subscriptionsQuery.isFetching}
             pagination={false}
-            scroll={{ x: 780 }}
           />
-        </Space>
+        </div>
       </Drawer>
     </>
   );

@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.business.task.domain.SparkJarLineageAggregate;
 import cn.superhuang.data.scalpel.business.task.domain.SparkJarLineageIngestion;
 import cn.superhuang.data.scalpel.business.task.domain.SparkJarTaskDefinition;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
+import cn.superhuang.data.scalpel.business.task.domain.TaskRunExecutionMode;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import cn.superhuang.data.scalpel.business.task.repository.SparkJarLineageAggregateRepository;
 import cn.superhuang.data.scalpel.business.task.repository.SparkJarLineageIngestionRepository;
@@ -69,7 +70,8 @@ public class SparkJarLineageIngestionService {
 
     @Transactional
     public void enqueue(TaskRun run, DispatcherExecutionEvent event) {
-        if (event.resultSha256() == null || ingestionRepository.existsByRunId(run.getId())) return;
+        if (run.getExecutionMode() == TaskRunExecutionMode.TRIAL
+                || event.resultSha256() == null || ingestionRepository.existsByRunId(run.getId())) return;
         String jarSha256 = run.getUserJarSha256();
         String resultObjectKey = run.getResultObjectKey();
         if (jarSha256 == null || resultObjectKey == null) return;

@@ -1,5 +1,6 @@
+import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { ReloadOutlined } from '@ant-design/icons';
-import { Alert, Button, Card, Spin } from 'antd';
+import { Button, Card, Spin } from 'antd';
 import {
   forwardRef,
   useEffect,
