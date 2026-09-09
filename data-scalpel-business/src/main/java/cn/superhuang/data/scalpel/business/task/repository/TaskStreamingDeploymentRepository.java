@@ -13,7 +13,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
-public interface TaskStreamingDeploymentRepository extends JpaRepository<TaskStreamingDeployment, UUID> {
+public interface TaskStreamingDeploymentRepository extends cn.superhuang.data.scalpel.search.SearchRepository<TaskStreamingDeployment, UUID> {
     Optional<TaskStreamingDeployment> findFirstByTaskIdAndDefinitionVersionOrderByCheckpointGenerationDesc(
             UUID taskId, int definitionVersion);
     Optional<TaskStreamingDeployment> findFirstByTaskIdAndDefinitionVersionAndExecutionModeOrderByCheckpointGenerationDesc(

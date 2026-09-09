@@ -47,6 +47,7 @@ spring:
         jdbc:
           time_zone: UTC
   quartz:
+    auto-startup: false # TaskRunRecovery starts Quartz after interrupted-run cleanup.
     scheduler-name: dataScalpelTaskScheduler
     job-store-type: jdbc
     jdbc:
@@ -55,6 +56,35 @@ spring:
     wait-for-jobs-to-complete-on-shutdown: false
 
 data-scalpel:
+  system-mcp:
+    public-base-url: ${DATASCALPEL_SYSTEM_MCP_PUBLIC_BASE_URL:}
+    connect-timeout: 3s
+    invoke-timeout: 60s
+    concurrency: 8
+    max-request-bytes: 2097152
+    max-response-bytes: 1048576
+    audit-retention: 30d
+  operations:
+    credential-key: ${DATASCALPEL_ALERT_CREDENTIAL_KEY:}
+    public-base-url: ${DATASCALPEL_PUBLIC_BASE_URL:}
+    observation-stale-after: 90s
+    evaluation-interval: 10s
+    incident-retention-days: 90
+    notification-retention-days: 30
+    delivery-retention-days: 30
+    signal-retention-days: 7
+  mcp:
+    public-base-url: ${DATASCALPEL_MCP_PUBLIC_BASE_URL:http://localhost:${server.port}}
+    credential-key: ${DATASCALPEL_MCP_CREDENTIAL_KEY:}
+    execution-timeout: ${DATASCALPEL_MCP_EXECUTION_TIMEOUT:10s}
+    execution-concurrency: ${DATASCALPEL_MCP_EXECUTION_CONCURRENCY:8}
+    execution-queue-capacity: ${DATASCALPEL_MCP_EXECUTION_QUEUE_CAPACITY:32}
+    max-script-size: ${DATASCALPEL_MCP_MAX_SCRIPT_SIZE:200KB}
+    max-schema-size: ${DATASCALPEL_MCP_MAX_SCHEMA_SIZE:64KB}
+    max-payload-size: ${DATASCALPEL_MCP_MAX_PAYLOAD_SIZE:1MB}
+    max-tools-per-server: ${DATASCALPEL_MCP_MAX_TOOLS_PER_SERVER:100}
+    invocation-retention: ${DATASCALPEL_MCP_INVOCATION_RETENTION:30d}
+    invocation-cleanup-cron: ${DATASCALPEL_MCP_INVOCATION_CLEANUP_CRON:0 45 3 * * *}
   assistant:
     credential-key: ${DATASCALPEL_ASSISTANT_CREDENTIAL_KEY:}
     connect-timeout: ${DATASCALPEL_ASSISTANT_CONNECT_TIMEOUT:5s}

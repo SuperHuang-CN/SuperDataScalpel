@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.business.task.service.TaskRunArtifactStorage;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -87,11 +88,11 @@ final class S3TaskRunArtifactStorage implements TaskRunArtifactStorage {
                 .bucket(bucket).key(resolve(objectKey)).build())) {
             long contentLength = response.response().contentLength();
             if (contentLength > maximumBytes) {
-                throw new IllegalStateException("任务运行制品超过允许大小");
+                throw new ArtifactSizeLimitExceededException(maximumBytes);
             }
             byte[] content = response.readAllBytes();
             if (content.length > maximumBytes) {
-                throw new IllegalStateException("任务运行制品超过允许大小");
+                throw new ArtifactSizeLimitExceededException(maximumBytes);
             }
             return Optional.of(content);
         } catch (NoSuchKeyException exception) {
@@ -101,6 +102,39 @@ final class S3TaskRunArtifactStorage implements TaskRunArtifactStorage {
             throw exception;
         } catch (IOException exception) {
             throw new IllegalStateException("无法读取任务运行制品", exception);
+        }
+    }
+
+    @Override
+    public Optional<byte[]> readRangeIfPresent(String objectKey, long startInclusive, int maximumBytes) {
+        if (startInclusive < 0) throw new IllegalArgumentException("任务运行制品读取位置无效");
+        if (maximumBytes < 1) throw new IllegalArgumentException("任务运行制品读取大小无效");
+        long endInclusive = Math.addExact(startInclusive, maximumBytes - 1L);
+        try (var response = client.getObject(GetObjectRequest.builder()
+                .bucket(bucket)
+                .key(resolve(objectKey))
+                .range("bytes=%d-%d".formatted(startInclusive, endInclusive))
+                .build())) {
+            return Optional.of(response.readAllBytes());
+        } catch (NoSuchKeyException exception) {
+            return Optional.empty();
+        } catch (S3Exception exception) {
+            if (exception.statusCode() == 404) return Optional.empty();
+            throw exception;
+        } catch (IOException exception) {
+            throw new IllegalStateException("无法读取任务运行制品范围", exception);
+        }
+    }
+
+    @Override
+    public Optional<ArtifactMetadata> metadataIfPresent(String objectKey) {
+        try {
+            var response = client.headObject(HeadObjectRequest.builder()
+                    .bucket(bucket).key(resolve(objectKey)).build());
+            return Optional.of(new ArtifactMetadata(response.contentLength(), response.contentType()));
+        } catch (S3Exception exception) {
+            if (exception.statusCode() == 404) return Optional.empty();
+            throw exception;
         }
     }
 

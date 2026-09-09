@@ -14,13 +14,14 @@ public record TaskExecutionLaunchDescriptor(
         RunnerSparkMode sparkMode,
         LaunchArtifactDownload manifest,
         LaunchArtifactUpload result,
+        LaunchArtifactUpload trialPreview,
         RunnerEventChannel runnerEvent,
         String checkpointUriPrefix,
         RunnerControlChannel runnerControl,
         List<QualitySampleArtifactUpload> qualitySamples,
         LaunchUserJarDownload userJar
 ) {
-    public static final int CURRENT_VERSION = 4;
+    public static final int CURRENT_VERSION = 5;
 
     public TaskExecutionLaunchDescriptor {
         qualitySamples = qualitySamples == null ? List.of() : List.copyOf(qualitySamples);
@@ -37,6 +38,10 @@ public record TaskExecutionLaunchDescriptor(
             }
         }
         ExecutionContractValidation.exactArtifactKey(result.objectKey(), runId, attempt, "result.json");
+        if (trialPreview != null) {
+            ExecutionContractValidation.exactArtifactKey(
+                    trialPreview.objectKey(), runId, attempt, "trial-preview.json");
+        }
         String samplePrefix = "task-runs/%s/attempts/%d/quality/samples/".formatted(runId, attempt);
         if (qualitySamples.stream().map(QualitySampleArtifactUpload::ruleId).distinct().count() != qualitySamples.size()
                 || qualitySamples.stream().anyMatch(sample -> !sample.objectKey().equals(
@@ -58,7 +63,7 @@ public record TaskExecutionLaunchDescriptor(
             RunnerEventChannel runnerEvent
     ) {
         this(launchVersion, engineId, executionId, runId, attempt, deadlineAt, sparkMode,
-                manifest, result, runnerEvent, null, null, List.of(), null);
+                manifest, result, null, runnerEvent, null, null, List.of(), null);
     }
 
     public TaskExecutionLaunchDescriptor(
@@ -68,7 +73,7 @@ public record TaskExecutionLaunchDescriptor(
             String checkpointUriPrefix, RunnerControlChannel runnerControl
     ) {
         this(launchVersion, engineId, executionId, runId, attempt, deadlineAt, sparkMode,
-                manifest, result, runnerEvent, checkpointUriPrefix, runnerControl, List.of(), null);
+                manifest, result, null, runnerEvent, checkpointUriPrefix, runnerControl, List.of(), null);
     }
 
     public TaskExecutionLaunchDescriptor(
@@ -78,6 +83,6 @@ public record TaskExecutionLaunchDescriptor(
             RunnerControlChannel runnerControl, List<QualitySampleArtifactUpload> qualitySamples
     ) {
         this(launchVersion, engineId, executionId, runId, attempt, deadlineAt, sparkMode,
-                manifest, result, runnerEvent, checkpointUriPrefix, runnerControl, qualitySamples, null);
+                manifest, result, null, runnerEvent, checkpointUriPrefix, runnerControl, qualitySamples, null);
     }
 }

@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendException;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendLog;
+import cn.superhuang.data.scalpel.dispatcher.backend.BackendLogWindow;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendReadiness;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendStatus;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendSubmission;
@@ -184,6 +185,16 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
                 dispatcherProperties.logMaxBytes().toBytes());
         if (!result.successful()) throw new BackendException("KUBERNETES_LOG_FAILED", "无法获取Driver Pod日志");
         return new BackendLog(result.output(), result.truncated());
+    }
+
+    @Override
+    public BackendLog collectRecentLog(ExternalExecutionHandle handle) throws BackendException {
+        String podName = requireHandle(handle);
+        CommandResult result = execute(commands.recentLogs(podName, 2_001), java.time.Duration.ofSeconds(10),
+                dispatcherProperties.logMaxBytes().toBytes());
+        if (!result.successful()) throw new BackendException("KUBERNETES_LOG_FAILED", "无法获取Driver Pod日志");
+        return BackendLogWindow.recent(new BackendLog(result.output(), result.truncated()),
+                2_000, 1024 * 1024);
     }
 
     @Override

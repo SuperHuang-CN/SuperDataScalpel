@@ -447,14 +447,11 @@ export const DataServiceListPanel = ({
       title: '运行状态', width: 210,
       render: (_: unknown, dataService: DataServiceSummary) => <ManagementListCell
         primary={<ManagementStatusIndicator label={dataServiceStatusLabels[dataService.status]} tone={serviceStatusColors[dataService.status]} />}
-        secondary={<div className="management-status-group">
-          <ManagementStatusIndicator
-            label={dataService.definitionConfigured ? `定义 v${dataService.definitionVersion}` : '定义未配置'}
-            tone={dataService.definitionConfigured ? 'success' : 'warning'}
-          />
+        secondary={<div className="data-service-runtime-summary">
           {dataService.deploymentStatus
             ? <ManagementStatusIndicator label={dataServiceDeploymentStatusLabels[dataService.deploymentStatus]} tone={deploymentStatusColors[dataService.deploymentStatus]} title={dataService.deploymentError || undefined} />
             : <ManagementStatusIndicator label="未部署" />}
+          <span className="data-service-runtime-summary-separator" aria-hidden>·</span>
           <ManagementStatusIndicator label={dataService.type === 'SPATIAL_SERVICE' ? 'GeoServer 直连' : dataService.gatewayBindings.length ? `网关 ${dataService.gatewayBindings.length}` : '未发布网关'} tone={dataService.type === 'SPATIAL_SERVICE' || dataService.gatewayBindings.length ? 'success' : 'default'} />
         </div>}
       />,
@@ -479,13 +476,12 @@ export const DataServiceListPanel = ({
           && (!dataService.deploymentStatus || dataService.deploymentStatus === 'REMOVED');
         return <div className="management-row-actions">
           <div className="management-row-actions-shortcuts">
-          {canUpdate && (
-            <Tooltip title={editable ? '修改基础信息' : '请先停用服务并完成部署清理'}>
+          {canUpdate && editable && (
+            <Tooltip title="修改基础信息">
               <span>
                 <Button
                   type="text"
                   size="small"
-                  disabled={!editable}
                   aria-label={`编辑${dataService.name}的基础信息`}
                   icon={<EditOutlined />}
                   onClick={() => setEditingService(dataService)}
@@ -493,13 +489,12 @@ export const DataServiceListPanel = ({
               </span>
             </Tooltip>
           )}
-          {canUpdate && !dataService.definitionConfigured && (
-            <Tooltip title={editable ? '配置服务定义' : '请先停用服务并完成部署清理'}>
+          {canUpdate && editable && !dataService.definitionConfigured && (
+            <Tooltip title="配置服务定义">
               <span>
                 <Button
                   type="text"
                   size="small"
-                  disabled={!editable}
                   aria-label={`配置${dataService.name}的服务定义`}
                   icon={<FormOutlined />}
                   onClick={() => openEditor(`/dataservice/${dataService.id}/definition/edit`)}
@@ -507,9 +502,9 @@ export const DataServiceListPanel = ({
               </span>
             </Tooltip>
           )}
-          {canPublish && dataService.status !== 'ENABLED' && (
-            <Tooltip title={!dataService.definitionConfigured ? '请先配置服务定义' : dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING' ? '重试启用' : '启用'}>
-              <span><Button type="text" size="small" disabled={!dataService.definitionConfigured} aria-label={`启用${dataService.name}`} icon={<PlayCircleOutlined />} loading={enableMutation.isPending && enableMutation.variables === dataService.id} onClick={() => void enable(dataService)} /></span>
+          {canPublish && dataService.status !== 'ENABLED' && dataService.definitionConfigured && (
+            <Tooltip title={dataService.deploymentStatus === 'FAILED' || dataService.deploymentStatus === 'PENDING' ? '重试启用' : '启用'}>
+              <span><Button type="text" size="small" aria-label={`启用${dataService.name}`} icon={<PlayCircleOutlined />} loading={enableMutation.isPending && enableMutation.variables === dataService.id} onClick={() => void enable(dataService)} /></span>
             </Tooltip>
           )}
           {canPublish && dataService.status === 'ENABLED' && (

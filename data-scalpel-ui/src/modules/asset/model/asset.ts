@@ -1,4 +1,4 @@
-export type AssetType = 'DATA_MODEL' | 'FILE_DATASET' | 'DICTIONARY' | 'DATA_SERVICE';
+export type AssetType = 'DATA_MODEL' | 'FILE_DATASET' | 'PANORAMA' | 'DICTIONARY' | 'DATA_SERVICE';
 export type AssetStatus = 'DRAFT' | 'PUBLISHED' | 'OFFLINE';
 export type AssetSyncStatus = 'IN_SYNC' | 'OUTDATED' | 'SOURCE_UNAVAILABLE' | 'SOURCE_MISSING' | 'FAILED';
 export type AssetSensitivityLevel = 'PUBLIC' | 'INTERNAL' | 'SENSITIVE';
@@ -123,6 +123,7 @@ export interface AssetSourceNavigation {
 export const assetTypeLabels: Record<AssetType, string> = {
   DATA_MODEL: '数据模型',
   FILE_DATASET: '文件数据集',
+  PANORAMA: '全景影像',
   DICTIONARY: '码表',
   DATA_SERVICE: '数据服务',
 };
@@ -156,6 +157,7 @@ export const assetPortalSourceDisplayStatusLabels: Record<AssetPortalSourceDispl
 export const assetSourcePath = (asset: Pick<Asset, 'assetType' | 'resourceId'>): string => ({
   DATA_MODEL: `/model/${asset.resourceId}`,
   FILE_DATASET: `/file-dataset/${asset.resourceId}`,
+  PANORAMA: `/panorama/${asset.resourceId}`,
   DICTIONARY: `/standard/dictionaries/${asset.resourceId}`,
   DATA_SERVICE: `/dataservice/${asset.resourceId}`,
 })[asset.assetType];

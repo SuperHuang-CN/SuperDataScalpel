@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.filedataset.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.filedataset.service.FileDatasetService;
 import cn.superhuang.data.scalpel.business.filedataset.web.request.QueryFileDatasetCanvasMetadataRequest;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetCanvasMetadataResponse;
@@ -23,6 +24,7 @@ public class FileDatasetTableResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "批量查询 Canvas 所需的文件表元数据")
     @PostMapping("/actions/query-canvas-metadata")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "批量查询 Canvas 所需的文件表元数据", description = "只读操作")

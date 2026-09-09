@@ -21,6 +21,8 @@ import java.util.List;
 public record TaskRunResponse(
         UUID id,
         UUID taskId,
+        UUID parentRunId,
+        String workflowNodeId,
         UUID scheduleId,
         UUID streamingDeploymentId,
         TaskType taskType,
@@ -62,7 +64,7 @@ public record TaskRunResponse(
 
     public static TaskRunResponse from(TaskRun run) {
         return new TaskRunResponse(
-                run.getId(), run.getTaskId(), run.getScheduleId(), run.getStreamingDeploymentId(),
+                run.getId(), run.getTaskId(), run.getParentRunId(), run.getWorkflowNodeId(), run.getScheduleId(), run.getStreamingDeploymentId(),
                 run.getTaskType(), run.getExternalExecutionId(),
                 run.getComputeEngineId(), run.getBackendApplicationId(), run.getTrackingUrl(),
                 run.getAttempt(), run.getDefinitionVersion(), run.getTriggerType(),

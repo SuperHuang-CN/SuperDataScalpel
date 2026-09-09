@@ -15,6 +15,18 @@ import {
   createGeometryConstructConfiguration,
   createGeometryBufferConfiguration,
   createGeometryExplodeConfiguration,
+  createGeometryDeriveConfiguration,
+  createGeometrySimplifyConfiguration,
+  createSpatialNearestConfiguration,
+  createSpatialSummarizeWithinConfiguration,
+  createSpatialOverlayConfiguration,
+  createTrackReconstructConfiguration,
+  createTrackMotionStatisticsConfiguration,
+  createTrackFindDwellConfiguration,
+  createTrackDetectIncidentsConfiguration,
+  createSpatialBinAggregateConfiguration,
+  createSpatialPointClusterConfiguration,
+  createSpatialCenterDispersionConfiguration,
   createGeometryRepairConfiguration,
   createGeometrySerializeConfiguration,
   createGeometryValidateConfiguration,
@@ -57,7 +69,7 @@ export type {
 } from '../model/maskingRule';
 
 export const CANVAS_SCHEMA_VERSION = 4 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 8 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 47 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
 export const CANVAS_FILTER_MAX_DEPTH = 12 as const;
 export const CANVAS_FILTER_MAX_CONDITION_NODES = 256 as const;
@@ -80,6 +92,11 @@ export const CANVAS_WINDOW_MAX_FRAME_OFFSET = 1_000_000 as const;
 export const CANVAS_TOP_N_MAX_LIMIT = 1_000_000 as const;
 export const CANVAS_SPATIAL_MEASURE_MAX_MEASUREMENTS = 32 as const;
 export const CANVAS_SPATIAL_AGGREGATE_MAX_AGGREGATIONS = 32 as const;
+export const CANVAS_GEOMETRY_DERIVE_MAX_DERIVATIONS = 32 as const;
+export const CANVAS_SPATIAL_WITHIN_MAX_STATISTICS = 32 as const;
+export const CANVAS_SPATIAL_BIN_MAX_STATISTICS = 32 as const;
+export const CANVAS_SPATIAL_CENTER_MAX_GROUP_COLUMNS = 8 as const;
+export const CANVAS_SPATIAL_CENTER_MAX_ANALYSES = 16 as const;
 
 export const CanvasNodeType = {
   ModelInput: 'MODEL_INPUT',
@@ -96,6 +113,18 @@ export const CanvasNodeType = {
   SpatialTransform: 'SPATIAL_TRANSFORM',
   GeometryValidate: 'GEOMETRY_VALIDATE',
   GeometryRepair: 'GEOMETRY_REPAIR',
+  GeometryDerive: 'GEOMETRY_DERIVE',
+  GeometrySimplify: 'GEOMETRY_SIMPLIFY',
+  SpatialNearest: 'SPATIAL_NEAREST',
+  SpatialSummarizeWithin: 'SPATIAL_SUMMARIZE_WITHIN',
+  SpatialOverlay: 'SPATIAL_OVERLAY',
+  TrackReconstruct: 'TRACK_RECONSTRUCT',
+  TrackMotionStatistics: 'TRACK_MOTION_STATISTICS',
+  TrackFindDwell: 'TRACK_FIND_DWELL',
+  TrackDetectIncidents: 'TRACK_DETECT_INCIDENTS',
+  SpatialBinAggregate: 'SPATIAL_BIN_AGGREGATE',
+  SpatialPointCluster: 'SPATIAL_POINT_CLUSTER',
+  SpatialCenterDispersion: 'SPATIAL_CENTER_DISPERSION',
   GeometryBuffer: 'GEOMETRY_BUFFER',
   GeometryExplode: 'GEOMETRY_EXPLODE',
   SpatialMeasure: 'SPATIAL_MEASURE',
@@ -334,6 +363,526 @@ export interface GeometryRepairConfiguration {
   outputTableName: string;
   geometryColumnName: string;
   outputColumnName: string;
+}
+
+export type GeometryDeriveKind =
+  | 'CENTROID'
+  | 'POINT_ON_SURFACE'
+  | 'ENVELOPE'
+  | 'CONVEX_HULL'
+  | 'BOUNDARY';
+
+export interface GeometryDerivation {
+  derivationId: string;
+  kind: GeometryDeriveKind | null;
+  sourceColumnName: string;
+  outputColumnName: string;
+  geometryPolicy?: GeometryUnaryPolicy | null;
+}
+
+export type GeometryUnaryPolicy = 'PRESERVE_DIMENSION' | 'OUTPUT_XY' | 'LEGACY';
+
+export interface GeometryDeriveConfiguration {
+  sourceTableName: string;
+  outputTableName: string;
+  derivations: GeometryDerivation[];
+}
+
+export type SpatialDistanceUnit =
+  | 'SOURCE_CRS_UNIT'
+  | 'METERS'
+  | 'KILOMETERS'
+  | 'FEET'
+  | 'MILES'
+  | 'NAUTICAL_MILES'
+  | 'YARDS' | 'FEET_US' | 'YARDS_US' | 'MILES_US' | 'NAUTICAL_MILES_US';
+
+export type SpatialDistanceMethod = 'PLANAR' | 'GEODESIC';
+
+export type SpatialAreaUnit =
+  | 'SQUARE_METERS'
+  | 'SQUARE_KILOMETERS'
+  | 'HECTARES'
+  | 'ACRES'
+  | 'SQUARE_FEET'
+  | 'SQUARE_MILES'
+  | 'SQUARE_YARDS' | 'SQUARE_FEET_US' | 'SQUARE_YARDS_US' | 'SQUARE_MILES_US' | 'ACRES_US';
+
+export type SpatialDurationUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES' | 'HOURS' | 'DAYS' | 'WEEKS';
+
+export interface SpatialTemporalSlicing {
+  calendar?: SpatialCalendarWindowOptions | null;
+  timeColumnName: string;
+  interval: number;
+  intervalUnit: SpatialDurationUnit;
+  repeatInterval: number | null;
+  repeatIntervalUnit: SpatialDurationUnit | null;
+  referenceTime: string | null;
+  timeZone: string;
+  windowStartColumnName: string;
+  windowEndColumnName: string;
+}
+
+export interface SpatialCalendarWindowOptions {
+  mode: 'FIXED_DURATION' | 'CALENDAR' | null;
+  intervalUnit: SpatialDurationUnit | 'WEEKS' | 'MONTHS' | 'YEARS' | null;
+  repeatIntervalUnit: SpatialDurationUnit | 'WEEKS' | 'MONTHS' | 'YEARS' | null;
+}
+
+export interface SpatialGroupSummary {
+  groupByColumnName: string;
+  includeMinorityMajority: boolean;
+  includeGroupPercentage: boolean;
+  minorityFlagColumnName: string | null;
+  majorityFlagColumnName: string | null;
+  groupPercentageColumnName: string | null;
+}
+
+export type GeometrySimplifyAlgorithm = 'DOUGLAS_PEUCKER' | 'TOPOLOGY_PRESERVING';
+
+export interface GeometrySimplifyConfiguration {
+  sourceTableName: string;
+  geometryColumnName: string;
+  outputTableName: string;
+  outputColumnName: string;
+  algorithm: GeometrySimplifyAlgorithm | null;
+  tolerance: number | null;
+  toleranceUnit: SpatialDistanceUnit | null;
+  geometryPolicy?: GeometryUnaryPolicy | null;
+}
+
+export type SpatialNearestMatchSemantics = 'EXACT_DISTANCE' | 'LEGACY_KNN';
+
+export interface SpatialNearestConnectionLines {
+  enabled: boolean | null;
+  outputTableName: string;
+  geometryColumnName: string;
+  maximumGeodesicSegmentLength: number | null;
+  maximumGeodesicSegmentLengthUnit: SpatialDistanceUnit | null;
+}
+
+export interface SpatialNearestMatching {
+  semantics: SpatialNearestMatchSemantics | null;
+  sourceIdColumnName: string;
+  connectionLines: SpatialNearestConnectionLines | null;
+}
+
+export interface SpatialNearestConfiguration {
+  sourceTableName: string;
+  sourceGeometryColumnName: string;
+  candidateTableName: string;
+  candidateGeometryColumnName: string;
+  candidateIdColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  nearestCount: number;
+  maximumDistance: number | null;
+  maximumDistanceUnit: SpatialDistanceUnit | null;
+  includeUnmatched: boolean;
+  outputTableName: string;
+  distanceColumnName: string;
+  distanceOutputUnit: SpatialDistanceUnit;
+  rankColumnName: string | null;
+  outputColumns: JoinOutputColumn[];
+  matching?: SpatialNearestMatching | null;
+}
+
+export type SpatialWithinStatisticKind =
+  | 'COUNT'
+  | 'COUNT_FIELD'
+  | 'ANY'
+  | 'SUM'
+  | 'MEAN'
+  | 'MIN'
+  | 'MAX'
+  | 'RANGE'
+  | 'STDDEV'
+  | 'VARIANCE'
+  | 'LENGTH_WITHIN'
+  | 'AREA_WITHIN';
+
+export interface SpatialWithinStatistic {
+  statisticId: string;
+  kind: SpatialWithinStatisticKind;
+  sourceColumnName: string | null;
+  outputColumnName: string;
+  valueTreatment?: 'ORIGINAL_VALUE' | 'APPORTION_TOTAL' | null;
+  weighting?: 'NONE' | 'INTERSECTION_FRACTION' | null;
+}
+
+export interface SpatialWithinGroupResult {
+  mode?: 'LINKED_TABLES' | 'LEGACY_FLAT' | null;
+  areaKeyColumnName: string;
+  areaKeyOutputColumnName: string;
+  outputTableName: string;
+  groupValueColumnName: string;
+  minorityValueColumnName: string | null;
+  majorityValueColumnName: string | null;
+  minorityPercentageColumnName: string | null;
+  majorityPercentageColumnName: string | null;
+}
+
+export interface SpatialWithinRegions {
+  mode: 'AREA_TABLE' | 'PLANAR_GRID' | null;
+  binShape: 'SQUARE' | 'HEXAGON' | null;
+  binSize: number | null;
+  binSizeUnit: SpatialDistanceUnit | null;
+  planarGrid: SpatialPlanarGridOptions | null;
+  binIdColumnName: string;
+  binGeometryColumnName: string;
+}
+
+export interface SpatialSummarizeWithinConfiguration {
+  regions?: SpatialWithinRegions | null;
+  areaTableName: string;
+  areaGeometryColumnName: string;
+  summaryTableName: string;
+  summaryGeometryColumnName: string;
+  includeEmptyAreas: boolean;
+  distanceMethod: SpatialDistanceMethod | null;
+  lengthUnit: SpatialDistanceUnit;
+  areaUnit: SpatialAreaUnit;
+  areaOutputColumns: JoinOutputColumn[];
+  statistics: SpatialWithinStatistic[];
+  groupSummary: SpatialGroupSummary | null;
+  groupResult?: SpatialWithinGroupResult | null;
+  temporalSlicing: SpatialTemporalSlicing | null;
+  outputTableName: string;
+}
+
+export type SpatialOverlayOperation = 'INTERSECTION' | 'ERASE' | 'UNION' | 'IDENTITY' | 'SYMMETRICAL_DIFFERENCE';
+export type SpatialOverlayGeometryPolicy = 'FAMILY_2D' | 'LEGACY_GEOMETRY';
+
+export interface SpatialOverlayConfiguration {
+  leftTableName: string;
+  leftGeometryColumnName: string;
+  rightTableName: string;
+  rightGeometryColumnName: string;
+  operation: SpatialOverlayOperation | null;
+  outputTableName: string;
+  outputGeometryColumnName: string;
+  outputColumns: JoinOutputColumn[];
+  geometryPolicy?: SpatialOverlayGeometryPolicy | null;
+}
+
+export type SpatialSpeedUnit =
+  | 'METERS_PER_SECOND'
+  | 'KILOMETERS_PER_HOUR'
+  | 'FEET_PER_SECOND'
+  | 'MILES_PER_HOUR'
+  | 'KNOTS';
+
+export type SpatialAccelerationUnit =
+  | 'METERS_PER_SECOND_SQUARED'
+  | 'FEET_PER_SECOND_SQUARED';
+
+export interface TrackBoundaryConfiguration {
+  fixedTimeBoundary?: TrackFixedTimeBoundary | null;
+  maximumTimeGap: number | null;
+  maximumTimeGapUnit: SpatialDurationUnit | null;
+  maximumDistanceGap: number | null;
+  maximumDistanceGapUnit: SpatialDistanceUnit | null;
+}
+
+export type TrackTimeBoundaryUnit = 'MILLISECONDS' | 'SECONDS' | 'MINUTES' | 'HOURS'
+  | 'DAYS' | 'WEEKS' | 'MONTHS' | 'YEARS';
+
+export interface TrackFixedTimeBoundary {
+  interval: number | null;
+  unit: TrackTimeBoundaryUnit | null;
+  referenceTime: string | null;
+  timeZone: string | null;
+}
+
+export type TrackSummaryStatisticKind =
+  | 'COUNT' | 'SUM' | 'MEAN' | 'MIN' | 'MAX' | 'RANGE'
+  | 'STDDEV' | 'VARIANCE' | 'FIRST' | 'LAST' | 'COUNT_FIELD' | 'ANY';
+
+export interface TrackSummaryStatistic {
+  statisticId: string;
+  kind: TrackSummaryStatisticKind;
+  sourceColumnName: string | null;
+  outputColumnName: string;
+}
+
+export type TrackSplitBoundaryOption = 'GAP' | 'FINISH_LAST' | 'START_NEXT';
+export interface TrackFieldWindowBinding { name: string; sourceColumnName: string; offset: number | null }
+export interface TrackSplitExpression { expression: string; bindings: TrackFieldWindowBinding[]; enabled?: boolean | null }
+export interface TrackPathGeometryOptions {
+  mode: 'METHOD_PATH' | 'LEGACY_VERTEX_LINE' | null;
+  maximumGeodesicSegmentLength: number | null;
+  maximumGeodesicSegmentLengthUnit: SpatialDistanceUnit | null;
+}
+export interface TrackReconstructOptions {
+  semantics: 'ORDERED_SEGMENTS' | 'LEGACY_POINTS' | null;
+  orderByColumns: string[];
+  splitBoundaryOption: TrackSplitBoundaryOption | null;
+  splitExpression: TrackSplitExpression | null;
+  pathGeometry?: TrackPathGeometryOptions | null;
+  areaGeometry?: TrackAreaGeometryOptions | null;
+}
+export interface TrackAreaGeometryOptions {
+  enabled?: boolean | null;
+  bufferMode: 'NONE' | 'FIELD' | 'EXPRESSION' | null;
+  bufferField: string | null;
+  bufferExpression: string | null;
+  bufferUnit: SpatialDistanceUnit | null;
+  windowBindings?: TrackBufferWindowBinding[] | null;
+  geodesicBoundary?: TrackGeodesicAreaOptions | null;
+}
+export interface TrackGeodesicAreaOptions {
+  maximumSegmentLength: number | null;
+  maximumSegmentLengthUnit: SpatialDistanceUnit | null;
+}
+export interface TrackBufferWindowBinding {
+  name: string;
+  sourceColumnName: string;
+  startOffset: number | null;
+  endOffset: number | null;
+  statistic: TrackSummaryStatisticKind | null;
+}
+export interface TrackReconstructConfiguration {
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  trackIdColumns: string[];
+  timeColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  boundaries: TrackBoundaryConfiguration;
+  summaryStatistics: TrackSummaryStatistic[];
+  outputTableName: string;
+  outputGeometryColumnName: string;
+  startTimeColumnName: string;
+  endTimeColumnName: string;
+  pointCountColumnName: string;
+  reconstruction?: TrackReconstructOptions | null;
+}
+
+export type TrackMotionMetric =
+  | { kind: 'DISTANCE' | 'ELEVATION_CHANGE'; metricId: string; outputColumnName: string; outputUnit: SpatialDistanceUnit }
+  | { kind: 'DURATION'; metricId: string; outputColumnName: string; outputUnit: SpatialDurationUnit }
+  | { kind: 'SPEED'; metricId: string; outputColumnName: string; outputUnit: SpatialSpeedUnit }
+  | { kind: 'ACCELERATION'; metricId: string; outputColumnName: string; outputUnit: SpatialAccelerationUnit }
+  | { kind: 'BEARING'; metricId: string; outputColumnName: string; outputUnit: 'DEGREES' }
+  | { kind: 'SLOPE'; metricId: string; outputColumnName: string; outputUnit: 'PERCENT' }
+  | { kind: 'IDLE'; metricId: string; outputColumnName: string; outputUnit: null };
+
+export interface TrackMotionStatisticsConfiguration {
+  motionSemantics?: 'LEGACY_LAG' | 'OBSERVATION_WINDOW' | null;
+  windowOptions?: TrackMotionWindowOptions | null;
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  trackIdColumns: string[];
+  timeColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  boundaries: TrackBoundaryConfiguration;
+  historyPoints: number;
+  idleDistanceThreshold: number | null;
+  idleDistanceThresholdUnit: SpatialDistanceUnit | null;
+  metrics: TrackMotionMetric[];
+  outputTableName: string;
+}
+
+export type DwellGeometryKind = 'CENTROID' | 'CONVEX_HULL';
+
+export type TrackMotionStatisticGroup = 'DISTANCE' | 'DURATION' | 'SPEED' | 'ACCELERATION' | 'ELEVATION' | 'SLOPE' | 'IDLE' | 'BEARING';
+export type TrackMotionStatistic = 'DISTANCE' | 'TOT_DISTANCE' | 'MIN_DISTANCE' | 'MAX_DISTANCE' | 'AVG_DISTANCE' | 'DURATION' | 'TOT_DURATION' | 'MIN_DURATION' | 'MAX_DURATION' | 'AVG_DURATION' | 'SPEED' | 'MIN_SPEED' | 'MAX_SPEED' | 'AVG_SPEED' | 'ACCELERATION' | 'MIN_ACCELERATION' | 'MAX_ACCELERATION' | 'ELEVATION' | 'ELEV_CHANGE' | 'TOT_ELEV_CHANGE' | 'MIN_ELEVATION' | 'MAX_ELEVATION' | 'AVG_ELEVATION' | 'SLOPE' | 'MIN_SLOPE' | 'MAX_SLOPE' | 'AVG_SLOPE' | 'IDLING' | 'TOT_IDLE_TIME' | 'PCT_IDLE_TIME' | 'BEARING';
+export interface TrackMotionWindowStatistic { statisticId: string; kind: TrackMotionStatistic; outputColumnName: string }
+export interface TrackMotionWindowOptions {
+  observationCount: number | null;
+  orderByColumns: string[];
+  statistics: TrackMotionWindowStatistic[];
+  distanceUnit: SpatialDistanceUnit | null;
+  durationUnit: SpatialDurationUnit | null;
+  speedUnit: SpatialSpeedUnit | null;
+  accelerationUnit: SpatialAccelerationUnit | null;
+  elevationColumnName: string | null;
+  inputElevationUnit: SpatialDistanceUnit | null;
+  elevationUnit: SpatialDistanceUnit | null;
+  idleTimeThreshold: number | null;
+  idleTimeThresholdUnit: SpatialDurationUnit | null;
+}
+
+export interface TrackFindDwellConfiguration {
+  dwellSemantics?: 'LEGACY_ADJACENT' | 'REFERENCE_CENTER' | null;
+  rangeOptions?: TrackDwellRangeOptions | null;
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  trackIdColumns: string[];
+  timeColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  distanceThreshold: number;
+  distanceThresholdUnit: SpatialDistanceUnit;
+  minimumDuration: number;
+  minimumDurationUnit: SpatialDurationUnit;
+  boundaries: TrackBoundaryConfiguration;
+  summaryStatistics: TrackSummaryStatistic[];
+  outputGeometryKind: DwellGeometryKind | null;
+  outputTableName: string;
+  dwellIdColumnName: string;
+  startTimeColumnName: string;
+  endTimeColumnName: string;
+  durationColumnName: string;
+  pointCountColumnName: string;
+  outputGeometryColumnName: string;
+}
+
+export type TrackDwellResultMode = 'MEAN_CENTERS' | 'CONVEX_HULLS' | 'DWELL_FEATURES' | 'ALL_FEATURES';
+export interface TrackDwellRangeOptions {
+  resultMode: TrackDwellResultMode | null;
+  orderByColumns: string[];
+  durationUnit: SpatialDurationUnit | null;
+  meanDistanceColumnName: string;
+  meanDistanceUnit: SpatialDistanceUnit | null;
+  dwellFlagColumnName: string;
+}
+
+export type TrackIncidentResultMode = 'INCIDENTS_ONLY' | 'ALL_EVENTS';
+export type TrackIncidentSemantics = 'LEGACY' | 'CONDITION_LIFECYCLE';
+
+export interface TrackIncidentWindow {
+  bindingName: string;
+  sourceColumnName: string;
+  kind: 'COUNT' | 'SUM' | 'MEAN' | 'MIN' | 'MAX' | 'FIRST' | 'LAST' | 'STDDEV_POP' | 'VARIANCE_POP' | null;
+  startOffset: number | null;
+  endOffset: number | null;
+}
+
+export interface TrackDetectIncidentsConfiguration {
+  conditionWindows?: TrackIncidentWindow[];
+  incidentSemantics?: TrackIncidentSemantics;
+  incidentStatusColumnName?: string | null;
+  orderByColumns?: string[];
+  sourceTableName: string;
+  pointGeometryColumnName: string | null;
+  trackIdColumns: string[];
+  timeColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  boundaries: TrackBoundaryConfiguration;
+  startCondition: CanvasFilterCondition;
+  endCondition: CanvasFilterCondition | null;
+  resultMode: TrackIncidentResultMode | null;
+  outputTableName: string;
+  incidentIdColumnName: string;
+  incidentFlagColumnName: string;
+  incidentStartTimeColumnName: string;
+  incidentEndTimeColumnName: string;
+  incidentDurationColumnName: string;
+  incidentDurationUnit: SpatialDurationUnit;
+}
+
+export type SpatialBinShape = 'SQUARE' | 'HEXAGON' | 'H3';
+
+export interface SpatialH3Options {
+  mode: 'RESOLUTION' | 'APPROXIMATE_SIZE' | null;
+  resolution: number | null;
+}
+
+export type SpatialBinStatisticKind =
+  | 'COUNT' | 'COUNT_FIELD' | 'ANY' | 'SUM' | 'MEAN' | 'MIN' | 'MAX' | 'RANGE' | 'STDDEV' | 'VARIANCE';
+
+export interface SpatialBinStatistic {
+  statisticId: string;
+  kind: SpatialBinStatisticKind;
+  sourceColumnName: string | null;
+  outputColumnName: string;
+}
+
+export interface SpatialPlanarGridOptions {
+  originX: number | null;
+  originY: number | null;
+  extent: {
+    mode: 'DATA_BOUNDS' | 'EXPLICIT_BOUNDS' | null;
+    minX: number | null;
+    minY: number | null;
+    maxX: number | null;
+    maxY: number | null;
+  } | null;
+}
+
+export interface SpatialBinAggregateConfiguration {
+  planarGrid?: SpatialPlanarGridOptions | null;
+  h3?: SpatialH3Options | null;
+  binSizeSemantics?: SpatialBinSizeSemantics | null;
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  binShape: SpatialBinShape | null;
+  binSize: number;
+  binSizeUnit: SpatialDistanceUnit;
+  includeEmptyBins: boolean;
+  statistics: SpatialBinStatistic[];
+  groupSummary: SpatialGroupSummary | null;
+  temporalSlicing: SpatialTemporalSlicing | null;
+  outputTableName: string;
+  binIdColumnName: string;
+  binGeometryColumnName: string;
+}
+
+export type SpatialBinSizeSemantics = 'LEGACY_SIDE_LENGTH' | 'HEXAGON_FLAT_TO_FLAT';
+
+export type SpatialPointClusterParameters =
+  | { algorithm: 'DBSCAN'; searchDistance: number; searchDistanceUnit: SpatialDistanceUnit; minimumFeatures: number }
+  | { algorithm: 'HDBSCAN'; minimumFeatures: number }
+  | { algorithm: 'MULTI_SCALE'; minimumFeatures: number; sensitivity: number };
+
+export interface SpatialPointClusterConfiguration {
+  dbscan?: SpatialDbscanOptions | null;
+  hdbscan?: SpatialHdbscanOptions | null;
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  featureIdColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  parameters: SpatialPointClusterParameters;
+  outputTableName: string;
+  clusterIdColumnName: string;
+  noiseColumnName: string;
+}
+
+export interface SpatialHdbscanOptions {
+  probabilityColumnName: string;
+  outlierColumnName: string;
+  exemplarColumnName: string;
+  stabilityColumnName: string;
+}
+
+export interface SpatialDbscanOptions {
+  mode: 'LEGACY_SPATIAL' | 'SPATIAL' | 'LINEAR' | null;
+  timeColumnName: string;
+  searchDuration: number | null;
+  searchDurationUnit: SpatialDurationUnit | null;
+}
+
+export type SpatialCenterDispersionKind =
+  | 'MEAN_CENTER'
+  | 'MEDIAN_CENTER'
+  | 'CENTRAL_FEATURE'
+  | 'STANDARD_DISTANCE'
+  | 'DIRECTIONAL_ELLIPSE';
+
+export interface SpatialCenterFeatureColumn {
+  sourceColumnName: string;
+  outputColumnName: string;
+  included: boolean;
+}
+
+export interface SpatialCenterDispersionAnalysis {
+  analysisId: string;
+  kind: SpatialCenterDispersionKind;
+  outputColumnName: string;
+  standardDeviations: number | null;
+  outputTableName?: string | null;
+  centralFeatureColumns?: SpatialCenterFeatureColumn[] | null;
+}
+
+export type SpatialCenterResultMode = 'ANALYSIS_TABLES' | 'LEGACY_WIDE';
+
+export interface SpatialCenterDispersionConfiguration {
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  featureIdColumnName: string | null;
+  groupByColumns: string[];
+  weightColumnName: string | null;
+  analyses: SpatialCenterDispersionAnalysis[];
+  outputTableName: string;
+  resultMode?: SpatialCenterResultMode | null;
 }
 
 export interface GeometryBufferConfiguration {
@@ -1186,6 +1735,66 @@ export type GeometryRepairNodeDefinition = CanvasNodeBase<
   GeometryRepairConfiguration
 >;
 
+export type GeometryDeriveNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometryDerive,
+  GeometryDeriveConfiguration
+>;
+
+export type GeometrySimplifyNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.GeometrySimplify,
+  GeometrySimplifyConfiguration
+>;
+
+export type SpatialNearestNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialNearest,
+  SpatialNearestConfiguration
+>;
+
+export type SpatialSummarizeWithinNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialSummarizeWithin,
+  SpatialSummarizeWithinConfiguration
+>;
+
+export type SpatialOverlayNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialOverlay,
+  SpatialOverlayConfiguration
+>;
+
+export type TrackReconstructNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TrackReconstruct,
+  TrackReconstructConfiguration
+>;
+
+export type TrackMotionStatisticsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TrackMotionStatistics,
+  TrackMotionStatisticsConfiguration
+>;
+
+export type TrackFindDwellNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TrackFindDwell,
+  TrackFindDwellConfiguration
+>;
+
+export type TrackDetectIncidentsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TrackDetectIncidents,
+  TrackDetectIncidentsConfiguration
+>;
+
+export type SpatialBinAggregateNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialBinAggregate,
+  SpatialBinAggregateConfiguration
+>;
+
+export type SpatialPointClusterNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialPointCluster,
+  SpatialPointClusterConfiguration
+>;
+
+export type SpatialCenterDispersionNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialCenterDispersion,
+  SpatialCenterDispersionConfiguration
+>;
+
 export type GeometryBufferNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.GeometryBuffer,
   GeometryBufferConfiguration
@@ -1340,6 +1949,18 @@ export type CanvasNodeDefinition =
   | SpatialTransformNodeDefinition
   | GeometryValidateNodeDefinition
   | GeometryRepairNodeDefinition
+  | GeometryDeriveNodeDefinition
+  | GeometrySimplifyNodeDefinition
+  | SpatialNearestNodeDefinition
+  | SpatialSummarizeWithinNodeDefinition
+  | SpatialOverlayNodeDefinition
+  | TrackReconstructNodeDefinition
+  | TrackMotionStatisticsNodeDefinition
+  | TrackFindDwellNodeDefinition
+  | TrackDetectIncidentsNodeDefinition
+  | SpatialBinAggregateNodeDefinition
+  | SpatialPointClusterNodeDefinition
+  | SpatialCenterDispersionNodeDefinition
   | GeometryBufferNodeDefinition
   | GeometryExplodeNodeDefinition
   | SpatialMeasureNodeDefinition
@@ -1391,6 +2012,18 @@ export type CanvasNodeConfigurationUpdate =
   | Pick<SpatialTransformNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<GeometryValidateNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<GeometryRepairNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometryDeriveNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<GeometrySimplifyNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialNearestNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialSummarizeWithinNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialOverlayNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TrackReconstructNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TrackMotionStatisticsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TrackFindDwellNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TrackDetectIncidentsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialBinAggregateNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialPointClusterNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialCenterDispersionNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<GeometryBufferNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<GeometryExplodeNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<SpatialMeasureNodeDefinition, 'id' | 'type' | 'configuration'>
@@ -1672,6 +2305,48 @@ export type CanvasNodeRuntimeData =
     GeometryRepairConfiguration
   >
   | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometryDerive,
+    GeometryDeriveConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.GeometrySimplify,
+    GeometrySimplifyConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialNearest,
+    SpatialNearestConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialSummarizeWithin,
+    SpatialSummarizeWithinConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialOverlay,
+    SpatialOverlayConfiguration
+  >
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.TrackReconstruct, TrackReconstructConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.TrackMotionStatistics,
+    TrackMotionStatisticsConfiguration
+  >
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.TrackFindDwell, TrackFindDwellConfiguration>
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.TrackDetectIncidents,
+    TrackDetectIncidentsConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialBinAggregate,
+    SpatialBinAggregateConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialPointCluster,
+    SpatialPointClusterConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialCenterDispersion,
+    SpatialCenterDispersionConfiguration
+  >
+  | CanvasNodeRuntimeBase<
     typeof CanvasNodeType.GeometryBuffer,
     GeometryBufferConfiguration
   >
@@ -1740,6 +2415,18 @@ const emptyConfigurationFactories: Record<
   [CanvasNodeType.SpatialTransform]: createSpatialTransformConfiguration,
   [CanvasNodeType.GeometryValidate]: createGeometryValidateConfiguration,
   [CanvasNodeType.GeometryRepair]: createGeometryRepairConfiguration,
+  [CanvasNodeType.GeometryDerive]: createGeometryDeriveConfiguration,
+  [CanvasNodeType.GeometrySimplify]: createGeometrySimplifyConfiguration,
+  [CanvasNodeType.SpatialNearest]: createSpatialNearestConfiguration,
+  [CanvasNodeType.SpatialSummarizeWithin]: createSpatialSummarizeWithinConfiguration,
+  [CanvasNodeType.SpatialOverlay]: createSpatialOverlayConfiguration,
+  [CanvasNodeType.TrackReconstruct]: createTrackReconstructConfiguration,
+  [CanvasNodeType.TrackMotionStatistics]: createTrackMotionStatisticsConfiguration,
+  [CanvasNodeType.TrackFindDwell]: createTrackFindDwellConfiguration,
+  [CanvasNodeType.TrackDetectIncidents]: createTrackDetectIncidentsConfiguration,
+  [CanvasNodeType.SpatialBinAggregate]: createSpatialBinAggregateConfiguration,
+  [CanvasNodeType.SpatialPointCluster]: createSpatialPointClusterConfiguration,
+  [CanvasNodeType.SpatialCenterDispersion]: createSpatialCenterDispersionConfiguration,
   [CanvasNodeType.GeometryBuffer]: createGeometryBufferConfiguration,
   [CanvasNodeType.GeometryExplode]: createGeometryExplodeConfiguration,
   [CanvasNodeType.SpatialMeasure]: createSpatialMeasureConfiguration,

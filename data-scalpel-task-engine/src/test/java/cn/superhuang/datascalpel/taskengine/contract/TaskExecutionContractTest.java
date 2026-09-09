@@ -145,6 +145,61 @@ class TaskExecutionContractTest {
     }
 
     @Test
+    void roundTripsGeoJsonFileInputWithItsEpsgConfiguration() throws Exception {
+        RuntimeFileInput input = new RuntimeFileInput(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "a".repeat(64),
+                new RuntimeFileParsingOptions.GeoJson(4490),
+                List.of(new RuntimeFileSource(
+                        UUID.randomUUID(), UUID.randomUUID(),
+                        FileDatasetFormat.GEOJSON, FileDatasetCompression.GZIP,
+                        FileDatasetStorageKind.SINGLE_OBJECT,
+                        "datasets/administrative-areas.geojson.gz", null, "FILE"
+                ))
+        );
+
+        RuntimeFileInput restored = objectMapper.readValue(
+                objectMapper.writeValueAsBytes(input),
+                RuntimeFileInput.class
+        );
+
+        RuntimeFileParsingOptions.GeoJson options = assertInstanceOf(
+                RuntimeFileParsingOptions.GeoJson.class, restored.parsingOptions()
+        );
+        assertEquals(4490, options.epsgCode());
+        assertEquals(FileDatasetFormat.GEOJSON, restored.format());
+        assertEquals(FileDatasetCompression.GZIP, restored.compression());
+    }
+
+    @Test
+    void roundTripsGeoJsonLinesFileInputWithItsEpsgConfiguration() throws Exception {
+        RuntimeFileInput input = new RuntimeFileInput(
+                UUID.randomUUID(),
+                UUID.randomUUID(),
+                "a".repeat(64),
+                new RuntimeFileParsingOptions.GeoJsonLines(4326),
+                List.of(new RuntimeFileSource(
+                        UUID.randomUUID(), UUID.randomUUID(),
+                        FileDatasetFormat.GEOJSONL, FileDatasetCompression.NONE,
+                        FileDatasetStorageKind.SINGLE_OBJECT,
+                        "datasets/addresses.geojsonl", null, "FILE"
+                ))
+        );
+
+        RuntimeFileInput restored = objectMapper.readValue(
+                objectMapper.writeValueAsBytes(input),
+                RuntimeFileInput.class
+        );
+
+        RuntimeFileParsingOptions.GeoJsonLines options = assertInstanceOf(
+                RuntimeFileParsingOptions.GeoJsonLines.class, restored.parsingOptions()
+        );
+        assertEquals(4326, options.epsgCode());
+        assertEquals(FileDatasetFormat.GEOJSONL, restored.format());
+    }
+
+    @Test
     void rejectsUnknownManifestFields() {
         String json = """
                 {

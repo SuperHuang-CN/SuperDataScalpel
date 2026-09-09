@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.dispatcher.artifact.ArtifactLaunchAccess;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendException;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendLog;
+import cn.superhuang.data.scalpel.dispatcher.backend.BackendLogWindow;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendReadiness;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendStatus;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendSubmission;
@@ -158,6 +159,16 @@ public class YarnSparkExecutionBackend implements TaskExecutionBackend {
                 dispatcherProperties.logMaxBytes().toBytes());
         if (!result.successful()) throw new BackendException("YARN_LOG_FAILED", "无法获取YARN聚合日志");
         return new BackendLog(result.output(), result.truncated());
+    }
+
+    @Override
+    public BackendLog collectRecentLog(ExternalExecutionHandle handle) throws BackendException {
+        String applicationId = requireHandle(handle);
+        CommandResult result = execute(commands.logs(applicationId), java.time.Duration.ofSeconds(10),
+                dispatcherProperties.logMaxBytes().toBytes());
+        if (!result.successful()) throw new BackendException("YARN_LOG_UNAVAILABLE", "集群尚未提供运行日志");
+        return BackendLogWindow.recent(new BackendLog(result.output(), result.truncated()),
+                2_000, 1024 * 1024);
     }
 
     @Override

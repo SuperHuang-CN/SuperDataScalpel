@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.system.configuration.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.system.configuration.service.SystemConfigurationService;
 import cn.superhuang.data.scalpel.business.system.configuration.web.request.UpdateSystemConfigurationRequest;
 import cn.superhuang.data.scalpel.business.system.configuration.web.response.SystemConfigurationResponse;
@@ -31,6 +32,7 @@ public class SystemConfigurationResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统配置")
     @GetMapping
     @PreAuthorize("hasAuthority('system.configuration.view')")
     @Operation(summary = "查询系统配置")
@@ -40,6 +42,7 @@ public class SystemConfigurationResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改系统配置值")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     @Operation(summary = "修改系统配置值")

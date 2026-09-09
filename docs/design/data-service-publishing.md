@@ -207,7 +207,39 @@ Engine 接收 SQL 快照时再次检查只读单语句、占位符数量、参�
 
 ## 公开调用协议
 
-标准与 SQL 两种查询模式继续返回相同分页 JSON。SQL 服务请求示例：
+标准与 SQL 两种查询模式返回相同分页 JSON。标准单表服务使用固定 V1 查询协议，字段编码只能引用发布快照中开放的字段，不接受物理列名或 SQL：
+
+```http
+POST /open-api/v1/orders
+Content-Type: application/json
+
+{
+  "pageNo": 1,
+  "pageSize": 20,
+  "fields": ["id", "name", "department"],
+  "filter": {
+    "operator": "AND",
+    "conditions": [
+      {"field": "status", "operator": "EQ", "value": "ACTIVE"},
+      {
+        "operator": "OR",
+        "conditions": [
+          {"field": "age", "operator": "GTE", "value": 18},
+          {"field": "level", "operator": "IN", "value": ["A", "B"]}
+        ]
+      }
+    ]
+  },
+  "sort": [{"field": "createdAt", "direction": "DESC"}],
+  "groupBy": [],
+  "aggregates": [],
+  "returnCount": false
+}
+```
+
+`filter` 可省略；存在时根节点必须是非空 `AND` 或 `OR` 条件组。单值操作符为 `EQ`、`NE`、`GT`、`GTE`、`LT`、`LTE`、`LIKE`、`NOT_LIKE`；`IN`、`NOT_IN` 使用非空数组；`BETWEEN`、`NOT_BETWEEN` 使用两个元素的数组；`IS_NULL`、`IS_NOT_NULL`、`IS_EMPTY`、`IS_NOT_EMPTY` 不传 `value`。默认最多 50 个叶子条件、5 层嵌套。`fields` 为空时返回全部可查询字段；聚合项使用 `function`、`field`、`alias`，仅 `COUNT` 支持 `field: "*"`。
+
+SQL 服务请求示例：
 
 ```http
 POST /open-api/v1/customers
@@ -228,7 +260,7 @@ Content-Type: application/json
   "pageNo": 1,
   "pageSize": 20,
   "totalCount": null,
-  "resultList": [{"id": 1001, "name": "示例客户"}]
+  "items": [{"id": 1001, "name": "示例客户"}]
 }
 ```
 
@@ -251,6 +283,9 @@ Engine 通过 `ApiDataSourceRegistry` 取得 API Studio 按数据源复用的连
 | --- | --- | --- |
 | `DATASCALPEL_ENGINE_QUERY_DEFAULT_PAGE_SIZE` | `20` | 默认分页大小 |
 | `DATASCALPEL_ENGINE_QUERY_MAXIMUM_PAGE_SIZE` | `100` | 最大分页大小 |
+| `DATASCALPEL_ENGINE_QUERY_MAXIMUM_FILTER_COUNT` | `50` | 标准服务最大叶子过滤条件数 |
+| `DATASCALPEL_ENGINE_QUERY_MAXIMUM_FILTER_DEPTH` | `5` | 标准服务最大过滤嵌套深度 |
+| `DATASCALPEL_ENGINE_QUERY_MAXIMUM_IN_VALUES` | `1000` | 单个 IN/NOT_IN 条件最大值数量 |
 | `DATASCALPEL_ENGINE_QUERY_MAXIMUM_OFFSET` | `100000` | 最大分页偏移 |
 | `DATASCALPEL_ENGINE_QUERY_TIMEOUT_SECONDS` | `30` | JDBC 查询超时 |
 

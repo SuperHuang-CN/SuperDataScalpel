@@ -18,6 +18,16 @@ import java.util.UUID;
 
 public interface TaskRunRepository extends SearchRepository<TaskRun, UUID> {
 
+    @Query("select r.id from TaskRun r where r.executionMode = 'REAL' and r.status in ('QUEUED', 'RUNNING') order by r.alertCheckedAt nulls first, r.id")
+    List<UUID> alertCandidates(org.springframework.data.domain.Pageable pageable);
+
+    @Query("select r.id from TaskRun r where (r.taskType is null or r.taskType = 'LOCAL_SQL') and r.status in :statuses")
+    List<UUID> localRunIdsInStatuses(Collection<TaskRunStatus> statuses);
+
+    List<TaskRun> findAllByParentRunIdOrderByQueuedAtAsc(UUID parentRunId);
+
+    Optional<TaskRun> findByParentRunIdAndWorkflowNodeId(UUID parentRunId, String workflowNodeId);
+
     boolean existsByTaskId(UUID taskId);
 
     boolean existsByTaskIdAndStatusIn(UUID taskId, Collection<TaskRunStatus> statuses);

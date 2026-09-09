@@ -1026,6 +1026,14 @@ public class CanvasTaskRunPreparationService {
                     new CanvasTaskRunManifest.RuntimeFileParsingOptions.JsonLines(
                             value.charset(), value.recordDelimiter()
                     );
+            case FileDatasetParsingOptionsResponse.GeoJson value ->
+                    new CanvasTaskRunManifest.RuntimeFileParsingOptions.GeoJson(value.epsgCode());
+            case FileDatasetParsingOptionsResponse.GeoJsonLines value ->
+                    new CanvasTaskRunManifest.RuntimeFileParsingOptions.GeoJsonLines(value.epsgCode());
+            case FileDatasetParsingOptionsResponse.GeoParquet ignored ->
+                    new CanvasTaskRunManifest.RuntimeFileParsingOptions.GeoParquet();
+            case FileDatasetParsingOptionsResponse.GeoPackage ignored ->
+                    new CanvasTaskRunManifest.RuntimeFileParsingOptions.GeoPackage();
             case FileDatasetParsingOptionsResponse.Spreadsheet value ->
                     new CanvasTaskRunManifest.RuntimeFileParsingOptions.Spreadsheet(
                             value.headerRowIndex(), value.dataStartRowIndex()

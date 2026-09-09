@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.asset.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.asset.domain.AssetType;
 import cn.superhuang.data.scalpel.business.asset.service.AssetPortalService;
 import cn.superhuang.data.scalpel.business.asset.web.response.AssetPortalAssetDetailResponse;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 import java.util.UUID;
 
+@org.springframework.security.access.prepost.PreAuthorize("permitAll()")
 @RestController
 @RequestMapping("/api/v1/asset-portal")
 @Tag(name = "数据资产门户")
@@ -27,12 +29,14 @@ public class AssetPortalResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询公开资产门户概览")
     @GetMapping("/overview")
     @Operation(summary = "查询公开资产门户概览")
     public AssetPortalOverviewResponse overview() {
         return service.overview();
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询公开资产")
     @GetMapping("/assets")
     @Operation(summary = "查询公开资产")
     public PageResponse<AssetPortalAssetSummaryResponse> assets(
@@ -45,6 +49,7 @@ public class AssetPortalResource {
         return service.assets(keyword, assetType, directoryId, page, size);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询公开资产详情")
     @GetMapping("/assets/{id}")
     @Operation(summary = "查询公开资产详情")
     public AssetPortalAssetDetailResponse detail(@PathVariable UUID id) {

@@ -65,6 +65,18 @@ export const fileDatasetParsingOptionEntries = (
         { label: '字符集', value: options.charset },
         { label: '记录分隔符', value: recordDelimiterLabels[options.recordDelimiter] },
       ];
+    case 'GEOJSON':
+      return [
+        { label: '输入结构', value: 'RFC 7946 FeatureCollection' },
+        { label: '坐标参考', value: `EPSG:${options.epsgCode}（不转换坐标）` },
+        { label: '几何维度', value: '二维 XY' },
+      ];
+    case 'GEOJSONL':
+      return [
+        { label: '输入结构', value: '每个非空物理行是一个 GeoJSON Feature' },
+        { label: '坐标参考', value: `EPSG:${options.epsgCode}（不转换坐标）` },
+        { label: '几何维度', value: '二维 XY' },
+      ];
     case 'SPREADSHEET':
       return [
         { label: '表头行', value: `第 ${options.headerRowIndex + 1} 行` },
@@ -72,6 +84,17 @@ export const fileDatasetParsingOptionEntries = (
       ];
     case 'PARQUET':
       return [{ label: '解析方式', value: '读取 Parquet 内置 Schema' }];
+    case 'GEOPARQUET':
+      return [
+        { label: '解析方式', value: '读取 GeoParquet Footer 和 Parquet 内置 Schema' },
+        { label: 'Geometry', value: 'WKB · 二维 XY · 坐标参考由文件元数据识别' },
+      ];
+    case 'GPKG':
+      return [
+        { label: '上传格式', value: '单个 .gpkg 文件' },
+        { label: '解析方式', value: '后台发现 features 图层和 attributes 属性表' },
+        { label: 'Geometry', value: '二维 XY · 坐标参考由每个图层元数据识别' },
+      ];
     case 'AVRO':
       return [{ label: '解析方式', value: '读取 Avro 内置 Schema' }];
     case 'GDB':

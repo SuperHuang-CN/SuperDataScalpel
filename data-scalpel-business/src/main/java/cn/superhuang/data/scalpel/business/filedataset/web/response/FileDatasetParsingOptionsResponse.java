@@ -12,6 +12,10 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Text.class, name = "TEXT"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Json.class, name = "JSON"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.JsonLines.class, name = "JSON_LINES"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.GeoJson.class, name = "GEOJSON"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.GeoJsonLines.class, name = "GEOJSONL"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.GeoParquet.class, name = "GEOPARQUET"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.GeoPackage.class, name = "GPKG"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Spreadsheet.class, name = "SPREADSHEET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Parquet.class, name = "PARQUET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsResponse.Avro.class, name = "AVRO"),
@@ -23,6 +27,10 @@ public sealed interface FileDatasetParsingOptionsResponse permits
         FileDatasetParsingOptionsResponse.Text,
         FileDatasetParsingOptionsResponse.Json,
         FileDatasetParsingOptionsResponse.JsonLines,
+        FileDatasetParsingOptionsResponse.GeoJson,
+        FileDatasetParsingOptionsResponse.GeoJsonLines,
+        FileDatasetParsingOptionsResponse.GeoParquet,
+        FileDatasetParsingOptionsResponse.GeoPackage,
         FileDatasetParsingOptionsResponse.Spreadsheet,
         FileDatasetParsingOptionsResponse.Parquet,
         FileDatasetParsingOptionsResponse.Avro,
@@ -40,6 +48,10 @@ public sealed interface FileDatasetParsingOptionsResponse permits
             case FileDatasetParsingOptionsRequest.Text value -> new Text(value.charset(), value.recordDelimiter());
             case FileDatasetParsingOptionsRequest.Json value -> new Json(value.charset(), value.rootPointer());
             case FileDatasetParsingOptionsRequest.JsonLines value -> new JsonLines(value.charset(), value.recordDelimiter());
+            case FileDatasetParsingOptionsRequest.GeoJson value -> new GeoJson(value.epsgCode());
+            case FileDatasetParsingOptionsRequest.GeoJsonLines value -> new GeoJsonLines(value.epsgCode());
+            case FileDatasetParsingOptionsRequest.GeoParquet ignored -> new GeoParquet();
+            case FileDatasetParsingOptionsRequest.GeoPackage ignored -> new GeoPackage();
             case FileDatasetParsingOptionsRequest.Spreadsheet value -> new Spreadsheet(
                     value.headerRowIndex(), value.dataStartRowIndex()
             );
@@ -84,6 +96,34 @@ public sealed interface FileDatasetParsingOptionsResponse permits
         @Override
         public FileDatasetParsingOptionsKind kind() {
             return FileDatasetParsingOptionsKind.JSON_LINES;
+        }
+    }
+
+    record GeoJson(int epsgCode) implements FileDatasetParsingOptionsResponse {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GEOJSON;
+        }
+    }
+
+    record GeoJsonLines(int epsgCode) implements FileDatasetParsingOptionsResponse {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GEOJSONL;
+        }
+    }
+
+    record GeoParquet() implements FileDatasetParsingOptionsResponse {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GEOPARQUET;
+        }
+    }
+
+    record GeoPackage() implements FileDatasetParsingOptionsResponse {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GPKG;
         }
     }
 

@@ -29,9 +29,9 @@ public record TaskExecutionManifest(
         SparkStreamingJarExecutionPayload streamingSparkJarJob,
         CanvasTrialSpec canvasTrial
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 23;
+    public static final int CURRENT_MANIFEST_VERSION = 27;
     /** Retained as a symbolic value for diagnostics/tests; Runner does not accept it. */
-    public static final int PREVIOUS_MANIFEST_VERSION = 22;
+    public static final int PREVIOUS_MANIFEST_VERSION = 26;
 
     public TaskExecutionManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);

@@ -3,10 +3,15 @@ package cn.superhuang.data.scalpel.dialect.builtin;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
+import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 
+import java.util.HashMap;
 import java.util.Locale;
+import java.util.Map;
+import java.util.Objects;
+import java.util.UUID;
 
 /** Shared, database-neutral validation used by the two V1 spatial dialects. */
 final class SpatialTypeSupport {
@@ -16,6 +21,38 @@ final class SpatialTypeSupport {
 
     static boolean containsGeometry(TableDefinition definition) {
         return definition.columns().stream().anyMatch(column -> column.type() == TableColumnType.GEOMETRY);
+    }
+
+    static boolean isConstraintOnlyChange(TableDefinition before, TableDefinition target) {
+        if (!before.table().equals(target.table())
+                || !before.storage().equals(target.storage())
+                || before.columns().size() != target.columns().size()) {
+            return false;
+        }
+        Map<UUID, TableColumnDefinition> targetById = new HashMap<>();
+        Map<String, TableColumnDefinition> targetByName = new HashMap<>();
+        for (TableColumnDefinition column : target.columns()) {
+            if (column.columnId() != null) {
+                targetById.put(column.columnId(), column);
+            }
+            targetByName.put(column.name().toLowerCase(Locale.ROOT), column);
+        }
+        for (TableColumnDefinition source : before.columns()) {
+            TableColumnDefinition destination = source.columnId() == null
+                    ? targetByName.get(source.name().toLowerCase(Locale.ROOT))
+                    : targetById.get(source.columnId());
+            if (destination == null
+                    || !source.name().equalsIgnoreCase(destination.name())
+                    || source.type() != destination.type()
+                    || !Objects.equals(source.length(), destination.length())
+                    || !Objects.equals(source.precision(), destination.precision())
+                    || !Objects.equals(source.scale(), destination.scale())
+                    || !Objects.equals(source.columnId(), destination.columnId())
+                    || !Objects.equals(source.geometry(), destination.geometry())) {
+                return false;
+            }
+        }
+        return true;
     }
 
     static GeometryKind geometryKind(String nativeKind) {

@@ -75,6 +75,7 @@ const syncColor: Record<AssetSyncStatus, string> = {
 const sourcePermission: Record<AssetType, string> = {
   DATA_MODEL: 'model.view',
   FILE_DATASET: 'filedataset.view',
+  PANORAMA: 'panorama.view',
   DICTIONARY: 'standard.dictionary.view',
   DATA_SERVICE: 'service.view',
 };

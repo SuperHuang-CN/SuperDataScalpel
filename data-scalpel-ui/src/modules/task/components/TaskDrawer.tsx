@@ -1,10 +1,11 @@
 import { ApartmentOutlined, CloudServerOutlined, FileTextOutlined } from '@ant-design/icons';
 import { Badge, Button, Col, Drawer, Form, Input, Row, Select, Space, Tag, TreeSelect, Typography } from 'antd';
-import { useEffect } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ContextHelp } from '../../../shared/components/ContextualFeedback';
 import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory';
 import { computeEngineRegistrationStateLabels, isComputeEngineSelectable, useComputeEngines } from '../../computeengine';
 import { taskStatusLabels, taskTypeLabels, type DataTask, type TaskType } from '../model/task';
+import { getTaskView, type TaskListView } from '../model/taskViews';
 import type { TaskAssistantCreateDraft } from '../model/taskAssistant';
 
 export interface TaskDrawerValues {
@@ -16,6 +17,7 @@ export interface TaskDrawerValues {
 }
 
 interface TaskDrawerProps {
+  view?: TaskListView;
   open: boolean;
   task: DataTask | null;
   initialDirectoryId?: string;
@@ -26,6 +28,7 @@ interface TaskDrawerProps {
 }
 
 export const TaskDrawer = ({
+  view = 'all',
   open,
   task,
   initialDirectoryId,
@@ -34,9 +37,13 @@ export const TaskDrawer = ({
   onClose,
   onSubmit,
 }: TaskDrawerProps) => {
+  const viewConfig = getTaskView(view);
+  const [submitting, setSubmitting] = useState(false);
+  const submittingRef = useRef(false);
+  const fixedType = !task && !initialDraft && viewConfig.types.length === 1;
   const [form] = Form.useForm<TaskDrawerValues>();
   const taskType = Form.useWatch('type', form);
-  const sparkTask = taskType !== undefined && taskType !== 'LOCAL_SQL';
+  const sparkTask = taskType !== undefined && taskType !== 'LOCAL_SQL' && taskType !== 'WORKFLOW';
   const computeEnginesQuery = useComputeEngines(
     { page: 0, size: 500, sort: 'name' },
     open && sparkTask,
@@ -56,17 +63,27 @@ export const TaskDrawer = ({
       directoryId: initialDraft.directoryId ?? undefined,
       description: initialDraft.description ?? '',
       computeEngineId: undefined,
-    } : { name: '', type: 'LOCAL_SQL', directoryId: initialDirectoryId, description: '', computeEngineId: undefined });
-  }, [form, initialDirectoryId, initialDraft, open, task]);
+    } : { name: '', type: viewConfig.defaultType, directoryId: initialDirectoryId, description: '', computeEngineId: undefined });
+  }, [form, initialDirectoryId, initialDraft, open, task, viewConfig.defaultType]);
 
   const submit = async () => {
-    let values: TaskDrawerValues;
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setSubmitting(true);
     try {
-      values = await form.validateFields();
+      let values: TaskDrawerValues;
+      try {
+        values = await form.validateFields();
+      } catch {
+        return;
+      }
+      await onSubmit(values);
     } catch {
-      return;
+      // The caller presents the API error; keep the drawer open for correction.
+    } finally {
+      submittingRef.current = false;
+      setSubmitting(false);
     }
-    await onSubmit(values);
   };
 
   return (
@@ -77,7 +94,7 @@ export const TaskDrawer = ({
         <div className="data-model-drawer-title">
           <span className="data-model-drawer-title-icon" aria-hidden="true"><ApartmentOutlined /></span>
           <span className="data-model-drawer-title-copy">
-            <span>{task ? '修改任务基本信息' : '新建任务'}</span>
+            <span>{task ? '修改任务基本信息' : `新建${view === 'all' ? '任务' : viewConfig.label}`}</span>
             <Typography.Text type="secondary">维护任务身份、所属目录与默认执行资源</Typography.Text>
           </span>
         </div>
@@ -85,7 +102,7 @@ export const TaskDrawer = ({
       extra={<Tag className="data-model-drawer-header-tag">{taskType ? taskTypeLabels[taskType] : '待选择类型'}</Tag>}
       open={open}
       width={720}
-      onClose={onClose}
+      onClose={() => { if (!submittingRef.current) onClose(); }}
       destroyOnHidden
       footer={(
         <div className="data-model-drawer-footer">
@@ -94,8 +111,8 @@ export const TaskDrawer = ({
             text={task ? `${taskStatusLabels[task.status]} · ${taskTypeLabels[task.type]}` : '创建后进入草稿状态'}
           />
           <Space>
-            <Button onClick={onClose}>取消</Button>
-            <Button type="primary" onClick={() => void submit()}>{task ? '保存修改' : '创建任务'}</Button>
+            <Button disabled={submitting} onClick={onClose}>取消</Button>
+            <Button type="primary" loading={submitting} onClick={() => void submit()}>{task ? '保存修改' : '创建任务'}</Button>
           </Space>
         </div>
       )}
@@ -111,15 +128,15 @@ export const TaskDrawer = ({
           </header>
           <div className="data-model-form-section-body">
             <Row gutter={14}>
-              <Col span={12} xs={24} sm={12}>
-                <Form.Item name="type" label="任务类型" rules={[{ required: true, message: '请选择任务类型' }]}>
+              <Col span={12} xs={24} sm={12} style={fixedType ? { display: 'none' } : undefined}>
+                <Form.Item name="type" hidden={fixedType} label={view === 'batch' || view === 'streaming' ? '执行方式' : '任务类型'} rules={[{ required: true, message: '请选择任务类型' }]}>
                   <Select
                     disabled={Boolean(task || initialDraft)}
-                    options={Object.entries(taskTypeLabels).map(([value, label]) => ({ value, label }))}
+                    options={(task ? [task.type] : initialDraft ? ['SPARK_CANVAS' as const] : viewConfig.types).map(value => ({ value, label: taskTypeLabels[value] }))}
                   />
                 </Form.Item>
               </Col>
-              <Col span={12} xs={24} sm={12}>
+              <Col span={fixedType ? 24 : 12} xs={24} sm={fixedType ? 24 : 12}>
                 <Form.Item name="name" label="任务名称" rules={[{ required: true, message: '请输入任务名称' }, { max: 100 }]}>
                   <Input name="task-basic-name" autoComplete="off" placeholder="输入便于识别的任务名称" />
                 </Form.Item>

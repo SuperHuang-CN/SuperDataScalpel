@@ -20,7 +20,8 @@ import java.util.UUID;
 @Table(name = "task_execution_outbox", uniqueConstraints = {
         @UniqueConstraint(name = "uk_task_execution_outbox_message", columnNames = "message_id")
 }, indexes = {
-        @Index(name = "idx_task_execution_outbox_due", columnList = "state,next_attempt_at")
+        @Index(name = "idx_task_execution_outbox_due", columnList = "state,next_attempt_at"),
+        @Index(name = "idx_task_execution_outbox_submission", columnList = "aggregate_id,execution_id,message_type,state")
 })
 public class TaskExecutionOutboxMessage extends BaseEntity {
 

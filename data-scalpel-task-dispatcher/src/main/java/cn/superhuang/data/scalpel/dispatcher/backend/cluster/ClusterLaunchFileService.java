@@ -53,7 +53,9 @@ public class ClusterLaunchFileService {
                     launch.identity().attempt(), launch.deadlineAt(), RunnerSparkMode.CLUSTER,
                     new LaunchArtifactDownload(
                             access.manifestGetUrl(), launch.manifestSha256(), access.maximumManifestBytes()),
-                    new LaunchArtifactUpload(access.resultPutUrl(), launch.resultKey()), launch.runnerEvent(),
+                    new LaunchArtifactUpload(access.resultPutUrl(), launch.resultKey()),
+                    access.trialPreviewPutUrl() == null ? null : new LaunchArtifactUpload(
+                            access.trialPreviewPutUrl(), trialPreviewKey(launch)), launch.runnerEvent(),
                     launch.checkpointUriPrefix(), launch.runnerControl(), access.qualitySamples(), access.userJar());
             Files.write(file, objectMapper.writeValueAsBytes(descriptor), StandardOpenOption.CREATE,
                     StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.WRITE);
@@ -62,6 +64,11 @@ public class ClusterLaunchFileService {
         } catch (IOException | RuntimeException exception) {
             throw new BackendException("CLUSTER_LAUNCH_PREPARATION_FAILED", "无法准备集群 Runner 启动文件", exception);
         }
+    }
+
+    private static String trialPreviewKey(ExecutionLaunch launch) {
+        return "task-runs/%s/attempts/%d/trial-preview.json".formatted(
+                launch.identity().runId(), launch.identity().attempt());
     }
 
     public boolean readiness(Path configuredRoot) {

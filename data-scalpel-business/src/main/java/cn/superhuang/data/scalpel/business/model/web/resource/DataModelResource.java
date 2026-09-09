@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.model.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.lineage.service.ModelLineageQueryService;
 import cn.superhuang.data.scalpel.business.lineage.web.request.LineageDirection;
 import cn.superhuang.data.scalpel.business.lineage.web.response.LineageGraphResponse;
@@ -101,6 +102,7 @@ public class DataModelResource {
         this.referenceQueryService = referenceQueryService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询模型")
     @GetMapping
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询模型")
@@ -108,6 +110,7 @@ public class DataModelResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询模型详情和字段")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询模型详情和字段")
@@ -115,6 +118,7 @@ public class DataModelResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询阻止模型删除的任务和数据服务引用")
     @GetMapping("/{id}/references")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询阻止模型删除的任务和数据服务引用")
@@ -122,6 +126,7 @@ public class DataModelResource {
         return referenceQueryService.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询当前保存任务定义中引用模型的任务")
     @GetMapping("/{id}/related-tasks")
     @PreAuthorize("hasAuthority('model.view') and hasAuthority('task.view')")
     @Operation(summary = "查询当前保存任务定义中引用模型的任务")
@@ -133,6 +138,7 @@ public class DataModelResource {
         return taskModelRelationQueryService.searchRelatedTasks(id, role, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询模型当前表级血缘")
     @GetMapping("/{id}/lineage/table")
     @PreAuthorize("hasAuthority('model.view') and hasAuthority('task.view') and hasAuthority('service.view')")
     @Operation(summary = "查询模型当前表级血缘")
@@ -144,6 +150,7 @@ public class DataModelResource {
         return lineageQueryService.tableLineage(id, direction, depth);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询模型当前字段级血缘")
     @GetMapping("/{id}/lineage/fields/{fieldId}")
     @PreAuthorize("hasAuthority('model.view') and hasAuthority('task.view') and hasAuthority('service.view')")
     @Operation(summary = "查询模型当前字段级血缘")
@@ -156,6 +163,7 @@ public class DataModelResource {
         return lineageQueryService.fieldLineage(id, fieldId, direction, depth);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "批量查询模型当前字段级血缘")
     @PostMapping("/{id}/lineage/actions/query-fields")
     @PreAuthorize("hasAuthority('model.view') and hasAuthority('task.view') and hasAuthority('service.view')")
     @Operation(summary = "批量查询模型当前字段级血缘")
@@ -170,6 +178,7 @@ public class DataModelResource {
         );
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "预览已有物理表导入后的平台字段类型")
     @GetMapping("/external-table-import-preview")
     @PreAuthorize("hasAnyAuthority('model.create', 'model.update')")
     @Operation(summary = "预览已有物理表导入后的平台字段类型")
@@ -180,6 +189,7 @@ public class DataModelResource {
         return service.previewExternalTableImport(storageDataSourceId, physicalTableName);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "预览从 JDBC 表结构创建受管模型草稿的字段")
     @PostMapping("/managed-import-preview")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "预览从 JDBC 表结构创建受管模型草稿的字段")
@@ -189,6 +199,7 @@ public class DataModelResource {
         return service.previewManagedImport(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "预览从文件数据集逻辑表创建受管模型草稿的字段")
     @PostMapping("/file-dataset-import-preview")
     @PreAuthorize("hasAuthority('model.create') and hasAuthority('filedataset.view')")
     @Operation(summary = "预览从文件数据集逻辑表创建受管模型草稿的字段")
@@ -198,6 +209,7 @@ public class DataModelResource {
         return service.previewFileDatasetImport(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "根据已校对的字段原子创建受管模型草稿")
     @PostMapping("/managed-drafts")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('model.create')")
@@ -208,6 +220,7 @@ public class DataModelResource {
         return service.createManagedDraft(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "下载模型元数据 Excel 导入模板")
     @GetMapping("/metadata-import-template")
     @PreAuthorize("hasAuthority('model.create')")
     @Operation(summary = "下载模型元数据 Excel 导入模板")
@@ -215,6 +228,7 @@ public class DataModelResource {
         return excelFile(metadataExcelService.template());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "将选中的受管模型导出为 Excel 元数据")
     @PostMapping("/actions/export-metadata")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "将选中的受管模型导出为 Excel 元数据")
@@ -224,6 +238,7 @@ public class DataModelResource {
         return excelFile(metadataExcelService.export(request));
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "解析并校验模型元数据 Excel，不保存模型")
     @PostMapping(path = "/actions/preview-metadata-import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('model.create')")
     @Operation(summary = "解析并校验模型元数据 Excel，不保存模型")
@@ -234,6 +249,7 @@ public class DataModelResource {
         return metadataExcelService.preview(targetStorageDataSourceId, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "将已校对的 Excel 模型元数据整批原子创建为受管草稿")
     @PostMapping("/actions/import-metadata")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('model.create')")
@@ -244,6 +260,7 @@ public class DataModelResource {
         return service.importModelMetadata(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询指定数据存储支持的平台字段类型")
     @GetMapping("/platform-types")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询指定数据存储支持的平台字段类型")
@@ -251,6 +268,7 @@ public class DataModelResource {
         return service.platformTypeCapabilities(storageDataSourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "实时检查模型物理表")
     @GetMapping("/{id}/physical-table")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "实时检查模型物理表")
@@ -258,6 +276,7 @@ public class DataModelResource {
         return service.inspectPhysicalTable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "刷新模型物理表的快速统计快照")
     @PostMapping("/{id}/actions/refresh-physical-statistics")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "刷新模型物理表的快速统计快照")
@@ -265,6 +284,7 @@ public class DataModelResource {
         return physicalStatisticsService.refresh(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "预览模型建表 SQL")
     @GetMapping("/{id}/physical-table/ddl")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "预览模型建表 SQL")
@@ -272,6 +292,7 @@ public class DataModelResource {
         return service.physicalTableDdl(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询物理表变更计划历史")
     @GetMapping("/{id}/physical-table-change-plans")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询物理表变更计划历史")
@@ -282,6 +303,7 @@ public class DataModelResource {
         return service.searchPhysicalTableChangePlans(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询物理表变更计划详情")
     @GetMapping("/{id}/physical-table-change-plans/{planId}")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询物理表变更计划详情")
@@ -292,6 +314,7 @@ public class DataModelResource {
         return service.getPhysicalTableChangePlan(id, planId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "快速预览模型物理表数据（固定读取最多 50 条）")
     @GetMapping("/{id}/data-preview")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "快速预览模型物理表数据（固定读取最多 50 条）")
@@ -299,6 +322,7 @@ public class DataModelResource {
         return service.previewPhysicalTable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询模型动态空间预览能力")
     @GetMapping("/{id}/spatial-preview")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询模型动态空间预览能力")
@@ -306,6 +330,7 @@ public class DataModelResource {
         return spatialPreviewService.inspect(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "按 EPSG:3857 视口动态渲染模型空间预览 PNG")
     @GetMapping(value = "/{id}/spatial-preview/map", produces = MediaType.IMAGE_PNG_VALUE)
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "按 EPSG:3857 视口动态渲染模型空间预览 PNG")
@@ -333,6 +358,7 @@ public class DataModelResource {
     /**
      * Uses POST only because the SQL-free query contract is a structured request body; this endpoint is read-only.
      */
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "按条件查询模型物理表数据")
     @PostMapping("/{id}/actions/query-data")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "按条件查询模型物理表数据")
@@ -343,6 +369,7 @@ public class DataModelResource {
         return service.queryPhysicalTableData(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增模型", prerequisites = "先获取存储数据源和支持的平台类型，再按契约定义字段。", relatedOperations = {"GET /api/v1/data-sources", "GET /api/v1/models"})
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('model.create')")
@@ -351,6 +378,7 @@ public class DataModelResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改模型")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "修改模型")
@@ -361,6 +389,7 @@ public class DataModelResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "整体保存模型字段")
     @PostMapping("/{id}/actions/update-fields")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "整体保存模型字段")
@@ -371,6 +400,7 @@ public class DataModelResource {
         return service.updateFields(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "根据目标字段生成物理表变更计划")
     @PostMapping("/{id}/physical-table-change-plans")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "根据目标字段生成物理表变更计划")
@@ -381,6 +411,7 @@ public class DataModelResource {
         return service.createPhysicalTableChangePlan(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "取消待执行的物理表变更计划")
     @PostMapping("/{id}/physical-table-change-plans/{planId}/actions/cancel")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "取消待执行的物理表变更计划")
@@ -391,6 +422,7 @@ public class DataModelResource {
         return service.cancelPhysicalTableChangePlan(id, planId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "执行物理表变更计划", prerequisites = "必须使用当前有效的变更计划，执行前核对计划中的风险和预检参数；超时后查询计划状态。", relatedOperations = {"GET /api/v1/models/{id}"})
     @PostMapping("/{id}/physical-table-change-plans/{planId}/actions/execute")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "执行物理表变更计划")
@@ -402,6 +434,7 @@ public class DataModelResource {
         return service.executePhysicalTableChangePlan(id, planId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "根据模型字段创建物理表")
     @PostMapping("/{id}/actions/create-physical-table")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "根据模型字段创建物理表")
@@ -409,6 +442,7 @@ public class DataModelResource {
         return service.createPhysicalTable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "发布草稿或已停用模型（缺失的受管物理表自动创建）")
     @PostMapping("/{id}/actions/publish")
     @PreAuthorize("hasAuthority('model.publish')")
     @Operation(summary = "发布草稿或已停用模型（缺失的受管物理表自动创建）")
@@ -416,6 +450,7 @@ public class DataModelResource {
         return service.publish(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用模型")
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('model.publish')")
     @Operation(summary = "停用模型")
@@ -423,6 +458,7 @@ public class DataModelResource {
         return service.disable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除模型元数据，不操作物理表")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('model.delete')")

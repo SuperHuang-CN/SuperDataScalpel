@@ -1,3 +1,4 @@
+import { taskPageHref } from '../model/taskViews';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
@@ -11,13 +12,14 @@ import {
   FieldStringOutlined,
   SaveOutlined,
   PlayCircleOutlined,
+  ReloadOutlined,
   StopOutlined,
   TableOutlined,
 } from '@ant-design/icons';
 import { useQueries } from '@tanstack/react-query';
-import { Button, Empty, List, Modal, Popover, Result, Skeleton, Space, Spin, Tag, Tabs, Tooltip, Typography, message } from 'antd';
+import { Button, Empty, List, Modal, Popover, Result, Skeleton, Space, Spin, Switch, Tag, Tabs, Tooltip, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useBlocker, useNavigate, useParams } from 'react-router-dom';
+import { useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { fetchDataModel } from '../../model';
 import { fetchTableMetadata } from '../../datasource';
@@ -26,14 +28,16 @@ import {
   type SparkJarCodeResource,
   type SparkJarJavaEditorHandle,
 } from '../components/SparkJarJavaEditor';
-import { SparkJarTrialPreviewPanel } from '../components/SparkJarTrialPreviewPanel';
+import {
+  SparkJarTrialPreviewPanel,
+} from '../components/SparkJarTrialPreviewPanel';
+import { TaskRunLogViewer } from '../components/TaskRunLogViewer';
 import {
   useCompileSparkJarOnlineSource,
   useTrialRunSparkJarOnlineSource,
   useTaskRuns,
   useTaskRun,
   useSparkJarTrialPreview,
-  useTaskRunLogText,
   useCancelTaskRun,
   useForceTerminateTaskRun,
   useStopTaskRun,
@@ -54,9 +58,16 @@ import type {
   SparkJarOnlineDiagnostic,
   SparkJarOnlineSource,
   SparkJarTaskDefinition,
+  SparkJarTrialPreview,
 } from '../model/task';
 
 const onlineSourceLimit = 256 * 1024;
+
+const countTrialPreviewOutputs = (preview: SparkJarTrialPreview): number => (
+  new Set(preview.writes.map((write) => JSON.stringify([
+    write.resourceKind, write.bindingName, write.target,
+  ]))).size
+);
 
 const diagnosticColor = (severity: SparkJarOnlineDiagnostic['severity']) => {
   if (severity === 'ERROR') return 'red';
@@ -101,6 +112,7 @@ const resourceSnippet = (resource: SparkJarCodeResource, streaming: boolean): st
 interface OnlineWorkbenchProps {
   taskId: string;
   taskName: string;
+  definitionHref: string;
   initialSource: SparkJarOnlineSource;
   definition: SparkJarTaskDefinition;
   jdbcTables: SparkJarDevelopmentKitJdbcTable[];
@@ -109,6 +121,7 @@ interface OnlineWorkbenchProps {
 const OnlineWorkbench = ({
   taskId,
   taskName,
+  definitionHref,
   initialSource,
   definition,
   jdbcTables,
@@ -123,6 +136,9 @@ const OnlineWorkbench = ({
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
   const [selectedTrialRunId, setSelectedTrialRunId] = useState<string | null>(null);
   const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<'online' | 'log' | 'preview'>('online');
+  const [previewAutoRefresh, setPreviewAutoRefresh] = useState(true);
+  const [pageVisible, setPageVisible] = useState(() => document.visibilityState === 'visible');
+  const [finalPreviewWaitExpired, setFinalPreviewWaitExpired] = useState(false);
   const [expandedResourceKeys, setExpandedResourceKeys] = useState<string[]>([]);
   const saveMutation = useSaveSparkJarOnlineSource();
   const compileMutation = useCompileSparkJarOnlineSource();
@@ -140,8 +156,12 @@ const OnlineWorkbench = ({
   const trialActive = trialRun?.status === 'QUEUED' || trialRun?.status === 'RUNNING'
     || trialRun?.status === 'CANCEL_REQUESTED' || trialRun?.status === 'STOP_REQUESTED';
   const trialTerminal = Boolean(trialRun && !trialActive);
-  const previewQuery = useSparkJarTrialPreview(trialRunId, trialTerminal);
-  const logQuery = useTaskRunLogText(trialRunId, Boolean(trialActive));
+  const previewVisible = activeWorkbenchTab === 'preview' && pageVisible;
+  const previewQuery = useSparkJarTrialPreview(
+    trialRunId,
+    previewVisible,
+    previewVisible && previewAutoRefresh && (trialActive || trialTerminal && !finalPreviewWaitExpired),
+  );
   const modelBindings = useMemo(() => definition.resourceBindings.filter(
     (binding) => binding.resourceType === 'MODEL',
   ), [definition.resourceBindings]);
@@ -220,6 +240,18 @@ const OnlineWorkbench = ({
   ));
 
   useEffect(() => {
+    const handleVisibility = () => setPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => document.removeEventListener('visibilitychange', handleVisibility);
+  }, []);
+
+  useEffect(() => {
+    if (!trialTerminal) return undefined;
+    const timer = window.setTimeout(() => setFinalPreviewWaitExpired(true), 60_000);
+    return () => window.clearTimeout(timer);
+  }, [trialRunId, trialTerminal]);
+
+  useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
       if (!localDirty) return;
       event.preventDefault();
@@ -296,6 +328,7 @@ const OnlineWorkbench = ({
         return;
       }
       setActiveWorkbenchTab('log');
+      setFinalPreviewWaitExpired(false);
       setSelectedTrialRunId(result.run?.id ?? null);
       void messageApi.success(streaming
         ? '实时试运行已提交，可在 30 分钟内正常停止'
@@ -325,7 +358,7 @@ const OnlineWorkbench = ({
     }
   };
 
-  const goBack = () => navigate(`/task/${taskId}/definition`);
+  const goBack = () => navigate(definitionHref);
   const jarOrigin = sourceState.currentJarOrigin === 'ONLINE_COMPILED' ? '在线编译' : '本地上传';
   const toggleResourceFields = (resourceKey: string) => {
     setExpandedResourceKeys((current) => (
@@ -604,7 +637,12 @@ const OnlineWorkbench = ({
                   {trialRun ? (
                     <>
                       {renderTrialRunError()}
-                      <pre className="spark-jar-trial-log">{logQuery.data ?? (logQuery.isPending ? '日志加载中…' : '暂无日志')}</pre>
+                      <TaskRunLogViewer
+                        key={trialRun.id}
+                        runId={trialRun.id}
+                        visible={activeWorkbenchTab === 'log'}
+                        endedAt={trialRun.endedAt}
+                      />
                     </>
                   ) : <Empty className="spark-jar-trial-empty" image={Empty.PRESENTED_IMAGE_SIMPLE} description="点击“试运行”后查看真实数据执行日志" />}
                 </section>
@@ -612,14 +650,59 @@ const OnlineWorkbench = ({
             },
             {
               key: 'preview',
-              label: `输出预览（${previewQuery.data?.preview?.writes.length ?? 0}）`,
+              label: `输出预览（${previewQuery.data?.preview
+                ? streaming
+                  ? countTrialPreviewOutputs(previewQuery.data.preview)
+                  : previewQuery.data.preview.writes.length
+                : 0}）`,
               children: (
                 <section className="spark-jar-trial-view">
                   {trialRun ? (
                     <>
                       {renderTrialRunError()}
                       <div className="spark-jar-trial-preview-content">
-                        {previewQuery.error ? (
+                        <div className="spark-jar-trial-preview-toolbar">
+                          <Space wrap>
+                            <Tag color={previewQuery.data?.finalResult
+                              ? 'success'
+                              : previewQuery.data?.source === 'RUNNING_SNAPSHOT' ? 'processing' : 'default'}>
+                              {previewQuery.data?.finalResult
+                                ? '最终预览'
+                                : previewQuery.data?.source === 'RUNNING_SNAPSHOT' ? '运行中' : '等待输出'}
+                            </Tag>
+                            {streaming && <Typography.Text type="secondary">每个输出保留最近 100 条已捕获样例</Typography.Text>}
+                            {previewQuery.data?.capturedAt && (
+                              <Typography.Text type="secondary">
+                                最后样例更新于 {new Date(previewQuery.data.capturedAt).toLocaleString()}
+                              </Typography.Text>
+                            )}
+                          </Space>
+                          <Space wrap>
+                            <Space size={6}>
+                              <Switch
+                                size="small"
+                                checked={previewAutoRefresh && !finalPreviewWaitExpired}
+                                disabled={previewQuery.data?.finalResult || finalPreviewWaitExpired}
+                                onChange={setPreviewAutoRefresh}
+                              />
+                              <Typography.Text type="secondary">
+                                {previewQuery.data?.finalResult
+                                  ? '已停止刷新'
+                                  : finalPreviewWaitExpired
+                                    ? '已停止自动等待，可手动刷新'
+                                    : previewAutoRefresh ? '每 3 秒刷新' : '已暂停'}
+                              </Typography.Text>
+                            </Space>
+                            <Tooltip title="立即刷新">
+                              <Button
+                                icon={<ReloadOutlined />}
+                                loading={previewQuery.isFetching}
+                                onClick={() => void previewQuery.refetch()}
+                              />
+                            </Tooltip>
+                          </Space>
+                        </div>
+                        {previewQuery.error && (
                           <Alert
                             showIcon
                             type={streaming && trialRun.status === 'CANCELLED' ? 'warning' : 'error'}
@@ -629,20 +712,26 @@ const OnlineWorkbench = ({
                                 : previewQuery.error.message
                               : '输出预览读取失败'}
                           />
-                        ) : previewQuery.data?.preview ? (
+                        )}
+                        {previewQuery.data?.preview ? (
                           previewQuery.data.preview.writes.length ? (
                             <SparkJarTrialPreviewPanel
                               key={trialRunId ?? 'unknown-trial-run'}
                               preview={previewQuery.data.preview}
+                              streaming={streaming}
                             />
-                          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="运行已结束，但没有捕获到 SDK 输出写入" />
+                          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={previewQuery.data.finalResult
+                            ? '运行已结束，但没有捕获到 SDK 输出写入'
+                            : '等待首批输出'} />
                         ) : <Empty
                           image={Empty.PRESENTED_IMAGE_SIMPLE}
                           description={trialActive
-                            ? '运行中，结束后生成输出预览'
-                            : trialRun.status !== 'SUCCESS' && trialRun.status !== 'STOPPED'
+                            ? '等待首批输出'
+                            : previewQuery.data?.finalResult
+                              ? '运行已结束，但没有捕获到 SDK 输出写入'
+                              : trialRun.status !== 'SUCCESS' && trialRun.status !== 'STOPPED'
                               ? '运行在捕获 SDK 写入前失败，没有输出预览'
-                              : '运行已结束，但没有捕获到 SDK 输出写入'}
+                              : '任务已结束，正在等待最终预览'}
                         />}
                       </div>
                     </>
@@ -658,9 +747,13 @@ const OnlineWorkbench = ({
 };
 
 export const SparkJarOnlineEditorPage = () => {
+  const location = useLocation();
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const taskQuery = useTask(taskId);
+  const definitionHref = taskQuery.data && !taskQuery.isError
+    ? taskPageHref(`/task/${taskQuery.data.id}/definition`, location.search, taskQuery.data.type)
+    : '/task';
   const sourceQuery = useSparkJarOnlineSource(taskId);
   const definitionQuery = useSparkJarTaskDefinition(taskId);
   const kitQuery = useSparkJarDevelopmentKit(taskId, Boolean(taskId));
@@ -678,21 +771,22 @@ export const SparkJarOnlineEditorPage = () => {
         status="error"
         title="在线开发工作台加载失败"
         subTitle={error instanceof ApiError ? error.message : '请确认任务和 Task Engine 配置是否有效。'}
-        extra={<Button type="primary" onClick={() => navigate(`/task/${taskId}/definition`)}>返回任务定义</Button>}
+        extra={<Button type="primary" onClick={() => navigate(definitionHref)}>{definitionHref === '/task' ? '返回全部任务' : '返回任务定义'}</Button>}
       />
     );
   }
   if (taskQuery.data.type !== 'SPARK_JAR' && taskQuery.data.type !== 'SPARK_STREAMING_JAR') {
-    return <Result status="warning" title="当前任务不支持 Spark JAR 在线开发" extra={<Button onClick={() => navigate(`/task/${taskId}/definition`)}>返回任务定义</Button>} />;
+    return <Result status="warning" title="当前任务不支持 Spark JAR 在线开发" extra={<Button onClick={() => navigate(definitionHref)}>返回任务定义</Button>} />;
   }
   if (taskQuery.data.status === 'PUBLISHED') {
-    return <Result status="warning" title="当前任务状态不可在线编辑" subTitle="请先停用任务，再修改和编译在线源码。" extra={<Button onClick={() => navigate(`/task/${taskId}`)}>返回任务详情</Button>} />;
+    return <Result status="warning" title="当前任务状态不可在线编辑" subTitle="请先停用任务，再修改和编译在线源码。" extra={<Button onClick={() => navigate(taskPageHref(`/task/${taskId}`, location.search, taskQuery.data.type))}>返回任务详情</Button>} />;
   }
 
   return (
     <OnlineWorkbench
       taskId={taskId}
       taskName={taskQuery.data.name}
+      definitionHref={definitionHref}
       initialSource={sourceQuery.data}
       definition={definitionQuery.data}
       jdbcTables={kitQuery.data.configuration.jdbcTables}

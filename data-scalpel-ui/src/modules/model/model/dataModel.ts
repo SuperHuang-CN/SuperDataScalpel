@@ -24,6 +24,7 @@ export interface DataModelReferenceService {
 }
 
 export interface DataModelReferences {
+  metrics?: { id: string; name: string; code: string }[];
   modelId: string;
   deletable: boolean;
   tasks: DataModelReferenceTask[];
@@ -921,6 +922,7 @@ const sameGeometryDefinition = (
 export const isMetadataOnlyFieldUpdate = (
   currentFields: DataModelFieldInput[],
   requestedFields: DataModelFieldInput[],
+  ignorePrimaryKey = false,
 ) => {
   if (currentFields.length !== requestedFields.length) return false;
   const currentById = new Map(
@@ -940,7 +942,7 @@ export const isMetadataOnlyFieldUpdate = (
       && current.scale === requested.scale
       && sameGeometryDefinition(current.geometry, requested.geometry)
       && current.nullable === requested.nullable
-      && current.primaryKey === requested.primaryKey;
+      && (ignorePrimaryKey || current.primaryKey === requested.primaryKey);
   });
 };
 

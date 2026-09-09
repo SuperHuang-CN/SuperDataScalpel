@@ -12,6 +12,7 @@ import cn.superhuang.data.scalpel.business.directory.web.response.DirectoryRespo
 import cn.superhuang.data.scalpel.business.directory.web.response.DirectoryImportResultResponse;
 import cn.superhuang.data.scalpel.business.directory.web.response.DirectoryTreeNodeResponse;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
+import cn.superhuang.data.scalpel.business.mcp.repository.McpServerRepository;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import org.springframework.http.HttpStatus;
@@ -35,6 +36,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 @Service
 public class DirectoryService {
 
+    private final cn.superhuang.data.scalpel.business.metric.repository.DataMetricRepository metricRepository;
     private final DirectoryRepository repository;
     private final AssetRepository assetRepository;
     private final DataSourceRepository dataSourceRepository;
@@ -42,16 +44,22 @@ public class DirectoryService {
     private final DataModelRepository dataModelRepository;
     private final DataTaskRepository dataTaskRepository;
     private final DataServiceRepository dataServiceRepository;
+    private final McpServerRepository mcpServerRepository;
+    private final cn.superhuang.data.scalpel.business.panorama.repository.PanoramaRepository panoramaRepository;
 
     public DirectoryService(
+            cn.superhuang.data.scalpel.business.metric.repository.DataMetricRepository metricRepository,
             DirectoryRepository repository,
             AssetRepository assetRepository,
             DataSourceRepository dataSourceRepository,
             FileDatasetRepository fileDatasetRepository,
             DataModelRepository dataModelRepository,
             DataTaskRepository dataTaskRepository,
-            DataServiceRepository dataServiceRepository
+            DataServiceRepository dataServiceRepository,
+            McpServerRepository mcpServerRepository,
+            cn.superhuang.data.scalpel.business.panorama.repository.PanoramaRepository panoramaRepository
     ) {
+        this.metricRepository = metricRepository;
         this.repository = repository;
         this.assetRepository = assetRepository;
         this.dataSourceRepository = dataSourceRepository;
@@ -59,6 +67,8 @@ public class DirectoryService {
         this.dataModelRepository = dataModelRepository;
         this.dataTaskRepository = dataTaskRepository;
         this.dataServiceRepository = dataServiceRepository;
+        this.mcpServerRepository = mcpServerRepository;
+        this.panoramaRepository = panoramaRepository;
     }
 
     @Transactional(readOnly = true)
@@ -289,10 +299,14 @@ public class DirectoryService {
         }
         Map<UUID, Long> counts = new HashMap<>();
         List<UUID> directoryIds = directories.stream().map(Directory::getId).toList();
-        if (scope == DirectoryScope.DATA_SOURCE) {
+        if (scope == DirectoryScope.METRIC) {
+            for (var count : metricRepository.countByDirectoryIdIn(directoryIds)) counts.put(count.directoryId(), count.resourceCount());
+        } else if (scope == DirectoryScope.DATA_SOURCE) {
             for (DataSourceRepository.DirectoryResourceCount count : dataSourceRepository.countByDirectoryIdIn(directoryIds)) {
                 counts.put(count.directoryId(), count.resourceCount());
             }
+        } else if (scope == DirectoryScope.PANORAMA) {
+            for (var count : panoramaRepository.countByDirectoryIdIn(directoryIds)) counts.put(count.directoryId(), count.resourceCount());
         } else if (scope == DirectoryScope.FILE_DATASET) {
             for (FileDatasetRepository.DirectoryResourceCount count : fileDatasetRepository.countByDirectoryIdIn(directoryIds)) {
                 counts.put(count.directoryId(), count.resourceCount());
@@ -309,6 +323,10 @@ public class DirectoryService {
             for (DataServiceRepository.DirectoryResourceCount count : dataServiceRepository.countByDirectoryIdIn(directoryIds)) {
                 counts.put(count.directoryId(), count.resourceCount());
             }
+        } else if (scope == DirectoryScope.MCP_SERVER) {
+            for (McpServerRepository.DirectoryResourceCount count : mcpServerRepository.countByDirectoryIdIn(directoryIds)) {
+                counts.put(count.directoryId(), count.resourceCount());
+            }
         } else if (scope == DirectoryScope.ASSET) {
             for (AssetRepository.DirectoryResourceCount count : assetRepository.countByDirectoryIdIn(directoryIds)) {
                 counts.put(count.directoryId(), count.resourceCount());
@@ -320,11 +338,14 @@ public class DirectoryService {
     private boolean hasResources(DirectoryScope scope, UUID directoryId) {
         return switch (scope) {
             case DATA_SOURCE -> dataSourceRepository.existsByDirectoryId(directoryId);
+            case PANORAMA -> panoramaRepository.existsByDirectoryId(directoryId);
             case FILE_DATASET -> fileDatasetRepository.existsByDirectoryId(directoryId);
             case MODEL -> dataModelRepository.existsByDirectoryId(directoryId);
+            case METRIC -> metricRepository.existsByDirectoryId(directoryId);
             case TASK -> dataTaskRepository.existsByDirectoryId(directoryId);
             case DATA_SERVICE -> dataServiceRepository.countByDirectoryIdIn(List.of(directoryId)).stream()
                     .anyMatch(count -> count.resourceCount() > 0);
+            case MCP_SERVER -> mcpServerRepository.existsByDirectoryId(directoryId);
             case ASSET -> assetRepository.existsByDirectoryId(directoryId);
         };
     }

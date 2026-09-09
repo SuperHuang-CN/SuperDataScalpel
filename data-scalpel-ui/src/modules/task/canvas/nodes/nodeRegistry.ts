@@ -21,6 +21,18 @@ import { geometryConstructSpec } from './geometryConstruct/spec';
 import { geometryBufferSpec } from './geometryBuffer/spec';
 import { geometryExplodeSpec } from './geometryExplode/spec';
 import { geometryRepairSpec } from './geometryRepair/spec';
+import { geometryDeriveSpec } from './geometryDerive/spec';
+import { geometrySimplifySpec } from './geometrySimplify/spec';
+import { spatialNearestSpec } from './spatialNearest/spec';
+import { spatialSummarizeWithinSpec } from './spatialSummarizeWithin/spec';
+import { spatialOverlaySpec } from './spatialOverlay/spec';
+import { trackReconstructSpec } from './trackReconstruct/spec';
+import { trackMotionStatisticsSpec } from './trackMotionStatistics/spec';
+import { trackFindDwellSpec } from './trackFindDwell/spec';
+import { trackDetectIncidentsSpec } from './trackDetectIncidents/spec';
+import { spatialBinAggregateSpec } from './spatialBinAggregate/spec';
+import { spatialPointClusterSpec } from './spatialPointCluster/spec';
+import { spatialCenterDispersionSpec } from './spatialCenterDispersion/spec';
 import { geometrySerializeSpec } from './geometrySerialize/spec';
 import { geometryValidateSpec } from './geometryValidate/spec';
 import { httpApiInputSpec } from './httpApiInput/spec';
@@ -88,6 +100,18 @@ const builtinSpecs = [
   spatialTransformSpec,
   geometryValidateSpec,
   geometryRepairSpec,
+  geometryDeriveSpec,
+  geometrySimplifySpec,
+  spatialNearestSpec,
+  spatialSummarizeWithinSpec,
+  spatialOverlaySpec,
+  trackReconstructSpec,
+  trackMotionStatisticsSpec,
+  trackFindDwellSpec,
+  trackDetectIncidentsSpec,
+  spatialBinAggregateSpec,
+  spatialPointClusterSpec,
+  spatialCenterDispersionSpec,
   geometryBufferSpec,
   geometryExplodeSpec,
   spatialMeasureSpec,

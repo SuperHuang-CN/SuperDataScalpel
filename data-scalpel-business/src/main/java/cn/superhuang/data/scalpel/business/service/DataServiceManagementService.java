@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.service;
 
+import cn.superhuang.data.scalpel.business.cartography.model.SpatialStyleDocument;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
@@ -28,6 +29,7 @@ import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceModelRef
 import cn.superhuang.data.scalpel.business.service.domain.SqlDataServiceParameter;
 import cn.superhuang.data.scalpel.business.service.domain.StandardDataServiceDefinition;
 import cn.superhuang.data.scalpel.business.service.domain.SpatialDataServiceDefinition;
+import cn.superhuang.data.scalpel.business.service.domain.SpatialGeometryFamily;
 import cn.superhuang.data.scalpel.business.service.gateway.domain.GatewayServiceBinding;
 import cn.superhuang.data.scalpel.business.service.gateway.repository.GatewayServiceBindingRepository;
 import cn.superhuang.data.scalpel.business.service.consumer.subscription.repository.ApiServiceSubscriptionRepository;
@@ -135,6 +137,7 @@ public class DataServiceManagementService {
     private final ModelPhysicalTablePort physicalTablePort;
     private final ServiceEngineClient engineClient;
     private final GeoServerClient geoServerClient;
+    private final SpatialDataServiceStyleService spatialStyleService;
     private final DataServiceGatewayPublicationService gatewayPublicationService;
     private final ServiceEngineDataSourceRegistrationService dataSourceRegistrationService;
     private final ServiceEngineAccessPolicyService accessPolicyService;
@@ -164,6 +167,7 @@ public class DataServiceManagementService {
             ModelPhysicalTablePort physicalTablePort,
             ServiceEngineClient engineClient,
             GeoServerClient geoServerClient,
+            SpatialDataServiceStyleService spatialStyleService,
             DataServiceGatewayPublicationService gatewayPublicationService,
             ServiceEngineDataSourceRegistrationService dataSourceRegistrationService,
             ServiceEngineAccessPolicyService accessPolicyService,
@@ -191,6 +195,7 @@ public class DataServiceManagementService {
         this.physicalTablePort = physicalTablePort;
         this.engineClient = engineClient;
         this.geoServerClient = geoServerClient;
+        this.spatialStyleService = spatialStyleService;
         this.gatewayPublicationService = gatewayPublicationService;
         this.dataSourceRegistrationService = dataSourceRegistrationService;
         this.accessPolicyService = accessPolicyService;
@@ -377,6 +382,11 @@ public class DataServiceManagementService {
         String failure = null;
         try {
             if (command.engine().getType() == ServiceEngineType.GEOSERVER) {
+                if (command.styleDeployment().sldText() != null) {
+                    geoServerClient.upsertStyle(
+                            command.engine(), command.styleDeployment().styleName(), command.styleDeployment().sldText()
+                    );
+                }
                 geoServerClient.upsertLayer(command.engine(), command.layerSpec());
             } else {
                 ServiceDeploymentResponse response = engineClient.deploy(command.engine(), command.request());
@@ -389,7 +399,11 @@ public class DataServiceManagementService {
         }
         String finalFailure = failure;
         return requireTransactionResult(transactionTemplate.execute(
-                status -> completeEnable(id, command.revision(), finalFailure)
+                status -> completeEnable(
+                        id, command.revision(),
+                        command.styleDeployment() == null ? null : command.styleDeployment().styleVersion(),
+                        finalFailure
+                )
         ));
     }
 
@@ -647,13 +661,17 @@ public class DataServiceManagementService {
         deploymentRepository.saveAndFlush(deployment);
         if (service.getType() == DataServiceType.SPATIAL_SERVICE) {
             SpatialServiceDefinition spatial = definition.spatialDefinition();
+            SpatialDataServiceStyleService.StyleDeployment style = spatialStyleService.beginDeployment(
+                    service.getId(), service.getCode()
+            );
             return new EnableCommand(
                     engine,
                     null,
                     new GeoServerClient.LayerSpec(
                             dataSource.getId(), service.getCode(), spatial.title(), spatial.table(),
-                            spatial.geometryColumn(), spatial.epsg(), styleName(spatial.geometryKind())
+                            spatial.geometryColumn(), spatial.epsg(), style.styleName()
                     ),
+                    style,
                     revision
             );
         }
@@ -663,6 +681,7 @@ public class DataServiceManagementService {
                         service.getId(), service.getCode(), service.getContextPath(),
                         definitionDigest, definition, dataSource.getId()
                 ),
+                null,
                 null,
                 revision
         );
@@ -709,10 +728,13 @@ public class DataServiceManagementService {
         }
     }
 
-    private DataServiceDetailResponse completeEnable(UUID id, long revision, String failure) {
+    private DataServiceDetailResponse completeEnable(UUID id, long revision, Integer styleVersion, String failure) {
         DataService service = requireService(id);
         DataServiceDeployment deployment = requireDeployment(id);
         requireRevision(service, deployment, revision);
+        if (service.getType() == DataServiceType.SPATIAL_SERVICE && styleVersion != null) {
+            spatialStyleService.completeDeployment(id, styleVersion, failure);
+        }
         if (failure == null) {
             deployment.deployed();
             service.markEnabled();
@@ -748,6 +770,7 @@ public class DataServiceManagementService {
         try {
             if (command.engine().getType() == ServiceEngineType.GEOSERVER) {
                 geoServerClient.removeLayer(command.engine(), command.dataSourceId(), command.serviceCode());
+                geoServerClient.removeStyle(command.engine(), command.serviceCode());
             } else {
                 ServiceDeploymentResponse response = engineClient.remove(
                         command.engine(), new ServiceUndeploymentRequest(command.serviceId())
@@ -771,6 +794,7 @@ public class DataServiceManagementService {
         requireRevision(service, deployment, revision);
         if (failure == null) {
             deployment.removed();
+            if (service.getType() == DataServiceType.SPATIAL_SERVICE) spatialStyleService.markRemoved(id);
             if (disableService) service.markDisabled();
         } else {
             deployment.failed(failure);
@@ -800,15 +824,6 @@ public class DataServiceManagementService {
         return new RemovalCommand(serviceId, engine, revision, disableService, service.getCode(), null);
     }
 
-    private static String styleName(GeometryKind kind) {
-        return switch (kind) {
-            case POINT, MULTIPOINT -> "point";
-            case LINESTRING, MULTILINESTRING -> "line";
-            case POLYGON, MULTIPOLYGON -> "polygon";
-            case GEOMETRY, GEOMETRYCOLLECTION -> "generic";
-        };
-    }
-
     private void saveNewDefinition(
             UUID serviceId,
             DataServiceType type,
@@ -833,9 +848,9 @@ public class DataServiceManagementService {
                     )
             );
         } else {
-            spatialDefinitionRepository.saveAndFlush(
-                    SpatialDataServiceDefinition.create(serviceId, spatial.modelId())
-            );
+            SpatialDataServiceDefinition definition = SpatialDataServiceDefinition.create(serviceId, spatial.modelId());
+            initializeSpatialStyleDocument(definition);
+            spatialDefinitionRepository.saveAndFlush(definition);
         }
     }
 
@@ -865,7 +880,9 @@ public class DataServiceManagementService {
         }
         if (type == DataServiceType.SPATIAL_SERVICE) {
             SpatialDataServiceDefinition definition = requireSpatialDefinition(serviceId);
+            boolean modelChanged = !definition.getModelId().equals(spatial.modelId());
             definition.update(spatial.modelId());
+            if (modelChanged) initializeSpatialStyleDocument(definition);
             spatialDefinitionRepository.saveAndFlush(definition);
             return;
         }
@@ -1416,6 +1433,23 @@ public class DataServiceManagementService {
         }
     }
 
+    private void initializeSpatialStyleDocument(SpatialDataServiceDefinition definition) {
+        List<DataModelField> geometryFields = fieldRepository
+                .findAllByModelIdOrderBySortOrderAscCodeAsc(definition.getModelId()).stream()
+                .filter(field -> field.getGeometry() != null)
+                .toList();
+        if (geometryFields.size() != 1) return;
+        SpatialGeometryFamily family = SpatialGeometryFamily.from(geometryFields.getFirst().getGeometry().kind());
+        if (family == SpatialGeometryFamily.GENERIC) return;
+        try {
+            definition.initializeCartographyDocument(objectMapper.writeValueAsString(
+                    SpatialStyleDocument.defaults(SpatialDataServiceStyleService.coreFamily(family))
+            ));
+        } catch (JacksonException exception) {
+            throw new IllegalStateException("无法初始化在线制图 V4 默认样式", exception);
+        }
+    }
+
     private List<ScriptRequestExampleResponse> readScriptExamples(String examplesJson) {
         List<ScriptRequestExampleRequest> examples;
         if (examplesJson == null || examplesJson.isBlank()) {
@@ -1604,6 +1638,7 @@ public class DataServiceManagementService {
             ServiceEngine engine,
             ServiceDeploymentRequest request,
             GeoServerClient.LayerSpec layerSpec,
+            SpatialDataServiceStyleService.StyleDeployment styleDeployment,
             long revision
     ) {
     }

@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.system.access.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.system.access.service.SystemAccessService;
 import cn.superhuang.data.scalpel.business.system.access.web.request.CreateSystemRoleRequest;
 import cn.superhuang.data.scalpel.business.system.access.web.request.UpdateSystemRolePermissionsRequest;
@@ -35,6 +36,7 @@ public class SystemRoleResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统角色")
     @GetMapping
     @PreAuthorize("hasAuthority('system.role.view')")
     @Operation(summary = "查询系统角色")
@@ -42,6 +44,7 @@ public class SystemRoleResource {
         return service.searchRoles(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统角色详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('system.role.view')")
     @Operation(summary = "查询系统角色详情")
@@ -49,6 +52,7 @@ public class SystemRoleResource {
         return service.getRole(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增系统角色")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('system.role.manage')")
@@ -57,6 +61,7 @@ public class SystemRoleResource {
         return service.createRole(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改系统角色")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('system.role.manage')")
     @Operation(summary = "修改系统角色")
@@ -64,6 +69,7 @@ public class SystemRoleResource {
         return service.updateRole(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "配置角色权限")
     @PostMapping("/{id}/actions/update-permissions")
     @PreAuthorize("hasAuthority('system.role.manage')")
     @Operation(summary = "配置角色权限")
@@ -74,6 +80,7 @@ public class SystemRoleResource {
         return service.updateRolePermissions(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除系统角色")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('system.role.manage')")

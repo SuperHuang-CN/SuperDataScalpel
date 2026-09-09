@@ -1111,7 +1111,12 @@ final class CanvasTaskExecutor {
                     SPATIAL_SERVICE_INPUT, KAFKA_INPUT, TDENGINE_TMQ_INPUT ->
                     ExecutionFailurePhase.READ;
             case JOIN, GEOMETRY_CONSTRUCT, SPATIAL_TRANSFORM, GEOMETRY_VALIDATE,
-                    GEOMETRY_REPAIR, GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
+                    GEOMETRY_REPAIR, GEOMETRY_DERIVE, GEOMETRY_SIMPLIFY, SPATIAL_NEAREST,
+                    SPATIAL_SUMMARIZE_WITHIN, SPATIAL_OVERLAY,
+                    TRACK_RECONSTRUCT, TRACK_MOTION_STATISTICS, TRACK_FIND_DWELL,
+                    TRACK_DETECT_INCIDENTS,
+                    SPATIAL_BIN_AGGREGATE, SPATIAL_POINT_CLUSTER, SPATIAL_CENTER_DISPERSION,
+                    GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
                     SPATIAL_MEASURE, GEOMETRY_SERIALIZE, SPATIAL_CLIP,
                     SPATIAL_AGGREGATE, SPATIAL_JOIN, STREAM_JOIN,
                     RENAME, FILTER, SQL_TRANSFORM, SELECT_COLUMNS, DERIVE_COLUMNS, TYPE_CAST,
@@ -1164,6 +1169,31 @@ final class CanvasTaskExecutor {
                     validate.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.GeometryRepairNodeDefinition repair ->
                     repair.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometryDeriveNodeDefinition derive ->
+                    derive.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.GeometrySimplifyNodeDefinition simplify ->
+                    simplify.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialNearestNodeDefinition nearest ->
+                    nearest.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialSummarizeWithinNodeDefinition summarize ->
+                    summarize.configuration().outputTableName() + (summarize.configuration().usesLinkedGroupResult()
+                            ? ", " + summarize.configuration().groupResult().outputTableName() : "");
+            case cn.superhuang.data.scalpel.contract.task.SpatialOverlayNodeDefinition overlay ->
+                    overlay.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.TrackReconstructNodeDefinition track ->
+                    track.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.TrackMotionStatisticsNodeDefinition track ->
+                    track.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.TrackFindDwellNodeDefinition track ->
+                    track.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition track ->
+                    track.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialBinAggregateNodeDefinition aggregate ->
+                    aggregate.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialPointClusterNodeDefinition cluster ->
+                    cluster.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialCenterDispersionNodeDefinition analysis ->
+                    analysis.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
                     buffer.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.GeometryExplodeNodeDefinition explode ->
@@ -1441,6 +1471,173 @@ final class CanvasTaskExecutor {
                             + safeLogValue(repair.configuration().geometryColumnName())
                             + " outputColumn="
                             + safeLogValue(repair.configuration().outputColumnName());
+            case cn.superhuang.data.scalpel.contract.task.GeometryDeriveNodeDefinition derive -> {
+                String derivations = derive.configuration().derivations().stream()
+                        .map(item -> item.kind() + ":" + item.sourceColumnName()
+                                + ":" + item.outputColumnName() + ":" + item.geometryPolicy())
+                        .collect(java.util.stream.Collectors.joining(","));
+                yield "sourceTable=" + safeLogValue(derive.configuration().sourceTableName())
+                        + " outputTable=" + safeLogValue(derive.configuration().outputTableName())
+                        + " derivationCount=" + derive.configuration().derivations().size()
+                        + " derivations=" + safeLogValue(derivations);
+            }
+            case cn.superhuang.data.scalpel.contract.task.GeometrySimplifyNodeDefinition simplify ->
+                    "sourceTable=" + safeLogValue(simplify.configuration().sourceTableName())
+                            + " outputTable=" + safeLogValue(simplify.configuration().outputTableName())
+                            + " geometryColumn="
+                            + safeLogValue(simplify.configuration().geometryColumnName())
+                            + " outputColumn="
+                            + safeLogValue(simplify.configuration().outputColumnName())
+                            + " algorithm=" + simplify.configuration().algorithm()
+                            + " geometryPolicy=" + simplify.configuration().geometryPolicy()
+                            + " toleranceUnit=" + simplify.configuration().toleranceUnit();
+            case cn.superhuang.data.scalpel.contract.task.SpatialNearestNodeDefinition nearest ->
+                    "sourceTable=" + safeLogValue(nearest.configuration().sourceTableName())
+                            + " sourceGeometry="
+                            + safeLogValue(nearest.configuration().sourceGeometryColumnName())
+                            + " candidateTable="
+                            + safeLogValue(nearest.configuration().candidateTableName())
+                            + " candidateGeometry="
+                            + safeLogValue(nearest.configuration().candidateGeometryColumnName())
+                            + " candidateId="
+                            + safeLogValue(nearest.configuration().candidateIdColumnName())
+                            + " method=" + nearest.configuration().distanceMethod()
+                            + " matching=" + (nearest.configuration().usesExactMatching() ? "EXACT_DISTANCE" : "LEGACY_KNN")
+                            + " sourceId=" + safeLogValue(nearest.configuration().matching() == null ? null : nearest.configuration().matching().sourceIdColumnName())
+                            + " connectionLines=" + nearest.configuration().outputsConnectionLines()
+                            + " nearestCount=" + nearest.configuration().nearestCount()
+                            + " outputFieldCount=" + nearest.configuration().outputColumns().stream()
+                            .filter(cn.superhuang.data.scalpel.contract.task.JoinOutputColumn::included).count()
+                            + " outputTable="
+                            + safeLogValue(nearest.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialSummarizeWithinNodeDefinition summarize ->
+                    "regionMode=" + (summarize.configuration().usesGridRegions() ? "PLANAR_GRID" : "AREA_TABLE")
+                            + " areaTable=" + (summarize.configuration().usesGridRegions() ? "GENERATED_GRID" : safeLogValue(summarize.configuration().areaTableName()))
+                            + " areaGeometry="
+                            + (summarize.configuration().usesGridRegions() ? "GENERATED" : safeLogValue(summarize.configuration().areaGeometryColumnName()))
+                            + " summaryTable="
+                            + safeLogValue(summarize.configuration().summaryTableName())
+                            + " summaryGeometry="
+                            + safeLogValue(summarize.configuration().summaryGeometryColumnName())
+                            + " statisticCount=" + summarize.configuration().statistics().size()
+                            + " apportionedCount=" + summarize.configuration().statistics().stream()
+                            .filter(cn.superhuang.data.scalpel.contract.task.SpatialWithinStatistic::apportionsTotal).count()
+                            + " weightedCount=" + summarize.configuration().statistics().stream()
+                            .filter(cn.superhuang.data.scalpel.contract.task.SpatialWithinStatistic::usesGeographicWeight).count()
+                            + " grouped=" + (summarize.configuration().groupSummary() != null)
+                            + " linkedGroupResult=" + summarize.configuration().usesLinkedGroupResult()
+                            + " resultTableCount=" + (summarize.configuration().usesLinkedGroupResult() ? 2 : 1)
+                            + " temporal=" + (summarize.configuration().temporalSlicing() != null)
+                            + " calendar=" + (summarize.configuration().temporalSlicing() != null && summarize.configuration().temporalSlicing().usesCalendar())
+                            + " outputTable="
+                            + safeLogValue(summarize.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialOverlayNodeDefinition overlay ->
+                    "leftTable=" + safeLogValue(overlay.configuration().leftTableName())
+                            + " leftGeometry=" + safeLogValue(overlay.configuration().leftGeometryColumnName())
+                            + " rightTable=" + safeLogValue(overlay.configuration().rightTableName())
+                            + " rightGeometry=" + safeLogValue(overlay.configuration().rightGeometryColumnName())
+                            + " operation=" + overlay.configuration().operation()
+                            + " familyGeometry=" + overlay.configuration().usesFamilyGeometry()
+                            + " outputFieldCount=" + overlay.configuration().outputColumns().stream()
+                            .filter(cn.superhuang.data.scalpel.contract.task.JoinOutputColumn::included).count()
+                            + " outputTable=" + safeLogValue(overlay.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.TrackReconstructNodeDefinition track ->
+                    "sourceTable=" + safeLogValue(track.configuration().sourceTableName())
+                            + " pointGeometry=" + safeLogValue(track.configuration().pointGeometryColumnName())
+                            + " trackIdFieldCount=" + track.configuration().trackIdColumns().size()
+                            + " summaryCount=" + track.configuration().summaryStatistics().size()
+                            + " orderedSegments=" + track.configuration().usesOrderedReconstruction()
+                            + " methodPath=" + track.configuration().usesMethodPath()
+                            + " areaGeometry=" + track.configuration().usesAreaGeometry()
+                            + " distanceMethod=" + track.configuration().distanceMethod()
+                            + " areaSamplingConfigured=" + (track.configuration().usesAreaGeometry()
+                                && track.configuration().distanceMethod() == cn.superhuang.data.scalpel.contract.task.SpatialDistanceMethod.GEODESIC
+                                && track.configuration().reconstruction().areaGeometry().geodesicBoundary() != null)
+                            + " bufferWindowCount=" + (track.configuration().usesAreaGeometry()
+                                && track.configuration().reconstruction().areaGeometry().bufferMode() == cn.superhuang.data.scalpel.contract.task.TrackBufferMode.EXPRESSION
+                                ? track.configuration().reconstruction().areaGeometry().windowBindings().size() : 0)
+                            + " bufferMode=" + (track.configuration().usesAreaGeometry()
+                                ? track.configuration().reconstruction().areaGeometry().bufferMode() : "INACTIVE")
+                            + " splitExpression=" + (track.configuration().usesOrderedReconstruction()
+                                && track.configuration().reconstruction().splitExpression() != null
+                                && track.configuration().reconstruction().splitExpression().active())
+                            + " splitBoundary=" + (track.configuration().usesOrderedReconstruction()
+                                ? track.configuration().reconstruction().effectiveBoundaryOption() : "LEGACY")
+                            + " outputTable=" + safeLogValue(track.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.TrackMotionStatisticsNodeDefinition track ->
+                    "sourceTable=" + safeLogValue(track.configuration().sourceTableName())
+                            + " pointGeometry=" + safeLogValue(track.configuration().pointGeometryColumnName())
+                            + " trackIdFieldCount=" + track.configuration().trackIdColumns().size()
+                            + " metricCount=" + track.configuration().metrics().size()
+                            + " observationWindow=" + track.configuration().usesObservationWindow()
+                            + " windowStatisticCount=" + (track.configuration().windowOptions() == null ? 0 : track.configuration().windowOptions().statistics().size())
+                            + " orderFieldCount=" + (track.configuration().windowOptions() == null ? 0 : track.configuration().windowOptions().orderByColumns().size())
+                            + " outputTable=" + safeLogValue(track.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.TrackFindDwellNodeDefinition track ->
+                    "sourceTable=" + safeLogValue(track.configuration().sourceTableName())
+                            + " pointGeometry=" + safeLogValue(track.configuration().pointGeometryColumnName())
+                            + " trackIdFieldCount=" + track.configuration().trackIdColumns().size()
+                            + " summaryCount=" + track.configuration().summaryStatistics().size()
+                            + " referenceCenter=" + track.configuration().usesReferenceCenter()
+                            + " resultMode=" + (track.configuration().usesReferenceCenter() && track.configuration().rangeOptions() != null
+                                ? track.configuration().rangeOptions().resultMode() : "LEGACY")
+                            + " orderFieldCount=" + (track.configuration().rangeOptions() == null
+                                ? 0 : track.configuration().rangeOptions().orderByColumns().size())
+                            + " outputGeometryKind=" + track.configuration().outputGeometryKind()
+                            + " outputTable=" + safeLogValue(track.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition track ->
+                    "sourceTable=" + safeLogValue(track.configuration().sourceTableName())
+                            + " trackIdFieldCount=" + track.configuration().trackIdColumns().size()
+                            + " hasEndCondition=" + (track.configuration().endCondition() != null)
+                            + " incidentSemantics=" + track.configuration().effectiveIncidentSemantics()
+                            + " conditionWindowCount=" + track.configuration().conditionWindows().size()
+                            + " orderFieldCount=" + track.configuration().orderByColumns().size()
+                            + " fixedTimeBoundary=" + (track.configuration().boundaries().fixedTimeBoundary() != null)
+                            + " resultMode=" + track.configuration().resultMode()
+                            + " outputTable=" + safeLogValue(track.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialBinAggregateNodeDefinition aggregate ->
+                    "sourceTable=" + safeLogValue(aggregate.configuration().sourceTableName())
+                            + " pointGeometry="
+                            + safeLogValue(aggregate.configuration().pointGeometryColumnName())
+                            + " binShape=" + aggregate.configuration().binShape()
+                            + " h3Mode=" + (aggregate.configuration().h3() == null ? null : aggregate.configuration().h3().mode())
+                            + " h3Resolution=" + (aggregate.configuration().h3() == null ? null : aggregate.configuration().h3().resolution())
+                            + " binSizeSemantics=" + aggregate.configuration().effectiveBinSizeSemantics()
+                            + " planarGridConfigured=" + (aggregate.configuration().planarGrid() != null)
+                            + " explicitPlanarBounds=" + (aggregate.configuration().binShape() != cn.superhuang.data.scalpel.contract.task.SpatialBinShape.H3
+                                && aggregate.configuration().planarGrid() != null && aggregate.configuration().planarGrid().usesExplicitBounds())
+                            + " binSizeUnit=" + aggregate.configuration().binSizeUnit()
+                            + " includeEmptyBins=" + aggregate.configuration().includeEmptyBins()
+                            + " statisticCount=" + aggregate.configuration().statistics().size()
+                            + " grouped=" + (aggregate.configuration().groupSummary() != null)
+                            + " temporal=" + (aggregate.configuration().temporalSlicing() != null)
+                            + " calendar=" + (aggregate.configuration().temporalSlicing() != null && aggregate.configuration().temporalSlicing().usesCalendar())
+                            + " outputTable=" + safeLogValue(aggregate.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialPointClusterNodeDefinition cluster ->
+                    "sourceTable=" + safeLogValue(cluster.configuration().sourceTableName())
+                            + " pointGeometry="
+                            + safeLogValue(cluster.configuration().pointGeometryColumnName())
+                            + " featureId=" + safeLogValue(cluster.configuration().featureIdColumnName())
+                            + " dbscanMode=" + (cluster.configuration().parameters() instanceof cn.superhuang.data.scalpel.contract.task.SpatialPointClusterParameters.Dbscan
+                            ? cluster.configuration().dbscan() == null ? "LEGACY_SPATIAL" : cluster.configuration().dbscan().mode() : "INACTIVE")
+                            + " diagnosticCount=" + (cluster.configuration().parameters() instanceof cn.superhuang.data.scalpel.contract.task.SpatialPointClusterParameters.Hdbscan && cluster.configuration().hdbscan() != null ? 4 : 0)
+                            + " distanceMethod=" + cluster.configuration().distanceMethod()
+                            + " algorithm=" + (cluster.configuration().parameters() == null
+                            ? null : cluster.configuration().parameters().getClass().getSimpleName())
+                            + " outputTable=" + safeLogValue(cluster.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialCenterDispersionNodeDefinition analysis ->
+                    "sourceTable=" + safeLogValue(analysis.configuration().sourceTableName())
+                            + " pointGeometry="
+                            + safeLogValue(analysis.configuration().pointGeometryColumnName())
+                            + " groupFieldCount=" + analysis.configuration().groupByColumns().size()
+                            + " weighted=" + !blank(analysis.configuration().weightColumnName())
+                            + " analysisCount=" + analysis.configuration().analyses().size()
+                            + " resultMode=" + analysis.configuration().resultMode()
+                            + " projectedOriginalFieldCount=" + (analysis.configuration().separateResults()
+                            ? analysis.configuration().analyses().stream().filter(a -> a.kind() == cn.superhuang.data.scalpel.contract.task.SpatialCenterDispersionKind.CENTRAL_FEATURE && a.centralFeatureColumns() != null)
+                            .flatMap(a -> a.centralFeatureColumns().stream()).filter(c -> c != null && c.included()).count() : 0)
+                            + " resultTableCount=" + (analysis.configuration().separateResults() ? analysis.configuration().analyses().size() : 1)
+                            + " outputTable=" + safeLogValue(analysis.configuration().outputTableName());
             case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
                     "sourceTable=" + safeLogValue(buffer.configuration().sourceTableName())
                             + " outputTable=" + safeLogValue(buffer.configuration().outputTableName())
@@ -2017,6 +2214,18 @@ final class CanvasTaskExecutor {
             case SPATIAL_TRANSFORM -> "空间转换已准备";
             case GEOMETRY_VALIDATE -> "Geometry 校验已准备";
             case GEOMETRY_REPAIR -> "Geometry 修复已准备";
+            case GEOMETRY_DERIVE -> "Geometry 派生已准备";
+            case GEOMETRY_SIMPLIFY -> "Geometry 简化已准备";
+            case SPATIAL_NEAREST -> "空间最近邻已准备";
+            case SPATIAL_SUMMARIZE_WITHIN -> "区域内汇总已准备";
+            case SPATIAL_OVERLAY -> "空间叠加已准备";
+            case TRACK_RECONSTRUCT -> "轨迹重建已准备";
+            case TRACK_MOTION_STATISTICS -> "运动统计已准备";
+            case TRACK_FIND_DWELL -> "驻留识别已准备";
+            case TRACK_DETECT_INCIDENTS -> "轨迹事件识别已准备";
+            case SPATIAL_BIN_AGGREGATE -> "空间格网聚合已准备";
+            case SPATIAL_POINT_CLUSTER -> "空间点聚类已准备";
+            case SPATIAL_CENTER_DISPERSION -> "空间中心与离散统计已准备";
             case GEOMETRY_BUFFER -> "Geometry Buffer 已准备";
             case GEOMETRY_EXPLODE -> "Geometry 拆分已准备";
             case SPATIAL_MEASURE -> "空间测量已准备";

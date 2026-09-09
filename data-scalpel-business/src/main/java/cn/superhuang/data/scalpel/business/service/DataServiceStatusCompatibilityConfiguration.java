@@ -37,6 +37,7 @@ class DataServiceStatusCompatibilityConfiguration {
             jdbcTemplate.execute("ALTER TABLE ds_data_service DROP CONSTRAINT IF EXISTS " + TYPE_CHECK_CONSTRAINT);
             jdbcTemplate.execute("ALTER TABLE ds_data_service ADD CONSTRAINT " + TYPE_CHECK_CONSTRAINT
                     + " CHECK (type IN (" + supportedTypes() + "))");
+            jdbcTemplate.execute("ALTER TABLE ds_data_service ALTER COLUMN route_path DROP NOT NULL");
         };
     }
 

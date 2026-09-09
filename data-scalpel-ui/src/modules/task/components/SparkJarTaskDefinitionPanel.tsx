@@ -1,3 +1,4 @@
+import { taskPageHref } from '../model/taskViews';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -8,7 +9,7 @@ import {
 } from '@ant-design/icons';
 import { Button, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tag, Tooltip, Typography, Upload, message, type UploadFile, type UploadProps } from 'antd';
 import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useBlocker, useNavigate, type BlockerFunction } from 'react-router-dom';
+import { useBlocker, useLocation, useNavigate, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { DataModelPickerModal, useDataModel } from '../../model';
@@ -481,6 +482,7 @@ export const SparkJarTaskDefinitionPanel = ({
   protectNavigation = true,
 }: SparkJarTaskDefinitionPanelProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const [form] = Form.useForm<SparkJarDefinitionFormValues>();
   const [messageApi, messageContext] = message.useMessage();
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
@@ -781,7 +783,7 @@ export const SparkJarTaskDefinitionPanel = ({
     const nextName = previousName || selection.table?.table || selection.dataSourceCode;
     form.setFieldValue(['resourceBindings', fieldIndex, 'resourceId'], selection.dataSourceId);
     if (!previousName) form.setFieldValue(['resourceBindings', fieldIndex, 'bindingName'], nextName);
-    if (!streaming && canRead && selection.table) {
+    if (canRead && selection.table) {
       const currentTables = jdbcTablesForBinding(previousName || nextName);
       const previousTable = currentTables[0];
       const replacement: SparkJarDevelopmentKitJdbcTable = {
@@ -933,7 +935,7 @@ export const SparkJarTaskDefinitionPanel = ({
           beforeUpload={beforeJarUpload}
           onClearSelection={() => setUploadFiles([])}
           onUpload={() => void upload()}
-          onOpenOnlineEditor={() => navigate(`/task/${task.id}/online-code`)}
+          onOpenOnlineEditor={() => navigate(taskPageHref(`/task/${task.id}/online-code`, location.search, task.type))}
         />
 
         <Form<SparkJarDefinitionFormValues>

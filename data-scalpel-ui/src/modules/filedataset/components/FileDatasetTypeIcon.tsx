@@ -39,6 +39,42 @@ const glyphs = {
       <path stroke="#CFC4EA" strokeWidth="1.2" strokeLinecap="round" d="M16.2 7h2.2m-2.2 3.2h2.2m-2.2 4.3h2.2m-2.2 3.2h2.2" />
     </svg>
   ),
+  GEOJSON: (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="4" fill="#3578B9" />
+      <path fill="#D9F0FF" stroke="#fff" strokeWidth="1.05" strokeLinejoin="round" d="m5.8 15.9 1.9-7 5-3 5.5 3.9-1.6 7.5-6.6 1.3-4.1-2.7Z" />
+      <path stroke="#1B5B97" strokeWidth="1" strokeLinecap="round" strokeLinejoin="round" d="m7.7 8.9 4.7 3.2 4-2.3M10 18.5l2.4-6.4 4.1 5.2" />
+      <g fill="#fff"><circle cx="7.7" cy="8.9" r="1.3" /><circle cx="12.7" cy="5.9" r="1.3" /><circle cx="18.2" cy="9.8" r="1.3" /><circle cx="16.6" cy="17.3" r="1.3" /><circle cx="10" cy="18.5" r="1.3" /></g>
+    </svg>
+  ),
+  GEOJSONL: (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="4" fill="#2E6FAA" />
+      <path fill="#D9F0FF" stroke="#fff" strokeWidth="1" strokeLinejoin="round" d="m5.6 14.8 1.7-5.7 4.6-2.5 4.1 3.1-1.3 5.9-5.4 1.2-3.7-2Z" />
+      <path stroke="#17568E" strokeWidth=".9" strokeLinecap="round" strokeLinejoin="round" d="m7.3 9.1 4.3 2.8 3.5-2.2m-5.6 7 2.1-4.7 3.1 3.7" />
+      <g fill="#fff"><circle cx="7.3" cy="9.1" r="1" /><circle cx="11.9" cy="6.6" r="1" /><circle cx="16" cy="9.7" r="1" /><circle cx="14.7" cy="15.6" r="1" /><circle cx="9.4" cy="16.8" r="1" /></g>
+      <path stroke="#BFE3FF" strokeWidth="1.1" strokeLinecap="round" d="M17.8 6.9h1.4m-1.4 3.4h1.4m-1.4 3.4h1.4m-1.4 3.4h1.4" />
+    </svg>
+  ),
+  GEOPARQUET: (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <rect x="2.5" y="2.5" width="19" height="19" rx="4" fill="#247F97" />
+      <path fill="#D8F5FA" d="M5.1 6h3.4v4.3H5.1V6Zm4.6 0h3.4v6.9H9.7V6Zm4.6 0h4.6v3.1h-4.6V6ZM5.1 11.5h3.4v6.5H5.1v-6.5Zm4.6 2.6h3.4V18H9.7v-3.9Zm4.6-3.6h4.6V18h-4.6v-7.5Z" />
+      <path fill="#fff" fillOpacity=".95" stroke="#1A6880" strokeWidth=".75" strokeLinejoin="round" d="m6.1 16.2 1.5-4.2 3-1.8 3.3 1.7-1 4.7-3.8.8-3-1.2Z" />
+      <path stroke="#1A6880" strokeWidth=".7" strokeLinecap="round" strokeLinejoin="round" d="m7.6 12 2.8 1.8 3.5-1.9m-4.2 5.5.7-3.6 2.5 2.8" />
+      <g fill="#247F97"><circle cx="7.6" cy="12" r=".7" /><circle cx="10.6" cy="10.2" r=".7" /><circle cx="13.9" cy="11.9" r=".7" /><circle cx="12.9" cy="16.6" r=".7" /><circle cx="9.1" cy="17.4" r=".7" /></g>
+    </svg>
+  ),
+  GPKG: (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path fill="#2C718F" d="M5.2 2.5h9.2L19.5 7v14.5H5.2V2.5Z" />
+      <path fill="#79C7DD" d="M14.2 2.5 19.5 7h-5.3V2.5Z" />
+      <path fill="#DDF7FF" stroke="#fff" strokeWidth=".85" strokeLinejoin="round" d="m6.7 15.7 1.6-5.1 3.8-2.3 3.7 2.7-1.3 5.4-4.7.9-3.1-1.6Z" />
+      <path stroke="#20617E" strokeWidth=".8" strokeLinecap="round" strokeLinejoin="round" d="m8.3 10.6 3.6 2.4 3.8-2m-4.7 6.3 1-4.3 2.7 3.5" />
+      <g fill="#2C718F"><circle cx="8.3" cy="10.6" r=".75" /><circle cx="12.1" cy="8.3" r=".75" /><circle cx="15.8" cy="11" r=".75" /><circle cx="14.5" cy="16.4" r=".75" /><circle cx="10" cy="17.3" r=".75" /></g>
+      <path stroke="#fff" strokeWidth="1" strokeLinecap="round" d="M7.4 5.7h4.1" />
+    </svg>
+  ),
   PARQUET: (
     <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
       <rect x="2.5" y="2.5" width="19" height="19" rx="4" fill="#C45A3A" />

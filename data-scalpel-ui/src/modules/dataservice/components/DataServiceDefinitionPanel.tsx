@@ -4,8 +4,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import { dataModelStatusLabels, useDataModel, type DataModelField } from '../../model';
+import { useDataServiceSpatialStyle } from '../hooks/useDataServices';
 import type { DataServiceRelatedModelView } from '../hooks/useDataServiceRelatedModels';
-import type { DataServiceDetail, SqlServiceParameterDefinition } from '../model/dataService';
+import type {
+  DataServiceDetail,
+  SpatialStyleSyncStatus,
+  SqlServiceParameterDefinition,
+} from '../model/dataService';
 import { typeDescription } from '../model/dataServiceEditor';
 
 interface DataServiceDefinitionPanelProps {
@@ -16,6 +21,22 @@ interface DataServiceDefinitionPanelProps {
   canUpdate: boolean;
   editable: boolean;
 }
+
+const styleModeLabels = { CARTOGRAPHY: '在线制图', UPLOADED_SLD: '上传 SLD' } as const;
+const styleSyncStatusLabels: Record<SpatialStyleSyncStatus, string> = {
+  NOT_APPLIED: '未应用',
+  OUT_OF_SYNC: '待应用',
+  SYNCING: '应用中',
+  IN_SYNC: '已同步',
+  SYNC_FAILED: '同步失败',
+};
+const styleSyncStatusColors: Record<SpatialStyleSyncStatus, string> = {
+  NOT_APPLIED: 'default',
+  OUT_OF_SYNC: 'warning',
+  SYNCING: 'processing',
+  IN_SYNC: 'success',
+  SYNC_FAILED: 'error',
+};
 
 export const DataServiceDefinitionPanel = ({
   dataService,
@@ -29,7 +50,12 @@ export const DataServiceDefinitionPanel = ({
   const location = useLocation();
   const standardModelId = dataService.standardDefinition?.modelId ?? dataService.spatialDefinition?.modelId;
   const modelQuery = useDataModel(standardModelId, canViewModels && Boolean(standardModelId));
+  const styleQuery = useDataServiceSpatialStyle(dataService.id, dataService.type === 'SPATIAL_SERVICE');
   const openEditor = () => navigate(`/dataservice/${dataService.id}/definition/edit`, { state: location.state });
+  const openCartography = () => navigate(
+    { pathname: location.pathname, search: '?tab=cartography' },
+    { state: location.state },
+  );
   const editButton = canUpdate ? (
     <Button
       type="primary"
@@ -100,16 +126,24 @@ export const DataServiceDefinitionPanel = ({
       )}
 
       {dataService.type === 'SPATIAL_SERVICE' && dataService.spatialDefinition && (
-        <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
-          <Descriptions.Item label="空间模型">{standardModel?.name ?? relatedModels[0]?.name ?? '模型已删除'}</Descriptions.Item>
-          <Descriptions.Item label="模型编码"><Typography.Text code>{standardModel?.code ?? relatedModels[0]?.code ?? standardModelId}</Typography.Text></Descriptions.Item>
-          <Descriptions.Item label="存储数据源">{standardModel?.storageDataSourceName ?? relatedModels[0]?.storageDataSourceName ?? '—'}</Descriptions.Item>
-          <Descriptions.Item label="物理表"><Typography.Text code>{standardModel ? `${standardModel.schemaName ?? 'public'}.${standardModel.physicalTableName}` : '—'}</Typography.Text></Descriptions.Item>
-          <Descriptions.Item label="Geometry">{standardFields.find((field) => field.fieldType === 'GEOMETRY')?.geometry?.kind ?? '—'}</Descriptions.Item>
-          <Descriptions.Item label="EPSG">{standardFields.find((field) => field.fieldType === 'GEOMETRY')?.geometry?.crs.code ?? '—'}</Descriptions.Item>
-          <Descriptions.Item label="主键"><Typography.Text code>{standardFields.find((field) => field.primaryKey)?.code ?? '—'}</Typography.Text></Descriptions.Item>
-          <Descriptions.Item label="发布协议"><Space><Tag>只读 WMS</Tag><Tag>只读 WFS</Tag></Space></Descriptions.Item>
-        </BusinessDetailDescriptions>
+        <>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
+            <Descriptions.Item label="空间模型">{standardModel?.name ?? relatedModels[0]?.name ?? '模型已删除'}</Descriptions.Item>
+            <Descriptions.Item label="模型编码"><Typography.Text code>{standardModel?.code ?? relatedModels[0]?.code ?? standardModelId}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="存储数据源">{standardModel?.storageDataSourceName ?? relatedModels[0]?.storageDataSourceName ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="物理表"><Typography.Text code>{standardModel ? `${standardModel.schemaName ?? 'public'}.${standardModel.physicalTableName}` : '—'}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="Geometry">{standardFields.find((field) => field.fieldType === 'GEOMETRY')?.geometry?.kind ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="EPSG">{standardFields.find((field) => field.fieldType === 'GEOMETRY')?.geometry?.crs.code ?? '—'}</Descriptions.Item>
+            <Descriptions.Item label="主键"><Typography.Text code>{standardFields.find((field) => field.primaryKey)?.code ?? '—'}</Typography.Text></Descriptions.Item>
+            <Descriptions.Item label="发布协议"><Space><Tag>只读 WMS</Tag><Tag>只读 WFS</Tag></Space></Descriptions.Item>
+          </BusinessDetailDescriptions>
+          <BusinessDetailDescriptions column={{ xs: 1, md: 2, xl: 4 }}>
+            <Descriptions.Item label="样式来源">{styleQuery.data ? styleModeLabels[styleQuery.data.mode] : '—'}</Descriptions.Item>
+            <Descriptions.Item label="样式版本">{styleQuery.data ? `草稿 v${styleQuery.data.styleVersion} / 已应用 ${styleQuery.data.appliedStyleVersion == null ? '—' : `v${styleQuery.data.appliedStyleVersion}`}` : '—'}</Descriptions.Item>
+            <Descriptions.Item label="同步状态">{styleQuery.data ? <Tag color={styleSyncStatusColors[styleQuery.data.syncStatus]}>{styleSyncStatusLabels[styleQuery.data.syncStatus]}</Tag> : '—'}</Descriptions.Item>
+            <Descriptions.Item label="样式管理"><Button size="small" type="link" onClick={openCartography}>进入在线制图</Button></Descriptions.Item>
+          </BusinessDetailDescriptions>
+        </>
       )}
 
       {dataService.type === 'SQL_QUERY' && dataService.sqlDefinition && (

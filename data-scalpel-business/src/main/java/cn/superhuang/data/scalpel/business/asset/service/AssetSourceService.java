@@ -34,6 +34,7 @@ import java.util.stream.Collectors;
 @Service
 public class AssetSourceService {
 
+    private final cn.superhuang.data.scalpel.business.panorama.service.PanoramaService panoramaService;
     private final DataModelService modelService;
     private final FileDatasetService fileDatasetService;
     private final StandardDictionaryService dictionaryService;
@@ -42,6 +43,7 @@ public class AssetSourceService {
     private final ObjectMapper objectMapper;
 
     public AssetSourceService(
+            cn.superhuang.data.scalpel.business.panorama.service.PanoramaService panoramaService,
             DataModelService modelService,
             FileDatasetService fileDatasetService,
             StandardDictionaryService dictionaryService,
@@ -49,6 +51,7 @@ public class AssetSourceService {
             AssetRepository assetRepository,
             ObjectMapper objectMapper
     ) {
+        this.panoramaService = panoramaService;
         this.modelService = modelService;
         this.fileDatasetService = fileDatasetService;
         this.dictionaryService = dictionaryService;
@@ -66,6 +69,7 @@ public class AssetSourceService {
         SearchRequest request = new SearchRequest(candidateSearch(assetType, keyword), page, size, "-updatedAt");
         return switch (assetType) {
             case DATA_MODEL -> candidatePage(assetType, modelService.search(request), DataModelResponse::id, item -> candidate(item));
+            case PANORAMA -> candidatePage(assetType, panoramaService.search(request), cn.superhuang.data.scalpel.business.panorama.web.response.PanoramaResponse::id, this::candidate);
             case FILE_DATASET -> candidatePage(assetType, fileDatasetService.search(request), FileDatasetResponse::id, item -> candidate(item));
             case DICTIONARY -> candidatePage(assetType, dictionaryService.search(request), StandardDictionaryResponse::id, item -> candidate(item));
             case DATA_SERVICE -> candidatePage(assetType, dataService.search(request), DataServiceSummaryResponse::id, item -> candidate(item));
@@ -75,10 +79,34 @@ public class AssetSourceService {
     public AssetSourceSnapshot read(AssetType assetType, UUID resourceId) {
         return switch (assetType) {
             case DATA_MODEL -> snapshot(modelService.get(resourceId));
+            case PANORAMA -> snapshot(panoramaService.get(resourceId));
             case FILE_DATASET -> snapshot(fileDatasetService.get(resourceId));
             case DICTIONARY -> snapshot(dictionaryService.get(resourceId));
             case DATA_SERVICE -> snapshot(dataService.get(resourceId));
         };
+    }
+
+    private AssetSourceSnapshot snapshot(cn.superhuang.data.scalpel.business.panorama.web.response.PanoramaResponse p) {
+        Map<String, Object> metadata = new LinkedHashMap<>();
+        metadata.put("contentVersion", p.contentVersion());
+        metadata.put("captureTime", p.captureTime());
+        metadata.put("captureOffset", p.captureOffset());
+        metadata.put("hasLocation", p.latitude() != null && p.longitude() != null);
+        boolean available = p.currentContent() != null;
+        if (available) {
+            var content = p.currentContent();
+            metadata.put("width", content.width()); metadata.put("height", content.height()); metadata.put("byteSize", content.byteSize());
+            if (content.metadata() != null) {
+                metadata.put("manufacturer", content.metadata().manufacturer()); metadata.put("cameraModel", content.metadata().cameraModel());
+            }
+        }
+        return createSnapshot(AssetType.PANORAMA, p.id(), p.name(), null, p.description(), available ? "READY" : "NOT_READY", p.updatedAt(),
+                available, available ? null : "全景影像需要可用的当前成品", metadata);
+    }
+    private AssetCandidateResponse candidate(cn.superhuang.data.scalpel.business.panorama.web.response.PanoramaResponse p) {
+        boolean eligible = p.currentContent() != null;
+        return new AssetCandidateResponse(AssetType.PANORAMA, p.id(), p.name(), null, p.description(), eligible ? "READY" : "NOT_READY",
+                p.updatedAt(), eligible, eligible ? null : "全景影像需要可用的当前成品", false, null);
     }
 
     private AssetSourceSnapshot snapshot(DataModelDetailResponse detail) {
@@ -233,7 +261,7 @@ public class AssetSourceService {
         if (keyword == null || keyword.trim().isEmpty()) return null;
         String value = keyword.trim().replace("\\", "\\\\").replace("\"", "\\\"");
         String name = "name:*\"" + value + "\"*";
-        return type == AssetType.FILE_DATASET ? name : "(" + name + " OR code:*\"" + value + "\"*)";
+        return (type == AssetType.FILE_DATASET || type == AssetType.PANORAMA) ? name : "(" + name + " OR code:*\"" + value + "\"*)";
     }
 
     private static String fingerprint(String json) {

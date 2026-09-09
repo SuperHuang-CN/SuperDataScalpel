@@ -4,6 +4,7 @@ import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetFormat;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
+import org.apache.hadoop.conf.Configuration;
 import org.apache.parquet.example.data.Group;
 import org.apache.parquet.example.data.GroupValueSource;
 import org.apache.parquet.format.converter.ParquetMetadataConverter;
@@ -39,6 +40,7 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /** Reads a bounded Parquet preview while taking field structure from the Parquet schema. */
 @Component
@@ -63,6 +65,19 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
     @Override
     public ParseResult parse(FileDatasetParseSource source, FileDatasetParsingConfiguration configuration, int recordLimit)
             throws IOException {
+        return parse(source, configuration, recordLimit, Set.of());
+    }
+
+    /**
+     * Reads a bounded preview while avoiding physical decoding of explicitly excluded root columns.
+     * GeoParquet uses this for WKB and covering columns, neither of which belongs in an attribute preview.
+     */
+    ParseResult parse(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int recordLimit,
+            Set<String> excludedPreviewColumns
+    ) throws IOException {
         if (!(configuration instanceof FileDatasetParsingConfiguration.Parquet)) {
             throw new FileDatasetParsingException("Parquet 解析参数无效");
         }
@@ -76,17 +91,22 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
             MessageType schema = metadata.getFileMetaData().getSchema();
             long rowCount = metadata.getBlocks().stream().mapToLong(block -> block.getRowCount()).sum();
             List<Field> fields = fields(schema);
+            MessageType previewSchema = previewSchema(schema, excludedPreviewColumns);
             List<Map<String, Object>> rows = new ArrayList<>();
             boolean truncated = false;
-            try (ParquetReader<Group> reader = new GroupReaderBuilder(inputFile).build()) {
-                Group row;
-                while ((row = reader.read()) != null) {
-                    if (rows.size() >= recordLimit) {
-                        truncated = true;
-                        break;
+            if (previewSchema.getFieldCount() > 0) {
+                try (ParquetReader<Group> reader = new GroupReaderBuilder(inputFile, previewSchema).build()) {
+                    Group row;
+                    while ((row = reader.read()) != null) {
+                        if (rows.size() >= recordLimit) {
+                            truncated = true;
+                            break;
+                        }
+                        rows.add(row(row, previewSchema));
                     }
-                    rows.add(row(row, schema));
                 }
+            } else if (rowCount > 0) {
+                truncated = true;
             }
             Map<String, Object> sourceMetadata = new LinkedHashMap<>();
             if (metadata.getFileMetaData().getCreatedBy() != null) {
@@ -104,7 +124,7 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
         }
     }
 
-    private List<Field> fields(MessageType schema) {
+    private static List<Field> fields(MessageType schema) {
         List<Field> fields = new ArrayList<>(schema.getFieldCount());
         for (int index = 0; index < schema.getFieldCount(); index++) {
             Type type = schema.getType(index);
@@ -113,6 +133,16 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
             ));
         }
         return fields;
+    }
+
+    private static MessageType previewSchema(MessageType schema, Set<String> excludedColumns) {
+        if (excludedColumns == null || excludedColumns.isEmpty()) {
+            return schema;
+        }
+        List<Type> fields = schema.getFields().stream()
+                .filter(field -> !excludedColumns.contains(field.getName()))
+                .toList();
+        return new MessageType(schema.getName(), fields);
     }
 
     private Map<String, Object> row(Group row, MessageType schema) {
@@ -434,6 +464,15 @@ public class ParquetFileDatasetParser implements FileDatasetParser {
 
         private GroupReaderBuilder(InputFile inputFile) {
             super(inputFile);
+        }
+
+        private GroupReaderBuilder(InputFile inputFile, MessageType requestedSchema) {
+            super(inputFile);
+            if (requestedSchema != null) {
+                Configuration configuration = new Configuration(false);
+                configuration.set(ReadSupport.PARQUET_READ_SCHEMA, requestedSchema.toString());
+                withConf(configuration);
+            }
         }
 
         @Override

@@ -1,4 +1,4 @@
-import { requestJson } from '../../../shared/api/http';
+import { requestBlob, requestJson } from '../../../shared/api/http';
 import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
@@ -11,9 +11,12 @@ import type {
   SqlServiceTestResponse,
   StandardDataServiceModelCandidate,
   SpatialDataServiceModelCandidate,
+  SpatialDataServicePreview,
+  SpatialDataServiceStyle,
   UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
 } from '../model/dataService';
+import type { FieldProfile, FieldProfileRequest, SpatialStyleDocument, SpatialStyleMode } from '../../cartography';
 import type { LineageFieldGraph, LineageGraph } from '../../model';
 import type {
   ScriptCompletionData,
@@ -34,6 +37,121 @@ export const fetchDataServices = (request: SearchRequest): Promise<PageResponse<
 
 export const fetchDataService = (id: string): Promise<DataServiceDetail> => (
   requestJson<DataServiceDetail>(`${DATA_SERVICE_PATH}/${id}`)
+);
+
+export const fetchDataServiceSpatialPreview = (id: string): Promise<SpatialDataServicePreview> => (
+  requestJson<SpatialDataServicePreview>(`${DATA_SERVICE_PATH}/${id}/spatial-preview`)
+);
+
+export const fetchDataServiceSpatialStyle = (id: string): Promise<SpatialDataServiceStyle> => (
+  requestJson<SpatialDataServiceStyle>(`${DATA_SERVICE_PATH}/${id}/spatial-style`)
+);
+
+/** Read-only draft compilation; does not save a style or request a WMS image. */
+export const queryDataServiceSpatialStyleSld = (
+  id: string,
+  styleDocument: SpatialStyleDocument,
+  signal: AbortSignal,
+): Promise<{ sldText: string }> => requestJson<{ sldText: string }>(
+  `${DATA_SERVICE_PATH}/${id}/actions/query-spatial-style-sld`,
+  { method: 'POST', body: JSON.stringify({ styleDocument }), signal },
+);
+
+export const updateDataServiceSpatialStyle = (
+  id: string,
+  styleDocument: SpatialStyleDocument | null,
+  mode: SpatialStyleMode = 'CARTOGRAPHY',
+): Promise<SpatialDataServiceStyle> => requestJson<SpatialDataServiceStyle>(
+  `${DATA_SERVICE_PATH}/${id}/actions/update-spatial-style`,
+  { method: 'POST', body: JSON.stringify({ mode, styleDocument }) },
+);
+
+export const queryDataServiceSpatialStyleFieldProfile = (
+  id: string,
+  request: FieldProfileRequest,
+): Promise<FieldProfile> => requestJson<FieldProfile>(
+  `${DATA_SERVICE_PATH}/${id}/actions/query-spatial-style-field-profile`,
+  { method: 'POST', body: JSON.stringify(request) },
+  20_000,
+);
+
+export const uploadDataServiceSpatialSld = (
+  id: string,
+  file: File,
+): Promise<SpatialDataServiceStyle> => {
+  const body = new FormData();
+  body.append('file', file);
+  return requestJson<SpatialDataServiceStyle>(
+    `${DATA_SERVICE_PATH}/${id}/actions/upload-spatial-sld`,
+    { method: 'POST', body },
+  );
+};
+
+export const applyDataServiceSpatialStyle = (id: string): Promise<SpatialDataServiceStyle> => (
+  requestJson<SpatialDataServiceStyle>(`${DATA_SERVICE_PATH}/${id}/actions/apply-spatial-style`, { method: 'POST' })
+);
+
+export const fetchDataServiceSpatialPreviewMap = (
+  id: string,
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+  signal: AbortSignal,
+): Promise<Blob> => {
+  const query = new URLSearchParams({
+    bbox: bbox.join(','),
+    width: String(width),
+    height: String(height),
+  });
+  return requestBlob(
+    `${DATA_SERVICE_PATH}/${id}/spatial-preview/map?${query.toString()}`,
+    { signal },
+    30_000,
+  );
+};
+
+export const renderDataServiceSpatialStylePreview = (
+  id: string,
+  styleDocument: SpatialStyleDocument,
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+  signal: AbortSignal,
+): Promise<Blob> => requestBlob(
+  `${DATA_SERVICE_PATH}/${id}/actions/render-spatial-style-preview`,
+  {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'image/png' },
+    body: JSON.stringify({ styleDocument, bbox, width, height }),
+    signal,
+  },
+  30_000,
+);
+
+export const renderUploadedDataServiceSpatialStylePreview = (
+  id: string,
+  file: File,
+  bbox: [number, number, number, number],
+  width: number,
+  height: number,
+  signal: AbortSignal,
+): Promise<Blob> => {
+  const body = new FormData();
+  body.append('file', file);
+  body.append('bbox', bbox.join(','));
+  body.append('width', String(width));
+  body.append('height', String(height));
+  return requestBlob(
+    `${DATA_SERVICE_PATH}/${id}/actions/render-spatial-style-preview`,
+    { method: 'POST', body, signal },
+    30_000,
+  );
+};
+
+export const fetchDataServiceSpatialPreviewLegend = (id: string, signal?: AbortSignal): Promise<Blob> => requestBlob(
+  `${DATA_SERVICE_PATH}/${id}/spatial-preview/legend`,
+  { signal },
+  30_000,
 );
 
 export const fetchDataServiceRelatedModels = (id: string): Promise<DataServiceRelatedModel[]> => (

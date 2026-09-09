@@ -66,7 +66,7 @@ export const FileDatasetFilesPanel = ({
   const uploadDisabled = !fileDatasetAllowsAdditionalUpload(dataset.type, files.length);
 
   useEffect(() => {
-    if (dataset.type !== 'GDB' && dataset.type !== 'SHP') return;
+    if (dataset.type !== 'GDB' && dataset.type !== 'SHP' && dataset.type !== 'GPKG') return;
     const preparing = files.some((file) => file.status === 'PREPARING');
     if (preparing) {
       observedPreparation.current = true;
@@ -128,7 +128,7 @@ export const FileDatasetFilesPanel = ({
     { title: '上传时间', dataIndex: 'createdAt', width: 180, render: formatDateTime },
     {
       title: '操作', key: 'actions', width: 120, fixed: 'right', render: (_value: unknown, file: FileDatasetFile) => {
-        const wholeFileReplacementSupported = dataset.type === 'EXCEL' || dataset.type === 'GDB';
+        const wholeFileReplacementSupported = dataset.type === 'EXCEL' || dataset.type === 'GDB' || dataset.type === 'GPKG';
         const moreItems: MenuProps['items'] = canUpdate ? [
           ...(wholeFileReplacementSupported ? [
             { key: 'replace', icon: <SwapOutlined />, label: '替换文件' },
@@ -165,7 +165,7 @@ export const FileDatasetFilesPanel = ({
       {messageContext}
       {modalContext}
       {uploadDisabled && (
-        <Alert type="info" showIcon message={`${dataset.type === 'GDB' ? 'FileGDB' : 'Excel'} 数据集只允许一个物理文件；需要更新内容时请使用文件行的“替换文件”。`} />
+        <Alert type="info" showIcon message={`${dataset.type === 'GDB' ? 'FileGDB' : dataset.type === 'GPKG' ? 'GeoPackage' : 'Excel'} 数据集只允许一个物理文件；需要更新内容时请使用文件行的“替换文件”。`} />
       )}
       {filesQuery.isError && (
         <Alert

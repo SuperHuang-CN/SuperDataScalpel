@@ -45,6 +45,8 @@ export const ReplaceFileDatasetContentDrawer = ({ fileDataset, file, open, onClo
       await replaceMutation.mutateAsync({ datasetId: fileDataset.id, fileId: file.id, file: selectedFile });
       messageApi.success(fileDataset.type === 'GDB'
         ? 'GDB ZIP 已替换，后台正在解包、校验并发现图层'
+        : fileDataset.type === 'GPKG'
+          ? 'GeoPackage 已替换，后台正在校验并发现图层和属性表'
         : fileDataset.type === 'SHP'
           ? 'SHP ZIP 已替换，后台正在校验并物化组件'
           : '文件已替换，来源表已重建并提交后台解析');
@@ -58,12 +60,16 @@ export const ReplaceFileDatasetContentDrawer = ({ fileDataset, file, open, onClo
 
   const replacementEffect = fileDataset?.type === 'GDB'
     ? '旧图层与 Schema 会被永久删除。新 ZIP 校验通过后，系统将重新解包并发现图层。'
+    : fileDataset?.type === 'GPKG'
+      ? '旧图层、属性表与 Schema 会被永久删除。新 GeoPackage 校验通过后，系统将重新发现业务表。'
     : fileDataset?.type === 'SHP'
       ? '旧表与 Schema 会被永久删除。新 ZIP 校验通过后，系统将重新物化 SHP 组件并生成表。'
       : '旧表与 Schema 会被永久删除。系统将从新文件重新发现表，并生成新的 table ID。';
 
   const replacementDetail = fileDataset?.type === 'GDB'
     ? '系统保留新的原始 ZIP，并在后台解包为不可变 GDB 目录；校验通过后自动发现图层并提交表解析。'
+    : fileDataset?.type === 'GPKG'
+      ? '系统保留新的 .gpkg 原始对象，并在后台只读校验后发现 features 图层和 attributes 属性表；每张表独立进入解析队列。'
     : fileDataset?.type === 'SHP'
       ? '系统保留新的原始 ZIP，并在后台规范化物化 SHP 组件；校验通过后生成一张新表并提交解析。'
       : '旧表、旧 Schema 和版本均不会保留；新表会继续使用当前数据集的解析设置进入后台队列。';

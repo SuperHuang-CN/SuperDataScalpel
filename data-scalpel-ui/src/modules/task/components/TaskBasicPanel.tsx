@@ -53,7 +53,7 @@ export const TaskBasicPanel = ({ task, directoryName }: TaskBasicPanelProps) => 
         <Descriptions.Item label="定义版本">
           {task.definitionVersion == null ? '—' : `v${task.definitionVersion}`}
         </Descriptions.Item>
-        {task.type === 'LOCAL_SQL' ? (
+        {task.type === 'WORKFLOW' ? <Descriptions.Item label="执行方式" span={2}>依赖推进，子任务使用各自执行方式</Descriptions.Item> : task.type === 'LOCAL_SQL' ? (
           <>
             <Descriptions.Item label="执行方式">本地 JDBC</Descriptions.Item>
             <Descriptions.Item label="输出模型" span={4}>{task.outputModelName ?? '—'}</Descriptions.Item>

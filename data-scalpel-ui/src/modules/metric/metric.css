@@ -1,0 +1,29 @@
+.metric-management .management-filter-form { flex-wrap: wrap; gap: 8px; }
+.metric-management .management-filter-form .ant-select { min-width: 118px; }
+.metric-management .management-filter-form .ant-input-affix-wrapper { max-width: 300px; }
+.metric-detail-content { display: grid; gap: 12px; padding: 12px; }
+.metric-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0,1fr)); gap: 0 16px; }
+.metric-span { grid-column: 1 / -1; }
+.metric-form-grid .ant-input-number, .metric-full-width { width: 100%; }
+.metric-reference-row { padding: 12px 0; border-bottom: 1px solid var(--ant-color-border-secondary, #e5e7eb); }
+.metric-section-toolbar, .metric-picker-pagination { padding: 12px 0; }
+.metric-picker-pagination { display: flex; justify-content: space-between; padding: 8px; }
+.metric-grow { flex: 1; min-width: 0; }
+.metric-editor-footer { position: sticky; bottom: 0; background: var(--ant-color-bg-container, #fff); padding: 16px 0; display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--ant-color-border-secondary, #e5e7eb); }
+.metric-drawer-actions { display: flex; justify-content: flex-end; }
+.metric-long-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+.metric-relation-panel { padding: 12px; }
+.metric-version-comparison { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 12px; }
+.metric-version-comparison .business-detail-descriptions { grid-template-columns: minmax(0,1fr); }
+.metric-version-comparison .business-detail-description-item { grid-column: 1 !important; }
+@media(max-width:900px){.metric-version-comparison{grid-template-columns:minmax(0,1fr);}}
+@media(max-width:600px){.metric-form-grid{grid-template-columns:minmax(0,1fr);}}
+
+.metric-form-guidance { padding-bottom: 8px; font-size: 12px; }
+
+.metric-import-upload { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 8px; margin-bottom: 16px; }
+.metric-import-summary { margin: 12px 0; }
+.metric-import-subtitle { display: block; font-size: 12px; font-weight: normal; }
+.metric-import-details { display: grid; gap: 8px; }
+.metric-import-details .ant-typography { margin-bottom: 0; }
+.metric-import-table .ant-table-cell { overflow-wrap: anywhere; }

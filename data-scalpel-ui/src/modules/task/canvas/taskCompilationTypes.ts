@@ -72,7 +72,7 @@ export interface TaskCompilationMetadataFileDatasetTable {
   fileDatasetId: string;
   code: string;
   name: string;
-  datasetType: 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'PARQUET' | 'AVRO' | 'EXCEL' | 'GDB' | 'SHP';
+  datasetType: 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'GEOJSON' | 'GEOJSONL' | 'GEOPARQUET' | 'PARQUET' | 'AVRO' | 'EXCEL' | 'GDB' | 'SHP' | 'GPKG';
   parseStatus: 'QUEUED' | 'PARSING' | 'SCHEMA_READY' | 'READY';
   fileStatus: 'PREPARING' | 'READY';
   columns: CanvasColumnSchema[];

@@ -63,6 +63,22 @@ public final class SearchEngine {
         return logical.operator() == SearchDslParser.LogicalOperator.AND ? left.and(right) : left.or(right);
     }
 
+    /** Uses the same DSL and forced scope while selecting only the requested scalar projection. */
+    public <T, ID, R> Page<R> search(
+            SearchRequest request,
+            Class<T> entityType,
+            SearchRepository<T, ID> repository,
+            Specification<T> baseSpecification,
+            Class<R> projectionType
+    ) {
+        Objects.requireNonNull(baseSpecification, "baseSpecification");
+        SearchRequest effective = request == null ? SearchRequest.empty() : request;
+        Specification<T> specification = baseSpecification.and(
+                toSpecification(SearchDslParser.parse(effective.search()), entityType));
+        var pageable = pageRequest(effective, entityType);
+        return repository.findBy(specification, query -> query.as(projectionType).page(pageable));
+    }
+
     private <T> Specification<T> conditionSpecification(
             SearchDslParser.ConditionNode condition,
             Class<T> entityType

@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.assistant.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.assistant.service.LlmModelManagementService;
 import cn.superhuang.data.scalpel.business.assistant.web.request.CreateLlmModelRequest;
 import cn.superhuang.data.scalpel.business.assistant.web.request.UpdateLlmModelRequest;
@@ -34,6 +35,7 @@ public class LlmModelConfigurationResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 AI 模型配置")
     @GetMapping
     @PreAuthorize("hasAuthority('system.configuration.view')")
     @Operation(summary = "查询 AI 模型配置")
@@ -41,12 +43,14 @@ public class LlmModelConfigurationResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "系统管理-AI 模型：查看详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('system.configuration.view')")
     public LlmModelConfigurationResponse get(@PathVariable UUID id) {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "系统管理-AI 模型：创建")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('system.configuration.update')")
@@ -54,6 +58,7 @@ public class LlmModelConfigurationResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "系统管理-AI 模型：修改")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     public LlmModelConfigurationResponse update(
@@ -63,22 +68,27 @@ public class LlmModelConfigurationResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "系统管理-AI 模型：测试连接")
     @PostMapping("/{id}/actions/test")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     public LlmModelConfigurationResponse test(@PathVariable UUID id) { return service.test(id); }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "系统管理-AI 模型：启用")
     @PostMapping("/{id}/actions/enable")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     public LlmModelConfigurationResponse enable(@PathVariable UUID id) { return service.enable(id); }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "系统管理-AI 模型：停用")
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     public LlmModelConfigurationResponse disable(@PathVariable UUID id) { return service.disable(id); }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "系统管理-AI 模型：设为默认模型")
     @PostMapping("/{id}/actions/set-default")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     public LlmModelConfigurationResponse setDefault(@PathVariable UUID id) { return service.setDefault(id); }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "系统管理-AI 模型：删除")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('system.configuration.update')")

@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.filedataset.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.filedataset.service.FileDatasetContent;
 import cn.superhuang.data.scalpel.business.filedataset.service.FileDatasetService;
 import cn.superhuang.data.scalpel.business.filedataset.web.request.CreateFileDatasetRequest;
@@ -57,6 +58,7 @@ public class FileDatasetResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询文件数据集")
     @GetMapping
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询文件数据集")
@@ -64,6 +66,7 @@ public class FileDatasetResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询文件数据集详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询文件数据集详情")
@@ -71,6 +74,7 @@ public class FileDatasetResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建空文件数据集")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('filedataset.create')")
@@ -79,6 +83,7 @@ public class FileDatasetResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改文件数据集信息和共享解析参数")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('filedataset.update')")
     @Operation(summary = "修改文件数据集信息和共享解析参数")
@@ -89,6 +94,7 @@ public class FileDatasetResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询文件数据集的物理文件")
     @GetMapping("/{id}/files")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询文件数据集的物理文件")
@@ -99,6 +105,7 @@ public class FileDatasetResource {
         return service.searchFiles(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "向文件数据集上传一个文件并创建逻辑表")
     @PostMapping(path = "/{id}/files", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('filedataset.update')")
@@ -110,6 +117,7 @@ public class FileDatasetResource {
         return service.uploadFiles(id, files);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "替换物理文件并重建其逻辑表")
     @PostMapping(path = "/{id}/files/{fileId}/actions/replace", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('filedataset.update')")
     @Operation(summary = "替换物理文件并重建其逻辑表")
@@ -121,6 +129,7 @@ public class FileDatasetResource {
         return service.replaceFile(id, fileId, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除物理文件及其逻辑表")
     @PostMapping("/{id}/files/{fileId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('filedataset.update')")
@@ -129,6 +138,7 @@ public class FileDatasetResource {
         service.deleteFile(id, fileId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "下载文件数据集物理文件")
     @GetMapping("/{id}/files/{fileId}/content")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "下载文件数据集物理文件")
@@ -153,6 +163,7 @@ public class FileDatasetResource {
         return response.body(body);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询文件数据集的逻辑表")
     @GetMapping("/{id}/tables")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询文件数据集的逻辑表")
@@ -163,6 +174,7 @@ public class FileDatasetResource {
         return service.searchTables(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询文件数据集逻辑表详情")
     @GetMapping("/{id}/tables/{tableId}")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询文件数据集逻辑表详情")
@@ -170,6 +182,7 @@ public class FileDatasetResource {
         return service.getTable(id, tableId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改逻辑表名称")
     @PostMapping("/{id}/tables/{tableId}/actions/update")
     @PreAuthorize("hasAuthority('filedataset.update')")
     @Operation(summary = "修改逻辑表名称")
@@ -181,6 +194,7 @@ public class FileDatasetResource {
         return service.updateTable(id, tableId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "确认空间表的 EPSG 并重新解析 Schema")
     @PostMapping("/{id}/tables/{tableId}/actions/update-spatial-reference")
     @PreAuthorize("hasAuthority('filedataset.update')")
     @Operation(summary = "确认空间表的 EPSG 并重新解析 Schema")
@@ -192,6 +206,7 @@ public class FileDatasetResource {
         return service.updateTableSpatialReference(id, tableId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询逻辑表的数据来源")
     @GetMapping("/{id}/tables/{tableId}/sources")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询逻辑表的数据来源")
@@ -202,6 +217,7 @@ public class FileDatasetResource {
         return service.tableSources(id, tableId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "向逻辑表追加一个文件来源")
     @PostMapping(
             path = "/{id}/tables/{tableId}/actions/append",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -217,6 +233,7 @@ public class FileDatasetResource {
         return service.append(id, tableId, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "全量覆盖逻辑表的全部当前来源")
     @PostMapping(
             path = "/{id}/tables/{tableId}/actions/replace-data",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -232,6 +249,7 @@ public class FileDatasetResource {
         return service.replaceData(id, tableId, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "替换逻辑表中的一个当前来源")
     @PostMapping(
             path = "/{id}/tables/{tableId}/sources/{sourceId}/actions/replace",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -248,6 +266,7 @@ public class FileDatasetResource {
         return service.replaceSource(id, tableId, sourceId, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除表数据来源")
     @PostMapping("/{id}/tables/{tableId}/sources/{sourceId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('filedataset.update')")
@@ -260,6 +279,7 @@ public class FileDatasetResource {
         service.deleteSource(id, tableId, sourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询逻辑表 Schema")
     @GetMapping("/{id}/tables/{tableId}/schema")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询逻辑表 Schema")
@@ -267,6 +287,7 @@ public class FileDatasetResource {
         return service.schema(id, tableId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "预览已解析逻辑表")
     @GetMapping("/{id}/tables/{tableId}/preview")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "预览已解析逻辑表")
@@ -278,6 +299,7 @@ public class FileDatasetResource {
         return service.preview(id, tableId, limit);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除文件数据集及其全部文件和表")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('filedataset.delete')")

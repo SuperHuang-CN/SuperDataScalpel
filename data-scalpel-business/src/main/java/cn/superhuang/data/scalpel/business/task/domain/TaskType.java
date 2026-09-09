@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.task.domain;
 /** Stable task definition family selected when a task is created. */
 public enum TaskType {
     LOCAL_SQL,
+    WORKFLOW,
     SPARK_CANVAS,
     SPARK_STREAMING_CANVAS,
     SPARK_MODEL_QUALITY,
@@ -22,6 +23,6 @@ public enum TaskType {
     }
 
     public boolean requiresComputeEngine() {
-        return this != LOCAL_SQL;
+        return this != LOCAL_SQL && this != WORKFLOW;
     }
 }

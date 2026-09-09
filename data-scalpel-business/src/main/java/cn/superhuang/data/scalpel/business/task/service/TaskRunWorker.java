@@ -1,8 +1,11 @@
 package cn.superhuang.data.scalpel.business.task.service;
 
+import cn.superhuang.data.scalpel.dialect.runtime.JdbcExecutionCancellation;
+
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
+import cn.superhuang.data.scalpel.business.operations.service.TaskRunAlertService;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
@@ -23,7 +26,15 @@ import java.util.UUID;
 @Component
 public class TaskRunWorker {
 
+    private final java.util.concurrent.ConcurrentMap<UUID, JdbcExecutionCancellation> cancellations = new java.util.concurrent.ConcurrentHashMap<>();
+
+    public void cancel(UUID runId) {
+        var cancellation = cancellations.get(runId);
+        if (cancellation != null) cancellation.cancel();
+    }
+
     private final TaskRunRepository runRepository;
+    private final TaskRunAlertService runAlerts;
     private final DataSourceRepository dataSourceRepository;
     private final JdbcInsertSelectExecutor executor;
     private final ObjectMapper objectMapper;
@@ -31,12 +42,14 @@ public class TaskRunWorker {
 
     public TaskRunWorker(
             TaskRunRepository runRepository,
+            TaskRunAlertService runAlerts,
             DataSourceRepository dataSourceRepository,
             JdbcInsertSelectExecutor executor,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
     ) {
         this.runRepository = runRepository;
+        this.runAlerts = runAlerts;
         this.dataSourceRepository = dataSourceRepository;
         this.executor = executor;
         this.objectMapper = objectMapper;
@@ -44,6 +57,13 @@ public class TaskRunWorker {
     }
 
     public void execute(UUID runId) {
+        var cancellation = new JdbcExecutionCancellation();
+        if (cancellations.putIfAbsent(runId, cancellation) != null) return;
+        try { execute(runId, cancellation); }
+        finally { cancellations.remove(runId, cancellation); }
+    }
+
+    private void execute(UUID runId, JdbcExecutionCancellation cancellation) {
         ExecutionContext context;
         try {
             context = requireTransactionResult(transactionTemplate.execute(status -> start(runId)));
@@ -62,7 +82,7 @@ public class TaskRunWorker {
                     context.snapshot().targetColumns(),
                     query,
                     context.snapshot().writeMode() == cn.superhuang.data.scalpel.business.task.domain.LocalSqlWriteMode.OVERWRITE,
-                    Duration.ofSeconds(context.snapshot().timeoutSeconds())
+                    Duration.ofSeconds(context.snapshot().timeoutSeconds()), cancellation
             );
             transactionTemplate.executeWithoutResult(status -> completeSuccess(runId, result.affectedRows()));
         } catch (DatabaseAccessException exception) {
@@ -90,8 +110,12 @@ public class TaskRunWorker {
 
     private void completeSuccess(UUID runId, long affectedRows) {
         TaskRun run = requireRun(runId);
-        if (run.getStatus() == TaskRunStatus.RUNNING) {
+        if (run.getStatus() == TaskRunStatus.CANCEL_REQUESTED) {
+            run.cancel("SQL 执行已取消", run.getStartedAt(), java.time.Instant.now());
+            runAlerts.capture(run);
+        } else if (run.getStatus() == TaskRunStatus.RUNNING) {
             run.succeed(affectedRows);
+            runAlerts.capture(run);
             runRepository.saveAndFlush(run);
         }
     }
@@ -99,11 +123,14 @@ public class TaskRunWorker {
     private void completeFailure(UUID runId, String message, String detail, boolean timeout) {
         transactionTemplate.executeWithoutResult(status -> {
             TaskRun run = requireRun(runId);
-            if (timeout) {
+            if (run.getStatus() == TaskRunStatus.CANCEL_REQUESTED) {
+                run.cancel("SQL 执行已取消", run.getStartedAt(), java.time.Instant.now());
+            } else if (timeout) {
                 run.timeout(message, detail);
             } else {
                 run.fail(message, detail);
             }
+            runAlerts.capture(run);
             runRepository.saveAndFlush(run);
         });
     }
@@ -117,7 +144,7 @@ public class TaskRunWorker {
     }
 
     private TaskRun requireRun(UUID runId) {
-        return runRepository.findById(runId)
+        return runRepository.findByIdForUpdate(runId)
                 .orElseThrow(() -> new IllegalStateException("任务运行不存在"));
     }
 

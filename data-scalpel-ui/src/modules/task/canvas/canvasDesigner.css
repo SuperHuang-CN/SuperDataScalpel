@@ -1986,6 +1986,90 @@ body .canvas-designer.canvas-designer-fullscreen {
   padding: 8px;
 }
 
+.canvas-geometry-derive-preview {
+  display: grid;
+  gap: 6px;
+}
+
+.canvas-geometry-derive-preview-row {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 76px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fafafa;
+}
+
+.canvas-field-inline-warning {
+  display: block;
+  margin-top: 6px;
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.canvas-spatial-pair-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  column-gap: 10px;
+}
+
+.canvas-geometry-derive-preview-row > .ant-typography {
+  min-width: 0;
+  margin: 0;
+}
+
+.canvas-geometry-derive-modal-heading,
+.canvas-geometry-derive-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.canvas-geometry-derive-modal-heading {
+  margin-bottom: 12px;
+}
+
+.canvas-geometry-derive-grid {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(120px, 1.2fr) minmax(120px, 1fr) minmax(100px, 1fr) 100px 78px;
+  align-items: center;
+  gap: 8px;
+}
+
+.canvas-geometry-derive-grid-header {
+  padding: 0 8px 6px;
+  color: #667085;
+  font-size: 12px;
+}
+
+.canvas-geometry-derive-rule-list {
+  display: grid;
+  max-height: 420px;
+  gap: 6px;
+  overflow: auto;
+}
+
+.canvas-geometry-derive-rule {
+  padding: 7px 8px;
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  background: #fff;
+}
+
+.canvas-geometry-derive-rule.is-invalid {
+  border-color: #ffccc7;
+  background: #fffafa;
+}
+
+.canvas-geometry-derive-rule-issues {
+  grid-column: 1 / -1;
+}
+
 .canvas-masking-strategy-control {
   display: grid;
   width: 100%;
@@ -4615,10 +4699,75 @@ body .canvas-designer.canvas-designer-fullscreen {
   font-size: 9px;
 }
 
+.canvas-spatial-projection-row {
+  display: grid;
+  grid-template-columns: 28px minmax(140px, 1fr) minmax(180px, 1fr);
+  gap: 8px;
+  align-items: center;
+}
+
+.canvas-spatial-statistic-row {
+  display: grid;
+  grid-template-columns: 150px minmax(160px, 1fr) minmax(160px, 1fr) 96px;
+  gap: 8px;
+  align-items: center;
+}
+
+.canvas-center-analysis-row {
+  display: grid;
+  grid-template-columns: minmax(150px, 1fr) minmax(120px, 1fr) minmax(120px, 1fr) 80px 78px;
+  gap: 8px;
+  align-items: center;
+}
+
+.canvas-spatial-analysis-row {
+  display: grid;
+  grid-template-columns: 180px minmax(180px, 1fr) 120px 96px;
+  gap: 8px;
+  align-items: center;
+}
+
+.canvas-spatial-modal-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.canvas-track-summary-row,
+.canvas-track-metric-row {
+  display: grid;
+  grid-template-columns: 150px minmax(180px, 1fr) minmax(170px, 1fr) 96px;
+  gap: 8px;
+  align-items: center;
+}
+
+.canvas-track-condition-row {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  border-bottom: 1px solid rgb(148 163 184 / 18%);
+}
+
 .canvas-node-type-geometry-construct,
 .canvas-node-type-spatial-transform,
 .canvas-node-type-geometry-validate,
 .canvas-node-type-geometry-repair,
+.canvas-node-type-geometry-derive,
+.canvas-node-type-geometry-simplify,
+.canvas-node-type-spatial-nearest,
+.canvas-node-type-spatial-summarize-within,
+.canvas-node-type-spatial-overlay,
+.canvas-node-type-track-reconstruct,
+.canvas-node-type-track-motion-statistics,
+.canvas-node-type-track-find-dwell,
+.canvas-node-type-track-detect-incidents,
+.canvas-node-type-spatial-bin-aggregate,
+.canvas-node-type-spatial-point-cluster,
+.canvas-node-type-spatial-center-dispersion,
 .canvas-node-type-geometry-buffer,
 .canvas-node-type-geometry-explode,
 .canvas-node-type-spatial-measure,

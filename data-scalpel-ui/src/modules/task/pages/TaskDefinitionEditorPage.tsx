@@ -1,6 +1,8 @@
+import { taskPageHref } from '../model/taskViews';
 import { ArrowLeftOutlined, ProfileOutlined } from '@ant-design/icons';
 import { Button, Result, Skeleton, Tag } from 'antd';
-import { useEffect, useState } from 'react';
+import { lazy, Suspense, useEffect, useState } from 'react';
+const WorkflowTaskDefinitionPanel = lazy(() => import('../workflow/WorkflowTaskDefinitionPanel'));
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { useCurrentUser } from '../../system';
@@ -28,7 +30,7 @@ export const TaskDefinitionEditorPage = () => {
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
   const canUpdate = permissions.has('task.update');
   const canValidate = permissions.has('task.publish');
-  const backToDefinition = () => navigate(taskId ? `/task/${taskId}?tab=definition` : '/task');
+  const backToDefinition = () => navigate(taskQuery.data ? taskPageHref(`/task/${taskQuery.data.id}`, location.search, taskQuery.data.type, { tab: 'definition' }) : '/task');
 
   useEffect(() => {
     const routeState = location.state as TaskCanvasProposalLocationState | null;
@@ -56,7 +58,7 @@ export const TaskDefinitionEditorPage = () => {
         status="error"
         title="任务定义加载失败"
         subTitle={taskQuery.error instanceof ApiError ? taskQuery.error.message : '请确认任务是否存在。'}
-        extra={<Button type="primary" onClick={() => void taskQuery.refetch()}>重试</Button>}
+        extra={<><Button type="primary" onClick={() => void taskQuery.refetch()}>重试</Button><Button onClick={() => navigate('/task')}>返回全部任务</Button></>}
       />
     );
   }
@@ -97,7 +99,9 @@ export const TaskDefinitionEditorPage = () => {
   return (
     <div className="task-definition-editor-page">
       <main className="task-definition-editor-body">
-        {task.type === 'LOCAL_SQL' ? (
+        {task.type === 'WORKFLOW' ? (
+          <Suspense fallback={<Skeleton active />}><WorkflowTaskDefinitionPanel task={task} canUpdate canValidate={canValidate} editable toolbarContext={toolbarContext} /></Suspense>
+        ) : task.type === 'LOCAL_SQL' ? (
           <LocalSqlTaskDefinitionPanel
             task={task}
             canUpdate

@@ -368,6 +368,7 @@ public class FileDatasetService {
                 sourceRepository.findBySourceFileIdOrderByCreatedAtAsc(fileId);
         if (dataset.getType() != FileDatasetType.EXCEL
                 && dataset.getType() != FileDatasetType.GDB
+                && dataset.getType() != FileDatasetType.GPKG
                 && !fileSources.isEmpty()) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -388,7 +389,8 @@ public class FileDatasetService {
                 "文件包含正在解析的表，暂不能替换或删除"
         );
         Set<UUID> tablesToDelete = new HashSet<>();
-        if (dataset.getType() == FileDatasetType.EXCEL || dataset.getType() == FileDatasetType.GDB) {
+        if (dataset.getType() == FileDatasetType.EXCEL || dataset.getType() == FileDatasetType.GDB
+                || dataset.getType() == FileDatasetType.GPKG) {
             affectedTables.forEach(table -> tablesToDelete.add(table.getId()));
         } else {
             nonTerminalJobs.stream()
@@ -536,7 +538,13 @@ public class FileDatasetService {
 
     @Transactional
     public void deleteSource(UUID datasetId, UUID tableId, UUID sourceId) {
-        requireDatasetLocked(datasetId);
+        FileDataset dataset = requireDatasetLocked(datasetId);
+        if (dataset.getType() == FileDatasetType.GPKG) {
+            throw new ResponseStatusException(
+                    HttpStatus.CONFLICT,
+                    "GeoPackage 仅支持整文件删除或替换，不能单独删除图层来源"
+            );
+        }
         FileDatasetTable table = tableRepository.findLockedByIdAndFileDatasetId(tableId, datasetId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文件数据集表不存在"));
         FileDatasetTableSource source = sourceRepository.findLockedById(sourceId)
@@ -636,7 +644,7 @@ public class FileDatasetService {
                 ? "data.shp" : SINGLE_TABLE_SOURCE_KEY;
         FileDatasetParseJobSubmissionService.Submission submission = null;
         FileDatasetParseJobSubmissionService.FilePreparationSubmission preparation = null;
-        if (file.getStorageKind() == FileDatasetStorageKind.SINGLE_OBJECT) {
+        if (!file.requiresPreparation()) {
             submission = parseJobSubmissionService.enqueueTableValidation(
                     dataset, file, table, mode, replacesSourceId, tableBaseName(prepared.upload()), sourceKey
             );
@@ -652,10 +660,10 @@ public class FileDatasetService {
     }
 
     private static void ensureTableLoadSupported(FileDatasetType type) {
-        if (type == FileDatasetType.EXCEL || type == FileDatasetType.GDB) {
+        if (type == FileDatasetType.EXCEL || type == FileDatasetType.GDB || type == FileDatasetType.GPKG) {
             throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "Excel/GDB 暂不支持表级追加或覆盖，请使用整文件替换"
+                HttpStatus.CONFLICT,
+                    "Excel/GDB/GPKG 暂不支持表级追加或覆盖，请使用整文件替换"
             );
         }
     }
@@ -693,7 +701,12 @@ public class FileDatasetService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "逻辑表没有当前数据来源");
             }
             List<FileDatasetFieldResponse> previewFields = parsedFields(tableId);
-            if (dataset.getType() == FileDatasetType.GDB || dataset.getType() == FileDatasetType.SHP) {
+            if (dataset.getType() == FileDatasetType.GDB
+                    || dataset.getType() == FileDatasetType.SHP
+                    || dataset.getType() == FileDatasetType.GEOJSON
+                    || dataset.getType() == FileDatasetType.GEOJSONL
+                    || dataset.getType() == FileDatasetType.GEOPARQUET
+                    || dataset.getType() == FileDatasetType.GPKG) {
                 previewFields = previewFields.stream()
                         .filter(field -> field.fieldType() != PlatformDataType.GEOMETRY)
                         .toList();
@@ -749,7 +762,8 @@ public class FileDatasetService {
     private ReplacementContext replacementContext(UUID datasetId, UUID fileId) {
         FileDataset dataset = requireDataset(datasetId);
         requireFile(datasetId, fileId);
-        if (dataset.getType() != FileDatasetType.EXCEL && dataset.getType() != FileDatasetType.GDB) {
+        if (dataset.getType() != FileDatasetType.EXCEL && dataset.getType() != FileDatasetType.GDB
+                && dataset.getType() != FileDatasetType.GPKG) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "单表文件请使用逻辑表的数据来源替换接口"
@@ -763,7 +777,8 @@ public class FileDatasetService {
 
     private FileDatasetUploadResponse persistUploads(UUID datasetId, List<PreparedUpload> prepared) {
         FileDataset dataset = requireDatasetLocked(datasetId);
-        if ((dataset.getType() == FileDatasetType.EXCEL || dataset.getType() == FileDatasetType.GDB)
+        if ((dataset.getType() == FileDatasetType.EXCEL || dataset.getType() == FileDatasetType.GDB
+                || dataset.getType() == FileDatasetType.GPKG)
                 && fileRepository.countByFileDatasetId(datasetId) > 0) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -780,7 +795,7 @@ public class FileDatasetService {
                     item.upload().contentType(), item.upload().sizeBytes(), item.eTag()
             ));
             savedFiles.add(file);
-            if (file.getStorageKind() != FileDatasetStorageKind.SINGLE_OBJECT) {
+            if (file.requiresPreparation()) {
                 jobIds.add(parseJobSubmissionService.enqueuePreparation(dataset, file).job().getId());
             } else {
                 savedTables.addAll(createTables(dataset, file, item.tables(), usedCodes, jobIds));
@@ -822,7 +837,7 @@ public class FileDatasetService {
         Set<String> usedCodes = existingTableCodes(datasetId, fileId);
         List<FileDatasetTable> newTables;
         List<UUID> jobIds = new ArrayList<>();
-        if (file.getStorageKind() != FileDatasetStorageKind.SINGLE_OBJECT) {
+        if (file.requiresPreparation()) {
             newTables = List.of();
             jobIds.add(parseJobSubmissionService.enqueuePreparation(dataset, file).job().getId());
         } else {
@@ -846,7 +861,7 @@ public class FileDatasetService {
             FileDatasetTable table = tableRepository.saveAndFlush(FileDatasetTable.create(
                     dataset.getId(), code, discoveredTable.sourceName()
             ));
-            String sourceKey = dataset.getType() == FileDatasetType.EXCEL
+            String sourceKey = (dataset.getType() == FileDatasetType.EXCEL || dataset.getType() == FileDatasetType.GPKG)
                     ? discoveredTable.sourceName() : SINGLE_TABLE_SOURCE_KEY;
             FileDatasetParseJobSubmissionService.Submission submission =
                     parseJobSubmissionService.enqueueTableValidation(
@@ -928,6 +943,10 @@ public class FileDatasetService {
             case TXT -> options instanceof FileDatasetParsingOptionsRequest.Text;
             case JSON -> options instanceof FileDatasetParsingOptionsRequest.Json;
             case JSONL -> options instanceof FileDatasetParsingOptionsRequest.JsonLines;
+            case GEOJSON -> options instanceof FileDatasetParsingOptionsRequest.GeoJson;
+            case GEOJSONL -> options instanceof FileDatasetParsingOptionsRequest.GeoJsonLines;
+            case GEOPARQUET -> options instanceof FileDatasetParsingOptionsRequest.GeoParquet;
+            case GPKG -> options instanceof FileDatasetParsingOptionsRequest.GeoPackage;
             case EXCEL -> options instanceof FileDatasetParsingOptionsRequest.Spreadsheet;
             case PARQUET -> options instanceof FileDatasetParsingOptionsRequest.Parquet;
             case AVRO -> options instanceof FileDatasetParsingOptionsRequest.Avro;
@@ -952,6 +971,10 @@ public class FileDatasetService {
                 }
             }
             case FileDatasetParsingOptionsRequest.JsonLines value -> validateCharset(value.charset());
+            case FileDatasetParsingOptionsRequest.GeoJson ignored -> { }
+            case FileDatasetParsingOptionsRequest.GeoJsonLines ignored -> { }
+            case FileDatasetParsingOptionsRequest.GeoParquet ignored -> { }
+            case FileDatasetParsingOptionsRequest.GeoPackage ignored -> { }
             case FileDatasetParsingOptionsRequest.Spreadsheet value -> {
                 if (value.dataStartRowIndex() <= value.headerRowIndex()) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "数据起始行必须位于表头行之后");
@@ -998,6 +1021,12 @@ public class FileDatasetService {
             case TXT -> requireExtension(extension, type, Set.of("txt"), FileDatasetFormat.TXT);
             case JSON -> requireExtension(extension, type, Set.of("json"), FileDatasetFormat.JSON);
             case JSONL -> requireExtension(extension, type, Set.of("jsonl", "ndjson"), FileDatasetFormat.JSONL);
+            case GEOJSON -> requireExtension(extension, type, Set.of("geojson", "json"), FileDatasetFormat.GEOJSON);
+            case GEOJSONL -> requireExtension(
+                    extension, type, Set.of("geojsonl", "ndgeojson", "jsonl", "ndjson"), FileDatasetFormat.GEOJSONL
+            );
+            case GEOPARQUET -> requireExtension(extension, type, Set.of("parquet"), FileDatasetFormat.GEOPARQUET);
+            case GPKG -> requireExtension(extension, type, Set.of("gpkg"), FileDatasetFormat.GPKG);
             case PARQUET -> requireExtension(extension, type, Set.of("parquet"), FileDatasetFormat.PARQUET);
             case AVRO -> requireExtension(extension, type, Set.of("avro"), FileDatasetFormat.AVRO);
             case GDB -> requireExtension(extension, type, Set.of("zip"), FileDatasetFormat.GDB);
@@ -1034,7 +1063,8 @@ public class FileDatasetService {
         if (files.size() != 1) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "每次只能上传一个文件");
         }
-        if ((context.type() == FileDatasetType.EXCEL || context.type() == FileDatasetType.GDB)
+        if ((context.type() == FileDatasetType.EXCEL || context.type() == FileDatasetType.GDB
+                || context.type() == FileDatasetType.GPKG)
                 && context.existingFileCount() > 0) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -1044,7 +1074,12 @@ public class FileDatasetService {
     }
 
     private static String datasetTypeDisplayName(FileDatasetType type) {
-        return type == FileDatasetType.EXCEL ? "Excel" : type.name();
+        return switch (type) {
+            case EXCEL -> "Excel";
+            case GDB -> "FileGDB";
+            case GPKG -> "GeoPackage";
+            default -> type.name();
+        };
     }
 
     private void validateContentSignature(FileDatasetFormat format, FileDatasetCompression compression, MultipartFile file) {
@@ -1066,7 +1101,7 @@ public class FileDatasetService {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "AVRO 文件内容不是有效的 Object Container File");
                 }
             }
-            case PARQUET -> {
+            case PARQUET, GEOPARQUET -> {
                 if (!hasSignature(file, 'P', 'A', 'R', '1')) {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "PARQUET 文件头无效");
                 }
@@ -1081,7 +1116,12 @@ public class FileDatasetService {
                     throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "XLSX 文件头无效");
                 }
             }
-            case CSV, TSV, TXT, JSON, JSONL, GDB, SHP -> { }
+            case GPKG -> {
+                if (!hasSignature(file, 'S', 'Q', 'L', 'i', 't', 'e', ' ', 'f', 'o', 'r', 'm', 'a', 't', ' ', '3', 0)) {
+                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "GPKG 文件头无效");
+                }
+            }
+            case CSV, TSV, TXT, JSON, JSONL, GEOJSON, GEOJSONL, GDB, SHP -> { }
         }
     }
 
@@ -1370,8 +1410,8 @@ public class FileDatasetService {
 
     private static boolean supportsGzip(FileDatasetFormat format) {
         return switch (format) {
-            case CSV, TSV, TXT, JSONL -> true;
-            case JSON, XLS, XLSX, PARQUET, AVRO, GDB, SHP -> false;
+            case CSV, TSV, TXT, JSONL, GEOJSON, GEOJSONL -> true;
+            case JSON, XLS, XLSX, PARQUET, GEOPARQUET, GPKG, AVRO, GDB, SHP -> false;
         };
     }
 

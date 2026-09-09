@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.service.consumer.credential.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.service.consumer.credential.service.ApiConsumerCredentialService;
 import cn.superhuang.data.scalpel.business.service.consumer.credential.web.request.CreateApiConsumerCredentialRequest;
 import cn.superhuang.data.scalpel.business.service.consumer.credential.web.response.ApiConsumerCredentialResponse;
@@ -31,6 +32,7 @@ public class ApiConsumerCredentialResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 API Consumer 的调用凭证")
     @GetMapping
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询 API Consumer 的调用凭证")
@@ -38,6 +40,7 @@ public class ApiConsumerCredentialResource {
         return service.list(consumerId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建 API Key，明文只在本次成功响应中返回")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('service.publish')")
@@ -49,6 +52,7 @@ public class ApiConsumerCredentialResource {
         return service.create(consumerId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "轮换 API Key，明文只在本次成功响应中返回")
     @PostMapping("/{credentialId}/actions/rotate")
     @PreAuthorize("hasAuthority('service.publish')")
     @Operation(summary = "轮换 API Key，明文只在本次成功响应中返回")
@@ -59,6 +63,7 @@ public class ApiConsumerCredentialResource {
         return service.rotate(consumerId, credentialId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "立即对账 API Key 网关状态")
     @PostMapping("/{credentialId}/actions/reconcile-gateway")
     @PreAuthorize("hasAuthority('service.publish')")
     @Operation(summary = "立即对账 API Key 网关状态")
@@ -69,6 +74,7 @@ public class ApiConsumerCredentialResource {
         return service.reconcileGateway(consumerId, credentialId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "从网关和 DataScalpel 删除 API Key")
     @PostMapping("/{credentialId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('service.publish')")

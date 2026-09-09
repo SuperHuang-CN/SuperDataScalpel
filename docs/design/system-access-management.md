@@ -45,6 +45,8 @@
 | `datasource.view`、`datasource.create`、`datasource.update`、`datasource.delete` | 数据源查询及各 CRUD 操作 |
 | `datasource.test` | 测试数据源连接 |
 | `datasource.metadata` | 读取库表、字段和预览数据 |
+| `alert.manage` | 配置告警规则、对象覆盖、Webhook 渠道，测试渠道与重试失败投递 |
+| `alert.handle` | 确认、人工关闭事件告警、设置和取消静默 |
 
 后续功能按同样方式增加权限，避免使用笼统的“模块管理员”权限替代具体操作权限。
 
@@ -87,6 +89,8 @@ JWT 的 `roles` 和 `permissions` Claim 由登录时的数据库用户、单一�
 - 内置 `super_admin` 的权限由启动同步维护，角色管理页面不可修改。
 - 配置角色权限时只能选择有效权限；保存时使用映射表全量替换，先删除并刷写旧映射，再写入新映射，保证唯一约束下的更新稳定。
 - 所有业务接口默认需要有效 JWT；健康检查、OpenAPI、Swagger、登录入口以及明确列出的资产门户只读接口例外。
+
+运行中心复用 `task.view` / `compute.engine.view` 控制来源可见性，实际取消、停止、强制终止仍走原任务权限。`alert.manage` 和 `alert.handle` 不单独授予来源查看权。告警、通知、概览及接收人投递会额外读取数据库中的当前用户状态与角色权限，因此该范围内的权限撤回立即生效；不改变其他接口已有的 JWT 权限生效规则。站内已读仅改变本人收件箱，确认与关闭改变团队共享告警。完整规则见 [全局运行工作台与告警](global-runtime-workbench-and-alerts.md)。
 
 ## 前端
 

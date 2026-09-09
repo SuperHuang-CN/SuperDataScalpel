@@ -141,11 +141,18 @@ public class FileDatasetContentParser {
             Path localFile = temporaryFileManager.materialize(
                     new SampledContentSizeLimitInputStream(
                             storageInput,
-                            fullValidation ? maxValidatedUncompressedSize : maxSampledUncompressedSize
+                            materializedSizeLimit(input.format(), fullValidation)
                     ),
                     content.contentLength() >= 0 ? content.contentLength() : input.sizeBytes()
             );
             try {
+                if (input.format() == FileDatasetFormat.GEOPARQUET) {
+                    // Parquet may be internally compressed. Its physical object size is not a safe
+                    // proxy for the amount of data the full Geometry scan will decompress.
+                    GeoParquetFileDatasetParser.requireUncompressedSizeWithin(
+                            localFile, maxValidatedUncompressedSize
+                    );
+                }
                 FileDatasetParser.ParseResult result = fullValidation
                         ? parser.validate(new FileDatasetParseSource.LocalFile(localFile), configuration, recordLimit)
                         : parser.parse(new FileDatasetParseSource.LocalFile(localFile), configuration, recordLimit);
@@ -159,6 +166,15 @@ public class FileDatasetContentParser {
                 abortContent(content);
             }
         }
+    }
+
+    private long materializedSizeLimit(FileDatasetFormat format, boolean fullValidation) {
+        // Seekable spatial containers remain previewable after import even when their physical
+        // object exceeds the bounded stream-preview limit. GeoParquet separately checks Footer
+        // declared uncompressed size after materialization; GeoPackage is bounded by the same
+        // temporary-file and full-validation limits.
+        return fullValidation || format == FileDatasetFormat.GEOPARQUET || format == FileDatasetFormat.GPKG
+                ? maxValidatedUncompressedSize : maxSampledUncompressedSize;
     }
 
     private FileDatasetParser requireParser(FileDatasetFormat format) {
@@ -193,6 +209,14 @@ public class FileDatasetContentParser {
             case FileDatasetParsingOptionsResponse.JsonLines value -> new FileDatasetParsingConfiguration.JsonLines(
                     value.charset(), value.recordDelimiter()
             );
+            case FileDatasetParsingOptionsResponse.GeoJson value ->
+                    new FileDatasetParsingConfiguration.GeoJson(value.epsgCode());
+            case FileDatasetParsingOptionsResponse.GeoJsonLines value ->
+                    new FileDatasetParsingConfiguration.GeoJsonLines(value.epsgCode());
+            case FileDatasetParsingOptionsResponse.GeoParquet ignored ->
+                    new FileDatasetParsingConfiguration.GeoParquet();
+            case FileDatasetParsingOptionsResponse.GeoPackage ignored ->
+                    new FileDatasetParsingConfiguration.GeoPackage(sourceKey);
             case FileDatasetParsingOptionsResponse.Spreadsheet value ->
                     new FileDatasetParsingConfiguration.Spreadsheet(
                             sourceKey, value.headerRowIndex(), value.dataStartRowIndex()

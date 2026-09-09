@@ -119,6 +119,10 @@ public class KubernetesCommandFactory {
 
     public List<String> logs(String podName) { return kubectl("logs", podName, "--timestamps"); }
 
+    public List<String> recentLogs(String podName, int lines) {
+        return kubectl("logs", podName, "--timestamps", "--tail=" + lines);
+    }
+
     public List<String> namespace() { return kubectl("get", "namespace", properties.namespace(), "-o", "name"); }
 
     public List<String> authCanI(String verb, String resource) {

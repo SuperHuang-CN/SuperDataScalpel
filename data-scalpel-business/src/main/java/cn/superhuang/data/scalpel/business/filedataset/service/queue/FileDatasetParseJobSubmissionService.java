@@ -92,7 +92,7 @@ public class FileDatasetParseJobSubmissionService {
         if (!dataset.getId().equals(file.getFileDatasetId())) {
             throw new IllegalArgumentException("准备任务中的文件不属于目标文件数据集");
         }
-        if (file.getStorageKind() == FileDatasetStorageKind.SINGLE_OBJECT) {
+        if (!file.requiresPreparation()) {
             throw conflict("当前文件不需要准备任务");
         }
         if (file.getStatus() != FileDatasetFileStatus.PREPARING || file.getCurrentPreparationJobId() != null) {

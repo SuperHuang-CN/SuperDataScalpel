@@ -15,8 +15,8 @@ import {
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
-import { useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useBlocker, useLocation, useNavigate, useParams, useSearchParams, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { useDataSource } from '../../datasource';
 import { useDirectoryTree, type DirectoryTreeNode } from '../../directory';
@@ -28,6 +28,7 @@ import { DataServiceDefinitionPanel } from '../components/DataServiceDefinitionP
 import { DataServiceLineagePanel } from '../components/DataServiceLineagePanel';
 import { DataServiceRelatedModelsPanel } from '../components/DataServiceRelatedModelsPanel';
 import { DataServiceRuntimePanel } from '../components/DataServiceRuntimePanel';
+import { DataServiceSpatialPreviewPanel } from '../components/DataServiceSpatialPreviewPanel';
 import { DataServiceSubscriptionsDrawer } from '../components/DataServiceSubscriptionsDrawer';
 import { PublishDataServiceModal } from '../components/PublishDataServiceModal';
 import { DataServiceTypeIcon } from '../components/DataServiceTypeIcon';
@@ -106,6 +107,9 @@ export const DataServiceDetailPage = () => {
   const [subscriptionsOpen, setSubscriptionsOpen] = useState(false);
   const [basicEditorOpen, setBasicEditorOpen] = useState(false);
   const [publishTarget, setPublishTarget] = useState<DataServiceDetail | null>(null);
+  const [spatialStyleDirty, setSpatialStyleDirty] = useState(false);
+  const allowStyleNavigationRef = useRef(false);
+  const styleBlockerPromptOpenRef = useRef(false);
   const detailQuery = useDataService(id, Boolean(id));
   const currentUserQuery = useCurrentUser();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
@@ -134,15 +138,46 @@ export const DataServiceDetailPage = () => {
   const deleteMutation = useDeleteDataService();
   const requestedTab = normalizeDataServiceDetailTab(searchParams.get('tab'));
   const lineageUnavailable = requestedTab === 'lineage' && (!canViewModels || !canViewTasks);
-  const activeTab = requestedTab === 'lineage' && (!permissionsLoaded || lineageUnavailable)
+  const cartographyUnavailable = requestedTab === 'cartography'
+    && Boolean(dataService)
+    && dataService?.type !== 'SPATIAL_SERVICE';
+  const activeTab = cartographyUnavailable || requestedTab === 'lineage' && (!permissionsLoaded || lineageUnavailable)
     ? 'basic'
     : requestedTab;
+  const styleBlocker = useBlocker(useCallback<BlockerFunction>(
+    ({ currentLocation, nextLocation }) => !allowStyleNavigationRef.current && spatialStyleDirty && (
+      currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search
+    ),
+    [spatialStyleDirty],
+  ));
 
   useEffect(() => {
-    if (permissionsLoaded && lineageUnavailable) {
+    if (cartographyUnavailable || permissionsLoaded && lineageUnavailable) {
       setSearchParams({ tab: 'basic' }, { replace: true });
     }
-  }, [lineageUnavailable, permissionsLoaded, setSearchParams]);
+  }, [cartographyUnavailable, lineageUnavailable, permissionsLoaded, setSearchParams]);
+
+  useEffect(() => {
+    if (styleBlocker.state !== 'blocked' || styleBlockerPromptOpenRef.current) return;
+    styleBlockerPromptOpenRef.current = true;
+    modalApi.confirm({
+      title: '放弃未保存的样式修改？',
+      content: '当前在线配图还没有保存，离开页面后修改会丢失。',
+      okText: '放弃并离开',
+      okButtonProps: { danger: true },
+      cancelText: '继续编辑',
+      onOk: () => {
+        allowStyleNavigationRef.current = true;
+        setSpatialStyleDirty(false);
+        styleBlocker.proceed();
+        styleBlockerPromptOpenRef.current = false;
+      },
+      onCancel: () => {
+        styleBlocker.reset();
+        styleBlockerPromptOpenRef.current = false;
+      },
+    });
+  }, [modalApi, styleBlocker]);
 
   const directoryNameById = useMemo(() => {
     const names = new Map<string, string>();
@@ -164,6 +199,25 @@ export const DataServiceDetailPage = () => {
   const sourceName = dataSourceQuery.data?.name ?? relatedModels[0]?.storageDataSourceName;
 
   const backToList = () => {
+    if (spatialStyleDirty) {
+      modalApi.confirm({
+        title: '放弃未保存的样式修改？',
+        content: '当前在线配图还没有保存，离开页面后修改会丢失。',
+        okText: '放弃并离开',
+        okButtonProps: { danger: true },
+        cancelText: '继续编辑',
+        onOk: () => {
+          allowStyleNavigationRef.current = true;
+          setSpatialStyleDirty(false);
+          navigateBackToList();
+        },
+      });
+      return;
+    }
+    navigateBackToList();
+  };
+
+  const navigateBackToList = () => {
     const state = location.state as DataServiceDetailLocationState | null;
     if (state?.returnTo) {
       navigate(state.returnTo);
@@ -382,6 +436,23 @@ export const DataServiceDetailPage = () => {
         />
       ),
     },
+    ...(dataService.type === 'SPATIAL_SERVICE' ? [{
+      key: 'cartography',
+      label: '在线制图',
+      children: (
+        <DataServiceSpatialPreviewPanel
+          serviceId={dataService.id}
+          status={dataService.status}
+          deploymentStatus={dataService.deploymentStatus}
+          definitionConfigured={dataService.definitionConfigured}
+          canUpdate={canUpdate}
+          canPublish={canPublish}
+          enableLoading={commandLoading}
+          onEnable={() => void enable(dataService)}
+          onDirtyChange={setSpatialStyleDirty}
+        />
+      ),
+    }] : []),
     {
       key: 'models',
       label: `关联模型 ${relatedModels.length}`,
@@ -502,10 +573,29 @@ export const DataServiceDetailPage = () => {
         className="data-service-detail-tabs business-detail-tabs"
         destroyOnHidden
         items={tabItems}
-        onChange={(key) => setSearchParams(
-          { tab: key as DataServiceDetailTabKey },
-          { replace: true, state: location.state },
-        )}
+        onChange={(key) => {
+          const changeTab = () => setSearchParams(
+            { tab: key as DataServiceDetailTabKey },
+            { replace: true, state: location.state },
+          );
+          if (activeTab === 'cartography' && key !== 'cartography' && spatialStyleDirty) {
+            modalApi.confirm({
+              title: '放弃未保存的样式修改？',
+              content: '切换页签后，当前在线配图修改会丢失。',
+              okText: '放弃并切换',
+              okButtonProps: { danger: true },
+              cancelText: '继续编辑',
+              onOk: () => {
+                allowStyleNavigationRef.current = true;
+                setSpatialStyleDirty(false);
+                changeTab();
+                window.setTimeout(() => { allowStyleNavigationRef.current = false; }, 0);
+              },
+            });
+            return;
+          }
+          changeTab();
+        }}
       />
       <DataServiceSubscriptionsDrawer
         open={subscriptionsOpen}

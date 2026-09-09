@@ -166,7 +166,8 @@ class TaskRunnerApplicationTest {
         byte[] manifest = manifestJson.getBytes(java.nio.charset.StandardCharsets.UTF_8);
         String digest = wrongDigest ? "0".repeat(64) : sha256(manifest);
         TaskExecutionLaunchDescriptor descriptor = new TaskExecutionLaunchDescriptor(
-                2, engineId, executionId, runId, 1, deadline, RunnerSparkMode.LOCAL,
+                TaskExecutionLaunchDescriptor.CURRENT_VERSION,
+                engineId, executionId, runId, 1, deadline, RunnerSparkMode.LOCAL,
                 new LaunchArtifactDownload(URI.create("http://minio/manifest"), digest, 1024 * 1024),
                 new LaunchArtifactUpload(URI.create("http://minio/result"),
                         "task-runs/" + runId + "/attempts/1/result.json"),

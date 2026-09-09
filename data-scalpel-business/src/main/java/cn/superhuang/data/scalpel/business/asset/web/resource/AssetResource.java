@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.asset.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.asset.domain.AssetType;
 import cn.superhuang.data.scalpel.business.asset.service.AssetManagementService;
 import cn.superhuang.data.scalpel.business.asset.service.AssetPortalService;
@@ -44,6 +45,7 @@ public class AssetResource {
         this.portalService = portalService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询资产")
     @GetMapping
     @PreAuthorize("hasAuthority('asset.view')")
     @Operation(summary = "查询资产")
@@ -51,6 +53,7 @@ public class AssetResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询资产详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('asset.view')")
     @Operation(summary = "查询资产详情")
@@ -58,6 +61,7 @@ public class AssetResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "获取资产来源导航")
     @GetMapping("/{id}/source-navigation")
     @PreAuthorize("isAuthenticated()")
     @Operation(summary = "获取资产来源导航")
@@ -65,6 +69,7 @@ public class AssetResource {
         return portalService.sourceNavigation(id, authentication);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询可登记的来源资源")
     @GetMapping("/candidates")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "查询可登记的来源资源")
@@ -77,6 +82,7 @@ public class AssetResource {
         return service.candidates(assetType, keyword, page, size);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "批量登记资产草稿")
     @PostMapping("/actions/register")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('asset.manage')")
@@ -85,6 +91,7 @@ public class AssetResource {
         return service.register(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改资产门户信息")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "修改资产门户信息")
@@ -92,6 +99,7 @@ public class AssetResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "发布资产")
     @PostMapping("/{id}/actions/publish")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "发布资产")
@@ -99,6 +107,7 @@ public class AssetResource {
         return service.publish(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "下线资产")
     @PostMapping("/{id}/actions/offline")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "下线资产")
@@ -106,6 +115,7 @@ public class AssetResource {
         return service.offline(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除资产记录")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('asset.manage')")
@@ -114,6 +124,7 @@ public class AssetResource {
         service.delete(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "检查资产来源变化")
     @PostMapping("/{id}/actions/check")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "检查资产来源变化")
@@ -121,6 +132,7 @@ public class AssetResource {
         return service.check(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "同步资产来源快照")
     @PostMapping("/{id}/actions/sync")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "同步资产来源快照")
@@ -128,6 +140,7 @@ public class AssetResource {
         return service.sync(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "全量检查已登记资产")
     @PostMapping("/actions/check-all")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "全量检查已登记资产")
@@ -135,6 +148,7 @@ public class AssetResource {
         return service.checkAll();
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "全量同步已登记资产")
     @PostMapping("/actions/sync-all")
     @PreAuthorize("hasAuthority('asset.manage')")
     @Operation(summary = "全量同步已登记资产")

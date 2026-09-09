@@ -205,9 +205,6 @@ const ExecutionListPanel = ({ engineId, scope }: { engineId: string; scope: Disp
       pageSize={size}
       itemUnit="条"
       onChange={(nextPage, nextSize) => { setPage(nextPage - 1); setSize(nextSize); }}
-      onRefresh={() => void executionsQuery.refetch()}
-      refreshing={executionsQuery.isFetching}
-      refreshLabel={`刷新${title}`}
     />
     <Table<ComputeEngineExecution>
       className="management-table"

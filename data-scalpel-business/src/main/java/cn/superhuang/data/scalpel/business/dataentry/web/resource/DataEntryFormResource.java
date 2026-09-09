@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.dataentry.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryFormStatus;
 import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryImportFormat;
 import cn.superhuang.data.scalpel.business.dataentry.service.DataEntryDataService;
@@ -77,6 +78,7 @@ public class DataEntryFormResource {
         this.importService = importService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询填报表单")
     @GetMapping
     @PreAuthorize("hasAuthority('dataentry.view')")
     @Operation(summary = "查询填报表单")
@@ -89,6 +91,7 @@ public class DataEntryFormResource {
         return formService.search(status, keyword, page, size);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询尚未建立填报表单的模型")
     @GetMapping("/model-candidates")
     @PreAuthorize("hasAuthority('dataentry.manage')")
     @Operation(summary = "查询尚未建立填报表单的模型")
@@ -96,6 +99,7 @@ public class DataEntryFormResource {
         return formService.candidates(keyword);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询填报表单详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('dataentry.view')")
     @Operation(summary = "查询填报表单详情")
@@ -103,6 +107,7 @@ public class DataEntryFormResource {
         return formService.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "实时检查填报表单健康状态")
     @GetMapping("/{id}/health")
     @PreAuthorize("hasAuthority('dataentry.view')")
     @Operation(summary = "实时检查填报表单健康状态")
@@ -110,6 +115,7 @@ public class DataEntryFormResource {
         return formService.health(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "为模型创建填报表单")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('dataentry.manage')")
@@ -118,6 +124,7 @@ public class DataEntryFormResource {
         return formService.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "整体替换关联模型下拉配置")
     @PostMapping("/{id}/actions/update-lookups")
     @PreAuthorize("hasAuthority('dataentry.manage')")
     @Operation(summary = "整体替换关联模型下拉配置")
@@ -128,6 +135,7 @@ public class DataEntryFormResource {
         return formService.updateLookups(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "发布填报表单")
     @PostMapping("/{id}/actions/publish")
     @PreAuthorize("hasAuthority('dataentry.manage')")
     @Operation(summary = "发布填报表单")
@@ -135,6 +143,7 @@ public class DataEntryFormResource {
         return formService.publish(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用填报表单")
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('dataentry.manage')")
     @Operation(summary = "停用填报表单")
@@ -142,6 +151,7 @@ public class DataEntryFormResource {
         return formService.disable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除填报表单及其配置和操作日志")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('dataentry.manage')")
@@ -151,6 +161,7 @@ public class DataEntryFormResource {
     }
 
     /** This POST endpoint is read-only; the request body carries the existing structured model query contract. */
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "按条件查询填报目标物理表数据")
     @PostMapping("/{id}/actions/query-data")
     @PreAuthorize("hasAuthority('dataentry.view')")
     @Operation(summary = "按条件查询填报目标物理表数据")
@@ -162,6 +173,7 @@ public class DataEntryFormResource {
     }
 
     /** This POST endpoint is read-only; it supports structured paging and historical-value lookup. */
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "搜索字段下拉选项或反查已有值")
     @PostMapping("/{id}/fields/{fieldId}/actions/query-options")
     @PreAuthorize("hasAuthority('dataentry.view')")
     @Operation(summary = "搜索字段下拉选项或反查已有值")
@@ -173,6 +185,7 @@ public class DataEntryFormResource {
         return dataService.queryOptions(id, fieldId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增一条填报数据")
     @PostMapping("/{id}/entries")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('dataentry.submit')")
@@ -185,6 +198,7 @@ public class DataEntryFormResource {
         return dataService.insert(id, request, principal == null ? null : principal.getName());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "下载当前模型的 Excel 或 CSV 填报模板")
     @GetMapping("/{id}/entries/import-template")
     @PreAuthorize("hasAuthority('dataentry.submit')")
     @Operation(summary = "下载当前模型的 Excel 或 CSV 填报模板")
@@ -202,6 +216,7 @@ public class DataEntryFormResource {
     }
 
     /** This POST endpoint is read-only; it parses and validates the uploaded file without changing either database. */
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "只读校验并预览 Excel/CSV 批量填报文件")
     @PostMapping(
             path = "/{id}/entries/actions/preview-import",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -215,6 +230,7 @@ public class DataEntryFormResource {
         return importService.preview(id, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "导入已预览的 Excel/CSV 填报数据")
     @PostMapping(
             path = "/{id}/entries/actions/import",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -231,6 +247,7 @@ public class DataEntryFormResource {
         return importService.importData(id, file, previewDigest, principal == null ? null : principal.getName());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "按单字段或联合业务主键批量删除目标数据")
     @PostMapping("/{id}/entries/actions/delete-batch")
     @PreAuthorize("hasAuthority('dataentry.delete')")
     @Operation(summary = "按单字段或联合业务主键批量删除目标数据")
@@ -242,6 +259,7 @@ public class DataEntryFormResource {
         return dataService.deleteBatch(id, request, principal == null ? null : principal.getName());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询填报数据操作日志")
     @GetMapping("/{id}/operation-logs")
     @PreAuthorize("hasAuthority('dataentry.view')")
     @Operation(summary = "查询填报数据操作日志")
@@ -253,6 +271,7 @@ public class DataEntryFormResource {
         return logService.search(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询填报数据操作日志详情")
     @GetMapping("/{id}/operation-logs/{logId}")
     @PreAuthorize("hasAuthority('dataentry.view')")
     @Operation(summary = "查询填报数据操作日志详情")

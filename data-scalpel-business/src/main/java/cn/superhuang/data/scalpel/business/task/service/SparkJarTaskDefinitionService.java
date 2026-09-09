@@ -84,12 +84,11 @@ public class SparkJarTaskDefinitionService {
 
             import cn.superhuang.datascalpel.sdk.SparkStreamingJob;
             import cn.superhuang.datascalpel.sdk.SparkStreamingJobContext;
-            import cn.superhuang.datascalpel.sdk.StreamingQueries;
 
             public final class ExampleSparkStreamingJob implements SparkStreamingJob {
                 @Override
-                public void start(SparkStreamingJobContext context, StreamingQueries queries) throws Exception {
-                    // 在这里读取绑定资源、构建流式转换，并通过 queries 注册全部 StreamingQuery。
+                public void start(SparkStreamingJobContext context) throws Exception {
+                    // 在这里读取绑定资源、构建流式转换，并通过 context.queries() 注册全部 StreamingQuery。
                 }
             }
             """;

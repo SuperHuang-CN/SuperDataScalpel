@@ -60,6 +60,19 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
         </Col>
       </Row>
     );
+    case 'GEOJSON':
+    case 'GEOJSONL': return (
+      <Form.Item
+        label="EPSG code"
+        name="epsgCode"
+        extra={type === 'GEOJSONL'
+          ? '每个非空物理行必须是一个 GeoJSON Feature；EPSG 只声明坐标，不转换。'
+          : '声明坐标值的 EPSG；系统不自动转换坐标。'}
+        rules={[{ required: true, message: '请输入 EPSG code' }]}
+      >
+        <InputNumber name={`file-dataset-${type.toLowerCase()}-epsg-code`} min={1} precision={0} className="file-dataset-number-input" />
+      </Form.Item>
+    );
     case 'EXCEL': return (
       <Row gutter={12}>
         <Col span={12}><Form.Item label="表头行" name="headerRowIndex" extra="从 0 开始。" rules={[{ required: true, message: '请输入表头行' }]}><InputNumber name="file-dataset-header-row-index" min={0} precision={0} className="file-dataset-number-input" /></Form.Item></Col>
@@ -72,6 +85,24 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
         <span>
           <strong>无需额外解析参数</strong>
           <Typography.Text type="secondary">Parquet 文件自带字段类型和编码信息。</Typography.Text>
+        </span>
+      </div>
+    );
+    case 'GEOPARQUET': return (
+      <div className="file-dataset-native-parsing">
+        <CheckCircleOutlined aria-hidden="true" />
+        <span>
+          <strong>按 GeoParquet Footer 自动识别</strong>
+          <Typography.Text type="secondary">读取 WKB Geometry、CRS 和 Geometry 类型；不提供手工 EPSG 覆盖。</Typography.Text>
+        </span>
+      </div>
+    );
+    case 'GPKG': return (
+      <div className="file-dataset-native-parsing">
+        <CheckCircleOutlined aria-hidden="true" />
+        <span>
+          <strong>按 GeoPackage 元数据自动识别</strong>
+          <Typography.Text type="secondary">后台发现 features 图层和 attributes 属性表；每个空间图层从文件识别 CRS。</Typography.Text>
         </span>
       </div>
     );

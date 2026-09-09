@@ -28,11 +28,15 @@ export const parsingFormValues = (options: FileDatasetParsingOptions): ParsingFo
     case 'TEXT': return { charset: options.charset, recordDelimiter: options.recordDelimiter };
     case 'JSON': return { charset: options.charset, rootPointer: options.rootPointer };
     case 'JSON_LINES': return { charset: options.charset, recordDelimiter: options.recordDelimiter };
+    case 'GEOJSON': return { epsgCode: options.epsgCode };
+    case 'GEOJSONL': return { epsgCode: options.epsgCode };
     case 'SPREADSHEET': return {
       headerRowIndex: options.headerRowIndex,
       dataStartRowIndex: options.dataStartRowIndex,
     };
     case 'PARQUET':
+    case 'GEOPARQUET':
+    case 'GPKG':
     case 'AVRO': return {};
     case 'GDB': return { epsgCode: options.epsgCode };
     case 'SHP': return {
@@ -61,12 +65,16 @@ export const buildFileDatasetParsingOptions = (
     case 'TXT': return { kind: 'TEXT', charset: values.charset as string, recordDelimiter: values.recordDelimiter as FileRecordDelimiter };
     case 'JSON': return { kind: 'JSON', charset: values.charset as string, rootPointer: values.rootPointer || undefined };
     case 'JSONL': return { kind: 'JSON_LINES', charset: values.charset as string, recordDelimiter: values.recordDelimiter as FileRecordDelimiter };
+    case 'GEOJSON': return { kind: 'GEOJSON', epsgCode: values.epsgCode as number };
+    case 'GEOJSONL': return { kind: 'GEOJSONL', epsgCode: values.epsgCode as number };
     case 'EXCEL': return {
       kind: 'SPREADSHEET',
       headerRowIndex: values.headerRowIndex as number,
       dataStartRowIndex: values.dataStartRowIndex as number,
     };
     case 'PARQUET': return { kind: 'PARQUET' };
+    case 'GEOPARQUET': return { kind: 'GEOPARQUET' };
+    case 'GPKG': return { kind: 'GPKG' };
     case 'AVRO': return { kind: 'AVRO' };
     case 'GDB': return { kind: 'GDB', epsgCode: values.epsgCode };
     case 'SHP': return {

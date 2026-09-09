@@ -123,8 +123,7 @@ public class FileDatasetFile extends BaseEntity {
             case SHP -> FileDatasetStorageKind.SHAPEFILE_COMPONENT_SET;
             default -> FileDatasetStorageKind.SINGLE_OBJECT;
         };
-        this.status = getStorageKind() == FileDatasetStorageKind.SINGLE_OBJECT
-                ? FileDatasetFileStatus.READY : FileDatasetFileStatus.PREPARING;
+        this.status = requiresPreparation() ? FileDatasetFileStatus.PREPARING : FileDatasetFileStatus.READY;
         this.materializedPrefix = null;
         this.materializedSizeBytes = null;
         this.materializedEntryCount = null;
@@ -132,7 +131,7 @@ public class FileDatasetFile extends BaseEntity {
     }
 
     public void queuePreparation(UUID jobId) {
-        if (getStorageKind() == FileDatasetStorageKind.SINGLE_OBJECT) {
+        if (!requiresPreparation()) {
             throw new IllegalStateException("当前文件不需要准备任务");
         }
         if (currentPreparationJobId != null) {
@@ -157,6 +156,17 @@ public class FileDatasetFile extends BaseEntity {
         this.materializedEntryCount = materializedEntryCount;
         this.status = FileDatasetFileStatus.READY;
         this.currentPreparationJobId = null;
+    }
+
+    /** Marks a validated single-object file ready after asynchronous table discovery. */
+    public void completePreparationWithoutMaterialization(UUID jobId) {
+        requireCurrentPreparation(jobId);
+        this.status = FileDatasetFileStatus.READY;
+        this.currentPreparationJobId = null;
+    }
+
+    public boolean requiresPreparation() {
+        return storageKind != FileDatasetStorageKind.SINGLE_OBJECT || format == FileDatasetFormat.GPKG;
     }
 
     public void cancelQueuedPreparation(UUID jobId) {

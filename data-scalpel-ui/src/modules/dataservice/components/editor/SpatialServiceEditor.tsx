@@ -33,7 +33,7 @@ export const SpatialServiceEditor = ({ form, serviceId, readOnly, canViewModels 
   const geometryPreview = previewQuery.data?.geometryFields.find((field) => field.code === selected?.geometryColumn);
 
   return (
-    <div className="data-service-standard-definition-editor data-service-management-scope">
+    <div className="data-service-standard-definition-editor spatial-service-definition-editor data-service-management-scope">
       <Form.Item<DataServiceFormValues> name="modelId" hidden rules={[
         { required: true, message: '请选择空间模型' },
         {
@@ -47,7 +47,7 @@ export const SpatialServiceEditor = ({ form, serviceId, readOnly, canViewModels 
           },
         },
       ]}><input /></Form.Item>
-      <div className="management-filter-strip">
+      <div className="management-filter-strip spatial-service-model-filters">
         <Input.Search allowClear value={keyword} onChange={(event) => setKeyword(event.target.value)} placeholder="搜索空间模型名称或编码" style={{ maxWidth: 360 }} />
         <Space><span>显示不可用模型</span><Switch size="small" checked={includeUnavailable} onChange={setIncludeUnavailable} disabled={readOnly} /></Space>
       </div>
@@ -58,28 +58,32 @@ export const SpatialServiceEditor = ({ form, serviceId, readOnly, canViewModels 
       {geometryPreview && !geometryPreview.spatialIndexAvailable && (
         <Alert type="warning" showIcon message="物理 Geometry 列未发现 GiST/SP-GiST 空间索引，允许发布，但范围查询性能可能较差" />
       )}
-      <Table<SpatialDataServiceModelCandidate>
-        size="small"
-        rowKey="id"
-        loading={candidatesQuery.isFetching}
-        dataSource={candidatesQuery.data?.content ?? []}
-        pagination={false}
-        rowSelection={{
-          type: 'radio',
-          selectedRowKeys: selectedModelId ? [selectedModelId] : [],
-          getCheckboxProps: (candidate) => ({ disabled: readOnly || !candidate.selectable }),
-          onChange: (keys) => form.setFieldValue('modelId', String(keys[0] ?? '')),
-        }}
-        columns={[
-          { title: '空间模型', render: (_, item) => <><Typography.Text strong>{item.name}</Typography.Text><br /><Typography.Text type="secondary" code>{item.code}</Typography.Text></> },
-          { title: '物理表', render: (_, item) => <Typography.Text code>{`${item.schema ?? 'public'}.${item.table}`}</Typography.Text> },
-          { title: 'Geometry', render: (_, item) => item.geometryColumn ? <Space size={4}><Tag>{item.geometryKind}</Tag><code>{item.geometryColumn}</code></Space> : '—' },
-          { title: 'CRS', width: 100, render: (_, item) => item.epsg ? `EPSG:${item.epsg}` : '—' },
-          { title: '主键', dataIndex: 'primaryKeyColumn', width: 130, render: (value) => value ? <code>{value}</code> : '—' },
-          { title: '状态', width: 170, render: (_, item) => item.selectable ? <Tag color="success">可发布</Tag> : <Tag color="warning">{item.unavailableReason ?? '不可用'}</Tag> },
-        ]}
-      />
-      {selected && <Typography.Paragraph type="secondary" style={{ marginTop: 12 }}>
+      <div className="management-results-surface spatial-service-model-results">
+        <Table<SpatialDataServiceModelCandidate>
+          size="small"
+          className="management-table spatial-service-model-table"
+          rowKey="id"
+          loading={candidatesQuery.isFetching}
+          dataSource={candidatesQuery.data?.content ?? []}
+          pagination={false}
+          scroll={{ y: '100%' }}
+          rowSelection={{
+            type: 'radio',
+            selectedRowKeys: selectedModelId ? [selectedModelId] : [],
+            getCheckboxProps: (candidate) => ({ disabled: readOnly || !candidate.selectable }),
+            onChange: (keys) => form.setFieldValue('modelId', String(keys[0] ?? '')),
+          }}
+          columns={[
+            { title: '空间模型', render: (_, item) => <><Typography.Text strong>{item.name}</Typography.Text><br /><Typography.Text type="secondary" code>{item.code}</Typography.Text></> },
+            { title: '物理表', render: (_, item) => <Typography.Text code>{item.table}</Typography.Text> },
+            { title: 'Geometry', render: (_, item) => item.geometryColumn ? <Space size={4}><Tag>{item.geometryKind}</Tag><code>{item.geometryColumn}</code></Space> : '—' },
+            { title: 'CRS', width: 100, render: (_, item) => item.epsg ? `EPSG:${item.epsg}` : '—' },
+            { title: '主键', dataIndex: 'primaryKeyColumn', width: 130, render: (value) => value ? <code>{value}</code> : '—' },
+            { title: '状态', width: 170, render: (_, item) => item.selectable ? <Tag color="success">可发布</Tag> : <Tag color="warning">{item.unavailableReason ?? '不可用'}</Tag> },
+          ]}
+        />
+      </div>
+      {selected && <Typography.Paragraph className="spatial-service-selection-summary" type="secondary">
         发布后图层名：<Typography.Text code>{`svc_<服务编码>`}</Typography.Text>，数据源：{selected.dataSourceName ?? selected.dataSourceCode ?? selected.dataSourceId}
       </Typography.Paragraph>}
     </div>

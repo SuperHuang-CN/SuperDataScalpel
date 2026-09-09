@@ -1,3 +1,4 @@
+import { MetricRelationsPanel } from '../../metric';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
@@ -261,6 +262,7 @@ export const DataModelDetailPage = () => {
 
   const commandLoading = publishMutation.isPending || disableMutation.isPending;
   const tabItems = [
+    ...(permissions.has('metric.view') ? [{ key: 'metrics', label: '关联指标', children: <MetricRelationsPanel modelId={model.id} /> }] : []),
     {
       key: 'basic',
       label: '基本信息',

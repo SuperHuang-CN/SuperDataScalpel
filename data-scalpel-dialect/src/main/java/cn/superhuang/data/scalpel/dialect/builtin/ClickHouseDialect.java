@@ -249,16 +249,11 @@ public final class ClickHouseDialect extends AbstractJdbcDialect {
         requireMergeTreeDefinition(before);
         requireMergeTreeDefinition(target);
         if (containsGeometry(before) || containsGeometry(target)) {
-            if (!compareTable(before, actual).compatible()) {
-                throw new IllegalArgumentException("Physical ClickHouse table structure has drifted from the source definition");
-            }
-            if (before.structureFingerprint().equals(target.structureFingerprint())) {
-                return new TableChangePlan(
-                        before, target, TableChangeStrategy.METADATA_ONLY, TableChangeRisk.SAFE,
-                        TableDdlAtomicity.NOT_APPLICABLE, List.of(), List.of(), List.of(), List.of()
+            if (!SpatialTypeSupport.isConstraintOnlyChange(before, target)) {
+                throw new UnsupportedOperationException(
+                        "ClickHouse Geometry 受管表当前仅支持规划可空性约束变化"
                 );
             }
-            throw new UnsupportedOperationException("ClickHouse Geometry 受管表第一版不支持物理结构变更");
         }
         if (!compareTable(before, actual).compatible()) {
             throw new IllegalArgumentException("Physical ClickHouse table structure has drifted from the source definition");

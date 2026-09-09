@@ -399,6 +399,7 @@
                                     <include>cn.superhuang:data-scalpel-task-sdk</include>
                                     <include>cn.superhuang:data-scalpel-contracts</include>
                                     <include>cn.superhuang:data-scalpel-dialect</include>
+                                    <include>org.xerial:sqlite-jdbc</include>
                                     <include>org.apache.sedona:sedona-spark-shaded-4.1_2.13</include>
                                     <include>org.datasyslab:geotools-wrapper</include>
                                     <include>org.geotools:gt-shapefile</include>

@@ -5,8 +5,11 @@ public enum DirectoryScope {
 
     DATA_SOURCE,
     FILE_DATASET,
+    PANORAMA,
     MODEL,
+    METRIC,
     TASK,
     DATA_SERVICE,
+    MCP_SERVER,
     ASSET
 }

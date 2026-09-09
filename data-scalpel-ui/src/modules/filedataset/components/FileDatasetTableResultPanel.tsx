@@ -110,14 +110,16 @@ export const FileDatasetTableResultPanel = ({
   const ready = table?.parseStatus === 'READY';
   const schemaReady = table?.parseStatus === 'SCHEMA_READY';
   const schemaAvailable = ready || schemaReady;
-  const tableLoadSupported = dataset.type !== 'EXCEL' && dataset.type !== 'GDB';
+  const tableLoadSupported = dataset.type !== 'EXCEL' && dataset.type !== 'GDB' && dataset.type !== 'GPKG';
   const schemaQuery = useFileDatasetSchema(dataset.id, table?.id, Boolean(schemaAvailable));
   const previewQuery = useFileDatasetPreview(dataset.id, table?.id, Boolean(ready && table?.previewSupported));
   const sourcesQuery = useFileDatasetTableSources(dataset.id, table?.id, Boolean(table));
   const sources = sourcesQuery.data ?? [];
   const fields = schemaQuery.data?.fields ?? previewQuery.data?.fields ?? [];
   const geometryField = fields.find((field) => field.fieldType === 'GEOMETRY');
-  const spatialDataset = dataset.type === 'GDB' || dataset.type === 'SHP';
+  const spatialDataset = dataset.type === 'GDB' || dataset.type === 'SHP' || dataset.type === 'GEOJSON'
+    || dataset.type === 'GEOJSONL' || dataset.type === 'GEOPARQUET' || dataset.type === 'GPKG';
+  const spatialReferenceEditable = dataset.type === 'GDB' || dataset.type === 'SHP';
 
   if (!table) {
     return (
@@ -402,7 +404,7 @@ export const FileDatasetTableResultPanel = ({
               </Tooltip>
             </Upload>
           )}
-          {canUpdate && (
+          {canUpdate && dataset.type !== 'GPKG' && (
             <Tooltip title="删除来源">
               <Button
                 type="text"
@@ -488,7 +490,7 @@ export const FileDatasetTableResultPanel = ({
             />
           </Tooltip>
           {canUpdate && <Button icon={<EditOutlined />} onClick={rename}>修改名称</Button>}
-          {canUpdate && spatialDataset && schemaAvailable && (
+          {canUpdate && spatialReferenceEditable && schemaAvailable && (
             <Button
               icon={<GlobalOutlined />}
               loading={spatialReferenceMutation.isPending}

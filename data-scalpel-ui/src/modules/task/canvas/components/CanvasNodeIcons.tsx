@@ -86,6 +86,88 @@ const nodeGlyph = (iconKey: CanvasNodeIconKeyValue): ReactNode => {
         <path d="m3 17 3-10 7-3 5 5-2 9-8 2-2.5-1" strokeDasharray="2.5 2.5" />
         <path d="m14.5 14.5 5-5m-1.8-.7 2.5 2.5M13 16l-1 4 4-1" />
       </>;
+    case CanvasNodeIconKey.GeometryDerive:
+      return <>
+        <path d="m3 13 3-7 6-2 4 5-2 6-7 2z" />
+        <path d="M14 12h3.5M16 10l2 2-2 2" />
+        <circle cx="20" cy="7" r="1.6" />
+        <rect x="17.5" y="16" width="5" height="4" rx=".8" />
+        <path d="M18 12.5 20 15" />
+      </>;
+    case CanvasNodeIconKey.GeometrySimplify:
+      return <>
+        <path d="m3 17 3-10 7-3 6 6-3 8-8 2z" />
+        <path d="m6 15 3-6 5-1 2 3-2 4-5 1z" strokeDasharray="2 2" />
+        <path d="M18 4v4m-2-2h4M18 15v5m-2.5-2.5h5" />
+      </>;
+    case CanvasNodeIconKey.SpatialNearest:
+      return <>
+        <circle cx="6" cy="12" r="2.5" />
+        <circle cx="18" cy="6" r="1.8" />
+        <circle cx="19" cy="17" r="1.8" />
+        <circle cx="13" cy="13" r="1.8" />
+        <path d="m8.5 11 3-1.3M8.3 13l3 1M14.5 11.5l2.2-3.8" strokeDasharray="2 2" />
+      </>;
+    case CanvasNodeIconKey.SpatialSummarizeWithin:
+      return <>
+        <path d="m3 17 3-11 8-3 7 6-3 10-9 2z" />
+        <circle cx="9" cy="10" r="1.2" />
+        <circle cx="14" cy="8" r="1.2" />
+        <circle cx="16" cy="14" r="1.2" />
+        <path d="M7 18h10M9 15v3m4-6v6m4-3v3" />
+      </>;
+    case CanvasNodeIconKey.SpatialOverlay:
+      return <>
+        <path d="M3 6 12 3l7 4-3 10-9 2-4-5z" />
+        <path d="m8 9 8-3 5 5-3 9-9 1-4-6z" />
+        <path d="m8 9 8-3 3 2-3 9-7 2-4-5z" fill="currentColor" fillOpacity=".12" />
+      </>;
+    case CanvasNodeIconKey.TrackReconstruct:
+      return <>
+        <circle cx="4" cy="18" r="1.7" /><circle cx="9" cy="8" r="1.7" />
+        <circle cx="15" cy="13" r="1.7" /><circle cx="20" cy="5" r="1.7" />
+        <path d="m5 16.5 3.2-7M10.5 9l3.2 3M16.2 11.5l2.6-5" />
+      </>;
+    case CanvasNodeIconKey.TrackMotionStatistics:
+      return <>
+        <path d="M3 17c3-7 5-10 8-8s4 7 10-3" />
+        <circle cx="3" cy="17" r="1.4" /><circle cx="11" cy="9" r="1.4" /><circle cx="21" cy="6" r="1.4" />
+        <path d="M4 21h16M7 19v2m5-5v5m5-9v9" />
+      </>;
+    case CanvasNodeIconKey.TrackFindDwell:
+      return <>
+        <path d="M4 18c2-7 5-12 9-10s4 8 7 10" strokeDasharray="2 2" />
+        <circle cx="13" cy="11" r="6" /><circle cx="13" cy="11" r="2" />
+        <path d="M13 3V1M5 11H3m18 0h-2" />
+      </>;
+    case CanvasNodeIconKey.TrackDetectIncidents:
+      return <>
+        <path d="M3 18c4-8 7-9 10-5s5 3 8-5" />
+        <circle cx="4" cy="17" r="1.5" /><circle cx="20" cy="8" r="1.5" />
+        <path d="M12 3v6m0 4v1" /><path d="m8 10 4-8 4 8z" />
+      </>;
+    case CanvasNodeIconKey.SpatialBinAggregate:
+      return <>
+        <path d="M3 4h18v16H3zM9 4v16m6-16v16M3 9.3h18M3 14.7h18" />
+        <circle cx="6" cy="7" r="1.1" fill="currentColor" />
+        <circle cx="12" cy="12" r="1.1" fill="currentColor" />
+        <circle cx="18" cy="17" r="1.1" fill="currentColor" />
+      </>;
+    case CanvasNodeIconKey.SpatialPointCluster:
+      return <>
+        <circle cx="7" cy="8" r="1.6" /><circle cx="11" cy="6" r="1.6" />
+        <circle cx="10" cy="11" r="1.6" /><circle cx="15" cy="14" r="1.6" />
+        <circle cx="18" cy="11" r="1.6" /><circle cx="17" cy="18" r="1.6" />
+        <path d="M4 4c5-3 10-1 11 4M7 14c3 5 9 7 14 3" strokeDasharray="2 2" />
+      </>;
+    case CanvasNodeIconKey.SpatialCenterDispersion:
+      return <>
+        <ellipse cx="12" cy="12" rx="9" ry="5.5" transform="rotate(-22 12 12)" />
+        <circle cx="12" cy="12" r="2" />
+        <path d="M12 4v16M4 12h16" strokeDasharray="2 2" />
+        <circle cx="6" cy="8" r="1" fill="currentColor" />
+        <circle cx="18" cy="15" r="1" fill="currentColor" />
+      </>;
     case CanvasNodeIconKey.GeometryBuffer:
       return <>
         <path d="m9 7 5-1 3 4-2 6-6 1-3-4z" />

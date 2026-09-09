@@ -1,11 +1,13 @@
 # DataScalpel
 
-DataScalpel 是面向内网部署的数据中台。当前已完成前后端基础框架、轻量 RBAC、系统配置、通用目录、数据源管理、文件数据集管理、树形码表管理，以及可管理物理表的模型管理能力。
+DataScalpel 是面向企业或厅局、适合内网部署的全域数据管理平台。统一管理数据源、文件数据集、全景影像、码表、数据模型和资产目录，提供数据处理、服务发布与轻量 RBAC 等配套能力。
 
 工程包含后端和独立的前端管理端：
 
 - 后端：Spring Boot 多模块工程。
 - 前端：`data-scalpel-ui`，React + TypeScript + Vite + Ant Design + AntV X6。
+
+开发前先读 [工程约定](AGENTS.md)，再从 [开发文档入口](docs/README.md) 按任务选择模块规范与专题设计。
 
 ## 技术基线
 
@@ -26,7 +28,7 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 - `data-scalpel-contracts`：模块间稳定的请求、响应契约，例如 `SearchRequest`、`PageResponse`。
 - `data-scalpel-web-core`：通用 Web 自动配置和参数校验错误响应。
 - `data-scalpel-dialect`：纯 Java/JDBC 的数据库方言、连接规格、元数据读取和受控建表内核。
-- `data-scalpel-business`：统一业务模块，内部按系统、数据源、模型、任务和数据服务等业务包组织。
+- `data-scalpel-business`：统一业务模块，内部按系统、数据源、模型、任务、数据服务和独立 MCP 平台等业务包组织。
 - `data-scalpel-admin`：控制面启动模块、运行配置、OpenAPI、Actuator 和安全配置。
 - `data-scalpel-service-engine`：可独立部署的数据服务运行面，保存部署快照，通过自身路由执行受控标准查询和参数化 SQL 查询，并通过内嵌 API Studio 管理数据源与 Groovy 脚本路由。
 - `data-scalpel-task-sdk`：用户 Spark JAR 作业的轻量稳定公开 API；不依赖控制面、Canvas 或 Runner内部实现。
@@ -39,6 +41,14 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 - `data-scalpel-shapefile-s3`：对已解包 SHP 组件执行 HeadObject 与条件 Range GET 的可选 AWS SDK v2 适配器。
 
 业务实体统一继承 `BaseEntity`，使用 Java `UUID` 主键和 `createdAt`、`updatedAt` 字段。UUID 不绑定 PostgreSQL 专属列定义，由 Hibernate 根据数据库方言选择物理类型。
+
+## 当前业务能力：全景影像
+
+“数据管理 / 全景影像”支持成品上传、目录与列表管理、地图选点、360°浏览和统一资产登记。仅接收完整 360°×180°、2:1 的球形 JPEG，每张最多 100 MiB、宽度最多 32768 像素；原图保留原始字节，生成轻量预览。
+
+替换保持资源 ID，成功后切换并回收旧文件；失败保留当前成品供浏览下载，不提供历史回滚。媒体访问需要登录和 `panorama.view`；已发布资产门户只展示安全摘要。XYZ 底图在系统配置的“全景地图设置”中维护，默认不请求底图。V1 图片处理按单 Admin 实例部署。
+
+完整接口、元数据语义、权限和运行说明见 [全景影像管理 V1](docs/development/panorama-management-v1.md)。
 
 ## 当前业务能力：系统配置
 
@@ -94,7 +104,7 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 
 任务定义支持草稿、发布和停用。发布或重新启用会检查输入/输出模型及物理表、查询输出字段别名和类型，并且不写入目标表。任务详情统一按最后保存的 Local SQL 或 Canvas 定义展示输入、输出模型；该关系是只读投影，不从 SQL 文本猜测，也不包含运行历史。Local SQL 第一版仍拒绝包含 Geometry 的输入/输出模型并返回稳定的 `SPATIAL_FIELD_UNSUPPORTED`，不得把 Geometry 映射为 String/Binary；Spark Canvas 则通过 Sedona 支持 PostgreSQL/PostGIS 与 MySQL 8 Geometry。已发布任务可异步手动运行，运行记录保存不可变的无凭据快照、状态、耗时、影响行数和安全错误信息；每个任务同一时间只允许一个排队或运行实例。`OVERWRITE` 目前只对 PostgreSQL 开放事务性清空再写入，ClickHouse 第一阶段仅支持 `APPEND`。PostgreSQL 已有真实任务集成验收；其余方言当前仅验证 SQL 渲染。
 
-`SPARK_CANVAS` 与 `SPARK_STREAMING_CANVAS` 使用统一定义路由进入图形化编辑器，定义保存到 `task_canvas_definition`，并继续通过 Task Engine 做设计期零行 Spark 编译校验。Canvas 支持按模型 UUID 配置 `MODEL_INPUT` 和 `MODEL_OUTPUT`：输入使用不可修改的模型 code 作为逻辑表名，输出从目标模型解析数据源和物理位置。同一 `JDBC_INPUT` 可以按顺序选择一个数据源下的多张物理表，每张表仍以原始表名形成独立 Canvas 表。批处理 Canvas 还提供 `SQL_TRANSFORM`，用单条受控 Spark SQL 查询读取当前上游逻辑表 Map 并追加一张新表；临时视图仅在节点私有 Spark 子 Session 中存在。`TYPE_CAST` 可在 LONG Epoch 与 TIMESTAMP 之间按秒、毫秒或微秒转换（新规则默认毫秒），DATE 也可按 UTC 零点输出 Epoch LONG；还可按受控 Spark pattern 解析或格式化日期时间字符串。Canvas 发布、重新启用和运行准备会由 Admin 读取权威逻辑元数据；真实运行使用私有 MinIO Manifest 和 Kafka 可靠消息，由 Task Dispatcher 提交 Spark Runner。PostgreSQL、MySQL 支持 JDBC 输入输出；`MODEL_OUTPUT` 在批处理中支持 APPEND、OVERWRITE、UPSERT，在实时处理中支持 APPEND、UPSERT，UPSERT Key 自动使用目标模型完整主键，实时写入通过独立 `foreachBatch` 和 Checkpoint 按至少一次交付。Canvas 当前协议为 `4.8`；Manifest 当前版本为 v21。
+`SPARK_CANVAS` 与 `SPARK_STREAMING_CANVAS` 使用统一定义路由进入图形化编辑器，定义保存到 `task_canvas_definition`，并继续通过 Task Engine 做设计期零行 Spark 编译校验。Canvas 支持按模型 UUID 配置 `MODEL_INPUT` 和 `MODEL_OUTPUT`：输入使用不可修改的模型 code 作为逻辑表名，输出从目标模型解析数据源和物理位置。同一 `JDBC_INPUT` 可以按顺序选择一个数据源下的多张物理表，每张表仍以原始表名形成独立 Canvas 表。批处理 Canvas 还提供 `SQL_TRANSFORM`，用单条受控 Spark SQL 查询读取当前上游逻辑表 Map 并追加一张新表；临时视图仅在节点私有 Spark 子 Session 中存在。`TYPE_CAST` 可在 LONG Epoch 与 TIMESTAMP 之间按秒、毫秒或微秒转换（新规则默认毫秒），DATE 也可按 UTC 零点输出 Epoch LONG；还可按受控 Spark pattern 解析或格式化日期时间字符串。空间分析已覆盖 Geometry 派生与简化、最近要素、区域汇总、叠加、四类轨迹分析、格网聚合、DBSCAN 点聚类以及中心与离散统计；所有节点继续使用一条边携带完整逻辑表 Map。Canvas 发布、重新启用和运行准备会由 Admin 读取权威逻辑元数据；真实运行使用私有 MinIO Manifest 和 Kafka 可靠消息，由 Task Dispatcher 提交 Spark Runner。PostgreSQL、MySQL 支持 JDBC 输入输出；`MODEL_OUTPUT` 在批处理中支持 APPEND、OVERWRITE、UPSERT，在实时处理中支持 APPEND、UPSERT，UPSERT Key 自动使用目标模型完整主键，实时写入通过独立 `foreachBatch` 和 Checkpoint 按至少一次交付。Canvas 与 Manifest 的当前版本以代码常量为准，见 [协议版本定位](docs/README.md#协议版本定位)。
 
 `SPARK_JAR` 用于 Canvas 不适合表达的复杂批处理。用户可下载 Java 21 Maven 初始工程，以 `provided` 方式依赖轻量 `data-scalpel-task-sdk` 和 Spark 4.1.1，实现 `SparkBatchJob` 后上传最大 100 MiB 的用户 JAR。模板以 `test` 作用域引入 `data-scalpel-task-sdk-testkit`，可用本地Spark、资源仿真和写入捕获直接执行 `mvn test`，TestKit不会进入最终JAR。任务通过大小写敏感的模型/JDBC绑定名访问已授权资源，SDK提供APPEND、OVERWRITE、UPSERT和影响行数累计。Local Docker、YARN和Kubernetes共用同一Runner；手动运行、Cron、取消、日志和历史记录继续使用现有闭环。详细设计见 [Spark JAR 任务与 SDK v1](docs/design/spark-jar-task-sdk-v1.md)。
 
@@ -110,11 +120,27 @@ DataScalpel 是面向内网部署的数据中台。当前已完成前后端基�
 
 服务引擎列表可进入详情页，统一查看基础配置、绑定的数据服务、已注册数据源和访问策略；数据服务 Tab 展示控制面保存的服务及最近部署结果，不直接扫描 Engine 的实时路由。详情页可直接打开内嵌 API Studio 的 `/modern-ui/` 管理界面。
 
-服务引擎现在分为 `DATASCALPEL` 和 `GEOSERVER` 两种同级运行时。GeoServer Engine 由 Admin 直接调用 REST API，使用加密保存的管理凭据和默认 `datascalpel` Workspace，不经过普通 Service Engine。第四种数据服务 `SPATIAL_SERVICE` 只允许选择 GeoServer Engine，将满足唯一 Geometry、明确 XY/EPSG 和单字段主键约束的 PostGIS 物理表发布为只读 WMS/WFS；空间服务不进入现有 API Gateway。详细约束见[GeoServer 空间服务发布 V1](docs/design/geoserver-spatial-service-publishing-v1.md)。
+DataScalpel 引擎详情的“数据源” Tab 同时展示 API Studio JDBC 连接池摘要（使用中/上限、空闲、等待、长 SQL/长占用），点击占用数量或“JDBC 监控”可查看活动连接、SQL 占用、最近 SQL 聚合和饱和事件。首次进入读取一次，默认手动刷新，可选择每 5 秒刷新；关闭详情、离开 Tab 或浏览器进入后台后停止对应轮询。监控不可用与注册/同步状态分开显示，不修改注册状态，GeoServer 不展示这组指标。
+
+监控通过 Admin 代理读取 Engine，沿用 `service.engine.view` 权限，浏览器不接触 Management Token；摘要仅返回当前引擎在 DataScalpel 中已注册的数据源。只读接口为 `GET /api/v1/service-engines/{engineId}/data-source-pools` 和 `GET /api/v1/service-engine-data-sources/{registrationId}/pool-monitor`，Engine 对应 `GET /internal/v1/data-sources/pool-summaries` 和 `GET /internal/v1/data-sources/{dataSourceId}/pool-monitor`，内部接口仍要求 Engine Token。Admin 的远程监控调用位于管理数据库事务之外，连接/读取超时分别为 2/4 秒；旧版 Engine 缺少接口时提示升级并重启，不影响注册管理。
+
+JDBC 监控复用 API Studio 的动态连接池包装，覆盖单表、SQL 和脚本服务，不另建连接池或执行探测 SQL。指标是当前进程内存快照，连接池重建或引擎重启后清空；最近 SQL 默认是最近 200 次已完成执行的指纹聚合，饱和事件默认保留 20 条（同原因事件有限流），并非全量审计。默认长 SQL 阈值为 5 秒，长占用为 30 秒，可由 `spring.super-api-studio.datasource.monitor` 下的 `enabled`、`recent-query-capacity`、`incident-capacity`、`long-running-query-threshold`、`long-held-connection-threshold` 等现有 API Studio 配置调整。预览沿用 Studio 的 SQL 归一化和截断，不采集 JDBC 参数或查询结果，但不能作为完整的敏感信息脱敏保证；无 Studio API 执行上下文的单表/SQL 调用可能显示“未知调用方”。
+
+服务引擎现在分为 `DATASCALPEL` 和 `GEOSERVER` 两种同级运行时。GeoServer Engine 由 Admin 直接调用 REST API，使用加密保存的管理凭据和默认 `datascalpel` Workspace，不经过普通 Service Engine。第四种数据服务 `SPATIAL_SERVICE` 只允许选择 GeoServer Engine，将满足唯一 Geometry、明确 XY/EPSG 和单字段主键约束的 PostGIS 物理表发布为只读 WMS/WFS；空间服务不进入现有 API Gateway。空间服务详情页提供基于已发布 WMS 的交互预览，以及点线面简单制图和安全 SLD 上传；样式以 DataScalpel 草稿为源，按独立版本同步到 Workspace 专属 Style，实际业务流量仍直连 GeoServer。详细约束见[GeoServer 空间服务发布 V1](docs/design/geoserver-spatial-service-publishing-v1.md)。
 
 启用/停用管理 Engine 运行态；“发布/取消发布”独立管理已经启用的服务是否通过网关向调用方开放。系统支持 Kong OSS 和独立的 Super API Gateway Provider，调用方使用当前 Provider 的 Proxy 地址；取消发布会撤回全部历史网关绑定但保持 Engine 在线，停用则在安全撤回后继续移除 Engine，任一撤回失败时都不会停止 Engine。标准模式继续使用统一的分页、列选择、过滤、排序、分组和聚合协议；SQL 模式只接收启用快照声明的标量参数、分页和可选 count；脚本模式第一版固定为可信 Groovy、POST、静态路径和一个默认数据源，保留 API Studio 的数据库访问、事务、日志与 SQL Trace 能力，暂不提供沙箱、超时中断或多语言。脚本补全和草稿调试由 Admin 代理到目标 Engine，浏览器不会直接访问 Engine 或持有 Management Token。详细设计见[数据服务定义、Engine 启用与查询运行设计](docs/design/data-service-publishing.md)、[数据服务启停与网关发布设计](docs/design/data-service-gateway-publishing.md)和[Super API Gateway Provider 集成](docs/design/super-api-gateway-provider-integration.md)。
 
 数据服务模块还提供与后台登录用户完全分离的 API Consumer 管理。Consumer 编码全局唯一且创建后不可修改；DataScalpel 保存 Consumer、API Key 和服务订阅主数据，通过职责单一的薄网关端口投影到当前网关。Kong 实现使用 `key-auth + acl`：API Key 只显示一次，Consumer 的全部有效 Key 共享服务订阅；受保护服务只有同时通过身份认证和服务 ACL 才能进入 Service Engine。当前不包含配额、限流和调用统计。详细设计见 [API 消费者、凭证与服务订阅管理](docs/design/api-consumer-management.md)和[API 消费者凭证与服务订阅开发计划](docs/design/api-consumer-service-subscription-development-plan.md)。
+
+## 当前业务能力：MCP 在线开发平台
+
+编辑器使用内网可用的本地 Monaco 资源；复杂 Schema 与全部测试样例无损保留，本地未保存草稿不被后台刷新覆盖。运行保护覆盖排队、编译、校验和结果转换，编译/Schema/发布缓存均有容量上限；协议使用 MCP SDK 无状态分发，队列繁忙保留 HTTP 429，调用审计只记录安全错误分类。Tool 列表使用摘要接口，详情日志支持服务端分页。
+
+MCP 管理是独立业务域，不依赖数据服务、Service Engine、API Gateway、API Consumer、平台数据源或模型。用户可以在线创建多个 MCP Server，并在每个 Server 下使用 Groovy 开发多个 Tool；Input Schema 支持普通参数的可视化编辑和完整 JSON Schema，高级结构保留为 JSON 编辑，Output Schema 可选。草稿修改不会影响调用方，发布时会将 Server 和全部启用 Tool 固化为不可变快照并原子切换当前版本；相同定义重复发布不增加版本。
+
+MCP 访问凭证独立于 Server 管理：一个 Bearer Token 可授权多个 Server，一个 Server 也可接受多个 Token。Token 使用 SHA-256 摘要认证，并以独立 AES-GCM 密钥加密保存原文，管理员可按需查看和复制。公开入口为 `POST /mcp/{serverCode}`，支持 `initialize`、`notifications/initialized`、`ping`、`tools/list` 和 `tools/call`，由 Admin 直接托管无状态 Streamable HTTP 请求。调用日志记录凭证名称快照与版本，但不保存参数、结果、Token 或脚本日志正文。旧 Server 级 Token 不迁移且全部失效，需要创建新凭证、授权 Server 并更新客户端。
+
+Groovy Tool 是受信任的内部代码，能够使用任意 Java 能力；执行超时和有界队列只能控制正常脚本，不能构成安全沙箱，也无法阻止脚本创建线程、访问文件/网络/环境变量或终止 Admin。只有可信开发人员应获得 `mcp.update`、`mcp.execute` 和 `mcp.publish` 权限。完整接口、发布模型、运行边界和配置见 [MCP 在线开发平台](docs/design/mcp-platform.md)。
 
 ## 构建
 
@@ -133,8 +159,9 @@ cp settings-superhuang.example.xml settings-superhuang.xml
 ```bash
 cd data-scalpel-ui
 pnpm install
-pnpm dev
 ```
+
+本地运行统一从工程根目录执行 `./start-local-dev.sh`，具体见 [本地开发与调试](#本地开发与调试)。
 
 前端质量检查：
 
@@ -145,6 +172,34 @@ pnpm check
 任务编排画布采用 AntV X6；其节点、连线和配置会保存为稳定的 JSON 定义，而不是 X6 内部对象。
 
 ## 启动
+
+### 本地开发与调试
+
+日常开发、Codex 主动功能自测、页面/接口验证和联调统一使用当前开发环境，需要启动时从工程根目录执行：
+
+```bash
+./start-local-dev.sh
+```
+
+启动前先检查当前工程实例的健康状态及是否已加载本次修改，能够复用时直接使用已有实例。端口占用时先核对进程归属，不自行换端口另起一套环境；需要重启时仍使用本脚本。除非用户明确要求隔离环境，不另建临时应用、数据库或 Mock 服务替代真实开发环境。
+
+脚本为 Admin、Service Engine 和 Task Dispatcher 显式启用 `local` Profile，并加载根目录不提交的 `config/application-local.yml`；Task Engine 使用脚本指定的 properties 配置。默认端口为后端 `18080`、前端 `18887`、Service Engine `8081`、Task Engine `18091`、Dispatcher `18092`，以当前脚本及已有环境配置为准。不要为自测临时更换 Profile、数据库、Schema 或外部服务地址。
+
+保留启动终端或会话，从其输出和健康检查结果排查失败，不绕过脚本单独启动服务。脚本收到 `Ctrl+C` 或退出时会停止它启动的子进程；调试结束后默认保留开发环境供用户继续使用。
+
+各 Java 应用的运行依赖统一从当前 Maven Reactor 解析，项目模块直接使用 `target/classes`；不读取本地仓库旧快照 POM 来推导传递依赖，也不要求先执行 `install`。本地脚本使用 `maven.test.skip=true`，不执行或编译测试源码；新增业务依赖后重新运行脚本即可更新启动依赖列表。仅编译和准备启动依赖、不启动应用或连接业务外部服务时，可执行：
+
+```bash
+./start-local-dev.sh --prepare --threads 2
+```
+
+`--prepare` 不代表应用已启动或功能验证通过。是否执行测试遵循 [根开发约定](AGENTS.md#测试与验证暂时禁用)，Maven 隔离自动化测试仍使用各模块 `application-test.yml`。
+
+本地脚本中的 Dispatcher 数据库连接与 Admin 解耦：默认复用 Admin JDBC URL 的 PostgreSQL 主机和查询参数，但数据库名固定为 `datascalpel`，Schema 默认使用 `dispatcher`。需要配置时使用独立的 `DATASCALPEL_TASK_DISPATCHER_DB_URL` 与 `DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA`，不能通过 `DATASCALPEL_DB_URL` 间接改变 Dispatcher 数据库。
+
+### Admin 独立部署
+
+以下单服务启动命令用于独立部署与运维；当前工作区的功能调试使用上节的统一脚本。
 
 准备 PostgreSQL 数据库 `data_scalpel`，或者通过环境变量覆盖连接信息：
 
@@ -160,6 +215,7 @@ export DATASCALPEL_TASK_ENGINE_TOKEN="<task-engine-token>"
 export DATASCALPEL_COMPUTE_ENGINE_CREDENTIAL_KEY="$(openssl rand -base64 32)"
 export DATASCALPEL_DATA_SOURCE_CREDENTIAL_KEY="$(openssl rand -base64 32)"
 export DATASCALPEL_ASSISTANT_CREDENTIAL_KEY="$(openssl rand -base64 32)"
+export DATASCALPEL_MCP_CREDENTIAL_KEY="$(openssl rand -base64 32)"
 ./mvnw -pl data-scalpel-admin -am package
 java -jar data-scalpel-admin/target/data-scalpel-admin-0.1.0-SNAPSHOT.jar
 ```
@@ -168,6 +224,8 @@ java -jar data-scalpel-admin/target/data-scalpel-admin-0.1.0-SNAPSHOT.jar
 
 `DATASCALPEL_ASSISTANT_CREDENTIAL_KEY` 只用于加密 AI 模型 API Key，与数据源和计算引擎密钥相互独立。无 Key 的内网模型可以不配置该密钥；需要保存 API Key 时必须配置包含 16、24 或 32 字节内容的 Base64 密钥，并在部署生命周期内稳定保管。
 
+`DATASCALPEL_MCP_CREDENTIAL_KEY` 只用于加密 MCP 访问凭证明文。凭证认证同时使用 SHA-256 摘要，因此缺少密钥不会阻止 Admin 启动或已有凭证调用，但会阻止创建、轮换和查看完整 Token。该密钥必须包含 16、24 或 32 字节的 Base64 内容并稳定备份，直接更换会导致已有 Token 无法查看。`start-local-dev.sh` 内置独立且稳定的本地开发密钥，也可通过同名环境变量覆盖；该默认值不得用于正式部署。
+
 Admin 还需要独立的 Service Engine 凭据加密主密钥，用于加密保存每台 Engine 各自的 Management Token：
 
 ```bash
@@ -175,25 +233,6 @@ export DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY="$(openssl rand -base64 32)"
 ```
 
 该密钥必须包含 16、24 或 32 字节的 Base64 内容并稳定保存。丢失或更换后，Admin 无法解密已登记 Engine 的 Token，需要使用原密钥恢复，或重建开发数据并重新登记 Engine。Admin 不再配置全局共享的 Engine Management Token。
-
-当前工作区的本地功能测试和联调优先使用根目录的 `config/application-local.yml`。其中可以保存不提交的数据库、Kong 等本地连接；Spring Boot 使用 `local` Profile 从该外部文件读取配置，它不会进入构建产物：
-
-```bash
-java -jar data-scalpel-admin/target/data-scalpel-admin-0.1.0-SNAPSHOT.jar --spring.profiles.active=local
-```
-
-也可以使用根目录的 `start-local-dev.sh` 启动开发环境。脚本会为 Admin、Service Engine 和 Task Dispatcher 显式启用 `local` Profile 并加载上述配置；Task Engine 不是 Spring Boot 应用，不读取该 YAML。默认使用后端 `18080`、前端 `18887`；若端口已被占用，可临时指定备用端口：
-
-```bash
-BACKEND_PORT=18080 FRONTEND_PORT=18887 ./start-local-dev.sh
-```
-
-本地脚本中的 Dispatcher 数据库连接与 Admin 解耦：默认复用 Admin JDBC URL 的 PostgreSQL 主机和查询参数，但数据库名固定为 `datascalpel`，Schema 默认使用 `dispatcher`。数据库 URL 与 Schema 分别通过独立变量覆盖，不能通过 `DATASCALPEL_DB_URL` 间接改变 Dispatcher 数据库：
-
-```bash
-export DATASCALPEL_TASK_DISPATCHER_DB_URL="jdbc:postgresql://localhost:5432/datascalpel"
-export DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA="dispatcher"
-```
 
 ### 启动 Service Engine
 
@@ -205,6 +244,8 @@ export DATASCALPEL_ENGINE_DB_USERNAME="<engine-db-user>"
 export DATASCALPEL_ENGINE_DB_PASSWORD="<engine-db-password>"
 export DATASCALPEL_ENGINE_CODE="dev-engine-01"
 export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="<this-engine-management-token>"
+export DATASCALPEL_ENGINE_QUERY_MAXIMUM_FILTER_COUNT="50"
+export DATASCALPEL_ENGINE_QUERY_MAXIMUM_FILTER_DEPTH="5"
 export DATASCALPEL_ENGINE_QUERY_MAXIMUM_OFFSET="100000"
 ./mvnw -pl data-scalpel-service-engine -am package
 java -jar data-scalpel-service-engine/target/data-scalpel-service-engine-0.1.0-SNAPSHOT.jar
@@ -290,3 +331,13 @@ GET /api/tasks?search=state:"RUNNING" AND name:*"测试"*&page=0&size=20&sort=-u
 - 支持 `AND`、`OR` 和括号；`AND` 优先于 `OR`。
 - 普通值必须使用双引号；支持 `\"` 和 `\\` 转义。`field:null` 和 `field!null` 分别表示空与非空。
 - 时间使用 ISO-8601；第一版只支持实体自身及父类的标量字段，不支持关联、集合、JSON、LOB 和 `a.b` 路径。
+
+### 任务工作流
+
+`WORKFLOW` 任务复用现有目录、发布、Cron 和运行历史；Business 按依赖推进 Local SQL、Spark Canvas、模型质检和 Spark JAR 批任务。支持并行、父子运行追踪和级联取消；应用重启后未结束流程标记失败，不恢复执行。定义、接口及升级说明见 [TaskWorkflow V1](docs/design/task-workflow-v1.md)。
+
+## 系统 MCP
+
+“系统管理 → 系统 MCP”提供独立的 API 开放清单、专用访问令牌和审计。标准 MCP 客户端通过 `/system-mcp` 使用 `api_search`、`api_describe`、`api_invoke` 操作已授权接口。首次部署默认关闭，令牌由超级管理员创建并绑定现有系统用户。
+
+此入口与在线 MCP 开发平台独立，首版只支持 JSON 与空响应，不支持文件上传下载、二进制或持续流。配置、维护和连接方式见 [系统 MCP 说明](docs/design/system-mcp.md)。

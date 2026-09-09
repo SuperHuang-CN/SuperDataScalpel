@@ -20,6 +20,9 @@ public interface TaskExecutionBackend {
         cancel(handle, identity);
     }
     BackendLog collectLog(ExternalExecutionHandle handle) throws BackendException;
+    default BackendLog collectRecentLog(ExternalExecutionHandle handle) throws BackendException {
+        return BackendLogWindow.recent(collectLog(handle), 2_000, 1024 * 1024);
+    }
     Optional<ExternalExecutionHandle> recover(ExecutionIdentity identity) throws BackendException;
     default void cleanup(ExternalExecutionHandle handle) throws BackendException { }
     default void cleanup(ExternalExecutionHandle handle, ExecutionIdentity identity) throws BackendException {

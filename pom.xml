@@ -59,10 +59,32 @@
         <zstd-jni.version>1.5.7-4</zstd-jni.version>
         <jsqlparser.version>5.3</jsqlparser.version>
         <jts.version>1.20.0</jts.version>
+        <mcp-sdk.version>0.17.0</mcp-sdk.version>
+        <groovy.version>5.0.6</groovy.version>
     </properties>
 
     <dependencyManagement>
         <dependencies>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-core</artifactId>
+                <version>${mcp-sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>io.modelcontextprotocol.sdk</groupId>
+                <artifactId>mcp-json-jackson2</artifactId>
+                <version>${mcp-sdk.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.groovy</groupId>
+                <artifactId>groovy</artifactId>
+                <version>${groovy.version}</version>
+            </dependency>
+            <dependency>
+                <groupId>org.apache.groovy</groupId>
+                <artifactId>groovy-json</artifactId>
+                <version>${groovy.version}</version>
+            </dependency>
             <dependency>
                 <groupId>org.locationtech.jts</groupId>
                 <artifactId>jts-core</artifactId>

@@ -205,10 +205,13 @@ public class FileDatasetParseJobCoordinator {
                 removeFailedTemporaryState(job);
                 return false;
             }
-            file.completePreparation(
-                    job.getId(), result.materializedPrefix(),
-                    result.materializedSizeBytes(), result.materializedEntryCount()
-            );
+            if (result.materializedPrefix() == null) {
+                file.completePreparationWithoutMaterialization(job.getId());
+            } else {
+                file.completePreparation(
+                        job.getId(), result.materializedPrefix(), result.materializedSizeBytes(), result.materializedEntryCount()
+                );
+            }
             job.succeed(claimedJob.workerId(), now);
             fileRepository.save(file);
             jobRepository.save(job);

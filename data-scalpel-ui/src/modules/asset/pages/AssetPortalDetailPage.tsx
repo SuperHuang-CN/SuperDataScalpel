@@ -5,6 +5,7 @@ import {
   BookOutlined,
   DatabaseOutlined,
   FileTextOutlined,
+  CameraOutlined,
   LoginOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -30,6 +31,7 @@ import './assetPortal.css';
 const assetTypeIcons: Record<AssetType, ReactNode> = {
   DATA_MODEL: <DatabaseOutlined />,
   FILE_DATASET: <FileTextOutlined />,
+  PANORAMA: <CameraOutlined />,
   DATA_SERVICE: <ApiOutlined />,
   DICTIONARY: <BookOutlined />,
 };
@@ -42,6 +44,7 @@ const metadataLabels: Record<AssetType, Record<string, string>> = {
     schemaVersion: 'Schema 版本',
     fieldCount: '字段数量',
   },
+  PANORAMA: { contentVersion: '内容版本', width: '宽度（像素）', height: '高度（像素）', byteSize: '原图字节数', captureTime: '拍摄时间', captureOffset: '时区偏移', manufacturer: '相机厂商', cameraModel: '相机型号', hasLocation: '是否有位置' },
   FILE_DATASET: {
     datasetType: '数据集类型',
     fileCount: '文件数量',

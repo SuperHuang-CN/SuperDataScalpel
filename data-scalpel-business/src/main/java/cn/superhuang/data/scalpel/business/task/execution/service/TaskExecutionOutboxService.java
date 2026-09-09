@@ -17,6 +17,11 @@ public class TaskExecutionOutboxService {
         this.codec = codec;
     }
 
+    @Transactional(readOnly = true)
+    public boolean hasForceTerminate(java.util.UUID runId, java.util.UUID executionId) {
+        return repository.existsByAggregateIdAndExecutionIdAndMessageType(runId, executionId, "FORCE_TERMINATE_EXECUTION");
+    }
+
     @Transactional
     public TaskExecutionOutboxMessage enqueue(String topic, ExecutionCommand command) {
         repository.findByMessageId(command.messageId()).ifPresent(existing -> {

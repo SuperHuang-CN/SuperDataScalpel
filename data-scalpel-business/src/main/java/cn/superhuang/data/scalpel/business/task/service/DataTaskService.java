@@ -100,6 +100,7 @@ public class DataTaskService {
     private final SparkJarDevelopmentKitService sparkJarDevelopmentKitService;
     private final SparkJarTaskDefinitionRepository sparkJarDefinitionRepository;
     private final SparkJarTaskResourceBindingRepository sparkJarBindingRepository;
+    private final WorkflowTaskDefinitionService workflowDefinitions;
     private final TransactionTemplate readTransactionTemplate;
     private final TransactionTemplate transactionTemplate;
 
@@ -133,8 +134,10 @@ public class DataTaskService {
             SparkJarDevelopmentKitService sparkJarDevelopmentKitService,
             SparkJarTaskDefinitionRepository sparkJarDefinitionRepository,
             SparkJarTaskResourceBindingRepository sparkJarBindingRepository,
+            WorkflowTaskDefinitionService workflowDefinitions,
             PlatformTransactionManager transactionManager
     ) {
+        this.workflowDefinitions = workflowDefinitions;
         this.taskRepository = taskRepository;
         this.definitionRepository = definitionRepository;
         this.canvasDefinitionRepository = canvasDefinitionRepository;
@@ -287,6 +290,11 @@ public class DataTaskService {
 
     public DataTaskResponse publish(UUID taskId) {
         DataTask current = requireTask(taskId);
+        if (current.getType() == TaskType.WORKFLOW) {
+            workflowDefinitions.publish(taskId, TaskStatus.DRAFT);
+            scheduleService.resumeForTask(taskId);
+            return get(taskId);
+        }
         if (current.getType().isJar()) {
             return publishSparkJar(taskId, TaskStatus.DRAFT);
         }
@@ -329,6 +337,11 @@ public class DataTaskService {
 
     public DataTaskResponse disable(UUID taskId) {
         DataTask current = requireTask(taskId);
+        if (current.getType() == TaskType.WORKFLOW) {
+            workflowDefinitions.disable(taskId);
+            scheduleService.pauseForTask(taskId);
+            return get(taskId);
+        }
         if (current.getType().isJar()) {
             return disableSparkJar(taskId);
         }
@@ -354,6 +367,11 @@ public class DataTaskService {
 
     public DataTaskResponse enable(UUID taskId) {
         DataTask current = requireTask(taskId);
+        if (current.getType() == TaskType.WORKFLOW) {
+            workflowDefinitions.publish(taskId, TaskStatus.DISABLED);
+            scheduleService.resumeForTask(taskId);
+            return get(taskId);
+        }
         if (current.getType().isJar()) {
             return publishSparkJar(taskId, TaskStatus.DISABLED);
         }
@@ -417,6 +435,7 @@ public class DataTaskService {
             sparkJarTaskDefinitionService.deleteObjectAfterCommit(taskId, definition.getJarObjectKey());
             sparkJarDefinitionRepository.delete(definition);
         });
+        workflowDefinitions.deleteDefinition(taskId);
         streamingConfigurationRepository.deleteByTaskId(taskId);
         taskRepository.delete(task);
     }
@@ -784,6 +803,11 @@ public class DataTaskService {
             Map<UUID, String> outputModelNames,
             Map<UUID, String> computeEngineNames
     ) {
+        if (task.getType() == TaskType.WORKFLOW) {
+            var definitionResponse = workflowDefinitions.get(task.getId());
+            return DataTaskResponse.from(task, null, definitionResponse.version() != null,
+                    definitionResponse.version(), null, null);
+        }
         String computeEngineName = task.getComputeEngineId() == null
                 ? null : computeEngineNames.get(task.getComputeEngineId());
         if (task.getType().isCanvas()) {
@@ -821,9 +845,9 @@ public class DataTaskService {
     }
 
     private void validateComputeEngineReference(TaskType taskType, UUID computeEngineId) {
-        if (taskType == TaskType.LOCAL_SQL) {
+        if (!taskType.requiresComputeEngine()) {
             if (computeEngineId != null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "本地 SQL 任务不能绑定计算引擎");
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "此任务类型不能绑定计算引擎");
             }
             return;
         }

@@ -1,5 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { Button, Empty, Modal, Table, Tabs, Tooltip, Typography, type TableColumnsType } from 'antd';
+import { Button, Empty, Modal, Table, Tooltip, Typography, type TableColumnsType } from 'antd';
 import { useMemo, useState } from 'react';
 import type {
   SparkJarTrialPreview,
@@ -25,6 +25,16 @@ interface ParsedWritePreview {
   fields: ParsedSparkField[];
   rows: PreviewRow[];
   error: string | null;
+}
+
+interface PreviewOutput {
+  key: string;
+  write: SparkJarTrialWritePreview;
+  fields: ParsedSparkField[];
+  rows: PreviewRow[];
+  error: string | null;
+  warning: string | null;
+  truncated: boolean;
 }
 
 interface SelectedComplexValue {
@@ -82,6 +92,55 @@ const parseWritePreview = (write: SparkJarTrialWritePreview): ParsedWritePreview
   }
 };
 
+const streamingOutputKey = (write: SparkJarTrialWritePreview): string => JSON.stringify([
+  write.resourceKind,
+  write.bindingName,
+  write.target,
+]);
+
+const asSingleOutput = (parsed: ParsedWritePreview): PreviewOutput => ({
+  ...parsed,
+  warning: null,
+  truncated: parsed.write.truncated,
+});
+
+const groupStreamingOutputs = (parsedWrites: ParsedWritePreview[]): PreviewOutput[] => {
+  const grouped = new Map<string, ParsedWritePreview[]>();
+  parsedWrites.forEach((parsed) => {
+    const key = streamingOutputKey(parsed.write);
+    const entries = grouped.get(key);
+    if (entries) entries.push(parsed);
+    else grouped.set(key, [parsed]);
+  });
+
+  return [...grouped.entries()].map(([key, entries]) => {
+    const latest = entries[entries.length - 1];
+    const reference = [...entries].reverse().find((entry) => !entry.error) ?? latest;
+    const compatible = entries.filter((entry) => (
+      !entry.error && entry.write.schemaJson === reference.write.schemaJson
+    ));
+    const capturedRows = compatible.flatMap((entry) => entry.rows);
+    const rows = capturedRows.slice(-100).map((row, index) => ({
+      ...row,
+      key: String(index + 1),
+    }));
+    const skippedBatches = entries.length - compatible.length;
+    return {
+      key,
+      write: reference.write,
+      fields: reference.fields,
+      rows,
+      error: compatible.length ? null : reference.error,
+      warning: skippedBatches > 0
+        ? `${skippedBatches} 个微批次的 Schema 或预览数据无法与当前结果合并。`
+        : null,
+      truncated: capturedRows.length > 100
+        || compatible.some((entry) => entry.write.truncated)
+        || skippedBatches > 0,
+    };
+  });
+};
+
 const valueSummary = (value: object): string => {
   const json = JSON.stringify(value);
   return json.length > 100 ? `${json.slice(0, 100)}…` : json;
@@ -120,15 +179,16 @@ const PreviewValue = ({ fieldName, value, onViewComplexValue }: PreviewValueProp
 
 interface SparkJarTrialPreviewPanelProps {
   preview: SparkJarTrialPreview;
+  streaming?: boolean;
 }
 
-export const SparkJarTrialPreviewPanel = ({ preview }: SparkJarTrialPreviewPanelProps) => {
+export const SparkJarTrialPreviewPanel = ({ preview, streaming = false }: SparkJarTrialPreviewPanelProps) => {
   const parsedWrites = useMemo(() => preview.writes.map(parseWritePreview), [preview.writes]);
-  const [activeWriteKey, setActiveWriteKey] = useState<string | null>(null);
+  const outputs = useMemo(
+    () => streaming ? groupStreamingOutputs(parsedWrites) : parsedWrites.map(asSingleOutput),
+    [parsedWrites, streaming],
+  );
   const [complexValue, setComplexValue] = useState<SelectedComplexValue | null>(null);
-  const selectedWriteKey = parsedWrites.some((candidate) => candidate.key === activeWriteKey)
-    ? activeWriteKey
-    : parsedWrites[0]?.key;
 
   const previewColumns = (fields: ParsedSparkField[]): TableColumnsType<PreviewRow> => [
     {
@@ -156,53 +216,49 @@ export const SparkJarTrialPreviewPanel = ({ preview }: SparkJarTrialPreviewPanel
     })),
   ];
 
+  const renderOutput = (output: PreviewOutput) => (
+    <div className="spark-jar-trial-output">
+      {(streaming || outputs.length > 1) && (
+        <div className="spark-jar-trial-output-summary">
+          <Tooltip title={`绑定名：${output.write.bindingName} · 写入模式：${output.write.writeMode}`}>
+            <Typography.Text strong>
+              {streaming ? output.write.target : `#${output.write.index} · ${output.write.target}`}
+            </Typography.Text>
+          </Tooltip>
+          <Typography.Text type="secondary">
+            {streaming ? `最近 ${output.rows.length} 条已捕获样例` : `${output.rows.length} 条样例`}
+            {output.truncated ? '（已截断）' : ''}
+          </Typography.Text>
+        </div>
+      )}
+      {output.warning && <Alert type="warning" showIcon message={output.warning} />}
+      {output.error ? (
+        <Alert type="error" showIcon message="输出预览无法展示" description={output.error} />
+      ) : (
+        <div className="spark-jar-trial-write-content">
+          <Table<PreviewRow>
+            className="spark-jar-trial-preview-table"
+            size="small"
+            bordered
+            tableLayout="fixed"
+            rowKey="key"
+            columns={previewColumns(output.fields)}
+            dataSource={output.rows}
+            pagination={false}
+            scroll={{ x: Math.max(720, (output.fields.length + 1) * 180) }}
+            locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本次写入结果为空" /> }}
+          />
+        </div>
+      )}
+    </div>
+  );
+
   return (
     <div className="spark-jar-trial-preview-panel">
       {preview.warnings.map((warning) => <Alert key={warning} type="warning" showIcon message={warning} />)}
-      <Tabs
-        className="spark-jar-trial-write-tabs"
-        activeKey={selectedWriteKey ?? undefined}
-        onChange={setActiveWriteKey}
-        items={parsedWrites.map((parsed) => ({
-          key: parsed.key,
-          label: (
-            <Tooltip
-              title={(
-                <div className="spark-jar-trial-write-tooltip">
-                  <div>资源类型：{parsed.write.resourceKind === 'MODEL'
-                    ? '模型'
-                    : parsed.write.resourceKind === 'KAFKA' ? 'Kafka' : 'JDBC'}</div>
-                  <div>绑定名：{parsed.write.bindingName}</div>
-                  <div>目标：{parsed.write.target}</div>
-                  <div>写入模式：{parsed.write.writeMode}</div>
-                  <div>预览行数：{parsed.rows.length}</div>
-                  {parsed.write.truncated && <div>结果已截断，最多展示 100 行</div>}
-                </div>
-              )}
-            >
-              <span className="spark-jar-trial-write-tab-label">#{parsed.write.index} · {parsed.write.target}</span>
-            </Tooltip>
-          ),
-          children: parsed.error ? (
-            <Alert type="error" showIcon message="输出预览无法展示" description={parsed.error} />
-          ) : (
-            <div className="spark-jar-trial-write-content">
-              <Table<PreviewRow>
-                className="spark-jar-trial-preview-table"
-                size="small"
-                bordered
-                tableLayout="fixed"
-                rowKey="key"
-                columns={previewColumns(parsed.fields)}
-                dataSource={parsed.rows}
-                pagination={false}
-                scroll={{ x: Math.max(720, (parsed.fields.length + 1) * 180), y: '100%' }}
-                locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="本次写入结果为空" /> }}
-              />
-            </div>
-          ),
-        }))}
-      />
+      <div className="spark-jar-trial-output-list">
+        {outputs.map((output) => <div key={output.key}>{renderOutput(output)}</div>)}
+      </div>
       <Modal
         rootClassName="business-overlay business-modal-overlay spark-jar-trial-value-modal"
         open={Boolean(complexValue)}

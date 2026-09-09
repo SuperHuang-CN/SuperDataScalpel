@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.datasource.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.datasource.service.SpatialFeatureResourceService;
 import cn.superhuang.data.scalpel.business.datasource.web.request.CreateSpatialFeatureResourceRequest;
 import cn.superhuang.data.scalpel.business.datasource.web.request.UpdateSpatialFeatureResourceRequest;
@@ -36,6 +37,7 @@ public class SpatialFeatureResourceResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "发现 ArcGIS 图层或 WFS FeatureType")
     @GetMapping("/catalog")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "发现 ArcGIS 图层或 WFS FeatureType")
@@ -46,6 +48,7 @@ public class SpatialFeatureResourceResource {
         return service.discover(dataSourceId, parent);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询已登记的空间要素资源")
     @GetMapping
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询已登记的空间要素资源")
@@ -53,6 +56,7 @@ public class SpatialFeatureResourceResource {
         return service.list(dataSourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询空间要素资源详情")
     @GetMapping("/{resourceId}")
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询空间要素资源详情")
@@ -60,6 +64,7 @@ public class SpatialFeatureResourceResource {
         return service.get(dataSourceId, resourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "登记远程空间要素资源")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('datasource.create')")
@@ -70,6 +75,7 @@ public class SpatialFeatureResourceResource {
         return service.create(dataSourceId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改空间要素资源")
     @PostMapping("/{resourceId}/actions/update")
     @PreAuthorize("hasAuthority('datasource.update')")
     @Operation(summary = "修改空间要素资源")
@@ -81,6 +87,7 @@ public class SpatialFeatureResourceResource {
         return service.update(dataSourceId, resourceId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "刷新远程空间要素资源 Schema")
     @PostMapping("/{resourceId}/actions/refresh-schema")
     @PreAuthorize("hasAuthority('datasource.update')")
     @Operation(summary = "刷新远程空间要素资源 Schema")
@@ -88,6 +95,7 @@ public class SpatialFeatureResourceResource {
         return service.refresh(dataSourceId, resourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "预览空间要素属性数据")
     @PostMapping("/{resourceId}/actions/query-preview")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "预览空间要素属性数据")
@@ -99,6 +107,7 @@ public class SpatialFeatureResourceResource {
         return service.preview(dataSourceId, resourceId, limit);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除空间要素资源")
     @PostMapping("/{resourceId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('datasource.delete')")

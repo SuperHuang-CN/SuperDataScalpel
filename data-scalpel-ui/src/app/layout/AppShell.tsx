@@ -10,6 +10,7 @@ import {
   MenuFoldOutlined,
   MenuUnfoldOutlined,
   RobotOutlined,
+  ToolOutlined,
   SettingOutlined,
 } from '@ant-design/icons';
 import type { BreadcrumbProps, MenuProps } from 'antd';
@@ -18,10 +19,15 @@ import { useState } from 'react';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { AssistantDrawer, assistantPageKeyForPath, assistantPagePath } from '../../modules/assistant';
 import { useCurrentUser, useLogout, useSystemConfigurations } from '../../modules/system';
+import { getTaskView, resolveTaskView, taskIdFromPath, taskViews, useTask, type TaskViewConfiguration } from '../../modules/task';
+import { NotificationBell } from '../../modules/operations';
 
 const APP_SIDEBAR_COLLAPSED_STORAGE_KEY = 'data-scalpel.ui.app-sidebar.collapsed';
 
 const TOP_LEVEL_MANAGEMENT_PATHS = new Set([
+  '/operations',
+  '/operations/alerts',
+  '/operations/configuration',
   '/system/configurations',
   '/system/model-warehouse-layers',
   '/system/ai-models',
@@ -32,22 +38,29 @@ const TOP_LEVEL_MANAGEMENT_PATHS = new Set([
   '/asset-management/domains',
   '/datasource',
   '/file-dataset',
+  '/panorama',
   '/standard/dictionaries',
   '/model',
+  '/metrics',
   '/model/field-templates',
   '/data-entry',
-  '/task',
+  ...taskViews.map(view => view.path),
   '/task/masking-rules',
   '/service-engine',
   '/compute-engine',
   '/dataservice',
   '/dataservice/consumers',
   '/dataservice/operations',
+  '/mcp-management',
+  '/mcp-management/access-tokens',
+  '/mcp-management/invocations',
 ]);
 
 const isBusinessDetailPath = (pathname: string) => (
-  /^\/datasource\/[^/]+$/.test(pathname)
+  /^\/metrics\/[^/]+$/.test(pathname)
+  || /^\/datasource\/[^/]+$/.test(pathname)
   || /^\/file-dataset\/[^/]+$/.test(pathname)
+  || /^\/panorama\/[^/]+$/.test(pathname)
   || /^\/standard\/dictionaries\/[^/]+$/.test(pathname)
   || /^\/model\/[^/]+$/.test(pathname)
   || /^\/data-entry\/[^/]+$/.test(pathname)
@@ -55,6 +68,7 @@ const isBusinessDetailPath = (pathname: string) => (
   || /^\/service-engine\/[^/]+$/.test(pathname)
   || /^\/compute-engine\/[^/]+$/.test(pathname)
   || /^\/dataservice\/[^/]+$/.test(pathname)
+  || (/^\/mcp-management\/[^/]+$/.test(pathname) && pathname !== '/mcp-management/access-tokens' && pathname !== '/mcp-management/invocations')
 );
 
 const isDataServiceEditorPath = (pathname: string) => (
@@ -63,6 +77,10 @@ const isDataServiceEditorPath = (pathname: string) => (
 
 const isTaskDefinitionEditorPath = (pathname: string) => (
   /^\/task\/[^/]+\/(definition|online-code)$/.test(pathname)
+);
+
+const isMcpToolEditorPath = (pathname: string) => (
+  /^\/mcp-management\/[^/]+\/tools\/[^/]+\/edit$/.test(pathname)
 );
 
 const readSidebarCollapsedPreference = (): boolean => {
@@ -84,9 +102,11 @@ const writeSidebarCollapsedPreference = (collapsed: boolean) => {
 const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items']> => {
   const dataItems = [
     permissions.has('datasource.view') ? { key: '/datasource', label: '数据源' } : null,
+    permissions.has('panorama.view') ? { key: '/panorama', label: '全景影像' } : null,
     permissions.has('filedataset.view') ? { key: '/file-dataset', label: '文件数据集' } : null,
     permissions.has('standard.dictionary.view') ? { key: '/standard/dictionaries', label: '码表管理' } : null,
     permissions.has('model.view') ? { key: '/model', label: '模型列表' } : null,
+    permissions.has('metric.view') ? { key: '/metrics', label: '指标管理' } : null,
     permissions.has('model.view') ? { key: '/model/field-templates', label: '常用字段模板' } : null,
     permissions.has('dataentry.view') ? { key: '/data-entry', label: '数据填报' } : null,
   ].filter((item): item is { key: string; label: string } => item !== null);
@@ -97,6 +117,7 @@ const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items
   ].filter((item): item is { key: string; label: string } => item !== null);
 
   const systemItems = [
+    permissions.has('system.mcp.view') ? { key: '/system/system-mcp', label: '系统 MCP' } : null,
     permissions.has('system.user.view') ? { key: '/system/users', label: '用户管理' } : null,
     permissions.has('system.role.view') ? { key: '/system/roles', label: '角色管理' } : null,
     permissions.has('system.permission.view') ? { key: '/system/permissions', label: '权限管理' } : null,
@@ -123,7 +144,7 @@ const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items
       icon: <ApartmentOutlined />,
       label: '任务中心',
       children: [
-        { key: '/task', label: '任务列表' },
+        ...taskViews.filter(view => view.id !== 'all').map(view => ({ key: view.path, label: view.label })),
         { key: '/task/masking-rules', label: '脱敏规则' },
       ],
     }] : []),
@@ -137,7 +158,24 @@ const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items
         { key: '/dataservice/operations', label: '调用统计' },
       ],
     }] : []),
+    ...(permissions.has('mcp.view') || permissions.has('mcp.token.manage') ? [{
+      key: 'mcp',
+      icon: <ToolOutlined />,
+      label: 'MCP 管理',
+      children: [
+        ...(permissions.has('mcp.view') ? [{ key: '/mcp-management', label: 'MCP Server' }] : []),
+        ...(permissions.has('mcp.token.manage') ? [{ key: '/mcp-management/access-tokens', label: '访问凭证' }] : []),
+        ...(permissions.has('mcp.view') ? [{ key: '/mcp-management/invocations', label: '调用日志' }] : []),
+      ],
+    }] : []),
     ...(runtimeItems.length ? [{ key: 'runtime', icon: <DeploymentUnitOutlined />, label: '运行管理', children: runtimeItems }] : []),
+    ...(permissions.has('task.view') || permissions.has('compute.engine.view') || permissions.has('alert.manage') ? [{
+      key: 'operations', icon: <DashboardOutlined />, label: '运行中心', children: [
+        { key: '/operations', label: '运行工作台' },
+        ...(permissions.has('task.view') || permissions.has('compute.engine.view') ? [{ key: '/operations/alerts', label: '告警中心' }] : []),
+        ...(permissions.has('alert.manage') ? [{ key: '/operations/configuration', label: '告警配置' }] : []),
+      ],
+    }] : []),
     ...(systemItems.length ? [
       { type: 'divider' as const },
       { key: 'system', icon: <SettingOutlined />, label: '系统管理', children: systemItems },
@@ -146,58 +184,77 @@ const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items
 };
 
 const menuGroupKey = (pathname: string): string | undefined => {
+  if (pathname.startsWith('/operations')) return 'operations';
   if (pathname.startsWith('/asset-management')) return 'asset';
   if (pathname.startsWith('/datasource')
     || pathname.startsWith('/file-dataset')
+    || pathname.startsWith('/panorama')
     || pathname.startsWith('/standard/dictionaries')
     || pathname.startsWith('/model')
+    || pathname.startsWith('/metrics')
     || pathname.startsWith('/data-entry')) return 'data';
   if (pathname.startsWith('/task')) return 'task';
   if (pathname.startsWith('/dataservice')) return 'dataservice';
+  if (pathname.startsWith('/mcp-management')) return 'mcp';
   if (pathname.startsWith('/service-engine') || pathname.startsWith('/compute-engine')) return 'runtime';
   if (pathname.startsWith('/system')) return 'system';
   return undefined;
 };
 
-const selectedMenuKey = (pathname: string) => {
+const selectedMenuKey = (pathname: string, taskView: TaskViewConfiguration) => {
+  if (pathname.startsWith('/operations/configuration')) return '/operations/configuration';
+  if (pathname.startsWith('/operations/alerts')) return '/operations/alerts';
+  if (pathname.startsWith('/operations')) return '/operations';
   if (pathname.startsWith('/asset-management/assets')) return '/asset-management/assets';
   if (pathname.startsWith('/asset-management/domains')) return '/asset-management/domains';
   if (pathname.startsWith('/task/masking-rules')) return '/task/masking-rules';
   if (pathname.startsWith('/task/orchestration')) return '/task/orchestration';
-  if (pathname.startsWith('/task')) return '/task';
+  if (pathname.startsWith('/task')) return taskView.id === 'all' ? undefined : taskView.path;
   if (pathname.startsWith('/system/users')) return '/system/users';
   if (pathname.startsWith('/system/roles')) return '/system/roles';
   if (pathname.startsWith('/system/permissions')) return '/system/permissions';
+  if (pathname.startsWith('/system/system-mcp')) return '/system/system-mcp';
   if (pathname.startsWith('/system/configurations')) return '/system/configurations';
   if (pathname.startsWith('/system/model-warehouse-layers')) return '/system/model-warehouse-layers';
   if (pathname.startsWith('/system/ai-models')) return '/system/ai-models';
   if (pathname.startsWith('/system')) return 'system';
   if (pathname.startsWith('/datasource')) return '/datasource';
+  if (pathname.startsWith('/panorama')) return '/panorama';
   if (pathname.startsWith('/file-dataset')) return '/file-dataset';
   if (pathname.startsWith('/standard/dictionaries')) return '/standard/dictionaries';
   if (pathname.startsWith('/model/field-templates')) return '/model/field-templates';
   if (pathname.startsWith('/model')) return '/model';
+  if (pathname.startsWith('/metrics')) return '/metrics';
   if (pathname.startsWith('/data-entry')) return '/data-entry';
   if (pathname.startsWith('/service-engine')) return '/service-engine';
   if (pathname.startsWith('/compute-engine')) return '/compute-engine';
   if (pathname.startsWith('/dataservice/operations')) return '/dataservice/operations';
   if (pathname.startsWith('/dataservice/consumers')) return '/dataservice/consumers';
   if (pathname.startsWith('/dataservice')) return '/dataservice';
+  if (pathname.startsWith('/mcp-management/invocations')) return '/mcp-management/invocations';
+  if (pathname.startsWith('/mcp-management/access-tokens')) return '/mcp-management/access-tokens';
+  if (pathname.startsWith('/mcp-management')) return '/mcp-management';
   return '/';
 };
 
-const breadcrumbItems = (pathname: string): BreadcrumbProps['items'] => {
+const breadcrumbItems = (pathname: string, taskView: TaskViewConfiguration): BreadcrumbProps['items'] => {
+  if (pathname.startsWith('/operations/configuration')) return [{ title: '运行中心' }, { title: '告警配置' }];
+  if (pathname.startsWith('/operations/alerts')) return [{ title: '运行中心' }, { title: '告警中心' }];
+  if (pathname.startsWith('/operations')) return [{ title: '运行中心' }, { title: '运行工作台' }];
   if (pathname.startsWith('/asset-management/assets')) return [{ title: '数据资产' }, { title: '资产管理' }];
   if (pathname.startsWith('/asset-management/domains')) return [{ title: '数据资产' }, { title: '业务领域' }];
   if (pathname.startsWith('/system/users')) return [{ title: '系统管理' }, { title: '用户管理' }];
   if (pathname.startsWith('/system/roles')) return [{ title: '系统管理' }, { title: '角色管理' }];
   if (pathname.startsWith('/system/permissions')) return [{ title: '系统管理' }, { title: '权限管理' }];
+  if (pathname.startsWith('/system/system-mcp')) return [{ title: '系统管理' }, { title: '系统 MCP' }];
   if (pathname.startsWith('/system/configurations')) return [{ title: '系统管理' }, { title: '系统配置' }];
   if (pathname.startsWith('/system/model-warehouse-layers')) return [{ title: '系统管理' }, { title: '数仓分层' }];
   if (pathname.startsWith('/system/ai-models')) return [{ title: '系统管理' }, { title: 'AI 模型' }];
   if (pathname.startsWith('/system')) return [{ title: '系统管理' }];
   if (/^\/datasource\/[^/]+/.test(pathname)) return [{ title: '数据管理' }, { title: <Link to="/datasource">数据源</Link> }, { title: '数据源详情' }];
   if (pathname.startsWith('/datasource')) return [{ title: '数据管理' }, { title: '数据源' }];
+  if (/^\/panorama\/[^/]+/.test(pathname)) return [{ title: '数据管理' }, { title: <Link to="/panorama">全景影像</Link> }, { title: '全景详情' }];
+  if (pathname.startsWith('/panorama')) return [{ title: '数据管理' }, { title: '全景影像' }];
   if (/^\/file-dataset\/[^/]+/.test(pathname)) return [{ title: '数据管理' }, { title: <Link to="/file-dataset">文件数据集</Link> }, { title: '数据集详情' }];
   if (pathname.startsWith('/file-dataset')) return [{ title: '数据管理' }, { title: '文件数据集' }];
   if (/^\/standard\/dictionaries\/[^/]+/.test(pathname)) {
@@ -207,20 +264,22 @@ const breadcrumbItems = (pathname: string): BreadcrumbProps['items'] => {
   if (pathname.startsWith('/model/field-templates')) return [{ title: '数据管理' }, { title: '常用字段模板' }];
   if (/^\/model\/[^/]+/.test(pathname)) return [{ title: '数据管理' }, { title: <Link to="/model">模型列表</Link> }, { title: '模型详情' }];
   if (pathname.startsWith('/model')) return [{ title: '数据管理' }, { title: '模型列表' }];
+  if (pathname.startsWith('/metrics')) return [{ title: '数据管理' }, { title: '指标管理' }];
   if (/^\/data-entry\/[^/]+/.test(pathname)) return [{ title: '数据管理' }, { title: <Link to="/data-entry">数据填报</Link> }, { title: '填报详情' }];
   if (pathname.startsWith('/data-entry')) return [{ title: '数据管理' }, { title: '数据填报' }];
   if (pathname.startsWith('/task/masking-rules')) return [{ title: '任务中心' }, { title: '脱敏规则' }];
   if (pathname.startsWith('/task/orchestration')) return [{ title: '任务中心' }, { title: '任务编排' }];
+  if (taskViews.some(view => view.path === pathname)) return [{ title: '任务中心' }, { title: taskView.label }];
   if (/^\/task\/[^/]+\/online-code$/.test(pathname)) {
-    return [{ title: '任务中心' }, { title: <Link to="/task">任务列表</Link> }, { title: '在线 Java 开发' }];
+    return [{ title: '任务中心' }, { title: <Link to={taskView.path}>{taskView.label}</Link> }, { title: '在线 Java 开发' }];
   }
   if (isTaskDefinitionEditorPath(pathname)) {
-    return [{ title: '任务中心' }, { title: <Link to="/task">任务列表</Link> }, { title: '任务定义' }];
+    return [{ title: '任务中心' }, { title: <Link to={taskView.path}>{taskView.label}</Link> }, { title: '任务定义' }];
   }
   if (/^\/task\/[^/]+/.test(pathname)) {
-    return [{ title: '任务中心' }, { title: <Link to="/task">任务列表</Link> }, { title: '任务详情' }];
+    return [{ title: '任务中心' }, { title: <Link to={taskView.path}>{taskView.label}</Link> }, { title: '任务详情' }];
   }
-  if (pathname.startsWith('/task')) return [{ title: '任务中心' }, { title: '任务列表' }];
+  if (pathname.startsWith('/task')) return [{ title: '任务中心' }, { title: taskView.label }];
   if (/^\/service-engine\/[^/]+/.test(pathname)) {
     return [{ title: '运行管理' }, { title: <Link to="/service-engine">服务引擎</Link> }, { title: '引擎详情' }];
   }
@@ -235,34 +294,45 @@ const breadcrumbItems = (pathname: string): BreadcrumbProps['items'] => {
   if (/^\/dataservice\/[^/]+\/edit$/.test(pathname)) return [{ title: <Link to="/dataservice">数据服务</Link> }, { title: '编辑服务' }];
   if (/^\/dataservice\/[^/]+/.test(pathname)) return [{ title: <Link to="/dataservice">数据服务</Link> }, { title: '服务详情' }];
   if (pathname.startsWith('/dataservice')) return [{ title: '数据服务' }];
+  if (pathname.startsWith('/mcp-management/invocations')) return [{ title: 'MCP 管理' }, { title: '调用日志' }];
+  if (pathname.startsWith('/mcp-management/access-tokens')) return [{ title: 'MCP 管理' }, { title: '访问凭证' }];
+  if (/^\/mcp-management\/[^/]+\/tools\/[^/]+\/edit$/.test(pathname)) return [{ title: <Link to="/mcp-management">MCP 管理</Link> }, { title: 'Tool 定义' }];
+  if (/^\/mcp-management\/[^/]+/.test(pathname)) return [{ title: <Link to="/mcp-management">MCP 管理</Link> }, { title: 'Server 详情' }];
+  if (pathname.startsWith('/mcp-management')) return [{ title: 'MCP 管理' }];
   return [{ title: '工作台' }];
 };
 
 export const AppShell = () => {
   const navigate = useNavigate();
   const location = useLocation();
+  const navigationPath = location.pathname.replace(/\/+$/, '') || '/';
   const [sidebarCollapsed, setSidebarCollapsed] = useState(readSidebarCollapsedPreference);
   const [assistantOpen, setAssistantOpen] = useState(false);
   const [openMenuOverride, setOpenMenuOverride] = useState<{ pathname: string; keys: string[] } | null>(null);
   const currentUserQuery = useCurrentUser();
   const logout = useLogout();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
+  const navigationTask = useTask(permissions.has('task.view') ? taskIdFromPath(navigationPath) : undefined);
+  const taskView = taskViews.find(view => view.path === navigationPath)
+    ?? (navigationTask.isError ? getTaskView('all') : resolveTaskView(new URLSearchParams(location.search).get('taskView'), navigationTask.data?.type));
+  const selectedKey = selectedMenuKey(navigationPath, taskView);
   const canViewConfigurations = permissions.has('system.configuration.view');
   const configurationsQuery = useSystemConfigurations({ page: 0, size: 20, sort: 'sortOrder,configKey' }, canViewConfigurations);
   const platformName = configurationsQuery.data?.content.find((item) => item.configKey === 'platform.name')?.configValue
     ?? 'DataScalpel';
   const platformSubtitle = configurationsQuery.data?.content.find((item) => item.configKey === 'platform.subtitle')?.configValue
     ?? '内网部署 · 模块化单体';
-  const activeMenuGroup = menuGroupKey(location.pathname);
-  const topLevelManagementPage = TOP_LEVEL_MANAGEMENT_PATHS.has(location.pathname);
+  const activeMenuGroup = menuGroupKey(navigationPath);
+  const topLevelManagementPage = TOP_LEVEL_MANAGEMENT_PATHS.has(navigationPath);
   const dashboardPage = location.pathname === '/';
-  const dataServiceEditorPage = isDataServiceEditorPath(location.pathname);
-  const taskDefinitionEditorPage = isTaskDefinitionEditorPath(location.pathname);
-  const editorPage = dataServiceEditorPage || taskDefinitionEditorPage;
+  const dataServiceEditorPage = isDataServiceEditorPath(navigationPath);
+  const taskDefinitionEditorPage = isTaskDefinitionEditorPath(navigationPath);
+  const mcpToolEditorPage = isMcpToolEditorPath(navigationPath);
+  const editorPage = dataServiceEditorPage || taskDefinitionEditorPage || mcpToolEditorPage;
   const businessDetailPage = !topLevelManagementPage
     && !editorPage
-    && location.pathname !== '/task/orchestration'
-    && isBusinessDetailPath(location.pathname);
+    && navigationPath !== '/task/orchestration'
+    && isBusinessDetailPath(navigationPath);
   const contentClassName = [
     'app-content',
     topLevelManagementPage ? 'app-content-management' : '',
@@ -315,7 +385,7 @@ export const AppShell = () => {
         <Menu
           theme="dark"
           mode="inline"
-          selectedKeys={[selectedMenuKey(location.pathname)]}
+          selectedKeys={selectedKey ? [selectedKey] : []}
           openKeys={openMenuKeys}
           items={navigationItems(permissions)}
           onClick={({ key }) => {
@@ -346,9 +416,10 @@ export const AppShell = () => {
                 onClick={toggleSidebar}
               />
             </Tooltip>
-            <Breadcrumb items={breadcrumbItems(location.pathname)} />
+            <Breadcrumb items={breadcrumbItems(navigationPath, taskView)} />
           </div>
           <Space size={12}>
+            <NotificationBell />
             <Tooltip title="打开 AI 助手">
               <Button
                 type="text"

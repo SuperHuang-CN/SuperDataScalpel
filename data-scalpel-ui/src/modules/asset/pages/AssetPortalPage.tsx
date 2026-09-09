@@ -9,6 +9,7 @@ import {
   DatabaseOutlined,
   EnvironmentOutlined,
   FileTextOutlined,
+  CameraOutlined,
   GlobalOutlined,
   ReloadOutlined,
   SafetyCertificateOutlined,
@@ -37,6 +38,7 @@ import './assetPortal.css';
 const assetTypeIcons: Record<AssetType, ReactNode> = {
   DATA_MODEL: <DatabaseOutlined />,
   FILE_DATASET: <FileTextOutlined />,
+  PANORAMA: <CameraOutlined />,
   DATA_SERVICE: <ApiOutlined />,
   DICTIONARY: <BookOutlined />,
 };

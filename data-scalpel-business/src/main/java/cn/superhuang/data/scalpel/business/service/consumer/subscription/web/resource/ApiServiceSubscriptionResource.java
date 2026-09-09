@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.service.consumer.subscription.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.service.consumer.subscription.service.ApiServiceSubscriptionService;
 import cn.superhuang.data.scalpel.business.service.consumer.subscription.web.request.CreateApiServiceSubscriptionRequest;
 import cn.superhuang.data.scalpel.business.service.consumer.subscription.web.response.ApiServiceSubscriptionResponse;
@@ -34,6 +35,7 @@ public class ApiServiceSubscriptionResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 API 服务订阅")
     @GetMapping
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询 API 服务订阅")
@@ -45,6 +47,7 @@ public class ApiServiceSubscriptionResource {
         return service.search(request, consumerId, dataServiceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 API 服务订阅详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询 API 服务订阅详情")
@@ -52,6 +55,7 @@ public class ApiServiceSubscriptionResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建订阅并同步网关授权")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('service.publish')")
@@ -62,6 +66,7 @@ public class ApiServiceSubscriptionResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "重新同步订阅授权")
     @PostMapping("/{id}/actions/sync")
     @PreAuthorize("hasAuthority('service.publish')")
     @Operation(summary = "重新同步订阅授权")
@@ -69,6 +74,7 @@ public class ApiServiceSubscriptionResource {
         return service.sync(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "立即对账订阅授权网关状态")
     @PostMapping("/{id}/actions/reconcile-gateway")
     @PreAuthorize("hasAuthority('service.publish')")
     @Operation(summary = "立即对账订阅授权网关状态")
@@ -76,6 +82,7 @@ public class ApiServiceSubscriptionResource {
         return service.reconcileGateway(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "撤回网关授权并删除订阅")
     @PostMapping("/{id}/actions/revoke")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('service.publish')")

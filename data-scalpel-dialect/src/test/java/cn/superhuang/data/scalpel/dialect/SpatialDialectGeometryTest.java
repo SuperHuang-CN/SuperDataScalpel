@@ -12,6 +12,9 @@ import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.LogicalType;
 import cn.superhuang.data.scalpel.dialect.model.PrimaryKeyMetadata;
 import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
+import cn.superhuang.data.scalpel.dialect.model.TableChangeCheckType;
+import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
+import cn.superhuang.data.scalpel.dialect.model.TableChangeOperationType;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeStrategy;
@@ -265,20 +268,82 @@ class SpatialDialectGeometryTest {
     }
 
     @Test
-    void treatsGeometrySemanticChangesAsMetadataOnly() {
+    void rejectsGeometryDefinitionChangesAfterThePhysicalTableExists() {
         TableDefinition before = definition(POSTGRES_TABLE, GeometryKind.POINT, 4326, true);
         TableDefinition target = definition(POSTGRES_TABLE, GeometryKind.MULTIPOLYGON, 4490, true);
 
-        assertEquals(
-                TableChangeStrategy.METADATA_ONLY,
-                postgres.planTableChange(
-                        before,
-                        target,
-                        metadata(POSTGRES_TABLE, spatialColumn(
+        UnsupportedOperationException exception = assertThrows(
+                UnsupportedOperationException.class,
+                () -> postgres.planTableChange(
+                        before, target, metadata(POSTGRES_TABLE, spatialColumn(
                                 "LINESTRING", 990001, "EPSG", 3857, CoordinateDimension.XY, true
                         ))
-                ).strategy()
+                )
         );
+        assertTrue(exception.getMessage().contains("仅支持修改可空性"));
+    }
+
+    @Test
+    void plansPostGisNullabilityChangesWithoutUnlockingTheGeometryDefinition() {
+        TableDefinition before = definition(POSTGRES_TABLE, GeometryKind.POINT, 4326, true);
+        TableDefinition target = definition(POSTGRES_TABLE, GeometryKind.POINT, 4326, false);
+
+        var plan = postgres.planTableChange(
+                before,
+                target,
+                metadata(POSTGRES_TABLE, spatialColumn(
+                        "POINT", 990001, "EPSG", 4326, CoordinateDimension.XY, true
+                ))
+        );
+
+        assertEquals(TableChangeStrategy.IN_PLACE, plan.strategy());
+        assertTrue(plan.checks().stream().anyMatch(
+                check -> check.type() == TableChangeCheckType.COLUMNS_HAVE_NO_NULLS
+        ));
+        assertEquals(
+                List.of("ALTER TABLE \"public\".\"spatial_asset\" ALTER COLUMN \"shape\" SET NOT NULL"),
+                plan.requireExecutionOption(TableChangeExecutionMode.IN_PLACE).statements()
+        );
+    }
+
+    @Test
+    void plansAPrimaryKeyChangeOnANonGeometryColumnOfAPostGisTable() {
+        var idColumnId = java.util.UUID.randomUUID();
+        var shapeColumnId = java.util.UUID.randomUUID();
+        GeometryTypeDefinition geometry = geometry(GeometryKind.POINT, 4326, CoordinateDimension.XY);
+        TableDefinition before = new TableDefinition(
+                POSTGRES_TABLE,
+                List.of(
+                        new TableColumnDefinition("asset_id", TableColumnType.LONG, null, null, null, false, idColumnId),
+                        new TableColumnDefinition("shape", TableColumnType.GEOMETRY, null, null, null, true, shapeColumnId, geometry)
+                ),
+                List.of()
+        );
+        TableDefinition target = new TableDefinition(before.table(), before.columns(), List.of("asset_id"));
+        TableMetadata actual = new TableMetadata(
+                new TableSummary(POSTGRES_TABLE, "TABLE", null),
+                List.of(
+                        new ColumnMetadata(
+                                "asset_id", 1, Types.BIGINT, "int8", LogicalType.INTEGER,
+                                null, null, null, false, null, false, false, null
+                        ),
+                        spatialColumn("POINT", 990001, "EPSG", 4326, CoordinateDimension.XY, true)
+                ),
+                new PrimaryKeyMetadata(null, List.of()),
+                List.of()
+        );
+
+        var plan = postgres.planTableChange(before, target, actual);
+
+        assertEquals(TableChangeStrategy.IN_PLACE, plan.strategy());
+        assertTrue(plan.operations().stream().anyMatch(
+                operation -> operation.type() == TableChangeOperationType.ADD_PRIMARY_KEY
+        ));
+        assertTrue(plan.checks().stream().anyMatch(
+                check -> check.type() == TableChangeCheckType.COLUMNS_ARE_UNIQUE
+        ));
+        assertTrue(plan.requireExecutionOption(TableChangeExecutionMode.IN_PLACE).statements().stream()
+                .anyMatch(statement -> statement.endsWith("ADD PRIMARY KEY (\"asset_id\")")));
     }
 
     private static TableDefinition definition(

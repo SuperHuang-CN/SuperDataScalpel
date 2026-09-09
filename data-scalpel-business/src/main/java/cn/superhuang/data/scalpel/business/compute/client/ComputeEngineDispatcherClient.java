@@ -55,6 +55,19 @@ public class ComputeEngineDispatcherClient {
                 .retrieve().body(DispatcherExecutionResponse.class);
     }
 
+    public DispatcherExecutionLogResponse executionLog(
+            String baseUrl,
+            String token,
+            UUID executionId,
+            int attempt
+    ) {
+        return client(baseUrl, token).get().uri(builder -> builder
+                        .path("/api/v1/task-executions/{executionId}/logs")
+                        .queryParam("attempt", attempt)
+                        .build(executionId))
+                .retrieve().body(DispatcherExecutionLogResponse.class);
+    }
+
     public DispatcherRuntimeOverviewResponse runtimeOverview(String baseUrl, String token) {
         return client(baseUrl, token).get().uri("/api/v1/dispatcher/runtime-overview")
                 .retrieve().body(DispatcherRuntimeOverviewResponse.class);

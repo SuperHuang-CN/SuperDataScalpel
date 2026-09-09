@@ -150,7 +150,7 @@ JSON 顶层字段是权威值；Header 用于运维观察和未来路由，二�
 }
 ```
 
-强制终止是取消或实时正常停止无法收敛时的人工升级路径。Dispatcher 必须跳过 Runner
+强制终止是取消或实时正常停止无法收敛时的人工升级路径；TaskWorkflow V1 的取消、失败与重启清理也复用该命令直接停止所属批任务子运行。Dispatcher 必须跳过 Runner
 正常退出宽限期并调用 Backend 硬终止能力；该命令仍通过 Outbox 和 Command Topic 传递，
 不增加 HTTP 执行旁路。
 
@@ -285,6 +285,7 @@ EXECUTION_LOST
 - 发送成功后短事务标记 PUBLISHED。
 - 发送成功但更新数据库前崩溃会造成重复投递，由 Dispatcher Inbox 去重。
 - 指数退避有上限；持续失败保留记录并暴露监控，不删除消息。
+- 同一 aggregateId/runId 与 executionId 的 Submit 尚未确认发布时，不领取后续控制命令。Submit 发送失败后，Cancel/ForceTerminate 不得越过它；消息可靠投递重试不等于重试任务执行。
 
 ## 9. Admin Inbox 与事件应用
 

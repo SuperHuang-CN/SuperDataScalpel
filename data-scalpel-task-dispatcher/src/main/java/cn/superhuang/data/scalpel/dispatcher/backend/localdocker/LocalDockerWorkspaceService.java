@@ -71,6 +71,8 @@ public class LocalDockerWorkspaceService {
                     new LaunchArtifactDownload(
                             access.manifestGetUrl(), launch.manifestSha256(), access.maximumManifestBytes()),
                     new LaunchArtifactUpload(access.resultPutUrl(), launch.resultKey()),
+                    access.trialPreviewPutUrl() == null ? null : new LaunchArtifactUpload(
+                            access.trialPreviewPutUrl(), trialPreviewKey(launch)),
                     launch.runnerEvent(),
                     launch.checkpointUriPrefix(),
                     launch.runnerControl(),
@@ -83,6 +85,11 @@ public class LocalDockerWorkspaceService {
         } catch (IOException | RuntimeException exception) {
             throw new BackendException("WORKSPACE_PREPARATION_FAILED", "无法准备 Local Docker 执行工作目录", exception);
         }
+    }
+
+    private static String trialPreviewKey(ExecutionLaunch launch) {
+        return "task-runs/%s/attempts/%d/trial-preview.json".formatted(
+                launch.identity().runId(), launch.identity().attempt());
     }
 
     public boolean readiness() {

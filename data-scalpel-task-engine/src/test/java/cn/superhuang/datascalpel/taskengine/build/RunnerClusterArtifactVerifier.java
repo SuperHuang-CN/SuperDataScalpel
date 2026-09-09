@@ -52,6 +52,11 @@ public final class RunnerClusterArtifactVerifier {
             "org/java_websocket/client/WebSocketClient.class",
             "org/apache/sedona/spark/SedonaContext.class",
             "org/apache/spark/sql/sedona_sql/UDT/GeometryUDT.class",
+            "com/uber/h3core/H3Core.class",
+            "linux-x64/libh3-java.so",
+            "linux-arm64/libh3-java.so",
+            "darwin-x64/libh3-java.dylib",
+            "darwin-arm64/libh3-java.dylib",
             "org/apache/spark/sql/execution/datasources/geoparquet/GeoParquetFileFormat.class",
             "org/geotools/api/referencing/NoSuchAuthorityCodeException.class",
             "org/geotools/referencing/CRS.class",
@@ -252,6 +257,12 @@ public final class RunnerClusterArtifactVerifier {
                 Class.forName("dm.jdbc.driver.DmDriver", true, loader);
                 Class.forName("com.kingbase8.Driver", true, loader);
                 Class.forName("org.opengauss.Driver", true, loader);
+                Class<?> h3 = Class.forName("com.uber.h3core.H3Core", true, loader);
+                Object core = h3.getMethod("newInstance").invoke(null);
+                Object cell = h3.getMethod("latLngToCellAddress", double.class, double.class, int.class).invoke(core, 0d, 0d, 8);
+                if (!(cell instanceof String value) || value.isBlank()) {
+                    throw new IllegalStateException(artifactName + " cannot invoke H3 native runtime");
+                }
                 Class<?> crs = Class.forName(CRS_CLASS, true, loader);
                 Object decoded = crs.getMethod("decode", String.class, boolean.class)
                         .invoke(null, "EPSG:4326", true);
@@ -298,6 +309,7 @@ public final class RunnerClusterArtifactVerifier {
         private static boolean isSpatialRuntimeClass(String name) {
             return name.startsWith("org.apache.spark.sql.execution.datasources.geoparquet.")
                     || name.startsWith("org.apache.sedona.")
+                    || name.startsWith("com.uber.h3core.")
                     || name.startsWith("org.geotools.");
         }
     }

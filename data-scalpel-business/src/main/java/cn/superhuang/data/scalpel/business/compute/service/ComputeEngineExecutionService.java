@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.compute.service;
 import cn.superhuang.data.scalpel.business.compute.client.ComputeEngineDispatcherClient;
 import cn.superhuang.data.scalpel.business.compute.client.DispatcherInfoResponse;
 import cn.superhuang.data.scalpel.business.compute.client.DispatcherExecutionResponse;
+import cn.superhuang.data.scalpel.business.compute.client.DispatcherExecutionLogResponse;
 import cn.superhuang.data.scalpel.business.compute.client.DispatcherRegistrationResponse;
 import cn.superhuang.data.scalpel.business.compute.client.DispatcherRegistrationState;
 import cn.superhuang.data.scalpel.business.compute.domain.ComputeBackendType;
@@ -134,6 +135,24 @@ public class ComputeEngineExecutionService {
             throw new IllegalStateException("Dispatcher 返回了不匹配的执行身份");
         }
         return response;
+    }
+
+    public DispatcherExecutionLogResponse executionLog(UUID engineId, UUID executionId, int attempt) {
+        EngineSnapshot snapshot = Objects.requireNonNull(readTransaction.execute(status -> rawSnapshot(engineId)));
+        try {
+            DispatcherExecutionLogResponse response = dispatcherClient.executionLog(
+                    snapshot.dispatcherBaseUrl(), credentialCipher.decrypt(snapshot.accessTokenCiphertext()),
+                    executionId, attempt);
+            if (response == null || !engineId.equals(response.engineId())
+                    || !executionId.equals(response.executionId()) || attempt != response.attempt()) {
+                throw new IllegalStateException("Dispatcher 返回了不匹配的日志执行身份");
+            }
+            return response;
+        } catch (ResponseStatusException exception) {
+            throw exception;
+        } catch (RuntimeException exception) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Dispatcher 当前无法提供运行日志", exception);
+        }
     }
 
     private EngineSnapshot snapshot(UUID engineId) {

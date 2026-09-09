@@ -1,0 +1,41 @@
+.jdbc-monitor-controls,
+.jdbc-monitor-footer,
+.jdbc-monitor-states {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px 16px;
+}
+
+.jdbc-monitor-controls { margin-bottom: 16px; }
+.jdbc-monitor-states { justify-content: flex-start; color: #64748b; font-size: 12px; margin: 12px 0; }
+.jdbc-monitor-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); border: 1px solid #e2e6f0; border-radius: 12px; overflow: hidden; }
+.jdbc-monitor-metrics > div { display: flex; flex-direction: column; gap: 4px; padding: 14px 16px; border-right: 1px solid #e2e6f0; }
+.jdbc-monitor-metrics > div:last-child { border-right: 0; }
+.jdbc-monitor-metrics span { color: #64748b; font-size: 12px; }
+.jdbc-monitor-metrics strong { color: #1e293b; font-size: 26px; font-variant-numeric: tabular-nums; }
+.jdbc-monitor-metrics small { color: #64748b; font-size: 16px; font-weight: 400; }
+.jdbc-monitor-metrics .jdbc-monitor-risk strong { color: #ad6800; }
+.jdbc-monitor-drawer .jdbc-monitor-sql-preview { margin: 0; font-family: ui-monospace, SFMono-Regular, monospace; font-size: 12px; overflow-wrap: anywhere; }
+.jdbc-monitor-sql-detail { margin: 8px 0; padding: 12px; max-height: 280px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #f8fafc; border-radius: 8px; font-size: 12px; }
+.jdbc-monitor-expanded { overflow-wrap: anywhere; font-size: 12px; color: #475569; }
+.jdbc-monitor-table { min-width: 0; }
+.jdbc-monitor-table .detail-table-result-toolbar { padding-inline: 0; }
+.jdbc-monitor-truncate { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.jdbc-monitor-loading { padding: 48px 0; text-align: center; }
+.jdbc-monitor-loading .ant-spin-container { height: 60px; }
+.service-engine-data-source-panel .jdbc-pool-cell { display: flex; flex-direction: column; gap: 4px; }
+.service-engine-data-source-panel .jdbc-pool-cell-head { display: flex; align-items: center; gap: 12px; min-width: 0; }
+.service-engine-data-source-panel .jdbc-pool-cell .ant-progress { margin: 0; max-width: 76px; min-width: 30px; line-height: 1; }
+.service-engine-data-source-panel .jdbc-pool-cell button { padding: 0; height: auto; text-align: left; align-self: flex-start; }
+.service-engine-data-source-panel .jdbc-pool-cell-hint { color: #64748b; font-size: 12px; font-variant-numeric: tabular-nums; }
+.service-engine-data-source-panel .jdbc-pool-risk { color: #ad6800; }
+.service-engine-data-source-panel .jdbc-monitor-feedback { padding: 0 12px 8px; }
+
+@media (max-width: 640px) {
+  .jdbc-monitor-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .jdbc-monitor-metrics > div { border-bottom: 1px solid #e2e6f0; }
+  .jdbc-monitor-metrics > div:nth-child(2) { border-right: 0; }
+  .jdbc-monitor-metrics > div:nth-child(n + 3) { border-bottom: 0; }
+}

@@ -77,6 +77,7 @@ SERVICE_STARTUP_TIMEOUT_SECONDS="${DATASCALPEL_LOCAL_SERVICE_STARTUP_TIMEOUT_SEC
 ENGINE_CODE="${DATASCALPEL_LOCAL_ENGINE_CODE:-local_engine}"
 ENGINE_MANAGEMENT_TOKEN="${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:-change-me-engine-management-token}"
 SERVICE_ENGINE_CREDENTIAL_KEY="${DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
+MCP_CREDENTIAL_KEY="${DATASCALPEL_MCP_CREDENTIAL_KEY:-ZGF0YXNjYWxwZWwtbWNwLWxvY2FsLWRldi1rZXktdjE=}"
 TASK_ENGINE_TOKEN="${DATASCALPEL_TASK_ENGINE_TOKEN:-change-me-task-engine-token}"
 DISPATCHER_TOKEN="${DATASCALPEL_TASK_DISPATCHER_TOKEN:-change-me-task-dispatcher-token}"
 DISPATCHER_WORK_DIR="${DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY:-$ROOT_DIR/.local/task-dispatcher}"
@@ -187,51 +188,6 @@ echo "正在并行编译后端（Maven 线程：${MAVEN_THREADS}，不执行 pac
   -pl data-scalpel-admin,data-scalpel-service-engine,data-scalpel-task-engine,data-scalpel-task-dispatcher \
   -am compile
 
-runtime_classpath() {
-  local application_module="$1"
-  shift
-  local classpath_file="$ROOT_DIR/$application_module/target/dev-runtime-classpath.txt"
-  local dependency
-  local module
-  local -a entries=()
-  local -a project_modules=("$@")
-
-  echo "正在解析 $application_module 的运行时 classpath…" >&2
-  if ! ./mvnw -q -pl "$application_module" dependency:build-classpath \
-    "$MAVEN_SKIP_TESTS_ARGUMENT" \
-    -DincludeScope=runtime \
-    -Dmdep.regenerateFile=true \
-    -Dmdep.outputFile=target/dev-runtime-classpath.txt >&2; then
-    echo "$application_module 的运行时 classpath 解析失败。" >&2
-    return 1
-  fi
-
-  if [[ ! -s "$classpath_file" ]]; then
-    echo "未生成运行时 classpath：$classpath_file" >&2
-    return 1
-  fi
-
-  for module in "${project_modules[@]}"; do
-    local classes_directory="$ROOT_DIR/$module/target/classes"
-    if [[ ! -d "$classes_directory" ]]; then
-      echo "未找到已编译的模块目录：$classes_directory" >&2
-      return 1
-    fi
-    entries+=("$classes_directory")
-  done
-
-  while IFS= read -r -d ':' dependency; do
-    # 项目模块使用 target/classes；不允许本地 Maven 仓库中可能过期的快照 JAR 抢占它们。
-    if [[ "$dependency" == */cn/superhuang/data-scalpel-*/* ]]; then
-      continue
-    fi
-    entries+=("$dependency")
-  done < <(printf '%s:' "$(<"$classpath_file")")
-
-  local IFS=:
-  printf '%s' "${entries[*]}"
-}
-
 reactor_runtime_classpath() {
   local application_module="$1"
   local marker="__DATASCALPEL_CLASSPATH__${application_module}="
@@ -240,6 +196,9 @@ reactor_runtime_classpath() {
   local classpath
 
   echo "正在从 Maven Reactor 解析 $application_module 的运行时 classpath…" >&2
+  # 必须通过 -am 使用当前 Reactor 的模块 POM 和 target/classes。
+  # 单独 dependency:build-classpath 会读取本地仓库的旧快照 POM，即使替换
+  # 项目 JAR 为 target/classes，也仍会漏掉当前源码新增的传递依赖。
   # exec:exec 会输出带边界标记的 classpath；这里保持单线程，避免并行 Reactor 日志插入标记内容。
   if ! reactor_output="$(./mvnw -q \
     "$MAVEN_SKIP_TESTS_ARGUMENT" \
@@ -304,29 +263,14 @@ TASK_ENGINE_CLASSPATH_FILE="$ROOT_DIR/data-scalpel-task-engine/target/dev-launch
 DISPATCHER_CLASSPATH_FILE="$ROOT_DIR/data-scalpel-task-dispatcher/target/dev-launch-classpath.txt"
 
 echo "正在并行解析各应用的运行时 classpath…"
-start_classpath_job "Admin 运行时 classpath 解析" "$ADMIN_CLASSPATH_FILE" runtime_classpath \
-  data-scalpel-admin \
-  data-scalpel-admin \
-  data-scalpel-business \
-  data-scalpel-web-core \
-  data-scalpel-dialect \
-  data-scalpel-contracts \
-  data-scalpel-filegdb \
-  data-scalpel-filegdb-s3 \
-  data-scalpel-shapefile \
-  data-scalpel-shapefile-s3
-start_classpath_job "Service Engine 运行时 classpath 解析" "$ENGINE_CLASSPATH_FILE" runtime_classpath \
-  data-scalpel-service-engine \
-  data-scalpel-service-engine \
-  data-scalpel-web-core \
-  data-scalpel-dialect \
-  data-scalpel-contracts
+start_classpath_job "Admin 运行时 classpath 解析" "$ADMIN_CLASSPATH_FILE" \
+  reactor_runtime_classpath data-scalpel-admin
+start_classpath_job "Service Engine 运行时 classpath 解析" "$ENGINE_CLASSPATH_FILE" \
+  reactor_runtime_classpath data-scalpel-service-engine
 start_classpath_job "Task Engine 运行时 classpath 解析" "$TASK_ENGINE_CLASSPATH_FILE" \
   reactor_runtime_classpath data-scalpel-task-engine
-start_classpath_job "Task Dispatcher 运行时 classpath 解析" "$DISPATCHER_CLASSPATH_FILE" runtime_classpath \
-  data-scalpel-task-dispatcher \
-  data-scalpel-task-dispatcher \
-  data-scalpel-contracts
+start_classpath_job "Task Dispatcher 运行时 classpath 解析" "$DISPATCHER_CLASSPATH_FILE" \
+  reactor_runtime_classpath data-scalpel-task-dispatcher
 
 load_runtime_classpaths() {
   local file
@@ -408,6 +352,7 @@ load_runtime_classpaths
 
 export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="$ENGINE_MANAGEMENT_TOKEN"
 export DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY="$SERVICE_ENGINE_CREDENTIAL_KEY"
+export DATASCALPEL_MCP_CREDENTIAL_KEY="$MCP_CREDENTIAL_KEY"
 export DATASCALPEL_TASK_ENGINE_TOKEN="$TASK_ENGINE_TOKEN"
 export DATASCALPEL_COMPUTE_ENGINE_CREDENTIAL_KEY="$COMPUTE_ENGINE_CREDENTIAL_KEY"
 export DATASCALPEL_TASK_DISPATCHER_TOKEN="$DISPATCHER_TOKEN"

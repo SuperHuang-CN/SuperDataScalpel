@@ -2,6 +2,11 @@ import {
   CanvasNodeType,
   type CanvasNodeRuntimeDataByType,
 } from '../canvasTypes';
+import { dwellFeatureMode, dwellOutputLabel } from './trackFindDwell/rangeOptions';
+import { usesLinkedWithinGroups } from './spatialSummarizeWithin/groupResult';
+import { boundaryLabels, usesMethodPath, usesOrderedReconstruction, usesSplitExpression } from './trackReconstruct/reconstruction';
+import { usesAreaGeometry } from './trackReconstruct/areaGeometry';
+import { h3SizeSummary } from './spatialBinAggregate/h3';
 
 const summarizeProcessorOperations = (
   operations: Array<{ sourceTableName: string; output: { outputTableName: string | null } }>,
@@ -178,6 +183,194 @@ export const summarizeGeometryRepair = (
     return '请选择需要修复的 Geometry 字段';
   }
   return `${sourceTableName}.${geometryColumnName} → ${outputTableName}.${outputColumnName} · MAKE_VALID`;
+};
+
+export const summarizeGeometryDerive = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.GeometryDerive>,
+) => {
+  const { sourceTableName, outputTableName, derivations } = data.configuration;
+  if (!sourceTableName || !outputTableName || derivations.length === 0) {
+    return '请选择来源表并配置 Geometry 派生字段';
+  }
+  const kinds = [...new Set(derivations.map((item) => item.kind))];
+  return `${sourceTableName} → ${outputTableName} · ${derivations.length} 个派生字段 · ${kinds.join('/')}`;
+};
+
+export const summarizeGeometrySimplify = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.GeometrySimplify>,
+) => {
+  const {
+    sourceTableName,
+    outputTableName,
+    geometryColumnName,
+    outputColumnName,
+    algorithm,
+    toleranceUnit,
+  } = data.configuration;
+  if (!sourceTableName || !outputTableName || !geometryColumnName || !outputColumnName) {
+    return '请选择 Geometry 字段并配置简化规则';
+  }
+  return `${sourceTableName}.${geometryColumnName} → ${outputTableName}.${outputColumnName}`
+    + ` · ${algorithm ?? '待选算法'} · ${toleranceUnit}`;
+};
+
+export const summarizeSpatialNearest = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialNearest>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.candidateTableName
+    || !configuration.outputTableName) {
+    return '请选择来源、候选 Geometry 和输出表';
+  }
+  return `${configuration.sourceTableName} → ${configuration.candidateTableName}`
+    + ` · TOP ${configuration.nearestCount} · ${configuration.distanceMethod ?? '待选方法'}`
+    + ` · ${configuration.matching != null && configuration.matching.semantics !== 'LEGACY_KNN' ? '真实距离' : '旧版 KNN'}`
+    + ` → ${configuration.outputTableName}`;
+};
+
+export const summarizeSpatialSummarizeWithin = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialSummarizeWithin>,
+) => {
+  const configuration = data.configuration;
+  const grid = configuration.regions?.mode === 'PLANAR_GRID';
+  if ((!grid && !configuration.areaTableName) || !configuration.summaryTableName
+    || !configuration.outputTableName) {
+    return '请选择区域表、被汇总要素表和输出表';
+  }
+  return `${grid ? '规则格网' : configuration.areaTableName} × ${configuration.summaryTableName}`
+    + ` · ${configuration.statistics.length} 个统计项`
+    + ` · 分摊 ${configuration.statistics.filter((item) => item.valueTreatment === 'APPORTION_TOTAL').length}`
+    + ` / 加权 ${configuration.statistics.filter((item) => item.weighting === 'INTERSECTION_FRACTION').length}`
+    + `${configuration.groupSummary ? usesLinkedWithinGroups(configuration) ? ' · 关联双表' : ' · 扁平分组' : ''}`
+    + `${configuration.temporalSlicing ? ' · 时间切片' : ''}`
+    + ` → ${configuration.outputTableName}`
+    + (usesLinkedWithinGroups(configuration) ? ` / ${configuration.groupResult?.outputTableName || '待配置组表'}` : '');
+};
+
+export const summarizeSpatialOverlay = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialOverlay>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.leftTableName || !configuration.rightTableName
+    || !configuration.outputTableName) {
+    return '请选择左右图层和输出表';
+  }
+  const labels = { INTERSECTION: '相交', ERASE: '擦除', UNION: '联合', IDENTITY: '标识', SYMMETRICAL_DIFFERENCE: '对称差' } as const;
+  return `${configuration.leftTableName} × ${configuration.rightTableName}`
+    + ` · ${configuration.operation ? labels[configuration.operation] : '待选方式'}`
+    + ` · ${configuration.outputColumns.filter((item) => item.included).length} 个属性字段`
+    + ` → ${configuration.outputTableName}`;
+};
+
+export const summarizeTrackReconstruct = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TrackReconstruct>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择轨迹事件表并设置输出表';
+  }
+  const boundaryCount = [
+    configuration.boundaries.maximumTimeGap,
+    configuration.boundaries.maximumDistanceGap,
+    configuration.boundaries.fixedTimeBoundary,
+  ].filter((value) => value != null).length;
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${configuration.trackIdColumns.length} 个轨迹标识`
+    + (usesAreaGeometry(configuration.reconstruction) ? ' · 面轨迹'
+      : usesMethodPath(configuration.reconstruction) ? ' · 多部件路径' : '')
+    + (usesAreaGeometry(configuration.reconstruction) && configuration.reconstruction?.areaGeometry?.bufferMode === 'EXPRESSION'
+      ? ` · ${configuration.reconstruction.areaGeometry.windowBindings?.length ?? 0} 个缓冲窗口` : '')
+    + ` · ${boundaryCount === 0 ? '不拆分' : `${boundaryCount} 项边界`}`
+    + (usesOrderedReconstruction(configuration.reconstruction)
+      ? ` · ${boundaryLabels[configuration.reconstruction?.splitBoundaryOption ?? 'GAP']}${usesSplitExpression(configuration.reconstruction) ? ' · 表达式拆分' : ''}` : ' · 旧版')
+    + ` · ${configuration.summaryStatistics.length} 项汇总`;
+};
+
+export const summarizeTrackMotionStatistics = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TrackMotionStatistics>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择轨迹事件表并设置输出表';
+  }
+  const kinds = [...new Set(configuration.metrics.map((metric) => metric.kind))];
+  if (configuration.motionSemantics === 'OBSERVATION_WINDOW') {
+    return `${configuration.sourceTableName} → ${configuration.outputTableName} · 窗口 ${configuration.windowOptions?.observationCount ?? '待配置'} 个观测 · ${configuration.windowOptions?.statistics.length ?? 0} 项指标`;
+  }
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · 旧版偏移 ${configuration.historyPoints} 点 · ${kinds.join('/') || '待配置指标'}`;
+};
+
+export const summarizeTrackFindDwell = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TrackFindDwell>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择轨迹事件表并设置驻留输出';
+  }
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${dwellOutputLabel(configuration)}`
+    + (configuration.dwellSemantics === 'REFERENCE_CENTER' && dwellFeatureMode(configuration.rangeOptions?.resultMode)
+      ? ' · 保留原字段并标记' : ` · ${configuration.summaryStatistics.length} 项汇总`);
+};
+
+export const summarizeTrackDetectIncidents = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TrackDetectIncidents>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择轨迹事件表并设置事件输出';
+  }
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ((configuration.conditionWindows?.length ?? 0) > 0 ? ` · ${configuration.conditionWindows?.length} 个窗口指标` : '')
+    + ` · ${configuration.resultMode === 'ALL_EVENTS' ? '全部并标记' : '仅事件'}`
+    + ` · ${configuration.endCondition ? '含结束条件'
+      : configuration.incidentSemantics === 'CONDITION_LIFECYCLE' ? '条件不成立即结束' : '旧版：片段末结束'}`;
+};
+
+export const summarizeSpatialBinAggregate = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialBinAggregate>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择点表并设置格网输出';
+  }
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${configuration.binShape === 'H3' ? h3SizeSummary(configuration) : configuration.binShape === 'HEXAGON' ? '六边形' : '方格'}`
+    + `${configuration.binShape === 'HEXAGON'
+      ? configuration.binSizeSemantics === 'HEXAGON_FLAT_TO_FLAT' ? '（对边距离）' : '（旧版边长）' : ''}`
+    + `${configuration.binShape !== 'H3' && configuration.planarGrid ? configuration.planarGrid.extent?.mode === 'EXPLICIT_BOUNDS' ? ' · 业务范围' : ' · 指定原点' : ''}`
+    + ` · ${configuration.statistics.length} 个统计项`
+    + `${configuration.groupSummary ? ' · 分组' : ''}`
+    + `${configuration.temporalSlicing ? ' · 时间切片' : ''}`;
+};
+
+export const summarizeSpatialPointCluster = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialPointCluster>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择点表并设置聚类输出';
+  }
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${configuration.parameters.algorithm}`
+    + ` · 最少 ${configuration.parameters.minimumFeatures} 个要素`
+    + (configuration.parameters.algorithm === 'HDBSCAN' ? configuration.hdbscan ? ' · 4 项诊断' : ' · 诊断待配置' : '')
+    + (configuration.parameters.algorithm === 'DBSCAN' && configuration.dbscan?.mode === 'LINEAR' ? ' · Linear 时空' : '');
+};
+
+export const summarizeSpatialCenterDispersion = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialCenterDispersion>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || configuration.resultMode !== 'ANALYSIS_TABLES' && !configuration.outputTableName) {
+    return '请选择来源并设置中心与离散输出';
+  }
+  return `${configuration.sourceTableName} → ${configuration.resultMode === 'ANALYSIS_TABLES' ? `${configuration.analyses.length} 张独立结果表` : configuration.outputTableName}`
+    + ` · ${configuration.analyses.length} 个分析项`
+    + ` · ${configuration.groupByColumns.length > 0
+      ? `${configuration.groupByColumns.length} 个分组字段` : '全局统计'}`
+    + `${configuration.weightColumnName ? ' · 加权' : ''}`;
 };
 
 export const summarizeGeometryBuffer = (

@@ -2,6 +2,7 @@ import type { CanvasDefinition, CanvasTableSchema } from '../canvas/canvasTypes'
 import type { DataModelStatus, PhysicalTableMode } from '../../model';
 
 export type TaskType =
+  | 'WORKFLOW'
   | 'LOCAL_SQL'
   | 'SPARK_CANVAS'
   | 'SPARK_STREAMING_CANVAS'
@@ -25,7 +26,7 @@ export type TaskRunStatus =
   | 'CANCELLED'
   | 'SKIPPED';
 
-export type TaskRunTriggerType = 'MANUAL' | 'SCHEDULED';
+export type TaskRunTriggerType = 'MANUAL' | 'SCHEDULED' | 'WORKFLOW';
 
 export type TaskRunExecutionMode = 'REAL' | 'SIMULATED' | 'TRIAL';
 
@@ -394,6 +395,10 @@ export interface SparkJarTrialPreview {
 export interface SparkJarTrialPreviewResponse {
   runId: string;
   status: TaskRunStatus;
+  source: 'NONE' | 'RUNNING_SNAPSHOT' | 'FINAL_RESULT';
+  revision: number | null;
+  capturedAt: string | null;
+  finalResult: boolean;
   preview: SparkJarTrialPreview | null;
 }
 
@@ -452,6 +457,8 @@ export interface LocalSqlLineageWarning {
 }
 
 export interface TaskRun {
+  parentRunId?: string | null;
+  workflowNodeId?: string | null;
   id: string;
   taskId: string;
   scheduleId: string | null;
@@ -491,6 +498,41 @@ export interface TaskRun {
   executionError: TaskRunExecutionError | null;
   createdAt: string;
   updatedAt: string;
+}
+
+export type TaskRunArtifactKind = 'result' | 'log';
+
+export type TaskRunArtifactAvailability = 'AVAILABLE' | 'NOT_GENERATED' | 'SIZE_UNAVAILABLE';
+
+export interface TaskRunArtifactMetadata {
+  kind: TaskRunArtifactKind;
+  fileName: string;
+  availability: TaskRunArtifactAvailability;
+  sizeBytes: number | null;
+  previewAvailable: boolean;
+}
+
+export interface TaskRunArtifacts {
+  runId: string;
+  result: TaskRunArtifactMetadata;
+  log: TaskRunArtifactMetadata;
+}
+
+export type TaskRunLogStatus = 'WAITING' | 'LIVE' | 'ARCHIVING' | 'FINAL' | 'UNAVAILABLE';
+export type TaskRunLogSource = 'NONE' | 'DISPATCHER' | 'ARTIFACT';
+
+export interface TaskRunLog {
+  runId: string;
+  status: TaskRunLogStatus;
+  source: TaskRunLogSource;
+  content: string | null;
+  collectedAt: string;
+  windowSizeBytes: number | null;
+  truncated: boolean;
+  message: string | null;
+  finalSizeBytes: number | null;
+  finalPreviewAvailable: boolean;
+  finalDownloadAvailable: boolean;
 }
 
 export type TaskRunLineageStatus =
@@ -662,6 +704,7 @@ export interface TaskFilters {
 }
 
 export const taskTypeLabels: Record<TaskType, string> = {
+  WORKFLOW: '工作流',
   LOCAL_SQL: '本地 SQL',
   SPARK_CANVAS: 'Spark 编排',
   SPARK_STREAMING_CANVAS: 'Spark 实时编排',
@@ -671,6 +714,7 @@ export const taskTypeLabels: Record<TaskType, string> = {
 };
 
 export const taskTypeColors: Record<TaskType, string> = {
+  WORKFLOW: 'geekblue',
   LOCAL_SQL: 'blue',
   SPARK_CANVAS: 'purple',
   SPARK_STREAMING_CANVAS: 'magenta',
@@ -718,6 +762,7 @@ export const taskRunStatusColors: Record<TaskRunStatus, string> = {
 };
 
 export const taskRunTriggerTypeLabels: Record<TaskRunTriggerType, string> = {
+  WORKFLOW: '工作流',
   MANUAL: '手动',
   SCHEDULED: '定时',
 };

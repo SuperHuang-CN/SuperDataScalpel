@@ -17,6 +17,10 @@ import jakarta.validation.constraints.Size;
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Text.class, name = "TEXT"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Json.class, name = "JSON"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.JsonLines.class, name = "JSON_LINES"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.GeoJson.class, name = "GEOJSON"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.GeoJsonLines.class, name = "GEOJSONL"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.GeoParquet.class, name = "GEOPARQUET"),
+        @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.GeoPackage.class, name = "GPKG"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Spreadsheet.class, name = "SPREADSHEET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Parquet.class, name = "PARQUET"),
         @JsonSubTypes.Type(value = FileDatasetParsingOptionsRequest.Avro.class, name = "AVRO"),
@@ -28,6 +32,10 @@ public sealed interface FileDatasetParsingOptionsRequest permits
         FileDatasetParsingOptionsRequest.Text,
         FileDatasetParsingOptionsRequest.Json,
         FileDatasetParsingOptionsRequest.JsonLines,
+        FileDatasetParsingOptionsRequest.GeoJson,
+        FileDatasetParsingOptionsRequest.GeoJsonLines,
+        FileDatasetParsingOptionsRequest.GeoParquet,
+        FileDatasetParsingOptionsRequest.GeoPackage,
         FileDatasetParsingOptionsRequest.Spreadsheet,
         FileDatasetParsingOptionsRequest.Parquet,
         FileDatasetParsingOptionsRequest.Avro,
@@ -77,6 +85,38 @@ public sealed interface FileDatasetParsingOptionsRequest permits
         @Override
         public FileDatasetParsingOptionsKind kind() {
             return FileDatasetParsingOptionsKind.JSON_LINES;
+        }
+    }
+
+    record GeoJson(
+            @NotNull @Min(1) Integer epsgCode
+    ) implements FileDatasetParsingOptionsRequest {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GEOJSON;
+        }
+    }
+
+    record GeoJsonLines(
+            @NotNull @Min(1) Integer epsgCode
+    ) implements FileDatasetParsingOptionsRequest {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GEOJSONL;
+        }
+    }
+
+    record GeoParquet() implements FileDatasetParsingOptionsRequest {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GEOPARQUET;
+        }
+    }
+
+    record GeoPackage() implements FileDatasetParsingOptionsRequest {
+        @Override
+        public FileDatasetParsingOptionsKind kind() {
+            return FileDatasetParsingOptionsKind.GPKG;
         }
     }
 

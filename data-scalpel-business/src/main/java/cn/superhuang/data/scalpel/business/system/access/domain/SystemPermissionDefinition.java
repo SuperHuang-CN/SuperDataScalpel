@@ -2,6 +2,8 @@ package cn.superhuang.data.scalpel.business.system.access.domain;
 
 /** The code-declared, stable permission catalogue. It is synchronized to the database at startup. */
 public enum SystemPermissionDefinition {
+    ALERT_MANAGE("alert.manage", "运行中心", "配置告警", "管理告警规则、通知渠道与投递", 680),
+    ALERT_HANDLE("alert.handle", "运行中心", "处理告警", "确认、关闭和静默来源权限范围内的告警", 681),
 
     SYSTEM_USER_VIEW("system.user.view", "系统管理", "查看用户", "查看系统用户及其角色", 10),
     SYSTEM_USER_MANAGE("system.user.manage", "系统管理", "管理用户", "新增、修改、重置密码和删除系统用户", 20),
@@ -32,6 +34,10 @@ public enum SystemPermissionDefinition {
     DATA_SOURCE_DELETE("datasource.delete", "数据源管理", "删除数据源", "删除数据源连接", 230),
     DATA_SOURCE_TEST("datasource.test", "数据源管理", "测试数据源", "测试数据源连接", 240),
     DATA_SOURCE_METADATA("datasource.metadata", "数据源管理", "读取数据源元数据", "读取库表、字段和数据预览", 250),
+    PANORAMA_VIEW("panorama.view", "全景影像", "查看全景", "查看全景、地图和下载原图", 291),
+    PANORAMA_CREATE("panorama.create", "全景影像", "上传全景", "上传全景成品", 292),
+    PANORAMA_UPDATE("panorama.update", "全景影像", "修改全景", "修改资料、替换、重试和放弃候选", 293),
+    PANORAMA_DELETE("panorama.delete", "全景影像", "删除全景", "删除全景及其文件", 294),
     FILE_DATASET_VIEW("filedataset.view", "文件数据集", "查看文件数据集", "查询文件数据集及下载原始文件", 260),
     FILE_DATASET_CREATE("filedataset.create", "文件数据集", "新增文件数据集", "上传并新增文件数据集", 270),
     FILE_DATASET_UPDATE("filedataset.update", "文件数据集", "修改文件数据集", "修改信息、解析参数或替换内容", 280),
@@ -50,6 +56,9 @@ public enum SystemPermissionDefinition {
             "新增、修改、导入、启停和删除业务码表",
             296
     ),
+    METRIC_VIEW("metric.view", "指标管理", "查看指标", "查看业务口径、版本和资源关联", 341),
+    METRIC_MANAGE("metric.manage", "指标管理", "管理指标", "登记指标、编辑草稿和维护结果绑定", 343),
+    METRIC_PUBLISH("metric.publish", "指标管理", "发布指标", "发布和停用指标口径", 345),
     MODEL_VIEW("model.view", "模型管理", "查看模型", "查询模型、字段定义和常用字段模板", 300),
     MODEL_CREATE("model.create", "模型管理", "新增模型", "新增模型元数据", 310),
     MODEL_UPDATE("model.update", "模型管理", "修改模型", "修改模型元数据和字段定义，并维护常用字段模板", 320),
@@ -80,7 +89,16 @@ public enum SystemPermissionDefinition {
     SERVICE_CREATE("service.create", "数据服务", "新增数据服务", "新增标准数据服务", 520),
     SERVICE_UPDATE("service.update", "数据服务", "修改数据服务", "修改未发布或已下线的数据服务", 530),
     SERVICE_DELETE("service.delete", "数据服务", "删除数据服务", "删除已下线的数据服务", 540),
-    SERVICE_PUBLISH("service.publish", "数据服务", "发布数据服务", "发布和下线数据服务", 550);
+    SERVICE_PUBLISH("service.publish", "数据服务", "发布数据服务", "发布和下线数据服务", 550),
+    MCP_VIEW("mcp.view", "MCP 管理", "查看 MCP", "查看 MCP Server、Tool、发布版本与调用日志", 600),
+    MCP_CREATE("mcp.create", "MCP 管理", "新增 MCP", "新增 MCP Server", 610),
+    MCP_UPDATE("mcp.update", "MCP 管理", "修改 MCP", "修改 MCP Server 和 Tool 草稿", 620),
+    MCP_EXECUTE("mcp.execute", "MCP 管理", "调试 MCP Tool", "执行未发布的 Groovy Tool 草稿", 630),
+    MCP_PUBLISH("mcp.publish", "MCP 管理", "发布 MCP", "发布、启用和停用 MCP Server", 640),
+    MCP_DELETE("mcp.delete", "MCP 管理", "删除 MCP", "删除从未发布的 MCP Server 和 Tool", 650),
+    SYSTEM_MCP_VIEW("system.mcp.view", "查看系统 MCP", "系统管理", "查看系统 MCP 配置与审计", 670),
+    SYSTEM_MCP_UPDATE("system.mcp.update", "管理系统 MCP", "系统管理", "修改系统 MCP 配置与令牌", 671),
+    MCP_TOKEN_MANAGE("mcp.token.manage", "MCP 管理", "管理 MCP 凭证", "创建、查看、轮换访问凭证并管理 Server 授权", 660);
 
     private final String code;
     private final String module;

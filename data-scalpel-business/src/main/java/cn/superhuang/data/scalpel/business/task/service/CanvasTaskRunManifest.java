@@ -42,7 +42,7 @@ public record CanvasTaskRunManifest(
         SparkStreamingJarExecutionPayload streamingSparkJarJob,
         CanvasTrialSpec canvasTrial
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 23;
+    public static final int CURRENT_MANIFEST_VERSION = 27;
 
     public CanvasTaskRunManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);
@@ -391,6 +391,10 @@ public record CanvasTaskRunManifest(
             @JsonSubTypes.Type(value = RuntimeFileParsingOptions.Text.class, name = "TEXT"),
             @JsonSubTypes.Type(value = RuntimeFileParsingOptions.Json.class, name = "JSON"),
             @JsonSubTypes.Type(value = RuntimeFileParsingOptions.JsonLines.class, name = "JSON_LINES"),
+            @JsonSubTypes.Type(value = RuntimeFileParsingOptions.GeoJson.class, name = "GEOJSON"),
+            @JsonSubTypes.Type(value = RuntimeFileParsingOptions.GeoJsonLines.class, name = "GEOJSONL"),
+            @JsonSubTypes.Type(value = RuntimeFileParsingOptions.GeoParquet.class, name = "GEOPARQUET"),
+            @JsonSubTypes.Type(value = RuntimeFileParsingOptions.GeoPackage.class, name = "GPKG"),
             @JsonSubTypes.Type(value = RuntimeFileParsingOptions.Spreadsheet.class, name = "SPREADSHEET"),
             @JsonSubTypes.Type(value = RuntimeFileParsingOptions.Parquet.class, name = "PARQUET"),
             @JsonSubTypes.Type(value = RuntimeFileParsingOptions.Avro.class, name = "AVRO"),
@@ -402,6 +406,10 @@ public record CanvasTaskRunManifest(
             RuntimeFileParsingOptions.Text,
             RuntimeFileParsingOptions.Json,
             RuntimeFileParsingOptions.JsonLines,
+            RuntimeFileParsingOptions.GeoJson,
+            RuntimeFileParsingOptions.GeoJsonLines,
+            RuntimeFileParsingOptions.GeoParquet,
+            RuntimeFileParsingOptions.GeoPackage,
             RuntimeFileParsingOptions.Spreadsheet,
             RuntimeFileParsingOptions.Parquet,
             RuntimeFileParsingOptions.Avro,
@@ -425,6 +433,18 @@ public record CanvasTaskRunManifest(
         }
 
         record JsonLines(String charset, FileRecordDelimiter recordDelimiter) implements RuntimeFileParsingOptions {
+        }
+
+        record GeoJson(int epsgCode) implements RuntimeFileParsingOptions {
+        }
+
+        record GeoJsonLines(int epsgCode) implements RuntimeFileParsingOptions {
+        }
+
+        record GeoParquet() implements RuntimeFileParsingOptions {
+        }
+
+        record GeoPackage() implements RuntimeFileParsingOptions {
         }
 
         record Spreadsheet(int headerRowIndex, int dataStartRowIndex) implements RuntimeFileParsingOptions {

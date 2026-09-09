@@ -7,6 +7,8 @@ package cn.superhuang.data.scalpel.business.system.configuration.domain;
  * values are never overwritten.</p>
  */
 public enum SystemConfigurationDefinition {
+    PANORAMA_MAP("panorama.map", "全景地图设置", "{\"url\":\"\",\"attribution\":\"\",\"maxZoom\":18}",
+            SystemConfigurationValueType.STRING, "全景拍摄点的标准 XYZ 栅格底图；未配置时不请求底图。", 150),
     PLATFORM_NAME(
             "platform.name",
             "平台名称",
@@ -186,6 +188,7 @@ public enum SystemConfigurationDefinition {
     }
 
     public String normalizeValue(String rawValue) {
+        if (this == PANORAMA_MAP) return PanoramaMapConfiguration.normalize(rawValue);
         String normalized = valueType.normalize(rawValue);
         if (minimumValue != null && maximumValue != null) {
             int value = Integer.parseInt(normalized);

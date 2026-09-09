@@ -1,5 +1,14 @@
 package cn.superhuang.data.scalpel.business.task.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
+import cn.superhuang.data.scalpel.business.task.web.request.UpdateWorkflowTaskDefinitionRequest;
+
+import cn.superhuang.data.scalpel.business.task.web.response.WorkflowDefinitionValidationResponse;
+
+import cn.superhuang.data.scalpel.business.task.web.response.WorkflowTaskDefinitionResponse;
+
+import cn.superhuang.data.scalpel.business.task.service.WorkflowTaskDefinitionService;
+
 import cn.superhuang.data.scalpel.business.task.service.DataTaskService;
 import cn.superhuang.data.scalpel.business.task.service.CanvasTaskDefinitionService;
 import cn.superhuang.data.scalpel.business.task.service.TaskStreamingService;
@@ -69,6 +78,7 @@ import java.util.UUID;
 @Tag(name = "任务管理")
 public class DataTaskResource {
 
+    private final WorkflowTaskDefinitionService workflowDefinitions;
     private final DataTaskService service;
     private final CanvasTaskDefinitionService canvasDefinitionService;
     private final TaskStreamingService streamingService;
@@ -81,6 +91,7 @@ public class DataTaskResource {
     private final TaskRunService taskRunService;
 
     public DataTaskResource(
+            WorkflowTaskDefinitionService workflowDefinitions,
             DataTaskService service,
             CanvasTaskDefinitionService canvasDefinitionService,
             TaskStreamingService streamingService,
@@ -92,6 +103,7 @@ public class DataTaskResource {
             SparkJarTrialRunService sparkJarTrialRunService,
             TaskRunService taskRunService
     ) {
+        this.workflowDefinitions = workflowDefinitions;
         this.service = service;
         this.canvasDefinitionService = canvasDefinitionService;
         this.streamingService = streamingService;
@@ -104,6 +116,7 @@ public class DataTaskResource {
         this.taskRunService = taskRunService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询任务")
     @GetMapping
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询任务")
@@ -111,6 +124,7 @@ public class DataTaskResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询任务摘要")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询任务摘要")
@@ -118,6 +132,7 @@ public class DataTaskResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询本地 SQL 任务定义")
     @GetMapping("/{id}/definition")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询本地 SQL 任务定义")
@@ -125,6 +140,7 @@ public class DataTaskResource {
         return service.getDefinition(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 Spark Canvas 任务定义")
     @GetMapping("/{id}/canvas-definition")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询 Spark Canvas 任务定义")
@@ -132,6 +148,7 @@ public class DataTaskResource {
         return canvasDefinitionService.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "使用真实数据试运行 Canvas 到指定节点")
     @PostMapping("/{id}/canvas-definition/actions/trial-run")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAuthority('task.execute')")
@@ -143,6 +160,7 @@ public class DataTaskResource {
         return taskRunService.submitCanvasTrial(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 Spark 模型质检任务定义")
     @GetMapping("/{id}/model-quality-definition")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询 Spark 模型质检任务定义")
@@ -150,6 +168,7 @@ public class DataTaskResource {
         return modelQualityTaskDefinitionService.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 Spark JAR 任务定义")
     @GetMapping("/{id}/spark-jar-definition")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询 Spark JAR 任务定义")
@@ -157,6 +176,7 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 Spark JAR 在线 Java 源码")
     @GetMapping("/{id}/spark-jar-online-source")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询 Spark JAR 在线 Java 源码")
@@ -164,6 +184,7 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.getOnlineSource(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "保存 Spark JAR 在线 Java 源码草稿")
     @PostMapping("/{id}/spark-jar-online-source/actions/save")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "保存 Spark JAR 在线 Java 源码草稿")
@@ -172,6 +193,7 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.saveOnlineSource(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "编译并应用 Spark JAR 在线 Java 源码")
     @PostMapping("/{id}/spark-jar-online-source/actions/compile")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "编译并应用 Spark JAR 在线 Java 源码")
@@ -180,6 +202,7 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.compileOnlineSource(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "使用真实数据试运行 Spark JAR 在线 Java 源码")
     @PostMapping("/{id}/spark-jar-online-source/actions/trial-run")
     @PreAuthorize("hasAuthority('task.update') and hasAuthority('task.execute')")
     @Operation(summary = "使用真实数据试运行 Spark JAR 在线 Java 源码")
@@ -190,6 +213,7 @@ public class DataTaskResource {
                 ? HttpStatus.ACCEPTED : HttpStatus.OK).body(response);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "下载 Spark JAR Maven 初始化工程")
     @GetMapping("/{id}/spark-jar-template")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "下载 Spark JAR Maven 初始化工程")
@@ -201,6 +225,7 @@ public class DataTaskResource {
                 .body(sparkJarTaskDefinitionService.template(id));
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询当前 Spark JAR 本地开发包")
     @GetMapping("/{id}/spark-jar-development-kit")
     @PreAuthorize("hasAuthority('task.update') and hasAuthority('model.view') and hasAuthority('datasource.metadata')")
     @Operation(summary = "查询当前 Spark JAR 本地开发包")
@@ -208,6 +233,7 @@ public class DataTaskResource {
         return sparkJarDevelopmentKitService.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "生成或重新生成 Spark JAR 本地开发包")
     @PostMapping("/{id}/spark-jar-development-kit/actions/generate")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAuthority('task.update') and hasAuthority('model.view') and hasAuthority('datasource.metadata')")
@@ -217,6 +243,7 @@ public class DataTaskResource {
         return sparkJarDevelopmentKitService.generate(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "下载当前 Spark JAR 本地开发包")
     @GetMapping("/{id}/spark-jar-development-kit/artifact")
     @PreAuthorize("hasAuthority('task.update') and hasAuthority('model.view') and hasAuthority('datasource.metadata')")
     @Operation(summary = "下载当前 Spark JAR 本地开发包")
@@ -234,6 +261,7 @@ public class DataTaskResource {
                 .body(body);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询当前保存任务定义引用的模型")
     @GetMapping("/{id}/model-relations")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询当前保存任务定义引用的模型")
@@ -241,6 +269,7 @@ public class DataTaskResource {
         return taskModelRelationQueryService.getTaskModelRelations(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询任务当前表级血缘")
     @GetMapping("/{id}/lineage/table")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询任务当前表级血缘")
@@ -251,6 +280,7 @@ public class DataTaskResource {
         return taskLineageQueryService.table(id, flowKey);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询任务当前字段级血缘")
     @GetMapping("/{id}/lineage/fields")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询任务当前字段级血缘")
@@ -262,6 +292,7 @@ public class DataTaskResource {
         return taskLineageQueryService.fields(id, flowKey, outputFieldKey);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "批量查询任务当前输出链路的字段级血缘")
     @PostMapping("/{id}/lineage/actions/query-fields")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "批量查询任务当前输出链路的字段级血缘")
@@ -272,6 +303,7 @@ public class DataTaskResource {
         return taskLineageQueryService.fieldLines(id, request.flowKey(), request.outputFieldKeys());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询实时任务配置")
     @GetMapping("/{id}/streaming-configuration")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询实时任务配置")
@@ -279,6 +311,7 @@ public class DataTaskResource {
         return streamingService.getConfiguration(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询实时任务运行状态")
     @GetMapping("/{id}/streaming-status")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询实时任务运行状态")
@@ -286,6 +319,7 @@ public class DataTaskResource {
         return streamingService.status(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建任务")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('task.create')")
@@ -294,6 +328,7 @@ public class DataTaskResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改任务基本信息")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "修改任务基本信息")
@@ -301,6 +336,7 @@ public class DataTaskResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "整体保存本地 SQL 任务定义")
     @PostMapping("/{id}/actions/update-definition")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "整体保存本地 SQL 任务定义")
@@ -311,6 +347,7 @@ public class DataTaskResource {
         return service.updateDefinition(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "整体保存 Spark Canvas 任务定义")
     @PostMapping("/{id}/actions/update-canvas-definition")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "整体保存 Spark Canvas 任务定义")
@@ -321,6 +358,7 @@ public class DataTaskResource {
         return canvasDefinitionService.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "保存 Spark 模型质检任务定义")
     @PostMapping("/{id}/actions/update-model-quality-definition")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "保存 Spark 模型质检任务定义")
@@ -331,6 +369,7 @@ public class DataTaskResource {
         return modelQualityTaskDefinitionService.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "保存 Spark JAR 任务定义")
     @PostMapping("/{id}/actions/update-spark-jar-definition")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "保存 Spark JAR 任务定义")
@@ -341,6 +380,7 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "上传或覆盖 Spark JAR")
     @PostMapping(value = "/{id}/actions/upload-spark-jar", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "上传或覆盖 Spark JAR")
@@ -351,6 +391,7 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.upload(id, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改实时任务配置")
     @PostMapping("/{id}/actions/update-streaming-configuration")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "修改实时任务配置")
@@ -361,6 +402,7 @@ public class DataTaskResource {
         return streamingService.updateConfiguration(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "启动或恢复实时任务")
     @PostMapping("/{id}/actions/start")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAuthority('task.execute')")
@@ -372,6 +414,7 @@ public class DataTaskResource {
         return streamingService.start(id, request == null ? null : request.checkpointMode());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "正常停止实时任务")
     @PostMapping("/{id}/actions/stop")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAuthority('task.execute')")
@@ -380,6 +423,7 @@ public class DataTaskResource {
         return streamingService.stop(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "校验本地 SQL 任务定义")
     @PostMapping("/{id}/actions/validate-definition")
     @PreAuthorize("hasAuthority('task.publish')")
     @Operation(summary = "校验本地 SQL 任务定义")
@@ -387,6 +431,7 @@ public class DataTaskResource {
         return service.validateDefinition(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "发布任务")
     @PostMapping("/{id}/actions/publish")
     @PreAuthorize("hasAuthority('task.publish')")
     @Operation(summary = "发布任务")
@@ -394,6 +439,7 @@ public class DataTaskResource {
         return service.publish(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用任务")
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('task.publish')")
     @Operation(summary = "停用任务")
@@ -401,6 +447,7 @@ public class DataTaskResource {
         return service.disable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "重新启用任务")
     @PostMapping("/{id}/actions/enable")
     @PreAuthorize("hasAuthority('task.publish')")
     @Operation(summary = "重新启用任务")
@@ -408,6 +455,7 @@ public class DataTaskResource {
         return service.enable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除未发布任务")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('task.delete')")
@@ -415,4 +463,29 @@ public class DataTaskResource {
     public void delete(@PathVariable UUID id) {
         service.delete(id);
     }
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询工作流定义")
+    @GetMapping("/{id}/workflow-definition")
+    @PreAuthorize("hasAuthority('task.view')")
+    @Operation(summary = "查询工作流定义")
+    public WorkflowTaskDefinitionResponse workflowDefinition(@PathVariable UUID id) {
+        return workflowDefinitions.get(id);
+    }
+
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "整体保存工作流定义")
+    @PostMapping("/{id}/actions/update-workflow-definition")
+    @PreAuthorize("hasAuthority('task.update')")
+    @Operation(summary = "整体保存工作流定义")
+    public WorkflowTaskDefinitionResponse updateWorkflowDefinition(
+            @PathVariable UUID id, @Valid @RequestBody UpdateWorkflowTaskDefinitionRequest request) {
+        return workflowDefinitions.update(id, request);
+    }
+
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "校验工作流定义")
+    @PostMapping("/{id}/actions/validate-workflow-definition")
+    @PreAuthorize("hasAuthority('task.publish')")
+    @Operation(summary = "校验工作流定义")
+    public WorkflowDefinitionValidationResponse validateWorkflowDefinition(@PathVariable UUID id) {
+        return workflowDefinitions.validate(id);
+    }
+
 }

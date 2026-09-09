@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.business.task.execution.service;
 import cn.superhuang.data.scalpel.business.compute.client.DispatcherExecutionResponse;
 import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutionService;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
+import cn.superhuang.data.scalpel.business.operations.service.TaskRunAlertService;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
 import cn.superhuang.data.scalpel.business.task.domain.TaskType;
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
@@ -33,6 +34,7 @@ public class DispatcherExecutionReconciliationService {
             TaskRunStatus.CANCEL_REQUESTED, TaskRunStatus.STOP_REQUESTED);
 
     private final TaskRunRepository runRepository;
+    private final TaskRunAlertService runAlerts;
     private final TaskStreamingDeploymentRepository deploymentRepository;
     private final TaskStreamingQueryRepository queryRepository;
     private final ComputeEngineExecutionService computeEngineExecutionService;
@@ -42,6 +44,7 @@ public class DispatcherExecutionReconciliationService {
 
     public DispatcherExecutionReconciliationService(
             TaskRunRepository runRepository,
+            TaskRunAlertService runAlerts,
             TaskStreamingDeploymentRepository deploymentRepository,
             TaskStreamingQueryRepository queryRepository,
             ComputeEngineExecutionService computeEngineExecutionService,
@@ -50,6 +53,7 @@ public class DispatcherExecutionReconciliationService {
             PlatformTransactionManager transactionManager
     ) {
         this.runRepository = runRepository;
+        this.runAlerts = runAlerts;
         this.deploymentRepository = deploymentRepository;
         this.queryRepository = queryRepository;
         this.computeEngineExecutionService = computeEngineExecutionService;
@@ -98,6 +102,7 @@ public class DispatcherExecutionReconciliationService {
                         .filter(current -> ACTIVE.contains(current.getStatus()))
                         .ifPresent(current -> {
                             current.timeout("无法从 Dispatcher 确认执行终态", "DISPATCHER_RECONCILIATION_TIMEOUT");
+                            runAlerts.capture(current);
                             runRepository.save(current);
                         }));
             }

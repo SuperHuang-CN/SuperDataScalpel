@@ -1,4 +1,4 @@
-export type DirectoryScope = 'DATA_SOURCE' | 'MODEL' | 'FILE_DATASET' | 'TASK' | 'DATA_SERVICE' | 'ASSET';
+export type DirectoryScope = 'DATA_SOURCE' | 'MODEL' | 'FILE_DATASET' | 'PANORAMA' | 'TASK' | 'DATA_SERVICE' | 'MCP_SERVER' | 'ASSET' | 'METRIC';
 
 export interface DirectoryTreeNode {
   id: string;

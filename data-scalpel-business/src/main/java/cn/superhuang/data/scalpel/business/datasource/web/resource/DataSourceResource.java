@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.datasource.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceService;
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceRelationQueryService;
 import cn.superhuang.data.scalpel.business.datasource.web.request.CreateDataSourceRequest;
@@ -55,6 +56,7 @@ public class DataSourceResource {
         this.relationQueryService = relationQueryService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据源")
     @GetMapping
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询数据源")
@@ -62,6 +64,7 @@ public class DataSourceResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据源详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询数据源详情")
@@ -69,6 +72,7 @@ public class DataSourceResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询使用当前数据源存储的模型")
     @GetMapping("/{id}/related-models")
     @PreAuthorize("hasAuthority('datasource.view') and hasAuthority('model.view')")
     @Operation(summary = "查询使用当前数据源存储的模型")
@@ -79,6 +83,7 @@ public class DataSourceResource {
         return relationQueryService.relatedModels(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询直接或通过模型使用当前数据源的任务")
     @GetMapping("/{id}/related-tasks")
     @PreAuthorize("hasAuthority('datasource.view') and hasAuthority('task.view')")
     @Operation(summary = "查询直接或通过模型使用当前数据源的任务")
@@ -91,6 +96,7 @@ public class DataSourceResource {
         return relationQueryService.relatedTasks(id, role, relationKind, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询直接或通过模型使用当前数据源的数据服务")
     @GetMapping("/{id}/related-services")
     @PreAuthorize("hasAuthority('datasource.view') and hasAuthority('service.view')")
     @Operation(summary = "查询直接或通过模型使用当前数据源的数据服务")
@@ -102,6 +108,7 @@ public class DataSourceResource {
         return relationQueryService.relatedServices(id, relationKind, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增数据源", prerequisites = "先查询数据库类型与连接参数；可先测试未保存连接。", relatedOperations = {"GET /api/v1/data-source-types", "POST /api/v1/data-sources/actions/test"})
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('datasource.create')")
@@ -110,6 +117,7 @@ public class DataSourceResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改数据源")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('datasource.update')")
     @Operation(summary = "修改数据源")
@@ -117,6 +125,7 @@ public class DataSourceResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除数据源", prerequisites = "先检查关联模型、任务和数据服务；被引用的数据源不能直接删除。", relatedOperations = {"GET /api/v1/data-sources/{id}/related-models", "GET /api/v1/data-sources/{id}/related-tasks", "GET /api/v1/data-sources/{id}/related-services"})
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('datasource.delete')")
@@ -125,6 +134,7 @@ public class DataSourceResource {
         service.delete(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "测试未保存的数据源连接")
     @PostMapping("/actions/test")
     @PreAuthorize("hasAuthority('datasource.test')")
     @Operation(summary = "测试未保存的数据源连接")
@@ -132,6 +142,7 @@ public class DataSourceResource {
         return service.test(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "测试已保存的数据源连接")
     @PostMapping("/{id}/actions/test")
     @PreAuthorize("hasAuthority('datasource.test')")
     @Operation(summary = "测试已保存的数据源连接")
@@ -139,6 +150,7 @@ public class DataSourceResource {
         return service.test(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据源的库和 Schema")
     @GetMapping("/{id}/namespaces")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "查询数据源的库和 Schema")
@@ -146,6 +158,7 @@ public class DataSourceResource {
         return service.listNamespaces(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据源中的表")
     @GetMapping("/{id}/tables")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "查询数据源中的表")
@@ -166,6 +179,7 @@ public class DataSourceResource {
         return service.listTables(id, catalog, schema, keyword, includeViews, limit);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "读取数据表元数据")
     @GetMapping("/{id}/table-metadata")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "读取数据表元数据")
@@ -178,6 +192,7 @@ public class DataSourceResource {
         return service.readTable(id, catalog, schema, table);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "分析只读 JDBC 查询结果字段")
     @PostMapping("/{id}/actions/inspect-query")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "分析只读 JDBC 查询结果字段")
@@ -188,6 +203,7 @@ public class DataSourceResource {
         return service.inspectQuery(id, request.sql());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "预览数据表数据")
     @GetMapping("/{id}/table-preview")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "预览数据表数据")
@@ -207,6 +223,7 @@ public class DataSourceResource {
         return service.preview(id, catalog, schema, table, limit);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 Kafka Topic")
     @GetMapping("/{id}/kafka-topics")
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询 Kafka Topic")
@@ -218,6 +235,7 @@ public class DataSourceResource {
         return service.listKafkaTopics(id, keyword, includeInternal);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 TDengine TMQ Topic")
     @GetMapping("/{id}/tmq-topics")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "查询 TDengine TMQ Topic")
@@ -228,6 +246,7 @@ public class DataSourceResource {
         return service.listTdEngineTmqTopics(id, keyword);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "读取 TDengine TMQ Topic 详情")
     @GetMapping("/{id}/tmq-topic")
     @PreAuthorize("hasAuthority('datasource.metadata')")
     @Operation(summary = "读取 TDengine TMQ Topic 详情")

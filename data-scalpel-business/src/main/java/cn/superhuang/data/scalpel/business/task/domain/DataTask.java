@@ -72,8 +72,8 @@ public class DataTask extends BaseEntity {
         this.name = normalizeRequired(name);
         this.directoryId = directoryId;
         this.description = normalizeOptional(description);
-        if (type == TaskType.LOCAL_SQL && computeEngineId != null) {
-            throw new IllegalArgumentException("本地 SQL 任务不能绑定计算引擎");
+        if (!type.requiresComputeEngine() && computeEngineId != null) {
+            throw new IllegalArgumentException("此任务类型不能绑定计算引擎");
         }
         this.computeEngineId = computeEngineId;
     }

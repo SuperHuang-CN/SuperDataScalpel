@@ -9,6 +9,7 @@ public record ArtifactLaunchAccess(
         URI manifestGetUrl,
         URI resultPutUrl,
         URI logPutUrl,
+        URI trialPreviewPutUrl,
         int maximumManifestBytes,
         List<QualitySampleArtifactUpload> qualitySamples,
         LaunchUserJarDownload userJar
@@ -22,11 +23,11 @@ public record ArtifactLaunchAccess(
     }
 
     public ArtifactLaunchAccess(URI manifestGetUrl, URI resultPutUrl, URI logPutUrl, int maximumManifestBytes) {
-        this(manifestGetUrl, resultPutUrl, logPutUrl, maximumManifestBytes, List.of(), null);
+        this(manifestGetUrl, resultPutUrl, logPutUrl, null, maximumManifestBytes, List.of(), null);
     }
 
     public ArtifactLaunchAccess(URI manifestGetUrl, URI resultPutUrl, URI logPutUrl,
                                 int maximumManifestBytes, List<QualitySampleArtifactUpload> qualitySamples) {
-        this(manifestGetUrl, resultPutUrl, logPutUrl, maximumManifestBytes, qualitySamples, null);
+        this(manifestGetUrl, resultPutUrl, logPutUrl, null, maximumManifestBytes, qualitySamples, null);
     }
 }

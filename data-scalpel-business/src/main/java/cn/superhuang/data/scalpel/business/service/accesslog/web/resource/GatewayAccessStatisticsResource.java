@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.service.accesslog.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.service.accesslog.service.GatewayAccessQueryService;
 import cn.superhuang.data.scalpel.business.service.accesslog.web.request.GatewayAccessRankingDimension;
 import cn.superhuang.data.scalpel.business.service.accesslog.web.request.GatewayAccessRankingMetric;
@@ -31,6 +32,7 @@ public class GatewayAccessStatisticsResource {
         this.queryService = queryService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询网关访问统计概览")
     @GetMapping("/overview")
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询网关访问统计概览")
@@ -47,6 +49,7 @@ public class GatewayAccessStatisticsResource {
         return queryService.overview(from, to, dataServiceId, consumerId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询当前服务和消费者范围的小时访问趋势")
     @GetMapping("/hourly")
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询当前服务和消费者范围的小时访问趋势")
@@ -63,6 +66,7 @@ public class GatewayAccessStatisticsResource {
         return queryService.hourlyTrend(from, to, dataServiceId, consumerId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据服务小时访问趋势")
     @GetMapping("/services/hourly")
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询数据服务小时访问趋势")
@@ -78,6 +82,7 @@ public class GatewayAccessStatisticsResource {
         return queryService.serviceHourly(from, to, dataServiceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 API 消费者小时访问趋势")
     @GetMapping("/consumers/hourly")
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询 API 消费者小时访问趋势")
@@ -94,6 +99,7 @@ public class GatewayAccessStatisticsResource {
         return queryService.consumerHourly(from, to, consumerId, dataServiceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据服务或消费者调用排行")
     @GetMapping("/rankings")
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询数据服务或消费者调用排行")

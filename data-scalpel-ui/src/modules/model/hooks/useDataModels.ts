@@ -130,6 +130,7 @@ const invalidateTaskModelRelations = (
 const invalidateDataModels = async (queryClient: ReturnType<typeof useQueryClient>) => {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: [dataModelsQueryKey] }),
+    queryClient.invalidateQueries({ queryKey: ['metrics'] }),
     invalidateDirectoryTree(queryClient, 'MODEL'),
   ]);
 };

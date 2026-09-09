@@ -18,6 +18,10 @@ public final class FilterSqlExpressionPolicy {
     }
 
     public static Violation findViolation(String expression) {
+        return findViolation(expression, Set.of());
+    }
+
+    public static Violation findViolation(String expression, Set<String> additionalForbiddenKeywords) {
         if (expression == null || expression.isBlank()) {
             return Violation.REQUIRED;
         }
@@ -72,7 +76,7 @@ public final class FilterSqlExpressionPolicy {
             if (Character.isLetterOrDigit(current) || current == '_') {
                 token.append(current);
             } else if (!token.isEmpty()) {
-                if (FORBIDDEN_KEYWORDS.contains(token.toString())) {
+                if (FORBIDDEN_KEYWORDS.contains(token.toString()) || additionalForbiddenKeywords.contains(token.toString())) {
                     return Violation.STATEMENT_KEYWORD;
                 }
                 token.setLength(0);

@@ -15,6 +15,18 @@ public enum CanvasNodeType {
     SPATIAL_TRANSFORM,
     GEOMETRY_VALIDATE,
     GEOMETRY_REPAIR,
+    GEOMETRY_DERIVE,
+    GEOMETRY_SIMPLIFY,
+    SPATIAL_NEAREST,
+    SPATIAL_SUMMARIZE_WITHIN,
+    SPATIAL_OVERLAY,
+    TRACK_RECONSTRUCT,
+    TRACK_MOTION_STATISTICS,
+    TRACK_FIND_DWELL,
+    TRACK_DETECT_INCIDENTS,
+    SPATIAL_BIN_AGGREGATE,
+    SPATIAL_POINT_CLUSTER,
+    SPATIAL_CENTER_DISPERSION,
     GEOMETRY_BUFFER,
     GEOMETRY_EXPLODE,
     SPATIAL_MEASURE,
@@ -47,6 +59,21 @@ public enum CanvasNodeType {
 
     /** Canvas protocol minor version in which this node type was introduced. */
     public int introducedInMinorVersion() {
-        return this == SQL_TRANSFORM ? 1 : 0;
+        return switch (this) {
+            case SQL_TRANSFORM -> 1;
+            case GEOMETRY_DERIVE -> 9;
+            case GEOMETRY_SIMPLIFY -> 10;
+            case SPATIAL_NEAREST -> 11;
+            case SPATIAL_SUMMARIZE_WITHIN -> 12;
+            case SPATIAL_OVERLAY -> 13;
+            case TRACK_RECONSTRUCT -> 14;
+            case TRACK_MOTION_STATISTICS -> 15;
+            case TRACK_FIND_DWELL -> 16;
+            case TRACK_DETECT_INCIDENTS -> 17;
+            case SPATIAL_BIN_AGGREGATE -> 18;
+            case SPATIAL_POINT_CLUSTER -> 19;
+            case SPATIAL_CENTER_DISPERSION -> 20;
+            default -> 0;
+        };
     }
 }

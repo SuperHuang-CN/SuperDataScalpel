@@ -14,6 +14,10 @@ public sealed interface FileDatasetParsingConfiguration permits
         FileDatasetParsingConfiguration.Text,
         FileDatasetParsingConfiguration.Json,
         FileDatasetParsingConfiguration.JsonLines,
+        FileDatasetParsingConfiguration.GeoJson,
+        FileDatasetParsingConfiguration.GeoJsonLines,
+        FileDatasetParsingConfiguration.GeoParquet,
+        FileDatasetParsingConfiguration.GeoPackage,
         FileDatasetParsingConfiguration.Spreadsheet,
         FileDatasetParsingConfiguration.Parquet,
         FileDatasetParsingConfiguration.Avro,
@@ -37,6 +41,34 @@ public sealed interface FileDatasetParsingConfiguration permits
     }
 
     record JsonLines(String charset, FileRecordDelimiter recordDelimiter) implements FileDatasetParsingConfiguration {
+    }
+
+    record GeoJson(int epsgCode) implements FileDatasetParsingConfiguration {
+        public GeoJson {
+            if (epsgCode < 1) {
+                throw new IllegalArgumentException("GeoJSON EPSG code 必须为正整数");
+            }
+        }
+    }
+
+    record GeoJsonLines(int epsgCode) implements FileDatasetParsingConfiguration {
+        public GeoJsonLines {
+            if (epsgCode < 1) {
+                throw new IllegalArgumentException("GEOJSONL EPSG code 必须为正整数");
+            }
+        }
+    }
+
+    record GeoParquet() implements FileDatasetParsingConfiguration {
+    }
+
+    record GeoPackage(String tableName) implements FileDatasetParsingConfiguration {
+        public GeoPackage {
+            if (tableName == null || tableName.isBlank()) {
+                throw new IllegalArgumentException("GeoPackage 表名不能为空");
+            }
+            tableName = tableName.trim();
+        }
     }
 
     record Spreadsheet(String sourceKey, int headerRowIndex, int dataStartRowIndex)

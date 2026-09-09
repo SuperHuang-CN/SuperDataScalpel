@@ -1,8 +1,8 @@
 import type { CrsReference, PlatformDataType, PlatformTypeDefinition } from '../../model';
 
-export type FileDatasetType = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'PARQUET' | 'AVRO' | 'EXCEL' | 'GDB' | 'SHP';
+export type FileDatasetType = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'GEOJSON' | 'GEOJSONL' | 'GEOPARQUET' | 'GPKG' | 'PARQUET' | 'AVRO' | 'EXCEL' | 'GDB' | 'SHP';
 
-export type FileDatasetFormat = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'XLS' | 'XLSX' | 'PARQUET' | 'AVRO' | 'GDB' | 'SHP';
+export type FileDatasetFormat = 'CSV' | 'TSV' | 'TXT' | 'JSON' | 'JSONL' | 'GEOJSON' | 'GEOJSONL' | 'GEOPARQUET' | 'GPKG' | 'XLS' | 'XLSX' | 'PARQUET' | 'AVRO' | 'GDB' | 'SHP';
 
 export type FileDatasetCompression = 'NONE' | 'GZIP' | 'ZIP';
 
@@ -21,6 +21,10 @@ export type FileDatasetParsingOptions =
   | { kind: 'TEXT'; charset: string; recordDelimiter: FileRecordDelimiter }
   | { kind: 'JSON'; charset: string; rootPointer?: string }
   | { kind: 'JSON_LINES'; charset: string; recordDelimiter: FileRecordDelimiter }
+  | { kind: 'GEOJSON'; epsgCode: number }
+  | { kind: 'GEOJSONL'; epsgCode: number }
+  | { kind: 'GEOPARQUET' }
+  | { kind: 'GPKG' }
   | { kind: 'SPREADSHEET'; headerRowIndex: number; dataStartRowIndex: number }
   | { kind: 'PARQUET' }
   | { kind: 'AVRO' }
@@ -170,6 +174,10 @@ export const fileDatasetTypeLabels: Record<FileDatasetType, string> = {
   TXT: '文本',
   JSON: 'JSON',
   JSONL: 'JSON Lines',
+  GEOJSON: 'GeoJSON',
+  GEOJSONL: 'GeoJSON Lines',
+  GEOPARQUET: 'GeoParquet',
+  GPKG: 'GeoPackage',
   PARQUET: 'Parquet',
   AVRO: 'Avro',
   EXCEL: 'Excel',
@@ -183,6 +191,10 @@ export const fileDatasetFormatLabels: Record<FileDatasetFormat, string> = {
   TXT: '文本',
   JSON: 'JSON',
   JSONL: 'JSON Lines',
+  GEOJSON: 'GeoJSON',
+  GEOJSONL: 'GeoJSON Lines',
+  GEOPARQUET: 'GeoParquet',
+  GPKG: 'GeoPackage',
   XLS: 'Excel 97-2003',
   XLSX: 'Excel',
   PARQUET: 'Parquet',
@@ -220,6 +232,10 @@ export const defaultFileDatasetParsingOptions = (type: FileDatasetType): FileDat
     case 'TXT': return { kind: 'TEXT', charset: 'UTF-8', recordDelimiter: 'AUTO' };
     case 'JSON': return { kind: 'JSON', charset: 'UTF-8' };
     case 'JSONL': return { kind: 'JSON_LINES', charset: 'UTF-8', recordDelimiter: 'AUTO' };
+    case 'GEOJSON': return { kind: 'GEOJSON', epsgCode: 4326 };
+    case 'GEOJSONL': return { kind: 'GEOJSONL', epsgCode: 4326 };
+    case 'GEOPARQUET': return { kind: 'GEOPARQUET' };
+    case 'GPKG': return { kind: 'GPKG' };
     case 'EXCEL': return { kind: 'SPREADSHEET', headerRowIndex: 0, dataStartRowIndex: 1 };
     case 'PARQUET': return { kind: 'PARQUET' };
     case 'AVRO': return { kind: 'AVRO' };
@@ -235,6 +251,10 @@ export const fileDatasetAccept = (type: FileDatasetType): string => {
     case 'TXT': return '.txt,.txt.gz';
     case 'JSON': return '.json';
     case 'JSONL': return '.jsonl,.ndjson,.jsonl.gz,.ndjson.gz';
+    case 'GEOJSON': return '.geojson,.json,.geojson.gz,.json.gz';
+    case 'GEOJSONL': return '.geojsonl,.ndgeojson,.jsonl,.ndjson,.geojsonl.gz,.ndgeojson.gz,.jsonl.gz,.ndjson.gz';
+    case 'GEOPARQUET': return '.parquet';
+    case 'GPKG': return '.gpkg';
     case 'PARQUET': return '.parquet';
     case 'AVRO': return '.avro';
     case 'EXCEL': return '.xls,.xlsx';
@@ -246,7 +266,7 @@ export const fileDatasetAccept = (type: FileDatasetType): string => {
 export const fileDatasetAllowsAdditionalUpload = (
   type: FileDatasetType,
   existingFileCount: number,
-): boolean => (type !== 'EXCEL' && type !== 'GDB') || existingFileCount === 0;
+): boolean => (type !== 'EXCEL' && type !== 'GDB' && type !== 'GPKG') || existingFileCount === 0;
 
 export const inferFileDatasetCompression = (fileName: string): FileDatasetCompression => (
   fileName.toLowerCase().endsWith('.gz')

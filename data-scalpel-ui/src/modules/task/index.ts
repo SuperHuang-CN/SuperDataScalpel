@@ -2,6 +2,9 @@ export { TaskOrchestrationPage } from './pages/TaskOrchestrationPage';
 export { TaskListPage } from './pages/TaskListPage';
 export { TaskDetailPage } from './pages/TaskDetailPage';
 export { QualityFailureSampleDrawer } from './components/QualityFailureSampleDrawer';
+export { TaskRunDetailDrawer } from './components/TaskRunDetailDrawer';
+export { useCancelTaskRun, useStopTaskRun, useForceTerminateTaskRun } from './hooks/useTasks';
+export { taskRunStatusLabels, taskRunStatusColors, taskRunTriggerTypeLabels, taskRunExecutionModeLabels } from './model/task';
 export {
   useCanvasTaskDefinition,
   useTaskCanvasProposal,
@@ -40,3 +43,6 @@ export type {
   TaskCanvasProposalLocationState,
   TaskCanvasProposalChangeSet,
 } from './model/taskAssistant';
+
+export { taskViews, getTaskView, resolveTaskView, taskIdFromPath, taskPageHref } from './model/taskViews';
+export type { TaskListView, TaskViewConfiguration } from './model/taskViews';

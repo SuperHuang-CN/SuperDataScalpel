@@ -78,6 +78,7 @@ final class SearchFieldResolver {
         int modifiers = field.getModifiers();
         return Modifier.isStatic(modifiers)
                 || Modifier.isTransient(modifiers)
+                || field.isAnnotationPresent(SearchExcluded.class)
                 || field.isSynthetic()
                 || field.isAnnotationPresent(Transient.class)
                 || field.getType().isArray()

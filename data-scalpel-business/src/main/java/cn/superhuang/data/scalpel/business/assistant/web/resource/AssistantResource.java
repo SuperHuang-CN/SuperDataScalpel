@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.assistant.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.assistant.domain.AssistantChangeSet;
 import cn.superhuang.data.scalpel.business.assistant.domain.AssistantChangeSetType;
 import cn.superhuang.data.scalpel.business.assistant.service.AssistantChangeSetResponseService;
@@ -78,12 +79,14 @@ public class AssistantResource {
         this.taskCanvasProposalService = taskCanvasProposalService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询当前用户可选的 AI 模型")
     @GetMapping("/models")
     @Operation(summary = "查询当前用户可选的 AI 模型")
     public List<AvailableLlmModelResponse> models() {
         return modelService.availableModels();
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询当前用户的 AI 会话")
     @GetMapping("/sessions")
     @Operation(summary = "查询当前用户的 AI 会话")
     public PageResponse<AssistantSessionResponse> sessions(
@@ -93,6 +96,7 @@ public class AssistantResource {
         return sessionService.search(authentication.getName(), request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建 AI 会话")
     @PostMapping("/sessions")
     @ResponseStatus(HttpStatus.CREATED)
     @Operation(summary = "创建 AI 会话")
@@ -103,6 +107,7 @@ public class AssistantResource {
         return sessionService.create(authentication.getName(), request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 AI 会话详情")
     @GetMapping("/sessions/{id}")
     @Operation(summary = "查询 AI 会话详情")
     public AssistantSessionDetailResponse session(@PathVariable UUID id, Authentication authentication) {
@@ -113,6 +118,7 @@ public class AssistantResource {
         return new AssistantSessionDetailResponse(session, latestResponse, auditQueryService.latestRun(id));
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 AI 会话消息")
     @GetMapping("/sessions/{id}/messages")
     @Operation(summary = "查询 AI 会话消息")
     public PageResponse<AssistantMessageResponse> messages(
@@ -124,6 +130,7 @@ public class AssistantResource {
         return sessionService.messages(authentication.getName(), id, page, size);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "切换 AI 会话模型")
     @PostMapping("/sessions/{id}/actions/select-model")
     @Operation(summary = "切换 AI 会话模型")
     public AssistantSessionResponse selectModel(
@@ -134,6 +141,7 @@ public class AssistantResource {
         return sessionService.selectModel(authentication.getName(), id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "发送 AI 助手消息")
     @PostMapping("/sessions/{id}/actions/message")
     @Operation(summary = "发送 AI 助手消息")
     public AssistantTurnResponse message(
@@ -144,18 +152,21 @@ public class AssistantResource {
         return conversationService.message(authentication.getName(), id, request, authentication);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "归档 AI 会话")
     @PostMapping("/sessions/{id}/actions/archive")
     @Operation(summary = "归档 AI 会话")
     public AssistantSessionResponse archive(@PathVariable UUID id, Authentication authentication) {
         return sessionService.archive(authentication.getName(), id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询助手变更计划")
     @GetMapping("/change-sets/{id}")
     @Operation(summary = "查询助手变更计划")
     public AssistantChangeSetResponse changeSet(@PathVariable UUID id, Authentication authentication) {
         return changeSetResponseService.toResponse(changePlanService.getOwned(id, authentication.getName()));
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "确认并执行目录变更计划")
     @PostMapping("/change-sets/{id}/actions/approve")
     @PreAuthorize("hasAuthority('directory.manage')")
     @Operation(summary = "确认并执行目录变更计划")
@@ -169,6 +180,7 @@ public class AssistantResource {
         );
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "接受任务 Canvas 提案为前端未保存草稿")
     @PostMapping("/change-sets/{id}/actions/accept-task-canvas")
     @PreAuthorize("hasAuthority('task.view') and hasAuthority('task.update')")
     @Operation(summary = "接受任务 Canvas 提案为前端未保存草稿")
@@ -182,6 +194,7 @@ public class AssistantResource {
         );
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "拒绝目录变更计划")
     @PostMapping("/change-sets/{id}/actions/reject")
     @Operation(summary = "拒绝目录变更计划")
     public AssistantChangeSetResponse reject(@PathVariable UUID id, Authentication authentication) {

@@ -217,3 +217,25 @@ export const CompactAlert = ({
     />
   );
 };
+
+export type FloatingFeedbackPlacement = 'top-left' | 'top-right' | 'bottom-left' | 'bottom-right';
+
+interface FloatingFeedbackProps extends AlertProps {
+  placement?: FloatingFeedbackPlacement;
+}
+
+/** Toast-like persistent feedback anchored inside a positioned workspace without changing its layout. */
+export const FloatingFeedback = ({
+  placement = 'top-left',
+  className,
+  ...props
+}: FloatingFeedbackProps) => (
+  <CompactAlert
+    {...props}
+    className={[
+      'workspace-floating-feedback',
+      `workspace-floating-feedback-${placement}`,
+      className,
+    ].filter(Boolean).join(' ')}
+  />
+);

@@ -29,7 +29,9 @@ final class SparkJarTaskExecutor {
 
     TaskExecutionResult execute(TaskExecutionManifest manifest, RunnerSparkMode sparkMode,
                                 Path userJar, Consumer<String> sparkStarted,
-                                Consumer<UserJobObservabilitySnapshot> observabilityPublisher) {
+                                Consumer<UserJobObservabilitySnapshot> observabilityPublisher,
+                                Consumer<cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview>
+                                        trialPreviewPublisher) {
         Instant startedAt = Instant.now();
         SparkSession spark = null;
         SparkJarJobContextImpl context = null;
@@ -48,7 +50,8 @@ final class SparkJarTaskExecutor {
             spark = SedonaSparkSupport.initialize(builder.getOrCreate());
             spark.sparkContext().addJar(userJar.toUri().toString());
             sparkStarted.accept(spark.sparkContext().applicationId());
-            context = new SparkJarJobContextImpl(spark, manifest, objectMapper, observabilityPublisher);
+            context = new SparkJarJobContextImpl(
+                    spark, manifest, objectMapper, observabilityPublisher, trialPreviewPublisher);
             context.observabilityRuntime().platformStatus("INITIALIZING", "正在初始化用户作业");
             context.observabilityRuntime().platformStatus("RUNNING", "正在执行用户作业");
             invoke(userJar, manifest.sparkJarJob().jobClass(), context);

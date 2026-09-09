@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.task.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.task.service.DataMaskingRuleService;
 import cn.superhuang.data.scalpel.business.task.web.request.CreateDataMaskingRuleRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateDataMaskingRuleRequest;
@@ -34,6 +35,7 @@ public class DataMaskingRuleResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询脱敏规则")
     @GetMapping
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询脱敏规则")
@@ -43,6 +45,7 @@ public class DataMaskingRuleResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询脱敏规则详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询脱敏规则详情")
@@ -50,6 +53,7 @@ public class DataMaskingRuleResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建脱敏规则")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('task.update')")
@@ -60,6 +64,7 @@ public class DataMaskingRuleResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改脱敏规则")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "修改脱敏规则")
@@ -70,6 +75,7 @@ public class DataMaskingRuleResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除脱敏规则")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('task.update')")

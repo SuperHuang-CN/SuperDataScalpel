@@ -1,3 +1,4 @@
+import { SystemMcpPage } from '../modules/system-mcp';
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider, useParams } from 'react-router-dom';
 import { DashboardPage } from '../modules/dashboard';
@@ -8,6 +9,7 @@ import { ApiConsumerPage } from '../modules/dataservice/pages/ApiConsumerPage';
 import { DataServicePage } from '../modules/dataservice/pages/DataServicePage';
 import { FileDatasetPage } from '../modules/filedataset';
 import { DataEntryPage } from '../modules/dataentry';
+import { MetricListPage, MetricDetailPage } from '../modules/metric';
 import { DataModelPage, ModelFieldTemplatePage, ModelWarehouseLayerPage } from '../modules/model';
 import { ServiceEngineDetailPage, ServiceEnginePage } from '../modules/serviceengine';
 import { StandardDictionaryDetailPage, StandardDictionaryPage } from '../modules/standard';
@@ -18,7 +20,7 @@ import {
   SystemRoleManagementPage,
   SystemUserManagementPage,
 } from '../modules/system';
-import { TaskListPage } from '../modules/task/pages/TaskListPage';
+import { TaskListPage, taskViews } from '../modules/task';
 import { PlaceholderPage } from '../shared/components/PlaceholderPage';
 import { RequireAuthentication } from './auth/RequireAuthentication';
 import { RequirePermission } from './auth/RequirePermission';
@@ -29,6 +31,10 @@ const TaskOrchestrationPage = lazy(async () => {
   const module = await import('../modules/task/pages/TaskOrchestrationPage');
   return { default: module.TaskOrchestrationPage };
 });
+
+const RuntimeWorkbenchPage = lazy(async () => ({ default: (await import('../modules/operations/pages/RuntimeWorkbenchPage')).RuntimeWorkbenchPage }));
+const AlertCenterPage = lazy(async () => ({ default: (await import('../modules/operations/pages/AlertCenterPage')).AlertCenterPage }));
+const AlertConfigurationPage = lazy(async () => ({ default: (await import('../modules/operations/pages/AlertConfigurationPage')).AlertConfigurationPage }));
 
 const TaskDetailPage = lazy(async () => {
   const module = await import('../modules/task/pages/TaskDetailPage');
@@ -64,6 +70,9 @@ const DataSourceDetailPage = lazy(async () => {
   const module = await import('../modules/datasource/pages/DataSourceDetailPage');
   return { default: module.DataSourceDetailPage };
 });
+
+const PanoramaPage = lazy(() => import('../modules/panorama').then(module => ({ default: module.PanoramaPage })));
+const PanoramaDetailPage = lazy(() => import('../modules/panorama').then(module => ({ default: module.PanoramaDetailPage })));
 
 const FileDatasetDetailPage = lazy(async () => {
   const module = await import('../modules/filedataset/pages/FileDatasetDetailPage');
@@ -105,6 +114,31 @@ const AssetManagementPage = lazy(async () => {
   return { default: module.AssetManagementPage };
 });
 
+const McpServerPage = lazy(async () => {
+  const module = await import('../modules/mcp');
+  return { default: module.McpServerPage };
+});
+
+const McpServerDetailPage = lazy(async () => {
+  const module = await import('../modules/mcp');
+  return { default: module.McpServerDetailPage };
+});
+
+const McpToolEditorPage = lazy(async () => {
+  const module = await import('../modules/mcp');
+  return { default: module.McpToolEditorPage };
+});
+
+const McpInvocationPage = lazy(async () => {
+  const module = await import('../modules/mcp');
+  return { default: module.McpInvocationPage };
+});
+
+const McpAccessTokenPage = lazy(async () => {
+  const module = await import('../modules/mcp');
+  return { default: module.McpAccessTokenPage };
+});
+
 const LegacyDataServiceEditRedirect = () => {
   const { id } = useParams<{ id: string }>();
   return <Navigate to={id ? `/dataservice/${id}?tab=basic` : '/dataservice'} replace />;
@@ -118,6 +152,10 @@ const router = createBrowserRouter(createRoutesFromElements(
         <Route element={<RequireAuthentication />}>
           <Route element={<AppShell />}>
             <Route index element={<DashboardPage />} />
+            <Route path="operations" element={<Suspense fallback="正在加载运行工作台…"><RuntimeWorkbenchPage /></Suspense>} />
+            <Route path="operations/alerts" element={<Suspense fallback="正在加载告警中心…"><AlertCenterPage /></Suspense>} />
+            <Route path="operations/configuration" element={<RequirePermission permission="alert.manage"><Suspense fallback="正在加载告警配置…"><AlertConfigurationPage /></Suspense></RequirePermission>} />
+            <Route path="system/system-mcp" element={<RequirePermission permission="system.mcp.view"><SystemMcpPage /></RequirePermission>} />
             <Route path="system/configurations" element={<RequirePermission permission="system.configuration.view"><SystemConfigurationPage /></RequirePermission>} />
             <Route path="system/model-warehouse-layers" element={<RequirePermission permission="system.configuration.view"><ModelWarehouseLayerPage /></RequirePermission>} />
             <Route path="system/ai-models" element={<RequirePermission permission="system.configuration.view"><LlmModelManagementPage /></RequirePermission>} />
@@ -152,6 +190,8 @@ const router = createBrowserRouter(createRoutesFromElements(
               )}
             />
             <Route path="datasource/*" element={<Navigate to="/datasource" replace />} />
+            <Route path="panorama" element={<RequirePermission permission="panorama.view"><Suspense fallback="正在加载全景影像…"><PanoramaPage /></Suspense></RequirePermission>} />
+            <Route path="panorama/:id" element={<RequirePermission permission="panorama.view"><Suspense fallback="正在加载全景详情…"><PanoramaDetailPage /></Suspense></RequirePermission>} />
             <Route path="file-dataset" element={<RequirePermission permission="filedataset.view"><FileDatasetPage /></RequirePermission>} />
             <Route
               path="file-dataset/:id"
@@ -195,7 +235,15 @@ const router = createBrowserRouter(createRoutesFromElements(
               )}
             />
             <Route path="data-entry/*" element={<Navigate to="/data-entry" replace />} />
-            <Route path="task" element={<RequirePermission permission="task.view"><TaskListPage /></RequirePermission>} />
+            <Route path="mcp-management" element={<RequirePermission permission="mcp.view"><Suspense fallback="正在加载 MCP 管理…"><McpServerPage /></Suspense></RequirePermission>} />
+            <Route path="mcp-management/access-tokens" element={<RequirePermission permission="mcp.token.manage"><Suspense fallback="正在加载 MCP 访问凭证…"><McpAccessTokenPage /></Suspense></RequirePermission>} />
+            <Route path="mcp-management/invocations" element={<RequirePermission permission="mcp.view"><Suspense fallback="正在加载 MCP 调用日志…"><McpInvocationPage /></Suspense></RequirePermission>} />
+            <Route path="mcp-management/:serverId/tools/:toolId/edit" element={<RequirePermission permission="mcp.update"><Suspense fallback="正在加载 Tool 编辑器…"><McpToolEditorPage /></Suspense></RequirePermission>} />
+            <Route path="mcp-management/:id" element={<RequirePermission permission="mcp.view"><Suspense fallback="正在加载 MCP Server…"><McpServerDetailPage /></Suspense></RequirePermission>} />
+            <Route path="mcp-management/*" element={<Navigate to="/mcp-management" replace />} />
+            {taskViews.map(view => (
+              <Route key={view.id} path={view.path.slice(1)} element={<RequirePermission permission="task.view"><TaskListPage key={view.id} view={view.id} /></RequirePermission>} />
+            ))}
             <Route
               path="task/masking-rules"
               element={(
@@ -230,6 +278,8 @@ const router = createBrowserRouter(createRoutesFromElements(
             />
             <Route path="task/orchestration" element={<Suspense fallback="正在加载任务编排器…"><TaskOrchestrationPage /></Suspense>} />
             <Route path="task/*" element={<Navigate to="/task" replace />} />
+            <Route path="metrics" element={<RequirePermission permission="metric.view"><MetricListPage /></RequirePermission>} />
+            <Route path="metrics/:id" element={<RequirePermission permission="metric.view"><MetricDetailPage /></RequirePermission>} />
             <Route path="service-engine" element={<RequirePermission permission="service.engine.view"><ServiceEnginePage /></RequirePermission>} />
             <Route path="service-engine/:id" element={<RequirePermission permission="service.engine.view"><ServiceEngineDetailPage /></RequirePermission>} />
             <Route path="service-engine/*" element={<Navigate to="/service-engine" replace />} />

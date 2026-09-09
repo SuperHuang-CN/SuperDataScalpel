@@ -26,6 +26,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PutObjectPresignReques
 
 import java.net.URI;
 import java.io.IOException;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -92,6 +94,7 @@ public class S3DispatcherArtifactService implements DispatcherArtifactService {
                     presignGet(manifestKey),
                     presignPut(resolve(launch.resultKey()), "application/json"),
                     presignPut(resolve(launch.logKey()), "text/plain; charset=utf-8"),
+                    presignPut(resolve(trialPreviewKey(launch)), "application/json", previewUrlLifetime(launch)),
                     Math.toIntExact(properties.maximumManifestBytes()), qualitySamples, userJar
             );
         } catch (BackendException exception) {
@@ -99,6 +102,11 @@ public class S3DispatcherArtifactService implements DispatcherArtifactService {
         } catch (RuntimeException exception) {
             throw new BackendException("ARTIFACT_STORAGE_UNAVAILABLE", "无法读取或签发任务制品地址", exception);
         }
+    }
+
+    private static String trialPreviewKey(ExecutionLaunch launch) {
+        return "task-runs/%s/attempts/%d/trial-preview.json".formatted(
+                launch.identity().runId(), launch.identity().attempt());
     }
 
     @Override
@@ -157,10 +165,22 @@ public class S3DispatcherArtifactService implements DispatcherArtifactService {
     }
 
     private URI presignPut(String key, String contentType) {
+        return presignPut(key, contentType, properties.urlLifetime());
+    }
+
+    private URI presignPut(String key, String contentType, Duration lifetime) {
         PutObjectRequest request = PutObjectRequest.builder()
                 .bucket(properties.bucket()).key(key).contentType(contentType).build();
         return URI.create(presigner().presignPutObject(PutObjectPresignRequest.builder()
-                .signatureDuration(properties.urlLifetime()).putObjectRequest(request).build()).url().toString());
+                .signatureDuration(lifetime).putObjectRequest(request).build()).url().toString());
+    }
+
+    private Duration previewUrlLifetime(ExecutionLaunch launch) {
+        if (launch.deadlineAt() == null) return properties.urlLifetime();
+        Duration required = Duration.between(Instant.now(), launch.deadlineAt().plus(Duration.ofMinutes(10)));
+        if (required.compareTo(properties.urlLifetime()) < 0) return properties.urlLifetime();
+        Duration maximum = Duration.ofDays(7).minusSeconds(1);
+        return required.compareTo(maximum) > 0 ? maximum : required;
     }
 
     private S3Client client() {

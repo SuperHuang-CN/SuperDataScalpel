@@ -136,6 +136,7 @@ class DispatcherExecutionReconciliationServiceTest {
         DispatcherExecutionReconciliationService service =
                 new DispatcherExecutionReconciliationService(
                         runRepository,
+                        org.mockito.Mockito.mock(cn.superhuang.data.scalpel.business.operations.service.TaskRunAlertService.class),
                         deploymentRepository,
                         queryRepository,
                         executionService,

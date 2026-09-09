@@ -1,3 +1,4 @@
+import { taskPageHref } from '../model/taskViews';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
@@ -5,7 +6,7 @@ import { DeploymentUnitOutlined, EditOutlined, ReloadOutlined } from '@ant-desig
 import type { TableProps } from 'antd';
 import { Button, Descriptions, Empty, Space, Spin, Table, Tag, Typography } from 'antd';
 import { ApiError } from '../../../shared/api/http';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { CanvasNodeType, type CanvasNodeDefinition } from '../canvas/canvasTypes';
 import { useCanvasTaskDefinition, useTaskStreamingStatus } from '../hooks/useTasks';
 import {
@@ -56,6 +57,7 @@ const durationValue = (value: number | null) => {
 
 export const TaskStreamingRuntimePanel = ({ task }: TaskStreamingRuntimePanelProps) => {
   const navigate = useNavigate();
+  const location = useLocation();
   const streamingJar = task.type === 'SPARK_STREAMING_JAR';
   const statusQuery = useTaskStreamingStatus(task.id);
   const definitionQuery = useCanvasTaskDefinition(task.id, !streamingJar);
@@ -190,7 +192,7 @@ export const TaskStreamingRuntimePanel = ({ task }: TaskStreamingRuntimePanelPro
         <Space>
           <Button
             icon={<EditOutlined />}
-            onClick={() => navigate(`/task/${task.id}/definition`)}
+            onClick={() => navigate(taskPageHref(`/task/${task.id}/definition`, location.search, task.type))}
           >
             {streamingJar ? '编辑 JAR 定义' : '编辑输入节点'}
           </Button>

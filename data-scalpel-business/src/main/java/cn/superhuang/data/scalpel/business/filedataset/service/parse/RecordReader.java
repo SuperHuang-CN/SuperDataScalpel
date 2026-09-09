@@ -29,7 +29,7 @@ final class RecordReader {
         forEachLine(source, delimiter, consumer, () -> false);
     }
 
-    private static void forEachLine(
+    static void forEachLine(
             Reader source,
             FileRecordDelimiter delimiter,
             Consumer<String> consumer,

@@ -159,9 +159,100 @@ final class RunnerFailureClassifier {
                     ExecutionErrorCategory.SCHEMA
             );
         }
+        for (String code : java.util.List.of("GEOMETRY_UNARY_INPUT_INVALID", "GEOMETRY_UNARY_KIND_UNSUPPORTED",
+                "GEOMETRY_UNARY_DIMENSION_UNSUPPORTED", "GEOMETRY_SIMPLIFY_RESULT_INVALID")) {
+            if (causeText.contains(code.toLowerCase(java.util.Locale.ROOT))) return failure(code, ExecutionErrorCategory.SCHEMA);
+        }
+        for (String code : java.util.List.of("SPATIAL_NEAREST_GEOMETRY_INVALID", "GEODESIC_NEAREST_REQUIRES_POINTS",
+                "SPATIAL_NEAREST_SOURCE_ID_INVALID", "SPATIAL_NEAREST_CANDIDATE_ID_INVALID", "SPATIAL_NEAREST_DISTANCE_INVALID")) {
+            if (causeText.contains(code.toLowerCase(java.util.Locale.ROOT))) return failure(code, ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_nearest_connection_vertex_limit_exceeded"))
+            return failure("SPATIAL_NEAREST_CONNECTION_VERTEX_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        for (String code : java.util.List.of("SPATIAL_CENTER_GEOMETRY_INVALID", "SPATIAL_CENTER_WEIGHT_INVALID", "SPATIAL_CENTER_FEATURE_ID_INVALID",
+                "SPATIAL_CENTER_NUMERIC_INVALID", "SPATIAL_CENTER_MEDIAN_NOT_CONVERGED")) {
+            if (causeText.contains(code.toLowerCase(java.util.Locale.ROOT))) return failure(code, ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_center_group_limit_exceeded")) return failure("SPATIAL_CENTER_GROUP_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        if (causeText.contains("spatial_h3_point_invalid")) return failure("SPATIAL_H3_POINT_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_grid_point_invalid")) return failure("SPATIAL_GRID_POINT_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_grid_geometry_invalid")) return failure("SPATIAL_GRID_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_grid_cell_limit_exceeded")) return failure("SPATIAL_GRID_CELL_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        if (causeText.contains("spatial_cluster_point_invalid")) return failure("SPATIAL_CLUSTER_POINT_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_cluster_feature_id_invalid")) return failure("SPATIAL_CLUSTER_FEATURE_ID_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_cluster_preview_not_executable")) return failure("SPATIAL_CLUSTER_PREVIEW_NOT_EXECUTABLE", ExecutionErrorCategory.CONFIGURATION);
+        if (causeText.contains("spatial_hdbscan_tree_invalid")) return failure("SPATIAL_HDBSCAN_TREE_INVALID", ExecutionErrorCategory.INTERNAL);
+        if (causeText.contains("spatial_hdbscan_hierarchy_limit_exceeded")) return failure("SPATIAL_HDBSCAN_HIERARCHY_LIMIT_EXCEEDED", ExecutionErrorCategory.RESOURCE);
+        if (causeText.contains("spatial_hdbscan_numeric_range_invalid")) return failure("SPATIAL_HDBSCAN_NUMERIC_RANGE_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_calendar_window_limit_exceeded")) return failure("SPATIAL_CALENDAR_WINDOW_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        if (causeText.contains("spatial_calendar_window_range_invalid")) return failure("SPATIAL_CALENDAR_WINDOW_RANGE_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_h3_boundary_invalid")) return failure("SPATIAL_H3_BOUNDARY_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_h3_runtime_unavailable")) return failure("SPATIAL_H3_RUNTIME_UNAVAILABLE", ExecutionErrorCategory.CONFIGURATION);
         if ("GEOMETRY_REPAIR".equals(context.nodeType())
                 && spatialLibraryFailure(causeText)) {
             return failure("GEOMETRY_REPAIR_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("GEOMETRY_DERIVE".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("GEOMETRY_DERIVE_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("GEOMETRY_SIMPLIFY".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("GEOMETRY_SIMPLIFY_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        for (String code : java.util.List.of("GEODESIC_DISTANCE_COORDINATE_INVALID", "GEODESIC_DISTANCE_GEOMETRY_UNSUPPORTED",
+                "GEODESIC_DISTANCE_GEOMETRY_INVALID", "GEODESIC_DISTANCE_REGION_RANGE_NOT_SUPPORTED", "GEODESIC_DISTANCE_WORK_LIMIT_EXCEEDED",
+                "GEODESIC_DISTANCE_PRECISION_NOT_REACHED", "GEODESIC_TOPOLOGY_PRECISION_NOT_REACHED")) {
+            if (causeText.contains(code.toLowerCase(java.util.Locale.ROOT))) return failure(code, ExecutionErrorCategory.SCHEMA);
+        }
+        for (String code : java.util.List.of("INVALID_GEODESIC_DISTANCE_PRECISION", "INVALID_GEODESIC_DISTANCE_WORK_LIMIT", "INVALID_GEODESIC_DISTANCE_THRESHOLD")) {
+            if (causeText.contains(code.toLowerCase(java.util.Locale.ROOT))) return failure(code, ExecutionErrorCategory.CONFIGURATION);
+        }
+        if ("SPATIAL_NEAREST".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("SPATIAL_NEAREST_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("SPATIAL_SUMMARIZE_WITHIN".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("SPATIAL_SUMMARIZE_WITHIN_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_overlay_invalid_geometry")) {
+            return failure("SPATIAL_OVERLAY_INVALID_GEOMETRY", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("SPATIAL_OVERLAY".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("SPATIAL_OVERLAY_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if (("SPATIAL_BIN_AGGREGATE".equals(context.nodeType())
+                || "SPATIAL_POINT_CLUSTER".equals(context.nodeType())
+                || "SPATIAL_CENTER_DISPERSION".equals(context.nodeType()))
+                && spatialLibraryFailure(causeText)) {
+            return failure("SPATIAL_ANALYSIS_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("track_geodesic_coordinate_invalid")) return failure("TRACK_GEODESIC_COORDINATE_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_geodesic_vertex_limit_exceeded")) return failure("TRACK_GEODESIC_VERTEX_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        if (causeText.contains("invalid_track_geodesic_segment_length")) return failure("INVALID_TRACK_GEODESIC_SEGMENT_LENGTH", ExecutionErrorCategory.CONFIGURATION);
+        if (causeText.contains("track_buffer_distance_invalid")) return failure("TRACK_BUFFER_DISTANCE_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_area_geometry_invalid")) return failure("TRACK_AREA_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_area_vertex_limit_exceeded")) return failure("TRACK_AREA_VERTEX_LIMIT_EXCEEDED", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_geodesic_buffer_range_not_supported")) return failure("TRACK_GEODESIC_BUFFER_RANGE_NOT_SUPPORTED", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_geodesic_hull_range_not_supported")) return failure("TRACK_GEODESIC_HULL_RANGE_NOT_SUPPORTED", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_geodesic_hull_work_limit_exceeded")) return failure("TRACK_GEODESIC_HULL_WORK_LIMIT_EXCEEDED", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_geodesic_hull_invalid")) return failure("TRACK_GEODESIC_HULL_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_reconstruct_geometry_invalid")) return failure("TRACK_RECONSTRUCT_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_observation_order_not_unique")) {
+            return failure("TRACK_OBSERVATION_ORDER_NOT_UNIQUE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("track_dwell_point_invalid")) return failure("TRACK_DWELL_POINT_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_motion_point_invalid")) return failure("TRACK_MOTION_POINT_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_within_area_key_invalid")) return failure("SPATIAL_WITHIN_AREA_KEY_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("track_dwell_center_undefined")) return failure("TRACK_DWELL_CENTER_UNDEFINED", ExecutionErrorCategory.SCHEMA);
+        if (("TRACK_RECONSTRUCT".equals(context.nodeType())
+                || "TRACK_MOTION_STATISTICS".equals(context.nodeType())
+                || "TRACK_FIND_DWELL".equals(context.nodeType())
+                || "TRACK_DETECT_INCIDENTS".equals(context.nodeType()))
+                && spatialLibraryFailure(causeText)) {
+            return failure("TRACK_SPATIAL_ANALYSIS_FAILED", ExecutionErrorCategory.SCHEMA);
         }
         if ("GEOMETRY_BUFFER".equals(context.nodeType())
                 && spatialLibraryFailure(causeText)) {
@@ -461,6 +552,62 @@ final class RunnerFailureClassifier {
             case "GEOMETRY_CONSTRUCT_PARSE_FAILED" -> "Geometry 来源内容解析失败";
             case "GEOMETRY_CONSTRUCT_KIND_MISMATCH" -> "Geometry 实际类型与目标类型不一致";
             case "GEOMETRY_REPAIR_FAILED" -> "Geometry 修复失败";
+            case "GEOMETRY_UNARY_INPUT_INVALID" -> "一元几何运算遇到无效 Geometry，请先显式校验或修复";
+            case "GEOMETRY_UNARY_KIND_UNSUPPORTED" -> "该一元几何运算不支持当前 Geometry 类型，请先提取具体类型";
+            case "GEOMETRY_UNARY_DIMENSION_UNSUPPORTED" -> "该几何结果无法可靠保留 Z/M，请显式选择输出 XY";
+            case "GEOMETRY_SIMPLIFY_RESULT_INVALID" -> "简化结果无效，请减小容差或选择单要素拓扑保持；未自动修复";
+            case "GEOMETRY_DERIVE_FAILED" -> "Geometry 派生失败";
+            case "GEOMETRY_SIMPLIFY_FAILED" -> "Geometry 简化失败";
+            case "SPATIAL_NEAREST_FAILED" -> "空间最近邻计算失败";
+            case "SPATIAL_CENTER_GEOMETRY_INVALID" -> "中心分析遇到无效或不支持的 Geometry，请先校验输入";
+            case "SPATIAL_CENTER_WEIGHT_INVALID" -> "中心分析权重必须为有限非负数";
+            case "SPATIAL_CENTER_FEATURE_ID_INVALID" -> "中央要素身份字段包含空值或重复值";
+            case "SPATIAL_CENTER_NUMERIC_INVALID" -> "中心分析结果超出可靠数值范围";
+            case "SPATIAL_CENTER_MEDIAN_NOT_CONVERGED" -> "中位中心未在迭代上限内达到误差停止准则，请检查分组分布与权重";
+            case "SPATIAL_CENTER_GROUP_LIMIT_EXCEEDED" -> "中心分析单组要素数或总顶点数超过安全上限，请按业务字段缩小分组";
+            case "SPATIAL_H3_POINT_INVALID" -> "H3 输入必须是有效 XY Point，经度在 -180～180、纬度在 -90～90 之间";
+            case "SPATIAL_H3_BOUNDARY_INVALID" -> "H3 格网边界无法可靠生成，请检查格网配置";
+            case "SPATIAL_H3_RUNTIME_UNAVAILABLE" -> "Runner 无法加载 H3 本地运行库，请检查制品和运行架构";
+            case "SPATIAL_NEAREST_GEOMETRY_INVALID" -> "最近邻遇到无效 Geometry 或坐标，请先校验输入";
+            case "GEODESIC_NEAREST_REQUIRES_POINTS" -> "当前真实测地最近位置仅支持 Point，不使用质心替代";
+            case "SPATIAL_NEAREST_SOURCE_ID_INVALID" -> "最近邻来源身份字段包含空值或重复值";
+            case "SPATIAL_NEAREST_CANDIDATE_ID_INVALID" -> "最近邻候选身份字段包含空值或重复值";
+            case "SPATIAL_NEAREST_DISTANCE_INVALID" -> "最近邻距离超出可表示范围，请检查输入坐标和单位";
+            case "SPATIAL_NEAREST_CONNECTION_VERTEX_LIMIT_EXCEEDED" -> "测地连接线顶点数超过安全上限，请增大最大段长";
+            case "SPATIAL_SUMMARIZE_WITHIN_FAILED" -> "区域内汇总失败";
+            case "SPATIAL_WITHIN_AREA_KEY_INVALID" -> "区域唯一键存在空值或重复值，请修正区域来源数据";
+            case "SPATIAL_OVERLAY_FAILED" -> "空间叠加失败";
+            case "SPATIAL_OVERLAY_INVALID_GEOMETRY" -> "空间叠加输入包含无效几何，请先进行几何校验或修复";
+            case "TRACK_GEODESIC_COORDINATE_INVALID" -> "测地轨迹存在无效经纬度，请检查来源 Geometry";
+            case "TRACK_GEODESIC_VERTEX_LIMIT_EXCEEDED" -> "测地轨迹超过单片段一百万顶点保护限制，请增大加密段长或拆分轨迹";
+            case "INVALID_TRACK_GEODESIC_SEGMENT_LENGTH" -> "测地加密段长必须为有限正数及线性距离单位";
+            case "TRACK_BUFFER_DISTANCE_INVALID" -> "轨迹缓冲距离必须是有限非负数，点缓冲必须大于零；请检查距离字段或表达式";
+            case "TRACK_AREA_GEOMETRY_INVALID" -> "面轨迹包含无法计算的几何，请检查类型、坐标与有效性";
+            case "TRACK_AREA_VERTEX_LIMIT_EXCEEDED" -> "面轨迹顶点超过保护上限，请拆分轨迹或简化观测几何";
+            case "TRACK_GEODESIC_BUFFER_RANGE_NOT_SUPPORTED" -> "测地缓冲半径超出当前小圆盘算法范围，不能自动选择球面补集";
+            case "TRACK_GEODESIC_HULL_RANGE_NOT_SUPPORTED" -> "相邻测地面超出当前局部凸域，不能自动选择球面补集或平面替代";
+            case "TRACK_GEODESIC_HULL_WORK_LIMIT_EXCEEDED" -> "测地面边界校验超过计算量保护限制，请调整边界采样或拆分复杂观测";
+            case "TRACK_GEODESIC_HULL_INVALID" -> "测地面无法形成有效且包含全部输入顶点的凸边界，请检查观测几何";
+            case "GEODESIC_DISTANCE_COORDINATE_INVALID" -> "测地距离遇到无效经纬度，请检查来源 Geometry";
+            case "GEODESIC_DISTANCE_GEOMETRY_UNSUPPORTED" -> "当前测地最近位置计算入口不支持此几何类型，不能用质心或仅面边界替代";
+            case "GEODESIC_DISTANCE_GEOMETRY_INVALID" -> "测地距离遇到无效面区域，请检查环、孔洞及部件关系";
+            case "GEODESIC_DISTANCE_REGION_RANGE_NOT_SUPPORTED" -> "测地面区域超出当前局部验证域，不能自动选择球面补集或质心替代";
+            case "GEODESIC_DISTANCE_WORK_LIMIT_EXCEEDED" -> "测地几何计算超过计算量保护，未返回未经验证的结果";
+            case "GEODESIC_TOPOLOGY_PRECISION_NOT_REACHED" -> "测地边界存在无法可靠区分的极近接触，未将其吸附或猜测为相交";
+            case "GEODESIC_DISTANCE_PRECISION_NOT_REACHED" -> "测地最近位置搜索达到数值分辨率边界，无法满足所需精度";
+            case "INVALID_GEODESIC_DISTANCE_PRECISION" -> "测地距离精度必须为有限正数且不低于数值计算边界";
+            case "INVALID_GEODESIC_DISTANCE_WORK_LIMIT" -> "测地距离计算量保护参数无效";
+            case "INVALID_GEODESIC_DISTANCE_THRESHOLD" -> "测地距离阈值必须为有限非负数";
+            case "TRACK_RECONSTRUCT_GEOMETRY_INVALID" -> "轨迹重建输入存在无效几何，请先校验或修复";
+            case "SPATIAL_ANALYSIS_FAILED" -> "空间分析失败";
+            case "SPATIAL_HDBSCAN_TREE_INVALID" -> "HDBSCAN 内部生成树或层次关系不一致，未返回聚类结果，请联系维护人员";
+            case "SPATIAL_HDBSCAN_HIERARCHY_LIMIT_EXCEEDED" -> "HDBSCAN 层次计算超过当前资源保护上限，未返回部分聚类结果";
+            case "SPATIAL_HDBSCAN_NUMERIC_RANGE_INVALID" -> "HDBSCAN 距离或密度超出可靠数值范围，未返回未经验证的诊断结果";
+            case "TRACK_SPATIAL_ANALYSIS_FAILED" -> "轨迹空间分析失败";
+            case "TRACK_OBSERVATION_ORDER_NOT_UNIQUE" -> "轨迹存在无法区分次序的同时间观测，请配置同时间顺序字段";
+            case "TRACK_DWELL_POINT_INVALID" -> "驻留分析存在不合法的点坐标，请检查 Geometry 类型和坐标范围";
+            case "TRACK_MOTION_POINT_INVALID" -> "运动统计存在不合法的点坐标，请检查 Geometry 类型和坐标范围";
+            case "TRACK_DWELL_CENTER_UNDEFINED" -> "驻留候选的测地均值中心无法确定，请检查分析范围";
             case "GEOMETRY_BUFFER_FAILED" -> "Geometry Buffer 计算失败";
             case "GEOMETRY_EXPLODE_FAILED" -> "Geometry 拆分失败";
             case "SPATIAL_CLIP_FAILED" -> "空间裁剪失败";
@@ -614,6 +761,18 @@ final class RunnerFailureClassifier {
                 || "SPATIAL_TRANSFORM".equals(nodeType)
                 || "GEOMETRY_VALIDATE".equals(nodeType)
                 || "GEOMETRY_REPAIR".equals(nodeType)
+                || "GEOMETRY_DERIVE".equals(nodeType)
+                || "GEOMETRY_SIMPLIFY".equals(nodeType)
+                || "SPATIAL_NEAREST".equals(nodeType)
+                || "SPATIAL_SUMMARIZE_WITHIN".equals(nodeType)
+                || "SPATIAL_OVERLAY".equals(nodeType)
+                || "SPATIAL_BIN_AGGREGATE".equals(nodeType)
+                || "SPATIAL_POINT_CLUSTER".equals(nodeType)
+                || "SPATIAL_CENTER_DISPERSION".equals(nodeType)
+                || "TRACK_RECONSTRUCT".equals(nodeType)
+                || "TRACK_MOTION_STATISTICS".equals(nodeType)
+                || "TRACK_FIND_DWELL".equals(nodeType)
+                || "TRACK_DETECT_INCIDENTS".equals(nodeType)
                 || "GEOMETRY_BUFFER".equals(nodeType)
                 || "GEOMETRY_EXPLODE".equals(nodeType)
                 || "SPATIAL_MEASURE".equals(nodeType)

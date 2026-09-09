@@ -91,7 +91,7 @@ describe('TaskListPage', () => {
 
     expect(await screen.findByText('客户编排')).toBeInTheDocument();
     expect(screen.getByRole('img', { name: '任务类型：Spark 编排' })).toBeInTheDocument();
-    expect(screen.getByRole('columnheader', { name: '状态' })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: '发布状态' })).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: '类型 / 状态' })).not.toBeInTheDocument();
     expect(screen.getByText('v3 · Canvas 定义')).toBeInTheDocument();
     expect(screen.queryByRole('columnheader', { name: '编码' })).not.toBeInTheDocument();
@@ -101,7 +101,7 @@ describe('TaskListPage', () => {
     const user = userEvent.setup();
     render(<MemoryRouter><TaskListPage /></MemoryRouter>);
 
-    await user.click(await screen.findByLabelText('更多任务操作：客户编排'));
+    await user.click(await screen.findByLabelText('客户编排的更多操作'));
     expect(await screen.findByText('发布')).toBeInTheDocument();
   });
 
@@ -115,7 +115,7 @@ describe('TaskListPage', () => {
     );
 
     await user.click(await screen.findByRole('button', { name: '客户编排' }));
-    expect(screen.getByTestId('location')).toHaveTextContent(`/task/${sparkTask.id}`);
+    expect(screen.getByTestId('location')).toHaveTextContent(`/task/${sparkTask.id}?taskView=all`);
   });
 
   it('adds the selected task type to the server-side search request', async () => {

@@ -143,6 +143,19 @@ export const DataServiceDefinitionEditorPage = () => {
 
   const save = async (values: DataServiceFormValues) => {
     if (!id) return;
+    if (detail?.type === 'SPATIAL_SERVICE'
+        && detail.spatialDefinition?.modelId
+        && values.modelId !== detail.spatialDefinition.modelId) {
+      const confirmed = await new Promise<boolean>((resolve) => Modal.confirm({
+        title: '更换空间模型并重置样式？',
+        content: '空间模型发生变化后，当前样式草稿会重置为新 Geometry 类型的默认简单样式。',
+        okText: '继续保存',
+        cancelText: '取消',
+        onOk: () => resolve(true),
+        onCancel: () => resolve(false),
+      }));
+      if (!confirmed) return;
+    }
     setOperationError(null);
     try {
       const updated = await updateMutation.mutateAsync({ id, request: buildDataServiceDefinitionRequest(values) });
@@ -231,7 +244,7 @@ export const DataServiceDefinitionEditorPage = () => {
         autoComplete="off"
         form={form}
         layout="vertical"
-        className={`data-service-editor-form${detail.type === 'STANDARD_TABLE' ? ' data-service-standard-definition-form' : detail.type === 'SQL_QUERY' ? ' data-service-sql-definition-form' : ''}`}
+        className={`data-service-editor-form${detail.type === 'STANDARD_TABLE' || detail.type === 'SPATIAL_SERVICE' ? ' data-service-standard-definition-form' : detail.type === 'SQL_QUERY' ? ' data-service-sql-definition-form' : ''}`}
         onFinish={(values) => void save(values)}
         onFinishFailed={onFinishFailed}
         onValuesChange={() => setTestResult(null)}

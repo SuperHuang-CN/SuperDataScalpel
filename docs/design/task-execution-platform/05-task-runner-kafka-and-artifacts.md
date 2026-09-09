@@ -28,7 +28,7 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 
 ```json
 {
-  "launchVersion": 4,
+  "launchVersion": 5,
   "engineId": "uuid",
   "executionId": "uuid",
   "runId": "uuid",
@@ -42,6 +42,10 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
   "result": {
     "putUrl": "presigned-put-url",
     "objectKey": "task-runs/.../result.json"
+  },
+  "trialPreview": {
+    "putUrl": "presigned-put-url",
+    "objectKey": "task-runs/{runId}/attempts/{attempt}/trial-preview.json"
   },
   "runnerEvent": {
     "bootstrapServers": "kafka:9092",
@@ -72,13 +76,15 @@ Dispatcher 仍是执行生命周期权威。Runner 上传的结果只有被 Disp
 - Dispatcher 在任务真正出队时生成短期 URL。
 - launch v4 的 `qualitySamples` 仅为本次质检可生成样本的行级规则签发固定对象 Key PUT 地址；
   Canvas 或关闭样本时为空。该清单不进入 Manifest、Result、日志或 Kafka 事件。
+- launch v5 增加固定 `trialPreview` PUT 地址。批流 Spark JAR 仅在试运行时使用它，每 3 秒按变化覆盖
+  `trial-preview.json`；上传失败只影响预览新鲜度，不改变任务成败。正式运行不会写入该对象。
 - `userJar` 只在 `SPARK_JAR` 出队时存在，和 Manifest 使用相互独立的短期下载地址与 100 MiB 大小限制。
 - launch 文件只读交付给 Runner，完成后由 Dispatcher/集群清理。
 - SASL 密码使用独立受限文件或环境变量引用，不直接放进 `spark-submit` 参数。
 
-## 4. Manifest v23
+## 4. Manifest v26
 
-Admin 当前写出 `manifestVersion: 23`；Runner 严格只接受 v23。升级时先停止或排空旧 Runner，
+Admin 当前写出 `manifestVersion: 26`；Runner 严格只接受 v26。升级时先停止或排空旧 Runner，
 再统一发布 Admin、Dispatcher 和 Runner：
 
 ```text
@@ -153,7 +159,8 @@ Runner 的可写目录由 `DATASCALPEL_TASK_WORK_DIRECTORY` 指定。Local Docke
 7. 按逻辑 Schema 构造 Input/Output 计划，不执行物理 Schema 相等校验。
 8. 构造完整非输出计划。
 9. 按稳定拓扑顺序执行 Output；Snapshot Sync 使用独立单连接事务与严格目标表写锁。
-10. 质检失败规则按需在 Driver 生成有界 Parquet，并使用 launch v4 中的短期固定 Key PUT 地址上传。
+10. 质检失败规则按需在 Driver 生成有界 Parquet，并使用 launch v4 中的短期固定 Key PUT 地址上传；
+    Spark JAR 试运行在 SDK Writer 捕获输出后，使用 launch v5 的固定地址发布有界 JSON 快照。
 11. Spark JAR使用父优先 ClassLoader 调用 SDK `SparkBatchJob.execute()`，结果固定 `nodeResults=[]`。
 12. 原子生成本地 result.json。
 13. 计算 result SHA-256并 PUT 到 MinIO。
@@ -200,6 +207,20 @@ result.json 已上传
 如果结果上传成功但 Kafka 失败，Runner 可以非零退出；Dispatcher 发现外部应用终止后仍读取已存在的 result.json 并收敛状态。
 
 `RUNNER_RESULT_AVAILABLE` 只表示 result 对象已经可校验，不直接触发 Admin 终态。Dispatcher 等 Backend 确认终止，收集并上传 `console.log`，再应用经过校验的 result 并发布权威终态事件。这样 Admin 收到终态时日志对象已经可用。
+
+### 7.1 运行中日志窗口
+
+控制面通过 `GET /api/v1/task-runs/{runId}/logs` 按需读取运行日志。运行未结束或最终日志尚未归档时，
+Business 使用 TaskRun 中固定的计算引擎、executionId、executionRunId 和 attempt 调用 Dispatcher 的
+`GET /api/v1/task-executions/{executionId}/logs?attempt=...`，并校验返回身份，避免 Streaming 运行 ID
+与页面 TaskRun ID 不同时串读日志。管理数据库事务只负责读取该快照，Dispatcher、后端命令和对象存储
+访问均发生在事务外。
+
+Dispatcher 对 Local Docker 和 Kubernetes Driver 获取最近 2,001 行，统一裁剪为最近 2,000 行且最多
+1 MiB；YARN 聚合日志尚不可用时返回明确的 `UNAVAILABLE` 状态。单次后端日志命令最长 10 秒，读取
+不会更新终态归档标记、清理容器或改变执行状态。最终 `console.log` 出现后，Business 优先返回对象存储
+制品：不超过 1 MiB 时返回完整日志；超过 1 MiB 时使用对象存储 Range 读取尾部并只预览最近 2,000 行、
+最多 1 MiB，同时始终保留完整文件下载入口，避免为了在线预览把大日志整体载入后台内存。
 
 ## 8. Result 契约
 
@@ -377,6 +398,11 @@ Kafka Output 的新写入由 Prepared Output 显式携带 `JSON/TEXT/BINARY` 格
 不得进入日志、Result 或 Runner 事件。
 
 错误类别固定为 `CONFIGURATION/CONNECTION/AUTHENTICATION/PERMISSION/SCHEMA/CONSTRAINT/TIMEOUT/CANCELLED/RESOURCE/EXTERNAL_SYSTEM/INTERNAL`；阶段固定为 `PREPARE/READ/PROCESS/WRITE/DELIVERY/DISPATCH`。SQLState `08xxx/28xxx/42501/23xxx/57014` 分别映射连接、认证、权限、约束和超时错误。只有连接、网络超时和暂时性外部系统故障标记为可重试；本阶段不自动重试。
+
+轨迹事件生命周期的真实同时间顺序歧义返回 `TRACK_OBSERVATION_ORDER_NOT_UNIQUE`，类别 `SCHEMA`、
+阶段 `PROCESS`、不可重试。安全摘要提示配置同时间顺序字段，不包含轨迹 ID、时间值或条件值。
+该判断由惰性计划在实际执行时完成，不在 Compiler 中试读；Dispatcher/Admin/前端沿用通用错误码透传，
+不新增错误协议或 Result 版本。节点摘要只增加策略、排序字段数和是否启用固定边界，不记录配置正文。
 
 结果原子写入：
 

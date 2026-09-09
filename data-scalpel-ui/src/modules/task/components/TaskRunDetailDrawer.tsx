@@ -1,7 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DownloadOutlined,
-  FileTextOutlined,
   EyeOutlined,
   ReloadOutlined,
   StopOutlined,
@@ -18,6 +17,7 @@ import {
   useDownloadQualityFailureSamples,
   useDownloadTaskRunArtifact,
   useTaskRun,
+  useTaskRunArtifacts,
   useTaskRunLineage,
   useTaskRunResultArtifact,
 } from '../hooks/useTasks';
@@ -30,6 +30,8 @@ import {
   taskRunTriggerTypeLabels,
   taskTypeLabels,
   type TaskRun,
+  type TaskRunArtifactKind,
+  type TaskRunArtifactMetadata,
 } from '../model/task';
 import type {
   OutputWriteExecutionResult,
@@ -37,8 +39,12 @@ import type {
   QualitySkippedRuleResult,
 } from '../model/taskExecutionResult';
 import { QualityFailureSampleDrawer } from './QualityFailureSampleDrawer';
-import { useState } from 'react';
+import { lazy, Suspense, useEffect, useRef, useState } from 'react';
+import { Link } from 'react-router-dom';
+const WorkflowRunPanel = lazy(() => import('../workflow/WorkflowRunPanel'));
 import { UserJobObservabilityPanel } from './UserJobObservabilityPanel';
+import { TaskRunArtifactPreview } from './TaskRunArtifactPreview';
+import { TaskRunLogViewer } from './TaskRunLogViewer';
 import {
   formatTaskRunDateTime,
   formatTaskRunDuration,
@@ -161,11 +167,25 @@ export const TaskRunDetailDrawer = ({
 }: TaskRunDetailDrawerProps) => {
   const [messageApi, messageContext] = message.useMessage();
   const [sampleRule, setSampleRule] = useState<QualityRuleExecutionResult | null>(null);
+  const [previewSelection, setPreviewSelection] = useState<{
+    runId: string;
+    kind: TaskRunArtifactKind;
+  } | null>(null);
+  const detailContentRef = useRef<HTMLDivElement>(null);
+  const detailScrollTopRef = useRef(0);
   const runQuery = useTaskRun(runId ?? undefined, open);
   const resultDownload = useDownloadTaskRunArtifact();
   const logDownload = useDownloadTaskRunArtifact();
   const sampleDownload = useDownloadQualityFailureSamples();
   const run = runQuery.data;
+  const parentQuery = useTaskRun(run?.parentRunId ?? undefined, open && Boolean(run?.parentRunId));
+  const previewKind = previewSelection?.runId === runId ? previewSelection.kind : null;
+  const supportsRunArtifacts = run?.taskType === 'SPARK_CANVAS'
+    || run?.taskType === 'SPARK_STREAMING_CANVAS'
+    || run?.taskType === 'SPARK_MODEL_QUALITY'
+    || run?.taskType === 'SPARK_JAR'
+    || run?.taskType === 'SPARK_STREAMING_JAR';
+  const artifactsQuery = useTaskRunArtifacts(run?.id, open && supportsRunArtifacts);
   const lineageQuery = useTaskRunLineage(
     run?.id,
     open && run?.taskType === 'SPARK_JAR',
@@ -175,7 +195,8 @@ export const TaskRunDetailDrawer = ({
     open && (run?.taskType === 'SPARK_CANVAS' || run?.taskType === 'SPARK_MODEL_QUALITY'
       || run?.taskType === 'SPARK_JAR')
       && (run.status === 'SUCCESS' || run.status === 'FAILED'
-        || run.status === 'TIMED_OUT' || run.status === 'CANCELLED'),
+        || run.status === 'TIMED_OUT' || run.status === 'CANCELLED')
+      && artifactsQuery.data?.result.previewAvailable === true,
   );
   const snapshotResults = resultArtifactQuery.data?.nodeResults.filter(
     (node) => node.metrics?.kind === 'SNAPSHOT_SYNC',
@@ -184,7 +205,26 @@ export const TaskRunDetailDrawer = ({
     (node) => node.metrics?.kind === 'OUTPUT_WRITES',
   ) ?? [];
 
-  const download = async (kind: 'result' | 'log') => {
+  useEffect(() => {
+    detailScrollTopRef.current = 0;
+  }, [runId]);
+
+  useEffect(() => {
+    if (previewKind !== null || detailScrollTopRef.current === 0) return;
+    const frame = requestAnimationFrame(() => {
+      detailContentRef.current?.closest<HTMLElement>('.ant-drawer-body')
+        ?.scrollTo({ top: detailScrollTopRef.current });
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [previewKind]);
+
+  const openPreview = (kind: TaskRunArtifactKind) => {
+    detailScrollTopRef.current = detailContentRef.current
+      ?.closest<HTMLElement>('.ant-drawer-body')?.scrollTop ?? 0;
+    if (runId) setPreviewSelection({ runId, kind });
+  };
+
+  const download = async (kind: TaskRunArtifactKind) => {
     if (!run) return;
     const mutation = kind === 'result' ? resultDownload : logDownload;
     try {
@@ -197,11 +237,79 @@ export const TaskRunDetailDrawer = ({
     }
   };
 
+  const artifactAction = (artifact: TaskRunArtifactMetadata) => {
+    const label = artifact.kind === 'result' ? '执行结果' : '控制台日志';
+    const mutation = artifact.kind === 'result' ? resultDownload : logDownload;
+    if (artifact.availability === 'NOT_GENERATED') {
+      return (
+        <div key={artifact.kind} className="task-run-artifact-row">
+          <Typography.Text strong>{label}</Typography.Text>
+          <Typography.Text type="secondary">尚未生成</Typography.Text>
+          {artifact.kind === 'log' && (
+            <Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPreview('log')}>查看运行日志</Button>
+          )}
+        </div>
+      );
+    }
+    if (artifact.availability === 'SIZE_UNAVAILABLE') {
+      return (
+        <div key={artifact.kind} className="task-run-artifact-row">
+          <Typography.Text strong>{label}</Typography.Text>
+          <Typography.Text type="secondary">大小获取失败</Typography.Text>
+          <Button size="small" type="text" icon={<ReloadOutlined />} aria-label={`重新获取${label}大小`}
+            onClick={() => void artifactsQuery.refetch()} />
+          {artifact.kind === 'log' && (
+            <Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPreview('log')}>查看运行日志</Button>
+          )}
+          <Button size="small" icon={<DownloadOutlined />} loading={mutation.isPending}
+            onClick={() => void download(artifact.kind)}>下载</Button>
+        </div>
+      );
+    }
+    return (
+      <div key={artifact.kind} className="task-run-artifact-row">
+        <Typography.Text strong>{label}</Typography.Text>
+        <Typography.Text type="secondary">{artifact.sizeBytes == null ? '大小未知' : formatBytes(artifact.sizeBytes)}</Typography.Text>
+        {artifact.previewAvailable || artifact.kind === 'log' ? (
+          <Button size="small" type="text" icon={<EyeOutlined />} onClick={() => openPreview(artifact.kind)}>预览</Button>
+        ) : (
+          <Typography.Text type="secondary">文件较大，仅支持下载</Typography.Text>
+        )}
+        <Button size="small" icon={<DownloadOutlined />} loading={mutation.isPending}
+          onClick={() => void download(artifact.kind)}>下载</Button>
+      </div>
+    );
+  };
+
+  const unavailableStructuredResult = () => {
+    const result = artifactsQuery.data?.result;
+    const tooLarge = result?.availability === 'AVAILABLE' && !result.previewAvailable;
+    return (
+      <Alert
+        showIcon
+        type="warning"
+        message={tooLarge ? '执行结果文件较大，未自动加载' : '暂时无法读取结构化执行结果'}
+        description={tooLarge
+          ? `执行结果为 ${result.sizeBytes == null ? '未知大小' : formatBytes(result.sizeBytes)}，请按需下载查看。`
+          : '为避免在后台读取未知大小的结果文件，请通过上方“执行结果”下载查看。'}
+        action={(
+          <Button size="small" icon={<DownloadOutlined />} onClick={() => void download('result')}>
+            下载结果
+          </Button>
+        )}
+      />
+    );
+  };
+
+  const shouldSkipStructuredResultPreview = artifactsQuery.isError
+    || (artifactsQuery.data?.result.availability === 'AVAILABLE'
+      && !artifactsQuery.data.result.previewAvailable);
+
   const trackingUrl = safeTrackingUrl(run?.trackingUrl ?? null);
-  const cancellable = (run?.taskType === 'SPARK_CANVAS' || run?.taskType === 'SPARK_MODEL_QUALITY'
+  const cancellable = (run?.taskType === 'WORKFLOW' || run?.taskType === 'LOCAL_SQL' || run?.taskType === 'SPARK_CANVAS' || run?.taskType === 'SPARK_MODEL_QUALITY'
     || run?.taskType === 'SPARK_JAR')
     && (run.status === 'QUEUED' || run.status === 'RUNNING');
-  const forceTerminable = run?.taskType !== 'LOCAL_SQL'
+  const forceTerminable = run?.taskType !== 'LOCAL_SQL' && run?.taskType !== 'WORKFLOW'
     && (run?.status === 'CANCEL_REQUESTED' || run?.status === 'STOP_REQUESTED');
   const downloadSamples = async (rule: QualityRuleExecutionResult) => {
     if (!run) return;
@@ -244,6 +352,7 @@ export const TaskRunDetailDrawer = ({
   return (
     <Drawer
       rootClassName="business-overlay business-drawer-overlay"
+      className={previewKind ? 'task-run-detail-drawer task-run-detail-drawer-preview' : 'task-run-detail-drawer'}
       open={open}
       size="large"
       destroyOnHidden
@@ -256,7 +365,10 @@ export const TaskRunDetailDrawer = ({
             aria-label="刷新运行详情"
             loading={runQuery.isFetching}
             disabled={!runId}
-            onClick={() => void runQuery.refetch()}
+            onClick={() => {
+              void runQuery.refetch();
+              if (supportsRunArtifacts) void artifactsQuery.refetch();
+            }}
           />
         </Tooltip>
       )}
@@ -273,35 +385,32 @@ export const TaskRunDetailDrawer = ({
         />
       )}
       {!runQuery.isPending && !runQuery.isError && !run && <Empty description="没有可展示的运行记录" />}
-      {run && (
-        <div className="task-run-detail-content">
+      {run && previewKind && artifactsQuery.data ? (
+        previewKind === 'log' ? (
+          <TaskRunLogViewer
+            key={run.id}
+            runId={run.id}
+            visible={open && previewKind === 'log'}
+            endedAt={run.endedAt}
+            onBack={() => setPreviewSelection(null)}
+            onShowResult={artifactsQuery.data.result.previewAvailable
+              ? () => setPreviewSelection({ runId: run.id, kind: 'result' }) : undefined}
+          />
+        ) : (
+          <TaskRunArtifactPreview
+            runId={run.id}
+            artifact={artifactsQuery.data.result}
+            artifacts={artifactsQuery.data}
+            onBack={() => setPreviewSelection(null)}
+            onSelect={(kind) => setPreviewSelection({ runId: run.id, kind })}
+            onDownload={(kind) => void download(kind)}
+            downloadLoading={resultDownload.isPending}
+          />
+        )
+      ) : run && (
+        <div ref={detailContentRef} className="task-run-detail-content">
           <Space wrap>
             <Tag color={taskRunStatusColors[run.status]}>{taskRunStatusLabels[run.status]}</Tag>
-            {(run.taskType === 'SPARK_CANVAS' || run.taskType === 'SPARK_MODEL_QUALITY'
-              || run.taskType === 'SPARK_JAR' || run.taskType === 'SPARK_STREAMING_JAR') && (
-              <>
-                {run.taskType !== 'SPARK_STREAMING_JAR' && (
-                  <Button
-                    icon={<DownloadOutlined />}
-                    aria-label="下载执行结果"
-                    loading={resultDownload.isPending}
-                    disabled={run.status === 'QUEUED' || run.status === 'RUNNING'
-                      || run.status === 'CANCEL_REQUESTED'}
-                    onClick={() => void download('result')}
-                  >
-                    执行结果
-                  </Button>
-                )}
-                <Button
-                  icon={<FileTextOutlined />}
-                  aria-label="下载控制台日志"
-                  loading={logDownload.isPending}
-                  onClick={() => void download('log')}
-                >
-                  控制台日志
-                </Button>
-              </>
-            )}
             {canExecute && cancellable && (
               <Button
                 danger
@@ -326,6 +435,22 @@ export const TaskRunDetailDrawer = ({
             )}
           </Space>
 
+          {supportsRunArtifacts && (
+            <div className="task-run-artifact-actions" aria-label="运行制品">
+              {artifactsQuery.isPending ? <Typography.Text type="secondary">正在获取制品大小…</Typography.Text>
+                : artifactsQuery.isError ? (
+                  <Space size="small">
+                    <Typography.Text type="secondary">制品大小获取失败</Typography.Text>
+                    <Button size="small" type="text" icon={<ReloadOutlined />} onClick={() => void artifactsQuery.refetch()}>重试</Button>
+                  </Space>
+                ) : artifactsQuery.data ? (
+                  <>{artifactAction(artifactsQuery.data.log)}{artifactAction(artifactsQuery.data.result)}</>
+                ) : null}
+            </div>
+          )}
+
+          {run.parentRunId && parentQuery.data && <Link to={`/task/${parentQuery.data.taskId}?tab=runs&runId=${run.parentRunId}`}>返回父工作流运行</Link>}
+          {run.taskType === 'WORKFLOW' && <Suspense fallback={<Spin />}><WorkflowRunPanel runId={run.id} /></Suspense>}
           <Descriptions size="small" bordered column={2} title="运行信息">
             <Descriptions.Item label="运行 ID" span={2}>{idValue(run.id)}</Descriptions.Item>
             <Descriptions.Item label="任务类型">{taskTypeLabels[run.taskType]}</Descriptions.Item>
@@ -457,8 +582,8 @@ export const TaskRunDetailDrawer = ({
           {run.taskType === 'SPARK_CANVAS'
             && (run.status === 'SUCCESS' || run.status === 'FAILED'
               || run.status === 'TIMED_OUT' || run.status === 'CANCELLED') && (
-            <Card size="small" title="输出写入结果" loading={resultArtifactQuery.isPending}>
-              {resultArtifactQuery.isError ? (
+            <Card size="small" title="输出写入结果" loading={artifactsQuery.isPending || resultArtifactQuery.isPending}>
+              {shouldSkipStructuredResultPreview ? unavailableStructuredResult() : resultArtifactQuery.isError ? (
                 <Alert
                   showIcon
                   type="warning"
@@ -509,8 +634,8 @@ export const TaskRunDetailDrawer = ({
           )}
 
           {run.taskType === 'SPARK_CANVAS' && run.status === 'SUCCESS' && (
-            <Card size="small" title="快照同步结果" loading={resultArtifactQuery.isPending}>
-              {resultArtifactQuery.isError ? (
+            <Card size="small" title="快照同步结果" loading={artifactsQuery.isPending || resultArtifactQuery.isPending}>
+              {shouldSkipStructuredResultPreview ? unavailableStructuredResult() : resultArtifactQuery.isError ? (
                 <Alert
                   showIcon
                   type="warning"
@@ -563,8 +688,8 @@ export const TaskRunDetailDrawer = ({
           )}
 
           {run.taskType === 'SPARK_MODEL_QUALITY' && run.status === 'SUCCESS' && (
-            <Card size="small" title="规则检查结果" loading={resultArtifactQuery.isPending}>
-              {resultArtifactQuery.isError ? (
+            <Card size="small" title="规则检查结果" loading={artifactsQuery.isPending || resultArtifactQuery.isPending}>
+              {shouldSkipStructuredResultPreview ? unavailableStructuredResult() : resultArtifactQuery.isError ? (
                 <Alert
                   showIcon
                   type="warning"

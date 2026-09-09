@@ -27,9 +27,11 @@ final class SparkStreamingJarJobContextImpl implements SparkStreamingJobContext 
             TaskExecutionManifest manifest,
             StreamingQueries queries,
             ObjectMapper objectMapper,
-            Consumer<UserJobObservabilitySnapshot> observabilityPublisher
+            Consumer<UserJobObservabilitySnapshot> observabilityPublisher,
+            Consumer<cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview> trialPreviewPublisher
     ) {
-        this.delegate = new SparkJarJobContextImpl(spark, manifest, objectMapper, observabilityPublisher);
+        this.delegate = new SparkJarJobContextImpl(
+                spark, manifest, objectMapper, observabilityPublisher, trialPreviewPublisher);
         this.kafka = new Kafka(spark);
         this.queries = Objects.requireNonNull(queries);
     }

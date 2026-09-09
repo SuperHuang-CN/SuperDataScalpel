@@ -8,6 +8,8 @@ import cn.superhuang.data.scalpel.contract.execution.RunnerStartedEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerStreamingStoppedEvent;
 import cn.superhuang.data.scalpel.contract.execution.RunnerUserObservabilityEvent;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarExecutionPayload;
+import cn.superhuang.data.scalpel.contract.execution.SparkJarTrialPreview;
 import cn.superhuang.data.scalpel.contract.execution.TaskExecutionLaunchDescriptor;
 import cn.superhuang.data.scalpel.contract.task.CanvasExecutionMode;
 import cn.superhuang.datascalpel.taskengine.contract.TaskExecutionManifest;
@@ -33,6 +35,7 @@ import java.util.HexFormat;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import java.util.function.Consumer;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType;
 
 final class TaskRunnerApplication {
@@ -114,6 +117,7 @@ final class TaskRunnerApplication {
         RunnerEventPublisher publisher = createPublisher(launch);
         TaskExecutionResult result;
         TaskExecutionManifest loadedManifest = null;
+        TrialPreviewPublisher trialPreviewPublisher = null;
         try {
             byte[] manifestBytes = artifactClient.download(launch.manifest().getUrl(), launch.manifest().maxBytes());
             verifySha256(manifestBytes, launch.manifest().sha256());
@@ -123,6 +127,10 @@ final class TaskRunnerApplication {
             TaskExecutionManifest manifest = objectMapper.readValue(manifestBytes, TaskExecutionManifest.class);
             loadedManifest = manifest;
             requireManifestIdentity(launch, manifest);
+            trialPreviewPublisher = createTrialPreviewPublisher(launch, manifest);
+            Consumer<SparkJarTrialPreview> previewSink = trialPreviewPublisher == null
+                    ? ignored -> { }
+                    : trialPreviewPublisher;
             if (manifest.executionTaskType() == ExecutionTaskType.SPARK_STREAMING_JAR) {
                 if (launch.userJar() == null) {
                     throw new RunnerExecutionException("USER_JAR_DOWNLOAD_MISSING", "启动描述缺少用户 JAR", null);
@@ -131,7 +139,7 @@ final class TaskRunnerApplication {
                 artifactClient.downloadToFile(launch.userJar().getUrl(), launch.userJar().sizeBytes(), userJar);
                 verifySha256(userJar, launch.userJar().sha256());
                 result = new SparkStreamingJarTaskExecutor(objectMapper)
-                        .execute(manifest, launch.sparkMode(), launch, userJar, publisher);
+                        .execute(manifest, launch.sparkMode(), launch, userJar, publisher, previewSink);
                 requireResultIdentity(launch, result);
             } else if (manifest.executionTaskType() == ExecutionTaskType.SPARK_JAR) {
                 if (launch.userJar() == null) {
@@ -145,7 +153,7 @@ final class TaskRunnerApplication {
                                 ExecutionMessageEnvelope.CURRENT_VERSION, UUID.randomUUID(),
                                 ExecutionMessageType.RUNNER_STARTED, Instant.now(), launch.engineId(),
                                 launch.executionId(), launch.runId(), launch.attempt(), applicationId)),
-                        snapshot -> publishObservability(publisher, launch, snapshot));
+                        snapshot -> publishObservability(publisher, launch, snapshot), previewSink);
                 requireResultIdentity(launch, result);
             } else if (manifest.executionTaskType() == ExecutionTaskType.SPARK_MODEL_QUALITY) {
                 result = qualityTaskExecutor.execute(manifest, launch.sparkMode(), applicationId -> {
@@ -196,6 +204,9 @@ final class TaskRunnerApplication {
                     "event=TASK_FAILURE_DETAIL executionId={} runId={} attempt={} code={} diagnosticId={}\n{}",
                     launch.executionId(), launch.runId(), launch.attempt(), result.error().code(),
                     result.error().diagnosticId(), RunnerLogSanitizer.stackTrace(throwable));
+        }
+        if (trialPreviewPublisher != null) {
+            trialPreviewPublisher.close();
         }
         logTaskTerminal(launch, result);
 
@@ -269,6 +280,22 @@ final class TaskRunnerApplication {
                 // The result artifact is recoverable even if producer shutdown fails.
             }
         }
+    }
+
+    private TrialPreviewPublisher createTrialPreviewPublisher(
+            TaskExecutionLaunchDescriptor launch,
+            TaskExecutionManifest manifest
+    ) {
+        boolean trial = (manifest.executionTaskType() == ExecutionTaskType.SPARK_JAR
+                && manifest.sparkJarJob().executionPurpose() == SparkJarExecutionPayload.ExecutionPurpose.TRIAL)
+                || (manifest.executionTaskType() == ExecutionTaskType.SPARK_STREAMING_JAR
+                && manifest.streamingSparkJarJob().executionPurpose() == SparkJarExecutionPayload.ExecutionPurpose.TRIAL);
+        if (!trial) return null;
+        if (launch.trialPreview() == null) {
+            throw new RunnerExecutionException(
+                    "TRIAL_PREVIEW_UPLOAD_MISSING", "试运行启动描述缺少输出预览上传地址", null);
+        }
+        return new TrialPreviewPublisher(launch, artifactClient, objectMapper);
     }
 
     private int runStreaming(

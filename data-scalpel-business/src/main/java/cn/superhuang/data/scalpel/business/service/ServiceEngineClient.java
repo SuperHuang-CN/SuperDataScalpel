@@ -9,16 +9,20 @@ import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationR
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRegistrationResponse;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceRemovalRequest;
 import cn.superhuang.data.scalpel.contract.service.EngineDataSourceTestResponse;
+import cn.superhuang.data.scalpel.contract.service.EngineDataSourcePoolMonitorResponse;
+import cn.superhuang.data.scalpel.contract.service.EngineDataSourcePoolSummariesResponse;
 import cn.superhuang.data.scalpel.contract.service.ServiceEngineInfoResponse;
 import cn.superhuang.data.scalpel.contract.service.ServiceUndeploymentRequest;
 import cn.superhuang.data.scalpel.contract.service.ScriptCompletionResponse;
 import cn.superhuang.data.scalpel.contract.service.ScriptDraftExecutionRequest;
 import cn.superhuang.data.scalpel.contract.service.ScriptDraftExecutionResponse;
 import org.springframework.stereotype.Component;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 
 import java.util.UUID;
+import java.time.Duration;
 
 /** Minimal synchronous Admin-to-Engine client. The Engine owns its persisted runtime snapshot. */
 @Component
@@ -95,6 +99,27 @@ public class ServiceEngineClient {
                         .queryParam("dataSourceId", dataSourceId)
                         .build())
                 .retrieve().body(ScriptCompletionResponse.class);
+    }
+
+    public EngineDataSourcePoolSummariesResponse dataSourcePoolSummaries(ServiceEngine engine) {
+        return monitoringClient(engine).get().uri("/internal/v1/data-sources/pool-summaries")
+                .retrieve().body(EngineDataSourcePoolSummariesResponse.class);
+    }
+
+    public EngineDataSourcePoolMonitorResponse dataSourcePoolMonitor(ServiceEngine engine, UUID dataSourceId) {
+        return monitoringClient(engine).get().uri("/internal/v1/data-sources/{id}/pool-monitor", dataSourceId)
+                .retrieve().body(EngineDataSourcePoolMonitorResponse.class);
+    }
+
+    private RestClient monitoringClient(ServiceEngine engine) {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(Duration.ofSeconds(2));
+        factory.setReadTimeout(Duration.ofSeconds(4));
+        return RestClient.builder()
+                .baseUrl(engine.getAdminUrl())
+                .defaultHeader("Authorization", "Bearer " + credentialCipher.decrypt(engine.getManagementTokenCiphertext()))
+                .requestFactory(factory)
+                .build();
     }
 
     private RestClient client(ServiceEngine engine) {

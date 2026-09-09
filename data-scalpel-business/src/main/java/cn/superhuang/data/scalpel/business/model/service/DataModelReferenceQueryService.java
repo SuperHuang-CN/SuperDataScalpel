@@ -47,6 +47,8 @@ import java.util.stream.Collectors;
 @Service
 public class DataModelReferenceQueryService {
 
+    private final cn.superhuang.data.scalpel.business.metric.repository.MetricReferenceRepository metricReferences;
+    private final cn.superhuang.data.scalpel.business.metric.repository.DataMetricRepository metricRepository;
     private final DataModelRepository modelRepository;
     private final DataTaskRepository taskRepository;
     private final LocalSqlTaskDefinitionRepository localDefinitionRepository;
@@ -64,6 +66,8 @@ public class DataModelReferenceQueryService {
     private final CanvasTaskDefinitionService canvasDefinitionService;
 
     public DataModelReferenceQueryService(
+            cn.superhuang.data.scalpel.business.metric.repository.MetricReferenceRepository metricReferences,
+            cn.superhuang.data.scalpel.business.metric.repository.DataMetricRepository metricRepository,
             DataModelRepository modelRepository,
             DataTaskRepository taskRepository,
             LocalSqlTaskDefinitionRepository localDefinitionRepository,
@@ -80,6 +84,8 @@ public class DataModelReferenceQueryService {
             SpatialDataServiceDefinitionRepository spatialServiceRepository,
             CanvasTaskDefinitionService canvasDefinitionService
     ) {
+        this.metricReferences = metricReferences;
+        this.metricRepository = metricRepository;
         this.modelRepository = modelRepository;
         this.taskRepository = taskRepository;
         this.localDefinitionRepository = localDefinitionRepository;
@@ -212,8 +218,13 @@ public class DataModelReferenceQueryService {
                 .sorted(Comparator.comparing(DataModelReferenceTaskResponse::name)
                         .thenComparing(DataModelReferenceTaskResponse::referenceType))
                 .toList();
+        var metricIds = metricReferences.findProtected(List.of(modelId)).stream().map(r -> r.getMetricId()).distinct().toList();
+        var authentication = org.springframework.security.core.context.SecurityContextHolder.getContext().getAuthentication();
+        boolean canViewMetrics = authentication != null && authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("metric.view"));
+        var metricResponses = metricRepository.findAllById(canViewMetrics ? metricIds : List.<UUID>of()).stream()
+                .map(m -> new cn.superhuang.data.scalpel.business.model.web.response.DataModelReferenceMetricResponse(m.getId(), m.getName(), m.getCode())).toList();
         return new DataModelReferencesResponse(
-                modelId, taskResponses.isEmpty() && services.isEmpty(), taskResponses, services);
+                modelId, taskResponses.isEmpty() && services.isEmpty() && metricIds.isEmpty(), taskResponses, services, metricResponses);
     }
 
     private Map<UUID, Map<UUID, String>> canvasNodeNames(List<UUID> taskIds) {

@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.datasource.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.datasource.service.DataSourceRuntimeService;
 import cn.superhuang.data.scalpel.business.datasource.web.response.DataSourceTypeResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -22,6 +23,7 @@ public class DataSourceTypeResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询支持的数据库类型和连接能力")
     @GetMapping
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询支持的数据库类型和连接能力")

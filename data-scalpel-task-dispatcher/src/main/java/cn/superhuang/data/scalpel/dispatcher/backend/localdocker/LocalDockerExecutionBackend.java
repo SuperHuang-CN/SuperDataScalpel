@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherArtifactService;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendException;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendExecutionState;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendLog;
+import cn.superhuang.data.scalpel.dispatcher.backend.BackendLogWindow;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendReadiness;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendStatus;
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendSubmission;
@@ -226,6 +227,19 @@ public class LocalDockerExecutionBackend implements TaskExecutionBackend {
                 dispatcherProperties.logMaxBytes().toBytes());
         if (!logs.successful()) throw new BackendException("DOCKER_LOG_FAILED", "无法读取 Docker 容器日志");
         return new BackendLog(logs.combinedOutput(), logs.truncated());
+    }
+
+    @Override
+    public BackendLog collectRecentLog(ExternalExecutionHandle handle) throws BackendException {
+        requireHandle(handle);
+        if (inspectIfPresent(handle.externalId()).isEmpty()) {
+            throw new BackendException("EXTERNAL_EXECUTION_NOT_FOUND", "没有找到 Docker 容器日志");
+        }
+        DockerCommandResult logs = execute(commands.recentLogs(handle.externalId(), 2_001),
+                Duration.ofSeconds(10), dispatcherProperties.logMaxBytes().toBytes());
+        if (!logs.successful()) throw new BackendException("DOCKER_LOG_FAILED", "无法读取 Docker 容器日志");
+        return BackendLogWindow.recent(new BackendLog(logs.combinedOutput(), logs.truncated()),
+                2_000, 1024 * 1024);
     }
 
     @Override

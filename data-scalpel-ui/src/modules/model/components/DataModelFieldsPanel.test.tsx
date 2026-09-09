@@ -71,6 +71,7 @@ const scalarFields: DataModelField[] = [{
 
 let detailModel = baseModel;
 let detailFields = geometryFields;
+let dataSourceType: 'POSTGRESQL' | 'CLICKHOUSE' = 'POSTGRESQL';
 
 vi.mock('../hooks/useDataModels', () => ({
   useDataModel: () => ({
@@ -105,6 +106,12 @@ vi.mock('../../system', () => ({
   }),
 }));
 
+vi.mock('../../datasource', () => ({
+  useDataSource: () => ({
+    data: { id: 'storage-id', type: dataSourceType },
+  }),
+}));
+
 vi.mock('../../standard', () => ({
   isStandardDictionaryTypeFamilyCompatible: () => true,
   standardDictionaryValueTypeLabels: {},
@@ -124,6 +131,7 @@ describe('DataModelFieldsPanel field editing boundaries', () => {
   beforeEach(() => {
     detailModel = baseModel;
     detailFields = geometryFields;
+    dataSourceType = 'POSTGRESQL';
     vi.stubGlobal('ResizeObserver', ResizeObserverStub);
     Object.defineProperty(window, 'matchMedia', {
       configurable: true,
@@ -144,14 +152,56 @@ describe('DataModelFieldsPanel field editing boundaries', () => {
     cleanup();
   });
 
-  it('disables physical structure changes after a managed Geometry table matches', () => {
+  it('allows constraint changes but keeps the spatial field definition locked', async () => {
+    const user = userEvent.setup();
     render(<DataModelFieldsPanel model={detailModel} canUpdate />);
 
-    expect(screen.getByText(/不支持物理结构变更/)).toBeInTheDocument();
+    expect(screen.getByText(/可修改可空性和非空间字段主键约束/)).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /新增字段/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: /生成变更计划/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /生成变更计划/ })).toBeDisabled();
     expect(screen.queryByRole('button', { name: /删除字段空间位置/ })).not.toBeInTheDocument();
     expect(screen.getByText(/Point · EPSG:4326 · XY/)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '修改字段空间位置' }));
+    expect(screen.getByLabelText('字段编码')).toBeDisabled();
+    expect(screen.getByLabelText('字段类型')).toBeDisabled();
+    expect(screen.getByRole('switch', { name: '允许为空' })).toBeEnabled();
+    expect(screen.getByRole('switch', { name: '主键' })).toBeDisabled();
+
+    await user.click(screen.getByRole('switch', { name: '允许为空' }));
+    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /生成变更计划/ })).toBeEnabled();
+    });
+  });
+
+  it('treats a ClickHouse platform primary key as directly saved metadata', async () => {
+    const user = userEvent.setup();
+    dataSourceType = 'CLICKHOUSE';
+    detailFields = [...scalarFields, ...geometryFields];
+    render(<DataModelFieldsPanel model={detailModel} canUpdate />);
+
+    await user.click(screen.getByRole('button', { name: '修改字段订单ID' }));
+    expect(screen.getByText(/不生成 ClickHouse 约束/)).toBeInTheDocument();
+    await user.click(screen.getByRole('switch', { name: '平台主键' }));
+    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /保存字段/ })).toBeEnabled();
+    });
+    expect(screen.queryByRole('button', { name: /生成变更计划/ })).not.toBeInTheDocument();
+  });
+
+  it('keeps nullable and primary key locked for an external table', async () => {
+    const user = userEvent.setup();
+    detailModel = { ...baseModel, physicalTableMode: 'EXTERNAL' };
+    detailFields = scalarFields;
+    render(<DataModelFieldsPanel model={detailModel} canUpdate />);
+
+    await user.click(screen.getByRole('button', { name: '修改字段订单ID' }));
+
+    expect(screen.getByRole('switch', { name: '允许为空' })).toBeDisabled();
+    expect(screen.getByRole('switch', { name: '主键' })).toBeDisabled();
   });
 
   it('allows a disabled managed model to enter field editing', () => {

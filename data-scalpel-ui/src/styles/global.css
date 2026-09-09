@@ -182,6 +182,39 @@ input.business-secret-input.is-masked {
   background: rgb(211 87 87 / 7%);
 }
 
+/* Non-blocking feedback for maps, editors and other fixed-height workspaces. */
+.workspace-floating-feedback.inline-feedback {
+  position: absolute;
+  z-index: 8;
+  max-width: min(420px, calc(100% - 24px));
+  min-height: 32px;
+  padding: 5px 8px;
+  background: rgb(255 255 255 / 94%);
+  border-color: rgb(91 107 170 / 16%);
+  box-shadow: var(--ds-panel-shadow-elevated);
+  backdrop-filter: blur(10px);
+}
+
+.workspace-floating-feedback-top-left {
+  top: 12px;
+  left: 12px;
+}
+
+.workspace-floating-feedback-top-right {
+  top: 12px;
+  right: 12px;
+}
+
+.workspace-floating-feedback-bottom-left {
+  bottom: 12px;
+  left: 12px;
+}
+
+.workspace-floating-feedback-bottom-right {
+  right: 12px;
+  bottom: 12px;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -5910,6 +5943,142 @@ body,
   word-break: break-all;
 }
 
+.task-run-artifact-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  align-items: center;
+  padding: 8px 10px;
+  border: 1px solid rgba(80, 106, 180, 0.14);
+  border-radius: 10px;
+  background: rgba(246, 248, 255, 0.72);
+}
+
+.task-run-artifact-row {
+  display: inline-flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 8px;
+  padding-right: 12px;
+  border-right: 1px solid rgba(80, 106, 180, 0.14);
+}
+
+.task-run-artifact-row:last-child {
+  padding-right: 0;
+  border-right: 0;
+}
+
+.task-run-artifact-preview {
+  display: flex;
+  min-height: 0;
+  height: 100%;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.task-run-live-log-viewer {
+  display: flex;
+  flex-direction: column;
+  min-height: 520px;
+  height: 100%;
+  gap: 12px;
+}
+
+.task-run-live-log-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.task-run-live-log-info {
+  color: #fa8c16;
+}
+
+.task-run-live-log-editor-wrap {
+  position: relative;
+  flex: 1;
+  min-height: 460px;
+}
+
+.task-run-live-log-editor-wrap > .task-run-artifact-preview-editor,
+.task-run-live-log-editor-wrap > div:last-child {
+  height: 100%;
+}
+
+.task-run-live-log-notice {
+  position: absolute;
+  z-index: 2;
+  top: 8px;
+  right: 22px;
+  max-width: min(560px, calc(100% - 44px));
+  padding: 5px 10px;
+  border: 1px solid #ffe58f;
+  border-radius: 6px;
+  color: #ad6800;
+  background: rgba(255, 251, 230, 0.94);
+  font-size: 12px;
+}
+
+.task-run-live-log-state {
+  display: grid;
+  flex: 1;
+  min-height: 420px;
+  place-items: center;
+}
+
+.task-run-artifact-preview-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(80, 106, 180, 0.16);
+}
+
+.task-run-artifact-preview-navigation {
+  flex: none;
+}
+
+.task-run-artifact-preview-editor {
+  flex: 1;
+  min-height: 420px;
+}
+
+.task-run-artifact-preview-loading,
+.task-run-artifact-preview-empty {
+  display: flex;
+  flex: 1;
+  min-height: 360px;
+  align-items: center;
+  justify-content: center;
+}
+
+.business-drawer-overlay .task-run-detail-drawer-preview .ant-drawer-body {
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.business-drawer-overlay .task-run-detail-drawer-preview .task-run-artifact-preview {
+  width: 100%;
+}
+
+@media (max-width: 720px) {
+  .task-run-artifact-row {
+    width: 100%;
+    padding-right: 0;
+    border-right: 0;
+  }
+
+  .task-run-artifact-preview-header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
 .task-user-observability-panel {
   width: 100%;
   flex: none;
@@ -10270,6 +10439,31 @@ body.model-preview-column-resizing * {
   overflow: hidden;
 }
 
+.spark-jar-trial-preview-toolbar {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 36px;
+  margin-bottom: 12px;
+}
+
+.spark-jar-trial-preview-toolbar + .ant-alert {
+  flex: none;
+  margin-bottom: 12px;
+}
+
+.spark-jar-trial-view > .task-run-live-log-viewer,
+.spark-jar-trial-view .task-run-live-log-editor-wrap,
+.spark-jar-trial-view .task-run-live-log-state {
+  min-height: 0;
+}
+
+.spark-jar-trial-view > .task-run-live-log-viewer {
+  flex: 1;
+}
+
 .spark-jar-trial-preview-panel {
   display: flex;
   flex: 1;
@@ -10280,6 +10474,20 @@ body.model-preview-column-resizing * {
 .spark-jar-trial-preview-panel > .ant-alert {
   flex: none;
   margin-bottom: 12px;
+}
+
+.spark-jar-trial-output-list {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.spark-jar-trial-output-list > div + div {
+  padding-top: 16px;
+  border-top: 1px solid rgba(73, 94, 151, 0.12);
 }
 
 .spark-jar-trial-write-tabs {
@@ -10315,9 +10523,31 @@ body.model-preview-column-resizing * {
   white-space: nowrap;
 }
 
+.spark-jar-trial-output {
+  display: flex;
+  flex: none;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 0;
+}
+
+.spark-jar-trial-output-summary {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 2px 2px 0;
+}
+
+.spark-jar-trial-output > .ant-alert {
+  flex: none;
+}
+
 .spark-jar-trial-write-content {
   display: flex;
-  flex: 1;
+  flex: none;
   flex-direction: column;
   min-width: 0;
   min-height: 0;
@@ -10625,6 +10855,31 @@ body.model-preview-column-resizing * {
 :is(.app-content-management, .data-service-management-scope) .management-status-indicator-error {
   color: #a44355;
   background: #fff0f2;
+}
+
+.data-service-runtime-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+:is(.app-content-management, .data-service-management-scope) .data-service-runtime-summary .management-status-indicator {
+  min-height: 0;
+  padding: 0;
+  line-height: 18px;
+  background: transparent;
+  border: 0;
+  border-radius: 0;
+}
+
+.data-service-runtime-summary-separator {
+  flex: none;
+  color: #c5cad8;
+  font-size: 11px;
 }
 
 .management-more-filter-overlay .ant-popover-container,
@@ -11850,6 +12105,23 @@ body.model-preview-column-resizing * {
   overflow: hidden;
 }
 
+/* The execution table uses a viewport inside the active tab pane. Ant Design's
+   tab internals vary between v5 and v6, so each possible pane layer must itself
+   participate in the flex height chain; otherwise `scroll.y` expands the page
+   instead of creating an inner table scroll area. */
+.compute-engine-detail-tabs > .ant-tabs-content-holder,
+.compute-engine-detail-tabs > .ant-tabs-content-holder > .ant-tabs-content,
+.compute-engine-detail-tabs > .ant-tabs-content-holder > .ant-tabs-content > .ant-tabs-tabpane,
+.compute-engine-detail-tabs > .ant-tabs-body-holder,
+.compute-engine-detail-tabs > .ant-tabs-body-holder > .ant-tabs-body,
+.compute-engine-detail-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content,
+.compute-engine-detail-tabs > .ant-tabs-body-holder > .ant-tabs-body > .ant-tabs-content > .ant-tabs-tabpane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
 .compute-engine-execution-panel .ant-table-wrapper {
   display: flex;
   flex: 1;
@@ -11865,7 +12137,20 @@ body.model-preview-column-resizing * {
 }
 
 .compute-engine-execution-panel .ant-table {
+  display: flex;
   flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.compute-engine-execution-panel .ant-table-container {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.compute-engine-execution-panel .ant-table-body {
   min-height: 0;
 }
 

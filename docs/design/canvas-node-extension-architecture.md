@@ -2,16 +2,16 @@
 
 ## 1. 文档状态
 
-- 状态：已实施。
+- 状态：架构已实施；本文保留设计背景、原实施计划与验收记录。
 - 适用范围：Canvas 设计器、Canvas 稳定定义、Business 保存与发布准备、Task Engine 编译与运行。
-- 当前协议：`schemaVersion: 3`、`schemaMinorVersion: 0`。
-- 实施门禁：本文档已完成评审确认，生产代码按本文约束迁移。
+- 当前开发入口：[前端约定](../../data-scalpel-ui/AGENTS.md)、[Task Engine 约定](../../data-scalpel-task-engine/AGENTS.md)及 [编译与执行规范](../development/task-engine.md)。
+- 协议版本以 [当前读写端常量](../README.md#协议版本定位)为准；文中的历史版本、迁移、回退和验收步骤只适用于原重构，不自动适用于后续任务。
 
 本文定义 DataScalpel 内置 Canvas 节点的扩展架构。目标不是提供运行时第三方插件，而是让新增内置 `INPUT`、`PROCESSOR`、`OUTPUT` 时，展示、配置、导入、图规则、元数据依赖和执行能力通过明确的编译期注册机制接入。
 
 ## 2. 背景与问题
 
-本架构设计启动时已有 19 种 Canvas 节点；完成 Canvas `1.24` 后，前端与 Task Engine 显式 Registry 均为 37 种。稳定定义与 X6 已经解耦，但设计器能力仍分散在多个集中式文件：
+本架构设计启动时已有 19 种 Canvas 节点；完成 Canvas `1.24` 后，前端与 Task Engine 显式 Registry 均为 37 种。这些是历史阶段数据。重构前稳定定义与 X6 已经解耦，但设计器能力仍分散在多个集中式文件：
 
 - `canvasRegistry.tsx` 同时维护 Palette 模板、节点摘要、图标和 X6 React Shape。
 - `CanvasNodeInspector.tsx` 同时包含大量节点表单和节点类型分发。
@@ -19,7 +19,7 @@
 - `canvasPorts.ts`、连接预校验、默认配置和元数据快照各自按节点类型分支。
 - `data-scalpel-business` 与 `data-scalpel-contracts` 分别维护一套完整 Java Canvas 定义，并在任务准备时逐节点转换。
 
-继续按当前方式新增节点会产生以下问题：
+继续按重构前的方式新增节点会产生以下问题：
 
 1. 一个节点需要修改多个互不约束的 `switch`，容易漏注册。
 2. Palette 展示、Inspector、协议版本、端口和 Operator 支持模式可能不一致。
@@ -63,7 +63,7 @@
 
 ```mermaid
 flowchart LR
-    Definition["Canvas Definition 1.13"] --> ProtocolRegistry["CanvasNodeSpec Registry"]
+    Definition["Canvas Definition"] --> ProtocolRegistry["CanvasNodeSpec Registry"]
     ProtocolRegistry --> IO["JSON 导入与默认配置"]
     ProtocolRegistry --> Palette["节点库与分组"]
     ProtocolRegistry --> Shape["通用 X6 Node Shape"]
@@ -262,7 +262,7 @@ src/modules/task/canvas/
 4. 调用 `spec.parseConfiguration` 解析配置。
 5. 解析成功后组装判别联合 `CanvasNodeDefinition`。
 6. 保留现有重复 ID、布局、边端点和协议版本校验。
-7. 规范化输出统一写入当前 `3.0`。
+7. 兼容定义规范化为当前读写端声明的大/小版本，具体规则见 [协议版本规范](../development/task-engine.md#protocol-versions)。
 
 `emptyNodeConfiguration(type)` 改为调用 `registry.require(type).createDefaultConfiguration()`。旧函数名可以保留为薄适配层，避免调用方一次性重写；实现完成后不得再包含节点类型分支。
 
@@ -579,7 +579,7 @@ Business 保存边界：
 - 空字符串允许作为未配置草稿。
 - 非空字符串必须是 UUID；非法值继续返回 HTTP 400 ProblemDetail。
 - 不验证资源是否存在、是否启用或字段是否兼容。
-- 升级后保存的定义统一写为当前 `3.0`。
+- 兼容定义保存时规范化为当前小版本；大版本不兼容定义不隐式迁移或覆盖。
 
 Task Engine 直接编译边界：
 
@@ -622,7 +622,7 @@ Task Engine 继续显式注册内置 Operator。每个 `CanvasNodeType`：
 ### 10.1 兼容
 
 - Canvas JSON 字段、节点类型和配置语义不变。
-- Registry 架构重构本身不单独占用协议版本；当前写出版本统一为 Canvas `3.0`。
+- Registry 架构重构本身不单独占用协议版本；写出版本遵循当前读写端常量，不再以原迁移记录中的 Canvas `3.0` 为现行值。
 - HTTP API 路径、请求和响应 JSON 不变。
 - 数据库表和已保存 JSON 不迁移。
 - X6 Shape 变化属于内存实现，不影响持久化。
@@ -639,7 +639,7 @@ Task Engine 继续显式注册内置 Operator。每个 `CanvasNodeType`：
 
 ### 10.3 回退
 
-因为没有协议、API 或数据库迁移，代码版本可以整体回退。新版本保存的 JSON 仍可由旧版本 `1.13` 读取。不得在重构中顺带加入新节点或新配置字段，以免破坏这一回退条件。
+原重构的回退假设是协议、API 和数据库均未改变，且没有混入新节点或配置字段。这个假设不适用于后续协议升级，也不保证当前 JSON 可由旧版本 `1.13` 读取。回退前必须核对目标读写端的协议范围；不同大版本及未来小版本按现行规则拒绝读取。
 
 ## 11. 新增节点标准流程
 
@@ -663,7 +663,9 @@ Task Engine 继续显式注册内置 Operator。每个 `CanvasNodeType`：
 - 只在 Task Engine 支持但没有稳定 Definition 和 Inspector。
 - 新增新的中心化节点类型 `switch`。
 
-## 12. 测试矩阵
+## 12. 原实施测试矩阵
+
+以下是原重构的验收范围；后续任务是否执行测试，遵循 [根测试政策](../../AGENTS.md#测试与验证暂时禁用)与本次用户要求。
 
 ### 12.1 前端 Registry
 
@@ -721,7 +723,7 @@ Task Engine 继续显式注册内置 Operator。每个 `CanvasNodeType`：
 
 ### 12.7 最终验证
 
-所有代码完成后统一执行：
+原实施任务要求全部代码完成后统一执行：
 
 ```bash
 ./mvnw -pl data-scalpel-business,data-scalpel-task-engine -am test
@@ -732,7 +734,7 @@ pnpm vitest run --maxWorkers=1
 git diff --check
 ```
 
-测试执行集中在全部开发完成后。本次用户明确要求执行上述测试，但该要求不解除工程其他任务的全局“测试与验证暂时禁用”政策。
+上述执行要求只适用于原实施任务，不构成后续任务的强制验收要求；是否执行遵循根文件测试政策及当前任务要求。
 
 ## 13. 开发规范落点
 
@@ -764,7 +766,7 @@ git diff --check
 
 ## 14. 评审确认项
 
-本文已固定以下决策，评审时只需确认是否接受整体设计：
+原实施评审已确认以下决策，保留供追溯，不要求后续任务重复评审：
 
 1. 使用编译期 `CanvasNodeSpec`，不建设运行时插件系统。
 2. 三大分类不变，使用本文固定二级分组。
@@ -772,6 +774,6 @@ git diff --check
 4. 元数据按资源种类注册 Provider。
 5. Contracts 成为唯一 Java Canvas 定义。
 6. 四个草稿资源 ID 的 Java 类型改为 String，JSON 不变。
-7. 当前协议为 `3.0`，无数据库迁移和功能开关。
+7. 原记录使用 Canvas `3.0`，重构不引入数据库迁移或功能开关；当前版本见文首入口。
 8. 最近使用、收藏和快捷搜索不在本次范围。
-9. 设计文档确认后才开始代码实施。
+9. 原重构在设计确认后开始实施，该流程已完成。

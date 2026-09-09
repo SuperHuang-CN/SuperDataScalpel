@@ -73,8 +73,13 @@ final class RunnerArtifactClient implements RunnerArtifactAccess {
 
     @Override
     public void upload(URI uri, byte[] content, String contentType) throws Exception {
+        upload(uri, content, contentType, Duration.ofSeconds(30));
+    }
+
+    @Override
+    public void upload(URI uri, byte[] content, String contentType, Duration timeout) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri)
-                .timeout(Duration.ofSeconds(30))
+                .timeout(timeout)
                 .header("Content-Type", contentType)
                 .PUT(HttpRequest.BodyPublishers.ofByteArray(content))
                 .build();

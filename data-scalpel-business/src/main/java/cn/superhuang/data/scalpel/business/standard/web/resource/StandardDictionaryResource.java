@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.standard.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.standard.service.StandardDictionaryExcelFile;
 import cn.superhuang.data.scalpel.business.standard.service.StandardDictionaryExcelService;
 import cn.superhuang.data.scalpel.business.standard.service.StandardDictionaryService;
@@ -61,6 +62,7 @@ public class StandardDictionaryResource {
         this.excelService = excelService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "分页查询码表")
     @GetMapping
     @PreAuthorize("hasAuthority('standard.dictionary.view')")
     @Operation(summary = "分页查询码表")
@@ -70,6 +72,7 @@ public class StandardDictionaryResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询码表详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('standard.dictionary.view')")
     @Operation(summary = "查询码表详情")
@@ -77,6 +80,7 @@ public class StandardDictionaryResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增码表")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
@@ -87,6 +91,7 @@ public class StandardDictionaryResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改码表")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
     @Operation(summary = "修改码表")
@@ -97,6 +102,7 @@ public class StandardDictionaryResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "启用码表")
     @PostMapping("/{id}/actions/enable")
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
     @Operation(summary = "启用码表")
@@ -107,6 +113,7 @@ public class StandardDictionaryResource {
         return service.enable(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用码表")
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
     @Operation(summary = "停用码表")
@@ -117,6 +124,7 @@ public class StandardDictionaryResource {
         return service.disable(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除未被模型字段引用的码表")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
@@ -128,6 +136,7 @@ public class StandardDictionaryResource {
         service.delete(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询码表项树")
     @GetMapping("/{dictionaryId}/items/tree")
     @PreAuthorize("hasAuthority('standard.dictionary.view')")
     @Operation(summary = "查询码表项树")
@@ -135,6 +144,7 @@ public class StandardDictionaryResource {
         return service.tree(dictionaryId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增码表树节点")
     @PostMapping("/{dictionaryId}/items")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
@@ -146,6 +156,7 @@ public class StandardDictionaryResource {
         return service.createItem(dictionaryId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改码表树节点")
     @PostMapping("/{dictionaryId}/items/{itemId}/actions/update")
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
     @Operation(summary = "修改码表树节点")
@@ -157,6 +168,7 @@ public class StandardDictionaryResource {
         return service.updateItem(dictionaryId, itemId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "移动码表树节点")
     @PostMapping("/{dictionaryId}/items/{itemId}/actions/move")
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
     @Operation(summary = "移动码表树节点")
@@ -168,6 +180,7 @@ public class StandardDictionaryResource {
         return service.moveItem(dictionaryId, itemId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "启用码表树节点")
     @PostMapping("/{dictionaryId}/items/{itemId}/actions/enable")
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
     @Operation(summary = "启用码表树节点")
@@ -179,6 +192,7 @@ public class StandardDictionaryResource {
         return service.enableItem(dictionaryId, itemId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用码表树节点")
     @PostMapping("/{dictionaryId}/items/{itemId}/actions/disable")
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
     @Operation(summary = "停用码表树节点")
@@ -190,6 +204,7 @@ public class StandardDictionaryResource {
         return service.disableItem(dictionaryId, itemId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除码表树节点")
     @PostMapping("/{dictionaryId}/items/{itemId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('standard.dictionary.manage')")
@@ -202,6 +217,7 @@ public class StandardDictionaryResource {
         service.deleteItem(dictionaryId, itemId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询引用码表的模型字段")
     @GetMapping("/{id}/field-references")
     @PreAuthorize("hasAuthority('standard.dictionary.view') and hasAuthority('model.view')")
     @Operation(summary = "查询引用码表的模型字段")
@@ -212,6 +228,7 @@ public class StandardDictionaryResource {
         return service.fieldReferences(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "下载码表 Excel 导入模板")
     @GetMapping("/metadata-import-template")
     @PreAuthorize("hasAuthority('standard.dictionary.view')")
     @Operation(summary = "下载码表 Excel 导入模板")
@@ -219,6 +236,7 @@ public class StandardDictionaryResource {
         return excelFile(excelService.template());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "导出选择的码表树元数据")
     @PostMapping("/actions/query-export-metadata")
     @PreAuthorize("hasAuthority('standard.dictionary.view')")
     @Operation(summary = "导出选择的码表树元数据")
@@ -228,6 +246,7 @@ public class StandardDictionaryResource {
         return excelFile(excelService.export(request));
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "只读解析并预览码表 Excel")
     @PostMapping(
             path = "/actions/query-import-preview",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE
@@ -240,6 +259,7 @@ public class StandardDictionaryResource {
         return excelService.preview(file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "提交已预览的码表 Excel")
     @PostMapping(
             path = "/actions/import-metadata",
             consumes = MediaType.MULTIPART_FORM_DATA_VALUE

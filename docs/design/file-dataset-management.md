@@ -12,9 +12,9 @@ FileDataset
        └─ FileDatasetTableSource（有序当前来源）
 ```
 
-数据集先按类型创建并保存共享解析参数，再上传文件。CSV、TSV、TXT、JSON、JSONL、Parquet、
-Avro 和 SHP 支持表级 `APPEND`、`REPLACE_ALL` 和 `REPLACE_SOURCE`，每次只上传一个文件。
-Excel 和 GDB 只支持整文件上传或替换。
+数据集先按类型创建并保存共享解析参数，再上传文件。CSV、TSV、TXT、JSON、JSONL、GeoJSON、GEOJSONL、
+GeoParquet、Parquet、Avro 和 SHP 支持表级 `APPEND`、`REPLACE_ALL` 和 `REPLACE_SOURCE`，每次只上传一个文件。
+Excel、GDB 和 GeoPackage（GPKG）只支持整文件上传或替换。
 
 数据集级上传表示“创建新的逻辑表”，不会按名称自动追加。多个来源按顺序执行 `UNION ALL`，
 不合并文件、不去重、不做 Upsert，也不支持 Schema 演进。
@@ -31,10 +31,10 @@ Excel 和 GDB 只支持整文件上传或替换。
 保存当前文件或临时待校验文件的原始文件名、格式、压缩方式、对象 Key、存储形态和物化信息。
 状态只有：
 
-- `PREPARING`：SHP/GDB 归档正在安全检查和物化；
+- `PREPARING`：SHP/GDB 归档正在安全检查和物化，或 GPKG 正在只读校验和发现表；
 - `READY`：对象可供逻辑表校验或当前来源读取。
 
-普通格式直接使用原始对象。SHP/GDB 同时保存原归档对象和已发布物化前缀。准备或校验最终失败
+普通格式与 GPKG 直接使用原始对象。SHP/GDB 同时保存原归档对象和已发布物化前缀。准备或校验最终失败
 时删除临时文件记录、原始对象和物化目录，不保留失败文件。
 
 ### 2.3 `ds_file_dataset_table`
@@ -72,7 +72,7 @@ CRS、kind 或 dimension 变化都不允许静默兼容。
 
 `ds_file_dataset_parse_job` 是可重试的执行历史，不是业务版本。任务类型为：
 
-- `FILE_PREPARATION`：SHP/GDB 归档检查、物化和表发现；
+- `FILE_PREPARATION`：SHP/GDB 归档检查、物化和表发现，或 GPKG 的只读表发现；
 - `TABLE_SOURCE_VALIDATE`：执行 `INITIAL/APPEND/REPLACE_ALL/REPLACE_SOURCE` 的完整校验。
 
 Job 保存数据集、表、文件名称快照，以及可空的 `load_mode/target_source_id/source_name/
@@ -82,8 +82,11 @@ source_key`。队列状态为 `QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELLED`，并�
 ## 3. 校验与提交
 
 初始来源完整扫描并建立字段、总行数、最多 1000 条预览样本和来源元数据。CSV、TSV、TXT、
-JSON 和 JSONL 必须逐条解码；Parquet 和 Avro 校验内置 Schema；SHP 还比较 Shape 类型、Z/M
-维度、Geometry 字段和规范化 PRJ WKT。
+JSON、JSONL、GeoJSON 和 GEOJSONL 必须逐条解码；Parquet 和 Avro 校验内置 Schema；GeoParquet 与 GPKG 还会完整扫描
+WKB Geometry 和 GeoParquet Footer；SHP 还比较 Shape 类型、Z/M
+维度、Geometry 字段和规范化 PRJ WKT。GeoJSON 固定为 RFC 7946 `FeatureCollection`：`properties`
+构成属性字段，顶层 `Feature.id` 保存为可空 `_feature_id`，`geometry` 保存为 EPSG + XY 的 Geometry；
+数据集解析参数指定 EPSG（默认 `4326`），不会根据旧式 `crs` 成员或坐标值推测、转换坐标。
 
 后续来源固定比较字段数量、名称、顺序、完整 `PlatformTypeDefinition` 和 nullable。任一不一致
 都使 Job 失败并清理临时数据，不修改当前来源。
@@ -110,25 +113,25 @@ Worker 在事务外读取和校验，在短事务内锁定 Job、文件和表并
 - 事务提交后立即删除不再被任何当前来源或非终态 Job 引用的文件记录、原始对象和物化目录。
 - 对象删除失败只记录告警，极少数孤儿对象由技术人员按日志人工处理。
 
-Excel/GDB 整文件替换采用破坏性语义：新文件提交后立即删除旧表和旧对象，再重新发现表。
+Excel/GDB/GPKG 整文件替换采用破坏性语义：新文件提交后立即删除旧表和旧对象，再重新发现表。
 后续解析失败不恢复旧文件，数据集允许变为空。
 
 ## 5. 预览和 Canvas
 
 预览按 `source_order` 读取当前来源，累计到请求 limit 后停止。任一来源不能安全预览时整表返回
-`409`，不得返回部分结果。GDB 和 SHP 的管理端预览只返回属性字段，不返回 Geometry 字段及其
+`409`，不得返回部分结果。GDB、SHP、GeoJSON、GEOJSONL、GeoParquet 和 GPKG 的管理端预览只返回属性字段，不返回 Geometry 字段及其
 坐标值；权威 Schema、Canvas 元数据和任务运行仍保留完整 Geometry 定义和值读取能力。
 
 状态为 `READY` 或 `SCHEMA_READY` 且存在来源的表可以作为 Canvas 输入。运行准备直接快照权威
-Schema、解析参数和有序 Object Key 列表，生成 Manifest v8：
+Schema、解析参数和有序 Object Key 列表，生成当前严格兼容的 Manifest v27：
 
 - 表输入保存数据集 ID、表 ID、Schema 指纹和目标 Schema；
 - 来源输入保存稳定来源 ID、文件 ID、格式、压缩、存储位置和来源键；
 - 不包含数据或解析修订号，也不建立旧对象读取保护。
 
 APPEND 不影响已经生成的 Manifest；覆盖、替换和删除会立即删除旧对象，已排队或运行任务允许
-因对象不存在而失败。Task Engine 接受当前 v8，并兼容不包含空间节点或 Geometry Schema 的
-v7；多个来源使用同一 Schema 和 FAILFAST Reader 后执行 `unionByName`。
+因对象不存在而失败。Task Engine 只接受 v27；多个来源使用同一 Schema 和 FAILFAST Reader 后执行
+`unionByName`。
 
 ## 6. API 与管理端
 
@@ -145,7 +148,8 @@ v7；多个来源使用同一 Schema 和 FAILFAST Reader 后执行 `unionByName`
 `jobIds`。表响应使用 `sourceCount/totalRowCount/currentLoadJobId/previewSupported`。
 
 表级 `actions/parse`、来源 `actions/retry` 和文件 `actions/prepare` 不再提供。具体失败信息统一
-在解析队列抽屉查看。来源页签只展示当前来源及下载、替换和删除操作；危险确认明确提示不可恢复、
+在解析队列抽屉查看。来源页签只展示当前来源及下载、替换和删除操作；GPKG 来源只能下载，替换和
+删除必须从整文件操作发起。危险确认明确提示不可恢复、
 旧对象立即删除以及旧 Canvas 任务可能失败。
 
 空间参考确认只接受 `EPSG` 和正整数 code。管理端会重新读取全部当前来源并在成功后刷新表、Schema、

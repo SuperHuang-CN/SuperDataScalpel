@@ -27,7 +27,14 @@ JDBC 能力按节点而不是全局数据库白名单判定：
 
 ## 2. Manifest 边界
 
-manifest 当前写出 `manifestVersion: 23`；Runner 严格只读取 v23，不保留旧版本兼容分支。
+Canvas 4.46 的事件窗口指标仍完全位于 `task.definition`，不新增 Manifest/Result 字段或 HTTP API。
+`TRACK_DETECT_INCIDENTS` 在确定轨迹片段之后，通过 Spark ROWS 窗口计算节点内临时指标，再判断开始/结束条件；
+将左闭右开偏移转换为 Spark 的闭区间 `[start,end-1]`。指标只读取原字段，不互相形成计划链。
+Compiler 同一路径只解析零行惰性计划，不启动 Job、Checkpoint、缓存或外部读取；Runner 仍按整个节点记录生命周期，
+安全摘要只新增指标数量，不记录窗口偏移、别名或条件字面量。逐输出血缘从 Catalyst 追溯原字段，不把临时指标登记为来源。
+这项能力不等同任意 Arcade 脚本，窗口函数与 NULL 规则见[事件检测设计](canvas-spatial-next-processors/track-detect-incidents.md#8-446-受控字段窗口条件)。
+
+manifest 当前写出 `manifestVersion: 27`；Runner 严格只读取 v27，不保留旧版本兼容分支。
 顶层分为 `execution`、`task`、
 `metadataSnapshot`、`runtimeDataSources`、可空 `runtimeFileStorage`、`runtimeFileInputs` 和
 `snapshotSyncLimits` 和可空的 `canvasTrial`：
@@ -223,6 +230,18 @@ HTTP API 批次的 Local Checkpoint 用于限制 Driver 堆占用，不是容错
 控制台日志记录 `TASK_START/TASK_SUCCESS/TASK_FAILED` 和 `NODE_START/NODE_SUCCESS/NODE_FAILED`。TMQ 摘要只允许数据源 ID、Topic、超级表、首次位置和字段数量；Spark 配置对密码、Token、Key 及 TDengine 密码选项启用脱敏，不记录完整 Properties、Checkpoint URI 或数据行。Snapshot Sync 摘要只记录目标身份、Key 字段名、映射数量、删除策略、阈值和结果计数，不记录 Key 值、before/after、Geometry 或数据行。文件 Input 的安全摘要只包含节点 ID、Table ID、table code、格式和字段数；空间文件 Output 摘要只记录来源表、Geometry 字段、空间类型/CRS/维度、格式选项、目标相对路径和冲突策略，不得记录 Geometry、坐标、属性值、完整 S3 URI 或临时路径；`MASK_FIELDS` 摘要只包含节点 ID、字段数量、策略类型以及全局来源和自定义规则数量，不得记录固定替换值、完整参数或节点配置；`JSON_EXTRACT` 摘要只记录来源/输出表、来源字段、提取数量、目标类型集合和失败策略，不得记录 JSON Path、JSON 内容或实际值。空间基础 Processor 摘要只记录表名、字段名、来源/格式、测量类型、CRS 和规则数量，不得记录 WKT、WKB、GeoJSON、坐标或测量结果。Geometry 修复、Buffer 和拆分节点的摘要只允许记录表名、字段名、模式、距离和 CRS；空间裁剪和空间聚合摘要只允许记录表名、字段名、聚合 kind、CRS 和规则数量，不得记录匹配数量、组大小、实际 Geometry、坐标、部件内容、裁剪/聚合结果或数据行。节点失败只打印一次经过脱敏的异常链和调用栈，最大 64 KiB；任务级失败只打印摘要。密码、Secret、Token、Credential、Access Key、签名参数、预签名 URL、完整 JDBC Properties、文件对象 Key、物化前缀、来源 Key、临时路径、HTTP 响应业务数据、数据行、固定替换值、脱敏测试值和 SQL参数值必须被屏蔽。
 
 ## 6. 管理端运行观察
+
+HDBSCAN 执行阶段使用下列安全错误分类；Canvas 4.45 已通过显式诊断配置接入节点，结果协议不变。
+这些错误沿用现有 `code/message/category/retryable/phase/diagnosticId` 字段，Dispatcher、Admin 与前端按已有
+字符串错误码和类别传递、展示，不新增另一套错误枚举或响应包装。
+
+| 错误码 | 类别 | 阶段 / 重试 | 含义 |
+| --- | --- | --- | --- |
+| SPATIAL_HDBSCAN_TREE_INVALID | INTERNAL | PROCESS / false | 内部生成树、分支或收敛关系不一致，不归咎于用户点字段 |
+| SPATIAL_HDBSCAN_HIERARCHY_LIMIT_EXCEEDED | RESOURCE | PROCESS / false | 超过当前层次资源保护边界，不隐式切分数据后返回部分簇 |
+| SPATIAL_HDBSCAN_NUMERIC_RANGE_INVALID | SCHEMA | PROCESS / false | 距离或密度无法可靠表示，不回退为另一算法或返回无穷诊断 |
+
+三项摘要均不包含观测身份值、坐标、密度值或原异常正文；包装异常中的稳定错误码优先于一般空间库错误。
 
 Canvas 与 LOCAL_SQL 共用任务运行记录和详情入口。活动状态包括 `QUEUED`、`RUNNING`、
 `CANCEL_REQUESTED`、`STOP_REQUESTED`，详情页每 2 秒刷新；终态停止详情轮询，任务运行列表在无活动实例时降低到每 10 秒刷新。

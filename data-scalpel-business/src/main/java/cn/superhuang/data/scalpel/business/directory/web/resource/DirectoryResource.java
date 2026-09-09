@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.directory.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryExcelFile;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryExcelService;
@@ -46,6 +47,7 @@ public class DirectoryResource {
         this.excelService = excelService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询目录树")
     @GetMapping
     @PreAuthorize("hasAuthority('directory.view')")
     @Operation(summary = "查询目录树")
@@ -53,6 +55,7 @@ public class DirectoryResource {
         return service.tree(scope);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "下载目录导入模板")
     @GetMapping("/actions/download-import-template")
     @PreAuthorize("hasAuthority('directory.view')")
     @Operation(summary = "下载目录导入模板")
@@ -60,6 +63,7 @@ public class DirectoryResource {
         return excelFile(excelService.template());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "导出指定范围的完整目录树")
     @GetMapping("/actions/export")
     @PreAuthorize("hasAuthority('directory.view')")
     @Operation(summary = "导出指定范围的完整目录树")
@@ -67,6 +71,7 @@ public class DirectoryResource {
         return excelFile(excelService.export(scope));
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "原子校验并导入指定范围的目录树")
     @PostMapping(path = "/actions/import", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     @PreAuthorize("hasAuthority('directory.manage')")
     @Operation(summary = "原子校验并导入指定范围的目录树")
@@ -77,6 +82,7 @@ public class DirectoryResource {
         return excelService.importDirectories(scope, file);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询目录详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('directory.view')")
     @Operation(summary = "查询目录详情")
@@ -84,6 +90,7 @@ public class DirectoryResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增目录")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('directory.manage')")
@@ -92,6 +99,7 @@ public class DirectoryResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改目录")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('directory.manage')")
     @Operation(summary = "修改目录")
@@ -99,6 +107,7 @@ public class DirectoryResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除目录")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('directory.manage')")

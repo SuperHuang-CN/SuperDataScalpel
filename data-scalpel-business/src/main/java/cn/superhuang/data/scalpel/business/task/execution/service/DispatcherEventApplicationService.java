@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.business.task.execution.service;
 
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
+import cn.superhuang.data.scalpel.business.operations.service.TaskRunAlertService;
 import cn.superhuang.data.scalpel.business.task.execution.domain.DispatcherEventInboxMessage;
 import cn.superhuang.data.scalpel.business.task.execution.repository.DispatcherEventInboxRepository;
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
@@ -27,6 +28,7 @@ public class DispatcherEventApplicationService {
 
     private final DispatcherEventInboxRepository inboxRepository;
     private final TaskRunRepository runRepository;
+    private final TaskRunAlertService runAlerts;
     private final TaskStreamingDeploymentRepository deploymentRepository;
     private final TaskStreamingQueryRepository queryRepository;
     private final TaskExecutionOutboxService executionOutboxService;
@@ -36,6 +38,7 @@ public class DispatcherEventApplicationService {
     public DispatcherEventApplicationService(
             DispatcherEventInboxRepository inboxRepository,
             TaskRunRepository runRepository,
+            TaskRunAlertService runAlerts,
             TaskStreamingDeploymentRepository deploymentRepository,
             TaskStreamingQueryRepository queryRepository,
             TaskExecutionOutboxService executionOutboxService,
@@ -44,6 +47,7 @@ public class DispatcherEventApplicationService {
     ) {
         this.inboxRepository = inboxRepository;
         this.runRepository = runRepository;
+        this.runAlerts = runAlerts;
         this.deploymentRepository = deploymentRepository;
         this.queryRepository = queryRepository;
         this.executionOutboxService = executionOutboxService;
@@ -80,6 +84,7 @@ public class DispatcherEventApplicationService {
             sparkJarLineageIngestionService.enqueue(run, event);
         }
         run.recordDispatcherEvent(event.sequence(), event.externalExecutionId(), event.trackingUrl());
+        runAlerts.capture(run);
         runRepository.save(run);
         inbox.processed();
         inboxRepository.save(inbox);
@@ -152,8 +157,14 @@ public class DispatcherEventApplicationService {
         }
         TaskStreamingDeployment deployment = deploymentRepository
                 .findByIdForUpdate(run.getStreamingDeploymentId()).orElseThrow();
+        // Dispatcher emits a generic EXECUTION_RUNNING event when the backend/container starts.
+        // That event deliberately has no query descriptors. The Runner emits a second RUNNING
+        // event only after the user job has registered its managed streaming queries. Treating
+        // the generic event as a query-set report would make a first deployment fail because an
+        // empty descriptor list appears to differ from the deployment's eventual query set.
         if (event.messageType() == ExecutionMessageType.EXECUTION_RUNNING
-                && run.getTaskType() == TaskType.SPARK_STREAMING_JAR) {
+                && run.getTaskType() == TaskType.SPARK_STREAMING_JAR
+                && !event.streamingQueries().isEmpty()) {
             if (!applyStreamingQuerySet(run, deployment, event)) {
                 deploymentRepository.save(deployment);
                 return;

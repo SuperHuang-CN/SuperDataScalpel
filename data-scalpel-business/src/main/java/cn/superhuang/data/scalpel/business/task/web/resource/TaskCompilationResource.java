@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.task.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.task.service.TaskCompilationService;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationResponse;
@@ -29,6 +30,7 @@ public class TaskCompilationResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "编译任务定义")
     @PostMapping
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "编译任务定义")
@@ -36,6 +38,7 @@ public class TaskCompilationResource {
         return service.compile(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "取消活动的任务定义编译")
     @PostMapping("/{requestId}/actions/cancel")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAuthority('task.view')")

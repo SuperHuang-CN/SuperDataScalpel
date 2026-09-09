@@ -16,6 +16,11 @@
 
 运行证据、任务调度依赖、行级血缘、历史快照查询及人工维护关系不属于 V3。静态血缘不得从运行日志、Checkpoint、Offset 或输出数据猜测，也不得保存数据值、SQL 参数值、对象路径原文或任何凭据。
 
+Catalyst 分析对已知 `ROW_NUMBER` 窗口表达式使用可解析的分区/排序字段形成 `CALCULATED` 值来源，
+同时继续记录 `PARTITION_KEY` / `SORT_KEY` 用途。排序字段来源不明、仅按常量排序且无可证明来源时，
+不得标为完整字段血缘；该规则不推广至任意无参窗口函数。区域汇总的加权方差沿聚合表达式追踪数值字段及
+权重中的两侧 Geometry，不读取实际数据来补猜来源。
+
 V3 新增标准数据服务的查询期组合语义，但数据服务不是任务资产，也不写入 `TaskLineageSnapshot`。查询层使用当前标准服务定义、生命周期和最后成功部署快照，将服务作为模型的终端消费者展示。
 
 ## 2. 快照语义
@@ -192,6 +197,11 @@ AST 在别名、通配符、CTE、子查询、集合运算、函数、聚合和�
 只有发布和重新启用会调用快照服务。静态分析与 JDBC 检查在管理事务外完成，最终短事务内发布血缘并更新任务状态；保存、普通校验、停用和重复运行不修改正式快照。
 
 ### 9.2 Spark Canvas
+
+4.34 补充 Catalyst `Expand`：按输出位置汇总每个投影分支的来源、派生和未知标记，不能作为透明节点跳过。
+全部为已知字面量或 NULL 的分支只保留 CONSTANT/NULL_FILLED，不记录具体值；任何未知分支仍使相应字段不完整。
+已通过格网 COUNT_FIELD/ANY 与重叠、连续、留空时间窗的实际惰性计划专项（方格、六边形、H3，含平面空格网）；
+这不是对任意第三方 Spark 表达式都能产生 FIELD_COMPLETE 的承诺。
 
 Spark Canvas 使用编译阶段已经建立的 Schema-only Dataset，在不触发 Spark Action 的前提下读取每个 Output Writer 前 Dataset 的 `queryExecution().analyzed()`。Input Operator 为 Catalyst Attribute metadata 写入资产和字段身份；Processor 产生新逻辑表时写入稳定节点边界；Output Operator 保存完成最终字段映射和 Cast 后的 Dataset。分析器从输出计划反向解析到 Input 标记，并在 Task Engine 边界转换成无 Spark 类型的 `CanvasLineageCompilation`。
 

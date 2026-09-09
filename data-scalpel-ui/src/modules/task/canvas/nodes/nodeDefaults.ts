@@ -1,3 +1,7 @@
+import { createNearestMatching } from './spatialNearest/matching';
+import { createMotionWindowOptions } from './trackMotionStatistics/windowOptions';
+import { createWithinGroupResult } from './spatialSummarizeWithin/groupResult';
+import { createReconstructionOptions } from './trackReconstruct/reconstruction';
 import type {
   AggregateConfiguration,
   DeduplicateConfiguration,
@@ -8,6 +12,18 @@ import type {
   GeometryConstructConfiguration,
   GeometryBufferConfiguration,
   GeometryExplodeConfiguration,
+  GeometryDeriveConfiguration,
+  GeometrySimplifyConfiguration,
+  SpatialNearestConfiguration,
+  SpatialSummarizeWithinConfiguration,
+  SpatialOverlayConfiguration,
+  TrackReconstructConfiguration,
+  TrackMotionStatisticsConfiguration,
+  TrackFindDwellConfiguration,
+  TrackDetectIncidentsConfiguration,
+  SpatialBinAggregateConfiguration,
+  SpatialPointClusterConfiguration,
+  SpatialCenterDispersionConfiguration,
   GeometryRepairConfiguration,
   GeometrySerializeConfiguration,
   GeometryValidateConfiguration,
@@ -145,6 +161,208 @@ export const createGeometryRepairConfiguration = (): GeometryRepairConfiguration
   outputTableName: '',
   geometryColumnName: '',
   outputColumnName: 'repaired_geometry',
+});
+
+export const createGeometryDeriveConfiguration = (): GeometryDeriveConfiguration => ({
+  sourceTableName: '',
+  outputTableName: '',
+  derivations: [],
+});
+
+export const createGeometrySimplifyConfiguration = (): GeometrySimplifyConfiguration => ({
+  sourceTableName: '',
+  geometryColumnName: '',
+  outputTableName: '',
+  outputColumnName: 'simplified_geometry',
+  algorithm: 'TOPOLOGY_PRESERVING',
+  tolerance: null,
+  toleranceUnit: 'SOURCE_CRS_UNIT',
+  geometryPolicy: 'PRESERVE_DIMENSION',
+});
+
+export const createSpatialNearestConfiguration = (): SpatialNearestConfiguration => ({
+  sourceTableName: '',
+  sourceGeometryColumnName: '',
+  candidateTableName: '',
+  candidateGeometryColumnName: '',
+  candidateIdColumnName: '',
+  distanceMethod: null,
+  nearestCount: 1,
+  maximumDistance: null,
+  maximumDistanceUnit: null,
+  includeUnmatched: false,
+  outputTableName: '',
+  distanceColumnName: 'distance',
+  distanceOutputUnit: 'METERS',
+  rankColumnName: 'nearest_rank',
+  outputColumns: [],
+  matching: createNearestMatching(),
+});
+
+export const createSpatialSummarizeWithinConfiguration = (): SpatialSummarizeWithinConfiguration => ({
+  areaTableName: '',
+  areaGeometryColumnName: '',
+  summaryTableName: '',
+  summaryGeometryColumnName: '',
+  includeEmptyAreas: true,
+  distanceMethod: 'PLANAR',
+  lengthUnit: 'SOURCE_CRS_UNIT',
+  areaUnit: 'SQUARE_METERS',
+  areaOutputColumns: [],
+  statistics: [],
+  groupSummary: null,
+  groupResult: createWithinGroupResult(),
+  temporalSlicing: null,
+  outputTableName: '',
+});
+
+export const createSpatialOverlayConfiguration = (): SpatialOverlayConfiguration => ({
+  leftTableName: '',
+  leftGeometryColumnName: '',
+  rightTableName: '',
+  rightGeometryColumnName: '',
+  operation: 'INTERSECTION',
+  geometryPolicy: 'FAMILY_2D',
+  outputTableName: '',
+  outputGeometryColumnName: 'overlay_geometry',
+  outputColumns: [],
+});
+
+export const createTrackBoundaryConfiguration = () => ({
+  maximumTimeGap: null,
+  maximumTimeGapUnit: null,
+  maximumDistanceGap: null,
+  maximumDistanceGapUnit: null,
+});
+
+export const createTrackReconstructConfiguration = (): TrackReconstructConfiguration => ({
+  reconstruction: createReconstructionOptions(),
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  trackIdColumns: [],
+  timeColumnName: '',
+  distanceMethod: 'PLANAR',
+  boundaries: createTrackBoundaryConfiguration(),
+  summaryStatistics: [],
+  outputTableName: '',
+  outputGeometryColumnName: 'track_geometry',
+  startTimeColumnName: 'start_time',
+  endTimeColumnName: 'end_time',
+  pointCountColumnName: 'point_count',
+});
+
+export const createTrackMotionStatisticsConfiguration = (): TrackMotionStatisticsConfiguration => ({
+  motionSemantics: 'OBSERVATION_WINDOW',
+  windowOptions: createMotionWindowOptions(),
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  trackIdColumns: [],
+  timeColumnName: '',
+  distanceMethod: 'GEODESIC',
+  boundaries: createTrackBoundaryConfiguration(),
+  historyPoints: 1,
+  idleDistanceThreshold: null,
+  idleDistanceThresholdUnit: null,
+  metrics: [],
+  outputTableName: '',
+});
+
+export const createTrackFindDwellConfiguration = (): TrackFindDwellConfiguration => ({
+  dwellSemantics: 'REFERENCE_CENTER',
+  rangeOptions: { resultMode: 'MEAN_CENTERS', orderByColumns: [], durationUnit: 'MILLISECONDS',
+    meanDistanceColumnName: 'mean_distance', meanDistanceUnit: 'METERS', dwellFlagColumnName: 'is_dwell' },
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  trackIdColumns: [],
+  timeColumnName: '',
+  distanceMethod: 'PLANAR',
+  distanceThreshold: 100,
+  distanceThresholdUnit: 'METERS',
+  minimumDuration: 20,
+  minimumDurationUnit: 'MINUTES',
+  boundaries: createTrackBoundaryConfiguration(),
+  summaryStatistics: [],
+  outputGeometryKind: 'CENTROID',
+  outputTableName: '',
+  dwellIdColumnName: 'dwell_id',
+  startTimeColumnName: 'start_time',
+  endTimeColumnName: 'end_time',
+  durationColumnName: 'duration',
+  pointCountColumnName: 'point_count',
+  outputGeometryColumnName: 'dwell_geometry',
+});
+
+export const createTrackDetectIncidentsConfiguration = (): TrackDetectIncidentsConfiguration => ({
+  conditionWindows: [],
+  incidentSemantics: 'CONDITION_LIFECYCLE',
+  incidentStatusColumnName: 'incident_status',
+  orderByColumns: [],
+  sourceTableName: '',
+  pointGeometryColumnName: null,
+  trackIdColumns: [],
+  timeColumnName: '',
+  distanceMethod: 'PLANAR',
+  boundaries: createTrackBoundaryConfiguration(),
+  startCondition: { kind: 'GROUP', operator: 'AND', children: [] },
+  endCondition: null,
+  resultMode: 'INCIDENTS_ONLY',
+  outputTableName: '',
+  incidentIdColumnName: 'incident_id',
+  incidentFlagColumnName: 'is_incident',
+  incidentStartTimeColumnName: 'incident_start_time',
+  incidentEndTimeColumnName: 'incident_end_time',
+  incidentDurationColumnName: 'incident_duration',
+  incidentDurationUnit: 'MILLISECONDS',
+});
+
+export const createSpatialBinAggregateConfiguration = (): SpatialBinAggregateConfiguration => ({
+  binSizeSemantics: 'HEXAGON_FLAT_TO_FLAT',
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  binShape: 'SQUARE',
+  binSize: 1000,
+  binSizeUnit: 'METERS',
+  includeEmptyBins: false,
+  statistics: [{
+    statisticId: crypto.randomUUID(),
+    kind: 'COUNT',
+    sourceColumnName: null,
+    outputColumnName: 'point_count',
+  }],
+  groupSummary: null,
+  temporalSlicing: null,
+  outputTableName: '',
+  binIdColumnName: 'bin_id',
+  binGeometryColumnName: 'bin_geometry',
+});
+
+export const createSpatialPointClusterConfiguration = (): SpatialPointClusterConfiguration => ({
+  dbscan: { mode: 'SPATIAL', timeColumnName: '', searchDuration: null, searchDurationUnit: 'MINUTES' },
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  featureIdColumnName: '',
+  distanceMethod: 'PLANAR',
+  parameters: {
+    algorithm: 'DBSCAN',
+    searchDistance: 200,
+    searchDistanceUnit: 'METERS',
+    minimumFeatures: 5,
+  },
+  outputTableName: '',
+  clusterIdColumnName: 'cluster_id',
+  noiseColumnName: 'is_noise',
+});
+
+export const createSpatialCenterDispersionConfiguration = (
+): SpatialCenterDispersionConfiguration => ({
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  featureIdColumnName: null,
+  groupByColumns: [],
+  weightColumnName: null,
+  analyses: [{ analysisId: crypto.randomUUID(), kind: 'MEAN_CENTER', outputColumnName: 'mean_center', standardDeviations: null, outputTableName: '' }],
+  outputTableName: '',
+  resultMode: 'ANALYSIS_TABLES',
 });
 
 export const createGeometryBufferConfiguration = (): GeometryBufferConfiguration => ({

@@ -21,6 +21,9 @@ import type {
   ModelRelatedTask,
   ModelTaskRelationRole,
   TaskRun,
+  TaskRunArtifactKind,
+  TaskRunArtifacts,
+  TaskRunLog,
   TaskRunLineage,
   TaskSchedule,
   TaskScheduleRequest,
@@ -296,6 +299,10 @@ export const fetchTaskRuns = async (id: string, request: SearchRequest): Promise
 
 export const fetchTaskRun = (runId: string): Promise<TaskRun> => requestJson<TaskRun>(`/v1/task-runs/${runId}`);
 
+export const fetchTaskRunArtifacts = (runId: string): Promise<TaskRunArtifacts> => (
+  requestJson<TaskRunArtifacts>(`/v1/task-runs/${runId}/artifacts`)
+);
+
 export const fetchSparkJarTrialPreview = (runId: string): Promise<SparkJarTrialPreviewResponse> => (
   requestJson<SparkJarTrialPreviewResponse>(`/v1/task-runs/${runId}/trial-preview`)
 );
@@ -304,8 +311,15 @@ export const fetchCanvasTrialPreview = (runId: string): Promise<CanvasTrialPrevi
   requestJson<CanvasTrialPreviewResponse>(`/v1/task-runs/${runId}/canvas-trial-preview`)
 );
 
-export const fetchTaskRunLogText = async (runId: string): Promise<string> => {
-  const blob = await downloadTaskRunArtifact(runId, 'log');
+export const fetchTaskRunLogs = (runId: string): Promise<TaskRunLog> => (
+  requestJson<TaskRunLog>(`/v1/task-runs/${runId}/logs`)
+);
+
+export const fetchTaskRunArtifactPreview = async (
+  runId: string,
+  kind: TaskRunArtifactKind,
+): Promise<string> => {
+  const blob = await requestBlob(`/v1/task-runs/${runId}/artifacts/${kind}/preview`, {}, 60_000);
   return blob.text();
 };
 
@@ -325,7 +339,7 @@ export const forceTerminateTaskRun = (runId: string): Promise<TaskRun> => (
   requestJson<TaskRun>(`/v1/task-runs/${runId}/actions/force-terminate`, { method: 'POST' })
 );
 
-export type TaskRunArtifactKind = 'result' | 'log';
+export type { TaskRunArtifactKind };
 
 export const downloadTaskRunArtifact = (
   runId: string,

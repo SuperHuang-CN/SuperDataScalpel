@@ -4,12 +4,15 @@ import cn.superhuang.data.scalpel.business.service.domain.ServiceEngine;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.util.LinkedMultiValueMap;
+import org.springframework.util.MultiValueMap;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
@@ -19,6 +22,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
+import java.util.Optional;
 import java.util.UUID;
 
 /** Minimal GeoServer 3 REST client used directly by the Admin control plane. */
@@ -146,10 +150,61 @@ public class GeoServerClient {
             }
             Map<String, Object> layer = Map.of("layer", Map.of(
                     "enabled", true,
-                    "defaultStyle", Map.of("name", spec.styleName())
+                    "defaultStyle", Map.of("name", qualifiedStyleName(workspace, spec.styleName()))
             ));
             client.put().uri("/rest/layers/{workspace}:{layer}", workspace, publishedName)
                     .contentType(MediaType.APPLICATION_JSON).body(layer).retrieve().toBodilessEntity();
+        } catch (RuntimeException exception) {
+            throw translate(exception);
+        }
+    }
+
+    public void upsertStyle(ServiceEngine engine, String styleName, String sldText) {
+        try {
+            RestClient client = client(engine);
+            String workspace = engine.getGeoServerWorkspace();
+            if (styleExists(client, workspace, styleName)) {
+                client.put().uri("/rest/workspaces/{workspace}/styles/{style}", workspace, styleName)
+                        .contentType(MediaType.parseMediaType("application/vnd.ogc.sld+xml"))
+                        .body(sldText)
+                        .retrieve().toBodilessEntity();
+            } else {
+                client.post().uri(builder -> builder
+                                .path("/rest/workspaces/{workspace}/styles")
+                                .queryParam("name", styleName)
+                                .build(workspace))
+                        .contentType(MediaType.parseMediaType("application/vnd.ogc.sld+xml"))
+                        .body(sldText)
+                        .retrieve().toBodilessEntity();
+            }
+        } catch (RuntimeException exception) {
+            throw translate(exception);
+        }
+    }
+
+    public void bindLayerStyle(ServiceEngine engine, String serviceCode, String styleName) {
+        try {
+            String workspace = engine.getGeoServerWorkspace();
+            Map<String, Object> layer = Map.of("layer", Map.of(
+                    "enabled", true,
+                    "defaultStyle", Map.of("name", qualifiedStyleName(workspace, styleName))
+            ));
+            client(engine).put().uri("/rest/layers/{workspace}:{layer}", workspace, layerName(serviceCode))
+                    .contentType(MediaType.APPLICATION_JSON).body(layer).retrieve().toBodilessEntity();
+        } catch (RuntimeException exception) {
+            throw translate(exception);
+        }
+    }
+
+    public void removeStyle(ServiceEngine engine, String serviceCode) {
+        try {
+            client(engine).delete().uri(builder -> builder
+                            .path("/rest/workspaces/{workspace}/styles/{style}")
+                            .queryParam("purge", true)
+                            .build(engine.getGeoServerWorkspace(), styleName(serviceCode)))
+                    .retrieve().toBodilessEntity();
+        } catch (HttpClientErrorException.NotFound ignored) {
+            // Idempotent removal.
         } catch (RuntimeException exception) {
             throw translate(exception);
         }
@@ -172,12 +227,168 @@ public class GeoServerClient {
         }
     }
 
+    public Optional<LayerPreview> inspectLayer(ServiceEngine engine, UUID dataSourceId, String serviceCode) {
+        try {
+            RestClient client = client(engine);
+            String workspace = engine.getGeoServerWorkspace();
+            String store = storeName(dataSourceId);
+            String layer = layerName(serviceCode);
+            if (!featureTypeExists(client, workspace, store, layer) || !layerExists(client, workspace, layer)) {
+                return Optional.empty();
+            }
+            @SuppressWarnings("unchecked")
+            Map<String, Object> body = client.get()
+                    .uri(
+                            "/rest/workspaces/{workspace}/datastores/{store}/featuretypes/{featureType}.json",
+                            workspace, store, layer
+                    )
+                    .accept(MediaType.APPLICATION_JSON)
+                    .retrieve()
+                    .body(Map.class);
+            return Optional.of(new LayerPreview(latLonBounds(body)));
+        } catch (RuntimeException exception) {
+            throw translate(exception);
+        }
+    }
+
+    public byte[] renderWms(
+            ServiceEngine engine,
+            String qualifiedLayerName,
+            String bbox,
+            int width,
+            int height
+    ) {
+        try {
+            RestClient runtime = RestClient.builder()
+                    .baseUrl(engine.getRuntimeUrl())
+                    .requestFactory(requestFactory())
+                    .build();
+            ResponseEntity<byte[]> response = runtime.get()
+                    .uri(builder -> builder
+                            .path("/{workspace}/wms")
+                            .queryParam("service", "WMS")
+                            .queryParam("version", "1.3.0")
+                            .queryParam("request", "GetMap")
+                            .queryParam("layers", qualifiedLayerName)
+                            .queryParam("styles", "")
+                            .queryParam("crs", "EPSG:3857")
+                            .queryParam("scaleMethod", "OGC")
+                            .queryParam("bbox", bbox)
+                            .queryParam("width", width)
+                            .queryParam("height", height)
+                            .queryParam("format", "image/png")
+                            .queryParam("transparent", true)
+                            .build(engine.getGeoServerWorkspace()))
+                    .accept(MediaType.IMAGE_PNG)
+                    .retrieve()
+                    .toEntity(byte[].class);
+            return requirePng(response, "GeoServer WMS 未返回有效 PNG 图片，请检查图层发布状态");
+        } catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "GeoServer WMS 要求认证，当前空间服务无法公开预览",
+                    exception
+            );
+        } catch (RuntimeException exception) {
+            throw translate(exception);
+        }
+    }
+
+    public byte[] renderWms(
+            ServiceEngine engine,
+            String qualifiedLayerName,
+            String bbox,
+            int width,
+            int height,
+            String sldBody
+    ) {
+        try {
+            RestClient runtime = RestClient.builder()
+                    .baseUrl(engine.getRuntimeUrl())
+                    .requestFactory(requestFactory())
+                    .build();
+            MultiValueMap<String, String> form = new LinkedMultiValueMap<>();
+            form.add("service", "WMS");
+            form.add("version", "1.3.0");
+            form.add("request", "GetMap");
+            form.add("layers", qualifiedLayerName);
+            form.add("styles", "");
+            form.add("crs", "EPSG:3857");
+            form.add("scaleMethod", "OGC");
+            form.add("bbox", bbox);
+            form.add("width", Integer.toString(width));
+            form.add("height", Integer.toString(height));
+            form.add("format", "image/png");
+            form.add("transparent", "true");
+            form.add("SLD_BODY", sldBody);
+            ResponseEntity<byte[]> response = runtime.post()
+                    .uri("/{workspace}/wms", engine.getGeoServerWorkspace())
+                    .contentType(MediaType.APPLICATION_FORM_URLENCODED)
+                    .accept(MediaType.IMAGE_PNG)
+                    .body(form)
+                    .retrieve()
+                    .toEntity(byte[].class);
+            return requirePng(response, "GeoServer 未能使用草稿样式渲染 PNG，请检查动态样式配置");
+        } catch (HttpClientErrorException.Unauthorized | HttpClientErrorException.Forbidden exception) {
+            throw new ResponseStatusException(
+                    HttpStatus.BAD_GATEWAY,
+                    "GeoServer WMS 不允许动态样式预览",
+                    exception
+            );
+        } catch (RuntimeException exception) {
+            throw translate(exception);
+        }
+    }
+
+    public byte[] renderLegend(ServiceEngine engine, String qualifiedLayerName) {
+        try {
+            RestClient runtime = RestClient.builder()
+                    .baseUrl(engine.getRuntimeUrl())
+                    .requestFactory(requestFactory())
+                    .build();
+            ResponseEntity<byte[]> response = runtime.get()
+                    .uri(builder -> builder.path("/{workspace}/wms")
+                            .queryParam("service", "WMS")
+                            .queryParam("version", "1.1.1")
+                            .queryParam("request", "GetLegendGraphic")
+                            .queryParam("layer", qualifiedLayerName)
+                            .queryParam("format", "image/png")
+                            .queryParam("transparent", true)
+                            .queryParam("legend_options", "forceLabels:on;fontAntiAliasing:true")
+                            .build(engine.getGeoServerWorkspace()))
+                    .accept(MediaType.IMAGE_PNG)
+                    .retrieve()
+                    .toEntity(byte[].class);
+            return requirePng(response, "GeoServer 未返回有效图例图片");
+        } catch (RuntimeException exception) {
+            throw translate(exception);
+        }
+    }
+
+    private static byte[] requirePng(ResponseEntity<byte[]> response, String message) {
+        MediaType contentType = response.getHeaders().getContentType();
+        byte[] body = response.getBody();
+        if (contentType == null || !MediaType.IMAGE_PNG.isCompatibleWith(contentType)
+                || body == null || body.length == 0) {
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, message);
+        }
+        return body;
+    }
+
     public static String storeName(UUID dataSourceId) {
         return "ds_" + Objects.requireNonNull(dataSourceId).toString().replace("-", "");
     }
 
     public static String layerName(String serviceCode) {
         return "svc_" + ServiceEngine.normalizeCode(serviceCode);
+    }
+
+    public static String styleName(String serviceCode) {
+        return "sty_" + layerName(serviceCode);
+    }
+
+    private static String qualifiedStyleName(String workspace, String styleName) {
+        return "generic".equals(styleName) ? styleName : workspace + ":" + styleName;
     }
 
     private String resolveBaseUrl(String value, String username, String password) {
@@ -334,6 +545,65 @@ public class GeoServerClient {
         }
     }
 
+    private static boolean layerExists(RestClient client, String workspace, String layer) {
+        try {
+            client.get().uri("/rest/layers/{workspace}:{layer}.json", workspace, layer)
+                    .retrieve().toBodilessEntity();
+            return true;
+        } catch (HttpClientErrorException.NotFound exception) {
+            return false;
+        }
+    }
+
+    private static boolean styleExists(RestClient client, String workspace, String style) {
+        try {
+            client.get().uri("/rest/workspaces/{workspace}/styles/{style}.json", workspace, style)
+                    .retrieve().toBodilessEntity();
+            return true;
+        } catch (HttpClientErrorException.NotFound exception) {
+            return false;
+        }
+    }
+
+    private static List<Double> latLonBounds(Map<String, Object> body) {
+        if (body == null || !(body.get("featureType") instanceof Map<?, ?> featureType)
+                || !(featureType.get("latLonBoundingBox") instanceof Map<?, ?> bounds)) {
+            return List.of();
+        }
+        Double minX = finiteDouble(bounds.get("minx"));
+        Double minY = finiteDouble(bounds.get("miny"));
+        Double maxX = finiteDouble(bounds.get("maxx"));
+        Double maxY = finiteDouble(bounds.get("maxy"));
+        if (minX == null || minY == null || maxX == null || maxY == null
+                || minX > maxX || minY > maxY
+                || minX < -180 || maxX > 180 || minY < -90 || maxY > 90) {
+            return List.of();
+        }
+        double[] longitude = paddedRange(minX, maxX, -180, 180);
+        double[] latitude = paddedRange(minY, maxY, -90, 90);
+        return List.of(longitude[0], latitude[0], longitude[1], latitude[1]);
+    }
+
+    private static double[] paddedRange(double minimum, double maximum, double lowerLimit, double upperLimit) {
+        if (minimum < maximum) return new double[]{minimum, maximum};
+        double padding = 0.01d;
+        double paddedMinimum = Math.max(lowerLimit, minimum - padding);
+        double paddedMaximum = Math.min(upperLimit, maximum + padding);
+        return new double[]{paddedMinimum, paddedMaximum};
+    }
+
+    private static Double finiteDouble(Object value) {
+        if (value == null) return null;
+        try {
+            double number = value instanceof Number numeric
+                    ? numeric.doubleValue()
+                    : Double.parseDouble(String.valueOf(value));
+            return Double.isFinite(number) ? number : null;
+        } catch (NumberFormatException exception) {
+            return null;
+        }
+    }
+
     private static Map<String, Object> dataStorePayload(
             String workspace,
             String store,
@@ -418,5 +688,11 @@ public class GeoServerClient {
             int epsg,
             String styleName
     ) {
+    }
+
+    public record LayerPreview(List<Double> initialBounds) {
+        public LayerPreview {
+            initialBounds = initialBounds == null ? List.of() : List.copyOf(initialBounds);
+        }
     }
 }

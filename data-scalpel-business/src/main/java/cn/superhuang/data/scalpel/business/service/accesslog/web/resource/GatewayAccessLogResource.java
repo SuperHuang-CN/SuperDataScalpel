@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.service.accesslog.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.service.accesslog.service.GatewayAccessQueryService;
 import cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessLogResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
@@ -26,6 +27,7 @@ public class GatewayAccessLogResource {
         this.queryService = queryService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询最近七天的网关访问明细")
     @GetMapping
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询最近七天的网关访问明细")

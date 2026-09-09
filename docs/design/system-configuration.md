@@ -10,6 +10,7 @@
 
 | 配置键 | 名称 | 类型 | 默认值 | 当前用途 |
 | --- | --- | --- | --- | --- |
+| `panorama.map` | 全景地图设置 | `STRING`（受控 JSON） | `{"url":"","attribution":"","maxZoom":18}` | 全景地图的 XYZ 底图；专用 Drawer 编辑 |
 | `platform.name` | 平台名称 | `STRING` | `DataScalpel` | 前端左侧品牌和顶部标题 |
 | `platform.subtitle` | 平台副标题 | `STRING` | `内网部署 · 模块化单体` | 前端顶部副标题 |
 | `task.engine.base-url` | Task Engine 地址 | `STRING` | `http://127.0.0.1:18091` | Admin 访问 Task Engine 的内部地址 |
@@ -57,6 +58,7 @@ data-scalpel-business/
 
 - `configKey` 由代码中的内置定义声明，创建后不可修改。
 - 页面只允许修改 `configValue`，不提供新增或删除操作。
+- `panorama.map` 通过专用表单提交受控 JSON 字符串，校验 HTTP(S) XYZ 地址、纯文本署名和 0～22 缩放上限；内部 URL 为空表示关闭底图，不改变普通 STRING 的非空要求。完整规则见 [全景影像管理 V1](../development/panorama-management-v1.md)。
 - `STRING` 接受非空文本；`INTEGER` 必须是 Java `Integer`；`BOOLEAN` 仅接受 `true` 或 `false`，保存时规范化为小写。内置定义可以进一步声明整数最小值和最大值，更新时同时执行范围校验。
 - 应用启动时仅插入缺失的内置配置，不覆盖数据库中已经被修改的值，不执行删除或全量重置。
 - 第一版不缓存配置。业务模块需要读取配置时通过 `SystemConfigurationService` 查询，确保管理页面修改后下一次读取即可得到新值。

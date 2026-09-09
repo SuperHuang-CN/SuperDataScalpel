@@ -12,3 +12,5 @@ export type {
   DataServiceSummary,
   DataServiceType,
 } from './model/dataService';
+
+export { fetchDataServices } from './api/dataServiceApi';

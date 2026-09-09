@@ -240,16 +240,23 @@ API索引和任务资源元数据，支持绑定名、模型字段及已配置JD
 `definitionVersion`。运行使用任务当前保存的真实模型、JDBC凭据、计算引擎、运行资源、参数和超时。
 
 模型和JDBC Writer继续完成字段映射、Cast、主键规则、目标数据库能力检查和Catalyst分析，但在真实写入前被预览采集器拦截。
-每次调用执行`limit(101).toJSON().collectAsList()`，展示前100行并标记是否截断；最多保留20次写入。试运行的
+每次调用执行`limit(101).toJSON().collectAsList()`，展示前100行并标记是否截断；批任务最多保留20次写入。试运行的
 `affectedRows`为空，血缘证据只留在运行结果中，不创建正式血缘摄取任务。`sessionInitStatement`在试运行中被拒绝。
 
 用户代码显式调用`show/count/collect`仍按真实Spark语义执行，聚合和Join可能扫描完整输入。无写入保证只覆盖平台SDK Writer；
 用户自行携带连接信息产生的外部副作用不属于第一版拦截范围。
 
 实时在线试运行同样读取任务绑定的真实模型、JDBC和Kafka输入，但平台SDK的模型/JDBC写入会采集映射后的Dataset，
-Kafka SDK Writer会改为本地`foreachBatch`采集，不连接输出Topic。每次最多100行、最多20次写入，整体结果仍受4 MiB限制。
+Kafka SDK Writer会改为本地`foreachBatch`采集，不连接输出Topic。预览按“资源类型、绑定名、完整目标”分组，最多20个
+输出目标；同一目标跨微批追加并滚动保留最近100条已捕获样例，空批次不清空，Schema变化时清空旧样例。该顺序是捕获顺序，
+不表示源数据时间顺序。整体快照受4 MiB限制。
 正常停止和执行失败都生成v11 `result.json`；正常停止状态为`STOPPED`，失败可返回失败前已采集的部分预览。
 Runner先上传结果并报告结果可用，再报告停止或失败；强制终止可能来不及生成最新预览。
+
+批流试运行在输出发生变化后，由Runner单线程每3秒覆盖Attempt固定对象
+`task-runs/{executionRunId}/attempts/{attempt}/trial-preview.json`。页面仅在输出预览可见时按3秒读取；查询和上传不触发
+额外Dataset Action。快照上传失败只会使页面数据暂时变旧，不影响试运行状态。终态优先展示`result.json`中的最终预览，
+归档尚未完成时继续展示最后一份运行快照。
 
 每次实时Trial固定创建新的`TRIAL + FRESH` Deployment，Checkpoint前缀为
 `streaming-jar-trials/{taskId}/{runId}`，最长运行30分钟。Trial与正式`REAL` Deployment互斥且Checkpoint完全隔离，

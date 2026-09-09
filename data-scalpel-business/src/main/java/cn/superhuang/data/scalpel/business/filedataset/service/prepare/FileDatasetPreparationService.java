@@ -41,8 +41,10 @@ public interface FileDatasetPreparationService {
             List<DiscoveredTable> tables
     ) {
         public FileDatasetPreparationResult {
-            materializedPrefix = requireText(materializedPrefix, "文件物化前缀不能为空");
-            if (materializedSizeBytes < 0 || materializedEntryCount < 1) {
+            materializedPrefix = materializedPrefix == null || materializedPrefix.isBlank() ? null : materializedPrefix.trim();
+            if (materializedSizeBytes < 0 || materializedEntryCount < 0
+                    || (materializedPrefix != null && materializedEntryCount < 1)
+                    || (materializedPrefix == null && (materializedSizeBytes != 0 || materializedEntryCount != 0))) {
                 throw new IllegalArgumentException("文件物化统计无效");
             }
             tables = List.copyOf(tables);

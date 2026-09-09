@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.task.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.task.service.TaskScheduleService;
 import cn.superhuang.data.scalpel.business.task.web.request.CreateTaskScheduleRequest;
 import cn.superhuang.data.scalpel.business.task.web.request.UpdateTaskScheduleRequest;
@@ -29,6 +30,7 @@ public class TaskScheduleResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询任务运行计划")
     @GetMapping("/api/v1/tasks/{taskId}/schedules")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询任务运行计划")
@@ -36,6 +38,7 @@ public class TaskScheduleResource {
         return service.list(taskId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建任务运行计划")
     @PostMapping("/api/v1/tasks/{taskId}/schedules")
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('task.update')")
@@ -47,6 +50,7 @@ public class TaskScheduleResource {
         return service.create(taskId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询任务运行计划详情")
     @GetMapping("/api/v1/task-schedules/{scheduleId}")
     @PreAuthorize("hasAuthority('task.view')")
     @Operation(summary = "查询任务运行计划详情")
@@ -54,6 +58,7 @@ public class TaskScheduleResource {
         return service.get(scheduleId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改任务运行计划")
     @PostMapping("/api/v1/task-schedules/{scheduleId}/actions/update")
     @PreAuthorize("hasAuthority('task.update')")
     @Operation(summary = "修改任务运行计划")
@@ -64,6 +69,7 @@ public class TaskScheduleResource {
         return service.update(scheduleId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "启用任务运行计划")
     @PostMapping("/api/v1/task-schedules/{scheduleId}/actions/enable")
     @PreAuthorize("hasAuthority('task.publish')")
     @Operation(summary = "启用任务运行计划")
@@ -71,6 +77,7 @@ public class TaskScheduleResource {
         return service.enable(scheduleId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用任务运行计划")
     @PostMapping("/api/v1/task-schedules/{scheduleId}/actions/disable")
     @PreAuthorize("hasAuthority('task.publish')")
     @Operation(summary = "停用任务运行计划")
@@ -78,6 +85,7 @@ public class TaskScheduleResource {
         return service.disable(scheduleId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除任务运行计划")
     @PostMapping("/api/v1/task-schedules/{scheduleId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('task.delete')")

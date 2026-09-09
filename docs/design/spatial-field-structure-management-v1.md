@@ -255,10 +255,13 @@ V1 不扩展 `IndexMetadata`、`TableDefinition` 索引定义或 DDL 原子性�
 WKB marker。已有表导入仍要求完整的空间语义，通用 Geometry 必须由用户明确补充模型
 Geometry 定义。外部调用继续采用“短事务读取快照 → 事务外 JDBC → 短事务提交”的边界。
 
-包含 Geometry 的受管物理表创建并匹配后，修改字段显示名称、说明、展示顺序以及 Geometry
-的 kind、CRS、dimension 都不产生物理变更计划，可直接保存模型定义。新增、删除、改名
-物理列、修改 nullable、主键或字段类型仍属于物理结构变更；包含 Geometry 的整表物理变更
-在第一版继续拒绝。
+包含 Geometry 的受管物理表创建并匹配后，字段显示名称、说明、展示顺序和码表绑定仍可
+直接保存。字段编码、类型、Geometry kind/CRS/dimension、新增和删除字段继续锁定；服务端
+也会校验字段 ID 和定义，不能通过接口绕过。nullable 和非 Geometry 字段的主键属于当前
+唯一开放的结构变化，必须生成统一物理变更计划。PostgreSQL/PostGIS 对 nullable 和主键
+生成原表约束 DDL，并复用空值、重复值和外部依赖检查；ClickHouse nullable 返回不带执行
+选项的 `UNSUPPORTED` 计划。ClickHouse 字段主键仅作为平台元数据直接保存，不进入物理
+定义，也不提供数据库唯一性保证；Geometry 字段仍不能标记为主键。
 
 模型快速预览和标准条件查询默认排除 Geometry。客户端显式选择、筛选、排序、分组或
 聚合 Geometry 时返回查询参数错误。PostGIS 动态空间预览是独立的受控 PNG 渲染边界，
@@ -285,16 +288,18 @@ String/Binary：
 `XY`。选择 Geometry 时自动关闭并禁用主键。外部/受管导入和 Excel V2 校对保持嵌套
 Geometry 定义，不转换为数据库原生字符串。
 
-字段列表展示 `Kind · EPSG:code · XY`。包含 Geometry 的已匹配受管表显示 V1 限制说明，
-隐藏新增、删除和物理变更计划入口。模型数据查询的投影、条件和排序选择器均排除 Geometry。
-界面不提供空间索引控件。
+字段列表展示 `Kind · EPSG:code · XY`。包含 Geometry 的已匹配受管表显示约束编辑说明，
+隐藏新增、删除和模板添加入口；字段编辑器锁定编码、类型和空间参数，但开放 nullable 和
+非 Geometry 字段主键，并把物理约束差异路由到变更计划。ClickHouse 主键显示为“平台主键”
+并明确提示不生成物理约束。模型数据查询的投影、条件和排序选择器均排除 Geometry；界面
+不提供空间索引控件。
 
 ## 测试与真实库验收
 
 后续恢复验证时，自动化场景应覆盖契约 JSON/非法组合、八种 GeometryKind 严格导入映射、
 PostGIS/MySQL 通用 Geometry DDL、ClickHouse WKB DDL 与 marker、空间元数据增强、物理
 Geometry 类型族比较、Geometry V4 指纹、标量 V2 指纹兼容、模型持久化/API、外部与受管
-导入、Excel V1/V2、查询排除、物理变更阻止、Canvas/Local SQL/服务边界和前端联动。
+导入、Excel V1/V2、查询排除、空间约束变更边界、Canvas/Local SQL/服务边界和前端联动。
 
 ClickHouse 验收需确认八种 kind 均生成 `String` 或 `Nullable(String)`，合法 marker 可
 回读；普通 String 不误判；非法、重复、缺失参数或位于非 String 列的 marker 被拒绝；

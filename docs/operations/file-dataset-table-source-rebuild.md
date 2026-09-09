@@ -16,7 +16,7 @@
    `ds_file_dataset_table_source`、`ds_file_dataset_field` 和
    `ds_file_dataset_parse_job`。
 7. 重新创建文件数据集并上传文件。
-8. 所有引用旧 `tableId` 的 Canvas 节点必须重新选择；Task Engine 接受 Manifest v8，并兼容不含空间能力的 v7 任务。
+8. 所有引用旧 `tableId` 的 Canvas 节点必须重新选择；Task Engine 使用当前严格兼容的 Manifest v26，不接受旧版本任务。
 
 脚本保留系统配置、目录、模型、任务和其他业务表，并删除已经废弃的文件来源清理配置。脚本使用
 `CASCADE` 清理数据库内对旧文件数据集表的直接依赖；如环境存在自定义视图或外键，执行前应先

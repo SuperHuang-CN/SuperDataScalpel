@@ -6,6 +6,12 @@
 target/
 **/target/
 
+# Local runtime files, dependency caches, Dispatcher workspaces, and Spark streaming checkpoints.
+/.local/
+/.pnpm-store/
+/work/
+/data-scalpel-task-dispatcher/work/
+
 node_modules/
 **/node_modules/
 dist/

@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.model.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.model.service.ModelFieldTemplateService;
 import cn.superhuang.data.scalpel.business.model.web.request.CreateModelFieldTemplateRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateModelFieldTemplateRequest;
@@ -34,6 +35,7 @@ public class ModelFieldTemplateResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "分页查询常用字段模板及字段快照")
     @GetMapping
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "分页查询常用字段模板及字段快照")
@@ -43,6 +45,7 @@ public class ModelFieldTemplateResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询常用字段模板详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('model.view')")
     @Operation(summary = "查询常用字段模板详情")
@@ -50,6 +53,7 @@ public class ModelFieldTemplateResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增常用字段模板")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('model.update')")
@@ -60,6 +64,7 @@ public class ModelFieldTemplateResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "原子修改常用字段模板及其字段")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "原子修改常用字段模板及其字段")
@@ -70,6 +75,7 @@ public class ModelFieldTemplateResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "启用常用字段模板")
     @PostMapping("/{id}/actions/enable")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "启用常用字段模板")
@@ -77,6 +83,7 @@ public class ModelFieldTemplateResource {
         return service.enable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用常用字段模板")
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('model.update')")
     @Operation(summary = "停用常用字段模板")
@@ -84,6 +91,7 @@ public class ModelFieldTemplateResource {
         return service.disable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除常用字段模板；不影响已经复制到模型的字段")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('model.update')")

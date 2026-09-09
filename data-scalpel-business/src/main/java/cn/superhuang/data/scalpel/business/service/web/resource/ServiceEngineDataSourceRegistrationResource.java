@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.service.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineDataSourceRegistrationService;
 import cn.superhuang.data.scalpel.business.service.web.request.CreateServiceEngineDataSourceRegistrationRequest;
 import cn.superhuang.data.scalpel.business.service.web.request.ServiceEngineDataSourceActionRequest;
@@ -23,6 +24,7 @@ import org.springframework.web.bind.annotation.RestController;
 import java.util.UUID;
 
 /** Admin management API for Engine-local data source registrations. */
+@io.swagger.v3.oas.annotations.tags.Tag(name = "服务引擎数据源登记")
 @RestController
 @RequestMapping("/api/v1/service-engine-data-sources")
 public class ServiceEngineDataSourceRegistrationResource {
@@ -33,6 +35,7 @@ public class ServiceEngineDataSourceRegistrationResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "服务引擎数据源登记：查询列表")
     @GetMapping
     @PreAuthorize("hasAuthority('service.engine.view')")
     public PageResponse<ServiceEngineDataSourceRegistrationResponse> search(
@@ -41,12 +44,14 @@ public class ServiceEngineDataSourceRegistrationResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "服务引擎数据源登记：查看详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('service.engine.view')")
     public ServiceEngineDataSourceRegistrationResponse get(@PathVariable UUID id) {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "服务引擎数据源登记：创建")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('service.engine.update')")
@@ -56,6 +61,7 @@ public class ServiceEngineDataSourceRegistrationResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "服务引擎数据源登记：同步")
     @PostMapping("/{id}/actions/sync")
     @PreAuthorize("hasAuthority('service.engine.update')")
     public ServiceEngineDataSourceRegistrationResponse sync(
@@ -65,6 +71,7 @@ public class ServiceEngineDataSourceRegistrationResource {
         return service.sync(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "服务引擎数据源登记：测试连接")
     @PostMapping("/{id}/actions/test")
     @PreAuthorize("hasAuthority('service.engine.test')")
     public ServiceEngineDataSourceTestResponse test(
@@ -74,6 +81,7 @@ public class ServiceEngineDataSourceRegistrationResource {
         return service.test(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "服务引擎数据源登记：删除")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('service.engine.update')")

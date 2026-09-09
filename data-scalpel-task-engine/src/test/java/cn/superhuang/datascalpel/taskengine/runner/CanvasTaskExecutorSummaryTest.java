@@ -37,6 +37,34 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CanvasTaskExecutorSummaryTest {
+    @Test
+    void incidentWindowsSummaryContainsOnlyCountsNotBindingsOrConditionValues() throws Exception {
+        var c = new com.fasterxml.jackson.databind.ObjectMapper().readValue("""
+                {"sourceTableName":"events","outputTableName":"incidents","trackIdColumns":[],"boundaries":{},
+                 "startCondition":{"kind":"PREDICATE","columnName":"private_alias","operator":"GREATER_THAN",
+                   "values":[{"dataType":"DOUBLE","value":"987654321"}]},
+                 "conditionWindows":[{"bindingName":"private_alias","sourceColumnName":"private_field","kind":"MEAN","startOffset":-512345,"endOffset":0}]}
+                """, cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsConfiguration.class);
+        var node = new cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition(UUID.randomUUID().toString(),"事件",
+                new CanvasNodeLayout(0d,0d,360d,216d),c);
+        String summary = CanvasTaskExecutor.nodeSummary(node,EMPTY_METADATA);
+        assertTrue(summary.contains("conditionWindowCount=1"));
+        for (String value : List.of("private_alias","private_field","987654321","512345")) assertFalse(summary.contains(value));
+    }
+
+    @Test void hdbscanSummaryCountsDiagnosticsWithoutExposingTheirNamesOrInactiveTime() {
+        var c = new cn.superhuang.data.scalpel.contract.task.SpatialPointClusterConfiguration("points", "shape", "identity",
+                cn.superhuang.data.scalpel.contract.task.SpatialDistanceMethod.PLANAR,
+                new cn.superhuang.data.scalpel.contract.task.SpatialPointClusterParameters.Hdbscan(5), "clusters", "cluster_id", "noise",
+                new cn.superhuang.data.scalpel.contract.task.SpatialDbscanOptions(cn.superhuang.data.scalpel.contract.task.SpatialDbscanOptions.Mode.LINEAR,
+                        "private-time", 314159L, cn.superhuang.data.scalpel.contract.task.SpatialDurationUnit.SECONDS),
+                new cn.superhuang.data.scalpel.contract.task.SpatialHdbscanOptions("private-probability", "private-outlier", "private-exemplar", "private-stability"));
+        var node = new cn.superhuang.data.scalpel.contract.task.SpatialPointClusterNodeDefinition(UUID.randomUUID().toString(), "聚类",
+                new CanvasNodeLayout(0d,0d,352d,216d),c);
+        String summary = CanvasTaskExecutor.nodeSummary(node, EMPTY_METADATA);
+        assertTrue(summary.contains("diagnosticCount=4")); assertTrue(summary.contains("dbscanMode=INACTIVE"));
+        assertFalse(summary.contains("private-")); assertFalse(summary.contains("314159"));
+    }
 
     private static final UUID DATA_SOURCE_ID = UUID.fromString("901e8938-bc1d-4bfd-91ec-d26bca38e8f6");
     private static final MetadataIndex EMPTY_METADATA = MetadataIndex.create(

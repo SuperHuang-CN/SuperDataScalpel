@@ -23,6 +23,67 @@ class CanvasDefinitionValidatorTest {
     private final CanvasDefinitionUpgrader upgrader = new CanvasDefinitionUpgrader();
     private final CanvasDefinitionValidator validator = new CanvasDefinitionValidator(upgrader);
 
+    @Test void fixedWeekDraftsRequire47WithPrecisePath() {
+        var c = new ObjectMapper().readValue("{\"boundaries\":{\"maximumTimeGapUnit\":\"WEEKS\"}}", TrackReconstructConfiguration.class);
+        var node = new TrackReconstructNodeDefinition(UUID.randomUUID().toString(),"轨迹",new CanvasNodeLayout(0d,0d,360d,216d),c);
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(4,46,List.of(node),List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("SPATIAL_DURATION_WEEKS_REQUIRE_SCHEMA_VERSION"));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("configuration.boundaries.maximumTimeGapUnit"));
+        assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4,47,List.of(node),List.of())));
+    }
+
+    @Test void incidentWindowDraftsAreVersionGatedButBusinessErrorsCanBeSaved() {
+        for (var semantics : TrackIncidentSemantics.values()) {
+            var c = new TrackDetectIncidentsConfiguration("",null,List.of(),"",null,
+                    new TrackBoundaryConfiguration(null,null,null,null),new CanvasFilterGroup(FilterGroupOperator.AND,List.of()),null,
+                    TrackIncidentResultMode.ALL_EVENTS,"","","","","","",SpatialDurationUnit.SECONDS,semantics,"",List.of(),
+                    List.of(new TrackIncidentWindow("","",null,null,null)));
+            var node = new TrackDetectIncidentsNodeDefinition(UUID.randomUUID().toString(),"事件",new CanvasNodeLayout(0d,0d,360d,216d),c);
+            assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(4,45,List.of(node),List.of())));
+            assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4,46,List.of(node),List.of())));
+        }
+    }
+
+    @Test void hdbscanOptionsRequire45EvenOnDbscanDrafts() {
+        for (SpatialHdbscanOptions options : java.util.Arrays.asList(null, new SpatialHdbscanOptions("", "", "", ""))) {
+            var c = new SpatialPointClusterConfiguration("", "", "", SpatialDistanceMethod.PLANAR,
+                    new SpatialPointClusterParameters.Dbscan(0, null, 0), "", "", "", null, options);
+            var node = new SpatialPointClusterNodeDefinition(UUID.randomUUID().toString(), "聚类", new CanvasNodeLayout(0d,0d,352d,216d), c);
+            var old = new CanvasDefinition(4,44,List.of(node),List.of());
+            if (options == null) assertDoesNotThrow(() -> validator.validate(old));
+            else assertThrows(ResponseStatusException.class, () -> validator.validate(old));
+            assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4,45,List.of(node),List.of())));
+        }
+    }
+
+    @Test void hdbscanFieldNamesMayBeInvalidBusinessDraftsButMustBeStrings() {
+        for (var options : List.of(new SpatialHdbscanOptions("", "same", "same", ""), new SpatialHdbscanOptions(null, "o", "e", "s"))) {
+            var c = new SpatialPointClusterConfiguration("", "", "", SpatialDistanceMethod.PLANAR,
+                    new SpatialPointClusterParameters.Hdbscan(0), "", "", "", null, options);
+            var node = new SpatialPointClusterNodeDefinition(UUID.randomUUID().toString(), "聚类", new CanvasNodeLayout(0d,0d,352d,216d), c);
+            var definition = new CanvasDefinition(4,45,List.of(node),List.of());
+            if (options.probabilityColumnName() == null) assertThrows(ResponseStatusException.class, () -> validator.validate(definition));
+            else assertDoesNotThrow(() -> validator.validate(definition));
+        }
+    }
+
+    @Test void geodesicAreaDraftRequires44EvenWhenInactive() {
+        for (TrackGeodesicAreaOptions boundary : java.util.Arrays.asList(null,new TrackGeodesicAreaOptions(-1d,null))) {
+            var options=new TrackReconstructOptions(TrackReconstructSemantics.LEGACY_POINTS,List.of(),null,null,null,
+                    new TrackAreaGeometryOptions(false,TrackBufferMode.NONE,null,null,null,List.of(),boundary));
+            var c=new TrackReconstructConfiguration("","",List.of(),"",null,new TrackBoundaryConfiguration(null,null,null,null),
+                    List.of(),"","","","","",options);
+            var node=new TrackReconstructNodeDefinition(UUID.randomUUID().toString(),"重建",new CanvasNodeLayout(0d,0d,352d,216d),c);
+            var old=new CanvasDefinition(4,43,List.of(node),List.of());
+            if(boundary==null) assertDoesNotThrow(()->validator.validate(old));
+            else {
+                var error=assertThrows(ResponseStatusException.class,()->validator.validate(old));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("TRACK_GEODESIC_AREA_REQUIRE_SCHEMA_VERSION"));
+            }
+            assertDoesNotThrow(()->validator.validate(new CanvasDefinition(4,44,List.of(node),List.of())));
+        }
+    }
+
     @Test
     void acceptsCompleteAndIncompleteModelIdentifiersButRejectsMalformedIdentifiers() {
         String inputId = UUID.randomUUID().toString();

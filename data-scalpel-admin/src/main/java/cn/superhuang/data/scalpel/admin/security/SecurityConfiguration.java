@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.admin.security;
 
 import cn.superhuang.data.scalpel.business.system.access.service.SystemAccessService;
+import cn.superhuang.data.scalpel.business.mcp.security.McpTokenAuthenticationFilter;
 import com.nimbusds.jose.jwk.source.ImmutableSecret;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -24,6 +25,8 @@ import org.springframework.security.oauth2.server.resource.authentication.JwtAut
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
+import org.springframework.core.annotation.Order;
 import org.springframework.core.convert.converter.Converter;
 import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.authentication.AbstractAuthenticationToken;
@@ -101,6 +104,44 @@ public class SecurityConfiguration {
     }
 
     @Bean
+    @Order(1)
+    SecurityFilterChain mcpSecurityFilterChain(HttpSecurity http,
+                                               McpTokenAuthenticationFilter tokenAuthenticationFilter,
+                                               RestAuthenticationEntryPoint authenticationEntryPoint,
+                                               RestAccessDeniedHandler accessDeniedHandler) throws Exception {
+        http
+                .securityMatcher("/mcp/**")
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(authorize -> authorize.anyRequest().hasAuthority("mcp.invoke"))
+                .addFilterBefore(tokenAuthenticationFilter, UsernamePasswordAuthenticationFilter.class)
+                .exceptionHandling(exceptions -> exceptions
+                        .authenticationEntryPoint(authenticationEntryPoint)
+                        .accessDeniedHandler(accessDeniedHandler));
+        return http.build();
+    }
+
+    @Bean
+    @Order(2)
+    SecurityFilterChain systemMcpSecurityFilterChain(HttpSecurity http,
+            cn.superhuang.data.scalpel.business.systemmcp.service.SystemMcpTokenService tokens,
+            cn.superhuang.data.scalpel.web.error.ProblemDetailWriter errors,
+            RestAuthenticationEntryPoint entryPoint, RestAccessDeniedHandler denied) throws Exception {
+        http.securityMatcher(request -> {
+                    String path = request.getRequestURI().substring(request.getContextPath().length());
+                    String header = request.getHeader("Authorization");
+                    return path.equals("/system-mcp") || header != null && header.startsWith("Bearer dssmcp_");
+                })
+                .csrf(csrf -> csrf.disable())
+                .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
+                .addFilterBefore(new cn.superhuang.data.scalpel.business.systemmcp.security.SystemMcpTokenFilter(tokens, errors), UsernamePasswordAuthenticationFilter.class)
+                .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(entryPoint).accessDeniedHandler(denied));
+        return http.build();
+    }
+
+    @Bean
+    @Order(3)
     SecurityFilterChain securityFilterChain(HttpSecurity http,
                                             Converter<Jwt, ? extends AbstractAuthenticationToken> jwtAuthenticationConverter,
                                             RestAuthenticationEntryPoint authenticationEntryPoint,

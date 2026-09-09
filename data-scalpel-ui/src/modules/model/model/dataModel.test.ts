@@ -44,6 +44,10 @@ describe('physical table change presentation rules', () => {
       ...current[0],
       nullable: true,
     }])).toBe(false);
+    expect(isMetadataOnlyFieldUpdate(current, [{
+      ...current[0],
+      primaryKey: false,
+    }], true)).toBe(true);
     expect(isMetadataOnlyFieldUpdate(current, [...current, {
       ...current[0],
       id: undefined,

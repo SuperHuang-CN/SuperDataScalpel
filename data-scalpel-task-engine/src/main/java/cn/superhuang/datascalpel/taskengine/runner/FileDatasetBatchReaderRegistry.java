@@ -5,6 +5,8 @@ import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.CrsReference;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
+import com.fasterxml.jackson.core.JsonParser;
+import com.fasterxml.jackson.core.JsonToken;
 import cn.superhuang.data.scalpel.filegdb.FileGdbFeatureCursor;
 import cn.superhuang.data.scalpel.filegdb.FileGdbOpenOptions;
 import cn.superhuang.data.scalpel.filegdb.FileGdbReadLimits;
@@ -25,6 +27,7 @@ import cn.superhuang.data.scalpel.shapefile.model.ShapefileFeature;
 import cn.superhuang.data.scalpel.shapefile.s3.S3ShapefileLocation;
 import cn.superhuang.data.scalpel.shapefile.s3.S3ShapefileOptions;
 import cn.superhuang.data.scalpel.shapefile.s3.S3ShapefileSource;
+import cn.superhuang.data.scalpel.dialect.geopackage.GeoPackageReader;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.datascalpel.taskengine.contract.FileDatasetCompression;
@@ -54,11 +57,15 @@ import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.functions;
+import org.apache.spark.sql.sedona_sql.expressions.st_functions;
 import org.apache.spark.sql.types.ArrayType;
 import org.apache.spark.sql.types.DataType;
 import org.apache.spark.sql.types.MapType;
 import org.apache.spark.sql.types.StructField;
 import org.apache.spark.sql.types.StructType;
+import org.locationtech.jts.geom.Geometry;
+import org.locationtech.jts.geom.GeometryFactory;
+import org.locationtech.jts.io.WKBReader;
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -85,6 +92,8 @@ import java.net.SocketException;
 import java.net.SocketTimeoutException;
 import java.net.URI;
 import java.nio.charset.Charset;
+import java.nio.charset.CodingErrorAction;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.sql.Date;
@@ -155,6 +164,14 @@ final class FileDatasetBatchReaderRegistry {
                 case CSV, TSV -> readDelimited(spark, storage, input, schema, nodeId, nodeName);
                 case TXT -> readText(spark, storage, input, schema, nodeId, nodeName);
                 case JSON, JSONL -> readJson(
+                        spark, storage, input, logicalSchema.columns(), schema, nodeId, nodeName);
+                case GEOJSON -> readGeoJson(
+                        spark, storage, input, logicalSchema.columns(), schema, nodeId, nodeName);
+                case GEOJSONL -> readGeoJsonLines(
+                        spark, storage, input, logicalSchema.columns(), schema, nodeId, nodeName);
+                case GEOPARQUET -> readGeoParquet(
+                        spark, storage, input, logicalSchema.columns(), schema, nodeId, nodeName);
+                case GPKG -> readGeoPackage(
                         spark, storage, input, logicalSchema.columns(), schema, nodeId, nodeName);
                 case PARQUET -> projectToLogicalSchema(
                         spark.read().parquet(objectUri(storage, input)),
@@ -254,6 +271,170 @@ final class FileDatasetBatchReaderRegistry {
                 throw exception;
             } catch (RuntimeException | IOException exception) {
                 throw parseFailure(nodeId, nodeName, "文件数据集 JSON 内容解析失败", exception);
+            }
+        });
+    }
+
+    private static Dataset<Row> readGeoJson(
+            SparkSession spark,
+            RuntimeFileStorage storage,
+            RuntimeFileInput input,
+            List<CanvasColumnSchema> columns,
+            StructType schema,
+            String nodeId,
+            String nodeName
+    ) {
+        if (!(input.parsingOptions() instanceof RuntimeFileParsingOptions.GeoJson)) {
+            throw parseFailure(nodeId, nodeName, "文件解析参数与 GeoJSON 格式不匹配", null);
+        }
+        List<RuntimeColumnSchema> runtimeColumns = runtimeColumns(columns);
+        return singlePartition(spark, schema, ignored -> {
+            List<CanvasColumnSchema> executorColumns = canvasColumns(runtimeColumns);
+            S3Client client = null;
+            InputStream raw = null;
+            InputStream content = null;
+            JsonParser parser = null;
+            try {
+                client = s3Client(storage);
+                raw = objectStream(client, storage, input, nodeId, nodeName);
+                content = decompress(raw, input.compression());
+                parser = OBJECT_MAPPER.getFactory().createParser(content);
+                AutoCloseable[] resources = {parser, content, raw, client};
+                Iterator<Row> rows = geoJsonRows(parser, executorColumns, () -> closeQuietly(resources));
+                registerClose(resources);
+                return rows;
+            } catch (RuntimeException | IOException exception) {
+                closeQuietly(parser, content, raw, client);
+                throw parseFailure(nodeId, nodeName, "文件数据集 GeoJSON 内容解析失败", exception);
+            }
+        });
+    }
+
+    private static Dataset<Row> readGeoJsonLines(
+            SparkSession spark,
+            RuntimeFileStorage storage,
+            RuntimeFileInput input,
+            List<CanvasColumnSchema> columns,
+            StructType schema,
+            String nodeId,
+            String nodeName
+    ) {
+        if (!(input.parsingOptions() instanceof RuntimeFileParsingOptions.GeoJsonLines)) {
+            throw parseFailure(nodeId, nodeName, "文件解析参数与 GEOJSONL 格式不匹配", null);
+        }
+        List<RuntimeColumnSchema> runtimeColumns = runtimeColumns(columns);
+        return singlePartition(spark, schema, ignored -> {
+            List<CanvasColumnSchema> executorColumns = canvasColumns(runtimeColumns);
+            S3Client client = null;
+            InputStream raw = null;
+            InputStream content = null;
+            BufferedReader reader = null;
+            try {
+                client = s3Client(storage);
+                raw = objectStream(client, storage, input, nodeId, nodeName);
+                content = decompress(raw, input.compression());
+                reader = new BufferedReader(new InputStreamReader(
+                        content,
+                        StandardCharsets.UTF_8.newDecoder()
+                                .onMalformedInput(CodingErrorAction.REPORT)
+                                .onUnmappableCharacter(CodingErrorAction.REPORT)
+                ));
+                AutoCloseable[] resources = {reader, content, raw, client};
+                Iterator<Row> rows = geoJsonLinesRows(reader, executorColumns, () -> closeQuietly(resources));
+                registerClose(resources);
+                return rows;
+            } catch (FileDatasetReadException exception) {
+                closeQuietly(reader, content, raw, client);
+                throw exception;
+            } catch (RuntimeException | IOException exception) {
+                closeQuietly(reader, content, raw, client);
+                throw parseFailure(nodeId, nodeName, "文件数据集 GEOJSONL 内容解析失败", exception);
+            }
+        });
+    }
+
+    private static Dataset<Row> readGeoParquet(
+            SparkSession spark,
+            RuntimeFileStorage storage,
+            RuntimeFileInput input,
+            List<CanvasColumnSchema> columns,
+            StructType schema,
+            String nodeId,
+            String nodeName
+    ) {
+        if (!(input.parsingOptions() instanceof RuntimeFileParsingOptions.GeoParquet)) {
+            throw parseFailure(nodeId, nodeName, "文件解析参数与 GeoParquet 格式不匹配", null);
+        }
+        Dataset<Row> source = spark.read()
+                .format("geoparquet")
+                .option("mode", "FAILFAST")
+                .load(objectUri(storage, input));
+        for (CanvasColumnSchema column : columns) {
+            if (column.fieldType() == PlatformDataType.GEOMETRY) {
+                // The GeoParquet parser normalized the CRS to EPSG. This only attaches the
+                // declared SRID to Sedona Geometry; it deliberately does not transform X/Y.
+                source = source.withColumn(
+                        column.name(),
+                        st_functions.ST_SetSRID(
+                                functions.col(quoted(column.name())),
+                                functions.lit(column.geometry().crs().code())
+                        )
+                );
+            }
+        }
+        return projectToLogicalSchema(source, columns, schema);
+    }
+
+    private static Dataset<Row> readGeoPackage(
+            SparkSession spark,
+            RuntimeFileStorage storage,
+            RuntimeFileInput input,
+            List<CanvasColumnSchema> columns,
+            StructType schema,
+            String nodeId,
+            String nodeName
+    ) {
+        if (!(input.parsingOptions() instanceof RuntimeFileParsingOptions.GeoPackage)) {
+            throw parseFailure(nodeId, nodeName, "文件解析参数与 GPKG 格式不匹配", null);
+        }
+        List<RuntimeColumnSchema> runtimeColumns = runtimeColumns(columns);
+        return singlePartition(spark, schema, ignored -> {
+            List<CanvasColumnSchema> executorColumns = canvasColumns(runtimeColumns);
+            S3Client client = null;
+            GeoPackageReader reader = null;
+            GeoPackageReader.RowCursor cursor = null;
+            Path temporary = null;
+            try {
+                client = s3Client(storage);
+                temporary = Files.createTempFile("datascalpel-file-input-", ".gpkg");
+                try (ResponseInputStream<GetObjectResponse> source = client.getObject(GetObjectRequest.builder()
+                        .bucket(storage.bucket()).key(input.objectKey()).build())) {
+                    Files.copy(source, temporary, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+                }
+                reader = GeoPackageReader.open(temporary);
+                GeoPackageReader.TableSchema sourceSchema = reader.schema(input.sourceKey());
+                cursor = reader.openRows(sourceSchema, true);
+                GeoPackageReader openedReader = reader;
+                GeoPackageReader.RowCursor openedCursor = cursor;
+                S3Client openedClient = client;
+                Path openedTemporary = temporary;
+                registerClose(
+                        openedCursor, openedReader, openedClient,
+                        () -> Files.deleteIfExists(openedTemporary)
+                );
+                return geoPackageRows(openedCursor, executorColumns);
+            } catch (FileDatasetReadException exception) {
+                closeQuietly(cursor, reader, client, deleteOnClose(temporary));
+                throw exception;
+            } catch (NoSuchKeyException exception) {
+                closeQuietly(cursor, reader, client, deleteOnClose(temporary));
+                throw objectMissing(nodeId, nodeName, exception);
+            } catch (S3Exception exception) {
+                closeQuietly(cursor, reader, client, deleteOnClose(temporary));
+                throw s3Failure(nodeId, nodeName, exception);
+            } catch (RuntimeException | IOException exception) {
+                closeQuietly(cursor, reader, client, deleteOnClose(temporary));
+                throw normalizeFailure(nodeId, nodeName, exception);
             }
         });
     }
@@ -493,6 +674,279 @@ final class FileDatasetBatchReaderRegistry {
 
     private static String quoted(String name) {
         return "`" + name.replace("`", "``") + "`";
+    }
+
+    private static Iterator<Row> geoJsonRows(
+            JsonParser parser,
+            List<CanvasColumnSchema> columns,
+            Runnable close
+    ) throws IOException {
+        if (parser.nextToken() != JsonToken.START_OBJECT) {
+            throw new IllegalArgumentException("GeoJSON 根节点必须是 FeatureCollection 对象");
+        }
+        return new Iterator<>() {
+            private boolean inFeatures;
+            private boolean featuresSeen;
+            private boolean completed;
+            private String collectionType;
+            private long featureNumber;
+            private Row next;
+            private boolean closed;
+
+            @Override
+            public boolean hasNext() {
+                if (next == null && !completed) {
+                    next = readNext();
+                }
+                return next != null;
+            }
+
+            @Override
+            public Row next() {
+                if (!hasNext()) {
+                    throw new NoSuchElementException();
+                }
+                Row result = next;
+                next = null;
+                return result;
+            }
+
+            private Row readNext() {
+                try {
+                    while (!completed) {
+                        JsonToken token = parser.nextToken();
+                        if (inFeatures) {
+                            if (token == JsonToken.END_ARRAY) {
+                                inFeatures = false;
+                                continue;
+                            }
+                            if (token != JsonToken.START_OBJECT) {
+                                throw new IllegalArgumentException("GeoJSON features 元素必须是 Feature 对象");
+                            }
+                            featureNumber++;
+                            return geoJsonRow(readGeoJsonFeature(parser, "GeoJSON features[" + featureNumber + "]"), columns);
+                        }
+                        if (token == JsonToken.END_OBJECT) {
+                            completed = true;
+                            try {
+                                validateGeoJsonRoot(collectionType, featuresSeen, featureNumber);
+                                if (parser.nextToken() != null) {
+                                    throw new IllegalArgumentException("GeoJSON 根节点之后不允许存在额外 JSON 内容");
+                                }
+                            } finally {
+                                close();
+                            }
+                            return null;
+                        }
+                        if (token != JsonToken.FIELD_NAME) {
+                            throw new IllegalArgumentException("GeoJSON 根节点结构无效");
+                        }
+                        String name = parser.currentName();
+                        JsonToken value = parser.nextToken();
+                        if ("type".equals(name)) {
+                            if (collectionType != null || value != JsonToken.VALUE_STRING) {
+                                throw new IllegalArgumentException("GeoJSON 根节点 type 无效");
+                            }
+                            collectionType = parser.getText();
+                        } else if ("features".equals(name)) {
+                            if (featuresSeen || value != JsonToken.START_ARRAY) {
+                                throw new IllegalArgumentException("GeoJSON 根节点 features 无效");
+                            }
+                            featuresSeen = true;
+                            inFeatures = true;
+                        } else {
+                            parser.skipChildren();
+                        }
+                    }
+                    return null;
+                } catch (IOException exception) {
+                    close();
+                    throw new IllegalArgumentException("GeoJSON 读取失败", exception);
+                } catch (RuntimeException exception) {
+                    close();
+                    throw exception;
+                }
+            }
+
+            private void close() {
+                if (!closed) {
+                    closed = true;
+                    close.run();
+                }
+            }
+        };
+    }
+
+    private static Iterator<Row> geoJsonLinesRows(
+            BufferedReader reader,
+            List<CanvasColumnSchema> columns,
+            Runnable close
+    ) {
+        return new Iterator<>() {
+            private long physicalLine;
+            private Row next;
+            private boolean completed;
+            private boolean closed;
+
+            @Override
+            public boolean hasNext() {
+                if (next == null && !completed) next = readNext();
+                return next != null;
+            }
+
+            @Override
+            public Row next() {
+                if (!hasNext()) throw new NoSuchElementException();
+                Row result = next;
+                next = null;
+                return result;
+            }
+
+            private Row readNext() {
+                try {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        physicalLine++;
+                        if (line.isBlank()) continue;
+                        String featurePath = "GEOJSONL 第 " + physicalLine + " 行";
+                        if (line.stripLeading().startsWith("\u001E")) {
+                            throw new IllegalArgumentException(featurePath + " 不支持 RS 分隔的 GeoJSON Text Sequence");
+                        }
+                        try (JsonParser parser = OBJECT_MAPPER.getFactory().createParser(line)) {
+                            if (parser.nextToken() != JsonToken.START_OBJECT) {
+                                throw new IllegalArgumentException(featurePath + " 必须是一个完整 GeoJSON Feature 对象");
+                            }
+                            GeoJsonFeature feature = readGeoJsonFeature(parser, featurePath);
+                            if (parser.nextToken() != null) {
+                                throw new IllegalArgumentException(featurePath + " 只能包含一个完整 GeoJSON Feature");
+                            }
+                            return geoJsonRow(feature, columns);
+                        }
+                    }
+                    completed = true;
+                    close();
+                    return null;
+                } catch (IOException exception) {
+                    close();
+                    throw new IllegalArgumentException("GEOJSONL 读取失败", exception);
+                } catch (RuntimeException exception) {
+                    close();
+                    throw exception;
+                }
+            }
+
+            private void close() {
+                if (!closed) {
+                    closed = true;
+                    close.run();
+                }
+            }
+        };
+    }
+
+    private static GeoJsonFeature readGeoJsonFeature(JsonParser parser, String featurePath) throws IOException {
+        String type = null;
+        String id = null;
+        Map<String, Object> properties = null;
+        Object geometry = MissingGeoJsonValue.VALUE;
+        boolean propertiesSeen = false;
+        boolean geometrySeen = false;
+        boolean idSeen = false;
+        while (parser.nextToken() != JsonToken.END_OBJECT) {
+            if (parser.currentToken() != JsonToken.FIELD_NAME) {
+                throw geoJsonInvalid(featurePath, "Feature 对象结构无效");
+            }
+            String name = parser.currentName();
+            JsonToken value = parser.nextToken();
+            switch (name) {
+                case "type" -> {
+                    if (type != null || value != JsonToken.VALUE_STRING) {
+                        throw geoJsonInvalid(featurePath, "type 无效");
+                    }
+                    type = parser.getText();
+                }
+                case "id" -> {
+                    if (idSeen || (value != JsonToken.VALUE_NULL
+                            && value != JsonToken.VALUE_STRING
+                            && !value.isNumeric())) {
+                        throw geoJsonInvalid(featurePath, "id 必须是字符串、数值或 null");
+                    }
+                    idSeen = true;
+                    id = value == JsonToken.VALUE_NULL ? null : parser.getText();
+                }
+                case "properties" -> {
+                    if (propertiesSeen) throw geoJsonInvalid(featurePath, "properties 重复");
+                    propertiesSeen = true;
+                    properties = geoJsonProperties(parser, value, featurePath);
+                }
+                case "geometry" -> {
+                    if (geometrySeen) throw geoJsonInvalid(featurePath, "geometry 重复");
+                    geometrySeen = true;
+                    geometry = value == JsonToken.VALUE_NULL ? null : parser.readValueAs(Object.class);
+                }
+                default -> parser.skipChildren();
+            }
+        }
+        if (!"Feature".equals(type)) throw geoJsonInvalid(featurePath, "type 必须为 Feature");
+        if (!propertiesSeen) throw geoJsonInvalid(featurePath, "缺少 properties");
+        if (!geometrySeen || geometry == MissingGeoJsonValue.VALUE) {
+            throw geoJsonInvalid(featurePath, "缺少 geometry");
+        }
+        if (properties.containsKey("_feature_id") || properties.containsKey("geometry")) {
+            throw geoJsonInvalid(featurePath, "properties 包含保留字段");
+        }
+        return new GeoJsonFeature(properties, id, geometry);
+    }
+
+    private static Map<String, Object> geoJsonProperties(JsonParser parser, JsonToken token, String featurePath)
+            throws IOException {
+        if (token == JsonToken.VALUE_NULL) return Map.of();
+        if (token != JsonToken.START_OBJECT) {
+            throw geoJsonInvalid(featurePath, "properties 必须是对象或 null");
+        }
+        Object value = parser.readValueAs(Object.class);
+        if (!(value instanceof Map<?, ?> source)) {
+            throw geoJsonInvalid(featurePath, "properties 必须是对象或 null");
+        }
+        Map<String, Object> result = new LinkedHashMap<>();
+        source.forEach((key, item) -> result.put(String.valueOf(key), item));
+        return result;
+    }
+
+    private static Row geoJsonRow(GeoJsonFeature feature, List<CanvasColumnSchema> columns) {
+        Object[] values = new Object[columns.size()];
+        for (int index = 0; index < columns.size(); index++) {
+            CanvasColumnSchema column = columns.get(index);
+            Object value = column.fieldType() == PlatformDataType.GEOMETRY
+                    ? GeoJsonGeometryConverter.convert(feature.geometry(), column.geometry())
+                    : "_feature_id".equals(column.name()) ? feature.id()
+                    : feature.properties().get(column.name());
+            values[index] = convert(value, column);
+        }
+        return RowFactory.create(values);
+    }
+
+    private static void validateGeoJsonRoot(String type, boolean featuresSeen, long featureCount) {
+        if (!"FeatureCollection".equals(type)) {
+            throw new IllegalArgumentException("GeoJSON 根节点 type 必须为 FeatureCollection");
+        }
+        if (!featuresSeen) {
+            throw new IllegalArgumentException("GeoJSON 根节点缺少 features 数组");
+        }
+        if (featureCount == 0) {
+            throw new IllegalArgumentException("GeoJSON FeatureCollection 不包含任何 Feature");
+        }
+    }
+
+    private static IllegalArgumentException geoJsonInvalid(String featurePath, String message) {
+        return new IllegalArgumentException(featurePath + " " + message);
+    }
+
+    private record GeoJsonFeature(Map<String, Object> properties, String id, Object geometry) {
+    }
+
+    private enum MissingGeoJsonValue {
+        VALUE
     }
 
     private static Map<String, Object> jsonRecord(Object value) {
@@ -853,6 +1307,83 @@ final class FileDatasetBatchReaderRegistry {
                     throw new NoSuchElementException();
                 }
                 return mapper.apply(source.next());
+            }
+        };
+    }
+
+    private static Iterator<Row> geoPackageRows(
+            GeoPackageReader.RowCursor cursor,
+            List<CanvasColumnSchema> columns
+    ) {
+        return new Iterator<>() {
+            private Map<String, Object> next;
+            private boolean loaded;
+
+            @Override
+            public boolean hasNext() {
+                if (!loaded) {
+                    next = cursor.next();
+                    loaded = true;
+                }
+                return next != null;
+            }
+
+            @Override
+            public Row next() {
+                if (!hasNext()) {
+                    throw new NoSuchElementException();
+                }
+                Map<String, Object> value = next;
+                next = null;
+                loaded = false;
+                Object[] values = new Object[columns.size()];
+                for (int index = 0; index < columns.size(); index++) {
+                    CanvasColumnSchema column = columns.get(index);
+                    Object raw = value.get(column.name());
+                    values[index] = column.fieldType() == PlatformDataType.GEOMETRY
+                            ? geoPackageGeometry(raw, column)
+                            : convert(raw, column);
+                }
+                return RowFactory.create(values);
+            }
+        };
+    }
+
+    private static Geometry geoPackageGeometry(Object value, CanvasColumnSchema column) {
+        if (value == null) {
+            return null;
+        }
+        if (!(value instanceof byte[] wkb)) {
+            throw new IllegalArgumentException("GPKG Geometry 运行时值无效");
+        }
+        try {
+            Geometry geometry = wkb.length == 0
+                    ? emptyGeometry(column)
+                    : new WKBReader().read(wkb);
+            geometry.setSRID(column.geometry().crs().code());
+            return geometry;
+        } catch (Exception exception) {
+            throw new IllegalArgumentException("GPKG Geometry WKB 解析失败", exception);
+        }
+    }
+
+    private static Geometry emptyGeometry(CanvasColumnSchema column) {
+        GeometryFactory factory = new GeometryFactory();
+        return switch (column.geometry().kind()) {
+            case POINT -> factory.createPoint();
+            case LINESTRING -> factory.createLineString();
+            case POLYGON -> factory.createPolygon();
+            case MULTIPOINT -> factory.createMultiPoint();
+            case MULTILINESTRING -> factory.createMultiLineString();
+            case MULTIPOLYGON -> factory.createMultiPolygon();
+            case GEOMETRYCOLLECTION, GEOMETRY -> factory.createGeometryCollection();
+        };
+    }
+
+    private static AutoCloseable deleteOnClose(Path path) {
+        return () -> {
+            if (path != null) {
+                Files.deleteIfExists(path);
             }
         };
     }

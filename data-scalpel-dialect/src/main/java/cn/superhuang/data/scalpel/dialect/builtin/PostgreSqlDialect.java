@@ -587,16 +587,11 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     @Override
     public TableChangePlan planTableChange(TableDefinition before, TableDefinition target, TableMetadata actual) {
         if (SpatialTypeSupport.containsGeometry(before) || SpatialTypeSupport.containsGeometry(target)) {
-            if (!compareTable(before, actual).compatible()) {
-                throw new IllegalArgumentException("Physical table structure has drifted from the source definition");
-            }
-            if (before.structureFingerprint().equals(target.structureFingerprint())) {
-                return new TableChangePlan(
-                        before, target, TableChangeStrategy.METADATA_ONLY, TableChangeRisk.SAFE,
-                        TableDdlAtomicity.NOT_APPLICABLE, List.of(), List.of(), List.of(), List.of()
+            if (!SpatialTypeSupport.isConstraintOnlyChange(before, target)) {
+                throw new UnsupportedOperationException(
+                        "空间字段所在受管表当前仅支持修改可空性和非空间字段主键约束"
                 );
             }
-            throw new UnsupportedOperationException("空间字段所在受管表第一版不支持物理结构变更");
         }
         if (!compareTable(before, actual).compatible()) {
             throw new IllegalArgumentException("Physical table structure has drifted from the source definition");

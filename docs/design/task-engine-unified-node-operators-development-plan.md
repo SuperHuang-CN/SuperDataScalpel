@@ -1,8 +1,10 @@
 # Task Engine 统一节点 Operator 分阶段开发计划
 
+状态：已实施的历史计划。下文的旧类名、Result v2、阶段任务和验收要求描述原重构，不代表当前能力或后续任务要求。现行约束见 [Task Engine 约定](../../data-scalpel-task-engine/AGENTS.md)与 [编译与执行规范](../development/task-engine.md)；版本值见 [协议版本定位](../README.md#协议版本定位)，测试执行遵循 [根测试政策](../../AGENTS.md#测试与验证暂时禁用)。
+
 ## 1. 背景与目标
 
-当前 Task Engine 会在 Runner 执行前调用 `CanvasTaskCompiler`，但预检和运行仍分别实现节点行为：
+重构前 Task Engine 会在 Runner 执行前调用 `CanvasTaskCompiler`，但预检和运行仍分别实现节点行为：
 
 - Compiler 使用 `JdbcInputNodeCompiler`、`JoinNodeCompiler`、`OutputColumnMappingCompiler` 等类。
 - Runner 在 `CanvasTaskExecutor` 中通过 `executeInput`、`executeJoin`、`prepareJdbcOutput` 等方法重新解释同一份 Definition。
@@ -291,7 +293,7 @@ Join 不再因为左右平台类型不完全相同而直接失败，也不维护
 
 ## 9. 实施状态与验收映射
 
-阶段 0 至阶段 6 已按本计划完成。实现后的权威结构如下：
+阶段 0 至阶段 6 已按本计划完成。当时交付的结构如下，节点数量和运行时行为以现行规范与实现为准：
 
 - `CanvasNodeOperators` 只创建一份内置 Registry，并为六种正式节点各注册一个无状态 Operator。
 - `CanvasTaskCompiler` 与 `CanvasTaskExecutor` 都从该 Registry 取得同一个 Operator 实例。

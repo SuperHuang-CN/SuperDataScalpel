@@ -58,6 +58,132 @@ public class CanvasDefinitionValidator {
             requireName(node.name(), path + ".name");
             validateLayout(node.layout(), path + ".layout");
             validateConfiguration(node, path + ".configuration");
+            if (definition.effectiveSchemaMinorVersion() < 41 && node instanceof SpatialSummarizeWithinNodeDefinition within
+                    && within.configuration().regions() != null)
+                invalid("SPATIAL_WITHIN_REGIONS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.regions 从 Canvas 4.41 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 40 && node instanceof SpatialPointClusterNodeDefinition cluster
+                    && cluster.configuration().dbscan() != null)
+                invalid("SPATIAL_DBSCAN_OPTIONS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.dbscan 从 Canvas 4.40 开始支持");
+            SpatialTemporalSlicing slicing = switch (node) {
+                case SpatialBinAggregateNodeDefinition bin -> bin.configuration().temporalSlicing();
+                case SpatialSummarizeWithinNodeDefinition within -> within.configuration().temporalSlicing();
+                default -> null;
+            };
+            if (definition.effectiveSchemaMinorVersion() < 39 && slicing != null && slicing.calendar() != null)
+                invalid("SPATIAL_CALENDAR_WINDOW_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.temporalSlicing.calendar 从 Canvas 4.39 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 38 && node instanceof SpatialBinAggregateNodeDefinition bin
+                    && bin.configuration().planarGrid() != null)
+                invalid("SPATIAL_PLANAR_GRID_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.planarGrid 从 Canvas 4.38 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 37 && node instanceof SpatialSummarizeWithinNodeDefinition within
+                    && within.configuration().statistics() != null) {
+                for (int i = 0; i < within.configuration().statistics().size(); i++) {
+                    if (within.configuration().statistics().get(i).requiresWeightedDispersionVersion())
+                        invalid("SPATIAL_WITHIN_WEIGHTED_DISPERSION_REQUIRE_SCHEMA_VERSION：" + path
+                                + ".configuration.statistics[" + i + "].weighting 从 Canvas 4.37 开始支持");
+                }
+            }
+            for (String unitPath : CanvasSpatialUnitVersions.unsupportedPaths(node, definition.effectiveSchemaMinorVersion()))
+                invalid("SPATIAL_EXTENDED_UNITS_REQUIRE_SCHEMA_VERSION：" + path + "." + unitPath + " 从 Canvas 4.36 开始支持");
+            for (String unitPath : CanvasSpatialUnitVersions.unsupportedDurationPaths(node, definition.effectiveSchemaMinorVersion()))
+                invalid("SPATIAL_DURATION_WEEKS_REQUIRE_SCHEMA_VERSION：" + path + "." + unitPath + " 从 Canvas 4.47 开始支持");
+            List<TrackSummaryStatistic> trackSummaries = switch (node) {
+                case TrackReconstructNodeDefinition track -> track.configuration().summaryStatistics();
+                case TrackFindDwellNodeDefinition dwell -> dwell.configuration().summaryStatistics();
+                default -> List.of();
+            };
+            if (definition.effectiveSchemaMinorVersion() < 35 && trackSummaries != null
+                    && trackSummaries.stream().anyMatch(s -> s != null && (s.kind() == TrackSummaryStatisticKind.COUNT_FIELD || s.kind() == TrackSummaryStatisticKind.ANY)))
+                invalid("TRACK_FIELD_STATISTICS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.summaryStatistics 从 Canvas 4.35 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 34 && node instanceof SpatialBinAggregateNodeDefinition binStatistics
+                    && binStatistics.configuration().statistics().stream().anyMatch(s -> s.kind() == SpatialBinStatisticKind.COUNT_FIELD || s.kind() == SpatialBinStatisticKind.ANY))
+                invalid("SPATIAL_BIN_FIELD_STATISTICS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.statistics 从 Canvas 4.34 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 33 && node instanceof SpatialBinAggregateNodeDefinition bins
+                    && (bins.configuration().binShape() == SpatialBinShape.H3 || bins.configuration().h3() != null))
+                invalid("SPATIAL_H3_REQUIRE_SCHEMA_VERSION：" + path + ".configuration 从 Canvas 4.33 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 32 && node instanceof SpatialCenterDispersionNodeDefinition center
+                    && center.configuration().analyses().stream().anyMatch(a -> a.centralFeatureColumns() != null))
+                invalid("SPATIAL_CENTER_PROJECTION_REQUIRE_SCHEMA_VERSION：" + path + ".configuration 从 Canvas 4.32 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 31 && node instanceof SpatialCenterDispersionNodeDefinition center
+                    && (center.configuration().resultMode() != null || center.configuration().analyses().stream().anyMatch(a -> a.outputTableName() != null)))
+                invalid("SPATIAL_CENTER_RESULTS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration 从 Canvas 4.31 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 30 && node instanceof SpatialNearestNodeDefinition nearest
+                    && nearest.configuration().matching() != null)
+                invalid("SPATIAL_NEAREST_MATCHING_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.matching 从 Canvas 4.30 开始支持");
+            boolean unaryPolicy = node instanceof GeometryDeriveNodeDefinition derive
+                    && derive.configuration().derivations().stream().anyMatch(item -> item.geometryPolicy() != null)
+                    || node instanceof GeometrySimplifyNodeDefinition simplify && simplify.configuration().geometryPolicy() != null;
+            if (definition.effectiveSchemaMinorVersion() < 29 && unaryPolicy)
+                invalid("GEOMETRY_UNARY_POLICY_REQUIRE_SCHEMA_VERSION：" + path + ".configuration 从 Canvas 4.29 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 46 && node instanceof TrackDetectIncidentsNodeDefinition incident
+                    && incident.configuration() != null && !incident.configuration().conditionWindows().isEmpty()) {
+                invalid("TRACK_INCIDENT_WINDOWS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.conditionWindows 从 Canvas 4.46 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 45 && node instanceof SpatialPointClusterNodeDefinition cluster
+                    && cluster.configuration().hdbscan() != null)
+                invalid("SPATIAL_HDBSCAN_OPTIONS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.hdbscan 从 Canvas 4.45 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 44 && node instanceof TrackReconstructNodeDefinition reconstruct
+                    && reconstruct.configuration().reconstruction() != null
+                    && reconstruct.configuration().reconstruction().areaGeometry() != null
+                    && reconstruct.configuration().reconstruction().areaGeometry().geodesicBoundary() != null)
+                invalid("TRACK_GEODESIC_AREA_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.reconstruction.areaGeometry.geodesicBoundary 从 Canvas 4.44 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 43 && node instanceof TrackReconstructNodeDefinition reconstruct
+                    && reconstruct.configuration().reconstruction() != null
+                    && reconstruct.configuration().reconstruction().areaGeometry() != null
+                    && !reconstruct.configuration().reconstruction().areaGeometry().windowBindings().isEmpty())
+                invalid("TRACK_BUFFER_WINDOWS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.reconstruction.areaGeometry.windowBindings 从 Canvas 4.43 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 42 && node instanceof TrackReconstructNodeDefinition reconstruct
+                    && reconstruct.configuration().reconstruction() != null
+                    && reconstruct.configuration().reconstruction().areaGeometry() != null)
+                invalid("TRACK_AREA_GEOMETRY_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.reconstruction.areaGeometry 从 Canvas 4.42 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 28 && node instanceof TrackReconstructNodeDefinition reconstruct
+                    && reconstruct.configuration().reconstruction() != null
+                    && reconstruct.configuration().reconstruction().pathGeometry() != null) {
+                invalid("TRACK_PATH_GEOMETRY_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.reconstruction.pathGeometry 从 Canvas 4.28 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 27 && node instanceof TrackReconstructNodeDefinition reconstruct
+                    && reconstruct.configuration().reconstruction() != null) {
+                invalid("TRACK_RECONSTRUCT_OPTIONS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.reconstruction 从 Canvas 4.27 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 26 && node instanceof SpatialOverlayNodeDefinition overlay
+                    && overlay.configuration().requiresFamilyGeometryVersion()) {
+                invalid("SPATIAL_OVERLAY_FAMILY_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.geometryPolicy 从 Canvas 4.26 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 25 && node instanceof SpatialSummarizeWithinNodeDefinition within
+                    && within.configuration().groupResult() != null) {
+                invalid(path + ".configuration.groupResult 从 Canvas 4.25 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 24 && node instanceof SpatialSummarizeWithinNodeDefinition within
+                    && within.configuration().usesExplicitStatistics()) {
+                invalid(path + ".configuration.statistics 从 Canvas 4.24 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 23 && node instanceof TrackMotionStatisticsNodeDefinition motion
+                    && (motion.configuration().motionSemantics() != null || motion.configuration().windowOptions() != null)) {
+                invalid(path + ".configuration.motionSemantics 从 Canvas 4.23 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 22 && node instanceof TrackFindDwellNodeDefinition dwell
+                    && (dwell.configuration().dwellSemantics() != null || dwell.configuration().rangeOptions() != null)) {
+                invalid(path + ".configuration.dwellSemantics 从 Canvas 4.22 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 21 && node instanceof SpatialBinAggregateNodeDefinition bins
+                    && bins.configuration().binSizeSemantics() != null) {
+                invalid(path + ".configuration.binSizeSemantics 从 Canvas 4.21 开始支持");
+            }
+            TrackBoundaryConfiguration boundaries = switch (node) {
+                case TrackReconstructNodeDefinition n -> n.configuration().boundaries();
+                case TrackMotionStatisticsNodeDefinition n -> n.configuration().boundaries();
+                case TrackFindDwellNodeDefinition n -> n.configuration().boundaries();
+                case TrackDetectIncidentsNodeDefinition n -> n.configuration().boundaries();
+                default -> null;
+            };
+            if (definition.effectiveSchemaMinorVersion() < 21
+                    && boundaries != null && boundaries.fixedTimeBoundary() != null) {
+                invalid(path + ".configuration.boundaries.fixedTimeBoundary 从 Canvas 4.21 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 21
+                    && node instanceof TrackDetectIncidentsNodeDefinition track
+                    && track.configuration().usesLifecycleOptions()) {
+                invalid(path + ".configuration 事件生命周期配置从 Canvas 4.21 开始支持");
+            }
         }
 
         Set<String> edgeIds = new HashSet<>();
@@ -365,6 +491,227 @@ public class CanvasDefinitionValidator {
                 requireString(repair.configuration().geometryColumnName(), path + ".geometryColumnName");
                 requireString(repair.configuration().outputColumnName(), path + ".outputColumnName");
             }
+            case GeometryDeriveNodeDefinition derive ->
+                    validateGeometryDerive(derive.configuration(), path);
+            case GeometrySimplifyNodeDefinition simplify -> {
+                if (simplify.configuration() == null) invalid(path + " 不能为空");
+                requireString(simplify.configuration().sourceTableName(), path + ".sourceTableName");
+                requireString(simplify.configuration().geometryColumnName(), path + ".geometryColumnName");
+                requireString(simplify.configuration().outputTableName(), path + ".outputTableName");
+                requireString(simplify.configuration().outputColumnName(), path + ".outputColumnName");
+                if (simplify.configuration().tolerance() != null && !Double.isFinite(simplify.configuration().tolerance()))
+                    invalid(path + ".tolerance 必须是有限数值或 null");
+            }
+            case SpatialNearestNodeDefinition nearest -> {
+                if (nearest.configuration() == null) invalid(path + " 不能为空");
+                requireString(nearest.configuration().sourceTableName(), path + ".sourceTableName");
+                requireString(nearest.configuration().sourceGeometryColumnName(),
+                        path + ".sourceGeometryColumnName");
+                requireString(nearest.configuration().candidateTableName(), path + ".candidateTableName");
+                requireString(nearest.configuration().candidateGeometryColumnName(),
+                        path + ".candidateGeometryColumnName");
+                requireString(nearest.configuration().candidateIdColumnName(), path + ".candidateIdColumnName");
+                requireString(nearest.configuration().outputTableName(), path + ".outputTableName");
+                requireString(nearest.configuration().distanceColumnName(), path + ".distanceColumnName");
+                if (nearest.configuration().maximumDistance() != null && !Double.isFinite(nearest.configuration().maximumDistance()))
+                    invalid(path + ".maximumDistance 必须是有限数值或 null");
+                var matching = nearest.configuration().matching();
+                if (matching != null && matching.connectionLines() != null && matching.connectionLines().maximumGeodesicSegmentLength() != null
+                        && !Double.isFinite(matching.connectionLines().maximumGeodesicSegmentLength()))
+                    invalid(path + ".matching.connectionLines.maximumGeodesicSegmentLength 必须是有限数值或 null");
+                if (nearest.configuration().rankColumnName() != null) {
+                    requireString(nearest.configuration().rankColumnName(), path + ".rankColumnName");
+                }
+                if (nearest.configuration().outputColumns() == null) {
+                    invalid(path + ".outputColumns 必须是数组");
+                }
+                for (int index = 0; index < nearest.configuration().outputColumns().size(); index++) {
+                    if (nearest.configuration().outputColumns().get(index) == null) {
+                        invalid(path + ".outputColumns[" + index + "] 不能为空");
+                    }
+                }
+            }
+            case SpatialSummarizeWithinNodeDefinition summarize ->
+                    validateSpatialSummarizeWithin(summarize.configuration(), path);
+            case SpatialOverlayNodeDefinition overlay -> {
+                if (overlay.configuration() == null) invalid(path + " 不能为空");
+                requireString(overlay.configuration().leftTableName(), path + ".leftTableName");
+                requireString(overlay.configuration().leftGeometryColumnName(),
+                        path + ".leftGeometryColumnName");
+                requireString(overlay.configuration().rightTableName(), path + ".rightTableName");
+                requireString(overlay.configuration().rightGeometryColumnName(),
+                        path + ".rightGeometryColumnName");
+                requireString(overlay.configuration().outputTableName(), path + ".outputTableName");
+                requireString(overlay.configuration().outputGeometryColumnName(),
+                        path + ".outputGeometryColumnName");
+                if (overlay.configuration().outputColumns() == null) {
+                    invalid(path + ".outputColumns 必须是数组");
+                }
+                for (int index = 0; index < overlay.configuration().outputColumns().size(); index++) {
+                    if (overlay.configuration().outputColumns().get(index) == null) {
+                        invalid(path + ".outputColumns[" + index + "] 不能为空");
+                    }
+                }
+            }
+            case TrackReconstructNodeDefinition track -> {
+                TrackReconstructConfiguration configuration = track.configuration();
+                if (configuration != null && configuration.reconstruction() != null) {
+                    var options = configuration.reconstruction();
+                    for (String field : options.orderByColumns()) requireString(field, path + ".reconstruction.orderByColumns");
+                    if (options.splitExpression() != null) {
+                        requireString(options.splitExpression().expression(), path + ".reconstruction.splitExpression.expression");
+                        for (var binding : options.splitExpression().bindings()) {
+                            if (binding == null) invalid(path + ".reconstruction.splitExpression.bindings 项不能为空");
+                            requireString(binding.name(), path + ".reconstruction.splitExpression.bindings.name");
+                            requireString(binding.sourceColumnName(), path + ".reconstruction.splitExpression.bindings.sourceColumnName");
+                        }
+                    }
+                }
+                validateTrackBase(configuration == null ? null : configuration.sourceTableName(),
+                        configuration == null ? null : configuration.pointGeometryColumnName(),
+                        configuration == null ? null : configuration.trackIdColumns(),
+                        configuration == null ? null : configuration.timeColumnName(),
+                        configuration == null ? null : configuration.boundaries(), path);
+                if (configuration.summaryStatistics() == null) invalid(path + ".summaryStatistics 必须是数组");
+                validateTrackSummaries(configuration.summaryStatistics(), path + ".summaryStatistics");
+                requireString(configuration.outputTableName(), path + ".outputTableName");
+                requireString(configuration.outputGeometryColumnName(), path + ".outputGeometryColumnName");
+                requireString(configuration.startTimeColumnName(), path + ".startTimeColumnName");
+                requireString(configuration.endTimeColumnName(), path + ".endTimeColumnName");
+                requireString(configuration.pointCountColumnName(), path + ".pointCountColumnName");
+            }
+            case TrackMotionStatisticsNodeDefinition track -> {
+                TrackMotionStatisticsConfiguration configuration = track.configuration();
+                validateTrackBase(configuration == null ? null : configuration.sourceTableName(),
+                        configuration == null ? null : configuration.pointGeometryColumnName(),
+                        configuration == null ? null : configuration.trackIdColumns(),
+                        configuration == null ? null : configuration.timeColumnName(),
+                        configuration == null ? null : configuration.boundaries(), path);
+                if (configuration.windowOptions() != null) {
+                    var options = configuration.windowOptions();
+                    if (options.elevationColumnName() != null) requireString(options.elevationColumnName(), path + ".windowOptions.elevationColumnName");
+                    for (int i = 0; i < options.orderByColumns().size(); i++) requireString(options.orderByColumns().get(i), path + ".windowOptions.orderByColumns[" + i + "]");
+                    for (int i = 0; i < options.statistics().size(); i++) {
+                        var statistic = options.statistics().get(i);
+                        requireString(statistic.statisticId(), path + ".windowOptions.statistics[" + i + "].statisticId");
+                        requireString(statistic.outputColumnName(), path + ".windowOptions.statistics[" + i + "].outputColumnName");
+                    }
+                }
+                if (configuration.usesObservationWindow()) {
+                    requireString(configuration.outputTableName(), path + ".outputTableName");
+                    if (configuration.metrics() == null) invalid(path + ".metrics 必须是数组");
+                    break; // Preserve incomplete semantic drafts; the shared Operator validates active options.
+                }
+                if (configuration.historyPoints() < 1 || configuration.historyPoints() > 100) {
+                    invalid(path + ".historyPoints 必须在 1 到 100 之间");
+                }
+                if (configuration.metrics() == null) invalid(path + ".metrics 必须是数组");
+                if (configuration.metrics().size() > 16) invalid(path + ".metrics 不能超过 16 项");
+                for (int index = 0; index < configuration.metrics().size(); index++) {
+                    TrackMotionMetric metric = configuration.metrics().get(index);
+                    String itemPath = path + ".metrics[" + index + "]";
+                    if (metric == null) invalid(itemPath + " 不能为空");
+                    requireUuid(metric.metricId(), itemPath + ".metricId");
+                    requireString(metric.outputColumnName(), itemPath + ".outputColumnName");
+                }
+                requireString(configuration.outputTableName(), path + ".outputTableName");
+            }
+            case TrackFindDwellNodeDefinition track -> {
+                TrackFindDwellConfiguration configuration = track.configuration();
+                validateTrackBase(configuration == null ? null : configuration.sourceTableName(),
+                        configuration == null ? null : configuration.pointGeometryColumnName(),
+                        configuration == null ? null : configuration.trackIdColumns(),
+                        configuration == null ? null : configuration.timeColumnName(),
+                        configuration == null ? null : configuration.boundaries(), path);
+                if (configuration.rangeOptions() != null) {
+                    var range = configuration.rangeOptions();
+                    if (range.meanDistanceColumnName() != null) requireString(range.meanDistanceColumnName(), path + ".rangeOptions.meanDistanceColumnName");
+                    if (range.dwellFlagColumnName() != null) requireString(range.dwellFlagColumnName(), path + ".rangeOptions.dwellFlagColumnName");
+                    for (int i = 0; i < range.orderByColumns().size(); i++) requireString(range.orderByColumns().get(i), path + ".rangeOptions.orderByColumns[" + i + "]");
+                }
+                if (configuration.usesReferenceCenter()) {
+                    requireString(configuration.outputTableName(), path + ".outputTableName");
+                    requireString(configuration.dwellIdColumnName(), path + ".dwellIdColumnName");
+                    if (configuration.summaryStatistics() == null) invalid(path + ".summaryStatistics 必须是数组");
+                    // Semantic errors in the new mode remain editable drafts; the Operator validates active fields.
+                    break;
+                }
+                if (!Double.isFinite(configuration.distanceThreshold()) || configuration.distanceThreshold() <= 0
+                        || configuration.distanceThresholdUnit() == null) {
+                    invalid(path + ".distanceThreshold 必须是带单位的有限正数");
+                }
+                if (!Double.isFinite(configuration.minimumDuration()) || configuration.minimumDuration() <= 0
+                        || configuration.minimumDurationUnit() == null) {
+                    invalid(path + ".minimumDuration 必须是带单位的有限正数");
+                }
+                if (configuration.outputGeometryKind() == null) invalid(path + ".outputGeometryKind 不能为空");
+                if (configuration.summaryStatistics() == null) invalid(path + ".summaryStatistics 必须是数组");
+                validateTrackSummaries(configuration.summaryStatistics(), path + ".summaryStatistics");
+                requireString(configuration.outputTableName(), path + ".outputTableName");
+                requireString(configuration.dwellIdColumnName(), path + ".dwellIdColumnName");
+                requireString(configuration.startTimeColumnName(), path + ".startTimeColumnName");
+                requireString(configuration.endTimeColumnName(), path + ".endTimeColumnName");
+                requireString(configuration.durationColumnName(), path + ".durationColumnName");
+                requireString(configuration.pointCountColumnName(), path + ".pointCountColumnName");
+                requireString(configuration.outputGeometryColumnName(), path + ".outputGeometryColumnName");
+            }
+            case TrackDetectIncidentsNodeDefinition track -> {
+                TrackDetectIncidentsConfiguration configuration = track.configuration();
+                validateTrackBase(configuration == null ? null : configuration.sourceTableName(),
+                        configuration == null ? null : configuration.pointGeometryColumnName(),
+                        configuration == null ? null : configuration.trackIdColumns(),
+                        configuration == null ? null : configuration.timeColumnName(),
+                        configuration == null ? null : configuration.boundaries(), path);
+                if (configuration.startCondition() == null) invalid(path + ".startCondition 不能为空");
+                validateFilterCondition(configuration.startCondition(), path + ".startCondition", 1, new int[]{0});
+                if (configuration.endCondition() != null) {
+                    validateFilterCondition(configuration.endCondition(), path + ".endCondition", 1, new int[]{0});
+                }
+                if (configuration.resultMode() == null) invalid(path + ".resultMode 不能为空");
+                if (configuration.incidentDurationUnit() == null) invalid(path + ".incidentDurationUnit 不能为空");
+                requireString(configuration.outputTableName(), path + ".outputTableName");
+                requireString(configuration.incidentIdColumnName(), path + ".incidentIdColumnName");
+                requireString(configuration.incidentFlagColumnName(), path + ".incidentFlagColumnName");
+                requireString(configuration.incidentStartTimeColumnName(), path + ".incidentStartTimeColumnName");
+                requireString(configuration.incidentEndTimeColumnName(), path + ".incidentEndTimeColumnName");
+                requireString(configuration.incidentDurationColumnName(), path + ".incidentDurationColumnName");
+                if (configuration.incidentStatusColumnName() != null) {
+                    requireString(configuration.incidentStatusColumnName(), path + ".incidentStatusColumnName");
+                }
+                for (int index = 0; index < configuration.orderByColumns().size(); index++) {
+                    requireString(configuration.orderByColumns().get(index), path + ".orderByColumns[" + index + "]");
+                }
+                for (int index = 0; index < configuration.conditionWindows().size(); index++) {
+                    var window = configuration.conditionWindows().get(index);
+                    String windowPath = path + ".conditionWindows[" + index + "]";
+                    requireString(window.bindingName(), windowPath + ".bindingName");
+                    requireString(window.sourceColumnName(), windowPath + ".sourceColumnName");
+                }
+            }
+            case SpatialBinAggregateNodeDefinition aggregate ->
+                    validateSpatialBinAggregate(aggregate.configuration(), path);
+            case SpatialPointClusterNodeDefinition cluster -> {
+                SpatialPointClusterConfiguration configuration = cluster.configuration();
+                if (configuration == null) invalid(path + " 不能为空");
+                requireString(configuration.sourceTableName(), path + ".sourceTableName");
+                requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+                requireString(configuration.featureIdColumnName(), path + ".featureIdColumnName");
+                if (configuration.distanceMethod() == null) invalid(path + ".distanceMethod 不能为空");
+                if (configuration.parameters() == null) invalid(path + ".parameters 不能为空");
+                validateSpatialPointClusterParameters(configuration.parameters(), path + ".parameters");
+                if (configuration.dbscan() != null) requireString(configuration.dbscan().timeColumnName(), path + ".dbscan.timeColumnName");
+                if (configuration.hdbscan() != null) {
+                    requireString(configuration.hdbscan().probabilityColumnName(), path + ".hdbscan.probabilityColumnName");
+                    requireString(configuration.hdbscan().outlierColumnName(), path + ".hdbscan.outlierColumnName");
+                    requireString(configuration.hdbscan().exemplarColumnName(), path + ".hdbscan.exemplarColumnName");
+                    requireString(configuration.hdbscan().stabilityColumnName(), path + ".hdbscan.stabilityColumnName");
+                }
+                requireString(configuration.outputTableName(), path + ".outputTableName");
+                requireString(configuration.clusterIdColumnName(), path + ".clusterIdColumnName");
+                requireString(configuration.noiseColumnName(), path + ".noiseColumnName");
+            }
+            case SpatialCenterDispersionNodeDefinition analysis ->
+                    validateSpatialCenterDispersion(analysis.configuration(), path);
             case GeometryBufferNodeDefinition buffer -> {
                 if (buffer.configuration() == null) invalid(path + " 不能为空");
                 requireString(buffer.configuration().sourceTableName(), path + ".sourceTableName");
@@ -850,6 +1197,34 @@ public class CanvasDefinitionValidator {
         }
     }
 
+    private static void validateGeometryDerive(
+            GeometryDeriveConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        if (configuration.derivations() == null) {
+            invalid(path + ".derivations 必须是数组");
+        }
+        if (configuration.derivations().size() > GeometryDeriveConfiguration.MAX_DERIVATIONS) {
+            invalid(path + ".derivations 不能超过 "
+                    + GeometryDeriveConfiguration.MAX_DERIVATIONS + " 项");
+        }
+        Set<String> derivationIds = new HashSet<>();
+        for (int index = 0; index < configuration.derivations().size(); index++) {
+            GeometryDerivation derivation = configuration.derivations().get(index);
+            String itemPath = path + ".derivations[" + index + "]";
+            if (derivation == null) invalid(itemPath + " 不能为空");
+            requireUuid(derivation.derivationId(), itemPath + ".derivationId");
+            if (!derivationIds.add(derivation.derivationId())) {
+                invalid(itemPath + ".derivationId 在节点内重复");
+            }
+            requireString(derivation.sourceColumnName(), itemPath + ".sourceColumnName");
+            requireString(derivation.outputColumnName(), itemPath + ".outputColumnName");
+        }
+    }
+
     private static void validateSpatialMeasure(
             SpatialMeasureConfiguration configuration,
             String path
@@ -893,8 +1268,263 @@ public class CanvasDefinitionValidator {
         }
     }
 
+    private static void validateSpatialSummarizeWithin(
+            SpatialSummarizeWithinConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        var regions = configuration.regions();
+        if (regions != null) {
+            if (regions.binShape() == SpatialBinShape.H3) invalid(path + ".regions.binShape 仅支持 SQUARE 或 HEXAGON");
+            requireString(regions.binIdColumnName(), path + ".regions.binIdColumnName");
+            requireString(regions.binGeometryColumnName(), path + ".regions.binGeometryColumnName");
+            if (regions.binSize() != null && !Double.isFinite(regions.binSize())) invalid(path + ".regions.binSize 必须是有限数值");
+            var grid = regions.planarGrid();
+            if (grid != null) {
+                var e = grid.extent();
+                Double[] values = e == null ? new Double[]{grid.originX(), grid.originY()}
+                        : new Double[]{grid.originX(), grid.originY(), e.minX(), e.minY(), e.maxX(), e.maxY()};
+                for (Double value : values) if (value != null && !Double.isFinite(value)) invalid(path + ".regions.planarGrid 坐标必须是有限数值");
+            }
+        }
+        requireString(configuration.areaTableName(), path + ".areaTableName");
+        requireString(configuration.areaGeometryColumnName(), path + ".areaGeometryColumnName");
+        requireString(configuration.summaryTableName(), path + ".summaryTableName");
+        requireString(configuration.summaryGeometryColumnName(), path + ".summaryGeometryColumnName");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        if (configuration.distanceMethod() == null) invalid(path + ".distanceMethod 不能为空");
+        if (configuration.lengthUnit() == null) invalid(path + ".lengthUnit 不能为空");
+        if (configuration.areaUnit() == null) invalid(path + ".areaUnit 不能为空");
+        if (configuration.areaOutputColumns() == null) {
+            invalid(path + ".areaOutputColumns 必须是数组");
+        }
+        if (configuration.statistics() == null) invalid(path + ".statistics 必须是数组");
+        if (configuration.statistics().size() > SpatialSummarizeWithinConfiguration.MAX_STATISTICS) {
+            invalid(path + ".statistics 不能超过 32 项");
+        }
+        Set<String> statisticIds = new HashSet<>();
+        for (int index = 0; index < configuration.statistics().size(); index++) {
+            SpatialWithinStatistic statistic = configuration.statistics().get(index);
+            String itemPath = path + ".statistics[" + index + "]";
+            if (statistic == null) invalid(itemPath + " 不能为空");
+            requireUuid(statistic.statisticId(), itemPath + ".statisticId");
+            if (!statisticIds.add(statistic.statisticId())) {
+                invalid(itemPath + ".statisticId 在节点内重复");
+            }
+            if (statistic.kind() == null) invalid(itemPath + ".kind 不能为空");
+            if (statistic.sourceColumnName() != null) {
+                requireString(statistic.sourceColumnName(), itemPath + ".sourceColumnName");
+            }
+            requireString(statistic.outputColumnName(), itemPath + ".outputColumnName");
+        }
+        SpatialGroupSummary group = configuration.groupSummary();
+        SpatialWithinGroupResult groupResult = configuration.groupResult();
+        if (groupResult != null) {
+            String resultPath = path + ".groupResult";
+            requireString(groupResult.areaKeyColumnName(), resultPath + ".areaKeyColumnName");
+            requireString(groupResult.areaKeyOutputColumnName(), resultPath + ".areaKeyOutputColumnName");
+            requireString(groupResult.outputTableName(), resultPath + ".outputTableName");
+            requireString(groupResult.groupValueColumnName(), resultPath + ".groupValueColumnName");
+            if (groupResult.minorityValueColumnName() != null) requireString(groupResult.minorityValueColumnName(), resultPath + ".minorityValueColumnName");
+            if (groupResult.majorityValueColumnName() != null) requireString(groupResult.majorityValueColumnName(), resultPath + ".majorityValueColumnName");
+            if (groupResult.minorityPercentageColumnName() != null) requireString(groupResult.minorityPercentageColumnName(), resultPath + ".minorityPercentageColumnName");
+            if (groupResult.majorityPercentageColumnName() != null) requireString(groupResult.majorityPercentageColumnName(), resultPath + ".majorityPercentageColumnName");
+        }
+        if (group != null) {
+            requireString(group.groupByColumnName(), path + ".groupSummary.groupByColumnName");
+            if (group.minorityFlagColumnName() != null) {
+                requireString(group.minorityFlagColumnName(), path + ".groupSummary.minorityFlagColumnName");
+            }
+            if (group.majorityFlagColumnName() != null) {
+                requireString(group.majorityFlagColumnName(), path + ".groupSummary.majorityFlagColumnName");
+            }
+            if (group.groupPercentageColumnName() != null) {
+                requireString(group.groupPercentageColumnName(), path + ".groupSummary.groupPercentageColumnName");
+            }
+        }
+        validateSpatialTemporalSlicing(configuration.temporalSlicing(), path + ".temporalSlicing");
+    }
+
+    private static void validateSpatialBinAggregate(
+            SpatialBinAggregateConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+        // Mode, resolution and size ranges are business drafts, validated by the shared Operator.
+        if (!Double.isFinite(configuration.binSize())) invalid(path + ".binSize 必须是有限数值");
+        if (configuration.statistics() == null) invalid(path + ".statistics 必须是数组");
+        if (configuration.statistics().size() > SpatialBinAggregateConfiguration.MAX_STATISTICS) {
+            invalid(path + ".statistics 不能超过 32 项");
+        }
+        Set<String> statisticIds = new HashSet<>();
+        for (int index = 0; index < configuration.statistics().size(); index++) {
+            SpatialBinStatistic statistic = configuration.statistics().get(index);
+            String itemPath = path + ".statistics[" + index + "]";
+            if (statistic == null) invalid(itemPath + " 不能为空");
+            requireUuid(statistic.statisticId(), itemPath + ".statisticId");
+            if (!statisticIds.add(statistic.statisticId())) {
+                invalid(itemPath + ".statisticId 在节点内重复");
+            }
+            if (statistic.kind() == null) invalid(itemPath + ".kind 不能为空");
+            if (statistic.sourceColumnName() != null) {
+                requireString(statistic.sourceColumnName(), itemPath + ".sourceColumnName");
+            }
+            requireString(statistic.outputColumnName(), itemPath + ".outputColumnName");
+        }
+        validateSpatialGroupSummary(configuration.groupSummary(), path + ".groupSummary");
+        validateSpatialTemporalSlicing(configuration.temporalSlicing(), path + ".temporalSlicing");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        requireString(configuration.binIdColumnName(), path + ".binIdColumnName");
+        requireString(configuration.binGeometryColumnName(), path + ".binGeometryColumnName");
+    }
+
+    private static void validateSpatialCenterDispersion(
+            SpatialCenterDispersionConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+        if (configuration.featureIdColumnName() != null) {
+            requireString(configuration.featureIdColumnName(), path + ".featureIdColumnName");
+        }
+        if (configuration.weightColumnName() != null) {
+            requireString(configuration.weightColumnName(), path + ".weightColumnName");
+        }
+        if (configuration.groupByColumns() == null) invalid(path + ".groupByColumns 必须是数组");
+        if (configuration.groupByColumns().size()
+                > SpatialCenterDispersionConfiguration.MAX_GROUP_COLUMNS) {
+            invalid(path + ".groupByColumns 不能超过 8 项");
+        }
+        for (int index = 0; index < configuration.groupByColumns().size(); index++) {
+            requireString(configuration.groupByColumns().get(index),
+                    path + ".groupByColumns[" + index + "]");
+        }
+        if (configuration.analyses() == null) invalid(path + ".analyses 必须是数组");
+        if (configuration.analyses().size() > SpatialCenterDispersionConfiguration.MAX_ANALYSES) {
+            invalid(path + ".analyses 不能超过 16 项");
+        }
+        for (int index = 0; index < configuration.analyses().size(); index++) {
+            SpatialCenterDispersionAnalysis analysis = configuration.analyses().get(index);
+            String itemPath = path + ".analyses[" + index + "]";
+            if (analysis == null) invalid(itemPath + " 不能为空");
+            requireString(analysis.analysisId(), itemPath + ".analysisId");
+            requireString(analysis.outputColumnName(), itemPath + ".outputColumnName");
+            if (analysis.outputTableName() != null) requireString(analysis.outputTableName(), itemPath + ".outputTableName");
+            if (analysis.centralFeatureColumns() != null) {
+                for (int j = 0; j < analysis.centralFeatureColumns().size(); j++) {
+                    var field = analysis.centralFeatureColumns().get(j);
+                    String fieldPath = itemPath + ".centralFeatureColumns[" + j + "]";
+                    if (field == null) invalid(fieldPath + " 不能为空");
+                    requireString(field.sourceColumnName(), fieldPath + ".sourceColumnName");
+                    requireString(field.outputColumnName(), fieldPath + ".outputColumnName");
+                }
+            }
+        }
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+    }
+
+    private static void validateSpatialPointClusterParameters(
+            SpatialPointClusterParameters parameters,
+            String path
+    ) {
+        // Numeric ranges and incomplete units remain saveable drafts; the Operator is authoritative.
+        switch (parameters) {
+            case SpatialPointClusterParameters.Dbscan dbscan -> {
+                if (!Double.isFinite(dbscan.searchDistance())) {
+                    invalid(path + ".searchDistance 必须是有限数值");
+                }
+            }
+            case SpatialPointClusterParameters.Hdbscan ignored -> {
+                // 协议保留该算法；运行时可用性由 Compiler 返回稳定能力错误。
+            }
+            case SpatialPointClusterParameters.MultiScale multiScale -> {
+                if (!Double.isFinite(multiScale.sensitivity())
+                        || multiScale.sensitivity() < 0
+                        || multiScale.sensitivity() > 100) {
+                    invalid(path + ".sensitivity 必须在 0 到 100 之间");
+                }
+            }
+        }
+    }
+
+    private static void validateSpatialGroupSummary(SpatialGroupSummary group, String path) {
+        if (group == null) return;
+        requireString(group.groupByColumnName(), path + ".groupByColumnName");
+        if (group.minorityFlagColumnName() != null) {
+            requireString(group.minorityFlagColumnName(), path + ".minorityFlagColumnName");
+        }
+        if (group.majorityFlagColumnName() != null) {
+            requireString(group.majorityFlagColumnName(), path + ".majorityFlagColumnName");
+        }
+        if (group.groupPercentageColumnName() != null) {
+            requireString(group.groupPercentageColumnName(), path + ".groupPercentageColumnName");
+        }
+    }
+
+    private static void validateSpatialTemporalSlicing(SpatialTemporalSlicing temporal, String path) {
+        if (temporal == null) return;
+        requireString(temporal.timeColumnName(), path + ".timeColumnName");
+        // Numeric ranges, mode-specific units and incomplete pairs are Operator errors, not draft-save blockers.
+        if (temporal.referenceTime() != null) requireString(temporal.referenceTime(), path + ".referenceTime");
+        requireString(temporal.timeZone(), path + ".timeZone");
+        requireString(temporal.windowStartColumnName(), path + ".windowStartColumnName");
+        requireString(temporal.windowEndColumnName(), path + ".windowEndColumnName");
+    }
+
     private static void requireSpatialMeasureMode(SpatialMeasureMode mode, String path) {
         if (mode == null) invalid(path + " 不能为空");
+    }
+
+    private static void validateTrackBase(
+            String sourceTableName,
+            String pointGeometryColumnName,
+            List<String> trackIdColumns,
+            String timeColumnName,
+            TrackBoundaryConfiguration boundaries,
+            String path
+    ) {
+        requireString(sourceTableName, path + ".sourceTableName");
+        if (pointGeometryColumnName != null) requireString(pointGeometryColumnName, path + ".pointGeometryColumnName");
+        requireString(timeColumnName, path + ".timeColumnName");
+        if (trackIdColumns == null) invalid(path + ".trackIdColumns 必须是数组");
+        if (trackIdColumns.size() > 8) invalid(path + ".trackIdColumns 不能超过 8 项");
+        for (int index = 0; index < trackIdColumns.size(); index++) {
+            requireString(trackIdColumns.get(index), path + ".trackIdColumns[" + index + "]");
+        }
+        if (boundaries == null) invalid(path + ".boundaries 不能为空");
+        validateOptionalPositivePair(boundaries.maximumTimeGap(), boundaries.maximumTimeGapUnit(),
+                path + ".boundaries.maximumTimeGap");
+        validateOptionalPositivePair(boundaries.maximumDistanceGap(), boundaries.maximumDistanceGapUnit(),
+                path + ".boundaries.maximumDistanceGap");
+        if (boundaries.fixedTimeBoundary() != null) {
+            TrackFixedTimeBoundary fixed = boundaries.fixedTimeBoundary();
+            if (fixed.referenceTime() != null) requireString(fixed.referenceTime(), path + ".boundaries.fixedTimeBoundary.referenceTime");
+            if (fixed.timeZone() != null) requireString(fixed.timeZone(), path + ".boundaries.fixedTimeBoundary.timeZone");
+            // Incomplete periods remain valid drafts; the Operator owns positive interval/unit validation.
+        }
+    }
+
+    private static void validateOptionalPositivePair(Double value, Object unit, String path) {
+        if ((value == null) != (unit == null)) invalid(path + " 的数值和单位必须同时配置或同时为空");
+        if (value != null && (!Double.isFinite(value) || value <= 0)) invalid(path + " 必须是有限正数");
+    }
+
+    private static void validateTrackSummaries(List<TrackSummaryStatistic> summaries, String path) {
+        if (summaries.size() > 32) invalid(path + " 不能超过 32 项");
+        for (int index = 0; index < summaries.size(); index++) {
+            TrackSummaryStatistic statistic = summaries.get(index);
+            String itemPath = path + "[" + index + "]";
+            if (statistic == null) invalid(itemPath + " 不能为空");
+            requireUuid(statistic.statisticId(), itemPath + ".statisticId");
+            if (statistic.kind() == null) invalid(itemPath + ".kind 不能为空");
+            if (statistic.sourceColumnName() != null) {
+                requireString(statistic.sourceColumnName(), itemPath + ".sourceColumnName");
+            }
+            requireString(statistic.outputColumnName(), itemPath + ".outputColumnName");
+        }
     }
 
     private static void validateGeometrySerialize(

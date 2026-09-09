@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.service.consumer.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.service.consumer.service.ApiConsumerService;
 import cn.superhuang.data.scalpel.business.service.consumer.web.request.CreateApiConsumerRequest;
 import cn.superhuang.data.scalpel.business.service.consumer.web.request.UpdateApiConsumerRequest;
@@ -34,6 +35,7 @@ public class ApiConsumerResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 API 消费者")
     @GetMapping
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询 API 消费者")
@@ -43,6 +45,7 @@ public class ApiConsumerResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 API 消费者详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('service.view')")
     @Operation(summary = "查询 API 消费者详情")
@@ -50,6 +53,7 @@ public class ApiConsumerResource {
         return service.get(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "创建并同步 API 消费者")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('service.update')")
@@ -60,6 +64,7 @@ public class ApiConsumerResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改并同步 API 消费者")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('service.update')")
     @Operation(summary = "修改并同步 API 消费者")
@@ -70,6 +75,7 @@ public class ApiConsumerResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "重新同步 API 消费者")
     @PostMapping("/{id}/actions/sync")
     @PreAuthorize("hasAuthority('service.update')")
     @Operation(summary = "重新同步 API 消费者")
@@ -77,6 +83,7 @@ public class ApiConsumerResource {
         return service.sync(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "立即对账 API 消费者网关状态")
     @PostMapping("/{id}/actions/reconcile-gateway")
     @PreAuthorize("hasAuthority('service.publish')")
     @Operation(summary = "立即对账 API 消费者网关状态")
@@ -84,6 +91,7 @@ public class ApiConsumerResource {
         return service.reconcileGateway(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "从网关和 DataScalpel 删除 API 消费者")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('service.update')")

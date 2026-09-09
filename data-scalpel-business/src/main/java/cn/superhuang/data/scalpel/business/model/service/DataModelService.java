@@ -160,6 +160,7 @@ public class DataModelService {
     private final DialectRegistry dialectRegistry;
     private final StandardDictionaryValueSupport standardDictionaryValueSupport;
     private final ModelQualityRuleService qualityRuleService;
+    private final cn.superhuang.data.scalpel.business.metric.service.MetricReferenceGuard metricReferenceGuard;
     private final DataModelReferenceQueryService referenceQueryService;
 
     public DataModelService(
@@ -180,7 +181,8 @@ public class DataModelService {
             DialectRegistry dialectRegistry,
             StandardDictionaryValueSupport standardDictionaryValueSupport,
             ModelQualityRuleService qualityRuleService,
-            DataModelReferenceQueryService referenceQueryService
+            DataModelReferenceQueryService referenceQueryService,
+            cn.superhuang.data.scalpel.business.metric.service.MetricReferenceGuard metricReferenceGuard
     ) {
         this.repository = repository;
         this.fieldRepository = fieldRepository;
@@ -200,6 +202,7 @@ public class DataModelService {
         this.standardDictionaryValueSupport = standardDictionaryValueSupport;
         this.qualityRuleService = qualityRuleService;
         this.referenceQueryService = referenceQueryService;
+        this.metricReferenceGuard = metricReferenceGuard;
     }
 
     @Transactional(readOnly = true)
@@ -863,7 +866,7 @@ public class DataModelService {
             validateExternalFieldUpdate(preparation.storage(), preparation.model(), preparation.normalizedFields());
         }
         requireDirectFieldUpdateAllowed(
-                preparation.model(), preparation.currentFields(), preparation.normalizedFields()
+                preparation.model(), preparation.storage(), preparation.currentFields(), preparation.normalizedFields()
         );
         return requireTransactionResult(transactionTemplate.execute(
                 status -> completeUpdateFields(id, preparation)
@@ -951,6 +954,7 @@ public class DataModelService {
                 .filter(field -> !retainedIds.contains(field.getId()))
                 .toList();
         if (!removedFields.isEmpty()) {
+            metricReferenceGuard.assertFieldsRemovable(model.getId(), removedFields.stream().map(DataModelField::getId).toList());
             fieldRepository.deleteAll(removedFields);
             fieldRepository.flush();
         }
@@ -1023,6 +1027,9 @@ public class DataModelService {
         Map<UUID, DataModelField> existingFields = currentFields.stream()
                 .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
         validateTargetFieldIds(targetFields, existingFields);
+        if (containsGeometry(currentFields)) {
+            requireSpatialConstraintOnlyChange(currentFields, targetFields);
+        }
         validateStandardDictionaryAssignments(targetFields, existingFields);
         return new ChangePlanPreparation(
                 model, model.getUpdatedAt(), model.getSchemaVersion(), storage, currentFields, targetFields
@@ -1205,7 +1212,7 @@ public class DataModelService {
         }
         if (!referenceQueryService.authoritative(id).deletable()) {
             throw new CodedProblemException(
-                    HttpStatus.CONFLICT, "MODEL_REFERENCED", "模型仍被任务或数据服务引用，不能删除");
+                    HttpStatus.CONFLICT, "MODEL_REFERENCED", "模型仍被任务、数据服务或已发布指标引用，不能删除");
         }
         physicalChangeRepository.deleteAllByModelId(id);
         physicalStatisticsRepository.deleteByModelId(id);
@@ -1288,15 +1295,19 @@ public class DataModelService {
 
     private void requireDirectFieldUpdateAllowed(
             DataModel model,
+            DataSource storage,
             List<DataModelField> currentFields,
             List<NormalizedField> requestedFields
     ) {
         if (model.getPhysicalTableMode() != PhysicalTableMode.MANAGED
                 || currentFields.isEmpty()
-                || isMetadataOnlyFieldUpdate(currentFields, requestedFields)) {
+                || isMetadataOnlyFieldUpdate(
+                        currentFields,
+                        requestedFields,
+                        storage.getType() == DataSourceType.CLICKHOUSE
+                )) {
             return;
         }
-        DataSource storage = requireStorageDataSource(model.getStorageDataSourceId(), false);
         ModelPhysicalTableInspection inspection;
         try {
             inspection = physicalTablePort.inspect(storage, model, currentFields);
@@ -1307,12 +1318,6 @@ public class DataModelService {
             return;
         }
         if (inspection.state() == PhysicalTableState.MATCHED) {
-            if (currentFields.stream().anyMatch(field -> field.getFieldType() == PlatformDataType.GEOMETRY)) {
-                throw new ResponseStatusException(
-                        HttpStatus.CONFLICT,
-                        "空间字段所在受管表已创建，第一版只能修改字段名称、说明和展示顺序"
-                );
-            }
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "受管物理表已存在，请先生成并执行物理表变更计划"
@@ -1332,7 +1337,8 @@ public class DataModelService {
 
     private static boolean isMetadataOnlyFieldUpdate(
             List<DataModelField> currentFields,
-            List<NormalizedField> requestedFields
+            List<NormalizedField> requestedFields,
+            boolean ignorePrimaryKey
     ) {
         if (currentFields.size() != requestedFields.size()) {
             return false;
@@ -1349,14 +1355,49 @@ public class DataModelService {
                     || !Objects.equals(current.getLength(), requested.length())
                     || !Objects.equals(current.getPrecision(), requested.precision())
                     || !Objects.equals(current.getScale(), requested.scale())
-                    || (current.getFieldType() != PlatformDataType.GEOMETRY
-                    && !Objects.equals(current.getGeometry(), requested.geometry()))
+                    || !Objects.equals(current.getGeometry(), requested.geometry())
                     || current.isNullable() != requested.input().nullable()
-                    || current.isPrimaryKey() != requested.input().primaryKey()) {
+                    || (!ignorePrimaryKey && current.isPrimaryKey() != requested.input().primaryKey())) {
                 return false;
             }
         }
         return true;
+    }
+
+    private static boolean containsGeometry(List<DataModelField> fields) {
+        return fields.stream().anyMatch(field -> field.getFieldType() == PlatformDataType.GEOMETRY);
+    }
+
+    private static void requireSpatialConstraintOnlyChange(
+            List<DataModelField> currentFields,
+            List<NormalizedField> requestedFields
+    ) {
+        if (currentFields.size() != requestedFields.size()) {
+            throw spatialStructureChangeNotSupported();
+        }
+        Map<UUID, DataModelField> currentById = currentFields.stream()
+                .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
+        for (NormalizedField requested : requestedFields) {
+            DataModelField current = requested.input().id() == null
+                    ? null
+                    : currentById.get(requested.input().id());
+            if (current == null
+                    || !current.getCode().equals(requested.code())
+                    || current.getFieldType() != requested.input().fieldType()
+                    || !Objects.equals(current.getLength(), requested.length())
+                    || !Objects.equals(current.getPrecision(), requested.precision())
+                    || !Objects.equals(current.getScale(), requested.scale())
+                    || !Objects.equals(current.getGeometry(), requested.geometry())) {
+                throw spatialStructureChangeNotSupported();
+            }
+        }
+    }
+
+    private static ResponseStatusException spatialStructureChangeNotSupported() {
+        return new ResponseStatusException(
+                HttpStatus.CONFLICT,
+                "空间字段所在受管表当前仅支持修改可空性和非空间字段主键约束"
+        );
     }
 
     public PhysicalTableInspectionResponse inspectPhysicalTable(UUID id) {
@@ -1669,6 +1710,10 @@ public class DataModelService {
         if (model.getPhysicalTableMode() != PhysicalTableMode.MANAGED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "绑定已有表模式不允许执行物理表变更");
         }
+        Set<UUID> retainedFieldIds = readTargetFieldSnapshot(change).stream()
+                .map(ModelPhysicalTableChangeTargetField::id).filter(Objects::nonNull).collect(Collectors.toSet());
+        metricReferenceGuard.assertFieldsRemovable(modelId, fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(modelId)
+                .stream().map(DataModelField::getId).filter(fieldId -> !retainedFieldIds.contains(fieldId)).toList());
         TableChangePlan plan = readChangePlan(change);
         if (!change.getBeforeFingerprint().equals(plan.beforeFingerprint().value())
                 || !change.getTargetFingerprint().equals(plan.targetFingerprint().value())) {
@@ -1761,6 +1806,7 @@ public class DataModelService {
                 .filter(field -> !retainedIds.contains(field.getId()))
                 .toList();
         if (!removedFields.isEmpty()) {
+            metricReferenceGuard.assertFieldsRemovable(model.getId(), removedFields.stream().map(DataModelField::getId).toList());
             fieldRepository.deleteAll(removedFields);
             fieldRepository.flush();
         }
@@ -2037,9 +2083,9 @@ public class DataModelService {
 
     private static String fileDatasetSchemaSourceWarning(FileDatasetType type) {
         return switch (type) {
-            case CSV, TSV, TXT, JSON, JSONL, EXCEL ->
+            case CSV, TSV, TXT, JSON, JSONL, GEOJSON, GEOJSONL, EXCEL ->
                     "字段类型来自文件样本推断，创建模型前请确认类型、长度和精度";
-            case PARQUET, AVRO, GDB, SHP ->
+            case PARQUET, GEOPARQUET, GPKG, AVRO, GDB, SHP ->
                     "字段类型主要来自文件声明 Schema，创建模型前仍建议核对目标数据库兼容性";
         };
     }
@@ -2096,6 +2142,7 @@ public class DataModelService {
             boolean replaceExisting
     ) {
         if (replaceExisting) {
+            metricReferenceGuard.assertFieldsRemovable(model.getId(), fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(model.getId()).stream().map(DataModelField::getId).toList());
             fieldRepository.deleteAllByModelId(model.getId());
             fieldRepository.flush();
         }

@@ -149,6 +149,44 @@ class ClickHouseTableChangePlanTest {
         assertFalse(dialect.compareTable(expected, invalidMarker).compatible());
     }
 
+    @Test
+    void returnsAnUnsupportedPlanForWkbGeometryNullabilityChanges() {
+        TableIdentifier table = new TableIdentifier("warehouse", null, "spatial_events");
+        UUID shapeId = columnId("shape");
+        GeometryTypeDefinition geometry = new GeometryTypeDefinition(
+                GeometryKind.POINT, CrsReference.epsg(4326), CoordinateDimension.XY
+        );
+        TableDefinition before = new TableDefinition(
+                table,
+                List.of(new TableColumnDefinition(
+                        "shape", TableColumnType.GEOMETRY, null, null, null, true, shapeId, geometry
+                )),
+                List.of(),
+                TableStorageDefinition.mergeTree(List.of())
+        );
+        TableDefinition target = new TableDefinition(
+                table,
+                List.of(new TableColumnDefinition(
+                        "shape", TableColumnType.GEOMETRY, null, null, null, false, shapeId, geometry
+                )),
+                List.of(),
+                before.storage()
+        );
+        TableMetadata actual = new TableMetadata(
+                new TableSummary(table, "TABLE", null),
+                List.of(geometryColumn("POINT", 4326, null)),
+                new PrimaryKeyMetadata(null, List.of()),
+                List.of(),
+                new TableStorageMetadata("MergeTree", List.of())
+        );
+
+        var plan = dialect.planTableChange(before, target, actual);
+
+        assertEquals(TableChangeStrategy.UNSUPPORTED, plan.strategy());
+        assertFalse(plan.allowsInPlaceExecution());
+        assertTrue(plan.reasons().stream().anyMatch(reason -> reason.message().contains("可空性调整")));
+    }
+
     private static TableDefinition definition(String payloadName, boolean payloadNullable, List<String> orderByColumns) {
         return new TableDefinition(
                 new TableIdentifier("warehouse", null, "events"),

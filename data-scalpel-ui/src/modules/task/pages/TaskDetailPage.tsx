@@ -1,3 +1,5 @@
+import { resolveTaskView } from '../model/taskViews';
+import { MetricRelationsPanel } from '../../metric';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
@@ -48,7 +50,7 @@ import {
   type StreamingCheckpointMode,
   type TaskStreamingDeployment,
 } from '../model/task';
-import { normalizeTaskDetailTab, type TaskDetailTabKey } from '../model/taskDetail';
+import { normalizeTaskDetailTab } from '../model/taskDetail';
 
 const lifecycleLabel = (task: DataTask) => {
   if (task.status === 'DRAFT') return '发布';
@@ -147,6 +149,7 @@ export const TaskDetailPage = () => {
   const activeTab = normalizeTaskDetailTab(searchParams.get('tab'));
   const detailRunId = activeTab === 'runs' ? searchParams.get('runId') : null;
   const task = taskQuery.data;
+  const listPath = resolveTaskView(searchParams.get('taskView'), taskQuery.isError ? undefined : task?.type).path;
   const streamingStatusQuery = useTaskStreamingStatus(
     taskId,
     task?.type === 'SPARK_STREAMING_CANVAS' || task?.type === 'SPARK_STREAMING_JAR',
@@ -155,6 +158,12 @@ export const TaskDetailPage = () => {
   const streamingActive = streamingState === 'STARTING'
     || streamingState === 'RUNNING'
     || streamingState === 'STOPPING';
+
+  const changeTab = (tab: string) => setSearchParams(previous => {
+    const next = new URLSearchParams(previous);
+    next.set('tab', tab);
+    return next;
+  }, { replace: true });
 
   const changeDetailRun = (runId: string | null) => {
     const next = new URLSearchParams(searchParams);
@@ -194,7 +203,7 @@ export const TaskDetailPage = () => {
       modalApi.confirm({
         rootClassName: 'business-overlay business-modal-overlay',
         title: '发布任务',
-        content: target.type === 'SPARK_MODEL_QUALITY'
+        content: target.type === 'WORKFLOW' ? '发布会校验依赖图和引用任务的发布状态。' : target.type === 'SPARK_MODEL_QUALITY'
           ? '发布会校验目标模型、计算引擎和当前可执行规则，不会读取模型物理表。'
           : isJarTask(target)
             ? '发布会校验当前 JAR、资源绑定和计算引擎，不会加载用户类或读写业务数据。'
@@ -228,7 +237,7 @@ export const TaskDetailPage = () => {
         await stopStreamingMutation.mutateAsync(target.id);
       }
       messageApi.success(command === 'start' ? '实时任务启动请求已提交' : '实时任务停止请求已提交');
-      setSearchParams({ tab: 'streaming' }, { replace: true });
+      changeTab('streaming');
     } catch (error) {
       messageApi.error(error instanceof ApiError
         ? error.message
@@ -290,7 +299,7 @@ export const TaskDetailPage = () => {
       messageApi.success(target.type === 'SPARK_CANVAS' || target.type === 'SPARK_MODEL_QUALITY' || target.type === 'SPARK_JAR'
         ? '任务已提交，等待计算引擎调度'
         : '任务已进入执行队列');
-      setSearchParams({ tab: 'runs' }, { replace: true });
+      changeTab('runs');
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '提交任务运行失败');
     }
@@ -348,7 +357,7 @@ export const TaskDetailPage = () => {
       try {
         await deleteMutation.mutateAsync(target.id);
         messageApi.success('任务已删除');
-        navigate('/task', { replace: true });
+        navigate(listPath, { replace: true });
       } catch (error) {
         messageApi.error(error instanceof ApiError ? error.message : '删除任务失败');
         throw error;
@@ -365,7 +374,7 @@ export const TaskDetailPage = () => {
           name: values.name,
           directoryId: values.directoryId,
           description: values.description,
-          computeEngineId: task.type !== 'LOCAL_SQL'
+          computeEngineId: task.type !== 'LOCAL_SQL' && task.type !== 'WORKFLOW'
             ? values.computeEngineId
             : undefined,
         },
@@ -379,7 +388,7 @@ export const TaskDetailPage = () => {
   };
 
   if (!taskId) {
-    return <Result status="404" title="任务地址无效" extra={<Button type="primary" onClick={() => navigate('/task')}>返回任务列表</Button>} />;
+    return <Result status="404" title="任务地址无效" extra={<Button type="primary" onClick={() => navigate(listPath)}>返回任务列表</Button>} />;
   }
 
   if (taskQuery.isPending) {
@@ -394,7 +403,7 @@ export const TaskDetailPage = () => {
         subTitle={taskQuery.error instanceof ApiError ? taskQuery.error.message : '请确认任务是否存在。'}
         extra={(
           <Space>
-            <Button onClick={() => navigate('/task')}>返回列表</Button>
+            <Button onClick={() => navigate(listPath)}>返回列表</Button>
             <Button type="primary" onClick={() => void taskQuery.refetch()}>重试</Button>
           </Space>
         )}
@@ -404,7 +413,7 @@ export const TaskDetailPage = () => {
 
   const commandLoading = publishMutation.isPending || disableMutation.isPending || enableMutation.isPending;
   const directoryName = task.directoryId ? directoryNameById.get(task.directoryId) : undefined;
-  const subtitleResource = task.type === 'LOCAL_SQL'
+  const subtitleResource = task.type === 'WORKFLOW' ? '依赖驱动的批任务工作流' : task.type === 'LOCAL_SQL'
     ? '本地 JDBC 执行'
     : task.computeEngineName ?? (task.computeEngineId ? '计算引擎已删除' : '未绑定计算引擎');
   const lifecycleBlockedByStreaming = isStreamingTask(task)
@@ -414,6 +423,7 @@ export const TaskDetailPage = () => {
     ? '任务定义缺失，无法运行，请先停用后重新配置'
     : undefined;
   const standardTabItems = [
+    ...(permissions.has('metric.view') && canViewModels ? [{ key: 'metrics', label: '关联指标', children: <MetricRelationsPanel taskId={task.id} /> }] : []),
     {
       key: 'basic',
       label: '基本信息',
@@ -469,7 +479,7 @@ export const TaskDetailPage = () => {
       ),
     },
   ];
-  const tabItems = task.type === 'SPARK_MODEL_QUALITY' ? [
+  const tabItems = task.type === 'WORKFLOW' ? standardTabItems.filter(item => item.key !== 'models' && item.key !== 'lineage') : task.type === 'SPARK_MODEL_QUALITY' ? [
     standardTabItems[0],
     {
       key: 'quality',
@@ -489,7 +499,7 @@ export const TaskDetailPage = () => {
       <div className="task-detail-header business-detail-header">
         <div className="task-detail-identity">
           <div className="task-detail-title-row">
-            <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate('/task')}>返回列表</Button>
+            <Button type="text" icon={<ArrowLeftOutlined />} onClick={() => navigate(listPath)}>返回列表</Button>
             <span className="business-detail-resource-icon business-detail-resource-icon-blue"><ProfileOutlined /></span>
             <span className="task-detail-title">{task.name}</span>
             <Tag color={taskTypeColors[task.type]}>{taskTypeLabels[task.type]}</Tag>
@@ -591,7 +601,7 @@ export const TaskDetailPage = () => {
         className={`task-detail-tabs business-detail-tabs task-detail-tabs-${activeTab}`}
         destroyOnHidden
         items={tabItems}
-        onChange={(key) => setSearchParams({ tab: key as TaskDetailTabKey }, { replace: true })}
+        onChange={changeTab}
       />
       <TaskDrawer
         open={editing}

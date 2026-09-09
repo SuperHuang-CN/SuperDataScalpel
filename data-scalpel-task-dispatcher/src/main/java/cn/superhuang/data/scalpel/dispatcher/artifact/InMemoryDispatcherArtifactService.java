@@ -26,6 +26,7 @@ public class InMemoryDispatcherArtifactService implements DispatcherArtifactServ
                 URI.create("http://artifact.test/manifest"),
                 URI.create("http://artifact.test/result"),
                 URI.create("http://artifact.test/log"),
+                URI.create("http://artifact.test/trial-preview"),
                 10 * 1024 * 1024, java.util.List.of(), userJar);
     }
 

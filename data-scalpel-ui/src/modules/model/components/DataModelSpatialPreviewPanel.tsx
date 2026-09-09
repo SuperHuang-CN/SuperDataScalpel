@@ -1,4 +1,8 @@
-import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import {
+  CompactAlert as Alert,
+  ContextHelp,
+  FloatingFeedback,
+} from '../../../shared/components/ContextualFeedback';
 import { ReloadOutlined } from '@ant-design/icons';
 import { Button, Select, Space, Spin, Tag } from 'antd';
 import maplibregl, { type Coordinates, type ImageSource, type Map as MapLibreMap } from 'maplibre-gl';
@@ -245,6 +249,14 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
           {selectedField?.spatialIndexAvailable
             ? <Tag color="green">空间索引可用</Tag>
             : <Tag color="orange">无空间索引 · 小表受限预览</Tag>}
+          {selectedField?.message && (
+            <ContextHelp
+              ariaLabel="查看空间预览限制"
+              content={selectedField.message}
+              tone="warning"
+              presentation="popover"
+            />
+          )}
           {selectedField?.estimatedRowCount !== null && selectedField?.estimatedRowCount !== undefined && (
             <span className="model-preview-caption">估算 {selectedField.estimatedRowCount.toLocaleString()} 行</span>
           )}
@@ -263,13 +275,23 @@ export const DataModelSpatialPreviewPanel = ({ modelId }: DataModelSpatialPrevie
           <Button size="small" icon={<ReloadOutlined />} loading={loading} onClick={() => void requestImage()}>刷新</Button>
         </Space>
       </div>
-      {selectedField?.message && <Alert className="model-spatial-preview-alert" type="warning" showIcon message={selectedField.message} />}
-      {mapError && <Alert className="model-spatial-preview-alert" type="warning" showIcon message={mapError} closable onClose={() => setMapError(undefined)} />}
-      {mapResult?.truncated && (
-        <Alert className="model-spatial-preview-alert" type="warning" showIcon message="当前视图图形过密，请继续放大" />
-      )}
       <div className="model-spatial-preview-map-wrap">
         <div ref={containerRef} className="model-spatial-preview-map" />
+        {mapError ? (
+          <FloatingFeedback
+            type="warning"
+            title="地图预览加载失败"
+            description={mapError}
+            action={<Button size="small" onClick={() => void requestImage()}>重试</Button>}
+            closable
+            onClose={() => setMapError(undefined)}
+          />
+        ) : mapResult?.truncated ? (
+          <FloatingFeedback
+            type="warning"
+            title="当前视图图形过密，请继续放大"
+          />
+        ) : null}
         {loading && <div className="model-spatial-preview-loading"><Spin size="small" /> 正在渲染当前视图…</div>}
         <div className="model-spatial-preview-legend">
           <span><i className="point" />点</span>

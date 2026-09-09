@@ -24,12 +24,16 @@ import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
 @Entity
 @Table(
         name = "task_run",
-        uniqueConstraints = @UniqueConstraint(
-                name = "uk_task_run_schedule_fire",
-                columnNames = {"schedule_id", "scheduled_fire_at"}
-        ),
+        uniqueConstraints = {
+                @UniqueConstraint(name = "uk_task_run_schedule_fire", columnNames = {"schedule_id", "scheduled_fire_at"}),
+                @UniqueConstraint(name = "uk_task_run_workflow_node", columnNames = {"parent_run_id", "workflow_node_id"})
+        },
         indexes = {
+                @Index(name = "idx_task_run_parent", columnList = "parent_run_id"),
                 @Index(name = "idx_task_run_task_queued", columnList = "task_id,queued_at"),
+                @Index(name = "idx_task_run_global_queued", columnList = "execution_mode,queued_at"),
+                @Index(name = "idx_task_run_global_status", columnList = "execution_mode,status,queued_at"),
+                @Index(name = "idx_task_run_global_ended", columnList = "execution_mode,ended_at"),
                 @Index(name = "idx_task_run_task_status", columnList = "task_id,status"),
                 @Index(
                         name = "idx_task_run_canvas_trial_target_queued",
@@ -41,8 +45,61 @@ import cn.superhuang.data.scalpel.contract.quality.QualitySummary;
 )
 public class TaskRun extends BaseEntity {
 
+    /** Durable marker: changing alert configuration never replays an already evaluated terminal fact. */
+    @Column(name = "alert_evaluated")
+    private Boolean alertEvaluated;
+
+    @Column(name = "alert_checked_at")
+    private Instant alertCheckedAt;
+
+    public Instant getAlertCheckedAt() { return alertCheckedAt; }
+
+    public void markAlertChecked(Instant at) { alertCheckedAt = at; }
+
+    public Boolean getAlertEvaluated() { return alertEvaluated; }
+
+    public void markAlertEvaluated() { alertEvaluated = true; }
+
     @Column(name = "task_id", nullable = false, updatable = false)
     private UUID taskId;
+
+    @Column(name = "parent_run_id", updatable = false)
+    private UUID parentRunId;
+    @Column(name = "workflow_node_id", length = 128, updatable = false)
+    private String workflowNodeId;
+
+    public UUID getParentRunId() { return parentRunId; }
+    public String getWorkflowNodeId() { return workflowNodeId; }
+
+    public void attachWorkflow(UUID parentRunId, String nodeId) {
+        if (this.parentRunId != null || scheduleId != null || taskType == TaskType.WORKFLOW
+                || parentRunId == null || nodeId == null || nodeId.isBlank())
+            throw new IllegalStateException("无效的工作流子运行关联");
+        this.parentRunId = parentRunId;
+        this.workflowNodeId = nodeId;
+        this.triggerType = TaskRunTriggerType.WORKFLOW;
+    }
+
+    public static TaskRun queueWorkflow(UUID taskId, int version, String snapshot,
+                                        UUID scheduleId, Instant fireAt, boolean skipped) {
+        var run = new TaskRun(taskId, version, snapshot);
+        run.taskType = TaskType.WORKFLOW;
+        run.scheduleId = scheduleId;
+        run.scheduledFireAt = fireAt;
+        run.triggerType = scheduleId == null ? TaskRunTriggerType.MANUAL : TaskRunTriggerType.SCHEDULED;
+        if (skipped) {
+            run.status = TaskRunStatus.SKIPPED;
+            run.endedAt = Instant.now();
+            run.message = "定时触发已跳过：当前工作流存在活动运行";
+        }
+        return run;
+    }
+
+    public void succeedWorkflow() {
+        if (taskType != TaskType.WORKFLOW) throw new IllegalStateException("不是工作流运行");
+        requireStatus(TaskRunStatus.RUNNING);
+        externalSucceed(null, startedAt, Instant.now());
+    }
 
     @Column(name = "schedule_id", updatable = false)
     private UUID scheduleId;

@@ -1,5 +1,7 @@
 # Task Engine Daemon 与 Canvas 编译设计
 
+状态：现行设计。开发约束见 [编译与执行规范](../development/task-engine.md)；当前协议版本及读写端见 [协议版本定位](../README.md#协议版本定位)。
+
 ## 1. 范围
 
 `data-scalpel-task-engine` 提供彼此隔离的长期预检 Daemon和一次性 Runner构建产物：
@@ -7,7 +9,7 @@
 - Java 21、Spark 4.1.1、Scala 2.13、Apache Sedona 1.9.0。
 - 普通 Java Main 和 JDK `HttpServer`，不使用 Spring、Servlet、Thrift 或 gRPC。
 - 默认以 `local[*]` 长期运行，也可由未来的 `spark-submit --master yarn --deploy-mode client` 启动同一个 Main。
-- Canvas 当前协议为 `3.1`；`JDBC_INPUT` 使用同一数据源下的有序多表配置，并可在每张表上保存高级读取参数。`3.0` 定义继续兼容并在保存时规范化为 `3.1`；`1.x`、`2.x` 定义按大版本不兼容处理，不自动迁移；用户重新配置并保存后才覆盖旧定义。
+- Canvas 当前协议以 Contracts 的 `CanvasDefinition` 常量为准；同大版本旧小版本可读，并在保存时规范化为当前小版本；不同大版本及未来小版本拒绝读取，不隐式迁移或覆盖原始定义。`JDBC_INPUT` 使用同一数据源下的有序多表配置，并可在每张表上保存高级读取参数。
 - 同一大版本内只允许向下兼容的小版本增量；删除字段、改变既有节点语义等破坏性变化必须升级大版本并将小版本归零。
 - 根据请求携带的元数据快照创建零行 DataFrame，只构造并分析 Spark 逻辑计划。
 - 编译接口不连接 JDBC、不调用 Spark Action、不创建 `DataFrameWriter`。
@@ -139,7 +141,7 @@ Authorization: Bearer <token>
 Content-Type: application/json
 ```
 
-请求顶层固定为：
+请求顶层结构如下；示例版本号仅展示字段格式，请求须使用 Contracts 声明的当前大/小版本：
 
 ```json
 {
@@ -147,8 +149,8 @@ Content-Type: application/json
   "task": {
     "type": "CANVAS",
     "definition": {
-      "schemaVersion": 3,
-      "schemaMinorVersion": 1,
+      "schemaVersion": 4,
+      "schemaMinorVersion": 21,
       "nodes": [],
       "edges": []
     }
@@ -179,7 +181,7 @@ Annotation Processor被禁用，编译过程不联网、不解析Maven坐标，�
 最多100行的快速预览并跳过数据库写入。result schema v9的`trialPreview`由Dispatcher校验后留在固定结果制品中，不进入事件消息。
 
 Canvas 节点试运行使用专用 `compileTrial` 入口，并继续复用同一节点 Registry 和 Operator。Business 根据目标节点计算上游闭包，
-Manifest v23 的 `canvasTrial` 保存目标节点、逻辑表和字段选择；Runner 执行到目标节点后再投影字段并读取最多 101 行，Result v10
+Manifest v27 的 `canvasTrial` 保存目标节点、逻辑表和字段选择；Runner 执行到目标节点后再投影字段并读取最多 101 行，Result v10
 返回最多 100 行的 `canvasTrialPreview`。该入口只放宽目标 Input 作为终点以及目标 Processor 未消费提示，不改变正常 Canvas 编译规则。
 
 ### 4.4 取消
@@ -324,13 +326,13 @@ Output 专用字段转换策略分为安全、风险和不支持三类：可证�
 
 仅接受有界来源表，以及已启用、连接类型为 S3、用途包含 `DISTRIBUTION` 的数据源。检查用户指定的相对目录、`FAIL_IF_EXISTS/OVERWRITE` 冲突策略和 CSV、JSON Lines、Parquet、Shapefile、GeoParquet、GeoJSON 的判别式格式参数。
 
-Shapefile 是 Canvas `3.0` 的正式能力。Compiler 额外检查 EPSG + XY Geometry、Shape 类型兼容、文件基础名和 `1..255` 个有序 DBF 属性映射，包括 10 位 ASCII 字段名、STRING UTF-8 字节宽度、数值宽度与受支持平台类型。Compiler 只使用零行 Dataset 和元数据 Schema，不读取 Geometry、不连接 S3、不建立 Writer。
+Shapefile 是 FILE_OUTPUT 的正式格式。Compiler 额外检查 EPSG + XY Geometry、Shape 类型兼容、文件基础名和 `1..255` 个有序 DBF 属性映射，包括 10 位 ASCII 字段名、STRING UTF-8 字节宽度、数值宽度与受支持平台类型。Compiler 只使用零行 Dataset 和元数据 Schema，不读取 Geometry、不连接 S3、不建立 Writer。
 
 Runner 使用 Manifest 的外部 S3 连接和 bucket 级 S3A 配置。普通格式继续使用 Spark Writer；Shapefile 通过 Driver 本地 GeoTools 33.5 Writer 和 `Dataset.toLocalIterator()` 生成唯一一套 ZIP 或五组件制品，上传运行级临时前缀后提交精确目标目录，最后写 `_SUCCESS`。GeoParquet 使用 Sedona 分布式写出，GeoJSON 使用受大小限制的 Driver FeatureCollection Writer。完整约束见 [FILE_OUTPUT Shapefile 输出设计](canvas-shapefile-output-design.md)、[GeoParquet 输出设计](canvas-geoparquet-output-design.md)和 [GeoJSON 输出设计](canvas-geojson-output-design.md)。
 
 ### 6.10 JDBC 与模型快照同步 Output
 
-`JDBC_SNAPSHOT_SYNC_OUTPUT` 和 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是 Canvas `3.0` 的正式节点，
+`JDBC_SNAPSHOT_SYNC_OUTPUT` 和 `MODEL_SNAPSHOT_SYNC_OUTPUT` 是正式快照同步节点，
 只支持 BATCH、有界来源、一条入边和无出边。两个独立 Operator 只解析 JDBC 表或已发布
 MANAGED 模型目标，字段映射、显式 Cast、Key 与删除策略校验统一由
 `SnapshotSyncOperatorSupport` 完成；Compiler 仍只分析零行 Dataset，不连接目标数据库。
@@ -349,15 +351,16 @@ INSERT/UPDATE/DELETE/UNCHANGED/RETAINED 分类。Geometry 使用 JTS/Sedona 拓�
 
 ## 7. Runner 协议版本
 
-Admin 当前写出 Manifest `v11`；Runner 兼容读取 `v10/v11`，但 v10 携带任一 Snapshot Sync
-节点时必须拒绝。v11 的受保护 `snapshotSyncLimits` 不进入 Canvas JSON，包含每侧最大行数、
+Admin 与 Runner 的 `CURRENT_MANIFEST_VERSION` 必须一致；Runner 的 `ManifestVersionSupport`
+只接受当前版本，不保证读取上一版本。受保护 `snapshotSyncLimits` 不进入 Canvas JSON，包含每侧最大行数、
 来源与目标合计估算字节上限和锁等待秒数，默认分别为 `100000`、`256 MiB` 和 `30` 秒。
 
-Runner 当前只写 `result.json schemaVersion: 3`。成功的 Snapshot Sync 节点在
+Runner 只按 `TaskExecutionResult.CURRENT_SCHEMA_VERSION` 写出 `result.json`。成功的 Snapshot Sync 节点在
 `NodeExecutionResult.metrics` 写入 `kind: SNAPSHOT_SYNC` 及来源、目标、新增、更新、删除、
 未变化、保留目标独有行数量；`rowsWritten` 等于新增、更新、删除之和，任务 `affectedRows`
 继续汇总已提交 Output 的 `rowsWritten`。失败或事务回滚的节点不得携带成功指标。Dispatcher
-兼容读取 Result v2/v3，便于升级时收敛已经运行的旧任务。
+按 `DispatcherTaskResult.supportsSchemaVersion` 读取其声明范围内的 Result，并执行对应版本的字段校验，
+以收敛已运行任务；其兼容范围与 Runner 的写出版本分开维护。具体代码入口见 [协议版本定位](../README.md#协议版本定位)。
 
 ## 8. 配置与认证
 

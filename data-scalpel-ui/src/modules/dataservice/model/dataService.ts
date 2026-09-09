@@ -2,6 +2,13 @@ import type { DataModelStatus, PlatformDataType } from '../../model';
 import type { GatewayProvider } from './apiConsumer';
 import type { GatewayReconciliationState } from './gatewayReconciliation';
 import type { ScriptRequestExample } from '@superhuang/super-api-studio-script-workbench';
+import type {
+  CartographyField, SpatialGeometryFamily, SpatialStyleDocument, SpatialStyleMode,
+} from '../../cartography';
+export type {
+  SpatialGeometryFamily, SpatialLinePattern, SpatialMarkerShape, SpatialStyleDocument,
+  SpatialStyleMode, SpatialSymbol,
+} from '../../cartography';
 
 export type DataServiceType = 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API' | 'SPATIAL_SERVICE';
 
@@ -78,6 +85,41 @@ export interface ScriptDataServiceDefinition {
 export interface SpatialDataServiceDefinition {
   modelId: string;
   version: number;
+}
+
+export interface SpatialDataServicePreview {
+  available: boolean;
+  message: string | null;
+  qualifiedLayerName: string;
+  displayCrs: string;
+  initialBounds: number[];
+  limits: {
+    minimumWidth: number;
+    maximumWidth: number;
+    minimumHeight: number;
+    maximumHeight: number;
+  };
+}
+
+export type SpatialStyleSyncStatus = 'NOT_APPLIED' | 'OUT_OF_SYNC' | 'SYNCING' | 'IN_SYNC' | 'SYNC_FAILED';
+
+export interface SpatialDataServiceStyle {
+  mode: SpatialStyleMode;
+  geometryKind: string;
+  geometryFamily: SpatialGeometryFamily;
+  simpleEditable: boolean;
+  styleDocument: SpatialStyleDocument | null;
+  defaultStyleDocument: SpatialStyleDocument | null;
+  fields: CartographyField[];
+  sldFileName: string | null;
+  sldFileSize: number | null;
+  uploadedSldText: string | null;
+  styleVersion: number;
+  appliedStyleVersion: number | null;
+  syncStatus: SpatialStyleSyncStatus;
+  syncError: string | null;
+  appliedAt: string | null;
+  deployed: boolean;
 }
 
 interface DataServiceBase {

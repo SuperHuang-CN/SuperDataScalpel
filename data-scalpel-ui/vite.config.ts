@@ -12,6 +12,11 @@ export default defineConfig({
     port: 8887,
     strictPort: true,
     proxy: {
+      '/system-mcp': {
+        target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8080',
+        changeOrigin: true,
+        timeout: 90000,
+      },
       '/api': {
         target: process.env.BACKEND_ORIGIN ?? 'http://localhost:8080',
         changeOrigin: true,

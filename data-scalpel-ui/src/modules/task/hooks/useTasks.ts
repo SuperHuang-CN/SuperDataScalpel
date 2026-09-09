@@ -26,9 +26,11 @@ import {
   queryTaskFieldLineage,
   fetchModelRelatedTasks,
   fetchTaskRun,
+  fetchTaskRunArtifacts,
+  fetchTaskRunArtifactPreview,
   fetchSparkJarTrialPreview,
   fetchCanvasTrialPreview,
-  fetchTaskRunLogText,
+  fetchTaskRunLogs,
   fetchTaskRunLineage,
   fetchTaskRunResultArtifact,
   fetchQualityFailureSamples,
@@ -74,6 +76,7 @@ import type {
   UpdateLocalSqlTaskDefinitionRequest,
   UpdateSparkJarTaskDefinitionRequest,
   CanvasTrialRunRequest,
+  TaskRunLog,
 } from '../model/task';
 
 const tasksKey = 'tasks';
@@ -83,14 +86,16 @@ const taskModelRelationsKey = 'task-model-relations';
 const invalidateTasks = async (queryClient: ReturnType<typeof useQueryClient>) => {
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: [tasksKey] }),
+    queryClient.invalidateQueries({ queryKey: ['metrics'] }),
     queryClient.invalidateQueries({ queryKey: [taskModelRelationsKey] }),
     invalidateDirectoryTree(queryClient, 'TASK'),
   ]);
 };
 
-export const useTasks = (request: SearchRequest) => useQuery({
+export const useTasks = (request: SearchRequest, enabled = true) => useQuery({
   queryKey: [tasksKey, request],
   queryFn: () => fetchTasks(request),
+  enabled,
 });
 
 export const useTask = (id: string | undefined) => useQuery({
@@ -373,11 +378,35 @@ export const useTaskRun = (runId: string | undefined, enabled = true) => useQuer
   },
 });
 
-export const useSparkJarTrialPreview = (runId: string | undefined, enabled = true) => useQuery({
+export const useTaskRunArtifacts = (runId: string | undefined, enabled = true) => useQuery({
+  queryKey: [taskRunsKey, runId, 'artifacts'],
+  queryFn: () => fetchTaskRunArtifacts(runId as string),
+  enabled: Boolean(runId) && enabled,
+  retry: false,
+});
+
+export const useTaskRunArtifactPreview = (
+  runId: string | undefined,
+  kind: TaskRunArtifactKind | null,
+  enabled = true,
+) => useQuery({
+  queryKey: [taskRunsKey, runId, 'artifact-preview', kind],
+  queryFn: () => fetchTaskRunArtifactPreview(runId as string, kind as TaskRunArtifactKind),
+  enabled: Boolean(runId) && Boolean(kind) && enabled,
+  retry: false,
+});
+
+export const useSparkJarTrialPreview = (
+  runId: string | undefined,
+  enabled = true,
+  polling = false,
+) => useQuery({
   queryKey: [taskRunsKey, runId, 'trial-preview'],
   queryFn: () => fetchSparkJarTrialPreview(runId as string),
   enabled: Boolean(runId) && enabled,
   retry: false,
+  refetchInterval: (query) => polling && !query.state.data?.finalResult ? 3_000 : false,
+  refetchIntervalInBackground: false,
 });
 
 export const useCanvasTrialPreview = (runId: string | undefined, enabled = true) => useQuery({
@@ -387,12 +416,25 @@ export const useCanvasTrialPreview = (runId: string | undefined, enabled = true)
   retry: false,
 });
 
-export const useTaskRunLogText = (runId: string | undefined, active: boolean) => useQuery({
-  queryKey: [taskRunsKey, runId, 'log-text'],
-  queryFn: () => fetchTaskRunLogText(runId as string),
-  enabled: Boolean(runId),
+export const useTaskRunLogs = (runId: string | undefined, enabled: boolean, polling: boolean) => useQuery<TaskRunLog>({
+  queryKey: [taskRunsKey, runId, 'logs'],
+  queryFn: () => fetchTaskRunLogs(runId as string),
+  enabled: Boolean(runId) && enabled,
   retry: false,
-  refetchInterval: active ? 2_000 : false,
+  placeholderData: (previous) => previous,
+  structuralSharing: (previous, next) => {
+    const previousLog = previous as TaskRunLog | undefined;
+    const nextLog = next as TaskRunLog;
+    return nextLog.content == null && previousLog?.content
+      ? {
+        ...nextLog,
+        content: previousLog.content,
+        windowSizeBytes: previousLog.windowSizeBytes,
+        truncated: nextLog.truncated || previousLog.truncated,
+      }
+      : nextLog;
+  },
+  refetchInterval: (query) => polling && query.state.data?.status !== 'FINAL' ? 3_000 : false,
 });
 
 export const useTaskRunLineage = (runId: string | undefined, enabled = true) => useQuery({

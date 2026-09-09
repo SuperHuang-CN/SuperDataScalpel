@@ -1,0 +1,163 @@
+# Task Engine 编译与执行规范
+
+状态：现行规范。适用于 Task Engine，以及修改同一 Canvas、执行消息、SDK 或结果契约的 Contracts、Business、Dispatcher 和前端代码。
+
+本文件承接原 Task Engine AGENTS.md 的详细运行约束；高频边界摘要见 [Task Engine 开发约定](../../data-scalpel-task-engine/AGENTS.md)。修改某项能力前，阅读对应章节；历史计划用于追溯决策，不替代本文件。测试政策统一见 [根开发约定](../../AGENTS.md#测试与验证暂时禁用)。
+
+| 修改内容 | 必读章节 |
+| --- | --- |
+| 新增或修改 Canvas 节点 | [统一 Operator](#node-operators)、[编译上下文](#compilation-context)、[新增节点](#new-nodes)、[节点日志](#node-logging) |
+| 模式、流式算子、Sink | [模式](#execution-modes)、[有界性与流式 Schema](#streaming-schema) |
+| 保存、导入、兼容性 | [协议版本](#protocol-versions) |
+| 用户 JAR、SDK、TestKit、在线开发和试运行 | [Spark JAR](#spark-jar)及 [SDK 设计](../design/spark-jar-task-sdk-v1.md) |
+| Runner、日志、异常、结果或终态事件 | [节点日志](#node-logging)、[错误分类](#failure-diagnostics)、[结果一致性](#execution-results)及 [执行制品契约](../design/task-execution-platform/05-task-runner-kafka-and-artifacts.md) |
+
+协议字段、HTTP 接口和配置详见 [Canvas 执行设计](../design/canvas-task-execution.md)、[编译服务设计](../design/task-engine-daemon-and-compilation.md)。当前版本值以 [CanvasDefinition](../../data-scalpel-contracts/src/main/java/cn/superhuang/data/scalpel/contract/task/CanvasDefinition.java)、[TaskExecutionManifest](../../data-scalpel-task-engine/src/main/java/cn/superhuang/datascalpel/taskengine/contract/TaskExecutionManifest.java)、[TaskExecutionResult](../../data-scalpel-task-engine/src/main/java/cn/superhuang/datascalpel/taskengine/contract/TaskExecutionResult.java) 的常量为准；发布时必须保持各端一致。
+
+<a id="execution-modes"></a>
+
+## 批流执行模式与节点能力
+
+- Canvas 执行模式统一使用明确枚举表达，当前固定为 `BATCH`、`STREAMING`。`SPARK_CANVAS` 映射为 `BATCH`，`SPARK_STREAMING_CANVAS` 映射为 `STREAMING`；`LOCAL_SQL` 不进入 Canvas 节点编译体系。任务执行模式创建后不可切换。
+- 每个内置节点描述必须声明 `category: INPUT | PROCESSOR | OUTPUT` 和非空的 `supportedModes: Set<CanvasExecutionMode>`。不得使用彼此独立的 `supportsBatch`、`supportsStreaming` Boolean 扩散无效组合，也不得让节点 Operator 自行隐式判断是否支持某种模式。
+- `supportedModes` 属于 Task Engine 内置节点注册表能力，不属于用户配置，不得写入 Canvas Definition、Manifest 节点配置或持久化 JSON。Compiler 和 Runner 必须以同一个内置 Registry 为准，不能信任前端 Palette 已经完成过滤。
+- Compiler 和 Runner 都必须在调用 Operator 前校验任务执行模式；节点不支持当前模式时使用稳定错误码 `NODE_EXECUTION_MODE_NOT_SUPPORTED`，不得依赖 Spark 在更晚阶段偶然报错。
+- 现有 `JOIN` 节点和定义协议保持不变并仅支持 `BATCH`，不得为了命名对称将其重命名为 `BATCH_JOIN`。流式 Join 使用独立节点类型 `STREAM_JOIN`、独立配置类型和独立 Operator，不得在现有 Join 配置中堆叠 Watermark、时间范围、状态超时等流式可选字段。
+- 只有当批流之间的用户配置和业务语义一致时，节点才可以同时支持 `BATCH`、`STREAMING`，例如 Filter、Select、Rename、Cast 和普通派生列。涉及 Watermark、事件时间、状态存储、时间窗口、流式去重、输出模式或 Checkpoint 语义时必须使用独立流式节点，例如 `STREAM_JOIN`、`WINDOW_AGGREGATE`、`STREAM_DEDUPLICATE`。
+- 不得仅因为底层 Spark API 分为 `Dataset` 和 `DataStreamWriter` 就机械复制所有节点。是否拆分节点以配置契约、Schema 传播、状态语义和用户可理解性是否存在实质差异为准。
+- 节点能力基线为：`JDBC_INPUT` 可支持批流，但在流任务中产生静态有界维表；`KAFKA_INPUT` 仅支持流并产生无界表；`JOIN` 仅支持批；`STREAM_JOIN` 仅支持流；无状态通用 Processor 可同时支持批流；`JDBC_OUTPUT` 和 `MODEL_OUTPUT` 只有在 Operator 明确校验流式写入限制时才可同时支持批流；`KAFKA_OUTPUT` 仅支持流。
+- 同一节点类型同时支持批流时仍只能有一个 `CanvasNodeOperator`。模式差异通过明确的执行上下文和小范围策略表达；当配置契约已经明显分叉时，应新增节点类型，而不是在一个 Operator 中持续增加模式条件分支。
+
+<a id="protocol-versions"></a>
+
+## Canvas 协议版本
+
+- Canvas Definition 使用独立的 `schemaVersion + schemaMinorVersion`。`schemaVersion` 是大版本，`schemaMinorVersion` 是同一大版本内的小版本；不得把任务定义自身的 `definitionVersion` 与协议版本混用。
+- 大版本之间默认不兼容。管理端、Compiler 和 Runner 在发现 `schemaVersion` 不一致时必须在反序列化节点配置前拒绝读取，不得隐式迁移、猜测旧字段语义或为某些节点增加例外兼容分支。
+- 同一大版本内的小版本必须向下兼容。新增小版本只能增加节点类型、可选字段或其他不改变既有定义语义的能力；读取受支持的旧小版本后，当前写入端统一规范化为最新小版本。
+- 删除或重命名字段、改变已有字段或节点语义、修改核心图规则等破坏性变化必须升级大版本，并把小版本重置为 `0`。不得通过“低于某个小版本且包含某类节点”的特殊判断承载破坏性变化。
+- 高于当前实现的小版本必须拒绝读取，避免旧程序忽略尚不了解的语义；低于当前大版本的定义只允许明确标记为不兼容并由用户重新配置，不自动覆盖原始定义。
+
+<a id="streaming-schema"></a>
+
+## 数据有界性与流式 Schema 传播
+
+- 节点支持 `STREAMING` 只表示它可以出现在流任务中，不表示它一定产生无界数据。Task Engine 必须在表 Schema 中传播 `BOUNDED | UNBOUNDED`，并按需传播事件时间列和 Watermark；不得只依赖任务模式判断输入是否为流。
+- `Map<tableName, CanvasTableSchema>` 的表名 Key 语义保持不变。数据有界性、事件时间和 Watermark 是 `CanvasTableSchema` 的运行时/编译期属性，不得改变表名冲突、字段冲突和 Rename 的既有规则。
+- `JDBC_INPUT` 在批任务和流任务中均产生 `BOUNDED`；`KAFKA_INPUT` 产生 `UNBOUNDED`。无状态 Processor 继承主要输入的有界性；多输入和有状态 Processor 必须由自身 Operator 显式推导，禁止使用模糊的默认值。
+- `FILE_DATASET_INPUT` 仅支持 `BATCH` 并产生 `BOUNDED`。Compiler 必须只根据元数据快照创建显式 Schema 的零行 Dataset，不得连接对象存储、读取文件或重新推断 Schema；Runner 必须调用同一个 Operator，并仅通过 `CanvasNodeDataAccess` 委托 Batch Reader。
+- `STREAM_JOIN` 必须根据直接上游有界性区分语义：一个 `UNBOUNDED` 与一个 `BOUNDED` 表示 Stream-Static Join；两个 `UNBOUNDED` 表示 Stream-Stream Join；两个 `BOUNDED` 必须拒绝并提示使用批 `JOIN`。
+- 在 Stream-Stream Join 尚未实现事件时间、Watermark、受限时间条件和有界状态清理之前，两个 `UNBOUNDED` 输入必须编译失败。实现后也必须由 `STREAM_JOIN` Operator 同时验证两侧 Watermark、时间范围和 Spark Analyzer 计划，不得允许无限状态增长的普通等值 Join。
+- Window Aggregate、流式去重、Stream-Stream Join 等有状态 Processor 必须明确声明和验证事件时间、Watermark、状态保留边界及输出模式。缺失任何保证有界状态的必要配置时属于编译 `ERROR`，不得降级为 WARNING。
+- 节点模式兼容和图数据语义是两层校验：节点全部支持 `STREAMING` 不代表整张图能够形成合法流式查询。Compiler 必须继续验证有界性组合、流式 Sink 能力、输出模式、Watermark 和状态算子约束。
+- 流式 `JDBC_OUTPUT` 不得沿用批处理 `OVERWRITE` 语义。允许的写入模式、至少一次或幂等保证以及必要业务键必须由 Output Operator 显式校验和记录；不得笼统宣称任意流式 Sink 为 Exactly Once。
+- `MODEL_OUTPUT` 的 UPSERT Key 固定来自目标模型按字段顺序声明的完整主键，不得让用户另配 Key，也不得访问物理表预检唯一约束。批流均可使用 UPSERT；流式继续禁止 OVERWRITE 和 Geometry，并按至少一次交付理解。
+- Checkpoint、Trigger、查询名称和恢复策略属于任务/部署级运行配置，不得重复塞入每个节点配置。节点只声明形成执行计划所需的局部语义。
+
+<a id="node-logging"></a>
+
+## 节点生命周期日志
+
+- 所有 Input、Processor 和 Output 节点必须通过统一的节点执行包装记录生命周期，不得由各节点自行形成不一致的日志格式。
+- 节点事件固定为 `NODE_START`、`NODE_SUCCESS`、`NODE_FAILED`；任务事件固定为 `TASK_START`、`TASK_SUCCESS`、`TASK_FAILED`。
+- 节点日志必须包含 `executionId`、`runId`、`attempt`、`nodeId`、`nodeType`、`nodeName`、`phase`；成功和失败日志还必须包含耗时，失败日志必须包含错误码和诊断 ID。
+- `JDBC_INPUT`、`KAFKA_INPUT`、`MODEL_INPUT` 默认归属 `READ`，包括 `JOIN`、`STREAM_JOIN` 在内的 Processor 默认归属 `PROCESS`，`JDBC_OUTPUT`、`KAFKA_OUTPUT`、`MODEL_OUTPUT` 默认归属 `WRITE`。任务准备、制品投递和分发分别使用当前协议定义的阶段，不得用节点名称代替阶段。
+- 节点摘要只能记录诊断所需的安全元数据，例如数据源 UUID、模型 UUID、模型 code、模型 schemaVersion、表名、Join 类型、条件数量、写入模式和目标表；不得记录数据行、字段实际值或 SQL 参数值。
+- Input 成功只表示读取计划已经准备完成；不得为了日志、统计或 Schema 对比额外触发 Spark Action。
+- 文件 Input 的安全摘要只允许记录节点 ID、文件表 UUID、稳定 table code、格式和字段数量。对象 Key、物化前缀、来源 Key、S3 凭据和执行器临时路径禁止出现在节点日志、异常消息、Result 或 Kafka 事件中。
+- Output 行数应从实际写入计划的指标中采集；不得为日志单独调用 `count()` 或重复扫描数据源。
+
+<a id="spark-jar"></a>
+
+## Spark JAR 与公开 SDK
+
+- `data-scalpel-task-sdk` 是用户 Spark JAR 的唯一公开兼容面。批作业实现 `SparkBatchJob`，实时作业实现 `SparkStreamingJob`，均不得提供任意 `main()` 入口；Task Engine Uber JAR、Manifest、Runner 类和 Canvas Operator 都不是用户编译 API。
+- SDK 只能依赖 Spark 公共 API，不得依赖 Spring、JPA、Canvas 或 Task Engine 内部实现。用户模板必须把 SDK、Spark、Scala 和 Hadoop 作为 `provided`，只把用户自己的第三方依赖打入 JAR。
+- TestKit 只模拟本地 Spark 转换、资源绑定、字段映射、写入捕获和 StreamingQuery 生命周期，不复制生产 Runner、数据库方言或外部连接实现。真实 Kafka 认证、数据库约束、事务和网络故障只能由独立集成测试验证，不能以 TestKit 结果代替；测试执行遵循根政策，具体边界见 [SDK 设计](../design/spark-jar-task-sdk-v1.md)。
+- Runner 使用一次性父优先 ClassLoader 加载用户类，一个进程只执行一个用户作业，不复用 ClassLoader。Spark、Scala、Hadoop、SDK 和 Task Engine 类必须由父加载器提供，用户 JAR不得覆盖平台运行时类。
+- 平台负责根 SparkSession 生命周期。SDK 文档和模板必须明确禁止用户调用 `spark.stop()`、创建新的根 SparkSession或调用 `System.exit()`；第一版信任实施人员，不建设 JVM 沙箱或恶意代码防护。
+- 模型、JDBC 和 Kafka Topic 绑定名大小写敏感，绑定只表达授权声明和运行凭据范围，不保证用户代码一定使用该资源，也不是针对任意 Java 代码的强安全边界。SDK 必须在每次读写时校验资源类型和 `READ/WRITE/READ_WRITE`；Kafka SDK只能返回标准原始 Kafka 行，不替用户解释消息 Schema，也不得暴露 Broker认证配置。
+- SDK 字段映射固定为 `map(目标字段, 来源字段)`。模型 UPSERT Key 来自完整模型主键；JDBC UPSERT Key 由代码显式提供。物理唯一约束、Schema兼容和真实值转换由实际数据库/Spark执行结果决定，不增加运行前物理契约门禁。
+- SDK 写操作立即执行，多个目标之间没有跨目标事务。平台只累计 SDK 写入的影响行数；没有 SDK 写入时为 `0`，任一 SDK 写入指标未知时整体为 `null`，用户直接调用原生 Spark Writer 的写入不计入平台指标。
+- 用户 JAR、签名 URL、对象 Key、Manifest 和凭据不得进入日志、Result、Runner事件或管理端对外响应；内部提交命令只允许携带 Dispatcher 获取制品所必需的对象 Key，不得携带签名 URL。下载后必须同时校验大小和 SHA-256；类加载、构造、下载和用户执行失败使用稳定错误码，并优先保留 Cause链中的真实 Spark/JDBC错误。
+- 实时 JAR 的全部 `StreamingQuery` 必须通过 `StreamingQueries.start()` 注册。平台生成稳定 Query UUID、Spark Query Name 和 Checkpoint位置；用户 Starter必须使用平台提供的 Query Name和Checkpoint，`SparkStreamingJob.start()`完成注册后返回且不得调用 `awaitTermination()`。零查询、重名、非 Active查询或绕过SDK启动查询都必须使整个Application失败。
+- 实时 JAR由用户代码控制 Trigger、Output Mode和处理逻辑；平台只负责查询集合、进度、停止和Checkpoint生命周期。任一查询失败或意外停止时停止其他查询；正常停止先停止查询再调用一次 `onStop()`，原始执行错误优先于清理错误。
+- 实时 JAR首次启动必须使用 `FRESH`；后续可选 `CONTINUE`复用最近Checkpoint或 `FRESH`创建新世代。跨定义版本继续由实施人员确认代码、查询集合和状态Schema兼容性，平台不得自动转换、删除或复制历史Checkpoint。
+- 在线源码编译必须按任务模式校验固定入口：批处理只接受 `com.example.datascalpel.ExampleSparkJob + SparkBatchJob`，实时只接受 `com.example.datascalpel.ExampleSparkStreamingJob + SparkStreamingJob`；产物 Manifest 必须写入匹配的 `DataScalpel-Job-Mode`，不得根据源码内容猜测模式。
+- 批流本地开发包共用一套生成队列和制品流程。实时开发包使用独立的 Kafka Input/Output `TestKafkaTopic`，`READ_WRITE` 也不得复用同一个假 Topic；假消息只使用明确可编辑的 UTF-8 样例，不连接线上 Kafka。
+- 实时在线试运行固定创建 `TRIAL + FRESH` Deployment，并使用与正式运行隔离的 Checkpoint 前缀；正式 `CONTINUE`、最新正式状态和恢复来源只能查询 `REAL` Deployment。正常停止或失败后 Runner 最佳努力删除 Trial Checkpoint，强制终止残留由运维按专属前缀清理。
+- 实时试运行允许真实读取已绑定的模型、JDBC和Kafka输入，但只拦截平台SDK的模型、JDBC和Kafka输出。原生Spark Writer、自带凭据或其他客户端副作用不在拦截范围内；不得宣称试运行是JVM沙箱。试运行最长30分钟，到期先正常停止，60秒宽限后才沿用Backend强制终止。
+- 实时 JAR 正常停止和失败都必须先生成并上传 result.json，再报告停止或失败事件。结果协议版本以 TaskExecutionResult.CURRENT_SCHEMA_VERSION 为准，正常停止使用 `STOPPED` 且不携带错误；失败结果允许保留失败前已采集的部分 Trial Preview，强制终止可能没有最新预览。
+- 用户作业观测由 `SparkJobContext.observability()`统一提供，只支持结构化事件、最新阶段、Counter、Gauge和Operation Timer。Runner最多每5秒上报完整最新快照并在终态刷新；Streaming指标属于当前Application/Attempt且不得写入Checkpoint。
+- 用户作业观测对象只允许Driver端使用，不得设计为可序列化对象或支持捕获到Executor闭包；Operation必须在创建线程关闭并恢复原Spark Job Description。
+- SDK模型/JDBC写入和StreamingQuery注册应自动形成安全事件与保留指标，但不得为了观测增加`count()`、采样或其他Spark Action。自定义事件内容由用户负责，平台自动事件不得包含SQL、数据值、凭据、签名地址、对象Key或Checkpoint物理地址。
+
+<a id="node-operators"></a>
+
+## 统一节点实现
+
+- 每个正式 Input、Processor、Output 节点类型只能有一个无状态 `CanvasNodeOperator` 实现。预检 Compiler 与 Runner 必须通过同一个内置 `CanvasNodeOperatorRegistry` 调用同一个 Operator，不得分别增加 `*NodeCompiler`、`execute*` 或字段映射副本。
+- 每种稳定 `CanvasNodeType` 必须恰好对应一个 Operator；Operator Registry 必须完整覆盖 Contracts 中全部稳定类型，并为每个节点声明非空运行模式集合。
+- Operator Registry 继续使用显式内置列表，不使用反射、Spring 扫描、ServiceLoader 或其他运行时插件发现机制。
+- Canvas 草稿中的字符串资源 ID 必须在 Operator 校验边界解析；空值和非法 UUID 必须分别返回稳定必填/格式问题，并保留当前节点已经能够安全取得的上游输入上下文。
+- Operator 统一负责配置规则、元数据定位、表 Map 语义、Spark Dataset 变换、字段映射和显式 Cast。预检与运行时的差异只能通过 `CanvasNodeDataAccess` 等外部 I/O 端口注入。
+- 预检 I/O 必须使用元数据 Schema 创建零行 Dataset，Output 只分析计划，不得读取 JDBC/HTTP、创建 Writer、TRUNCATE 或写入。Runner I/O 才允许真实读取和生成延迟写入计划。
+- 元数据快照和节点内联 Schema 是 Canvas 的逻辑规划与解析依据，不是物理系统的运行时相等契约。Runner 不得因为字段数量、顺序、类型参数、可空性或 Geometry 元数据与逻辑 Schema 不完全一致而提前拒绝执行；真实读取、Spark Analyzer、Cast、解析器或目标系统能够处理时必须继续，不能处理时报告实际执行失败。
+- 文件 Reader 必须以 Manifest 中的快照 Schema 为目标 Schema 并采用 FAILFAST 语义，不得根据运行文件重定义 Canvas Schema。`schemaFingerprint` 仅作为当前 Manifest 的兼容信息，不得用于运行时相等门禁。Manifest 的文件存储配置、对象位置和解析参数属于受保护运行字段，不得回写 Canvas Definition、编译响应或前端状态。
+- Kafka Value Schema 归 `KAFKA_INPUT/KAFKA_OUTPUT` 节点自身所有，Compiler 与 Runner 必须直接使用节点内联字段调用同一个 Operator，不得通过模型 ID、模型元数据快照或运行时模型查询间接取得 Schema。前端从模型导入只能是一次性字段复制，模型引用不得进入 Kafka 节点定义、编译契约或 Manifest。
+- Kafka 节点内联 Schema 只允许平台稳定标量类型和明确的 STRING/DECIMAL 参数；Broker 地址、认证信息、序列化器私有配置和其他运行连接字段仍只能来自受保护 Manifest，不得混入 Value Schema 或 Canvas Definition。
+- Compiler 只保证 Canvas 定义能够生成合法的 Spark 执行计划，不保证任务针对真实数据和外部系统一定执行成功。真实数据值、数据库约束、权限、连接状态和驱动差异由 Runner 在运行时判断，不得为了提高预检覆盖率在 Compiler 中增加试读、试写或外部连接测试。
+- DataScalpel 是配置驱动的技术平台，不负责仲裁 Sink 目标的业务占用关系。Compiler、发布流程和 Runner 不得因为不同任务或同一任务内多个 Output 指向相同模型、数据源或物理表而拒绝定义，也不得因为同一模型同时被读取和写入而增加平台级冲突错误、分布式锁或任务间扫描；并发结果由 Sink 和实施配置决定。
+- `ERROR` 只用于能够根据 Canvas 定义、元数据快照和 Spark Analyzer 确定无法执行的问题；`WARNING` 只用于 Spark 计划合法但可能受真实数据影响的问题。存在 WARNING 时编译结果仍必须有效，节点 Schema 和下游传播不得中断；不得因为预检无法证明数据值安全就将问题升级为 ERROR。
+- Processor 的 Spark 可执行性以实际表达式和 Spark Analyzer 为唯一类型依据；不得按平台字段类型另写兼容矩阵，也不得据此产生类型风险警告。表名冲突、字段存在性、重复字段等配置和平台业务规则仍由 Operator 明确检查。
+- Rename 必须根据原始 Schema 使用单次 `select + alias` 原子生成最终字段名，并在不修改输入 Map、上游表或 Dataset 的前提下替换逻辑表 Key；不得顺序调用 `withColumnRenamed`，也不得丢失物理 Origin 或字段元数据。
+- Output 必须在共享 Operator 中对目标类型执行显式 Spark Cast。Output 类型策略只负责区分安全转换和运行时风险并生成 WARNING，转换是否受支持仍以共享 Operator 构造的 Spark Cast 和 Analyzer 结果为准；不得通过平台类型矩阵提前拒绝 Spark 能够建立的 Cast。
+- 可证明安全的 Output 转换直接通过；Spark 支持但依赖实际值的转换产生 WARNING；只有配置错误、业务结构错误或 Analyzer 不支持的 Cast 才产生 ERROR。如果新增 Output 预检需要连接目标数据库、执行试写、模拟数据库约束或维护方言专属转换矩阵，应将该检查留到 Runner，不得加入 Compiler。
+- 新增节点时必须新增一个 Operator 并注册到内置 Registry。若必须增加新的环境能力，应扩展 I/O 端口，不得复制节点行为。
+
+<a id="compilation-context"></a>
+
+## 编译诊断上下文保留
+
+- Compiler 必须将“为编辑器提供诊断上下文”和“判定节点能否继续执行或向下游传播”分开处理。节点存在错误不代表其已经可以安全推导的输入上下文应被清空。
+- 对拓扑序中的每个节点，Compiler 必须先合并直接上游已经成功传播的表并填写该节点的 `inputTables`，再根据当前节点已有错误决定是否调用 Operator。不得因为当前节点配置缺失、执行模式不兼容、节点度数错误或其他预置错误，在合并上游表之前直接跳过节点。
+- 当前节点存在 `ERROR` 时可以跳过 Operator，不生成当前节点 `outputTables`，也不得继续向后继节点传播当前节点输出；但必须在编译响应中保留已经安全推导出的 `inputTables`，供 Inspector 展示来源表、来源字段并帮助用户修正配置。
+- 只有上游节点本身无法产生有效 Schema、上游表名冲突、边端点不可靠、环路导致无法建立拓扑序等确实无法安全确定输入的情况，才允许输入上下文不完整；此时必须同时返回明确的稳定错误，不能只返回空列表。
+- WARNING 不得中断 Operator 分析、`outputTables` 生成或下游 Schema 传播。ERROR 只阻止当前节点执行和当前节点输出，不得追溯清除此前节点已经形成的编译结果。
+- 依赖其他配置字段的条件规则必须在前置字段已经配置后执行。空值、缺失值只产生对应的必填或结构错误；例如只有 `writeMode != null` 时，才能判断实时 `JDBC_OUTPUT` 是否违反仅支持 `APPEND` 的限制，不得用条件约束错误替代必填错误。
+- 当用户要求新增节点的编译测试时，至少覆盖：当前节点未配置完成仍返回上游 `inputTables`；当前节点存在预置模式错误仍返回上游 `inputTables`；依赖字段为空时不产生衍生业务错误；上游真正无效时停止传播并返回 `UPSTREAM_INVALID` 或更精确错误；WARNING 不影响 Schema 传播。
+
+<a id="failure-diagnostics"></a>
+
+## 异常分类与日志安全
+
+- 节点和 Runner 失败必须使用统一错误分类器。分类器应遍历 Spark 包装异常、`cause` 链以及 `SQLException#getNextException()`，不得只根据最外层异常消息判断。
+- 稳定错误码、错误类别、执行阶段和 `retryable` 语义是对外诊断契约。调整映射时必须同步修改 Runner、Dispatcher、Admin、前端和设计文档。
+- 每次失败生成一个诊断 ID；顶层错误、失败节点结果、终态事件和管理端运行记录必须保持同一诊断 ID。
+- 同一异常只允许在最接近失败来源的位置打印一次经过脱敏的完整异常链和调用栈；任务级终态日志只打印结构化摘要，不重复堆栈。
+- 异常链和调用栈必须经过统一脱敏并限制最大长度。当前上限为 64 KiB，截断时必须保留明确标记。
+- 日志和执行结果禁止包含密码、Secret、Token、Credential、Access Key、签名参数、预签名 URL、完整 JDBC Properties、Kafka 认证信息、数据行、SQL 参数值、Manifest 全文和本地敏感路径。
+- 不得吞掉异常或仅打印自由文本。可预期失败必须形成结构化错误；未知失败必须安全回退为稳定错误码，并保留诊断 ID。
+
+<a id="execution-results"></a>
+
+## 执行结果一致性
+
+- Runner 必须生成当前唯一受支持版本的严格 `result.json`。协议字段和约束以 [Task Runner、Kafka 与制品](../design/task-execution-platform/05-task-runner-kafka-and-artifacts.md) 为准，不在本规范复制完整 JSON Schema。
+- 节点结果按稳定拓扑执行顺序保存。失败时保留已经完成的节点并追加失败节点；未开始节点不得写入结果。
+- 成功节点不得包含错误对象；失败节点必须包含完整的安全错误对象。顶层 SUCCESS 与正常 STOPPED 结果不得包含错误；其他终态必须包含完整的安全错误对象。
+- 日志和结果必须复用同一个节点执行上下文，避免节点身份、阶段、耗时或诊断 ID不一致。
+- 结果和终态事件不得携带 Java 调用栈。调用栈只允许存在于经过脱敏的受控控制台日志中。
+- 升级结果协议时必须在同一改动中更新 Runner 写入、Dispatcher 严格解析、Kafka 事件、Admin 持久化/API、前端类型与展示和设计文档。除非用户明确要求，不得私自增加兼容分支。
+
+<a id="new-nodes"></a>
+
+## 新增节点类型
+
+- 新增 Rename、Filter 等节点时，必须同时定义节点执行阶段、安全日志摘要、失败回退错误码、节点结果消息和 Schema 传播行为。
+- 新节点必须声明非空 `supportedModes`、输入和输出有界性规则；有状态流式节点还必须声明事件时间、Watermark、状态边界和输出模式约束。
+- 新节点是否需要拆分批流类型应遵循“配置与状态语义是否实质不同”的规则，不得为了减少节点数量把流式专属字段堆入批处理配置，也不得为了代码形式对称复制语义完全相同的无状态节点。
+- 新节点必须接入统一生命周期包装和错误分类器，不得复制一套节点日志或异常处理逻辑。
+- Processor 不得记录参与计算的实际字段值；只允许记录表名、字段名、条件数量和操作类型等安全元数据。
+- 新节点的编译校验与运行时失败必须可区分。配置或编译错误不得伪装成 JDBC 或 Runner 内部错误。
+- 文件 Input 新增或修改格式支持时，必须同时覆盖 Registry 能力校验、零行 Compiler、真实 Reader、逻辑 Schema 解析、当前 Manifest 有序来源快照、来源节点错误归属和敏感路径脱敏；不得为每种格式拆分重复的 Canvas 节点，也不得重新引入文件物理 Schema 相等门禁。

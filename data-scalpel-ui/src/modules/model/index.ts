@@ -21,6 +21,7 @@ export {
 } from './hooks/useDataModels';
 export {
   fetchDataModel,
+  fetchDataModels,
   fetchDataModelReferences,
   fetchPhysicalTableInspection,
   fetchModelWarehouseLayers,

@@ -176,6 +176,7 @@ public class AssetPortalService {
         }));
         String requiredAuthority = switch (source.assetType()) {
             case DATA_MODEL -> "model.view";
+            case PANORAMA -> "panorama.view";
             case FILE_DATASET -> "filedataset.view";
             case DICTIONARY -> "standard.dictionary.view";
             case DATA_SERVICE -> "service.view";
@@ -186,6 +187,7 @@ public class AssetPortalService {
         if (!permitted) throw new ResponseStatusException(HttpStatus.FORBIDDEN, "没有查看源资源的权限");
         String path = switch (source.assetType()) {
             case DATA_MODEL -> "/model/" + source.resourceId();
+            case PANORAMA -> "/panorama/" + source.resourceId();
             case FILE_DATASET -> "/file-dataset/" + source.resourceId();
             case DICTIONARY -> "/standard/dictionaries/" + source.resourceId();
             case DATA_SERVICE -> "/dataservice/" + source.resourceId();

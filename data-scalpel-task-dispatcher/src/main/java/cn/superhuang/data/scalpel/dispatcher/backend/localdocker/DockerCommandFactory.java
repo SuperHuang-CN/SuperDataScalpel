@@ -132,6 +132,10 @@ public class DockerCommandFactory {
         return command("logs", "--timestamps", reference(reference));
     }
 
+    public List<String> recentLogs(String reference, int lines) {
+        return command("logs", "--timestamps", "--tail", Integer.toString(lines), reference(reference));
+    }
+
     public List<String> stop(String reference) {
         return command("stop", "--time", Long.toString(properties.stopTimeout().toSeconds()), reference(reference));
     }

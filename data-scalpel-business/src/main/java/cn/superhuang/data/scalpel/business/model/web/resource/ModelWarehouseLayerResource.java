@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.model.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.model.service.ModelWarehouseLayerService;
 import cn.superhuang.data.scalpel.business.model.web.request.CreateModelWarehouseLayerRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.UpdateModelWarehouseLayerRequest;
@@ -43,6 +44,7 @@ public class ModelWarehouseLayerResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询动态数仓分层")
     @GetMapping
     @PreAuthorize(READ_AUTHORITY)
     @Operation(summary = "查询动态数仓分层")
@@ -52,6 +54,7 @@ public class ModelWarehouseLayerResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增数仓分层")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('system.configuration.update')")
@@ -62,6 +65,7 @@ public class ModelWarehouseLayerResource {
         return service.create(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改数仓分层")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     @Operation(summary = "修改数仓分层")
@@ -72,6 +76,7 @@ public class ModelWarehouseLayerResource {
         return service.update(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "启用数仓分层")
     @PostMapping("/{id}/actions/enable")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     @Operation(summary = "启用数仓分层")
@@ -79,6 +84,7 @@ public class ModelWarehouseLayerResource {
         return service.enable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "停用数仓分层")
     @PostMapping("/{id}/actions/disable")
     @PreAuthorize("hasAuthority('system.configuration.update')")
     @Operation(summary = "停用数仓分层")
@@ -86,6 +92,7 @@ public class ModelWarehouseLayerResource {
         return service.disable(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除未被模型或其他分层规范引用的数仓分层")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('system.configuration.update')")

@@ -3,6 +3,7 @@ package cn.superhuang.datascalpel.taskengine.runner;
 import java.net.URI;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.Duration;
 
 interface RunnerArtifactAccess {
     byte[] download(URI uri, int maximumBytes) throws Exception;
@@ -11,4 +12,7 @@ interface RunnerArtifactAccess {
         Files.write(target, download(uri, Math.toIntExact(expectedBytes)));
     }
     void upload(URI uri, byte[] content, String contentType) throws Exception;
+    default void upload(URI uri, byte[] content, String contentType, Duration timeout) throws Exception {
+        upload(uri, content, contentType);
+    }
 }

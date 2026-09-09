@@ -7,12 +7,19 @@ import org.apache.spark.sql.catalyst.expressions.AttributeReference;
 import org.apache.spark.sql.catalyst.expressions.Expression;
 import org.apache.spark.sql.catalyst.expressions.Literal;
 import org.apache.spark.sql.catalyst.expressions.NamedExpression;
+import org.apache.spark.sql.catalyst.expressions.RowNumber;
 import org.apache.spark.sql.catalyst.expressions.WindowExpression;
+import org.apache.spark.sql.catalyst.expressions.ArraySort;
+import org.apache.spark.sql.catalyst.expressions.ArrayTransform;
+import org.apache.spark.sql.catalyst.expressions.HigherOrderFunction;
+import org.apache.spark.sql.catalyst.expressions.LambdaFunction;
+import org.apache.spark.sql.catalyst.expressions.NamedLambdaVariable;
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression;
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate;
 import org.apache.spark.sql.catalyst.plans.logical.CTERelationDef;
 import org.apache.spark.sql.catalyst.plans.logical.CTERelationRef;
 import org.apache.spark.sql.catalyst.plans.logical.Filter;
+import org.apache.spark.sql.catalyst.plans.logical.Expand;
 import org.apache.spark.sql.catalyst.plans.logical.Generate;
 import org.apache.spark.sql.catalyst.plans.logical.Join;
 import org.apache.spark.sql.catalyst.plans.logical.LogicalPlan;
@@ -185,6 +192,32 @@ public final class CatalystLineageAnalyzer {
                 .map(child -> analyzePlan(child, activeNodeKey, state))
                 .toList();
         Map<ExpressionKey, ValueEvidence> available = merge(childEvidence);
+
+        if (plan instanceof Expand expand) {
+            // Sliding time windows project one input row into several window rows. Expand is
+            // not transparent: each output ordinal must be traced through every projection.
+            List<List<Expression>> projections = CollectionConverters.asJava(expand.projections()).stream()
+                    .map(CatalystLineageAnalyzer::expressions).toList();
+            List<Attribute> outputs = attributes(expand.output());
+            Map<ExpressionKey, ValueEvidence> values = new LinkedHashMap<>();
+            for (int ordinal = 0; ordinal < outputs.size(); ordinal++) {
+                List<ValueEvidence> parts = new ArrayList<>();
+                for (List<Expression> projection : projections) {
+                    parts.add(ordinal < projection.size() ? expressionEvidence(projection.get(ordinal), available, activeNodeKey)
+                            : ValueEvidence.unknown(activeNodeKey, "expand-column-count"));
+                }
+                String fingerprint = compositeFingerprint("expand", parts);
+                ValueEvidence value = parts.isEmpty() ? ValueEvidence.unknown(activeNodeKey, "expand-empty")
+                        : ValueEvidence.merge(parts, activeNodeKey, fingerprint);
+                if (!parts.isEmpty() && parts.stream().allMatch(v -> !v.unknown() && v.sources().isEmpty()
+                        && (v.effect() == TaskLineageEvidence.OutputEffect.CONSTANT || v.effect() == TaskLineageEvidence.OutputEffect.NULL_FILLED))) {
+                    value = parts.stream().allMatch(v -> v.effect() == TaskLineageEvidence.OutputEffect.NULL_FILLED)
+                            ? ValueEvidence.nullValue(fingerprint) : ValueEvidence.constant(fingerprint);
+                }
+                values.put(key(outputs.get(ordinal)), value);
+            }
+            return new PlanEvidence(values);
+        }
 
         if (plan instanceof Filter filter) {
             addUsage(filter.condition(), available, activeNodeKey,
@@ -407,6 +440,9 @@ public final class CatalystLineageAnalyzer {
             return available.getOrDefault(key(attribute),
                     ValueEvidence.unknown(activeNodeKey, "attribute:" + attribute.name()));
         }
+        if (expression instanceof NamedLambdaVariable variable) {
+            return available.getOrDefault(key(variable), ValueEvidence.unknown(activeNodeKey, "unbound-lambda"));
+        }
         if (expression instanceof Alias alias) {
             return expressionEvidence(alias.child(), available, activeNodeKey);
         }
@@ -416,11 +452,46 @@ public final class CatalystLineageAnalyzer {
                     : ValueEvidence.constant(expressionFingerprint(expression, List.of()));
         }
         if (expression instanceof WindowExpression windowExpression) {
+            if (windowExpression.windowFunction() instanceof RowNumber) {
+                // RowNumber has no value arguments: its value depends on the partition and order.
+                // Resolve only this known function, not arbitrary sourceless window expressions.
+                List<Expression> keys = new ArrayList<>(expressions(windowExpression.windowSpec().partitionSpec()));
+                keys.addAll(expressions(windowExpression.windowSpec().orderSpec()));
+                List<ValueEvidence> evidence = keys.stream()
+                        .map(key -> expressionEvidence(key, available, activeNodeKey)).toList();
+                ValueEvidence ranking = ValueEvidence.merge(evidence, activeNodeKey,
+                        expressionFingerprint(expression, evidence));
+                return ranking.sources().isEmpty()
+                        ? ValueEvidence.unknown(activeNodeKey, ranking.fingerprint())
+                        : ranking.withDerivation(TaskLineageEvidence.DerivationType.CALCULATED);
+            }
             ValueEvidence function = expressionEvidence(
                     windowExpression.windowFunction(), available, activeNodeKey);
             return function.sources().isEmpty()
                     ? ValueEvidence.unknown(activeNodeKey, expressionFingerprint(expression, List.of()))
                     : function.asWindowDerived(activeNodeKey);
+        }
+        if (expression instanceof ArraySort || expression instanceof ArrayTransform) {
+            // The lambda element(s) come from this array, never from a synthetic physical field.
+            // Deliberately scoped to these two known operators; unsupported lambdas stay unknown.
+            HigherOrderFunction function = (HigherOrderFunction) expression;
+            List<ValueEvidence> evidence = new ArrayList<>();
+            for (Expression argument : expressions(function.arguments()))
+                evidence.add(expressionEvidence(argument, available, activeNodeKey));
+            if (evidence.size() != 1) return ValueEvidence.unknown(activeNodeKey, "array-argument-count");
+            ValueEvidence element = evidence.getFirst();
+            for (Expression body : expressions(function.functions())) {
+                if (!(body instanceof LambdaFunction lambda)) return ValueEvidence.unknown(activeNodeKey, "unresolved-array-lambda");
+                Map<ExpressionKey, ValueEvidence> bound = new LinkedHashMap<>(available);
+                int index = 0;
+                for (NamedExpression parameter : CollectionConverters.asJava(lambda.arguments())) {
+                    bound.put(key(parameter), expression instanceof ArrayTransform && index == 1
+                            ? ValueEvidence.constant("array-element-index") : element);
+                    index++;
+                }
+                evidence.add(expressionEvidence(lambda.function(), bound, activeNodeKey));
+            }
+            return ValueEvidence.merge(evidence, activeNodeKey, expressionFingerprint(expression, evidence));
         }
         List<ValueEvidence> children = expressions(expression.children()).stream()
                 .map(child -> expressionEvidence(child, available, activeNodeKey)).toList();

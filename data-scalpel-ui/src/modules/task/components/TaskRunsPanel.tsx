@@ -25,11 +25,11 @@ interface TaskRunsPanelProps {
   onDetailRunChange: (runId: string | null) => void;
 }
 
-const cancellable = (run: TaskRun) => (run.taskType === 'SPARK_CANVAS'
+const cancellable = (run: TaskRun) => (run.taskType === 'WORKFLOW' || run.taskType === 'LOCAL_SQL' || run.taskType === 'SPARK_CANVAS'
   || run.taskType === 'SPARK_MODEL_QUALITY' || run.taskType === 'SPARK_JAR')
   && (run.status === 'QUEUED' || run.status === 'RUNNING');
 
-const forceTerminable = (run: TaskRun) => run.taskType !== 'LOCAL_SQL'
+const forceTerminable = (run: TaskRun) => run.taskType !== 'LOCAL_SQL' && run.taskType !== 'WORKFLOW'
   && (run.status === 'CANCEL_REQUESTED' || run.status === 'STOP_REQUESTED');
 
 const qualityConclusion = (value: TaskRun['qualityConclusion']) => {
@@ -64,7 +64,7 @@ export const TaskRunsPanel = ({
   const cancel = (run: TaskRun) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
     title: '取消任务运行',
-    content: `确认取消运行“${run.id}”吗？已开始的 Spark 应用将被停止。`,
+    content: `确认取消运行“${run.id}”吗？${run.taskType === 'WORKFLOW' ? '将停止本次工作流的活动子任务，并取消后续节点。' : '将停止本次执行。'}`,
     okText: '取消运行',
     okButtonProps: { danger: true },
     cancelText: '返回',

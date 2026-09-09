@@ -484,9 +484,12 @@ public class AssistantToolExecutionService {
         return switch (scope) {
             case DATA_SOURCE -> "数据源目录";
             case FILE_DATASET -> "文件数据集目录";
+            case PANORAMA -> "全景影像目录";
             case MODEL -> "模型目录";
+            case METRIC -> "指标目录";
             case TASK -> "任务目录";
             case DATA_SERVICE -> "数据服务目录";
+            case MCP_SERVER -> "MCP Server 目录";
             case ASSET -> "业务领域";
         };
     }

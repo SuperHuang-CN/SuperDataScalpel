@@ -1,0 +1,15 @@
+import { requestJson } from '../../../shared/api/http';
+import { toSearchParams, type SearchRequest } from '../../../shared/search';
+import type { Api, Audit, Configuration, Issued, Page, Token, UserOption } from '../model/types';
+const base = '/v1/system-mcp';
+export const getConfiguration = () => requestJson<Configuration>(`${base}/configuration`);
+export const getApis = (r: SearchRequest) => requestJson<Page<Api>>(`${base}/apis?${toSearchParams(r)}`);
+export const getApi = (id: string) => requestJson<Api>(`${base}/apis/${id}`);
+export const getTokens = (r: SearchRequest) => requestJson<Page<Token>>(`${base}/access-tokens?${toSearchParams(r)}`);
+export const getAudits = (r: SearchRequest) => requestJson<Page<Audit>>(`${base}/audits?${toSearchParams(r)}`);
+export const getUsers = (r: SearchRequest) => requestJson<Page<UserOption>>(`/v1/system/users?${toSearchParams(r)}`);
+export const saveConfiguration = (body: { enabled?: boolean; changes: { id: string; enabled: boolean }[] }) => requestJson<Configuration>(`${base}/actions/update-configuration`, { method: 'POST', body: JSON.stringify(body) });
+export const refreshCatalog = () => requestJson<Configuration>(`${base}/actions/refresh-catalog`, { method: 'POST' }, 90000);
+export const createToken = (body: { name: string; userId: string; expiresAt?: string }) => requestJson<Issued>(`${base}/access-tokens`, { method: 'POST', body: JSON.stringify(body) });
+export const rotateToken = (id: string) => requestJson<Issued>(`${base}/access-tokens/${id}/actions/rotate`, { method: 'POST' });
+export const tokenCommand = (id: string, action: 'enable' | 'disable' | 'delete' | 'update', body?: { name: string; expiresAt?: string }) => requestJson<void>(`${base}/access-tokens/${id}/actions/${action}`, { method: 'POST', body: body ? JSON.stringify(body) : undefined });

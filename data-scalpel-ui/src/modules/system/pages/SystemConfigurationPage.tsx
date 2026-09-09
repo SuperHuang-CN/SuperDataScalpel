@@ -4,6 +4,8 @@ import { Button, Dropdown, Form, Input, Table, Tooltip } from 'antd';
 import { useMemo, useState } from 'react';
 import { ManagementCode, ManagementDateTime, ManagementListCell } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
+import { PanoramaMapSettingsDrawer } from '../components/PanoramaMapSettingsDrawer';
+import { panoramaMapSettingsSummary } from '../model/panoramaMapSettings';
 import { SystemConfigurationDrawer } from '../components/SystemConfigurationDrawer';
 import { useCurrentUser } from '../hooks/useSystemAccess';
 import { useSystemConfigurations } from '../hooks/useSystemConfigurations';
@@ -45,7 +47,7 @@ export const SystemConfigurationPage = () => {
       title: '当前值',
       dataIndex: 'configValue',
       width: 230,
-      render: (value: string) => <ManagementListCell primary={value} secondary="系统配置值" />,
+      render: (value: string, configuration) => <ManagementListCell primary={configuration.configKey === 'panorama.map' ? panoramaMapSettingsSummary(value) : value} secondary="系统配置值" />,
     },
     {
       title: '类型 / 排序', width: 130,
@@ -119,11 +121,11 @@ export const SystemConfigurationPage = () => {
           />
         </div>
       </section>
-      <SystemConfigurationDrawer
+      {editingConfiguration?.configKey === 'panorama.map' ? <PanoramaMapSettingsDrawer configuration={editingConfiguration} onClose={() => setEditingConfiguration(null)} /> : <SystemConfigurationDrawer
         open={Boolean(editingConfiguration)}
         configuration={editingConfiguration}
         onClose={() => setEditingConfiguration(null)}
-      />
+      />}
     </>
   );
 };

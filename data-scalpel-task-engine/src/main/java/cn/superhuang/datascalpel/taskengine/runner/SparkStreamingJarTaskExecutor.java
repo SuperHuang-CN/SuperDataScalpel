@@ -45,7 +45,8 @@ final class SparkStreamingJarTaskExecutor {
             RunnerSparkMode sparkMode,
             TaskExecutionLaunchDescriptor launch,
             Path userJar,
-            RunnerEventPublisher publisher
+            RunnerEventPublisher publisher,
+            java.util.function.Consumer<SparkJarTrialPreview> trialPreviewPublisher
     ) {
         Instant executionStartedAt = Instant.now();
         validate(manifest, launch, userJar);
@@ -82,7 +83,8 @@ final class SparkStreamingJarTaskExecutor {
         SparkStreamingJarJobContextImpl context =
                 new SparkStreamingJarJobContextImpl(
                         spark, manifest, queries, objectMapper,
-                        snapshot -> publishObservability(publisher, launch, snapshot));
+                        snapshot -> publishObservability(publisher, launch, snapshot),
+                        trialPreviewPublisher);
         observabilityReference.set(context.observabilityRuntime());
         context.observabilityRuntime().platformStatus("INITIALIZING", "正在初始化用户实时作业");
         SparkStreamingJob job = null;

@@ -35,6 +35,13 @@ public final class JdbcInsertSelectExecutor {
             boolean overwrite,
             Duration timeout
     ) {
+        return execute(databaseType, config, target, targetColumns, query, overwrite, timeout, new JdbcExecutionCancellation());
+    }
+
+    public InsertSelectExecution execute(String databaseType, JdbcConnectionConfig config, TableIdentifier target,
+                                         List<String> targetColumns, InsertSelectQuery query, boolean overwrite,
+                                         Duration timeout, JdbcExecutionCancellation cancellation) {
+        cancellation.check();
         if (timeout == null || timeout.isNegative() || timeout.isZero()) {
             throw new IllegalArgumentException("Execution timeout must be positive");
         }
@@ -47,11 +54,12 @@ public final class JdbcInsertSelectExecutor {
                 throw new UnsupportedOperationException(dialect.definition().displayName() + " does not support transactional task overwrite");
             }
             try (Connection connection = connectionFactory.open(dialect.createConnectionSpec(config))) {
+                cancellation.register(connection);
                 if (overwrite) {
-                    return executeOverwrite(connection, dialect, target, targetColumns, query, timeout);
+                    return executeOverwrite(connection, dialect, target, targetColumns, query, timeout, cancellation);
                 }
                 return new InsertSelectExecution(executeStatement(
-                        connection, dialect.renderInsertSelect(target, targetColumns, query), timeout
+                        connection, dialect.renderInsertSelect(target, targetColumns, query), timeout, cancellation
                 ));
             }
         } catch (DatabaseAccessException exception) {
@@ -63,8 +71,10 @@ public final class JdbcInsertSelectExecutor {
         } catch (UnsupportedOperationException exception) {
             throw new DatabaseAccessException("WRITE_MODE_UNSUPPORTED", exception.getMessage(), exception);
         } catch (SQLTimeoutException exception) {
+            cancellation.check();
             throw new DatabaseAccessException("QUERY_TIMEOUT", "SQL 执行超时", exception);
         } catch (SQLException exception) {
+            cancellation.check();
             if ("57014".equals(exception.getSQLState())) {
                 // PostgreSQL reports a JDBC statement timeout as a generic PSQLException with
                 // SQLSTATE query_canceled instead of SQLTimeoutException.
@@ -72,6 +82,8 @@ public final class JdbcInsertSelectExecutor {
             }
             throw new DatabaseAccessException("DATABASE_ERROR", "SQL 执行失败（SQLState: "
                     + (exception.getSQLState() == null ? "未知" : exception.getSQLState()) + "）", exception);
+        } finally {
+            cancellation.clear();
         }
     }
 
@@ -81,13 +93,15 @@ public final class JdbcInsertSelectExecutor {
             TableIdentifier target,
             List<String> targetColumns,
             InsertSelectQuery query,
-            Duration timeout
+            Duration timeout,
+            JdbcExecutionCancellation cancellation
     ) throws SQLException {
         boolean originalAutoCommit = connection.getAutoCommit();
         connection.setAutoCommit(false);
         try {
-            executeStatement(connection, dialect.renderOverwriteCleanup(target), timeout);
-            long affectedRows = executeStatement(connection, dialect.renderInsertSelect(target, targetColumns, query), timeout);
+            executeStatement(connection, dialect.renderOverwriteCleanup(target), timeout, cancellation);
+            long affectedRows = executeStatement(connection, dialect.renderInsertSelect(target, targetColumns, query), timeout, cancellation);
+            cancellation.check();
             connection.commit();
             return new InsertSelectExecution(affectedRows);
         } catch (SQLException | RuntimeException exception) {
@@ -106,14 +120,19 @@ public final class JdbcInsertSelectExecutor {
         }
     }
 
-    private static long executeStatement(Connection connection, String sql, Duration timeout) throws SQLException {
+    private static long executeStatement(Connection connection, String sql, Duration timeout, JdbcExecutionCancellation cancellation) throws SQLException {
+        cancellation.check();
         try (Statement statement = connection.createStatement()) {
+            cancellation.register(statement);
             try {
                 statement.setQueryTimeout(Math.max(1, Math.toIntExact(timeout.toSeconds())));
             } catch (SQLException ignored) {
                 // Some drivers do not support JDBC statement timeouts.
             }
+            cancellation.check();
             return statement.executeUpdate(sql);
+        } finally {
+            cancellation.clearStatement();
         }
     }
 }

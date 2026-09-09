@@ -1,10 +1,8 @@
-import type { TaskFilters } from './task';
+import type { TaskFilters, TaskType } from './task';
 
-const escapeDslText = (value: string) => value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
+import { andSearch, orSearch, escapeSearchText as escapeDslText, searchEquals as equals } from '../../../shared/search';
 
-const equals = (field: string, value: string) => `${field}:"${escapeDslText(value)}"`;
-
-export const buildTaskSearch = (filters: TaskFilters): string | undefined => {
+export const buildTaskSearch = (filters: TaskFilters, types?: readonly TaskType[]): string | undefined => {
   const conditions = [
     filters.keyword?.trim()
       ? `name:*"${escapeDslText(filters.keyword.trim())}"*`
@@ -19,5 +17,8 @@ export const buildTaskSearch = (filters: TaskFilters): string | undefined => {
     filters.uncategorized ? 'directoryId:null' : undefined,
   ].filter((condition): condition is string => Boolean(condition));
 
-  return conditions.length ? conditions.join(' AND ') : undefined;
+  return andSearch(
+    types ? orSearch(...types.map(type => equals('type', type))) : undefined,
+    ...conditions,
+  );
 };

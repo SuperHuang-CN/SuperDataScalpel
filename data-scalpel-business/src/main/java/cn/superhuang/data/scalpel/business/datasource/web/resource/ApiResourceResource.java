@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.datasource.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.datasource.service.ApiResourceService;
 import cn.superhuang.data.scalpel.business.datasource.service.ApiResourceRuntimeService;
 import cn.superhuang.data.scalpel.business.datasource.web.request.CreateApiResourceRequest;
@@ -36,6 +37,7 @@ public class ApiResourceResource {
         this.runtimeService = runtimeService;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 HTTP API 资源")
     @GetMapping
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询 HTTP API 资源")
@@ -43,6 +45,7 @@ public class ApiResourceResource {
         return service.list(dataSourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询 HTTP API 资源详情")
     @GetMapping("/{resourceId}")
     @PreAuthorize("hasAuthority('datasource.view')")
     @Operation(summary = "查询 HTTP API 资源详情")
@@ -50,6 +53,7 @@ public class ApiResourceResource {
         return service.get(dataSourceId, resourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增 HTTP API 资源")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('datasource.create')")
@@ -61,6 +65,7 @@ public class ApiResourceResource {
         return service.create(dataSourceId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改 HTTP API 资源")
     @PostMapping("/{resourceId}/actions/update")
     @PreAuthorize("hasAuthority('datasource.update')")
     @Operation(summary = "修改 HTTP API 资源")
@@ -72,6 +77,7 @@ public class ApiResourceResource {
         return service.update(dataSourceId, resourceId, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除 HTTP API 资源")
     @PostMapping("/{resourceId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('datasource.delete')")
@@ -80,6 +86,7 @@ public class ApiResourceResource {
         service.delete(dataSourceId, resourceId);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "测试 HTTP API 资源")
     @PostMapping("/{resourceId}/actions/test")
     @PreAuthorize("hasAuthority('datasource.test')")
     @Operation(summary = "测试 HTTP API 资源")

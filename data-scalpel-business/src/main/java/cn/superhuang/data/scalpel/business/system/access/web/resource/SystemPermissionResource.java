@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.system.access.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.system.access.service.SystemAccessService;
 import cn.superhuang.data.scalpel.business.system.access.web.response.SystemPermissionResponse;
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
@@ -27,6 +28,7 @@ public class SystemPermissionResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统权限")
     @GetMapping
     @PreAuthorize("hasAuthority('system.permission.view')")
     @Operation(summary = "查询系统权限")
@@ -34,6 +36,7 @@ public class SystemPermissionResource {
         return service.searchPermissions(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统权限详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('system.permission.view')")
     @Operation(summary = "查询系统权限详情")

@@ -5,6 +5,7 @@ import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Modal, Popconfirm
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { DetailTableToolbar } from '../../../shared/components/DetailTableToolbar';
+import { useDataSource } from '../../datasource';
 import { useCurrentUser } from '../../system';
 import {
   isStandardDictionaryTypeFamilyCompatible,
@@ -64,7 +65,9 @@ interface FieldEditorDrawerProps {
   open: boolean;
   field: EditableField | null;
   nextSortOrder: number;
-  structuralLocked: boolean;
+  externalStructureLocked: boolean;
+  spatialDefinitionLocked: boolean;
+  clickHousePrimaryKeyMetadata: boolean;
   geometryTypeDisabled: boolean;
   storageDataSourceId: string;
   onCancel: () => void;
@@ -133,13 +136,16 @@ const FieldEditorDrawer = ({
   open,
   field,
   nextSortOrder,
-  structuralLocked,
+  externalStructureLocked,
+  spatialDefinitionLocked,
+  clickHousePrimaryKeyMetadata,
   geometryTypeDisabled,
   storageDataSourceId,
   onCancel,
   onDirtyChange,
   onSave,
 }: FieldEditorDrawerProps) => {
+  const definitionLocked = externalStructureLocked || spatialDefinitionLocked;
   const [form] = Form.useForm<DataModelFieldInput>();
   const selectedType = Form.useWatch('fieldType', form);
   const selectedPrimaryKey = Form.useWatch('primaryKey', form);
@@ -150,7 +156,7 @@ const FieldEditorDrawer = ({
     { page: 0, size: 500, sort: 'name,code' },
     open && canViewDictionaries,
   );
-  const capabilitiesQuery = usePlatformTypeCapabilities(storageDataSourceId, open && !structuralLocked);
+  const capabilitiesQuery = usePlatformTypeCapabilities(storageDataSourceId, open && !definitionLocked);
   const capabilities = useMemo(() => new Map(
     (capabilitiesQuery.data ?? []).map((capability) => [capability.type, capability]),
   ), [capabilitiesQuery.data]);
@@ -233,11 +239,15 @@ const FieldEditorDrawer = ({
           : null
       )
       : null;
-    if (structuralLocked && field) {
+    if (definitionLocked && field) {
       onDirtyChange(false);
       onSave({
         ...field,
         name: values.name.trim(),
+        nullable: externalStructureLocked ? field.nullable : values.primaryKey ? false : values.nullable,
+        primaryKey: externalStructureLocked || field.fieldType === 'GEOMETRY'
+          ? field.primaryKey
+          : values.primaryKey,
         sortOrder: values.sortOrder,
         description: values.description?.trim() || undefined,
         standardDictionaryId: values.standardDictionaryId,
@@ -272,9 +282,17 @@ const FieldEditorDrawer = ({
         <div className="data-model-drawer-title">
           <span className="data-model-drawer-title-icon" aria-hidden="true"><FontSizeOutlined /></span>
           <span className="data-model-drawer-title-copy">
-            <span>{structuralLocked ? '修改字段业务信息' : field ? '修改模型字段' : '新增模型字段'}</span>
+            <span>{externalStructureLocked
+              ? '修改字段业务信息'
+              : spatialDefinitionLocked
+                ? '修改字段约束与业务信息'
+                : field ? '修改模型字段' : '新增模型字段'}</span>
             <Typography.Text type="secondary">
-              {structuralLocked ? '物理结构保持不变，仅维护字段的业务语义' : '定义字段标识、数据类型、约束与业务元数据'}
+              {externalStructureLocked
+                ? '物理结构由外部数据库维护，仅维护字段的业务语义'
+                : spatialDefinitionLocked
+                  ? '字段定义保持不变，可调整约束与业务语义'
+                  : '定义字段标识、数据类型、约束与业务元数据'}
             </Typography.Text>
           </span>
         </div>
@@ -287,8 +305,12 @@ const FieldEditorDrawer = ({
       footer={(
         <div className="data-model-drawer-footer">
           <Badge
-            status={structuralLocked ? 'default' : 'processing'}
-            text={structuralLocked ? '仅业务信息可修改' : field ? '字段修改待应用' : '新字段待应用'}
+            status={definitionLocked ? 'default' : 'processing'}
+            text={externalStructureLocked
+              ? '仅业务信息可修改'
+              : spatialDefinitionLocked
+                ? '约束修改需生成计划'
+                : field ? '字段修改待应用' : '新字段待应用'}
           />
           <Space className="data-model-field-editor-actions">
             <Button onClick={onCancel}>取消</Button>
@@ -314,12 +336,14 @@ const FieldEditorDrawer = ({
             </span>
           </header>
           <div className="data-model-form-section-body">
-            {structuralLocked && (
+            {definitionLocked && (
               <InlineFeedback
                 className="data-model-field-editor-lock-feedback"
                 tone="info"
-                label="物理结构已锁定"
-                detail="可以调整字段名称、排序、关联码表和说明；字段编码、类型及约束保持不变。"
+                label={externalStructureLocked ? '物理结构已锁定' : '空间字段定义已锁定'}
+                detail={externalStructureLocked
+                  ? '可以调整字段名称、排序、关联码表和说明；字段编码、类型及约束保持不变。'
+                  : '可以调整可空性、非空间字段主键、字段名称、排序、关联码表和说明；字段编码、类型和空间参数保持不变。'}
               />
             )}
             <Row gutter={14}>
@@ -332,7 +356,7 @@ const FieldEditorDrawer = ({
                   { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' },
                 ]}
               >
-                <Input name="data-model-field-code" autoComplete="off" disabled={structuralLocked} placeholder="如：order_id" />
+                <Input name="data-model-field-code" autoComplete="off" disabled={definitionLocked} placeholder="如：order_id" />
               </Form.Item>
             </Col>
             <Col span={12}>
@@ -343,7 +367,7 @@ const FieldEditorDrawer = ({
             <Col span={12}>
               <Form.Item label="字段类型" name="fieldType" rules={[{ required: true }]}>
                 <Select
-                  disabled={structuralLocked || capabilitiesQuery.isFetching}
+                  disabled={definitionLocked || capabilitiesQuery.isFetching}
                   loading={capabilitiesQuery.isFetching}
                   options={editorTypeOptions}
                   onChange={changeType}
@@ -355,7 +379,7 @@ const FieldEditorDrawer = ({
                 <Form.Item label="长度（可选）" name="length" extra="留空表示无长度上限，由目标数据库映射为 text、CLOB 或 String">
                   <div className="data-model-field-length-control">
                     <InputNumber
-                      disabled={structuralLocked}
+                      disabled={definitionLocked}
                       min={1}
                       precision={0}
                     />
@@ -376,12 +400,12 @@ const FieldEditorDrawer = ({
               <>
                 <Col span={12}>
                   <Form.Item label="精度" name="precision" rules={[{ required: true, message: '请输入精度' }]}>
-                    <InputNumber disabled={structuralLocked} min={1} max={38} precision={0} className="data-model-number-input" />
+                    <InputNumber disabled={definitionLocked} min={1} max={38} precision={0} className="data-model-number-input" />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
                   <Form.Item label="小数位" name="scale" rules={[{ required: true, message: '请输入小数位' }]}>
-                    <InputNumber disabled={structuralLocked} min={0} max={38} precision={0} className="data-model-number-input" />
+                    <InputNumber disabled={definitionLocked} min={0} max={38} precision={0} className="data-model-number-input" />
                   </Form.Item>
                 </Col>
               </>
@@ -390,7 +414,7 @@ const FieldEditorDrawer = ({
               <>
                 <Col span={12}>
                   <Form.Item label="几何类型" name={['geometry', 'kind']} rules={[{ required: true, message: '请选择几何类型' }]}>
-                    <Select disabled={structuralLocked} options={geometryKindOptions} />
+                    <Select disabled={definitionLocked} options={geometryKindOptions} />
                   </Form.Item>
                 </Col>
                 <Col span={12}>
@@ -405,7 +429,7 @@ const FieldEditorDrawer = ({
                 </Col>
                 <Col span={12}>
                   <Form.Item label="EPSG Code" name={['geometry', 'crs', 'code']} rules={[{ required: true, message: '请输入 EPSG Code' }]}>
-                    <InputNumber disabled={structuralLocked} min={1} precision={0} className="data-model-number-input" />
+                    <InputNumber disabled={definitionLocked} min={1} precision={0} className="data-model-number-input" />
                   </Form.Item>
                 </Col>
               </>
@@ -426,13 +450,18 @@ const FieldEditorDrawer = ({
             <Row gutter={14}>
             <Col span={8}>
               <Form.Item label="允许为空" name="nullable" valuePropName="checked">
-                <Switch disabled={structuralLocked || selectedPrimaryKey} />
+                <Switch disabled={externalStructureLocked || selectedPrimaryKey} />
               </Form.Item>
             </Col>
             <Col span={8}>
-              <Form.Item label="主键" name="primaryKey" valuePropName="checked">
+              <Form.Item
+                label={clickHousePrimaryKeyMetadata ? '平台主键' : '主键'}
+                name="primaryKey"
+                valuePropName="checked"
+                extra={clickHousePrimaryKeyMetadata ? '仅作为平台元数据，不生成 ClickHouse 约束，也不保证物理唯一性。' : undefined}
+              >
                 <Switch
-                  disabled={structuralLocked || selectedType === 'GEOMETRY'}
+                  disabled={externalStructureLocked || selectedType === 'GEOMETRY'}
                   onChange={(checked) => checked && form.setFieldValue('nullable', false)}
                 />
               </Form.Item>
@@ -513,6 +542,8 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
   const updateMutation = useUpdateDataModelFields();
   const createPlanMutation = useCreatePhysicalTableChangePlan();
   const detailModel = detailQuery.data?.model ?? model;
+  const dataSourceQuery = useDataSource(detailModel.storageDataSourceId, true);
+  const clickHouseModel = dataSourceQuery.data?.type === 'CLICKHOUSE';
   const readOnly = detailModel.status === 'PUBLISHED' || !canUpdate;
   const externalModel = detailModel.physicalTableMode === 'EXTERNAL';
   const serverFields = useMemo(() => toEditableFields(detailQuery.data?.fields ?? []), [detailQuery.data?.fields]);
@@ -531,16 +562,27 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
   );
   const dirty = localFields !== null && currentFieldsFingerprint !== serverFieldsFingerprint;
   const hasUnsavedChanges = dirty || editorDirty;
-  const metadataOnlyChange = dirty && isMetadataOnlyFieldUpdate(serverFields, fields);
+  const metadataOnlyChange = dirty && isMetadataOnlyFieldUpdate(serverFields, fields, clickHouseModel);
+  const changedConstraints = useMemo(() => {
+    const currentById = new Map(serverFields.map((field) => [field.id, field]));
+    return fields.reduce((result, field) => {
+      const current = field.id ? currentById.get(field.id) : undefined;
+      return {
+        nullable: result.nullable || (current !== undefined && current.nullable !== field.nullable),
+        primaryKey: result.primaryKey || (current !== undefined && current.primaryKey !== field.primaryKey),
+      };
+    }, { nullable: false, primaryKey: false });
+  }, [fields, serverFields]);
   const physicalTableState = inspectionQuery.data?.state;
   const geometryModel = serverFields.some((field) => field.fieldType === 'GEOMETRY');
-  const geometryPhysicalLocked = geometryModel
+  const spatialDefinitionLocked = geometryModel
     && detailModel.physicalTableMode === 'MANAGED'
     && physicalTableState === 'MATCHED';
-  const requiresPhysicalChangePlan = !geometryModel
-    && shouldCreatePhysicalTableChangePlan(detailModel.physicalTableMode, physicalTableState);
+  const requiresPhysicalChangePlan = shouldCreatePhysicalTableChangePlan(
+    detailModel.physicalTableMode,
+    physicalTableState,
+  );
   const directSaveAllowed = serverFields.length === 0
-    || geometryPhysicalLocked
     || metadataOnlyChange
     || canSaveFieldsDirectly(detailModel.physicalTableMode, physicalTableState);
   const physicalChangeBlocked = serverFields.length > 0
@@ -703,6 +745,10 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
   };
 
   const createPlan = async () => {
+    if (clickHouseModel && changedConstraints.primaryKey && changedConstraints.nullable) {
+      messageApi.warning('ClickHouse 平台主键与可空性不能同时提交；请先撤销可空性修改并保存平台主键，再单独调整可空性。');
+      return;
+    }
     try {
       const change = await createPlanMutation.mutateAsync({
         id: model.id,
@@ -728,7 +774,17 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
         ? <Tag color="blue">时间主列</Tag>
         : value === 'TAG' ? <Tag color="purple">TAG</Tag> : '普通列',
     },
-    { title: '主键', dataIndex: 'primaryKey', width: 56, align: 'center', render: (value: boolean) => value ? <Tag color="blue">是</Tag> : '—' },
+    {
+      title: clickHouseModel ? '平台主键' : '主键',
+      dataIndex: 'primaryKey',
+      width: clickHouseModel ? 84 : 56,
+      align: 'center',
+      render: (value: boolean) => value
+        ? clickHouseModel
+          ? <Tooltip title="仅作为平台元数据，不生成 ClickHouse 约束"><Tag color="blue">平台</Tag></Tooltip>
+          : <Tag color="blue">是</Tag>
+        : '—',
+    },
     { title: '允许为空', dataIndex: 'nullable', width: 80, align: 'center', render: (value: boolean) => value ? '是' : '否' },
     { title: '排序', dataIndex: 'sortOrder', width: 56, align: 'center' },
     {
@@ -762,7 +818,7 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
               onClick={() => { setEditingField(field); setEditorOpen(true); }}
             />
           </Tooltip>
-          {!externalModel && !geometryPhysicalLocked && (
+          {!externalModel && !spatialDefinitionLocked && (
             <Popconfirm
               title="删除字段"
               description={`确认删除“${field.name}”吗？保存后生效。`}
@@ -802,12 +858,12 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
           title="外部表字段结构由数据库维护；此处仅可修改字段名称、说明、展示排序和关联码表。"
         />
       )}
-      {!readOnly && geometryPhysicalLocked && (
+      {!readOnly && spatialDefinitionLocked && (
         <Alert
           banner
           type="info"
           showIcon
-          title="包含空间字段的受管物理表已创建；第一版仅可修改字段名称、说明、展示排序和关联码表，不支持物理结构变更。"
+          title="包含空间字段的受管物理表已创建；可修改可空性和非空间字段主键约束，字段定义及字段增删仍保持锁定。"
         />
       )}
       {detailQuery.error && (
@@ -886,12 +942,12 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
                 生成变更计划
               </Button>
             )}
-            {!readOnly && !externalModel && !geometryPhysicalLocked && (
+            {!readOnly && !externalModel && !spatialDefinitionLocked && (
               <Button icon={<CopyOutlined />} onClick={() => setTemplatePickerOpen(true)}>
                 从模板添加
               </Button>
             )}
-            {!readOnly && !externalModel && !geometryPhysicalLocked && (
+            {!readOnly && !externalModel && !spatialDefinitionLocked && (
               <Button type={requiresPhysicalChangePlan ? 'default' : 'primary'} icon={<PlusOutlined />} onClick={() => { setEditingField(null); setEditorOpen(true); }}>
                 新增字段
               </Button>
@@ -916,7 +972,9 @@ export const DataModelFieldsPanel = forwardRef<DataModelFieldsPanelHandle, DataM
         open={editorOpen}
         field={editingField}
         nextSortOrder={nextSortOrder}
-        structuralLocked={externalModel || geometryPhysicalLocked}
+        externalStructureLocked={externalModel}
+        spatialDefinitionLocked={spatialDefinitionLocked}
+        clickHousePrimaryKeyMetadata={clickHouseModel}
         geometryTypeDisabled={Boolean(
           editingField && detailModel.clickHouseOrderByColumns.includes(editingField.code),
         )}

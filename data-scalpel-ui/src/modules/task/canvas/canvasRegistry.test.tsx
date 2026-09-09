@@ -257,20 +257,24 @@ describe('CanvasNodeView', () => {
       type: CanvasNodeType.Rename,
       name: '订单重命名',
       configuration: {
-        sourceTableName: 'orders',
-        outputTableName: 'source_orders',
-        columnMappings: [
-          { sourceColumnName: 'id', targetColumnName: 'order_id' },
-          { sourceColumnName: 'customer_id', targetColumnName: 'buyer_id' },
-        ],
+        ...canvasNodeRegistry.require(CanvasNodeType.Rename).createDefaultConfiguration(),
+        operations: [{
+          operationId: '11111111-1111-4111-8111-111111111111',
+          sourceTableName: 'orders',
+          output: { mode: 'REPLACE_SOURCE', outputTableName: 'source_orders' },
+          columnMappings: [
+            { sourceColumnName: 'id', targetColumnName: 'order_id' },
+            { sourceColumnName: 'customer_id', targetColumnName: 'buyer_id' },
+          ],
+        }],
       },
     });
 
     render(<CanvasNodeView node={node} />);
 
-    expect(screen.getByText('orders')).toBeInTheDocument();
-    expect(screen.getByText('source_orders')).toBeInTheDocument();
-    expect(screen.getByText('2 个字段')).toBeInTheDocument();
+    expect(screen.getAllByText('orders')).not.toHaveLength(0);
+    expect(screen.getAllByText('source_orders')).not.toHaveLength(0);
+    expect(screen.getAllByText('2 个字段')).not.toHaveLength(0);
   });
 
   it('renames from the title and restores the original name for empty input', () => {
@@ -303,7 +307,9 @@ describe('CanvasNodeView', () => {
   });
 
   it('declares a non-empty execution mode set for every registered node', () => {
-    expect(canvasNodeTemplates).toHaveLength(40);
+    expect(canvasNodeTemplates).toHaveLength(Object.values(CanvasNodeType).length);
+    expect(new Set(canvasNodeTemplates.map((template) => template.type)))
+      .toEqual(new Set(Object.values(CanvasNodeType)));
     expect(canvasNodeTemplates.every((template) => template.supportedModes.length > 0)).toBe(true);
     expect(canvasNodeTemplates.every((template) => template.description.length > 0)).toBe(true);
     expect(canvasNodeTemplates.every((template) => template.searchKeywords.length > 0)).toBe(true);
@@ -312,10 +318,14 @@ describe('CanvasNodeView', () => {
       .map((template) => template.type)))
       .toEqual(new Set([
         CanvasNodeType.JdbcInput,
+        CanvasNodeType.JdbcIncrementalInput,
+        CanvasNodeType.TdEngineTmqInput,
         CanvasNodeType.JdbcQueryInput,
         CanvasNodeType.KafkaInput,
         CanvasNodeType.StreamJoin,
         CanvasNodeType.GeometryConstruct,
+        CanvasNodeType.GeometryDerive,
+        CanvasNodeType.GeometrySimplify,
         CanvasNodeType.GeometryValidate,
         CanvasNodeType.GeometryRepair,
         CanvasNodeType.GeometryBuffer,
@@ -405,7 +415,10 @@ describe('CanvasNodeView', () => {
     render(<CanvasNodeView node={node} />);
 
     expect(screen.getByText('请选择物理表')).toHaveClass('canvas-node-issue');
-    expect(resize).toHaveBeenCalledWith(320, 132, { canvasPresentationUpdate: true });
+    const spec = canvasNodeRegistry.require(CanvasNodeType.JdbcInput);
+    const baseSize = spec.canvasView.resolveSize({ dataSourceId: '', tables: [] });
+    expect(resize).toHaveBeenCalledWith(baseSize.width, baseSize.height + 28, { canvasPresentationUpdate: true });
+    expect(spec.canvasView.resolveSize({ dataSourceId: '', tables: [] })).toEqual(baseSize);
   });
 
   it('renders representative configured processors without exposing literal values', () => {
@@ -430,20 +443,24 @@ describe('CanvasNodeView', () => {
         type: CanvasNodeType.Filter,
         name: '有效订单筛选',
         configuration: {
-          sourceTableName: 'orders',
-          outputTableName: 'valid_orders',
-          mode: 'STRUCTURED',
-          condition: {
-            kind: 'GROUP',
-            operator: 'AND',
-            children: [{
-              kind: 'PREDICATE',
-              columnName: 'status',
-              operator: 'EQUALS',
-              values: [{ dataType: 'STRING', value: 'SECRET_LITERAL' }],
-            }],
-          },
-          sqlExpression: '',
+          ...canvasNodeRegistry.require(CanvasNodeType.Filter).createDefaultConfiguration(),
+          operations: [{
+            operationId: '11111111-1111-4111-8111-111111111111',
+            sourceTableName: 'orders',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'valid_orders' },
+            mode: 'STRUCTURED',
+            condition: {
+              kind: 'GROUP',
+              operator: 'AND',
+              children: [{
+                kind: 'PREDICATE',
+                columnName: 'status',
+                operator: 'EQUALS',
+                values: [{ dataType: 'STRING', value: 'SECRET_LITERAL' }],
+              }],
+            },
+            sqlExpression: '',
+          }],
         },
       },
       {
@@ -490,7 +507,7 @@ describe('CanvasNodeView', () => {
     ];
     const expectedTexts = [
       ['INNER JOIN', 'customer_id', 'id'],
-      ['FILTER', '1 个值', 'AND'],
+      ['FILTER', 'valid_orders', '生成新表', '1 个条件', '1 条筛选'],
       ['SUM(amount)', 'total_amount'],
       ['ROW_NUMBER', 'customer_id'],
       ['SPATIAL JOIN', 'WITHIN', 'district_geom'],
@@ -595,7 +612,7 @@ describe('CanvasNodeView', () => {
     const expectedTexts = [
       ['UPSERT', 'dwd_orders', '1 个写入'],
       ['SNAPSHOT SYNC', 'DELETE', '100 行 · 0.2 比例'],
-      ['order-events', 'KEY id', '1 个子查询'],
+      ['order-events', '旧版 JSON · KEY id', '1 个子查询'],
       ['GEOPARQUET · FAIL_IF_EXISTS', 'exports/districts', '1 个写入'],
     ];
 
@@ -678,32 +695,38 @@ describe('CanvasNodeView', () => {
   });
 
   it('registers every stable node exactly once with coherent extension metadata', () => {
-    const specs = canvasNodeRegistry.all();
-    expect(specs).toHaveLength(Object.values(CanvasNodeType).length);
-    expect(new Set(specs.map((spec) => spec.type)).size).toBe(specs.length);
-    specs.forEach((spec) => {
-      expect(canvasNodeGroup(spec.group).category).toBe(spec.category);
-      expect(spec.introducedInMinor).toBeGreaterThanOrEqual(0);
-      expect(spec.introducedInMinor).toBeLessThanOrEqual(CANVAS_SCHEMA_MINOR_VERSION);
-      expect(spec.supportedModes.length).toBeGreaterThan(0);
-      const size = canvasNodeRegistry.resolveSize(canvasNodeRegistry.createRuntimeData(spec.type));
-      expect(size.width).toBeGreaterThanOrEqual(180);
-      expect(size.height).toBeGreaterThanOrEqual(96);
-      expect(spec.canvasView.Body).toBeTypeOf('function');
-      expect(spec.createDefaultConfiguration()).toEqual(
-        canvasNodeRegistry.createDefaultConfiguration(spec.type),
-      );
-    });
-    expect(new Set(canvasNodeTemplates.map((template) => template.shape)))
-      .toEqual(new Set([CANVAS_RUNTIME_NODE_SHAPE]));
-    const processorSpecs = specs.filter((spec) => spec.category === CanvasNodeCategory.Processor);
-    processorSpecs.forEach((spec) => {
-      expect(spec.graph).toMatchObject({
-        minInputs: 1,
-        maxInputs: null,
-        minOutputs: 0,
-        maxOutputs: null,
+    const randomUuid = vi.spyOn(globalThis.crypto, 'randomUUID')
+      .mockReturnValue('00000000-0000-4000-8000-000000000000');
+    try {
+      const specs = canvasNodeRegistry.all();
+      expect(specs).toHaveLength(Object.values(CanvasNodeType).length);
+      expect(new Set(specs.map((spec) => spec.type)).size).toBe(specs.length);
+      specs.forEach((spec) => {
+        expect(canvasNodeGroup(spec.group).category).toBe(spec.category);
+        expect(spec.introducedInMinor).toBeGreaterThanOrEqual(0);
+        expect(spec.introducedInMinor).toBeLessThanOrEqual(CANVAS_SCHEMA_MINOR_VERSION);
+        expect(spec.supportedModes.length).toBeGreaterThan(0);
+        const size = canvasNodeRegistry.resolveSize(canvasNodeRegistry.createRuntimeData(spec.type));
+        expect(size.width).toBeGreaterThanOrEqual(180);
+        expect(size.height).toBeGreaterThanOrEqual(96);
+        expect(spec.canvasView.Body).toBeTypeOf('function');
+        expect(spec.createDefaultConfiguration()).toEqual(
+          canvasNodeRegistry.createDefaultConfiguration(spec.type),
+        );
       });
-    });
+      expect(new Set(canvasNodeTemplates.map((template) => template.shape)))
+        .toEqual(new Set([CANVAS_RUNTIME_NODE_SHAPE]));
+      const processorSpecs = specs.filter((spec) => spec.category === CanvasNodeCategory.Processor);
+      processorSpecs.forEach((spec) => {
+        expect(spec.graph).toMatchObject({
+          minInputs: 1,
+          maxInputs: null,
+          minOutputs: 0,
+          maxOutputs: null,
+        });
+      });
+    } finally {
+      randomUuid.mockRestore();
+    }
   });
 });

@@ -174,7 +174,7 @@ class DataModelIntegrationTests {
                 .andReturn().getResponse().getContentAsString();
         String orderIdFieldId = JsonPath.read(fieldsResponse, "$.fields[0].id");
 
-        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+        String clickHouseFields = mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {
@@ -737,16 +737,16 @@ class DataModelIntegrationTests {
                                     "id":"%s", "code":"shape", "name":"定位点", "fieldType":"GEOMETRY",
                                     "geometry":{
                                       "kind":"POINT",
-                                      "crs":{"authority":"EPSG","code":3857},
+                                      "crs":{"authority":"EPSG","code":4326},
                                       "dimension":"XY"
                                     },
-                                    "nullable":true, "primaryKey":false, "sortOrder":10
+                                    "nullable":false, "primaryKey":false, "sortOrder":10
                                   }
                                 ]}
                                 """.formatted(idFieldId, geometryFieldId)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
-                        org.hamcrest.Matchers.containsString("只能修改字段名称、说明和展示顺序")
+                        org.hamcrest.Matchers.containsString("请先生成并执行物理表变更计划")
                 ));
 
         mockMvc.perform(post("/api/v1/models/{id}/physical-table-change-plans", modelId)
@@ -764,13 +764,35 @@ class DataModelIntegrationTests {
                                       "crs":{"authority":"EPSG","code":4326},
                                       "dimension":"XY"
                                     },
+                                    "nullable":false, "primaryKey":false, "sortOrder":10
+                                  }
+                                ]}
+                                """.formatted(idFieldId, geometryFieldId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("PLANNED"));
+
+        mockMvc.perform(post("/api/v1/models/{id}/physical-table-change-plans", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [
+                                  {
+                                    "id":"%s", "code":"asset_id", "name":"资产编号", "fieldType":"LONG",
+                                    "nullable":false, "primaryKey":true, "sortOrder":20
+                                  },
+                                  {
+                                    "id":"%s", "code":"shape", "name":"定位点", "fieldType":"GEOMETRY",
+                                    "geometry":{
+                                      "kind":"POINT",
+                                      "crs":{"authority":"EPSG","code":3857},
+                                      "dimension":"XY"
+                                    },
                                     "nullable":true, "primaryKey":false, "sortOrder":10
                                   }
                                 ]}
                                 """.formatted(idFieldId, geometryFieldId)))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value(
-                        org.hamcrest.Matchers.containsString("不支持物理结构变更")
+                        org.hamcrest.Matchers.containsString("仅支持修改可空性和非空间字段主键约束")
                 ));
     }
 
@@ -1135,11 +1157,36 @@ class DataModelIntegrationTests {
                                   }
                                 ]}
                                 """))
-                .andExpect(status().isOk());
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        String eventIdFieldId = JsonPath.read(clickHouseFields, "$.fields[0].id");
+        String eventTimeFieldId = JsonPath.read(clickHouseFields, "$.fields[1].id");
+        String payloadFieldId = JsonPath.read(clickHouseFields, "$.fields[2].id");
 
         mockMvc.perform(post("/api/v1/models/{id}/actions/create-physical-table", modelId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("MATCHED"));
+
+        mockMvc.perform(post("/api/v1/models/{id}/actions/update-fields", modelId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"fields": [
+                                  {
+                                    "id": "%s", "code": "event_id", "name": "事件ID", "fieldType": "LONG",
+                                    "nullable": false, "primaryKey": false, "sortOrder": 10
+                                  },
+                                  {
+                                    "id": "%s", "code": "event_time", "name": "事件时间", "fieldType": "TIMESTAMP",
+                                    "nullable": false, "primaryKey": false, "sortOrder": 20
+                                  },
+                                  {
+                                    "id": "%s", "code": "payload", "name": "载荷", "fieldType": "STRING",
+                                    "nullable": true, "primaryKey": false, "sortOrder": 30
+                                  }
+                                ]}
+                                """.formatted(eventIdFieldId, eventTimeFieldId, payloadFieldId)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.fields[0].primaryKey").value(false));
 
         mockMvc.perform(post("/api/v1/models/{id}/actions/update", modelId)
                         .contentType(MediaType.APPLICATION_JSON)

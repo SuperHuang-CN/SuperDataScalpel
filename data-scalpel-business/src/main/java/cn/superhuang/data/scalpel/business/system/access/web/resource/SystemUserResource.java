@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.system.access.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.system.access.service.SystemAccessService;
 import cn.superhuang.data.scalpel.business.system.access.web.request.CreateSystemUserRequest;
 import cn.superhuang.data.scalpel.business.system.access.web.request.ResetSystemUserPasswordRequest;
@@ -36,6 +37,7 @@ public class SystemUserResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统用户")
     @GetMapping
     @PreAuthorize("hasAuthority('system.user.view')")
     @Operation(summary = "查询系统用户")
@@ -43,6 +45,7 @@ public class SystemUserResource {
         return service.searchUsers(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统用户详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('system.user.view')")
     @Operation(summary = "查询系统用户详情")
@@ -50,6 +53,7 @@ public class SystemUserResource {
         return service.getUser(id);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "新增系统用户")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('system.user.manage')")
@@ -58,6 +62,7 @@ public class SystemUserResource {
         return service.createUser(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改系统用户")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('system.user.manage')")
     @Operation(summary = "修改系统用户")
@@ -69,6 +74,7 @@ public class SystemUserResource {
         return service.updateUser(id, request, currentUser.getName());
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "重置系统用户密码")
     @PostMapping("/{id}/actions/reset-password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('system.user.manage')")
@@ -77,6 +83,7 @@ public class SystemUserResource {
         service.resetUserPassword(id, request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除系统用户")
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('system.user.manage')")

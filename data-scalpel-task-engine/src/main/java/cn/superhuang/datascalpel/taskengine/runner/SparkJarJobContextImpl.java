@@ -48,15 +48,14 @@ final class SparkJarJobContextImpl implements SparkJobContext {
     private final JdbcResources jdbcResources = new Jdbc();
     private final UserJobObservabilityRuntime observability;
     private final SparkJarLineageRuntime lineage;
-    private final List<SparkJarTrialPreview.WritePreview> trialWrites = new ArrayList<>();
-    private final LinkedHashSet<String> trialWarnings = new LinkedHashSet<>();
-    private int trialPreviewCharacters;
+    private final SparkJarTrialPreviewCollector trialPreviewCollector;
 
     SparkJarJobContextImpl(
             SparkSession spark,
             TaskExecutionManifest manifest,
             ObjectMapper objectMapper,
-            Consumer<UserJobObservabilitySnapshot> observabilityPublisher
+            Consumer<UserJobObservabilitySnapshot> observabilityPublisher,
+            Consumer<SparkJarTrialPreview> trialPreviewPublisher
     ) {
         this.spark = Objects.requireNonNull(spark);
         SparkJarExecutionPayload payload = manifest.sparkJarJob();
@@ -90,6 +89,8 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         this.observability = new UserJobObservabilityRuntime(
                 spark, identity, objectMapper, observabilityPublisher);
         this.lineage = new SparkJarLineageRuntime(!streaming);
+        this.trialPreviewCollector = new SparkJarTrialPreviewCollector(
+                trial, streaming, trialPreviewPublisher, objectMapper);
     }
 
     @Override public SparkSession spark() { return spark; }
@@ -101,7 +102,7 @@ final class SparkJarJobContextImpl implements SparkJobContext {
     UserJobObservabilityRuntime observabilityRuntime() { return observability; }
     Long affectedRows() { return trial ? null : affectedRows.value(); }
     SparkJarTrialPreview trialPreview() {
-        return trial ? new SparkJarTrialPreview(trialWrites, new ArrayList<>(trialWarnings)) : null;
+        return trialPreviewCollector.snapshot();
     }
     boolean trial() { return trial; }
     void previewKafka(String bindingName, String topicName, Dataset<Row> dataset) {
@@ -261,7 +262,7 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         @Override public JdbcWriteOperation map(String target, String source) { putMapping(mappings, target, source); return this; }
         @Override public WriteResult execute() {
             return observedWrite("jdbc", bindingName, mode.name(),
-                    table == null ? "unconfigured" : table.toString(), () -> {
+                    table == null ? "unconfigured" : jdbcIdentifier(table), () -> {
                 if (table == null) {
                     throw new RunnerExecutionException(
                             "SDK_JDBC_TARGET_REQUIRED", "JDBC 目标表不能为空", null);
@@ -280,7 +281,7 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                 SparkJarLineageRuntime.PreparedFlow flow = lineage.analyzeJdbcWrite(
                         bindingName, runtime.dataSourceId(), resolved, mode.name(), projected);
                 WriteResult result = trial
-                        ? preview(SparkJarTrialPreview.ResourceKind.JDBC, bindingName, resolved.table(),
+                        ? preview(SparkJarTrialPreview.ResourceKind.JDBC, bindingName, jdbcIdentifier(resolved),
                                 mode.name(), runtime, projected)
                         : write(runtime,
                                 new TableIdentifier(resolved.catalog(), resolved.schema(), resolved.table()),
@@ -289,6 +290,12 @@ final class SparkJarJobContextImpl implements SparkJobContext {
                 return result;
             });
         }
+    }
+
+    private static String jdbcIdentifier(JdbcTableIdentifier identifier) {
+        return java.util.stream.Stream.of(identifier.catalog(), identifier.schema(), identifier.table())
+                .filter(Objects::nonNull)
+                .collect(java.util.stream.Collectors.joining("."));
     }
 
     private WriteResult observedWrite(
@@ -361,35 +368,14 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         return WriteResult.unknown();
     }
 
-    private synchronized void capturePreview(
+    private void capturePreview(
             SparkJarTrialPreview.ResourceKind kind,
             String bindingName,
             String target,
             String mode,
             Dataset<Row> dataset
     ) {
-        List<String> captured = dataset.limit(SparkJarTrialPreview.MAX_ROWS_PER_WRITE + 1)
-                .toJSON().collectAsList();
-        boolean truncated = captured.size() > SparkJarTrialPreview.MAX_ROWS_PER_WRITE;
-        if (trialWrites.size() >= SparkJarTrialPreview.MAX_WRITES) {
-            trialWarnings.add("输出写入超过 20 次，仅保留前 20 次预览");
-            return;
-        }
-        List<String> rows = new ArrayList<>();
-        for (String row : captured.subList(0, Math.min(captured.size(), SparkJarTrialPreview.MAX_ROWS_PER_WRITE))) {
-            if (trialPreviewCharacters + row.length() > 4 * 1024 * 1024) {
-                truncated = true;
-                trialWarnings.add("试运行预览接近结果大小上限，部分数据行未返回");
-                break;
-            }
-            rows.add(row);
-            trialPreviewCharacters += row.length();
-        }
-        String schemaJson = dataset.schema().json();
-        trialPreviewCharacters += schemaJson.length();
-        trialWrites.add(new SparkJarTrialPreview.WritePreview(
-                trialWrites.size() + 1, kind, bindingName, target, mode,
-                schemaJson, rows, truncated));
+        trialPreviewCollector.capture(kind, bindingName, target, mode, dataset);
     }
 
     private static void requireJdbcWriteSupported(

@@ -1,8 +1,10 @@
+import { taskPageHref } from '../model/taskViews';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CodeOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Empty, Space, Spin, Table, Tag, Tooltip, Typography } from 'antd';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { lazy, Suspense, useState } from 'react';
+const WorkflowTaskDefinitionPanel = lazy(() => import('../workflow/WorkflowTaskDefinitionPanel'));
+import { useLocation, useNavigate } from 'react-router-dom';
 import { MonacoSqlEditor } from '../../../shared/components/MonacoSqlEditor';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
@@ -26,7 +28,9 @@ export const TaskDefinitionOverview = ({
   canUpdate,
   streamingActive,
 }: TaskDefinitionOverviewProps) => (
-  task.type === 'LOCAL_SQL'
+  task.type === 'WORKFLOW'
+    ? <Suspense fallback={<Spin />}><WorkflowTaskDefinitionPanel task={task} canUpdate={canUpdate} /></Suspense>
+    : task.type === 'LOCAL_SQL'
     ? <LocalSqlDefinitionOverview task={task} canUpdate={canUpdate} />
     : task.type === 'SPARK_JAR' || task.type === 'SPARK_STREAMING_JAR'
       ? <SparkJarDefinitionOverview task={task} canUpdate={canUpdate} streamingActive={streamingActive} />
@@ -149,6 +153,7 @@ const DefinitionEditAction = ({
   onEdit?: () => void;
 }) => {
   const navigate = useNavigate();
+  const location = useLocation();
   if (!canUpdate) return null;
   if (task.status === 'PUBLISHED') {
     const reason = (task.type === 'SPARK_STREAMING_CANVAS' || task.type === 'SPARK_STREAMING_JAR') && streamingActive
@@ -168,7 +173,7 @@ const DefinitionEditAction = ({
     <Button
       type="primary"
       icon={configured && !incompatible ? <EditOutlined /> : <SettingOutlined />}
-      onClick={() => onEdit ? onEdit() : navigate(`/task/${task.id}/definition`)}
+      onClick={() => onEdit ? onEdit() : navigate(taskPageHref(`/task/${task.id}/definition`, location.search, task.type))}
     >
       {incompatible ? '重新配置' : configured ? '编辑任务定义' : '配置任务定义'}
     </Button>

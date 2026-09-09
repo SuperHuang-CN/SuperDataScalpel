@@ -1,0 +1,26 @@
+.panorama-page .management-filter-form { min-width: 0; }
+.panorama-page .management-search-input { width: 280px; }
+.panorama-time-filters { display: flex; align-items: center; gap: 8px; }
+.panorama-time-filters input { width: 190px; }
+.panorama-name-cell { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.panorama-name-cell .ant-btn { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; display: block; }
+.panorama-thumbnail { width: 64px; height: 32px; object-fit: cover; border-radius: 5px; flex-shrink: 0; }
+.panorama-no-preview { color: #7b8092; font-size: 12px; min-width: 48px; }
+.panorama-drawer-footer { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+.panorama-candidate { padding: 8px 16px; }
+.panorama-info { overflow: auto; padding: 16px; height: 100%; }
+.panorama-hash { overflow-wrap: anywhere; }
+.panorama-detail-tabs { flex: 1; min-height: 0; }
+.panorama-detail-tabs > .ant-tabs-content-holder, .panorama-detail-tabs > .ant-tabs-content-holder > .ant-tabs-content, .panorama-detail-tabs .ant-tabs-tabpane-active { height: 100%; min-height: 0; }
+.panorama-viewer-shell { position: relative; height: 100%; min-height: 320px; overflow: hidden; background: #151a29; border-radius: 12px; }
+.panorama-viewer { height: 100%; min-height: 320px; }
+.panorama-viewer-loading { position: absolute; inset: 0; display: grid; place-items: center; pointer-events: none; }
+.panorama-viewer-feedback { position: absolute; left: 16px; bottom: 16px; padding: 10px; background: white; border-radius: 8px; display: flex; gap: 8px; }
+.panorama-viewer-reset { position: absolute; right: 16px; top: 16px; z-index: 3; }
+.panorama-map-panel { flex: 1; min-height: 280px; position: relative; display: flex; flex-direction: column; }
+.panorama-map-summary { padding: 6px 14px; }
+.panorama-map { flex: 1; min-height: 240px; }
+.panorama-map-attribution { position: absolute; right: 4px; bottom: 4px; background: #ffffffdc; max-width: 70%; padding: 2px 8px; font-size: 11px; }
+.panorama-map .maplibregl-popup-content button { display: block; margin-top: 8px; border: 0; background: #edf0ff; color: #465bcc; padding: 4px 8px; border-radius: 5px; cursor: pointer; }
+
+.panorama-viewer .pnlm-orientation-button { display: none; }

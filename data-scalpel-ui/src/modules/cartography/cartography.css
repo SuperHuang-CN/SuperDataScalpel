@@ -1,0 +1,44 @@
+.cartography-workbench { display:flex; flex-direction:column; height:100%; min-height:0; padding:14px; gap:10px; }
+.cartography-heading,.cartography-meta,.cartography-compact-row,.cartography-actions { display:flex; align-items:center; justify-content:space-between; gap:8px; }
+.cartography-heading > div { display:flex; flex-direction:column; }
+.cartography-meta { color:#7a849f; font-size:12px; }
+.cartography-scroll { flex:1; min-height:0; overflow:auto; padding-right:2px; }
+.cartography-renderer-editor,.cartography-label-editor,.cartography-symbol-editor,.cartography-style-grid { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.cartography-renderer-editor > .cartography-field-wide,.cartography-renderer-editor > .cartography-compact-row,.cartography-renderer-editor > .cartography-rule-list,.cartography-renderer-editor > .cartography-toggle-list,.cartography-renderer-editor > .cartography-breaks,.cartography-renderer-editor > .cartography-range-row,.cartography-renderer-editor > .ant-typography,.cartography-label-editor > .cartography-toggle,.cartography-label-editor > .cartography-style-grid { grid-column:1/-1; }
+.cartography-field { display:flex; flex-direction:column; gap:5px; min-width:0; color:#63708d; font-size:12px; }
+.cartography-field > .ant-select,.cartography-field > .ant-input-number { width:100%; }
+.cartography-field-wide { grid-column:1/-1; }
+.cartography-scale-editor,.cartography-scale-section { display:flex; flex-direction:column; gap:10px; }
+.cartography-scale-section { padding:10px 0; border-bottom:1px solid rgb(77 96 166 / 12%); }
+.cartography-scale-row { display:flex; align-items:flex-end; gap:6px; }
+.cartography-scale-row > .cartography-field { flex:1; min-width:0; }
+.cartography-scale-row > .ant-select { width:95px; flex:none; }
+.cartography-slider { display:grid; grid-template-columns:minmax(0,1fr) 38px; align-items:center; gap:8px; }
+.cartography-slider .ant-slider { margin:5px 3px; }
+.cartography-compact-row { grid-column:1/-1; align-items:flex-end; }
+.cartography-compact-row > .ant-select:first-child { flex:1; min-width:130px; }
+.cartography-rule-list { display:flex; flex-direction:column; gap:6px; max-height:270px; overflow:auto; }
+.cartography-rule-row { display:grid; grid-template-columns:30px minmax(0,1fr); align-items:center; gap:8px; padding:6px; background:#fff; border:1px solid rgb(77 96 166 / 12%); border-radius:8px; }
+.cartography-rule-copy { display:grid; grid-template-columns:minmax(70px,.7fr) minmax(90px,1fr); align-items:center; gap:6px; min-width:0; }
+.cartography-swatch-button { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0; background:#f6f7fb; border:1px solid #e4e8f2; border-radius:7px; cursor:pointer; }
+.cartography-swatch { display:inline-block; flex:none; width:18px; height:18px; box-sizing:border-box; background:color-mix(in srgb,var(--fill,transparent) calc(var(--fill-opacity,1) * 100%),transparent); border:var(--stroke-width,2px) var(--stroke-style,solid) color-mix(in srgb,var(--stroke,#4F6BFF) calc(var(--stroke-opacity,1) * 100%),transparent); }
+.cartography-swatch-point { border-radius:50%; }
+.cartography-shape-square { border-radius:2px; }
+.cartography-shape-triangle { border:0; border-radius:0; clip-path:polygon(50% 0,100% 100%,0 100%); box-shadow:inset 0 0 0 var(--stroke-width,1px) var(--stroke); }
+.cartography-shape-star { border:0; border-radius:0; clip-path:polygon(50% 0,61% 35%,98% 35%,68% 57%,79% 94%,50% 72%,21% 94%,32% 57%,2% 35%,39% 35%); box-shadow:inset 0 0 0 var(--stroke-width,1px) var(--stroke); }
+.cartography-swatch-line { width:24px; height:0; background:transparent; border:0; border-top:var(--stroke-width,2px) var(--stroke-style,solid) color-mix(in srgb,var(--stroke,#4F6BFF) calc(var(--stroke-opacity,1) * 100%),transparent); }
+.cartography-legend-symbol { display:inline-flex; align-items:center; justify-content:center; width:30px; height:26px; flex:none; }
+.cartography-toggle-list { display:flex; gap:14px; flex-wrap:wrap; color:#596681; font-size:12px; }
+.cartography-breaks { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:6px; }
+.cartography-breaks label { display:flex; align-items:center; gap:6px; color:#63708d; font-size:12px; }
+.cartography-breaks .ant-input { min-width:0; }
+.cartography-range-row { display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:8px; padding:9px; border-radius:8px; background:#f7f8fc; }
+.cartography-inline-state { grid-column:1/-1; color:#63708d; font-size:12px; }
+.cartography-legend { display:flex; flex-direction:column; gap:6px; max-height:180px; overflow:auto; }
+.cartography-legend > div { display:flex; align-items:center; gap:8px; color:#4d5875; font-size:12px; }
+.cartography-upload { display:flex; flex-direction:column; gap:10px; }
+.cartography-sld-source { margin-top:12px; min-width:0; }
+.cartography-sld-content { display:flex; flex-direction:column; gap:10px; min-width:0; }
+.cartography-sld-toolbar { display:flex; align-items:center; justify-content:space-between; flex-wrap:wrap; gap:8px; }
+.cartography-actions { flex:none; padding-top:10px; border-top:1px solid rgb(77 96 166 / 12%); }
+@media (max-width: 520px) { .cartography-renderer-editor,.cartography-label-editor,.cartography-symbol-editor,.cartography-style-grid { grid-template-columns:1fr; } .cartography-compact-row { align-items:stretch; flex-direction:column; } }

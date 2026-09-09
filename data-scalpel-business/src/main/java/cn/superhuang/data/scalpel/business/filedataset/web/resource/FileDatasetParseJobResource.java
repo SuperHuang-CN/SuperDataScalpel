@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.filedataset.web.resource;
 
+import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.filedataset.service.queue.FileDatasetParseJobMonitoringService;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetParseJobResponse;
 import cn.superhuang.data.scalpel.business.filedataset.web.response.FileDatasetParseQueueSummaryResponse;
@@ -25,6 +26,7 @@ public class FileDatasetParseJobResource {
         this.service = service;
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "分页查询文件数据集解析任务（只读）")
     @GetMapping
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "分页查询文件数据集解析任务（只读）")
@@ -34,6 +36,7 @@ public class FileDatasetParseJobResource {
         return service.search(request);
     }
 
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询文件数据集解析队列摘要（只读）")
     @GetMapping("/summary")
     @PreAuthorize("hasAuthority('filedataset.view')")
     @Operation(summary = "查询文件数据集解析队列摘要（只读）")

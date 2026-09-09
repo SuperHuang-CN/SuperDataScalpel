@@ -10,6 +10,8 @@ import {
   executeScriptDraft,
   fetchDataServices,
   fetchDataService,
+  fetchDataServiceSpatialPreview,
+  fetchDataServiceSpatialStyle,
   fetchDataServiceFieldLineage,
   fetchDataServiceTableLineage,
   queryDataServiceFieldLineage,
@@ -22,6 +24,10 @@ import {
   unpublishDataService,
   updateDataService,
   updateDataServiceDefinition,
+  updateDataServiceSpatialStyle,
+  uploadDataServiceSpatialSld,
+  applyDataServiceSpatialStyle,
+  queryDataServiceSpatialStyleFieldProfile,
   type ExecuteScriptDraftRequest,
 } from '../api/dataServiceApi';
 import type {
@@ -31,6 +37,7 @@ import type {
   UpdateDataServiceDefinitionRequest,
   UpdateDataServiceRequest,
 } from '../model/dataService';
+import type { FieldProfileRequest, SpatialStyleDocument, SpatialStyleMode } from '../../cartography';
 import type { LineageGranularity } from '../../model';
 import { invalidateDataModelLineage } from '../../model';
 
@@ -54,6 +61,64 @@ export const useDataService = (id: string | undefined, enabled = true) => useQue
   queryFn: () => fetchDataService(id as string),
   enabled: enabled && Boolean(id),
 });
+
+export const useDataServiceSpatialPreview = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [dataServicesQueryKey, id, 'spatial-preview'],
+  queryFn: () => fetchDataServiceSpatialPreview(id as string),
+  enabled: enabled && Boolean(id),
+});
+
+export const useDataServiceSpatialStyle = (id: string | undefined, enabled = true) => useQuery({
+  queryKey: [dataServicesQueryKey, id, 'spatial-style'],
+  queryFn: () => fetchDataServiceSpatialStyle(id as string),
+  enabled: enabled && Boolean(id),
+});
+
+export const useUpdateDataServiceSpatialStyle = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, styleDocument, mode = 'CARTOGRAPHY' }: {
+      id: string;
+      styleDocument: SpatialStyleDocument | null;
+      mode?: SpatialStyleMode;
+    }) => (
+      updateDataServiceSpatialStyle(id, styleDocument, mode)
+    ),
+    onSuccess: (style, { id }) => {
+      queryClient.setQueryData([dataServicesQueryKey, id, 'spatial-style'], style);
+    },
+  });
+};
+
+export const useProfileDataServiceSpatialStyleField = () => useMutation({
+  mutationFn: ({ id, request }: { id: string; request: FieldProfileRequest }) => (
+    queryDataServiceSpatialStyleFieldProfile(id, request)
+  ),
+});
+
+export const useUploadDataServiceSpatialSld = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, file }: { id: string; file: File }) => uploadDataServiceSpatialSld(id, file),
+    onSuccess: (style, { id }) => {
+      queryClient.setQueryData([dataServicesQueryKey, id, 'spatial-style'], style);
+    },
+  });
+};
+
+export const useApplyDataServiceSpatialStyle = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: applyDataServiceSpatialStyle,
+    onSuccess: async (style, id) => {
+      queryClient.setQueryData([dataServicesQueryKey, id, 'spatial-style'], style);
+      await queryClient.invalidateQueries({ queryKey: [dataServicesQueryKey, id, 'spatial-preview'] });
+    },
+    onSettled: async (_style, _error, id) => {
+      await queryClient.invalidateQueries({ queryKey: [dataServicesQueryKey, id, 'spatial-style'] });
+    },
+  });
+};
 
 export const useDataServiceLineage = (
   serviceId: string,

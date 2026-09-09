@@ -127,10 +127,10 @@ public final class StandardTableQueryCompiler {
         if (input == null) {
             throw invalid("过滤条件不能为空");
         }
-        if (depth > limits.maximumFilterDepth()) {
-            throw invalid("filter 嵌套深度不能超过 " + limits.maximumFilterDepth());
-        }
         if (input instanceof StandardQueryFilterGroupInput group) {
+            if (depth > limits.maximumFilterDepth()) {
+                throw invalid("filter 条件组嵌套深度不能超过 " + limits.maximumFilterDepth());
+            }
             if (group.conjunction() == null || group.conditions().isEmpty()) {
                 throw invalid("过滤条件组必须指定 AND 或 OR，并且至少包含一个条件");
             }
