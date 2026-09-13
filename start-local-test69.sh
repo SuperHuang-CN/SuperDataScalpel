@@ -214,6 +214,10 @@ if [[ ! -f "$TASK_RUNNER_JAR" ]] || [[ -n "$(find \
   data-scalpel-shapefile/src/main data-scalpel-shapefile/pom.xml \
   data-scalpel-shapefile-s3/src/main data-scalpel-shapefile-s3/pom.xml \
   -type f -newer "$TASK_RUNNER_JAR" -print -quit)" ]]; then
+  echo "正在准备文件解析模块的 Maven test-jar 依赖（只编译，不运行测试）…"
+  ./mvnw -q -T "$MAVEN_THREADS" \
+    -pl data-scalpel-filegdb,data-scalpel-shapefile \
+    install -DskipTests
   echo "正在构建 test69 Task Runner Uber JAR…"
   ./mvnw -q -T "$MAVEN_THREADS" -pl data-scalpel-task-engine -am \
     package -Dmaven.test.skip=true
