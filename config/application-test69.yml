@@ -1,0 +1,18 @@
+spring:
+  config:
+    activate:
+      on-profile: test69
+
+data-scalpel:
+  dsh:
+    enabled: false
+  gateway-access:
+    enabled: false
+  service-gateway:
+    provider: kong
+    kong:
+      admin-url: ${DATASCALPEL_KONG_ADMIN_URL}
+      proxy-url: ${DATASCALPEL_KONG_PROXY_URL}
+  execution:
+    kafka:
+      enabled: true

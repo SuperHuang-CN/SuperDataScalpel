@@ -61,18 +61,28 @@ if [[ ! "$MAVEN_THREADS" =~ ^([1-9][0-9]*|([1-9][0-9]*([.][0-9]+)?|0[.][0-9]*[1-
   exit 1
 fi
 
-LOCAL_CONFIG="$ROOT_DIR/config/application-local.yml"
-SPRING_LOCAL_ARGUMENTS=(
-  "--spring.profiles.active=local"
-  "--spring.config.additional-location=optional:file:$LOCAL_CONFIG"
+ENVIRONMENT_NAME="${DATASCALPEL_START_ENVIRONMENT_NAME:-本地开发}"
+RUNTIME_PROFILE="${DATASCALPEL_START_PROFILE:-local}"
+RUNTIME_CONFIG="${DATASCALPEL_START_CONFIG:-$ROOT_DIR/config/application-local.yml}"
+SPRING_RUNTIME_ARGUMENTS=(
+  "--spring.profiles.active=$RUNTIME_PROFILE"
+  "--spring.config.additional-location=optional:file:$RUNTIME_CONFIG"
 )
 BACKEND_PORT="${BACKEND_PORT:-18080}"
+BACKEND_BIND_ADDRESS="${DATASCALPEL_START_BACKEND_BIND_ADDRESS:-0.0.0.0}"
+BACKEND_INTERNAL_URL="${DATASCALPEL_START_BACKEND_INTERNAL_URL:-http://localhost:$BACKEND_PORT}"
 ENGINE_PORT="${ENGINE_PORT:-8081}"
+ENGINE_BIND_ADDRESS="${DATASCALPEL_START_ENGINE_BIND_ADDRESS:-0.0.0.0}"
+ENGINE_ADMIN_URL="${DATASCALPEL_START_ENGINE_ADMIN_URL:-http://localhost:$ENGINE_PORT}"
+ENGINE_RUNTIME_URL="${DATASCALPEL_START_ENGINE_RUNTIME_URL:-http://localhost:$ENGINE_PORT}"
 TASK_ENGINE_PORT="${TASK_ENGINE_PORT:-18091}"
-TASK_ENGINE_URL="http://127.0.0.1:$TASK_ENGINE_PORT"
+TASK_ENGINE_HOST="${DATASCALPEL_START_TASK_ENGINE_HOST:-127.0.0.1}"
+TASK_ENGINE_URL="${DATASCALPEL_START_TASK_ENGINE_URL:-http://127.0.0.1:$TASK_ENGINE_PORT}"
 DISPATCHER_PORT="${DISPATCHER_PORT:-18092}"
-DISPATCHER_URL="http://127.0.0.1:$DISPATCHER_PORT"
+DISPATCHER_BIND_ADDRESS="${DATASCALPEL_START_DISPATCHER_BIND_ADDRESS:-0.0.0.0}"
+DISPATCHER_URL="${DATASCALPEL_START_DISPATCHER_URL:-http://127.0.0.1:$DISPATCHER_PORT}"
 FRONTEND_PORT="${FRONTEND_PORT:-18887}"
+FRONTEND_HOST="${DATASCALPEL_START_FRONTEND_HOST:-}"
 SERVICE_STARTUP_TIMEOUT_SECONDS="${DATASCALPEL_LOCAL_SERVICE_STARTUP_TIMEOUT_SECONDS:-300}"
 ENGINE_CODE="${DATASCALPEL_LOCAL_ENGINE_CODE:-local_engine}"
 ENGINE_MANAGEMENT_TOKEN="${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:-change-me-engine-management-token}"
@@ -83,6 +93,7 @@ DISPATCHER_TOKEN="${DATASCALPEL_TASK_DISPATCHER_TOKEN:-change-me-task-dispatcher
 DISPATCHER_WORK_DIR="${DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY:-$ROOT_DIR/.local/task-dispatcher}"
 COMPUTE_ENGINE_CREDENTIAL_KEY="${DATASCALPEL_COMPUTE_ENGINE_CREDENTIAL_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
 COMPUTE_ENGINE_NAME="${DATASCALPEL_LOCAL_COMPUTE_ENGINE_NAME:-本地 Docker 计算引擎}"
+COMPUTE_ENGINE_DESCRIPTION="${DATASCALPEL_START_COMPUTE_ENGINE_DESCRIPTION:-由 start-local-dev.sh 管理的本地 Docker Spark 计算引擎}"
 KAFKA_BOOTSTRAP_SERVERS="${DATASCALPEL_KAFKA_BOOTSTRAP_SERVERS:-home.superhuang.net:9094}"
 KAFKA_STARTUP_TIMEOUT_SECONDS="${DATASCALPEL_KAFKA_STARTUP_TIMEOUT_SECONDS:-120}"
 COMMAND_TOPIC="${DATASCALPEL_LOCAL_COMMAND_TOPIC:-datascalpel.execution.command.local}"
@@ -110,6 +121,9 @@ TASK_ENGINE_CONFIG="$ROOT_DIR/data-scalpel-task-engine/src/main/distribution/con
 TASK_ENGINE_LOG_CONFIG="$ROOT_DIR/data-scalpel-task-engine/src/main/distribution/conf/log4j2.properties"
 ADMIN_USERNAME="${DATASCALPEL_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${DATASCALPEL_ADMIN_PASSWORD:-admin123456}"
+ENGINE_DISPLAY_NAME="${DATASCALPEL_START_ENGINE_DISPLAY_NAME:-本地开发服务引擎}"
+ENGINE_DESCRIPTION="${DATASCALPEL_START_ENGINE_DESCRIPTION:-由 start-local-dev.sh 自动登记，仅供本机开发测试。}"
+ENGINE_ACCESS_POLICY_JSON="${DATASCALPEL_START_ENGINE_ACCESS_POLICY_JSON:-{\"allowCidrs\":[\"127.0.0.1/32\",\"::1/128\"],\"denyCidrs\":[]}}"
 if [[ ! "$SERVICE_STARTUP_TIMEOUT_SECONDS" =~ ^[1-9][0-9]*$ ]]; then
   echo "DATASCALPEL_LOCAL_SERVICE_STARTUP_TIMEOUT_SECONDS 必须是正整数秒数。"
   exit 1
@@ -136,7 +150,7 @@ cleanup() {
   fi
 
   echo
-  echo "正在停止 DataScalpel 本地进程…"
+  echo "正在停止 DataScalpel ${ENVIRONMENT_NAME}进程…"
   [[ -n "$FRONTEND_PID" ]] && kill "$FRONTEND_PID" 2>/dev/null || true
   [[ -n "$BACKEND_PID" ]] && kill "$BACKEND_PID" 2>/dev/null || true
   [[ -n "$ENGINE_PID" ]] && kill "$ENGINE_PID" 2>/dev/null || true
@@ -165,8 +179,8 @@ command -v java >/dev/null 2>&1 || { echo "未找到 Java，请先安装并启�
 command -v pnpm >/dev/null 2>&1 || { echo "未找到 pnpm，请先安装 pnpm。"; exit 1; }
 command -v curl >/dev/null 2>&1 || { echo "未找到 curl，无法完成本地服务配置。"; exit 1; }
 
-if [[ ! -f "$LOCAL_CONFIG" ]]; then
-  echo "未找到本地配置：$LOCAL_CONFIG"
+if [[ ! -f "$RUNTIME_CONFIG" ]]; then
+  echo "未找到运行配置：$RUNTIME_CONFIG"
   exit 1
 fi
 
@@ -513,7 +527,7 @@ configure_task_engine() {
 }
 
 register_local_engine() {
-  local backend_url="http://localhost:$BACKEND_PORT"
+  local backend_url="$BACKEND_INTERNAL_URL"
   local token engine_list engine_id
 
   echo "正在等待本地管理员可登录…"
@@ -533,7 +547,7 @@ register_local_engine() {
   engine_id="$(printf '%s' "$engine_list" | sed -nE 's/.*"id":"([0-9a-fA-F-]{36})".*/\1/p')"
 
   local engine_payload
-  engine_payload="{\"name\":\"本地开发服务引擎\",\"adminUrl\":\"http://localhost:$ENGINE_PORT\",\"runtimeUrl\":\"http://localhost:$ENGINE_PORT\",\"managementToken\":\"$(json_escape "$ENGINE_MANAGEMENT_TOKEN")\",\"enabled\":true,\"description\":\"由 start-local-dev.sh 自动登记，仅供本机开发测试。\"}"
+  engine_payload="{\"name\":\"$(json_escape "$ENGINE_DISPLAY_NAME")\",\"adminUrl\":\"$(json_escape "$ENGINE_ADMIN_URL")\",\"runtimeUrl\":\"$(json_escape "$ENGINE_RUNTIME_URL")\",\"managementToken\":\"$(json_escape "$ENGINE_MANAGEMENT_TOKEN")\",\"enabled\":true,\"description\":\"$(json_escape "$ENGINE_DESCRIPTION")\"}"
   if [[ -z "$engine_id" ]]; then
     echo "正在登记本地服务引擎：$ENGINE_CODE"
     curl --fail --silent --show-error \
@@ -578,14 +592,14 @@ register_local_engine() {
     --request POST \
     --header "Authorization: Bearer $token" \
     --header 'Content-Type: application/json' \
-    --data '{"allowCidrs":["127.0.0.1/32","::1/128"],"denyCidrs":[]}' \
+    --data "$ENGINE_ACCESS_POLICY_JSON" \
     "$backend_url/api/v1/service-engines/$engine_id/actions/update-access-policy" >/dev/null
 
   configure_task_engine "$backend_url" "$token"
 }
 
 register_local_compute_engine() {
-  local backend_url="http://localhost:$BACKEND_PORT"
+  local backend_url="$BACKEND_INTERNAL_URL"
   local token="$ADMIN_ACCESS_TOKEN"
   local engine_list engine_id registration_state payload
 
@@ -603,7 +617,7 @@ register_local_compute_engine() {
     "$backend_url/api/v1/compute-engines")"
   engine_id="$(printf '%s' "$engine_list" | sed -nE 's/.*"id":"([0-9a-fA-F-]{36})".*/\1/p')"
   registration_state="$(printf '%s' "$engine_list" | sed -nE 's/.*"registrationState":"([A-Z_]+)".*/\1/p')"
-  payload="{\"name\":\"$(json_escape "$COMPUTE_ENGINE_NAME")\",\"description\":\"由 start-local-dev.sh 管理的本地 Docker Spark 计算引擎\",\"dispatcherBaseUrl\":\"$DISPATCHER_URL\",\"accessToken\":\"$(json_escape "$DISPATCHER_TOKEN")\",\"expectedBackendType\":\"LOCAL_DOCKER\",\"commandTopic\":\"$(json_escape "$COMMAND_TOPIC")\",\"runnerEventTopic\":\"$(json_escape "$RUNNER_EVENT_TOPIC")\",\"adminEventTopic\":\"$(json_escape "$ADMIN_EVENT_TOPIC")\",\"maxQueuedExecutions\":20,\"maxConcurrentSubmissions\":2,\"maxInFlightApplications\":2}"
+  payload="{\"name\":\"$(json_escape "$COMPUTE_ENGINE_NAME")\",\"description\":\"$(json_escape "$COMPUTE_ENGINE_DESCRIPTION")\",\"dispatcherBaseUrl\":\"$DISPATCHER_URL\",\"accessToken\":\"$(json_escape "$DISPATCHER_TOKEN")\",\"expectedBackendType\":\"LOCAL_DOCKER\",\"commandTopic\":\"$(json_escape "$COMMAND_TOPIC")\",\"runnerEventTopic\":\"$(json_escape "$RUNNER_EVENT_TOPIC")\",\"adminEventTopic\":\"$(json_escape "$ADMIN_EVENT_TOPIC")\",\"maxQueuedExecutions\":20,\"maxConcurrentSubmissions\":2,\"maxInFlightApplications\":2}"
 
   if [[ -z "$engine_id" ]]; then
     echo "正在创建本地 Docker 计算引擎。"
@@ -648,7 +662,7 @@ register_local_compute_engine() {
   fi
 }
 
-echo "正在按 classpath 启动服务引擎：http://localhost:$ENGINE_PORT"
+echo "正在按 classpath 启动服务引擎：$ENGINE_ADMIN_URL"
 ENGINE_ENV=("DATASCALPEL_ENGINE_CODE=$ENGINE_CODE")
 [[ -n "${DATASCALPEL_ENGINE_DB_URL:-}" ]] && ENGINE_ENV+=(
   "DATASCALPEL_ENGINE_DB_URL=$DATASCALPEL_ENGINE_DB_URL"
@@ -664,11 +678,11 @@ ENGINE_ENV=("DATASCALPEL_ENGINE_CODE=$ENGINE_CODE")
 )
 env "${ENGINE_ENV[@]}" java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$ENGINE_CLASSPATH" \
   cn.superhuang.data.scalpel.engine.DataScalpelServiceEngineApplication \
-  "${SPRING_LOCAL_ARGUMENTS[@]}" --server.port="$ENGINE_PORT" &
+  "${SPRING_RUNTIME_ARGUMENTS[@]}" --server.address="$ENGINE_BIND_ADDRESS" --server.port="$ENGINE_PORT" &
 ENGINE_PID=$!
 
 echo "正在按 classpath 启动 Task Engine：$TASK_ENGINE_URL"
-DATASCALPEL_TASK_ENGINE_HOST="127.0.0.1" \
+DATASCALPEL_TASK_ENGINE_HOST="$TASK_ENGINE_HOST" \
 DATASCALPEL_TASK_ENGINE_PORT="$TASK_ENGINE_PORT" \
 java "${DIRECT_JAVA_OPTIONS[@]}" -Dlog4j.configurationFile="$TASK_ENGINE_LOG_CONFIG" \
   -cp "$TASK_ENGINE_CLASSPATH" \
@@ -695,31 +709,36 @@ DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA="$DISPATCHER_DB_SCHEMA" \
 SPRING_DATASOURCE_URL="$DISPATCHER_DB_URL" \
 SPRING_DATASOURCE_USERNAME="$ADMIN_DB_USERNAME" \
 SPRING_DATASOURCE_PASSWORD="$ADMIN_DB_PASSWORD" \
+SERVER_ADDRESS="$DISPATCHER_BIND_ADDRESS" \
 java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$DISPATCHER_CLASSPATH" \
   cn.superhuang.data.scalpel.dispatcher.TaskDispatcherApplication \
-  "${SPRING_LOCAL_ARGUMENTS[@]}" &
+  "${SPRING_RUNTIME_ARGUMENTS[@]}" &
 DISPATCHER_PID=$!
 
-echo "正在按 classpath 启动后端：http://localhost:$BACKEND_PORT"
+echo "正在按 classpath 启动后端：$BACKEND_INTERNAL_URL"
 java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$ADMIN_CLASSPATH" \
   cn.superhuang.data.scalpel.admin.DataScalpelAdminApplication \
-  "${SPRING_LOCAL_ARGUMENTS[@]}" --server.port="$BACKEND_PORT" &
+  "${SPRING_RUNTIME_ARGUMENTS[@]}" --server.address="$BACKEND_BIND_ADDRESS" --server.port="$BACKEND_PORT" &
 BACKEND_PID=$!
 
-echo "正在启动前端：http://localhost:$FRONTEND_PORT"
-BACKEND_ORIGIN="http://localhost:$BACKEND_PORT" pnpm --dir "$ROOT_DIR/data-scalpel-ui" dev --port "$FRONTEND_PORT" &
+FRONTEND_ARGUMENTS=(dev --port "$FRONTEND_PORT")
+if [[ -n "$FRONTEND_HOST" ]]; then
+  FRONTEND_ARGUMENTS+=(--host "$FRONTEND_HOST")
+fi
+echo "正在启动前端：http://${FRONTEND_HOST:-localhost}:$FRONTEND_PORT"
+BACKEND_ORIGIN="$BACKEND_INTERNAL_URL" pnpm --dir "$ROOT_DIR/data-scalpel-ui" "${FRONTEND_ARGUMENTS[@]}" &
 FRONTEND_PID=$!
 
 echo "正在并行等待各本地服务就绪…"
-start_health_check "服务引擎" "http://localhost:$ENGINE_PORT/actuator/health" "$ENGINE_PID"
+start_health_check "服务引擎" "$ENGINE_ADMIN_URL/actuator/health" "$ENGINE_PID"
 start_health_check "Task Engine" "$TASK_ENGINE_URL/health/ready" "$TASK_ENGINE_PID"
 start_health_check "Task Dispatcher" "$DISPATCHER_URL/health/ready" "$DISPATCHER_PID"
-start_health_check "后端" "http://localhost:$BACKEND_PORT/actuator/health" "$BACKEND_PID"
-start_health_check "前端" "http://localhost:$FRONTEND_PORT" "$FRONTEND_PID"
+start_health_check "后端" "$BACKEND_INTERNAL_URL/actuator/health" "$BACKEND_PID"
+start_health_check "前端" "http://127.0.0.1:$FRONTEND_PORT" "$FRONTEND_PID"
 wait_for_background_jobs
 
 register_local_engine
 register_local_compute_engine
 
-echo "DataScalpel 前后端、服务引擎、Task Engine 与 Dispatcher 已启动（Java 服务使用 classpath，未执行完整 package），按 Ctrl+C 一起停止。"
+echo "DataScalpel ${ENVIRONMENT_NAME}前后端、服务引擎、Task Engine 与 Dispatcher 已启动（Java 服务使用 classpath，未执行完整 package），按 Ctrl+C 一起停止。"
 wait "$ENGINE_PID" "$TASK_ENGINE_PID" "$DISPATCHER_PID" "$BACKEND_PID" "$FRONTEND_PID"

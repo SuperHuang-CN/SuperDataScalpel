@@ -33,3 +33,6 @@ application-local.yaml
 # Local linux69 compute-engine deployment secrets and generated connection details.
 /deploy/compute-engine/deploy-local.env
 /deploy/compute-engine/connection-info.txt
+
+# linux69 test environment secrets are stored on the server data disk.
+/deploy/test69/stack.env
