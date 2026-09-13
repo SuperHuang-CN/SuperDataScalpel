@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryModelLookup
 import cn.superhuang.data.scalpel.business.dataentry.repository.DataEntryFormRepository;
 import cn.superhuang.data.scalpel.business.dataentry.repository.DataEntryModelLookupRepository;
 import cn.superhuang.data.scalpel.business.dataentry.repository.DataEntryOperationLogRepository;
+import cn.superhuang.data.scalpel.business.dataentry.repository.DataEntryRecordChangeRepository;
 import cn.superhuang.data.scalpel.business.dataentry.web.request.CreateDataEntryFormRequest;
 import cn.superhuang.data.scalpel.business.dataentry.web.request.UpdateDataEntryLookupsRequest;
 import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryFieldResponse;
@@ -56,6 +57,7 @@ public class DataEntryFormService {
     private final DataEntryFormRepository formRepository;
     private final DataEntryModelLookupRepository lookupRepository;
     private final DataEntryOperationLogRepository logRepository;
+    private final DataEntryRecordChangeRepository changeRepository;
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
     private final StandardDictionaryRepository dictionaryRepository;
@@ -68,6 +70,7 @@ public class DataEntryFormService {
             DataEntryFormRepository formRepository,
             DataEntryModelLookupRepository lookupRepository,
             DataEntryOperationLogRepository logRepository,
+            DataEntryRecordChangeRepository changeRepository,
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
             StandardDictionaryRepository dictionaryRepository,
@@ -79,6 +82,7 @@ public class DataEntryFormService {
         this.formRepository = formRepository;
         this.lookupRepository = lookupRepository;
         this.logRepository = logRepository;
+        this.changeRepository = changeRepository;
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
         this.dictionaryRepository = dictionaryRepository;
@@ -252,6 +256,8 @@ public class DataEntryFormService {
         }
         lookupRepository.deleteAllByFormId(id);
         lookupRepository.flush();
+        changeRepository.deleteAllByFormId(id);
+        changeRepository.flush();
         logRepository.deleteAllByFormId(id);
         logRepository.flush();
         formRepository.delete(form);
@@ -291,10 +297,13 @@ public class DataEntryFormService {
             issues.add(new DataEntryHealthIssueResponse("TARGET_DATASOURCE_UNAVAILABLE", "目标数据存储不存在、已停用或不具有存储用途", List.of("PUBLISH"), null, null));
         }
         if (dataSource != null && dataSource.getType() != DataSourceType.POSTGRESQL
+                && dataSource.getType() != DataSourceType.HIGHGO
+                && dataSource.getType() != DataSourceType.KINGBASE
+                && dataSource.getType() != DataSourceType.OPENGAUSS
                 && dataSource.getType() != DataSourceType.MYSQL
                 && dataSource.getType() != DataSourceType.CLICKHOUSE) {
             issues.add(new DataEntryHealthIssueResponse(
-                    "TARGET_DATABASE_UNSUPPORTED", "数据填报只支持 PostgreSQL、MySQL 和单机 ClickHouse",
+                    "TARGET_DATABASE_UNSUPPORTED", "数据填报只支持 PostgreSQL、HighGo、人大金仓、openGauss、MySQL 和单机 ClickHouse",
                     List.of("PUBLISH"), null, null
             ));
         }

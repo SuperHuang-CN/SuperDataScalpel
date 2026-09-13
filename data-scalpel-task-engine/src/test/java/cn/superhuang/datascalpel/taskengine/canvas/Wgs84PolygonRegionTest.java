@@ -62,6 +62,19 @@ class Wgs84PolygonRegionTest {
         assertEquals(Location.INSIDE,region.locate(p(0.5,1.5)));
     }
 
+    @Test void antipodalMultipartComponentsAreValidatedAndLocatedInIndependentLocalDomains() throws Exception {
+        Geometry shape=read("MULTIPOLYGON (((-170 0,-169 0,-169 1,-170 1,-170 0)),((10 0,11 0,11 1,10 1,10 0)))");
+        Geometry reordered=FACTORY.createMultiPolygon(new Polygon[]{(Polygon)shape.getGeometryN(1),(Polygon)shape.getGeometryN(0)});
+        for (Geometry ordered : List.of(shape,shape.reverse(),reordered)) {
+            var region=Wgs84PolygonRegion.prepare(ordered);
+            assertEquals(Location.INSIDE,region.locate(p(-169.5,0.5)));
+            assertEquals(Location.INSIDE,region.locate(p(10.5,0.5)));
+            assertEquals(Location.OUTSIDE,region.locate(p(-80,0.5)));
+            assertEquals(0,Wgs84GeometryDistance.nearest(read("POINT (-169.5 0.5)"),ordered,0.1).distanceMetres());
+            assertEquals(0,Wgs84GeometryDistance.nearest(read("POINT (10.5 0.5)"),ordered,0.1).distanceMetres());
+        }
+    }
+
     @Test void exactHoleContactVertexTakesPrecedenceOverUnresolvedShellBearing() throws Exception {
         Geometry shape=read("POLYGON ((0 0,4 0,4 4,0 4,0 0),(0 2,1 1,1 3,0 2))");
         for (Geometry ordered : List.of(shape,shape.reverse())) {

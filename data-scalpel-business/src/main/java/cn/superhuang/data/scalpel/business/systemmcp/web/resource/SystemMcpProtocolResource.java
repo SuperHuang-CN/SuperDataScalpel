@@ -10,6 +10,8 @@ import org.springframework.web.context.request.async.DeferredResult;
 import org.springframework.web.server.ResponseStatusException;
 import java.util.concurrent.*;
 import java.io.IOException;
+import io.swagger.v3.oas.annotations.Hidden;
+@Hidden
 @RestController
 public class SystemMcpProtocolResource {
     private final SystemMcpProtocolService protocol;
@@ -34,6 +36,11 @@ public class SystemMcpProtocolResource {
                 }
                 catch(Exception e) {
                     result.setErrorResult(e);
+                }
+                catch(Error e) {
+                    // Complete the HTTP request even when a worker terminates unexpectedly.
+                    result.setErrorResult(new IllegalStateException("系统 MCP 执行异常", e));
+                    throw e;
                 }
             });
         }

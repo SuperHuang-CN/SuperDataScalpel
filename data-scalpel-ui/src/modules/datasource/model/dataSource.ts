@@ -10,6 +10,7 @@ export type DataSourceConnectionKind = 'JDBC' | 'KAFKA' | 'S3' | 'HTTP_API';
 export type DataSourceType =
   | 'MYSQL'
   | 'POSTGRESQL'
+  | 'HIGHGO'
   | 'ORACLE'
   | 'SQL_SERVER'
   | 'CLICKHOUSE'
@@ -255,35 +256,6 @@ export interface DataSource {
   updatedAt: string;
 }
 
-interface DataSourceAssistantDraftBase {
-  name: string;
-  directoryId: string | null;
-  purposes: DataSourcePurpose[];
-  enabled: boolean;
-  description: string | null;
-}
-
-export interface DataSourceAssistantCreateDraft extends DataSourceAssistantDraftBase {
-  mode: 'CREATE';
-  code: string;
-  type: DataSourceType;
-}
-
-export interface DataSourceAssistantUpdateDraft extends DataSourceAssistantDraftBase {
-  mode: 'UPDATE';
-  code: null;
-  type: null;
-}
-
-export type DataSourceAssistantDraft = DataSourceAssistantCreateDraft | DataSourceAssistantUpdateDraft;
-
-export type DataSourceAssistantRouteAction =
-  | { kind: 'CREATE'; draft: DataSourceAssistantCreateDraft }
-  | { kind: 'EDIT'; dataSourceId: string; draft: DataSourceAssistantUpdateDraft };
-
-export interface DataSourceAssistantLocationState {
-  assistantDataSourceAction?: DataSourceAssistantRouteAction;
-}
 
 export interface KafkaTopic {
   name: string;
@@ -654,6 +626,7 @@ export type DatabaseCapability =
   | 'STANDARD_QUERY'
   | 'SQL_SERVICE_QUERY'
   | 'QUERY_METADATA'
+  | 'JDBC_QUERY_INPUT'
   | 'INSERT_SELECT'
   | 'OVERWRITE_INSERT_SELECT'
   | 'ROW_UPSERT'
@@ -815,6 +788,7 @@ export interface DataSourceFilters {
 export const dataSourceTypeLabels: Record<DataSourceType, string> = {
   MYSQL: 'MySQL',
   POSTGRESQL: 'PostgreSQL',
+  HIGHGO: 'HighGo',
   ORACLE: 'Oracle',
   SQL_SERVER: 'SQL Server',
   CLICKHOUSE: 'ClickHouse',

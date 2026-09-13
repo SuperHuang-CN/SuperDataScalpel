@@ -65,6 +65,7 @@ import cn.superhuang.data.scalpel.business.model.web.response.ModelWarehouseLaye
 import cn.superhuang.data.scalpel.business.model.web.response.PlatformTypeCapabilityResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableDdlPlanResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.PhysicalTableInspectionResponse;
+import cn.superhuang.data.scalpel.business.datasource.web.response.TableIdentifierResponse;
 import cn.superhuang.data.scalpel.business.quality.service.ModelQualityRuleService;
 import cn.superhuang.data.scalpel.business.standard.service.StandardDictionaryValueSupport;
 import cn.superhuang.data.scalpel.business.standard.web.response.StandardDictionarySummaryResponse;
@@ -275,7 +276,7 @@ public class DataModelService {
                         mapping.column().role().name()
                 ))
                 .toList();
-        return new ExternalTableImportPreviewResponse(table, !columns.isEmpty() && issues.isEmpty(), columns, issues);
+        return new ExternalTableImportPreviewResponse(TableIdentifierResponse.from(table), !columns.isEmpty() && issues.isEmpty(), columns, issues);
     }
 
     public ManagedImportPreviewResponse previewManagedImport(ManagedImportPreviewRequest request) {
@@ -322,7 +323,7 @@ public class DataModelService {
         String suggestedName = truncateText(tableComment == null ? sourceTableName : tableComment, 100);
         List<String> warnings = managedImportWarnings(metadata);
         return new ManagedImportPreviewResponse(
-                metadata.table().identifier(),
+                TableIdentifierResponse.from(metadata.table().identifier()),
                 suggestedCode,
                 suggestedName,
                 suggestedPhysicalTableName,

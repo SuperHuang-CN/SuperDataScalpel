@@ -153,7 +153,7 @@ const SpatialNearestInspector = ({
           <Select aria-label="匹配策略" value={exact ? 'EXACT_DISTANCE' : 'LEGACY_KNN'}
             options={[{ value: 'EXACT_DISTANCE', label: '真实距离 · 稳定同距排序' }, { value: 'LEGACY_KNN', label: '旧版 KNN' }]}
             onChange={semantics => Modal.confirm({ title: '切换最近邻匹配策略？',
-              content: '真实距离策略要求两侧 ID 非空且唯一，测地线暂仅支持 Point。旧版保留原 KNN / 质心行为且忽略连接线配置。已有字段和连接线草稿不会清除，请检查下游结果。',
+              content: '真实距离策略要求两侧 ID 非空且唯一，并按测地 Geometry 范围使用真实最近位置。旧版保留原 KNN / 质心行为且忽略连接线配置。已有字段和连接线草稿不会清除，请检查下游结果。',
               okText: '确认切换', cancelText: '取消', onOk: () => {
                 form.setFieldValue('matching', { ...(form.getFieldValue('matching') ?? createNearestMatching()), semantics });
                 markDirty();
@@ -231,7 +231,7 @@ const SpatialNearestInspector = ({
               距离方法
               <ContextHelp
                 ariaLabel="距离方法说明"
-                content="平面距离测量几何最近位置，是平台扩展；真实测地距离暂仅支持 EPSG:4326 XY Point，不用非点质心冒充最近位置。"
+                content="平面距离测量几何最近位置，是平台扩展；真实测地距离支持 EPSG:4326 XY 点、线、面及其 Multi 类型，不用非点质心冒充最近位置。Polygon 当前要求可验证的局部强凸域，超出范围会安全失败。"
               />
             </span>
           )}
@@ -239,7 +239,7 @@ const SpatialNearestInspector = ({
         >
           <Select placeholder="明确选择距离方法" options={[
             { value: 'PLANAR', label: '平面（扩展）' },
-            { value: 'GEODESIC', label: exact ? '测地线（点）' : '测地线（旧版质心）' },
+            { value: 'GEODESIC', label: exact ? '测地线（真实最近位置）' : '测地线（旧版质心）' },
           ]} />
         </Form.Item>
         {distanceMethod === 'GEODESIC' && sourceGeometry && !isWgs84 && (
@@ -291,10 +291,17 @@ const SpatialNearestInspector = ({
             测地线结果不能使用来源 CRS 单位，请选择明确的线性距离单位。
           </Typography.Text>
         )}
-        {exact && distanceMethod === 'GEODESIC' && [sourceGeometry, candidateGeometry].some(column =>
-          column?.geometry != null && !['POINT', 'GEOMETRY'].includes(column.geometry.kind)) && (
-          <Typography.Text type="danger" className="canvas-field-inline-warning">真实测地最近位置暂仅支持 Point，线面能力尚未实现。</Typography.Text>
-        )}
+        {exact && distanceMethod === 'GEODESIC' && <Form.Item
+          name={['matching', 'geodesicGeometryMode']}
+          label={<span className="canvas-inspector-field-label">测地 Geometry 范围
+            <ContextHelp ariaLabel="测地 Geometry 范围说明" content="完整 Geometry 使用 WGS84 上的真实最近位置，支持点、多点、线、多线、面和多面；不支持 GeometryCollection。Polygon 当前仅支持可验证的局部强凸域；连续 Geometry 几乎等距、范围或数值精度无法证明时会安全失败，不按采样次序猜测，也不回退质心。仅 Point 用于兼容旧定义。" />
+          </span>}
+        >
+          <Select options={[
+            { value: 'GEOMETRY', label: '完整 Geometry（推荐）' },
+            { value: 'POINT_ONLY', label: '仅 Point（兼容）' },
+          ]} />
+        </Form.Item>}
         {exact && <div className="canvas-processor-section-header">
           <Space size={6}><Typography.Text strong>连接线结果</Typography.Text><Tag>{matching?.connectionLines?.enabled ? '已启用' : '关闭'}</Tag></Space>
           <Button size="small" aria-label="设置连接线" icon={<SettingOutlined />} onClick={() => setLineDraft({

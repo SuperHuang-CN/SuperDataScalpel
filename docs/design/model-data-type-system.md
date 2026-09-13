@@ -44,7 +44,7 @@
 
 当前重点方言：
 
-| 平台类型 | PostgreSQL | 达梦 | ClickHouse |
+| 平台类型 | PostgreSQL 家族 | 达梦 | ClickHouse |
 | --- | --- | --- | --- |
 | `BYTE` / `SHORT` | `smallint` / `smallint` | `SMALLINT` / `SMALLINT` | `Int8` / `Int16` |
 | `INTEGER` / `LONG` | `integer` / `bigint` | `INT` / `BIGINT` | `Int32` / `Int64` |
@@ -55,7 +55,9 @@
 | `DATE` | `date` | `DATE` | `Date` |
 | `TIMESTAMP` | `timestamp with time zone` | `TIMESTAMP WITH TIME ZONE` | `DateTime64(6,'UTC')` |
 | `TIMESTAMP_NTZ` | `timestamp` | `TIMESTAMP` | 暂不支持 |
-| `GEOMETRY` | PostGIS `geometry(KIND,localSrid)` | 暂不支持 | 原始 WKB `String` / `Nullable(String)` + comment marker |
+| `GEOMETRY` | PostGIS 兼容 `geometry(KIND,localSrid)` | 暂不支持 | 原始 WKB `String` / `Nullable(String)` + comment marker |
+
+这里的 PostgreSQL 家族包括 PostgreSQL、HighGo、openGauss 和人大金仓 R8/R9；各产品保持独立 JDBC 身份，Geometry 仅在连接目标库并确认 PostGIS 兼容扩展、函数和系统目录可用后开放。
 
 ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型归一：`UInt8 -> SHORT`、`UInt16 -> INTEGER`、`UInt32 -> LONG`、`UInt64 -> DECIMAL(20,0)`。
 

@@ -7,13 +7,18 @@ import cn.superhuang.data.scalpel.business.dataentry.domain.DataEntryOperationTy
 import cn.superhuang.data.scalpel.business.dataentry.web.request.CreateDataEntryRequest;
 import cn.superhuang.data.scalpel.business.dataentry.web.request.DataEntryOptionQueryRequest;
 import cn.superhuang.data.scalpel.business.dataentry.web.request.DeleteDataEntryBatchRequest;
+import cn.superhuang.data.scalpel.business.dataentry.web.request.DataEntryRecordKeyRequest;
+import cn.superhuang.data.scalpel.business.dataentry.web.request.UpdateDataEntryRecordRequest;
 import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryHealthResponse;
 import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryMutationResponse;
 import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryOptionResponse;
+import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryRecordDetailResponse;
+import cn.superhuang.data.scalpel.business.dataentry.web.response.DataEntryUpdateResponse;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
+import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelFieldRepository;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.model.service.DataModelService;
@@ -54,6 +59,7 @@ public class DataEntryDataService {
     private final DataEntryFormService formService;
     private final DataEntryHealthService healthService;
     private final DataEntryOperationLogService logService;
+    private final DataEntryRecordChangeService changeService;
     private final DataEntryPhysicalMutationPort physicalMutationPort;
     private final DataModelService modelService;
     private final DataModelRepository modelRepository;
@@ -68,6 +74,7 @@ public class DataEntryDataService {
             DataEntryFormService formService,
             DataEntryHealthService healthService,
             DataEntryOperationLogService logService,
+            DataEntryRecordChangeService changeService,
             DataEntryPhysicalMutationPort physicalMutationPort,
             DataModelService modelService,
             DataModelRepository modelRepository,
@@ -81,6 +88,7 @@ public class DataEntryDataService {
         this.formService = formService;
         this.healthService = healthService;
         this.logService = logService;
+        this.changeService = changeService;
         this.physicalMutationPort = physicalMutationPort;
         this.modelService = modelService;
         this.modelRepository = modelRepository;
@@ -105,6 +113,85 @@ public class DataEntryDataService {
         }
     }
 
+    public DataEntryRecordDetailResponse queryDetail(UUID formId, DataEntryRecordKeyRequest request) {
+        DataEntryForm form = formService.requireForm(formId);
+        DataEntryMetadataSnapshot snapshot = healthService.snapshot(form);
+        requireAllowed(healthService.inspect(snapshot, true).canQueryEntries(), "当前目标物理表不可查询");
+        List<DataModelField> keys = businessKeys(snapshot.fields());
+        Map<String, Object> normalizedKey = normalizeKey(request.key(), keys);
+        Map<String, Object> values = physicalMutationPort.queryRecord(
+                snapshot.dataSource(), snapshot.model(), snapshot.fields(), keys, normalizedKey);
+        return new DataEntryRecordDetailResponse(changeService.recordKey(formId, keys, normalizedKey), values);
+    }
+
+    public DataEntryUpdateResponse update(UUID formId, UpdateDataEntryRecordRequest request, String username) {
+        DataEntryForm form = formService.requireForm(formId);
+        DataEntryMetadataSnapshot snapshot = healthService.snapshot(form);
+        requireAllowed(healthService.inspect(snapshot, true).canUpdateEntries(), "当前填报表单不可编辑数据");
+        List<DataModelField> keys = businessKeys(snapshot.fields());
+        Map<String, Object> normalizedKey = normalizeKey(request.key(), keys);
+        Map<String, Object> normalized = normalizeRow(request.values(), snapshot.fields());
+        for (DataModelField key : keys) {
+            if (!Objects.equals(DataEntryValueCanonicalizer.canonical(normalizedKey.get(key.getCode()), key),
+                    DataEntryValueCanonicalizer.canonical(normalized.get(key.getCode()), key))) {
+                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "业务主键不可修改：" + key.getName());
+            }
+        }
+        Map<String, Object> before = physicalMutationPort.queryRecord(
+                snapshot.dataSource(), snapshot.model(), snapshot.fields(), keys, normalizedKey);
+        Set<String> changedFields = snapshot.fields().stream().filter(field -> !field.isPrimaryKey()).filter(field ->
+                !Objects.equals(DataEntryValueCanonicalizer.canonical(before.get(field.getCode()), field),
+                        DataEntryValueCanonicalizer.canonical(normalized.get(field.getCode()), field)))
+                .map(DataModelField::getCode).collect(Collectors.toSet());
+        String recordKey = changeService.recordKey(formId, keys, normalizedKey);
+        if (changedFields.isEmpty()) return new DataEntryUpdateResponse(false, null, recordKey, before, false, null);
+        validateDictionaries(normalized, snapshot.fields(), changedFields);
+        validateLookups(normalized, snapshot, changedFields);
+
+        DataEntryOperationLog log = logService.start(form, snapshot.model().getSchemaVersion(),
+                DataEntryOperationType.UPDATE, username, 1, json(Map.of("key", normalizedKey)));
+        List<UUID> changeIds = changeService.prepare(form, log.getId(), DataEntryOperationType.UPDATE,
+                username, 1, snapshot.fields(), List.of(normalized), List.of(before));
+        try {
+            DataEntryRecordUpdateResult result = physicalMutationPort.updateRecord(snapshot.dataSource(), snapshot.model(),
+                    snapshot.fields(), keys, normalizedKey, normalized);
+            if (!result.changed()) {
+                changeService.discard(changeIds);
+                logService.succeed(log.getId(), 0, json(Map.of("key", normalizedKey, "changed", false)));
+                return new DataEntryUpdateResponse(false, log.getId(), recordKey, result.after(), false, null);
+            }
+            String payload = json(Map.of("key", normalizedKey, "changed", true));
+            try {
+                changeService.succeed(changeIds, List.of(result.after()));
+            } catch (RuntimeException historyException) {
+                markHistoryUnknown(changeIds, "HISTORY_STATUS_SAVE_FAILED",
+                        "目标记录已更新，但变更历史状态保存失败，请人工核对");
+                markLogPartial(log.getId(), 1, payload, "HISTORY_STATUS_SAVE_FAILED",
+                        "目标记录已更新，但变更历史或操作日志状态保存失败，请人工核对；系统不会自动重试");
+                return new DataEntryUpdateResponse(true, log.getId(), recordKey, result.after(), true,
+                        "记录已更新，但历史状态保存失败，请人工核对；系统不会自动重试");
+            }
+            try {
+                logService.succeed(log.getId(), 1, payload);
+                return new DataEntryUpdateResponse(true, log.getId(), recordKey, result.after(), false, null);
+            } catch (RuntimeException logException) {
+                markLogPartial(log.getId(), 1, payload, "OPERATION_LOG_STATUS_SAVE_FAILED",
+                        "目标记录和变更历史已更新，但操作日志状态保存失败，请人工核对；系统不会自动重试");
+                return new DataEntryUpdateResponse(true, log.getId(), recordKey, result.after(), true,
+                        "记录已更新，但操作日志状态保存失败，请人工核对；系统不会自动重试");
+            }
+        } catch (RuntimeException exception) {
+            boolean unknown = exception instanceof DataEntryPhysicalAccessException accessException
+                    && accessException.resultUnknown();
+            try { changeService.complete(changeIds, 0, unknown, errorCode(exception), safeMessage(exception), null); }
+            catch (RuntimeException ignored) {}
+            if (unknown) markLogPartial(log.getId(), 0, json(Map.of("key", normalizedKey)),
+                    errorCode(exception), safeMessage(exception));
+            else failLog(log.getId(), exception);
+            throw publicException(exception);
+        }
+    }
+
     public DataEntryMutationResponse insert(UUID formId, CreateDataEntryRequest request, String username) {
         DataEntryForm form = formService.requireForm(formId);
         DataModel currentModel = modelRepository.findById(form.getModelId()).orElse(null);
@@ -116,6 +203,7 @@ public class DataEntryDataService {
                 1,
                 json(Map.of("values", request.values()))
         );
+        List<UUID> changeIds = List.of();
         try {
             DataEntryMetadataSnapshot snapshot = healthService.snapshot(form);
             requireAllowed(healthService.inspect(snapshot, true).canSubmit(), "当前填报表单不可新增数据");
@@ -124,16 +212,49 @@ public class DataEntryDataService {
             validateLookups(normalized, snapshot);
             List<DataModelField> businessKeys = businessKeys(snapshot.fields());
             requireNoExistingBusinessKeys(snapshot, businessKeys, List.of(normalized));
+            changeIds = changeService.prepare(form, log.getId(), DataEntryOperationType.INSERT,
+                    username, 1, snapshot.fields(), List.of(normalized), null);
             DataEntryPhysicalMutationResult result = physicalMutationPort.insert(
                     snapshot.dataSource(), snapshot.model(), snapshot.fields(), normalized
             );
             String payload = json(Map.of("values", normalized));
             if (!result.completed()) {
+                if (result.affectedCount() > 0) {
+                    try {
+                        Map<String, Object> actual = physicalMutationPort.queryRecord(
+                                snapshot.dataSource(), snapshot.model(), snapshot.fields(), businessKeys,
+                                keyOf(normalized, businessKeys));
+                        changeService.complete(changeIds, 1, result.manualVerificationRequired(),
+                                result.errorCode(), result.errorMessage(), List.of(actual));
+                    } catch (RuntimeException readbackException) {
+                        markHistoryUnknown(changeIds, "INSERT_READBACK_FAILED",
+                                "新增可能已生效，但实际值回读失败，请人工核对；系统不会自动重试");
+                    }
+                } else {
+                    changeService.complete(changeIds, 0, result.manualVerificationRequired(),
+                            result.errorCode(), result.errorMessage(), null);
+                }
                 requireMutationMayHaveChangedTarget(result);
                 return partial(log, 1, result, payload);
             }
-            return recordSuccess(log, 1, result.affectedCount(), payload);
+            try {
+                Map<String, Object> actual = physicalMutationPort.queryRecord(snapshot.dataSource(), snapshot.model(),
+                        snapshot.fields(), businessKeys, keyOf(normalized, businessKeys));
+                changeService.succeed(changeIds, List.of(actual));
+                return recordSuccess(log, 1, result.affectedCount(), payload);
+            } catch (RuntimeException historyOrReadbackException) {
+                String message = "目标记录已新增，但实际值回读或历史状态保存失败，请人工核对；系统不会自动重试";
+                markHistoryUnknown(changeIds, "INSERT_READBACK_OR_HISTORY_FAILED", message);
+                markLogPartial(log.getId(), result.affectedCount(), payload,
+                        "INSERT_READBACK_OR_HISTORY_FAILED", message);
+                return DataEntryMutationResponse.partiallySucceeded(
+                        log.getId(), 1, result.affectedCount(), true, message);
+            }
         } catch (RuntimeException exception) {
+            if (!changeIds.isEmpty()) {
+                try { changeService.complete(changeIds, 0, false, errorCode(exception), safeMessage(exception), null); }
+                catch (RuntimeException ignored) {}
+            }
             failLog(log.getId(), exception);
             throw publicException(exception);
         }
@@ -154,6 +275,7 @@ public class DataEntryDataService {
                 request.keys().size(),
                 json(Map.of("keys", request.keys()))
         );
+        List<UUID> changeIds = List.of();
         try {
             DataEntryMetadataSnapshot snapshot = healthService.snapshot(form);
             requireAllowed(healthService.inspect(snapshot, true).canDeleteEntries(), "当前填报表单不可删除数据");
@@ -168,16 +290,47 @@ public class DataEntryDataService {
                 normalizedKeys.add(normalized);
             }
             requireExactBusinessKeyMatches(snapshot, primaryKeys, normalizedKeys);
+            List<Map<String, Object>> before = normalizedKeys.stream().map(key -> physicalMutationPort.queryRecord(
+                    snapshot.dataSource(), snapshot.model(), snapshot.fields(), primaryKeys, key)).toList();
+            changeIds = changeService.prepare(form, log.getId(), DataEntryOperationType.DELETE,
+                    username, 1, snapshot.fields(), before, before);
             DataEntryPhysicalMutationResult result = physicalMutationPort.deleteBatch(
                     snapshot.dataSource(), snapshot.model(), primaryKeys, normalizedKeys
             );
             String payload = json(Map.of("keys", normalizedKeys));
             if (!result.completed()) {
+                try {
+                    List<DataEntryBusinessKeyMatch> remaining = physicalMutationPort.findBusinessKeyMatches(
+                            snapshot.dataSource(), snapshot.model(), primaryKeys, normalizedKeys);
+                    Set<List<String>> remainingKeys = remaining.stream().map(DataEntryBusinessKeyMatch::key)
+                            .map(key -> canonicalKey(key, primaryKeys)).collect(Collectors.toSet());
+                    List<Integer> deletedIndexes = java.util.stream.IntStream.range(0, normalizedKeys.size())
+                            .filter(index -> !remainingKeys.contains(canonicalKey(normalizedKeys.get(index), primaryKeys)))
+                            .boxed().toList();
+                    changeService.completeDeletionByIndexes(changeIds, deletedIndexes,
+                            result.manualVerificationRequired(), result.errorCode(), result.errorMessage());
+                } catch (RuntimeException postcheckException) {
+                    markHistoryUnknown(changeIds, "DELETE_POSTCHECK_FAILED",
+                            "删除已执行但无法逐条复查结果，请人工核对；系统不会自动重试");
+                }
                 requireMutationMayHaveChangedTarget(result);
                 return partial(log, normalizedKeys.size(), result, payload);
             }
-            return recordSuccess(log, normalizedKeys.size(), result.affectedCount(), payload);
+            try {
+                changeService.succeed(changeIds, null);
+                return recordSuccess(log, normalizedKeys.size(), result.affectedCount(), payload);
+            } catch (RuntimeException historyException) {
+                String message = "目标记录已删除，但变更历史状态保存失败，请人工核对；系统不会自动重试";
+                markHistoryUnknown(changeIds, "HISTORY_STATUS_SAVE_FAILED", message);
+                markLogPartial(log.getId(), result.affectedCount(), payload, "HISTORY_STATUS_SAVE_FAILED", message);
+                return DataEntryMutationResponse.partiallySucceeded(
+                        log.getId(), normalizedKeys.size(), result.affectedCount(), true, message);
+            }
         } catch (RuntimeException exception) {
+            if (!changeIds.isEmpty()) {
+                try { changeService.complete(changeIds, 0, false, errorCode(exception), safeMessage(exception), null); }
+                catch (RuntimeException ignored) {}
+            }
             failLog(log.getId(), exception);
             throw publicException(exception);
         }
@@ -332,7 +485,7 @@ public class DataEntryDataService {
     private Map<String, Object> normalizeKey(Map<String, Object> values, List<DataModelField> fields) {
         Set<String> expected = fields.stream().map(DataModelField::getCode).collect(Collectors.toSet());
         if (!expected.equals(values.keySet())) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "每个删除键必须恰好包含当前模型全部业务主键字段");
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "记录标识必须恰好包含当前模型全部业务主键字段");
         }
         Map<String, Object> normalized = new LinkedHashMap<>();
         for (DataModelField field : fields) {
@@ -345,7 +498,12 @@ public class DataEntryDataService {
     }
 
     private void validateDictionaries(Map<String, Object> values, List<DataModelField> fields) {
+        validateDictionaries(values, fields, null);
+    }
+
+    private void validateDictionaries(Map<String, Object> values, List<DataModelField> fields, Set<String> selectedFields) {
         for (DataModelField field : fields) {
+            if (selectedFields != null && !selectedFields.contains(field.getCode())) continue;
             if (field.getStandardDictionaryId() == null || values.get(field.getCode()) == null) continue;
             StandardDictionary dictionary = dictionaryRepository.findById(field.getStandardDictionaryId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "字段绑定的码表不存在：" + field.getName()));
@@ -362,19 +520,35 @@ public class DataEntryDataService {
     }
 
     private void validateLookups(Map<String, Object> values, DataEntryMetadataSnapshot snapshot) {
+        validateLookups(values, snapshot, null);
+    }
+
+    private void validateLookups(Map<String, Object> values, DataEntryMetadataSnapshot snapshot, Set<String> selectedFields) {
         Map<UUID, DataModelField> targets = snapshot.fields().stream().collect(Collectors.toMap(DataModelField::getId, Function.identity()));
         for (DataEntryModelLookup lookup : snapshot.lookups()) {
             DataModelField target = targets.get(lookup.getTargetFieldId());
+            if (target != null && selectedFields != null && !selectedFields.contains(target.getCode())) continue;
             if (target == null || values.get(target.getCode()) == null) continue;
             DataModel source = modelRepository.findById(lookup.getSourceModelId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源模型不存在"));
+            if (source.getStatus() != DataModelStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源模型不是已发布状态");
+            }
             List<DataModelField> sourceFields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(source.getId());
-            DataModelField sourceKey = sourceFields.stream().filter(DataModelField::isPrimaryKey).findFirst()
-                    .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源模型业务主键无效"));
+            List<DataModelField> sourceKeys = sourceFields.stream().filter(DataModelField::isPrimaryKey).toList();
+            if (sourceKeys.size() != 1) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源模型必须且只能有一个业务主键字段");
+            }
+            DataModelField sourceKey = sourceKeys.getFirst();
             DataModelField label = sourceFields.stream().filter(field -> field.getId().equals(lookup.getSourceLabelFieldId())).findFirst()
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉标签字段无效"));
             DataSource sourceDataSource = dataSourceRepository.findById(source.getStorageDataSourceId())
                     .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源数据源不存在"));
+            if (!sourceDataSource.isEnabled() || !DataEntryHealthService.supportedDatabase(sourceDataSource)
+                    || !DataEntryHealthService.valueCompatible(target, sourceKey)
+                    || label.getFieldType() != PlatformDataType.STRING || label.isNullable()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "关联下拉来源配置当前不可用");
+            }
             Object sourceValue = convertSafely(values.get(target.getCode()), sourceKey);
             List<Map<String, Object>> found = physicalMutationPort.queryLookupOptions(
                     sourceDataSource, source, sourceKey, label, null, 1, 2, List.of(sourceValue)
@@ -451,6 +625,20 @@ public class DataEntryDataService {
                     log.getId(), requestedCount, affectedCount, true,
                     "目标数据库操作已完成，但操作日志状态保存失败，请人工核对；系统不会自动重试"
             );
+        }
+    }
+
+    private void markHistoryUnknown(List<UUID> changeIds, String code, String message) {
+        try { changeService.complete(changeIds, 0, true, code, message, null); }
+        catch (RuntimeException ignored) {
+            // PREPARED remains an accurate indication that the management database did not confirm the outcome.
+        }
+    }
+
+    private void markLogPartial(UUID logId, int affectedCount, String payload, String code, String message) {
+        try { logService.partiallySucceed(logId, affectedCount, payload, code, message); }
+        catch (RuntimeException ignored) {
+            // PROCESSING remains visible when the management database cannot persist the final state.
         }
     }
 
@@ -556,6 +744,12 @@ public class DataEntryDataService {
         return fields.stream().map(field -> DataEntryValueCanonicalizer.canonical(
                 key.get(field.getCode()), field
         )).toList();
+    }
+
+    private static Map<String, Object> keyOf(Map<String, Object> values, List<DataModelField> fields) {
+        Map<String, Object> result = new LinkedHashMap<>();
+        fields.forEach(field -> result.put(field.getCode(), values.get(field.getCode())));
+        return Collections.unmodifiableMap(result);
     }
 
     private static DataEntryOptionResponse.Option option(Map<String, Object> row) {

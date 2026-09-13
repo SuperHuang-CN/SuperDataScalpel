@@ -9,6 +9,7 @@ import {
 } from '../../components/nodeView/CanvasNodePrimitives';
 import { resolvedNodeSize } from '../canvasNodePresentation';
 import type { CanvasNodeBodyProps, CanvasNodeCanvasView } from '../nodeSpec';
+import { spatialDistanceUnitLabels } from '../spatialUnits';
 import { outputsNearestLines, usesExactNearest } from './matching';
 
 const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.SpatialNearest>) => {
@@ -32,6 +33,11 @@ const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.SpatialNearest
         <NodeBadge>{configuration.includeUnmatched ? '保留未命中' : '仅命中'}</NodeBadge>
         <NodeBadge>{configuration.outputColumns.filter((item) => item.included).length} 个字段</NodeBadge>
         <NodeBadge>{usesExactNearest(configuration) ? '真实距离' : '旧版 KNN'}</NodeBadge>
+        {configuration.maximumDistance != null && <NodeBadge>
+          {`范围 ≤ ${configuration.maximumDistance} ${configuration.maximumDistanceUnit == null
+            ? '单位待选'
+            : spatialDistanceUnitLabels[configuration.maximumDistanceUnit]}`}
+        </NodeBadge>}
         {outputsNearestLines(configuration) && <NodeBadge>含连接线表</NodeBadge>}
       </NodeBadges>
     </NodeContent>

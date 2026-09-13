@@ -227,7 +227,7 @@ public class SystemMcpCatalogService {
         });
     }
     public static boolean eligiblePath(String path) {
-        return path.startsWith("/api/v1/")&&!under(path,"/api/v1/auth")&&!under(path,"/api/v1/internal")&&!under(path,"/api/v1/system-mcp");
+        return path.startsWith("/api/v1/")&&!under(path,"/api/v1/auth")&&!under(path,"/api/v1/internal")&&!under(path,"/api/v1/system-mcp")&&!under(path,"/api/v1/dsh");
     }
     private static boolean under(String value,String root) {
         return value.equals(root)||value.startsWith(root+"/");

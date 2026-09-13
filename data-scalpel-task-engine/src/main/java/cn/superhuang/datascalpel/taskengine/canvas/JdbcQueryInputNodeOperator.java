@@ -95,10 +95,13 @@ public final class JdbcQueryInputNodeOperator implements CanvasNodeOperator {
             );
         } else if (dataSource != null
                 && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.POSTGRESQL
-                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL) {
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.HIGHGO
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.OPENGAUSS
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.KINGBASE) {
             issues.error(
                     "JDBC_QUERY_DATABASE_NOT_SUPPORTED",
-                    "JDBC 查询输入只支持 PostgreSQL 和 MySQL",
+                    "JDBC 查询输入只支持 PostgreSQL、HighGo、MySQL、openGauss 和人大金仓",
                     "configuration.dataSourceId"
             );
         }

@@ -241,10 +241,16 @@ public final class JdbcOutputNodeOperator implements CanvasNodeOperator {
             CanvasNodeIssueSink issues
     ) {
         if (dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.POSTGRESQL
-                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL) {
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.HIGHGO
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.OPENGAUSS
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.KINGBASE
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.DAMENG
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.ORACLE
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.SQL_SERVER) {
             issues.error(
                     "UPSERT_DATABASE_NOT_SUPPORTED",
-                    "UPSERT 只支持 PostgreSQL 和 MySQL",
+                    "当前目标数据库未开放 UPSERT",
                     "configuration.dataSourceId"
             );
         }

@@ -15,7 +15,9 @@ import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } fro
 import { spatialColumnOptions, spatialTableOptions } from '../spatialInspectorOptions';
 import { TrackBoundaryEditor } from '../trackShared';
 import { trackDurationUnitOptions } from '../trackOptions';
-import { incidentConditionColumns, incidentWindowErrors } from './conditionWindows';
+import { incidentConditionColumns, incidentScalarErrors, incidentWindowErrors,
+  isIncidentPointCoordinateScalar } from './conditionWindows';
+import { IncidentScalarsModal } from './IncidentScalarsModal';
 import { IncidentWindowsModal } from './IncidentWindowsModal';
 
 const emptyCondition = (): CanvasFilterCondition => ({ kind: 'GROUP', operator: 'AND', children: [] });
@@ -49,6 +51,7 @@ const TrackDetectIncidentsInspector = ({
   const [endDraft, setEndDraft] = useState<CanvasFilterCondition>(emptyCondition);
   const [fieldsOpen, setFieldsOpen] = useState(false);
   const [windowsOpen, setWindowsOpen] = useState(false);
+  const [scalarsOpen, setScalarsOpen] = useState(false);
   const sourceTableName = Form.useWatch('sourceTableName', form) ?? '';
   const pointGeometryColumnName = Form.useWatch('pointGeometryColumnName', form) ?? null;
   const timeColumnName = Form.useWatch('timeColumnName', form) ?? '';
@@ -63,12 +66,20 @@ const TrackDetectIncidentsInspector = ({
   const sourceTable = tables.find((table) => table.name === sourceTableName);
   const columns = sourceTable?.columns ?? [];
   const conditionWindows = Form.useWatch('conditionWindows', { form, preserve: true }) ?? node.configuration.conditionWindows ?? [];
-  const conditionColumns = lifecycle ? incidentConditionColumns(columns, conditionWindows) : columns;
-  const windowErrors = lifecycle ? incidentWindowErrors(conditionWindows, columns, Boolean(validation)) : [];
+  const conditionScalars = Form.useWatch('conditionScalars', { form, preserve: true }) ?? node.configuration.conditionScalars ?? [];
+  const conditionColumns = lifecycle ? incidentConditionColumns(columns, conditionWindows, conditionScalars) : columns;
+  const motionWindowCount = conditionWindows.filter(window => (window.source ?? 'FIELD') !== 'FIELD').length;
+  const pointCoordinateScalarCount = conditionScalars.filter(isIncidentPointCoordinateScalar).length;
+  const windowErrors = lifecycle
+    ? incidentWindowErrors(conditionWindows, columns, Boolean(validation), pointGeometryColumnName, conditionScalars) : [];
   const windowErrorDetails = windowErrors.flatMap((row, index) => Object.values(row).map(message => `第 ${index + 1} 项：${message}`));
+  const scalarErrors = lifecycle ? incidentScalarErrors(conditionScalars, columns, conditionWindows,
+    Boolean(validation), pointGeometryColumnName) : [];
+  const scalarErrorDetails = scalarErrors.flatMap((row, index) => Object.values(row).map(message => `第 ${index + 1} 项：${message}`));
 
   const normalize = (value: TrackDetectIncidentsConfiguration): TrackDetectIncidentsConfiguration => ({
     conditionWindows: value.conditionWindows ?? [],
+    conditionScalars: value.conditionScalars ?? [],
     incidentSemantics: value.incidentSemantics ?? 'LEGACY',
     incidentStatusColumnName: value.incidentStatusColumnName ?? null,
     orderByColumns: value.orderByColumns ?? [],
@@ -131,8 +142,17 @@ const TrackDetectIncidentsInspector = ({
         <Form.Item name="pointGeometryColumnName" label="Geometry（可选）">
           <Select allowClear showSearch optionFilterProp="label" options={spatialColumnOptions(
             columns, pointGeometryColumnName ?? '',
-            (column) => column.fieldType === 'GEOMETRY'
-              && (lifecycle && boundaries.maximumDistanceGap == null || column.geometry?.kind === 'POINT'),
+            (column) => {
+              if (column.fieldType !== 'GEOMETRY') return false;
+              if (motionWindowCount > 0) return column.geometry?.kind === 'POINT'
+                && column.geometry.dimension === 'XY'
+                && column.geometry.crs.authority.toUpperCase() === 'EPSG'
+                && column.geometry.crs.code === 4326;
+              if (pointCoordinateScalarCount > 0 || !lifecycle || boundaries.maximumDistanceGap != null) {
+                return column.geometry?.kind === 'POINT';
+              }
+              return true;
+            },
           )} />
         </Form.Item>
       </div>
@@ -177,11 +197,27 @@ const TrackDetectIncidentsInspector = ({
         <Space wrap size={6} style={{ minWidth: 0 }}><Typography.Text strong>窗口指标</Typography.Text><Tag>{conditionWindows.length} 项{!lifecycle && conditionWindows.length > 0 ? '（未启用）' : ''}</Tag>
           {windowErrorDetails.length > 0 && <InlineFeedback tone="warning" label={`${windowErrorDetails.length} 个问题`}
             detail={windowErrorDetails.map((message, index) => <div key={index}>{message}</div>)} />}
-          <ContextHelp ariaLabel="窗口指标使用说明" content="配置移动均值、极值或计数后，可在开始和结束条件中选择指标名。仅条件生命周期模式执行；切回旧模式保留但不计算这些配置。" /></Space>
+          <ContextHelp ariaLabel="窗口指标使用说明" content="配置字段、WGS84 累计轨迹距离、逐观测速度或加速度窗口后，可在开始和结束条件中选择指标名。运动单位固定为米、米/秒和米/秒²；仅条件生命周期模式执行，切回旧模式保留但不计算这些配置。" /></Space>
         <Button size="small" aria-label="配置事件窗口指标" disabled={!lifecycle} icon={<SettingOutlined />} onClick={() => setWindowsOpen(true)}>设置</Button>
       </div>
-      {windowsOpen && <IncidentWindowsModal value={conditionWindows} columns={columns} schemaAvailable={Boolean(validation)} onCancel={() => setWindowsOpen(false)}
+      {windowsOpen && <IncidentWindowsModal value={conditionWindows} columns={columns} scalars={conditionScalars}
+        pointGeometryColumnName={pointGeometryColumnName} schemaAvailable={Boolean(validation)} onCancel={() => setWindowsOpen(false)}
         onSave={value => { updateField('conditionWindows', value); setWindowsOpen(false); }} />}
+      <div className="canvas-track-condition-row">
+        <Space wrap size={6} style={{ minWidth: 0 }}><Typography.Text strong>轨迹标量</Typography.Text>
+          <Tag>{conditionScalars.length} 项{!lifecycle && conditionScalars.length > 0 ? '（未启用）' : ''}</Tag>
+          {scalarErrorDetails.length > 0 && <InlineFeedback tone="warning" label={`${scalarErrorDetails.length} 个问题`}
+            detail={scalarErrorDetails.map((message, index) => <div key={index}>{message}</div>)} />}
+          <ContextHelp ariaLabel="轨迹标量使用说明"
+            content="把轨迹时间、时长、序号或相对观测的 Point X/Y 坐标绑定为条件字段。时间使用 Epoch 毫秒，序号从 0 开始；坐标偏移 0 表示当前、负数回看、正数前看，坐标单位跟随来源 CRS。轨迹边界会重置这些值。" />
+        </Space>
+        <Button size="small" aria-label="配置轨迹条件标量" disabled={!lifecycle}
+          icon={<SettingOutlined />} onClick={() => setScalarsOpen(true)}>设置</Button>
+      </div>
+      {scalarsOpen && <IncidentScalarsModal value={conditionScalars} columns={columns} windows={conditionWindows}
+        pointGeometryColumnName={pointGeometryColumnName} schemaAvailable={Boolean(validation)}
+        onCancel={() => setScalarsOpen(false)}
+        onSave={value => { updateField('conditionScalars', value); setScalarsOpen(false); }} />}
       <div className="canvas-track-condition-row">
         <Space size={6}><Typography.Text strong>开始条件</Typography.Text><Tag>{conditionCount(startCondition)} 个条件</Tag></Space>
         <Button size="small" icon={<EditOutlined />} aria-label="编辑事件开始条件" onClick={() => {

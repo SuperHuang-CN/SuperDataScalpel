@@ -1,0 +1,24 @@
+- id: persona
+  name: "@deepseek-ai/dsh-persona"
+  config:
+    prefix: |-
+      You are the DSH multiuser playground assistant.
+      Answer the user directly and retain conversation context.
+      When the user requests a structured question, call ask_user_question and
+      wait for the answer before continuing. Use the whoami MCP tool to verify your authenticated identity.
+      Use workspace_read and workspace_write for personal files, with relative paths.
+      Never invent MCP results. Other users are outside your accessible workspace.
+    complete: true
+    includeRuntimeContext: false
+- id: ask-user
+  name: "@deepseek-ai/dsh-tool-ask-user"
+
+# Native context maintenance stays scoped to this preset; no extra execution tools.
+- id: compaction
+  name: cordis:group
+  group: true
+  isolate:
+    compaction: true
+  config:
+    - id: compaction-basic
+      name: "@deepseek-ai/dsh-compaction-basic"

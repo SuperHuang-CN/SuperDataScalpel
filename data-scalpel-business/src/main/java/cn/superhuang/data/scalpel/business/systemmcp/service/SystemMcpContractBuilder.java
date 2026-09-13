@@ -41,12 +41,20 @@ public class SystemMcpContractBuilder {
         ObjectNode components = mapper.createObjectNode();
         collectReferences(contract, document, components, new HashSet<>());
         contract.set("components", components);
-        normalize(contract);
+        for (JsonNode parameter : contract.path("parameters")) normalize(parameter.path("schema"));
+        normalizeContent(contract.path("requestBody").path("content"));
+        for (JsonNode response : contract.path("responses")) normalizeContent(response.path("content"));
+        for (JsonNode schema : components.path("schemas")) normalize(schema);
         ObjectNode input = mapper.createObjectNode().put("type", "object").put("additionalProperties", false);
         ObjectNode properties = input.putObject("properties");
         ArrayNode required = input.putArray("required");
         for (String location : List.of("path", "query")) {
-            ObjectNode group = mapper.createObjectNode().put("type", "object").put("additionalProperties", false);
+            ObjectNode group = mapper.createObjectNode()
+                    .put("type", "object")
+                    .put("description", location.equals("path")
+                            ? "路径参数对象；字段名对应路由模板中的占位符，调用时只传契约列出的字段。"
+                            : "查询参数对象；字段值按原业务接口契约序列化，调用时只传契约列出的字段。")
+                    .put("additionalProperties", false);
             ObjectNode fields = group.putObject("properties");
             ArrayNode mandatory = group.putArray("required");
             for (JsonNode parameter : contract.path("parameters")) {
@@ -60,7 +68,14 @@ public class SystemMcpContractBuilder {
                 String type = parameterSchema.path("type").asText();
                 if (type.equals("object") || type.equals("array") && (!location.equals("query") || dereference(parameterSchema.path("items"), document).path("type").asText().matches("object|array")))
                 throw new IllegalArgumentException("路径或查询参数结构需要适配");
-                fields.set(name, parameter.get("schema").deepCopy());
+                JsonNode fieldSchema = parameter.get("schema").deepCopy();
+                if (fieldSchema instanceof ObjectNode fieldObject
+                        && !fieldObject.hasNonNull("description")
+                        && parameter.path("description").isTextual()
+                        && !parameter.path("description").asText().isBlank()) {
+                    fieldObject.put("description", parameter.path("description").asText());
+                }
+                fields.set(name, fieldSchema);
                 if (location.equals("path") || parameter.path("required").asBoolean()) mandatory.add(name);
             }
             String key = location.equals("path") ? "pathParams" : "queryParams";
@@ -72,7 +87,14 @@ public class SystemMcpContractBuilder {
             JsonNode content = body.path("content");
             JsonNode json = jsonContent(content);
             if (json == null || !json.has("schema")) throw new IllegalArgumentException("仅支持有 Schema 的 JSON 请求体");
-            properties.set("body", json.get("schema").deepCopy());
+            JsonNode bodySchema = json.get("schema").deepCopy();
+            if (bodySchema instanceof ObjectNode bodyObject && !bodyObject.hasNonNull("description")) {
+                String description = body.path("description").asText();
+                bodyObject.put("description", description.isBlank()
+                        ? "JSON 请求体；完整字段约束见引用的业务请求 Schema。"
+                        : description);
+            }
+            properties.set("body", bodySchema);
             if (body.path("required").asBoolean()) required.add("body");
         }
         input.set("components", components.deepCopy());
@@ -99,7 +121,7 @@ public class SystemMcpContractBuilder {
     private void collectReferences(JsonNode node, JsonNode document, ObjectNode target, Set<String> seen) {
         schemas.rejectRemoteReferences(node);
         if (node.isObject()) {
-            if (node.has("$ref")) {
+            if (node.path("$ref").isTextual()) {
                 String ref = node.get("$ref").asText();
                 if (!ref.startsWith("#/components/")) throw new IllegalArgumentException("仅支持本地 components 引用");
                 if (seen.add(ref)) {
@@ -116,15 +138,18 @@ public class SystemMcpContractBuilder {
             for (String key : node.propertyNames()) collectReferences(node.get(key), document, target, seen);
         } else if (node.isArray()) for (JsonNode child : node) collectReferences(child, document, target, seen);
     }
+    private void normalizeContent(JsonNode content) {
+        for (JsonNode media : content) normalize(media.path("schema"));
+    }
     private void normalize(JsonNode node) {
+        SystemMcpSchemaService.visitSchemas(node, this::normalizeSchema);
+    }
+    private void normalizeSchema(JsonNode node) {
         if (node.isObject()) {
             ObjectNode object = (ObjectNode) node;
             if (object.path("format").asText().equals("binary") || object.path("format").asText().equals("byte"))
                 throw new IllegalArgumentException("第一版不支持二进制 Schema");
-            for (String key : new ArrayList<>(object.propertyNames())) {
-                if (!Set.of("example", "examples", "default", "enum", "const").contains(key)) normalize(object.get(key));
-            }
-            if (object.path("nullable").asBoolean()) {
+            if (object.path("nullable").isBoolean() && object.get("nullable").asBoolean()) {
                 object.remove("nullable");
                 ObjectNode original = object.deepCopy();
                 object.removeAll();
@@ -139,6 +164,6 @@ public class SystemMcpContractBuilder {
                     if (enabled && object.has(ordinary)) object.set(exclusive, object.remove(ordinary));
                 }
             }
-        } else if (node.isArray()) for (JsonNode child : node) normalize(child);
+        }
     }
 }

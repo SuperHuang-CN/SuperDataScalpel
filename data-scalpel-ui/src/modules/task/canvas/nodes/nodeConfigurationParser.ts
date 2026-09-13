@@ -50,10 +50,18 @@ import {
   CANVAS_SPATIAL_BIN_MAX_STATISTICS,
   CANVAS_SPATIAL_CENTER_MAX_ANALYSES,
   CANVAS_SPATIAL_CENTER_MAX_GROUP_COLUMNS,
+  CANVAS_SPATIAL_DENSITY_MAX_FIELDS,
+  CANVAS_SPATIAL_MULTI_VARIABLE_GRID_MAX_VARIABLES,
+  CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_ANALYSIS_FIELDS,
+  CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_APPEND_FIELDS,
+  CANVAS_TRACE_PROXIMITY_MAX_INTERESTS,
+  CANVAS_SNAP_TRACKS_MAX_LINE_FIELDS,
   CANVAS_MASKING_MAX_FIELD_RULES,
   CANVAS_TOP_N_MAX_LIMIT,
   CANVAS_SPATIAL_MEASURE_MAX_MEASUREMENTS,
   CANVAS_SPATIAL_AGGREGATE_MAX_AGGREGATIONS,
+  CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS,
+  CANVAS_SPATIAL_JOIN_MAX_SUMMARY_STATISTICS,
   CANVAS_VALUE_MAPPING_MAX_ENTRIES_PER_RULE,
   CANVAS_VALUE_MAPPING_MAX_RULES,
   CANVAS_VALUE_MAPPING_MAX_TOTAL_ENTRIES,
@@ -74,10 +82,35 @@ import {
   type SpatialBinStatistic,
   type SpatialPointClusterParameters,
   type SpatialCenterDispersionAnalysis,
+  type SpatialDensityField,
+  type SpatialMultiVariableGridVariable,
+  type SpatialSimilarLocationsAnalysisField,
+  type SpatialSimilarLocationsAppendField,
+  type SpatialEnrichFromGridField,
+  type SpatialGroupByProximityAttributeCondition,
+  type SpatialGroupByProximityAttributeRelationship,
+  type SpatialGroupByProximitySpatialRelationship,
+  type SpatialGroupByProximityTemporalCondition,
+  type SpatialGroupByProximityTemporalRelationship,
+  type SpatialGroupByProximityTemporalUnit,
+  type TraceProximityEntityOfInterest,
+  type TraceProximityInterestSource,
+  type SnapTracksDirectionMatching,
+  type SnapTracksLineField,
   type RowsFrameBoundary,
   type RowsWindowFrame,
+  type SpatialAreaUnit,
+  type SpatialDistanceUnit,
   type SpatialMeasurement,
   type SpatialAggregation,
+  type SpatialAggregateDissolveOptions,
+  type SpatialAggregateStatistic,
+  type SpatialJoinOneToOneOptions,
+  type SpatialJoinSummaryStatistic,
+  type SpatialJoinTemporalCondition,
+  type SpatialJoinSpatialNearCondition,
+  type SpatialJoinDistanceOutput,
+  type UnionMergeTable,
   type CanvasColumnSchema,
   type ValueMappingRule,
   type WindowFunctionItem,
@@ -548,6 +581,332 @@ const parseSpatialAggregations = (
     });
 };
 
+const unionMergeFieldActions = new Set(['MATCH', 'RENAME', 'REMOVE']);
+
+const parseUnionMergingTables = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): UnionMergeTable[] | null => {
+  if (value === undefined || value === null) return null;
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组或 null`);
+    return [];
+  }
+  return value.flatMap((item, tableIndex): UnionMergeTable[] => {
+    const tablePath = `${path}[${tableIndex}]`;
+    if (!isRecord(item)) {
+      errors.push(`${tablePath} 必须是对象`);
+      return [];
+    }
+    if (!Array.isArray(item.fieldRules)) {
+      errors.push(`${tablePath}.fieldRules 必须是数组`);
+    }
+    const fieldRules = Array.isArray(item.fieldRules)
+      ? item.fieldRules.flatMap((rule, ruleIndex): UnionMergeTable['fieldRules'] => {
+        const rulePath = `${tablePath}.fieldRules[${ruleIndex}]`;
+        if (!isRecord(rule)) {
+          errors.push(`${rulePath} 必须是对象`);
+          return [];
+        }
+        const action = stringValue(rule.action);
+        if (!unionMergeFieldActions.has(action)) {
+          errors.push(`${rulePath}.action 仅支持 MATCH、RENAME 或 REMOVE`);
+        }
+        if (rule.targetColumnName !== undefined && rule.targetColumnName !== null
+            && typeof rule.targetColumnName !== 'string') {
+          errors.push(`${rulePath}.targetColumnName 必须是字符串或 null`);
+        }
+        return [{
+          sourceColumnName: stringValue(rule.sourceColumnName),
+          action: unionMergeFieldActions.has(action)
+            ? action as UnionMergeTable['fieldRules'][number]['action']
+            : null,
+          targetColumnName: typeof rule.targetColumnName === 'string'
+            ? rule.targetColumnName
+            : null,
+        }];
+      })
+      : [];
+    return [{ tableName: stringValue(item.tableName), fieldRules }];
+  });
+};
+
+const spatialAggregateStatisticKinds = new Set([
+  'COUNT_FIELD', 'SUM', 'MEAN', 'MIN', 'MAX', 'RANGE', 'STDDEV', 'VARIANCE', 'ANY',
+]);
+const spatialAggregateDissolveGroupingModes = new Set([
+  'ALL_OR_FIELDS', 'CONNECTED_COMPONENTS',
+]);
+
+const parseSpatialAggregateDissolve = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialAggregateDissolveOptions | null => {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return null;
+  }
+  if (typeof value.enabled !== 'boolean') {
+    errors.push(`${path}.enabled 必须是布尔值`);
+  }
+  if (typeof value.multipart !== 'boolean') {
+    errors.push(`${path}.multipart 必须是布尔值`);
+  }
+  const groupingMode = stringValue(value.groupingMode);
+  if (value.groupingMode !== undefined && value.groupingMode !== null
+      && !spatialAggregateDissolveGroupingModes.has(groupingMode)) {
+    errors.push(`${path}.groupingMode 不是受支持的 Dissolve 分组方式`);
+  }
+  const rawStatistics = value.summaryStatistics;
+  if (!Array.isArray(rawStatistics)) {
+    errors.push(`${path}.summaryStatistics 必须是数组`);
+  }
+  const source = Array.isArray(rawStatistics) ? rawStatistics : [];
+  if (source.length > CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS) {
+    errors.push(
+      `${path}.summaryStatistics 不能超过 ${CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS} 项`,
+    );
+  }
+  const summaryStatistics = source
+    .slice(0, CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS)
+    .flatMap((item, index): SpatialAggregateStatistic[] => {
+      const itemPath = `${path}.summaryStatistics[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      const kind = stringValue(item.kind);
+      if (!spatialAggregateStatisticKinds.has(kind)) {
+        errors.push(`${itemPath}.kind 不是受支持的 Dissolve 统计类型`);
+      }
+      return [{
+        statisticId: stringValue(item.statisticId),
+        kind: spatialAggregateStatisticKinds.has(kind)
+          ? kind as SpatialAggregateStatistic['kind'] : 'COUNT_FIELD',
+        sourceColumnName: stringValue(item.sourceColumnName),
+        outputColumnName: stringValue(item.outputColumnName),
+      }];
+    });
+  return {
+    enabled: value.enabled === true,
+    multipart: value.multipart === true,
+    countOutputColumnName: stringValue(value.countOutputColumnName),
+    summaryStatistics,
+    groupingMode: spatialAggregateDissolveGroupingModes.has(groupingMode)
+      ? groupingMode as SpatialAggregateDissolveOptions['groupingMode'] : null,
+  };
+};
+
+const spatialJoinSummaryStatisticKinds = new Set(['SUM', 'MIN', 'MAX', 'MEAN', 'STDDEV']);
+const spatialJoinTemporalRelationships = new Set([
+  'EQUALS', 'INTERSECTS', 'DURING', 'CONTAINS', 'FINISHES', 'FINISHED_BY',
+  'MEETS', 'MET_BY', 'OVERLAPS', 'OVERLAPPED_BY', 'STARTS', 'STARTED_BY',
+  'NEAR', 'NEAR_BEFORE', 'NEAR_AFTER',
+]);
+const spatialDurationUnits = new Set([
+  'MILLISECONDS', 'SECONDS', 'MINUTES', 'HOURS', 'DAYS', 'WEEKS',
+]);
+
+const parseSpatialJoinOneToOne = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialJoinOneToOneOptions | null => {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return null;
+  }
+  const mode = value.mode === 'SUMMARIZE_MATCHES' || value.mode === 'KEEP_ONE'
+    ? value.mode
+    : null;
+  if (value.mode !== undefined && value.mode !== null && mode === null) {
+    errors.push(`${path}.mode 仅支持 SUMMARIZE_MATCHES 或 KEEP_ONE`);
+  }
+  const rawStatistics = value.summaryStatistics;
+  if (!Array.isArray(rawStatistics)) {
+    errors.push(`${path}.summaryStatistics 必须是数组`);
+  }
+  const statistics = Array.isArray(rawStatistics) ? rawStatistics : [];
+  if (statistics.length > CANVAS_SPATIAL_JOIN_MAX_SUMMARY_STATISTICS) {
+    errors.push(`${path}.summaryStatistics 不能超过 ${CANVAS_SPATIAL_JOIN_MAX_SUMMARY_STATISTICS} 项`);
+  }
+  const summaryStatistics = statistics
+    .slice(0, CANVAS_SPATIAL_JOIN_MAX_SUMMARY_STATISTICS)
+    .flatMap((item, index): SpatialJoinSummaryStatistic[] => {
+      const itemPath = `${path}.summaryStatistics[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      const kind = stringValue(item.kind);
+      if (!spatialJoinSummaryStatisticKinds.has(kind)) {
+        errors.push(`${itemPath}.kind 仅支持 SUM、MIN、MAX、MEAN 或 STDDEV`);
+      }
+      return [{
+        statisticId: stringValue(item.statisticId),
+        kind: spatialJoinSummaryStatisticKinds.has(kind)
+          ? kind as SpatialJoinSummaryStatistic['kind'] : null,
+        sourceColumnName: stringValue(item.sourceColumnName),
+        outputColumnName: stringValue(item.outputColumnName),
+      }];
+    });
+  let keepRule: SpatialJoinOneToOneOptions['keepRule'] = null;
+  if (value.keepRule !== undefined && value.keepRule !== null) {
+    if (!isRecord(value.keepRule)) {
+      errors.push(`${path}.keepRule 必须是对象或 null`);
+    } else {
+      const strategy = ['FIRST', 'LARGEST', 'SMALLEST', 'NEWEST', 'OLDEST']
+        .includes(stringValue(value.keepRule.strategy))
+        ? stringValue(value.keepRule.strategy) as NonNullable<SpatialJoinOneToOneOptions['keepRule']>['strategy']
+        : null;
+      if (value.keepRule.strategy !== undefined
+        && value.keepRule.strategy !== null
+        && strategy === null) {
+        errors.push(`${path}.keepRule.strategy 不是受支持的保留策略`);
+      }
+      keepRule = {
+        strategy,
+        orderByColumnName: value.keepRule.orderByColumnName === undefined
+          || value.keepRule.orderByColumnName === null
+          ? null : stringValue(value.keepRule.orderByColumnName),
+        stableOrder: parseSortFields(
+          value.keepRule.stableOrder,
+          `${path}.keepRule.stableOrder`,
+          errors,
+        ),
+      };
+    }
+  }
+  return {
+    mode,
+    joinCountColumnName: stringValue(value.joinCountColumnName),
+    summaryStatistics,
+    keepRule,
+  };
+};
+
+const parseSpatialJoinTemporalCondition = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialJoinTemporalCondition | null => {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return null;
+  }
+  const rawRelationship = stringValue(value.relationship);
+  if (!spatialJoinTemporalRelationships.has(rawRelationship)) {
+    errors.push(`${path}.relationship 不是受支持的时间关系`);
+  }
+  const nullableColumnName = (raw: unknown, field: string): string | null => {
+    if (raw === undefined || raw === null) return null;
+    if (typeof raw !== 'string') {
+      errors.push(`${path}.${field} 必须是字符串或 null`);
+      return null;
+    }
+    return raw;
+  };
+  let nearDistance: number | null = null;
+  if (value.nearDistance !== undefined && value.nearDistance !== null) {
+    if (typeof value.nearDistance !== 'number' || !Number.isSafeInteger(value.nearDistance)) {
+      errors.push(`${path}.nearDistance 必须是安全整数或 null`);
+    } else {
+      nearDistance = value.nearDistance;
+    }
+  }
+  const rawUnit = stringValue(value.nearDistanceUnit);
+  if (value.nearDistanceUnit !== undefined && value.nearDistanceUnit !== null
+    && !spatialDurationUnits.has(rawUnit)) {
+    errors.push(`${path}.nearDistanceUnit 不是受支持的固定时长单位`);
+  }
+  return {
+    relationship: spatialJoinTemporalRelationships.has(rawRelationship)
+      ? rawRelationship as SpatialJoinTemporalCondition['relationship'] : null,
+    leftStartColumnName: stringValue(value.leftStartColumnName),
+    leftEndColumnName: nullableColumnName(value.leftEndColumnName, 'leftEndColumnName'),
+    rightStartColumnName: stringValue(value.rightStartColumnName),
+    rightEndColumnName: nullableColumnName(value.rightEndColumnName, 'rightEndColumnName'),
+    nearDistance,
+    nearDistanceUnit: spatialDurationUnits.has(rawUnit)
+      ? rawUnit as SpatialJoinTemporalCondition['nearDistanceUnit'] : null,
+  };
+};
+
+const parseSpatialJoinSpatialNearCondition = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialJoinSpatialNearCondition | null => {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return null;
+  }
+  const rawMethod = stringValue(value.distanceMethod);
+  if (rawMethod !== '' && rawMethod !== 'PLANAR' && rawMethod !== 'GEODESIC') {
+    errors.push(`${path}.distanceMethod 仅支持 PLANAR 或 GEODESIC`);
+  }
+  let distance: number | null = null;
+  if (value.distance !== undefined && value.distance !== null) {
+    if (typeof value.distance !== 'number' || !Number.isFinite(value.distance)) {
+      errors.push(`${path}.distance 必须是有限数值或 null`);
+    } else {
+      distance = value.distance;
+    }
+  }
+  const rawUnit = stringValue(value.distanceUnit);
+  if (value.distanceUnit !== undefined && value.distanceUnit !== null
+    && !spatialDistanceUnits.has(rawUnit)) {
+    errors.push(`${path}.distanceUnit 不是受支持的距离单位`);
+  }
+  return {
+    leftGeometryColumnName: stringValue(value.leftGeometryColumnName),
+    rightGeometryColumnName: stringValue(value.rightGeometryColumnName),
+    distanceMethod: rawMethod === 'PLANAR' || rawMethod === 'GEODESIC' ? rawMethod : null,
+    distance,
+    distanceUnit: spatialDistanceUnits.has(rawUnit) ? rawUnit as SpatialDistanceUnit : null,
+  };
+};
+
+const parseSpatialJoinDistanceOutput = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialJoinDistanceOutput | null => {
+  if (value === undefined || value === null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return null;
+  }
+  if (value.enabled !== undefined && typeof value.enabled !== 'boolean') {
+    errors.push(`${path}.enabled 必须是 boolean`);
+  }
+  const spatialUnit = stringValue(value.spatialDistanceUnit);
+  if (value.spatialDistanceUnit !== undefined && value.spatialDistanceUnit !== null
+    && !spatialDistanceUnits.has(spatialUnit)) {
+    errors.push(`${path}.spatialDistanceUnit 不是受支持的距离单位`);
+  }
+  const temporalUnit = stringValue(value.temporalDifferenceUnit);
+  if (value.temporalDifferenceUnit !== undefined && value.temporalDifferenceUnit !== null
+    && !spatialDurationUnits.has(temporalUnit)) {
+    errors.push(`${path}.temporalDifferenceUnit 不是受支持的固定时长单位`);
+  }
+  return {
+    enabled: value.enabled === true,
+    spatialDistanceColumnName: stringValue(value.spatialDistanceColumnName),
+    spatialDistanceUnit: spatialDistanceUnits.has(spatialUnit)
+      ? spatialUnit as SpatialDistanceUnit : null,
+    temporalDifferenceColumnName: stringValue(value.temporalDifferenceColumnName),
+    temporalDifferenceUnit: spatialDurationUnits.has(temporalUnit)
+      ? temporalUnit as SpatialJoinDistanceOutput['temporalDifferenceUnit'] : null,
+  };
+};
+
 const parseMaskingDefinition = (
   value: unknown,
   path: string,
@@ -1006,20 +1365,47 @@ const parseSpatialMeasurements = (
           outputColumnName,
         }];
       }
-      if (item.kind === 'AREA' || item.kind === 'LENGTH' || item.kind === 'PERIMETER') {
+      if (item.kind === 'AREA') {
         if (item.mode !== 'PLANAR' && item.mode !== 'SPHEROID') {
           errors.push(`${itemPath}.mode 仅支持 PLANAR 或 SPHEROID`);
+        }
+        const outputUnit = item.outputUnit == null ? null : stringValue(item.outputUnit);
+        if (outputUnit !== null && !spatialAreaUnits.has(outputUnit)) {
+          errors.push(`${itemPath}.outputUnit 不是受支持的面积单位`);
+        }
+        return [{
+          kind: 'AREA',
+          geometryColumnName: stringValue(item.geometryColumnName),
+          mode: item.mode === 'SPHEROID' ? 'SPHEROID' : 'PLANAR',
+          outputColumnName,
+          outputUnit: outputUnit !== null && spatialAreaUnits.has(outputUnit)
+            ? outputUnit as SpatialAreaUnit : null,
+        }];
+      }
+      if (item.kind === 'LENGTH' || item.kind === 'PERIMETER') {
+        if (item.mode !== 'PLANAR' && item.mode !== 'SPHEROID') {
+          errors.push(`${itemPath}.mode 仅支持 PLANAR 或 SPHEROID`);
+        }
+        const outputUnit = item.outputUnit == null ? null : stringValue(item.outputUnit);
+        if (outputUnit !== null && !spatialDistanceUnits.has(outputUnit)) {
+          errors.push(`${itemPath}.outputUnit 不是受支持的距离单位`);
         }
         return [{
           kind: item.kind,
           geometryColumnName: stringValue(item.geometryColumnName),
           mode: item.mode === 'SPHEROID' ? 'SPHEROID' : 'PLANAR',
           outputColumnName,
+          outputUnit: outputUnit !== null && spatialDistanceUnits.has(outputUnit)
+            ? outputUnit as SpatialDistanceUnit : null,
         }];
       }
       if (item.kind === 'DISTANCE') {
         if (item.mode !== 'PLANAR' && item.mode !== 'SPHEROID') {
           errors.push(`${itemPath}.mode 仅支持 PLANAR 或 SPHEROID`);
+        }
+        const outputUnit = item.outputUnit == null ? null : stringValue(item.outputUnit);
+        if (outputUnit !== null && !spatialDistanceUnits.has(outputUnit)) {
+          errors.push(`${itemPath}.outputUnit 不是受支持的距离单位`);
         }
         return [{
           kind: 'DISTANCE',
@@ -1027,6 +1413,8 @@ const parseSpatialMeasurements = (
           rightGeometryColumnName: stringValue(item.rightGeometryColumnName),
           mode: item.mode === 'SPHEROID' ? 'SPHEROID' : 'PLANAR',
           outputColumnName,
+          outputUnit: outputUnit !== null && spatialDistanceUnits.has(outputUnit)
+            ? outputUnit as SpatialDistanceUnit : null,
         }];
       }
       errors.push(`${itemPath}.kind 不是受支持的空间测量类型`);
@@ -1399,6 +1787,370 @@ const parseSpatialBinStatistics = (
           ? kind as SpatialBinStatistic['kind'] : 'COUNT',
         sourceColumnName: typeof item.sourceColumnName === 'string'
           ? item.sourceColumnName : null,
+        outputColumnName: stringValue(item.outputColumnName),
+      }];
+    });
+};
+
+const parseSpatialDensityFields = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialDensityField[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  if (value.length > CANVAS_SPATIAL_DENSITY_MAX_FIELDS) {
+    errors.push(`${path} 不能超过 ${CANVAS_SPATIAL_DENSITY_MAX_FIELDS} 项`);
+  }
+  return value.slice(0, CANVAS_SPATIAL_DENSITY_MAX_FIELDS)
+    .flatMap((item, index): SpatialDensityField[] => {
+      const itemPath = `${path}[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      return [{
+        fieldId: validateOptionalUuid(stringValue(item.fieldId), `${itemPath}.fieldId`, errors),
+        sourceColumnName: stringValue(item.sourceColumnName),
+        outputColumnName: stringValue(item.outputColumnName),
+      }];
+    });
+};
+
+const multiVariableGridKinds = new Set([
+  'DISTANCE_TO_NEAREST', 'ATTRIBUTE_OF_NEAREST', 'ATTRIBUTE_SUMMARY_OF_RELATED',
+]);
+const multiVariableGridStatisticKinds = new Set([
+  'COUNT', 'SUM', 'MEAN', 'MIN', 'MAX', 'RANGE', 'STDDEV', 'VARIANCE', 'ANY',
+]);
+
+const parseSpatialMultiVariableGridVariables = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialMultiVariableGridVariable[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  if (value.length > CANVAS_SPATIAL_MULTI_VARIABLE_GRID_MAX_VARIABLES) {
+    errors.push(`${path} 不能超过 ${CANVAS_SPATIAL_MULTI_VARIABLE_GRID_MAX_VARIABLES} 项`);
+  }
+  return value.slice(0, CANVAS_SPATIAL_MULTI_VARIABLE_GRID_MAX_VARIABLES)
+    .flatMap((item, index): SpatialMultiVariableGridVariable[] => {
+      const itemPath = `${path}[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      const kind = item.kind == null ? null : stringValue(item.kind);
+      const statisticKind = item.statisticKind == null ? null : stringValue(item.statisticKind);
+      const searchDistanceUnit = item.searchDistanceUnit == null
+        ? null : stringValue(item.searchDistanceUnit);
+      if (kind !== null && !multiVariableGridKinds.has(kind)) {
+        errors.push(`${itemPath}.kind 不是受支持的格网变量类型`);
+      }
+      if (statisticKind !== null && !multiVariableGridStatisticKinds.has(statisticKind)) {
+        errors.push(`${itemPath}.statisticKind 不是受支持的关联统计类型`);
+      }
+      if (searchDistanceUnit !== null && !spatialDistanceUnits.has(searchDistanceUnit)) {
+        errors.push(`${itemPath}.searchDistanceUnit 不是受支持的距离单位`);
+      }
+      for (const name of ['attributeColumnName', 'statisticColumnName'] as const) {
+        if (item[name] !== null && item[name] !== undefined && typeof item[name] !== 'string') {
+          errors.push(`${itemPath}.${name} 必须是字符串或 null`);
+        }
+      }
+      return [{
+        variableId: validateOptionalUuid(
+          stringValue(item.variableId), `${itemPath}.variableId`, errors,
+        ),
+        sourceTableName: stringValue(item.sourceTableName),
+        geometryColumnName: stringValue(item.geometryColumnName),
+        kind: kind !== null && multiVariableGridKinds.has(kind)
+          ? kind as SpatialMultiVariableGridVariable['kind'] : null,
+        attributeColumnName: typeof item.attributeColumnName === 'string'
+          ? item.attributeColumnName : null,
+        statisticKind: statisticKind !== null && multiVariableGridStatisticKinds.has(statisticKind)
+          ? statisticKind as SpatialMultiVariableGridVariable['statisticKind'] : null,
+        statisticColumnName: typeof item.statisticColumnName === 'string'
+          ? item.statisticColumnName : null,
+        searchDistance: item.searchDistance == null ? null
+          : parseFiniteNumber(item.searchDistance, `${itemPath}.searchDistance`, errors, 0),
+        searchDistanceUnit: searchDistanceUnit !== null && spatialDistanceUnits.has(searchDistanceUnit)
+          ? searchDistanceUnit as SpatialMultiVariableGridVariable['searchDistanceUnit'] : null,
+        filter: item.filter == null ? null
+          : parseFilterCondition(item.filter, `${itemPath}.filter`, errors),
+        outputColumnName: stringValue(item.outputColumnName),
+      }];
+    });
+};
+
+const parseSpatialSimilarLocationsAnalysisFields = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialSimilarLocationsAnalysisField[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  if (value.length > CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_ANALYSIS_FIELDS) {
+    errors.push(`${path} 不能超过 ${CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_ANALYSIS_FIELDS} 项`);
+  }
+  return value.slice(0, CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_ANALYSIS_FIELDS)
+    .flatMap((item, index): SpatialSimilarLocationsAnalysisField[] => {
+      const itemPath = `${path}[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      if (typeof item.columnName !== 'string') {
+        errors.push(`${itemPath}.columnName 必须是字符串`);
+      }
+      if (typeof item.outputColumnName !== 'string') {
+        errors.push(`${itemPath}.outputColumnName 必须是字符串`);
+      }
+      return [{
+        columnName: stringValue(item.columnName),
+        outputColumnName: stringValue(item.outputColumnName),
+      }];
+    });
+};
+
+const parseSpatialSimilarLocationsAppendFields = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialSimilarLocationsAppendField[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  if (value.length > CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_APPEND_FIELDS) {
+    errors.push(`${path} 不能超过 ${CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_APPEND_FIELDS} 项`);
+  }
+  return value.slice(0, CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_APPEND_FIELDS)
+    .flatMap((item, index): SpatialSimilarLocationsAppendField[] => {
+      const itemPath = `${path}[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      if (typeof item.sourceColumnName !== 'string') {
+        errors.push(`${itemPath}.sourceColumnName 必须是字符串`);
+      }
+      if (typeof item.outputColumnName !== 'string') {
+        errors.push(`${itemPath}.outputColumnName 必须是字符串`);
+      }
+      return [{
+        sourceColumnName: stringValue(item.sourceColumnName),
+        outputColumnName: stringValue(item.outputColumnName),
+      }];
+    });
+};
+
+const parseSpatialEnrichFromGridFields = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialEnrichFromGridField[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index): SpatialEnrichFromGridField[] => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${itemPath} 必须是对象`);
+      return [];
+    }
+    if (typeof item.sourceColumnName !== 'string') {
+      errors.push(`${itemPath}.sourceColumnName 必须是字符串`);
+    }
+    if (typeof item.outputColumnName !== 'string') {
+      errors.push(`${itemPath}.outputColumnName 必须是字符串`);
+    }
+    return [{
+      sourceColumnName: stringValue(item.sourceColumnName),
+      outputColumnName: stringValue(item.outputColumnName),
+    }];
+  });
+};
+
+const groupByProximitySpatialRelationships = new Set([
+  'INTERSECTS', 'TOUCHES', 'NEAR_PLANAR', 'NEAR_GEODESIC',
+]);
+const groupByProximityTemporalRelationships = new Set(['INTERSECTS', 'NEAR']);
+const groupByProximityTemporalUnits = new Set([
+  'MILLISECONDS', 'SECONDS', 'MINUTES', 'HOURS', 'DAYS', 'WEEKS', 'MONTHS', 'YEARS',
+]);
+const groupByProximityAttributeRelationships = new Set([
+  'EQUALS', 'ABSOLUTE_DIFFERENCE_AT_MOST',
+]);
+
+const parseGroupByProximityTemporalCondition = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialGroupByProximityTemporalCondition | null => {
+  if (value == null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return null;
+  }
+  const relationship = value.relationship == null ? null : stringValue(value.relationship);
+  if (relationship !== null && !groupByProximityTemporalRelationships.has(relationship)) {
+    errors.push(`${path}.relationship 不是受支持的时间关系`);
+  }
+  const unit = value.nearDistanceUnit == null ? null : stringValue(value.nearDistanceUnit);
+  if (unit !== null && !groupByProximityTemporalUnits.has(unit)) {
+    errors.push(`${path}.nearDistanceUnit 不是受支持的时间单位`);
+  }
+  if (value.endColumnName != null && typeof value.endColumnName !== 'string') {
+    errors.push(`${path}.endColumnName 必须是字符串或 null`);
+  }
+  if (value.nearDistance != null
+    && (typeof value.nearDistance !== 'number' || !Number.isInteger(value.nearDistance))) {
+    errors.push(`${path}.nearDistance 必须是整数或 null`);
+  }
+  return {
+    relationship: relationship !== null && groupByProximityTemporalRelationships.has(relationship)
+      ? relationship as SpatialGroupByProximityTemporalRelationship : null,
+    startColumnName: stringValue(value.startColumnName),
+    endColumnName: typeof value.endColumnName === 'string' ? value.endColumnName : null,
+    nearDistance: typeof value.nearDistance === 'number' && Number.isInteger(value.nearDistance)
+      ? value.nearDistance : null,
+    nearDistanceUnit: unit !== null && groupByProximityTemporalUnits.has(unit)
+      ? unit as SpatialGroupByProximityTemporalUnit : null,
+  };
+};
+
+const parseGroupByProximityAttributeConditions = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SpatialGroupByProximityAttributeCondition[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  return value.flatMap((item, index): SpatialGroupByProximityAttributeCondition[] => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${itemPath} 必须是对象`);
+      return [];
+    }
+    const relationship = item.relationship == null ? null : stringValue(item.relationship);
+    if (relationship !== null && !groupByProximityAttributeRelationships.has(relationship)) {
+      errors.push(`${itemPath}.relationship 不是受支持的属性关系`);
+    }
+    if (item.maximumDifference != null
+      && (typeof item.maximumDifference !== 'number'
+        || !Number.isFinite(item.maximumDifference))) {
+      errors.push(`${itemPath}.maximumDifference 必须是有限数值或 null`);
+    }
+    return [{
+      columnName: stringValue(item.columnName),
+      relationship: relationship !== null
+        && groupByProximityAttributeRelationships.has(relationship)
+        ? relationship as SpatialGroupByProximityAttributeRelationship : null,
+      maximumDifference: typeof item.maximumDifference === 'number'
+        && Number.isFinite(item.maximumDifference) ? item.maximumDifference : null,
+    }];
+  });
+};
+
+const traceProximityInterestSources = new Set(['ENTITY_IDS', 'TABLE']);
+
+const parseTraceProximityInterests = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): TraceProximityEntityOfInterest[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  if (value.length > CANVAS_TRACE_PROXIMITY_MAX_INTERESTS) {
+    errors.push(`${path} 不能超过 ${CANVAS_TRACE_PROXIMITY_MAX_INTERESTS} 项`);
+  }
+  return value.flatMap((item, index): TraceProximityEntityOfInterest[] => {
+    const itemPath = `${path}[${index}]`;
+    if (!isRecord(item)) {
+      errors.push(`${itemPath} 必须是对象`);
+      return [];
+    }
+    if (typeof item.entityId !== 'string') {
+      errors.push(`${itemPath}.entityId 必须是字符串`);
+    }
+    if (item.startEpochMillis != null
+      && (typeof item.startEpochMillis !== 'number'
+        || !Number.isSafeInteger(item.startEpochMillis))) {
+      errors.push(`${itemPath}.startEpochMillis 必须是安全整数或 null`);
+    }
+    return [{
+      entityId: stringValue(item.entityId),
+      startEpochMillis: typeof item.startEpochMillis === 'number'
+        && Number.isSafeInteger(item.startEpochMillis) ? item.startEpochMillis : null,
+    }];
+  });
+};
+
+const parseSnapTracksDirection = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SnapTracksDirectionMatching | null => {
+  if (value == null) return null;
+  if (!isRecord(value)) {
+    errors.push(`${path} 必须是对象或 null`);
+    return null;
+  }
+  const fields = [
+    'directionColumnName', 'forwardValue', 'backwardValue', 'bothValue', 'noneValue',
+  ] as const;
+  fields.forEach((field) => {
+    if (typeof value[field] !== 'string') errors.push(`${path}.${field} 必须是字符串`);
+  });
+  return {
+    directionColumnName: stringValue(value.directionColumnName),
+    forwardValue: stringValue(value.forwardValue),
+    backwardValue: stringValue(value.backwardValue),
+    bothValue: stringValue(value.bothValue),
+    noneValue: stringValue(value.noneValue),
+  };
+};
+
+const parseSnapTracksLineFields = (
+  value: unknown,
+  path: string,
+  errors: string[],
+): SnapTracksLineField[] => {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} 必须是数组`);
+    return [];
+  }
+  if (value.length > CANVAS_SNAP_TRACKS_MAX_LINE_FIELDS) {
+    errors.push(`${path} 不能超过 ${CANVAS_SNAP_TRACKS_MAX_LINE_FIELDS} 项`);
+  }
+  return value.slice(0, CANVAS_SNAP_TRACKS_MAX_LINE_FIELDS)
+    .flatMap((item, index): SnapTracksLineField[] => {
+      const itemPath = `${path}[${index}]`;
+      if (!isRecord(item)) {
+        errors.push(`${itemPath} 必须是对象`);
+        return [];
+      }
+      if (typeof item.sourceColumnName !== 'string') {
+        errors.push(`${itemPath}.sourceColumnName 必须是字符串`);
+      }
+      if (typeof item.outputColumnName !== 'string') {
+        errors.push(`${itemPath}.outputColumnName 必须是字符串`);
+      }
+      return [{
+        sourceColumnName: stringValue(item.sourceColumnName),
         outputColumnName: stringValue(item.outputColumnName),
       }];
     });
@@ -2297,13 +3049,462 @@ const configurationParsers = {
       },
     )
   ),
+  [CanvasNodeType.SpatialDensity]: (value, path) => (
+    parseConfiguration<Configuration<'SPATIAL_DENSITY'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        const weighting = stringValue(configuration.weighting);
+        const binShape = stringValue(configuration.binShape);
+        const binSizeUnit = stringValue(configuration.binSizeUnit);
+        const radiusUnit = stringValue(configuration.radiusUnit);
+        const areaUnit = stringValue(configuration.areaUnit);
+        if (configuration.weighting != null && !['UNIFORM', 'KERNEL'].includes(weighting)) {
+          errors.push(`${path}.weighting 仅支持 UNIFORM 或 KERNEL`);
+        }
+        if (configuration.binShape != null && !['SQUARE', 'HEXAGON'].includes(binShape)) {
+          errors.push(`${path}.binShape 仅支持 SQUARE 或 HEXAGON`);
+        }
+        if (!spatialDistanceUnits.has(binSizeUnit)) errors.push(`${path}.binSizeUnit 不是受支持的距离单位`);
+        if (!spatialDistanceUnits.has(radiusUnit)) errors.push(`${path}.radiusUnit 不是受支持的距离单位`);
+        if (!spatialAreaUnits.has(areaUnit)) errors.push(`${path}.areaUnit 不是受支持的面积单位`);
+        return {
+          sourceTableName: stringValue(configuration.sourceTableName),
+          pointGeometryColumnName: stringValue(configuration.pointGeometryColumnName),
+          fields: parseSpatialDensityFields(configuration.fields, `${path}.fields`, errors),
+          weighting: ['UNIFORM', 'KERNEL'].includes(weighting)
+            ? weighting as Configuration<'SPATIAL_DENSITY'>['weighting'] : null,
+          binShape: ['SQUARE', 'HEXAGON'].includes(binShape)
+            ? binShape as Configuration<'SPATIAL_DENSITY'>['binShape'] : null,
+          binSize: parseFiniteNumber(configuration.binSize, `${path}.binSize`, errors, 0),
+          binSizeUnit: spatialDistanceUnits.has(binSizeUnit)
+            ? binSizeUnit as Configuration<'SPATIAL_DENSITY'>['binSizeUnit'] : 'METERS',
+          radius: parseFiniteNumber(configuration.radius, `${path}.radius`, errors, 0),
+          radiusUnit: spatialDistanceUnits.has(radiusUnit)
+            ? radiusUnit as Configuration<'SPATIAL_DENSITY'>['radiusUnit'] : 'METERS',
+          areaUnit: spatialAreaUnits.has(areaUnit)
+            ? areaUnit as Configuration<'SPATIAL_DENSITY'>['areaUnit'] : 'SQUARE_KILOMETERS',
+          temporalSlicing: parseSpatialTemporalSlicing(
+            configuration.temporalSlicing, `${path}.temporalSlicing`, errors,
+          ),
+          outputTableName: stringValue(configuration.outputTableName),
+          binIdColumnName: stringValue(configuration.binIdColumnName),
+          binGeometryColumnName: stringValue(configuration.binGeometryColumnName),
+          countDensityColumnName: stringValue(configuration.countDensityColumnName),
+        };
+      },
+    )
+  ),
+  [CanvasNodeType.SpatialHotSpots]: (value, path) => (
+    parseConfiguration<Configuration<'SPATIAL_HOT_SPOTS'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        const analysisSource = stringValue(configuration.analysisSource);
+        const multipleTesting = stringValue(configuration.multipleTesting);
+        const binSizeUnit = stringValue(configuration.binSizeUnit);
+        const neighborhoodDistanceUnit = stringValue(configuration.neighborhoodDistanceUnit);
+        if (configuration.analysisSource != null
+          && !['POINT_COUNT', 'FIELD_SUM'].includes(analysisSource)) {
+          errors.push(`${path}.analysisSource 仅支持 POINT_COUNT 或 FIELD_SUM`);
+        }
+        if (configuration.analysisColumnName !== null
+          && configuration.analysisColumnName !== undefined
+          && typeof configuration.analysisColumnName !== 'string') {
+          errors.push(`${path}.analysisColumnName 必须是字符串或 null`);
+        }
+        if (configuration.multipleTesting != null
+          && !['NONE', 'FDR_BH'].includes(multipleTesting)) {
+          errors.push(`${path}.multipleTesting 仅支持 NONE 或 FDR_BH`);
+        }
+        if (!spatialDistanceUnits.has(binSizeUnit)) {
+          errors.push(`${path}.binSizeUnit 不是受支持的距离单位`);
+        }
+        if (!spatialDistanceUnits.has(neighborhoodDistanceUnit)) {
+          errors.push(`${path}.neighborhoodDistanceUnit 不是受支持的距离单位`);
+        }
+        return {
+          sourceTableName: stringValue(configuration.sourceTableName),
+          pointGeometryColumnName: stringValue(configuration.pointGeometryColumnName),
+          analysisSource: ['POINT_COUNT', 'FIELD_SUM'].includes(analysisSource)
+            ? analysisSource as Configuration<'SPATIAL_HOT_SPOTS'>['analysisSource'] : null,
+          analysisColumnName: typeof configuration.analysisColumnName === 'string'
+            ? configuration.analysisColumnName : null,
+          binSize: parseFiniteNumber(configuration.binSize, `${path}.binSize`, errors, 0),
+          binSizeUnit: spatialDistanceUnits.has(binSizeUnit)
+            ? binSizeUnit as Configuration<'SPATIAL_HOT_SPOTS'>['binSizeUnit'] : 'METERS',
+          neighborhoodDistance: parseFiniteNumber(
+            configuration.neighborhoodDistance, `${path}.neighborhoodDistance`, errors, 0,
+          ),
+          neighborhoodDistanceUnit: spatialDistanceUnits.has(neighborhoodDistanceUnit)
+            ? neighborhoodDistanceUnit as Configuration<'SPATIAL_HOT_SPOTS'>['neighborhoodDistanceUnit'] : 'METERS',
+          temporalSlicing: parseSpatialTemporalSlicing(
+            configuration.temporalSlicing, `${path}.temporalSlicing`, errors,
+          ),
+          multipleTesting: ['NONE', 'FDR_BH'].includes(multipleTesting)
+            ? multipleTesting as Configuration<'SPATIAL_HOT_SPOTS'>['multipleTesting'] : null,
+          outputTableName: stringValue(configuration.outputTableName),
+          binIdColumnName: stringValue(configuration.binIdColumnName),
+          binGeometryColumnName: stringValue(configuration.binGeometryColumnName),
+          pointCountColumnName: stringValue(configuration.pointCountColumnName),
+          analysisValueColumnName: stringValue(configuration.analysisValueColumnName),
+          zScoreColumnName: stringValue(configuration.zScoreColumnName),
+          pValueColumnName: stringValue(configuration.pValueColumnName),
+          adjustedPValueColumnName: stringValue(configuration.adjustedPValueColumnName),
+          confidenceBinColumnName: stringValue(configuration.confidenceBinColumnName),
+        };
+      },
+    )
+  ),
+  [CanvasNodeType.SpatialMultiVariableGrid]: (value, path) => (
+    parseConfiguration<Configuration<'SPATIAL_MULTI_VARIABLE_GRID'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        const binShape = stringValue(configuration.binShape);
+        const binSizeUnit = stringValue(configuration.binSizeUnit);
+        if (configuration.binShape != null && !['SQUARE', 'HEXAGON'].includes(binShape)) {
+          errors.push(`${path}.binShape 仅支持 SQUARE 或 HEXAGON`);
+        }
+        if (!spatialDistanceUnits.has(binSizeUnit)) {
+          errors.push(`${path}.binSizeUnit 不是受支持的距离单位`);
+        }
+        return {
+          variables: parseSpatialMultiVariableGridVariables(
+            configuration.variables, `${path}.variables`, errors,
+          ),
+          binShape: ['SQUARE', 'HEXAGON'].includes(binShape)
+            ? binShape as Configuration<'SPATIAL_MULTI_VARIABLE_GRID'>['binShape'] : null,
+          binSize: parseFiniteNumber(configuration.binSize, `${path}.binSize`, errors, 0),
+          binSizeUnit: spatialDistanceUnits.has(binSizeUnit)
+            ? binSizeUnit as Configuration<'SPATIAL_MULTI_VARIABLE_GRID'>['binSizeUnit'] : 'METERS',
+          outputTableName: stringValue(configuration.outputTableName),
+          binIdColumnName: stringValue(configuration.binIdColumnName),
+          binGeometryColumnName: stringValue(configuration.binGeometryColumnName),
+        };
+      },
+    )
+  ),
+  [CanvasNodeType.SpatialSimilarLocations]: (value, path) => (
+    parseConfiguration<Configuration<'SPATIAL_SIMILAR_LOCATIONS'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        const matchMethod = configuration.matchMethod == null
+          ? null : stringValue(configuration.matchMethod);
+        const resultMode = configuration.resultMode == null
+          ? null : stringValue(configuration.resultMode);
+        if (matchMethod !== null
+          && !['ATTRIBUTE_VALUES', 'ATTRIBUTE_PROFILES'].includes(matchMethod)) {
+          errors.push(`${path}.matchMethod 不是受支持的匹配方法`);
+        }
+        if (resultMode !== null
+          && !['MOST_SIMILAR', 'LEAST_SIMILAR', 'BOTH'].includes(resultMode)) {
+          errors.push(`${path}.resultMode 不是受支持的返回范围`);
+        }
+        return {
+          referenceTableName: stringValue(configuration.referenceTableName),
+          referenceIdColumnName: stringValue(configuration.referenceIdColumnName),
+          referenceGeometryColumnName: stringValue(configuration.referenceGeometryColumnName),
+          referenceFilter: configuration.referenceFilter == null ? null
+            : parseFilterCondition(configuration.referenceFilter, `${path}.referenceFilter`, errors),
+          candidateTableName: stringValue(configuration.candidateTableName),
+          candidateIdColumnName: stringValue(configuration.candidateIdColumnName),
+          candidateGeometryColumnName: stringValue(configuration.candidateGeometryColumnName),
+          candidateFilter: configuration.candidateFilter == null ? null
+            : parseFilterCondition(configuration.candidateFilter, `${path}.candidateFilter`, errors),
+          analysisFields: parseSpatialSimilarLocationsAnalysisFields(
+            configuration.analysisFields, `${path}.analysisFields`, errors,
+          ),
+          appendFields: parseSpatialSimilarLocationsAppendFields(
+            configuration.appendFields, `${path}.appendFields`, errors,
+          ),
+          matchMethod: ['ATTRIBUTE_VALUES', 'ATTRIBUTE_PROFILES'].includes(matchMethod ?? '')
+            ? matchMethod as Configuration<'SPATIAL_SIMILAR_LOCATIONS'>['matchMethod'] : null,
+          resultMode: ['MOST_SIMILAR', 'LEAST_SIMILAR', 'BOTH'].includes(resultMode ?? '')
+            ? resultMode as Configuration<'SPATIAL_SIMILAR_LOCATIONS'>['resultMode'] : null,
+          numberOfResults: parseInteger(
+            configuration.numberOfResults, `${path}.numberOfResults`, errors, 0,
+          ),
+          outputTableName: stringValue(configuration.outputTableName),
+          outputGeometryColumnName: stringValue(configuration.outputGeometryColumnName),
+          locationTypeColumnName: stringValue(configuration.locationTypeColumnName),
+          similarityRankColumnName: stringValue(configuration.similarityRankColumnName),
+          dissimilarityRankColumnName: stringValue(configuration.dissimilarityRankColumnName),
+          similarityIndexColumnName: stringValue(configuration.similarityIndexColumnName),
+          cosineIndexColumnName: stringValue(configuration.cosineIndexColumnName),
+          labelRankColumnName: stringValue(configuration.labelRankColumnName),
+          referenceIdOutputColumnName: stringValue(configuration.referenceIdOutputColumnName),
+          searchIdOutputColumnName: stringValue(configuration.searchIdOutputColumnName),
+        };
+      },
+    )
+  ),
+  [CanvasNodeType.SpatialDescribeDataset]: (value, path) => (
+    parseConfiguration<Configuration<'SPATIAL_DESCRIBE_DATASET'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        if (typeof configuration.extentOutput !== 'boolean') {
+          errors.push(`${path}.extentOutput 必须是布尔值`);
+        }
+        return {
+          sourceTableName: stringValue(configuration.sourceTableName),
+          geometryColumnName: stringValue(configuration.geometryColumnName),
+          statisticsTableName: stringValue(configuration.statisticsTableName),
+          descriptionTableName: stringValue(configuration.descriptionTableName),
+          sampleSize: parseInteger(configuration.sampleSize, `${path}.sampleSize`, errors, 0),
+          sampleTableName: stringValue(configuration.sampleTableName),
+          extentOutput: configuration.extentOutput === true,
+          extentTableName: stringValue(configuration.extentTableName),
+        };
+      },
+    )
+  ),
+  [CanvasNodeType.SpatialEnrichFromGrid]: (value, path) => (
+    parseConfiguration<Configuration<'SPATIAL_ENRICH_FROM_GRID'>>(
+      value,
+      path,
+      (configuration, errors) => ({
+        pointTableName: stringValue(configuration.pointTableName),
+        pointGeometryColumnName: stringValue(configuration.pointGeometryColumnName),
+        gridTableName: stringValue(configuration.gridTableName),
+        gridGeometryColumnName: stringValue(configuration.gridGeometryColumnName),
+        gridIdColumnName: stringValue(configuration.gridIdColumnName),
+        enrichFields: parseSpatialEnrichFromGridFields(
+          configuration.enrichFields, `${path}.enrichFields`, errors,
+        ),
+        outputTableName: stringValue(configuration.outputTableName),
+      }),
+    )
+  ),
+  [CanvasNodeType.SpatialGroupByProximity]: (value, path) => (
+    parseConfiguration<Configuration<'SPATIAL_GROUP_BY_PROXIMITY'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        const spatialRelationship = configuration.spatialRelationship == null
+          ? null : stringValue(configuration.spatialRelationship);
+        const distanceUnit = configuration.spatialNearDistanceUnit == null
+          ? null : stringValue(configuration.spatialNearDistanceUnit);
+        if (spatialRelationship !== null
+          && !groupByProximitySpatialRelationships.has(spatialRelationship)) {
+          errors.push(`${path}.spatialRelationship 不是受支持的空间关系`);
+        }
+        if (distanceUnit !== null && !spatialDistanceUnits.has(distanceUnit)) {
+          errors.push(`${path}.spatialNearDistanceUnit 不是受支持的距离单位`);
+        }
+        if (configuration.spatialNearDistance != null
+          && (typeof configuration.spatialNearDistance !== 'number'
+            || !Number.isFinite(configuration.spatialNearDistance))) {
+          errors.push(`${path}.spatialNearDistance 必须是有限数值或 null`);
+        }
+        return {
+          sourceTableName: stringValue(configuration.sourceTableName),
+          geometryColumnName: stringValue(configuration.geometryColumnName),
+          spatialRelationship: spatialRelationship !== null
+            && groupByProximitySpatialRelationships.has(spatialRelationship)
+            ? spatialRelationship as SpatialGroupByProximitySpatialRelationship : null,
+          spatialNearDistance: typeof configuration.spatialNearDistance === 'number'
+            && Number.isFinite(configuration.spatialNearDistance)
+            ? configuration.spatialNearDistance : null,
+          spatialNearDistanceUnit: distanceUnit !== null && spatialDistanceUnits.has(distanceUnit)
+            ? distanceUnit as SpatialDistanceUnit : null,
+          temporalCondition: parseGroupByProximityTemporalCondition(
+            configuration.temporalCondition, `${path}.temporalCondition`, errors,
+          ),
+          attributeConditions: parseGroupByProximityAttributeConditions(
+            configuration.attributeConditions, `${path}.attributeConditions`, errors,
+          ),
+          groupIdColumnName: stringValue(configuration.groupIdColumnName),
+          outputTableName: stringValue(configuration.outputTableName),
+        };
+      },
+    )
+  ),
+  [CanvasNodeType.TraceProximityEvents]: (value, path) => (
+    parseConfiguration<Configuration<'TRACE_PROXIMITY_EVENTS'>>(
+      value,
+      path,
+      (configuration, errors) => {
+        const distanceMethod = configuration.distanceMethod == null
+          ? null : stringValue(configuration.distanceMethod);
+        const spatialUnit = configuration.spatialSearchDistanceUnit == null
+          ? null : stringValue(configuration.spatialSearchDistanceUnit);
+        const temporalUnit = configuration.temporalSearchDistanceUnit == null
+          ? null : stringValue(configuration.temporalSearchDistanceUnit);
+        const interestSource = configuration.interestSource == null
+          ? null : stringValue(configuration.interestSource);
+        if (distanceMethod !== null
+          && distanceMethod !== 'PLANAR' && distanceMethod !== 'GEODESIC') {
+          errors.push(`${path}.distanceMethod 仅支持 PLANAR 或 GEODESIC`);
+        }
+        if (spatialUnit !== null && !spatialDistanceUnits.has(spatialUnit)) {
+          errors.push(`${path}.spatialSearchDistanceUnit 不是受支持的距离单位`);
+        }
+        if (temporalUnit !== null && !groupByProximityTemporalUnits.has(temporalUnit)) {
+          errors.push(`${path}.temporalSearchDistanceUnit 不是受支持的时间单位`);
+        }
+        if (interestSource !== null && !traceProximityInterestSources.has(interestSource)) {
+          errors.push(`${path}.interestSource 不是受支持的起始实体来源`);
+        }
+        if (configuration.spatialSearchDistance != null
+          && (typeof configuration.spatialSearchDistance !== 'number'
+            || !Number.isFinite(configuration.spatialSearchDistance))) {
+          errors.push(`${path}.spatialSearchDistance 必须是有限数值或 null`);
+        }
+        for (const [key, field] of [
+          ['temporalSearchDistance', configuration.temporalSearchDistance],
+          ['maxTraceDepth', configuration.maxTraceDepth],
+        ] as const) {
+          if (field != null && (typeof field !== 'number' || !Number.isSafeInteger(field))) {
+            errors.push(`${path}.${key} 必须是安全整数或 null`);
+          }
+        }
+        if (configuration.interestStartTimeColumnName != null
+          && typeof configuration.interestStartTimeColumnName !== 'string') {
+          errors.push(`${path}.interestStartTimeColumnName 必须是字符串或 null`);
+        }
+        if (typeof configuration.includeTracks !== 'boolean') {
+          errors.push(`${path}.includeTracks 必须是布尔值`);
+        }
+        return {
+          sourceTableName: stringValue(configuration.sourceTableName),
+          pointGeometryColumnName: stringValue(configuration.pointGeometryColumnName),
+          entityIdColumnName: stringValue(configuration.entityIdColumnName),
+          timeColumnName: stringValue(configuration.timeColumnName),
+          distanceMethod: distanceMethod === 'PLANAR' || distanceMethod === 'GEODESIC'
+            ? distanceMethod : null,
+          spatialSearchDistance: typeof configuration.spatialSearchDistance === 'number'
+            && Number.isFinite(configuration.spatialSearchDistance)
+            ? configuration.spatialSearchDistance : null,
+          spatialSearchDistanceUnit: spatialUnit !== null && spatialDistanceUnits.has(spatialUnit)
+            ? spatialUnit as SpatialDistanceUnit : null,
+          temporalSearchDistance: typeof configuration.temporalSearchDistance === 'number'
+            && Number.isSafeInteger(configuration.temporalSearchDistance)
+            ? configuration.temporalSearchDistance : null,
+          temporalSearchDistanceUnit: temporalUnit !== null
+            && groupByProximityTemporalUnits.has(temporalUnit)
+            ? temporalUnit as SpatialGroupByProximityTemporalUnit : null,
+          interestSource: interestSource !== null && traceProximityInterestSources.has(interestSource)
+            ? interestSource as TraceProximityInterestSource : null,
+          entitiesOfInterest: parseTraceProximityInterests(
+            configuration.entitiesOfInterest, `${path}.entitiesOfInterest`, errors,
+          ),
+          entitiesOfInterestTableName: stringValue(configuration.entitiesOfInterestTableName),
+          interestEntityIdColumnName: stringValue(configuration.interestEntityIdColumnName),
+          interestStartTimeColumnName: typeof configuration.interestStartTimeColumnName === 'string'
+            ? configuration.interestStartTimeColumnName : null,
+          maxTraceDepth: typeof configuration.maxTraceDepth === 'number'
+            && Number.isSafeInteger(configuration.maxTraceDepth)
+            ? configuration.maxTraceDepth : null,
+          attributeMatchColumns: parseStringArray(
+            configuration.attributeMatchColumns, `${path}.attributeMatchColumns`, errors,
+          ),
+          includeTracks: configuration.includeTracks === true,
+          outputTableName: stringValue(configuration.outputTableName),
+          tracksOutputTableName: stringValue(configuration.tracksOutputTableName),
+          fromEntityIdColumnName: stringValue(configuration.fromEntityIdColumnName),
+          toEntityIdColumnName: stringValue(configuration.toEntityIdColumnName),
+          depthColumnName: stringValue(configuration.depthColumnName),
+          durationMinutesColumnName: stringValue(configuration.durationMinutesColumnName),
+          eventTimeColumnName: stringValue(configuration.eventTimeColumnName),
+        };
+      },
+    )
+  ),
+  [CanvasNodeType.SnapTracks]: (value, path) => (
+    parseConfiguration<Configuration<'SNAP_TRACKS'>>(value, path, (configuration, errors) => {
+      const distanceMethod = configuration.distanceMethod == null
+        ? null : stringValue(configuration.distanceMethod);
+      const distanceUnit = configuration.searchDistanceUnit == null
+        ? null : stringValue(configuration.searchDistanceUnit);
+      const outputMode = configuration.outputMode == null
+        ? null : stringValue(configuration.outputMode);
+      if (distanceMethod !== null
+        && distanceMethod !== 'PLANAR' && distanceMethod !== 'GEODESIC') {
+        errors.push(`${path}.distanceMethod 仅支持 PLANAR 或 GEODESIC`);
+      }
+      if (distanceUnit !== null && !spatialDistanceUnits.has(distanceUnit)) {
+        errors.push(`${path}.searchDistanceUnit 不是受支持的距离单位`);
+      }
+      if (outputMode !== null
+        && outputMode !== 'ALL_FEATURES' && outputMode !== 'MATCHED_FEATURES') {
+        errors.push(`${path}.outputMode 仅支持 ALL_FEATURES 或 MATCHED_FEATURES`);
+      }
+      return {
+        pointTableName: stringValue(configuration.pointTableName),
+        pointGeometryColumnName: stringValue(configuration.pointGeometryColumnName),
+        trackIdColumns: parseStringArray(
+          configuration.trackIdColumns, `${path}.trackIdColumns`, errors,
+        ),
+        timeColumnName: stringValue(configuration.timeColumnName),
+        orderByColumns: parseStringArray(
+          configuration.orderByColumns, `${path}.orderByColumns`, errors,
+        ),
+        lineTableName: stringValue(configuration.lineTableName),
+        lineGeometryColumnName: stringValue(configuration.lineGeometryColumnName),
+        lineIdColumnName: stringValue(configuration.lineIdColumnName),
+        fromNodeColumnName: stringValue(configuration.fromNodeColumnName),
+        toNodeColumnName: stringValue(configuration.toNodeColumnName),
+        searchDistance: parseNullableFiniteNumber(
+          configuration.searchDistance, `${path}.searchDistance`, errors,
+        ),
+        searchDistanceUnit: distanceUnit !== null && spatialDistanceUnits.has(distanceUnit)
+          ? distanceUnit as SpatialDistanceUnit : null,
+        distanceMethod: distanceMethod === 'PLANAR' || distanceMethod === 'GEODESIC'
+          ? distanceMethod : null,
+        boundaries: parseTrackBoundaries(configuration.boundaries, `${path}.boundaries`, errors),
+        directionMatching: parseSnapTracksDirection(
+          configuration.directionMatching, `${path}.directionMatching`, errors,
+        ),
+        lineFields: parseSnapTracksLineFields(
+          configuration.lineFields, `${path}.lineFields`, errors,
+        ),
+        outputMode: outputMode === 'ALL_FEATURES' || outputMode === 'MATCHED_FEATURES'
+          ? outputMode : null,
+        outputTableName: stringValue(configuration.outputTableName),
+        snappedGeometryColumnName: stringValue(configuration.snappedGeometryColumnName),
+        matchedLineIdColumnName: stringValue(configuration.matchedLineIdColumnName),
+        matchStatusColumnName: stringValue(configuration.matchStatusColumnName),
+        originalXColumnName: stringValue(configuration.originalXColumnName),
+        originalYColumnName: stringValue(configuration.originalYColumnName),
+        matchXColumnName: stringValue(configuration.matchXColumnName),
+        matchYColumnName: stringValue(configuration.matchYColumnName),
+        matchDistanceColumnName: stringValue(configuration.matchDistanceColumnName),
+      };
+    })
+  ),
   [CanvasNodeType.GeometryBuffer]: (value, path) => (
     parseConfiguration<Configuration<'GEOMETRY_BUFFER'>>(
       value,
       path,
       (configuration, errors) => {
+        const distanceUnit = configuration.distanceUnit == null
+          ? null : stringValue(configuration.distanceUnit);
+        const distanceSource = configuration.distanceSource == null
+          ? null : stringValue(configuration.distanceSource);
         if (configuration.mode !== 'PLANAR' && configuration.mode !== 'SPHEROID') {
           errors.push(`${path}.mode 仅支持 PLANAR 或 SPHEROID`);
+        }
+        if (distanceUnit !== null && !spatialDistanceUnits.has(distanceUnit)) {
+          errors.push(`${path}.distanceUnit 不是受支持的距离单位`);
+        }
+        if (distanceSource !== null
+          && distanceSource !== 'CONSTANT'
+          && distanceSource !== 'FIELD'
+          && distanceSource !== 'EXPRESSION') {
+          errors.push(`${path}.distanceSource 仅支持 CONSTANT、FIELD 或 EXPRESSION`);
+        }
+        if (configuration.distanceFieldName !== null
+          && configuration.distanceFieldName !== undefined
+          && typeof configuration.distanceFieldName !== 'string') {
+          errors.push(`${path}.distanceFieldName 必须是字符串或 null`);
+        }
+        if (configuration.distanceExpression !== null
+          && configuration.distanceExpression !== undefined
+          && typeof configuration.distanceExpression !== 'string') {
+          errors.push(`${path}.distanceExpression 必须是字符串或 null`);
         }
         return {
           sourceTableName: stringValue(configuration.sourceTableName),
@@ -2317,6 +3518,16 @@ const configurationParsers = {
             100,
           ),
           mode: configuration.mode === 'SPHEROID' ? 'SPHEROID' : 'PLANAR',
+          distanceUnit: distanceUnit !== null && spatialDistanceUnits.has(distanceUnit)
+            ? distanceUnit as Configuration<'GEOMETRY_BUFFER'>['distanceUnit'] : null,
+          distanceSource: distanceSource === 'CONSTANT'
+            || distanceSource === 'FIELD'
+            || distanceSource === 'EXPRESSION'
+            ? distanceSource : null,
+          distanceFieldName: typeof configuration.distanceFieldName === 'string'
+            ? configuration.distanceFieldName : null,
+          distanceExpression: typeof configuration.distanceExpression === 'string'
+            ? configuration.distanceExpression : null,
         };
       },
     )
@@ -2382,14 +3593,32 @@ const configurationParsers = {
     parseConfiguration<Configuration<'SPATIAL_CLIP'>>(
       value,
       path,
-      (configuration) => ({
-        sourceTableName: stringValue(configuration.sourceTableName),
-        maskTableName: stringValue(configuration.maskTableName),
-        outputTableName: stringValue(configuration.outputTableName),
-        sourceGeometryColumnName: stringValue(configuration.sourceGeometryColumnName),
-        maskGeometryColumnName: stringValue(configuration.maskGeometryColumnName),
-        outputColumnName: stringValue(configuration.outputColumnName),
-      }),
+      (configuration, errors) => {
+        const geometryPolicy = configuration.geometryPolicy;
+        if (geometryPolicy != null
+          && geometryPolicy !== 'SOURCE_FAMILY_2D'
+          && geometryPolicy !== 'LEGACY_ANY_DIMENSION') {
+          errors.push(`${path}.geometryPolicy 仅支持 SOURCE_FAMILY_2D 或 LEGACY_ANY_DIMENSION`);
+        }
+        const maskCombination = configuration.maskCombination;
+        if (maskCombination != null
+          && maskCombination !== 'DISSOLVE_ALL'
+          && maskCombination !== 'PAIRWISE') {
+          errors.push(`${path}.maskCombination 仅支持 DISSOLVE_ALL 或 PAIRWISE`);
+        }
+        return {
+          sourceTableName: stringValue(configuration.sourceTableName),
+          maskTableName: stringValue(configuration.maskTableName),
+          outputTableName: stringValue(configuration.outputTableName),
+          sourceGeometryColumnName: stringValue(configuration.sourceGeometryColumnName),
+          maskGeometryColumnName: stringValue(configuration.maskGeometryColumnName),
+          outputColumnName: stringValue(configuration.outputColumnName),
+          geometryPolicy: geometryPolicy === 'SOURCE_FAMILY_2D'
+            || geometryPolicy === 'LEGACY_ANY_DIMENSION' ? geometryPolicy : null,
+          maskCombination: maskCombination === 'DISSOLVE_ALL'
+            || maskCombination === 'PAIRWISE' ? maskCombination : null,
+        };
+      },
     )
   ),
   [CanvasNodeType.SpatialAggregate]: (value, path) => (
@@ -2409,13 +3638,18 @@ const configurationParsers = {
           `${path}.aggregations`,
           errors,
         ),
+        dissolve: parseSpatialAggregateDissolve(
+          configuration.dissolve,
+          `${path}.dissolve`,
+          errors,
+        ),
       }),
     )
   ),
   [CanvasNodeType.SpatialJoin]: (value, path) => (
     parseConfiguration<Configuration<'SPATIAL_JOIN'>>(value, path, (configuration, errors) => {
-      if (configuration.joinType !== 'INNER') {
-        errors.push(`${path}.joinType 第一阶段仅支持 INNER`);
+      if (configuration.joinType !== 'INNER' && configuration.joinType !== 'LEFT') {
+        errors.push(`${path}.joinType 仅支持 INNER 或 LEFT`);
       }
       if (!Array.isArray(configuration.conditions)) {
         errors.push(`${path}.conditions 必须是数组`);
@@ -2441,13 +3675,94 @@ const configurationParsers = {
           rightGeometryColumnName: stringValue(item.rightGeometryColumnName),
         }];
       });
-      return {
+      const base: Configuration<'SPATIAL_JOIN'> = {
         leftTableName: stringValue(configuration.leftTableName),
         rightTableName: stringValue(configuration.rightTableName),
         outputTableName: stringValue(configuration.outputTableName),
-        joinType: 'INNER',
+        joinType: configuration.joinType === 'LEFT' ? 'LEFT' : 'INNER',
         conditions,
       };
+      const withAttributes: Configuration<'SPATIAL_JOIN'> = configuration.attributeConditions === undefined
+        ? base
+        : configuration.attributeConditions === null
+          ? { ...base, attributeConditions: null }
+          : {
+              ...base,
+              attributeConditions: parseJoinConditions(
+                configuration.attributeConditions,
+                `${path}.attributeConditions`,
+                errors,
+              ),
+            };
+      let parsed: Configuration<'SPATIAL_JOIN'> = withAttributes;
+      if (configuration.outputColumns === null) {
+        parsed = { ...parsed, outputColumns: null };
+      } else if (configuration.outputColumns !== undefined) {
+        parsed = {
+          ...parsed,
+          outputColumns: parseJoinOutputColumns(
+            configuration.outputColumns,
+            `${path}.outputColumns`,
+            errors,
+          ),
+        };
+      }
+      if (configuration.joinOperation === null) {
+        parsed = { ...parsed, joinOperation: null };
+      } else if (configuration.joinOperation !== undefined) {
+        if (configuration.joinOperation !== 'JOIN_ONE_TO_MANY'
+          && configuration.joinOperation !== 'JOIN_ONE_TO_ONE') {
+          errors.push(`${path}.joinOperation 仅支持 JOIN_ONE_TO_MANY 或 JOIN_ONE_TO_ONE`);
+        }
+        parsed = {
+          ...parsed,
+          joinOperation: configuration.joinOperation === 'JOIN_ONE_TO_MANY'
+            || configuration.joinOperation === 'JOIN_ONE_TO_ONE'
+            ? configuration.joinOperation
+            : null,
+        };
+      }
+      if (configuration.oneToOne !== undefined) {
+        parsed = {
+          ...parsed,
+          oneToOne: parseSpatialJoinOneToOne(
+            configuration.oneToOne,
+            `${path}.oneToOne`,
+            errors,
+          ),
+        };
+      }
+      if (configuration.temporalCondition !== undefined) {
+        parsed = {
+          ...parsed,
+          temporalCondition: parseSpatialJoinTemporalCondition(
+          configuration.temporalCondition,
+          `${path}.temporalCondition`,
+          errors,
+          ),
+        };
+      }
+      if (configuration.spatialNear !== undefined) {
+        parsed = {
+          ...parsed,
+          spatialNear: parseSpatialJoinSpatialNearCondition(
+            configuration.spatialNear,
+            `${path}.spatialNear`,
+            errors,
+          ),
+        };
+      }
+      if (configuration.distanceOutput !== undefined) {
+        parsed = {
+          ...parsed,
+          distanceOutput: parseSpatialJoinDistanceOutput(
+            configuration.distanceOutput,
+            `${path}.distanceOutput`,
+            errors,
+          ),
+        };
+      }
+      return parsed;
     })
   ),
   [CanvasNodeType.StreamJoin]: (value, path) => (
@@ -2553,6 +3868,11 @@ const configurationParsers = {
       ),
       outputTableName: stringValue(configuration.outputTableName),
       mode: parseUnionMode(configuration.mode, `${path}.mode`, errors),
+      mergingTables: parseUnionMergingTables(
+        configuration.mergingTables,
+        `${path}.mergingTables`,
+        errors,
+      ),
     }))
   ),
   [CanvasNodeType.Deduplicate]: (value, path) => (

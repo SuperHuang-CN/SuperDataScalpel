@@ -36,14 +36,12 @@ import {
   dataSourceTypeLabels,
   type ConnectionTestResult,
   type DataSource,
-  type DataSourceAssistantLocationState,
-  type DataSourceAssistantUpdateDraft,
   type DataSourceTypeDefinition,
 } from '../model/dataSource';
 
 type DataSourceDetailTabKey = 'basic' | 'resources' | 'models' | 'tasks' | 'services';
 
-interface DataSourceDetailLocationState extends DataSourceAssistantLocationState {
+interface DataSourceDetailLocationState {
   fromDataSourceList?: boolean;
 }
 
@@ -83,12 +81,6 @@ const normalizeTab = (value: string | null): DataSourceDetailTabKey => {
   return 'basic';
 };
 
-const withoutAssistantDataSourceAction = (state: unknown): Record<string, unknown> | null => {
-  if (!state || typeof state !== 'object') return null;
-  const remaining = { ...(state as Record<string, unknown>) };
-  delete remaining.assistantDataSourceAction;
-  return Object.keys(remaining).length ? remaining : null;
-};
 
 const connectionSummary = (dataSource: DataSource) => {
   const connection = dataSource.connection;
@@ -129,7 +121,6 @@ export const DataSourceDetailPage = () => {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [editing, setEditing] = useState(false);
-  const [assistantEditDraft, setAssistantEditDraft] = useState<DataSourceAssistantUpdateDraft | null>(null);
   const [testFailure, setTestFailure] = useState<{
     result: ConnectionTestResult;
     targetLabel: string;
@@ -167,34 +158,11 @@ export const DataSourceDetailPage = () => {
   ]);
   const activeTab: DataSourceDetailTabKey = availableTabs.has(requestedTab) ? requestedTab : 'basic';
 
-  useEffect(() => {
-    if (!currentUserQuery.data || !dataSource) return;
-    const state = location.state as (DataSourceDetailLocationState & Record<string, unknown>) | null;
-    const action = state?.assistantDataSourceAction;
-    if (action?.kind !== 'EDIT') return;
-    const remainingState = withoutAssistantDataSourceAction(state);
-    navigate(
-      { pathname: location.pathname, search: location.search, hash: location.hash },
-      { replace: true, state: remainingState },
-    );
-    if (!canUpdate) {
-      messageApi.error('当前账号没有修改数据源权限');
-      return;
-    }
-    if (action.dataSourceId !== dataSource.id) {
-      messageApi.error('AI 助手指定的数据源与当前页面不一致');
-      return;
-    }
-    // React Router state is an external one-shot handoff that must be copied before it is cleared.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAssistantEditDraft(action.draft);
-    setEditing(true);
-  }, [canUpdate, currentUserQuery.data, dataSource, location, messageApi, navigate]);
 
   useEffect(() => {
     if (!permissionsLoaded || !dataSource || typeDefinitionsQuery.isPending) return;
     if (requestedTab !== activeTab) {
-      setSearchParams({ tab: activeTab }, { replace: true, state: withoutAssistantDataSourceAction(location.state) });
+      setSearchParams({ tab: activeTab }, { replace: true, state: location.state });
     }
   }, [activeTab, dataSource, location.state, permissionsLoaded, requestedTab, setSearchParams, typeDefinitionsQuery.isPending]);
 
@@ -355,7 +323,7 @@ export const DataSourceDetailPage = () => {
               测试连接
             </Button>
           )}
-          {canUpdate && <Button type="primary" icon={<EditOutlined />} onClick={() => { setAssistantEditDraft(null); setEditing(true); }}>修改</Button>}
+          {canUpdate && <Button type="primary" icon={<EditOutlined />} onClick={() => { setEditing(true); }}>修改</Button>}
           {canDelete && (
             <Dropdown
               trigger={['click']}
@@ -376,16 +344,15 @@ export const DataSourceDetailPage = () => {
         items={tabItems}
         onChange={(key) => setSearchParams(
           { tab: key as DataSourceDetailTabKey },
-          { replace: true, state: withoutAssistantDataSourceAction(location.state) },
+          { replace: true, state: location.state },
         )}
       />
       <DataSourceDrawer
         open={editing}
         dataSource={dataSource}
-        initialDraft={assistantEditDraft}
         canViewDirectories={canViewDirectories}
         canTest={canTest}
-        onClose={() => { setEditing(false); setAssistantEditDraft(null); }}
+        onClose={() => { setEditing(false); }}
       />
       {testFailure && (
         <ConnectionTestResultModal

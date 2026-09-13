@@ -24,6 +24,151 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class RunnerFailureClassifierTest {
+    @Test
+    void describeDatasetSpatialFailuresUseStableFallback() {
+        var error = new RunnerFailureClassifier().classify(
+                new TopologyException("private-coordinate"),
+                new RunnerFailureContext(
+                        "node", "SPATIAL_DESCRIBE_DATASET", "描述数据集",
+                        ExecutionFailurePhase.PROCESS, null));
+
+        assertEquals("SPATIAL_DESCRIBE_DATASET_FAILED", error.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+        assertFalse(error.retryable());
+        assertFalse(error.message().contains("private-coordinate"));
+    }
+
+    @Test void similarLocationsDataFailuresAreStableAndSafe() {
+        for (String code : java.util.List.of(
+                "SPATIAL_SIMILAR_LOCATIONS_REFERENCE_ID_INVALID",
+                "SPATIAL_SIMILAR_LOCATIONS_CANDIDATE_ID_DUPLICATE",
+                "SPATIAL_SIMILAR_LOCATIONS_REFERENCE_REQUIRED",
+                "SPATIAL_SIMILAR_LOCATIONS_VALUE_INVALID",
+                "SPATIAL_SIMILAR_LOCATIONS_ZERO_PROFILE",
+                "SPATIAL_SIMILAR_LOCATIONS_SCORE_INVALID")) {
+            var error = new RunnerFailureClassifier().classify(
+                    new SparkException("wrapper",
+                            new IllegalArgumentException(code + " private-id private-value")),
+                    new RunnerFailureContext(
+                            "node", "SPATIAL_SIMILAR_LOCATIONS", "查找相似位置",
+                            ExecutionFailurePhase.PROCESS, null));
+            assertEquals(code, error.code());
+            assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+            assertFalse(error.retryable());
+            assertFalse(error.message().contains("private-"));
+        }
+    }
+
+    @Test void hotSpotValueAndCapacityFailuresAreSafeAndNotRetryable() {
+        var categories = Map.of(
+                "SPATIAL_HOT_SPOT_VALUE_NOT_FINITE", ExecutionErrorCategory.SCHEMA,
+                "SPATIAL_HOT_SPOT_CELL_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        categories.forEach((code, category) -> {
+            var error = new RunnerFailureClassifier().classify(
+                    new SparkException("wrapper",
+                            new IllegalArgumentException(code + " private-coordinate private-value")),
+                    new RunnerFailureContext(
+                            "node", "SPATIAL_HOT_SPOTS", "热点",
+                            ExecutionFailurePhase.PROCESS, null));
+            assertEquals(code, error.code());
+            assertEquals(category, error.category());
+            assertFalse(error.retryable());
+            assertFalse(error.message().contains("private-"));
+        });
+    }
+
+    @Test void multiVariableGridFailuresAreSafeAndNotRetryable() {
+        var categories = Map.of(
+                "SPATIAL_MULTI_VARIABLE_GRID_CELL_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION,
+                "SPATIAL_MULTI_VARIABLE_GRID_VALUE_NOT_FINITE", ExecutionErrorCategory.SCHEMA,
+                "SPATIAL_MULTI_VARIABLE_GRID_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        categories.forEach((code, category) -> {
+            var error = new RunnerFailureClassifier().classify(
+                    new SparkException("wrapper",
+                            new IllegalArgumentException(code + " private-coordinate private-value")),
+                    new RunnerFailureContext(
+                            "node", "SPATIAL_MULTI_VARIABLE_GRID", "多变量格网",
+                            ExecutionFailurePhase.PROCESS, null));
+            assertEquals(code, error.code());
+            assertEquals(category, error.category());
+            assertFalse(error.retryable());
+            assertFalse(error.message().contains("private-"));
+        });
+    }
+
+    @Test void enrichFromGridNullIdentityIsAStableSchemaFailure() {
+        var error = new RunnerFailureClassifier().classify(
+                new SparkException("wrapper",
+                        new IllegalArgumentException("SPATIAL_ENRICH_GRID_ID_NULL private-value")),
+                new RunnerFailureContext(
+                        "node", "SPATIAL_ENRICH_FROM_GRID", "格网丰富",
+                        ExecutionFailurePhase.PROCESS, null));
+
+        assertEquals("SPATIAL_ENRICH_GRID_ID_NULL", error.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+        assertFalse(error.retryable());
+        assertFalse(error.message().contains("private-value"));
+    }
+
+    @Test void groupByProximityDataFailuresAreStableAndSafe() {
+        for (String code : java.util.List.of(
+                "SPATIAL_GROUP_GEOMETRY_INVALID",
+                "SPATIAL_GROUP_TEMPORAL_INTERVAL_INVALID")) {
+            var error = new RunnerFailureClassifier().classify(
+                    new SparkException("wrapper",
+                            new IllegalArgumentException(code + " private-coordinate private-time")),
+                    new RunnerFailureContext(
+                            "node", "SPATIAL_GROUP_BY_PROXIMITY", "邻近分组",
+                            ExecutionFailurePhase.PROCESS, null));
+
+            assertEquals(code, error.code());
+            assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+            assertFalse(error.retryable());
+            assertFalse(error.message().contains("private-"));
+        }
+    }
+
+    @Test void traceProximityDataFailuresAreStableAndSafe() {
+        for (String code : java.util.List.of("TRACE_PROXIMITY_GEOMETRY_INVALID")) {
+            var error = new RunnerFailureClassifier().classify(
+                    new SparkException("wrapper",
+                            new IllegalArgumentException(code + " private-coordinate private-id")),
+                    new RunnerFailureContext(
+                            "node", "TRACE_PROXIMITY_EVENTS", "邻近事件追踪",
+                            ExecutionFailurePhase.PROCESS, null));
+
+            assertEquals(code, error.code());
+            assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+            assertFalse(error.retryable());
+            assertFalse(error.message().contains("private-"));
+        }
+    }
+
+    @Test void snapTracksDataFailuresAreStableAndSafe() {
+        var categories = Map.of(
+                "SNAP_TRACKS_LINE_ID_INVALID", ExecutionErrorCategory.SCHEMA,
+                "SNAP_TRACKS_LINE_ID_DUPLICATE", ExecutionErrorCategory.SCHEMA,
+                "SNAP_TRACKS_NETWORK_NODE_INVALID", ExecutionErrorCategory.SCHEMA,
+                "SNAP_TRACKS_CANDIDATE_COUNT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION,
+                "SNAP_TRACKS_POINT_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA,
+                "SNAP_TRACKS_LINE_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA,
+                "SNAP_TRACKS_MATCH_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA,
+                "SNAP_TRACKS_MATCH_STATE_INVALID", ExecutionErrorCategory.INTERNAL);
+        categories.forEach((code, category) -> {
+            var error = new RunnerFailureClassifier().classify(
+                    new SparkException("wrapper",
+                            new IllegalArgumentException(code + " private-coordinate private-id")),
+                    new RunnerFailureContext(
+                            "node", "SNAP_TRACKS", "吸附轨迹",
+                            ExecutionFailurePhase.PROCESS, null));
+
+            assertEquals(code, error.code());
+            assertEquals(category, error.category());
+            assertFalse(error.retryable());
+            assertFalse(error.message().contains("private-"));
+        });
+    }
+
     @Test void hdbscanFailuresKeepTheirCauseCategoryAndNeverExposeObservations() {
         var categories = Map.of("SPATIAL_HDBSCAN_TREE_INVALID", ExecutionErrorCategory.INTERNAL,
                 "SPATIAL_HDBSCAN_HIERARCHY_LIMIT_EXCEEDED", ExecutionErrorCategory.RESOURCE,
@@ -46,6 +191,19 @@ class RunnerFailureClassifierTest {
             assertEquals(code, error.code()); assertFalse(error.retryable()); assertFalse(error.message().contains("private-point"));
             assertEquals(code.endsWith("EXECUTABLE") ? ExecutionErrorCategory.CONFIGURATION : ExecutionErrorCategory.SCHEMA, error.category());
         }
+    }
+
+    @Test void connectedDissolveGeometryErrorsAreSafeAndNotRetryable() {
+        var error = new RunnerFailureClassifier().classify(
+                new SparkException("wrapper", new IllegalArgumentException(
+                        "SPATIAL_DISSOLVE_GEOMETRY_INVALID private-coordinate")),
+                new RunnerFailureContext(
+                        "node", "SPATIAL_AGGREGATE", "Dissolve",
+                        ExecutionFailurePhase.PROCESS, null));
+        assertEquals("SPATIAL_DISSOLVE_GEOMETRY_INVALID", error.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+        assertFalse(error.retryable());
+        assertFalse(error.message().contains("private-coordinate"));
     }
     @Test void gridFailuresAreSafeAndNotRetryable() {
         for (String code : java.util.List.of("SPATIAL_CALENDAR_WINDOW_LIMIT_EXCEEDED", "SPATIAL_CALENDAR_WINDOW_RANGE_INVALID", "SPATIAL_GRID_CELL_LIMIT_EXCEEDED", "SPATIAL_GRID_POINT_INVALID", "SPATIAL_H3_POINT_INVALID", "SPATIAL_H3_BOUNDARY_INVALID", "SPATIAL_H3_RUNTIME_UNAVAILABLE")) {
@@ -125,8 +283,20 @@ class RunnerFailureClassifierTest {
         }
     }
 
+    @Test void classifiesDynamicBufferDistanceValuesWithoutExposingExpressions() {
+        var error = classifier.classify(new SparkException("wrapper",
+                        new IllegalArgumentException("GEOMETRY_BUFFER_DISTANCE_VALUE_INVALID private-expression")),
+                new RunnerFailureContext(input.nodeId(), "GEOMETRY_BUFFER", "缓冲",
+                        ExecutionFailurePhase.PROCESS, null));
+        assertEquals("GEOMETRY_BUFFER_DISTANCE_VALUE_INVALID", error.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+        assertFalse(error.retryable());
+        assertFalse(error.message().contains("private-expression"));
+    }
+
     @Test void classifiesSharedGeodesicDistanceGuardsBeforeGenericSpatialFailures() {
-        for (String node : java.util.List.of("TRACK_RECONSTRUCT","SPATIAL_NEAREST")) {
+        for (String node : java.util.List.of(
+                "TRACK_RECONSTRUCT", "SPATIAL_NEAREST", "SPATIAL_JOIN")) {
             for (String code : java.util.List.of("GEODESIC_DISTANCE_COORDINATE_INVALID","GEODESIC_DISTANCE_GEOMETRY_UNSUPPORTED",
                     "GEODESIC_DISTANCE_GEOMETRY_INVALID","GEODESIC_DISTANCE_REGION_RANGE_NOT_SUPPORTED","GEODESIC_DISTANCE_WORK_LIMIT_EXCEEDED",
                     "GEODESIC_DISTANCE_PRECISION_NOT_REACHED","GEODESIC_TOPOLOGY_PRECISION_NOT_REACHED","INVALID_GEODESIC_DISTANCE_PRECISION","INVALID_GEODESIC_DISTANCE_WORK_LIMIT","INVALID_GEODESIC_DISTANCE_THRESHOLD")) {
@@ -135,6 +305,26 @@ class RunnerFailureClassifierTest {
                 assertEquals(code,error.code()); assertFalse(error.retryable()); assertFalse(error.message().contains("private-coordinate"));
                 assertEquals(code.startsWith("INVALID_") ? ExecutionErrorCategory.CONFIGURATION : ExecutionErrorCategory.SCHEMA,error.category());
             }
+        }
+    }
+
+    @Test
+    void classifiesSpatialJoinNearRuntimeGuardsWithoutLeakingValues() {
+        for (String code : java.util.List.of(
+                "SPATIAL_JOIN_GEOMETRY_INVALID",
+                "SPATIAL_JOIN_DISTANCE_INVALID",
+                "SPATIAL_JOIN_TEMPORAL_DIFFERENCE_INVALID")) {
+            TaskExecutionError error = classifier.classify(
+                    new SparkException("wrapper",
+                            new IllegalArgumentException(code + " private-value")),
+                    new RunnerFailureContext(
+                            input.nodeId(), "SPATIAL_JOIN", "空间 Near",
+                            ExecutionFailurePhase.PROCESS, null));
+
+            assertEquals(code, error.code());
+            assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+            assertFalse(error.retryable());
+            assertFalse(error.message().contains("private-value"));
         }
     }
 
@@ -195,6 +385,22 @@ class RunnerFailureClassifierTest {
         assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
         assertFalse(error.retryable());
         assertTrue(error.message().contains("同时间"));
+    }
+
+    @Test
+    void reportsAmbiguousSpatialJoinKeepOrderAsSafeSchemaFailure() {
+        TaskExecutionError error = classifier.classify(new SparkException("wrapped",
+                        new IllegalArgumentException(
+                                "SPATIAL_JOIN_KEEP_ORDER_NOT_UNIQUE private-record")),
+                new RunnerFailureContext(
+                        input.nodeId(), "SPATIAL_JOIN", "一对一空间连接",
+                        ExecutionFailurePhase.PROCESS, null));
+
+        assertEquals("SPATIAL_JOIN_KEEP_ORDER_NOT_UNIQUE", error.code());
+        assertEquals(ExecutionErrorCategory.SCHEMA, error.category());
+        assertFalse(error.retryable());
+        assertTrue(error.message().contains("稳定排序"));
+        assertFalse(error.message().contains("private-record"));
     }
 
     @Test

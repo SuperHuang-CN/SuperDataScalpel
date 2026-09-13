@@ -3,6 +3,7 @@ import type { CanvasExecutionMode, JdbcWriteMode } from './canvasTypes';
 
 const databaseLabels: Partial<Record<DataSourceType, string>> = {
   POSTGRESQL: 'PostgreSQL',
+  HIGHGO: 'HighGo',
   MYSQL: 'MySQL',
   ORACLE: 'Oracle',
   SQL_SERVER: 'SQL Server',
@@ -14,7 +15,9 @@ const databaseLabels: Partial<Record<DataSourceType, string>> = {
   TDENGINE_RESTFUL: 'TDengine',
 };
 
-const upsertDatabases = new Set<DataSourceType>(['POSTGRESQL', 'MYSQL']);
+const upsertDatabases = new Set<DataSourceType>([
+  'POSTGRESQL', 'HIGHGO', 'MYSQL', 'OPENGAUSS', 'KINGBASE', 'DAMENG', 'ORACLE', 'SQL_SERVER',
+]);
 
 const tdEngineDatabases = new Set<DataSourceType>([
   'TDENGINE_WEBSOCKET',

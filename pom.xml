@@ -48,6 +48,7 @@
         <dameng-jdbc.version>8.1.3.140</dameng-jdbc.version>
         <kingbase-jdbc.version>8.6.1</kingbase-jdbc.version>
         <opengauss-jdbc.version>6.0.0-og</opengauss-jdbc.version>
+        <highgo-jdbc.version>6.2.5</highgo-jdbc.version>
         <tdengine-jdbc.version>3.6.3</tdengine-jdbc.version>
         <aws.sdk.version>2.46.8</aws.sdk.version>
         <apache.poi.version>5.5.1</apache.poi.version>

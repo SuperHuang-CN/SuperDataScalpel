@@ -246,7 +246,7 @@ export const LocalSqlTaskDefinitionPanel = ({
               <Form.Item name="writeMode" label="写入方式" rules={[{ required: true }]}>
                 <Select options={[
                   { value: 'APPEND', label: 'APPEND：追加写入' },
-                  { value: 'OVERWRITE', label: 'OVERWRITE：清空后重写（仅 PostgreSQL）' },
+                  { value: 'OVERWRITE', label: 'OVERWRITE：清空后重写（按目标方言能力）' },
                 ]} />
               </Form.Item>
               <Form.Item name="timeoutSeconds" label="超时（秒）" rules={[{ required: true }]}>

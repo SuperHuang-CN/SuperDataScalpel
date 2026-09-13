@@ -67,6 +67,8 @@ public class CanvasDefinitionValidator {
             SpatialTemporalSlicing slicing = switch (node) {
                 case SpatialBinAggregateNodeDefinition bin -> bin.configuration().temporalSlicing();
                 case SpatialSummarizeWithinNodeDefinition within -> within.configuration().temporalSlicing();
+                case SpatialDensityNodeDefinition density -> density.configuration().temporalSlicing();
+                case SpatialHotSpotsNodeDefinition hotSpots -> hotSpots.configuration().temporalSlicing();
                 default -> null;
             };
             if (definition.effectiveSchemaMinorVersion() < 39 && slicing != null && slicing.calendar() != null)
@@ -109,6 +111,113 @@ public class CanvasDefinitionValidator {
             if (definition.effectiveSchemaMinorVersion() < 30 && node instanceof SpatialNearestNodeDefinition nearest
                     && nearest.configuration().matching() != null)
                 invalid("SPATIAL_NEAREST_MATCHING_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.matching 从 Canvas 4.30 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 48 && node instanceof SpatialNearestNodeDefinition nearest
+                    && nearest.configuration().matching() != null
+                    && nearest.configuration().matching().geodesicGeometryMode() == SpatialNearestGeodesicGeometryMode.GEOMETRY)
+                invalid("SPATIAL_NEAREST_GEODESIC_GEOMETRY_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.matching.geodesicGeometryMode 从 Canvas 4.48 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 49 && node instanceof GeometryBufferNodeDefinition buffer
+                    && buffer.configuration() != null && buffer.configuration().distanceUnit() != null)
+                invalid("GEOMETRY_BUFFER_UNIT_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.distanceUnit 从 Canvas 4.49 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 52 && node instanceof GeometryBufferNodeDefinition buffer
+                    && buffer.configuration() != null
+                    && (buffer.configuration().distanceSource() != null
+                    || buffer.configuration().distanceFieldName() != null
+                    || buffer.configuration().distanceExpression() != null))
+                invalid("GEOMETRY_BUFFER_DISTANCE_SOURCE_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.distanceSource 从 Canvas 4.52 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 53
+                    && node instanceof SpatialAggregateNodeDefinition aggregate
+                    && aggregate.configuration() != null
+                    && aggregate.configuration().dissolve() != null)
+                invalid("SPATIAL_AGGREGATE_DISSOLVE_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.dissolve 从 Canvas 4.53 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 61
+                    && node instanceof SpatialAggregateNodeDefinition aggregate
+                    && aggregate.configuration() != null
+                    && aggregate.configuration().dissolve() != null
+                    && aggregate.configuration().dissolve().groupingMode() != null)
+                invalid("SPATIAL_DISSOLVE_GROUPING_MODE_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.dissolve.groupingMode 从 Canvas 4.61 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 62
+                    && node instanceof UnionNodeDefinition union
+                    && union.configuration() != null
+                    && union.configuration().mergingTables() != null)
+                invalid("UNION_MERGE_LAYERS_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.mergingTables 从 Canvas 4.62 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 54
+                    && node instanceof SpatialJoinNodeDefinition join
+                    && join.configuration() != null
+                    && join.configuration().outputColumns() != null)
+                invalid("SPATIAL_JOIN_OUTPUT_COLUMNS_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.outputColumns 从 Canvas 4.54 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 55
+                    && node instanceof SpatialJoinNodeDefinition join
+                    && join.configuration() != null
+                    && join.configuration().attributeConditions() != null)
+                invalid("SPATIAL_JOIN_ATTRIBUTE_CONDITIONS_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.attributeConditions 从 Canvas 4.55 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 56
+                    && node instanceof SpatialJoinNodeDefinition join
+                    && join.configuration() != null
+                    && join.configuration().joinType() == JoinType.LEFT)
+                invalid("SPATIAL_JOIN_KEEP_ALL_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.joinType 的保留全部目标要素从 Canvas 4.56 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 57
+                    && node instanceof SpatialJoinNodeDefinition join
+                    && join.configuration() != null
+                    && join.configuration().joinOperation() != null)
+                invalid("SPATIAL_JOIN_OPERATION_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.joinOperation 从 Canvas 4.57 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 58
+                    && node instanceof SpatialJoinNodeDefinition join
+                    && join.configuration() != null
+                    && (join.configuration().joinOperation() == SpatialJoinOperation.JOIN_ONE_TO_ONE
+                    || join.configuration().oneToOne() != null))
+                invalid("SPATIAL_JOIN_ONE_TO_ONE_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.oneToOne 从 Canvas 4.58 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 59
+                    && node instanceof SpatialJoinNodeDefinition join
+                    && join.configuration() != null
+                    && join.configuration().temporalCondition() != null)
+                invalid("SPATIAL_JOIN_TEMPORAL_CONDITION_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.temporalCondition 从 Canvas 4.59 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 60
+                    && node instanceof SpatialJoinNodeDefinition join
+                    && join.configuration() != null
+                    && (join.configuration().spatialNear() != null
+                    || join.configuration().distanceOutput() != null))
+                invalid("SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.spatialNear/distanceOutput 从 Canvas 4.60 开始支持");
+            if (definition.effectiveSchemaMinorVersion() < 50
+                    && node instanceof SpatialMeasureNodeDefinition measure
+                    && measure.configuration() != null && measure.configuration().measurements() != null) {
+                for (int measurementIndex = 0;
+                     measurementIndex < measure.configuration().measurements().size();
+                     measurementIndex++) {
+                    SpatialMeasurement measurement = measure.configuration().measurements().get(measurementIndex);
+                    boolean explicitUnit = switch (measurement) {
+                        case SpatialMeasurement.Area item -> item.outputUnit() != null;
+                        case SpatialMeasurement.Length item -> item.outputUnit() != null;
+                        case SpatialMeasurement.Perimeter item -> item.outputUnit() != null;
+                        case SpatialMeasurement.Distance item -> item.outputUnit() != null;
+                        case SpatialMeasurement.X ignored -> false;
+                        case SpatialMeasurement.Y ignored -> false;
+                        case null -> false;
+                    };
+                    if (explicitUnit) invalid("SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION：" + path
+                            + ".configuration.measurements[" + measurementIndex
+                            + "].outputUnit 从 Canvas 4.50 开始支持");
+                }
+            }
+            if (definition.effectiveSchemaMinorVersion() < 51
+                    && node instanceof SpatialClipNodeDefinition clip
+                    && clip.configuration() != null
+                    && clip.configuration().geometryPolicy() != null) {
+                invalid("SPATIAL_CLIP_GEOMETRY_POLICY_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.geometryPolicy 从 Canvas 4.51 开始支持");
+            }
             boolean unaryPolicy = node instanceof GeometryDeriveNodeDefinition derive
                     && derive.configuration().derivations().stream().anyMatch(item -> item.geometryPolicy() != null)
                     || node instanceof GeometrySimplifyNodeDefinition simplify && simplify.configuration().geometryPolicy() != null;
@@ -117,6 +226,39 @@ public class CanvasDefinitionValidator {
             if (definition.effectiveSchemaMinorVersion() < 46 && node instanceof TrackDetectIncidentsNodeDefinition incident
                     && incident.configuration() != null && !incident.configuration().conditionWindows().isEmpty()) {
                 invalid("TRACK_INCIDENT_WINDOWS_REQUIRE_SCHEMA_VERSION：" + path + ".configuration.conditionWindows 从 Canvas 4.46 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 63 && node instanceof TrackDetectIncidentsNodeDefinition incident
+                    && incident.configuration() != null
+                    && incident.configuration().conditionWindows().stream().anyMatch(window ->
+                    window != null && window.effectiveSource() == TrackIncidentWindow.Source.TRACK_DISTANCE)) {
+                invalid("TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.conditionWindows 的轨迹距离来源从 Canvas 4.63 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 64 && node instanceof TrackDetectIncidentsNodeDefinition incident
+                    && incident.configuration() != null
+                    && incident.configuration().conditionWindows().stream().anyMatch(window ->
+                    window != null && window.effectiveSource() == TrackIncidentWindow.Source.TRACK_SPEED)) {
+                invalid("TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.conditionWindows 的轨迹速度来源从 Canvas 4.64 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 65 && node instanceof TrackDetectIncidentsNodeDefinition incident
+                    && incident.configuration() != null
+                    && incident.configuration().conditionWindows().stream().anyMatch(window ->
+                    window != null && window.effectiveSource() == TrackIncidentWindow.Source.TRACK_ACCELERATION)) {
+                invalid("TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.conditionWindows 的轨迹加速度来源从 Canvas 4.65 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 66 && node instanceof TrackDetectIncidentsNodeDefinition incident
+                    && incident.configuration() != null && !incident.configuration().conditionScalars().isEmpty()) {
+                invalid("TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.conditionScalars 从 Canvas 4.66 开始支持");
+            }
+            if (definition.effectiveSchemaMinorVersion() < 67 && node instanceof TrackDetectIncidentsNodeDefinition incident
+                    && incident.configuration() != null
+                    && incident.configuration().conditionScalars().stream().anyMatch(scalar ->
+                    scalar != null && scalar.isPointCoordinate())) {
+                invalid("TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION：" + path
+                        + ".configuration.conditionScalars 的 Point 坐标来源从 Canvas 4.67 开始支持");
             }
             if (definition.effectiveSchemaMinorVersion() < 45 && node instanceof SpatialPointClusterNodeDefinition cluster
                     && cluster.configuration().hdbscan() != null)
@@ -481,6 +623,119 @@ public class CanvasDefinitionValidator {
                             conditionPath + ".rightGeometryColumnName"
                     );
                 }
+                List<JoinCondition> attributeConditions = join.configuration().attributeConditions();
+                if (attributeConditions != null) {
+                    if (attributeConditions.size()
+                            > SpatialJoinConfiguration.MAX_ATTRIBUTE_CONDITIONS) {
+                        invalid(path + ".attributeConditions 不能超过 "
+                                + SpatialJoinConfiguration.MAX_ATTRIBUTE_CONDITIONS + " 项");
+                    }
+                    for (int index = 0; index < attributeConditions.size(); index++) {
+                        JoinCondition condition = attributeConditions.get(index);
+                        String conditionPath = path + ".attributeConditions[" + index + "]";
+                        if (condition == null || condition.operator() == null) {
+                            invalid(conditionPath + " 不完整");
+                        }
+                        requireString(condition.leftColumnName(), conditionPath + ".leftColumnName");
+                        requireString(condition.rightColumnName(), conditionPath + ".rightColumnName");
+                    }
+                }
+                List<JoinOutputColumn> outputColumns = join.configuration().outputColumns();
+                if (outputColumns != null) {
+                    for (int index = 0; index < outputColumns.size(); index++) {
+                        if (outputColumns.get(index) == null) {
+                            invalid(path + ".outputColumns[" + index + "] 不能为空");
+                        }
+                    }
+                }
+                SpatialJoinOneToOneOptions oneToOne = join.configuration().oneToOne();
+                if (oneToOne != null) {
+                    List<SpatialJoinSummaryStatistic> statistics = oneToOne.summaryStatistics();
+                    if (statistics == null) {
+                        invalid(path + ".oneToOne.summaryStatistics 必须是数组");
+                    }
+                    if (statistics.size() > SpatialJoinOneToOneOptions.MAX_SUMMARY_STATISTICS) {
+                        invalid(path + ".oneToOne.summaryStatistics 不能超过 "
+                                + SpatialJoinOneToOneOptions.MAX_SUMMARY_STATISTICS + " 项");
+                    }
+                    for (int index = 0; index < statistics.size(); index++) {
+                        SpatialJoinSummaryStatistic statistic = statistics.get(index);
+                        String statisticPath = path + ".oneToOne.summaryStatistics[" + index + "]";
+                        if (statistic == null) invalid(statisticPath + " 不能为空");
+                        requireUuid(statistic.statisticId(), statisticPath + ".statisticId");
+                        requireString(
+                                statistic.sourceColumnName(),
+                                statisticPath + ".sourceColumnName"
+                        );
+                        requireString(
+                                statistic.outputColumnName(),
+                                statisticPath + ".outputColumnName"
+                        );
+                    }
+                    SpatialJoinKeepRule keepRule = oneToOne.keepRule();
+                    if (keepRule != null) {
+                        if (keepRule.stableOrder() == null) {
+                            invalid(path + ".oneToOne.keepRule.stableOrder 必须是数组");
+                        }
+                        for (int index = 0; index < keepRule.stableOrder().size(); index++) {
+                            SortField sort = keepRule.stableOrder().get(index);
+                            String sortPath = path + ".oneToOne.keepRule.stableOrder[" + index + "]";
+                            if (sort == null) invalid(sortPath + " 不能为空");
+                            requireString(sort.columnName(), sortPath + ".columnName");
+                        }
+                    }
+                }
+                SpatialJoinTemporalCondition temporal = join.configuration().temporalCondition();
+                if (temporal != null) {
+                    if (temporal.relationship() == null) {
+                        invalid(path + ".temporalCondition.relationship 不能为空");
+                    }
+                    requireString(
+                            temporal.leftStartColumnName(),
+                            path + ".temporalCondition.leftStartColumnName"
+                    );
+                    if (temporal.leftEndColumnName() != null) {
+                        requireString(
+                                temporal.leftEndColumnName(),
+                                path + ".temporalCondition.leftEndColumnName"
+                        );
+                    }
+                    requireString(
+                            temporal.rightStartColumnName(),
+                            path + ".temporalCondition.rightStartColumnName"
+                    );
+                    if (temporal.rightEndColumnName() != null) {
+                        requireString(
+                                temporal.rightEndColumnName(),
+                                path + ".temporalCondition.rightEndColumnName"
+                        );
+                    }
+                }
+                SpatialJoinSpatialNearCondition near = join.configuration().spatialNear();
+                if (near != null) {
+                    requireString(
+                            near.leftGeometryColumnName(),
+                            path + ".spatialNear.leftGeometryColumnName"
+                    );
+                    requireString(
+                            near.rightGeometryColumnName(),
+                            path + ".spatialNear.rightGeometryColumnName"
+                    );
+                    if (near.distance() != null && !Double.isFinite(near.distance())) {
+                        invalid(path + ".spatialNear.distance 必须是有限数值或 null");
+                    }
+                }
+                SpatialJoinDistanceOutput distanceOutput = join.configuration().distanceOutput();
+                if (distanceOutput != null) {
+                    if (distanceOutput.spatialDistanceColumnName() != null) {
+                        requireString(distanceOutput.spatialDistanceColumnName(),
+                                path + ".distanceOutput.spatialDistanceColumnName");
+                    }
+                    if (distanceOutput.temporalDifferenceColumnName() != null) {
+                        requireString(distanceOutput.temporalDifferenceColumnName(),
+                                path + ".distanceOutput.temporalDifferenceColumnName");
+                    }
+                }
             }
             case GeometryValidateNodeDefinition validate ->
                     validateGeometryValidate(validate.configuration(), path);
@@ -684,8 +939,17 @@ public class CanvasDefinitionValidator {
                 for (int index = 0; index < configuration.conditionWindows().size(); index++) {
                     var window = configuration.conditionWindows().get(index);
                     String windowPath = path + ".conditionWindows[" + index + "]";
+                    if (window == null) invalid(windowPath + " 不能为空");
                     requireString(window.bindingName(), windowPath + ".bindingName");
-                    requireString(window.sourceColumnName(), windowPath + ".sourceColumnName");
+                    if (window.effectiveSource() == TrackIncidentWindow.Source.FIELD) {
+                        requireString(window.sourceColumnName(), windowPath + ".sourceColumnName");
+                    }
+                }
+                for (int index = 0; index < configuration.conditionScalars().size(); index++) {
+                    var scalar = configuration.conditionScalars().get(index);
+                    String scalarPath = path + ".conditionScalars[" + index + "]";
+                    if (scalar == null) invalid(scalarPath + " 不能为空");
+                    requireString(scalar.bindingName(), scalarPath + ".bindingName");
                 }
             }
             case SpatialBinAggregateNodeDefinition aggregate ->
@@ -712,15 +976,40 @@ public class CanvasDefinitionValidator {
             }
             case SpatialCenterDispersionNodeDefinition analysis ->
                     validateSpatialCenterDispersion(analysis.configuration(), path);
+            case SpatialDensityNodeDefinition density ->
+                    validateSpatialDensity(density.configuration(), path);
+            case SpatialHotSpotsNodeDefinition hotSpots ->
+                    validateSpatialHotSpots(hotSpots.configuration(), path);
+            case SpatialMultiVariableGridNodeDefinition grid ->
+                    validateSpatialMultiVariableGrid(grid.configuration(), path);
+            case SpatialEnrichFromGridNodeDefinition enrich ->
+                    validateSpatialEnrichFromGrid(enrich.configuration(), path);
+            case SpatialGroupByProximityNodeDefinition group ->
+                    validateSpatialGroupByProximity(group.configuration(), path);
+            case TraceProximityEventsNodeDefinition trace ->
+                    validateTraceProximityEvents(trace.configuration(), path);
+            case SnapTracksNodeDefinition snap ->
+                    validateSnapTracks(snap.configuration(), path);
+            case SpatialSimilarLocationsNodeDefinition similar ->
+                    validateSpatialSimilarLocations(similar.configuration(), path);
+            case SpatialDescribeDatasetNodeDefinition describe ->
+                    validateSpatialDescribeDataset(describe.configuration(), path);
             case GeometryBufferNodeDefinition buffer -> {
                 if (buffer.configuration() == null) invalid(path + " 不能为空");
                 requireString(buffer.configuration().sourceTableName(), path + ".sourceTableName");
                 requireString(buffer.configuration().outputTableName(), path + ".outputTableName");
                 requireString(buffer.configuration().geometryColumnName(), path + ".geometryColumnName");
                 requireString(buffer.configuration().outputColumnName(), path + ".outputColumnName");
-                if (!Double.isFinite(buffer.configuration().distance())
-                        || buffer.configuration().distance() <= 0) {
+                if (buffer.configuration().effectiveDistanceSource() == GeometryBufferDistanceSource.CONSTANT
+                        && (!Double.isFinite(buffer.configuration().distance())
+                        || buffer.configuration().distance() <= 0)) {
                     invalid(path + ".distance 必须是有限正数");
+                }
+                if (buffer.configuration().effectiveDistanceSource() == GeometryBufferDistanceSource.FIELD) {
+                    requireString(buffer.configuration().distanceFieldName(), path + ".distanceFieldName");
+                }
+                if (buffer.configuration().effectiveDistanceSource() == GeometryBufferDistanceSource.EXPRESSION) {
+                    requireString(buffer.configuration().distanceExpression(), path + ".distanceExpression");
                 }
                 if (buffer.configuration().mode() == null) {
                     invalid(path + ".mode 不能为空");
@@ -916,6 +1205,27 @@ public class CanvasDefinitionValidator {
                 }
                 requireString(union.configuration().outputTableName(), path + ".outputTableName");
                 if (union.configuration().mode() == null) invalid(path + ".mode 不能为空");
+                if (union.configuration().mergingTables() != null) {
+                    for (int tableIndex = 0;
+                         tableIndex < union.configuration().mergingTables().size();
+                         tableIndex++) {
+                        UnionMergeTable table = union.configuration().mergingTables().get(tableIndex);
+                        String tablePath = path + ".mergingTables[" + tableIndex + "]";
+                        if (table == null) invalid(tablePath + " 不能为空");
+                        requireString(table.tableName(), tablePath + ".tableName");
+                        if (table.fieldRules() == null) invalid(tablePath + ".fieldRules 必须是数组");
+                        for (int ruleIndex = 0; ruleIndex < table.fieldRules().size(); ruleIndex++) {
+                            UnionMergeFieldRule rule = table.fieldRules().get(ruleIndex);
+                            String rulePath = tablePath + ".fieldRules[" + ruleIndex + "]";
+                            if (rule == null) invalid(rulePath + " 不能为空");
+                            requireString(rule.sourceColumnName(), rulePath + ".sourceColumnName");
+                            if (rule.action() == null) invalid(rulePath + ".action 不能为空");
+                            if (rule.action() != UnionMergeFieldAction.REMOVE) {
+                                requireString(rule.targetColumnName(), rulePath + ".targetColumnName");
+                            }
+                        }
+                    }
+                }
             }
             case DeduplicateNodeDefinition deduplicate -> {
                 if (deduplicate.configuration() == null) invalid(path + " 不能为空");
@@ -1424,6 +1734,346 @@ public class CanvasDefinitionValidator {
             }
         }
         requireString(configuration.outputTableName(), path + ".outputTableName");
+    }
+
+    private static void validateSpatialDensity(
+            SpatialDensityConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+        if (!Double.isFinite(configuration.binSize())) invalid(path + ".binSize 必须是有限数值");
+        if (!Double.isFinite(configuration.radius())) invalid(path + ".radius 必须是有限数值");
+        if (configuration.fields() == null) invalid(path + ".fields 必须是数组");
+        if (configuration.fields().size() > SpatialDensityConfiguration.MAX_FIELDS) {
+            invalid(path + ".fields 不能超过 32 项");
+        }
+        Set<String> fieldIds = new HashSet<>();
+        for (int index = 0; index < configuration.fields().size(); index++) {
+            SpatialDensityField field = configuration.fields().get(index);
+            String itemPath = path + ".fields[" + index + "]";
+            if (field == null) invalid(itemPath + " 不能为空");
+            requireUuid(field.fieldId(), itemPath + ".fieldId");
+            if (!fieldIds.add(field.fieldId())) invalid(itemPath + ".fieldId 在节点内重复");
+            requireString(field.sourceColumnName(), itemPath + ".sourceColumnName");
+            requireString(field.outputColumnName(), itemPath + ".outputColumnName");
+        }
+        validateSpatialTemporalSlicing(configuration.temporalSlicing(), path + ".temporalSlicing");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        requireString(configuration.binIdColumnName(), path + ".binIdColumnName");
+        requireString(configuration.binGeometryColumnName(), path + ".binGeometryColumnName");
+        requireString(configuration.countDensityColumnName(), path + ".countDensityColumnName");
+    }
+
+    private static void validateSpatialHotSpots(
+            SpatialHotSpotsConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+        if (!Double.isFinite(configuration.binSize())) invalid(path + ".binSize 必须是有限数值");
+        if (!Double.isFinite(configuration.neighborhoodDistance())) {
+            invalid(path + ".neighborhoodDistance 必须是有限数值");
+        }
+        if (configuration.analysisSource() == SpatialHotSpotAnalysisSource.FIELD_SUM) {
+            requireString(configuration.analysisColumnName(), path + ".analysisColumnName");
+        }
+        validateSpatialTemporalSlicing(configuration.temporalSlicing(), path + ".temporalSlicing");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        requireString(configuration.binIdColumnName(), path + ".binIdColumnName");
+        requireString(configuration.binGeometryColumnName(), path + ".binGeometryColumnName");
+        requireString(configuration.pointCountColumnName(), path + ".pointCountColumnName");
+        requireString(configuration.analysisValueColumnName(), path + ".analysisValueColumnName");
+        requireString(configuration.zScoreColumnName(), path + ".zScoreColumnName");
+        requireString(configuration.pValueColumnName(), path + ".pValueColumnName");
+        requireString(configuration.adjustedPValueColumnName(), path + ".adjustedPValueColumnName");
+        requireString(configuration.confidenceBinColumnName(), path + ".confidenceBinColumnName");
+    }
+
+    private static void validateSpatialMultiVariableGrid(
+            SpatialMultiVariableGridConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        if (configuration.variables() == null) invalid(path + ".variables 必须是数组");
+        if (configuration.variables().size() > SpatialMultiVariableGridConfiguration.MAX_VARIABLES) {
+            invalid(path + ".variables 不能超过 32 项");
+        }
+        Set<String> variableIds = new HashSet<>();
+        for (int index = 0; index < configuration.variables().size(); index++) {
+            SpatialMultiVariableGridVariable variable = configuration.variables().get(index);
+            String itemPath = path + ".variables[" + index + "]";
+            if (variable == null) invalid(itemPath + " 不能为空");
+            requireUuid(variable.variableId(), itemPath + ".variableId");
+            if (!variableIds.add(variable.variableId())) invalid(itemPath + ".variableId 在节点内重复");
+            requireString(variable.sourceTableName(), itemPath + ".sourceTableName");
+            requireString(variable.geometryColumnName(), itemPath + ".geometryColumnName");
+            requireString(variable.outputColumnName(), itemPath + ".outputColumnName");
+            if (variable.searchDistance() != null && !Double.isFinite(variable.searchDistance())) {
+                invalid(itemPath + ".searchDistance 必须是有限数值或 null");
+            }
+            if (variable.filter() != null) {
+                validateFilterCondition(variable.filter(), itemPath + ".filter", 1, new int[]{0});
+            }
+        }
+        if (!Double.isFinite(configuration.binSize())) invalid(path + ".binSize 必须是有限数值");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        requireString(configuration.binIdColumnName(), path + ".binIdColumnName");
+        requireString(configuration.binGeometryColumnName(), path + ".binGeometryColumnName");
+    }
+
+    private static void validateSpatialSimilarLocations(
+            SpatialSimilarLocationsConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.referenceTableName(), path + ".referenceTableName");
+        requireString(configuration.referenceIdColumnName(), path + ".referenceIdColumnName");
+        requireString(configuration.referenceGeometryColumnName(), path + ".referenceGeometryColumnName");
+        requireString(configuration.candidateTableName(), path + ".candidateTableName");
+        requireString(configuration.candidateIdColumnName(), path + ".candidateIdColumnName");
+        requireString(configuration.candidateGeometryColumnName(), path + ".candidateGeometryColumnName");
+        if (configuration.referenceFilter() != null) {
+            validateFilterCondition(configuration.referenceFilter(), path + ".referenceFilter", 1, new int[]{0});
+        }
+        if (configuration.candidateFilter() != null) {
+            validateFilterCondition(configuration.candidateFilter(), path + ".candidateFilter", 1, new int[]{0});
+        }
+        if (configuration.analysisFields() == null) invalid(path + ".analysisFields 必须是数组");
+        if (configuration.analysisFields().size() > SpatialSimilarLocationsConfiguration.MAX_ANALYSIS_FIELDS) {
+            invalid(path + ".analysisFields 不能超过 32 项");
+        }
+        for (int index = 0; index < configuration.analysisFields().size(); index++) {
+            SpatialSimilarLocationsAnalysisField field = configuration.analysisFields().get(index);
+            String itemPath = path + ".analysisFields[" + index + "]";
+            if (field == null) invalid(itemPath + " 不能为空");
+            requireString(field.columnName(), itemPath + ".columnName");
+            requireString(field.outputColumnName(), itemPath + ".outputColumnName");
+        }
+        if (configuration.appendFields() == null) invalid(path + ".appendFields 必须是数组");
+        if (configuration.appendFields().size() > SpatialSimilarLocationsConfiguration.MAX_APPEND_FIELDS) {
+            invalid(path + ".appendFields 不能超过 64 项");
+        }
+        for (int index = 0; index < configuration.appendFields().size(); index++) {
+            SpatialSimilarLocationsAppendField field = configuration.appendFields().get(index);
+            String itemPath = path + ".appendFields[" + index + "]";
+            if (field == null) invalid(itemPath + " 不能为空");
+            requireString(field.sourceColumnName(), itemPath + ".sourceColumnName");
+            requireString(field.outputColumnName(), itemPath + ".outputColumnName");
+        }
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        requireString(configuration.outputGeometryColumnName(), path + ".outputGeometryColumnName");
+        requireString(configuration.locationTypeColumnName(), path + ".locationTypeColumnName");
+        requireString(configuration.similarityRankColumnName(), path + ".similarityRankColumnName");
+        requireString(configuration.dissimilarityRankColumnName(), path + ".dissimilarityRankColumnName");
+        requireString(configuration.similarityIndexColumnName(), path + ".similarityIndexColumnName");
+        requireString(configuration.cosineIndexColumnName(), path + ".cosineIndexColumnName");
+        requireString(configuration.labelRankColumnName(), path + ".labelRankColumnName");
+        requireString(configuration.referenceIdOutputColumnName(), path + ".referenceIdOutputColumnName");
+        requireString(configuration.searchIdOutputColumnName(), path + ".searchIdOutputColumnName");
+    }
+
+    private static void validateSpatialDescribeDataset(
+            SpatialDescribeDatasetConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.geometryColumnName(), path + ".geometryColumnName");
+        requireString(configuration.statisticsTableName(), path + ".statisticsTableName");
+        requireString(configuration.descriptionTableName(), path + ".descriptionTableName");
+        requireString(configuration.sampleTableName(), path + ".sampleTableName");
+        requireString(configuration.extentTableName(), path + ".extentTableName");
+    }
+
+    private static void validateSpatialEnrichFromGrid(
+            SpatialEnrichFromGridConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.pointTableName(), path + ".pointTableName");
+        requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+        requireString(configuration.gridTableName(), path + ".gridTableName");
+        requireString(configuration.gridGeometryColumnName(), path + ".gridGeometryColumnName");
+        requireString(configuration.gridIdColumnName(), path + ".gridIdColumnName");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        if (configuration.enrichFields() == null) invalid(path + ".enrichFields 必须是数组");
+        for (int index = 0; index < configuration.enrichFields().size(); index++) {
+            SpatialEnrichFromGridField field = configuration.enrichFields().get(index);
+            String itemPath = path + ".enrichFields[" + index + "]";
+            if (field == null) invalid(itemPath + " 不能为空");
+            requireString(field.sourceColumnName(), itemPath + ".sourceColumnName");
+            requireString(field.outputColumnName(), itemPath + ".outputColumnName");
+        }
+    }
+
+    private static void validateSpatialGroupByProximity(
+            SpatialGroupByProximityConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.geometryColumnName(), path + ".geometryColumnName");
+        requireString(configuration.groupIdColumnName(), path + ".groupIdColumnName");
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        if (configuration.spatialNearDistance() != null
+                && !Double.isFinite(configuration.spatialNearDistance())) {
+            invalid(path + ".spatialNearDistance 必须是有限数值或 null");
+        }
+        if (configuration.temporalCondition() != null) {
+            SpatialGroupByProximityTemporalCondition temporal = configuration.temporalCondition();
+            requireString(temporal.startColumnName(), path + ".temporalCondition.startColumnName");
+            if (temporal.endColumnName() != null) {
+                requireString(temporal.endColumnName(), path + ".temporalCondition.endColumnName");
+            }
+        }
+        if (configuration.attributeConditions() == null) {
+            invalid(path + ".attributeConditions 必须是数组");
+        }
+        if (configuration.attributeConditions().size()
+                > SpatialGroupByProximityConfiguration.MAX_ATTRIBUTE_CONDITIONS) {
+            invalid(path + ".attributeConditions 不能超过 "
+                    + SpatialGroupByProximityConfiguration.MAX_ATTRIBUTE_CONDITIONS + " 项");
+        }
+        for (int index = 0; index < configuration.attributeConditions().size(); index++) {
+            SpatialGroupByProximityAttributeCondition condition =
+                    configuration.attributeConditions().get(index);
+            String itemPath = path + ".attributeConditions[" + index + "]";
+            if (condition == null) invalid(itemPath + " 不能为空");
+            requireString(condition.columnName(), itemPath + ".columnName");
+            if (condition.maximumDifference() != null
+                    && !Double.isFinite(condition.maximumDifference())) {
+                invalid(itemPath + ".maximumDifference 必须是有限数值或 null");
+            }
+        }
+    }
+
+    private static void validateTraceProximityEvents(
+            TraceProximityEventsConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.sourceTableName(), path + ".sourceTableName");
+        requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+        requireString(configuration.entityIdColumnName(), path + ".entityIdColumnName");
+        requireString(configuration.timeColumnName(), path + ".timeColumnName");
+        if (configuration.spatialSearchDistance() != null
+                && !Double.isFinite(configuration.spatialSearchDistance())) {
+            invalid(path + ".spatialSearchDistance 必须是有限数值或 null");
+        }
+        if (configuration.entitiesOfInterest() == null) {
+            invalid(path + ".entitiesOfInterest 必须是数组");
+        }
+        if (configuration.entitiesOfInterest().size()
+                > TraceProximityEventsConfiguration.MAX_ENTITIES_OF_INTEREST) {
+            invalid(path + ".entitiesOfInterest 不能超过 "
+                    + TraceProximityEventsConfiguration.MAX_ENTITIES_OF_INTEREST + " 项");
+        }
+        for (int index = 0; index < configuration.entitiesOfInterest().size(); index++) {
+            TraceProximityEntityOfInterest entity = configuration.entitiesOfInterest().get(index);
+            String itemPath = path + ".entitiesOfInterest[" + index + "]";
+            if (entity == null) invalid(itemPath + " 不能为空");
+            requireString(entity.entityId(), itemPath + ".entityId");
+        }
+        if (configuration.entitiesOfInterestTableName() != null) {
+            requireString(configuration.entitiesOfInterestTableName(),
+                    path + ".entitiesOfInterestTableName");
+        }
+        if (configuration.interestEntityIdColumnName() != null) {
+            requireString(configuration.interestEntityIdColumnName(),
+                    path + ".interestEntityIdColumnName");
+        }
+        if (configuration.interestStartTimeColumnName() != null) {
+            requireString(configuration.interestStartTimeColumnName(),
+                    path + ".interestStartTimeColumnName");
+        }
+        if (configuration.attributeMatchColumns() == null) {
+            invalid(path + ".attributeMatchColumns 必须是数组");
+        }
+        if (configuration.attributeMatchColumns().size()
+                > TraceProximityEventsConfiguration.MAX_ATTRIBUTE_MATCH_COLUMNS) {
+            invalid(path + ".attributeMatchColumns 不能超过 "
+                    + TraceProximityEventsConfiguration.MAX_ATTRIBUTE_MATCH_COLUMNS + " 项");
+        }
+        for (int index = 0; index < configuration.attributeMatchColumns().size(); index++) {
+            requireString(configuration.attributeMatchColumns().get(index),
+                    path + ".attributeMatchColumns[" + index + "]");
+        }
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        requireString(configuration.tracksOutputTableName(), path + ".tracksOutputTableName");
+        requireString(configuration.fromEntityIdColumnName(), path + ".fromEntityIdColumnName");
+        requireString(configuration.toEntityIdColumnName(), path + ".toEntityIdColumnName");
+        requireString(configuration.depthColumnName(), path + ".depthColumnName");
+        requireString(configuration.durationMinutesColumnName(), path + ".durationMinutesColumnName");
+        requireString(configuration.eventTimeColumnName(), path + ".eventTimeColumnName");
+    }
+
+    private static void validateSnapTracks(
+            SnapTracksConfiguration configuration,
+            String path
+    ) {
+        if (configuration == null) invalid(path + " 不能为空");
+        requireString(configuration.pointTableName(), path + ".pointTableName");
+        requireString(configuration.pointGeometryColumnName(), path + ".pointGeometryColumnName");
+        requireString(configuration.timeColumnName(), path + ".timeColumnName");
+        requireString(configuration.lineTableName(), path + ".lineTableName");
+        requireString(configuration.lineGeometryColumnName(), path + ".lineGeometryColumnName");
+        requireString(configuration.lineIdColumnName(), path + ".lineIdColumnName");
+        requireString(configuration.fromNodeColumnName(), path + ".fromNodeColumnName");
+        requireString(configuration.toNodeColumnName(), path + ".toNodeColumnName");
+        if (configuration.searchDistance() != null && !Double.isFinite(configuration.searchDistance())) {
+            invalid(path + ".searchDistance 必须是有限数值或 null");
+        }
+        if (configuration.trackIdColumns() == null) {
+            invalid(path + ".trackIdColumns 必须是数组");
+        }
+        if (configuration.trackIdColumns().size() > SnapTracksConfiguration.MAX_TRACK_ID_COLUMNS) {
+            invalid(path + ".trackIdColumns 不能超过 "
+                    + SnapTracksConfiguration.MAX_TRACK_ID_COLUMNS + " 项");
+        }
+        for (int index = 0; index < configuration.trackIdColumns().size(); index++) {
+            requireString(configuration.trackIdColumns().get(index),
+                    path + ".trackIdColumns[" + index + "]");
+        }
+        if (configuration.orderByColumns() == null) {
+            invalid(path + ".orderByColumns 必须是数组");
+        }
+        for (int index = 0; index < configuration.orderByColumns().size(); index++) {
+            requireString(configuration.orderByColumns().get(index),
+                    path + ".orderByColumns[" + index + "]");
+        }
+        if (configuration.lineFields() == null) {
+            invalid(path + ".lineFields 必须是数组");
+        }
+        if (configuration.lineFields().size() > SnapTracksConfiguration.MAX_LINE_FIELDS) {
+            invalid(path + ".lineFields 不能超过 " + SnapTracksConfiguration.MAX_LINE_FIELDS + " 项");
+        }
+        for (int index = 0; index < configuration.lineFields().size(); index++) {
+            SnapTracksLineField field = configuration.lineFields().get(index);
+            String itemPath = path + ".lineFields[" + index + "]";
+            if (field == null) invalid(itemPath + " 不能为空");
+            requireString(field.sourceColumnName(), itemPath + ".sourceColumnName");
+            requireString(field.outputColumnName(), itemPath + ".outputColumnName");
+        }
+        if (configuration.directionMatching() != null) {
+            SnapTracksDirectionMatching direction = configuration.directionMatching();
+            requireString(direction.directionColumnName(), path + ".directionMatching.directionColumnName");
+            requireString(direction.forwardValue(), path + ".directionMatching.forwardValue");
+            requireString(direction.backwardValue(), path + ".directionMatching.backwardValue");
+            requireString(direction.bothValue(), path + ".directionMatching.bothValue");
+            requireString(direction.noneValue(), path + ".directionMatching.noneValue");
+        }
+        requireString(configuration.outputTableName(), path + ".outputTableName");
+        requireString(configuration.snappedGeometryColumnName(), path + ".snappedGeometryColumnName");
+        requireString(configuration.matchedLineIdColumnName(), path + ".matchedLineIdColumnName");
+        requireString(configuration.matchStatusColumnName(), path + ".matchStatusColumnName");
+        requireString(configuration.originalXColumnName(), path + ".originalXColumnName");
+        requireString(configuration.originalYColumnName(), path + ".originalYColumnName");
+        requireString(configuration.matchXColumnName(), path + ".matchXColumnName");
+        requireString(configuration.matchYColumnName(), path + ".matchYColumnName");
+        requireString(configuration.matchDistanceColumnName(), path + ".matchDistanceColumnName");
     }
 
     private static void validateSpatialPointClusterParameters(

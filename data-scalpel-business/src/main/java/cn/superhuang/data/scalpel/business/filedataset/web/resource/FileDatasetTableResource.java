@@ -27,7 +27,7 @@ public class FileDatasetTableResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "批量查询 Canvas 所需的文件表元数据")
     @PostMapping("/actions/query-canvas-metadata")
     @PreAuthorize("hasAuthority('filedataset.view')")
-    @Operation(summary = "批量查询 Canvas 所需的文件表元数据", description = "只读操作")
+    @Operation(summary = "批量查询 Canvas 所需的文件表元数据", description = "按请求顺序返回仍存在且来源关系完整的文件数据集逻辑表、解析状态、文件准备状态和字段 Schema；缺失或内部关系不完整的 ID 不会出现在结果中，不读取文件正文。")
     public FileDatasetCanvasMetadataResponse queryCanvasMetadata(
             @Valid @RequestBody QueryFileDatasetCanvasMetadataRequest request
     ) {

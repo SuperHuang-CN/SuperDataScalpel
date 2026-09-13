@@ -7,17 +7,17 @@
 当前阶段提供：
 
 - 数据源 CRUD、统一 Search DSL 查询和目录筛选。
-- JDBC：已保存连接和未保存表单的真实连接测试、库/Schema、表和视图、表元数据、安全唯一键、最多 100 行的只读预览，以及 PostgreSQL/MySQL 只读查询结果分析；TDengine 仅发现和读取超级表。
+- JDBC：已保存连接和未保存表单的真实连接测试、库/Schema、表和视图、表元数据、安全唯一键、最多 100 行的只读预览，以及 PostgreSQL/HighGo/MySQL/openGauss/人大金仓只读查询结果分析；TDengine 仅发现和读取超级表。
 - HTTP API：只作为输入使用，支持可复用连接、运行时 Token、请求签名、API 资源、分页/异步请求、资源测试和 Canvas 输入节点。
 - Kafka：登记一个 Kafka 集群；Topic 是任务阶段的资源，不属于数据源配置，详情页可按名称发现 Topic。
 - TDengine TMQ：仅 `TDENGINE_WEBSOCKET` 数据源具备 `TMQ_SUBSCRIBE`；Topic 由外部系统管理，
   详情页只发现和查看完整超级表 Topic，Canvas 通过独立实时输入节点订阅。
-- JDBC 时间字段增量读取：PostgreSQL、MySQL、openGauss 和 Kingbase 暴露
+- JDBC 时间字段增量读取：PostgreSQL、HighGo、MySQL、openGauss、Kingbase、达梦、Oracle 和 SQL Server 暴露
   `JDBC_INCREMENTAL_READ`；实时 Canvas 使用独立节点轮询完整 `(fromTime,toTime]` 窗口。
   TDengine 不开放该能力，实时读取继续使用 TMQ。
 - S3：登记一个固定 Bucket，可选配置根目录；对象 Key 位于该根目录之下。
-- JDBC 方言：PostgreSQL、MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓、openGauss，以及共用超级表方言的 TDengine WebSocket/RESTful JDBC。
-- 空间结构元数据：已安装 PostGIS 的 PostgreSQL 与 MySQL 8.x 可整表读取受约束的 Geometry subtype、EPSG CRS 和 XY 维度；不读取 Geometry 值，也不创建或解释空间索引。
+- JDBC 方言：PostgreSQL、HighGo、MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓、openGauss，以及共用超级表方言的 TDengine WebSocket/RESTful JDBC。HighGo、openGauss、人大金仓保留独立厂商类型、驱动、URL 和默认端口，同时复用 PostgreSQL 家族方言主体；人大金仓 R8/R9 共用 `KINGBASE` 类型并在运行时识别 `sys_catalog/sys_*` 或 `pg_catalog/pg_*`。
+- 空间结构元数据：已安装 PostGIS 兼容扩展的 PostgreSQL、HighGo、openGauss、人大金仓及 MySQL 8.x 可整表读取受约束的 Geometry subtype、EPSG CRS 和 XY 维度；不读取 Geometry 值，也不自动创建空间索引。
 
 当前 S3 不提供对象浏览；Kafka 仅提供 Topic 发现和任务侧校验，不提供独立连接测试。TDengine 第一阶段不枚举子表，不支持受管模型、写入、自定义查询输入、数据服务或物理统计。常规构建不依赖外部数据库；PostGIS、MySQL 8 Geometry 和 TDengine 的真实环境验收需面向可销毁隔离实例独立安排。不提供连接健康定时检查或任务执行连接池，其他数据库的真实环境兼容性验证仍需独立安排。
 
@@ -31,7 +31,7 @@
 - 统一的表、字段、主键、安全唯一键、索引和预览数据模型。
 - 基于短连接的连接测试与只读元数据读取。
 - 通过可选 `DatabaseMetadataProvider` 适配 TDengine 等无法直接套用标准 JDBC 表元数据的数据库；TDengine 只从系统视图发现超级表。
-- 连接感知的 PostGIS/MySQL 8 空间能力检查、整表空间元数据增强和 EPSG 到数据库本地空间参考 ID 的目录解析。
+- 连接感知的 PostgreSQL 家族 PostGIS 兼容扩展/MySQL 8 空间能力检查、整表空间元数据增强和 EPSG 到数据库本地空间参考 ID 的目录解析。
 
 `data-scalpel-business` 负责维护数据源聚合，并按连接类别转换为运行时快照、编排 JDBC 方言或 HTTP 连接器调用和映射稳定的 Web DTO。远程 JDBC/HTTP 调用不运行在管理库的 JPA 事务中。HTTP 通用连接器负责管理端连接及资源测试；Task Engine Runner 使用同一份稳定运行契约执行真实拉取。Kafka/S3 客户端接入时在该业务域新增对应运行时实现，不扩展或污染 JDBC 方言模块。
 
@@ -176,7 +176,7 @@ Vendor Code、耗时和异常堆栈。响应与日志都会遮蔽当前连接密
 | `GET` | `/api/v1/data-sources/{id}/namespaces` | 查询 Catalog/Schema |
 | `GET` | `/api/v1/data-sources/{id}/tables` | 查询表和可选视图；最多返回 500 项；TDengine 只返回超级表 |
 | `GET` | `/api/v1/data-sources/{id}/table-metadata` | 查询字段、主键、安全唯一键和索引；TDengine 额外返回时间列/指标/TAG 角色 |
-| `POST` | `/api/v1/data-sources/{id}/actions/inspect-query` | 分析 PostgreSQL/MySQL 单条只读查询的输出 Schema |
+| `POST` | `/api/v1/data-sources/{id}/actions/inspect-query` | 分析 PostgreSQL/HighGo/MySQL/openGauss/人大金仓单条只读查询的输出 Schema |
 | `GET` | `/api/v1/data-sources/{id}/table-preview` | 预览数据；默认 50 行、最多 100 行 |
 | `GET` | `/api/v1/data-sources/{id}/kafka-topics` | 按可选 `keyword` 查询 Kafka Topic，`includeInternal=true` 时包含内部 Topic，最多返回 200 项 |
 | `GET` | `/api/v1/data-sources/{id}/api-resources` | 查询 HTTP API 数据源下的 API 资源 |
@@ -222,7 +222,7 @@ interface MetadataUniqueKey {
 }
 ```
 
-- 只接受已启用、具有 `SOURCE` 用途的 PostgreSQL/MySQL 数据源。
+- 只接受已启用、具有 `SOURCE` 用途的 PostgreSQL/HighGo/MySQL/openGauss/人大金仓数据源。
 - SQL 长度为 `1..100000`，只允许单条 `SELECT` 或 `WITH ... SELECT`；不支持模板变量、运行参数、Session 配置、DDL/DML 或多语句。
 - Hash 基于去除可选终止分号并 trim 后的 UTF-8 SQL；响应不回显 SQL，也不返回任何数据行。
 - 连接设置为只读，并执行方言提供的只读 Session 初始化语句。优先使用 PreparedStatement 元数据；驱动不提供时设置 `maxRows=1` 并最多执行一行作为 fallback。

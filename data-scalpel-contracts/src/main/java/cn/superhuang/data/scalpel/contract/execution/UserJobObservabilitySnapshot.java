@@ -1,13 +1,17 @@
 package cn.superhuang.data.scalpel.contract.execution;
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import java.time.Instant;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 
 public record UserJobObservabilitySnapshot(
+        @JsonPropertyDescription("快照采集时间。")
         Instant capturedAt,
+        @JsonPropertyDescription("用户作业主动报告的阶段、说明和更新时间；作业尚未报告状态且已有指标时可为空。")
         UserJobStatus status,
+        @JsonPropertyDescription("按稳定名称返回的用户作业指标快照。")
         List<UserJobMetricSnapshot> metrics
 ) {
     private static final int MAX_USER_METRICS = 100;

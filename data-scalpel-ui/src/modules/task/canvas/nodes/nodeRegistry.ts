@@ -33,6 +33,15 @@ import { trackDetectIncidentsSpec } from './trackDetectIncidents/spec';
 import { spatialBinAggregateSpec } from './spatialBinAggregate/spec';
 import { spatialPointClusterSpec } from './spatialPointCluster/spec';
 import { spatialCenterDispersionSpec } from './spatialCenterDispersion/spec';
+import { spatialDensitySpec } from './spatialDensity/spec';
+import { spatialHotSpotsSpec } from './spatialHotSpots/spec';
+import { spatialMultiVariableGridSpec } from './spatialMultiVariableGrid/spec';
+import { spatialSimilarLocationsSpec } from './spatialSimilarLocations/spec';
+import { spatialDescribeDatasetSpec } from './spatialDescribeDataset/spec';
+import { spatialEnrichFromGridSpec } from './spatialEnrichFromGrid/spec';
+import { spatialGroupByProximitySpec } from './spatialGroupByProximity/spec';
+import { traceProximityEventsSpec } from './traceProximityEvents/spec';
+import { snapTracksSpec } from './snapTracks/spec';
 import { geometrySerializeSpec } from './geometrySerialize/spec';
 import { geometryValidateSpec } from './geometryValidate/spec';
 import { httpApiInputSpec } from './httpApiInput/spec';
@@ -112,6 +121,15 @@ const builtinSpecs = [
   spatialBinAggregateSpec,
   spatialPointClusterSpec,
   spatialCenterDispersionSpec,
+  spatialDensitySpec,
+  spatialHotSpotsSpec,
+  spatialMultiVariableGridSpec,
+  spatialSimilarLocationsSpec,
+  spatialDescribeDatasetSpec,
+  spatialEnrichFromGridSpec,
+  spatialGroupByProximitySpec,
+  traceProximityEventsSpec,
+  snapTracksSpec,
   geometryBufferSpec,
   geometryExplodeSpec,
   spatialMeasureSpec,

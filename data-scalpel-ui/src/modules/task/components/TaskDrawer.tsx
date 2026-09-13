@@ -6,7 +6,6 @@ import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory
 import { computeEngineRegistrationStateLabels, isComputeEngineSelectable, useComputeEngines } from '../../computeengine';
 import { taskStatusLabels, taskTypeLabels, type DataTask, type TaskType } from '../model/task';
 import { getTaskView, type TaskListView } from '../model/taskViews';
-import type { TaskAssistantCreateDraft } from '../model/taskAssistant';
 
 export interface TaskDrawerValues {
   name: string;
@@ -21,7 +20,6 @@ interface TaskDrawerProps {
   open: boolean;
   task: DataTask | null;
   initialDirectoryId?: string;
-  initialDraft?: TaskAssistantCreateDraft;
   directories: DirectoryTreeNode[];
   onClose: () => void;
   onSubmit: (values: TaskDrawerValues) => Promise<void>;
@@ -32,7 +30,6 @@ export const TaskDrawer = ({
   open,
   task,
   initialDirectoryId,
-  initialDraft,
   directories,
   onClose,
   onSubmit,
@@ -40,7 +37,7 @@ export const TaskDrawer = ({
   const viewConfig = getTaskView(view);
   const [submitting, setSubmitting] = useState(false);
   const submittingRef = useRef(false);
-  const fixedType = !task && !initialDraft && viewConfig.types.length === 1;
+  const fixedType = !task && viewConfig.types.length === 1;
   const [form] = Form.useForm<TaskDrawerValues>();
   const taskType = Form.useWatch('type', form);
   const sparkTask = taskType !== undefined && taskType !== 'LOCAL_SQL' && taskType !== 'WORKFLOW';
@@ -57,14 +54,8 @@ export const TaskDrawer = ({
       directoryId: task.directoryId ?? undefined,
       description: task.description ?? undefined,
       computeEngineId: task.computeEngineId ?? undefined,
-    } : initialDraft ? {
-      name: initialDraft.name,
-      type: 'SPARK_CANVAS',
-      directoryId: initialDraft.directoryId ?? undefined,
-      description: initialDraft.description ?? '',
-      computeEngineId: undefined,
     } : { name: '', type: viewConfig.defaultType, directoryId: initialDirectoryId, description: '', computeEngineId: undefined });
-  }, [form, initialDirectoryId, initialDraft, open, task, viewConfig.defaultType]);
+  }, [form, initialDirectoryId, open, task, viewConfig.defaultType]);
 
   const submit = async () => {
     if (submittingRef.current) return;
@@ -131,8 +122,8 @@ export const TaskDrawer = ({
               <Col span={12} xs={24} sm={12} style={fixedType ? { display: 'none' } : undefined}>
                 <Form.Item name="type" hidden={fixedType} label={view === 'batch' || view === 'streaming' ? '执行方式' : '任务类型'} rules={[{ required: true, message: '请选择任务类型' }]}>
                   <Select
-                    disabled={Boolean(task || initialDraft)}
-                    options={(task ? [task.type] : initialDraft ? ['SPARK_CANVAS' as const] : viewConfig.types).map(value => ({ value, label: taskTypeLabels[value] }))}
+                    disabled={Boolean(task)}
+                    options={(task ? [task.type] : viewConfig.types).map(value => ({ value, label: taskTypeLabels[value] }))}
                   />
                 </Form.Item>
               </Col>

@@ -23,8 +23,11 @@ import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableColumnType;
+import cn.superhuang.data.scalpel.dialect.model.TableChangeCheck;
+import cn.superhuang.data.scalpel.dialect.model.TableChangePlan;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
+import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
 import cn.superhuang.data.scalpel.dialect.model.TableStatisticQuality;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
@@ -406,6 +409,24 @@ public final class MySqlDialect extends AbstractJdbcDialect implements JdbcIncre
                 List.of("CREATE TABLE " + qualifiedName(definition.table()) + " ("
                         + String.join(", ", clauses) + ") ENGINE=InnoDB")
         );
+    }
+
+    @Override
+    public TableChangePlan planTableChange(TableDefinition before, TableDefinition target, TableMetadata actual) {
+        return ControlledRelationalTableChangeSupport.plan(
+                this, before, target, actual,
+                ControlledRelationalTableChangeSupport.SqlStyle.MYSQL_SINGLE_STATEMENT,
+                "MySQL"
+        );
+    }
+
+    @Override
+    public boolean checkTableChange(
+            Connection connection,
+            TableIdentifier table,
+            TableChangeCheck check
+    ) throws SQLException {
+        return ControlledRelationalTableChangeSupport.check(this, connection, table, check, "MySQL");
     }
 
     private static boolean isMySql8(Connection connection) throws SQLException {

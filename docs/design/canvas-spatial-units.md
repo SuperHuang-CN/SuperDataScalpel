@@ -66,6 +66,8 @@ GeoAnalytics 的距离/面积单位以及 Esri Projection Engine 的单位定义
 | 节点 | 使用公共单位的配置位置 |
 | --- | --- |
 | Geometry Simplify | toleranceUnit；Canvas 容差摘要使用同一单位名称 |
+| Geometry Buffer（4.49） | distanceUnit；PLANAR 换算到投影轴单位，SPHEROID 换算为米 |
+| Spatial Measure（4.50） | measurements[i].outputUnit；逐项换算长度/距离/周长或面积结果 |
 | Nearest | maximumDistanceUnit、distanceOutputUnit、matching.connectionLines.maximumGeodesicSegmentLengthUnit |
 | Summarize Within | lengthUnit、areaUnit |
 | Bin Aggregate | binSizeUnit（含 H3 近似大小；显式分辨率不读取该数值，但保留草稿） |
@@ -78,7 +80,33 @@ GeoAnalytics 的距离/面积单位以及 Esri Projection Engine 的单位定义
 速度和加速度使用原独立枚举及换算：英尺/秒、英里/小时是国际制，KNOTS 是国际海里/小时。
 本次不声称它们与每个 Esri 端点别名完全等价，也不以距离单位推断速度单位。
 时间间隔、日历切片及参考时间是另一组语义；4.36 不扩展它们，4.47 固定周见下节。
-现有 Buffer/Measure 使用其他配置契约，须在路线图的现有节点复核阶段处理，不因本次共享枚举补齐而标记完成。
+Geometry Buffer 已在 4.49 接入显式距离单位；Spatial Measure 已在 4.50 接入逐项输出单位。
+两者缺失/null 均继续保留旧结果。Buffer 的字段/表达式距离、负值、样式和 Dissolve，以及 Measure
+尚未纳入协议的三维/方位角等能力，仍须在路线图的现有节点复核阶段处理。
+
+### 4.50 Spatial Measure 显式输出单位
+
+`SPATIAL_MEASURE.measurements[i].outputUnit` 只存在于 AREA、LENGTH、PERIMETER 和 DISTANCE：
+
+- AREA 使用公共面积单位；SPHEROID 的平方米原始结果按目标单位换算，投影 PLANAR 从 CRS 轴单位平方可靠换算。
+- LENGTH、PERIMETER、DISTANCE 使用公共距离单位；SPHEROID 的米原始结果按目标单位换算，投影 PLANAR
+  从 CRS 轴单位可靠换算。
+- 地理 CRS 的 PLANAR 线性结果只允许 `SOURCE_CRS_UNIT`，面积的角度平方只能保留缺失/null 的旧单位语义；
+  不使用随纬度变化的隐藏近似。
+- SPHEROID 不接受 `SOURCE_CRS_UNIT`。X/Y 是坐标读取，不增加输出单位字段。
+- 缺失/null 保持旧结果：PLANAR 为来源坐标单位（面积为平方），SPHEROID 为米/平方米。
+  显式单位要求 Canvas 4.50，低版本返回 `SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION`。
+
+结果 Schema 仍为 nullable DOUBLE，不虚构平台字段单位元数据；单位保存在测量项配置、Canvas 展示和安全摘要中。
+本项不转换 Geometry CRS，不改变测量算法，也不增加 Spark Action、Manifest、Result 或 HTTP API。
+
+### 4.49 Geometry Buffer 显式单位
+
+`GEOMETRY_BUFFER.distanceUnit` 接入上述公共距离单位。投影 CRS 的 PLANAR 模式按轴单位可靠换算；
+地理 CRS 的 PLANAR 模式只接受 `SOURCE_CRS_UNIT`，不做随纬度变化的米转角度近似。SPHEROID 仍只接受
+EPSG:4326 XY，但可使用任一固定线性单位并在执行前换算为米；`SOURCE_CRS_UNIT` 明确拒绝。
+缺失/null 保持旧版 PLANAR 来源单位、SPHEROID 米语义。显式单位要求 Canvas 4.49，切换单位不修改数值。
+这只收口单位误配，不增加字段/表达式距离、负 Buffer、样式或 Dissolve，也不代表 Create Buffers 完整对齐。
 
 ## 4.47 固定时长周与日历周
 

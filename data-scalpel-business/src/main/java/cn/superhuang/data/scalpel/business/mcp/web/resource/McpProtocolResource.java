@@ -14,6 +14,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
@@ -40,8 +42,13 @@ public class McpProtocolResource {
         this.payloads = payloads; this.mapper = mapper;
     }
 
+    @Operation(summary = "调用已发布 MCP Server", description = "使用 Authorization: Bearer dsmcp_... 发送无状态 JSON-RPC 2.0 MCP 请求。支持 initialize、notifications/initialized、ping、tools/list 和 tools/call；通知返回 202，业务失败位于 CallToolResult。")
     @PostMapping(path = "/mcp/{serverCode}", consumes = {MediaType.APPLICATION_JSON_VALUE, "application/*+json"})
-    public ResponseEntity<String> invoke(HttpServletRequest request) throws IOException {
+    public ResponseEntity<String> invoke(
+            @Parameter(description = "MCP Server 的稳定公开编码，与管理端 Server code 一致。")
+            @org.springframework.web.bind.annotation.PathVariable String serverCode,
+            HttpServletRequest request
+    ) throws IOException {
         AuthenticatedServer auth = (AuthenticatedServer) request.getAttribute(McpTokenAuthenticationFilter.AUTHENTICATED_SERVER_ATTRIBUTE);
         if (auth == null) throw new org.springframework.security.authentication.BadCredentialsException("Invalid MCP access token");
         if (!auth.callable()) throw new ResponseStatusException(HttpStatus.CONFLICT, "MCP Server 尚未发布启用");

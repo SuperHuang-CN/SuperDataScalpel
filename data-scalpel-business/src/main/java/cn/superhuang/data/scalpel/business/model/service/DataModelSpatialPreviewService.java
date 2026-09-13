@@ -1,7 +1,6 @@
 package cn.superhuang.data.scalpel.business.model.service;
 
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
-import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.model.domain.DataModel;
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
@@ -75,9 +74,6 @@ public class DataModelSpatialPreviewService {
         if (preparation.fields().isEmpty()) {
             return response(false, "模型不包含 Geometry 字段", List.of());
         }
-        if (preparation.storage().getType() != DataSourceType.POSTGRESQL) {
-            return response(false, "当前仅支持 PostgreSQL/PostGIS 动态空间预览", fieldsWithoutRuntime(preparation.fields()));
-        }
         ModelPhysicalTableInspection tableInspection = physicalTablePort.inspect(
                 preparation.storage(), preparation.model(), preparation.allFields()
         );
@@ -110,9 +106,6 @@ public class DataModelSpatialPreviewService {
     ) {
         SpatialPreviewViewport viewport = viewport(bbox, width, height);
         Preparation preparation = snapshot(modelId);
-        if (preparation.storage().getType() != DataSourceType.POSTGRESQL) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前仅支持 PostgreSQL/PostGIS 动态空间预览");
-        }
         DataModelField field = preparation.fields().stream()
                 .filter(candidate -> candidate.getCode().equals(geometryField))
                 .findFirst()

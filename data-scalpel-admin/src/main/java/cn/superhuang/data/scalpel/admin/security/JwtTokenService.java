@@ -15,10 +15,12 @@ import java.util.List;
 @Service
 public class JwtTokenService {
 
+    private final cn.superhuang.data.scalpel.business.system.access.repository.SystemUserRepository users;
     private final JwtEncoder jwtEncoder;
     private final SecurityProperties securityProperties;
 
-    public JwtTokenService(JwtEncoder jwtEncoder, SecurityProperties securityProperties) {
+    public JwtTokenService(JwtEncoder jwtEncoder, SecurityProperties securityProperties, cn.superhuang.data.scalpel.business.system.access.repository.SystemUserRepository users) {
+        this.users = users;
         this.jwtEncoder = jwtEncoder;
         this.securityProperties = securityProperties;
     }
@@ -42,6 +44,7 @@ public class JwtTokenService {
                 .issuedAt(issuedAt)
                 .expiresAt(expiresAt)
                 .subject(authentication.getName())
+                .claim("userId", users.findByUsername(authentication.getName()).filter(u -> u.isEnabled()).orElseThrow().getId().toString())
                 .claim("roles", roles)
                 .claim("permissions", permissions)
                 .build();

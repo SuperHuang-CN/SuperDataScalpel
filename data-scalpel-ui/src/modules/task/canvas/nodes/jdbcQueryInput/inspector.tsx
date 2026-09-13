@@ -59,7 +59,7 @@ const JdbcQueryInputInspector = ({
     ? dataSourceQuery.data.enabled
       && dataSourceQuery.data.connectionKind === 'JDBC'
       && dataSourceQuery.data.purposes.includes('SOURCE')
-      && (dataSourceQuery.data.type === 'POSTGRESQL' || dataSourceQuery.data.type === 'MYSQL')
+      && ['POSTGRESQL', 'HIGHGO', 'MYSQL', 'OPENGAUSS', 'KINGBASE'].includes(dataSourceQuery.data.type)
     : dataSourceQuery.isError ? false : undefined;
   const analysisStale = Boolean(analyzedSqlSha256)
     && (sql !== analyzedSql || dataSourceId !== analyzedDataSourceId);
@@ -86,7 +86,7 @@ const JdbcQueryInputInspector = ({
             name: 'dataSourceId',
             errors: [dataSourceQuery.isFetching
               ? '正在读取数据源信息，请稍候'
-              : '数据源不可用，或不是具有 SOURCE 用途的 PostgreSQL/MySQL'],
+              : '数据源不可用，或不是具有 SOURCE 用途的 PostgreSQL/HighGo/MySQL/openGauss/人大金仓'],
           }]);
 
         }
@@ -103,7 +103,7 @@ const JdbcQueryInputInspector = ({
     try {
       const values = await form.validateFields(['dataSourceId', 'sql']);
       if (dataSourceAvailable !== true) {
-        throw new Error('请选择可用的 PostgreSQL/MySQL SOURCE 数据源');
+        throw new Error('请选择可用的 PostgreSQL/HighGo/MySQL/openGauss/人大金仓 SOURCE 数据源');
       }
       setAnalyzing(true);
       const inspection = await inspectJdbcQuery(values.dataSourceId, values.sql);
@@ -149,8 +149,8 @@ const JdbcQueryInputInspector = ({
         >
           <CanvasJdbcDataSourceSelect
             purpose="SOURCE"
-            allowedTypes={['POSTGRESQL', 'MYSQL']}
-            placeholder="选择 PostgreSQL/MySQL SOURCE 数据源"
+            allowedTypes={['POSTGRESQL', 'HIGHGO', 'MYSQL', 'OPENGAUSS', 'KINGBASE']}
+            placeholder="选择 PostgreSQL/HighGo/MySQL/openGauss/人大金仓 SOURCE 数据源"
           />
         </Form.Item>
         <Form.Item

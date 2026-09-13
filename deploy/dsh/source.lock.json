@@ -1,0 +1,8 @@
+{
+  "purpose": "analysis-reference-only",
+  "project": "https://github.com/deepseek-ai/deepseek-harness",
+  "version": "0.1.0-rc.7",
+  "commit": "99f6f02fecdb7dff40c3fbc9470f5907c29f74ca",
+  "archiveSha256": "2aeccb735c64ddb66dc8763a291f801251bef932c9d02fa1f81272dcb7203c28",
+  "runtimePackage": "@deepseek-ai/dsh@0.1.5-rc.1"
+}

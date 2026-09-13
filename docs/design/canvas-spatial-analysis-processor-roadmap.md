@@ -3,15 +3,96 @@
 ## 1. 状态与产品基线
 
 - 审计日期：2026-09-07。审计基线为 Canvas 4.20，后续已进入开发；实现进度见[开发清单](canvas-spatial-development-progress.md)。
-- 当前写出版本为 4.47，共享固定时长新增[周（固定 7 天）](canvas-spatial-units.md#447-固定时长周与日历周)，
-  贯通时长阈值与输出单位。已有日历周不改变；固定月年、完整官方单位/数值对照仍待完成。
+- 当前写出版本为 4.77：`SPATIAL_CLIP` 新增逐来源多 Mask 组合，默认先融合每条来源要素命中的
+  所有 Mask 再裁剪一次，避免重叠 Mask 重复覆盖；缺失/null 保持旧 Pairwise 行为。4.76 新增批处理 `SPATIAL_DESCRIBE_DATASET`，保留来源表并输出逐字段统计、
+  数据集描述、可选样本和可选 XY Envelope 范围。Geometry 可选，范围输出时必须显式选择；
+  4.76 已完成四结果完整血缘、20,000 行规模样例和真实页面验收；真实 Enterprise 字段细节、
+  带真实上游的字段选择和生产容量仍开放。4.75 新增批处理 `SPATIAL_SIMILAR_LOCATIONS`，以参考位置和候选位置共同总体
+  标准化 1～32 个同名数值字段，支持属性值平方差、属性轮廓余弦差异及最相似/最不相似/两端返回。
+  4.76 已完成全输出血缘、20,000 候选/10,000 结果规模样例和真实页面验收；当前不包含 Pro 的
+  Ranked、Scale 或 Collapse 扩展，真实 Enterprise 数值和生产容量仍开放。
+  4.74 新增批处理 `SNAP_TRACKS`，将有界 XY Point 轨迹按时间、
+  搜索距离、直接相邻路网拓扑和可选通行方向执行 Viterbi 联合匹配，输出吸附点、
+  匹配线 ID、状态与可选道路属性。首版不搜索无观测的多条中间道路；真实 Enterprise
+  网络路径、评分、容差和服务结果仍待完成。4.76 已完成全输出血缘、20,000 观测/1,000 轨迹
+  规模样例和真实页面验收；高密度候选、超长单轨迹和生产容量仍开放，不声明 Esri 等价。
+  4.73 的 `TRACE_PROXIMITY_EVENTS` 从显式实体 ID 或另一张上游表出发，
+  按 Point 空间距离、时间距离和可选同值属性向下游逐层传播，输出每个下游实体的首次接触事件及可选后续轨迹。
+  当前强制最大深度 1～32、PLANAR 投影 CRS 和 GEODESIC EPSG:4326 XY。4.76 已补齐两结果完整血缘、
+  20,000 观测/10,000 事件惰性分布式执行证据及真实页面验收；真实 Enterprise 持续事件、月年边界、
+  极区/日期线、官方字段和高偏斜生产容量对照仍开放。
+  4.72 的 `SPATIAL_GROUP_BY_PROXIMITY` 按 Intersects、Touches、Near Planar
+  或 Near Geodesic 及可选时间/受控属性关系建立无向邻接图并求传递连通组。每个来源要素保留一行并追加
+  非空组 ID；孤立要素也形成单独组。4.76 已补齐集合字段完整血缘、20,000 孤立 Point 惰性/分布式执行证据及真实页面验收；
+  真实 Enterprise 容差、月年时间、任意属性表达式和高偏斜生产容量对照仍开放。
+  4.71 的 `SPATIAL_ENRICH_FROM_GRID` 把已有多变量 Polygon 格网的
+  显式属性按相交关系回填到有界 XY Point，未匹配 Point 保留；边界多格命中使用格网 ID 稳定选择。
+  4.76 已补完整字段血缘、20,000 Point/格网惰性预检与索引化执行证据及真实页面验收；真实 Enterprise
+  边界、字段类型与生产容量对照仍开放。4.70 新增批处理 `SPATIAL_MULTI_VARIABLE_GRID`，以多张投影 XY Point/Line/Polygon
+  来源的共同外包范围生成统一方格或六边形，支持逐变量筛选、最近距离、最近属性和关联要素
+  COUNT/数值/字符串汇总。4.76 已补齐三类变量、九种统计与两来源统一格网的完整字段血缘、20,000 点
+  惰性预检与分布式执行证据及真实页面验收。真实 Enterprise 的格网边缘、最近并列、统计数值、不同
+  Geometry/投影轴单位和生产容量对照仍开放，不宣称 Esri 数值等价。4.69 新增批处理 `SPATIAL_HOT_SPOTS`，以投影 XY Point、完整方格和固定距离
+  二元邻域计算 Getis-Ord Gi*，支持点数、单个数值字段求和、原始双侧 p-value、显式 FDR-BH、
+  `-3..3` 置信分级和可选时间切片。4.76 已补齐点数/字段总量、FDR/无校正及时间切片的完整字段血缘、
+  20,000 点惰性预检与分布式执行证据及真实页面验收。真实 Enterprise 的逐格网数值、边缘、
+  多重检验、不同投影轴单位和生产容量对照仍待完成，不宣称 Esri 数值等价。
+  4.68 的 `SPATIAL_DENSITY` 以投影 XY Point 生成方格或六边形
+  Polygon 格网，支持 Uniform/Kernel、点数及至多 32 个数量字段密度、独立格网/半径单位、
+  面积单位和可选时间切片。当前使用公开公式定义的平台确定性实现；4.76 已补齐 Uniform/Kernel
+  含时间切片的完整字段血缘、20,000 点惰性预检与分布式执行证据及真实页面验收。真实 Enterprise
+  的逐格网数值、边缘、不同投影轴单位和生产容量对照仍待完成，不宣称 Esri 数值等价。
+  `TRACK_DETECT_INCIDENTS` 在 4.66 轨迹标量上增加
+  `TRACK_POINT_X_AT/TRACK_POINT_Y_AT`，以有符号观测偏移读取当前片段内 Point 坐标，越界或
+  Geometry 为 NULL 时返回 NULL，DOUBLE 结果单位跟随来源 CRS。4.66 已接入 TrackStartTime、
+  TrackDuration、TrackCurrentTime 与 TrackIndex，统一以 LONG 暴露 Epoch 毫秒、
+  持续毫秒或零基观测序号，并随 DataScalpel 轨迹片段重置。既有受控条件窗口可显式选择
+  `source=TRACK_ACCELERATION`，按官方左闭右开观测范围聚合逐观测加速度；片段首观测为 0，后续值为
+  当前与前一观测速度之差除以时长，单位固定为米/秒²。4.64 的 `source=TRACK_SPEED` 按同一范围聚合
+  逐观测速度；片段首观测速度为 0，后续值为前一
+  观测到当前观测的 WGS84 测地距离除以时长，单位固定为米/秒。同时间、缺失 Point 或无法形成有效段时
+  返回 NULL。4.63 的 `source=TRACK_DISTANCE` 按同一窗口边界聚合各 Point 自当前片段首观测起的累计
+  测地距离，单位固定为米；
+  缺失/null/FIELD 继续保持 4.46 原始字段窗口语义。当前只接入 Distance/Speed/Acceleration 三种
+  Window 的受控标量聚合，不把它扩展解释成完整 Arcade 轨迹窗口能力。4.62 复用 `UNION` 接入
+  Merge Layers。第一张输入作为基准层，后续层默认同名
+  Match、非同名字段追加、缺失字段补 NULL，并可逐字段配置 Match/Rename/Remove；数值 Match 显式
+  Cast，Geometry 必须 Match 到类型、CRS、维度一致的基准字段，无界事件时间必须 Match 到基准事件
+  时间。缺失/null `mergingTables` 保持旧版严格同 Schema Union，不改变旧任务结果。4.61 的
+  `SPATIAL_AGGREGATE` 单 UNION Dissolve 可显式选择
+  `CONNECTED_COMPONENTS`，在不配置分组字段时按 Polygon/MultiPolygon 的二维相交、重叠或接触关系
+  建立分布式连通分量，再按传递闭包分别 UNION、计数和统计。NULL/Empty Geometry 不进入连通图；
+  Multipart/Singlepart 继续沿用 4.53 语义。缺失/null 分组方式继续保持 4.53 的空分组全局 All，
+  不改变旧任务结果。4.60 的 `SPATIAL_JOIN` 独立空间 `Near/Near Geodesic` 继续有效。PLANAR 使用来源 CRS；
+  GEODESIC 仅支持 EPSG:4326 XY，并以 ECEF 三轴保守召回候选后使用 Geometry 真实最近位置判断，
+  不使用质心。空间 Near 可单独使用，也可与拓扑、属性和时间条件按 AND 组合；一对多可分别输出空间距离
+  和时间 Near 间隔，两种 Near 同时存在时输出两个字段，一对一仅允许过滤。4.59 的 15 种可选有方向时间
+  关系继续有效；每侧可使用一个时间字段表达瞬时，或使用开始/结束字段表达闭区间，
+  `NEAR/NEAR_BEFORE/NEAR_AFTER` 支持受控固定时长。4.58 在 4.57 显式一对多基础上增加
+  `JOIN_ONE_TO_ONE`；一对一可汇总
+  全部匹配记录，或按 FIRST、数值最大/最小、日期最新/最旧及显式稳定顺序保留一条；
+  缺失/null `joinOperation` 仍保持既有一对多结果；
+  4.56 可通过 LEFT 保留全部左侧目标要素，未匹配时右侧投影字段为 NULL；
+  4.55 的至多八组属性等值条件与空间谓词 AND 组合继续有效；
+  4.54 的显式投影、排除、改名和排序左右字段继续解决普通同名字段；
+  旧缺失/null 投影继续保持全字段和同名拒绝语义。4.53 的 `SPATIAL_AGGREGATE` 可为单 UNION 启用 Create Buffers 风格的
+  Dissolve All/List、来源要素计数、九种标量统计及 Multipart/Singlepart 输出；
+  4.52 的 Geometry Buffer 固定值、数值字段和受控表达式三种逐行距离来源继续有效；
+  缺失/null 来源保持旧固定距离语义，动态 NULL 输出 NULL，非正或非有限实际值稳定失败。
+  4.51 的 Spatial Clip 来源家族二维输出继续有效；
+  4.50 的 Spatial Measure 逐项输出单位继续有效，投影 PLANAR 与 WGS84 SPHEROID 可靠换算；
+  缺失单位保持旧结果。4.49 的 Geometry Buffer 显式距离单位、4.48 的 Nearest 非点 WGS84 真实最近位置模式及 4.47 的
+  [周（固定 7 天）](canvas-spatial-units.md#447-固定时长周与日历周)继续贯通时长阈值与输出单位。
+  已有日历周不改变；固定月年、完整官方单位/数值对照仍待完成。
 - 4.46 事件检测增加[受控字段窗口条件](canvas-spatial-next-processors/track-detect-incidents.md#8-446-受控字段窗口条件)，
   按官方左闭右开偏移、原始字段、轨迹片段和确定次序计算。九种字段窗口聚合可供开始/结束条件引用；
-  完整 Arcade 几何/运动/时间窗口仍未完成，不将此增量当成整个事件节点验收。
+  4.63～4.65 已接入距离/速度/加速度窗口，4.66 已接入四种轨迹时间/序号标量，
+  4.67 已接入 Point 相对观测 X/Y 标量。返回复合对象的 Geometry/TrackWindow、整行对象和
+  更丰富受控表达式仍未完成，不将这些增量当成整个事件节点验收。
 - 4.45 的 HDBSCAN 已通过显式四诊断配置接入节点、集合血缘和 Inspector；保留 DBSCAN 旧语义。
   [聚类第 9 节](canvas-spatial-next-processors/spatial-point-cluster.md#9-canvas-445-hdbscan-节点接入)列明配置、参与规则与证据，规模/官方数值对照仍未完成。
 - HDBSCAN 新增[中间文件归属与清理](canvas-spatial-next-processors/spatial-point-cluster.md#15-hdbscan-中间-checkpoint-的显式归属与清理)：
-  保留最终可靠结果，清理自有快照及成功图阶段可确认归属的目录，不扫描共享目录。协议仍为 4.47；
+  保留最终可靠结果，清理自有快照及成功图阶段可确认归属的目录，不扫描共享目录。该增量未单独升级协议；
   图内部失败/强杀的未知残留、运行磁盘峰值和应用级最终结果回收仍需完善。
 - HDBSCAN 后续 MST 迭代增加[精确商图压缩](canvas-spatial-next-processors/spatial-point-cluster.md#10-精确商图压缩减少生成树后续迭代的边数)，
   保持最小候选及原始端点；不以截断 KNN 代替 MST。后续割恢复已替代初始稠密图，整体容量仍待验收，版本不变。
@@ -35,8 +116,9 @@
 - 4.27 Reconstruct 新增有序片段、前后观测绑定及布尔表达式、Gap/FinishLast/StartNext 和单点跳过；固定周期始终 Gap。
 - 4.28 Reconstruct 新增显式 METHOD_PATH：WGS84 测地加密及日期线切分，平面路径保持原顶点，统一 MultiLineString；旧顶点线保留。字段统计、平面面轨迹、缓冲窗口和局部测地面后续见 4.35、4.42、4.43、4.44；全球域、完整时间单位与官方精度/容量对照仍未完成。
 - 4.29 Geometry Derive/Simplify 新增显式 PRESERVE_DIMENSION/OUTPUT_XY：函数维度矩阵、真实 Z/M、无效输入与 Empty、DP 无隐式修复及共边反例；旧策略保留。它们是自有基础能力，不包装成 GA 同名工具。
-- 4.30 Nearest 新增显式真实距离策略、来源唯一身份、全同距候选恢复及可选独立连接线表；旧 KNN/非点质心路径保留。真实测地暂仅支持 Point；非点测地最近位置、官方对照及大规模验收仍未完成。
-- 4.31 Center 新增显式独立分析结果、线面质心/原中央要素、带停止证据的中位中心与分组要素/顶点保护；旧宽表算法保留。4.32 后续补原字段投影及其本地血缘验证；类型时间结果、官方椭圆加权公式和规模验收仍未完成。
+- 4.30 Nearest 新增显式真实距离策略、来源唯一身份、全同距候选恢复及可选独立连接线表；旧 KNN/非点质心路径保留。
+  该版本的真实测地仅支持 Point；4.48 后续显式开放受控非点，官方对照及大规模验收仍未完成。
+- 4.31 Center 新增显式独立分析结果、线面质心/原中央要素、带停止证据的中位中心与分组要素/顶点保护；旧宽表算法保留。4.32 后续补原字段投影；4.76 完成五结果完整字段血缘、20,000 点单组统计及真实页面收口。类型时间结果和官方椭圆加权公式仍未完成。
 - 4.32 Center 新增显式原字段投影：同一原记录属性的保留/排除/改名/排序及来源事件时间字段别名传播；旧配置保持不变。
   这不补齐平均/中位/椭圆时间和 interval 元数据，也不代表完整官方对照。
 - 12 个节点已有实现入口，引入版本为 4.9～4.20；**有实现不等于参数、算法、输出和边界行为已对齐**。
@@ -106,6 +188,12 @@ Reconstruct 的局部测地面节点链路已在 4.44 接入，现行范围见�
 
 4.47 共享非点距离搜索改为[完整边对域的分层队列](canvas-wgs84-geometry-distance.md#完整边对域的分层距离搜索447)，
 避免先展开全部边对。此项不开放 Nearest 的非点真实测地；跨表候选、位置/排名精度、全球域和规模验收仍待完成。
+同版本随后将 Point EXACT_DISTANCE 的跨表候选改为[ECEF 三轴保守召回](canvas-wgs84-geometry-distance.md#跨表候选的-ecef-保守召回基础447)，
+验证二维种子错误时仍可恢复真实最近项；随后把 WGS84 距离、上下界、两端位置和零距离证据合入单次匹配 Struct，
+当前 Point 路径的半径、Top N 与连接线已消费该结果。4.48 进一步用经验证的局部公共交叉位置、同一 Struct
+和区间门槛显式开放点/线/面及 Multi 类型，并允许各部件独立局部、跨域关系可证明严格分离的 MultiPolygon；
+Point/MultiPoint 有限集合已用分层下界证明精确最小值，避免亚容差近等距误判；旧 4.30 定义仍为 POINT_ONLY。
+单个跨域面、连续线面复杂近等距、跨域接触关系、官方结果与规模验收仍未完成。
 
 - Enterprise 标准要素分析、GeoAnalytics Server、ArcGIS Pro、GeoAnalytics Engine 是不同产品面；
   工具同名也可能参数不同，不把其他产品能力自动计入 Server 对齐范围。
@@ -118,24 +206,24 @@ Reconstruct 的局部测地面节点链路已在 4.44 接入，现行范围见�
 
 4.36 公共距离/面积单位补充国际码/平方码及独立美国测量制，并统一紧凑选择、隐藏草稿门槛和换算。
 旧单位结果不变；详见[单位映射与边界](canvas-spatial-units.md)。下方早期“完整单位”缺口中的距离/面积部分已补充；
-时间/日历、速度别名核对、现有 Buffer/Measure 复核和真实官方对照仍未完成，不能据此勾选整节点。
+时间/日历、速度别名核对、Measure 的三维/方位角等扩展、完整 Dissolve Boundaries、Buffer 与 Dissolve 的真实官方对照仍未完成，不能据此勾选整节点。
 
 ## 2. 当前覆盖与必须补齐项
 
 | 节点 / 引入版本 | 官方参照 | 审计结论 |
 | --- | --- | --- |
-| GEOMETRY_DERIVE / 4.9 | 自有基础算子 | 4.29 显式维度与实际 Spark Z/M、函数/集合限制、Empty/退化和紧凑规则已落实；非 GA 同名工具。扩展回归验收继续按清单。 |
-| GEOMETRY_SIMPLIFY / 4.10 | 自有基础算子 | 4.29 两算法维度矩阵及显式输出 XY、无隐式修复、共边反例已落实；单要素拓扑保持不是覆盖层简化。容差由用户填写。 |
-| SPATIAL_NEAREST / 4.11 | Enterprise 标准 Find Nearest | 4.30 新增真实距离/稳定同距排序、来源身份及独立连接线结果；点测地与平面最近位置有本地验证，非点测地与规模验收未完成。非 GA；路网/交通不在几何近邻范围，平面模式为自有扩展。 |
+| GEOMETRY_DERIVE / 4.9 | 自有基础算子 | 4.29 显式维度与实际 Spark Z/M、函数/集合限制、Empty/退化、紧凑规则、扩展回归和真实页面验收已落实；非 GA 同名工具。 |
+| GEOMETRY_SIMPLIFY / 4.10 | 自有基础算子 | 4.29 两算法维度矩阵及显式输出 XY、无隐式修复、共边反例、容差/单位边界、单几何规模和真实页面验收已落实；单要素拓扑保持不是覆盖层简化，容差由用户填写。 |
+| SPATIAL_NEAREST / 4.11 | Enterprise 标准 Find Nearest | 4.30 新增真实距离/稳定同距排序、来源身份及独立连接线；4.48 显式开放受控 WGS84 点/线/面及 Multi 真实最近位置，并支持全球严格分离的局部 MultiPolygon 部件，保留旧 Point-only/KNN。已有 ArcGIS Online GeometryServer 五例底层距离真值，但 Enterprise Find Nearest 作业、单个跨域面和规模验收未完成。非 GA；路网/交通不在几何近邻范围，平面模式为自有扩展。 |
 | SPATIAL_SUMMARIZE_WITHIN / 4.12 | GA Summarize Within / Aggregate Points 区域场景 | 4.24 显式分摊/原值、加权均值、字段 Count/Any；4.25 主表/组表及形状比例；4.36 距离/面积单位；4.37 按公式图的原值加权方差/标准差；4.39 共享日历窗口；4.41 规则格网区域。官方数值/边界、浏览器及规模对照仍待验收。 |
 | SPATIAL_OVERLAY / 4.13 | GA Overlay Layers | 4.26 五模式、输入组合及显式家族二维输出已接入。成对交叠不宣称全局无重叠分区；Esri 容差、官方边界和规模性能仍待验收。 |
-| TRACK_RECONSTRUCT / 4.14 | GA Reconstruct Tracks | 4.27 确定次序/段归属，4.28 测地线，4.35 字段统计，4.42 平面面，4.43 缓冲窗口，4.44 测地面节点链路已接入。全球域、完整单位/血缘审计、官方统计/窗口/精度和容量验收仍待完成。 |
-| TRACK_MOTION_STATISTICS / 4.15 | GA Calculate Motion Statistics | 4.23 新增观测历史窗口、八组 31 项指标、Idle 双阈值与垂直单位，旧 lag(N) 策略保留；完整官方单位、缺失值/窗口边界及官方服务对照仍待完成。 |
-| TRACK_FIND_DWELL / 4.16 | GA Find Dwell Locations | 4.22 参考点/固定均值中心扩展及四输出、4.35 字段 Count/Any 与实际统计类型已接入，旧相邻连段保留；测地/官方统计公式及类型对照、完整单位/血缘与大单轨迹容量仍待补齐。 |
-| TRACK_DETECT_INCIDENTS / 4.17 | GA Detect Incidents | 4.21 新策略已实现逐观测状态/时长、明确结束边界与排序；4.46 增加左闭右开的受控字段窗口。旧策略保留，完整 Arcade 几何/运动/时间表达式和官方服务对照仍待完成。 |
-| SPATIAL_BIN_AGGREGATE / 4.18 | GA Aggregate Points 格网场景 | 4.21 对边距离、4.33 H3、4.34 字段统计/留空切片、4.38 显式平面原点/业务范围、4.39 共享日历窗口已接入；修复统计 Schema/重叠窗口。球面范围、官方数值及规模对照仍待补。 |
-| SPATIAL_POINT_CLUSTER / 4.19 | GA Find Point Clusters | 4.40 增加空间/Linear DBSCAN；4.45 HDBSCAN/四诊断、原行回接、集合血缘及 Inspector 已接入。候选/深树规模、单位和官方诊断数值对照未完成；MULTI_SCALE 非 GA 算法。 |
-| SPATIAL_CENTER_DISPERSION / 4.20 | GA Summarize Center and Dispersion | 4.31 独立结果/线面质心/中位中心收敛/容量已实现；4.32 增加原记录完整字段投影及本地血缘验证。平均/中位/椭圆时间、interval 元数据、官方加权椭圆及规模验收仍待完成。标准距离为自有扩展。 |
+| TRACK_RECONSTRUCT / 4.14 | GA Reconstruct Tracks | 4.27～4.44 的确定次序/拆分/段归属、测地路径、字段统计、平面面、缓冲窗口与局部测地面链路已接入；4.76 完成完整输出血缘、20,000 观测单轨迹样例和真实页面收口。大域、Arcade、官方公式/容差/字段与生产容量不声明完全等价。 |
+| TRACK_MOTION_STATISTICS / 4.15 | GA Calculate Motion Statistics | 4.23 新增观测历史窗口、八组 31 项、Idle 双阈值与垂直单位，旧 lag(N) 保留；4.76 完成缺失值/窗口边界、完整字段血缘、20,000 观测逐行样例和真实页面收口。官方字段别名、固定月年、服务端容差/数值与生产容量不声明完全等价。 |
+| TRACK_FIND_DWELL / 4.16 | GA Find Dwell Locations | 4.22 参考点/固定均值中心扩展及四输出、4.35 字段 Count/Any 与实际统计类型已接入，旧相邻连段保留；4.76 完成平面/受控 WGS84、固定边界、完整输出血缘、20,000 点单轨迹样例和真实页面收口。官方测地中心/凸包公式、字段/统计类型、Enterprise 容差与数值、生产容量和 Streaming 不声明完全等价。 |
+| TRACK_DETECT_INCIDENTS / 4.17 | GA Detect Incidents | 4.21 生命周期状态/时长、结束边界与确定排序，4.46 原字段窗口，4.63～4.65 累计距离/逐观测速度和加速度，4.66 轨迹时间/时长/序号，4.67 Point 相对观测 X/Y 已接入，旧策略保留；4.76 完成两种结果范围完整血缘、20,000 条单轨迹样例和真实页面收口。任意 Arcade、完整 Geometry/TrackWindow 复合对象、第三种结果范围、官方字段/数值/边界、生产容量和 Streaming 不声明完全等价。 |
+| SPATIAL_BIN_AGGREGATE / 4.18 | GA Aggregate Points 格网场景 | 4.21 对边距离、4.33 H3、4.34 字段统计/留空切片、4.38 显式平面原点/业务范围、4.39 共享日历窗口已接入；4.76 完成三形状及平面补空路径的完整字段血缘、20,000 点惰性分布式聚合和真实页面收口。H3 球面业务范围、Enterprise 官方逐值/容差/边界编码及生产容量不声明完全等价。 |
+| SPATIAL_POINT_CLUSTER / 4.19 | GA Find Point Clusters | 4.40 增加空间/Linear DBSCAN；4.45 HDBSCAN/四诊断、原行回接、集合血缘及 Inspector；4.76 完成全输出血缘、20,000 点显式 DBSCAN、HDBSCAN 分布式状态/Checkpoint 与真实页面收口。密集候选、大 k、深树、官方诊断数值、Enterprise 簇成员和生产容量不声明完全等价；MULTI_SCALE 非 GA 算法。 |
+| SPATIAL_CENTER_DISPERSION / 4.20 | GA Summarize Center and Dispersion | 4.31 独立结果/线面质心/中位中心收敛/容量，4.32 原记录完整字段投影已实现；4.76 完成五结果完整字段血缘、20,000 点单组统计和真实页面收口。平均/中位/椭圆时间、interval 元数据、官方加权椭圆/退化边界、Enterprise 数值及生产容量仍未对齐；标准距离为自有扩展。 |
 
 特别是驻留、事件、运动窗口、分摊与格网尺寸，完成语义修正及结果对照验收之前，不能标记“已对齐”。
 
@@ -143,11 +231,11 @@ Reconstruct 的局部测地面节点链路已在 4.44 接入，现行范围见�
 
 | 官方能力 | 可复用节点 | 不能忽略的差距 |
 | --- | --- | --- |
-| Clip Layer | SPATIAL_CLIP | 核对输入类型、片段、空几何，不凭存在 ST_Intersection 判定等价。 |
-| Create Buffers | GEOMETRY_BUFFER | 常量距离子集；字段/表达式距离、溶解与统计另行核对。 |
-| Join Features | SPATIAL_JOIN、JOIN | 空间/属性/时间关系、一对一统计与一对多、输出投影均需核对。 |
-| Dissolve Boundaries | SPATIAL_AGGREGATE 的 UNION 聚合 | 分组融合子集；无字段时连通组、multipart=false、统计与 Count 不能省略。 |
-| Merge Layers | UNION + 显式字段处理 | Schema 对齐后可组合；还需 Match/Rename/Remove、缺字段补 NULL、Geometry/时间类型约束。 |
+| Clip Layer | SPATIAL_CLIP | 4.51 已补来源家族二维输出和低维接触过滤；4.77 已补逐来源融合相交 Mask，重叠覆盖不重复、分离片段保留为 Multi，旧定义保持 Pairwise。Esri 容差、官方边界/数值与生产容量对照仍未完成。 |
+| Create Buffers | GEOMETRY_BUFFER + SPATIAL_AGGREGATE | 4.52 已支持固定值、字段和受控逐行表达式距离；4.53 通过可选单 UNION Dissolve 支持 None/All/List、Count、九种统计及 Multipart/Singlepart。官方数值、容差和规模对照仍缺。 |
+| [Join Features（Enterprise 11.3）](https://enterprise.arcgis.com/en/portal/11.3/use/join-features.htm) | SPATIAL_JOIN、JOIN | 4.54 已补空间连接显式输出字段投影和同名处理；4.55 增加属性等值条件；4.56 实现 Keep all target features；4.57 显式一对多；4.58 增加一对一的 Join Count、五种数值统计及 FIRST/最大/最小/最新/最旧保留策略，并要求稳定并列排序；4.59 接入 12 种 Allen 区间关系和三种固定时长时间 Near；4.60 接入空间 Near/Near Geodesic、距离阈值/单位及一对多距离输出。纯属性连接继续复用 JOIN；官方服务结果、Esri 数值容差和规模验收仍未完成。 |
+| Dissolve Boundaries | SPATIAL_AGGREGATE 的 UNION + Dissolve | 4.53 已覆盖按字段分组、Count、统计和部件方式；4.61 显式补充无字段相交/重叠/接触连通组及传递闭包。Esri 容差、真实服务数值和规模验收仍缺。 |
+| [Merge Layers](https://developers.arcgis.com/rest/services-reference/enterprise/geoanalytics/tasks/merge-layers/) | UNION + 显式字段处理 | 4.62 已接入基准层、默认同名 Match/新字段追加、缺失补 NULL、自定义 Match/Rename/Remove、数值转换及 Geometry/无界时间约束；ArcGIS 服务结果、字段类型细分、规模和性能对照仍待完成。 |
 | Summarize Attributes | AGGREGATE | 分组统计子集；时间步长、字符串 Any 与字段非空 Count 单独映射。 |
 | Calculate Field | DERIVE_COLUMNS | 标量表达式子集，不等价 Arcade Geometry/轨迹窗口表达式。 |
 | Append Data / Copy To Data Store | Input / Output | 归入读取写入，不为工具名重复建立 Processor。 |
@@ -169,26 +257,30 @@ Reconstruct 的局部测地面节点链路已在 4.44 接入，现行范围见�
 - Overlay 五模式；轨迹重建固定边界、表达式拆分、段归属、面/缓冲轨迹。
 - Motion 八组指标；Dwell 四类输出；Center 四种官方分析及对应结果表。
 - DBSCAN 时空邻域、HDBSCAN 及诊断字段；Aggregate Points 的 H3。
-- 复核 Buffer、Join、Dissolve、Merge，不另造重复基础节点。
-- 新增 Calculate Density 设计：点输入、fields、Uniform/Kernel、方格/六边形、
+- 继续复核 Join 与 Merge 的官方数值和规模；Merge Layers 字段对齐已由 4.62 接入，Dissolve Boundaries
+  无字段连通组已由 4.61 接入，Create Buffers 的 Dissolve 组合不另造重复节点。
+- Calculate Density 已由 4.68 接入节点、Compiler、Runner 与 Inspector：点输入、fields、Uniform/Kernel、方格/六边形、
   binSize + unit、radius + unit、面积单位与时间切片。官方要求 radius 大于 binSize。
-  **结果是矢量面格网及密度字段，不依赖 Raster**；须验证邻域权重、核函数归一化、单位和边缘行为，
-  不能以 COUNT/格网面积或普通格网分级冒充密度分析。
+  **结果是矢量面格网及密度字段，不依赖 Raster**；4.76 已补完整血缘、20,000 点惰性/执行计划与
+  真实页面证据。不能以 COUNT/格网面积或普通格网分级冒充密度分析；真实 Enterprise 数值、边缘、
+  不同投影轴单位和生产容量验收仍开放。
 
 ### P2：扩大分析范围
 
 | 能力 | 最低设计范围 |
 | --- | --- |
-| Find Hot Spots | 分析字段、邻域、时间切片、Gi*、显著性和多重检验，不等于密度分级。 |
-| Build Multi-Variable Grid | 多输入、统一格网；DistanceToNearest、AttributeOfNearest、AttributeSummaryOfRelated，逐变量半径/筛选。 |
-| Enrich From Multi-Variable Grid | 点与现有变量格网关联、字段选择；不重新计算变量。 |
-| Group By Proximity | 属性/空间/时间关系的连通分组和传递闭包，不等于两两 Join。 |
-| Trace Proximity Events | 轨迹接触、时间和传播状态，独立输出契约。 |
-| Snap Tracks | 路网拓扑、方向和匹配质量，不能用最近道路替代。 |
-| Find Similar Locations、Forest、GLR、GWR | 独立统计/机器学习专题，训练/预测、诊断及模型制品。 |
+| Find Hot Spots | 4.69 已接入投影 Point、完整方格、点数/字段和、固定距离 Gi*、原始双侧 p-value、显式 FDR-BH、`-3..3` 分级和时间切片；4.76 完成全输出血缘、20,000 点惰性/执行计划与真实页面收口，不等于密度分级。Enterprise 边缘、FDR、数值、不同投影轴单位和生产容量对照仍开放。 |
+| Build Multi-Variable Grid | 4.70 已接入多输入统一格网、DistanceToNearest、AttributeOfNearest、AttributeSummaryOfRelated、逐变量半径/筛选和九种关联汇总；4.76 完成三类变量/九种统计完整血缘、两来源统一格网、20,000 点惰性分布式执行与真实页面收口。Enterprise 边缘、并列、统计数值、不同 Geometry/投影轴单位和生产容量对照仍开放。 |
+| Enrich From Multi-Variable Grid | 4.71 已接入有界 XY Point 与已有 Polygon 变量格网相交、显式字段选择/改名、未匹配保留和边界单格稳定选择；不重新计算变量。4.76 完成完整字段血缘、20,000 Point/格网惰性索引化执行和真实页面收口。Enterprise 边界选择、字段类型、服务输出和生产容量对照仍开放。 |
+| Group By Proximity | 4.72 已接入 Point/Line/Polygon 的 Intersects、Touches、Near Planar/Geodesic，可选时间 Intersects/Near 和受控同值/绝对差属性关系，并以 Connected Components 输出传递连通组；4.76 已完成完整集合血缘、20,000 孤立 Point 惰性分布式执行和真实页面收口。任意属性表达式、Enterprise 容差/月年边界、高偏斜图和生产容量对照仍开放。 |
+| Trace Proximity Events | 4.73 已接入有界 XY Point 观测、显式 ID/起始表、Planar/Geodesic 距离、时间和同值属性约束、最大深度、首次事件和可选后续轨迹。4.76 已完成两结果完整血缘、20,000 观测/10,000 事件惰性分布式执行和真实页面收口。Enterprise episode/月年、极区/日期线、官方字段、高偏斜图和生产容量对照仍开放。 |
+| Snap Tracks | 4.74 已接入有界 XY Point + LineString、轨迹/时间次序、线 ID 与 From/To 拓扑、可选方向四值映射、Planar/Geodesic 候选及 Viterbi 联合匹配；4.76 已完成全输出字段血缘、20,000 观测/1,000 轨迹规模样例和真实页面验收。首版只在同线或直接相邻线转移；多中间道路搜索、官方数值/容差、高密度候选、超长单轨迹和生产容量仍开放。 |
+| Find Similar Locations | 4.75 已接入 GeoAnalytics 核心的 Attribute Values / Attribute Profiles、共同总体标准化、多参考平均、最相似/最不相似/两端结果和显式附加字段；4.76 已完成全输出字段血缘、20,000 候选/10,000 结果规模样例和真实页面验收。Pro 的 Ranked/Scale/Collapse、真实 Enterprise 数值、带真实上游的完整筛选交互和生产容量仍开放。 |
+| Describe Dataset | 4.76 已接入字段统计、数据集描述 JSON、可选样本层和可选 XY Envelope 范围层，并完成四结果完整血缘、20,000 行规模样例和真实页面验收；来源及其他入口表保留。真实 Enterprise 字段细节、样本行为、服务结果、带真实上游的字段选择和生产容量仍开放。 |
+| Forest、GLR、GWR | 独立统计/机器学习专题，训练/预测、诊断及模型制品。 |
 
-Describe Dataset 不只有报告，还可返回范围要素、样本层和描述 JSON。优先在剖析/试运行入口提供；
-需要下游消费时可显式输出逻辑表，不能以“污染 Map”为理由排除。
+Describe Dataset 的四类结果已采用显式逻辑表供下游消费；后续仍可在剖析/试运行入口复用其结果，
+但不得引入另一套统计语义。
 地理编码和路网分析需要外部服务/数据，独立设计。Create Space Time Cube 须先确定具体产品和 Cube 契约，
 不把 Pro 同名工具自动计入 GA Server。Run Python Script 本轮不新增，SDK 仅复用自定义作业能力，不承诺 Python API 兼容。
 
@@ -296,7 +388,8 @@ SpatialTemporalSlicing 包含时间字段、窗宽/步长及单位、参考时�
 ### 测地能力的面板开放条件
 
 - 原语、节点与界面分别登记：内部距离/拓扑测试通过，不自动开放节点。Reconstruct 4.44 已接入完整局部链路，
-  Nearest 非点测地仍待接入；已保存的无效组合回显并允许业务草稿保存，不静默换成平面或质心算法。
+  Nearest 4.48 已接入受控非点测地，Spatial Join 4.60 复用同一真实最近位置能力；已保存的无效组合回显并
+  允许业务草稿保存，不静默换成平面或质心算法。单个跨域面、复杂近等距容量及官方作业对照仍保留为验收项。
 - 面轨迹边界采样参数放在面轨迹设置内；不能读取隐藏的线轨迹段长来改变面结果。
   参数名称为“边界采样最大段长”，不是“最大位置误差”或“ArcGIS 精度”；具体契约从 4.44 引入。
 - Nearest 的距离阈值、排名精度和连接线采样是三个不同概念，不合并成一个“容差”参数。
@@ -325,8 +418,9 @@ SpatialTemporalSlicing 包含时间字段、窗宽/步长及单位、参考时�
 配置允许 100 万点、不向 Driver collect 或使用 Spark，都不是大规模性能证据。
 
 界面只给需要解释的参数放邻近帮助，不常驻展示整张审计表；未实现选项禁用，业务无效草稿保留。
-HDBSCAN 四诊断公式、Center 时间与加权椭圆、Nearest 非点测地以及 Reconstruct 全球域等未决项继续保留在开发范围，
-不因文档修订、参数接入或局部测试而勾选整节点完成。本次修订不改算法、依赖、协议或 HTTP API。
+HDBSCAN 四诊断公式、Center 时间与加权椭圆、Nearest 跨域面/连续精度边界以及 Reconstruct 全球域等未决项继续保留在开发范围。
+清单勾选仅表示当前明确承诺范围已经形成实现、血缘、规模证据和页面闭环，不表示这些未决能力或 Enterprise
+数值已对齐。本次收口不改算法、依赖、协议或 HTTP API。
 
 ### 完成判据
 
@@ -352,6 +446,15 @@ HDBSCAN 四诊断公式、Center 时间与加权椭圆、Nearest 非点测地以
 - [SPATIAL_BIN_AGGREGATE](canvas-spatial-next-processors/spatial-bin-aggregate.md)
 - [SPATIAL_POINT_CLUSTER](canvas-spatial-next-processors/spatial-point-cluster.md)
 - [SPATIAL_CENTER_DISPERSION](canvas-spatial-next-processors/spatial-center-dispersion.md)
+- [SPATIAL_DENSITY](canvas-spatial-next-processors/spatial-density.md)
+- [SPATIAL_HOT_SPOTS](canvas-spatial-next-processors/spatial-hot-spots.md)
+- [SPATIAL_MULTI_VARIABLE_GRID](canvas-spatial-next-processors/spatial-multi-variable-grid.md)
+- [SPATIAL_SIMILAR_LOCATIONS](canvas-spatial-next-processors/spatial-similar-locations.md)
+- [SPATIAL_DESCRIBE_DATASET](canvas-spatial-next-processors/spatial-describe-dataset.md)
+- [SPATIAL_ENRICH_FROM_GRID](canvas-spatial-next-processors/spatial-enrich-from-grid.md)
+- [SPATIAL_GROUP_BY_PROXIMITY](canvas-spatial-next-processors/spatial-group-by-proximity.md)
+- [TRACE_PROXIMITY_EVENTS](canvas-spatial-next-processors/trace-proximity-events.md)
+- [SNAP_TRACKS](canvas-spatial-next-processors/snap-tracks.md)
 
 ## 9. 官方资料
 
@@ -359,6 +462,7 @@ HDBSCAN 四诊断公式、Center 时间与加权椭圆、Nearest 非点测地以
 - [GeoAnalytics Server 弃用声明](https://support.esri.com/en-us/knowledge-base/deprecation-arcgis-geoanalytics-server-000032771)
 - [Calculate Density](https://developers.arcgis.com/rest/services-reference/enterprise/geoanalytics/tasks/calculate-density-geoanalytics/)
 - [Build Multi-Variable Grid](https://developers.arcgis.com/rest/services-reference/enterprise/geoanalytics/tasks/build-multi-variable-grid/)
+- [Enrich From Multi-Variable Grid](https://developers.arcgis.com/rest/services-reference/enterprise/geoanalytics/tasks/enrich-from-multi-variable-grid/)
 - [Describe Dataset](https://developers.arcgis.com/rest/services-reference/enterprise/geoanalytics/tasks/describe-dataset/)
 - [Dissolve Boundaries](https://developers.arcgis.com/rest/services-reference/enterprise/geoanalytics/tasks/dissolve-boundaries/)
 - [Merge Layers](https://developers.arcgis.com/rest/services-reference/enterprise/geoanalytics/tasks/merge-layers/)

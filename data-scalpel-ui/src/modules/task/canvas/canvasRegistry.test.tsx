@@ -496,12 +496,159 @@ describe('CanvasNodeView', () => {
           leftTableName: 'orders',
           rightTableName: 'districts',
           outputTableName: 'district_orders',
-          joinType: 'INNER',
+          joinType: 'LEFT',
           conditions: [{
             leftGeometryColumnName: 'order_geom',
             predicate: 'WITHIN',
             rightGeometryColumnName: 'district_geom',
           }],
+          attributeConditions: [{
+            leftColumnName: 'tenant_id',
+            operator: 'EQUALS',
+            rightColumnName: 'tenant_id',
+          }],
+          outputColumns: [
+            { sourceSide: 'LEFT', sourceColumnName: 'id', outputColumnName: 'id', included: true },
+            { sourceSide: 'RIGHT', sourceColumnName: 'id', outputColumnName: 'districts_id', included: true },
+          ],
+          joinOperation: 'JOIN_ONE_TO_MANY',
+          temporalCondition: {
+            relationship: 'NEAR_BEFORE',
+            leftStartColumnName: 'private_target_start',
+            leftEndColumnName: 'private_target_end',
+            rightStartColumnName: 'private_join_start',
+            rightEndColumnName: 'private_join_end',
+            nearDistance: 314159,
+            nearDistanceUnit: 'SECONDS',
+          },
+        },
+      },
+      {
+        type: CanvasNodeType.SpatialMultiVariableGrid,
+        name: '城市多变量格网',
+        configuration: {
+          ...canvasNodeRegistry.require(CanvasNodeType.SpatialMultiVariableGrid)
+            .createDefaultConfiguration(),
+          outputTableName: 'city_grid',
+          variables: [{
+            variableId: '66666666-6666-4666-8666-666666666661',
+            sourceTableName: 'facilities',
+            geometryColumnName: 'shape',
+            kind: 'DISTANCE_TO_NEAREST',
+            attributeColumnName: null,
+            statisticKind: null,
+            statisticColumnName: null,
+            searchDistance: 2,
+            searchDistanceUnit: 'KILOMETERS',
+            filter: {
+              kind: 'PREDICATE', columnName: 'private_status', operator: 'EQUALS',
+              values: [{ dataType: 'STRING', value: 'SECRET_LITERAL' }],
+            },
+            outputColumnName: 'nearest_distance',
+          }, {
+            variableId: '66666666-6666-4666-8666-666666666662',
+            sourceTableName: 'events',
+            geometryColumnName: 'shape',
+            kind: 'ATTRIBUTE_SUMMARY_OF_RELATED',
+            attributeColumnName: null,
+            statisticKind: 'COUNT',
+            statisticColumnName: null,
+            searchDistance: null,
+            searchDistanceUnit: null,
+            filter: null,
+            outputColumnName: 'event_count',
+          }],
+        },
+      },
+      {
+        type: CanvasNodeType.SpatialEnrichFromGrid,
+        name: '丰富事件点',
+        configuration: {
+          pointTableName: 'events',
+          pointGeometryColumnName: 'shape',
+          gridTableName: 'city_grid',
+          gridGeometryColumnName: 'bin_geometry',
+          gridIdColumnName: 'bin_id',
+          enrichFields: [
+            { sourceColumnName: 'nearest_distance', outputColumnName: 'nearest_distance' },
+            { sourceColumnName: 'population_sum', outputColumnName: 'grid_population_sum' },
+          ],
+          outputTableName: 'enriched_events',
+        },
+      },
+      {
+        type: CanvasNodeType.SpatialGroupByProximity,
+        name: '邻近事件组',
+        configuration: {
+          ...canvasNodeRegistry.require(CanvasNodeType.SpatialGroupByProximity)
+            .createDefaultConfiguration(),
+          sourceTableName: 'events',
+          geometryColumnName: 'shape',
+          spatialRelationship: 'NEAR_PLANAR',
+          spatialNearDistance: 500,
+          spatialNearDistanceUnit: 'METERS',
+          temporalCondition: {
+            relationship: 'NEAR', startColumnName: 'event_at', endColumnName: null,
+            nearDistance: 10, nearDistanceUnit: 'MINUTES',
+          },
+          attributeConditions: [{
+            columnName: 'private_region', relationship: 'EQUALS', maximumDifference: null,
+          }],
+          groupIdColumnName: 'group_id',
+          outputTableName: 'event_groups',
+        },
+      },
+      {
+        type: CanvasNodeType.TraceProximityEvents,
+        name: '追踪邻近事件',
+        configuration: {
+          ...canvasNodeRegistry.require(CanvasNodeType.TraceProximityEvents)
+            .createDefaultConfiguration(),
+          sourceTableName: 'device_observations',
+          pointGeometryColumnName: 'shape',
+          entityIdColumnName: 'device_id',
+          timeColumnName: 'observed_at',
+          distanceMethod: 'PLANAR',
+          spatialSearchDistance: 15,
+          spatialSearchDistanceUnit: 'METERS',
+          temporalSearchDistance: 5,
+          temporalSearchDistanceUnit: 'MINUTES',
+          entitiesOfInterest: [{ entityId: 'PRIVATE-ENTITY-ID', startEpochMillis: null }],
+          maxTraceDepth: 3,
+          attributeMatchColumns: ['building'],
+          includeTracks: true,
+          outputTableName: 'trace_events',
+          tracksOutputTableName: 'trace_tracks',
+        },
+      },
+      {
+        type: CanvasNodeType.SnapTracks,
+        name: '吸附轨迹',
+        configuration: {
+          ...canvasNodeRegistry.require(CanvasNodeType.SnapTracks)
+            .createDefaultConfiguration(),
+          pointTableName: 'vehicle_observations',
+          pointGeometryColumnName: 'shape',
+          trackIdColumns: ['vehicle_id'],
+          timeColumnName: 'observed_at',
+          lineTableName: 'road_network',
+          lineGeometryColumnName: 'shape',
+          lineIdColumnName: 'road_id',
+          fromNodeColumnName: 'from_node',
+          toNodeColumnName: 'to_node',
+          searchDistance: 314159,
+          searchDistanceUnit: 'KILOMETERS',
+          distanceMethod: 'GEODESIC',
+          directionMatching: {
+            directionColumnName: 'private_direction',
+            forwardValue: 'PRIVATE_FORWARD',
+            backwardValue: 'PRIVATE_BACKWARD',
+            bothValue: 'PRIVATE_BOTH',
+            noneValue: 'PRIVATE_NONE',
+          },
+          lineFields: [{ sourceColumnName: 'road_class', outputColumnName: 'matched_road_class' }],
+          outputMode: 'MATCHED_FEATURES',
+          outputTableName: 'snapped_tracks',
         },
       },
     ];
@@ -510,7 +657,18 @@ describe('CanvasNodeView', () => {
       ['FILTER', 'valid_orders', '生成新表', '1 个条件', '1 条筛选'],
       ['SUM(amount)', 'total_amount'],
       ['ROW_NUMBER', 'customer_id'],
-      ['SPATIAL JOIN', 'WITHIN', 'district_geom'],
+      ['SPATIAL JOIN', 'LEFT', '1:N', 'WITHIN', 'district_geom', '1 拓扑 · 1 属性', '时间 NEAR_BEFORE', '2 字段'],
+      ['统一格网', '2 张来源表', 'facilities', 'nearest_distance · 最近距离',
+        'events', 'event_count · 关联汇总', '1 个半径搜索', '1 个筛选'],
+      ['Point', 'events', '变量格网', 'city_grid', '相交回填', 'enriched_events',
+        'nearest_distance', 'population_sum', '2 个丰富字段', '未命中保留'],
+      ['events', '连通分组', 'event_groups', '平面邻近', '时间', '邻近',
+        '属性 1 项', '传递闭包', 'group_id', '原要素保留'],
+      ['device_observations', '邻近传播', 'trace_events', '平面', '空间 15 米 · 时间 5 分钟',
+        '1 个起始实体', '最多传播 3 层', '首次接触', '1 个同值字段', '含后续轨迹'],
+      ['vehicle_observations', '路网吸附', 'snapped_tracks', 'road_network',
+        'shape · road_id', '测地线', '搜索范围单位 · 千米', '1 个轨迹标识',
+        '方向匹配', '1 个道路属性', '仅匹配观测'],
     ];
 
     nodes.forEach((data, index) => {
@@ -520,6 +678,9 @@ describe('CanvasNodeView', () => {
         expect(screen.getAllByText(content)).not.toHaveLength(0);
       });
       expect(screen.queryByText('SECRET_LITERAL')).not.toBeInTheDocument();
+      expect(screen.queryByText('PRIVATE-ENTITY-ID')).not.toBeInTheDocument();
+      expect(screen.queryByText(/314159|PRIVATE_FORWARD|PRIVATE_BACKWARD|PRIVATE_BOTH|PRIVATE_NONE/))
+        .not.toBeInTheDocument();
       unmount();
     });
   });
@@ -622,6 +783,10 @@ describe('CanvasNodeView', () => {
       expectedTexts[index].forEach((content) => {
         expect(screen.getAllByText(content)).not.toHaveLength(0);
       });
+      if (data.type === CanvasNodeType.SpatialJoin) {
+        expect(screen.queryByText(/private_/)).not.toBeInTheDocument();
+        expect(screen.queryByText(/314159/)).not.toBeInTheDocument();
+      }
       unmount();
     });
   });

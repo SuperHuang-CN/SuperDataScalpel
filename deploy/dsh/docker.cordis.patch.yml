@@ -1,0 +1,42 @@
+# Deployment overlay only. The DSH package and CLI remain unchanged.
+# Docker publishes this listener only on the host loopback interface.
+- id: webserver
+  config:
+    host: '0.0.0.0'
+    port: 13080
+    compression: gzip
+    compressionLevel: 1
+    compressionThresholdBytes: 1024
+
+# Keep shipped and user presets; only add a deployment-owned verification root.
+- id: agent-presets
+  config:
+    default: standard
+    includeShippedRoot: true
+    includeUserRoot: true
+    roots:
+      - path: /opt/dsh/node_modules/@datascalpel/dsh-plugin/presets
+        trust: system
+
+- insert:
+    - id: datascalpel-bridge
+      # User profile resolution starts under DSH_HOME, outside /opt/dsh.
+      name: 'file:///opt/dsh/node_modules/@datascalpel/dsh-plugin/dist/index.js'
+      config:
+        adminEnabled: !!js process.env.DSH_ADMIN_ENABLED === 'true'
+        adminAccessTokenEnv: DATASCALPEL_DSH_ADMIN_BRIDGE_TOKEN
+        adminMcpUrl: !!js process.env.DSH_ADMIN_MCP_URL || 'http://host.docker.internal:18080/system-mcp'
+        adminMaxActiveSessions: 8
+        adminIdleTimeoutMs: 900000
+        enabled: !!js process.env.DSH_BRIDGE_ENABLED === 'true'
+        playgroundEnabled: !!js process.env.DSH_PLAYGROUND_ENABLED === 'true'
+        playgroundRoot: /workspace/bridge-phase-two
+        playgroundMcpUrl: http://playground:13082/mcp
+        workspaceRoot: /workspace/bridge-phase-one
+        presetId: datascalpel-bridge-phase-one
+        provider: !!js process.env.DSH_BRIDGE_PROVIDER || 'deepseek-official'
+        model: !!js process.env.DSH_BRIDGE_MODEL || 'deepseek-flash'
+        accessTokenEnv: DATASCALPEL_DSH_BRIDGE_TOKEN
+        maxRequestBytes: 1048576
+        maxActiveSessions: 4
+        eventBufferBytes: 1048576

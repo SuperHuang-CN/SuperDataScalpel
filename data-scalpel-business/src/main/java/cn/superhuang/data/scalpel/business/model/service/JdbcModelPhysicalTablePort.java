@@ -10,6 +10,7 @@ import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
+import cn.superhuang.data.scalpel.dialect.api.SpatialPreviewDialect;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
@@ -280,10 +281,10 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
             List<SpatialPreviewColumn> columns,
             Duration timeout
     ) {
-        if (dataSource.getType() != DataSourceType.POSTGRESQL) {
-            return SpatialPreviewMetadata.unsupported("当前仅支持 PostgreSQL/PostGIS 动态空间预览");
-        }
         DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        if (!(dialect instanceof SpatialPreviewDialect)) {
+            return SpatialPreviewMetadata.unsupported("当前数据库不支持动态空间预览");
+        }
         return spatialPreviewExecutor.inspect(
                 dataSource.getType().name(), dataSource.getConnection().toJdbcConnectionConfig(),
                 tableIdentifier(dialect, dataSource, model), columns, timeout
@@ -299,10 +300,10 @@ public class JdbcModelPhysicalTablePort implements ModelPhysicalTablePort {
             SpatialPreviewLimits limits,
             Duration timeout
     ) {
-        if (dataSource.getType() != DataSourceType.POSTGRESQL) {
-            throw new UnsupportedOperationException("当前仅支持 PostgreSQL/PostGIS 动态空间预览");
-        }
         DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        if (!(dialect instanceof SpatialPreviewDialect)) {
+            throw new UnsupportedOperationException("当前数据库不支持动态空间预览");
+        }
         return spatialPreviewExecutor.read(
                 dataSource.getType().name(), dataSource.getConnection().toJdbcConnectionConfig(),
                 tableIdentifier(dialect, dataSource, model), column, viewport, limits, timeout

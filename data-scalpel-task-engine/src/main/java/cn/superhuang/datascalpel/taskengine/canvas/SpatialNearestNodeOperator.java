@@ -12,6 +12,7 @@ import cn.superhuang.data.scalpel.contract.task.SpatialDistanceUnit;
 import cn.superhuang.data.scalpel.contract.task.SpatialNearestConfiguration;
 import cn.superhuang.data.scalpel.contract.task.SpatialNearestNodeDefinition;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
@@ -298,7 +299,9 @@ public final class SpatialNearestNodeOperator implements CanvasNodeOperator {
         }
         if (configuration.distanceMethod() == SpatialDistanceMethod.GEODESIC
                 && (!("EPSG".equals(source.crs().authority()) && source.crs().code() == 4326)
-                || !("EPSG".equals(candidate.crs().authority()) && candidate.crs().code() == 4326))) {
+                || !("EPSG".equals(candidate.crs().authority()) && candidate.crs().code() == 4326)
+                || source.dimension() != CoordinateDimension.XY
+                || candidate.dimension() != CoordinateDimension.XY)) {
             issues.error("GEODESIC_DISTANCE_REQUIRES_WGS84",
                     "测地线距离仅支持 EPSG:4326 XY", "configuration.distanceMethod");
         }

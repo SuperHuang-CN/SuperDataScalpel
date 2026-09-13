@@ -7,14 +7,14 @@ V1 完成以下结构管理闭环：
 ```text
 模型 Geometry 定义
   → 目标数据库空间存储能力解析
-  → PostGIS / MySQL 8 通用 Geometry 列或 ClickHouse WKB 列受控建表
+  → PostgreSQL 家族 PostGIS 兼容扩展 / MySQL 8 通用 Geometry 列或 ClickHouse WKB 列受控建表
   → 整表空间元数据回读
   → 物理 Geometry 类型、存储编码、nullable 与其他表结构比较
 ```
 
 支持范围固定为：
 
-- PostgreSQL，并且目标实例已安装 PostGIS；
+- PostgreSQL、HighGo、openGauss、人大金仓，并且目标实例已安装可探测的 PostGIS 兼容扩展；
 - MySQL 8.x、InnoDB；
 - 单机 ClickHouse、`MergeTree`，使用原始 WKB `String` 列和空间 marker；
 - authority 为 `EPSG`、code 为正整数的 CRS；
@@ -29,7 +29,7 @@ WKT/WKB/GeoJSON 值解析或转换、CRS 转换、Geometry 修复、单体/Multi
 WKB 仅表示物理存储编码，平台不读取、生成或校验 WKB 值。Shapefile/FileGDB 的独立
 文件预览协议保持不变，不自动转换为模型 Geometry。
 
-模型详情另提供 PostgreSQL/PostGIS 动态空间预览 MVP。该只读能力识别目标 Geometry
+模型详情另提供 PostgreSQL 家族 PostGIS 兼容动态空间预览。该只读能力识别目标 Geometry
 字段上有效、就绪、非 partial、非 expression 的单列 GiST/SP-GiST 索引，但不把索引
 纳入模型结构、不自动创建索引。PostGIS 按当前视口在原字段上执行 `&&` 过滤，再转换、
 裁剪并简化到 EPSG:3857，返回 WKB 给业务层使用 JTS 和 Java2D 渲染透明 PNG；浏览器的
@@ -47,7 +47,7 @@ Canvas 协议 `1.20` 在上述结构管理基础上增加真实空间计算闭�
 - `SPATIAL_TRANSFORM` 通过受控 `ST_Transform` 转换 EPSG CRS。
 - `SPATIAL_JOIN` 仅支持 INNER，以及
   `INTERSECTS/CONTAINS/WITHIN/COVERS/COVERED_BY/TOUCHES/OVERLAPS/CROSSES/EQUALS`。
-- PostGIS/MySQL 8 输入统一读取 WKB并恢复为 Sedona `GeometryUDT`。
+- PostgreSQL 家族 PostGIS 兼容扩展/MySQL 8 输入统一读取 WKB并恢复为 Sedona `GeometryUDT`。
 - 含 Geometry 的 JDBC Output统一使用分区 PreparedStatement和数据库空间构造函数。
 - Manifest v8保存完整 Geometry Schema；v7只兼容非空间任务。
 
@@ -55,7 +55,8 @@ Canvas 协议 `1.21` 继续补齐空间值的基础处理闭环：
 
 - `GEOMETRY_CONSTRUCT` 从 WKT、WKB、GeoJSON 或 X/Y 构造具体 kind 的 Geometry，并显式设置 SRID；
 - `GEOMETRY_VALIDATE` 使用 `ST_IsValid/ST_IsValidReason` 输出诊断但不修复或删行；
-- `SPATIAL_MEASURE` 提供面积、长度、周长、距离和 Point X/Y 的平面或 WGS84 椭球测量；
+- `SPATIAL_MEASURE` 提供面积、长度、周长、距离和 Point X/Y 的平面或 WGS84 椭球测量，
+  并可为前四类逐项选择输出单位；
 - `GEOMETRY_SERIALIZE` 输出 WKT/WKB/GeoJSON，且 GeoJSON 只允许 EPSG:4326；
 - 四个节点均为无状态 Processor，同时支持 BATCH/STREAMING，并继承 boundedness、事件时间和 Watermark。
 
@@ -138,7 +139,7 @@ SRID/SRS ID。
 }
 ```
 
-`GET /api/v1/models/platform-types` 在 PostgreSQL、MySQL 和 ClickHouse 能力响应中返回
+`GET /api/v1/models/platform-types` 在 PostgreSQL、HighGo、openGauss、人大金仓、MySQL 和 ClickHouse 能力响应中返回
 Geometry 支持状态、GeometryKind、坐标维度和 CRS authority。ClickHouse 的映射说明
 明确展示 WKB `String` 存储和 comment 声明语义；其他方言保留 `GEOMETRY` 能力项但
 明确标记为不支持，由前端禁用。
@@ -173,15 +174,15 @@ EPSG CRS 和二维定义时才会初始化模型字段；通用 Geometry 无法�
 不完整模型定义。ClickHouse WKB 不使用数据库本地空间参考 ID，EPSG 直接作为列 marker 中
 的平台声明保存。
 
-## PostGIS
+## PostgreSQL 家族 PostGIS 兼容扩展
 
-PostGIS 是 PostgreSQL 数据源的可选运行能力，不是新的数据源类型。
+PostGIS 兼容空间实现是 PostgreSQL、HighGo、openGauss、人大金仓数据源的可选运行能力，不是新的数据源类型。四类数据源共享空间实现，但保留各自驱动、URL 和产品身份；系统在连接后探测扩展、函数和目录对象，缺失时返回明确不可用状态。
 
 - 建表前检查 `postgis` 扩展及其安装 schema，不自动执行 `CREATE EXTENSION`。
 - DDL 使用扩展 schema 限定的通用 `"schema"."geometry"`，不写入 subtype 或 SRID 修饰符。
 - 元数据通过 PostGIS catalog、`geometry_columns` 和 typmod 信息整表读取，不依赖 JDBC
   `TYPE_NAME` 推断 subtype、SRID 或维度。
-- `geometry`、`public.geometry` 和 `"public"."geometry"` 都归一为 PostgreSQL Geometry；
+- `geometry`、`public.geometry` 和 `"public"."geometry"` 都归一为 PostgreSQL 家族 Geometry；
   `geography`、Raster 不等同于 Geometry。通用物理 Geometry 与任意模型 Geometry 定义在
   物理结构检查中匹配。
 
@@ -251,7 +252,7 @@ V1 不扩展 `IndexMetadata`、`TableDefinition` 索引定义或 DDL 原子性�
 ## 业务行为
 
 草稿可以保存合法 Geometry。查看 DDL、创建物理表、外部绑定和受管导入预览时，才连接
-目标数据库校验 PostGIS/MySQL 版本和运行能力，或读取 ClickHouse `system.columns` 中的
+目标数据库校验 PostgreSQL 家族 PostGIS 兼容扩展/MySQL 版本和运行能力，或读取 ClickHouse `system.columns` 中的
 WKB marker。已有表导入仍要求完整的空间语义，通用 Geometry 必须由用户明确补充模型
 Geometry 定义。外部调用继续采用“短事务读取快照 → 事务外 JDBC → 短事务提交”的边界。
 
@@ -270,7 +271,7 @@ Geometry 定义。外部调用继续采用“短事务读取快照 → 事务外
 以下执行/服务边界明确区分 Geometry 能力，任何场景都不能把 Geometry 降级映射为 Spark
 String/Binary：
 
-- Spark Canvas 的 JDBC、`MODEL_INPUT` / `MODEL_OUTPUT` 支持 PostgreSQL/PostGIS 和
+- Spark Canvas 的 JDBC、`MODEL_INPUT` / `MODEL_OUTPUT` 支持具备 PostGIS 兼容扩展的 PostgreSQL、HighGo、openGauss、人大金仓和
   MySQL 8 Geometry，并通过 Sedona `GeometryUDT` 执行；Kafka 内联 Value Schema 仍返回
   `SPATIAL_FIELD_UNSUPPORTED`；
 - Local SQL 输入/输出模型仍返回 `SPATIAL_FIELD_UNSUPPORTED`；

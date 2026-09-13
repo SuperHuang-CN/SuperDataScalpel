@@ -7,6 +7,7 @@ import { usesLinkedWithinGroups } from './spatialSummarizeWithin/groupResult';
 import { boundaryLabels, usesMethodPath, usesOrderedReconstruction, usesSplitExpression } from './trackReconstruct/reconstruction';
 import { usesAreaGeometry } from './trackReconstruct/areaGeometry';
 import { h3SizeSummary } from './spatialBinAggregate/h3';
+import { spatialAreaUnitLabels, spatialDistanceUnitLabels } from './spatialUnits';
 
 const summarizeProcessorOperations = (
   operations: Array<{ sourceTableName: string; output: { outputTableName: string | null } }>,
@@ -323,6 +324,10 @@ export const summarizeTrackDetectIncidents = (
   }
   return `${configuration.sourceTableName} → ${configuration.outputTableName}`
     + ((configuration.conditionWindows?.length ?? 0) > 0 ? ` · ${configuration.conditionWindows?.length} 个窗口指标` : '')
+    + ((configuration.conditionScalars?.length ?? 0) > 0 ? ` · ${configuration.conditionScalars?.length} 个轨迹标量` : '')
+    + ((configuration.conditionWindows ?? []).some(window => window.source === 'TRACK_DISTANCE') ? ' · 含轨迹距离（米）' : '')
+    + ((configuration.conditionWindows ?? []).some(window => window.source === 'TRACK_SPEED') ? ' · 含轨迹速度（米/秒）' : '')
+    + ((configuration.conditionWindows ?? []).some(window => window.source === 'TRACK_ACCELERATION') ? ' · 含轨迹加速度（米/秒²）' : '')
     + ` · ${configuration.resultMode === 'ALL_EVENTS' ? '全部并标记' : '仅事件'}`
     + ` · ${configuration.endCondition ? '含结束条件'
       : configuration.incidentSemantics === 'CONDITION_LIFECYCLE' ? '条件不成立即结束' : '旧版：片段末结束'}`;
@@ -373,6 +378,147 @@ export const summarizeSpatialCenterDispersion = (
     + `${configuration.weightColumnName ? ' · 加权' : ''}`;
 };
 
+export const summarizeSpatialDensity = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialDensity>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择投影 Point 表并设置密度输出';
+  }
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${configuration.weighting === 'KERNEL' ? 'Kernel' : 'Uniform'}`
+    + ` · ${configuration.binShape === 'HEXAGON' ? '六边形' : '方格'}`
+    + ` · ${configuration.fields.length + 1} 个密度字段`
+    + `${configuration.temporalSlicing ? ' · 时间切片' : ''}`;
+};
+
+export const summarizeSpatialHotSpots = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialHotSpots>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择投影 Point 表并设置热点输出';
+  }
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${configuration.analysisSource === 'FIELD_SUM' ? '字段和' : '点数'}`
+    + ' · Getis-Ord Gi*'
+    + ` · ${configuration.multipleTesting === 'FDR_BH' ? 'FDR' : '原始显著性'}`
+    + `${configuration.temporalSlicing ? ' · 时间切片' : ''}`;
+};
+
+export const summarizeSpatialMultiVariableGrid = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialMultiVariableGrid>,
+) => {
+  const configuration = data.configuration;
+  if (configuration.variables.length === 0 || !configuration.outputTableName) {
+    return '请配置多来源格网变量和输出表';
+  }
+  const sourceCount = new Set(configuration.variables.map(variable => variable.sourceTableName)
+    .filter(Boolean)).size;
+  return `${sourceCount} 张来源表 → ${configuration.outputTableName}`
+    + ` · ${configuration.variables.length} 个变量`
+    + ` · ${configuration.binShape === 'HEXAGON' ? '六边形' : '方格'}`;
+};
+
+export const summarizeSpatialSimilarLocations = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialSimilarLocations>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.referenceTableName || !configuration.candidateTableName
+    || !configuration.outputTableName) {
+    return '请选择参考位置、候选位置并设置输出表';
+  }
+  const method = configuration.matchMethod === 'ATTRIBUTE_PROFILES' ? '属性轮廓' : '属性值';
+  const range = configuration.resultMode === 'LEAST_SIMILAR' ? '最不相似'
+    : configuration.resultMode === 'BOTH' ? '相似与不相似两端' : '最相似';
+  return `${configuration.referenceTableName} + ${configuration.candidateTableName}`
+    + ` → ${configuration.outputTableName} · ${method} · ${range}`
+    + ` · ${configuration.analysisFields.length} 个分析字段`;
+};
+
+export const summarizeSpatialDescribeDataset = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialDescribeDataset>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName
+    || !configuration.statisticsTableName
+    || !configuration.descriptionTableName) {
+    return '请选择来源表并设置字段统计和数据集描述表';
+  }
+  const resultCount = 2 + Number(configuration.sampleSize > 0)
+    + Number(configuration.extentOutput);
+  return `${configuration.sourceTableName} → ${resultCount} 个剖析结果`
+    + `${configuration.sampleSize > 0 ? ` · 样本 ${configuration.sampleSize} 行` : ''}`
+    + `${configuration.extentOutput ? ' · 空间范围' : ''}`;
+};
+
+export const summarizeSpatialEnrichFromGrid = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialEnrichFromGrid>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.pointTableName || !configuration.gridTableName || !configuration.outputTableName) {
+    return '请选择 Point 表、多变量格网和输出表';
+  }
+  return `${configuration.pointTableName} + ${configuration.gridTableName}`
+    + ` → ${configuration.outputTableName} · ${configuration.enrichFields.length} 个格网字段`;
+};
+
+export const summarizeSpatialGroupByProximity = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialGroupByProximity>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.geometryColumnName
+    || !configuration.outputTableName) {
+    return '请选择空间表、Geometry 和输出表';
+  }
+  const relation = configuration.spatialRelationship === 'TOUCHES' ? '接触'
+    : configuration.spatialRelationship === 'NEAR_PLANAR' ? '平面邻近'
+      : configuration.spatialRelationship === 'NEAR_GEODESIC' ? '测地邻近' : '相交';
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${relation}连通组`
+    + `${configuration.temporalCondition ? ' · 时间约束' : ''}`
+    + `${configuration.attributeConditions.length > 0
+      ? ` · ${configuration.attributeConditions.length} 个属性约束` : ''}`;
+};
+
+export const summarizeTraceProximityEvents = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.TraceProximityEvents>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.sourceTableName || !configuration.outputTableName) {
+    return '请选择轨迹观测表并设置事件输出';
+  }
+  const interestCount = configuration.interestSource === 'ENTITY_IDS'
+    ? configuration.entitiesOfInterest.length
+    : configuration.entitiesOfInterestTableName ? 1 : 0;
+  return `${configuration.sourceTableName} → ${configuration.outputTableName}`
+    + ` · ${configuration.distanceMethod === 'GEODESIC' ? '测地' : '平面'}邻近传播`
+    + ` · 最深 ${configuration.maxTraceDepth ?? '待设置'} 层`
+    + ` · ${configuration.interestSource === 'TABLE'
+      ? '起始表'
+      : `${interestCount} 个起始实体`}`
+    + `${configuration.attributeMatchColumns.length > 0
+      ? ` · ${configuration.attributeMatchColumns.length} 个同值约束` : ''}`
+    + `${configuration.includeTracks ? ' · 输出后续轨迹' : ''}`;
+};
+
+export const summarizeSnapTracks = (
+  data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SnapTracks>,
+) => {
+  const configuration = data.configuration;
+  if (!configuration.pointTableName || !configuration.lineTableName
+    || !configuration.outputTableName) {
+    return '请选择轨迹点表、道路网络和输出表';
+  }
+  return `${configuration.pointTableName} + ${configuration.lineTableName}`
+    + ` → ${configuration.outputTableName}`
+    + ` · ${configuration.distanceMethod === 'GEODESIC' ? '测地线' : '平面'}路网匹配`
+    + ` · ${configuration.trackIdColumns.length} 个轨迹标识`
+    + `${configuration.directionMatching ? ' · 启用方向' : ''}`
+    + `${configuration.lineFields.length > 0
+      ? ` · ${configuration.lineFields.length} 个道路属性` : ''}`;
+};
+
 export const summarizeGeometryBuffer = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.GeometryBuffer>,
 ) => {
@@ -383,11 +529,20 @@ export const summarizeGeometryBuffer = (
     outputColumnName,
     distance,
     mode,
+    distanceUnit,
+    distanceSource,
+    distanceFieldName,
   } = data.configuration;
   if (!sourceTableName || !outputTableName || !geometryColumnName || !outputColumnName) {
     return '请选择 Geometry 字段并配置 Buffer';
   }
-  return `${sourceTableName}.${geometryColumnName} → ${outputTableName}.${outputColumnName} · ${distance} · ${mode}`;
+  const effectiveUnit = distanceUnit ?? (mode === 'SPHEROID' ? 'METERS' : 'SOURCE_CRS_UNIT');
+  const distanceSummary = (distanceSource ?? 'CONSTANT') === 'CONSTANT'
+    ? `${distance} ${spatialDistanceUnitLabels[effectiveUnit]}`
+    : distanceSource === 'FIELD'
+      ? `字段 ${distanceFieldName || '?'} · ${spatialDistanceUnitLabels[effectiveUnit]}`
+      : `逐行表达式 · ${spatialDistanceUnitLabels[effectiveUnit]}`;
+  return `${sourceTableName}.${geometryColumnName} → ${outputTableName}.${outputColumnName} · ${distanceSummary} · ${mode}`;
 };
 
 export const summarizeGeometryExplode = (
@@ -417,9 +572,22 @@ export const summarizeSpatialMeasure = (
   const modes = [...new Set(measurements.flatMap((measurement) => (
     'mode' in measurement ? [measurement.mode] : []
   )))].join('/');
+  const units = [...new Set(measurements.flatMap((measurement) => {
+    if (measurement.kind === 'AREA') {
+      return [measurement.outputUnit
+        ? spatialAreaUnitLabels[measurement.outputUnit]
+        : measurement.mode === 'SPHEROID' ? '平方米' : '来源 CRS 单位²'];
+    }
+    if ('mode' in measurement) {
+      const effectiveUnit = measurement.outputUnit
+        ?? (measurement.mode === 'SPHEROID' ? 'METERS' : 'SOURCE_CRS_UNIT');
+      return [spatialDistanceUnitLabels[effectiveUnit]];
+    }
+    return [];
+  }))].join('/');
   return `${sourceTableName} → ${outputTableName} · ${measurements.length} 项${
     kinds ? ` · ${kinds}` : ''
-  }${modes ? ` · ${modes}` : ''}`;
+  }${modes ? ` · ${modes}` : ''}${units ? ` · ${units}` : ''}`;
 };
 
 export const summarizeGeometrySerialize = (
@@ -448,22 +616,38 @@ export const summarizeSpatialClip = (
     sourceGeometryColumnName,
     maskGeometryColumnName,
     outputColumnName,
+    geometryPolicy,
+    maskCombination,
   } = data.configuration;
   if (!sourceTableName || !maskTableName || !outputTableName
     || !sourceGeometryColumnName || !maskGeometryColumnName || !outputColumnName) {
     return '请选择来源 Geometry 和面状 Mask';
   }
-  return `${sourceTableName}.${sourceGeometryColumnName} ∩ ${maskTableName}.${maskGeometryColumnName} → ${outputTableName}.${outputColumnName}`;
+  const policy = geometryPolicy === 'SOURCE_FAMILY_2D' ? '保持来源家族' : '通用 Geometry';
+  const masks = maskCombination === 'DISSOLVE_ALL' ? '合并 Mask' : '逐条 Mask';
+  return `${sourceTableName}.${sourceGeometryColumnName} ∩ ${maskTableName}.${maskGeometryColumnName} → ${outputTableName}.${outputColumnName} · ${policy} · ${masks}`;
 };
 
 export const summarizeSpatialAggregate = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.SpatialAggregate>,
 ) => {
-  const { sourceTableName, outputTableName, groupByColumns, aggregations } = data.configuration;
+  const {
+    sourceTableName,
+    outputTableName,
+    groupByColumns,
+    aggregations,
+    dissolve,
+  } = data.configuration;
   if (!sourceTableName || !outputTableName || aggregations.length === 0) {
     return '请选择来源表并配置空间聚合';
   }
   const kinds = [...new Set(aggregations.map((item) => item.kind))].join('/');
+  if (dissolve?.enabled) {
+    const grouping = dissolve.groupingMode === 'CONNECTED_COMPONENTS'
+      ? 'Connected'
+      : groupByColumns.length === 0 ? 'All' : 'List';
+    return `${sourceTableName} → ${outputTableName} · Dissolve ${grouping} · ${dissolve.multipart ? 'Multipart' : 'Singlepart'} · ${dissolve.summaryStatistics.length} 项统计`;
+  }
   return `${sourceTableName} → ${outputTableName} · ${groupByColumns.length} 个分组字段 · ${aggregations.length} 项 ${kinds}`;
 };
 
@@ -474,14 +658,41 @@ export const summarizeSpatialJoin = (
     leftTableName,
     rightTableName,
     outputTableName,
+    joinType,
     conditions,
+    attributeConditions,
+    outputColumns,
+    joinOperation,
+    oneToOne,
+    temporalCondition,
+    spatialNear,
+    distanceOutput,
   } = data.configuration;
-  if (!leftTableName || !rightTableName || !outputTableName || conditions.length === 0) {
-    return '请选择两张空间表并配置空间谓词';
+  if (!leftTableName || !rightTableName || !outputTableName
+      || conditions.length === 0 && !spatialNear) {
+    return '请选择两张空间表并配置空间拓扑条件或 Near';
   }
   const predicates = [...new Set(conditions.map((condition) => condition.predicate)
     .filter(Boolean))].join('/');
-  return `${leftTableName} INNER ${rightTableName} → ${outputTableName} · ${conditions.length} 条 ${predicates}`;
+  const projection = outputColumns == null
+    ? '旧版全字段'
+    : `${outputColumns.filter((column) => column.included).length} 个输出字段`;
+  const attributeSummary = attributeConditions?.length
+    ? ` · ${attributeConditions.length} 条属性等值`
+    : '';
+  const temporalSummary = temporalCondition
+    ? ` · 时间 ${temporalCondition.relationship ?? '待配置'}`
+    : '';
+  const nearSummary = spatialNear
+    ? ` · ${spatialNear.distanceMethod === 'GEODESIC' ? 'Near Geodesic' : 'Near'}`
+    : '';
+  const distanceSummary = distanceOutput?.enabled ? ' · 输出距离' : '';
+  const grain = joinOperation !== 'JOIN_ONE_TO_ONE'
+    ? '一对多'
+    : oneToOne?.mode === 'SUMMARIZE_MATCHES'
+      ? `一对一汇总 · Join Count + ${oneToOne.summaryStatistics?.length ?? 0} 项统计`
+      : `一对一保留 · ${oneToOne?.keepRule?.strategy ?? '规则待配置'}`;
+  return `${leftTableName} ${joinType} ${rightTableName} → ${outputTableName} · ${grain} · ${conditions.length} 条 ${predicates || '拓扑'}${nearSummary}${attributeSummary}${temporalSummary}${distanceSummary} · ${projection}`;
 };
 
 export const summarizeStreamJoin = (
@@ -547,10 +758,10 @@ export const summarizeAggregate = (
 export const summarizeUnion = (
   data: CanvasNodeRuntimeDataByType<typeof CanvasNodeType.Union>,
 ) => {
-  const { inputTableNames, outputTableName, mode } = data.configuration;
+  const { inputTableNames, outputTableName, mode, mergingTables } = data.configuration;
   return inputTableNames.length < 2 || !outputTableName || !mode
     ? '请选择至少两张输入表'
-    : `${inputTableNames.length} 张表 → ${outputTableName} · ${mode}`;
+    : `${inputTableNames.length} 张表 → ${outputTableName} · ${mode} · ${mergingTables === null ? '严格 Schema' : 'Merge Layers'}`;
 };
 
 export const summarizeDeduplicate = (

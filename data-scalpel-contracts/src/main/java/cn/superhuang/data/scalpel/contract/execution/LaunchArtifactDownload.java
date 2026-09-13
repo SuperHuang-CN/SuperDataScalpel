@@ -1,8 +1,16 @@
 package cn.superhuang.data.scalpel.contract.execution;
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import java.net.URI;
 
-public record LaunchArtifactDownload(URI getUrl, String sha256, int maxBytes) {
+public record LaunchArtifactDownload(
+        @JsonPropertyDescription("短期有效且仅允许 GET 的预签名对象下载地址。")
+        URI getUrl,
+        @JsonPropertyDescription("内容的 SHA-256 十六进制摘要。")
+        String sha256,
+        @JsonPropertyDescription("允许下载或上传的最大字节数，超过时必须拒绝。")
+        int maxBytes
+) {
     public LaunchArtifactDownload {
         getUrl = ExecutionContractValidation.httpUri(getUrl, "制品下载地址");
         sha256 = ExecutionContractValidation.sha256(sha256);

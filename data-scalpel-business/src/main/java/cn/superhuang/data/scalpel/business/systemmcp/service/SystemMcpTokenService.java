@@ -53,12 +53,12 @@ public class SystemMcpTokenService {
         return tokens.findById(id).orElseThrow(()->new ResponseStatusException(HttpStatus.NOT_FOUND,"令牌不存在"));
     }
     public SystemMcpTokenResponse response(SystemMcpAccessToken t) {
-        return new SystemMcpTokenResponse(t.getId(),t.getName(),t.getUserId(),users.findById(t.getUserId()).map(u->u.getUsername()).orElse("已删除用户"),t.getEnabled(),t.getRevision(),t.getExpiresAt(),t.getLastUsedAt(),t.getCreatedAt());
+        return new SystemMcpTokenResponse(t.getId(),t.getName(),t.getUserId(),users.findById(t.getUserId()).map(u->u.getUsername()).orElse("已删除用户"),t.getEnabled(),t.getRevision(),t.getExpiresAt(),t.getLastUsedAt(),t.getCreatedAt(),t.isManaged());
     }
     public List<SystemMcpTokenResponse> responses(List<SystemMcpAccessToken> values) {
         Map<UUID,String> names=new HashMap<>();
         users.findAllById(values.stream().map(SystemMcpAccessToken::getUserId).distinct().toList()).forEach(u->names.put(u.getId(),u.getUsername()));
-        return values.stream().map(t->new SystemMcpTokenResponse(t.getId(),t.getName(),t.getUserId(),names.getOrDefault(t.getUserId(),"已删除用户"),t.getEnabled(),t.getRevision(),t.getExpiresAt(),t.getLastUsedAt(),t.getCreatedAt())).toList();
+        return values.stream().map(t->new SystemMcpTokenResponse(t.getId(),t.getName(),t.getUserId(),names.getOrDefault(t.getUserId(),"已删除用户"),t.getEnabled(),t.getRevision(),t.getExpiresAt(),t.getLastUsedAt(),t.getCreatedAt(),t.isManaged())).toList();
     }
     @Transactional public SystemMcpIssuedTokenResponse create(CreateSystemMcpTokenRequest r) {
         if(!users.existsById(r.userId()))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"绑定用户不存在");
@@ -71,7 +71,7 @@ public class SystemMcpTokenService {
         return issue(t);
     }
     @Transactional public SystemMcpIssuedTokenResponse rotate(UUID id) {
-        return issue(get(id));
+        return issue(manual(id));
     }
     private SystemMcpIssuedTokenResponse issue(SystemMcpAccessToken t) {
         byte[] bytes=new byte[32];
@@ -84,16 +84,44 @@ public class SystemMcpTokenService {
     }
     @Transactional public SystemMcpTokenResponse update(UUID id,UpdateSystemMcpTokenRequest r) {
         validateExpiry(r.expiresAt());
-        var t=get(id);
+        var t=manual(id);
         t.setName(r.name());
         t.setExpiresAt(r.expiresAt());
         return response(t);
     }
     @Transactional public void enabled(UUID id,boolean value) {
-        get(id).setEnabled(value);
+        manual(id).setEnabled(value);
     }
     @Transactional public void delete(UUID id) {
-        tokens.delete(get(id));
+        tokens.delete(manual(id));
+    }
+    private SystemMcpAccessToken manual(UUID id) {
+        var token=get(id);
+        if(token.isManaged()) {
+            throw new cn.superhuang.data.scalpel.web.error.CodedProblemException(HttpStatus.CONFLICT,"SYSTEM_MCP_TOKEN_MANAGED","DSH 系统托管令牌不允许手工修改");
+        }
+        return token;
+    }
+    /** Internal provisioning only; no public management resource exposes this operation. */
+    @Transactional public SystemMcpIssuedTokenResponse createManaged(UUID userId) {
+        users.findById(userId).filter(u->u.isEnabled()).orElseThrow(SystemMcpTokenService::invalid);
+        var token=new SystemMcpAccessToken(); token.setName("DSH:"+userId); token.setUserId(userId);
+        token.setManaged(true); token.setEnabled(true); return issue(token);
+    }
+    public record ManagedStateChange(UUID tokenId,String username,boolean enabled) {}
+    @Transactional public List<ManagedStateChange> reconcileManagedStates() {
+        var managed=tokens.findByManagedTrue();
+        Map<UUID,cn.superhuang.data.scalpel.business.system.access.domain.SystemUser> current=new HashMap<>();
+        users.findAllById(managed.stream().map(SystemMcpAccessToken::getUserId).distinct().toList()).forEach(user->current.put(user.getId(),user));
+        List<ManagedStateChange> changes=new ArrayList<>();
+        for(var token:managed) {
+            var user=current.get(token.getUserId());boolean enabled=user!=null&&user.isEnabled();
+            if(token.getEnabled()!=enabled) {
+                token.setEnabled(enabled);
+                changes.add(new ManagedStateChange(token.getId(),user==null?token.getUserId().toString():user.getUsername(),enabled));
+            }
+        }
+        return changes;
     }
     private void validateExpiry(Instant expiry) {
         if(expiry!=null&&!expiry.isAfter(Instant.now()))throw new ResponseStatusException(HttpStatus.BAD_REQUEST,"过期时间必须晚于当前时间");

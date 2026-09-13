@@ -1,11 +1,19 @@
 package cn.superhuang.data.scalpel.contract.type;
 
+import com.fasterxml.jackson.annotation.JsonClassDescription;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 /** One platform logical type together with the parameters that affect its physical representation. */
+@JsonClassDescription("一个平台逻辑数据类型及影响物理表示的类型参数；只有 STRING、DECIMAL 和 GEOMETRY 使用附加参数。")
 public record PlatformTypeDefinition(
+        @JsonPropertyDescription("平台逻辑数据类型；STRING 使用 length，DECIMAL 使用 precision/scale，GEOMETRY 使用 geometry。")
         PlatformDataType type,
+        @JsonPropertyDescription("STRING 类型允许的最大字符数；未限制时可为空，其他类型必须为空。")
         Integer length,
+        @JsonPropertyDescription("DECIMAL 类型的总有效位数，范围 1 到 38；其他类型必须为空。")
         Integer precision,
+        @JsonPropertyDescription("DECIMAL 类型的小数位数，范围 0 到 precision；其他类型必须为空。")
         Integer scale,
+        @JsonPropertyDescription("GEOMETRY 类型必填的几何子类型、坐标系和维度定义；其他类型必须为空。")
         GeometryTypeDefinition geometry
 ) {
 

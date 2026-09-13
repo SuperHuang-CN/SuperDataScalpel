@@ -12,11 +12,10 @@ import java.util.Set;
 /** Local minor regions on WGS84. Never uses rendered longitude seams to locate a point. */
 final class Wgs84PolygonRegion {
     enum Location { INSIDE, OUTSIDE, BOUNDARY, UNRESOLVED }
-    private final Position reference;
     private final List<Part> parts;
     private final Set<Position> boundaryVertices;
-    private Wgs84PolygonRegion(Position reference,List<Part> parts) {
-        this.reference=reference; this.parts=List.copyOf(parts);
+    private Wgs84PolygonRegion(List<Part> parts) {
+        this.parts=List.copyOf(parts);
         var vertices=new HashSet<Position>();
         for (Part part : parts) {
             for (Position vertex : part.shell) vertices.add(canonical(vertex));
@@ -28,10 +27,48 @@ final class Wgs84PolygonRegion {
     static Wgs84PolygonRegion prepare(Geometry shape) {
         if (!(shape instanceof Polygon || shape instanceof MultiPolygon) || shape.isEmpty())
             throw failure("GEODESIC_DISTANCE_GEOMETRY_UNSUPPORTED");
+        try {
+            TrackGeodesicPolygon.Source validated=validated(shape,null);
+            Position reference=position(validated.reference());
+            return new Wgs84PolygonRegion(parts(shape,java.util.Collections.nCopies(shape.getNumGeometries(),reference)));
+        } catch (IllegalArgumentException error) {
+            if (!(shape instanceof MultiPolygon)
+                    || !"GEODESIC_DISTANCE_REGION_RANGE_NOT_SUPPORTED".equals(error.getMessage())) throw error;
+        }
+
+        // A MultiPolygon need not fit in one common convex chart. Fall back only when every
+        // component is independently local and every component pair is provably separated.
+        // Touching, overlapping, nested or numerically unresolved global components remain
+        // rejected instead of being interpreted through a longitude seam or planar JTS area.
+        var budget=new Wgs84SegmentDistance.Budget(Wgs84SegmentDistance.MAX_EVALUATIONS);
+        var references=new ArrayList<Position>();
+        var boundaries=new ArrayList<List<Wgs84SegmentDistance.Arc>>();
+        for (int index=0;index<shape.getNumGeometries();index++) {
+            Polygon polygon=(Polygon)shape.getGeometryN(index);
+            references.add(position(validated(polygon,budget).reference()));
+            boundaries.add(Wgs84LinearDistance.edges(polygon.getBoundary()));
+        }
+        var parts=parts(shape,references);
+        for (int first=0;first<parts.size();first++) for (int second=first+1;second<parts.size();second++) {
+            var relation=Wgs84BoundaryIntersection.relate(boundaries.get(first),boundaries.get(second),budget);
+            if (relation==Wgs84BoundaryIntersection.Relation.INTERSECTING)
+                throw failure("GEODESIC_DISTANCE_GEOMETRY_INVALID");
+            if (relation==Wgs84BoundaryIntersection.Relation.UNRESOLVED) {
+                var distance=Wgs84SegmentDistance.nearestArcs(boundaries.get(first),boundaries.get(second),0.0001,budget);
+                if (distance.lowerBoundMetres()<=Wgs84SegmentDistance.ROUNDOFF_METRES)
+                    throw failure("GEODESIC_DISTANCE_PRECISION_NOT_REACHED");
+            }
+            requireOutside(parts.get(first),parts.get(second),budget);
+            requireOutside(parts.get(second),parts.get(first),budget);
+        }
+        return new Wgs84PolygonRegion(parts);
+    }
+
+    private static TrackGeodesicPolygon.Source validated(Geometry shape,Wgs84SegmentDistance.Budget budget) {
         // Source topology uses original continuous arcs. Preparing a distance region must
         // not allocate a sampled render or depend on its chord length/Boolean acceptance.
         TrackGeodesicPolygon.Source validated;
-        try { validated=TrackGeodesicPolygon.prepareSource(shape); }
+        try { validated=budget==null ? TrackGeodesicPolygon.prepareSource(shape) : TrackGeodesicPolygon.prepareSource(shape,budget); }
         catch (RuntimeException error) {
             String code=error.getMessage();
             if ("GEODESIC_TOPOLOGY_PRECISION_NOT_REACHED".equals(code) || "GEODESIC_DISTANCE_WORK_LIMIT_EXCEEDED".equals(code))
@@ -42,14 +79,30 @@ final class Wgs84PolygonRegion {
                 throw failure("GEODESIC_DISTANCE_WORK_LIMIT_EXCEEDED");
             throw failure("GEODESIC_DISTANCE_GEOMETRY_INVALID");
         }
+        return validated;
+    }
+
+    private static List<Part> parts(Geometry shape,List<Position> references) {
         var parts=new ArrayList<Part>();
         for (int i=0;i<shape.getNumGeometries();i++) {
             Polygon polygon=(Polygon)shape.getGeometryN(i);
             var holes=new ArrayList<List<Position>>();
             for (int h=0;h<polygon.getNumInteriorRing();h++) holes.add(ring(polygon.getInteriorRingN(h)));
-            parts.add(new Part(ring(polygon.getExteriorRing()),List.copyOf(holes)));
+            List<Position> shell=ring(polygon.getExteriorRing());
+            var vertices=new HashSet<Position>();
+            shell.forEach(vertex->vertices.add(canonical(vertex)));
+            holes.forEach(hole->hole.forEach(vertex->vertices.add(canonical(vertex))));
+            parts.add(new Part(references.get(i),shell,List.copyOf(holes),Set.copyOf(vertices)));
         }
-        return new Wgs84PolygonRegion(new Position(validated.reference().longitude(),validated.reference().latitude()),parts);
+        return List.copyOf(parts);
+    }
+
+    private static void requireOutside(Part candidate,Part container,Wgs84SegmentDistance.Budget budget) {
+        Location location=locatePart(candidate.shell.getFirst(),container,budget);
+        if (location==Location.INSIDE || location==Location.BOUNDARY)
+            throw failure("GEODESIC_DISTANCE_GEOMETRY_INVALID");
+        if (location==Location.UNRESOLVED)
+            throw failure("GEODESIC_DISTANCE_PRECISION_NOT_REACHED");
     }
 
     Location locate(Position point) {
@@ -62,29 +115,33 @@ final class Wgs84PolygonRegion {
             throw failure("GEODESIC_DISTANCE_COORDINATE_INVALID");
         // All rings lie in this strongly convex ball. Its minor region cannot contain a
         // point outside the ball. This also prevents antipodal azimuth winding false positives.
-        budget.consume();
-        if (Geodesic.WGS84.Inverse(reference.latitude(),reference.longitude(),point.latitude(),point.longitude()).s12
-                >=TrackGeodesicHull.MAX_REFERENCE_RADIUS) return Location.OUTSIDE;
         // A hole vertex may touch the interior of a shell edge. Its exact boundary
         // evidence must not be hidden by the shell's unresolved opposite-bearing sweep.
         if (boundaryVertices.contains(canonical(point))) return Location.BOUNDARY;
         boolean unresolved=false;
         for (Part part : parts) {
-            Location shell=locateRing(point,part.shell,budget);
-            if (shell==Location.BOUNDARY) return shell;
-            if (shell==Location.OUTSIDE) continue;
-            if (shell==Location.UNRESOLVED) { unresolved=true; continue; }
-            boolean inHole=false, uncertainHole=false;
-            for (var hole : part.holes) {
-                Location location=locateRing(point,hole,budget);
-                if (location==Location.BOUNDARY) return location;
-                if (location==Location.INSIDE) { inHole=true; break; }
-                if (location==Location.UNRESOLVED) uncertainHole=true;
-            }
-            if (!inHole && !uncertainHole) return Location.INSIDE;
-            if (!inHole) unresolved=true;
+            Location location=locatePart(point,part,budget);
+            if (location==Location.INSIDE || location==Location.BOUNDARY) return location;
+            unresolved|=location==Location.UNRESOLVED;
         }
         return unresolved ? Location.UNRESOLVED : Location.OUTSIDE;
+    }
+
+    private static Location locatePart(Position point,Part part,Wgs84SegmentDistance.Budget budget) {
+        budget.consume();
+        if (Geodesic.WGS84.Inverse(part.reference.latitude(),part.reference.longitude(),point.latitude(),point.longitude()).s12
+                >=TrackGeodesicHull.MAX_REFERENCE_RADIUS) return Location.OUTSIDE;
+        if (part.boundaryVertices.contains(canonical(point))) return Location.BOUNDARY;
+        Location shell=locateRing(point,part.shell,budget);
+        if (shell!=Location.INSIDE) return shell;
+        boolean uncertainHole=false;
+        for (var hole : part.holes) {
+            Location location=locateRing(point,hole,budget);
+            if (location==Location.BOUNDARY) return location;
+            if (location==Location.INSIDE) return Location.OUTSIDE;
+            uncertainHole|=location==Location.UNRESOLVED;
+        }
+        return uncertainHole ? Location.UNRESOLVED : Location.INSIDE;
     }
 
     static Location locateRing(Position point,List<Position> ring,Wgs84SegmentDistance.Budget budget) {
@@ -114,10 +171,13 @@ final class Wgs84PolygonRegion {
         for (Coordinate coordinate : ring.getCoordinates()) positions.add(new Position(coordinate.x,coordinate.y));
         return List.copyOf(positions);
     }
+    private static Position position(TrackGeodesicAreaBoundary.Vertex vertex) {
+        return new Position(vertex.longitude(),vertex.latitude());
+    }
     private static Position canonical(Position point) {
         double longitude=Math.abs(point.latitude())==90 ? 0 : point.longitude()==180 ? -180 : point.longitude();
         return new Position(longitude==0 ? 0 : longitude,point.latitude()==0 ? 0 : point.latitude());
     }
-    private record Part(List<Position> shell,List<List<Position>> holes) { }
+    private record Part(Position reference,List<Position> shell,List<List<Position>> holes,Set<Position> boundaryVertices) { }
     private static IllegalArgumentException failure(String code) { return new IllegalArgumentException(code); }
 }

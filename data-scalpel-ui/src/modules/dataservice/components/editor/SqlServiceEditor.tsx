@@ -81,7 +81,12 @@ export const SqlServiceEditor = ({
   const querySectionRef = useRef<HTMLDivElement>(null);
   const parameterSectionRef = useRef<HTMLDivElement>(null);
   const dataSourcesQuery = useDataSources(
-    { search: '(type:"POSTGRESQL" OR type:"CLICKHOUSE") AND enabled:"true"', page: 0, size: 500, sort: 'code' },
+    {
+      search: '(type:"POSTGRESQL" OR type:"HIGHGO" OR type:"MYSQL" OR type:"OPENGAUSS" OR type:"KINGBASE" OR type:"DAMENG" OR type:"ORACLE" OR type:"SQL_SERVER" OR type:"CLICKHOUSE") AND enabled:"true"',
+      page: 0,
+      size: 500,
+      sort: 'code',
+    },
     canViewDataSources,
   );
   const registrationsQuery = useServiceEngineDataSourceRegistrations(

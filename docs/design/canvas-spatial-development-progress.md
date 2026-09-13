@@ -25,13 +25,756 @@
 
 ## 当前执行
 
-当前 Canvas 为 4.47：共享固定时长增加周单位，与已有日历周分开；详情见下方本轮记录。
-4.46 的事件检测受控字段窗口配置及条件入口保持不变。
+当前 Canvas 为 4.77：`SPATIAL_CLIP` 新增逐来源多 Mask 组合，新建节点默认先融合当前来源命中的
+所有 Mask 再裁剪一次，避免重叠 Mask 重复覆盖；旧定义缺失/null 时仍逐 Mask 输出。4.76 新增批处理 `SPATIAL_DESCRIBE_DATASET`，保留来源表并输出逐字段统计、
+数据集描述、可选样本和可选 XY Envelope 范围。Geometry 可选，输出范围时必须显式选择；
+4.76 已补齐四结果完整血缘、20,000 行规模样例和真实页面验收；真实 Enterprise 字段细节、
+样本行为、带真实上游的字段选择和生产容量仍开放。4.75 新增批处理 `SPATIAL_SIMILAR_LOCATIONS`，以一个或多个参考位置的标准化平均
+属性为目标，对候选位置执行属性值平方差或属性轮廓余弦差异排名，支持最相似、最不相似和两端结果。
+4.76 已补齐全输出血缘、20,000 候选/10,000 结果规模样例和真实页面验收；当前仍是 GeoAnalytics
+核心子集，Pro Ranked/Scale/Collapse、真实 Enterprise 数值和生产容量仍开放。4.74 新增批处理 `SNAP_TRACKS`，对有界 XY Point 轨迹与有界 XY LineString
+道路网络执行距离候选、直接相邻拓扑/方向校验和 Viterbi 联合匹配，输出吸附点、
+匹配线和诊断字段。首版不搜索无观测的多条中间道路，真实 ArcGIS Enterprise 路径、
+容差和数值仍待完成；4.76 已补齐全输出血缘、20,000 观测/1,000 轨迹规模样例和真实页面验收，
+高密度候选、超长单轨迹与生产容量仍开放。4.73 的 `TRACE_PROXIMITY_EVENTS` 继续对带 TIMESTAMP
+和 STRING 实体 ID 的有界 XY Point 观测执行时空接触传播，支持显式 ID/起始表、
+最大深度、同值属性、首次事件和可选后续轨迹。4.76 已补齐两结果集合字段血缘、
+20,000 观测/10,000 事件惰性分布式执行证据及真实页面验收；Enterprise episode、
+月年、极区/日期线和高偏斜生产容量对照仍开放。
+4.72 的 `SPATIAL_GROUP_BY_PROXIMITY` 对一张有界 XY Point/Line/Polygon
+表按 Intersects、Touches、Near Planar 或 Near Geodesic 和可选时间、受控对称属性关系建立无向边，
+再以 Connected Components 求传递连通组；每个来源要素保留一行，孤立要素也获得非空组 ID。
+4.76 已补齐集合字段血缘、20,000 孤立 Point 惰性预检/分布式连通分量执行证据及真实页面验收；
+真实 ArcGIS Enterprise 的容差、月年时间、任意属性表达式和高偏斜生产容量对照仍待完成。4.71 的
+`SPATIAL_ENRICH_FROM_GRID` 把已有多变量 Polygon 格网的显式
+属性按相交关系回填到有界 XY Point，保留未匹配 Point，并在共享边界或异常重叠时按格网 ID 稳定选择
+一个格网，确保每个 Point 恰好输出一行。4.76 已补完整字段血缘、20,000 Point/格网惰性预检与索引化
+执行证据及真实页面验收；真实 ArcGIS Enterprise 的边界、字段类型和生产容量对照仍开放。4.70 的
+`SPATIAL_MULTI_VARIABLE_GRID` 从多张投影 XY Point/Line/Polygon
+来源的共同外包范围生成统一方格或六边形，支持逐变量筛选、最近距离、最近属性，以及相交或中心半径下的
+COUNT/数值/字符串关联汇总。真实 ArcGIS Enterprise 的格网边缘、最近并列、不同 Geometry、统计数值、
+不同投影轴单位和生产容量对照仍待完成；4.76 已补齐三类变量、九种统计和两来源统一格网的完整字段血缘、
+20,000 点惰性预检与分布式执行证据及真实页面验收。4.69 的 `SPATIAL_HOT_SPOTS` 从投影 XY Point 生成完整方格，按固定距离
+二元邻域计算 Getis-Ord Gi*，支持点数、单个数值字段求和、原始双侧 p-value、显式 FDR-BH、
+`-3..3` 置信分级和时间切片；4.76 已补齐点数/字段总量、FDR/无校正及时间切片的完整字段血缘、
+20,000 点惰性预检与分布式执行证据及真实页面验收。真实 ArcGIS Enterprise 边缘、多重检验、
+数值、不同投影轴单位和生产容量对照仍待完成。
+4.68 的 `SPATIAL_DENSITY` 从投影 XY Point 生成方格/六边形 Polygon
+密度格网，支持 Uniform/Kernel、点数与可选数量字段、格网/半径/面积单位和时间切片；平台公式、
+NULL/Empty、非有限值、候选展开上限与安全摘要均已显式定义。真实 ArcGIS Enterprise 数值和规模对照
+仍待完成。事件检测的 `conditionScalars` 增加 `TRACK_POINT_X_AT/TRACK_POINT_Y_AT`，
+可以有符号观测偏移读取当前轨迹片段内 Point X/Y；越界或 Geometry 为 NULL 时返回 NULL，
+DOUBLE 结果的数值和单位跟随来源 CRS。4.66 已可把 TrackStartTime、TrackDuration、
+TrackCurrentTime 与 TrackIndex 绑定为本节点条件 LONG 字段；时间使用 Epoch 毫秒，持续时间使用毫秒，
+观测序号从 0 开始，并随既有轨迹片段重置。4.65 的事件窗口可选择受控 `TRACK_ACCELERATION` 来源，
+对左闭右开观测范围内逐观测加速度（米/秒²）聚合；片段首观测为 0，后续值由相邻观测速度差与时间差计算。4.64 的
+`TRACK_SPEED` 继续聚合 WGS84 逐观测速度（米/秒），同时间或缺失 Point 的段值为 NULL。4.63 的
+`TRACK_DISTANCE` 继续对各 Point 自当前片段首观测起的累计测地距离（米）聚合；缺失/null/FIELD
+保持 4.46 原始字段窗口语义。UNION 继续通过 4.62
+的非 null `mergingTables` 执行 Merge Layers，第一张输入作为基准层，
+后续层默认同名 Match、非同名字段追加、缺失字段补 NULL，并可逐字段 Match/Rename/Remove。数值 Match
+显式 Cast；Geometry 必须 Match 到类型、CRS、维度一致的基准字段；无界来源事件时间必须 Match 到
+基准事件时间。缺失/null 配置保持旧版严格同 Schema Union。4.61 的 Spatial Aggregate 单 UNION
+Dissolve 可继续显式选择按 Polygon/MultiPolygon
+相交、重叠或接触关系的传递闭包分组；NULL/Empty Geometry 不进入连通图。缺失/null 分组方式仍保持
+4.53 的空分组全局 All，旧定义结果不变。Spatial Join 的独立空间 Near 继续沿用 4.60，PLANAR 使用来源 CRS，GEODESIC 仅支持
+EPSG:4326 XY 并计算 Geometry 真实最近位置；它可作为唯一空间条件，也可与拓扑、属性和时间条件按 AND
+组合。一对多可分别输出空间距离和时间 Near 区间间隔，一对一仅允许 Near 过滤。4.59 的 15 种有方向时间
+关系继续有效，每侧使用开始字段和可选结束字段表达瞬时或闭区间；时间 Near 使用正整数固定时长。4.58 的一对多/
+一对一粒度继续有效；一对一支持汇总全部匹配记录，或按
+FIRST、数值最大/最小、日期最新/最旧及显式稳定顺序保留一条；缺失/null 粒度仍保持既有一对多结果，
+不会因读取旧定义而改变输出。4.56 的 LEFT 可继续保留全部左侧目标要素，未匹配时右侧投影字段为 NULL；
+INNER 保持旧结果。4.55 的可选属性等值条件继续与全部空间谓词按 AND 组合；缺失/null 属性条件
+保持原空间连接。4.54 的可选显式输出字段投影继续支持按来源侧排除、改名和排序字段，缺失/null 保持旧版
+全字段及同名拒绝。4.53 的 Spatial Aggregate 可选单 UNION Dissolve 继续表达 Create Buffers 的
+All/List、来源要素计数、九种标量统计及 Multipart/Singlepart；4.52 的 Geometry Buffer 固定值、
+数值字段和受控表达式三种逐行距离来源继续有效；
+旧缺失/null 来源继续使用固定 distance。4.51 的 Spatial Clip 显式来源家族二维输出继续有效，
+其旧缺失/null 策略仍保留通用 Geometry 和低维相交结果。Spatial Measure 的逐项显式输出单位仍由 4.50 提供，Geometry Buffer 的显式距离单位
+仍由 4.49 提供。Nearest 的受控非点 WGS84
+真实最近位置仍由 4.48 显式模式提供，旧 4.30 定义仍为 Point-only。
+4.47 的共享固定周与已有日历周继续分开；详情见下方记录。
+4.46 的事件检测受控字段窗口配置及条件入口保持不变，4.63～4.65 只增加轨迹距离、速度和加速度来源；
+4.66 的四种时间/序号标量使用独立配置，不允许无意义的聚合函数或窗口偏移；
+4.67 只为 Point X/Y 开放单观测偏移，不引入 Geometry 数组或任意 Arcade。
 前一阶段 4.45 的 HDBSCAN 从内部管道推进到正式可选诊断对象、节点执行/原行回接、零 Job 集合血缘及 Inspector。
 原 DBSCAN 与 Multi-scale 不支持边界保留，Manifest/Result/HTTP 不变；完整节点的规模/官方数值验收仍开放。
+
+### Spatial Clip 多 Mask 组合（2026-09-13，Canvas 4.77）
+
+- `SpatialClipConfiguration` 新增可选 `maskCombination=DISSOLVE_ALL|PAIRWISE`；新建节点默认
+  `DISSOLVE_ALL`，缺失/null 保持旧 `PAIRWISE`，任意显式值在保存、导入和 GraphPlan 三处要求 4.77。
+- Dissolve All 使用空间 INNER Join 找到候选，再按不暴露的来源技术行 ID 聚合相交 Mask 并回接来源；
+  每条来源最多输出一条，重叠覆盖只计算一次，分离片段形成同一个 Multi Geometry。它不在 Driver
+  收集或全局物化 Mask，也不会把内容相同的两条来源记录误合并。
+- Pairwise 保留每个来源与每条 Mask 独立裁剪的旧行数和结果语义；两种模式都不输出 Mask 属性，
+  不增加容差、吸附、自动修复或稳定排序。
+- Inspector 增加邻近帮助和组合方式选择；Canvas/摘要只展示有效模式，不展示 Geometry、坐标、
+  命中数或结果值。协议升至 4.77，Manifest、Task Result 和 HTTP API 不变。
+- Business 的统一小版本升级入口在把旧定义规范化为当前版本之前检查显式 `maskCombination`，因此任务
+  保存、试运行草稿、持久化定义读取和独立 Validator 不会把伪装成 4.76 的新语义静默升级；Runner
+  安全摘要记录有效组合方式但不记录 Mask 内容。对应 Business 回归已补，当前执行受工作区内既有
+  ComputeEngine/GatewayService 测试构造器未同步造成的全模块 `testCompile` 错误阻塞，主代码编译通过。
+- Spark 专项验证覆盖旧 Pairwise、重叠/分离 Mask、重复来源行、结果家族/SRID、惰性零 Job、
+  空间索引计划和完整字段血缘；`SpatialNodeOperatorSparkTest` 43 项通过。真实 Enterprise 容差、
+  边界/数值与生产容量对照仍开放，不声明 Esri 完全等价。
+
+### Describe Dataset（2026-09-13，Canvas 4.76）
+
+- 新增 `SPATIAL_DESCRIBE_DATASET` Contracts、批处理 Operator、Registry/图规则、Runner PROCESS
+  阶段、安全摘要、成功消息和稳定失败分类；来源及其他入口表保持原顺序，启用的结果表按固定顺序追加。
+- 字段统计排除 Geometry/Binary，输出非空/空值数；数值字段统一为 DOUBLE 并输出 Sum、Mean、Min、
+  Max、Range、`stddev_pop` 和 `var_pop`，日期时间输出 Min、Max 与毫秒范围，String/Boolean 使用确定性最小值。
+- 数据集描述固定一行，包含记录/字段数、可选 Geometry 和事件时间统计、范围及 `description_json`。
+  样本使用 `limit` 并保留来源 Schema；范围为非空 Geometry 的共同 XY Envelope Polygon，继承来源 CRS。
+- 前端已接入严格 4.76 Parser、默认配置、专属 SVG/Canvas 卡片和紧凑 Inspector；来源、可选 Geometry、
+  两个固定结果、样本和范围配置均保留失效草稿，并继续允许保存普通业务错误。
+- Compiler Preview 已为字段统计、数据集描述和范围改用零行集合依赖计划，样本保持直接投影；四张结果表
+  均达到 `FIELD_COMPLETE` 且不存在未知来源，分析阶段零 Spark Job。
+- 20,000 行完成分布式字段统计和描述，样本严格限制为 10,000 行并输出单个范围 Polygon；Engine
+  `SpatialDescribeDatasetNodeOperatorSparkTest` 5 项通过。
+- 真实页面已验证必选结果、样本/范围开关、无效草稿应用和问题详情；修复了关闭状态字段未注册导致
+  两个开关无法进入 Form 的问题，验收定义未保存。
+- 尚未完成真实 ArcGIS Enterprise 11.3 字段级结果、采样边界、带真实上游的字段选择和生产容量对照；
+  路线图勾选不表示 Esri 结果完全等价。完整语义见
+  [Describe Dataset](canvas-spatial-next-processors/spatial-describe-dataset.md)。
+
+### Geometry Derive / Simplify 页面与扩展回归收口（2026-09-13，仍为 4.76）
+
+- 使用根目录 `./start-local-dev.sh` 重新启动当前源码对应的 Admin、Task Engine、Dispatcher、
+  Service Engine 与前端；没有绕过脚本另起服务，也没有保存对现有任务的临时 Canvas 修改。
+- `SpatialAnalysisProcessorSparkTest` 99 项真实 Spark 回归全部通过；此前同一轮
+  `UnaryGeometrySupportTest`、`CanvasGraphPlanTest`、`CanvasNodeOperatorRegistryTest` 和
+  `RunnerFailureClassifierTest` 共 115 项非 Spark 回归全部通过。覆盖两种简化算法、四维度策略、
+  NULL/Empty/无效与退化 Geometry、惰性批流计划、容差单位及现有空间节点回归。
+- 前端 `unaryGeometryPolicy`、`spatialUnits`、`canvasRegistry` 共 26 项通过。扩展单位用例改用当前
+  Canvas 版本作为正常输入，并显式使用 Nearest 的 Point-only 模式，使 4.36 单位门槛测试不被后续
+  4.40/4.48 能力门槛污染；Parser 的各能力版本限制没有放宽。
+- 真实页面验证 Geometry Derive 的紧凑规则 Modal、函数邻近帮助、结果维度、逐项错误详情、取消不提交；
+  Geometry Simplify 的算法帮助、容差与单位同行、EPSG:4326 来源角度警告、业务无效容差保留及
+  “应用配置”继续可用。错误汇总可点击查看稳定错误码和路径，Canvas 卡片未显示 WKT、坐标或实际数据值。
+- 两节点是自有基础算子，不声明 ArcGIS GeoAnalytics 同名工具或数值等价；测地简化、覆盖层共边简化、
+  Concave Hull 等明确排除项仍需独立设计，不作为本轮两个节点完成条件。
+
+### Nearest 当前支持范围收口（2026-09-13，仍为 Canvas 4.76）
+
+- 修复测地日期线 Polygon 被经纬平面 JTS 有效性误拒的问题：平面模式仍使用 JTS 校验；显式测地完整
+  Geometry 改由既有 WGS84 连续弧、环和区域拓扑校验。节点级回归覆盖日期线外环与孔洞、面内零距离、
+  孔洞内真实正距离，以及连接线长度与排名距离一致。
+- 增加连续 Geometry 极近等距回归：两个距离区间无法证明严格顺序时返回
+  `GEODESIC_DISTANCE_PRECISION_NOT_REACHED`，不按采样值或候选当前次序猜测排名。
+- 增加 256 张来源记录 × 1024 个候选的本地规模样例，结果与构造真值一致；执行计划继续使用索引化
+  Distance/BroadcastIndex Join，不出现 Cartesian Product 或 Broadcast Nested Loop Join。该样例不冒充
+  Enterprise 服务容量验收，也不承诺任意数据规模。
+- Canvas 卡片显示已配置搜索半径；Inspector 帮助明确完整 Geometry、局部 Polygon 域、连续近等距和
+  安全失败边界。前端专项 3 项、触及文件 ESLint、后端新增 3 项 Spark Nearest 与 Geometry 支持 4 项均通过。
+- 真实页面确认新节点默认“真实距离 · 稳定同距排序”、测地模式显示“完整 Geometry（推荐）”、帮助文案和
+  独立连接线 Modal；随后放弃临时编辑，现有任务仍为 11 节点、10 条连线，未保存验收节点。
+- 当前明确支持范围据此收口。单个跨局部计算域 Polygon、跨域接触/包含、GeometryCollection、路网和无法
+  证明的连续数值结果继续显式拒绝；ArcGIS Online GeometryServer 五例只验证底层距离，不声明 Enterprise
+  Find Nearest 异步作业、字段、排名或容量完全等价。
+
+### Summarize Within 当前支持范围收口（2026-09-13，仍为 Canvas 4.76）
+
+- 测地模式现统一要求区域和被汇总 Geometry 均为 EPSG:4326 XY，双方同为 XYZ/XYM 也会在编译期拒绝；
+  平面、CRS 一致和区域 Polygon/MultiPolygon 约束保持不变。
+- 保留空区域改为“索引化空间 INNER JOIN 获取命中 + 等值 LEFT ANTI JOIN 补未命中 + 类型一致空统计行”，
+  避免空间 LEFT OUTER JOIN 退化为 Broadcast Nested Loop Join。反连接不再对匹配键执行无语义 distinct，
+  两个原先退化为 FIELD_PARTIAL 的格网/日历关联结果血缘恢复 FIELD_COMPLETE。
+- 平台边界语义已固定：区域表使用 ST_Intersects，共边 Point 分别进入每个相交区域；重叠区域各自统计同一来源要素，
+  不做跨区域唯一归属或去重。规则格网 Point 继续按稳定格网索引唯一归属。
+- 256 个区域 × 1024 个 Point 的本地规模样例结果正确，计划使用 Sedona Range/Broadcast Index Join，
+  无 Cartesian Product/Broadcast Nested Loop Join。Within 合并回归 51 项全部通过，失败、错误、跳过均为 0。
+- 真实页面复核区域表/规则格网切换、格网、单行统计、关联双表、时间设置、无效草稿应用和问题详情；
+  时间切片开关补充可访问名称。验收节点未保存，任务正式定义不变。
+- 当前明确支持范围据此收口。Enterprise 11.3 官方加权方差公式与文字算例矛盾、真实异步服务字段、
+  官方边界数值及生产容量仍明确不宣称等价；完整边界见
+  [Summarize Within](canvas-spatial-next-processors/spatial-summarize-within.md#12-当前明确支持范围收口2026-09-13canvas-476)。
+
+### Overlay 当前支持范围收口（2026-09-13，仍为 Canvas 4.76）
+
+- 五模式、完整点/线/面家族矩阵、二维 Multi 结果、低维接触、字段投影、缺失侧补 NULL、洞、
+  Multipart、NULL/Empty、无效 Geometry 惰性失败及 Z/M 降为 XY 继续保持 4.26 的显式语义。
+- 独有区计划改为“索引化空间 INNER JOIN 获取匹配遮罩 + 按来源行身份 `ST_Union_Agg` + 等值
+  LEFT JOIN 恢复未匹配来源”，避免空间 LEFT OUTER JOIN 退化为 Broadcast Nested Loop Join。
+  每个来源要素只对全部匹配遮罩的并集执行一次 Difference，同侧重复/重叠来源仍保持独立。
+- 计划内行身份显式标记为技术列，不再把内部 GROUP/JOIN Key 误报成未知业务来源。IDENTITY 的相交与
+  差集联合计划达到 `FIELD_COMPLETE`，左右属性和结果 Geometry 均可追溯到真实输入字段。
+- 256 个来源要素 × 1024 个遮罩的本地样例结果正确，计划使用 Sedona Range/Broadcast Index Join，
+  不含 Cartesian Product/Broadcast Nested Loop Join。Overlay 合并回归 10 项全部通过，失败、错误、
+  跳过均为 0；前端 2 个文件 5 项通过，触及文件 ESLint 无错误。
+- 真实页面确认五模式、图层家族策略、字段投影入口、无效草稿应用和问题详情；验收内容只留在未保存草稿中。
+  当前完成范围明确为 pairwise overlay，不声明 Esri tolerance/snap、全局无重叠平面分区、几何编码、
+  Enterprise 异步服务字段或生产容量完全等价。完整边界见
+  [Overlay](canvas-spatial-next-processors/spatial-overlay.md#8-当前明确支持范围收口2026-09-13canvas-476)。
+
+### Track Reconstruct 当前支持范围收口（2026-09-13，仍为 Canvas 4.76）
+
+- 有序片段、确定同时间次序、三类拆分、三种连接段归属、固定周期始终 Gap、字段统计、平面/测地路径、
+  平面面轨迹、缓冲观测窗口及局部 WGS84 测地面执行链继续保持既有协议和运行语义。
+- 测地面 Point/Polygon/MultiPolygon 要求 EPSG:4326 XY；距离 gap 使用原始 Geometry 区域，不使用质心或
+  缓冲结果。日期线、极点、孔洞、凹面、不同半径和共享端点均已有真实 Spark/几何回归；大域和未决连续
+  数值边界继续稳定拒绝，不增加不可靠回退。
+- 新增完整输出血缘回归：轨迹 ID 为直接来源，开始/结束、观测数、Count/Count Field、Sum、Mean、
+  First/Last 和 Geometry 均为可解释的真实输入聚合派生；结果达到 `FIELD_COMPLETE`，不存在
+  `WRITTEN_UNKNOWN_SOURCE`。计划内部拆分/分段列没有暴露为业务输出，也没有通过放宽 Analyzer 伪造来源。
+- 新增 20,000 个 Point 的单轨迹样例：分析阶段 0 个 Spark Job，执行后形成一条 20,000 点轨迹，
+  起止、计数和统计正确。Operator 不 collect 到 Driver；Executor 侧仍按组执行 `collect_list + array_sort`，
+  单个超大组受内存和排序成本限制，本样例不代表生产容量或 Enterprise 性能等价。
+- 收口前后端专项共 91 项通过；新增用例所在 `TrackAreaSparkTest` 30 项通过。前端 4 个文件 20 项通过，
+  节点目录 ESLint 无错误。真实页面确认线/面、平面/测地、面轨迹设置、缓冲字段/表达式/窗口、相邻 gap、
+  固定周期、表达式拆分、连接段归属、无效草稿应用和问题详情；验收节点只在未保存草稿中。
+- 当前完成边界不包含 Arcade 全兼容、任意全球域、ArcGIS 官方采样/容差/统计/窗口公式、Enterprise
+  异步服务字段、Geometry 编码或生产容量完全等价。完整语义见
+  [Track Reconstruct](canvas-spatial-next-processors/track-reconstruct.md#18-当前明确支持范围收口2026-09-13canvas-476)。
+
+### Track Motion Statistics 当前支持范围收口（2026-09-13，仍为 Canvas 4.76）
+
+- 观测窗口八组 31 项、窗口 1～100、Idle 严格距离/时间双阈值、独立高程来源与垂直单位、平面/WGS84
+  测地距离、日期线 Bearing、固定周期和旧 `LEGACY_LAG` 兼容语义继续保持现有协议。
+- 缺失值边界已明确：NULL/Empty Point 不跨点连接，非有限高程只影响派生测量，零时长不除零，NULL 时间
+  不输出；窗口只汇总完整包含的段，加速度汇总要求两个相邻段。国际码/美国测量制与固定周沿用公共规则。
+- 新增完整字段血缘回归：保留字段为直接来源，31 项指标分别追溯到真实 Geometry、时间或高程字段；结果
+  达到 `FIELD_COMPLETE` 且不存在 `WRITTEN_UNKNOWN_SOURCE`。同时间唯一性检查改用内部校验时间列，
+  原始时间字段不再被覆盖；没有放宽 Catalyst Analyzer。
+- 新增 20,000 点单轨迹样例：分析阶段 0 个 Spark Job，执行后逐观测输出 20,000 行，窗口 100 的瞬时和
+  汇总结果正确；计划不把轨迹组 collect 到 Driver，也不使用 `collect_list`。该样例不代表生产容量保证。
+- 后端 Motion 基线 10 项及新增血缘/规模 2 项通过；前端 Inspector/Parser 2 个文件 6 项通过。
+  真实页面确认新节点不立即编译、新旧语义确认切换与草稿保留、八组 31 项、单位/高程、Idle 双阈值、
+  固定时间边界、无效草稿应用及问题详情；验收节点未保存。
+- 当前完成范围不包含 Enterprise 官方字段别名、全部单位名称、固定月年、服务端容差/数值、Streaming、
+  三维测地距离或生产容量等价。完整边界见
+  [Track Motion Statistics](canvas-spatial-next-processors/track-motion-statistics.md#8-当前明确支持范围收口2026-09-13canvas-476)。
+
+### Find Similar Locations（2026-09-13，Canvas 4.75）
+
+- 新增 `SPATIAL_SIMILAR_LOCATIONS` Contracts、批处理 Operator、Registry/图规则、Runner PROCESS
+  阶段、安全摘要、成功消息和稳定错误分类；入口表保持原顺序，新的有界结果表追加。
+- 支持 1～32 个两表同名同数值类型分析字段，以及最多 64 个只用于解释结果的候选附加字段；
+  两侧可分别使用已有受控 Filter。NULL/Empty Geometry 跳过，ID 必须非空且唯一。
+- 标准化总体包含筛选后的参考与候选全集；多个参考要素使用各标准化字段平均值形成目标。
+  `ATTRIBUTE_VALUES` 输出标准化平方差和，`ATTRIBUTE_PROFILES` 输出 `1 - cosine`，0 最相似。
+- 最相似和最不相似排名均以候选 ID 字符串解决并列；`BOTH` 自动缩小每端数量以避免同一候选重复。
+  分析值 NULL/NaN/Infinity、零轮廓和非有限分数均稳定失败。
+- 前端已接入严格 4.75 Parser、默认配置、专属 SVG/Canvas 卡片和紧凑 Inspector；参考/候选筛选、
+  分析字段、附加字段和九个固定结果字段均有独立紧凑编辑入口，Canvas 不显示筛选字面量或属性值。
+- Compiler Preview 已改为零行集合依赖计划，不构造标准化、全局排名或真实结果计划；全部结果字段
+  追溯真实参考/候选字段，达到 `FIELD_COMPLETE` 且不存在未知来源，分析阶段零 Spark Job。
+- 20,000 个候选完成分布式标准化与排名并稳定返回 10,000 个最相似候选；Engine
+  `SpatialSimilarLocationsNodeOperatorSparkTest` 7 项通过。
+- 真实页面已验证默认紧凑 Inspector、分析/附加字段行、九个结果字段 Modal、无效草稿应用和问题详情；
+  验收定义未保存。无上游时字段候选和筛选设置按 Schema 依赖正确禁用。
+- 仍待真实 ArcGIS Enterprise 11.3 的数值和并列边界、不同 Geometry、带真实上游的完整筛选交互及
+  生产容量对照；路线图勾选不表示 Esri 数值完全等价。详见
+  [Find Similar Locations](canvas-spatial-next-processors/spatial-similar-locations.md)。
+
+### Snap Tracks（2026-09-13，Canvas 4.74）
+
+- 新增 `SNAP_TRACKS` Contracts、批处理 Operator、Registry/图规则、Runner PROCESS 阶段、
+  安全摘要、成功消息和稳定错误分类；Point、Line 与其他入口表保持原顺序，结果表追加。
+- Point 轨迹按 1～8 个标识字段分组，再按 TIMESTAMP 和可选同时间顺序确定性排序；
+  复用时间 gap、距离 gap 和固定周期切分。单观测片段保守标记未匹配。
+- 线网显式配置唯一线 ID 和 From/To 节点，可选四值方向映射；未配置方向时全部双向，
+  未命中映射的实际方向值按禁行处理。
+- Planar 要求可换算线性单位的投影 CRS；Geodesic 要求 EPSG:4326 XY。每观测候选上限为 32，
+  超出稳定失败，不丢弃候选或退化为独立最近线。
+- Executor 内使用 Viterbi 联合选择，转移必须位于同线或共享端点的直接相邻线，并满足方向。
+  匹配成本同时使用点线距离与观测移动/路网转移距离差异。
+- 结果保留 Point 原字段，可选投影至多 32 个道路属性，追加吸附几何、线 ID、M/U 状态、
+  原/匹配坐标和米制距离。可选输出全部观测或仅匹配观测。
+- 前端已接入严格 4.74 Parser、默认配置、专属 SVG/Canvas 卡片和紧凑 Inspector；
+  方向、道路属性、切分和诊断字段用独立 Modal。卡片不展示搜索距离数值、方向值或坐标。
+- Compiler Preview 已改为零行集合依赖计划，不执行空间 Join、候选聚合或 Viterbi；Point 原字段保持
+  直接血缘，道路属性、匹配线 ID、状态、吸附 Geometry、坐标和距离均关联真实 Point/道路字段，
+  输出达到 `FIELD_COMPLETE` 且不存在未知来源。
+- 1,000 条独立轨迹、20,000 个观测和 1,000 条道路全部匹配；候选与观测不收集到 Driver。
+  Engine `SnapTracksMapMatcherTest` 与 `SnapTracksNodeOperatorSparkTest` 共 12 项通过。
+- 真实页面已验证紧凑 Inspector、方向四值配置、轨迹切分、8 个结果字段、无效草稿应用和问题详情；
+  验收定义未保存。道路属性依赖有效线表 Schema；Viterbi 仍在 Executor 逐轨迹分组内使用
+  `collect_list`，高密度候选、超长单轨迹和复杂路网仍是生产容量开放项。
+- 仍待真实 Enterprise 对照多条中间道路搜索、官方候选评分/容差、复杂路口和服务输出；路线图勾选
+  表示本地实现、血缘、规模样例与页面收口完成，不表示 Esri 完全等价。详见
+  [Snap Tracks](canvas-spatial-next-processors/snap-tracks.md)。
+
+### Trace Proximity Events 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 新增 `TRACE_PROXIMITY_EVENTS` Contracts、批处理 Operator、Registry/图规则、Runner PROCESS 阶段、
+  安全摘要、成功消息和稳定错误分类；入口表保持原顺序，首次接触事件表和可选后续轨迹表追加到 Map 末尾。
+- 来源限定为有界 XY Point 观测，实体 ID 为 STRING、观测时间为 TIMESTAMP；Planar 要求投影 CRS，
+  Geodesic 复用 EPSG:4326 XY 的真实测地距离实现。NULL Geometry、时间或实体 ID 不参与追踪。
+- 起始实体可直接配置 1～256 个 ID 和可选开始时间，也可从另一张有界上游表读取实体 ID 与开始时间；
+  最大传播深度为 1～32，可选择最多 8 个必须同时相等的属性字段。
+- 只有空间距离、时间距离和全部同值属性同时满足才形成接触；传播事件不能早于上游实体到达时间。
+  同一下游实体有多个候选时按事件时间、上游实体 ID 和内部行身份稳定选择第一次接触，每个实体最多一条事件。
+- Runner 使用分布式 BFS，并通过 RDD Union 后重建 Dataset 和逐层 Checkpoint 截断计划；Compiler Preview
+  使用零行集合依赖计划，事件 5 字段和轨迹深度追溯实际观测/起始表字段，不执行自连接、起始实体查找、BFS 或 Checkpoint。
+- 前端已接入严格 4.73 Parser、默认配置、节点注册、专属传播链 SVG、Canvas 卡片和紧凑 Inspector；
+  显式 ID 在 Inspector 完整编辑，但 Canvas 卡片和安全摘要只显示数量，不显示具体 ID、距离或数据值。
+- 事件表和轨迹表均达到 `FIELD_COMPLETE`，原观测字段保持直接血缘，六个追踪结果字段均有真实来源。
+  20,000 条 Point 观测与 10,000 个上游表起始实体生成 10,000 条首层事件；Preview 分析阶段零 Spark Job，
+  运行不向 Driver 收集轨迹或接触行。Engine `TraceProximityEventsNodeOperatorSparkTest` 4 项通过。
+- 真实页面已验证显式 ID 列表、上游表来源、后续轨迹开关、5 字段 Modal、无效草稿应用和问题详情；
+  未保存任务定义。真实 ArcGIS Enterprise 的搜索边界、持续接触 episode、月末/年末和会话时区、
+  多上游并列、极区/日期线、官方输出字段类型及高偏斜规模对照仍开放。完整语义和 UI 见
+  [Trace Proximity Events](canvas-spatial-next-processors/trace-proximity-events.md)。
+
+### Group By Proximity 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 新增 `SPATIAL_GROUP_BY_PROXIMITY` Contracts、批处理 Operator、Registry/图规则、Runner PROCESS
+  阶段、安全摘要、成功消息和稳定错误分类；来源及其他入口表保留，新有界结果追加到 Map 末尾。
+- 接入 Intersects、Touches、Near Planar、Near Geodesic；Near Planar 明确要求投影 CRS，Near Geodesic
+  复用 EPSG:4326 XY 的真实 Geometry 最近位置实现。Point 不允许 Touches。
+- 可选时间 Intersects/Near 支持瞬时或闭区间，毫秒至周为固定时长，月/年为会话时区日历区间；最多 8
+  个受控对称属性条件支持同值和数值绝对差，全部活动关系按 AND 形成边。
+- Runner 以 Checkpoint 绑定内部行身份，通过 GraphFrames Connected Components 求传递闭包；NULL/Empty
+  Geometry 成为孤立组，无效 Geometry 和倒置时间区间稳定失败。Compiler Preview 使用零行
+  集合依赖 Schema 计划，`group_id` 追溯 Geometry、活动时间和属性字段，不执行自连接、Checkpoint 或图算法。
+- 前端已增加严格 4.72 Parser、默认配置、节点注册、专属 SVG/Canvas 卡片和紧凑 Inspector；支持来源、
+  Geometry、空间距离、时间开关、属性关系增删排序以及失效值保留，业务错误不阻止保存草稿。
+- `group_id` 和原字段全部达到 `FIELD_COMPLETE`，无未知来源；集合字段关联 Geometry、活动时间和属性，
+  原字段保持直接血缘。20,000 个孤立 Point 的 Preview 分析阶段零 Spark Job，实际输出 20,000 行和
+  20,000 个非空独立组；GraphFrames/Checkpoint 分布式执行不向 Driver 收集要素、边或成员。
+- 规模执行暴露并修正 Geometry 校验 UDF 捕获不可序列化 `GeometryTypeDefinition` 的问题，
+  现只捕获 `GeometryKind`。Engine `SpatialGroupByProximityNodeOperatorSparkTest` 3 项通过。
+- 真实页面已验证四类空间关系、Near 距离/单位联动、时间关系、属性关系、无效草稿应用与
+  紧凑问题详情；未保存任务定义。当前属性能力是官方任意对称表达式的受控子集；Enterprise 容差、
+  月末/年末、任意属性表达式、高偏斜图和生产容量对照仍开放。完整语义和 UI 见
+  [Group By Proximity](canvas-spatial-next-processors/spatial-group-by-proximity.md)。
+
+### Enrich From Multi-Variable Grid（2026-09-12，Canvas 4.71）
+
+- 新增 `SPATIAL_ENRICH_FROM_GRID` Contracts、批处理 Operator、注册/图校验、Runner PROCESS 阶段、
+  安全摘要、成功消息和运行错误分类。Point、格网及其他入口表保持原顺序，新的有界 Point 结果追加。
+- 输入限定有界 XY Point 与同 CRS 的 XY Polygon/MultiPolygon 格网；显式选择并可改名要回填的非
+  Geometry 标量字段，不自动跟随格网 Schema 增加字段，也不重新计算格网变量。
+- 每个输入 Point 恰好输出一行。未命中仍保留并输出 NULL；共享边界或异常重叠时按格网 ID、Geometry
+  和选定属性形成稳定次序选择一格。命中格网 ID 为 NULL 时使用稳定安全错误。
+- 前端已增加严格 4.71 配置解析、默认配置、节点注册、专属 SVG/Canvas 卡片及紧凑 Inspector；支持
+  Point/格网选择、字段建议、添加全部属性、逐字段改名、排序和失效值保留，业务错误不阻止保存草稿。
+- Contracts、Parser、Registry、安全摘要和 Spark 专项已接入；Spark 样例覆盖单格命中、共享边界、
+  未匹配保留、字段 nullable Schema 与入口表传播。真实 Enterprise、浏览器和规模验收仍未完成。
+- 完整语义和 UI 见 [Enrich From Multi-Variable Grid](canvas-spatial-next-processors/spatial-enrich-from-grid.md)。
+
+### Build Multi-Variable Grid（2026-09-12，Canvas 4.70）
+
+- 新增 `SPATIAL_MULTI_VARIABLE_GRID` Contracts、批处理 Operator、注册/图校验、Runner PROCESS 阶段、
+  安全摘要、成功消息和运行错误分类。入口表保持原顺序，统一格网结果作为新的有界表追加。
+- 一至 32 个变量可独立选择来源表、投影 XY Point/Line/Polygon 家族 Geometry、筛选和搜索距离；
+  全部唯一来源 Geometry 的未筛选共同外包范围决定方格/六边形，变量筛选不改变范围。
+- 已接入最近距离、最近属性和关联要素汇总。汇总无半径时按完整格网相交，有半径时按中心平面距离；
+  COUNT 无命中为 0，数值统计输出 DOUBLE，ANY 第一版只接受 STRING 并采用确定性最小值。
+- 格网最多 100 万，搜索距离与格网大小比例最多 512；无效 Geometry、非有限统计值和容量超限均有稳定安全错误。
+  Compiler 只构建惰性计划，不读取真实数据。
+- 前端已增加严格 4.70 配置解析、默认配置、节点注册、专属 SVG/Canvas 卡片及 Inspector；变量使用全量紧凑列表、
+  独立设置 Modal 和条件树 Modal，业务错误不阻止保存草稿。
+- Contracts 4 项（含前序版本断言）、前端配置解析和 Spark 专项已通过；Spark 覆盖两张来源表、最近距离/属性、
+  COUNT/SUM、无命中 NULL/0、逐变量筛选不缩小格网、来源表保留和 Polygon Schema。真实 Enterprise、
+  不同 Geometry/单位、浏览器及容量验收仍未完成，不能写成 Esri 数值完全一致。
+- 完整语义和 UI 见 [Build Multi-Variable Grid](canvas-spatial-next-processors/spatial-multi-variable-grid.md)。
+
+### Find Hot Spots（2026-09-12，Canvas 4.69）
+
+- 新增 `SPATIAL_HOT_SPOTS` Contracts、批处理 Operator、注册/图校验、Runner PROCESS 阶段、
+  安全摘要、成功消息和运行错误分类。来源表保留，结果作为新的有界表追加。
+- 输入限定投影 XY Point；以固定 `(0, 0)` 原点生成有效点外包矩形内的完整方格，零值格也参与统计。
+  格网总数连同所有时间片最多 100 万；固定距离二元邻域包含当前格，距离必须大于格网边长且比例最多 64。
+- 默认以每格点数计算 Getis-Ord Gi*；平台扩展可先对一个数值字段求和。原始双侧 p-value 始终输出，
+  可选按时间片执行 Benjamini-Hochberg 并输出调整值；置信分级固定为 `-3..3`。
+- 前端已增加严格 4.69 配置解析、默认配置、节点注册、专属 SVG/Canvas 卡片及 Inspector；
+  时间切片和八个结果字段使用独立设置区，不在画布或日志显示坐标或数据值。
+- 点数、字段总量、FDR、无校正和时间切片的全部输出均达到 `FIELD_COMPLETE`，不存在
+  `WRITTEN_UNKNOWN_SOURCE`。格网、点数及 Gi* 诊断字段追溯 Geometry；字段总量结果同时追溯
+  数值字段；窗口字段追溯时间字段。
+- 20,000 点 Preview 分析阶段零 Spark Job；字段总量完成真实执行并输出 20,000 个格网，计划不含
+  `CollectLimit`、`collect_list`、Cartesian Product 或 Broadcast Nested Loop Join。
+  `SpatialHotSpotsNodeOperatorSparkTest` 3 项通过。
+- 真实页面已验证延迟编译、点数/字段总量、FDR/无校正、时间切片、结果字段、无效草稿应用和紧凑
+  问题详情；未保存任务定义。当前仍需真实 Enterprise 边缘、FDR、不同投影单位、数值和生产容量
+  对照，不能把当前公开公式实现描述为 Esri 数值完全一致。
+- 完整语义见 [Find Hot Spots](canvas-spatial-next-processors/spatial-hot-spots.md)。
+
+### Calculate Density（2026-09-12，Canvas 4.68）
+
+- 新增 `SPATIAL_DENSITY` Contracts、批处理 Operator、注册/图校验、Runner 阶段分类、安全摘要和
+  `SPATIAL_DENSITY_VALUE_NOT_FINITE` 运行错误分类。来源表保留，结果作为新的有界表追加。
+- 输入限定投影 XY Point；方格边长、六边形对边距离、搜索半径和面积单位显式配置。半径必须大于
+  格网大小且比例最多 512；NULL/Empty Point 排除，NULL 数量值不贡献。
+- Uniform 使用半径圆面积归一化常量贡献，Kernel 使用四次核并在格网中心计算；点数密度始终输出，
+  数值数量字段最多 32 项。固定/日历时间切片复用已有空间窗口语义。
+- 前端已增加严格 4.68 配置解析、默认配置、节点注册、专属 SVG/Canvas 卡片及 Inspector；数量字段、
+  时间切片和输出字段使用独立设置区，不在画布或日志显示数据值。
+- Task Engine 与 Business 主源码编译通过；当前仍需补真实 Enterprise 逐格网数值、边缘、不同投影单位
+  和规模对照，所以不把本地公式写成 Esri 完全等价。
+
+### Detect Incidents Point 相对观测坐标标量（2026-09-12，Canvas 4.67）
+
+- 依据 Enterprise 11.3 官方 `TrackGeometryWindow(-1,0)[0]["x"]` 示例，在独立
+  `TrackIncidentScalar` 中增加 `TRACK_POINT_X_AT/TRACK_POINT_Y_AT` 和有符号 `offset`。
+  0 读当前观测，负数回看，正数前看；超出当前 DataScalpel 轨迹片段或目标 Geometry
+  为 NULL 时返回 NULL，不跨轨迹、固定边界或 gap 片段。
+- 只允许带完整元数据的 Point Geometry；结果是可空 DOUBLE，数值和单位跟随来源
+  CRS，不限 WGS84，不做投影换算。坐标来源（含 LEGACY 非活动草稿）要求 4.67，
+  版本、缺偏移和缺 Point 分别使用
+  `TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION`、
+  `TRACK_INCIDENT_POINT_COORDINATE_OFFSET_REQUIRED` 和
+  `TRACK_INCIDENT_POINT_COORDINATE_REQUIRES_GEOMETRY`。
+- Inspector 在原轨迹标量 Modal 中仅对坐标来源显示偏移，切回时间/序号来源时保留
+  隐藏草稿。Canvas、定义摘要和 Runner 只显示安全计数，不记录绑定名、偏移、坐标或
+  条件字面量。标量只供开始/结束条件使用，不进入输出 Schema。
+- 专项验证通过：Contracts 5 项、GraphPlan 60 项、Runner 摘要 11 项、Incident Spark
+  19 项（Task Engine 合计 90 项）、前端定义/Inspector/Canvas 18 项，以及前端 TypeScript
+  和触及文件 ESLint。Incident Spark 覆盖相对 X/Y、片段重置、越界 NULL、Geometry/offset
+  校验及 FIELD_COMPLETE Geometry 血缘。Contracts、Business 和 Task Engine 主代码均已编译；
+  Business 定向用例因工作区内既有 Compute/Gateway 测试构造器未同步而在 testCompile 阶段被阻断。
+- 未引入 Geometry 数组、`TrackWindow`、整行对象或 Arcade 执行器；未执行真实 ArcGIS
+  服务和大轨迹容量对照，因此事件节点完成复选框保持开放。
+
+### Detect Incidents 轨迹时间与序号标量（2026-09-12，Canvas 4.66）
+
+- 依据 Enterprise 11.3 官方定义，新增 `TrackIncidentScalar` 与可选 `conditionScalars`。四种来源为
+  TRACK_START_TIME、TRACK_DURATION、TRACK_CURRENT_TIME 和 TRACK_INDEX；不复用窗口的九种聚合。
+- 开始/当前时间输出 Unix Epoch 毫秒，持续时间输出片段开始至当前观测的毫秒数，序号从 0 开始。
+  当前轨迹、固定边界与 gap 片段共用既有分区，进入新片段后重新计算；四种条件候选均为 LONG。
+- 非空数组（包括 LEGACY 非活动草稿）要求 4.66，稳定门槛为
+  `TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION`。绑定名与原字段、窗口指标和其他标量大小写不敏感唯一。
+- Inspector 使用独立紧凑 Modal，并继续允许保存未完成草稿；Canvas、定义摘要和 Runner 只显示配置数量，
+  不暴露绑定名、条件字面量或运行值。Manifest、Task Result、HTTP API 和生产依赖不变。
+- 专项验证通过：Contracts 5 项、GraphPlan 59 项、Runner 摘要 11 项、Incident Spark 16 项，
+  Task Engine 去重合计 86 项；前端定义、类型、Inspector 与 Canvas 65 项通过。前端 TypeScript、触及文件
+  ESLint、Business 主代码编译和 Task Engine 主代码编译均通过；Incident Spark 同时覆盖
+  FIELD_COMPLETE 原字段血缘，确认四种临时标量不会形成未知来源字段。
+- Distance/Speed/Acceleration 的 Current 和 At 不新增稳定类型：分别用 `FIRST + [0,1)` 与
+  `FIRST + [n,n+1)` 表达。Geometry/TrackWindow 复合对象仍不能被当前标量条件树安全消费，继续留待设计。
+
+### Detect Incidents 轨迹加速度窗口（2026-09-12，Canvas 4.65）
+
+- 依据 Enterprise 11.3 官方定义和示例，`TrackIncidentWindow.source` 增加 `TRACK_ACCELERATION`。
+  窗口值是逐观测加速度，边界仍为左闭右开；片段首观测为 0，后续值为当前速度与前一观测速度之差
+  除以时间差，单位固定为米/秒²。
+- 速度继续由 WGS84 测地距离和秒计算。同时间、当前或前一速度为 NULL、缺失 Point 时返回 NULL，不执行
+  除零，也不跨轨迹、固定边界或 gap 片段；异常输入处理是平台的确定性约定。
+- 复用现有九种聚合及条件入口。保存端、GraphPlan 和前端导入对任意 TRACK_ACCELERATION（含 LEGACY
+  非活动草稿）要求 4.65，错误为 `TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION`；
+  缺 Geometry 使用 `TRACK_INCIDENT_ACCELERATION_WINDOW_REQUIRES_GEOMETRY`。
+- Inspector、Canvas 和 Runner 只显示来源类型、单位与安全计数。Manifest、Task Result、HTTP API 和
+  生产依赖不变。专项验证通过：Contracts 4 项；GraphPlan、Runner 摘要与 Incident Spark 共 82 项
+  （Incident Spark 13 项，包含 FIELD_COMPLETE Geometry/时间血缘）；前端定义、类型、Inspector 与
+  Canvas 60 项及 TypeScript 检查通过。
+- 这只接入受控 TrackAccelerationWindow 聚合；Current/At 后续明确由单观测窗口等价表达，不另建类型。
+  Geometry/TrackWindow 数组、任意 Arcade 或真实 Enterprise 作业/容量验收仍未包含；Incidents 完成复选框保持开放。
+
+### Detect Incidents 轨迹速度窗口（2026-09-12，Canvas 4.64）
+
+- 依据 Enterprise 11.3 官方定义和示例，`TrackIncidentWindow.source` 增加 `TRACK_SPEED`。窗口边界仍为
+  左闭右开观测偏移；窗口值是逐观测速度，不是范围首尾的平均速度。片段首观测为 0，后续速度为前一
+  观测到当前观测的 WGS84 测地距离除以时间差，单位固定为米/秒。
+- 同时间观测、NULL Point、前一点缺失或无法形成有效时长时返回 NULL，不执行除零，也不跨轨迹、固定
+  边界或 gap 片段。该防御规则是平台确定性约定；首点 0、半开窗口及单位来自官方文档。
+- 复用现有九种受控聚合及条件入口；绑定仍不进入最终 Schema。保存端、GraphPlan 和前端导入对任意
+  TRACK_SPEED（含 LEGACY 非活动草稿）要求 4.64，错误为
+  `TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION`。缺 Geometry 使用
+  `TRACK_INCIDENT_SPEED_WINDOW_REQUIRES_GEOMETRY`，非 Point/WGS84 XY 复用既有错误。
+- Inspector 在原窗口表格中增加“轨迹速度”，只显示“逐观测速度 · 米/秒”；Canvas 和 Runner 只显示
+  安全计数。专项已通过 Contracts 4 项、Task Engine 80 项（其中 Incident Spark 12 项）及 TypeScript；
+  Manifest、Task Result、HTTP API 和生产依赖不变。
+- 这只接入受控 TrackSpeedWindow 聚合；TrackCurrentSpeed/TrackSpeedAt 后续明确由单观测窗口等价表达，
+  不另建类型。Geometry/TrackWindow 数组、任意 Arcade 或真实 Enterprise 作业/容量验收仍未包含。
+
+### Detect Incidents 轨迹距离窗口（2026-09-12，Canvas 4.63）
+
+- 依据 Enterprise 11.3 官方表达式文档，`TrackIncidentWindow` 增加可选
+  `source=FIELD|TRACK_DISTANCE`。缺失/null/FIELD 保持 4.46 原字段窗口；TRACK_DISTANCE 对
+  `[startOffset,endOffset)` 内各观测的累计轨迹距离求值，单位固定为米。累计值从当前轨迹片段首观测的
+  0 开始；官方 `[-1,2)` 示例中的 `[0,60,140]` 是三个逐观测累计值，不是两段距离。
+- 轨迹距离要求 EPSG:4326 XY Point；先按轨迹、固定边界/gap 和确定次序分段，再在段内累计，不跨边界。
+  NULL Point 及其之后无法证明完整累计距离的观测返回 NULL，直到新片段重新从 0 开始。绑定继续只供
+  开始/结束条件使用，不进入输出 Schema、日志或 Canvas 详情。
+- 保存端、前端导入和 GraphPlan 对任意 TRACK_DISTANCE（包括 LEGACY 非活动草稿）要求 4.63，错误为
+  `TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION`。Inspector 在原窗口表格中提供“原始字段/
+  轨迹距离”来源切换，显示“累计轨迹距离 · 米”；Canvas 只显示安全计数。
+- 专项验证通过：Contracts 4 项；GraphPlan/Runner 安全摘要 67 项；Incident Spark 11 项，覆盖半开区间、
+  米制真值、单观测累计值 0、Geometry 门槛、完整 Operator 与 FIELD_COMPLETE 血缘；前端定义/类型/UI 61 项，
+  TypeScript、触及文件 ESLint 和 Business 主代码编译通过。Manifest、Task Result、HTTP API 与生产依赖不变。
+- 这只接入受控 TrackDistanceWindow 聚合；4.64/4.65 后续已补 Speed/Acceleration Window，三者的
+  Current/At 后续明确由单观测窗口等价表达。Geometry/TrackWindow 数组、真实 Enterprise 作业结果、
+  全页面或大轨迹容量验收仍待完成；Incidents 完成复选框继续保持开放。
+
+### UNION Merge Layers（2026-09-12，Canvas 4.62）
+
+- `UnionConfiguration` 增加可选 `mergingTables`。缺失/null 保持旧版严格同 Schema；空数组启用默认
+  Merge Layers；非空数组只需保存偏离默认行为的字段规则。任一非 null 值在保存、前端导入和 GraphPlan
+  三处要求 4.62。
+- 第一张输入表是基准层并保留全部字段。后续层按顺序扩展输出 Schema：同名字段默认 Match，其他字段
+  默认按原名追加；Match/Rename/Remove 可覆盖默认行为，缺失侧使用具有目标类型和元数据的 NULL。
+- Match 允许相同平台类型和数值类型间显式 Cast，拒绝字符串与数值等其他跨类型映射。字段按大小写
+  不敏感唯一。空间输入必须均为空间层或均为属性表；Geometry 只能 Match 到基准层类型、CRS、维度
+  一致的字段。无界事件时间允许来源字段名不同，但必须 Match 到基准事件时间且 Watermark 一致。
+- Inspector 增加灵活/严格切换和逐合并层字段设置 Modal；Match 目标过滤明显不兼容类型，切换动作时
+  优先当前合法目标、同名目标或唯一兼容目标。基准层变化和删除表会清理失效字段草稿；保存只写自定义
+  规则。Canvas 与 Runner 摘要只显示模式、表数和规则数，不记录字段值。
+- Contracts、Compiler/Runner Operator、三端协议门槛、前端 Parser/默认配置和 Canvas 卡片均已接入；
+  Manifest、Task Result、HTTP API 和生产依赖不变。专项验证通过：Contracts 1 项；Task Engine 非 Spark
+  66 项（GraphPlan 55、Runner 安全摘要 11）；空间算子 Spark 40 项；前端定义与默认配置 52 项；前端
+  TypeScript 和触及文件 ESLint 通过。Business 主代码编译通过，其保存端专项仍被工作树中既有 Compute
+  Engine/Dispatcher/Kong 的 11 个无关测试编译错误阻断。完整设计见
+  [UNION Merge Layers](canvas-union-merge-layers-design.md)。
+- 当前仍不宣称完整 ArcGIS 对齐：真实 Enterprise 作业结果、Esri 字段类型细分、官方数值、规模和性能
+  对照保持开放。
+
+### Spatial Aggregate 无字段空间连通组（2026-09-12，Canvas 4.61）
+
+- `SpatialAggregateDissolveOptions` 增加可选 `groupingMode`。缺失/null 等同 `ALL_OR_FIELDS`，继续保持
+  4.53 的空分组全局 All、非空按字段值 List；任意显式值在保存、前端导入和 GraphPlan 三处要求 4.61，
+  包括 `enabled=false` 的非活动草稿。
+- `CONNECTED_COMPONENTS` 只允许空 `groupByColumns`、恰好一个 UNION，且 Geometry 元数据必须是
+  Polygon/MultiPolygon。运行时过滤 NULL/Empty，校验实际面 Geometry 后用 Sedona `ST_Intersects`
+  生成空间候选边，再用已有 GraphFrames 计算无向连通分量；A 接触 B、B 接触 C 时 A/B/C 属于同一组。
+  全过程保留分布式 Dataset，不把要素或图收集到 Driver。
+- 每个连通分量独立 UNION、来源计数和标量统计；Multipart 每个分量最多一行，Singlepart 继续按
+  `ST_Dump` 拆分并重复分量统计。Compiler 使用兼容的零行全局聚合只建立相同输出 Schema，不启动
+  Checkpoint、空间连接或图计算。集群 Runner 需要共享 `spark.checkpoint.dir`。
+- Inspector 增加“全部/按字段值”和“按相交或接触连通组”选择；字段冲突保留并就地标红。
+  Canvas/定义摘要/Runner 安全摘要只展示分组方式和数量，不记录 Geometry、坐标、组成员或统计值。
+  Manifest、Task Result、HTTP API 和生产依赖不变。
+- 验证通过：Contracts 1 项；Task Engine 非 Spark 97 项（GraphPlan 54、Runner 摘要 10、错误分类 33）；
+  空间算子 Spark 35 项；前端定义导入与空间聚合 50 项；Task Engine 主代码、前端 TypeScript、触及文件
+  ESLint 与 `git diff --check` 通过；Business 主代码编译通过。其既有无关测试错误不在本项修改。
+- 本阶段补齐无字段传递连通组的可执行语义，但不宣称完整 ArcGIS 官方等价：Esri 容差、真实服务数值、
+  超大要素图容量和浏览器页面验收仍开放。
+
+### Spatial Join 空间 Near 与距离输出（2026-09-12，Canvas 4.60）
+
+- `SpatialJoinConfiguration` 增加可选 `spatialNear` 和 `distanceOutput`。拓扑 `conditions` 可为空，
+  但拓扑与空间 Near 至少配置一种；拓扑、空间 Near、属性和时间条件全部按 AND 组合。任一新增非 null
+  对象在保存、前端导入和 GraphPlan 三处要求 4.60，包括不完整或关闭的草稿。
+- 空间 Near 独立于拓扑谓词：PLANAR 使用来源 CRS 的二维距离；GEODESIC 仅支持 EPSG:4326 XY 的
+  Point/MultiPoint/LineString/MultiLineString/Polygon/MultiPolygon，先使用 ECEF XY 包围与独立 Z 区间
+  作保守候选召回，再用共享 WGS84 Geometry 真实最近位置算法作最终包含边界的阈值判断。候选索引不决定
+  结果，不使用质心或 Sedona 非点 Spheroid 路径；执行计划专项确认未退化为 Cartesian/BroadcastNestedLoop。
+- `distanceOutput.enabled=true` 仅支持 `JOIN_ONE_TO_MANY`。空间 Near 输出空间距离，时间
+  NEAR/NEAR_BEFORE/NEAR_AFTER 输出闭区间之间的非负间隔；两种 Near 同时启用时输出两个独立
+  `DECIMAL(38,12)` 字段。LEFT 未匹配目标保留，右侧字段和距离字段均为 NULL。
+- Inspector 使用两个独立紧凑 Modal，分别配置空间 Near 与距离输出；失效字段和无效组合允许保存草稿，
+  一对一时明确提示只能过滤。Canvas 和 Runner 仅展示方法、单位与启用状态，不记录 Geometry 字段、
+  阈值、坐标或距离结果。Manifest、Task Result、HTTP API 和依赖不变。
+- 专项验证：Contracts 8 项；Task Engine 非 Spark 95 项（GraphPlan 53、Runner 安全摘要 10、错误分类 32）；
+  Spatial Join Near Spark 6 项；前端定义导入与 Near 工具 48 项，全部通过。Task Engine/Business 主代码、
+  TypeScript 和触及文件 ESLint 通过。Business 保存端门槛测试源码已补；该模块完整 testCompile 仍受工作树
+  中既有 Compute Engine/Dispatcher/Kong 无关测试错误影响，本阶段不修改这些测试。
+- 本阶段完成 Join Features 的空间 Near、Near Geodesic 和一对多距离输出参数接入，不等价完整官方验收；
+  Enterprise 作业结果、Esri 数值容差、复杂线面规模和跨全球域能力仍按路线图继续验证。
+
+### Spatial Join 时间关系（2026-09-12，Canvas 4.59）
+
+- `SpatialJoinConfiguration` 增加可选 `temporalCondition`。缺失/null 保持旧空间连接；非 null 对象在保存、
+  前端导入和 GraphPlan 三处要求 4.59，包括不完整的非活动草稿。
+- 时间关系覆盖 `EQUALS/INTERSECTS/DURING/CONTAINS/FINISHES/FINISHED_BY/MEETS/MET_BY/OVERLAPS/
+  OVERLAPPED_BY/STARTS/STARTED_BY` 及 `NEAR/NEAR_BEFORE/NEAR_AFTER`。方向固定以左侧目标表为主体；
+  每侧结束字段为 null 时按瞬时处理，非 null 时按闭区间处理。
+- 四个时间字段必须是同一种 `DATE/TIMESTAMP/TIMESTAMP_NTZ`。NULL 或开始晚于结束的记录不匹配；
+  LEFT 仍保留未匹配目标。Near 使用毫秒至固定周的受控正整数时长，日固定为 24 小时、周固定为 7 日。
+- Operator 使用 Spark Column 组合时间表达式，并与全部空间谓词及属性等值条件按 AND 连接；Compiler
+  只构造惰性计划。Inspector 使用独立紧凑 Modal，支持瞬时/区间、失效字段回显和无效草稿保存；Canvas
+  与 Runner 安全摘要只显示关系枚举，不记录字段名、阈值或实际时间值。
+- Manifest、Task Result、HTTP API 与依赖不变。空间距离 Near/容差、`includeDistance`、ArcGIS 官方服务
+  结果对照和大规模性能验收仍开放，因此不声明整个 Join Features 已完成对齐。
+- 最终专项验证：Contracts 7 项通过；Task Engine 非 Spark 61 项通过（GraphPlan 52、Runner 安全摘要 9），
+  空间 Spark 39 项通过（原空间节点回归 33、时间关系专项 6）；前端时间关系 Modal、定义导入和 Canvas
+  摘要相关 64 项通过。TypeScript、触及文件 ESLint 与 `git diff --check` 通过。Business 保存端 4.59
+  门槛用例已补；该模块完整 `testCompile` 仍被工作树中既有 Compute Engine/Dispatcher/Kong 无关测试的
+  11 个编译错误阻断，本阶段未修改这些测试，也不将 Business 专项声明为已运行通过。
+
+### Spatial Join 一对一汇总与确定性保留（2026-09-12，Canvas 4.58）
+
+- `JOIN_ONE_TO_ONE` 增加 `SUMMARIZE_MATCHES` 与 `KEEP_ONE`。汇总模式为每个左侧目标输出一行，Join Count
+  统计全部匹配项；可追加至多 32 项右表数值 `SUM/MIN/MAX/MEAN/STDDEV`，统计忽略 NULL，STDDEV 使用
+  样本标准差。LEFT 未匹配目标的 Join Count 为 0，统计结果为 NULL；汇总时右侧原字段不能直接投影。
+- 保留模式支持 FIRST、数值最大/最小及日期最新/最旧。FIRST 完全由 `stableOrder` 定义，其余策略先按
+  主字段排序，再以稳定顺序消除并列；完整排序仍并列时真实执行返回
+  `SPATIAL_JOIN_KEEP_ORDER_NOT_UNIQUE`，不使用分区顺序任取一条。
+- Inspector 使用独立一对一设置 Modal；Canvas、定义摘要和 Runner 安全摘要只显示模式、策略和数量，
+  不记录 Geometry、排序字段值或统计数据。配置及非活动草稿在保存、导入和 GraphPlan 三处要求 4.58。
+- Manifest、Task Result 与 HTTP API 不变。本阶段仍不包含时间关系、Near/容差、ArcGIS 官方服务结果及
+  大规模性能验收，因此不声明整个 Join Features 已完成对齐。
+- 最终专项验证：Contracts 5 项通过；Task Engine 非 Spark 90 项通过（GraphPlan 51、Runner 安全摘要 8、
+  错误分类 31），空间 Spark 33 项通过；前端定义导入、Registry 和 Inspector 三文件 60 项通过。
+  后端主代码、TypeScript、触及文件 ESLint 与 `git diff --check` 通过。Business 保存端 4.58 门槛用例
+  已补；该模块完整 `testCompile` 仍被工作树中既有 Compute Engine/Dispatcher/Kong 无关测试的 11 个
+  编译错误阻断，本阶段未修改这些测试。
+
+### Spatial Join 显式一对多粒度（2026-09-12，Canvas 4.57）
+
+- `SpatialJoinConfiguration` 增加可选 `joinOperation`，当前只接受 `JOIN_ONE_TO_MANY`。缺失/null 与显式值
+  都输出每个匹配组合，兼容 4.56 及更早定义；非 null 配置在保存、前端导入和 GraphPlan 三处要求 4.57。
+- Inspector 显示紧凑“连接粒度”并明确一对多含义；后续一对一能力见 Canvas 4.58。Canvas 使用 `1:N`，
+  定义摘要使用“一对多”，Runner 安全摘要只记录枚举名称，不记录 Geometry、坐标或数据值。
+- 本阶段没有用任意 `first()` 实现伪一对一；后续 4.58 按“汇总全部匹配记录”与“按确定规则保留一条记录”
+  分开建模，并要求显式稳定排序。
+- Manifest、Task Result 与 HTTP API 不变。最终专项验证：Contracts 4 项通过；Task Engine 共 86 项通过
+  （GraphPlan 50、空间 Spark 29、Runner 安全摘要 7）；前端定义导入、Registry 和 Inspector 三文件
+  59 项通过。后端主代码、TypeScript、触及文件 ESLint 与 `git diff --check` 通过。Business 保存端
+  4.57 门槛用例源码已补，主代码编译通过；该模块专项仍被工作树中既有 Compute Engine/Dispatcher/Kong
+  无关测试的 11 个编译错误阻断，本阶段未修改这些测试。
+
+### Spatial Join 保留全部目标要素（2026-09-12，Canvas 4.56）
+
+- `joinType=LEFT` 将左表明确为目标要素、右表明确为连接要素，并对应 Join Features 的
+  Keep all target features；4.55 及更早的 `INNER` 结果不变。LEFT 在保存、前端导入和 GraphPlan
+  三处要求 4.56，`RIGHT/FULL` 继续返回 `SPATIAL_JOIN_TYPE_UNSUPPORTED`。
+- 运行时使用受控 LEFT 空间连接。未匹配目标保留一行，右侧显式投影字段为 NULL 且 Schema 标记可空；
+  一个目标匹配多个连接要素时仍输出全部组合，不隐式转成一对一或执行统计。
+- Inspector 使用“目标表 / 连接表”和紧凑结果范围选择；Canvas、定义摘要与 Runner 安全摘要显示
+  INNER/LEFT，不记录 Geometry、坐标或数据值。Manifest、Task Result 与 HTTP API 不变。
+- 最终专项验证：Contracts 3 项通过；Task Engine 共 85 项通过（GraphPlan 49、空间 Spark 29、Runner
+  安全摘要 7）；前端定义导入、Registry 和 Inspector 三文件 58 项通过。后端主代码、TypeScript、
+  触及文件 ESLint 与 `git diff --check` 通过。Business 保存端 4.56 门槛用例源码已补，主代码编译通过；
+  该模块完整 `testCompile` 仍受工作树中既有无关测试问题影响，本轮未修改这些测试。
+- 本项只补 Keep all target features；显式一对多模式后续已在 4.57 建模，时间关系、Near/容差、一对一统计及官方结果/
+  规模对照仍开放，不将其标记为完整 Join Features 验收。
+
+### Spatial Join 属性等值组合（2026-09-12，Canvas 4.55）
+
+- `SpatialJoinConfiguration` 增加可选 `attributeConditions`。缺失/null 保持旧空间连接；非 null 数组在
+  保存、前端导入和 GraphPlan 三处要求 4.55，最多八项。
+- 每项复用普通 Join 的左右字段等值语义，禁止 Geometry；使用 Spark SQL 普通等号，并与全部空间谓词按
+  AND 组合。字段比较能力由 Spark Analyzer 判断，Compiler 不读取数据、不另建类型兼容矩阵。
+- Inspector 使用紧凑单行字段对，可保留失效字段草稿；Canvas 与 Runner 只展示属性条件数量，不记录字段名
+  或数据值。[官方 Enterprise 11.3 Join Features](https://enterprise.arcgis.com/en/portal/11.3/use/join-features.htm)
+  明确支持空间关系、属性关系或两者组合，本阶段只接入“与空间关系组合”；纯属性连接继续使用普通 `JOIN`。
+- 最终专项验证：Contracts 3 项通过；Task Engine 共 82 项通过（GraphPlan 48、空间 Spark 27、Runner
+  安全摘要 7）；前端定义导入、Registry、字段建议、Inspector 和类型五文件 64 项通过。后端主代码、
+  TypeScript、触及文件 ESLint 与 `git diff --check` 通过。Business 保存端 4.55 门槛用例源码已补，
+  但该模块 `testCompile` 仍被与本项无关的 Compute Engine/Dispatcher/Kong 旧测试 11 个编译错误阻断，
+  未修改这些无关测试，也不将保存端专项声明为已运行通过。
+- 本项仍是 Join Features 的增量，不新增时间关系、Near/容差、Keep all、一对一统计、一对多选择或官方结果对照。
+
+### Spatial Join 显式输出字段投影（2026-09-12，Canvas 4.54）
+
+- `SpatialJoinConfiguration` 增加可选 `outputColumns`。缺失/null 保持旧版左表全字段后接右表全字段，
+  并在同名时拒绝；任何非 null 数组在保存、前端导入和 GraphPlan 三处要求 4.54。
+- 显式投影复用普通 Join 校验，按配置顺序使用限定来源的 `select + alias`；支持排除、改名和排序，
+  拒绝重复来源、失效字段、空结果及大小写不敏感的最终重名。
+- Inspector 使用独立设置 Modal；首次选齐左右表时按“左表原名、右表重名用完整逻辑表名前缀”生成建议，
+  已有投影不自动重建，旧版投影须由用户明确启用。Canvas 与 Runner 只记录输出字段数量。
+- 最终专项验证全部通过：Contracts 3 项；Task Engine 共 79 项（GraphPlan 47、空间 Spark 25、Runner
+  安全摘要 7）；前端定义导入、Registry、字段建议和类型四文件 62 项通过，TypeScript、触及文件 ESLint、
+  Business 主代码编译与 `git diff --check` 通过。Spark 首轮仅因沙箱禁止 Driver 绑定回环端口而未进入用例，
+  在允许绑定本机端口的环境以相同测试集合重跑后全部通过。
+- 本项只补 Join Features 的字段投影差距；仍仅支持 INNER、九种空间谓词和 AND 条件，不新增属性/时间关系、
+  一对一统计、一对多选择、容差或 ArcGIS 官方结果对照。
+
+### Spatial Aggregate Dissolve 输出（2026-09-12，Canvas 4.53）
+
+- `SpatialAggregateConfiguration` 增加可选 `dissolve`；缺失/null 保持基础聚合，任意非 null 对象
+  在保存、前端导入和 GraphPlan 三处要求 4.53，包括 `enabled=false` 的非活动草稿。
+- 启用时要求恰好一个 UNION。空分组对应 Create Buffers All，非空分组对应 List；结果始终增加
+  来源要素计数，并可配置 COUNT_FIELD、SUM、MEAN、MIN、MAX、RANGE、STDDEV、VARIANCE、ANY。
+- Multipart 使用 `ST_Multi`；Singlepart 使用 `ST_Dump` 并为各部件重复组统计。NULL/Empty UNION
+  结果组不产生要素，混合组计数仍按融合前来源行计算；Compiler 只构造计划，不触发 Spark Job。
+- Inspector、Canvas 和安全摘要已接入，禁用时安全摘要不显示隐藏统计草稿数量；不记录统计值、Geometry
+  或坐标。当前实现也可与 Geometry Buffer 组合，不新增重复 Processor。
+- 最终验证：Contracts 1 项、GraphPlan 46 项、空间 Spark 23 项、Runner 安全摘要 6 项通过；
+  前端 Dissolve/定义导入/默认配置/Registry 四文件 62 项通过，TypeScript 和触及文件 ESLint 通过。
+  Spark 沙箱首轮因 Driver 不能绑定回环端口而未进入用例，在允许绑定本机端口的环境重跑后全部通过。
+  Business 主代码编译通过；保存端门槛测试源码已补，但 Business `testCompile` 被本轮无关的
+  Compute Engine/Dispatcher/Kong 旧测试 11 个编译错误阻断，未修改这些无关测试，也不将保存端专项声明为通过。
+- 本项对齐的是 Create Buffers 的 Dissolve 参数组合，不等价完整 Dissolve Boundaries：无字段的相交/
+  重叠连通组、Esri 容差、官方服务数值和大规模容量对照仍开放。负 Buffer 和样式不是官方对齐优先项。
+
+### Geometry Buffer 逐行距离来源（2026-09-12，Canvas 4.52）
+
+- 新建节点默认 `CONSTANT`；旧缺失/null 来源继续使用固定 `distance`。`FIELD` 读取数值字段，
+  `EXPRESSION` 使用受控确定性 Spark 数值表达式；任一新增非 null 字段在保存、导入和 GraphPlan
+  三处要求 4.52，包括非活动草稿。
+- 三种来源共用 4.49 的单位换算和 PLANAR/SPHEROID 规则。Compiler 只验证逐行数值标量，
+  不执行表达式或扫描数据；动态 NULL 保留行并输出 NULL Buffer，非正、NaN、Infinity 或溢出在
+  Runner 以 `GEOMETRY_BUFFER_DISTANCE_VALUE_INVALID` 安全失败。
+- Inspector 保留隐藏分支草稿并提供字段/表达式帮助；Canvas 与安全摘要不展示表达式正文或逐行值。
+  负 Buffer、样式、Dissolve、官方数值和页面验收仍开放，本项不宣称完整 Create Buffers 对齐。
+- 最终专项验证全部通过：Contracts 1 项、GraphPlan 45 项、Runner 错误分类 30 项、空间 Spark 20 项、
+  前端 Geometry Buffer/Spatial Clip/Registry 20 项；Task Engine/Business 主代码编译、前端 TypeScript、
+  触及文件 ESLint 与 `git diff --check` 通过。Spark 首轮仅因沙箱禁止 Driver 绑定回环端口而未进入用例，
+  在允许绑定本机端口的环境以相同集合重跑后 20 项全部通过。Business 保存端门槛测试源码已同步，
+  但整个 Business testCompile 仍被工作树中与本项无关的 Compute Engine/Gateway 旧测试构造器阻断。
+
 新增非 null hdbscan 在保存端、GraphPlan、导入端均要求 4.45，包括非活动草稿。
 
-### 非点测地距离分层边对搜索（2026-09-08，仍为 4.47）
+### Spatial Clip 来源家族输出（2026-09-12，Canvas 4.51）
+
+- 新建节点默认 `SOURCE_FAMILY_2D`，只接受明确的点、线、面来源类型；结果使用
+  `ST_Force2D + ST_CollectionExtract + ST_Multi` 输出对应 MultiPoint/MultiLineString/MultiPolygon + XY。
+- 仅在 Mask 边界接触产生的低维片段被过滤；多条 Mask 仍逐对输出，不自动 Union/Dissolve。
+- 缺失/null 及显式 `LEGACY_ANY_DIMENSION` 保持旧通用 Geometry 结果，不改变旧任务数值；任意非 null
+  策略在保存、导入和 GraphPlan 三处要求 4.51。
+- Inspector、Canvas 和安全摘要展示有效策略，不展示 Geometry 或坐标。Esri 容差、吸附、Mask 重叠
+  的官方边界行为及规模验收仍开放，不将本项标记为完整 Clip Layer 对齐。
+- Contracts 往返 1 项、Task Engine GraphPlan 44 项与空间 Spark 18 项、前端导入专项 2 项均通过；
+  Spark 覆盖线边界接触的新旧差异及点/线/面三个 Multi 结果家族。Task Engine/Business 主代码、
+  前端 TypeScript、触及文件 ESLint 与 `git diff --check` 通过。Business 专项测试仍被工作树中与本项
+  无关的 Compute Engine/Gateway 旧测试构造器阻断，保存端门槛测试源码已同步但未能单独执行。
+
+### Spatial Measure 显式输出单位（2026-09-12，Canvas 4.50）
+
+- AREA 增加可选 `SpatialAreaUnit outputUnit`；LENGTH/PERIMETER/DISTANCE 增加可选
+  `SpatialDistanceUnit outputUnit`。X/Y 仍返回坐标轴原值，不携带单位配置。
+- 缺失/null 保持旧数值：PLANAR 为来源 CRS 单位（面积为平方），SPHEROID 为米/平方米；任何显式值
+  在保存、导入和 GraphPlan 三处要求 4.50，并精确定位到测量项。
+- 投影 PLANAR 通过 CRS 第一轴线性单位可靠换算；地理 PLANAR 不把角度/角度平方近似为固定单位。
+  SPHEROID 从米/平方米换算，并拒绝线性项的 `SOURCE_CRS_UNIT`。不转换 Geometry CRS。
+- Inspector 将 mode 与输出单位同行展示，失效组合保留并标红；Canvas 与安全摘要显示有效单位，
+  Schema 仍为 nullable DOUBLE，不虚构字段单位元数据。
+- Contracts 往返 1 项、Task Engine GraphPlan 43 项与空间 Spark 17 项、前端导入专项 2 项均通过；
+  Task Engine/Business 主代码、前端 TypeScript 与触及文件 ESLint 通过。Spark 用例覆盖 Web Mercator
+  平方千米、WGS84 椭球千米、null 米兼容及两类失效组合。本项不增加 Spark Action、Manifest、Result、HTTP API 或生产依赖。
+
+### Geometry Buffer 显式距离单位（2026-09-12，Canvas 4.49）
+
+- `GeometryBufferConfiguration.distanceUnit` 增加公共距离单位；缺失/null 保持旧 PLANAR 来源 CRS 单位、
+  SPHEROID 米语义，显式值在保存、导入和 GraphPlan 三处要求 4.49。
+- PLANAR 对投影 CRS 将固定线性单位换算到来源轴单位；地理 CRS 只允许 `SOURCE_CRS_UNIT` 并提示角度。
+  SPHEROID 只接受 EPSG:4326 XY，将明确线性单位换算为米并拒绝 `SOURCE_CRS_UNIT`。
+- Inspector 将数值和单位同行展示，Canvas/安全摘要显示用户配置单位；切换模式/单位不修改数值，
+  失效组合保留并交给 Compiler 返回稳定问题。不转换 Geometry CRS，不增加 Spark Action、依赖、Manifest/Result/API。
+- 本项仅完成现有 Buffer 的单位复核；字段/表达式距离、负 Buffer、样式参数、Dissolve、官方数值与页面验收仍开放。
+
+### Nearest 非点 WGS84 显式接入（2026-09-12，Canvas 4.48）
+
+- `SpatialNearestMatching` 增加 `geodesicGeometryMode`。缺失/null 使用 POINT_ONLY；显式 GEOMETRY 要求 4.48，
+  包括 LEGACY_KNN 下的非活动草稿。新建节点默认 GEOMETRY，旧任务结果不变；Manifest/Result/HTTP 不变。
+- GEOMETRY 支持 EPSG:4326 XY Point/MultiPoint/LineString/MultiLineString/Polygon/MultiPolygon；
+  GeometryCollection 明确拒绝，通用 GEOMETRY 在 Executor 检查实际类型。补齐双方同为非 XY 时的编译拒绝。
+- 局部 CROSS 使用 GeographicLib Gnomonic 迭代并复核有限弧投影残差，成功时返回真实公共位置；不稳时
+  保留 Boolean 事实而不编造坐标。单次 Match 同时供最终距离、半径、Top N 和连接线使用。
+- ECEF 三轴仅召回，最终始终为 WGS84；无业务半径也保持空间 Join，不引入笛卡尔积。半径跨区间、Top N
+  未决重叠、局部 Polygon 域外、预算或精度不足均安全失败，不回退质心。
+- Task Engine 隔离专项最终 173 项全部通过：Nearest 类型支持 3、边界相交 7、Geometry 包围 4、测地公共交点 3、
+  Geometry 距离 7、单次 Match 4、空间 Processor Spark 98、弧拓扑 6、GraphPlan 41；失败、错误、跳过均为 0。
+  覆盖日期线 Line/Line 真实交点、Polygon 内含与孔洞、MultiPoint/MultiLineString、Point-only 兼容拒绝、
+  GeometryCollection 拒绝、双方 XYZ 拒绝及 4.48 版本门槛。测试辅助构造器首轮多一个右括号导致 testCompile 失败，
+  仅修正测试语法后原集合通过，没有为满足断言放宽生产算法。
+- Contracts 枚举专项 1 项、前端导入/默认值专项 3 项、前端 TypeScript 与触及文件 ESLint 均通过；
+  Business 与 Task Engine 主代码编译通过。Business 测试源码仍被本次未修改的 ComputeEngine/Dispatcher/Kong
+  旧构造器阻断，因此新增保存端门槛用例尚未实际运行，不以 Engine GraphPlan 门槛替代其证据。
+- 同版本继续拆除 MultiPolygon 的不必要共同参考域限制：原共同局部域路径优先；仅在其范围失败时，逐部件共享
+  一个总工作预算验证各自的连续环/孔洞，并要求任意跨域部件的边界严格分离且双向非包含均可证明。
+  两个近乎对跖的小面部件现在可以作为同一 Geometry 参与 ECEF 召回和 Nearest；跨域接触、相交、包含和未决关系
+  仍失败，不使用 JTS 经纬平面区域或质心补判。补充 Executor 后最终相关回归 113 项通过：Region 8、Geometry
+  Distance 7、空间 Processor Spark 98；此前同一路径含 Polygon Topology 8 的 121 项回归也通过，不累计为新增总数。
+- Point/MultiPoint 双方为有限点集时，`Wgs84SegmentDistance` 不再达到连续求解容差即停止，而是继续消费同一
+  ECEF 分层队列，直到所有可能更优/同距的点对均已求值或由保守下界排除；此时 Match 的上下界相同并标记
+  `exactDistance`。树、点对和验证仍共享 25 万次预算，线/面仍保留区间。最终 125 项通过：Segment 11、
+  Hierarchy 6、Linear 5、Match 4、空间 Processor Spark 99；Spark 用例覆盖相差约 0.011 毫米的两个 MultiPoint
+  候选正确排序，失败、错误、跳过均为 0。
+- 使用 ArcGIS Online 官方 GeometryServer `distance`（EPSG:4326、`geodesic=true`、米）取得五个非敏感人工样本：
+  Point→Line 1105.7427583286865、日期线 Line→Line 0、面内点 0、孔洞内点 110.57427575225489、全球严格分离
+  MultiPolygon 部件内点 0；固化为不访问公网的离线真值测试，1 项通过。此处只对照底层 Geometry 距离，
+  不将它称为 Enterprise Find Nearest 完整作业、排名、字段或容量验收。
+- 4.48 最终合并回归一次运行 220 项全部通过：上述距离/拓扑/包围/区域/官方真值原语、GraphPlan 41、
+  空间 Processor Spark 99；失败、错误、跳过均为 0。合并运行未访问数据库或 ArcGIS，官方响应只作为离线常量。
+- 本阶段当时未勾选完整 Nearest；2026-09-13 已补日期线 Polygon、连续近等距严格失败、256×1024 索引样例
+  和真实页面验收，并按明确支持/拒绝边界完成收口，见上方最新记录。
+
+### 非点测地距离分层边对搜索（2026-09-12，仍为 4.47）
 
 - `Wgs84SegmentDistance` 不再预展开所有边对：两侧保守 ECEF 树对与原弧长区间共用一个下界队列，
   叶对才创建完整参数域搜索。父下界传播、真实位置上界、严格阈值和全域误差停止规则保持；
@@ -43,9 +786,46 @@
   修正专项 `/tmp/datascalpel-geodesic-hierarchy-corrected.log` BUILD SUCCESS，65 项通过，不累计重复运行。
 - 新增两侧各 2049 边、20,000 工作预算的约 420 万组合反例；最近位置位于最后一对边内部，
   并验证 10/12 米阈值两侧、小集合穷举对照、排列/交换、全球弧包围与完整校验。
-  另外增加真实 Spark 多部件测距、阈值及 Analyzer 零 Job 用例，扩展回归正在执行，最终结果待登记。
+  另外增加真实 Spark 多部件测距、阈值及 Analyzer 零 Job 用例。
+- 首次扩展回归 `/tmp/datascalpel-geodesic-hierarchy-regression.log` 共报告 117 项：115 项非 Spark 用例通过，
+  两个 Spark 测试类在沙箱内因 Driver 端口绑定权限失败，未进入测试方法，不把该轮记作算法失败或通过。
+  使用相同测试集在允许绑定本机端口的环境重跑，219 项全部通过：共享 WGS84/轨迹原语 115、
+  GeodesicDistance Executor 10、空间 Processor Spark 94；失败、错误、跳过均为 0。
+  最终命令正常退出，未访问外部数据库；本轮不累计前述 65 项重复子集。
 - 更新共享距离设计、Nearest 和路线图；本轮不放开 Nearest 非点 EXACT_DISTANCE。
   跨表召回、区间排名、公共交叉位置、全球域、页面与官方验收继续保留，12 个节点完成框不勾选。
+
+### Nearest ECEF 三轴保守候选召回（2026-09-12，仍为 4.47）
+
+- 新增 `Wgs84GeometryBounds`：连续弧使用弦端点范围与曲率裕量；面区域另外检查六个椭球笛卡尔轴极值，
+  形成覆盖真实线/面内部的 ECEF XY 包围 Geometry 与 Z 区间。NULL/Empty 保留，非法坐标、集合和区域
+  继续返回既有安全错误；不使用质心、采样经纬包围或数据值日志。
+- Point EXACT_DISTANCE 的测地候选改用三轴包围。配置半径直接保守召回；无半径的二维 KNN 仅生成
+  一个真实 WGS84 距离上界，再恢复全部三轴可能候选，最终距离筛选和排名仍用 `ST_DistanceSpheroid`。
+  极区反例中二维 ECEF 最近种子接近对跖，真正最近点在二维更远；有/无半径都恢复正确候选，
+  执行计划保持 DistanceJoin/BroadcastIndexJoin，不出现 CartesianProduct/BroadcastNestedLoopJoin。
+- 包围盒专项 4 项连同 Geometry 距离/分层搜索共 17 项通过；空间 Processor Spark 回归 95 项通过，
+  失败、错误、跳过均为 0。覆盖高纬、日期线、对跖弧、面内部轴极值、孔洞、非法末项及极区召回。
+- 编译仅构造 UDF 与空间 Join 并由 Analyzer 验证，没有额外 Spark Action、协议、Manifest、Result、HTTP、
+  前端或依赖变更。非点门槛仍保留；距离/位置一次求解、公共交叉位置和区间排名是下一步，不勾选 Nearest。
+
+### Nearest 单次匹配 Struct 与区间判定（2026-09-12，仍为 4.47）
+
+- 新增 `Wgs84NearestMatch`，单次返回取样距离、真实最小距离上下界、两侧最近位置、明确零距离证据和确定距离标记。
+  单 Point–Point 与真实共同位置采用确定数值；MultiPoint、线/面保留数值区间，不把小距离或 Boolean 相交事实伪造成交点。
+- 当前 Point EXACT_DISTANCE 已改为使用该 Struct：无半径种子上界、最终距离、半径筛选、Top N 检查与连接线端点
+  使用同一种 WGS84 求解结果。连接线只加密 Struct 的位置对并切分日期线，不再独立求最近位置；ECEF 仍仅负责召回。
+- 半径只在区间可证明落在一侧时决定；Top N 的每个入选项与全部后续候选最小下界比较，避免仅检查相邻项时
+  漏掉“取样上界较大、真实下界很小”的后续候选。确定点距离可继续按候选 ID 处理同距，非确定区间重叠返回
+  `GEODESIC_DISTANCE_PRECISION_NOT_REACHED`，不以取样顺序猜测。
+- 首轮纯算法 17 项中 2 项失败，原因是旧辅助测试传入 SRID=0，而新连接线入口按 Struct 的 4326 约束提前拒绝。
+  修正旧兼容入口在测地模式下明确规范化为 4326，未放宽 Struct 入口；补入 MultiPoint 不得标记为确定距离的反例后，
+  最终纯算法 18 项全部通过。
+  最终空间 Processor Spark 回归 95 项通过，失败、错误、跳过均为 0；包含 Analyzer 零 Job、极区召回、日期线连接、
+  同距 ID 排序和无笛卡尔积计划。本轮未访问外部系统，没有协议、Manifest、Result、HTTP、前端或依赖变更。
+- 非点纯算法 Struct 已覆盖点到线、面内含及交叉区间，但已知非点类型和通用 Geometry 的运行门槛仍保留。
+  公共交叉位置、局部域之外的面关系、复杂近等距预算、页面/官方/规模验收继续在完整范围内，不勾选 Nearest。
+  本段记录 4.47 当时的门槛；4.48 当前已开放受控非点，并已将有限 Point/MultiPoint 对升级为精确离散最小值，见上方当前执行记录。
 
 ### HDBSCAN 已知归属中间文件清理（2026-09-08，仍为 4.47）
 
@@ -177,8 +957,10 @@
   总测试耗时约 13 秒；只作功能证据，不宣称页面性能或全组稳定性通过。最终不同前端用例为 13 + 5 = 18，不累计重复运行。
   最终 TypeScript `/tmp/datascalpel-incident-windows-tsc-complete.log`、触及文件 ESLint
   `/tmp/datascalpel-incident-windows-eslint-complete.log` 均正常退出且无错误；所有本轮进程已结束。
-- Manifest/Result/HTTP/生产依赖均不变。完整 Arcade 几何/运动/时间窗口、官方服务对照、全页面与容量仍在原范围内，
-  不勾选整个节点完成。完整契约、NULL/总体统计差异及 UI 图见[事件检测第 8 节](canvas-spatial-next-processors/track-detect-incidents.md#8-446-受控字段窗口条件)。
+- Manifest/Result/HTTP/生产依赖均不变。4.63～4.65 已补齐受控累计距离、逐观测速度和逐观测加速度
+  窗口，4.66 又补四种轨迹时间/序号标量，4.67 补 Point 相对观测 X/Y 标量；返回复合对象的 Geometry/TrackWindow 与更丰富受控表达式、官方服务对照、
+  全页面和容量仍在原范围内，因此不勾选整个节点完成。完整契约、NULL/总体统计差异及 UI 图见
+  [事件检测第 8 节](canvas-spatial-next-processors/track-detect-incidents.md#8-446-受控字段窗口条件)。
 
 ### HDBSCAN EOM 待决子簇工作集（2026-09-08，仍为 4.45）
 
@@ -975,31 +1757,199 @@ GatewayServiceSpec 旧构造器/方法调用阻断（`/tmp/datascalpel-geodesic-
   公共交叉位置及误差边界、全域、严格排名/候选召回与整节点/血缘仍需继续，不以本地回归宣称 ArcGIS 等价。
   没有运行全工程、真实数据库/ArcGIS、浏览器或容量验收，完整路线图目标保持。
 
+### Track Find Dwell 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 保留 `LEGACY_ADJACENT` 并完成 `REFERENCE_CENTER` 的四类结果闭环：均值中心、凸包、驻留点和全部点。
+  Count、字段 Count、Any、First/Last 与数值统计继续按各自结果粒度执行；点级结果不执行隐藏汇总草稿。
+- 平面和受控 WGS84、日期变更线中心/凸包、相邻 gap、固定日历/时长边界、NULL/Empty、退化 Geometry
+  及确定次序规则均保留。真实页面已验证策略确认、四输出切换、条件字段、边界 Modal、无效草稿应用和问题详情。
+- 四类输出均达到 `FIELD_COMPLETE`，点级原字段为直接血缘，聚合字段均有真实来源；为驻留归属增加的受控
+  `mapPartitions` 血缘边界只接受显式透传和派生来源声明，未标记的不透明行变换继续为 `FIELD_PARTIAL`。
+- 20,000 点单轨迹样例分析阶段零 Spark Job，点级输出一条观测一行且计划不含 `CollectLimit`/`collect_list`。
+  Executor 仍一次缓存一个轨迹片段并可能反复扫描候选，不能据此宣称无限容量或生产规模等价。
+- 联合专项共 130 项通过：`DwellRangeAssignmentTest` 6、`TrackFieldStatisticsSparkTest` 5、
+  `SpatialAnalysisProcessorSparkTest` 112、`SparkJarLineageRuntimeTest` 7；前端驻留配置与 Inspector 2 文件 6 项通过，
+  节点目录 ESLint 通过。未执行完整工程、真实 ArcGIS 服务或生产容量验收。
+- 当前收口不宣称 ArcGIS 官方测地中心/凸包公式、字段/统计类型、Enterprise 容差与数值或 Streaming 完全等价。
+
+### Track Detect Incidents 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 保留 `LEGACY` 并完成 `CONDITION_LIFECYCLE` 的 Started/OnGoing/Ended 状态机、逐观测持续时间、
+  结束优先及 `INCIDENTS_ONLY`/`ALL_EVENTS` 两种结果范围闭环。
+- 4.46 的原字段窗口、4.63～4.65 的累计距离/逐观测速度/加速度、4.66 的轨迹时间/时长/序号和
+  4.67 的相对 Point X/Y 坐标继续作为受控条件绑定；左闭右开范围、固定边界/gap 分段、确定次序、
+  NULL/空窗和 WGS84 运动单位规则保持明确，临时绑定不进入结果。
+- 两种结果范围均达到 `FIELD_COMPLETE`，原字段为直接血缘，六个生命周期结果字段均有真实输入来源；
+  20,000 条单轨迹样例分析阶段零 Spark Job、逐观测一行且计划不含 `CollectLimit`/`collect_list`。
+- Engine `IncidentWindowSparkTest` 21 项通过；前端窗口/Inspector 2 文件 21 项通过。
+  真实页面已验证默认语义、窗口和标量紧凑表格、无效草稿应用及问题详情，未保存任务定义。
+- 本轮不实现任意 Arcade、完整 Geometry/TrackWindow 复合对象、整行对象、未核实的第三种结果范围或 Streaming；
+  官方字段别名、Enterprise 服务数值/边界和生产容量不声明完全等价。
+
+### Spatial Bin Aggregate 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 方格、平面六边形和 H3 的当前实现范围保持不变：六边形显式对边距离、H3 分辨率/近似距离、
+  平面原点/范围、字段与数值统计、分组指示器、固定/日历窗口和空格网保护已形成可执行闭环。
+- 三种格网及平面补空、显式/来源范围的全输出血缘均为 `FIELD_COMPLETE`。配置常量生成的显式空格网
+  不伪造字段来源，其余格网、统计、分组和时间字段均追溯到实际输入，输出无未知来源字段。
+- 20,000 点样例分析阶段零 Spark Job，Count 和数值总和正确，执行计划不含 Driver 收集或意外笛卡尔积。
+  Engine `BinStatisticsAndWindowsSparkTest` 25 项、前端 4 文件 17 项通过。
+- 真实页面已验证延迟编译、三种形状、H3 两种大小方式、范围、统计、分组、时间切片、无效草稿应用
+  和问题详情；未保存任务定义。
+- H3 球面业务范围、Enterprise 官方逐值/容差/边界编码和生产容量仍不声明完全等价。
+
+### Spatial Point Cluster 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 旧 Sedona DBSCAN、显式空间 DBSCAN、Linear 时空 DBSCAN 与 HDBSCAN/四诊断继续共存；
+  算法切换保留隐藏草稿但必须确认，不把 HDBSCAN 强行套入无效半径或时间邻域。
+- DBSCAN/HDBSCAN 均达到 `FIELD_COMPLETE`：原字段保持直接血缘，簇号、噪声和诊断字段只关联真实参与字段，
+  HDBSCAN 不把隐藏时间草稿误记成来源。Preview 只构造集合依赖 Schema 计划，不执行聚类或 Checkpoint。
+- 20,000 个稀疏平面点完成显式 DBSCAN 执行且全部按预期为噪声，同规模 Preview 分析阶段零 Spark Job。
+  HDBSCAN 的 256 点规则格网已验证精确候选缩减；生产实现不向 Driver 收集点、边、簇或成员列表，
+  但密集候选、大 k 和深树仍可能产生平方级关系与多轮 Shuffle/Checkpoint。
+- Engine 点聚类/HDBSCAN 6 个类 54 项通过；前端 DBSCAN/HDBSCAN 2 文件 15 项通过。
+  真实页面已验证延迟编译、空间/Linear 条件、算法切换确认、HDBSCAN 隐藏半径/时间及四诊断弹窗；
+  未保存任务定义。
+- 当前收口不宣称 ArcGIS 四诊断逐值、Enterprise 簇成员、极端候选或生产容量完全等价；
+  `MULTI_SCALE` 继续作为明确不支持的旧草稿值保留。
+
+### Spatial Center Dispersion 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 4.31 的独立结果、线面质心、原中央要素、中位停止证据与容量保护，以及 4.32 的原字段投影和事件时间
+  别名传播保持不变；旧 `LEGACY_WIDE` 仍为显式兼容模式。
+- 五种当前结果均达到 `FIELD_COMPLETE`：分组字段、中央要素原字段及原 Geometry 保持直接血缘；
+  平均/中位/标准距离/方向椭圆 Geometry 关联实际 Geometry 与权重来源，不产生未知来源字段。
+- 20,000 点单组样例分析阶段零 Spark Job，平均中心、中位中心、标准距离和方向椭圆均完成真实执行；
+  计划不含 Driver 数据收集，但明确保留 Executor 单组 `collect_list`，受 100,000 要素/100 万顶点保护。
+  中央要素继续执行 5,000 要素上限，不以 O(n²) 计算冒充大组支持。
+- Engine 中心专项共 122 项通过；前端结果配置 7 项通过。真实页面已验证延迟编译、默认独立结果、
+  五种分析、逐项结果配置、σ、排序、删除确认、模式切换、隐藏草稿、无效草稿应用和问题详情；未保存任务定义。
+- 当前收口不实现平均/中位时间或椭圆 interval，不宣称 ArcGIS 官方加权椭圆、退化边界、Enterprise 数值
+  或生产容量完全等价；标准距离继续作为平台扩展。
+
+### Spatial Density 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 4.68 的投影 XY Point、Uniform/Kernel、方格/六边形、点数与至多 32 个数量字段密度、格网/半径/
+  面积单位和固定/日历时间切片保持不变，继续使用公开且可复现的平台公式。
+- Uniform 与 Kernel（含时间切片）的全输出血缘均为 `FIELD_COMPLETE`，无未知来源字段；格网、点数
+  密度、窗口和数量密度分别追溯到实际 Geometry、时间与数量字段。失败专用 `raise_error` 分支不再
+  把正常数量密度误判为未知来源。
+- 20,000 个稀疏投影点的 Preview 分析阶段零 Spark Job；Kernel 六边形完成真实执行，计划不含
+  Driver 收集、`collect_list` 或意外笛卡尔积。Engine Density 专项 3 项通过。
+- 真实页面已验证延迟编译、Kernel/六边形、时间切片、数量字段、结果字段、无效草稿应用和问题详情；
+  未保存任务定义。
+- 当前收口不宣称 Enterprise 逐格网数值、边缘/六边形编码、不同投影轴单位、重叠日历窗口或生产容量
+  完全等价，半径/格网比例接近上限的 Shuffle 与 Executor 内存仍需生产容量验收。
+
+### Spatial Multi-Variable Grid 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 4.70 的多来源共同范围、方格/六边形、逐变量筛选/搜索半径、最近距离、最近属性和关联汇总保持不变；
+  `COUNT/SUM/MEAN/MIN/MAX/RANGE/STDDEV/VARIANCE/ANY` 九种统计继续使用已声明的确定性语义。
+- 三类变量、九种统计及两个来源表的统一格网全部达到 `FIELD_COMPLETE`，无未知来源字段。`COUNT`
+  追溯实际来源 Geometry，最近属性追溯 Geometry 与属性字段，数值统计追溯 Geometry 与统计字段。
+- 20,000 个规则稀疏投影点的 Preview 分析阶段零 Spark Job，真实执行输出 20,000 个格网；计划不含
+  Driver 收集、`CollectLimit`、`collect_list`、Cartesian Product 或 Broadcast Nested Loop Join。
+  Engine `SpatialMultiVariableGridNodeOperatorSparkTest` 3 项通过。
+- 真实页面已验证新增节点延迟编译、方格/六边形入口、三类变量、逐变量筛选与条件树、结果字段、
+  无效草稿应用、Canvas 摘要和紧凑问题详情；未保存任务定义。
+- Enterprise 格网边缘、最近并列、统计数值/NULL 细节、不同 Geometry/投影轴单位及接近配置上限的
+  生产容量仍开放，不声明 Esri 数值完全等价。
+
+### Spatial Enrich From Grid 当前能力收口（2026-09-13，协议仍为 4.76）
+
+- 4.71 的有界 XY Point、同 CRS Polygon/MultiPolygon 格网、显式字段投影、未匹配保留和边界单格稳定
+  选择继续保持现有协议与确定性语义。
+- Point 原字段/Geometry 和全部丰富字段均追溯真实来源，结果达到 `FIELD_COMPLETE`，无未知来源字段；
+  内部 Point 行身份标记为技术列，不进入业务结果或血缘来源。
+- 保留未命中 Point 的计划改为索引化空间 INNER JOIN 找命中、窗口排序取一格、等值 LEFT JOIN 回接。
+  20,000 个 Point 与 20,000 个格网的 Preview 分析阶段零 Spark Job，真实执行输出 20,000 行且丰富字段
+  汇总值正确；计划不含 Driver 收集、`CollectLimit`、`collect_list`、Cartesian Product 或
+  Broadcast Nested Loop Join。Engine `SpatialEnrichFromGridNodeOperatorSparkTest` 3 项通过。
+- 真实页面已验证新增节点延迟编译、Point/格网来源、格网 ID 帮助、丰富字段紧凑编辑、无效草稿应用、
+  问题入口/详情和 Canvas 安全摘要；未保存任务定义。
+- Enterprise 共享边界/异常重叠选择、字段类型细节、服务输出和生产容量仍开放，不声明 Esri 完全等价。
+
 ## 12 个节点
 
 下列完整单位缺口的距离/面积部分已由 4.36 补充；时间/日历、速度别名和官方服务对照仍按节点继续验收。
 
-- [ ] Geometry Derive：4.29 函数支持矩阵、实际 Z/M、Empty/退化/集合及紧凑规则已实现并完成专项；全页面/扩展回归验收待收口。
-- [ ] Geometry Simplify：4.29 两算法维度、无效结果边界、共边反例、容差草稿及实际批流计划已验证；全页面与扩展容差/规模验收待收口。
-- [ ] Nearest：4.30 真实平面/点测地距离、全同距排序、来源身份、显式连接线结果已实现并本地验证；非点测地最近位置、真实规模/官方及全页面验收仍未完成。
-- [ ] Summarize Within：4.24 原值/总量分摊、交叠比例加权均值与字段 Count/Any，4.25 主表/组表、显式区域键与形状组比例，4.37 原值加权方差/标准差，4.39 日历窗口、4.41 规则格网已实现；官方公式/边界、浏览器及容量对照尚未完成。
-- [ ] Overlay：4.26 五模式、输入组合、显式二维 Multi 与低维过滤、缺失侧字段已实现；官方容差/边界、全局分区差异与大数据性能对照仍待验收。
-- [ ] Reconstruct：4.27 固定边界/次序/拆分绑定/段归属，4.28 测地线，4.35 字段统计，4.42 平面面轨迹、4.43 缓冲窗口及 4.44 测地面链路已接入；全球域、完整单位/血缘审计、容量和官方统计/窗口次序/精度验收未完成。
-- [ ] Motion：4.23 八组指标、观测历史窗口、Idle 双阈值与垂直单位已做本地验证；完整官方单位、缺失值/窗口边界及官方服务对照尚未完成。
-- [ ] Dwell：参考点/均值中心扩展与四输出、4.35 字段 Count/Any（含数值）与实际统计类型已做本地验证；官方公式/类型/细节对照、完整单位/血缘及大单轨迹容量尚未完成。
-- [ ] Incidents：4.21 生命周期与确定次序、4.46 左闭右开的九种受控字段窗口、独立条件/指标草稿及原字段血缘已接入；完整 Arcade 几何/运动/时间窗口、官方结果范围/边界、全页面及容量仍待完成。
-- [ ] Bins：4.21 对边距离、4.33 H3、4.34 字段统计/固定切片、4.38 显式平面原点/范围、4.39 日历窗口及安全展开已接入；球面范围、官方统计数值及规模验收待完成。
-- [ ] Cluster：4.40 显式空间/Linear DBSCAN；4.45 HDBSCAN/四诊断节点与契约、原行回接、集合血缘和 Inspector 已接入并本地验证；候选/深树容量、完整单位、官方诊断数值及全页面验收仍待完成。
-- [ ] Center：4.31 线面质心/原中央要素、独立结果、确定身份排序、中位停止证据及容量保护，4.32 原字段投影/血缘已实现；各类型时间、官方椭圆加权公式及规模/页面验收仍未完成。
+### 旧小版本升级入口收口（2026-09-13，当前协议 4.77）
+
+- Business 的保存、试运行草稿和持久化定义读取会先调用 `CanvasDefinitionUpgrader`，再校验规范化后的当前版本。
+  因此只在 Validator/Compiler 检查增量字段会丢失原始小版本，旧 JSON 可能夹带新语义后被升级为当前版本。
+- 升级入口现已在改写版本号前覆盖 12 个核心节点的增量门槛：固定轨迹边界、驻留/运动语义、Within
+  统计与关联结果、Overlay 家族输出、轨迹重建路径/面/缓冲窗口/测地边界、一元 Geometry 策略、Nearest
+  真实匹配、Center 独立结果与原字段投影、H3/格网字段统计、公共单位/固定周、平面格网/日历窗口、
+  DBSCAN/HDBSCAN，以及 Incidents 的窗口、运动来源和标量。缺失或 `null` 仍保留旧语义；显式新字段使用
+  既有稳定错误在升级前拒绝。
+- 该修正不改变当前 4.77 定义，不迁移旧任务算法，也不增加节点能力；Business 主代码编译通过。
+
+- [x] Geometry Derive：4.29 函数支持矩阵、实际 Z/M、Empty/退化/集合、紧凑规则、真实页面与扩展回归已完成；属于自有基础算子，不声明 GA 同名工具。
+- [x] Geometry Simplify：4.29 两算法维度、无效结果边界、共边反例、容差/单位草稿、实际批流计划、单几何规模与真实页面已验证；不承诺覆盖层共边或测地简化。
+- [x] Nearest：4.30/4.48 的真实平面与受控 WGS84 点线面距离、稳定同距排序、来源身份、显式连接线、
+  日期线 Polygon、连续近等距安全失败、256×1024 索引样例和真实页面已验证。单个跨域面、跨域接触/包含、
+  GeometryCollection、路网及无法证明的数值边界为明确拒绝范围；不声明 Enterprise 作业或容量完全等价。
+- [x] Summarize Within：4.24～4.41 的分摊/加权统计、主表/关联组表、日历窗口和规则格网，以及 4.76 收口的 EPSG:4326 XY、空区域索引计划、完整血缘、共边/重叠平台语义、256×1024 样例和真实页面已验证。Enterprise 公式矛盾、真实服务及生产容量不声明完全等价。
+- [x] Overlay：4.26 五模式、完整家族矩阵、显式二维 Multi、低维过滤和缺失侧字段，以及 4.76 收口的
+  重叠遮罩单次 Difference、pairwise 独立来源、索引计划、完整字段血缘、256×1024 样例和真实页面已验证；
+  Esri tolerance/snap、全局无重叠平面分区、几何编码及 Enterprise 容量不声明完全等价。
+- [x] Reconstruct：4.27～4.44 的固定边界/次序/拆分/段归属、测地路径、字段统计、平面面轨迹、缓冲窗口及
+  局部测地面链路，以及 4.76 收口的完整输出血缘、20,000 观测单轨迹样例和真实页面已验证。大域、Arcade、
+  ArcGIS 官方公式/容差/字段与生产容量不声明完全等价。
+- [x] Motion：4.23 的观测历史窗口、八组 31 项、Idle 双阈值、垂直单位、平面/WGS84 距离与旧语义兼容，
+  以及 4.76 收口的完整输出血缘、20,000 观测逐行样例和真实页面已验证。Enterprise 官方字段别名、
+  固定月年、服务端容差/数值与生产容量不声明完全等价。
+- [x] Dwell：4.22 参考点/固定均值中心扩展与四输出、4.35 字段 Count/Any（含数值）和实际统计类型，
+  以及 4.76 收口的平面/受控 WGS84、固定边界、完整输出血缘、20,000 点单轨迹样例和真实页面已验证。
+  官方测地中心/凸包公式、字段/统计类型、Enterprise 容差与数值、生产容量和 Streaming 不声明完全等价。
+- [x] Incidents：4.21 生命周期与确定次序、4.46 左闭右开的原字段窗口、4.63～4.65 的累计距离/逐观测
+  速度和加速度、4.66 的轨迹时间/时长/序号、4.67 的 Point 相对观测 X/Y 标量，以及 4.76 收口的
+  两种结果范围完整血缘、20,000 条单轨迹样例和真实页面已验证。完整 Geometry/TrackWindow 复合对象、
+  任意 Arcade、未核实的第三种结果范围、官方字段/数值/边界、生产容量和 Streaming 不声明完全等价。
+- [x] Bins：4.21 对边距离、4.33 H3、4.34 字段统计/固定切片、4.38 显式平面原点/范围、4.39 日历窗口，
+  以及 4.76 收口的三形状完整字段血缘、20,000 点惰性分布式聚合和真实页面已验证。H3 球面业务范围、
+  Enterprise 官方逐值/容差/边界编码及生产容量不声明完全等价。
+- [x] Cluster：4.40 显式空间/Linear DBSCAN，4.45 HDBSCAN/四诊断、原行回接、集合血缘和 Inspector，
+  以及 4.76 收口的完整输出血缘、20,000 点显式 DBSCAN、HDBSCAN 分布式状态/Checkpoint 与真实页面已验证。
+  密集候选、大 k、深树、官方诊断数值、Enterprise 簇成员和生产容量不声明完全等价；MULTI_SCALE 非 GA 算法。
+- [x] Center：4.31 线面质心/原中央要素、独立结果、确定身份排序、中位停止证据及容量保护，4.32 原字段投影，
+  以及 4.76 收口的五结果完整字段血缘、20,000 点单组统计和真实页面已验证。平均/中位时间、椭圆 interval、
+  官方加权椭圆公式/退化边界、Enterprise 数值和生产容量不声明完全等价；标准距离为平台扩展。
 
 ## 路线图其余范围
 
 - [ ] 公共单位/日历边界、Geometry/NULL/退化策略、多结果 Schema/血缘和安全摘要。
-- [ ] 现有 Clip、Buffer、Join、Dissolve、Merge、Summarize Attributes、Calculate Field 能力复核/补齐。
-- [ ] Calculate Density（矢量格网、Uniform/Kernel、半径/单位/时间）。
-- [ ] Hot Spots、Multi-Variable Grid 与 Enrich、Group By Proximity。
-- [ ] Trace Proximity Events、Snap Tracks、Similar Locations、Forest/GLR/GWR 专题设计与实现。
-- [ ] Describe Dataset 的剖析/范围/样本；需要新外部服务、依赖或框架的项先讨论确认。
+- [ ] 现有 Clip、Buffer、Measure、Join、Dissolve、Merge、Summarize Attributes、Calculate Field 能力复核/补齐；Clip 4.51 已补来源家族二维输出，4.77 已补逐来源融合相交 Mask 与旧 Pairwise 兼容；Buffer 4.49/4.52 已补显式单位及字段/表达式距离，Measure 4.50 已补逐项输出单位，Spatial Aggregate 4.53 已补 Create Buffers 的 Dissolve All/List、统计和部件方式，4.61 已补 Dissolve Boundaries 无字段连通组；Spatial Join 4.54～4.60 已补字段投影、属性/时间关系、LEFT、一对多及一对一统计/保留、空间 Near/Near Geodesic 和一对多距离输出；UNION 4.62 已补 Merge Layers 字段 Match/Rename/Remove、缺失补 NULL 和 Geometry/时间约束；各项官方容差/数值/容量能力仍待完成。
+- [x] Calculate Density：4.68 的矢量方格/六边形、Uniform/Kernel、数量字段、半径/单位/时间切片，
+  以及 4.76 收口的完整字段血缘、20,000 点惰性分布式聚合和真实页面已验证。Enterprise 数值/边缘、
+  不同投影轴单位、重叠日历窗口与生产容量不声明完全等价。
+- [x] Hot Spots：4.69 的投影 Point、完整方格、点数/字段和、固定距离 Gi*、双侧 p-value、FDR-BH、
+  `-3..3` 分级和时间切片，以及 4.76 收口的完整字段血缘、20,000 点惰性分布式执行和真实页面已验证。
+  Enterprise 边缘/FDR/数值、不同投影轴单位和生产容量不声明完全等价。
+- [x] Multi-Variable Grid：4.70 的多输入统一格网、逐变量筛选/半径、最近距离/属性和九种关联汇总，
+  以及 4.76 收口的三类变量/九种统计完整血缘、两来源统一格网、20,000 点惰性分布式执行和真实页面已验证。
+  Enterprise 边缘/并列/统计、不同 Geometry/投影轴单位及生产容量不声明完全等价。
+- [x] Enrich From Multi-Variable Grid：4.71 已接入 Point 与已有变量格网相交、显式字段投影、未匹配保留
+  及边界单格选择；4.76 已完成完整字段血缘、20,000 Point/格网惰性索引化执行和真实页面验收。
+  Enterprise 边界选择、字段类型、服务输出与生产容量不声明完全等价。
+- [x] Group By Proximity：4.72 已接入四种空间关系、可选时间/受控属性关系与传递连通组；
+  4.76 已完成集合字段完整血缘、20,000 孤立 Point 惰性分布式执行和真实页面验收。任意属性表达式、
+  Enterprise 容差/月年边界、高偏斜图和生产容量不声明完全等价。
+- [x] Trace Proximity Events：4.73 已接入有界 XY Point、显式 ID/起始表、时空和同值属性约束、
+  最大深度、首次事件及可选后续轨迹；4.76 已完成两结果完整血缘、20,000 观测/
+  10,000 事件惰性分布式执行和真实页面验收。Enterprise 搜索/episode/月年边界、极区/日期线、官方字段、
+  高偏斜图和生产容量不声明完全等价。
+- [x] Snap Tracks：4.74 已接入轨迹/时间次序、显式线网拓扑、方向、Planar/Geodesic 候选和
+  Viterbi 联合匹配；4.76 已完成全输出字段血缘、20,000 观测/1,000 轨迹规模样例和真实页面验收。
+  多条中间道路搜索、Enterprise 结果/容差、高密度候选、超长单轨迹和生产容量不声明完全等价。
+- [x] Similar Locations：4.75 已接入 GeoAnalytics 核心 Attribute Values / Attribute Profiles、
+  共同总体标准化、多参考平均和三种返回范围；4.76 已完成全输出字段血缘、20,000 候选/
+  10,000 结果规模样例和真实页面验收。Pro Ranked/Scale/Collapse、Enterprise 数值、带真实上游的
+  完整筛选交互和生产容量不声明完全等价。
+- [ ] Forest/GLR/GWR 专题设计与实现。
+- [x] Describe Dataset：4.76 已接入字段统计、描述 JSON、可选样本与可选 XY Envelope 范围，
+  并完成四结果完整血缘、20,000 行规模样例和真实页面验收。Enterprise 字段细节、采样边界、
+  带真实上游的字段选择和生产容量不声明完全等价。
 
 路线图明确独立设计/不在本轮的路网服务、地理编码、Cube、自定义脚本不伪称已实现。
 P2 中尚缺详细参数/算法决策的能力保留为待设计，不用宽泛节点名占位充数。

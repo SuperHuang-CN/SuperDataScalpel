@@ -23,13 +23,488 @@ class CanvasDefinitionValidatorTest {
     private final CanvasDefinitionUpgrader upgrader = new CanvasDefinitionUpgrader();
     private final CanvasDefinitionValidator validator = new CanvasDefinitionValidator(upgrader);
 
+    @Test void spatialClipExplicitGeometryPolicyRequires51WhileNullKeepsLegacySemantics() {
+        for (SpatialClipGeometryPolicy policy : java.util.Arrays.asList(
+                null,
+                SpatialClipGeometryPolicy.SOURCE_FAMILY_2D,
+                SpatialClipGeometryPolicy.LEGACY_ANY_DIMENSION)) {
+            var configuration = new SpatialClipConfiguration(
+                    "roads", "districts", "clipped",
+                    "shape", "boundary", "clipped_shape", policy);
+            var node = new SpatialClipNodeDefinition(
+                    UUID.randomUUID().toString(), "Clip",
+                    new CanvasNodeLayout(0d, 0d, 368d, 216d), configuration);
+            var old = new CanvasDefinition(4, 50, List.of(node), List.of());
+            if (policy == null) {
+                assertDoesNotThrow(() -> validator.validate(old));
+            } else {
+                var error = assertThrows(ResponseStatusException.class,
+                        () -> validator.validate(old));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                        .contains("SPATIAL_CLIP_GEOMETRY_POLICY_REQUIRE_SCHEMA_VERSION"));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                        .contains("configuration.geometryPolicy"));
+            }
+            assertDoesNotThrow(() -> validator.validate(
+                    new CanvasDefinition(4, 51, List.of(node), List.of())));
+        }
+    }
+
+    @Test void spatialClipExplicitMaskCombinationRequires77BeforeUpgradeWhileNullKeepsLegacySemantics() {
+        for (SpatialClipMaskCombination combination : java.util.Arrays.asList(
+                null,
+                SpatialClipMaskCombination.DISSOLVE_ALL,
+                SpatialClipMaskCombination.PAIRWISE)) {
+            var configuration = new SpatialClipConfiguration(
+                    "roads", "districts", "clipped",
+                    "shape", "boundary", "clipped_shape",
+                    SpatialClipGeometryPolicy.SOURCE_FAMILY_2D, combination);
+            var node = new SpatialClipNodeDefinition(
+                    UUID.randomUUID().toString(), "Clip",
+                    new CanvasNodeLayout(0d, 0d, 368d, 216d), configuration);
+            var old = new CanvasDefinition(4, 76, List.of(node), List.of());
+            if (combination == null) {
+                assertDoesNotThrow(() -> upgrader.upgradeToCurrent(old));
+                assertDoesNotThrow(() -> validator.validate(old));
+            } else {
+                var upgradeError = assertThrows(ResponseStatusException.class,
+                        () -> upgrader.upgradeToCurrent(old));
+                org.junit.jupiter.api.Assertions.assertTrue(upgradeError.getReason()
+                        .contains("SPATIAL_CLIP_MASK_COMBINATION_REQUIRE_SCHEMA_VERSION"));
+                org.junit.jupiter.api.Assertions.assertTrue(upgradeError.getReason()
+                        .contains("configuration.maskCombination"));
+
+                var validationError = assertThrows(ResponseStatusException.class,
+                        () -> validator.validate(old));
+                org.junit.jupiter.api.Assertions.assertTrue(validationError.getReason()
+                        .contains("SPATIAL_CLIP_MASK_COMBINATION_REQUIRE_SCHEMA_VERSION"));
+            }
+            assertDoesNotThrow(() -> validator.validate(
+                    new CanvasDefinition(4, 77, List.of(node), List.of())));
+        }
+    }
+
+    @Test void spatialMeasureExplicitUnitsRequire50WhileNullKeepsLegacySemantics() {
+        for (SpatialDistanceUnit unit : java.util.Arrays.asList(
+                null, SpatialDistanceUnit.KILOMETERS, SpatialDistanceUnit.FEET_US)) {
+            var measurement = new SpatialMeasurement.Length(
+                    "shape", SpatialMeasureMode.SPHEROID, "length", unit);
+            var configuration = new SpatialMeasureConfiguration(
+                    "source", "output", List.of(measurement));
+            var node = new SpatialMeasureNodeDefinition(
+                    UUID.randomUUID().toString(), "Measure",
+                    new CanvasNodeLayout(0d, 0d, 344d, 216d), configuration);
+            var old = new CanvasDefinition(4, 49, List.of(node), List.of());
+            if (unit == null) {
+                assertDoesNotThrow(() -> validator.validate(old));
+            } else {
+                var error = assertThrows(ResponseStatusException.class, () -> validator.validate(old));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                        .contains("SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION"));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                        .contains("configuration.measurements[0].outputUnit"));
+            }
+            assertDoesNotThrow(() -> validator.validate(
+                    new CanvasDefinition(4, 50, List.of(node), List.of())));
+        }
+    }
+
+    @Test void geometryBufferExplicitUnitsRequire49WhileNullKeepsLegacySemantics() {
+        for (SpatialDistanceUnit unit : java.util.Arrays.asList(null, SpatialDistanceUnit.METERS, SpatialDistanceUnit.FEET_US)) {
+            var configuration = new GeometryBufferConfiguration("", "", "", "", 1d,
+                    SpatialMeasureMode.SPHEROID, unit);
+            var node = new GeometryBufferNodeDefinition(UUID.randomUUID().toString(), "Buffer",
+                    new CanvasNodeLayout(0d, 0d, 320d, 188d), configuration);
+            var old = new CanvasDefinition(4, 48, List.of(node), List.of());
+            if (unit == null) {
+                assertDoesNotThrow(() -> validator.validate(old));
+            } else {
+                var error = assertThrows(ResponseStatusException.class, () -> validator.validate(old));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("GEOMETRY_BUFFER_UNIT_REQUIRE_SCHEMA_VERSION"));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("configuration.distanceUnit"));
+            }
+            assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4, 49, List.of(node), List.of())));
+        }
+    }
+
+    @Test void geometryBufferDistanceSourcesRequire52WhileMissingFieldsKeepLegacySemantics() {
+        for (GeometryBufferDistanceSource source : java.util.Arrays.asList(
+                null,
+                GeometryBufferDistanceSource.CONSTANT,
+                GeometryBufferDistanceSource.FIELD,
+                GeometryBufferDistanceSource.EXPRESSION)) {
+            var configuration = new GeometryBufferConfiguration(
+                    "", "", "", "", 1d, SpatialMeasureMode.PLANAR, null,
+                    source,
+                    source == GeometryBufferDistanceSource.FIELD ? "radius" : null,
+                    source == GeometryBufferDistanceSource.EXPRESSION ? "radius * 2" : null);
+            var node = new GeometryBufferNodeDefinition(UUID.randomUUID().toString(), "Buffer",
+                    new CanvasNodeLayout(0d, 0d, 320d, 188d), configuration);
+            var old = new CanvasDefinition(4, 51, List.of(node), List.of());
+            if (source == null) {
+                assertDoesNotThrow(() -> validator.validate(old));
+            } else {
+                var error = assertThrows(ResponseStatusException.class, () -> validator.validate(old));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                        .contains("GEOMETRY_BUFFER_DISTANCE_SOURCE_REQUIRE_SCHEMA_VERSION"));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                        .contains("configuration.distanceSource"));
+            }
+            assertDoesNotThrow(() -> validator.validate(
+                    new CanvasDefinition(4, 52, List.of(node), List.of())));
+        }
+    }
+
+    @Test
+    void spatialAggregateDissolveRequires53IncludingInactiveDrafts() {
+        var dissolve = new SpatialAggregateDissolveOptions(
+                false,
+                true,
+                "saved_count",
+                List.of(new SpatialAggregateStatistic(
+                        "saved-draft-id",
+                        SpatialAggregateStatisticKind.SUM,
+                        "saved_value",
+                        "saved_sum"))
+        );
+        var explicit = new SpatialAggregateNodeDefinition(
+                UUID.randomUUID().toString(),
+                "Dissolve",
+                new CanvasNodeLayout(0d, 0d, 352d, 224d),
+                new SpatialAggregateConfiguration(
+                        "parcels", "districts", List.of(), List.of(), dissolve)
+        );
+        var legacy = new SpatialAggregateNodeDefinition(
+                UUID.randomUUID().toString(),
+                "Legacy aggregate",
+                new CanvasNodeLayout(0d, 0d, 352d, 224d),
+                new SpatialAggregateConfiguration(
+                        "parcels", "districts", List.of(), List.of())
+        );
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 52, List.of(explicit), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("SPATIAL_AGGREGATE_DISSOLVE_REQUIRE_SCHEMA_VERSION"));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("configuration.dissolve"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 53, List.of(explicit), List.of())));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 52, List.of(legacy), List.of())));
+    }
+
+    @Test
+    void spatialAggregateDissolveGroupingRequires61IncludingInactiveDrafts() {
+        var dissolve = new SpatialAggregateDissolveOptions(
+                false,
+                true,
+                "saved_count",
+                List.of(),
+                SpatialAggregateDissolveGroupingMode.CONNECTED_COMPONENTS
+        );
+        var node = new SpatialAggregateNodeDefinition(
+                UUID.randomUUID().toString(),
+                "Connected Dissolve",
+                new CanvasNodeLayout(0d, 0d, 352d, 224d),
+                new SpatialAggregateConfiguration(
+                        "parcels", "districts", List.of(), List.of(), dissolve));
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 60, List.of(node), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("SPATIAL_DISSOLVE_GROUPING_MODE_REQUIRE_SCHEMA_VERSION"));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("configuration.dissolve.groupingMode"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 61, List.of(node), List.of())));
+    }
+
+    @Test
+    void unionMergeLayersRequires62WhileLegacyNullRemainsCompatible() {
+        var explicit = new UnionNodeDefinition(
+                UUID.randomUUID().toString(), "Merge Layers",
+                new CanvasNodeLayout(0d, 0d, 336d, 204d),
+                new UnionConfiguration(
+                        List.of("base", "merge"), "merged", UnionMode.ALL,
+                        List.of(new UnionMergeTable("merge", List.of(
+                                new UnionMergeFieldRule(
+                                        "status", UnionMergeFieldAction.MATCH, "code")
+                        )))
+                )
+        );
+        var legacy = new UnionNodeDefinition(
+                UUID.randomUUID().toString(), "Legacy Union",
+                new CanvasNodeLayout(0d, 0d, 336d, 204d),
+                new UnionConfiguration(
+                        List.of("base", "merge"), "merged", UnionMode.ALL)
+        );
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 61, List.of(explicit), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("UNION_MERGE_LAYERS_REQUIRE_SCHEMA_VERSION"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 62, List.of(explicit), List.of())));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 61, List.of(legacy), List.of())));
+    }
+
+    @Test
+    void spatialJoinOutputProjectionRequires54WhileLegacyNullRemainsCompatible() {
+        var columns = List.of(new JoinOutputColumn(
+                JoinOutputColumnSource.RIGHT, "id", "districts_id", true));
+        var explicit = spatialJoinNode(columns);
+        var legacy = spatialJoinNode(null);
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 53, List.of(explicit), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("SPATIAL_JOIN_OUTPUT_COLUMNS_REQUIRE_SCHEMA_VERSION"));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("configuration.outputColumns"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 54, List.of(explicit), List.of())));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 53, List.of(legacy), List.of())));
+    }
+
+    @Test
+    void spatialJoinAttributeConditionsRequire55WhileLegacyNullRemainsCompatible() {
+        var attributeConditions = List.of(new JoinCondition(
+                "tenant_id", JoinOperator.EQUALS, "tenant_id"));
+        var explicit = spatialJoinNode(null, attributeConditions);
+        var legacy = spatialJoinNode(null, null);
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 54, List.of(explicit), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("SPATIAL_JOIN_ATTRIBUTE_CONDITIONS_REQUIRE_SCHEMA_VERSION"));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("configuration.attributeConditions"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 55, List.of(explicit), List.of())));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 54, List.of(legacy), List.of())));
+    }
+
+    @Test
+    void spatialJoinKeepAllRequires56WhileInnerRemainsCompatible() {
+        var keepAll = spatialJoinNode(null, null, JoinType.LEFT);
+        var inner = spatialJoinNode(null, null, JoinType.INNER);
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 55, List.of(keepAll), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("SPATIAL_JOIN_KEEP_ALL_REQUIRE_SCHEMA_VERSION"));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("configuration.joinType"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 56, List.of(keepAll), List.of())));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 55, List.of(inner), List.of())));
+    }
+
+    @Test
+    void spatialJoinExplicitOperationRequires57WhileNullRemainsCompatible() {
+        var explicit = spatialJoinNode(
+                null, null, JoinType.INNER, SpatialJoinOperation.JOIN_ONE_TO_MANY);
+        var legacy = spatialJoinNode(null, null, JoinType.INNER, null);
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 56, List.of(explicit), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("SPATIAL_JOIN_OPERATION_REQUIRE_SCHEMA_VERSION"));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("configuration.joinOperation"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 57, List.of(explicit), List.of())));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 56, List.of(legacy), List.of())));
+    }
+
+    @Test
+    void spatialJoinOneToOneRequires58IncludingInactiveDrafts() {
+        var oneToOne = new SpatialJoinOneToOneOptions(
+                SpatialJoinOneToOneMode.SUMMARIZE_MATCHES,
+                "join_count",
+                List.of(),
+                null
+        );
+        var active = spatialJoinNode(
+                null, null, JoinType.INNER, SpatialJoinOperation.JOIN_ONE_TO_ONE, oneToOne);
+        var inactiveDraft = spatialJoinNode(
+                null, null, JoinType.INNER, SpatialJoinOperation.JOIN_ONE_TO_MANY, oneToOne);
+        var legacy = spatialJoinNode(
+                null, null, JoinType.INNER, SpatialJoinOperation.JOIN_ONE_TO_MANY, null);
+
+        for (var node : List.of(active, inactiveDraft)) {
+            var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                    new CanvasDefinition(4, 57, List.of(node), List.of())));
+            org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                    .contains("SPATIAL_JOIN_ONE_TO_ONE_REQUIRE_SCHEMA_VERSION"));
+            org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                    .contains("configuration.oneToOne"));
+            assertDoesNotThrow(() -> validator.validate(
+                    new CanvasDefinition(4, 58, List.of(node), List.of())));
+        }
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 57, List.of(legacy), List.of())));
+    }
+
+    @Test
+    void spatialJoinTemporalConditionRequires59IncludingIncompleteDrafts() {
+        var temporal = new SpatialJoinTemporalCondition(
+                SpatialJoinTemporalRelationship.INTERSECTS,
+                "target_start", "target_end", "join_start", "join_end", null, null);
+        var incompleteDraft = new SpatialJoinTemporalCondition(
+                SpatialJoinTemporalRelationship.NEAR,
+                "", null, "", null, null, null);
+
+        for (var condition : List.of(temporal, incompleteDraft)) {
+            var node = spatialJoinNode(
+                    null, null, JoinType.INNER, null, null, condition);
+            var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                    new CanvasDefinition(4, 58, List.of(node), List.of())));
+            org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                    .contains("SPATIAL_JOIN_TEMPORAL_CONDITION_REQUIRE_SCHEMA_VERSION"));
+            org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                    .contains("configuration.temporalCondition"));
+        }
+        assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
+                4, 59, List.of(spatialJoinNode(
+                null, null, JoinType.INNER, null, null, temporal)), List.of())));
+        assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
+                4, 59, List.of(spatialJoinNode(
+                null, null, JoinType.INNER, null, null, incompleteDraft)), List.of())));
+        assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(
+                4, 58, List.of(spatialJoinNode(null)), List.of())));
+    }
+
+    @Test
+    void spatialJoinNearAndDistanceOutputRequire60IncludingInactiveDrafts() {
+        var near = new SpatialJoinSpatialNearCondition(
+                "", "", SpatialDistanceMethod.GEODESIC,
+                null, null);
+        var output = new SpatialJoinDistanceOutput(
+                false, "", null, "", null);
+        var configuration = new SpatialJoinConfiguration(
+                "orders", "districts", "matched", JoinType.INNER,
+                List.of(), List.of(), List.of(),
+                SpatialJoinOperation.JOIN_ONE_TO_MANY,
+                null, null, near, output);
+        var node = new SpatialJoinNodeDefinition(
+                UUID.randomUUID().toString(), "Near",
+                new CanvasNodeLayout(0d, 0d, 368d, 224d), configuration);
+
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(
+                new CanvasDefinition(4, 59, List.of(node), List.of())));
+        org.junit.jupiter.api.Assertions.assertTrue(error.getReason()
+                .contains("SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION"));
+        assertDoesNotThrow(() -> validator.validate(
+                new CanvasDefinition(4, 60, List.of(node), List.of())));
+    }
+
+    private static SpatialJoinNodeDefinition spatialJoinNode(List<JoinOutputColumn> outputColumns) {
+        return spatialJoinNode(outputColumns, null);
+    }
+
+    private static SpatialJoinNodeDefinition spatialJoinNode(
+            List<JoinOutputColumn> outputColumns,
+            List<JoinCondition> attributeConditions
+    ) {
+        return spatialJoinNode(outputColumns, attributeConditions, JoinType.INNER);
+    }
+
+    private static SpatialJoinNodeDefinition spatialJoinNode(
+            List<JoinOutputColumn> outputColumns,
+            List<JoinCondition> attributeConditions,
+            JoinType joinType
+    ) {
+        return spatialJoinNode(outputColumns, attributeConditions, joinType, null);
+    }
+
+    private static SpatialJoinNodeDefinition spatialJoinNode(
+            List<JoinOutputColumn> outputColumns,
+            List<JoinCondition> attributeConditions,
+            JoinType joinType,
+            SpatialJoinOperation joinOperation
+    ) {
+        return spatialJoinNode(
+                outputColumns, attributeConditions, joinType, joinOperation, null);
+    }
+
+    private static SpatialJoinNodeDefinition spatialJoinNode(
+            List<JoinOutputColumn> outputColumns,
+            List<JoinCondition> attributeConditions,
+            JoinType joinType,
+            SpatialJoinOperation joinOperation,
+            SpatialJoinOneToOneOptions oneToOne
+    ) {
+        return spatialJoinNode(
+                outputColumns, attributeConditions, joinType, joinOperation, oneToOne, null);
+    }
+
+    private static SpatialJoinNodeDefinition spatialJoinNode(
+            List<JoinOutputColumn> outputColumns,
+            List<JoinCondition> attributeConditions,
+            JoinType joinType,
+            SpatialJoinOperation joinOperation,
+            SpatialJoinOneToOneOptions oneToOne,
+            SpatialJoinTemporalCondition temporalCondition
+    ) {
+        return new SpatialJoinNodeDefinition(
+                UUID.randomUUID().toString(),
+                "空间连接",
+                new CanvasNodeLayout(0d, 0d, 368d, 224d),
+                new SpatialJoinConfiguration(
+                        "orders", "districts", "orders_with_district", joinType,
+                        List.of(new SpatialJoinCondition(
+                                "shape", SpatialPredicate.WITHIN, "boundary")),
+                        attributeConditions,
+                        outputColumns,
+                        joinOperation,
+                        oneToOne,
+                        temporalCondition)
+        );
+    }
+
     @Test void fixedWeekDraftsRequire47WithPrecisePath() {
         var c = new ObjectMapper().readValue("{\"boundaries\":{\"maximumTimeGapUnit\":\"WEEKS\"}}", TrackReconstructConfiguration.class);
         var node = new TrackReconstructNodeDefinition(UUID.randomUUID().toString(),"轨迹",new CanvasNodeLayout(0d,0d,360d,216d),c);
-        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(4,46,List.of(node),List.of())));
+        var legacy = new CanvasDefinition(4,46,List.of(node),List.of());
+        var error = assertThrows(ResponseStatusException.class, () -> validator.validate(legacy));
         org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("SPATIAL_DURATION_WEEKS_REQUIRE_SCHEMA_VERSION"));
         org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("configuration.boundaries.maximumTimeGapUnit"));
+        assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(legacy));
         assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4,47,List.of(node),List.of())));
+    }
+
+    @Test void nearestGeodesicGeometryRequires48EvenInLegacyMatchingDraft() {
+        for (var mode : java.util.Arrays.asList(null, SpatialNearestGeodesicGeometryMode.POINT_ONLY,
+                SpatialNearestGeodesicGeometryMode.GEOMETRY)) {
+            var configuration = new ObjectMapper().readValue("{\"nearestCount\":1,\"includeUnmatched\":false}",
+                    SpatialNearestConfiguration.class);
+            configuration = new SpatialNearestConfiguration(configuration.sourceTableName(), configuration.sourceGeometryColumnName(),
+                    configuration.candidateTableName(), configuration.candidateGeometryColumnName(), configuration.candidateIdColumnName(),
+                    configuration.distanceMethod(), configuration.nearestCount(), configuration.maximumDistance(),
+                    configuration.maximumDistanceUnit(), configuration.includeUnmatched(), configuration.outputTableName(),
+                    configuration.distanceColumnName(), configuration.distanceOutputUnit(), configuration.rankColumnName(),
+                    List.of(), new SpatialNearestMatching(SpatialNearestMatchSemantics.LEGACY_KNN, "", null, mode));
+            var node = new SpatialNearestNodeDefinition(UUID.randomUUID().toString(), "最近邻",
+                    new CanvasNodeLayout(0d, 0d, 368d, 216d), configuration);
+            var old = new CanvasDefinition(4, 47, List.of(node), List.of());
+            if (mode == SpatialNearestGeodesicGeometryMode.GEOMETRY) {
+                var error = assertThrows(ResponseStatusException.class, () -> validator.validate(old));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("SPATIAL_NEAREST_GEODESIC_GEOMETRY_REQUIRE_SCHEMA_VERSION"));
+                org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("configuration.matching.geodesicGeometryMode"));
+                assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(old));
+            } else {
+                assertDoesNotThrow(() -> validator.validate(old));
+                assertDoesNotThrow(() -> upgrader.upgradeToCurrent(old));
+            }
+            assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4, 48, List.of(node), List.of())));
+        }
     }
 
     @Test void incidentWindowDraftsAreVersionGatedButBusinessErrorsCanBeSaved() {
@@ -39,8 +514,31 @@ class CanvasDefinitionValidatorTest {
                     TrackIncidentResultMode.ALL_EVENTS,"","","","","","",SpatialDurationUnit.SECONDS,semantics,"",List.of(),
                     List.of(new TrackIncidentWindow("","",null,null,null)));
             var node = new TrackDetectIncidentsNodeDefinition(UUID.randomUUID().toString(),"事件",new CanvasNodeLayout(0d,0d,360d,216d),c);
-            assertThrows(ResponseStatusException.class, () -> validator.validate(new CanvasDefinition(4,45,List.of(node),List.of())));
+            var legacy = new CanvasDefinition(4,45,List.of(node),List.of());
+            assertThrows(ResponseStatusException.class, () -> validator.validate(legacy));
+            assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(legacy));
             assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4,46,List.of(node),List.of())));
+        }
+    }
+
+    @Test void incidentPointCoordinateDraftsRequire67ButMayKeepBusinessErrors() {
+        for (var semantics : TrackIncidentSemantics.values()) {
+            var configuration = new TrackDetectIncidentsConfiguration("", null, List.of(), "", null,
+                    new TrackBoundaryConfiguration(null, null, null, null),
+                    new CanvasFilterGroup(FilterGroupOperator.AND, List.of()), null,
+                    TrackIncidentResultMode.ALL_EVENTS, "", "", "", "", "", "",
+                    SpatialDurationUnit.SECONDS, semantics, "", List.of(), List.of(),
+                    List.of(new TrackIncidentScalar("", TrackIncidentScalar.Source.TRACK_POINT_X_AT, null)));
+            var node = new TrackDetectIncidentsNodeDefinition(UUID.randomUUID().toString(), "事件",
+                    new CanvasNodeLayout(0d, 0d, 360d, 216d), configuration);
+
+            var old = assertThrows(ResponseStatusException.class,
+                    () -> validator.validate(new CanvasDefinition(4, 66, List.of(node), List.of())));
+            org.junit.jupiter.api.Assertions.assertTrue(old.getReason()
+                    .contains("TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION"));
+            assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(
+                    new CanvasDefinition(4, 66, List.of(node), List.of())));
+            assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4, 67, List.of(node), List.of())));
         }
     }
 
@@ -50,8 +548,13 @@ class CanvasDefinitionValidatorTest {
                     new SpatialPointClusterParameters.Dbscan(0, null, 0), "", "", "", null, options);
             var node = new SpatialPointClusterNodeDefinition(UUID.randomUUID().toString(), "聚类", new CanvasNodeLayout(0d,0d,352d,216d), c);
             var old = new CanvasDefinition(4,44,List.of(node),List.of());
-            if (options == null) assertDoesNotThrow(() -> validator.validate(old));
-            else assertThrows(ResponseStatusException.class, () -> validator.validate(old));
+            if (options == null) {
+                assertDoesNotThrow(() -> validator.validate(old));
+                assertDoesNotThrow(() -> upgrader.upgradeToCurrent(old));
+            } else {
+                assertThrows(ResponseStatusException.class, () -> validator.validate(old));
+                assertThrows(ResponseStatusException.class, () -> upgrader.upgradeToCurrent(old));
+            }
             assertDoesNotThrow(() -> validator.validate(new CanvasDefinition(4,45,List.of(node),List.of())));
         }
     }
@@ -79,6 +582,7 @@ class CanvasDefinitionValidatorTest {
             else {
                 var error=assertThrows(ResponseStatusException.class,()->validator.validate(old));
                 org.junit.jupiter.api.Assertions.assertTrue(error.getReason().contains("TRACK_GEODESIC_AREA_REQUIRE_SCHEMA_VERSION"));
+                assertThrows(ResponseStatusException.class,()->upgrader.upgradeToCurrent(old));
             }
             assertDoesNotThrow(()->validator.validate(new CanvasDefinition(4,44,List.of(node),List.of())));
         }

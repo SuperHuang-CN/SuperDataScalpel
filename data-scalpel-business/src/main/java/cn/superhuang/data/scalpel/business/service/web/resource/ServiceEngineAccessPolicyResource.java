@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.service.web.resource;
 
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Operation;
 import cn.superhuang.data.scalpel.business.systemmcp.metadata.SystemMcpOperation;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineAccessPolicyService;
 import cn.superhuang.data.scalpel.business.service.web.request.UpdateServiceEngineAccessPolicyRequest;
@@ -27,26 +29,29 @@ public class ServiceEngineAccessPolicyResource {
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "服务引擎访问策略：查看详情")
+    @Operation(summary = "查看服务引擎访问策略", description = "返回管理端期望的来源 IP/CIDR 白名单、最近一次远端应用结果和同步状态；尚未配置时返回空策略。仅 DataScalpel Service Engine 支持该能力。")
     @GetMapping("/access-policy")
     @PreAuthorize("hasAuthority('service.engine.view')")
-    public ServiceEngineAccessPolicyResponse get(@PathVariable UUID engineId) {
+    public ServiceEngineAccessPolicyResponse get(@Parameter(description = "DataScalpel Service Engine UUID。") @PathVariable UUID engineId) {
         return service.get(engineId);
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "服务引擎访问策略：修改")
+    @Operation(summary = "修改服务引擎访问策略", description = "要求 DataScalpel 引擎已启用；规范化并整体保存新的业务访问 IP/CIDR 策略，每次调用递增 desiredRevision，然后立即下发远端。失败时仍保留期望配置并写入 FAILED 状态，但当前调用返回 502；随后可查询状态或重新同步。")
     @PostMapping("/actions/update-access-policy")
     @PreAuthorize("hasAuthority('service.engine.update')")
     public ServiceEngineAccessPolicyResponse update(
-            @PathVariable UUID engineId,
+            @Parameter(description = "DataScalpel Service Engine UUID。") @PathVariable UUID engineId,
             @Valid @RequestBody UpdateServiceEngineAccessPolicyRequest request
     ) {
         return service.update(engineId, request);
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "服务引擎访问策略：同步")
+    @Operation(summary = "重新同步服务引擎访问策略", description = "要求 DataScalpel 引擎已启用且已有非空允许列表；把当前 desiredRevision 和规则重新下发，不递增修订。远端不可达、拒绝或未确认同一修订时保存 FAILED 状态后返回 502。")
     @PostMapping("/actions/sync-access-policy")
     @PreAuthorize("hasAuthority('service.engine.update')")
-    public ServiceEngineAccessPolicyResponse sync(@PathVariable UUID engineId) {
+    public ServiceEngineAccessPolicyResponse sync(@Parameter(description = "DataScalpel Service Engine UUID。") @PathVariable UUID engineId) {
         return service.sync(engineId);
     }
 }

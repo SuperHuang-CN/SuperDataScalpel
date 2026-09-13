@@ -38,10 +38,10 @@ import java.util.stream.Collectors;
 public class DataEntryHealthService {
 
     private static final List<String> PUBLISH_SUBMIT = List.of("PUBLISH", "SUBMIT");
-    private static final List<String> ALL_DATA = List.of("PUBLISH", "SUBMIT", "DELETE", "QUERY");
-    private static final List<String> WRITE_OPERATIONS = List.of("PUBLISH", "SUBMIT", "DELETE");
-    private static final List<String> MUTATIONS = List.of("SUBMIT", "DELETE");
-    private static final List<String> SUBMIT = List.of("SUBMIT");
+    private static final List<String> PUBLISH_SUBMIT_UPDATE = List.of("PUBLISH", "SUBMIT", "UPDATE");
+    private static final List<String> ALL_DATA = List.of("PUBLISH", "SUBMIT", "UPDATE", "DELETE", "QUERY");
+    private static final List<String> WRITE_OPERATIONS = List.of("PUBLISH", "SUBMIT", "UPDATE", "DELETE");
+    private static final List<String> MUTATIONS = List.of("SUBMIT", "UPDATE", "DELETE");
 
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
@@ -90,7 +90,7 @@ public class DataEntryHealthService {
         }
 
         if (model.getStatus() != DataModelStatus.PUBLISHED) {
-            issue(issues, "TARGET_MODEL_NOT_PUBLISHED", "目标模型不是已发布状态", PUBLISH_SUBMIT, null, null);
+            issue(issues, "TARGET_MODEL_NOT_PUBLISHED", "目标模型不是已发布状态", PUBLISH_SUBMIT_UPDATE, null, null);
         }
         if (snapshot.form().getStatus() == DataEntryFormStatus.PUBLISHED
                 && !Objects.equals(snapshot.form().getPublishedModelSchemaVersion(), model.getSchemaVersion())) {
@@ -107,20 +107,24 @@ public class DataEntryHealthService {
             issue(issues, "TARGET_DATASOURCE_UNAVAILABLE", "目标数据源不具有存储用途", WRITE_OPERATIONS, null, null);
         }
         if (dataSource != null && !supportedDatabase(dataSource)) {
-            issue(issues, "TARGET_DATABASE_UNSUPPORTED", "数据填报只支持 PostgreSQL、MySQL 和单机 ClickHouse",
+            issue(issues, "TARGET_DATABASE_UNSUPPORTED", "数据填报只支持 PostgreSQL、HighGo、人大金仓、openGauss、MySQL 和单机 ClickHouse",
                     WRITE_OPERATIONS, null, null);
+        }
+        if (dataSource != null && supportedDatabase(dataSource) && !updateSupported(dataSource)) {
+            issue(issues, "TARGET_UPDATE_UNSUPPORTED", "当前数据库类型暂不支持单条编辑",
+                    List.of("UPDATE"), null, null);
         }
         if (snapshot.fields().isEmpty()) {
             issue(issues, "TARGET_FIELDS_EMPTY", "目标模型没有字段", ALL_DATA, null, null);
         }
         if (snapshot.fields().stream().noneMatch(DataModelField::isPrimaryKey)) {
             issue(issues, "TARGET_PRIMARY_KEY_MISSING", "目标模型没有业务主键字段",
-                    List.of("PUBLISH", "SUBMIT", "DELETE"), null, null);
+                    List.of("PUBLISH", "SUBMIT", "UPDATE", "DELETE"), null, null);
         }
         for (DataModelField field : snapshot.fields()) {
             if (field.getFieldType() == PlatformDataType.BINARY || field.getFieldType() == PlatformDataType.GEOMETRY) {
                 issue(issues, "TARGET_FIELD_UNSUPPORTED", "字段“" + field.getName() + "”的类型暂不支持填报",
-                        field.isPrimaryKey() ? WRITE_OPERATIONS : PUBLISH_SUBMIT, field.getId(), null);
+                        field.isPrimaryKey() ? WRITE_OPERATIONS : PUBLISH_SUBMIT_UPDATE, field.getId(), null);
             }
         }
         if (!snapshot.fields().isEmpty() && snapshot.fields().stream().allMatch(field ->
@@ -268,10 +272,21 @@ public class DataEntryHealthService {
                 && !fields.isEmpty();
     }
 
-    private static boolean supportedDatabase(DataSource dataSource) {
+    static boolean supportedDatabase(DataSource dataSource) {
         return dataSource.getType() == DataSourceType.POSTGRESQL
+                || dataSource.getType() == DataSourceType.HIGHGO
+                || dataSource.getType() == DataSourceType.KINGBASE
+                || dataSource.getType() == DataSourceType.OPENGAUSS
                 || dataSource.getType() == DataSourceType.MYSQL
                 || dataSource.getType() == DataSourceType.CLICKHOUSE;
+    }
+
+    private static boolean updateSupported(DataSource dataSource) {
+        return dataSource.getType() == DataSourceType.POSTGRESQL
+                || dataSource.getType() == DataSourceType.HIGHGO
+                || dataSource.getType() == DataSourceType.KINGBASE
+                || dataSource.getType() == DataSourceType.OPENGAUSS
+                || dataSource.getType() == DataSourceType.MYSQL;
     }
 
     private static DataEntryHealthResponse result(DataEntryForm form, List<DataEntryHealthIssueResponse> issues) {
@@ -279,10 +294,12 @@ public class DataEntryHealthService {
                 && issues.stream().noneMatch(issue -> issue.affectedOperations().contains("PUBLISH"));
         boolean canSubmit = form.getStatus() == DataEntryFormStatus.PUBLISHED
                 && issues.stream().noneMatch(issue -> issue.affectedOperations().contains("SUBMIT"));
+        boolean canUpdate = form.getStatus() == DataEntryFormStatus.PUBLISHED
+                && issues.stream().noneMatch(issue -> issue.affectedOperations().contains("UPDATE"));
         boolean canDelete = form.getStatus() == DataEntryFormStatus.PUBLISHED
                 && issues.stream().noneMatch(issue -> issue.affectedOperations().contains("DELETE"));
         boolean canQuery = issues.stream().noneMatch(issue -> issue.affectedOperations().contains("QUERY"));
-        return new DataEntryHealthResponse(canPublish, canSubmit, canDelete, canQuery, List.copyOf(issues));
+        return new DataEntryHealthResponse(canPublish, canSubmit, canUpdate, canDelete, canQuery, List.copyOf(issues));
     }
 
     private static void issue(

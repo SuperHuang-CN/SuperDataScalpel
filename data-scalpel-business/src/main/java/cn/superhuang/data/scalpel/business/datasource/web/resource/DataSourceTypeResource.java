@@ -26,7 +26,7 @@ public class DataSourceTypeResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询支持的数据库类型和连接能力")
     @GetMapping
     @PreAuthorize("hasAuthority('datasource.view')")
-    @Operation(summary = "查询支持的数据库类型和连接能力")
+    @Operation(summary = "查询支持的数据库类型和连接能力", description = "返回系统当前支持的数据源类型、连接字段、能力和限制，用于构造新增、修改和测试请求；不读取已登记数据源。")
     public List<DataSourceTypeResponse> list() {
         return service.dataSourceTypes();
     }

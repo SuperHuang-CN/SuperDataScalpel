@@ -43,6 +43,9 @@ export interface DataModelDataQueryPanelProps {
   ) => ReactNode;
   rowSelection?: (rows: DataModelQueryRow[]) => TableProps<DataModelQueryRow>['rowSelection'];
   toolbar?: ReactNode;
+  requiredColumns?: string[];
+  rowActions?: (row: DataModelQueryRow) => ReactNode;
+  refreshToken?: number;
   onResult?: (result: DataModelDataQueryResponse) => void;
   columnSizing?: DataModelPreviewColumnSizing;
 }
@@ -125,6 +128,9 @@ export const DataModelDataQueryPanel = ({
   renderCell = defaultRenderCell,
   rowSelection,
   toolbar,
+  requiredColumns = [],
+  rowActions,
+  refreshToken,
   onResult,
   columnSizing,
 }: DataModelDataQueryPanelProps) => {
@@ -139,6 +145,7 @@ export const DataModelDataQueryPanel = ({
   const [error, setError] = useState<unknown>();
   const [autoColumnWidths, setAutoColumnWidths] = useState<DataModelPreviewColumnWidths>({});
   const initializedQueryRef = useRef<DataModelDataQueryPanelProps['query'] | undefined>(undefined);
+  const appliedRefreshTokenRef = useRef(refreshToken);
   const requestSequenceRef = useRef(0);
   const [modalApi, modalContext] = Modal.useModal();
   const options = useMemo(() => fields
@@ -148,8 +155,11 @@ export const DataModelDataQueryPanel = ({
     ...row,
     __rowKey: rowKey(row, index),
   })), [queryResult, rowKey]);
-  const columns = useMemo<NonNullable<TableProps<DataModelQueryRow>['columns']>>(() => (
-    (queryResult?.columns ?? []).map((column) => {
+  const columns = useMemo<NonNullable<TableProps<DataModelQueryRow>['columns']>>(() => {
+    const requested = new Set(appliedValues.columns ?? []);
+    const visible = (queryResult?.columns ?? []).filter((column) =>
+      !appliedValues.columns?.length || requested.has(column.code));
+    const dataColumns = visible.map((column) => {
       const width = columnSizing
         ? effectiveDataModelPreviewColumnWidth(column.code, autoColumnWidths, columnSizing.manualWidths)
         : 180;
@@ -176,8 +186,12 @@ export const DataModelDataQueryPanel = ({
           value, column.code, record, column.fieldType,
         ),
       };
-    })
-  ), [autoColumnWidths, columnSizing, queryResult, renderCell]);
+    });
+    return rowActions ? [...dataColumns, {
+      title: '操作', key: '__actions', width: 88, fixed: 'right' as const,
+      render: (_value: unknown, record: DataModelQueryRow) => rowActions(record),
+    }] : dataColumns;
+  }, [appliedValues.columns, autoColumnWidths, columnSizing, queryResult, renderCell, rowActions]);
   const tableWidth = useMemo(() => columnSizing
     ? totalDataModelPreviewColumnsWidth((queryResult?.columns ?? []).map((column) => (
         effectiveDataModelPreviewColumnWidth(column.code, autoColumnWidths, columnSizing.manualWidths)
@@ -230,7 +244,9 @@ export const DataModelDataQueryPanel = ({
   ) => {
     const request: DataModelDataQueryRequest = {
       pageNo, pageSize: requestedPageSize, conditionType: values.conditionType ?? 'AND',
-      columns: values.columns ?? [], filters: values.filters ?? [], orders: values.orders ?? [], returnCount: false,
+      columns: values.columns?.length
+        ? [...new Set([...(values.columns ?? []), ...requiredColumns])]
+        : [], filters: values.filters ?? [], orders: values.orders ?? [], returnCount: false,
     };
     setLastRequest(request);
     await run(request);
@@ -255,6 +271,12 @@ export const DataModelDataQueryPanel = ({
     setLastRequest(request);
     void run(request);
   }, [options.length, query, run]);
+
+  useEffect(() => {
+    if (appliedRefreshTokenRef.current === refreshToken) return;
+    appliedRefreshTokenRef.current = refreshToken;
+    if (lastRequest) queueMicrotask(() => void run(lastRequest));
+  }, [lastRequest, refreshToken, run]);
 
   const clearEditor = () => {
     form.resetFields();

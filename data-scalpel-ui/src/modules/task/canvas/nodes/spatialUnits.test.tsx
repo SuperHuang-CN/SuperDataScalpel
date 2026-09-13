@@ -9,7 +9,7 @@ import { createNearestMatching } from './spatialNearest/matching';
 import { ConnectionLinesModal } from './spatialNearest/ConnectionLinesModal';
 
 afterEach(cleanup);
-const definition = (type: CanvasNodeType, configuration: unknown, minor = 36) => ({ schemaVersion: 4, schemaMinorVersion: minor,
+const definition = (type: CanvasNodeType, configuration: unknown, minor: number = CANVAS_SCHEMA_MINOR_VERSION) => ({ schemaVersion: 4, schemaMinorVersion: minor,
   nodes: [{ id: '11111111-1111-4111-8111-111111111111', type, configuration, name: '单位', layout: { x: 12, y: 34, width: 240, height: 120 } }], edges: [] });
 
 describe('extended spatial units', () => {
@@ -31,6 +31,7 @@ describe('extended spatial units', () => {
   it('gates every affected node, preserves inactive unit settings and ignores ordinary strings', () => {
     const nearest = defaults.createSpatialNearestConfiguration();
     nearest.maximumDistanceUnit = 'FEET_US'; nearest.distanceOutputUnit = 'YARDS'; nearest.matching = createNearestMatching();
+    nearest.matching.geodesicGeometryMode = 'POINT_ONLY';
     nearest.matching.connectionLines!.maximumGeodesicSegmentLengthUnit = 'NAUTICAL_MILES_US';
     const reconstruct = defaults.createTrackReconstructConfiguration(); reconstruct.boundaries.maximumDistanceGapUnit = 'YARDS';
     reconstruct.reconstruction!.pathGeometry!.maximumGeodesicSegmentLengthUnit = 'MILES_US';

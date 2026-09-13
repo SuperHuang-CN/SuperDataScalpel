@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.contract.service;
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
@@ -12,10 +13,15 @@ import java.util.Set;
 
 /** Immutable compiled SQL and output contract deployed to a Service Engine. */
 public record SqlServiceDefinition(
+        @JsonPropertyDescription("Canvas 或执行协议版本。")
         int protocolVersion,
+        @JsonPropertyDescription("已通过单条只读查询校验的参数化 JDBC SQL。")
         @NotBlank @Size(max = 100_000) String jdbcSql,
+        @JsonPropertyDescription("SQL 占位符对应的参数编码顺序。")
         @Size(max = 200) List<@NotBlank String> bindingOrder,
+        @JsonPropertyDescription("服务允许接收的命名参数定义；名称在列表内唯一且覆盖 bindingOrder 中的全部参数。")
         @Size(max = 50) List<@Valid SqlServiceParameterDefinition> parameters,
+        @JsonPropertyDescription("通过 JDBC 元数据检查确认的结果字段定义列表。")
         @NotEmpty @Size(max = 200) List<@Valid SqlServiceResultFieldDefinition> resultFields
 ) {
 

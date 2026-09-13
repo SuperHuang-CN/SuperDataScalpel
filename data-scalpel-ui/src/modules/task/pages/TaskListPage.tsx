@@ -18,8 +18,8 @@ import {
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Select, Table, Tooltip, message } from 'antd';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useMemo, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementDateTime, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
@@ -48,7 +48,6 @@ import {
   type TaskFilters,
   type TaskType,
 } from '../model/task';
-import type { TaskAssistantLocationState, TaskAssistantCreateDraft } from '../model/taskAssistant';
 import { buildTaskSearch } from '../model/taskSearch';
 
 const taskTypeVisuals: Record<TaskType, {
@@ -82,17 +81,12 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
   const viewConfig = getTaskView(view);
   const detailHref = (task: DataTask, tab?: string) => taskPageHref(`/task/${task.id}`, `?taskView=${view}`, task.type, tab ? { tab } : {});
   const navigate = useNavigate();
-  const location = useLocation();
   const [filterForm] = Form.useForm<TaskFilters>();
   const [filters, setFilters] = useState<TaskFilters>({});
   const [selection, setSelection] = useState<DirectorySelection>();
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
   const [drawerTask, setDrawerTask] = useState<DataTask | null | undefined>(undefined);
-  const [assistantCreate, setAssistantCreate] = useState<{
-    changeSetId: string;
-    draft: TaskAssistantCreateDraft;
-  } | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const currentUser = useCurrentUser();
@@ -122,26 +116,6 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
   const enableMutation = useTaskCommand('enable');
   const runMutation = useRunTask();
 
-  useEffect(() => {
-    if (!currentUser.data) return;
-    const routeState = location.state as TaskAssistantLocationState | null;
-    const action = routeState?.assistantTaskCanvasAction;
-    if (!action || action.kind !== 'CREATE_TASK') return;
-    const remainingState = { ...routeState };
-    delete remainingState.assistantTaskCanvasAction;
-    navigate(
-      { pathname: location.pathname, search: location.search, hash: location.hash },
-      { replace: true, state: Object.keys(remainingState).length ? remainingState : null },
-    );
-    if (!canCreate) {
-      messageApi.error('当前账号没有新建任务权限');
-      return;
-    }
-    // React Router state is a one-shot external handoff that must be copied before clearing it.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAssistantCreate({ changeSetId: action.changeSetId, draft: action.draft });
-    setDrawerTask(null);
-  }, [canCreate, currentUser.data, location, messageApi, navigate]);
 
   const runCommand = async (task: DataTask, command: 'publish' | 'disable' | 'enable') => {
     try {
@@ -302,7 +276,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
               <ManagementFilterActions form={filterForm} appliedFilters={filters} additionalActive={selection !== undefined} loading={tasksQuery.isFetching} onReset={() => { filterForm.resetFields(); setFilters({}); setSelection(undefined); setPage(0); }} />
           </div>
           <div className="management-results-surface">
-            <div className="management-result-toolbar"><span className="management-result-title"><Dropdown menu={{ selectedKeys: [view], items: taskViews.map(item => ({ key: item.id, label: item.label, onClick: () => navigate(item.path) })) }}><Button type="text" aria-label="切换任务视图">{viewConfig.label} <DownOutlined /></Button></Dropdown> <span className="management-result-count">共 {tasksQuery.data?.totalElements ?? 0} 项</span></span><div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新任务列表" onClick={() => void tasksQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setAssistantCreate(null); setDrawerTask(null); }}>新建{view === 'all' ? '任务' : viewConfig.label}</Button>}</div></div>
+            <div className="management-result-toolbar"><span className="management-result-title"><Dropdown menu={{ selectedKeys: [view], items: taskViews.map(item => ({ key: item.id, label: item.label, onClick: () => navigate(item.path) })) }}><Button type="text" aria-label="切换任务视图">{viewConfig.label} <DownOutlined /></Button></Dropdown> <span className="management-result-count">共 {tasksQuery.data?.totalElements ?? 0} 项</span></span><div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新任务列表" onClick={() => void tasksQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setDrawerTask(null); }}>新建{view === 'all' ? '任务' : viewConfig.label}</Button>}</div></div>
             {tasksQuery.isError && <InlineFeedback tone="error" label={tasksQuery.error instanceof ApiError ? tasksQuery.error.message : '任务列表加载失败'} action={<Button size="small" onClick={() => void tasksQuery.refetch()}>重试</Button>} />}
             <Table<DataTask>
             size="small" className="management-table" rowKey="id" loading={tasksQuery.isLoading} columns={columns} dataSource={tasksQuery.data?.content ?? []} scroll={{ y: '100%' }}
@@ -318,10 +292,9 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
         view={view}
         open={drawerTask !== undefined}
         task={drawerTask ?? null}
-        initialDraft={!drawerTask ? assistantCreate?.draft : undefined}
         initialDirectoryId={typeof selection === 'string' ? selection : undefined}
         directories={directoriesQuery.data ?? []}
-        onClose={() => { setDrawerTask(undefined); setAssistantCreate(null); }}
+        onClose={() => { setDrawerTask(undefined); }}
         onSubmit={async (values) => {
           try {
             if (drawerTask) {
@@ -335,23 +308,14 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
                 },
               });
             } else {
-              const created = await createMutation.mutateAsync({
+              await createMutation.mutateAsync({
                 name: values.name,
                 type: values.type,
                 directoryId: values.directoryId,
                 description: values.description,
                 computeEngineId: requiresComputeEngine(values.type) ? values.computeEngineId : undefined,
               });
-              if (assistantCreate) {
-                const changeSetId = assistantCreate.changeSetId;
-                setDrawerTask(undefined);
-                setAssistantCreate(null);
-                messageApi.success('任务已创建，请核对并应用 AI Canvas 提案');
-                navigate(taskPageHref(`/task/${created.id}/definition`, `?taskView=${view}`, created.type), {
-                  state: { assistantTaskCanvasChangeSetId: changeSetId },
-                });
-                return;
-              }
+
             }
             messageApi.success(drawerTask ? '任务已更新' : '任务已创建');
             setDrawerTask(undefined);

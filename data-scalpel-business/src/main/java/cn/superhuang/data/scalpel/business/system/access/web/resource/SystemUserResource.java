@@ -9,6 +9,7 @@ import cn.superhuang.data.scalpel.business.system.access.web.response.SystemUser
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springdoc.core.annotations.ParameterObject;
@@ -40,7 +41,7 @@ public class SystemUserResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统用户")
     @GetMapping
     @PreAuthorize("hasAuthority('system.user.view')")
-    @Operation(summary = "查询系统用户")
+    @Operation(summary = "查询系统用户", description = "分页查询用户及其当前角色；响应不包含密码哈希。")
     public PageResponse<SystemUserResponse> search(@ParameterObject @ModelAttribute SearchRequest request) {
         return service.searchUsers(request);
     }
@@ -48,8 +49,8 @@ public class SystemUserResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统用户详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('system.user.view')")
-    @Operation(summary = "查询系统用户详情")
-    public SystemUserResponse get(@PathVariable UUID id) {
+    @Operation(summary = "查询系统用户详情", description = "返回用户显示信息、绑定角色和启用状态。")
+    public SystemUserResponse get(@Parameter(description = "用户 UUID。") @PathVariable UUID id) {
         return service.getUser(id);
     }
 
@@ -57,7 +58,7 @@ public class SystemUserResource {
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     @PreAuthorize("hasAuthority('system.user.manage')")
-    @Operation(summary = "新增系统用户")
+    @Operation(summary = "新增系统用户", description = "创建用户并保存密码哈希；用户名规范化为小写且必须唯一。")
     public SystemUserResponse create(@Valid @RequestBody CreateSystemUserRequest request) {
         return service.createUser(request);
     }
@@ -65,9 +66,9 @@ public class SystemUserResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改系统用户")
     @PostMapping("/{id}/actions/update")
     @PreAuthorize("hasAuthority('system.user.manage')")
-    @Operation(summary = "修改系统用户")
+    @Operation(summary = "修改系统用户", description = "整体替换显示名、唯一角色和启用状态；当前登录用户不能停用自己。角色或启用状态变化不会撤销已签发的普通 JWT，该 JWT 仍按签发时权限持续到过期；系统 MCP 令牌下次请求读取最新用户状态和权限。")
     public SystemUserResponse update(
-            @PathVariable UUID id,
+            @Parameter(description = "用户 UUID。") @PathVariable UUID id,
             @Valid @RequestBody UpdateSystemUserRequest request,
             Principal currentUser
     ) {
@@ -78,8 +79,8 @@ public class SystemUserResource {
     @PostMapping("/{id}/actions/reset-password")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('system.user.manage')")
-    @Operation(summary = "重置系统用户密码")
-    public void resetPassword(@PathVariable UUID id, @Valid @RequestBody ResetSystemUserPasswordRequest request) {
+    @Operation(summary = "重置系统用户密码", description = "用新密码哈希替换原密码，成功返回 204；不会撤销已签发的普通 JWT，也不会轮换该用户绑定的系统 MCP 令牌。")
+    public void resetPassword(@Parameter(description = "用户 UUID。") @PathVariable UUID id, @Valid @RequestBody ResetSystemUserPasswordRequest request) {
         service.resetUserPassword(id, request);
     }
 
@@ -87,8 +88,8 @@ public class SystemUserResource {
     @PostMapping("/{id}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('system.user.manage')")
-    @Operation(summary = "删除系统用户")
-    public void delete(@PathVariable UUID id, Principal currentUser) {
+    @Operation(summary = "删除系统用户", description = "永久删除用户；当前登录用户不能删除自己，成功返回 204。删除后绑定该用户的系统 MCP 令牌无法再认证；已签发的普通 JWT 没有服务端撤销检查，会继续有效至过期。")
+    public void delete(@Parameter(description = "用户 UUID。") @PathVariable UUID id, Principal currentUser) {
         service.deleteUser(id, currentUser.getName());
     }
 }

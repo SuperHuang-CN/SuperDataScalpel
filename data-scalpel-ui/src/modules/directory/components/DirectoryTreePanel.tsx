@@ -1,4 +1,4 @@
-import { AppstoreOutlined, DeleteOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
 import { Button, Dropdown, Modal, Spin, Tooltip, Tree, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
@@ -88,6 +88,7 @@ export const DirectoryTreePanel = ({
   const [resizing, setResizing] = useState(false);
   const [drawerState, setDrawerState] = useState<{ directory: DirectoryTreeNode | null; parentId?: string } | null>(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [contextMenuId, setContextMenuId] = useState<string>();
   const panelRef = useRef<HTMLElement>(null);
   const resizeStateRef = useRef<{
     pointerId: number;
@@ -207,50 +208,79 @@ export const DirectoryTreePanel = ({
     const buildNodes = (nodes: DirectoryTreeNode[]): DataNode[] => nodes.map((directory) => ({
       key: directory.id,
       title: (
-        <span className="directory-tree-node-title">
-          <Tooltip title={directory.name} mouseEnterDelay={0.5}>
-            <span className="directory-tree-node-name">{directory.name}</span>
-          </Tooltip>
-          {(canManage || (showResourceCounts && directory.resourceCount > 0)) && (
-            <span className="directory-tree-node-meta">
-              {showResourceCounts && directory.resourceCount > 0 && (
-              <Tooltip title={`${directory.resourceCount} 个资源`}>
-                <span className="directory-tree-node-count">{directory.resourceCount}</span>
-              </Tooltip>
-              )}
-              {canManage && (
-                <span className="directory-tree-node-actions" onClick={(event) => event.stopPropagation()}>
-                  <Tooltip title="更多操作">
-                    <Dropdown
-                      trigger={['click']}
-                      placement="bottomRight"
-                      menu={{
-                        items: [
-                          { key: 'create', icon: <FolderAddOutlined />, label: `新增子${label}` },
-                          { key: 'edit', icon: <EditOutlined />, label: `修改${label}` },
-                          { key: 'delete', icon: <DeleteOutlined />, label: `删除${label}`, danger: true },
-                        ],
-                        onClick: ({ key, domEvent }) => {
-                          domEvent.stopPropagation();
-                          if (key === 'create') openCreate(directory.id);
-                          if (key === 'edit') openEdit(directory);
-                          if (key === 'delete') confirmRemove(directory);
-                        },
-                      }}
-                    >
-                      <Button
-                        type="text"
-                        size="small"
-                        icon={<EllipsisOutlined />}
-                        aria-label={`${label}“${directory.name}”的更多操作`}
-                      />
-                    </Dropdown>
-                  </Tooltip>
-                </span>
-              )}
-            </span>
-          )}
-        </span>
+        <Dropdown
+          classNames={{ root: 'directory-context-menu' }}
+          trigger={['contextMenu']}
+          disabled={!canManage}
+          open={canManage && contextMenuId === directory.id}
+          onOpenChange={(open) => setContextMenuId(open ? directory.id : undefined)}
+          autoFocus
+          menu={{
+            id: `directory-context-menu-${directory.id}`,
+            items: [
+              { key: 'create', icon: <FolderAddOutlined />, label: `新增子${label}` },
+              { key: 'edit', icon: <EditOutlined />, label: `修改${label}` },
+              { type: 'divider' },
+              { key: 'delete', icon: <DeleteOutlined />, label: `删除${label}`, danger: true },
+            ],
+            onClick: ({ key, domEvent }) => {
+              domEvent.stopPropagation();
+              setContextMenuId(undefined);
+              if (!canManage) return;
+              if (key === 'create') openCreate(directory.id);
+              if (key === 'edit') openEdit(directory);
+              if (key === 'delete') confirmRemove(directory);
+            },
+          }}
+        >
+          <span
+            className="directory-tree-node-title"
+            tabIndex={canManage ? 0 : undefined}
+            aria-haspopup={canManage ? 'menu' : undefined}
+            aria-expanded={canManage ? contextMenuId === directory.id : undefined}
+            onKeyDown={(event) => {
+              if (canManage && ((event.shiftKey && event.key === 'F10') || event.key === 'ContextMenu')) {
+                event.preventDefault();
+                event.stopPropagation();
+                setContextMenuId(directory.id);
+              }
+              if (event.target === event.currentTarget && contextMenuId === directory.id
+                && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+                event.preventDefault();
+                event.stopPropagation();
+                const items = document.getElementById(`directory-context-menu-${directory.id}`)
+                  ?.querySelectorAll<HTMLElement>('[role="menuitem"]');
+                const item = event.key === 'ArrowUp' ? items?.[items.length - 1] : items?.[0];
+                item?.focus();
+              }
+            }}
+          >
+            <Tooltip title={canManage ? `${directory.name} · 右键或 Shift+F10 管理` : directory.name} mouseEnterDelay={0.5}>
+              <span className="directory-tree-node-name">{directory.name}</span>
+            </Tooltip>
+            {showResourceCounts && directory.resourceCount > 0 && (
+              <span className="directory-tree-node-meta">
+                <Tooltip title={`${directory.resourceCount} 个资源`}>
+                  <span className="directory-tree-node-count">{directory.resourceCount}</span>
+                </Tooltip>
+              </span>
+            )}
+            {canManage && (
+              <Button
+                className="directory-tree-node-touch-actions"
+                type="text"
+                size="small"
+                icon={<EllipsisOutlined />}
+                aria-label={`${label}“${directory.name}”的更多操作`}
+                aria-haspopup="menu"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  setContextMenuId(directory.id);
+                }}
+              />
+            )}
+          </span>
+        </Dropdown>
       ),
       children: buildNodes(directory.children),
     }));
@@ -356,6 +386,8 @@ export const DirectoryTreePanel = ({
         <Spin spinning={loading} size="small" className="directory-tree-spin">
           <Tree
             blockNode
+            showLine={{ showLeafIcon: false }}
+            switcherIcon={({ expanded }) => expanded ? <DownOutlined /> : <RightOutlined />}
             defaultExpandAll
             selectedKeys={selectedKeys}
             treeData={treeData}

@@ -82,6 +82,27 @@ class DataSourceRuntimeServiceJdbcQueryTest {
     }
 
     @Test
+    void acceptsPostgresqlFamilyVendorSources() {
+        QueryInspection inspection = new QueryInspection(List.of(new QueryColumn(
+                "order_id", Types.BIGINT, "int8", LogicalType.INTEGER, false)));
+        for (DataSourceType type : List.of(
+                DataSourceType.HIGHGO, DataSourceType.OPENGAUSS, DataSourceType.KINGBASE)) {
+            when(repository.findById(dataSourceId)).thenReturn(Optional.of(source(type, true)));
+            when(queryInspector.inspect(
+                    eq(type.name()),
+                    any(JdbcConnectionConfig.class),
+                    any(InsertSelectQuery.class),
+                    any(Duration.class)
+            )).thenReturn(inspection);
+
+            var response = service.inspectQuery(dataSourceId, "SELECT order_id FROM orders");
+
+            assertEquals(List.of("order_id"),
+                    response.columns().stream().map(column -> column.name()).toList(), type.name());
+        }
+    }
+
+    @Test
     void rejectsMutationSqlAndDuplicateOutputNames() {
         assertThrows(ResponseStatusException.class, () ->
                 service.inspectQuery(dataSourceId, "DELETE FROM orders"));
@@ -186,12 +207,16 @@ class DataSourceRuntimeServiceJdbcQueryTest {
     }
 
     private static DataSource source(boolean enabled) {
+        return source(DataSourceType.POSTGRESQL, enabled);
+    }
+
+    private static DataSource source(DataSourceType type, boolean enabled) {
         return DataSource.create(
                 "order-db",
                 "订单库",
                 null,
                 Set.of(DataSourcePurpose.SOURCE),
-                DataSourceType.POSTGRESQL,
+                type,
                 enabled,
                 null,
                 DataSourceConnection.jdbc(

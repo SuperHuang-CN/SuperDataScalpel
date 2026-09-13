@@ -23,6 +23,26 @@ public interface DataEntryPhysicalMutationPort {
             DataEntryImportRowSource rows
     );
 
+    DataEntryPhysicalMutationResult insertBatch(
+            DataSource dataSource, DataModel model, List<DataModelField> fields,
+            DataEntryImportRowSource rows, DataEntryImportBatchListener listener
+    );
+
+    Map<String, Object> queryRecord(
+            DataSource dataSource, DataModel model, List<DataModelField> fields,
+            List<DataModelField> businessKeyFields, Map<String, Object> key
+    );
+
+    List<Map<String, Object>> queryRecords(
+            DataSource dataSource, DataModel model, List<DataModelField> fields,
+            List<DataModelField> businessKeyFields, List<Map<String, Object>> keys
+    );
+
+    DataEntryRecordUpdateResult updateRecord(
+            DataSource dataSource, DataModel model, List<DataModelField> fields,
+            List<DataModelField> businessKeyFields, Map<String, Object> key, Map<String, Object> values
+    );
+
     DataEntryPhysicalMutationResult deleteBatch(
             DataSource dataSource,
             DataModel model,

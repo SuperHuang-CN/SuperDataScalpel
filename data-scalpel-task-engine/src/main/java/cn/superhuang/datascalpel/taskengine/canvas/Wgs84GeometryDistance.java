@@ -21,6 +21,12 @@ final class Wgs84GeometryDistance {
         if (relation.common!=null) return new Result(relation.common,relation.common,0,0);
         Result boundary=Wgs84LinearDistance.nearestEdges(left.edges,right.edges,toleranceMetres,budget);
         if (boundary==null) return null;
+        if (boundary.lowerBoundMetres()<=Wgs84SegmentDistance.ROUNDOFF_METRES) {
+            var intersection=Wgs84BoundaryIntersection.match(left.edges,right.edges,budget);
+            if (intersection.relation()==Wgs84BoundaryIntersection.Relation.INTERSECTING
+                    && intersection.contact()!=null)
+                return new Result(intersection.contact(),intersection.contact(),0,0);
+        }
         // Crossing regions can have no contained vertices. Their boundary-pair minimum is
         // zero; interval search retains a small attained upper bound rather than snapping.
         if (relation.unresolved) {
@@ -65,7 +71,7 @@ final class Wgs84GeometryDistance {
         return new AreaRelation(null,unresolved);
     }
 
-    private static Prepared prepare(Geometry geometry) {
+    static Prepared prepare(Geometry geometry) {
         if (geometry instanceof Polygon || geometry instanceof MultiPolygon) {
             var region=Wgs84PolygonRegion.prepare(geometry);
             return prepared(region,Wgs84LinearDistance.edges(geometry.getBoundary()));
@@ -77,6 +83,6 @@ final class Wgs84GeometryDistance {
         for (Arc edge : edges) { vertices.add(edge.start()); vertices.add(edge.end()); }
         return new Prepared(region,edges,List.copyOf(vertices));
     }
-    private record Prepared(Wgs84PolygonRegion region,List<Arc> edges,List<Position> vertices) { }
+    record Prepared(Wgs84PolygonRegion region,List<Arc> edges,List<Position> vertices) { }
     private record AreaRelation(Position common,boolean unresolved) { }
 }

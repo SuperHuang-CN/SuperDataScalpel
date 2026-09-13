@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.business.system.access.web.response.SystemPerm
 import cn.superhuang.data.scalpel.contract.page.PageResponse;
 import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -31,7 +32,7 @@ public class SystemPermissionResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统权限")
     @GetMapping
     @PreAuthorize("hasAuthority('system.permission.view')")
-    @Operation(summary = "查询系统权限")
+    @Operation(summary = "查询系统权限", description = "分页查询代码初始化的权限定义；结果只读，可按通用 Search DSL 筛选和排序。")
     public PageResponse<SystemPermissionResponse> search(@ParameterObject @ModelAttribute SearchRequest request) {
         return service.searchPermissions(request);
     }
@@ -39,8 +40,8 @@ public class SystemPermissionResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询系统权限详情")
     @GetMapping("/{id}")
     @PreAuthorize("hasAuthority('system.permission.view')")
-    @Operation(summary = "查询系统权限详情")
-    public SystemPermissionResponse get(@PathVariable UUID id) {
+    @Operation(summary = "查询系统权限详情", description = "返回权限编码、所属模块、说明和当前有效状态。")
+    public SystemPermissionResponse get(@Parameter(description = "权限 UUID。") @PathVariable UUID id) {
         return service.getPermission(id);
     }
 }

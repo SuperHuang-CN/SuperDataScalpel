@@ -50,6 +50,17 @@ public class SystemMcpManagementService {
         var p=search.search(r,SystemMcpApi.class,apis);
         return new PageResponse<>(p.getContent().stream().map(a->response(a,false)).toList(),p.getTotalElements(),p.getTotalPages(),p.getNumber(),p.getSize());
     }
+    public List<SystemMcpModuleResponse> modules() {
+        return apis.findAll().stream()
+                .collect(java.util.stream.Collectors.groupingBy(SystemMcpApi::getModule, TreeMap::new, java.util.stream.Collectors.toList()))
+                .entrySet().stream()
+                .map(entry -> new SystemMcpModuleResponse(
+                        entry.getKey(),
+                        entry.getValue().size(),
+                        entry.getValue().stream().filter(api -> api.getStatus().equals("AVAILABLE")).count(),
+                        entry.getValue().stream().filter(SystemMcpApi::getEnabled).count()))
+                .toList();
+    }
     public PageResponse<SystemMcpTokenResponse> tokens(SearchRequest r) {
         var p=search.search(r,SystemMcpAccessToken.class,tokens);
         return new PageResponse<>(tokenService.responses(p.getContent()),p.getTotalElements(),p.getTotalPages(),p.getNumber(),p.getSize());

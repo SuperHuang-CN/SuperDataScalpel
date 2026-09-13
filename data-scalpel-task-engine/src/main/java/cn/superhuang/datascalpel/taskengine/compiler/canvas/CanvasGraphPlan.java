@@ -209,6 +209,136 @@ public final class CanvasGraphPlan {
         if (schemaMinorVersion < 30 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialNearestNodeDefinition nearest
                 && nearest.configuration() != null && nearest.configuration().matching() != null)
             entry.result().error("SPATIAL_NEAREST_MATCHING_REQUIRE_SCHEMA_VERSION", "显式最近位置匹配从 Canvas 4.30 开始支持", "configuration.matching");
+        if (schemaMinorVersion < 48 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialNearestNodeDefinition nearest
+                && nearest.configuration() != null && nearest.configuration().matching() != null
+                && nearest.configuration().matching().geodesicGeometryMode()
+                == cn.superhuang.data.scalpel.contract.task.SpatialNearestGeodesicGeometryMode.GEOMETRY)
+            entry.result().error("SPATIAL_NEAREST_GEODESIC_GEOMETRY_REQUIRE_SCHEMA_VERSION",
+                    "非点 WGS84 真实最近位置从 Canvas 4.48 开始支持", "configuration.matching.geodesicGeometryMode");
+        if (schemaMinorVersion < 49 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer
+                && buffer.configuration() != null && buffer.configuration().distanceUnit() != null)
+            entry.result().error("GEOMETRY_BUFFER_UNIT_REQUIRE_SCHEMA_VERSION",
+                    "Geometry Buffer 显式距离单位从 Canvas 4.49 开始支持", "configuration.distanceUnit");
+        if (schemaMinorVersion < 52 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer
+                && buffer.configuration() != null
+                && (buffer.configuration().distanceSource() != null
+                || buffer.configuration().distanceFieldName() != null
+                || buffer.configuration().distanceExpression() != null))
+            entry.result().error("GEOMETRY_BUFFER_DISTANCE_SOURCE_REQUIRE_SCHEMA_VERSION",
+                    "Geometry Buffer 逐行距离来源从 Canvas 4.52 开始支持", "configuration.distanceSource");
+        if (schemaMinorVersion < 53
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition aggregate
+                && aggregate.configuration() != null
+                && aggregate.configuration().dissolve() != null)
+            entry.result().error("SPATIAL_AGGREGATE_DISSOLVE_REQUIRE_SCHEMA_VERSION",
+                    "空间聚合 Dissolve 选项从 Canvas 4.53 开始支持", "configuration.dissolve");
+        if (schemaMinorVersion < 61
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition aggregate
+                && aggregate.configuration() != null
+                && aggregate.configuration().dissolve() != null
+                && aggregate.configuration().dissolve().groupingMode() != null)
+            entry.result().error("SPATIAL_DISSOLVE_GROUPING_MODE_REQUIRE_SCHEMA_VERSION",
+                    "空间聚合 Dissolve 分组方式从 Canvas 4.61 开始支持",
+                    "configuration.dissolve.groupingMode");
+        if (schemaMinorVersion < 62
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.UnionNodeDefinition union
+                && union.configuration() != null
+                && union.configuration().mergingTables() != null)
+            entry.result().error("UNION_MERGE_LAYERS_REQUIRE_SCHEMA_VERSION",
+                    "Union 的 Merge Layers 字段处理从 Canvas 4.62 开始支持",
+                    "configuration.mergingTables");
+        if (schemaMinorVersion < 54
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join
+                && join.configuration() != null
+                && join.configuration().outputColumns() != null)
+            entry.result().error("SPATIAL_JOIN_OUTPUT_COLUMNS_REQUIRE_SCHEMA_VERSION",
+                    "空间连接输出字段投影从 Canvas 4.54 开始支持", "configuration.outputColumns");
+        if (schemaMinorVersion < 55
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join
+                && join.configuration() != null
+                && join.configuration().attributeConditions() != null)
+            entry.result().error("SPATIAL_JOIN_ATTRIBUTE_CONDITIONS_REQUIRE_SCHEMA_VERSION",
+                    "空间连接属性匹配条件从 Canvas 4.55 开始支持",
+                    "configuration.attributeConditions");
+        if (schemaMinorVersion < 56
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join
+                && join.configuration() != null
+                && join.configuration().joinType()
+                == cn.superhuang.data.scalpel.contract.task.JoinType.LEFT)
+            entry.result().error("SPATIAL_JOIN_KEEP_ALL_REQUIRE_SCHEMA_VERSION",
+                    "空间连接保留全部目标要素从 Canvas 4.56 开始支持",
+                    "configuration.joinType");
+        if (schemaMinorVersion < 57
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join
+                && join.configuration() != null
+                && join.configuration().joinOperation() != null)
+            entry.result().error("SPATIAL_JOIN_OPERATION_REQUIRE_SCHEMA_VERSION",
+                    "空间连接显式结果粒度从 Canvas 4.57 开始支持",
+                    "configuration.joinOperation");
+        if (schemaMinorVersion < 58
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join
+                && join.configuration() != null
+                && (join.configuration().joinOperation()
+                == cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation.JOIN_ONE_TO_ONE
+                || join.configuration().oneToOne() != null))
+            entry.result().error("SPATIAL_JOIN_ONE_TO_ONE_REQUIRE_SCHEMA_VERSION",
+                    "空间连接一对一规则从 Canvas 4.58 开始支持",
+                    "configuration.oneToOne");
+        if (schemaMinorVersion < 59
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join
+                && join.configuration() != null
+                && join.configuration().temporalCondition() != null)
+            entry.result().error("SPATIAL_JOIN_TEMPORAL_CONDITION_REQUIRE_SCHEMA_VERSION",
+                    "空间连接时间关系从 Canvas 4.59 开始支持",
+                    "configuration.temporalCondition");
+        if (schemaMinorVersion < 60
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join
+                && join.configuration() != null
+                && (join.configuration().spatialNear() != null
+                || join.configuration().distanceOutput() != null))
+            entry.result().error("SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION",
+                    "空间连接 Near 和距离输出从 Canvas 4.60 开始支持",
+                    "configuration.spatialNear");
+        if (schemaMinorVersion < 50
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialMeasureNodeDefinition measure
+                && measure.configuration() != null && measure.configuration().measurements() != null) {
+            for (int measurementIndex = 0;
+                 measurementIndex < measure.configuration().measurements().size();
+                 measurementIndex++) {
+                var measurement = measure.configuration().measurements().get(measurementIndex);
+                boolean explicitUnit = switch (measurement) {
+                    case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Area item -> item.outputUnit() != null;
+                    case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Length item -> item.outputUnit() != null;
+                    case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Perimeter item -> item.outputUnit() != null;
+                    case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Distance item -> item.outputUnit() != null;
+                    case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.X ignored -> false;
+                    case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Y ignored -> false;
+                    case null -> false;
+                };
+                if (explicitUnit) entry.result().error(
+                        "SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION",
+                        "空间测量显式输出单位从 Canvas 4.50 开始支持",
+                        "configuration.measurements[" + measurementIndex + "].outputUnit");
+            }
+        }
+        if (schemaMinorVersion < 51
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialClipNodeDefinition clip
+                && clip.configuration() != null
+                && clip.configuration().geometryPolicy() != null) {
+            entry.result().error(
+                    "SPATIAL_CLIP_GEOMETRY_POLICY_REQUIRE_SCHEMA_VERSION",
+                    "空间裁剪显式几何策略从 Canvas 4.51 开始支持",
+                    "configuration.geometryPolicy");
+        }
+        if (schemaMinorVersion < 77
+                && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialClipNodeDefinition clip
+                && clip.configuration() != null
+                && clip.configuration().maskCombination() != null) {
+            entry.result().error(
+                    "SPATIAL_CLIP_MASK_COMBINATION_REQUIRE_SCHEMA_VERSION",
+                    "空间裁剪多 Mask 组合方式从 Canvas 4.77 开始支持",
+                    "configuration.maskCombination");
+        }
         boolean unaryPolicy = entry.node() instanceof cn.superhuang.data.scalpel.contract.task.GeometryDeriveNodeDefinition derive
                 && derive.configuration() != null && derive.configuration().derivations() != null
                 && derive.configuration().derivations().stream().anyMatch(item -> item != null && item.geometryPolicy() != null)
@@ -219,6 +349,33 @@ public final class CanvasGraphPlan {
         if (schemaMinorVersion < 46 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition incident
                 && incident.configuration() != null && !incident.configuration().conditionWindows().isEmpty())
             entry.result().error("TRACK_INCIDENT_WINDOWS_REQUIRE_SCHEMA_VERSION", "事件窗口指标从 Canvas 4.46 开始支持", "configuration.conditionWindows");
+        if (schemaMinorVersion < 63 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition incident
+                && incident.configuration() != null && incident.configuration().conditionWindows().stream().anyMatch(window ->
+                window != null && window.effectiveSource()
+                        == cn.superhuang.data.scalpel.contract.task.TrackIncidentWindow.Source.TRACK_DISTANCE))
+            entry.result().error("TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION",
+                    "事件轨迹距离窗口从 Canvas 4.63 开始支持", "configuration.conditionWindows");
+        if (schemaMinorVersion < 64 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition incident
+                && incident.configuration() != null && incident.configuration().conditionWindows().stream().anyMatch(window ->
+                window != null && window.effectiveSource()
+                        == cn.superhuang.data.scalpel.contract.task.TrackIncidentWindow.Source.TRACK_SPEED))
+            entry.result().error("TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION",
+                    "事件轨迹速度窗口从 Canvas 4.64 开始支持", "configuration.conditionWindows");
+        if (schemaMinorVersion < 65 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition incident
+                && incident.configuration() != null && incident.configuration().conditionWindows().stream().anyMatch(window ->
+                window != null && window.effectiveSource()
+                        == cn.superhuang.data.scalpel.contract.task.TrackIncidentWindow.Source.TRACK_ACCELERATION))
+            entry.result().error("TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION",
+                    "事件轨迹加速度窗口从 Canvas 4.65 开始支持", "configuration.conditionWindows");
+        if (schemaMinorVersion < 66 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition incident
+                && incident.configuration() != null && !incident.configuration().conditionScalars().isEmpty())
+            entry.result().error("TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION",
+                    "事件轨迹标量从 Canvas 4.66 开始支持", "configuration.conditionScalars");
+        if (schemaMinorVersion < 67 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition incident
+                && incident.configuration() != null && incident.configuration().conditionScalars().stream().anyMatch(scalar ->
+                scalar != null && scalar.isPointCoordinate()))
+            entry.result().error("TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION",
+                    "事件 Point 坐标标量从 Canvas 4.67 开始支持", "configuration.conditionScalars");
         if (schemaMinorVersion < 45 && entry.node() instanceof cn.superhuang.data.scalpel.contract.task.SpatialPointClusterNodeDefinition cluster
                 && cluster.configuration() != null && cluster.configuration().hdbscan() != null)
             entry.result().error("SPATIAL_HDBSCAN_OPTIONS_REQUIRE_SCHEMA_VERSION", "HDBSCAN 诊断配置从 Canvas 4.45 开始支持", "configuration.hdbscan");
@@ -429,6 +586,24 @@ public final class CanvasGraphPlan {
                     cluster.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.SpatialCenterDispersionNodeDefinition analysis ->
                     analysis.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialDensityNodeDefinition density ->
+                    density.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialHotSpotsNodeDefinition hotSpots ->
+                    hotSpots.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialMultiVariableGridNodeDefinition grid ->
+                    grid.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialEnrichFromGridNodeDefinition enrich ->
+                    enrich.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialGroupByProximityNodeDefinition group ->
+                    group.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.TraceProximityEventsNodeDefinition trace ->
+                    trace.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SnapTracksNodeDefinition snap ->
+                    snap.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsNodeDefinition similar ->
+                    similar.configuration() == null;
+            case cn.superhuang.data.scalpel.contract.task.SpatialDescribeDatasetNodeDefinition describe ->
+                    describe.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
                     buffer.configuration() == null;
             case cn.superhuang.data.scalpel.contract.task.GeometryExplodeNodeDefinition explode ->
@@ -589,6 +764,10 @@ public final class CanvasGraphPlan {
                         TRACK_RECONSTRUCT, TRACK_MOTION_STATISTICS, TRACK_FIND_DWELL,
                         TRACK_DETECT_INCIDENTS,
                         SPATIAL_BIN_AGGREGATE, SPATIAL_POINT_CLUSTER, SPATIAL_CENTER_DISPERSION,
+                        SPATIAL_DENSITY, SPATIAL_HOT_SPOTS, SPATIAL_MULTI_VARIABLE_GRID,
+                        SPATIAL_ENRICH_FROM_GRID, SPATIAL_GROUP_BY_PROXIMITY,
+                        TRACE_PROXIMITY_EVENTS, SNAP_TRACKS,
+                        SPATIAL_SIMILAR_LOCATIONS, SPATIAL_DESCRIBE_DATASET,
                         GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
                         SPATIAL_MEASURE, GEOMETRY_SERIALIZE, SPATIAL_AGGREGATE, UNION,
                         MASK_FIELDS -> incoming >= 1;
@@ -616,6 +795,10 @@ public final class CanvasGraphPlan {
                             TRACK_RECONSTRUCT, TRACK_MOTION_STATISTICS, TRACK_FIND_DWELL,
                             TRACK_DETECT_INCIDENTS,
                             SPATIAL_BIN_AGGREGATE, SPATIAL_POINT_CLUSTER, SPATIAL_CENTER_DISPERSION,
+                            SPATIAL_DENSITY, SPATIAL_HOT_SPOTS, SPATIAL_MULTI_VARIABLE_GRID,
+                            SPATIAL_ENRICH_FROM_GRID, SPATIAL_GROUP_BY_PROXIMITY,
+                            TRACE_PROXIMITY_EVENTS, SNAP_TRACKS,
+                            SPATIAL_SIMILAR_LOCATIONS, SPATIAL_DESCRIBE_DATASET,
                             GEOMETRY_BUFFER,
                             GEOMETRY_EXPLODE, SPATIAL_MEASURE, GEOMETRY_SERIALIZE,
                             SPATIAL_AGGREGATE, UNION -> "处理节点至少需要一条入边";

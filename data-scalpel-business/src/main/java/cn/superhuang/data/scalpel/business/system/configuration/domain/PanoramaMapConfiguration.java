@@ -4,9 +4,14 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 import java.net.URI;
 import java.util.Set;
+import io.swagger.v3.oas.annotations.media.Schema;
 
 /** Typed value of the panorama.map STRING setting; URLs are fetched only by the user's map. */
-public record PanoramaMapConfiguration(String url, String attribution, int maxZoom) {
+@Schema(description = "panorama.map 字符串配置中保存的受控 JSON 结构。瓦片由用户浏览器直接向配置地址请求，DataScalpel 服务端不代理请求。")
+public record PanoramaMapConfiguration(
+        @Schema(description = "HTTP(S) XYZ 瓦片模板，最长 3000 个字符且必须包含 {z}、{x}、{y} 三个占位符；不得包含用户凭据或 URL fragment。空字符串表示不配置底图。") String url,
+        @Schema(description = "展示给最终用户的地图提供方纯文本署名，去除首尾空白后最长 500 个字符。") String attribution,
+        @Schema(description = "浏览器地图允许请求的最大缩放级别，闭区间 0 到 22。") int maxZoom) {
     private static final JsonMapper JSON = JsonMapper.builder().build();
     public static PanoramaMapConfiguration parse(String raw) {
         try {

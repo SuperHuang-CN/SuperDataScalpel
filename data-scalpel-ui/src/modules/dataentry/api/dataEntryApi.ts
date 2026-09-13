@@ -11,6 +11,9 @@ import type {
   DataEntryModelCandidate,
   DataEntryMutationResponse,
   DataEntryOperationLog,
+  DataEntryRecordChange,
+  DataEntryRecordDetail,
+  DataEntryUpdateResponse,
   DataEntryOptionResponse,
   DataModelDataQueryRequest,
   DataModelDataQueryResponse,
@@ -68,6 +71,18 @@ export const importDataEntryFile = (id: string, file: File, previewDigest: strin
 export const deleteDataEntries = (id: string, keys: Record<string, unknown>[]): Promise<DataEntryMutationResponse> => requestJson(`${PATH}/${id}/entries/actions/delete-batch`, { method: 'POST', body: JSON.stringify({ keys }) });
 export const queryDataEntryData = (id: string, request: DataModelDataQueryRequest): Promise<DataModelDataQueryResponse> => requestJson(`${PATH}/${id}/actions/query-data`, { method: 'POST', body: JSON.stringify(request) });
 export const queryDataEntryOptions = (id: string, fieldId: string, request: { keyword?: string; pageNo?: number; pageSize?: number; values?: unknown[] }): Promise<DataEntryOptionResponse> => requestJson(`${PATH}/${id}/fields/${fieldId}/actions/query-options`, { method: 'POST', body: JSON.stringify(request) });
+export const queryDataEntryDetail = (id: string, key: Record<string, unknown>): Promise<DataEntryRecordDetail> => requestJson(`${PATH}/${id}/entries/actions/query-detail`, { method: 'POST', body: JSON.stringify({ key }) });
+export const updateDataEntryRecord = (id: string, key: Record<string, unknown>, values: Record<string, unknown>): Promise<DataEntryUpdateResponse> => requestJson(`${PATH}/${id}/entries/actions/update`, { method: 'POST', body: JSON.stringify({ key, values }) });
+
+export const fetchDataEntryRecordChanges = (id: string, request: SearchRequest, filters: { recordKey?: string; operationLogId?: string } = {}): Promise<PageResponse<DataEntryRecordChange>> => {
+  const query = toSearchParams(request);
+  if (filters.recordKey) query.set('recordKey', filters.recordKey);
+  if (filters.operationLogId) query.set('operationLogId', filters.operationLogId);
+  const suffix = query.toString();
+  return requestJson(`${PATH}/${id}/record-changes${suffix ? `?${suffix}` : ''}`);
+};
+
+export const fetchDataEntryRecordChange = (id: string, changeId: string): Promise<DataEntryRecordChange> => requestJson(`${PATH}/${id}/record-changes/${changeId}`);
 
 export const fetchDataEntryOperationLogs = (id: string, request: SearchRequest): Promise<PageResponse<DataEntryOperationLog>> => {
   const query = toSearchParams(request).toString();

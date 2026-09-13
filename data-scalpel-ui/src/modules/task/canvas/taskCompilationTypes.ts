@@ -27,6 +27,7 @@ export interface TaskCompilationMetadataDataSource {
   connectionKind: 'JDBC' | 'HTTP_API' | 'KAFKA' | 'S3';
   jdbcDatabaseType:
     | 'POSTGRESQL'
+    | 'HIGHGO'
     | 'MYSQL'
     | 'ORACLE'
     | 'SQL_SERVER'

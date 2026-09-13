@@ -66,7 +66,7 @@ public enum SystemPermissionDefinition {
     MODEL_PUBLISH("model.publish", "模型管理", "发布模型", "发布、停用和启用模型元数据", 340),
     DATA_ENTRY_VIEW("dataentry.view", "数据填报", "查看填报", "查看填报表单、健康状态、物理数据和操作日志", 342),
     DATA_ENTRY_MANAGE("dataentry.manage", "数据填报", "管理填报", "创建、配置、发布、停用和删除填报表单", 344),
-    DATA_ENTRY_SUBMIT("dataentry.submit", "数据填报", "提交填报", "向已发布填报表单新增或批量导入数据", 346),
+    DATA_ENTRY_SUBMIT("dataentry.submit", "数据填报", "提交填报", "向已发布填报表单新增、编辑或批量导入数据", 346),
     DATA_ENTRY_DELETE("dataentry.delete", "数据填报", "删除填报数据", "按模型业务主键批量删除目标物理数据", 348),
     TASK_VIEW("task.view", "任务管理", "查看任务", "查询任务、定义和运行记录", 350),
     TASK_CREATE("task.create", "任务管理", "新增任务", "新增任务", 360),
@@ -96,8 +96,8 @@ public enum SystemPermissionDefinition {
     MCP_EXECUTE("mcp.execute", "MCP 管理", "调试 MCP Tool", "执行未发布的 Groovy Tool 草稿", 630),
     MCP_PUBLISH("mcp.publish", "MCP 管理", "发布 MCP", "发布、启用和停用 MCP Server", 640),
     MCP_DELETE("mcp.delete", "MCP 管理", "删除 MCP", "删除从未发布的 MCP Server 和 Tool", 650),
-    SYSTEM_MCP_VIEW("system.mcp.view", "查看系统 MCP", "系统管理", "查看系统 MCP 配置与审计", 670),
-    SYSTEM_MCP_UPDATE("system.mcp.update", "管理系统 MCP", "系统管理", "修改系统 MCP 配置与令牌", 671),
+    SYSTEM_MCP_VIEW("system.mcp.view", "系统管理", "查看系统 MCP", "查看系统 MCP 配置与审计", 670),
+    SYSTEM_MCP_UPDATE("system.mcp.update", "系统管理", "管理系统 MCP", "修改系统 MCP 配置与令牌", 671),
     MCP_TOKEN_MANAGE("mcp.token.manage", "MCP 管理", "管理 MCP 凭证", "创建、查看、轮换访问凭证并管理 Server 授权", 660);
 
     private final String code;

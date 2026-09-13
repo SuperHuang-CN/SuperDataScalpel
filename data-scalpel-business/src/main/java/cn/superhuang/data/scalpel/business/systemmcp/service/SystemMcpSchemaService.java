@@ -15,6 +15,7 @@ public class SystemMcpSchemaService {
         Schema value = cache.get(key);
         if (value != null) return value;
         rejectRemoteReferences(schema);
+        rejectNonProgressingCycles(schema);
         var registry = SchemaRegistry.withDefaultDialect(SpecificationVersion.DRAFT_2020_12,
         b -> b.schemaCacheEnabled(false).schemaLoader(l -> l.fetchRemoteResources(false)));
         value = registry.getSchema(key, InputFormat.JSON);
@@ -47,5 +48,50 @@ public class SystemMcpSchemaService {
                 rejectRemoteReferences(value);
             }
         } else if (node.isArray()) node.forEach(this::rejectRemoteReferences);
+    }
+
+    /** Property/item recursion consumes input; ref/composition recursion at the same value cannot terminate. */
+    private void rejectNonProgressingCycles(JsonNode root) {
+        var active = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<JsonNode, Boolean>());
+        var done = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<JsonNode, Boolean>());
+        visitSchemas(root, node -> visitSameValue(node, root, active, done));
+    }
+
+    /** Visit schema values, never property-name maps or example/default payloads, children first. */
+    static void visitSchemas(JsonNode node, java.util.function.Consumer<JsonNode> visitor) {
+        if (!node.isObject()) return;
+        for (String key : java.util.List.of("properties", "patternProperties", "$defs", "definitions", "dependentSchemas")) {
+            for (JsonNode child : node.path(key)) visitSchemas(child, visitor);
+        }
+        for (String key : java.util.List.of("allOf", "oneOf", "anyOf", "prefixItems")) {
+            for (JsonNode child : node.path(key)) visitSchemas(child, visitor);
+        }
+        for (String key : java.util.List.of("items", "additionalItems", "contains", "additionalProperties",
+                "unevaluatedProperties", "unevaluatedItems", "propertyNames", "not", "if", "then", "else", "contentSchema")) {
+            JsonNode child = node.path(key);
+            if (child.isArray()) child.forEach(item -> visitSchemas(item, visitor));
+            else visitSchemas(child, visitor);
+        }
+        for (JsonNode child : node.path("components").path("schemas")) visitSchemas(child, visitor);
+        visitor.accept(node);
+    }
+
+    private void visitSameValue(JsonNode node, JsonNode root, java.util.Set<JsonNode> active, java.util.Set<JsonNode> done) {
+        if (!node.isObject() || done.contains(node)) return;
+        if (!active.add(node)) throw new IllegalArgumentException("Schema 包含未进入子字段的循环引用，需要修复多态契约");
+        if (node.path("$ref").isTextual()) {
+            var target = root.at(node.path("$ref").asText().substring(1));
+            if (target.isMissingNode()) throw new IllegalArgumentException("Schema 本地引用不存在");
+            visitSameValue(target, root, active, done);
+        }
+        for (String key : java.util.List.of("allOf", "oneOf", "anyOf")) {
+            for (JsonNode branch : node.path(key)) visitSameValue(branch, root, active, done);
+        }
+        for (String key : java.util.List.of("not", "if", "then", "else")) {
+            visitSameValue(node.path(key), root, active, done);
+        }
+        for (JsonNode dependency : node.path("dependentSchemas")) visitSameValue(dependency, root, active, done);
+        active.remove(node);
+        done.add(node);
     }
 }

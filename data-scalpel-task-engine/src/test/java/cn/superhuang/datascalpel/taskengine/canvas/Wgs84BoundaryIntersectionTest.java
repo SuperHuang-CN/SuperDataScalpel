@@ -71,13 +71,14 @@ class Wgs84BoundaryIntersectionTest {
         for (Coordinate vertex : vertical.getCoordinates()) assertEquals(Wgs84PolygonRegion.Location.OUTSIDE,left.locate(p(vertex.x,vertex.y)));
         assertTrue(Wgs84GeometryDistance.withinDistance(horizontal,vertical,0));
         assertTrue(Wgs84GeometryDistance.withinDistance(vertical,horizontal,0));
-        // Distance/witness search remains a separate operation. No fabricated common
-        // coordinate is passed back merely because the Boolean topology is known.
+        // The local CROSS proof is refined by the verified ellipsoidal-gnomonic solver;
+        // Boolean-only intersections would still retain a null contact rather than invent one.
         var nearest=Wgs84GeometryDistance.nearest(horizontal,vertical,0.1);
         double witnessDistance=Geodesic.WGS84.Inverse(nearest.first().latitude(),nearest.first().longitude(),
                 nearest.second().latitude(),nearest.second().longitude()).s12;
         assertEquals(witnessDistance,nearest.distanceMetres(),1e-8);
-        assertTrue(nearest.uncertaintyMetres()<=0.1);
+        assertEquals(0,nearest.distanceMetres());
+        assertEquals(nearest.first(),nearest.second());
     }
 
     @Test void broadPhaseProvesLargeDisjointSetsWithoutAFullCartesianDistanceSearch() {

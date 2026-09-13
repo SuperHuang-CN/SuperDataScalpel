@@ -22,6 +22,7 @@ class CanvasJdbcDatabaseCapabilityTest {
     void overwriteAllowsAllRegularJdbcDatabasesAndRejectsTdEngine() {
         for (CanvasJdbcDatabaseType type : List.of(
                 CanvasJdbcDatabaseType.POSTGRESQL,
+                CanvasJdbcDatabaseType.HIGHGO,
                 CanvasJdbcDatabaseType.MYSQL,
                 CanvasJdbcDatabaseType.ORACLE,
                 CanvasJdbcDatabaseType.SQL_SERVER,
@@ -47,7 +48,7 @@ class CanvasJdbcDatabaseCapabilityTest {
     }
 
     @Test
-    void newDatabasesAllowScalarColumnsButRejectGeometry() {
+    void postgresFamilyAndMySqlAllowGeometryWhileOtherDatabasesRejectIt() {
         CanvasColumnSchema scalar = new CanvasColumnSchema(
                 "id", PlatformDataType.LONG, null, null, null,
                 false, null, false, false, null
@@ -61,6 +62,18 @@ class CanvasJdbcDatabaseCapabilityTest {
                         CoordinateDimension.XY
                 )
         );
+        for (CanvasJdbcDatabaseType type : List.of(
+                CanvasJdbcDatabaseType.POSTGRESQL,
+                CanvasJdbcDatabaseType.HIGHGO,
+                CanvasJdbcDatabaseType.MYSQL,
+                CanvasJdbcDatabaseType.OPENGAUSS,
+                CanvasJdbcDatabaseType.KINGBASE
+        )) {
+            RecordingIssues geometryIssues = new RecordingIssues();
+            CanvasNodeSupport.validateJdbcGeometryDatabase(
+                    List.of(geometry), type, "columns", geometryIssues);
+            assertFalse(geometryIssues.hasErrors(), type.name());
+        }
         for (CanvasJdbcDatabaseType type : List.of(
                 CanvasJdbcDatabaseType.ORACLE,
                 CanvasJdbcDatabaseType.SQL_SERVER,

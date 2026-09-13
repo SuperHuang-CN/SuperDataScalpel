@@ -168,6 +168,83 @@ const nodeGlyph = (iconKey: CanvasNodeIconKeyValue): ReactNode => {
         <circle cx="6" cy="8" r="1" fill="currentColor" />
         <circle cx="18" cy="15" r="1" fill="currentColor" />
       </>;
+    case CanvasNodeIconKey.SpatialDensity:
+      return <>
+        <path d="M3 4h18v16H3zM9 4v16m6-16v16M3 9.3h18M3 14.7h18" opacity=".55" />
+        <circle cx="7" cy="8" r="1.2" fill="currentColor" />
+        <circle cx="13" cy="12" r="1.2" fill="currentColor" />
+        <circle cx="17" cy="16" r="1.2" fill="currentColor" />
+        <circle cx="12" cy="12" r="5.5" strokeDasharray="2 2" />
+      </>;
+    case CanvasNodeIconKey.SpatialHotSpots:
+      return <>
+        <path d="M3 4h18v16H3zM9 4v16m6-16v16M3 9.3h18M3 14.7h18" opacity=".48" />
+        <rect x="4" y="5" width="4" height="3.3" rx=".6" fill="currentColor" opacity=".18" />
+        <rect x="10" y="10.3" width="4" height="3.4" rx=".6" fill="currentColor" opacity=".65" />
+        <rect x="16" y="15.7" width="4" height="3.3" rx=".6" fill="currentColor" />
+        <path d="m12 7 .75 1.5 1.65.24-1.2 1.17.29 1.64L12 10.78l-1.49.77.29-1.64-1.2-1.17 1.65-.24z" />
+      </>;
+    case CanvasNodeIconKey.SpatialMultiVariableGrid:
+      return <>
+        <path d="M3 4h18v16H3zM9 4v16m6-16v16M3 9.3h18M3 14.7h18" opacity=".5" />
+        <path d="M5 18 11 7l3 6 5-8" />
+        <circle cx="5" cy="18" r="1.2" fill="currentColor" />
+        <circle cx="11" cy="7" r="1.2" fill="currentColor" />
+        <circle cx="14" cy="13" r="1.2" fill="currentColor" />
+        <circle cx="19" cy="5" r="1.2" fill="currentColor" />
+      </>;
+    case CanvasNodeIconKey.SpatialSimilarLocations:
+      return <>
+        <circle cx="6" cy="12" r="3" fill="currentColor" fillOpacity=".18" />
+        <circle cx="17" cy="6" r="2" />
+        <circle cx="19" cy="13" r="2" />
+        <circle cx="15" cy="19" r="2" />
+        <path d="M9 11 15 7M9 13l8 0M8 14.5l5.5 3.5" strokeDasharray="2 2" />
+        <path d="m4.5 12 1 1 2-2" />
+      </>;
+    case CanvasNodeIconKey.SpatialDescribeDataset:
+      return <>
+        <path d="M4 4h10v16H4z" />
+        <path d="M7 8h4M7 12h4M7 16h3" />
+        <circle cx="17" cy="9" r="3.5" />
+        <path d="m19.5 11.5 2.5 2.5M16 7.5h2M17 6.5v2" />
+        <path d="M15 18h6M16 16v2m2-4v4m2-2v2" />
+      </>;
+    case CanvasNodeIconKey.SpatialEnrichFromGrid:
+      return <>
+        <path d="M3 4h18v16H3zM9 4v16m6-16v16M3 9.3h18M3 14.7h18" opacity=".42" />
+        <circle cx="6" cy="12" r="2.2" fill="currentColor" />
+        <path d="M9.5 12h7M14.5 9.5 17 12l-2.5 2.5" />
+        <path d="M18.5 5.5v4m-2-2h4" />
+      </>;
+    case CanvasNodeIconKey.SpatialGroupByProximity:
+      return <>
+        <circle cx="6" cy="7" r="2" fill="currentColor" />
+        <circle cx="13" cy="6" r="2" fill="currentColor" />
+        <circle cx="18" cy="12" r="2" fill="currentColor" />
+        <circle cx="10" cy="17" r="2" fill="currentColor" />
+        <path d="m8 7 3-1m3.5 1.5 2 3M16.5 13.5 12 16m-3-1-2-6" />
+        <path d="M3 3c5-2 13-2 18 4M3 21c5 2 13 2 18-4" strokeDasharray="2 2" />
+      </>;
+    case CanvasNodeIconKey.TraceProximityEvents:
+      return <>
+        <circle cx="4" cy="12" r="2" fill="currentColor" />
+        <circle cx="12" cy="6" r="2" fill="currentColor" />
+        <circle cx="20" cy="11" r="2" fill="currentColor" />
+        <circle cx="14" cy="19" r="2" fill="currentColor" />
+        <path d="m6 10.5 4-3M14 7l4 3M18.6 12.8 15.4 17" />
+        <path d="m8 9 2-1.5-.5 2.5M16 8.5l2 1.5-2.5.4M17.2 15l-1.8 2.3-.2-2.5" />
+        <path d="M3 5.5c4.5-3.5 13-4 18.5 1" strokeDasharray="2 2" opacity=".65" />
+      </>;
+    case CanvasNodeIconKey.SnapTracks:
+      return <>
+        <path d="M3 18c3-6 5-10 9-10s5 5 9 1" strokeDasharray="2 2" opacity=".65" />
+        <path d="M3 16c4-5 7-7 10-6s4 4 8 1" />
+        <circle cx="5" cy="14" r="1.7" fill="currentColor" />
+        <circle cx="12" cy="10.2" r="1.7" fill="currentColor" />
+        <circle cx="19" cy="11.7" r="1.7" fill="currentColor" />
+        <path d="m5 6 2 2 3-4" />
+      </>;
     case CanvasNodeIconKey.GeometryBuffer:
       return <>
         <path d="m9 7 5-1 3 4-2 6-6 1-3-4z" />

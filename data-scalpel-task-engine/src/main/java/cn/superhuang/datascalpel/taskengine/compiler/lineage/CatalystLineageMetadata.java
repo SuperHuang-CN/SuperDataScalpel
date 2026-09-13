@@ -8,6 +8,7 @@ import org.apache.spark.sql.types.Metadata;
 import org.apache.spark.sql.types.MetadataBuilder;
 
 import java.util.Arrays;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -32,6 +33,9 @@ public final class CatalystLineageMetadata {
     public static final String DISPLAY_NAME = PREFIX + "displayName";
     public static final String BOUNDARY_NODE_ID = PREFIX + "boundaryNodeId";
     public static final String BOUNDARY_NODE_TYPE = PREFIX + "boundaryNodeType";
+    public static final String TECHNICAL_COLUMN = PREFIX + "technicalColumn";
+    public static final String ROW_PRESERVING_OPAQUE_TRANSFORM = PREFIX + "rowPreservingOpaqueTransform";
+    public static final String OPAQUE_DERIVED_SOURCE_COLUMNS = PREFIX + "opaqueDerivedSourceColumns";
 
     private CatalystLineageMetadata() {
     }
@@ -89,6 +93,43 @@ public final class CatalystLineageMetadata {
         return source.select(columns);
     }
 
+    /**
+     * Marks a plan-local helper column that exists only to implement an operator and is
+     * removed before the logical Canvas table is exposed. Such a column is not an unknown
+     * physical source field and must not reduce field-lineage coverage when used as an
+     * internal grouping or equality-join key.
+     */
+    public static Column markTechnicalColumn(Column expression, String name) {
+        return expression.as(name, new MetadataBuilder()
+                .putLong(MARKER_VERSION, 1)
+                .putBoolean(TECHNICAL_COLUMN, true)
+                .build());
+    }
+
+    /**
+     * Marks a deliberately opaque row transform whose existing columns are copied without
+     * changing their values. Appended columns must list the input columns that determine
+     * them. The lineage analyzer only trusts this explicit boundary; arbitrary map/mapPartitions
+     * plans remain unsupported and partial.
+     */
+    public static Dataset<Row> markRowPreservingOpaqueTransform(
+            Dataset<Row> output,
+            Map<String, List<String>> derivedSourceColumns
+    ) {
+        Column[] columns = Arrays.stream(output.schema().fields()).map(field -> {
+            MetadataBuilder builder = new MetadataBuilder()
+                    .withMetadata(field.metadata())
+                    .putLong(MARKER_VERSION, 1)
+                    .putBoolean(ROW_PRESERVING_OPAQUE_TRANSFORM, true);
+            List<String> sources = derivedSourceColumns.get(field.name());
+            if (sources != null) {
+                builder.putStringArray(OPAQUE_DERIVED_SOURCE_COLUMNS, sources.toArray(String[]::new));
+            }
+            return output.col(quote(field.name())).as(field.name(), builder.build());
+        }).toArray(Column[]::new);
+        return output.select(columns);
+    }
+
     public static TaskLineageEvidence.Asset readAsset(Metadata metadata, String localAssetKey) {
         TaskLineageEvidence.AssetKind kind = TaskLineageEvidence.AssetKind.valueOf(
                 metadata.getString(ASSET_KIND));
@@ -110,6 +151,18 @@ public final class CatalystLineageMetadata {
     public static boolean isBoundary(Metadata metadata) {
         return metadata != null && metadata.contains(MARKER_VERSION)
                 && metadata.contains(BOUNDARY_NODE_ID);
+    }
+
+    public static boolean isTechnicalColumn(Metadata metadata) {
+        return metadata != null && metadata.contains(MARKER_VERSION)
+                && metadata.contains(TECHNICAL_COLUMN)
+                && metadata.getBoolean(TECHNICAL_COLUMN);
+    }
+
+    public static boolean isRowPreservingOpaqueTransform(Metadata metadata) {
+        return metadata != null && metadata.contains(MARKER_VERSION)
+                && metadata.contains(ROW_PRESERVING_OPAQUE_TRANSFORM)
+                && metadata.getBoolean(ROW_PRESERVING_OPAQUE_TRANSFORM);
     }
 
     public static String boundaryNodeKey(Metadata metadata) {

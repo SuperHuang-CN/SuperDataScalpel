@@ -14,10 +14,12 @@ import org.apache.spark.sql.catalyst.expressions.ArrayTransform;
 import org.apache.spark.sql.catalyst.expressions.HigherOrderFunction;
 import org.apache.spark.sql.catalyst.expressions.LambdaFunction;
 import org.apache.spark.sql.catalyst.expressions.NamedLambdaVariable;
+import org.apache.spark.sql.catalyst.expressions.RaiseError;
 import org.apache.spark.sql.catalyst.expressions.aggregate.AggregateExpression;
 import org.apache.spark.sql.catalyst.plans.logical.Aggregate;
 import org.apache.spark.sql.catalyst.plans.logical.CTERelationDef;
 import org.apache.spark.sql.catalyst.plans.logical.CTERelationRef;
+import org.apache.spark.sql.catalyst.plans.logical.Deduplicate;
 import org.apache.spark.sql.catalyst.plans.logical.Filter;
 import org.apache.spark.sql.catalyst.plans.logical.Expand;
 import org.apache.spark.sql.catalyst.plans.logical.Generate;
@@ -35,6 +37,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HexFormat;
@@ -51,7 +54,8 @@ import java.util.Set;
  */
 public final class CatalystLineageAnalyzer {
     private static final Set<String> TRANSPARENT_PLAN_TYPES = Set.of(
-            "SubqueryAlias", "GlobalLimit", "LocalLimit", "Repartition", "ResolvedHint"
+            "SubqueryAlias", "GlobalLimit", "LocalLimit", "Repartition",
+            "RepartitionByExpression", "ResolvedHint"
     );
     private final CatalystLineageAnalysisLimits limits;
 
@@ -176,6 +180,9 @@ public final class CatalystLineageAnalyzer {
                 : boundaryNodeKey;
         PlanEvidence input = inputEvidence(plan, state);
         if (input != null) return input;
+        PlanEvidence opaqueTransform = rowPreservingOpaqueTransformEvidence(
+                plan, activeNodeKey, state);
+        if (opaqueTransform != null) return opaqueTransform;
 
         if (plan instanceof WithCTE withCte) {
             return analyzeWithCte(withCte, activeNodeKey, state);
@@ -238,6 +245,13 @@ public final class CatalystLineageAnalyzer {
             }
             return projectOutputs(plan, available, activeNodeKey, state, false);
         }
+        if (plan instanceof Deduplicate deduplicate) {
+            for (Attribute attribute : attributes(deduplicate.keys())) {
+                addUsage(attribute, available, activeNodeKey,
+                        TaskLineageEvidence.UsageType.GROUP_KEY, state);
+            }
+            return projectOutputs(plan, available, activeNodeKey, state, false);
+        }
         if (plan instanceof Aggregate aggregate) {
             for (Expression expression : expressions(aggregate.groupingExpressions())) {
                 addUsage(expression, available, activeNodeKey,
@@ -273,6 +287,78 @@ public final class CatalystLineageAnalyzer {
             return alignOutputs(plan, output, state);
         }
         return projectOutputs(plan, available, activeNodeKey, state, true);
+    }
+
+    private PlanEvidence rowPreservingOpaqueTransformEvidence(
+            LogicalPlan plan,
+            String activeNodeKey,
+            FlowState state
+    ) {
+        List<Attribute> outputs = attributes(plan.output());
+        if (outputs.isEmpty() || outputs.stream().noneMatch(attribute ->
+                CatalystLineageMetadata.isRowPreservingOpaqueTransform(attribute.metadata()))) {
+            return null;
+        }
+        List<LogicalPlan> directChildren = plans(plan.children());
+        if (!(plan instanceof Project) || directChildren.size() != 1
+                || !"SerializeFromObject".equals(directChildren.getFirst().nodeName())) {
+            // Spark carries attribute metadata through later projections. Only the explicit
+            // marker projection immediately above the encoder is the trust boundary.
+            return null;
+        }
+        LogicalPlan inputPlan = opaqueTransformInput(plan);
+        if (inputPlan == null) {
+            state.partial = true;
+            state.warn("OPAQUE_TRANSFORM_INPUT_UNRESOLVED",
+                    "受控行变换未找到可验证的输入边界", null);
+            return null;
+        }
+        PlanEvidence input = analyzePlan(inputPlan, activeNodeKey, state);
+        Map<String, ValueEvidence> inputsByName = new LinkedHashMap<>();
+        for (Attribute attribute : attributes(inputPlan.output())) {
+            ValueEvidence value = input.values().get(key(attribute));
+            if (value != null) inputsByName.putIfAbsent(attribute.name(), value);
+        }
+        Map<ExpressionKey, ValueEvidence> values = new LinkedHashMap<>();
+        for (Attribute output : outputs) {
+            Metadata metadata = output.metadata();
+            if (!CatalystLineageMetadata.isRowPreservingOpaqueTransform(metadata)) continue;
+            ValueEvidence value;
+            if (metadata.contains(CatalystLineageMetadata.OPAQUE_DERIVED_SOURCE_COLUMNS)) {
+                List<ValueEvidence> dependencies = Arrays.stream(metadata.getStringArray(
+                                CatalystLineageMetadata.OPAQUE_DERIVED_SOURCE_COLUMNS))
+                        .map(inputsByName::get)
+                        .filter(Objects::nonNull)
+                        .toList();
+                int expected = metadata.getStringArray(
+                        CatalystLineageMetadata.OPAQUE_DERIVED_SOURCE_COLUMNS).length;
+                value = dependencies.size() == expected && expected > 0
+                        ? ValueEvidence.merge(dependencies, activeNodeKey,
+                        compositeFingerprint("opaque-row-derived", dependencies))
+                        .asCalculated(activeNodeKey)
+                        : ValueEvidence.unknown(activeNodeKey,
+                        "opaque-row-derived:" + output.name());
+            } else {
+                value = inputsByName.getOrDefault(output.name(),
+                        ValueEvidence.unknown(activeNodeKey,
+                                "opaque-row-passthrough:" + output.name()));
+            }
+            values.put(key(output), value);
+        }
+        return new PlanEvidence(values);
+    }
+
+    private static LogicalPlan opaqueTransformInput(LogicalPlan boundary) {
+        LogicalPlan current = boundary;
+        for (int depth = 0; depth < 8; depth++) {
+            List<LogicalPlan> children = plans(current.children());
+            if ("DeserializeToObject".equals(current.nodeName())) {
+                return children.size() == 1 ? children.getFirst() : null;
+            }
+            if (children.size() != 1) return null;
+            current = children.getFirst();
+        }
+        return null;
     }
 
     private PlanEvidence analyzeWithCte(
@@ -387,7 +473,9 @@ public final class CatalystLineageAnalyzer {
         Map<ExpressionKey, ValueEvidence> values = new LinkedHashMap<>();
         for (NamedExpression named : CollectionConverters.asJava(namedExpressions)) {
             Expression expression = named instanceof Alias alias ? alias.child() : (Expression) named;
-            ValueEvidence value = expressionEvidence(expression, available, activeNodeKey);
+            ValueEvidence value = CatalystLineageMetadata.isTechnicalColumn(named.metadata())
+                    ? ValueEvidence.constant("technical-column:" + named.name())
+                    : expressionEvidence(expression, available, activeNodeKey);
             if (CatalystLineageMetadata.isBoundary(named.metadata())) {
                 value = value.withNodeKey(CatalystLineageMetadata.boundaryNodeKey(named.metadata()));
             }
@@ -450,6 +538,11 @@ public final class CatalystLineageAnalyzer {
             return literal.value() == null
                     ? ValueEvidence.nullValue(expressionFingerprint(expression, List.of()))
                     : ValueEvidence.constant(expressionFingerprint(expression, List.of()));
+        }
+        if (expression instanceof RaiseError) {
+            // raise_error never emits a field value. Treat the failure-only branch as a
+            // constant so a guarded CASE/WHEN keeps the lineage of its real value branch.
+            return ValueEvidence.constant(expressionFingerprint(expression, List.of()));
         }
         if (expression instanceof WindowExpression windowExpression) {
             if (windowExpression.windowFunction() instanceof RowNumber) {

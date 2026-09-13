@@ -1,13 +1,15 @@
 package cn.superhuang.data.scalpel.business.model.web.request;
 
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
+import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Size;
 
+@Schema(description = "JDBC 来源表的限定标识")
 public record ManagedImportTableIdentifierInput(
-        @Size(max = 128) String catalog,
-        @Size(max = 128) String schema,
-        @NotBlank @Size(max = 128) String table
+        @Schema(description = "来源 Catalog；数据库不使用 Catalog 时为空") @Size(max = 128) String catalog,
+        @Schema(description = "来源 Schema；数据库不使用 Schema 时为空") @Size(max = 128) String schema,
+        @Schema(description = "来源普通表名称") @NotBlank @Size(max = 128) String table
 ) {
 
     public TableIdentifier toIdentifier() {

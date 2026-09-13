@@ -191,7 +191,7 @@ interface MetadataModel {
 - 全部 DML 在一个目标数据库事务中提交或回滚。
 - 不复用 Spark 分区 Writer，不与同任务其他 Output 建立跨节点事务。
 
-PostgreSQL/MySQL 锁、SQL、值绑定、Geometry 读取、连接恢复和失败分类由同一个
+PostgreSQL/HighGo/MySQL/openGauss/人大金仓锁、SQL、值绑定、连接恢复和失败分类由同一个
 `JdbcSnapshotSyncExecutor` 与方言能力完成。
 
 ## 7. 规模限制、结果和安全边界
@@ -253,7 +253,7 @@ PostgreSQL/MySQL 锁、SQL、值绑定、Geometry 读取、连接恢复和失败
 | 错误码 | 阶段 | 条件 |
 | --- | --- | --- |
 | `MODEL_SNAPSHOT_SYNC_REQUIRES_MANAGED_MODEL` | Compiler | 目标模型是 EXTERNAL |
-| `MODEL_SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED` | Compiler | MANAGED 模型不是 PostgreSQL/MySQL |
+| `MODEL_SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED` | Compiler | MANAGED 模型不是 PostgreSQL/HighGo/MySQL/openGauss/人大金仓 |
 | `MODEL_SNAPSHOT_SYNC_OUTPUT_FAILED` | Runner | 无法归类的模型快照同步失败 |
 
 真实 JDBC、锁、Key、删除保护和 Geometry 失败仍使用公共错误码，不能仅因目标通过模型解析就
@@ -272,19 +272,19 @@ PostgreSQL/MySQL 锁、SQL、值绑定、Geometry 读取、连接恢复和失败
 
 - Contracts：配置、公共删除策略、节点联合、`MetadataModel.uniqueKeys` 和严格 JSON 往返。
 - 版本：Canvas 2.0 统一映射、Manifest v11、Result v3 和旧大版本拒绝规则。
-- Compiler：PUBLISHED/MANAGED/STORAGE/PostgreSQL/MySQL、BOUNDED、映射、Cast、Key 和 Warning。
+- Compiler：PUBLISHED/MANAGED/STORAGE/支持快照同步的 JDBC 数据库、BOUNDED、映射、Cast、Key 和 Warning。
 - 模型生命周期：schemaVersion、updatedAt、状态和数据源在运行准备阶段发生变化。
 - 共享比较：使用与 JDBC 节点相同的参数化用例覆盖所有标量和 Geometry 拓扑相等。
 - Runtime：INSERT、UPDATE、DELETE、UNCHANGED、RETAINED、空来源、Key 变化和整体回滚。
 - 安全限制：两侧 NULL/重复 Key、行数/估算字节、删除数量/比例和锁超时。
-- 模型边界：MANAGED 成功、EXTERNAL 拒绝、非 PostgreSQL/MySQL 拒绝；物理结构差异不作为门禁。
+- 模型边界：MANAGED 成功、EXTERNAL 拒绝、不支持快照同步的数据库拒绝；物理结构差异不作为门禁。
 - 结果：七项指标、rowsWritten、affectedRows、失败无指标和运行详情展示。
 - 前端：模型筛选、失效值保留、共享 Key/删除交互、默认阈值、摘要和 JSON 导入导出。
 - 复用验收：JDBC 与 Model 两个 Operator 只做目标解析，共享 Executor 的关键路径不允许复制。
 
 ## 12. 不在范围内
 
-- EXTERNAL 模型或非 PostgreSQL/MySQL 模型同步。
+- EXTERNAL 模型或不支持快照同步的数据库模型同步。
 - 普通 MODEL_OUTPUT 的 APPEND/OVERWRITE 行为调整。
 - 自动使用模型主键、自动创建 Key 约束或自动修复重复 Key。
 - 局部模型范围同步、条件删除、软删除或逻辑状态映射。

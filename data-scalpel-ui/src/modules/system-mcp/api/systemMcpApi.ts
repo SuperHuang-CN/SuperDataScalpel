@@ -1,9 +1,10 @@
 import { requestJson } from '../../../shared/api/http';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
-import type { Api, Audit, Configuration, Issued, Page, Token, UserOption } from '../model/types';
+import type { Api, ApiModule, Audit, Configuration, Issued, Page, Token, UserOption } from '../model/types';
 const base = '/v1/system-mcp';
 export const getConfiguration = () => requestJson<Configuration>(`${base}/configuration`);
 export const getApis = (r: SearchRequest) => requestJson<Page<Api>>(`${base}/apis?${toSearchParams(r)}`);
+export const getApiModules = () => requestJson<ApiModule[]>(`${base}/apis/modules`);
 export const getApi = (id: string) => requestJson<Api>(`${base}/apis/${id}`);
 export const getTokens = (r: SearchRequest) => requestJson<Page<Token>>(`${base}/access-tokens?${toSearchParams(r)}`);
 export const getAudits = (r: SearchRequest) => requestJson<Page<Audit>>(`${base}/audits?${toSearchParams(r)}`);

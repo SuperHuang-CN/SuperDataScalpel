@@ -69,6 +69,14 @@ class CanvasNodeOperatorRegistryTest {
         assertBatchOnly(registry, CanvasNodeType.SPATIAL_BIN_AGGREGATE);
         assertBatchOnly(registry, CanvasNodeType.SPATIAL_POINT_CLUSTER);
         assertBatchOnly(registry, CanvasNodeType.SPATIAL_CENTER_DISPERSION);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_DENSITY);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_HOT_SPOTS);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_MULTI_VARIABLE_GRID);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_ENRICH_FROM_GRID);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_GROUP_BY_PROXIMITY);
+        assertBatchOnly(registry, CanvasNodeType.TRACE_PROXIMITY_EVENTS);
+        assertBatchOnly(registry, CanvasNodeType.SNAP_TRACKS);
+        assertBatchOnly(registry, CanvasNodeType.SPATIAL_SIMILAR_LOCATIONS);
         assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_BUFFER);
         assertBatchAndStreaming(registry, CanvasNodeType.GEOMETRY_EXPLODE);
         assertBatchAndStreaming(registry, CanvasNodeType.SPATIAL_MEASURE);

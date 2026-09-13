@@ -167,17 +167,17 @@ Geometry 写入。Kafka 内联 Value Schema 不接受 Geometry。Task Engine 的
 - `APPEND` 允许写入 `MANAGED` 或 `EXTERNAL`。
 - `OVERWRITE` 只允许支持该模式的数据库和 `MANAGED` 模型，固定语义为先 `TRUNCATE`、再 append，
   不得 Drop/Recreate。
-- `UPSERT` 只允许 PostgreSQL/MySQL，可写入 `MANAGED` 或 `EXTERNAL`，Key 自动取目标模型按字段
+- `UPSERT` 允许 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle 与 SQL Server，可写入 `MANAGED` 或 `EXTERNAL`，Key 自动取目标模型按字段
   顺序声明的完整主键；模型无主键或主键未全部映射时编译失败。
 - Batch 对普通 JDBC 数据库支持 `APPEND`，并按数据库能力开放 `OVERWRITE/UPSERT`；Streaming
-  支持 `APPEND`，仅 PostgreSQL/MySQL 支持 `UPSERT`，继续禁止 `OVERWRITE` 和 Geometry。
+  支持 `APPEND`，PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle 与 SQL Server 支持 `UPSERT`，继续禁止 `OVERWRITE` 和 Geometry。
 - 平台不检查物理表是否存在对应主键或唯一约束，由实际数据库 UPSERT 结果判定成功或失败。
 - 当前 Runner 支持该数据库产品。
 
-普通标量 `MODEL_INPUT` 支持 PostgreSQL、MySQL、openGauss、Kingbase、Oracle、SQL Server、
+普通标量 `MODEL_INPUT` 支持 PostgreSQL、HighGo、MySQL、openGauss、Kingbase、Oracle、SQL Server、
 ClickHouse 和达梦。`MODEL_OUTPUT` 对这些数据库开放 APPEND 和批处理 OVERWRITE；OVERWRITE
-固定执行 `TRUNCATE TABLE → APPEND`，不承诺两个步骤原子性，UPSERT 仅支持 PostgreSQL/MySQL，Geometry 仅支持
-PostgreSQL/PostGIS 和 MySQL 8。设计器根据模型存储数据源禁用不支持的模式，但必须保留并标红
+固定执行 `TRUNCATE TABLE → APPEND`，不承诺两个步骤原子性；UPSERT 按上述数据库能力开放；Geometry 支持
+具备 PostGIS 兼容扩展的 PostgreSQL/HighGo/openGauss/Kingbase 和 MySQL 8。设计器根据模型存储数据源禁用不支持的模式，但必须保留并标红
 已保存的失效值，使无效草稿仍可应用和保存。
 
 平台不仲裁输出目标占用关系。同一个模型可以在一个 Definition 中同时作为 `MODEL_INPUT` 和 `MODEL_OUTPUT`，多个 `MODEL_OUTPUT` 也可以指向同一个目标模型；不同任务同样可以写入同一个模型或物理表。每个节点按自身配置形成独立读写计划，并发覆盖、数据库锁竞争和最终数据结果由底层 Sink 语义与实施配置决定。

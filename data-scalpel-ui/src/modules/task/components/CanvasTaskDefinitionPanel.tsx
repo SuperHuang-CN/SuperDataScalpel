@@ -1,6 +1,7 @@
+import { Tag } from 'antd';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
-import { CloseOutlined, RobotOutlined, SaveOutlined } from '@ant-design/icons';
-import { Button, Modal, Space, Spin, Tag, Typography, message } from 'antd';
+import { CloseOutlined, SaveOutlined } from '@ant-design/icons';
+import { Button, Modal, Space, Spin, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useBlocker, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -14,8 +15,6 @@ import {
 } from '../canvas/canvasTypes';
 import {
   useCanvasTaskDefinition,
-  useAcceptTaskCanvasProposal,
-  useTaskCanvasProposal,
   useUpdateCanvasTaskDefinition,
 } from '../hooks/useTasks';
 import type { DataTask } from '../model/task';
@@ -27,7 +26,6 @@ interface CanvasTaskDefinitionPanelProps {
   onDirtyChange?: (dirty: boolean) => void;
   protectNavigation?: boolean;
   onCancelEdit?: () => void;
-  assistantChangeSetId?: string;
 }
 
 export const CanvasTaskDefinitionPanel = ({
@@ -37,7 +35,6 @@ export const CanvasTaskDefinitionPanel = ({
   onDirtyChange,
   protectNavigation = true,
   onCancelEdit,
-  assistantChangeSetId,
 }: CanvasTaskDefinitionPanelProps) => {
   const [messageApi, messageContext] = message.useMessage();
   const [currentDefinition, setCurrentDefinition] = useState<CanvasDefinition | null>(null);
@@ -54,8 +51,6 @@ export const CanvasTaskDefinitionPanel = ({
   const definitionQuery = useCanvasTaskDefinition(task.id);
   const streaming = task.type === 'SPARK_STREAMING_CANVAS';
   const saveMutation = useUpdateCanvasTaskDefinition();
-  const proposalQuery = useTaskCanvasProposal(assistantChangeSetId);
-  const acceptProposalMutation = useAcceptTaskCanvasProposal();
   const editable = task.status === 'DRAFT' || task.status === 'DISABLED';
   const querySavedFingerprint = useMemo(
     () => canvasDefinitionFingerprint(definitionQuery.data?.definition),
@@ -229,102 +224,9 @@ export const CanvasTaskDefinitionPanel = ({
     return <Alert type="error" showIcon message="Canvas 定义内容缺失" />;
   }
 
-  const applyAssistantProposal = () => {
-    if (!assistantChangeSetId || !proposalQuery.data) return;
-    if (hasPendingChanges) {
-      messageApi.warning('当前 Canvas 或节点配置存在未保存修改，请先保存或放弃修改后再应用 AI 提案');
-      return;
-    }
-    const execute = async () => {
-      try {
-        const changeSet = await acceptProposalMutation.mutateAsync({
-          id: assistantChangeSetId,
-          taskId: task.id,
-        });
-        const definition = changeSet.taskCanvasResult?.definition;
-        if (!definition) throw new Error('提案未返回 Canvas 定义');
-        designerRef.current?.replaceDefinition(definition);
-        messageApi.success('AI 提案已应用为未保存的 Canvas 草稿，请检查编译结果后手动保存');
-      } catch (error) {
-        messageApi.error(error instanceof ApiError ? error.message : '应用 AI Canvas 提案失败');
-        throw error;
-      }
-    };
-    if ((currentDefinition ?? initialDefinition).nodes.length > 0) {
-      Modal.confirm({
-        rootClassName: 'business-overlay business-modal-overlay',
-        title: '完整替换当前 Canvas？',
-        content: 'AI V1 只支持完整 Canvas 提案。确认后仅替换当前内存画布，后台已保存定义不会改变，直到你点击“保存定义”。',
-        okText: '替换为 AI 提案',
-        cancelText: '取消',
-        onOk: execute,
-      });
-      return;
-    }
-    void execute().catch(() => undefined);
-  };
-
-  const proposal = proposalQuery.data?.taskCanvasProposal;
-
   return (
     <div className="task-detail-tab-panel task-canvas-definition-panel">
       {messageContext}
-      {assistantChangeSetId && proposalQuery.isLoading && (
-        <Alert showIcon type="info" message="正在加载 AI Canvas 提案…" className="task-canvas-proposal-alert" />
-      )}
-      {assistantChangeSetId && proposalQuery.error && (
-        <Alert
-          showIcon
-          type="warning"
-          message="AI Canvas 提案加载失败"
-          description={proposalQuery.error instanceof ApiError ? proposalQuery.error.message : '请返回 AI 助手后重试。'}
-          className="task-canvas-proposal-alert"
-        />
-      )}
-      {proposalQuery.data && proposal && (
-        <Alert
-          showIcon
-          icon={<RobotOutlined />}
-          type={proposalQuery.data.status === 'PENDING' ? 'info'
-            : proposalQuery.data.status === 'APPLIED' ? 'success' : 'warning'}
-          message={<Space wrap>
-            <Typography.Text strong>AI Canvas 完整替换提案</Typography.Text>
-            <Tag>{proposal.nodeCount} 个节点</Tag>
-            <Tag>{proposal.plan.inputs.length} 个输入</Tag>
-            <Tag>{proposal.plan.steps.length} 个处理步骤</Tag>
-            <Tag>{proposal.plan.output.type}</Tag>
-          </Space>}
-          description={<Space direction="vertical" size={4}>
-            <Typography.Text>{proposal.summary}</Typography.Text>
-            <Typography.Text type="secondary">
-              {proposal.plan.inputs.map((input) => `${input.name}（${input.type}）`).join('、')}
-              {' → '}{proposal.plan.steps.map((step) => step.name).join(' → ') || '直接输出'}
-              {' → '}{proposal.plan.output.name}
-            </Typography.Text>
-            {proposal.assumptions.length > 0 && (
-              <Typography.Text type="secondary">假设：{proposal.assumptions.join('；')}</Typography.Text>
-            )}
-            {proposal.needsUserInput.length > 0 && (
-              <Typography.Text type="warning">待补配置：{proposal.needsUserInput.join('；')}</Typography.Text>
-            )}
-            <Typography.Text type="secondary">
-              应用只会生成当前页面的未保存草稿，仍需检查 Task Engine 编译结果并手动保存。
-            </Typography.Text>
-          </Space>}
-          action={(proposalQuery.data.status === 'PENDING' || proposalQuery.data.status === 'APPLIED') ? (
-            <Button
-              type="primary"
-              icon={<RobotOutlined />}
-              disabled={hasPendingChanges}
-              loading={acceptProposalMutation.isPending}
-              onClick={applyAssistantProposal}
-            >
-              {proposalQuery.data.status === 'APPLIED' ? '重新应用提案' : '应用提案'}
-            </Button>
-          ) : undefined}
-          className="task-canvas-proposal-alert"
-        />
-      )}
       {!editable && (
         <Alert
           type={definitionQuery.data.configured ? 'info' : 'error'}

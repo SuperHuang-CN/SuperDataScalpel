@@ -13,6 +13,7 @@ import cn.superhuang.datascalpel.taskengine.compiler.lineage.CatalystLineageOutp
 import cn.superhuang.datascalpel.taskengine.spark.SedonaSparkSupport;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
+import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.RowFactory;
 import org.apache.spark.sql.SparkSession;
@@ -26,6 +27,7 @@ import java.sql.Timestamp;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
 
@@ -721,6 +723,146 @@ class SpatialAnalysisProcessorSparkTest {
     }
 
     @Test
+    void everyReferenceDwellOutputFieldHasCompleteInputLineage() {
+        var raw = geometryTable("dwell_lineage_raw", "dwell_lineage", "shape", GeometryKind.POINT, 3857,
+                List.of(longColumn("track_id"), timestampColumn("event_time"), longColumn("sequence"),
+                        doubleColumn("value"), stringColumn("label"), stringColumn("wkt")),
+                List.of(
+                        RowFactory.create(1L, time("2026-01-01 00:00:00"), 1L, 10d, "a", "POINT (0 0)"),
+                        RowFactory.create(1L, time("2026-01-01 00:00:01"), 2L, 20d, "b", "POINT (1 0)"),
+                        RowFactory.create(1L, time("2026-01-01 00:00:02"), 3L, 30d, "c", "POINT (2 0)"),
+                        RowFactory.create(1L, time("2026-01-01 00:00:03"), 4L, 40d, "d", "POINT (100 0)")));
+        var inputAsset = new TaskLineageEvidence.Asset(
+                "dwell-input", TaskLineageEvidence.AssetRole.INPUT,
+                TaskLineageEvidence.AssetKind.JDBC_TABLE, null, null, null, null,
+                UUID.randomUUID(), null, null, "dwell_lineage", null, null, "dwell_lineage");
+        var inputFields = new LinkedHashMap<String, CatalystLineageMetadata.InputField>();
+        raw.schema().columns().forEach(column -> inputFields.put(column.name(),
+                new CatalystLineageMetadata.InputField("dwell-input:" + column.name(), null)));
+        var source = new SparkCanvasTable(raw.schema(), CatalystLineageMetadata.markInput(
+                raw.dataset(), "dwell-input-node", inputAsset, inputFields));
+
+        for (TrackDwellResultMode mode : TrackDwellResultMode.values()) {
+            var summaries = List.of(
+                    new TrackSummaryStatistic(id(), TrackSummaryStatisticKind.COUNT, null, "row_count"),
+                    new TrackSummaryStatistic(id(), TrackSummaryStatisticKind.COUNT_FIELD, "value", "value_count"),
+                    new TrackSummaryStatistic(id(), TrackSummaryStatisticKind.SUM, "value", "value_sum"),
+                    new TrackSummaryStatistic(id(), TrackSummaryStatisticKind.MEAN, "value", "value_mean"),
+                    new TrackSummaryStatistic(id(), TrackSummaryStatisticKind.ANY, "label", "label_any"),
+                    new TrackSummaryStatistic(id(), TrackSummaryStatisticKind.FIRST, "label", "label_first"),
+                    new TrackSummaryStatistic(id(), TrackSummaryStatisticKind.LAST, "label", "label_last"));
+            var configuration = referenceDwellConfiguration(mode, summaries, "dwell_lineage_result");
+            var issues = new RecordingIssueSink();
+            var result = new TrackFindDwellNodeOperator().apply(
+                    new TrackFindDwellNodeDefinition(id(), "驻留血缘", LAYOUT, configuration),
+                    Map.of("dwell_lineage", source), context(issues));
+            assertFalse(issues.hasErrors(), issues::toString);
+            var output = result.propagatedTables().get("dwell_lineage_result");
+            var outputAsset = new TaskLineageEvidence.Asset(
+                    "dwell-output-" + mode, TaskLineageEvidence.AssetRole.OUTPUT,
+                    TaskLineageEvidence.AssetKind.JDBC_TABLE, null,
+                    TaskLineageEvidence.WriteMode.APPEND, null, null, UUID.randomUUID(),
+                    null, null, "dwell_lineage_result", null, null, "dwell_lineage_result");
+            String outputKey = outputAsset.localAssetKey();
+            var candidate = new CatalystLineageOutputCandidate(
+                    "dwell-flow-" + mode, "output-node", "JDBC_OUTPUT", "dwell-write-" + mode,
+                    output.dataset(), outputAsset,
+                    output.schema().columns().stream().map(column ->
+                            new CatalystLineageOutputCandidate.TargetField(
+                                    outputKey + ":" + column.name(), null, column.name(), column.name(),
+                                    TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE)).toList());
+
+            var flow = new CatalystLineageAnalyzer().analyze(List.of(candidate)).flows().getFirst();
+
+            assertEquals(TaskLineageEvidence.Coverage.FIELD_COMPLETE, flow.coverage(),
+                    () -> mode + ": " + flow.warnings());
+            assertTrue(flow.fields().stream().filter(field -> field.localAssetKey().equals(outputKey))
+                    .noneMatch(field -> field.outputEffect()
+                            == TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE));
+            if (mode == TrackDwellResultMode.DWELL_FEATURES || mode == TrackDwellResultMode.ALL_FEATURES) {
+                for (var sourceField : raw.schema().columns()) {
+                    assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                                    edge.target().localFieldKey().equals(outputKey + ":" + sourceField.name())
+                                            && edge.source().localFieldKey().equals("dwell-input:" + sourceField.name())
+                                            && edge.derivationType() == TaskLineageEvidence.DerivationType.DIRECT),
+                            () -> mode + " should copy " + sourceField.name() + " directly: " + flow.fieldEdges());
+                }
+            } else {
+                Map<String, List<String>> expectedSources = Map.ofEntries(
+                        Map.entry("track_id", List.of("track_id")),
+                        Map.entry("dwell_id", List.of("track_id")),
+                        Map.entry("start_time", List.of("event_time")),
+                        Map.entry("end_time", List.of("event_time")),
+                        Map.entry("duration", List.of("event_time")),
+                        Map.entry("point_count", List.of("event_time")),
+                        Map.entry("mean_distance", List.of("shape")),
+                        Map.entry("row_count", List.of("event_time")),
+                        Map.entry("value_count", List.of("value")),
+                        Map.entry("value_sum", List.of("value")),
+                        Map.entry("value_mean", List.of("value")),
+                        Map.entry("label_any", List.of("label")),
+                        Map.entry("label_first", List.of("label")),
+                        Map.entry("label_last", List.of("label")),
+                        Map.entry("dwell_shape", List.of("shape")));
+                expectedSources.forEach((targetField, sources) -> sources.forEach(sourceField ->
+                        assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                                        edge.target().localFieldKey().equals(outputKey + ":" + targetField)
+                                                && edge.source().localFieldKey().equals("dwell-input:" + sourceField)),
+                                () -> mode + " " + targetField + " should depend on " + sourceField
+                                        + ": " + flow.fieldEdges())));
+            }
+        }
+    }
+
+    @Test
+    void largeReferenceDwellTrackStaysLazyAndProducesOneRowPerObservation() {
+        int observationCount = 20_000;
+        var dataset = spark.range(observationCount).select(
+                org.apache.spark.sql.functions.lit(1L).alias("track_id"),
+                org.apache.spark.sql.functions.to_timestamp(org.apache.spark.sql.functions.from_unixtime(
+                        org.apache.spark.sql.functions.col("id"))).alias("event_time"),
+                org.apache.spark.sql.functions.col("id").plus(1L).alias("sequence"),
+                org.apache.spark.sql.functions.col("id").cast("double").alias("value"),
+                org.apache.spark.sql.functions.lit("point").alias("label"),
+                org.apache.spark.sql.functions.lit("point").alias("wkt"),
+                org.apache.spark.sql.functions.expr(
+                        "ST_SetSRID(ST_Point(CAST(id % 10 AS DOUBLE) / 10D, 0D), 3857)").alias("shape"));
+        var schema = new CanvasTableSchema("dwell_lineage", null, List.of(
+                longColumn("track_id"), timestampColumn("event_time"), longColumn("sequence"),
+                doubleColumn("value"), stringColumn("label"), stringColumn("wkt"),
+                new CanvasColumnSchema("shape", PlatformDataType.GEOMETRY, null, null, null,
+                        false, null, false, false, null,
+                        new GeometryTypeDefinition(GeometryKind.POINT,
+                                new CrsReference("EPSG", 3857), CoordinateDimension.XY))),
+                CanvasDatasetKind.BOUNDED, null, null);
+        var source = new SparkCanvasTable(schema, dataset);
+        String jobGroup = "large-dwell-preflight-" + id();
+        spark.sparkContext().setJobGroup(jobGroup, "large dwell preflight", false);
+        SparkCanvasTable output;
+        try {
+            var issues = new RecordingIssueSink();
+            var result = new TrackFindDwellNodeOperator().apply(
+                    new TrackFindDwellNodeDefinition(id(), "大轨迹驻留", LAYOUT,
+                            referenceDwellConfiguration(TrackDwellResultMode.DWELL_FEATURES, List.of(),
+                                    "dwell_lineage_result")),
+                    Map.of("dwell_lineage", source), context(issues));
+            assertFalse(issues.hasErrors(), issues::toString);
+            output = result.propagatedTables().get("dwell_lineage_result");
+            output.dataset().queryExecution().analyzed();
+            assertEquals(0, spark.sparkContext().statusTracker().getJobIdsForGroup(jobGroup).length);
+        } finally {
+            spark.sparkContext().clearJobGroup();
+        }
+
+        assertEquals(observationCount, output.dataset().count());
+        Row last = output.dataset().orderBy(org.apache.spark.sql.functions.col("sequence").desc()).head();
+        assertNotNull(last.getAs("dwell_id"));
+        assertEquals(true, last.getAs("is_dwell"));
+        String plan = output.dataset().queryExecution().executedPlan().toString();
+        assertFalse(plan.contains("CollectLimit") || plan.contains("collect_list"), plan);
+    }
+
+    @Test
     void referenceDwellEmptyInputIsTypedAndInvalidOrderDoesNotPropagate() {
         var empty = geometryTable("empty_dwell_raw", "empty_dwell", "shape", GeometryKind.POINT, 3857,
                 List.of(longColumn("track_id"), timestampColumn("event_time"), stringColumn("wkt")), List.of());
@@ -782,6 +924,123 @@ class SpatialAnalysisProcessorSparkTest {
         assertEquals(4d, (Double) fourth.getAs("tot_distance"), 1e-9); // Oldest incoming segment is outside the window.
         assertNull(fourth.getAs("slope")); assertNull(fourth.getAs("bearing"));
         assertNull(output.schema().watermarkDelay());
+    }
+
+    @Test
+    void everyMotionOutputFieldHasCompleteInputLineage() {
+        var raw = motionPoints(List.of(
+                RowFactory.create(1L, time("2026-01-01 00:00:00"), 1L, 0d, "POINT (0 0)"),
+                RowFactory.create(1L, time("2026-01-01 00:00:01"), 2L, 10d, "POINT (3 0)"),
+                RowFactory.create(1L, time("2026-01-01 00:00:03"), 3L, 20d, "POINT (3 4)")));
+        var inputAsset = new TaskLineageEvidence.Asset(
+                "motion-input", TaskLineageEvidence.AssetRole.INPUT,
+                TaskLineageEvidence.AssetKind.JDBC_TABLE, null, null, null, null,
+                UUID.randomUUID(), null, null, "motion_points", null, null, "motion_points");
+        var inputFields = new LinkedHashMap<String, CatalystLineageMetadata.InputField>();
+        raw.schema().columns().forEach(column -> inputFields.put(column.name(),
+                new CatalystLineageMetadata.InputField("motion-input:" + column.name(), null)));
+        var source = new SparkCanvasTable(raw.schema(), CatalystLineageMetadata.markInput(
+                raw.dataset(), "motion-input-node", inputAsset, inputFields));
+        var issues = new RecordingIssueSink();
+        var result = new TrackMotionStatisticsNodeOperator().apply(
+                new TrackMotionStatisticsNodeDefinition(id(), "运动", LAYOUT, motionConfig(3)),
+                Map.of("motion_points", source), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+        var output = result.propagatedTables().get("motion_result");
+        var outputAsset = new TaskLineageEvidence.Asset(
+                "motion-output", TaskLineageEvidence.AssetRole.OUTPUT,
+                TaskLineageEvidence.AssetKind.JDBC_TABLE, null,
+                TaskLineageEvidence.WriteMode.APPEND, null, null, UUID.randomUUID(),
+                null, null, "motion_result", null, null, "motion_result");
+        var candidate = new CatalystLineageOutputCandidate(
+                "motion-flow", "output-node", "JDBC_OUTPUT", "motion-write",
+                output.dataset(), outputAsset,
+                output.schema().columns().stream().map(column ->
+                        new CatalystLineageOutputCandidate.TargetField(
+                                "motion-output:" + column.name(), null, column.name(), column.name(),
+                                TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE)).toList());
+
+        var flow = new CatalystLineageAnalyzer().analyze(List.of(candidate)).flows().getFirst();
+
+        assertEquals(TaskLineageEvidence.Coverage.FIELD_COMPLETE, flow.coverage(),
+                () -> flow.warnings().toString());
+        assertTrue(flow.fieldEdges().stream().allMatch(edge ->
+                edge.source().localFieldKey().startsWith("motion-input:")));
+        assertTrue(flow.fields().stream().filter(field -> field.localAssetKey().equals("motion-output"))
+                .noneMatch(field ->
+                        field.outputEffect() == TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE));
+        for (var sourceField : raw.schema().columns()) {
+            assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                    edge.target().localFieldKey().equals("motion-output:" + sourceField.name())
+                            && edge.source().localFieldKey().equals("motion-input:" + sourceField.name())
+                            && edge.derivationType() == TaskLineageEvidence.DerivationType.DIRECT),
+                    () -> sourceField.name() + " should be copied directly: " + flow.fieldEdges());
+        }
+        Map<String, List<String>> expectedMetricSources = Map.ofEntries(
+                Map.entry("distance", List.of("shape")),
+                Map.entry("tot_distance", List.of("shape")),
+                Map.entry("duration", List.of("event_time")),
+                Map.entry("tot_duration", List.of("event_time")),
+                Map.entry("speed", List.of("shape", "event_time")),
+                Map.entry("avg_speed", List.of("shape", "event_time")),
+                Map.entry("acceleration", List.of("shape", "event_time")),
+                Map.entry("elevation", List.of("altitude")),
+                Map.entry("tot_elev_change", List.of("altitude")),
+                Map.entry("slope", List.of("altitude", "shape")),
+                Map.entry("idling", List.of("shape", "event_time")),
+                Map.entry("tot_idle_time", List.of("shape", "event_time")),
+                Map.entry("bearing", List.of("shape")));
+        expectedMetricSources.forEach((targetField, sourceFields) -> sourceFields.forEach(sourceField ->
+                assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                        edge.target().localFieldKey().equals("motion-output:" + targetField)
+                                && edge.source().localFieldKey().equals("motion-input:" + sourceField)),
+                        () -> targetField + " should depend on " + sourceField)));
+    }
+
+    @Test
+    void largeMotionTrackStaysLazyAndProducesOneRowPerObservation() {
+        int observationCount = 20_000;
+        var dataset = spark.range(observationCount).select(
+                org.apache.spark.sql.functions.lit(1L).alias("track_id"),
+                org.apache.spark.sql.functions.to_timestamp(org.apache.spark.sql.functions.from_unixtime(
+                        org.apache.spark.sql.functions.col("id"))).alias("event_time"),
+                org.apache.spark.sql.functions.col("id").plus(1L).alias("sequence"),
+                org.apache.spark.sql.functions.col("id").cast("double").alias("altitude"),
+                org.apache.spark.sql.functions.lit("point").alias("wkt"),
+                org.apache.spark.sql.functions.expr(
+                        "ST_SetSRID(ST_Point(CAST(id AS DOUBLE), 0D), 3857)").alias("shape"));
+        var schema = new CanvasTableSchema("motion_points", null, List.of(
+                longColumn("track_id"), timestampColumn("event_time"), longColumn("sequence"),
+                doubleColumn("altitude"), stringColumn("wkt"),
+                new CanvasColumnSchema("shape", PlatformDataType.GEOMETRY, null, null, null,
+                        false, null, false, false, null,
+                        new GeometryTypeDefinition(GeometryKind.POINT,
+                                new CrsReference("EPSG", 3857), CoordinateDimension.XY))),
+                CanvasDatasetKind.BOUNDED, null, null);
+        var source = new SparkCanvasTable(schema, dataset);
+        String jobGroup = "large-motion-preflight-" + id();
+        spark.sparkContext().setJobGroup(jobGroup, "large motion preflight", false);
+        SparkCanvasTable output;
+        try {
+            var issues = new RecordingIssueSink();
+            var result = new TrackMotionStatisticsNodeOperator().apply(
+                    new TrackMotionStatisticsNodeDefinition(id(), "运动", LAYOUT, motionConfig(100)),
+                    Map.of("motion_points", source), context(issues));
+            assertFalse(issues.hasErrors(), issues::toString);
+            output = result.propagatedTables().get("motion_result");
+            output.dataset().queryExecution().analyzed();
+            assertEquals(0, spark.sparkContext().statusTracker().getJobIdsForGroup(jobGroup).length);
+        } finally {
+            spark.sparkContext().clearJobGroup();
+        }
+
+        assertEquals(observationCount, output.dataset().count());
+        Row last = output.dataset().orderBy(org.apache.spark.sql.functions.col("sequence").desc()).head();
+        assertEquals(1d, last.<Double>getAs("distance"));
+        assertEquals(99d, last.<Double>getAs("tot_distance"));
+        assertEquals(1d, last.<Double>getAs("duration"));
+        String plan = output.dataset().queryExecution().executedPlan().toString();
+        assertFalse(plan.contains("CollectLimit") || plan.contains("collect_list"), plan);
     }
 
     @Test
@@ -1249,6 +1508,102 @@ class SpatialAnalysisProcessorSparkTest {
     }
 
     @Test
+    void withinGeodesicRequiresXyEvenWhenBothSchemasUseTheSameDimension() {
+        var areas = withGeometryDimension(geometryTable("within_xyz_areas_raw", "areas", "shape",
+                GeometryKind.POLYGON, 4326, List.of(longColumn("area_id"), stringColumn("wkt")),
+                List.of(RowFactory.create(1L, "POLYGON ((-1 -1,1 -1,1 1,-1 1,-1 -1))"))), CoordinateDimension.XYZ);
+        var summaries = withGeometryDimension(geometryTable("within_xyz_points_raw", "summaries", "shape",
+                GeometryKind.POINT, 4326, List.of(stringColumn("wkt")),
+                List.of(RowFactory.create("POINT (0 0)"))), CoordinateDimension.XYZ);
+        var base = withinNode(List.of(new SpatialWithinStatistic(
+                id(), SpatialWithinStatisticKind.COUNT, null, "features"))).configuration();
+        var geodesic = new SpatialSummarizeWithinConfiguration(base.areaTableName(), base.areaGeometryColumnName(),
+                base.summaryTableName(), base.summaryGeometryColumnName(), base.includeEmptyAreas(),
+                SpatialDistanceMethod.GEODESIC, SpatialDistanceUnit.METERS, SpatialAreaUnit.SQUARE_METERS,
+                base.areaOutputColumns(), base.statistics(), base.groupSummary(), base.temporalSlicing(),
+                base.outputTableName(), base.groupResult(), base.regions());
+        var issues = new RecordingIssueSink();
+        var result = new SpatialSummarizeWithinNodeOperator().apply(
+                new SpatialSummarizeWithinNodeDefinition(id(), "测地维度", LAYOUT, geodesic),
+                tables(areas, summaries), context(issues));
+        assertTrue(issues.codes.contains("GEODESIC_DISTANCE_REQUIRES_WGS84"), issues::toString);
+        assertTrue(result.propagatedTables().isEmpty());
+    }
+
+    @Test
+    void withinUsesIndexedSpatialJoinForHundredsOfAreasAndAThousandPoints() {
+        var areaRows = new ArrayList<Row>();
+        var pointRows = new ArrayList<Row>();
+        for (int area = 0; area < 256; area++) {
+            double left = area * 2d;
+            areaRows.add(RowFactory.create((long) area,
+                    "POLYGON ((" + left + " 0," + (left + 1) + " 0," + (left + 1)
+                            + " 1," + left + " 1," + left + " 0))"));
+            for (int point = 0; point < 4; point++) {
+                pointRows.add(RowFactory.create("POINT (" + (left + 0.1 + point * 0.2) + " 0.5)"));
+            }
+        }
+        var areas = geometryTable("within_scale_areas_raw", "areas", "shape", GeometryKind.POLYGON, 3857,
+                List.of(longColumn("area_id"), stringColumn("wkt")), areaRows);
+        var summaries = geometryTable("within_scale_points_raw", "summaries", "shape", GeometryKind.POINT, 3857,
+                List.of(stringColumn("wkt")), pointRows);
+        var issues = new RecordingIssueSink();
+        var result = new SpatialSummarizeWithinNodeOperator().apply(
+                withinNode(List.of(new SpatialWithinStatistic(id(), SpatialWithinStatisticKind.COUNT, null, "features"))),
+                tables(areas, summaries), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+        var output = result.propagatedTables().get("within").dataset();
+        var rows = output.orderBy("area_id").collectAsList();
+        assertEquals(256, rows.size());
+        assertTrue(rows.stream().allMatch(row -> ((Long) row.getAs("features")) == 4L));
+        String plan = output.queryExecution().executedPlan().toString();
+        assertTrue(plan.contains("RangeJoin") || plan.contains("BroadcastIndexJoin"), plan);
+        assertFalse(plan.contains("CartesianProduct") || plan.contains("BroadcastNestedLoopJoin"), plan);
+    }
+
+    @Test
+    void withinSharedBoundaryPointBelongsToEveryIntersectingArea() {
+        var areas = geometryTable("within_boundary_areas_raw", "areas", "shape", GeometryKind.POLYGON, 3857,
+                List.of(longColumn("area_id"), stringColumn("wkt")), List.of(
+                        RowFactory.create(1L, "POLYGON ((0 0,10 0,10 10,0 10,0 0))"),
+                        RowFactory.create(2L, "POLYGON ((10 0,20 0,20 10,10 10,10 0))")));
+        var points = geometryTable("within_boundary_points_raw", "summaries", "shape", GeometryKind.POINT, 3857,
+                List.of(stringColumn("wkt")), List.of(RowFactory.create("POINT (10 5)")));
+        var issues = new RecordingIssueSink();
+
+        var result = new SpatialSummarizeWithinNodeOperator().apply(
+                withinNode(List.of(new SpatialWithinStatistic(
+                        id(), SpatialWithinStatisticKind.COUNT, null, "features"))),
+                tables(areas, points), context(issues));
+
+        assertFalse(issues.hasErrors(), issues::toString);
+        var rows = result.propagatedTables().get("within").dataset().orderBy("area_id").collectAsList();
+        assertEquals(2, rows.size());
+        assertTrue(rows.stream().allMatch(row -> ((Long) row.getAs("features")) == 1L));
+    }
+
+    @Test
+    void withinOverlappingAreasSummarizeTheSameFeatureIndependently() {
+        var areas = geometryTable("within_overlap_areas_raw", "areas", "shape", GeometryKind.POLYGON, 3857,
+                List.of(longColumn("area_id"), stringColumn("wkt")), List.of(
+                        RowFactory.create(1L, "POLYGON ((0 0,10 0,10 10,0 10,0 0))"),
+                        RowFactory.create(2L, "POLYGON ((5 0,15 0,15 10,5 10,5 0))")));
+        var points = geometryTable("within_overlap_points_raw", "summaries", "shape", GeometryKind.POINT, 3857,
+                List.of(stringColumn("wkt")), List.of(RowFactory.create("POINT (7 5)")));
+        var issues = new RecordingIssueSink();
+
+        var result = new SpatialSummarizeWithinNodeOperator().apply(
+                withinNode(List.of(new SpatialWithinStatistic(
+                        id(), SpatialWithinStatisticKind.COUNT, null, "features"))),
+                tables(areas, points), context(issues));
+
+        assertFalse(issues.hasErrors(), issues::toString);
+        var rows = result.propagatedTables().get("within").dataset().orderBy("area_id").collectAsList();
+        assertEquals(2, rows.size());
+        assertTrue(rows.stream().allMatch(row -> ((Long) row.getAs("features")) == 1L));
+    }
+
+    @Test
     void withinLinkedGroupsUseShapeSharesAndSeparateMainStatistics() {
         var areas = geometryTable("linked_areas", "areas", "shape", GeometryKind.POLYGON, 3857,
                 List.of(longColumn("area_id"), stringColumn("label"), stringColumn("wkt")), List.of(
@@ -1447,6 +1802,97 @@ class SpatialAnalysisProcessorSparkTest {
         Geometry difference = holeResult.propagatedTables().get("overlay").dataset().head().getAs("result_shape");
         assertEquals(64d, difference.getArea(), 1e-8);
         assertEquals(1, ((org.locationtech.jts.geom.Polygon) difference.getGeometryN(0)).getNumInteriorRing());
+    }
+
+    @Test
+    void overlayEraseUsesIndexedSpatialJoinForHundredsOfFeaturesAndMasks() {
+        var leftRows = new ArrayList<Row>();
+        var rightRows = new ArrayList<Row>();
+        for (int feature = 0; feature < 256; feature++) {
+            double left = feature * 2d;
+            leftRows.add(RowFactory.create((long) feature,
+                    "POLYGON ((" + left + " 0," + (left + 1) + " 0," + (left + 1)
+                            + " 1," + left + " 1," + left + " 0))"));
+            for (int mask = 0; mask < 4; mask++) {
+                double maskLeft = left + 0.05 + mask * 0.2;
+                double maskRight = maskLeft + 0.1;
+                rightRows.add(RowFactory.create((long) feature * 4 + mask,
+                        "POLYGON ((" + maskLeft + " 0," + maskRight + " 0," + maskRight
+                                + " 1," + maskLeft + " 1," + maskLeft + " 0))"));
+            }
+        }
+        var left = geometryTable("overlay_scale_left_raw", "left", "shape", GeometryKind.POLYGON, 3857,
+                List.of(longColumn("id"), stringColumn("wkt")), leftRows);
+        var right = geometryTable("overlay_scale_right_raw", "right", "shape", GeometryKind.POLYGON, 3857,
+                List.of(longColumn("id"), stringColumn("wkt")), rightRows);
+        var issues = new RecordingIssueSink();
+
+        var result = new SpatialOverlayNodeOperator().apply(
+                overlayNode(SpatialOverlayOperation.ERASE, SpatialOverlayGeometryPolicy.FAMILY_2D),
+                tables(left, right), context(issues));
+
+        assertFalse(issues.hasErrors(), issues::toString);
+        var output = result.propagatedTables().get("overlay").dataset();
+        var rows = output.collectAsList();
+        assertEquals(256, rows.size());
+        assertTrue(rows.stream().allMatch(row -> Math.abs(
+                ((Geometry) row.getAs("result_shape")).getArea() - 0.6d) < 1e-8));
+        String plan = output.queryExecution().executedPlan().toString();
+        assertTrue(plan.contains("RangeJoin") || plan.contains("BroadcastIndexJoin"), plan);
+        assertFalse(plan.contains("CartesianProduct") || plan.contains("BroadcastNestedLoopJoin"), plan);
+    }
+
+    @Test
+    void overlayIdentityKeepsCompleteFieldLineageAcrossIntersectionAndDifferenceBranches() {
+        var leftRaw = overlayLayer("left", GeometryKind.POLYGON);
+        var rightRaw = overlayLayer("right", GeometryKind.POLYGON);
+        var leftAsset = new TaskLineageEvidence.Asset(
+                "left-input", TaskLineageEvidence.AssetRole.INPUT, TaskLineageEvidence.AssetKind.JDBC_TABLE,
+                null, null, null, null, UUID.randomUUID(), null, null, "left", null, null, "left");
+        var rightAsset = new TaskLineageEvidence.Asset(
+                "right-input", TaskLineageEvidence.AssetRole.INPUT, TaskLineageEvidence.AssetKind.JDBC_TABLE,
+                null, null, null, null, UUID.randomUUID(), null, null, "right", null, null, "right");
+        var left = new SparkCanvasTable(leftRaw.schema(), CatalystLineageMetadata.markInput(
+                leftRaw.dataset(), "left-node", leftAsset, Map.of(
+                        "id", new CatalystLineageMetadata.InputField("left-input:id", null),
+                        "shape", new CatalystLineageMetadata.InputField("left-input:shape", null))));
+        var right = new SparkCanvasTable(rightRaw.schema(), CatalystLineageMetadata.markInput(
+                rightRaw.dataset(), "right-node", rightAsset, Map.of(
+                        "id", new CatalystLineageMetadata.InputField("right-input:id", null),
+                        "shape", new CatalystLineageMetadata.InputField("right-input:shape", null))));
+        var issues = new RecordingIssueSink();
+        var result = new SpatialOverlayNodeOperator().apply(
+                overlayNode(SpatialOverlayOperation.IDENTITY, SpatialOverlayGeometryPolicy.FAMILY_2D),
+                tables(left, right), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+        var table = result.propagatedTables().get("overlay");
+        var outputAsset = new TaskLineageEvidence.Asset(
+                "overlay-output", TaskLineageEvidence.AssetRole.OUTPUT, TaskLineageEvidence.AssetKind.JDBC_TABLE,
+                null, TaskLineageEvidence.WriteMode.APPEND, null, null, UUID.randomUUID(),
+                null, null, "overlay", null, null, "overlay");
+        var candidate = new CatalystLineageOutputCandidate(
+                "overlay-flow", "output-node", "JDBC_OUTPUT", "overlay-write", table.dataset(), outputAsset,
+                table.schema().columns().stream().map(column -> new CatalystLineageOutputCandidate.TargetField(
+                        "overlay-output:" + column.name(), null, column.name(), column.name(),
+                        TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE)).toList());
+
+        var flow = new CatalystLineageAnalyzer().analyze(List.of(candidate)).flows().getFirst();
+
+        assertEquals(TaskLineageEvidence.Coverage.FIELD_COMPLETE, flow.coverage(), () -> flow.warnings().toString());
+        assertTrue(flow.fields().stream().noneMatch(field ->
+                field.outputEffect() == TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE));
+        assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                edge.target().localFieldKey().equals("overlay-output:left_id")
+                        && edge.source().localFieldKey().equals("left-input:id")));
+        assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                edge.target().localFieldKey().equals("overlay-output:right_id")
+                        && edge.source().localFieldKey().equals("right-input:id")));
+        assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                edge.target().localFieldKey().equals("overlay-output:result_shape")
+                        && edge.source().localFieldKey().equals("left-input:shape")));
+        assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                edge.target().localFieldKey().equals("overlay-output:result_shape")
+                        && edge.source().localFieldKey().equals("right-input:shape")));
     }
 
     @Test
@@ -1991,6 +2437,39 @@ class SpatialAnalysisProcessorSparkTest {
     }
 
     @Test
+    void exactNearestGeodesicRecallUsesAllEcefAxesInsteadOfTrustingItsPlanarSeed() {
+        var source = nearestTable("source", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(1L, "POINT (0 89)")));
+        var candidate = nearestTable("candidate", 4326, GeometryKind.POINT, List.of(
+                RowFactory.create(10L, "POINT (0 -89)"),
+                RowFactory.create(20L, "POINT (180 89)")));
+        for (Double radius : new Double[]{300_000d, null}) {
+            var issues = new RecordingIssueSink();
+            String job = UUID.randomUUID().toString();
+            spark.sparkContext().setJobGroup(job, "ECEF nearest recall preflight", false);
+            CanvasNodeOperationResult result;
+            try {
+                result = new SpatialNearestNodeOperator().apply(
+                        exactNearest(SpatialDistanceMethod.GEODESIC, 1, radius, false, false),
+                        tables(source, candidate), context(issues));
+                result.propagatedTables().get("nearest").dataset().queryExecution().analyzed();
+                result.propagatedTables().get("nearest").dataset().schema();
+                assertEquals(0, spark.sparkContext().statusTracker().getJobIdsForGroup(job).length);
+            } finally {
+                spark.sparkContext().clearJobGroup();
+            }
+            assertFalse(issues.hasErrors(), issues::toString);
+            Row row = result.propagatedTables().get("nearest").dataset().head();
+            assertEquals(20L, (Long) row.getAs("candidate_id"));
+            double expected = net.sf.geographiclib.Geodesic.WGS84.Inverse(89, 0, 89, 180).s12;
+            assertEquals(expected, ((Number) row.getAs("distance")).doubleValue(), 1e-6);
+            String plan = result.propagatedTables().get("nearest").dataset().queryExecution().executedPlan().toString();
+            assertTrue(plan.contains("DistanceJoin") || plan.contains("BroadcastIndexJoin"), plan);
+            assertFalse(plan.contains("CartesianProduct") || plan.contains("BroadcastNestedLoopJoin"), plan);
+        }
+    }
+
+    @Test
     void exactNearestRetainsNullAndEmptySourcesWithoutInventingConnections() {
         var source = nearestTable("source", 3857, GeometryKind.POINT,
                 List.of(RowFactory.create(1L, null), RowFactory.create(2L, "POINT EMPTY"), RowFactory.create(3L, "POINT (0 0)")));
@@ -2024,18 +2503,228 @@ class SpatialAnalysisProcessorSparkTest {
     }
 
     @Test
-    void exactNearestRejectsNonpointGeodesicInSchemaAndAtRuntime() {
+    void exactNearestKeepsPointOnlyCompatibilityAndRejectsGeometryCollections() {
         var source = nearestTable("source", 4326, GeometryKind.POINT, List.of(RowFactory.create(1L, "POINT (0 0)")));
+        var base = exactNearest(SpatialDistanceMethod.GEODESIC, 1, 200_000d, true, false).configuration();
         for (GeometryKind kind : List.of(GeometryKind.LINESTRING, GeometryKind.GEOMETRY)) {
             var candidate = nearestTable("candidate", 4326, kind, List.of(RowFactory.create(10L, "LINESTRING (0 0, 1 1)")));
             var issues = new RecordingIssueSink();
-            var result = new SpatialNearestNodeOperator().apply(exactNearest(SpatialDistanceMethod.GEODESIC, 1, 10d, true, false), tables(source, candidate), context(issues));
+            var pointOnly = new SpatialNearestMatching(null, "id", null, SpatialNearestGeodesicGeometryMode.POINT_ONLY);
+            var result = new SpatialNearestNodeOperator().apply(withNearestMatching(base, pointOnly), tables(source, candidate), context(issues));
             if (kind == GeometryKind.LINESTRING) assertTrue(issues.toString().contains("GEODESIC_NEAREST_REQUIRES_POINTS"));
             else {
                 assertFalse(issues.hasErrors(), issues::toString);
                 assertTrue(assertThrows(Exception.class, () -> result.propagatedTables().get("nearest").dataset().collectAsList()).toString().contains("GEODESIC_NEAREST_REQUIRES_POINTS"));
             }
         }
+        for (GeometryKind kind : List.of(GeometryKind.GEOMETRYCOLLECTION, GeometryKind.GEOMETRY)) {
+            var candidate = nearestTable("candidate", 4326, kind,
+                    List.of(RowFactory.create(10L, "GEOMETRYCOLLECTION (POINT (0 0))")));
+            var issues = new RecordingIssueSink();
+            var result = new SpatialNearestNodeOperator().apply(exactNearest(SpatialDistanceMethod.GEODESIC, 1, 10d, true, false),
+                    tables(source, candidate), context(issues));
+            if (kind == GeometryKind.GEOMETRYCOLLECTION) {
+                assertTrue(issues.toString().contains("GEODESIC_DISTANCE_GEOMETRY_UNSUPPORTED"));
+            } else {
+                assertFalse(issues.hasErrors(), issues::toString);
+                assertTrue(assertThrows(Exception.class, () -> result.propagatedTables().get("nearest").dataset().collectAsList())
+                        .toString().contains("GEODESIC_DISTANCE_GEOMETRY_UNSUPPORTED"));
+            }
+        }
+    }
+
+    @Test
+    void exactNearestUsesRealWgs84PositionsForPointLineAndCrossingLines() {
+        var point = nearestTable("source", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(1L, "POINT (0.007 0.01)")));
+        var line = nearestTable("candidate", 4326, GeometryKind.LINESTRING,
+                List.of(RowFactory.create(10L, "LINESTRING (-0.02 0, 0.06 0)")));
+        var pointIssues = new RecordingIssueSink();
+        var pointResult = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 2_000d, false, true),
+                tables(point, line), context(pointIssues));
+        assertFalse(pointIssues.hasErrors(), pointIssues::toString);
+        var pointRow = pointResult.propagatedTables().get("nearest").dataset().head();
+        assertEquals(10L, (Long) pointRow.getAs("candidate_id"));
+        assertEquals(net.sf.geographiclib.Geodesic.WGS84.Inverse(0.01, 0.007, 0, 0.007).s12,
+                ((Number) pointRow.getAs("distance")).doubleValue(), 0.01);
+
+        var first = nearestTable("source", 4326, GeometryKind.LINESTRING,
+                List.of(RowFactory.create(1L, "LINESTRING (179 -1, -179 1)")));
+        var second = nearestTable("candidate", 4326, GeometryKind.LINESTRING,
+                List.of(RowFactory.create(10L, "LINESTRING (179 1, -179 -1)")));
+        var lineIssues = new RecordingIssueSink();
+        var lineResult = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 1_000d, false, true),
+                tables(first, second), context(lineIssues));
+        assertFalse(lineIssues.hasErrors(), lineIssues::toString);
+        assertEquals(0d, ((Number) lineResult.propagatedTables().get("nearest").dataset().head().getAs("distance")).doubleValue(), 0d);
+        var connection = (Geometry) lineResult.propagatedTables().get("connections").dataset().head().getAs("connection");
+        assertEquals(0d, connection.getLength(), 0d);
+    }
+
+    @Test
+    void exactNearestHandlesPolygonContainmentHolesCrossingsAndMultiParts() {
+        var point = nearestTable("source", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(1L, "POINT (0.005 0.005)"), RowFactory.create(2L, "POINT (0.02 0.02)")));
+        var area = nearestTable("candidate", 4326, GeometryKind.POLYGON, List.of(RowFactory.create(10L,
+                "POLYGON ((0 0,0.03 0,0.03 0.03,0 0.03,0 0),(0.015 0.015,0.025 0.015,0.025 0.025,0.015 0.025,0.015 0.015))")));
+        var issues = new RecordingIssueSink();
+        var result = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 2_000d, false, false), tables(point, area), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+        var rows = result.propagatedTables().get("nearest").dataset().orderBy("source_id").collectAsList();
+        assertEquals(0d, ((Number) rows.getFirst().getAs("distance")).doubleValue(), 0d);
+        assertTrue(((Number) rows.get(1).getAs("distance")).doubleValue() > 500d);
+
+        var first = nearestTable("source", 4326, GeometryKind.POLYGON, List.of(RowFactory.create(1L,
+                "POLYGON ((-0.003 -0.0005,0.003 -0.0005,0.003 0.0005,-0.003 0.0005,-0.003 -0.0005))")));
+        var second = nearestTable("candidate", 4326, GeometryKind.POLYGON, List.of(RowFactory.create(10L,
+                "POLYGON ((-0.0005 -0.003,0.0005 -0.003,0.0005 0.003,-0.0005 0.003,-0.0005 -0.003))")));
+        var crossingIssues = new RecordingIssueSink();
+        var crossing = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 100d, false, false), tables(first, second), context(crossingIssues));
+        assertFalse(crossingIssues.hasErrors(), crossingIssues::toString);
+        assertEquals(0d, ((Number) crossing.propagatedTables().get("nearest").dataset().head().getAs("distance")).doubleValue(), 0d);
+
+        var multiPoint = nearestTable("source", 4326, GeometryKind.MULTIPOINT,
+                List.of(RowFactory.create(1L, "MULTIPOINT ((0 0),(1 0))")));
+        var multiLine = nearestTable("candidate", 4326, GeometryKind.MULTILINESTRING,
+                List.of(RowFactory.create(10L, "MULTILINESTRING ((0.5 1,0.5 2),(2 0,2 1))")));
+        var multiIssues = new RecordingIssueSink();
+        var multi = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 200_000d, false, false),
+                tables(multiPoint, multiLine), context(multiIssues));
+        assertFalse(multiIssues.hasErrors(), multiIssues::toString);
+        assertTrue(((Number) multi.propagatedTables().get("nearest").dataset().head().getAs("distance")).doubleValue() > 0d);
+
+        var globalPoint = nearestTable("source", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(1L, "POINT (-169.5 0.5)")));
+        var globalParts = nearestTable("candidate", 4326, GeometryKind.MULTIPOLYGON, List.of(RowFactory.create(10L,
+                "MULTIPOLYGON (((-170 0,-169 0,-169 1,-170 1,-170 0)),((10 0,11 0,11 1,10 1,10 0)))")));
+        var globalIssues = new RecordingIssueSink();
+        var global = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 100d, false, false),
+                tables(globalPoint, globalParts), context(globalIssues));
+        assertFalse(globalIssues.hasErrors(), globalIssues::toString);
+        assertEquals(0d, ((Number) global.propagatedTables().get("nearest").dataset().head().getAs("distance")).doubleValue(), 0d);
+    }
+
+    @Test
+    void exactNearestKeepsDatelinePolygonDistanceAndConnectionWitnessesConsistent() {
+        var source = nearestTable("source", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(1L, "POINT (180 0.008)"), RowFactory.create(2L, "POINT (180 0)")));
+        var candidate = nearestTable("candidate", 4326, GeometryKind.POLYGON, List.of(RowFactory.create(10L,
+                "POLYGON ((179.99 -0.01,-179.99 -0.01,-179.99 0.01,179.99 0.01,179.99 -0.01),"
+                        + "(179.996 -0.004,-179.996 -0.004,-179.996 0.004,179.996 0.004,179.996 -0.004))")));
+        var issues = new RecordingIssueSink();
+        var result = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 2_000d, false, true),
+                tables(source, candidate), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+
+        var rows = result.propagatedTables().get("nearest").dataset().orderBy("source_id").collectAsList();
+        assertEquals(0d, ((Number) rows.getFirst().getAs("distance")).doubleValue(), 0d);
+        double holeDistance = ((Number) rows.getLast().getAs("distance")).doubleValue();
+        assertTrue(holeDistance > 440d && holeDistance < 446d);
+
+        var lines = result.propagatedTables().get("connections").dataset().orderBy("source_id").collectAsList();
+        assertEquals(2, lines.size());
+        assertEquals(0d, ((Geometry) lines.getFirst().getAs("connection")).getLength(), 0d);
+        Geometry holeLine = lines.getLast().getAs("connection");
+        double renderedDistance = 0;
+        for (int part = 0; part < holeLine.getNumGeometries(); part++) {
+            var coordinates = holeLine.getGeometryN(part).getCoordinates();
+            for (int index = 1; index < coordinates.length; index++) {
+                renderedDistance += net.sf.geographiclib.Geodesic.WGS84.Inverse(
+                        coordinates[index - 1].y, coordinates[index - 1].x,
+                        coordinates[index].y, coordinates[index].x).s12;
+            }
+        }
+        assertEquals(holeDistance, renderedDistance, 1e-6);
+    }
+
+    @Test
+    void exactNearestRejectsUnresolvedContinuousNearTiesInsteadOfGuessingTheirRank() {
+        var source = nearestTable("source", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(1L, "POINT (0 0)")));
+        var candidate = nearestTable("candidate", 4326, GeometryKind.LINESTRING, List.of(
+                RowFactory.create(10L, "LINESTRING (0.01 -0.01,0.01 0.01)"),
+                RowFactory.create(20L, "LINESTRING (0.0100000000001 -0.01,0.0100000000001 0.01)")));
+        var issues = new RecordingIssueSink();
+        var result = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 2_000d, false, false),
+                tables(source, candidate), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+
+        var failure = assertThrows(Exception.class,
+                () -> result.propagatedTables().get("nearest").dataset().collectAsList());
+        assertTrue(failure.toString().contains("GEODESIC_DISTANCE_PRECISION_NOT_REACHED"), failure::toString);
+    }
+
+    @Test
+    void exactNearestUsesIndexedRecallForHundredsOfSourcesAndAThousandCandidates() {
+        var sourceRows = new ArrayList<Row>();
+        var candidateRows = new ArrayList<Row>();
+        for (int source = 0; source < 256; source++) {
+            sourceRows.add(RowFactory.create((long) source + 1,
+                    "POINT (" + source * 0.001 + " 0)"));
+        }
+        for (int candidate = 0; candidate < 1_024; candidate++) {
+            candidateRows.add(RowFactory.create((long) candidate + 10_000,
+                    "POINT (" + candidate * 0.00025 + " 0)"));
+        }
+        var sources = nearestTable("source", 4326, GeometryKind.POINT, sourceRows);
+        var candidates = nearestTable("candidate", 4326, GeometryKind.POINT, candidateRows);
+        var issues = new RecordingIssueSink();
+        var result = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, null, false, false),
+                tables(sources, candidates), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+
+        var output = result.propagatedTables().get("nearest").dataset();
+        var rows = output.orderBy("source_id").collectAsList();
+        assertEquals(256, rows.size());
+        for (int index = 0; index < rows.size(); index++) {
+            assertEquals((long) index + 1, (Long) rows.get(index).getAs("source_id"));
+            assertEquals((long) index * 4 + 10_000, (Long) rows.get(index).getAs("candidate_id"));
+            assertEquals(0d, ((Number) rows.get(index).getAs("distance")).doubleValue(), 0d);
+        }
+        String plan = output.queryExecution().executedPlan().toString();
+        assertTrue(plan.contains("DistanceJoin") || plan.contains("BroadcastIndexJoin"), plan);
+        assertFalse(plan.contains("CartesianProduct") || plan.contains("BroadcastNestedLoopJoin"), plan);
+    }
+
+    @Test
+    void exactNearestOrdersSubToleranceMultipointDistancesWithoutTreatingThemAsContinuousIntervals() {
+        var source = nearestTable("source", 4326, GeometryKind.MULTIPOINT,
+                List.of(RowFactory.create(1L, "MULTIPOINT ((0 0),(10 0))")));
+        var candidate = nearestTable("candidate", 4326, GeometryKind.MULTIPOINT, List.of(
+                RowFactory.create(10L, "MULTIPOINT ((0 1),(50 50))"),
+                RowFactory.create(20L, "MULTIPOINT ((0 1.0000000001),(60 60))")));
+        var issues = new RecordingIssueSink();
+        var result = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 200_000d, false, false),
+                tables(source, candidate), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+        Row row=result.propagatedTables().get("nearest").dataset().head();
+        assertEquals(10L,(Long)row.getAs("candidate_id"));
+        assertEquals(net.sf.geographiclib.Geodesic.WGS84.Inverse(0,0,1,0).s12,
+                ((Number)row.getAs("distance")).doubleValue(),1e-8);
+    }
+
+    @Test
+    void exactGeodesicNearestRequiresXyEvenWhenBothSchemasUseTheSameDimension() {
+        var source = withGeometryDimension(nearestTable("source", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(1L, "POINT (0 0)"))), CoordinateDimension.XYZ);
+        var candidate = withGeometryDimension(nearestTable("candidate", 4326, GeometryKind.POINT,
+                List.of(RowFactory.create(10L, "POINT (1 1)"))), CoordinateDimension.XYZ);
+        var issues = new RecordingIssueSink();
+        var result = new SpatialNearestNodeOperator().apply(
+                exactNearest(SpatialDistanceMethod.GEODESIC, 1, 200_000d, false, false),
+                tables(source, candidate), context(issues));
+        assertTrue(issues.toString().contains("GEODESIC_DISTANCE_REQUIRES_WGS84"));
+        assertTrue(result.propagatedTables().isEmpty());
     }
 
     @Test
@@ -2340,6 +3029,180 @@ class SpatialAnalysisProcessorSparkTest {
     }
 
     @Test
+    void centerAllSeparateResultsHaveCompleteAndTruthfulFieldLineage() {
+        var raw = nearestTable("source", 3857, GeometryKind.POINT, List.of());
+        var columns = new ArrayList<>(raw.schema().columns());
+        columns.add(stringColumn("region"));
+        columns.add(doubleColumn("weight"));
+        var data = raw.dataset()
+                .withColumn("region", org.apache.spark.sql.functions.lit("north"))
+                .withColumn("weight", org.apache.spark.sql.functions.lit(1d));
+        var schema = new CanvasTableSchema("source", null, columns, CanvasDatasetKind.BOUNDED, null, null);
+        var inputAsset = new TaskLineageEvidence.Asset("input", TaskLineageEvidence.AssetRole.INPUT,
+                TaskLineageEvidence.AssetKind.JDBC_TABLE, null, null, null, null, UUID.randomUUID(),
+                null, null, "source", null, null, "source");
+        var inputFields = new LinkedHashMap<String, CatalystLineageMetadata.InputField>();
+        for (var column : columns) {
+            inputFields.put(column.name(), new CatalystLineageMetadata.InputField("input:" + column.name(), null));
+        }
+        var source = new SparkCanvasTable(schema,
+                CatalystLineageMetadata.markInput(data, "input-node", inputAsset, inputFields));
+        var analyses = List.of(
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.MEAN_CENTER,
+                        "mean_shape", null, "mean"),
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.MEDIAN_CENTER,
+                        "median_shape", null, "median"),
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.CENTRAL_FEATURE,
+                        "central_shape", null, "central", List.of(
+                                new SpatialCenterFeatureColumn("id", "selected_id", true),
+                                new SpatialCenterFeatureColumn("region", "selected_region", true),
+                                new SpatialCenterFeatureColumn("weight", "selected_weight", true))),
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.STANDARD_DISTANCE,
+                        "distance_shape", 2, "distance"),
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.DIRECTIONAL_ELLIPSE,
+                        "ellipse_shape", 2, "ellipse"));
+        var node = new SpatialCenterDispersionNodeDefinition(id(), "中心与离散", LAYOUT,
+                new SpatialCenterDispersionConfiguration("source", "shape", "id", List.of("region"),
+                        "weight", analyses, "", SpatialCenterResultMode.ANALYSIS_TABLES));
+        var issues = new RecordingIssueSink();
+        var result = new SpatialCenterDispersionNodeOperator().apply(
+                node, Map.of("source", source), context(issues));
+        assertFalse(issues.hasErrors(), issues::toString);
+
+        var candidates = new ArrayList<CatalystLineageOutputCandidate>();
+        for (String name : List.of("mean", "median", "central", "distance", "ellipse")) {
+            var table = result.propagatedTables().get(name);
+            var outputAsset = new TaskLineageEvidence.Asset("out:" + name,
+                    TaskLineageEvidence.AssetRole.OUTPUT, TaskLineageEvidence.AssetKind.JDBC_TABLE,
+                    null, TaskLineageEvidence.WriteMode.APPEND, null, null, UUID.randomUUID(),
+                    null, null, name, null, null, name);
+            candidates.add(new CatalystLineageOutputCandidate(
+                    "flow:" + name, "output-node", "JDBC_OUTPUT", "write:" + name,
+                    table.dataset(), outputAsset,
+                    table.schema().columns().stream().map(column ->
+                            new CatalystLineageOutputCandidate.TargetField(
+                                    "out:" + name + ":" + column.name(), null, column.name(), column.name(),
+                                    TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE)).toList()));
+        }
+
+        var flows = new CatalystLineageAnalyzer().analyze(candidates).flows();
+        assertEquals(5, flows.size());
+        for (var flow : flows) {
+            assertEquals(TaskLineageEvidence.Coverage.FIELD_COMPLETE, flow.coverage(),
+                    () -> flow.flowKey() + ": " + flow.warnings());
+            assertTrue(flow.fieldEdges().stream().allMatch(edge ->
+                    edge.target().localAssetKey().equals(flow.outputAsset().localAssetKey())));
+            assertTrue(flow.fields().stream().filter(field ->
+                            field.localAssetKey().equals(flow.outputAsset().localAssetKey()))
+                    .noneMatch(field -> field.outputEffect()
+                            == TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE));
+        }
+        var byFlow = new LinkedHashMap<String, TaskLineageEvidence.Flow>();
+        for (var flow : flows) byFlow.put(flow.flowKey(), flow);
+        for (String name : List.of("mean", "median", "distance", "ellipse")) {
+            var flow = byFlow.get("flow:" + name);
+            assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                    edge.target().localFieldKey().equals("out:" + name + ":region")
+                            && edge.source().localFieldKey().equals("input:region")
+                            && edge.derivationType() == TaskLineageEvidence.DerivationType.DIRECT), name);
+            String geometry = switch (name) {
+                case "mean" -> "mean_shape";
+                case "median" -> "median_shape";
+                case "distance" -> "distance_shape";
+                case "ellipse" -> "ellipse_shape";
+                default -> throw new IllegalStateException(name);
+            };
+            for (String sourceField : List.of("shape", "weight")) {
+                assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                        edge.target().localFieldKey().equals("out:" + name + ":" + geometry)
+                                && edge.source().localFieldKey().equals("input:" + sourceField)
+                                && edge.derivationType() != TaskLineageEvidence.DerivationType.DIRECT),
+                        name + ":" + sourceField);
+            }
+        }
+        var centralFlow = byFlow.get("flow:central");
+        for (var mapping : Map.of(
+                "selected_id", "id",
+                "selected_region", "region",
+                "selected_weight", "weight",
+                "central_shape", "shape").entrySet()) {
+            var edges = centralFlow.fieldEdges().stream().filter(edge ->
+                    edge.target().localFieldKey().equals("out:central:" + mapping.getKey())).toList();
+            assertEquals(1, edges.size(), mapping.getKey());
+            assertEquals("input:" + mapping.getValue(), edges.getFirst().source().localFieldKey());
+            assertEquals(TaskLineageEvidence.DerivationType.DIRECT, edges.getFirst().derivationType());
+        }
+    }
+
+    @Test
+    void centerTwentyThousandFeaturePreviewIsLazyAndBoundedStatisticsExecute() {
+        int featureCount = 20_000;
+        Dataset<Row> data = spark.range(featureCount)
+                .withColumn("shape", org.apache.spark.sql.functions.expr(
+                        "ST_SetSRID(ST_Point(CAST(id % 200 AS DOUBLE), CAST(FLOOR(id / 200) AS DOUBLE)), 3857)"));
+        var geometry = new CanvasColumnSchema("shape", PlatformDataType.GEOMETRY,
+                null, null, null, false, null, false, false, null,
+                new GeometryTypeDefinition(GeometryKind.POINT,
+                        new CrsReference("EPSG", 3857), CoordinateDimension.XY));
+        var source = new SparkCanvasTable(
+                new CanvasTableSchema("source", null, List.of(longColumn("id"), geometry),
+                        CanvasDatasetKind.BOUNDED, null, null), data);
+        var analyses = List.of(
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.MEAN_CENTER,
+                        "shape", null, "mean"),
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.MEDIAN_CENTER,
+                        "shape", null, "median"),
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.STANDARD_DISTANCE,
+                        "shape", 1, "distance"),
+                new SpatialCenterDispersionAnalysis(id(), SpatialCenterDispersionKind.DIRECTIONAL_ELLIPSE,
+                        "shape", 1, "ellipse"));
+        var node = new SpatialCenterDispersionNodeDefinition(id(), "中心与离散", LAYOUT,
+                new SpatialCenterDispersionConfiguration("source", "shape", null, List.of(),
+                        null, analyses, "", SpatialCenterResultMode.ANALYSIS_TABLES));
+
+        String previewGroup = "center-preview-" + id();
+        spark.sparkContext().setJobGroup(previewGroup, "center preview", false);
+        CanvasNodeOperationResult preview;
+        var previewIssues = new RecordingIssueSink();
+        try {
+            preview = new SpatialCenterDispersionNodeOperator().apply(
+                    node, Map.of("source", source), context(previewIssues));
+            for (String name : List.of("mean", "median", "distance", "ellipse")) {
+                preview.propagatedTables().get(name).dataset().queryExecution().analyzed();
+            }
+            assertEquals(0, spark.sparkContext().statusTracker().getJobIdsForGroup(previewGroup).length);
+        } finally {
+            spark.sparkContext().clearJobGroup();
+        }
+        assertFalse(previewIssues.hasErrors(), previewIssues::toString);
+
+        var executionIssues = new RecordingIssueSink();
+        var executionContext = new CanvasNodeOperationContext(
+                spark, MetadataIndex.create(new MetadataSnapshot(List.of(), List.of())), executionIssues,
+                new SchemaOnlyCanvasNodeDataAccess(spark), CanvasExecutionMode.BATCH,
+                CanvasRuntimeValues.execution(UUID.randomUUID(), java.time.Instant.now()));
+        var result = new SpatialCenterDispersionNodeOperator().apply(
+                node, Map.of("source", source), executionContext);
+        assertFalse(executionIssues.hasErrors(), executionIssues::toString);
+        for (String name : List.of("mean", "median", "distance", "ellipse")) {
+            var rows = result.propagatedTables().get(name).dataset().collectAsList();
+            assertEquals(1, rows.size(), name);
+            Geometry shape = rows.getFirst().getAs("shape");
+            assertNotNull(shape, name);
+            if (name.equals("mean") || name.equals("median")) {
+                assertEquals("Point", shape.getGeometryType(), name);
+            } else {
+                assertEquals("Polygon", shape.getGeometryType(), name);
+                assertFalse(shape.isEmpty(), name);
+            }
+        }
+        String plan = result.propagatedTables().get("ellipse").dataset()
+                .queryExecution().executedPlan().toString();
+        assertFalse(plan.contains("CollectLimit"), plan);
+        assertTrue(plan.toLowerCase(Locale.ROOT).contains("collect_list"), plan);
+    }
+
+    @Test
     void centerProjectionErrorsKeepOriginalAnalysisIndicesAfterInvalidEntries() {
         var source = nearestTable("source", 3857, GeometryKind.POINT, List.of());
         var invalid = new SpatialCenterDispersionAnalysis(id(), null, "shape", null, "incomplete");
@@ -2379,12 +3242,22 @@ class SpatialAnalysisProcessorSparkTest {
         return new SparkCanvasTable(new CanvasTableSchema(name, null, columns, CanvasDatasetKind.BOUNDED, null, null), data);
     }
 
+    private SparkCanvasTable withGeometryDimension(SparkCanvasTable table, CoordinateDimension dimension) {
+        var columns = table.schema().columns().stream().map(column -> column.geometry() == null ? column
+                : new CanvasColumnSchema(column.name(), column.fieldType(), column.length(), column.precision(), column.scale(),
+                column.nullable(), column.defaultValue(), column.autoIncrement(), column.generated(), column.comment(),
+                new GeometryTypeDefinition(column.geometry().kind(), column.geometry().crs(), dimension))).toList();
+        return new SparkCanvasTable(new CanvasTableSchema(table.schema().name(), table.schema().origin(), columns,
+                table.schema().datasetKind(), table.schema().eventTimeColumn(), table.schema().watermarkDelay()), table.dataset());
+    }
+
     private SpatialNearestNodeDefinition exactNearest(SpatialDistanceMethod method, int count, Double radius, boolean unmatched, boolean lines) {
         return new SpatialNearestNodeDefinition(id(), "最近位置", LAYOUT, new SpatialNearestConfiguration(
                 "source", "shape", "candidate", "shape", "id", method, count, radius, radius == null ? null : SpatialDistanceUnit.METERS,
                 unmatched, "nearest", "distance", SpatialDistanceUnit.METERS, "rank", List.of(output(JoinOutputColumnSource.LEFT, "id", "source_id"),
                 output(JoinOutputColumnSource.RIGHT, "id", "candidate_id")), new SpatialNearestMatching(null, "id",
-                new SpatialNearestConnectionLines(lines, "connections", "connection", 10d, SpatialDistanceUnit.KILOMETERS))));
+                new SpatialNearestConnectionLines(lines, "connections", "connection", 10d, SpatialDistanceUnit.KILOMETERS),
+                SpatialNearestGeodesicGeometryMode.GEOMETRY)));
     }
 
     @Test
@@ -2499,6 +3372,22 @@ class SpatialAnalysisProcessorSparkTest {
         if (mode != SpatialOverlayOperation.ERASE) columns.add(output(JoinOutputColumnSource.RIGHT, "id", "right_id"));
         return new SpatialOverlayNodeDefinition(id(), "五模式叠加", LAYOUT,
                 new SpatialOverlayConfiguration("left", "shape", "right", "shape", mode, "overlay", "result_shape", columns, policy));
+    }
+
+    private TrackFindDwellConfiguration referenceDwellConfiguration(
+            TrackDwellResultMode mode,
+            List<TrackSummaryStatistic> summaries,
+            String outputTableName
+    ) {
+        return new TrackFindDwellConfiguration(
+                "dwell_lineage", "shape", List.of("track_id"), "event_time",
+                SpatialDistanceMethod.PLANAR, 2d, SpatialDistanceUnit.METERS,
+                2d, SpatialDurationUnit.SECONDS,
+                new TrackBoundaryConfiguration(null, null, null, null), summaries, null,
+                outputTableName, "dwell_id", "start_time", "end_time", "duration",
+                "point_count", "dwell_shape", TrackDwellSemantics.REFERENCE_CENTER,
+                new TrackDwellRangeOptions(mode, List.of("sequence"), SpatialDurationUnit.SECONDS,
+                        "mean_distance", SpatialDistanceUnit.METERS, "is_dwell"));
     }
 
     private SpatialSummarizeWithinNodeDefinition withinLinkedNode(String areaOutput, SpatialTemporalSlicing time) {

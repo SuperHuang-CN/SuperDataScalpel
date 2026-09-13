@@ -46,6 +46,8 @@
 - 成功直接返回 Response DTO、`PageResponse`、文件流或空响应，并使用准确状态码；不增加 `Result<T>` / `ApiResponse<T>` 包裹层。
 - HTTP 错误统一 RFC 9457 `ProblemDetail` / `application/problem+json`：标准字段加稳定 `code`、`timestamp`，校验失败加 `violations`。使用 Web Core 的 Factory、异常映射和安全响应，禁止手工错误 JSON、`sendError` 或并行错误协议。
 - 预期业务错误可用准确状态码的 `ResponseStatusException`；未知异常记录完整日志，对外只返回安全的通用 500。修改错误映射、认证拒绝或错误契约时同步 [错误处理规范](docs/design/backend-api-response-and-error-handling.md)。
+- 新增或修改 REST 接口必须同步维护 OpenAPI 中文契约：Resource 分类、接口标题与行为、路径/查询参数、请求/响应及枚举的所有对外字段均须有准确说明，并在适用时写明单位、默认值、空值、范围、前置条件、副作用、状态变化和主要失败语义；详见 [OpenAPI 契约](docs/design/backend-api-response-and-error-handling.md#openapi-契约)。
+- Business/Admin 中使用 Swagger `@Tag` / `@Operation` / `@Parameter` / `@Schema`；Contracts 保持无 Swagger 依赖，使用 Jackson `@JsonClassDescription` / `@JsonPropertyDescription` 并由 Admin 的 OpenAPI 配置转换。以运行时 `/v3/api-docs` 为最终验收结果；源码有注解但 `$ref`、`allOf` 或多态转换后说明丢失，仍视为契约不完整。
 - 普通实体列表统一 `SearchRequest`、`SearchEngine`、`SearchRepository`；固定业务条件用 `Specification` 重载，始终与客户端条件 AND。不重复实现解析、转换、分页、排序或字段校验。
 - [README Search DSL](README.md#实体通用查询) 是稳定契约，改变语法或语义前须讨论。仅支持实体及父类的标量字段；不支持关联、集合、JSON、LOB 或嵌套路径。报表、聚合和动态物理表查询使用对应业务能力。
 

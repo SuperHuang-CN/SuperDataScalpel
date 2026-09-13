@@ -388,19 +388,28 @@ final class SparkJarJobContextImpl implements SparkJobContext {
         }
         if ("UPSERT".equals(mode)
                 && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.POSTGRESQL
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL) {
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.HIGHGO
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.OPENGAUSS
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.KINGBASE
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.DAMENG
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.ORACLE
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.SQL_SERVER) {
             throw new RunnerExecutionException(
                     "UPSERT_DATABASE_NOT_SUPPORTED",
-                    "UPSERT 只支持 PostgreSQL 和 MySQL",
+                    "当前目标数据库未开放 UPSERT",
                     null
             );
         }
         if (hasGeometry(schema)
                 && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.POSTGRESQL
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.HIGHGO
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.OPENGAUSS
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.KINGBASE
                 && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL) {
             throw new RunnerExecutionException(
                     "SPATIAL_JDBC_UNSUPPORTED",
-                    "Geometry JDBC 读写只支持 PostgreSQL/PostGIS 和 MySQL 8",
+                    "Geometry JDBC 读写只支持 PostgreSQL 家族的 PostGIS 兼容扩展和 MySQL 8",
                     null
             );
         }
@@ -438,8 +447,17 @@ final class SparkJarJobContextImpl implements SparkJobContext {
 
     private static void writeUpsert(RuntimeDataSource runtime, TableIdentifier table,
                                     Dataset<Row> dataset, List<String> keys) {
-        if (!"POSTGRESQL".equals(runtime.databaseType().name()) && !"MYSQL".equals(runtime.databaseType().name()))
-            throw new RunnerExecutionException("UPSERT_DATABASE_NOT_SUPPORTED", "UPSERT 只支持 PostgreSQL 和 MySQL", null);
+        if (!"POSTGRESQL".equals(runtime.databaseType().name()) && !"HIGHGO".equals(runtime.databaseType().name())
+                && !"MYSQL".equals(runtime.databaseType().name())
+                && !"OPENGAUSS".equals(runtime.databaseType().name())
+                && !"KINGBASE".equals(runtime.databaseType().name())
+                && !"DAMENG".equals(runtime.databaseType().name())
+                && !"ORACLE".equals(runtime.databaseType().name())
+                && !"SQL_SERVER".equals(runtime.databaseType().name()))
+            throw new RunnerExecutionException(
+                    "UPSERT_DATABASE_NOT_SUPPORTED",
+                    "当前目标数据库未开放 UPSERT",
+                    null);
         DatabaseDialect dialect = DIALECTS.require(runtime.databaseType().name());
         List<JdbcUpsertColumn> columns = Arrays.stream(dataset.columns()).map(name -> new JdbcUpsertColumn(name, null)).toList();
         String sql = dialect.renderRowUpsert(table, columns, keys);

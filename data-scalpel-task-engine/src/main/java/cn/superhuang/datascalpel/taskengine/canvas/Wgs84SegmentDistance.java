@@ -12,7 +12,7 @@ import java.util.PriorityQueue;
 /**
  * Internal shortest-geodesic segment distance, including degenerate point segments.
  * Searches the complete arc-length product, not just endpoints, centroids or a projection.
- * Not wired to Operators until geometry topology, candidate search and precision policy are ready.
+ * Operator callers consume only results whose global distance interval or discrete minimum is proven.
  */
 final class Wgs84SegmentDistance {
     static final int MAX_EVALUATIONS = 250_000;
@@ -50,7 +50,10 @@ final class Wgs84SegmentDistance {
     }
 
     /** Distance is attained at the returned witnesses; lowerBound bounds unsampled locations. */
-    record Result(Position first, Position second, double distanceMetres, double lowerBoundMetres) {
+    record Result(Position first, Position second, double distanceMetres, double lowerBoundMetres, boolean exactMinimum) {
+        Result(Position first,Position second,double distanceMetres,double lowerBoundMetres) {
+            this(first,second,distanceMetres,lowerBoundMetres,false);
+        }
         double uncertaintyMetres() { return distanceMetres + ROUNDOFF_METRES - lowerBoundMetres; }
     }
 
@@ -112,6 +115,8 @@ final class Wgs84SegmentDistance {
 
     private static Result search(List<Arc> first,List<Arc> second,double toleranceMetres,Double thresholdMetres,Budget budget) {
         validateArcs(first,second,budget);
+        boolean discrete=thresholdMetres==null && first.stream().allMatch(Wgs84SegmentDistance::isPoint)
+                && second.stream().allMatch(Wgs84SegmentDistance::isPoint);
         var best=new Best();
         var cells = new WorkQueue();
         if (first.size()==1 && second.size()==1) {
@@ -125,10 +130,12 @@ final class Wgs84SegmentDistance {
             new Search(left.firstSegment(),right.firstSegment(),budget,best).sample(0,0);
             cells.add(pair(left,right,0));
         }
-        while (true) {
+        while (!cells.isEmpty()) {
             Work work = cells.peek();
-            if (finished(best,work.lowerBound(),toleranceMetres,thresholdMetres))
-                return best.result(work.lowerBound());
+            if (discrete && work.lowerBound()>best.value.distance+ROUNDOFF_METRES)
+                return best.result(best.value.distance,true);
+            if (!discrete && finished(best,work.lowerBound(),toleranceMetres,thresholdMetres))
+                return best.result(work.lowerBound(),false);
             cells.remove();
             if (work instanceof ArcPair pair) {
                 budget.consume();
@@ -145,6 +152,9 @@ final class Wgs84SegmentDistance {
                 continue;
             }
             Cell cell=(Cell)work;
+            // A degenerate point pair was fully evaluated when this terminal cell was
+            // created. Removing it proves that no unvisited position remains in the pair.
+            if (discrete && cell.lowFirst==cell.highFirst && cell.lowSecond==cell.highSecond) continue;
             Search search=cell.search;
             if (cell.highFirst-cell.lowFirst >= cell.highSecond-cell.lowSecond) {
                 double middle = cell.lowFirst + (cell.highFirst-cell.lowFirst)/2;
@@ -158,6 +168,7 @@ final class Wgs84SegmentDistance {
                 cells.add(search.cell(cell.lowFirst,cell.highFirst,middle,cell.highSecond,cell.lowerBound));
             }
         }
+        return best.result(best.value.distance,discrete);
     }
 
     private static void initialize(Search search,double parentLower,WorkQueue cells) {
@@ -220,6 +231,10 @@ final class Wgs84SegmentDistance {
         return threshold==null ? upper-lower<=tolerance : upper<=threshold || lower>threshold;
     }
 
+    private static boolean isPoint(Arc arc) {
+        return canonical(arc.start).equals(canonical(arc.end));
+    }
+
     private static final class Search {
         private final Segment first, second;
         private final Budget budget;
@@ -259,7 +274,9 @@ final class Wgs84SegmentDistance {
 
     private static final class Best {
         private Sample value;
-        private Result result(double lower) { return new Result(value.first,value.second,value.distance,Math.min(lower,value.distance)); }
+        private Result result(double lower,boolean exact) {
+            return new Result(value.first,value.second,value.distance,exact ? value.distance : Math.min(lower,value.distance),exact);
+        }
     }
 
     private static final class Segment {
@@ -350,6 +367,7 @@ final class Wgs84SegmentDistance {
         private final PriorityQueue<Queued> queue=new PriorityQueue<>(Comparator.comparingDouble((Queued item)->item.work.lowerBound())
                 .thenComparingLong(Queued::sequence));
         void add(Work work) { queue.add(new Queued(work,sequence++)); }
+        boolean isEmpty() { return queue.isEmpty(); }
         Work peek() { return queue.element().work; }
         void remove() { queue.remove(); }
         private record Queued(Work work,long sequence) { }

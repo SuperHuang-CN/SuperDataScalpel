@@ -1,5 +1,8 @@
 package cn.superhuang.data.scalpel.contract.task;
 
+import com.fasterxml.jackson.annotation.JsonClassDescription;
+
+@JsonClassDescription("轨迹窗口统计种类。DISTANCE/DURATION/SPEED/ACCELERATION/ELEV_CHANGE/SLOPE/IDLING/BEARING 是当前段或当前点值；TOT/MIN/MAX/AVG 是当前观测窗口内的汇总。AVG_SPEED 为可计算速度段的总距离除以总时长；坡度为高差/水平距离且不乘 100；TOT_ELEV_CHANGE 保留正负；PCT_IDLE_TIME 为可分类段中静止时长百分比。缺失测量不当作 0，全部缺失时结果为 NULL。")
 public enum TrackMotionStatistic {
     DISTANCE(TrackMotionStatisticGroup.DISTANCE),
     TOT_DISTANCE(TrackMotionStatisticGroup.DISTANCE),

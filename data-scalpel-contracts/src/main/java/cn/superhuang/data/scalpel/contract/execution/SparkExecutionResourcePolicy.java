@@ -1,8 +1,13 @@
 package cn.superhuang.data.scalpel.contract.execution;
 
+import com.fasterxml.jackson.annotation.JsonClassDescription;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 /** Default and single-execution maximum resources enforced by a compute engine. */
+@JsonClassDescription("计算引擎对单次 Spark 执行采用的默认资源和允许申请的最大资源策略。")
 public record SparkExecutionResourcePolicy(
+        @JsonPropertyDescription("单次 Spark 执行未单独声明资源时采用的默认值；每一项都必须小于或等于 maximums。")
         SparkExecutionResourceSpec defaults,
+        @JsonPropertyDescription("单次 Spark 执行允许申请的最大资源；这是单任务上限，不是集群总容量或并发任务配额。")
         SparkExecutionResourceSpec maximums
 ) {
     public SparkExecutionResourcePolicy {

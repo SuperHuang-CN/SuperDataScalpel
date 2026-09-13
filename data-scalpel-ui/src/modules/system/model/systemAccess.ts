@@ -10,6 +10,7 @@ export interface LoginResponse {
 }
 
 export interface CurrentUser {
+  userId?: string | null;
   username: string;
   roles: string[];
   permissions: string[];

@@ -398,6 +398,56 @@ class BinStatisticsAndWindowsSparkTest {
         }
     }
 
+    @Test void everyBinGroupAndStatisticFieldHasCompleteInputLineage() {
+        for (var shape : SpatialBinShape.values()) {
+            for (boolean empty : shape == SpatialBinShape.H3 ? List.of(false) : List.of(false, true)) {
+                assertCompleteBinLineage(shape, empty, 5, null, null, true);
+            }
+        }
+    }
+
+    @Test void largePointSetStaysLazyAndUsesDistributedAggregation() {
+        int pointCount = 20_000;
+        Dataset<Row> data = spark.range(pointCount).select(
+                functions.col("id").cast("double").alias("value"),
+                functions.concat(functions.lit("group-"), functions.pmod(functions.col("id"), functions.lit(4L))).alias("category"),
+                functions.expr("ST_SetSRID(ST_Point(CAST(id % 100 AS DOUBLE), CAST(FLOOR(id / 100) AS DOUBLE)), 3857)").alias("shape"));
+        var source = new SparkCanvasTable(new CanvasTableSchema("points", null, List.of(
+                field("value", PlatformDataType.DOUBLE),
+                field("category", PlatformDataType.STRING),
+                new CanvasColumnSchema("shape", PlatformDataType.GEOMETRY, null, null, null,
+                        false, null, false, false, null,
+                        new GeometryTypeDefinition(GeometryKind.POINT,
+                                new CrsReference("EPSG", 3857), CoordinateDimension.XY))),
+                CanvasDatasetKind.BOUNDED, null, null), data);
+        var configuration = new SpatialBinAggregateConfiguration(
+                "points", "shape", SpatialBinShape.SQUARE, 10, SpatialDistanceUnit.METERS, false,
+                List.of(stat(SpatialBinStatisticKind.COUNT, null, "count"),
+                        stat(SpatialBinStatisticKind.SUM, "value", "total")),
+                new SpatialGroupSummary("category", true, true, "minority", "majority", "percentage"),
+                null, "bins", "bin_id", "bin_shape", null, null);
+
+        String jobGroup = "large-bin-preflight-" + UUID.randomUUID();
+        spark.sparkContext().setJobGroup(jobGroup, "large bin preflight", false);
+        SparkCanvasTable output;
+        try {
+            output = scopedBins(source, configuration);
+            output.dataset().queryExecution().analyzed();
+            assertEquals(0, spark.sparkContext().statusTracker().getJobIdsForGroup(jobGroup).length);
+        } finally {
+            spark.sparkContext().clearJobGroup();
+        }
+
+        Row totals = output.dataset().agg(
+                functions.sum("count").alias("count"),
+                functions.sum("total").alias("total")).head();
+        assertEquals(pointCount, totals.<Long>getAs("count"));
+        assertEquals((pointCount - 1d) * pointCount / 2d, totals.<Double>getAs("total"), 0d);
+        String plan = output.dataset().queryExecution().executedPlan().toString();
+        assertFalse(plan.contains("CollectLimit") || plan.contains("collect_list")
+                || plan.contains("CartesianProduct") || plan.contains("Cross"), plan);
+    }
+
     private void assertCompleteBinLineage(SpatialBinShape shape, boolean empty, long repeat) {
         assertCompleteBinLineage(shape, empty, repeat, null);
     }
@@ -428,15 +478,40 @@ class BinStatisticsAndWindowsSparkTest {
     }
 
     private void assertCompleteBinLineage(SpatialBinShape shape, boolean empty, long repeat, SpatialPlanarGridOptions grid, SpatialTemporalSlicing calendar) {
-        var raw = geometry("points", shape == SpatialBinShape.H3 ? 4326 : 3857, GeometryKind.POINT, List.of(field("label", PlatformDataType.STRING), field("event_time", PlatformDataType.TIMESTAMP)), List.of());
+        assertCompleteBinLineage(shape, empty, repeat, grid, calendar, false);
+    }
+
+    private void assertCompleteBinLineage(SpatialBinShape shape, boolean empty, long repeat,
+            SpatialPlanarGridOptions grid, SpatialTemporalSlicing calendar, boolean includeAllStatistics) {
+        var raw = geometry("points", shape == SpatialBinShape.H3 ? 4326 : 3857, GeometryKind.POINT,
+                List.of(field("label", PlatformDataType.STRING), field("event_time", PlatformDataType.TIMESTAMP),
+                        field("value", PlatformDataType.DOUBLE), field("category", PlatformDataType.STRING)),
+                List.of());
         var inputAsset = new TaskLineageEvidence.Asset("input", TaskLineageEvidence.AssetRole.INPUT, TaskLineageEvidence.AssetKind.JDBC_TABLE,
                 null, null, null, null, UUID.randomUUID(), null, null, "points", null, null, "points");
         var fields = new LinkedHashMap<String, CatalystLineageMetadata.InputField>();
         raw.schema().columns().forEach(c -> fields.put(c.name(), new CatalystLineageMetadata.InputField("input:" + c.name(), null)));
         var source = new SparkCanvasTable(raw.schema(), CatalystLineageMetadata.markInput(raw.dataset(), "input-node", inputAsset, fields));
         var time = calendar != null ? calendar : new SpatialTemporalSlicing("event_time", 10, SpatialDurationUnit.SECONDS, repeat, SpatialDurationUnit.SECONDS, null, "UTC", "start", "end");
-        var config = config(shape, List.of(stat(SpatialBinStatisticKind.COUNT, null, "count"),
-                stat(SpatialBinStatisticKind.COUNT_FIELD, "label", "labels"), stat(SpatialBinStatisticKind.ANY, "label", "sample")), empty, time);
+        var statistics = new ArrayList<>(List.of(
+                stat(SpatialBinStatisticKind.COUNT, null, "count"),
+                stat(SpatialBinStatisticKind.COUNT_FIELD, "label", "labels"),
+                stat(SpatialBinStatisticKind.ANY, "label", "sample")));
+        if (includeAllStatistics) statistics.addAll(List.of(
+                stat(SpatialBinStatisticKind.SUM, "value", "sum_value"),
+                stat(SpatialBinStatisticKind.MEAN, "value", "mean_value"),
+                stat(SpatialBinStatisticKind.MIN, "value", "min_value"),
+                stat(SpatialBinStatisticKind.MAX, "value", "max_value"),
+                stat(SpatialBinStatisticKind.RANGE, "value", "range_value"),
+                stat(SpatialBinStatisticKind.STDDEV, "value", "stddev_value"),
+                stat(SpatialBinStatisticKind.VARIANCE, "value", "variance_value")));
+        var config = config(shape, statistics, empty, time);
+        if (includeAllStatistics) config = new SpatialBinAggregateConfiguration(
+                config.sourceTableName(), config.pointGeometryColumnName(), config.binShape(), config.binSize(),
+                config.binSizeUnit(), config.includeEmptyBins(), config.statistics(),
+                new SpatialGroupSummary("category", true, true, "minority", "majority", "percentage"),
+                config.temporalSlicing(), config.outputTableName(), config.binIdColumnName(),
+                config.binGeometryColumnName(), config.binSizeSemantics(), config.h3(), config.planarGrid());
         if (grid != null) config = new SpatialBinAggregateConfiguration(config.sourceTableName(), config.pointGeometryColumnName(), config.binShape(), config.binSize(),
                 config.binSizeUnit(), config.includeEmptyBins(), config.statistics(), config.groupSummary(), config.temporalSlicing(), config.outputTableName(),
                 config.binIdColumnName(), config.binGeometryColumnName(), config.binSizeSemantics(), config.h3(), grid);
@@ -447,8 +522,33 @@ class BinStatisticsAndWindowsSparkTest {
                 table.schema().columns().stream().map(c -> new CatalystLineageOutputCandidate.TargetField("out:" + c.name(), null, c.name(), c.name(), TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE)).toList());
         var flow = new CatalystLineageAnalyzer().analyze(List.of(candidate)).flows().getFirst();
         assertEquals(TaskLineageEvidence.Coverage.FIELD_COMPLETE, flow.coverage(), () -> shape + "/empty=" + empty + "/" + repeat + ": " + flow.warnings());
-        for (var mapping : Map.of("labels", "label", "sample", "label", "start", "event_time", "end", "event_time").entrySet()) {
-            assertTrue(flow.fieldEdges().stream().anyMatch(e -> e.target().localFieldKey().equals("out:" + mapping.getKey()) && e.source().localFieldKey().equals("input:" + mapping.getValue())), mapping.toString());
+        assertTrue(flow.fields().stream().filter(field -> field.localAssetKey().equals("out"))
+                .noneMatch(field -> field.outputEffect() == TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE),
+                () -> flow.fields().toString());
+        var expected = new LinkedHashMap<String, String>();
+        // An explicit planar extent creates stable cells from configuration constants. Those
+        // fields are known calculated outputs, but must not invent a source-field edge.
+        if (grid == null || !grid.usesExplicitBounds()) {
+            expected.put("bin_id", "shape");
+            expected.put("bin_shape", "shape");
+        }
+        expected.put("count", "shape");
+        expected.put("labels", "label");
+        expected.put("sample", "label");
+        expected.put("start", "event_time");
+        expected.put("end", "event_time");
+        if (includeAllStatistics) {
+            expected.put("category", "category");
+            expected.put("minority", "shape");
+            expected.put("majority", "shape");
+            expected.put("percentage", "shape");
+            for (String statistic : List.of("sum_value", "mean_value", "min_value", "max_value",
+                    "range_value", "stddev_value", "variance_value")) expected.put(statistic, "value");
+        }
+        for (var mapping : expected.entrySet()) {
+            assertTrue(flow.fieldEdges().stream().anyMatch(e -> e.target().localFieldKey().equals("out:" + mapping.getKey())
+                            && e.source().localFieldKey().equals("input:" + mapping.getValue())),
+                    () -> shape + "/empty=" + empty + " " + mapping + ": " + flow.fieldEdges());
         }
     }
 

@@ -298,6 +298,92 @@ class TrackAreaSparkTest {
         }
     }
 
+    @Test void everyReconstructOutputFieldHasCompleteInputLineage() {
+        var raw = source(GeometryKind.POINT,row(0,"POINT (0 0)",2d),row(1,"POINT (10 0)",4d));
+        var asset = new TaskLineageEvidence.Asset("input",TaskLineageEvidence.AssetRole.INPUT,
+                TaskLineageEvidence.AssetKind.JDBC_TABLE,null,null,null,null,UUID.randomUUID(),null,null,
+                "events",null,null,"events");
+        var fields = new LinkedHashMap<String,CatalystLineageMetadata.InputField>();
+        raw.schema().columns().forEach(column -> fields.put(column.name(),
+                new CatalystLineageMetadata.InputField("input:" + column.name(),null)));
+        var source = new SparkCanvasTable(raw.schema(),
+                CatalystLineageMetadata.markInput(raw.dataset(),"input-node",asset,fields));
+        var base = config(area(TrackBufferMode.FIELD,null),NONE,TrackSplitBoundaryOption.GAP);
+        var configuration = new TrackReconstructConfiguration(base.sourceTableName(),base.pointGeometryColumnName(),
+                base.trackIdColumns(),base.timeColumnName(),base.distanceMethod(),base.boundaries(),List.of(
+                new TrackSummaryStatistic(UUID.randomUUID().toString(),TrackSummaryStatisticKind.COUNT,null,"summary_count"),
+                new TrackSummaryStatistic(UUID.randomUUID().toString(),TrackSummaryStatisticKind.COUNT_FIELD,"radius","radius_count"),
+                new TrackSummaryStatistic(UUID.randomUUID().toString(),TrackSummaryStatisticKind.SUM,"radius","total"),
+                new TrackSummaryStatistic(UUID.randomUUID().toString(),TrackSummaryStatisticKind.MEAN,"radius","mean_radius"),
+                new TrackSummaryStatistic(UUID.randomUUID().toString(),TrackSummaryStatisticKind.FIRST,"wkt","first_wkt"),
+                new TrackSummaryStatistic(UUID.randomUUID().toString(),TrackSummaryStatisticKind.LAST,"wkt","last_wkt")),
+                base.outputTableName(),base.outputGeometryColumnName(),base.startTimeColumnName(),base.endTimeColumnName(),
+                base.pointCountColumnName(),base.reconstruction());
+        var output = run(source,configuration);
+        var target = new TaskLineageEvidence.Asset("output",TaskLineageEvidence.AssetRole.OUTPUT,
+                TaskLineageEvidence.AssetKind.JDBC_TABLE,null,TaskLineageEvidence.WriteMode.APPEND,null,null,
+                UUID.randomUUID(),null,null,"result",null,null,"result");
+        var candidate = new CatalystLineageOutputCandidate("flow","out","JDBC_OUTPUT","write",output.dataset(),target,
+                output.schema().columns().stream().map(column -> new CatalystLineageOutputCandidate.TargetField(
+                        "out:" + column.name(),null,column.name(),column.name(),
+                        TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE)).toList());
+        var flow = new CatalystLineageAnalyzer().analyze(List.of(candidate)).flows().getFirst();
+
+        assertEquals(TaskLineageEvidence.Coverage.FIELD_COMPLETE,flow.coverage(),() -> flow.warnings().toString());
+        assertTrue(flow.fieldEdges().stream().allMatch(edge -> edge.source().localFieldKey().startsWith("input:")));
+        assertTrue(flow.fields().stream().filter(field -> field.localAssetKey().equals("output"))
+                .noneMatch(field -> field.outputEffect() == TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE));
+        Map<String,String> expectedSources = Map.ofEntries(
+                Map.entry("track","track"),Map.entry("start","time"),Map.entry("end","time"),
+                Map.entry("observations","time"),Map.entry("summary_count","time"),
+                Map.entry("radius_count","radius"),Map.entry("total","radius"),Map.entry("mean_radius","radius"),
+                Map.entry("first_wkt","wkt"),Map.entry("last_wkt","wkt"),Map.entry("geometry","shape"));
+        expectedSources.forEach((targetField,sourceField) -> assertTrue(flow.fieldEdges().stream().anyMatch(edge ->
+                edge.target().localFieldKey().equals("out:" + targetField)
+                        && edge.source().localFieldKey().equals("input:" + sourceField)),
+                () -> targetField + " should depend on " + sourceField));
+        assertTrue(flow.fieldEdges().stream().filter(edge -> edge.target().localFieldKey().equals("out:track"))
+                .allMatch(edge -> edge.derivationType() == TaskLineageEvidence.DerivationType.DIRECT));
+        assertTrue(flow.fieldEdges().stream().filter(edge -> !edge.target().localFieldKey().equals("out:track"))
+                .allMatch(edge -> edge.derivationType() == TaskLineageEvidence.DerivationType.AGGREGATED));
+    }
+
+    @Test void largeSingleTrackStaysLazyAndBuildsOneExecutorAggregatedPath() {
+        int observationCount = 20_000;
+        Dataset<Row> data = spark.range(observationCount).select(
+                functions.lit("A").alias("track"),
+                functions.to_timestamp(functions.from_unixtime(functions.col("id"))).alias("time"),
+                functions.lit(1d).alias("radius"),
+                functions.expr("ST_SetSRID(ST_Point(CAST(id AS DOUBLE), 0D), 3857)").alias("shape"));
+        List<CanvasColumnSchema> columns = List.of(field("track",PlatformDataType.STRING),
+                field("time",PlatformDataType.TIMESTAMP),field("radius",PlatformDataType.DOUBLE),
+                new CanvasColumnSchema("shape",PlatformDataType.GEOMETRY,null,null,null,false,null,false,false,null,
+                        new GeometryTypeDefinition(GeometryKind.POINT,new CrsReference("EPSG",3857),CoordinateDimension.XY)));
+        var source = new SparkCanvasTable(new CanvasTableSchema("events",null,columns,
+                CanvasDatasetKind.BOUNDED,null,null),data);
+        var configuration = new TrackReconstructConfiguration("events","shape",List.of("track"),"time",
+                SpatialDistanceMethod.PLANAR,NONE,List.of(new TrackSummaryStatistic(UUID.randomUUID().toString(),
+                TrackSummaryStatisticKind.SUM,"radius","total")),"result","geometry","start","end","observations",
+                new TrackReconstructOptions(TrackReconstructSemantics.ORDERED_SEGMENTS,List.of(),
+                        TrackSplitBoundaryOption.GAP,null));
+        String job = UUID.randomUUID().toString();
+        spark.sparkContext().setJobGroup(job,"large track preflight",false);
+        SparkCanvasTable output;
+        try {
+            output = run(source,configuration);
+            output.dataset().queryExecution().analyzed();
+            assertEquals(0,spark.sparkContext().statusTracker().getJobIdsForGroup(job).length);
+        } finally {
+            spark.sparkContext().clearJobGroup();
+        }
+        Row row = output.dataset().head();
+        assertEquals(observationCount,row.<Long>getAs("observations"));
+        assertEquals((double) observationCount,row.<Double>getAs("total"));
+        Geometry geometry = row.getAs("geometry");
+        assertEquals(observationCount,geometry.getNumPoints());
+        assertEquals(observationCount - 1d,geometry.getLength(),1e-8);
+    }
+
     @Test void historyRadiusIsComputedBeforeGapsAndDoesNotLeakBindingColumns() {
         var source = source(GeometryKind.POINT,row(0,"POINT (0 0)",2d),row(1,"POINT (100 0)",4d),row(2,"POINT (200 0)",8d));
         var options = history("coalesce(history, radius)",List.of(binding("history",-3,-1,TrackSummaryStatisticKind.MEAN)));

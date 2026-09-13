@@ -618,3 +618,38 @@ ClickHouse 单机 `MergeTree` 的排序键也在模型抽屉中增加为可输�
 - `pnpm check` 覆盖类型检查、lint、生产构建和前端单元测试。
 - 后端集成测试覆盖：停用模型的纯模型元数据可直接保存；物理表已匹配时结构性 `update-fields` 被拒绝并可通过变更计划执行；已发布模型保持只读；物理表不存在时仍能直接保存。
 - 不在本步连接 PostgreSQL、达梦或 ClickHouse；本步验证的是界面与既有受控接口的契约和状态处理。
+
+## 第 9 步：MySQL 安全子集与 PostgreSQL 家族完整演进
+
+### 目标与边界
+
+MySQL 继续只开放能够明确表达原子性和数据前置条件的变化：
+
+| 变化 | 结论 | 前置条件 |
+| --- | --- | --- |
+| 新增可空列 | `IN_PLACE + SAFE` | 无 |
+| 新增非空列 | `IN_PLACE + CAUTION` | 表必须为空 |
+| 按字段 UUID 改名 | `IN_PLACE + SAFE` | 无 |
+| `INTEGER → LONG` | `IN_PLACE + SAFE` | 无损扩大 |
+| 扩大字符串长度 | `IN_PLACE + SAFE` | 无 |
+| 可空改非空 | `IN_PLACE + CAUTION` | 原列不能包含 NULL |
+| 非空改可空 | `IN_PLACE + SAFE` | 无 |
+
+MySQL 对删除列、缩短字符串、任意小数精度变化、其他类型转换、主键变化及受管 Geometry 变化仍生成不可执行计划，并把同一次计划的全部列变化合并成一条 `ALTER TABLE`，原子性标记为 `ATOMIC_SINGLE_STATEMENT`。
+
+openGauss 与人大金仓 R8/R9 改为继承 PostgreSQL 方言主体，和 HighGo 一起具备新增、删除、改名、可空性、主键、字符串长度、小数精度、受支持类型转换、前置检查、外部依赖检查及事务型影子表重建。人大金仓保留单一 `KINGBASE` 类型，连接后识别 `sys_catalog/sys_*` 或 `pg_catalog/pg_*`。包含 Geometry 的已建受管表继续遵循 PostgreSQL 当前的受控变更限制。
+
+### 实现结论
+
+- MySQL 继续使用保守关系型规划器，不宣称多条 DDL 可整体回滚。
+- PostgreSQL、HighGo、openGauss 与人大金仓共享 PostgreSQL 结构演进规划和执行实现，厂商差异停留在连接与系统目录适配层。
+- 定向方言测试覆盖 PostgreSQL 家族的原表修改、事务型重建和两套人大金仓目录词汇。
+- 当前没有 HighGo、openGauss、人大金仓 R8/R9 的隔离测试实例，因此尚未执行真实 DDL 集成验收；生产使用前仍需在目标版本验证锁行为、回滚边界、目录对象和 JDBC 元数据归一。
+
+## 第 10 步：达梦、Oracle 与 SQL Server 的运行能力补齐
+
+达梦在已有连接、元数据、类型映射和受控结构变更规划之上，新增受控建表、SQL 查询服务、时间游标增量读取和标量 UPSERT。UPSERT 使用单行 `MERGE`；受管结构变更仍要求运行时满足 `DDL_AUTO_COMMIT=0` 且 `DPC_MODE=0`，没有放宽已有安全条件。
+
+Oracle 与 SQL Server 新增 SQL 查询服务、时间游标增量读取和标量 UPSERT。Oracle 使用 `OFFSET/FETCH` 和单行 `MERGE`；SQL Server 使用带 `HOLDLOCK` 的单行 `MERGE`，服务分页补充 `ORDER BY (SELECT NULL)` 后使用 `OFFSET/FETCH`。两者暂不开放受控建表和模型结构维护，因为数值、布尔、时间类型归一、默认约束和依赖对象规则尚未在真实目标版本上验证。
+
+Service Engine 显式打包达梦、Oracle 和 SQL Server JDBC 驱动；Canvas 与 Spark JAR 的 UPSERT、增量输入编译和运行名单同步更新。ClickHouse 继续保持普通 APPEND/OVERWRITE、SQL 服务和单机 `MergeTree` 定位，不增加 UPSERT 或时间游标增量；TDengine 继续保持超级表/TMQ 定位。

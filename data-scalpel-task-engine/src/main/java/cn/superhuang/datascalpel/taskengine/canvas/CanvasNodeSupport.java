@@ -183,12 +183,15 @@ final class CanvasNodeSupport {
     ) {
         if (columns.stream().noneMatch(column -> column.fieldType() == PlatformDataType.GEOMETRY)
                 || databaseType == CanvasJdbcDatabaseType.POSTGRESQL
+                || databaseType == CanvasJdbcDatabaseType.HIGHGO
+                || databaseType == CanvasJdbcDatabaseType.OPENGAUSS
+                || databaseType == CanvasJdbcDatabaseType.KINGBASE
                 || databaseType == CanvasJdbcDatabaseType.MYSQL) {
             return;
         }
         issues.error(
                 "SPATIAL_JDBC_UNSUPPORTED",
-                "Geometry JDBC 读写只支持 PostgreSQL/PostGIS 和 MySQL 8",
+                "Geometry JDBC 读写只支持 PostgreSQL 家族的 PostGIS 兼容扩展和 MySQL 8",
                 path
         );
     }

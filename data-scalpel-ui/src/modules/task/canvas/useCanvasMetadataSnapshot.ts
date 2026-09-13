@@ -158,7 +158,7 @@ const compilationDataSource = (
       enabled: dataSource.enabled,
       connectionKind: 'JDBC',
       jdbcDatabaseType: [
-        'POSTGRESQL', 'MYSQL', 'ORACLE', 'SQL_SERVER', 'CLICKHOUSE', 'DAMENG',
+        'POSTGRESQL', 'HIGHGO', 'MYSQL', 'ORACLE', 'SQL_SERVER', 'CLICKHOUSE', 'DAMENG',
         'OPENGAUSS', 'KINGBASE', 'TDENGINE_WEBSOCKET', 'TDENGINE_RESTFUL',
       ].includes(dataSource.type)
         ? (dataSource.type as TaskCompilationMetadataDataSource['jdbcDatabaseType'])

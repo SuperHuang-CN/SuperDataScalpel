@@ -3,6 +3,7 @@ package cn.superhuang.data.scalpel.dialect.builtin;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.api.NamespaceMode;
+import cn.superhuang.data.scalpel.dialect.api.JdbcIncrementalReadDialect;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.TableChangeCheck;
@@ -22,10 +23,13 @@ import cn.superhuang.data.scalpel.dialect.model.TableDdlAtomicity;
 import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
+import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
 import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
 import cn.superhuang.data.scalpel.dialect.model.TableStatisticQuality;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
+import cn.superhuang.data.scalpel.dialect.query.PreparedSqlQuery;
+import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
 
 import java.sql.Connection;
 import java.sql.ResultSet;
@@ -47,7 +51,7 @@ import java.util.UUID;
  * Conservative Dameng change planner. A DDL batch is executable only when the target instance
  * proves that it does not auto-commit DDL and is not running in DPC mode.
  */
-public final class DamengDialect extends AbstractJdbcDialect {
+public final class DamengDialect extends AbstractJdbcDialect implements JdbcIncrementalReadDialect {
 
     public DamengDialect() {
         super(
@@ -76,6 +80,33 @@ public final class DamengDialect extends AbstractJdbcDialect {
     public String resolveSchema(JdbcConnectionConfig config, String requestedSchema) {
         String resolved = super.resolveSchema(config, requestedSchema);
         return resolved == null ? config.username().toUpperCase(Locale.ROOT) : resolved;
+    }
+
+    @Override
+    protected PreparedSqlQuery paginateSqlServiceQuery(
+            String jdbcSql,
+            List<SqlQueryParameter> parameters,
+            int offset,
+            int limit
+    ) {
+        List<SqlQueryParameter> dataParameters = new ArrayList<>(parameters);
+        dataParameters.add(new SqlQueryParameter(
+                offset, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        dataParameters.add(new SqlQueryParameter(
+                limit, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        return new PreparedSqlQuery(
+                "SELECT * FROM (" + jdbcSql + ") ds_query OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                dataParameters
+        );
+    }
+
+    @Override
+    public String renderRowUpsert(
+            TableIdentifier target,
+            List<JdbcUpsertColumn> columns,
+            List<String> keyColumns
+    ) {
+        return MergeRowUpsertSupport.renderOracleLike(this, target, columns, keyColumns, "达梦");
     }
 
     @Override

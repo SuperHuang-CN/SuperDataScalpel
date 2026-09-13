@@ -34,8 +34,12 @@
 | 数据标准、填报、资产或血缘 | [码表](design/standard-dictionary-management.md)、[填报](design/data-entry-v1.md)、[资产](design/asset-publication-and-synchronization.md)、[血缘](design/lineage-integration-contract.md) |
 | 业务指标、口径说明、结果模型绑定、任务反查或 Excel 整理 | [指标管理 V1](design/metric-management-v1.md)、[关联示例](design/metric-management-v1.md#12-关联与口径维护示例)、[Excel 导入导出](design/metric-management-v1.md#13-excel-导入导出与线下整理)（已实现口径、结果绑定、任务关联及 Excel 整理；指标数据结果查询后续开发） |
 | 系统 MCP、API 开放和智能体访问 | [系统 MCP](design/system-mcp.md)（独立入口、目录、令牌、调用边界与运维） |
-| 第三方 Agent 使用系统、源数据分析与建模 | [DataScalpel Skill](../skills/datascalpel/SKILL.md)（统一入口；首版提供分析、方案确认与模型草稿创建流程） |
-| AI 助手或 MCP 平台 | [AI 助手](design/ai-assistant.md)、[MCP 平台](design/mcp-platform.md) |
+| DSH Docker 测试、原生页面和运行维护 | [DSH Docker 测试环境](../deploy/dsh/README.md)（发布包、持久化、启动、模型配置与升级） |
+| DSH 接入路线图与插件开发 | [接入路线图](design/dsh-integration-roadmap.md)、[第一阶段规格](design/dsh-plugin-phase-one.md)、[第一阶段验证](design/dsh-plugin-phase-one-verification.md)、[第二阶段设计](design/dsh-plugin-phase-two.md)、[第二阶段验证](design/dsh-plugin-phase-two-verification.md)、[独立验证台](../integrations/dsh-playground/README.md)、[第三阶段设计](design/dsh-plugin-phase-three.md)、[第三阶段验证](design/dsh-plugin-phase-three-verification.md)、[第四阶段第一批设计](design/dsh-plugin-phase-four.md)、[第四阶段第一批验证](design/dsh-plugin-phase-four-verification.md)（全局助手抽屉；业务上下文及结果跳转后续设计） |
+| 第三方 Agent 使用系统、建模、服务与任务开发 | [DataScalpel Skill](../skills/datascalpel/SKILL.md)（统一入口；[建模](../skills/datascalpel/references/modeling.md)、[服务开发](../skills/datascalpel/references/service-development.md)、[批处理](../skills/datascalpel/references/task-batch.md)/[实时](../skills/datascalpel/references/task-streaming.md)任务；任务按 [Canvas](../skills/datascalpel/references/task-canvas.md)/[JAR](../skills/datascalpel/references/task-jar.md)开发，Canvas 按需读取[55 类节点手册](../skills/datascalpel/references/canvas-nodes/index.md)） |
+| MCP 平台 | [MCP 平台](design/mcp-platform.md) |
+
+助手聊天附件与截图：[DSH 聊天附件](design/dsh-chat-attachments.md)（插件 0.5.0，上传、读表、原生图片消息及历史展示）。
 
 ## 协议版本定位
 

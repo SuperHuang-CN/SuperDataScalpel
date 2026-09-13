@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
+import cn.superhuang.datascalpel.taskengine.compiler.lineage.CatalystLineageMetadata;
 import org.apache.spark.sql.*;
 import org.apache.spark.sql.api.java.UDF1;
 import org.apache.spark.sql.expressions.Window;
@@ -100,6 +101,12 @@ final class DwellRangePlan {
                 c.distanceMethod() == SpatialDistanceMethod.GEODESIC);
         Dataset<Row> assigned = data.repartition(columns(keys)).sortWithinPartitions(columns(sortNames))
                 .mapPartitions(assignment, Encoders.row(schema.add(membership, org.apache.spark.sql.types.DataTypes.LongType, true)));
+        List<String> membershipSources = new ArrayList<>(keys);
+        membershipSources.add(c.timeColumnName());
+        membershipSources.add(c.pointGeometryColumnName());
+        membershipSources.addAll(options.orderByColumns());
+        assigned = CatalystLineageMetadata.markRowPreservingOpaqueTransform(
+                assigned, Map.of(membership, membershipSources));
         List<String> dwellKeys = new ArrayList<>(keys);
         dwellKeys.add(membership);
         List<Column> identity = new ArrayList<>();
@@ -128,14 +135,14 @@ final class DwellRangePlan {
             List<Column> aggregates = new ArrayList<>(List.of(
                     functions.min(col(c.timeColumnName())).alias(c.startTimeColumnName()),
                     functions.max(col(c.timeColumnName())).alias(c.endTimeColumnName()),
-                    functions.count(functions.lit(1)).alias(c.pointCountColumnName()),
+                    functions.count(functions.struct(col(c.timeColumnName()))).alias(c.pointCountColumnName()),
                     functions.avg(col(step)).divide(outputDistance.value()).alias(options.meanDistanceColumnName()),
                     st_aggregates.ST_Collect_Agg(col(c.pointGeometryColumnName())).alias(collected)));
             Column orderKey = functions.struct(columns(order));
             for (var summary : summaries) aggregates.add((switch (summary.statistic().kind()) {
                 case FIRST -> functions.min_by(col(summary.source().name()), orderKey);
                 case LAST -> functions.max_by(col(summary.source().name()), orderKey);
-                default -> TrackNodeSupport.summaryExpression(summary, members);
+                default -> TrackNodeSupport.summaryExpression(summary, members, c.timeColumnName());
             }).alias(summary.statistic().outputColumnName()));
             Dataset<Row> grouped = members.groupBy(columns(dwellKeys)).agg(aggregates.getFirst(), aggregates.subList(1, aggregates.size()).toArray(Column[]::new));
             boolean geodesic = c.distanceMethod() == SpatialDistanceMethod.GEODESIC;

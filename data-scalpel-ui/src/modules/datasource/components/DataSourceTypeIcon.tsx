@@ -19,6 +19,12 @@ const glyphs = {
       <circle cx="14.9" cy="8.8" r=".8" fill="#fff" />
     </svg>
   ),
+  HIGHGO: (
+    <svg viewBox="0 0 24 24" fill="none">
+      <circle cx="12" cy="12" r="9" fill="#244A9B" />
+      <path d="M7 7v10M17 7v10M7 12h10" stroke="#fff" strokeWidth="2.4" strokeLinecap="round" />
+    </svg>
+  ),
   ORACLE: (
     <svg viewBox="0 0 24 24" fill="none">
       <ellipse cx="12" cy="12" rx="9" ry="5.4" stroke="#F80000" strokeWidth="3" />

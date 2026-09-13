@@ -1,7 +1,7 @@
 import { taskPageHref } from '../model/taskViews';
 import { ArrowLeftOutlined, ProfileOutlined } from '@ant-design/icons';
 import { Button, Result, Skeleton, Tag } from 'antd';
-import { lazy, Suspense, useEffect, useState } from 'react';
+import { lazy, Suspense } from 'react';
 const WorkflowTaskDefinitionPanel = lazy(() => import('../workflow/WorkflowTaskDefinitionPanel'));
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -16,15 +16,11 @@ import {
   taskTypeColors,
   taskTypeLabels,
 } from '../model/task';
-import type { TaskCanvasProposalLocationState } from '../model/taskAssistant';
 
 export const TaskDefinitionEditorPage = () => {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
   const location = useLocation();
-  const [assistantChangeSetId, setAssistantChangeSetId] = useState(() => (
-    (location.state as TaskCanvasProposalLocationState | null)?.assistantTaskCanvasChangeSetId
-  ));
   const taskQuery = useTask(taskId);
   const currentUserQuery = useCurrentUser();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
@@ -32,19 +28,6 @@ export const TaskDefinitionEditorPage = () => {
   const canValidate = permissions.has('task.publish');
   const backToDefinition = () => navigate(taskQuery.data ? taskPageHref(`/task/${taskQuery.data.id}`, location.search, taskQuery.data.type, { tab: 'definition' }) : '/task');
 
-  useEffect(() => {
-    const routeState = location.state as TaskCanvasProposalLocationState | null;
-    if (!routeState?.assistantTaskCanvasChangeSetId) return;
-    // React Router state is a one-shot external handoff that must be retained before clearing it.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setAssistantChangeSetId(routeState.assistantTaskCanvasChangeSetId);
-    const remainingState = { ...routeState };
-    delete remainingState.assistantTaskCanvasChangeSetId;
-    navigate(
-      { pathname: location.pathname, search: location.search, hash: location.hash },
-      { replace: true, state: Object.keys(remainingState).length ? remainingState : null },
-    );
-  }, [location, navigate]);
 
   if (!taskId) {
     return <Result status="404" title="任务定义地址无效" extra={<Button onClick={() => navigate('/task')}>返回任务列表</Button>} />;
@@ -115,7 +98,6 @@ export const TaskDefinitionEditorPage = () => {
             task={task}
             canUpdate
             toolbarContext={toolbarContext}
-            assistantChangeSetId={task.type === 'SPARK_CANVAS' ? assistantChangeSetId : undefined}
           />
         )}
       </main>

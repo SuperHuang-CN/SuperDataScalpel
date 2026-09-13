@@ -68,11 +68,19 @@ import java.util.Properties;
 import java.util.Set;
 import java.util.UUID;
 
-public final class PostgreSqlDialect extends AbstractJdbcDialect implements JdbcIncrementalReadDialect, SpatialPreviewDialect {
+public class PostgreSqlDialect extends AbstractJdbcDialect implements JdbcIncrementalReadDialect, SpatialPreviewDialect {
+
+    private final String jdbcUrlPrefix;
+    private final String databaseDisplayName;
 
     public PostgreSqlDialect() {
+        this("POSTGRESQL", "PostgreSQL", 5432, "org.postgresql.Driver", "jdbc:postgresql://");
+    }
+
+    protected PostgreSqlDialect(String id, String displayName, int defaultPort,
+            String driverClassName, String jdbcUrlPrefix) {
         super(
-                "POSTGRESQL", "PostgreSQL", 5432,
+                id, displayName, defaultPort,
                 "数据库", "Schema", "public", NamespaceMode.SCHEMA,
                 List.of(new ConnectionOptionDefinition(
                         "sslmode", "SSL 模式", ConnectionOptionType.SELECT, null,
@@ -82,8 +90,18 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                                 new ConnectionOptionChoice("require", "必须")
                         )
                 )),
-                "org.postgresql.Driver", "\"", "\"", QualificationMode.SCHEMA, PreviewStyle.LIMIT
+                driverClassName, "\"", "\"", QualificationMode.SCHEMA, PreviewStyle.LIMIT
         );
+        this.jdbcUrlPrefix = jdbcUrlPrefix;
+        this.databaseDisplayName = displayName;
+    }
+
+    protected PostgreSqlCatalogNames catalogNames(Connection connection) throws SQLException {
+        return PostgreSqlCatalogNames.postgresql();
+    }
+
+    protected final String databaseDisplayName() {
+        return databaseDisplayName;
     }
 
     @Override
@@ -96,7 +114,7 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                 config, properties, Set.of(),
                 Set.of("connectTimeout", "socketTimeout", "ApplicationName", "currentSchema")
         );
-        String url = "jdbc:postgresql://" + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());
+        String url = jdbcUrlPrefix + hostForUrl(config) + ":" + config.port() + "/" + pathSegment(config.databaseName());
         return new JdbcConnectionSpec(driverClassName(), url, properties, config.schemaName());
     }
 
@@ -116,27 +134,34 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             TableIdentifier table,
             Duration timeout
     ) throws SQLException {
+        PostgreSqlCatalogNames catalogs = catalogNames(connection);
         String sql = """
                 WITH RECURSIVE target AS (
                     SELECT c.oid, c.relkind, c.reltuples
-                    FROM pg_catalog.pg_class c
-                    JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+                    FROM %s c
+                    JOIN %s n ON n.oid = c.relnamespace
                     WHERE n.nspname = ? AND c.relname = ?
                 ), relations AS (
                     SELECT oid, relkind, reltuples FROM target
                     UNION ALL
                     SELECT child.oid, child.relkind, child.reltuples
                     FROM relations parent
-                    JOIN pg_catalog.pg_inherits inheritance ON inheritance.inhparent = parent.oid
-                    JOIN pg_catalog.pg_class child ON child.oid = inheritance.inhrelid
+                    JOIN %s inheritance ON inheritance.inhparent = parent.oid
+                    JOIN %s child ON child.oid = inheritance.inhrelid
                 )
                 SELECT
-                    (SELECT relkind::text FROM target),
+                    (SELECT CAST(relkind AS varchar) FROM target),
                     CASE WHEN SUM(CASE WHEN reltuples >= 0 THEN 1 ELSE 0 END) = 0 THEN NULL
                          ELSE CAST(SUM(CASE WHEN reltuples >= 0 THEN reltuples ELSE 0 END) AS bigint) END,
-                    CAST(SUM(CASE WHEN relkind IN ('r', 'm') THEN pg_catalog.pg_total_relation_size(oid) ELSE 0 END) AS bigint)
+                    CAST(SUM(CASE WHEN relkind IN ('r', 'm') THEN %s(oid) ELSE 0 END) AS bigint)
                 FROM relations
-                """;
+                """.formatted(
+                catalogs.relation("class"),
+                catalogs.relation("namespace"),
+                catalogs.relation("inherits"),
+                catalogs.relation("class"),
+                catalogs.function("total_relation_size")
+        );
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
             statement.setString(1, table.schema());
@@ -150,7 +175,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                     return TablePhysicalStatistics.unsupported("普通视图没有独立物理存储统计");
                 }
                 if (!"r".equals(kind) && !"p".equals(kind) && !"m".equals(kind)) {
-                    return TablePhysicalStatistics.unsupported("当前 PostgreSQL 物理对象类型无法提供表统计");
+                    return TablePhysicalStatistics.unsupported(
+                            "当前 " + databaseDisplayName + " 物理对象类型无法提供表统计");
                 }
                 Long rowCount = TableStatisticsJdbcSupport.nullableLong(resultSet, 2);
                 Long storageBytes = TableStatisticsJdbcSupport.nullableLong(resultSet, 3);
@@ -173,7 +199,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     ) throws SQLException {
         String extensionSchema = postGisSchema(connection, timeout);
         if (extensionSchema == null) {
-            return SpatialPreviewMetadata.unsupported("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
+            return SpatialPreviewMetadata.unsupported(
+                    "目标 " + databaseDisplayName + " 数据库未安装或未启用 PostGIS 兼容扩展");
         }
         Set<String> indexedColumns = spatialPreviewIndexedColumns(connection, table, timeout);
         List<SpatialPreviewColumnMetadata> result = new ArrayList<>();
@@ -208,7 +235,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     ) throws SQLException {
         String extensionSchema = postGisSchema(connection, timeout);
         if (extensionSchema == null) {
-            throw new IllegalArgumentException("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
+            throw new IllegalArgumentException(
+                    "目标 " + databaseDisplayName + " 数据库未安装或未启用 PostGIS 兼容扩展");
         }
         int sourceSrid = resolveSpatialPreviewSrid(
                 connection, extensionSchema, column.geometry().crs().code(), timeout
@@ -466,7 +494,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             case "float4", "real" -> exact(PlatformDataType.FLOAT);
             case "float8", "double precision" -> exact(PlatformDataType.DOUBLE);
             case "text" -> Optional.of(TypeMappingResult.normalized(
-                    PlatformTypeDefinition.string(null), "PostgreSQL text 按无长度上限的 STRING 归一化"
+                    PlatformTypeDefinition.string(null),
+                    databaseDisplayName + " text 按无长度上限的 STRING 归一化"
             ));
             case "bytea" -> exact(PlatformDataType.BINARY);
             case "date" -> exact(PlatformDataType.DATE);
@@ -491,7 +520,7 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
         if (platformType.type() == PlatformDataType.BYTE) {
             return TypeMappingResult.normalized(
                     new PhysicalTypeDefinition(TableColumnType.SHORT, null, null, null),
-                    "PostgreSQL 没有 8 位整数，BYTE 使用 smallint 存储"
+                    databaseDisplayName + " 没有 8 位整数，BYTE 使用 smallint 存储"
             );
         }
         return super.mapPlatformTypeToPhysical(platformType);
@@ -555,7 +584,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     @Override
     public DdlPlan planCreateTable(TableDefinition definition) {
         if (SpatialTypeSupport.containsGeometry(definition)) {
-            throw new IllegalArgumentException("PostGIS Geometry 建表规划需要连接目标数据库确认 PostGIS 扩展");
+            throw new IllegalArgumentException(
+                    "Geometry 建表规划需要连接目标 " + databaseDisplayName + " 数据库确认 PostGIS 兼容扩展");
         }
         return super.planCreateTable(definition);
     }
@@ -567,7 +597,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
         }
         String extensionSchema = postGisSchema(connection);
         if (extensionSchema == null) {
-            throw new IllegalArgumentException("目标 PostgreSQL 数据库未安装或未启用 PostGIS 扩展");
+            throw new IllegalArgumentException(
+                    "目标 " + databaseDisplayName + " 数据库未安装或未启用 PostGIS 兼容扩展");
         }
         List<String> clauses = new ArrayList<>();
         for (TableColumnDefinition column : definition.columns()) {
@@ -672,7 +703,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                         TableChangeRisk.CAUTION,
                         List.of(new TableChangeReason(
                                 TableChangeReasonCode.PHYSICAL_TYPE_UNSUPPORTED,
-                                "当前 PostgreSQL 原表修改不支持 " + source.type() + " 到 " + destination.type() + " 的类型转换"
+                                "当前 " + databaseDisplayName + " 原表修改不支持 "
+                                        + source.type() + " 到 " + destination.type() + " 的类型转换"
                         )),
                         List.of()
                 );
@@ -889,8 +921,8 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             case MAX_STRING_LENGTH -> "SELECT COALESCE(MAX(char_length(" + quoteIdentifier(check.columnNames().getFirst())
                     + ")), 0) <= " + check.lengthLimit() + " FROM " + qualifiedTable;
             case DECIMAL_VALUES_FIT -> decimalFitSql(qualifiedTable, check);
-            case NO_EXTERNAL_DEPENDENCIES -> noExternalDependencySql(table);
-            case NO_REBUILD_DEPENDENCIES -> noRebuildDependencySql(table);
+            case NO_EXTERNAL_DEPENDENCIES -> noExternalDependencySql(catalogNames(connection), table);
+            case NO_REBUILD_DEPENDENCIES -> noRebuildDependencySql(catalogNames(connection), table);
             case STRUCTURE_FINGERPRINT_MATCH, DATABASE_RUNTIME_SUPPORTED -> throw new IllegalStateException("Unexpected check type");
         };
         try (Statement statement = connection.createStatement(); ResultSet resultSet = statement.executeQuery(sql)) {
@@ -960,8 +992,9 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                                 supported ? TableChangeReasonCode.DATA_CONVERSION_REQUIRED
                                         : TableChangeReasonCode.PHYSICAL_TYPE_UNSUPPORTED,
                                 supported
-                                        ? "字段类型将在复制到影子表时由 PostgreSQL 转换；无法转换的数据会使整个重建事务回滚"
-                                        : "当前 PostgreSQL 重建规则不能定义该字段类型转换"
+                                        ? "字段类型将在复制到影子表时由 " + databaseDisplayName
+                                        + " 转换；无法转换的数据会使整个重建事务回滚"
+                                        : "当前 " + databaseDisplayName + " 重建规则不能定义该字段类型转换"
                         )),
                         rebuildConversionChecks(source, destination)
                 );
@@ -1443,37 +1476,49 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                 + check.scaleLimit() + ")))";
     }
 
-    private static String noExternalDependencySql(TableIdentifier table) {
+    private static String noExternalDependencySql(
+            PostgreSqlCatalogNames catalogs,
+            TableIdentifier table
+    ) {
         String schemaPredicate = table.schema() == null
                 ? "target_schema.nspname = current_schema()"
                 : "target_schema.nspname = " + stringLiteral(table.schema());
-        return "SELECT NOT EXISTS (SELECT 1 FROM pg_constraint foreign_key "
-                + "JOIN pg_class target_table ON foreign_key.confrelid = target_table.oid "
-                + "JOIN pg_namespace target_schema ON target_table.relnamespace = target_schema.oid "
+        return "SELECT NOT EXISTS (SELECT 1 FROM " + catalogs.relation("constraint") + " foreign_key "
+                + "JOIN " + catalogs.relation("class")
+                + " target_table ON foreign_key.confrelid = target_table.oid "
+                + "JOIN " + catalogs.relation("namespace")
+                + " target_schema ON target_table.relnamespace = target_schema.oid "
                 + "WHERE foreign_key.contype = 'f' AND target_table.relname = " + stringLiteral(table.table())
                 + " AND " + schemaPredicate + ")";
     }
 
-    private static String noRebuildDependencySql(TableIdentifier table) {
+    private static String noRebuildDependencySql(
+            PostgreSqlCatalogNames catalogs,
+            TableIdentifier table
+    ) {
         String schemaPredicate = table.schema() == null
                 ? "target_schema.nspname = current_schema()"
                 : "target_schema.nspname = " + stringLiteral(table.schema());
-        String target = "WITH target AS (SELECT target_table.oid FROM pg_class target_table "
-                + "JOIN pg_namespace target_schema ON target_table.relnamespace = target_schema.oid "
+        String target = "WITH target AS (SELECT target_table.oid FROM " + catalogs.relation("class")
+                + " target_table JOIN " + catalogs.relation("namespace")
+                + " target_schema ON target_table.relnamespace = target_schema.oid "
                 + "WHERE target_table.relname = " + stringLiteral(table.table()) + " AND " + schemaPredicate + ") ";
         return target + "SELECT NOT EXISTS ("
-                + "SELECT 1 FROM pg_constraint constraint_definition JOIN target ON "
+                + "SELECT 1 FROM " + catalogs.relation("constraint") + " constraint_definition JOIN target ON "
                 + "(constraint_definition.conrelid = target.oid OR constraint_definition.confrelid = target.oid) "
                 + "WHERE constraint_definition.contype IN ('f', 'c', 'u', 'x') "
-                + "UNION ALL SELECT 1 FROM pg_index secondary_index JOIN target ON secondary_index.indrelid = target.oid "
+                + "UNION ALL SELECT 1 FROM " + catalogs.relation("index")
+                + " secondary_index JOIN target ON secondary_index.indrelid = target.oid "
                 + "WHERE NOT secondary_index.indisprimary "
-                + "UNION ALL SELECT 1 FROM pg_trigger user_trigger JOIN target ON user_trigger.tgrelid = target.oid "
+                + "UNION ALL SELECT 1 FROM " + catalogs.relation("trigger")
+                + " user_trigger JOIN target ON user_trigger.tgrelid = target.oid "
                 + "WHERE NOT user_trigger.tgisinternal "
-                + "UNION ALL SELECT 1 FROM pg_rewrite user_rule JOIN target ON user_rule.ev_class = target.oid "
+                + "UNION ALL SELECT 1 FROM " + catalogs.relation("rewrite")
+                + " user_rule JOIN target ON user_rule.ev_class = target.oid "
                 + "WHERE user_rule.rulename <> '_RETURN' "
-                + "UNION ALL SELECT 1 FROM pg_rewrite view_rule "
-                + "JOIN pg_class dependent_view ON dependent_view.oid = view_rule.ev_class "
-                + "JOIN pg_depend dependency ON dependency.objid = view_rule.oid "
+                + "UNION ALL SELECT 1 FROM " + catalogs.relation("rewrite") + " view_rule "
+                + "JOIN " + catalogs.relation("class") + " dependent_view ON dependent_view.oid = view_rule.ev_class "
+                + "JOIN " + catalogs.relation("depend") + " dependency ON dependency.objid = view_rule.oid "
                 + "JOIN target ON dependency.refobjid = target.oid "
                 + "WHERE dependent_view.relkind IN ('v', 'm') AND dependent_view.oid <> target.oid)";
     }
@@ -1553,14 +1598,15 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
             TableIdentifier table,
             Duration timeout
     ) throws SQLException {
+        PostgreSqlCatalogNames catalogs = catalogNames(connection);
         String sql = """
                 SELECT attribute.attname
-                  FROM pg_catalog.pg_class target
-                  JOIN pg_catalog.pg_namespace namespace ON namespace.oid = target.relnamespace
-                  JOIN pg_catalog.pg_index index_definition ON index_definition.indrelid = target.oid
-                  JOIN pg_catalog.pg_class index_relation ON index_relation.oid = index_definition.indexrelid
-                  JOIN pg_catalog.pg_am access_method ON access_method.oid = index_relation.relam
-                  JOIN pg_catalog.pg_attribute attribute
+                  FROM %s target
+                  JOIN %s namespace ON namespace.oid = target.relnamespace
+                  JOIN %s index_definition ON index_definition.indrelid = target.oid
+                  JOIN %s index_relation ON index_relation.oid = index_definition.indexrelid
+                  JOIN %s access_method ON access_method.oid = index_relation.relam
+                  JOIN %s attribute
                     ON attribute.attrelid = target.oid
                    AND attribute.attnum = ANY(index_definition.indkey)
                  WHERE namespace.nspname = ?
@@ -1572,7 +1618,14 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
                    AND index_definition.indexprs IS NULL
                    AND index_definition.indnkeyatts = 1
                    AND index_definition.indnatts = 1
-                """;
+                """.formatted(
+                catalogs.relation("class"),
+                catalogs.relation("namespace"),
+                catalogs.relation("index"),
+                catalogs.relation("class"),
+                catalogs.relation("am"),
+                catalogs.relation("attribute")
+        );
         Set<String> result = new HashSet<>();
         try (PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
@@ -1618,30 +1671,29 @@ public final class PostgreSqlDialect extends AbstractJdbcDialect implements Jdbc
     }
 
     private String postGisSchema(Connection connection) throws SQLException {
-        String sql = """
-                SELECT namespace.nspname
-                  FROM pg_extension extension
-                  JOIN pg_namespace namespace ON namespace.oid = extension.extnamespace
-                 WHERE extension.extname = 'postgis'
-                """;
-        try (Statement statement = connection.createStatement();
-             ResultSet resultSet = statement.executeQuery(sql)) {
-            return resultSet.next() ? resultSet.getString(1) : null;
-        }
+        return postGisSchema(connection, null);
     }
 
     private String postGisSchema(Connection connection, Duration timeout) throws SQLException {
+        PostgreSqlCatalogNames catalogs = catalogNames(connection);
         String sql = """
                 SELECT namespace.nspname
-                  FROM pg_extension extension
-                  JOIN pg_namespace namespace ON namespace.oid = extension.extnamespace
+                  FROM %s extension
+                  JOIN %s namespace ON namespace.oid = extension.extnamespace
                  WHERE extension.extname = 'postgis'
-                """;
+                """.formatted(catalogs.relation("extension"), catalogs.relation("namespace"));
         try (Statement statement = connection.createStatement()) {
-            statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            if (timeout != null) {
+                statement.setQueryTimeout(TableStatisticsJdbcSupport.timeoutSeconds(timeout));
+            }
             try (ResultSet resultSet = statement.executeQuery(sql)) {
                 return resultSet.next() ? resultSet.getString(1) : null;
             }
+        } catch (SQLException exception) {
+            if ("42P01".equals(exception.getSQLState()) || "42703".equals(exception.getSQLState())) {
+                return null;
+            }
+            throw exception;
         }
     }
 

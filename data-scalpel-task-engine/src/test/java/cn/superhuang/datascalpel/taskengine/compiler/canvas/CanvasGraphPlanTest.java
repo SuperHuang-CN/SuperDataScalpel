@@ -50,6 +50,519 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class CanvasGraphPlanTest {
+    @Test
+    void similarLocationsRequiresCanvas475() {
+        var configuration = new cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsConfiguration(
+                "references", "id", "shape", null,
+                "candidates", "id", "shape", null,
+                List.of(new cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsAnalysisField(
+                        "population", "population")),
+                List.of(),
+                cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsMatchMethod.ATTRIBUTE_VALUES,
+                cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsResultMode.MOST_SIMILAR,
+                10, "similar_locations", "geometry", "location_type", "simrank", "dsimrank",
+                "simindex", "cosimindex", "labelrank", "referenceid", "searchid");
+        var node = new cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsNodeDefinition(
+                UUID.randomUUID().toString(), "查找相似位置",
+                new CanvasNodeLayout(0d, 0d, 392d, 244d), configuration);
+
+        CanvasGraphPlan legacy = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 74, List.of(node), List.of()));
+        CanvasGraphPlan current = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 75, List.of(node), List.of()));
+
+        assertTrue(hasNodeIssue(legacy, 0, "NODE_SCHEMA_MINOR_VERSION_NOT_SUPPORTED"));
+        assertFalse(hasNodeIssue(current, 0, "NODE_SCHEMA_MINOR_VERSION_NOT_SUPPORTED"));
+    }
+
+    @Test
+    void explicitSpatialClipGeometryPolicyRequires51ButMissingPolicyRemainsCompatible() {
+        SpatialClipNodeDefinition explicit = new SpatialClipNodeDefinition(
+                UUID.randomUUID().toString(),
+                "空间裁剪",
+                new CanvasNodeLayout(0d, 0d, 368d, 216d),
+                new SpatialClipConfiguration(
+                        "roads", "districts", "clipped",
+                        "shape", "boundary", "clipped_shape",
+                        cn.superhuang.data.scalpel.contract.task.SpatialClipGeometryPolicy.SOURCE_FAMILY_2D)
+        );
+        SpatialClipNodeDefinition legacy = new SpatialClipNodeDefinition(
+                UUID.randomUUID().toString(),
+                "旧版空间裁剪",
+                new CanvasNodeLayout(0d, 0d, 368d, 216d),
+                new SpatialClipConfiguration(
+                        "roads", "districts", "clipped",
+                        "shape", "boundary", "clipped_shape")
+        );
+        String code = "SPATIAL_CLIP_GEOMETRY_POLICY_REQUIRE_SCHEMA_VERSION";
+
+        CanvasGraphPlan oldExplicit = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 50, List.of(explicit), List.of()));
+        CanvasGraphPlan currentExplicit = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 51, List.of(explicit), List.of()));
+        CanvasGraphPlan oldLegacy = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 50, List.of(legacy), List.of()));
+
+        assertTrue(hasNodeIssueAtPath(
+                oldExplicit, 0, code, "configuration.geometryPolicy"));
+        assertFalse(hasNodeIssue(currentExplicit, 0, code));
+        assertFalse(hasNodeIssue(oldLegacy, 0, code));
+    }
+
+    @Test
+    void explicitSpatialClipMaskCombinationRequires77ButMissingCombinationRemainsCompatible() {
+        SpatialClipNodeDefinition explicit = new SpatialClipNodeDefinition(
+                UUID.randomUUID().toString(), "合并 Mask 空间裁剪",
+                new CanvasNodeLayout(0d, 0d, 368d, 216d),
+                new SpatialClipConfiguration(
+                        "roads", "districts", "clipped", "shape", "boundary",
+                        "clipped_shape",
+                        cn.superhuang.data.scalpel.contract.task.SpatialClipGeometryPolicy.SOURCE_FAMILY_2D,
+                        cn.superhuang.data.scalpel.contract.task.SpatialClipMaskCombination.DISSOLVE_ALL));
+        SpatialClipNodeDefinition legacy = new SpatialClipNodeDefinition(
+                UUID.randomUUID().toString(), "旧版空间裁剪",
+                new CanvasNodeLayout(0d, 0d, 368d, 216d),
+                new SpatialClipConfiguration(
+                        "roads", "districts", "clipped", "shape", "boundary",
+                        "clipped_shape",
+                        cn.superhuang.data.scalpel.contract.task.SpatialClipGeometryPolicy.SOURCE_FAMILY_2D));
+        String code = "SPATIAL_CLIP_MASK_COMBINATION_REQUIRE_SCHEMA_VERSION";
+
+        CanvasGraphPlan oldExplicit = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 76, List.of(explicit), List.of()));
+        CanvasGraphPlan currentExplicit = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 77, List.of(explicit), List.of()));
+        CanvasGraphPlan oldLegacy = CanvasGraphPlan.create(new CanvasDefinition(
+                4, 76, List.of(legacy), List.of()));
+
+        assertTrue(hasNodeIssueAtPath(
+                oldExplicit, 0, code, "configuration.maskCombination"));
+        assertFalse(hasNodeIssue(currentExplicit, 0, code));
+        assertFalse(hasNodeIssue(oldLegacy, 0, code));
+    }
+
+    @Test void explicitSpatialMeasureUnitsRequire50ButLegacyUnitsRemainCompatible() {
+        for (var outputUnit : List.of(
+                java.util.Optional.<cn.superhuang.data.scalpel.contract.task.SpatialDistanceUnit>empty(),
+                java.util.Optional.of(cn.superhuang.data.scalpel.contract.task.SpatialDistanceUnit.KILOMETERS),
+                java.util.Optional.of(cn.superhuang.data.scalpel.contract.task.SpatialDistanceUnit.FEET_US))) {
+            var measurement = new cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Length(
+                    "shape",
+                    cn.superhuang.data.scalpel.contract.task.SpatialMeasureMode.SPHEROID,
+                    "length",
+                    outputUnit.orElse(null));
+            var configuration = new cn.superhuang.data.scalpel.contract.task.SpatialMeasureConfiguration(
+                    "source", "output", List.of(measurement));
+            var node = new cn.superhuang.data.scalpel.contract.task.SpatialMeasureNodeDefinition(
+                    UUID.randomUUID().toString(), "Measure",
+                    new CanvasNodeLayout(0d, 0d, 344d, 216d), configuration);
+            String code = "SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION";
+            assertEquals(outputUnit.isPresent(), hasNodeIssueAtPath(
+                    CanvasGraphPlan.create(new CanvasDefinition(4, 49, List.of(node), List.of())),
+                    0, code, "configuration.measurements[0].outputUnit"));
+            assertFalse(hasNodeIssue(
+                    CanvasGraphPlan.create(new CanvasDefinition(4, 50, List.of(node), List.of())),
+                    0, code));
+        }
+    }
+
+    @Test void explicitGeometryBufferUnitsRequire49ButLegacyUnitsRemainCompatible() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String unit : List.of("null", "\"METERS\"", "\"FEET_US\"")) {
+            var configuration = mapper.readValue("{\"distance\":1,\"mode\":\"SPHEROID\",\"distanceUnit\":" + unit + "}",
+                    cn.superhuang.data.scalpel.contract.task.GeometryBufferConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition(
+                    UUID.randomUUID().toString(), "Buffer", new CanvasNodeLayout(0d, 0d, 320d, 188d), configuration);
+            String code = "GEOMETRY_BUFFER_UNIT_REQUIRE_SCHEMA_VERSION";
+            assertEquals(!unit.equals("null"), hasNodeIssueAtPath(
+                    CanvasGraphPlan.create(new CanvasDefinition(4, 48, List.of(node), List.of())),
+                    0, code, "configuration.distanceUnit"));
+            assertFalse(hasNodeIssue(CanvasGraphPlan.create(new CanvasDefinition(4, 49, List.of(node), List.of())), 0, code));
+        }
+    }
+
+    @Test void geometryBufferDistanceSourcesRequire52ButMissingFieldsRemainConstant() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String extra : List.of(
+                "",
+                ",\"distanceSource\":null,\"distanceFieldName\":null,\"distanceExpression\":null",
+                ",\"distanceSource\":\"CONSTANT\"",
+                ",\"distanceSource\":\"FIELD\",\"distanceFieldName\":\"radius\"",
+                ",\"distanceSource\":\"EXPRESSION\",\"distanceExpression\":\"radius * 2\"")) {
+            var configuration = mapper.readValue(
+                    "{\"distance\":1,\"mode\":\"PLANAR\"" + extra + "}",
+                    cn.superhuang.data.scalpel.contract.task.GeometryBufferConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition(
+                    UUID.randomUUID().toString(), "Buffer",
+                    new CanvasNodeLayout(0d, 0d, 320d, 188d), configuration);
+            boolean explicit = configuration.distanceSource() != null
+                    || configuration.distanceFieldName() != null
+                    || configuration.distanceExpression() != null;
+            String code = "GEOMETRY_BUFFER_DISTANCE_SOURCE_REQUIRE_SCHEMA_VERSION";
+            assertEquals(explicit, hasNodeIssueAtPath(
+                    CanvasGraphPlan.create(new CanvasDefinition(4, 51, List.of(node), List.of())),
+                    0, code, "configuration.distanceSource"));
+            assertFalse(hasNodeIssue(
+                    CanvasGraphPlan.create(new CanvasDefinition(4, 52, List.of(node), List.of())),
+                    0, code));
+        }
+    }
+
+    @Test
+    void spatialAggregateDissolveRequires53WhileMissingOptionsRemainCompatible() {
+        var dissolve = new cn.superhuang.data.scalpel.contract.task.SpatialAggregateDissolveOptions(
+                false,
+                true,
+                "saved_count",
+                List.of(new cn.superhuang.data.scalpel.contract.task.SpatialAggregateStatistic(
+                        "saved-draft-id",
+                        cn.superhuang.data.scalpel.contract.task.SpatialAggregateStatisticKind.SUM,
+                        "saved_value",
+                        "saved_sum"))
+        );
+        var explicit = new SpatialAggregateNodeDefinition(
+                UUID.randomUUID().toString(),
+                "Dissolve",
+                new CanvasNodeLayout(0d, 0d, 352d, 224d),
+                new SpatialAggregateConfiguration(
+                        "parcels", "districts", List.of(), List.of(), dissolve)
+        );
+        var legacy = new SpatialAggregateNodeDefinition(
+                UUID.randomUUID().toString(),
+                "Legacy aggregate",
+                new CanvasNodeLayout(0d, 0d, 352d, 224d),
+                new SpatialAggregateConfiguration(
+                        "parcels", "districts", List.of(), List.of())
+        );
+        String code = "SPATIAL_AGGREGATE_DISSOLVE_REQUIRE_SCHEMA_VERSION";
+
+        CanvasGraphPlan oldExplicit = CanvasGraphPlan.create(
+                new CanvasDefinition(4, 52, List.of(explicit), List.of()));
+        CanvasGraphPlan currentExplicit = CanvasGraphPlan.create(
+                new CanvasDefinition(4, 53, List.of(explicit), List.of()));
+        CanvasGraphPlan oldLegacy = CanvasGraphPlan.create(
+                new CanvasDefinition(4, 52, List.of(legacy), List.of()));
+
+        assertTrue(hasNodeIssueAtPath(
+                oldExplicit, 0, code, "configuration.dissolve"));
+        assertFalse(hasNodeIssue(currentExplicit, 0, code));
+        assertFalse(hasNodeIssue(oldLegacy, 0, code));
+    }
+
+    @Test
+    void spatialAggregateDissolveGroupingRequires61WhileMissingModeRemainsCompatible() {
+        var explicitDissolve = new cn.superhuang.data.scalpel.contract.task.SpatialAggregateDissolveOptions(
+                true,
+                true,
+                "feature_count",
+                List.of(),
+                cn.superhuang.data.scalpel.contract.task.SpatialAggregateDissolveGroupingMode.CONNECTED_COMPONENTS
+        );
+        var legacyDissolve = new cn.superhuang.data.scalpel.contract.task.SpatialAggregateDissolveOptions(
+                true, true, "feature_count", List.of());
+        var explicit = new SpatialAggregateNodeDefinition(
+                UUID.randomUUID().toString(), "Connected Dissolve",
+                new CanvasNodeLayout(0d, 0d, 352d, 224d),
+                new SpatialAggregateConfiguration(
+                        "parcels", "districts", List.of(), List.of(), explicitDissolve));
+        var legacy = new SpatialAggregateNodeDefinition(
+                UUID.randomUUID().toString(), "Legacy Dissolve",
+                new CanvasNodeLayout(0d, 0d, 352d, 224d),
+                new SpatialAggregateConfiguration(
+                        "parcels", "districts", List.of(), List.of(), legacyDissolve));
+        String code = "SPATIAL_DISSOLVE_GROUPING_MODE_REQUIRE_SCHEMA_VERSION";
+
+        assertTrue(hasNodeIssueAtPath(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 60, List.of(explicit), List.of())),
+                0, code, "configuration.dissolve.groupingMode"));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 61, List.of(explicit), List.of())),
+                0, code));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 60, List.of(legacy), List.of())),
+                0, code));
+    }
+
+    @Test
+    void unionMergeLayersRequires62WhileLegacyNullRemainsCompatible() {
+        var explicit = new cn.superhuang.data.scalpel.contract.task.UnionNodeDefinition(
+                UUID.randomUUID().toString(), "Merge Layers",
+                new CanvasNodeLayout(0d, 0d, 336d, 204d),
+                new cn.superhuang.data.scalpel.contract.task.UnionConfiguration(
+                        List.of("base", "merge"), "merged",
+                        cn.superhuang.data.scalpel.contract.task.UnionMode.ALL,
+                        List.of()
+                )
+        );
+        var legacy = new cn.superhuang.data.scalpel.contract.task.UnionNodeDefinition(
+                UUID.randomUUID().toString(), "Legacy Union",
+                new CanvasNodeLayout(0d, 0d, 336d, 204d),
+                new cn.superhuang.data.scalpel.contract.task.UnionConfiguration(
+                        List.of("base", "merge"), "merged",
+                        cn.superhuang.data.scalpel.contract.task.UnionMode.ALL
+                )
+        );
+        String code = "UNION_MERGE_LAYERS_REQUIRE_SCHEMA_VERSION";
+
+        assertTrue(hasNodeIssueAtPath(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 61, List.of(explicit), List.of())),
+                0, code, "configuration.mergingTables"));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 62, List.of(explicit), List.of())),
+                0, code));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 61, List.of(legacy), List.of())),
+                0, code));
+    }
+
+    @Test
+    void spatialJoinProjectionRequires54WhileLegacyNullRemainsCompatible() {
+        var projected = spatialJoinNode(List.of(new cn.superhuang.data.scalpel.contract.task.JoinOutputColumn(
+                cn.superhuang.data.scalpel.contract.task.JoinOutputColumnSource.RIGHT,
+                "id", "districts_id", true)));
+        var legacy = spatialJoinNode(null);
+        String code = "SPATIAL_JOIN_OUTPUT_COLUMNS_REQUIRE_SCHEMA_VERSION";
+
+        assertTrue(hasNodeIssueAtPath(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 53, List.of(projected), List.of())),
+                0, code, "configuration.outputColumns"));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 54, List.of(projected), List.of())),
+                0, code));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 53, List.of(legacy), List.of())),
+                0, code));
+    }
+
+    @Test
+    void spatialJoinAttributeConditionsRequire55WhileLegacyNullRemainsCompatible() {
+        var attributeConditions = List.of(new cn.superhuang.data.scalpel.contract.task.JoinCondition(
+                "tenant_id",
+                cn.superhuang.data.scalpel.contract.task.JoinOperator.EQUALS,
+                "tenant_id"));
+        var explicit = spatialJoinNode(null, attributeConditions);
+        var legacy = spatialJoinNode(null, null);
+        String code = "SPATIAL_JOIN_ATTRIBUTE_CONDITIONS_REQUIRE_SCHEMA_VERSION";
+
+        assertTrue(hasNodeIssueAtPath(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 54, List.of(explicit), List.of())),
+                0, code, "configuration.attributeConditions"));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 55, List.of(explicit), List.of())),
+                0, code));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 54, List.of(legacy), List.of())),
+                0, code));
+    }
+
+    @Test
+    void spatialJoinKeepAllRequires56WhileInnerRemainsCompatible() {
+        var keepAll = spatialJoinNode(null, null,
+                cn.superhuang.data.scalpel.contract.task.JoinType.LEFT);
+        var inner = spatialJoinNode(null, null,
+                cn.superhuang.data.scalpel.contract.task.JoinType.INNER);
+        String code = "SPATIAL_JOIN_KEEP_ALL_REQUIRE_SCHEMA_VERSION";
+
+        assertTrue(hasNodeIssueAtPath(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 55, List.of(keepAll), List.of())),
+                0, code, "configuration.joinType"));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 56, List.of(keepAll), List.of())),
+                0, code));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 55, List.of(inner), List.of())),
+                0, code));
+    }
+
+    @Test
+    void spatialJoinExplicitOperationRequires57WhileMissingOperationRemainsCompatible() {
+        var explicit = spatialJoinNode(
+                null,
+                null,
+                cn.superhuang.data.scalpel.contract.task.JoinType.INNER,
+                cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation.JOIN_ONE_TO_MANY);
+        var legacy = spatialJoinNode(
+                null,
+                null,
+                cn.superhuang.data.scalpel.contract.task.JoinType.INNER,
+                null);
+        String code = "SPATIAL_JOIN_OPERATION_REQUIRE_SCHEMA_VERSION";
+
+        assertTrue(hasNodeIssueAtPath(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 56, List.of(explicit), List.of())),
+                0, code, "configuration.joinOperation"));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 57, List.of(explicit), List.of())),
+                0, code));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 56, List.of(legacy), List.of())),
+                0, code));
+    }
+
+    @Test
+    void spatialJoinOneToOneOptionsRequire58() {
+        var options = new cn.superhuang.data.scalpel.contract.task.SpatialJoinOneToOneOptions(
+                cn.superhuang.data.scalpel.contract.task.SpatialJoinOneToOneMode.SUMMARIZE_MATCHES,
+                "join_count",
+                List.of(),
+                null
+        );
+        var oneToOne = spatialJoinNode(
+                List.of(new cn.superhuang.data.scalpel.contract.task.JoinOutputColumn(
+                        cn.superhuang.data.scalpel.contract.task.JoinOutputColumnSource.LEFT,
+                        "id", "id", true)),
+                null,
+                cn.superhuang.data.scalpel.contract.task.JoinType.INNER,
+                cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation.JOIN_ONE_TO_ONE,
+                options
+        );
+        String code = "SPATIAL_JOIN_ONE_TO_ONE_REQUIRE_SCHEMA_VERSION";
+
+        assertTrue(hasNodeIssueAtPath(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 57, List.of(oneToOne), List.of())),
+                0, code, "configuration.oneToOne"));
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(4, 58, List.of(oneToOne), List.of())),
+                0, code));
+    }
+
+    @Test
+    void spatialJoinTemporalConditionRequires59IncludingIncompleteDrafts() {
+        var temporal = new cn.superhuang.data.scalpel.contract.task.SpatialJoinTemporalCondition(
+                cn.superhuang.data.scalpel.contract.task.SpatialJoinTemporalRelationship.INTERSECTS,
+                "target_start",
+                "target_end",
+                "join_start",
+                "join_end",
+                null,
+                null
+        );
+        var incompleteDraft = new cn.superhuang.data.scalpel.contract.task.SpatialJoinTemporalCondition(
+                null, "", null, "", null, null, null);
+        String code = "SPATIAL_JOIN_TEMPORAL_CONDITION_REQUIRE_SCHEMA_VERSION";
+
+        for (var condition : List.of(temporal, incompleteDraft)) {
+            var node = spatialJoinNode(
+                    null,
+                    null,
+                    cn.superhuang.data.scalpel.contract.task.JoinType.INNER,
+                    null,
+                    null,
+                    condition
+            );
+            assertTrue(hasNodeIssueAtPath(
+                    CanvasGraphPlan.create(new CanvasDefinition(4, 58, List.of(node), List.of())),
+                    0, code, "configuration.temporalCondition"));
+            assertFalse(hasNodeIssue(
+                    CanvasGraphPlan.create(new CanvasDefinition(4, 59, List.of(node), List.of())),
+                    0, code));
+        }
+        assertFalse(hasNodeIssue(
+                CanvasGraphPlan.create(new CanvasDefinition(
+                        4, 58, List.of(spatialJoinNode(null)), List.of())),
+                0, code));
+    }
+
+    private static cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition spatialJoinNode(
+            List<cn.superhuang.data.scalpel.contract.task.JoinOutputColumn> outputColumns
+    ) {
+        return spatialJoinNode(outputColumns, null);
+    }
+
+    @Test
+    void spatialJoinNearAndDistanceOutputRequire60IncludingInactiveOutputDraft() {
+        var near = new cn.superhuang.data.scalpel.contract.task.SpatialJoinSpatialNearCondition(
+                "shape", "boundary",
+                cn.superhuang.data.scalpel.contract.task.SpatialDistanceMethod.GEODESIC,
+                5d,
+                cn.superhuang.data.scalpel.contract.task.SpatialDistanceUnit.KILOMETERS);
+        var output = new cn.superhuang.data.scalpel.contract.task.SpatialJoinDistanceOutput(
+                false, "distance", cn.superhuang.data.scalpel.contract.task.SpatialDistanceUnit.METERS,
+                "time_gap", cn.superhuang.data.scalpel.contract.task.SpatialDurationUnit.SECONDS);
+        var node = new cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition(
+                UUID.randomUUID().toString(), "Near",
+                new CanvasNodeLayout(0d, 0d, 368d, 224d),
+                new cn.superhuang.data.scalpel.contract.task.SpatialJoinConfiguration(
+                        "orders", "districts", "matched",
+                        cn.superhuang.data.scalpel.contract.task.JoinType.INNER,
+                        List.of(), List.of(), List.of(),
+                        cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation.JOIN_ONE_TO_MANY,
+                        null, null, near, output));
+
+        var old = CanvasGraphPlan.create(new CanvasDefinition(4, 59, List.of(node), List.of()));
+        assertTrue(hasNodeIssueAtPath(old, 0,
+                "SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION", "configuration.spatialNear"));
+        var current = CanvasGraphPlan.create(new CanvasDefinition(4, 60, List.of(node), List.of()));
+        assertFalse(hasNodeIssue(current, 0, "SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION"));
+    }
+
+    private static cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition spatialJoinNode(
+            List<cn.superhuang.data.scalpel.contract.task.JoinOutputColumn> outputColumns,
+            List<cn.superhuang.data.scalpel.contract.task.JoinCondition> attributeConditions
+    ) {
+        return spatialJoinNode(
+                outputColumns,
+                attributeConditions,
+                cn.superhuang.data.scalpel.contract.task.JoinType.INNER
+        );
+    }
+
+    private static cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition spatialJoinNode(
+            List<cn.superhuang.data.scalpel.contract.task.JoinOutputColumn> outputColumns,
+            List<cn.superhuang.data.scalpel.contract.task.JoinCondition> attributeConditions,
+            cn.superhuang.data.scalpel.contract.task.JoinType joinType
+    ) {
+        return spatialJoinNode(outputColumns, attributeConditions, joinType, null);
+    }
+
+    private static cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition spatialJoinNode(
+            List<cn.superhuang.data.scalpel.contract.task.JoinOutputColumn> outputColumns,
+            List<cn.superhuang.data.scalpel.contract.task.JoinCondition> attributeConditions,
+            cn.superhuang.data.scalpel.contract.task.JoinType joinType,
+            cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation joinOperation
+    ) {
+        return spatialJoinNode(
+                outputColumns, attributeConditions, joinType, joinOperation, null);
+    }
+
+    private static cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition spatialJoinNode(
+            List<cn.superhuang.data.scalpel.contract.task.JoinOutputColumn> outputColumns,
+            List<cn.superhuang.data.scalpel.contract.task.JoinCondition> attributeConditions,
+            cn.superhuang.data.scalpel.contract.task.JoinType joinType,
+            cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation joinOperation,
+            cn.superhuang.data.scalpel.contract.task.SpatialJoinOneToOneOptions oneToOne
+    ) {
+        return spatialJoinNode(
+                outputColumns, attributeConditions, joinType, joinOperation, oneToOne, null);
+    }
+
+    private static cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition spatialJoinNode(
+            List<cn.superhuang.data.scalpel.contract.task.JoinOutputColumn> outputColumns,
+            List<cn.superhuang.data.scalpel.contract.task.JoinCondition> attributeConditions,
+            cn.superhuang.data.scalpel.contract.task.JoinType joinType,
+            cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation joinOperation,
+            cn.superhuang.data.scalpel.contract.task.SpatialJoinOneToOneOptions oneToOne,
+            cn.superhuang.data.scalpel.contract.task.SpatialJoinTemporalCondition temporalCondition
+    ) {
+        return new cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition(
+                UUID.randomUUID().toString(),
+                "空间连接",
+                new cn.superhuang.data.scalpel.contract.task.CanvasNodeLayout(0d, 0d, 368d, 224d),
+                new cn.superhuang.data.scalpel.contract.task.SpatialJoinConfiguration(
+                        "orders", "districts", "orders_with_district",
+                        joinType,
+                        List.of(new cn.superhuang.data.scalpel.contract.task.SpatialJoinCondition(
+                                "shape",
+                                cn.superhuang.data.scalpel.contract.task.SpatialPredicate.WITHIN,
+                                "boundary")),
+                        attributeConditions,
+                        outputColumns,
+                        joinOperation,
+                        oneToOne,
+                        temporalCondition)
+        );
+    }
+
     @Test void fixedWeekUnitsRequire47ButCalendarWeeksRemainCompatible() throws Exception {
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         var node = mapper.readValue("""
@@ -79,6 +592,95 @@ class CanvasGraphPlanTest {
             assertTrue(hasNodeIssueAtPath(old,0,"TRACK_INCIDENT_WINDOWS_REQUIRE_SCHEMA_VERSION","configuration.conditionWindows"));
             var current = CanvasGraphPlan.create(new CanvasDefinition(4,46,List.of(node),List.of()));
             assertFalse(hasNodeIssue(current,0,"TRACK_INCIDENT_WINDOWS_REQUIRE_SCHEMA_VERSION"));
+        }
+    }
+
+    @Test
+    void gatesIncidentTrackDistanceWindowsAt63IncludingInactiveDrafts() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String semantics : List.of("LEGACY", "CONDITION_LIFECYCLE")) {
+            var c = mapper.readValue("{\"incidentSemantics\":\"" + semantics
+                            + "\",\"conditionWindows\":[{\"bindingName\":\"travelled\",\"sourceColumnName\":null,"
+                            + "\"source\":\"TRACK_DISTANCE\",\"kind\":\"SUM\",\"startOffset\":-1,\"endOffset\":2}]}",
+                    cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition(
+                    UUID.randomUUID().toString(), "事件", new CanvasNodeLayout(0d,0d,360d,216d), c);
+            var old = CanvasGraphPlan.create(new CanvasDefinition(4,62,List.of(node),List.of()));
+            assertTrue(hasNodeIssueAtPath(old,0,"TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION",
+                    "configuration.conditionWindows"));
+            var current = CanvasGraphPlan.create(new CanvasDefinition(4,63,List.of(node),List.of()));
+            assertFalse(hasNodeIssue(current,0,"TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION"));
+        }
+    }
+
+    @Test
+    void gatesIncidentTrackSpeedWindowsAt64IncludingInactiveDrafts() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String semantics : List.of("LEGACY", "CONDITION_LIFECYCLE")) {
+            var c = mapper.readValue("{\"incidentSemantics\":\"" + semantics
+                            + "\",\"conditionWindows\":[{\"bindingName\":\"velocity\",\"sourceColumnName\":null,"
+                            + "\"source\":\"TRACK_SPEED\",\"kind\":\"MEAN\",\"startOffset\":-1,\"endOffset\":2}]}",
+                    cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition(
+                    UUID.randomUUID().toString(), "事件", new CanvasNodeLayout(0d,0d,360d,216d), c);
+            var old = CanvasGraphPlan.create(new CanvasDefinition(4,63,List.of(node),List.of()));
+            assertTrue(hasNodeIssueAtPath(old,0,"TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION",
+                    "configuration.conditionWindows"));
+            var current = CanvasGraphPlan.create(new CanvasDefinition(4,64,List.of(node),List.of()));
+            assertFalse(hasNodeIssue(current,0,"TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION"));
+        }
+    }
+
+    @Test
+    void gatesIncidentTrackAccelerationWindowsAt65IncludingInactiveDrafts() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String semantics : List.of("LEGACY", "CONDITION_LIFECYCLE")) {
+            var c = mapper.readValue("{\"incidentSemantics\":\"" + semantics
+                            + "\",\"conditionWindows\":[{\"bindingName\":\"acceleration\",\"sourceColumnName\":null,"
+                            + "\"source\":\"TRACK_ACCELERATION\",\"kind\":\"MAX\",\"startOffset\":-1,\"endOffset\":2}]}",
+                    cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition(
+                    UUID.randomUUID().toString(), "事件", new CanvasNodeLayout(0d,0d,360d,216d), c);
+            var old = CanvasGraphPlan.create(new CanvasDefinition(4,64,List.of(node),List.of()));
+            assertTrue(hasNodeIssueAtPath(old,0,"TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION",
+                    "configuration.conditionWindows"));
+            var current = CanvasGraphPlan.create(new CanvasDefinition(4,65,List.of(node),List.of()));
+            assertFalse(hasNodeIssue(current,0,"TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION"));
+        }
+    }
+
+    @Test
+    void gatesIncidentTrackScalarsAt66IncludingInactiveDrafts() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String semantics : List.of("LEGACY", "CONDITION_LIFECYCLE")) {
+            var c = mapper.readValue("{\"incidentSemantics\":\"" + semantics
+                            + "\",\"conditionScalars\":[{\"bindingName\":\"elapsed\",\"source\":\"TRACK_DURATION\"}]}",
+                    cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition(
+                    UUID.randomUUID().toString(), "事件", new CanvasNodeLayout(0d,0d,360d,216d), c);
+            var old = CanvasGraphPlan.create(new CanvasDefinition(4,65,List.of(node),List.of()));
+            assertTrue(hasNodeIssueAtPath(old,0,"TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION",
+                    "configuration.conditionScalars"));
+            var current = CanvasGraphPlan.create(new CanvasDefinition(4,66,List.of(node),List.of()));
+            assertFalse(hasNodeIssue(current,0,"TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION"));
+        }
+    }
+
+    @Test
+    void gatesIncidentPointCoordinateScalarsAt67IncludingInactiveDrafts() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String semantics : List.of("LEGACY", "CONDITION_LIFECYCLE")) {
+            var c = mapper.readValue("{\"incidentSemantics\":\"" + semantics
+                            + "\",\"conditionScalars\":[{\"bindingName\":\"previous_x\","
+                            + "\"source\":\"TRACK_POINT_X_AT\",\"offset\":-1}]}",
+                    cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.TrackDetectIncidentsNodeDefinition(
+                    UUID.randomUUID().toString(), "事件", new CanvasNodeLayout(0d,0d,360d,216d), c);
+            var old = CanvasGraphPlan.create(new CanvasDefinition(4,66,List.of(node),List.of()));
+            assertTrue(hasNodeIssueAtPath(old,0,"TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION",
+                    "configuration.conditionScalars"));
+            var current = CanvasGraphPlan.create(new CanvasDefinition(4,67,List.of(node),List.of()));
+            assertFalse(hasNodeIssue(current,0,"TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION"));
         }
     }
 
@@ -168,6 +770,22 @@ class CanvasGraphPlanTest {
             var node = new cn.superhuang.data.scalpel.contract.task.SpatialNearestNodeDefinition(UUID.randomUUID().toString(), "最近邻", new CanvasNodeLayout(0d, 0d, 368d, 216d), c);
             assertEquals(c.matching() != null, hasNodeIssue(CanvasGraphPlan.create(new CanvasDefinition(4, 29, List.of(node), List.of())), 0, "SPATIAL_NEAREST_MATCHING_REQUIRE_SCHEMA_VERSION"));
             assertFalse(hasNodeIssue(CanvasGraphPlan.create(new CanvasDefinition(4, 30, List.of(node), List.of())), 0, "SPATIAL_NEAREST_MATCHING_REQUIRE_SCHEMA_VERSION"));
+        }
+    }
+
+    @Test
+    void gatesNearestGeodesicGeometryAt48IncludingInactiveSettings() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        for (String mode : List.of("null", "\"POINT_ONLY\"", "\"GEOMETRY\"")) {
+            var c = mapper.readValue("{\"matching\":{\"semantics\":\"LEGACY_KNN\",\"geodesicGeometryMode\":" + mode + "}}",
+                    cn.superhuang.data.scalpel.contract.task.SpatialNearestConfiguration.class);
+            var node = new cn.superhuang.data.scalpel.contract.task.SpatialNearestNodeDefinition(UUID.randomUUID().toString(),
+                    "最近邻", new CanvasNodeLayout(0d, 0d, 368d, 216d), c);
+            String code = "SPATIAL_NEAREST_GEODESIC_GEOMETRY_REQUIRE_SCHEMA_VERSION";
+            assertEquals(mode.equals("\"GEOMETRY\""),
+                    hasNodeIssueAtPath(CanvasGraphPlan.create(new CanvasDefinition(4, 47, List.of(node), List.of())),
+                            0, code, "configuration.matching.geodesicGeometryMode"));
+            assertFalse(hasNodeIssue(CanvasGraphPlan.create(new CanvasDefinition(4, 48, List.of(node), List.of())), 0, code));
         }
     }
 

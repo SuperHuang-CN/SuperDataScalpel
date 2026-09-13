@@ -39,23 +39,8 @@ import type { CanvasDefinition } from '../canvas/canvasTypes';
 import { parseTaskExecutionResultArtifact, type TaskExecutionResultArtifact } from '../model/taskExecutionResult';
 import type { TaskFieldLineageGraph, TaskLineageGraph } from '../model/taskLineage';
 import type { PlatformTypeDefinition } from '../../model';
-import type { TaskCanvasProposalChangeSet } from '../model/taskAssistant';
 
 const TASK_PATH = '/v1/tasks';
-const ASSISTANT_CHANGE_SET_PATH = '/v1/assistant/change-sets';
-
-export const fetchTaskCanvasProposal = (id: string): Promise<TaskCanvasProposalChangeSet> => (
-  requestJson<TaskCanvasProposalChangeSet>(`${ASSISTANT_CHANGE_SET_PATH}/${id}`)
-);
-
-export const acceptTaskCanvasProposal = (
-  id: string,
-  taskId: string,
-): Promise<TaskCanvasProposalChangeSet> => requestJson<TaskCanvasProposalChangeSet>(
-  `${ASSISTANT_CHANGE_SET_PATH}/${id}/actions/accept-task-canvas`,
-  { method: 'POST', body: JSON.stringify({ taskId }) },
-);
-
 export const fetchTasks = async (request: SearchRequest): Promise<PageResponse<DataTask>> => {
   const query = toSearchParams(request).toString();
   return requestJson<PageResponse<DataTask>>(query ? `${TASK_PATH}?${query}` : TASK_PATH);

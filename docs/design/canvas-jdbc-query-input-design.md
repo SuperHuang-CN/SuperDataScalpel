@@ -16,13 +16,13 @@ interface JdbcQueryInputConfiguration {
 }
 ```
 
-查询只支持 PostgreSQL/MySQL 上单条 `SELECT` 或 `WITH ... SELECT`，最大 100,000 字符，不支持运行参数、模板变量、预览和分区读取。查询结果字段随 Canvas 定义保存；SQL Hash 使用去除终止分号并 trim 后的 UTF-8 SQL 计算 SHA-256。
+查询支持 PostgreSQL、HighGo、MySQL、openGauss 和人大金仓上的单条 `SELECT` 或 `WITH ... SELECT`，最大 100,000 字符，不支持运行参数、模板变量、预览和分区读取。查询结果字段随 Canvas 定义保存；SQL Hash 使用去除终止分号并 trim 后的 UTF-8 SQL 计算 SHA-256。
 
 节点类别为 `INPUT`，批流注册表均启用，无入边且至少一条出边。它以 `outputTableName` 产生一个 `BOUNDED` 表，Origin 固定为 `JDBC_QUERY`；与普通 `JDBC_INPUT` 不同，它不引用物理表元数据，也不把 SQL 扩张到普通表输入配置中。
 
 ## 分析、编译与运行
 
-- `POST /api/v1/data-sources/{id}/actions/inspect-query` 使用 `datasource.metadata` 权限，只接受已启用、具有 `SOURCE` 用途的 PostgreSQL/MySQL 数据源。它在只读连接和只读 Session 中优先读取 PreparedStatement 元数据；驱动不提供时最多执行一行 fallback，只返回 Hash 和字段，不返回 SQL 或数据行。
+- `POST /api/v1/data-sources/{id}/actions/inspect-query` 使用 `datasource.metadata` 权限，只接受已启用、具有 `SOURCE` 用途的 PostgreSQL、HighGo、MySQL、openGauss 或人大金仓数据源。它在只读连接和只读 Session 中优先读取 PreparedStatement 元数据；驱动不提供时最多执行一行 fallback，只返回 Hash 和字段，不返回 SQL 或数据行。
 - Inspector 仅在用户点击“分析 SQL”时调用接口；SQL 变化后保留旧快照并标记过期。
 - Compiler 校验 Hash、字段结构、数据源和表名冲突，并使用保存字段创建零行计划，不连接数据库。
 - 发布、重新启用和运行准备不重新分析查询结果，也不把当前结果结构与保存快照比较。

@@ -121,7 +121,8 @@ public final class TrackFindDwellNodeOperator implements CanvasNodeOperator {
                 .alias(configuration.startTimeColumnName()));
         aggregations.add(functions.max(TrackNodeSupport.column(staged, configuration.timeColumnName()))
                 .alias(configuration.endTimeColumnName()));
-        aggregations.add(functions.count(functions.lit(1)).alias(countColumn));
+        aggregations.add(functions.count(functions.struct(
+                TrackNodeSupport.column(staged, configuration.timeColumnName()))).alias(countColumn));
         for (TrackNodeSupport.ResolvedSummary summary : summaries) {
             Column expression = switch (summary.statistic().kind()) {
                 case FIRST -> functions.min_by(
@@ -130,7 +131,8 @@ public final class TrackFindDwellNodeOperator implements CanvasNodeOperator {
                 case LAST -> functions.max_by(
                         TrackNodeSupport.column(staged, summary.source().name()),
                         TrackNodeSupport.column(staged, configuration.timeColumnName()));
-                default -> TrackNodeSupport.summaryExpression(summary, staged);
+                default -> TrackNodeSupport.summaryExpression(
+                        summary, staged, configuration.timeColumnName());
             };
             aggregations.add(expression.alias(summary.statistic().outputColumnName()));
         }

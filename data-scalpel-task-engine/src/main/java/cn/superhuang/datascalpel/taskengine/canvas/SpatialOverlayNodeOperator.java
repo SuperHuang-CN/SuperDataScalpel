@@ -13,6 +13,7 @@ import cn.superhuang.data.scalpel.contract.task.SpatialOverlayOperation;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
+import cn.superhuang.datascalpel.taskengine.compiler.lineage.CatalystLineageMetadata;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
@@ -34,6 +35,8 @@ public final class SpatialOverlayNodeOperator implements CanvasNodeOperator {
 
     private static final String LEFT_ALIAS = "overlay_left";
     private static final String RIGHT_ALIAS = "overlay_right";
+    private static final String LEFT_MASK_ALIAS = "overlay_left_mask";
+    private static final String RIGHT_MASK_ALIAS = "overlay_right_mask";
 
     @Override
     public CanvasNodeType nodeType() {
@@ -264,24 +267,26 @@ public final class SpatialOverlayNodeOperator implements CanvasNodeOperator {
     ) {
         String rowId = internalName(left, right, "__datascalpel_overlay_left_id");
         String mask = internalName(left, right, "__datascalpel_overlay_right_union");
-        Dataset<Row> identified = left.withColumn(rowId, functions.monotonically_increasing_id()).alias(LEFT_ALIAS);
+        Dataset<Row> identified = left.withColumn(rowId, CatalystLineageMetadata.markTechnicalColumn(
+                functions.monotonically_increasing_id(), rowId)).alias(LEFT_ALIAS);
         Column leftGeometry = qualified(LEFT_ALIAS, configuration.leftGeometryColumnName());
         Column rightGeometry = qualified(RIGHT_ALIAS, configuration.rightGeometryColumnName());
-        Dataset<Row> joined = identified.join(
+        Dataset<Row> matchedMasks = identified.join(
                 right,
                 st_predicates.ST_Intersects(leftGeometry, rightGeometry),
+                "inner")
+                .groupBy(qualified(LEFT_ALIAS, rowId))
+                .agg(st_aggregates.ST_Union_Agg(rightGeometry).alias(mask))
+                .alias(LEFT_MASK_ALIAS);
+        // Sedona cannot index a spatial LEFT OUTER JOIN. Find real masks with an
+        // indexed INNER JOIN, then restore unmatched source rows through an equality
+        // join on the plan-local row identity.
+        Dataset<Row> prepared = identified.join(
+                matchedMasks,
+                qualified(LEFT_ALIAS, rowId).eqNullSafe(qualified(LEFT_MASK_ALIAS, rowId)),
                 "left_outer");
-        List<Column> aggregations = new ArrayList<>();
-        for (String name : identified.columns()) {
-            if (!name.equals(rowId)) {
-                aggregations.add(functions.first(qualified(LEFT_ALIAS, name), true).alias(name));
-            }
-        }
-        aggregations.add(st_aggregates.ST_Union_Agg(rightGeometry).alias(mask));
-        Dataset<Row> grouped = joined.groupBy(qualified(LEFT_ALIAS, rowId))
-                .agg(aggregations.getFirst(), aggregations.subList(1, aggregations.size()).toArray(Column[]::new));
-        Column originalGeometry = column(grouped, configuration.leftGeometryColumnName());
-        Column maskGeometry = column(grouped, mask);
+        Column originalGeometry = qualified(LEFT_ALIAS, configuration.leftGeometryColumnName());
+        Column maskGeometry = qualified(LEFT_MASK_ALIAS, mask);
         Column resultGeometry = withSrid(
                 functions.when(maskGeometry.isNull(), originalGeometry)
                         .otherwise(st_functions.ST_Difference(originalGeometry, maskGeometry)),
@@ -289,13 +294,13 @@ public final class SpatialOverlayNodeOperator implements CanvasNodeOperator {
         List<Column> projection = new ArrayList<>(outputs.size() + 1);
         for (JoinOutputColumnSupport.ResolvedOutputColumn output : outputs) {
             if (output.sourceSide() == JoinOutputColumnSource.LEFT) {
-                projection.add(column(grouped, output.sourceColumn().name()).alias(output.outputColumnName()));
+                projection.add(qualified(LEFT_ALIAS, output.sourceColumn().name()).alias(output.outputColumnName()));
             } else {
                 projection.add(nullOf(right, output.sourceColumn().name()).alias(output.outputColumnName()));
             }
         }
         projection.add(resultGeometry);
-        return nonEmpty(grouped.select(projection.toArray(Column[]::new)),
+        return nonEmpty(prepared.select(projection.toArray(Column[]::new)),
                 configuration.outputGeometryColumnName());
     }
 
@@ -308,24 +313,23 @@ public final class SpatialOverlayNodeOperator implements CanvasNodeOperator {
     ) {
         String rowId = internalName(right, left, "__datascalpel_overlay_right_id");
         String mask = internalName(right, left, "__datascalpel_overlay_left_union");
-        Dataset<Row> identified = right.withColumn(rowId, functions.monotonically_increasing_id()).alias(RIGHT_ALIAS);
+        Dataset<Row> identified = right.withColumn(rowId, CatalystLineageMetadata.markTechnicalColumn(
+                functions.monotonically_increasing_id(), rowId)).alias(RIGHT_ALIAS);
         Column rightGeometry = qualified(RIGHT_ALIAS, reversed.leftGeometryColumnName());
         Column leftGeometry = qualified(LEFT_ALIAS, reversed.rightGeometryColumnName());
-        Dataset<Row> joined = identified.join(
+        Dataset<Row> matchedMasks = identified.join(
                 left,
                 st_predicates.ST_Intersects(rightGeometry, leftGeometry),
+                "inner")
+                .groupBy(qualified(RIGHT_ALIAS, rowId))
+                .agg(st_aggregates.ST_Union_Agg(leftGeometry).alias(mask))
+                .alias(RIGHT_MASK_ALIAS);
+        Dataset<Row> prepared = identified.join(
+                matchedMasks,
+                qualified(RIGHT_ALIAS, rowId).eqNullSafe(qualified(RIGHT_MASK_ALIAS, rowId)),
                 "left_outer");
-        List<Column> aggregations = new ArrayList<>();
-        for (String name : identified.columns()) {
-            if (!name.equals(rowId)) {
-                aggregations.add(functions.first(qualified(RIGHT_ALIAS, name), true).alias(name));
-            }
-        }
-        aggregations.add(st_aggregates.ST_Union_Agg(leftGeometry).alias(mask));
-        Dataset<Row> grouped = joined.groupBy(qualified(RIGHT_ALIAS, rowId))
-                .agg(aggregations.getFirst(), aggregations.subList(1, aggregations.size()).toArray(Column[]::new));
-        Column originalGeometry = column(grouped, reversed.leftGeometryColumnName());
-        Column maskGeometry = column(grouped, mask);
+        Column originalGeometry = qualified(RIGHT_ALIAS, reversed.leftGeometryColumnName());
+        Column maskGeometry = qualified(RIGHT_MASK_ALIAS, mask);
         Column resultGeometry = withSrid(
                 functions.when(maskGeometry.isNull(), originalGeometry)
                         .otherwise(st_functions.ST_Difference(originalGeometry, maskGeometry)),
@@ -333,13 +337,13 @@ public final class SpatialOverlayNodeOperator implements CanvasNodeOperator {
         List<Column> projection = new ArrayList<>(outputs.size() + 1);
         for (JoinOutputColumnSupport.ResolvedOutputColumn output : outputs) {
             if (output.sourceSide() == JoinOutputColumnSource.RIGHT) {
-                projection.add(column(grouped, output.sourceColumn().name()).alias(output.outputColumnName()));
+                projection.add(qualified(RIGHT_ALIAS, output.sourceColumn().name()).alias(output.outputColumnName()));
             } else {
                 projection.add(nullOf(left, output.sourceColumn().name()).alias(output.outputColumnName()));
             }
         }
         projection.add(resultGeometry);
-        return nonEmpty(grouped.select(projection.toArray(Column[]::new)), reversed.outputGeometryColumnName());
+        return nonEmpty(prepared.select(projection.toArray(Column[]::new)), reversed.outputGeometryColumnName());
     }
 
     private static List<Column> projectedAttributes(

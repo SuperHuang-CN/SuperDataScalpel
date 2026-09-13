@@ -24,6 +24,7 @@ import cn.superhuang.superops.api.studio.datasource.factory.MySQLDriver;
 import cn.superhuang.superops.api.studio.datasource.factory.OpenGaussDriver;
 import cn.superhuang.superops.api.studio.datasource.factory.OracleDriver;
 import cn.superhuang.superops.api.studio.datasource.factory.PostgreSQLDriver;
+import cn.superhuang.superops.api.studio.datasource.factory.HighGoDriver;
 import cn.superhuang.superops.api.studio.datasource.factory.SQLServerDriver;
 import cn.superhuang.superops.api.studio.entity.DBConfig;
 import org.springframework.http.HttpStatus;
@@ -42,15 +43,16 @@ import java.util.UUID;
 @Service
 public class EngineApiStudioDataSourceService {
 
-    private static final Map<String, String> DRIVER_BY_DATABASE_TYPE = Map.of(
-            "POSTGRESQL", PostgreSQLDriver.class.getName(),
-            "MYSQL", MySQLDriver.class.getName(),
-            "ORACLE", OracleDriver.class.getName(),
-            "SQL_SERVER", SQLServerDriver.class.getName(),
-            "CLICKHOUSE", ClickHouseDriver.class.getName(),
-            "DAMENG", DmDriver.class.getName(),
-            "KINGBASE", KingBaseDriver.class.getName(),
-            "OPENGAUSS", OpenGaussDriver.class.getName()
+    private static final Map<String, String> DRIVER_BY_DATABASE_TYPE = Map.ofEntries(
+            Map.entry("POSTGRESQL", PostgreSQLDriver.class.getName()),
+            Map.entry("HIGHGO", HighGoDriver.class.getName()),
+            Map.entry("MYSQL", MySQLDriver.class.getName()),
+            Map.entry("ORACLE", OracleDriver.class.getName()),
+            Map.entry("SQL_SERVER", SQLServerDriver.class.getName()),
+            Map.entry("CLICKHOUSE", ClickHouseDriver.class.getName()),
+            Map.entry("DAMENG", DmDriver.class.getName()),
+            Map.entry("KINGBASE", KingBaseDriver.class.getName()),
+            Map.entry("OPENGAUSS", OpenGaussDriver.class.getName())
     );
     private static final Map<String, String> DATABASE_TYPE_BY_DRIVER = DRIVER_BY_DATABASE_TYPE.entrySet().stream()
             .collect(java.util.stream.Collectors.toUnmodifiableMap(Map.Entry::getValue, Map.Entry::getKey));

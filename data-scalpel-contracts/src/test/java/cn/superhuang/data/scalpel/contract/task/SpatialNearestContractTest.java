@@ -14,11 +14,19 @@ class SpatialNearestContractTest {
         assertNull(mapper.readValue("{\"nearestCount\":1,\"includeUnmatched\":false,\"matching\":null}", SpatialNearestConfiguration.class).matching());
         for (var mode : new SpatialNearestMatchSemantics[]{null, SpatialNearestMatchSemantics.EXACT_DISTANCE, SpatialNearestMatchSemantics.LEGACY_KNN}) {
             var matching = new SpatialNearestMatching(mode, "id", new SpatialNearestConnectionLines(true, "lines", "shape", 10d, SpatialDistanceUnit.KILOMETERS));
+            assertNull(matching.geodesicGeometryMode());
+            assertEquals(SpatialNearestGeodesicGeometryMode.POINT_ONLY, matching.effectiveGeodesicGeometryMode());
             var current = new SpatialNearestConfiguration("", "", "", "", "", null, 1, null, null, false, "", "distance", SpatialDistanceUnit.METERS, null, List.of(), matching);
             assertEquals(current, mapper.readValue(mapper.writeValueAsString(current), SpatialNearestConfiguration.class));
             assertEquals(mode != SpatialNearestMatchSemantics.LEGACY_KNN, current.usesExactMatching());
             assertEquals(mode != SpatialNearestMatchSemantics.LEGACY_KNN, current.outputsConnectionLines());
         }
+        for (var geometryMode : SpatialNearestGeodesicGeometryMode.values()) {
+            var matching = new SpatialNearestMatching(SpatialNearestMatchSemantics.EXACT_DISTANCE, "id", null, geometryMode);
+            assertEquals(geometryMode, mapper.readValue(mapper.writeValueAsString(matching), SpatialNearestMatching.class).geodesicGeometryMode());
+            assertEquals(geometryMode == SpatialNearestGeodesicGeometryMode.GEOMETRY, matching.allowsGeodesicGeometry());
+        }
         assertThrows(Exception.class, () -> mapper.readValue("{\"matching\":{\"semantics\":\"AUTO\"}}", SpatialNearestConfiguration.class));
+        assertThrows(Exception.class, () -> mapper.readValue("{\"matching\":{\"geodesicGeometryMode\":\"AUTO\"}}", SpatialNearestConfiguration.class));
     }
 }

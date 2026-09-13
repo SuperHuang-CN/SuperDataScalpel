@@ -178,4 +178,30 @@ FAMILY_2D 校验第 3 节完整组合矩阵，Single/Multi 均归入点/线/面�
 
 ### 仍未完成
 
-没有真实 Enterprise 11.3 环境交叉验收；Esri 容差、微小碎片、同侧重叠/全局分区、几何编码和大数据空间分区/索引性能仍待对照，不在进度清单勾选全部完成。
+没有真实 Enterprise 11.3 环境交叉验收；Esri 容差、微小碎片、同侧重叠/全局分区、几何编码和大数据空间分区/索引性能仍待对照。以上是 4.26 当时尚未完成的范围；当前收口状态见第 8 节。
+
+## 8. 当前明确支持范围收口（2026-09-13，Canvas 4.76）
+
+本次完成的是平台已经声明的 **pairwise overlay** 范围，不把它扩写成 ArcGIS Enterprise 的全局平面分区或容差模型：
+
+- 五种模式、点/线/面家族矩阵、二维 Multi 结果、低维接触过滤、字段投影、缺失侧补 NULL、洞、
+  Multipart、NULL/Empty、无效 Geometry 惰性失败和 Z/M 降为 XY 均保持第 7 节语义。
+- `ERASE`、`IDENTITY`、`UNION` 与 `SYMMETRICAL_DIFFERENCE` 的独有区先使用 Sedona
+  索引化空间 `INNER JOIN` 找到真实遮罩，再按计划内来源行身份执行 `ST_Union_Agg`，最后通过等值
+  `LEFT JOIN` 恢复未命中来源。空间 `LEFT OUTER JOIN` 不再退化为
+  `BroadcastNestedLoopJoin`。
+- 同一来源要素命中的多个重叠遮罩先合并、只做一次 Difference；同侧重复或重叠要素仍保持各自记录，
+  不跨来源要素去重或合并。256 个来源要素 × 1024 个遮罩的本地样例输出正确，执行计划包含
+  Range/Broadcast Index Join，不含 Cartesian Product 或 Broadcast Nested Loop Join。
+- 计划内行身份显式标记为技术列。它只服务于内部聚合和等值回连，不会被血缘分析器误认成未知业务字段；
+  IDENTITY 的相交/差集联合计划达到 `FIELD_COMPLETE`，左右投影属性和结果 Geometry 均能追溯到真实输入字段。
+- Task Engine Overlay 合并回归 10 项全部通过，失败、错误、跳过均为 0；前端 Inspector/配置专项
+  2 个文件 5 项全部通过，触及文件 ESLint 无错误。回归覆盖五模式、全部家族组合、独有区、重叠遮罩、
+  同侧重复要素、洞、低维接触、Point/MultiPoint、NULL/Empty、无效 Geometry、共享来源计划、XY 结果、
+  索引计划及完整字段血缘。
+- 真实页面确认五种模式、图层家族策略、字段投影入口、右字段命名说明、无效草稿仍可应用以及紧凑问题详情；
+  验收只修改当前未保存草稿，没有保存任务定义。
+
+据此，进度清单中的 Overlay 按当前明确支持范围完成。仍不声明 Esri tolerance/snap、微小碎片舍弃、
+全局无重叠平面分区、相同顶点编码、Enterprise 异步服务字段或生产容量完全等价；这些能力若需要，必须以
+新的显式数值语义和真实 Enterprise 对照单独设计，不能悄悄改变现有 pairwise 结果。

@@ -26,6 +26,7 @@ import cn.superhuang.data.scalpel.business.datasource.service.http.HttpApiConnec
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
 import cn.superhuang.data.scalpel.contract.task.CanvasColumnSchema;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.dialect.api.DatabaseCapability;
 import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
@@ -262,16 +263,15 @@ public class DataSourceRuntimeService {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT, "查询输入数据源不存在、未启用或不具有 SOURCE 用途");
         }
-        if (dataSource.getType() != DataSourceType.POSTGRESQL
-                && dataSource.getType() != DataSourceType.MYSQL) {
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        if (!dialect.definition().capabilities().contains(DatabaseCapability.JDBC_QUERY_INPUT)) {
             throw new ResponseStatusException(
-                    HttpStatus.CONFLICT, "JDBC 查询输入只支持 PostgreSQL 和 MySQL");
+                    HttpStatus.CONFLICT, "JDBC 查询输入只支持 PostgreSQL、HighGo、MySQL、openGauss 和人大金仓");
         }
         if (sql == null || sql.isBlank() || sql.length() > 100_000) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "SQL 长度必须为 1 到 100000 个字符");
         }
         var query = parseReadOnlyQuery(sql);
-        DatabaseDialect dialect = registry.require(dataSource.getType().name());
         QueryInspection inspection;
         try {
             inspection = queryInspector.inspect(

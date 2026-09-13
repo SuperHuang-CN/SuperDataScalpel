@@ -244,3 +244,31 @@ windowOptions?: {
 新增稳定配置错误：TRACK_MOTION_WINDOW_REQUIRE_SCHEMA_VERSION、INVALID_TRACK_HISTORY_WINDOW、
 TRACK_MOTION_GROUP_INCOMPLETE、DUPLICATE_TRACK_MOTION_STATISTIC、TRACK_ELEVATION_UNIT_REQUIRED、
 INVALID_IDLE_TIME_THRESHOLD；来源/字段/名称/UUID/单位继续复用已有错误。
+
+## 8. 当前明确支持范围收口（2026-09-13，Canvas 4.76）
+
+本次按已经落地且能够稳定验证的平台语义完成收口，不把 ArcGIS 服务未公开或尚未对照的细节补写成保证：
+
+- 新建节点使用 `OBSERVATION_WINDOW`，默认 3 个观测并选择距离、速度两组；旧定义继续按
+  `LEGACY_LAG` 解释。两套配置在确认式切换中分别保留，不对旧 `historyPoints` 和 `metrics` 做静默迁移。
+- 观测窗口完整支持八组 31 项输出。点值窗口含当前观测；段汇总只含完整落入窗口的 N−1 段，
+  加速度汇总最多含 N−2 个加速度。窗口 1/2、历史不足、不同持续时长、零时长和固定周期重置均有回归。
+- 距离支持平面和受控 WGS84 测地计算；Bearing 使用从北顺时针角度并覆盖日期变更线。
+  高程可来自 Geometry Z 或独立数值字段，输入垂直单位和输出高程单位独立；坡度是同单位高差除以
+  水平距离，不乘 100。国际码与美国测量制、固定 7 天周均沿用公共单位语义。
+- Idle 同时要求相邻距离严格小于距离阈值、相邻时长严格大于时间阈值；等值不判静止。
+  `TotIdleTime` 和 `PctIdleTime` 只统计可分类段。NULL/Empty Geometry 不跨点连接，非有限高程只在
+  测量中视为 NULL，原始字段值不被修改；NULL 时间不输出，同时间必须由显式顺序字段唯一确定。
+- 所有 31 个指标以及保留的原字段均达到 `FIELD_COMPLETE`，不存在 `WRITTEN_UNKNOWN_SOURCE`。
+  距离/时长/速度/加速度/高程/坡度/Idle/Bearing 分别追溯到真实 Geometry、时间和高程来源字段。
+  同时间唯一性检查改用内部校验时间列，原始时间字段继续是直接来源；没有放宽 Catalyst Analyzer。
+- 20,000 个 Point 的单轨迹样例在分析阶段触发 0 个 Spark Job，执行后仍逐观测输出 20,000 行，
+  窗口 100 的末行瞬时距离、累计距离和时长正确。计划使用 Spark Window，不在 Driver 收集轨迹组，
+  也不使用 `collect_list`；该样例不是任意偏斜或生产容量承诺。
+- Motion 后端基线 10 项及新增血缘/规模 2 项通过；前端 Inspector 与 Parser 2 个文件 6 项通过。
+  真实页面确认新节点未应用前不触发 Task Engine 编译、两种语义确认切换且各自草稿保留、八组 31 项、
+  单位/高程、Idle 双阈值、固定时间边界、无效草稿应用和问题详情均可用；验收节点只留在未保存草稿。
+
+据此，进度清单中的 Motion 按当前明确支持范围完成。仍不声明 ArcGIS Enterprise 官方字段别名、
+所有单位名称、未公开的缺失值/平局处理、固定月年、服务端容差与数值或生产容量完全等价；节点仍只支持
+有界批处理 Point 轨迹，不扩展 Streaming、任意三维测地距离或 Arcade。

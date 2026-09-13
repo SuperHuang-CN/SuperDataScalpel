@@ -56,6 +56,15 @@ spring:
     wait-for-jobs-to-complete-on-shutdown: false
 
 data-scalpel:
+  dsh:
+    enabled: ${DATASCALPEL_DSH_ENABLED:false}
+    base-url: ${DATASCALPEL_DSH_URL:http://127.0.0.1:13080}
+    bridge-key: ${DATASCALPEL_DSH_BRIDGE_KEY:}
+    credential-key: ${DATASCALPEL_DSH_CREDENTIAL_KEY:}
+    connect-timeout: 3s
+    request-timeout: 45s
+    max-request-bytes: 1048576
+    event-buffer-bytes: 1048576
   system-mcp:
     public-base-url: ${DATASCALPEL_SYSTEM_MCP_PUBLIC_BASE_URL:}
     connect-timeout: 3s
@@ -85,16 +94,6 @@ data-scalpel:
     max-tools-per-server: ${DATASCALPEL_MCP_MAX_TOOLS_PER_SERVER:100}
     invocation-retention: ${DATASCALPEL_MCP_INVOCATION_RETENTION:30d}
     invocation-cleanup-cron: ${DATASCALPEL_MCP_INVOCATION_CLEANUP_CRON:0 45 3 * * *}
-  assistant:
-    credential-key: ${DATASCALPEL_ASSISTANT_CREDENTIAL_KEY:}
-    connect-timeout: ${DATASCALPEL_ASSISTANT_CONNECT_TIMEOUT:5s}
-    request-timeout: ${DATASCALPEL_ASSISTANT_REQUEST_TIMEOUT:90s}
-    stale-run-timeout: ${DATASCALPEL_ASSISTANT_STALE_RUN_TIMEOUT:2m}
-    max-output-tokens: ${DATASCALPEL_ASSISTANT_MAX_OUTPUT_TOKENS:4096}
-    temperature: ${DATASCALPEL_ASSISTANT_TEMPERATURE:0.1}
-    max-tool-rounds: 4
-    max-tool-calls-per-turn: 8
-    max-directory-operations: 100
   gateway-access:
     enabled: ${DATASCALPEL_GATEWAY_ACCESS_ENABLED:false}
     topic: ${DATASCALPEL_GATEWAY_ACCESS_TOPIC:datascalpel.gateway.access.v1}
@@ -214,3 +213,4 @@ springdoc:
   swagger-ui:
     path: /swagger-ui.html
     persist-authorization: true
+    default-model-rendering: model

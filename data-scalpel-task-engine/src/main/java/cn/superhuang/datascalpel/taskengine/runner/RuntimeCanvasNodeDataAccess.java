@@ -631,10 +631,13 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         if (runtime.connectionKind() != ConnectionKind.JDBC
                 || runtime.connection() == null
                 || runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.POSTGRESQL
-                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL) {
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.HIGHGO
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.MYSQL
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.OPENGAUSS
+                && runtime.databaseType() != cn.superhuang.datascalpel.taskengine.contract.RuntimeDatabaseType.KINGBASE) {
             throw new RunnerExecutionException(
                     "SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED",
-                    "快照同步只支持 PostgreSQL 和 MySQL JDBC 数据源",
+                    "快照同步只支持 PostgreSQL、HighGo、MySQL、openGauss 和人大金仓 JDBC 数据源",
                     nodeId
             );
         }

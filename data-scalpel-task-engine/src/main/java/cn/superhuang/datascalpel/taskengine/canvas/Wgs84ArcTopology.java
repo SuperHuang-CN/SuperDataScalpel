@@ -5,6 +5,7 @@ import cn.superhuang.datascalpel.taskengine.canvas.Wgs84SegmentDistance.Budget;
 import cn.superhuang.datascalpel.taskengine.canvas.Wgs84SegmentDistance.Position;
 import net.sf.geographiclib.Geodesic;
 
+import java.util.Comparator;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
@@ -15,6 +16,8 @@ final class Wgs84ArcTopology {
     record Relation(Kind kind,Position contact) { }
     private enum Side { LEFT, RIGHT, ZERO, UNKNOWN }
     private static final double ANGULAR_GUARD=1e-12;
+    private static final Comparator<Position> POSITION_ORDER=Comparator.comparingDouble(Position::longitude)
+            .thenComparingDouble(Position::latitude);
     private Wgs84ArcTopology() { }
 
     /** Cheap continuous probe; an unverified local domain or uncertain bearing stays unresolved. */
@@ -58,12 +61,12 @@ final class Wgs84ArcTopology {
             if (a.equals(b)) return pointRelation(a,c,d,refineSeparation);
             if (c.equals(d)) return pointRelation(c,a,b,refineSeparation);
             int common=(a.equals(c)||a.equals(d) ? 1 : 0)+(b.equals(c)||b.equals(d) ? 1 : 0);
-            if (common==2) return relation(Kind.OVERLAP);
+            if (common==2) return new Relation(Kind.OVERLAP,POSITION_ORDER.compare(a,b)<=0 ? a : b);
             if (common==1) {
                 Position contact=a.equals(c)||a.equals(d) ? a : b;
                 Position first=a.equals(contact) ? b : a, second=c.equals(contact) ? d : c;
                 if (sameAxis(contact,first,second))
-                    return axisBetween(contact,first,second) ? new Relation(Kind.TOUCH,contact) : relation(Kind.OVERLAP);
+                    return axisBetween(contact,first,second) ? new Relation(Kind.TOUCH,contact) : new Relation(Kind.OVERLAP,contact);
                 double firstAzimuth=inverse(contact,first).azi1, secondAzimuth=inverse(contact,second).azi1;
                 double change=Math.toRadians(secondAzimuth-firstAzimuth);
                 // Opposite rays cannot overlap even when their tiny signed angle is uncertain.
@@ -72,16 +75,19 @@ final class Wgs84ArcTopology {
             }
             Side ac=side(a,b,c), ad=side(a,b,d), ca=side(c,d,a), cb=side(c,d,b);
             if (sameNonzero(ac,ad)||sameNonzero(ca,cb)) return relation(Kind.DISJOINT);
-            if (opposite(ac,ad)&&opposite(ca,cb)) return relation(Kind.CROSS);
+            if (opposite(ac,ad)&&opposite(ca,cb)) {
+                Position contact = Wgs84GeodesicIntersection.crossing(new Arc(a,b),new Arc(c,d),budget);
+                return new Relation(Kind.CROSS,contact);
+            }
             // Structural meridians/equator have exact zero orientation; other near-collinear
             // coordinates remain UNKNOWN rather than being snapped onto the supporting arc.
             Position contact=null;
             int contacts=0;
-            if (ac==Side.ZERO && axisBetween(c,a,b)) { contact=c; contacts++; }
-            if (ad==Side.ZERO && axisBetween(d,a,b)) { contact=d; contacts++; }
-            if (ca==Side.ZERO && axisBetween(a,c,d)) { contact=a; contacts++; }
-            if (cb==Side.ZERO && axisBetween(b,c,d)) { contact=b; contacts++; }
-            if (contacts>=2) return relation(Kind.OVERLAP);
+            if (ac==Side.ZERO && axisBetween(c,a,b)) { contact=first(contact,c); contacts++; }
+            if (ad==Side.ZERO && axisBetween(d,a,b)) { contact=first(contact,d); contacts++; }
+            if (ca==Side.ZERO && axisBetween(a,c,d)) { contact=first(contact,a); contacts++; }
+            if (cb==Side.ZERO && axisBetween(b,c,d)) { contact=first(contact,b); contacts++; }
+            if (contacts>=2) return new Relation(Kind.OVERLAP,contact);
             if (contacts==1) return new Relation(Kind.TOUCH,contact);
             if (ac==Side.UNKNOWN||ad==Side.UNKNOWN||ca==Side.UNKNOWN||cb==Side.UNKNOWN)
                 return refineSeparation ? separatedOrUnknown(a,b,c,d) : relation(Kind.UNRESOLVED);
@@ -155,6 +161,7 @@ final class Wgs84ArcTopology {
     }
     private static boolean sameNonzero(Side a,Side b) { return a==b && (a==Side.LEFT||a==Side.RIGHT); }
     private static boolean opposite(Side a,Side b) { return a==Side.LEFT&&b==Side.RIGHT || a==Side.RIGHT&&b==Side.LEFT; }
+    private static Position first(Position a,Position b) { return a==null || POSITION_ORDER.compare(b,a)<0 ? b : a; }
     private static Relation relation(Kind kind) { return new Relation(kind,null); }
     private static Position canonical(Position point) {
         if (point==null || !Double.isFinite(point.longitude()) || !Double.isFinite(point.latitude())

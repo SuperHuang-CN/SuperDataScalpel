@@ -251,10 +251,16 @@ public final class ModelOutputNodeOperator implements CanvasNodeOperator {
         }
         CanvasJdbcDatabaseType databaseType = dataSource.metadata().jdbcDatabaseType();
         if (databaseType != CanvasJdbcDatabaseType.POSTGRESQL
-                && databaseType != CanvasJdbcDatabaseType.MYSQL) {
+                && databaseType != CanvasJdbcDatabaseType.HIGHGO
+                && databaseType != CanvasJdbcDatabaseType.MYSQL
+                && databaseType != CanvasJdbcDatabaseType.OPENGAUSS
+                && databaseType != CanvasJdbcDatabaseType.KINGBASE
+                && databaseType != CanvasJdbcDatabaseType.DAMENG
+                && databaseType != CanvasJdbcDatabaseType.ORACLE
+                && databaseType != CanvasJdbcDatabaseType.SQL_SERVER) {
             issues.error(
                     "UPSERT_DATABASE_NOT_SUPPORTED",
-                    "UPSERT 只支持 PostgreSQL 和 MySQL",
+                    "当前目标数据库未开放 UPSERT",
                     "configuration.targetModelId"
             );
         }

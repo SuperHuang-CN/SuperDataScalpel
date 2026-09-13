@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.datasource.domain;
 
+import io.swagger.v3.oas.annotations.media.Schema;
+
 import java.util.EnumSet;
 import java.util.Set;
 
@@ -7,9 +9,11 @@ import java.util.Set;
  * A concrete reusable data-source product. JDBC products and non-JDBC connectors share the same
  * data-source aggregate while retaining their own connection configuration shape.
  */
+@Schema(description = "数据源产品类型；各类型允许的用途与连接结构以 GET /api/v1/data-source-types 返回结果为准。")
 public enum DataSourceType {
     MYSQL(DataSourceConnectionKind.JDBC, "MySQL", allPurposes()),
     POSTGRESQL(DataSourceConnectionKind.JDBC, "PostgreSQL", allPurposes()),
+    HIGHGO(DataSourceConnectionKind.JDBC, "HighGo", allPurposes()),
     ORACLE(DataSourceConnectionKind.JDBC, "Oracle", allPurposes()),
     SQL_SERVER(DataSourceConnectionKind.JDBC, "SQL Server", allPurposes()),
     CLICKHOUSE(DataSourceConnectionKind.JDBC, "ClickHouse", allPurposes()),

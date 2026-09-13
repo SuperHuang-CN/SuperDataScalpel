@@ -3,6 +3,8 @@ import {
   CANVAS_SCHEMA_VERSION,
   CanvasNodeType,
   type CanvasDefinition,
+  type JdbcOutputConfiguration,
+  type KafkaOutputConfiguration,
 } from './canvasTypes';
 
 export const emptyCanvasDefinition = (): CanvasDefinition => ({
@@ -65,18 +67,21 @@ export const exampleCanvasDefinition = (): CanvasDefinition => ({
       name: '订单客户结果输出',
       layout: { x: 860, y: 180, width: 352, height: 216 },
       configuration: {
-        sourceTableName: 'order_customer',
         dataSourceId: '04d11960-1ee1-4282-8963-6fb52a21ab0c',
-        targetTableName: 'dwd_order_customer',
-        writeMode: 'OVERWRITE',
-        upsertKeyColumns: [],
-        columnMappings: [
-          { sourceColumnName: 'order_id', targetColumnName: 'order_id' },
-          { sourceColumnName: 'customer_id', targetColumnName: 'customer_id' },
-          { sourceColumnName: 'customer_key', targetColumnName: 'customer_key' },
-          { sourceColumnName: 'customer_name', targetColumnName: 'customer_name' },
-        ],
-      },
+        writes: [{
+          writeId: '969b606a-c915-4ed0-85f9-9beebce05398',
+          sourceTableName: 'order_customer',
+          targetTableName: 'dwd_order_customer',
+          writeMode: 'OVERWRITE',
+          upsertKeyColumns: [],
+          columnMappings: [
+            { sourceColumnName: 'order_id', targetColumnName: 'order_id' },
+            { sourceColumnName: 'customer_id', targetColumnName: 'customer_id' },
+            { sourceColumnName: 'customer_key', targetColumnName: 'customer_key' },
+            { sourceColumnName: 'customer_name', targetColumnName: 'customer_name' },
+          ],
+        }],
+      } as unknown as JdbcOutputConfiguration,
     },
   ],
   edges: [
@@ -136,13 +141,9 @@ export const exampleCanvasTopologyDefinition = (): CanvasDefinition => ({
       name: '订单客户结果输出',
       layout: { x: 860, y: 180, width: 352, height: 112 },
       configuration: {
-        sourceTableName: '',
         dataSourceId: '',
-        targetTableName: '',
-        writeMode: 'OVERWRITE',
-        upsertKeyColumns: [],
-        columnMappings: [],
-      },
+        writes: [],
+      } as unknown as JdbcOutputConfiguration,
     },
   ],
   edges: [
@@ -211,23 +212,18 @@ export const exampleStreamingCanvasTopologyDefinition = (): CanvasDefinition => 
       name: '宽表事件输出',
       layout: { x: 880, y: 180, width: 352, height: 168 },
       configuration: {
-        sourceTableName: 'order_customer_stream',
         dataSourceId: '',
-        topic: '',
-        valueSchema: { columns: [] },
-        keyColumnName: '',
-        columnMappings: [],
         writes: [{
           writeId: '71d60391-b498-4ad7-a1ad-07ae1093f880',
           sourceTableName: 'order_customer_stream',
           topic: '',
           valueFormat: 'JSON',
-          valueColumnNames: [],
+          valueColumnNames: ['order_id'],
           keyColumnName: '',
           valueSchema: null,
           columnMappings: [],
         }],
-      },
+      } as unknown as KafkaOutputConfiguration,
     },
   ],
   edges: [

@@ -1,0 +1,76 @@
+name: datascalpel-dsh
+
+services:
+  dsh:
+    image: datascalpel-dsh:0.1.5-rc.1
+    build:
+      context: ../..
+      dockerfile: deploy/dsh/Dockerfile
+    init: true
+    restart: unless-stopped
+    user: root
+    env_file:
+      - path: .env.bridge
+        required: false
+      - path: .env.playground
+        required: false
+      - path: .env.admin
+        required: false
+    environment:
+      DSH_PERMISSION_MODE: workspace-write
+    ports:
+      - '127.0.0.1:${DSH_WEB_PORT:-13080}:13080'
+    healthcheck:
+      test:
+        - CMD
+        - node
+        - -e
+        - "const socket=require('node:net').connect(13080,'127.0.0.1');socket.setTimeout(4000);socket.once('connect',()=>{socket.end();process.exit(0)});socket.once('timeout',()=>{socket.destroy();process.exit(1)});socket.once('error',()=>process.exit(1))"
+    volumes:
+      - dsh-home:/home/node/.dsh
+      - dsh-workspace:/workspace
+      - ../../skills:/workspace/skills:ro
+      - ./docker.cordis.patch.yml:/opt/dsh-config/docker.cordis.patch.yml:ro
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+    stop_grace_period: 15s
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    cap_add:
+      - SYS_ADMIN
+
+  playground:
+    profiles: [playground]
+    image: datascalpel-dsh-playground:0.1.0
+    build:
+      context: ../../integrations/dsh-playground
+    init: true
+    restart: unless-stopped
+    user: node
+    env_file:
+      - .env.bridge
+      - .env.playground
+    environment:
+      DSH_BRIDGE_URL: http://dsh:13080
+      PLAYGROUND_ORIGIN: http://127.0.0.1:13081
+    ports:
+      - '127.0.0.1:13081:13081'
+    healthcheck:
+      test: ['CMD', 'node', '-e', "fetch('http://127.0.0.1:13081/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      start_period: 10s
+      retries: 3
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+
+volumes:
+  dsh-home:
+  dsh-workspace:

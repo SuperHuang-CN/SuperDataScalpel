@@ -293,9 +293,25 @@ Processor 不维护平台类型兼容矩阵，也不按字段类型产生风险�
 `ST_IsValidReason` 追加诊断字段，不删除、修复或拒绝无效 Geometry。
 
 `SPATIAL_MEASURE` 按配置顺序追加最多 32 个 DOUBLE 测量字段，支持面积、长度、周长、
-距离和 Point X/Y；平面模式使用原 CRS 单位，椭球模式只接受 EPSG:4326。
+距离和 Point X/Y；平面模式使用原 CRS 单位，椭球模式只接受 EPSG:4326。Canvas 4.50 可为
+前四类逐项选择输出单位；投影平面与 WGS84 椭球结果可靠换算，旧 null 配置保持原单位。
 `GEOMETRY_SERIALIZE` 将 Geometry 追加序列化为 WKT、WKB 或 GeoJSON，其中 GeoJSON 只
 允许 EPSG:4326，其他 CRS 必须先显式转换。
+
+`GEOMETRY_BUFFER` 在 4.52 可用固定值、数值字段或受控确定性表达式形成逐行距离 Column，
+再按公共单位规则换算并调用 Sedona Buffer。Compiler 只用 Analyzer 验证数值标量，不扫描距离值；
+Runner 对非 NULL 动态值执行有限正数保护，NULL 保留来源行并输出 NULL Buffer。
+
+`SPATIAL_CLIP` 对两张 BOUNDED 表构造 `ST_Intersects + ST_Intersection` 惰性计划。Canvas 4.51
+可显式保持来源点/线/面家族：低维边界接触由 CollectionExtract 过滤，结果规范化为二维 Multi；
+缺失/null 策略仍输出通用 Geometry。Canvas 4.77 可按每条来源的计划内行 ID 聚合全部相交 Mask 后
+只执行一次裁剪；该分支仍由空间 INNER Join 生成候选，不在 Driver 收集或全局物化 Mask。
+Compiler 不读取、计数或修复真实 Geometry。
+
+`SPATIAL_AGGREGATE` 在 4.53 可为恰好一个 UNION 聚合启用 Dissolve。Analyzer 同时构造组内来源
+行计数、最多 32 个标量统计和 Multipart/Singlepart 投影；Singlepart 使用 `ST_Dump`，无结果
+Geometry 的组不输出。Compiler 不执行真实聚合或任何外部副作用，安全摘要只记录是否启用、
+部件方式和统计数量。
 
 四个节点均保留输入表 Map 并以新逻辑表名追加结果，支持 BATCH 和 STREAMING，继承来源
 表的有界性、事件时间与 Watermark，不引入流式状态。Compiler 只在零行 Dataset 上构造并
@@ -304,15 +320,15 @@ Processor 不维护平台类型兼容矩阵，也不按字段类型产生风险�
 
 ### 6.6 MODEL_OUTPUT
 
-检查来源逻辑表、目标模型、数据源 STORAGE 用途、物理模式、写入模式和显式字段映射。目标字段使用模型字段 code，与 JDBC_OUTPUT 复用同一个字段映射和显式 Spark Cast 实现。APPEND 可写受管或外部模型，OVERWRITE 只允许受管模型。UPSERT 仅支持 PostgreSQL/MySQL，Key 固定取模型按字段顺序声明的完整主键；Key 必须全部完成映射且不能是 Geometry。平台不读取物理表预检唯一约束。Batch 支持 APPEND/OVERWRITE/UPSERT；Streaming 支持 APPEND/UPSERT，并通过独立 `foreachBatch` 与 Checkpoint 按至少一次交付。
+检查来源逻辑表、目标模型、数据源 STORAGE 用途、物理模式、写入模式和显式字段映射。目标字段使用模型字段 code，与 JDBC_OUTPUT 复用同一个字段映射和显式 Spark Cast 实现。APPEND 可写受管或外部模型，OVERWRITE 只允许受管模型。UPSERT 支持 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle 与 SQL Server，Key 固定取模型按字段顺序声明的完整主键；Key 必须全部完成映射且不能是 Geometry。平台不读取物理表预检唯一约束。Batch 支持 APPEND/OVERWRITE/UPSERT；Streaming 支持 APPEND/UPSERT，并通过独立 `foreachBatch` 与 Checkpoint 按至少一次交付。
 
 ### 6.7 JDBC_OUTPUT
 
 检查 sourceTableName、启用且具有 `DISTRIBUTION`（数据分发）用途的 JDBC 数据源、TABLE 目标、APPEND/OVERWRITE/UPSERT 和显式映射。共享 Operator 使用 Spark `select/alias/cast` 构造映射计划并触发 Analyzer；预检 I/O 只接收零行 Dataset，不创建 Writer。
 
-UPSERT 只支持 PostgreSQL/MySQL，配置必须按数据库返回顺序完整匹配一组主键或安全唯一索引，
+UPSERT 支持 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle 与 SQL Server，配置必须按数据库返回顺序完整匹配一组主键或安全唯一索引，
 且所有 Key 都必须进入映射后的目标字段；Key 不得是自增、生成或 Geometry 字段。冲突时仅更新
-已映射的非 Key 字段；仅 Key 映射时 PostgreSQL `DO NOTHING`，MySQL 执行无变化更新。MySQL
+已映射的非 Key 字段；仅 Key 映射时 PostgreSQL 系数据库 `DO NOTHING`，MySQL 执行无变化更新，`MERGE` 方言只执行不存在时插入。MySQL
 目标存在多组唯一键时返回 `MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS` 警告。Streaming 允许 APPEND
 和 UPSERT，继续拒绝 OVERWRITE；运行时写入语义见 [JDBC_OUTPUT UPSERT 设计](canvas-jdbc-output-upsert-design.md)。
 

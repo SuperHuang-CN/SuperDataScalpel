@@ -721,6 +721,7 @@ final class CanvasTaskExecutor {
     }
 
     static DataFrameReader reader(SparkSession spark, RuntimeDataSource source) {
+        PostgreSqlFamilySparkJdbcDialect.ensureRegistered();
         RuntimeJdbcConnection connection = source.connection();
         DataFrameReader reader = spark.read().format("jdbc")
                 .option("url", connection.jdbcUrl())
@@ -732,6 +733,7 @@ final class CanvasTaskExecutor {
     }
 
     static void write(RuntimeDataSource source, String qualifiedTableName, Dataset<Row> dataset) {
+        PostgreSqlFamilySparkJdbcDialect.ensureRegistered();
         RuntimeJdbcConnection connection = source.connection();
         DataFrameWriter<Row> writer = dataset.write().format("jdbc")
                 .mode(SaveMode.Append)
@@ -745,6 +747,7 @@ final class CanvasTaskExecutor {
     }
 
     static void truncate(RuntimeDataSource source, String qualifiedTableName) throws Exception {
+        PostgreSqlFamilySparkJdbcDialect.ensureRegistered();
         RuntimeJdbcConnection runtime = source.connection();
         Class.forName(runtime.driverClassName());
         Properties properties = new Properties();
@@ -1116,6 +1119,10 @@ final class CanvasTaskExecutor {
                     TRACK_RECONSTRUCT, TRACK_MOTION_STATISTICS, TRACK_FIND_DWELL,
                     TRACK_DETECT_INCIDENTS,
                     SPATIAL_BIN_AGGREGATE, SPATIAL_POINT_CLUSTER, SPATIAL_CENTER_DISPERSION,
+                    SPATIAL_DENSITY, SPATIAL_HOT_SPOTS, SPATIAL_MULTI_VARIABLE_GRID,
+                    SPATIAL_ENRICH_FROM_GRID, SPATIAL_GROUP_BY_PROXIMITY,
+                    TRACE_PROXIMITY_EVENTS, SNAP_TRACKS, SPATIAL_SIMILAR_LOCATIONS,
+                    SPATIAL_DESCRIBE_DATASET,
                     GEOMETRY_BUFFER, GEOMETRY_EXPLODE,
                     SPATIAL_MEASURE, GEOMETRY_SERIALIZE, SPATIAL_CLIP,
                     SPATIAL_AGGREGATE, SPATIAL_JOIN, STREAM_JOIN,
@@ -1194,6 +1201,25 @@ final class CanvasTaskExecutor {
                     cluster.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.SpatialCenterDispersionNodeDefinition analysis ->
                     analysis.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialDensityNodeDefinition density ->
+                    density.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialHotSpotsNodeDefinition hotSpots ->
+                    hotSpots.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialMultiVariableGridNodeDefinition grid ->
+                    grid.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialEnrichFromGridNodeDefinition enrich ->
+                    enrich.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialGroupByProximityNodeDefinition group ->
+                    group.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.TraceProximityEventsNodeDefinition trace ->
+                    trace.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SnapTracksNodeDefinition snap ->
+                    snap.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsNodeDefinition similar ->
+                    similar.configuration().outputTableName();
+            case cn.superhuang.data.scalpel.contract.task.SpatialDescribeDatasetNodeDefinition describe ->
+                    describe.configuration().statisticsTableName() + ", "
+                            + describe.configuration().descriptionTableName();
             case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
                     buffer.configuration().outputTableName();
             case cn.superhuang.data.scalpel.contract.task.GeometryExplodeNodeDefinition explode ->
@@ -1591,6 +1617,18 @@ final class CanvasTaskExecutor {
                             + " hasEndCondition=" + (track.configuration().endCondition() != null)
                             + " incidentSemantics=" + track.configuration().effectiveIncidentSemantics()
                             + " conditionWindowCount=" + track.configuration().conditionWindows().size()
+                            + " trackDistanceWindowCount=" + track.configuration().conditionWindows().stream()
+                            .filter(window -> window.effectiveSource()
+                                    == cn.superhuang.data.scalpel.contract.task.TrackIncidentWindow.Source.TRACK_DISTANCE).count()
+                            + " trackSpeedWindowCount=" + track.configuration().conditionWindows().stream()
+                            .filter(window -> window.effectiveSource()
+                                    == cn.superhuang.data.scalpel.contract.task.TrackIncidentWindow.Source.TRACK_SPEED).count()
+                            + " trackAccelerationWindowCount=" + track.configuration().conditionWindows().stream()
+                            .filter(window -> window.effectiveSource()
+                                    == cn.superhuang.data.scalpel.contract.task.TrackIncidentWindow.Source.TRACK_ACCELERATION).count()
+                            + " conditionScalarCount=" + track.configuration().conditionScalars().size()
+                            + " pointCoordinateScalarCount=" + track.configuration().conditionScalars().stream()
+                            .filter(cn.superhuang.data.scalpel.contract.task.TrackIncidentScalar::isPointCoordinate).count()
                             + " orderFieldCount=" + track.configuration().orderByColumns().size()
                             + " fixedTimeBoundary=" + (track.configuration().boundaries().fixedTimeBoundary() != null)
                             + " resultMode=" + track.configuration().resultMode()
@@ -1638,6 +1676,101 @@ final class CanvasTaskExecutor {
                             .flatMap(a -> a.centralFeatureColumns().stream()).filter(c -> c != null && c.included()).count() : 0)
                             + " resultTableCount=" + (analysis.configuration().separateResults() ? analysis.configuration().analyses().size() : 1)
                             + " outputTable=" + safeLogValue(analysis.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialDensityNodeDefinition density ->
+                    "sourceTable=" + safeLogValue(density.configuration().sourceTableName())
+                            + " pointGeometry=" + safeLogValue(density.configuration().pointGeometryColumnName())
+                            + " weighting=" + density.configuration().weighting()
+                            + " binShape=" + density.configuration().binShape()
+                            + " quantityFieldCount=" + (density.configuration().fields() == null
+                            ? 0 : density.configuration().fields().size())
+                            + " temporal=" + (density.configuration().temporalSlicing() != null)
+                            + " outputTable=" + safeLogValue(density.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialHotSpotsNodeDefinition hotSpots ->
+                    "sourceTable=" + safeLogValue(hotSpots.configuration().sourceTableName())
+                            + " pointGeometry=" + safeLogValue(hotSpots.configuration().pointGeometryColumnName())
+                            + " analysisSource=" + hotSpots.configuration().analysisSource()
+                            + " multipleTesting=" + hotSpots.configuration().multipleTesting()
+                            + " temporal=" + (hotSpots.configuration().temporalSlicing() != null)
+                            + " outputTable=" + safeLogValue(hotSpots.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialMultiVariableGridNodeDefinition grid ->
+                    "variableCount=" + (grid.configuration().variables() == null
+                            ? 0 : grid.configuration().variables().size())
+                            + " sourceTableCount=" + (grid.configuration().variables() == null ? 0
+                            : grid.configuration().variables().stream()
+                            .filter(java.util.Objects::nonNull)
+                            .map(cn.superhuang.data.scalpel.contract.task.SpatialMultiVariableGridVariable::sourceTableName)
+                            .filter(java.util.Objects::nonNull).distinct().count())
+                            + " binShape=" + grid.configuration().binShape()
+                            + " filteredVariableCount=" + (grid.configuration().variables() == null ? 0
+                            : grid.configuration().variables().stream().filter(java.util.Objects::nonNull)
+                            .filter(variable -> variable.filter() != null).count())
+                            + " outputTable=" + safeLogValue(grid.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialEnrichFromGridNodeDefinition enrich ->
+                    "pointTable=" + safeLogValue(enrich.configuration().pointTableName())
+                            + " pointGeometry=" + safeLogValue(enrich.configuration().pointGeometryColumnName())
+                            + " gridTable=" + safeLogValue(enrich.configuration().gridTableName())
+                            + " gridGeometry=" + safeLogValue(enrich.configuration().gridGeometryColumnName())
+                            + " gridId=" + safeLogValue(enrich.configuration().gridIdColumnName())
+                            + " enrichFieldCount=" + (enrich.configuration().enrichFields() == null
+                            ? 0 : enrich.configuration().enrichFields().size())
+                            + " outputTable=" + safeLogValue(enrich.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialGroupByProximityNodeDefinition group ->
+                    "sourceTable=" + safeLogValue(group.configuration().sourceTableName())
+                            + " geometryColumn=" + safeLogValue(group.configuration().geometryColumnName())
+                            + " spatialRelationship=" + group.configuration().spatialRelationship()
+                            + " temporal=" + (group.configuration().temporalCondition() != null)
+                            + " attributeConditionCount="
+                            + (group.configuration().attributeConditions() == null ? 0
+                            : group.configuration().attributeConditions().size())
+                            + " groupIdColumn=" + safeLogValue(group.configuration().groupIdColumnName())
+                            + " outputTable=" + safeLogValue(group.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.TraceProximityEventsNodeDefinition trace ->
+                    "sourceTable=" + safeLogValue(trace.configuration().sourceTableName())
+                            + " geometryColumn=" + safeLogValue(
+                            trace.configuration().pointGeometryColumnName())
+                            + " entityIdColumn=" + safeLogValue(
+                            trace.configuration().entityIdColumnName())
+                            + " timeColumn=" + safeLogValue(trace.configuration().timeColumnName())
+                            + " distanceMethod=" + trace.configuration().distanceMethod()
+                            + " interestSource=" + trace.configuration().interestSource()
+                            + " interestCount=" + (trace.configuration().entitiesOfInterest() == null
+                            ? 0 : trace.configuration().entitiesOfInterest().size())
+                            + " attributeMatchCount=" + (trace.configuration().attributeMatchColumns() == null
+                            ? 0 : trace.configuration().attributeMatchColumns().size())
+                            + " maxDepth=" + trace.configuration().maxTraceDepth()
+                            + " includeTracks=" + trace.configuration().includeTracks()
+                            + " outputTable=" + safeLogValue(trace.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SnapTracksNodeDefinition snap ->
+                    "pointTable=" + safeLogValue(snap.configuration().pointTableName())
+                            + " lineTable=" + safeLogValue(snap.configuration().lineTableName())
+                            + " trackIdColumnCount=" + (snap.configuration().trackIdColumns() == null
+                            ? 0 : snap.configuration().trackIdColumns().size())
+                            + " distanceMethod=" + snap.configuration().distanceMethod()
+                            + " directionMatching=" + (snap.configuration().directionMatching() != null)
+                            + " lineFieldCount=" + (snap.configuration().lineFields() == null
+                            ? 0 : snap.configuration().lineFields().size())
+                            + " outputMode=" + snap.configuration().outputMode()
+                            + " outputTable=" + safeLogValue(snap.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialSimilarLocationsNodeDefinition similar ->
+                    "referenceTable=" + safeLogValue(similar.configuration().referenceTableName())
+                            + " candidateTable=" + safeLogValue(similar.configuration().candidateTableName())
+                            + " analysisFieldCount=" + (similar.configuration().analysisFields() == null
+                            ? 0 : similar.configuration().analysisFields().size())
+                            + " appendFieldCount=" + (similar.configuration().appendFields() == null
+                            ? 0 : similar.configuration().appendFields().size())
+                            + " matchMethod=" + similar.configuration().matchMethod()
+                            + " resultMode=" + similar.configuration().resultMode()
+                            + " resultCountPerSide=" + similar.configuration().numberOfResults()
+                            + " outputTable=" + safeLogValue(similar.configuration().outputTableName());
+            case cn.superhuang.data.scalpel.contract.task.SpatialDescribeDatasetNodeDefinition describe ->
+                    "sourceTable=" + safeLogValue(describe.configuration().sourceTableName())
+                            + " geometryColumn=" + safeLogValue(describe.configuration().geometryColumnName())
+                            + " statisticsTable=" + safeLogValue(describe.configuration().statisticsTableName())
+                            + " descriptionTable=" + safeLogValue(describe.configuration().descriptionTableName())
+                            + " sampleSize=" + describe.configuration().sampleSize()
+                            + " sampleTable=" + safeLogValue(describe.configuration().sampleTableName())
+                            + " extentOutput=" + describe.configuration().extentOutput()
+                            + " extentTable=" + safeLogValue(describe.configuration().extentTableName());
             case cn.superhuang.data.scalpel.contract.task.GeometryBufferNodeDefinition buffer ->
                     "sourceTable=" + safeLogValue(buffer.configuration().sourceTableName())
                             + " outputTable=" + safeLogValue(buffer.configuration().outputTableName())
@@ -1645,7 +1778,14 @@ final class CanvasTaskExecutor {
                             + safeLogValue(buffer.configuration().geometryColumnName())
                             + " outputColumn="
                             + safeLogValue(buffer.configuration().outputColumnName())
-                            + " distance=" + buffer.configuration().distance()
+                            + " distanceSource=" + buffer.configuration().effectiveDistanceSource()
+                            + " distance=" + (buffer.configuration().effectiveDistanceSource()
+                            == cn.superhuang.data.scalpel.contract.task.GeometryBufferDistanceSource.CONSTANT
+                            ? buffer.configuration().distance() : "DYNAMIC")
+                            + " distanceField=" + (buffer.configuration().effectiveDistanceSource()
+                            == cn.superhuang.data.scalpel.contract.task.GeometryBufferDistanceSource.FIELD
+                            ? safeLogValue(buffer.configuration().distanceFieldName()) : "INACTIVE")
+                            + " distanceUnit=" + buffer.configuration().effectiveDistanceUnit()
                             + " mode=" + buffer.configuration().mode();
             case cn.superhuang.data.scalpel.contract.task.GeometryExplodeNodeDefinition explode ->
                     "sourceTable=" + safeLogValue(explode.configuration().sourceTableName())
@@ -1683,12 +1823,21 @@ final class CanvasTaskExecutor {
                             + " outputTable="
                             + safeLogValue(clip.configuration().outputTableName())
                             + " outputColumn="
-                            + safeLogValue(clip.configuration().outputColumnName());
+                            + safeLogValue(clip.configuration().outputColumnName())
+                            + " geometryPolicy="
+                            + (clip.configuration().geometryPolicy() == null
+                            ? "LEGACY_ANY_DIMENSION"
+                            : clip.configuration().geometryPolicy())
+                            + " maskCombination="
+                            + (clip.configuration().maskCombination() == null
+                            ? "PAIRWISE"
+                            : clip.configuration().maskCombination());
             case cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition aggregate -> {
                 String aggregations = aggregate.configuration().aggregations().stream()
                         .map(item -> item.kind() + ":" + item.geometryColumnName()
                                 + ":" + item.outputColumnName())
                         .collect(java.util.stream.Collectors.joining(","));
+                var dissolve = aggregate.configuration().dissolve();
                 yield "sourceTable="
                         + safeLogValue(aggregate.configuration().sourceTableName())
                         + " outputTable="
@@ -1697,13 +1846,50 @@ final class CanvasTaskExecutor {
                         + " groupBy="
                         + safeLogValue(String.join(",", aggregate.configuration().groupByColumns()))
                         + " aggregationCount=" + aggregate.configuration().aggregations().size()
-                        + " aggregations=" + safeLogValue(aggregations);
+                        + " aggregations=" + safeLogValue(aggregations)
+                        + " dissolve=" + (dissolve != null && dissolve.enabled())
+                        + " dissolveGrouping=" + (dissolve == null || !dissolve.enabled()
+                        ? "n/a" : dissolve.effectiveGroupingMode())
+                        + " multipart=" + (dissolve == null || !dissolve.enabled()
+                        ? "n/a" : dissolve.multipart())
+                        + " summaryCount="
+                        + (dissolve == null || !dissolve.enabled()
+                        || dissolve.summaryStatistics() == null
+                        ? 0 : dissolve.summaryStatistics().size());
             }
             case cn.superhuang.data.scalpel.contract.task.SpatialJoinNodeDefinition join ->
                     "leftTable=" + safeLogValue(join.configuration().leftTableName())
                             + " rightTable=" + safeLogValue(join.configuration().rightTableName())
                             + " joinType=" + join.configuration().joinType()
+                            + " joinOperation=" + join.configuration().effectiveJoinOperation()
                             + " conditionCount=" + join.configuration().conditions().size()
+                            + " attributeConditionCount="
+                            + (join.configuration().attributeConditions() == null
+                            ? 0 : join.configuration().attributeConditions().size())
+                            + " temporalRelationship="
+                            + (join.configuration().temporalCondition() == null
+                            ? "INACTIVE" : join.configuration().temporalCondition().relationship())
+                            + " spatialNear="
+                            + (join.configuration().spatialNear() == null
+                            ? "INACTIVE" : join.configuration().spatialNear().distanceMethod())
+                            + " spatialNearUnit="
+                            + (join.configuration().spatialNear() == null
+                            ? "n/a" : join.configuration().spatialNear().distanceUnit())
+                            + " distanceOutput="
+                            + (join.configuration().distanceOutput() != null
+                            && join.configuration().distanceOutput().enabled())
+                            + " spatialDistanceOutputUnit="
+                            + (join.configuration().distanceOutput() == null
+                            ? "n/a" : join.configuration().distanceOutput().spatialDistanceUnit())
+                            + " temporalDifferenceOutputUnit="
+                            + (join.configuration().distanceOutput() == null
+                            ? "n/a" : join.configuration().distanceOutput().temporalDifferenceUnit())
+                            + " outputFieldCount=" + (join.configuration().outputColumns() == null
+                            ? "LEGACY_ALL"
+                            : join.configuration().outputColumns().stream()
+                            .filter(cn.superhuang.data.scalpel.contract.task.JoinOutputColumn::included)
+                            .count())
+                            + spatialJoinOneToOneSummary(join.configuration())
                             + " outputTable="
                             + safeLogValue(join.configuration().outputTableName());
             case cn.superhuang.data.scalpel.contract.task.StreamJoinNodeDefinition join ->
@@ -1762,7 +1948,17 @@ final class CanvasTaskExecutor {
                             + safeLogValue(String.join(",", union.configuration().inputTableNames()))
                             + " outputTable="
                             + safeLogValue(union.configuration().outputTableName())
-                            + " mode=" + union.configuration().mode();
+                            + " mode=" + union.configuration().mode()
+                            + " mergeLayers=" + (union.configuration().mergingTables() != null)
+                            + " configuredMergeTableCount="
+                            + (union.configuration().mergingTables() == null
+                            ? 0 : union.configuration().mergingTables().size())
+                            + " mergeFieldRuleCount="
+                            + (union.configuration().mergingTables() == null
+                            ? 0 : union.configuration().mergingTables().stream()
+                            .filter(java.util.Objects::nonNull)
+                            .mapToInt(table -> table.fieldRules() == null ? 0 : table.fieldRules().size())
+                            .sum());
             case DeduplicateNodeDefinition deduplicate -> processorOperationsSummary(
                     deduplicate.configuration().operations());
             case NullHandlingNodeDefinition nullHandling -> processorOperationsSummary(
@@ -2226,6 +2422,15 @@ final class CanvasTaskExecutor {
             case SPATIAL_BIN_AGGREGATE -> "空间格网聚合已准备";
             case SPATIAL_POINT_CLUSTER -> "空间点聚类已准备";
             case SPATIAL_CENTER_DISPERSION -> "空间中心与离散统计已准备";
+            case SPATIAL_DENSITY -> "空间密度已准备";
+            case SPATIAL_HOT_SPOTS -> "热点分析已准备";
+            case SPATIAL_MULTI_VARIABLE_GRID -> "多变量格网已准备";
+            case SPATIAL_ENRICH_FROM_GRID -> "多变量格网丰富已准备";
+            case SPATIAL_GROUP_BY_PROXIMITY -> "邻近连通分组已准备";
+            case TRACE_PROXIMITY_EVENTS -> "邻近事件传播追踪已准备";
+            case SNAP_TRACKS -> "轨迹路网吸附已准备";
+            case SPATIAL_SIMILAR_LOCATIONS -> "相似位置排名已准备";
+            case SPATIAL_DESCRIBE_DATASET -> "数据集描述已准备";
             case GEOMETRY_BUFFER -> "Geometry Buffer 已准备";
             case GEOMETRY_EXPLODE -> "Geometry 拆分已准备";
             case SPATIAL_MEASURE -> "空间测量已准备";
@@ -2262,16 +2467,20 @@ final class CanvasTaskExecutor {
         return switch (measurement) {
             case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Area item ->
                     "AREA:" + item.geometryColumnName() + ":" + item.mode()
+                            + ":" + (item.outputUnit() == null ? "MODE_DEFAULT" : item.outputUnit())
                             + "->" + item.outputColumnName();
             case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Length item ->
                     "LENGTH:" + item.geometryColumnName() + ":" + item.mode()
+                            + ":" + (item.outputUnit() == null ? "MODE_DEFAULT" : item.outputUnit())
                             + "->" + item.outputColumnName();
             case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Perimeter item ->
                     "PERIMETER:" + item.geometryColumnName() + ":" + item.mode()
+                            + ":" + (item.outputUnit() == null ? "MODE_DEFAULT" : item.outputUnit())
                             + "->" + item.outputColumnName();
             case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.Distance item ->
                     "DISTANCE:" + item.leftGeometryColumnName() + ":"
                             + item.rightGeometryColumnName() + ":" + item.mode()
+                            + ":" + (item.outputUnit() == null ? "MODE_DEFAULT" : item.outputUnit())
                             + "->" + item.outputColumnName();
             case cn.superhuang.data.scalpel.contract.task.SpatialMeasurement.X item ->
                     "X:" + item.geometryColumnName() + "->" + item.outputColumnName();
@@ -2570,6 +2779,29 @@ final class CanvasTaskExecutor {
                 RunnerLogSanitizer.jdbcReadOptionSafeStackTrace(
                         throwable, jdbcReadOptionValues(manifest))
         );
+    }
+
+    private static String spatialJoinOneToOneSummary(
+            cn.superhuang.data.scalpel.contract.task.SpatialJoinConfiguration configuration
+    ) {
+        if (configuration.effectiveJoinOperation()
+                != cn.superhuang.data.scalpel.contract.task.SpatialJoinOperation.JOIN_ONE_TO_ONE
+                || configuration.oneToOne() == null) {
+            return "";
+        }
+        var options = configuration.oneToOne();
+        if (options.mode()
+                == cn.superhuang.data.scalpel.contract.task.SpatialJoinOneToOneMode.SUMMARIZE_MATCHES) {
+            return " oneToOneMode=SUMMARIZE_MATCHES summaryCount="
+                    + (options.summaryStatistics() == null
+                    ? 0 : options.summaryStatistics().size());
+        }
+        var keepRule = options.keepRule();
+        return " oneToOneMode=KEEP_ONE keepStrategy="
+                + (keepRule == null ? "-" : keepRule.strategy())
+                + " stableOrderCount="
+                + (keepRule == null || keepRule.stableOrder() == null
+                ? 0 : keepRule.stableOrder().size());
     }
 
     private static String safeLogValue(String value) {

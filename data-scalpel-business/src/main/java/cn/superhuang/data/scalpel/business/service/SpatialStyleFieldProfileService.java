@@ -186,7 +186,7 @@ public class SpatialStyleFieldProfileService {
                     String value = canonical(result.getObject(1), snapshot.field().valueType());
                     if (value.length() > 512) {
                         truncated = true;
-                        if (warnings.isEmpty()) warnings.add("超过 512 个字符的唯一值已归入其他");
+                        if (warnings.isEmpty()) warnings.add("超过 512 个字符的唯一值已省略");
                         continue;
                     }
                     values.add(new SpatialStyleFieldProfileResponse.UniqueValue(

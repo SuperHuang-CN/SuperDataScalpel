@@ -11,8 +11,8 @@ import {
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Select, Space, Table, Tooltip, message } from 'antd';
-import { useEffect, useMemo, useState, type ReactNode } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useMemo, useState, type ReactNode } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementListCell, ManagementStatusIndicator } from '../../../shared/components/ManagementListCells';
 import { ManagementAdaptiveMoreFilters, ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
@@ -27,8 +27,6 @@ import {
   dataSourceTypeLabels,
   dataSourcePurposeLabels,
   type DataSource,
-  type DataSourceAssistantCreateDraft,
-  type DataSourceAssistantLocationState,
   type ConnectionTestResult,
   type DataSourceFilters,
   type DataSourcePurpose,
@@ -57,6 +55,7 @@ const purposeIcons = {
 const dataSourceTypeIconTones = {
   MYSQL: 'orange',
   POSTGRESQL: 'blue',
+  HIGHGO: 'violet',
   ORACLE: 'rose',
   SQL_SERVER: 'rose',
   CLICKHOUSE: 'slate',
@@ -74,7 +73,6 @@ const dataSourceTypeIconTones = {
 
 export const DataSourcePage = () => {
   const navigate = useNavigate();
-  const location = useLocation();
   const [filterForm] = Form.useForm<DataSourceFilters>();
   const [advancedFilterForm] = Form.useForm<DataSourceFilters>();
   const [advancedFilterOpen, setAdvancedFilterOpen] = useState(false);
@@ -89,7 +87,6 @@ export const DataSourcePage = () => {
     targetLabel: string;
   } | null>(null);
   const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
-  const [assistantCreateDraft, setAssistantCreateDraft] = useState<DataSourceAssistantCreateDraft | null>(null);
   const [messageApi, messageContext] = message.useMessage();
   const currentUserQuery = useCurrentUser();
   const permissions = new Set(currentUserQuery.data?.permissions ?? []);
@@ -112,27 +109,6 @@ export const DataSourcePage = () => {
   const deleteMutation = useDeleteDataSource();
   const testMutation = useTestSavedDataSourceConnection();
 
-  useEffect(() => {
-    if (!currentUserQuery.data) return;
-    const state = location.state as (DataSourceAssistantLocationState & Record<string, unknown>) | null;
-    const action = state?.assistantDataSourceAction;
-    if (action?.kind !== 'CREATE') return;
-    const remainingState = { ...state };
-    delete remainingState.assistantDataSourceAction;
-    navigate(
-      { pathname: location.pathname, search: location.search, hash: location.hash },
-      { replace: true, state: Object.keys(remainingState).length ? remainingState : null },
-    );
-    if (!canCreate) {
-      messageApi.error('当前账号没有新建数据源权限');
-      return;
-    }
-    // React Router state is an external one-shot handoff that must be copied before it is cleared.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setEditingDataSource(null);
-    setAssistantCreateDraft(action.draft);
-    setCreateDrawerOpen(true);
-  }, [canCreate, currentUserQuery.data, location, messageApi, navigate]);
   const dataSourceTypeOptions = dataSourceTypesQuery.data?.map((definition) => ({
     value: definition.id,
     label: definition.displayName,
@@ -196,8 +172,7 @@ export const DataSourcePage = () => {
   const closeDrawer = () => {
     setEditingDataSource(null);
     setCreateDrawerOpen(false);
-    setAssistantCreateDraft(null);
-  };
+    };
 
   const testConnection = async (dataSource: DataSource) => {
     try {
@@ -389,7 +364,7 @@ export const DataSourcePage = () => {
           <div className="management-results-surface">
             <div className="management-result-toolbar">
             <span className="management-result-title">数据源列表 <span className="management-result-count">共 {dataSourcesQuery.data?.totalElements ?? 0} 项</span></span>
-            <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新数据源列表" onClick={() => void dataSourcesQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setAssistantCreateDraft(null); setCreateDrawerOpen(true); }}>新建</Button>}</div>
+            <div className="management-result-actions"><Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新数据源列表" onClick={() => void dataSourcesQuery.refetch()} /></Tooltip>{canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setCreateDrawerOpen(true); }}>新建</Button>}</div>
             </div>
             <Table<DataSource>
             size="small"
@@ -421,7 +396,6 @@ export const DataSourcePage = () => {
         open={createDrawerOpen || Boolean(editingDataSource)}
         dataSource={editingDataSource}
         initialDirectoryId={typeof directorySelection === 'string' ? directorySelection : undefined}
-        initialDraft={assistantCreateDraft}
         canViewDirectories={canViewDirectories}
         canTest={canTest}
         onClose={closeDrawer}

@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.contract.task;
 
+import com.fasterxml.jackson.annotation.JsonClassDescription;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
@@ -30,6 +31,15 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = TrackFindDwellNodeDefinition.class, name = "TRACK_FIND_DWELL"),
         @JsonSubTypes.Type(value = TrackDetectIncidentsNodeDefinition.class, name = "TRACK_DETECT_INCIDENTS"),
         @JsonSubTypes.Type(value = SpatialBinAggregateNodeDefinition.class, name = "SPATIAL_BIN_AGGREGATE"),
+        @JsonSubTypes.Type(value = SpatialDensityNodeDefinition.class, name = "SPATIAL_DENSITY"),
+        @JsonSubTypes.Type(value = SpatialHotSpotsNodeDefinition.class, name = "SPATIAL_HOT_SPOTS"),
+        @JsonSubTypes.Type(value = SpatialMultiVariableGridNodeDefinition.class, name = "SPATIAL_MULTI_VARIABLE_GRID"),
+        @JsonSubTypes.Type(value = SpatialEnrichFromGridNodeDefinition.class, name = "SPATIAL_ENRICH_FROM_GRID"),
+        @JsonSubTypes.Type(value = SpatialGroupByProximityNodeDefinition.class, name = "SPATIAL_GROUP_BY_PROXIMITY"),
+        @JsonSubTypes.Type(value = TraceProximityEventsNodeDefinition.class, name = "TRACE_PROXIMITY_EVENTS"),
+        @JsonSubTypes.Type(value = SnapTracksNodeDefinition.class, name = "SNAP_TRACKS"),
+        @JsonSubTypes.Type(value = SpatialSimilarLocationsNodeDefinition.class, name = "SPATIAL_SIMILAR_LOCATIONS"),
+        @JsonSubTypes.Type(value = SpatialDescribeDatasetNodeDefinition.class, name = "SPATIAL_DESCRIBE_DATASET"),
         @JsonSubTypes.Type(value = SpatialPointClusterNodeDefinition.class, name = "SPATIAL_POINT_CLUSTER"),
         @JsonSubTypes.Type(value = SpatialCenterDispersionNodeDefinition.class, name = "SPATIAL_CENTER_DISPERSION"),
         @JsonSubTypes.Type(value = GeometryBufferNodeDefinition.class, name = "GEOMETRY_BUFFER"),
@@ -62,6 +72,7 @@ import com.fasterxml.jackson.annotation.JsonTypeInfo;
         @JsonSubTypes.Type(value = KafkaOutputNodeDefinition.class, name = "KAFKA_OUTPUT"),
         @JsonSubTypes.Type(value = FileOutputNodeDefinition.class, name = "FILE_OUTPUT")
 })
+@JsonClassDescription("Canvas 中一个输入、转换或输出节点的多态定义；type 决定 configuration 结构和可用执行模式。")
 public sealed interface CanvasNodeDefinition
         permits ModelInputNodeDefinition, JdbcInputNodeDefinition, JdbcIncrementalInputNodeDefinition,
                 JdbcQueryInputNodeDefinition,
@@ -81,6 +92,15 @@ public sealed interface CanvasNodeDefinition
                 TrackFindDwellNodeDefinition,
                 TrackDetectIncidentsNodeDefinition,
                 SpatialBinAggregateNodeDefinition,
+                SpatialDensityNodeDefinition,
+                SpatialHotSpotsNodeDefinition,
+                SpatialMultiVariableGridNodeDefinition,
+                SpatialEnrichFromGridNodeDefinition,
+                SpatialGroupByProximityNodeDefinition,
+                TraceProximityEventsNodeDefinition,
+                SnapTracksNodeDefinition,
+                SpatialSimilarLocationsNodeDefinition,
+                SpatialDescribeDatasetNodeDefinition,
                 SpatialPointClusterNodeDefinition,
                 SpatialCenterDispersionNodeDefinition,
                 GeometryBufferNodeDefinition,

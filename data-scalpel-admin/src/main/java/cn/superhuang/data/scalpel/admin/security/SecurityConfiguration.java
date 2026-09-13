@@ -99,7 +99,12 @@ public class SecurityConfiguration {
             if (permissions != null) {
                 permissions.forEach(permission -> authorities.add(new SimpleGrantedAuthority(permission)));
             }
-            return new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
+            var token = new JwtAuthenticationToken(jwt, authorities, jwt.getSubject());
+            java.util.UUID userId = null;
+            try { if (jwt.getClaimAsString("userId") != null) userId = java.util.UUID.fromString(jwt.getClaimAsString("userId")); }
+            catch (IllegalArgumentException ignored) { /* DSH rejects missing stable identity; existing APIs retain their authentication behavior. */ }
+            token.setDetails(new cn.superhuang.data.scalpel.business.dsh.security.DshLoginIdentity(userId, jwt.getExpiresAt()));
+            return token;
         }
     }
 
@@ -127,6 +132,7 @@ public class SecurityConfiguration {
             cn.superhuang.data.scalpel.business.systemmcp.service.SystemMcpTokenService tokens,
             cn.superhuang.data.scalpel.web.error.ProblemDetailWriter errors,
             RestAuthenticationEntryPoint entryPoint, RestAccessDeniedHandler denied) throws Exception {
+        var contexts = new org.springframework.security.web.context.RequestAttributeSecurityContextRepository();
         http.securityMatcher(request -> {
                     String path = request.getRequestURI().substring(request.getContextPath().length());
                     String header = request.getHeader("Authorization");
@@ -134,8 +140,9 @@ public class SecurityConfiguration {
                 })
                 .csrf(csrf -> csrf.disable())
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+                .securityContext(context -> context.securityContextRepository(contexts))
                 .authorizeHttpRequests(auth -> auth.anyRequest().authenticated())
-                .addFilterBefore(new cn.superhuang.data.scalpel.business.systemmcp.security.SystemMcpTokenFilter(tokens, errors), UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(new cn.superhuang.data.scalpel.business.systemmcp.security.SystemMcpTokenFilter(tokens, errors, contexts), UsernamePasswordAuthenticationFilter.class)
                 .exceptionHandling(exceptions -> exceptions.authenticationEntryPoint(entryPoint).accessDeniedHandler(denied));
         return http.build();
     }

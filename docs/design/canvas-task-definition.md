@@ -53,12 +53,6 @@ X6 Shape、Palette 分组、图标和校验结果不属于持久化协议。
 
 Canvas 定义必须是与 AntV X6、Java 类名和未来执行引擎解耦的稳定 JSON。X6 只负责编辑和展示，不得直接持久化 X6 Cell、Shape、Port 或运行时状态。
 
-AI 助手生成任务定义时同样不能直接产生任意 Canvas JSON。助手只提交受限的强类型语义方案，
-由后端 Builder 生成当前 Canvas 4.47 的节点 UUID、边、逻辑表名和布局，并通过本文相同的持久化结构
-校验。提案接受后只替换前端内存画布并触发 dirty 与既有自动编译；最终保存仍使用原任务定义接口。
-AI V1 只生成批任务完整替换方案，不支持自动生成自由 SQL 节点、节点级 Patch、实时任务、发布或执行；
-已人工配置的 `SQL_TRANSFORM` 可正常加载、保存和展示。
-
 ## 2. 核心决策
 
 ### 2.1 一个节点只表达一个动作或一个同类资源集合
@@ -80,7 +74,8 @@ AI V1 只生成批任务完整替换方案，不支持自动生成自由 SQL 节
 - 一个 `SPATIAL_CLIP` 节点只使用一张 Polygon/MultiPolygon Mask 表裁剪一张来源表的一个
   Geometry 字段。
 - 一个 `SPATIAL_AGGREGATE` 节点只对一张有界表执行一次分组或全局空间聚合。
-- 一个 `SPATIAL_JOIN` 节点只使用受控空间谓词执行一次两表 INNER 连接。
+- 一个 `SPATIAL_JOIN` 节点只执行一次两表批处理空间连接；可组合受控拓扑、空间 Near、属性和时间条件，
+  并显式选择 INNER/LEFT 与一对多/一对一结果粒度。
 - 一个 `STREAM_JOIN` 节点只执行一次流式表连接。
 - 一个 `RENAME` 节点只替换一张逻辑表，并原子重命名该表的零到多个字段。
 - 一个 `FILTER` 节点可选择多张逻辑表逐表筛选；每项可使用结构化条件树或受控 SQL 布尔表达式。
@@ -90,7 +85,8 @@ AI V1 只生成批任务完整替换方案，不支持自动生成自由 SQL 节
 - 一个 `DERIVE_COLUMNS` 节点可对多张已选逻辑表应用共享的全局规则和各表独立规则；每张表可原表更新或生成一张新逻辑表。
 - 一个 `TYPE_CAST` 节点只显式转换一张来源表中的一个或多个字段类型。
 - 一个 `AGGREGATE` 节点只对一张来源表执行一次全表或分组聚合。
-- 一个 `UNION` 节点只按字段名纵向合并配置选择的多张逻辑表。
+- 一个 `UNION` 节点纵向合并配置选择的多张逻辑表；可保持严格同 Schema，也可按基准层执行
+  Merge Layers 字段 Match/Rename/Remove 和缺失字段补 NULL。
 - 一个 `DEDUPLICATE` 节点只按全字段或业务键删除一张来源表中的重复行。
 - 一个 `NULL_HANDLING` 节点只按有序规则删除含 NULL 的行或填充 NULL 字段。
 - 一个 `VALUE_MAPPING` 节点只对少量明确原值执行精确、内联的静态映射。
@@ -179,7 +175,7 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输
 ```json
 {
   "schemaVersion": 4,
-  "schemaMinorVersion": 31,
+  "schemaMinorVersion": 77,
   "nodes": [],
   "edges": []
 }
@@ -188,11 +184,31 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `4` |
-| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；当前写出版本为 `47` |
+| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；当前写出版本为 `77` |
 | `nodes` | array | 节点定义，按照前端保存顺序持久化；业务逻辑不得依赖数组顺序 |
 | `edges` | array | 有向边定义，业务逻辑不得依赖数组顺序 |
 
-当前写出版本统一为 `4.47`。`4.0` 将 `MODEL_INPUT`、`FILE_DATASET_INPUT`、`HTTP_API_INPUT` 和
+当前写出版本统一为 `4.77`。`4.77` 为 `SPATIAL_CLIP` 增加可选 `maskCombination`：新建节点默认
+`DISSOLVE_ALL`，对每条来源要素只融合与其相交的 Mask 后裁剪一次，避免重叠 Mask 重复输出覆盖区域；
+缺失/null 保持旧版 `PAIRWISE` 逐条 Mask 裁剪。`4.76` 新增批处理 `SPATIAL_DESCRIBE_DATASET`，在保留来源表的同时输出
+逐字段统计表、数据集描述表，以及可选样本表和 XY Envelope 范围表。节点只构造惰性 Spark 计划，
+真实统计在任务执行时完成；Geometry 可选，但输出范围时必须显式选择 Geometry 字段。`4.75` 新增批处理
+`SPATIAL_SIMILAR_LOCATIONS`，按参考位置与候选位置
+共有的数值属性执行全集标准化，并返回最相似、最不相似或两端候选。首版只接入 GeoAnalytics 的
+属性值与属性轮廓方法；不包含 ArcGIS Pro 的 Ranked、Scale 或 Collapse 扩展。`4.74` 新增批处理 `SNAP_TRACKS`，将有界 XY Point
+轨迹按时间、直接相邻路网拓扑和可选通行方向联合匹配到 XY LineString 网络，输出
+吸附点、匹配线和诊断字段。`4.73` 新增批处理 `TRACE_PROXIMITY_EVENTS`，从显式 ID 或起始表出发，
+按 Point 空间距离、时间距离和可选同值属性向下游逐层传播，输出首次接触事件及可选后续轨迹。
+`4.72` 的 `SPATIAL_GROUP_BY_PROXIMITY` 按空间及可选时间、
+受控属性关系对同一空间表建立无向邻接边并求传递连通组；每个来源要素保留一行并追加组 ID。`4.71`
+新增批处理 `SPATIAL_ENRICH_FROM_GRID`，把已有多变量 Polygon
+格网的显式属性按相交关系回填到有界 XY Point 表，并稳定保留未匹配 Point。`4.70` 新增批处理
+`SPATIAL_MULTI_VARIABLE_GRID`，从多张投影 XY
+Point/Line/Polygon 来源的共同外包范围生成统一方格或六边形，并按变量独立计算最近距离、最近属性和
+关联要素汇总。`4.69` 新增批处理 `SPATIAL_HOT_SPOTS`，从投影 XY Point
+生成完整方格并计算固定距离邻域 Getis-Ord Gi*、双侧显著性与可选 FDR；`4.68` 新增批处理
+`SPATIAL_DENSITY`，从投影 XY Point 生成 Uniform 或 Kernel 方格/六边形矢量密度格网；`4.0` 将
+`MODEL_INPUT`、`FILE_DATASET_INPUT`、`HTTP_API_INPUT` 和
 `SPATIAL_SERVICE_INPUT` 从单资源结构改为有序资源数组；这是破坏性协议变化，所有 `3.x` 定义均不导入、
 不迁移或猜测旧字段语义，必须重新配置后保存。一个 Input 节点的唯一输出端口传递完整表 Map，数组中每个资源产生一张表。
 
@@ -238,7 +254,105 @@ HDBSCAN 可选诊断配置 `hdbscan` 从 `4.45` 引入，包含非活动草稿�
 固定时长枚举 `SpatialDurationUnit.WEEKS` 从 `4.47` 引入；每周固定 604800 秒，包括非活动草稿的固定时长字段，
 低版本返回 `SPATIAL_DURATION_WEEKS_REQUIRE_SCHEMA_VERSION`。已有日历周/日历月年不改变、不触发此门槛；
 完整字段、固定周与日历周区别见[公共时长单位](canvas-spatial-units.md#447-固定时长周与日历周)。
-较低小版本定义继续读取，并在保存和导出时规范化为 `4.47`；
+最近邻 `matching.geodesicGeometryMode=GEOMETRY` 从 `4.48` 引入；缺失/null 按 `POINT_ONLY` 保持旧版仅 Point
+测地语义。显式 GEOMETRY 即使位于 LEGACY_KNN 非活动草稿中也要求 4.48，低版本返回
+`SPATIAL_NEAREST_GEODESIC_GEOMETRY_REQUIRE_SCHEMA_VERSION`。
+Geometry Buffer 可选 `distanceUnit` 从 `4.49` 引入；缺失/null 保持旧版 PLANAR 使用来源 CRS 单位、
+SPHEROID 使用米的语义。显式单位低版本返回 `GEOMETRY_BUFFER_UNIT_REQUIRE_SCHEMA_VERSION`。
+空间测量中 AREA/LENGTH/PERIMETER/DISTANCE 的可选 `outputUnit` 从 `4.50` 引入；缺失/null
+保持旧版 PLANAR 来源 CRS 单位（面积为平方）、SPHEROID 米/平方米结果。显式单位低版本返回
+`SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION`。
+空间裁剪可选 `geometryPolicy` 从 `4.51` 引入；`SOURCE_FAMILY_2D` 只保留来源点/线/面家族并
+规范化为二维 Multi，`LEGACY_ANY_DIMENSION` 及缺失/null 保持旧版通用 Geometry 结果。
+显式策略低版本返回 `SPATIAL_CLIP_GEOMETRY_POLICY_REQUIRE_SCHEMA_VERSION`。
+Geometry Buffer 可选 `distanceSource/distanceFieldName/distanceExpression` 从 `4.52` 引入；
+缺失/null 来源保持旧版固定 `distance` 语义，FIELD 和 EXPRESSION 分别逐行读取数值字段或受控确定性
+Spark 数值表达式。任一新增字段的非 null 值（包括非活动草稿）在低版本返回
+`GEOMETRY_BUFFER_DISTANCE_SOURCE_REQUIRE_SCHEMA_VERSION`。
+空间聚合可选 `dissolve` 从 `4.53` 引入；非 null 对象（包括 `enabled=false` 的非活动草稿）
+在低版本返回 `SPATIAL_AGGREGATE_DISSOLVE_REQUIRE_SCHEMA_VERSION`。启用时要求恰好一个 UNION；
+空分组对应 Create Buffers Dissolve All，非空分组对应 List，并可配置来源要素计数、九种标量统计和
+Multipart/Singlepart 输出。
+`dissolve.groupingMode` 从 `4.61` 引入；缺失/null 保持上述 All/List 语义。显式
+`CONNECTED_COMPONENTS` 只允许空分组和 Polygon/MultiPolygon，并按相交、重叠或接触关系的传递闭包
+分别融合；低版本返回 `SPATIAL_DISSOLVE_GROUPING_MODE_REQUIRE_SCHEMA_VERSION`。
+`UNION.mergingTables` 从 `4.62` 引入；缺失/null 保持严格同 Schema Union，空数组启用默认
+Merge Layers 对齐，非空数组只保存需要覆盖默认行为的合并层字段规则。低版本携带非 null 值时返回
+`UNION_MERGE_LAYERS_REQUIRE_SCHEMA_VERSION`。
+事件检测 `conditionWindows[i].source=TRACK_DISTANCE` 从 `4.63` 引入；缺失/null/FIELD 保持
+4.46 的原始字段窗口语义。轨迹距离来源按 WGS84 测地线计算各 Point 自当前片段首观测起的累计距离，
+再按左闭右开观测范围聚合，单位固定为米。低版本返回
+`TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION`。
+事件检测 `conditionWindows[i].source=TRACK_SPEED` 从 `4.64` 引入；按同一左闭右开范围聚合逐观测
+WGS84 速度，单位固定为米/秒。片段首观测速度为 0，后续速度使用前一观测到当前观测的测地距离与时间差；
+低版本返回 `TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION`。
+事件检测 `conditionWindows[i].source=TRACK_ACCELERATION` 从 `4.65` 引入；按同一范围聚合逐观测
+加速度，单位固定为米/秒²。片段首观测加速度为 0，后续值使用当前与前一观测速度差及时间差；低版本返回
+`TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION`。
+事件检测非空 `conditionScalars` 从 `4.66` 引入；每项绑定 TRACK_START_TIME、TRACK_DURATION、
+TRACK_CURRENT_TIME 或 TRACK_INDEX 之一，四种结果均为 LONG。开始/当前时间使用 Unix Epoch 毫秒，
+持续时间使用毫秒，观测序号从 0 开始，并在当前 DataScalpel 轨迹片段边界重置。低版本返回
+`TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION`。
+事件检测 `conditionScalars[i].source=TRACK_POINT_X_AT|TRACK_POINT_Y_AT` 从 `4.67` 引入；
+必填有符号 32 位整数 `offset`，0/负数/正数分别表示当前/过去/未来观测。只读取当前
+轨迹片段内带完整元数据的 Point X/Y，越界或 Geometry 为 NULL 时返回 NULL；结果为
+可空 DOUBLE，单位跟随来源 CRS，不做投影换算。非坐标来源忽略但保留隐藏 `offset`。
+低版本返回 `TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION`。
+`SPATIAL_HOT_SPOTS` 从 `4.69` 引入；低版本不能携带该节点。节点以投影 XY Point、规则方格和固定距离
+二元邻域计算 Getis-Ord Gi*，输出原始双侧 p-value、可选 Benjamini-Hochberg 调整值和 `-3..3`
+置信分级。默认分析方格点数，显式 `FIELD_SUM` 是平台扩展；可选时间切片按片独立计算统计与多重检验。
+`SPATIAL_MULTI_VARIABLE_GRID` 从 `4.70` 引入；低版本不能携带该节点。节点以所有变量来源 Geometry
+的共同未筛选外包范围生成统一方格或六边形，各变量独立选择来源、筛选和可选搜索距离，并输出最近距离、
+最近属性或关联要素汇总；最多 32 个变量和 100 万格。
+`SPATIAL_ENRICH_FROM_GRID` 从 `4.71` 引入；低版本不能携带该节点。节点接收有界 XY Point 和已有
+XY Polygon 多变量格网，按相交回填显式选择的标量字段；未匹配 Point 保留，边界多格命中按格网 ID
+确定性选择一格。
+`SPATIAL_GROUP_BY_PROXIMITY` 从 `4.72` 引入；低版本不能携带该节点。节点接收一张有界 XY
+Point/Line/Polygon 表，支持 Intersects、Touches、Near Planar/Geodesic 及可选时间 Intersects/Near、
+受控同值/绝对差属性关系，并通过 Connected Components 输出传递连通组。
+`TRACE_PROXIMITY_EVENTS` 从 `4.73` 引入；低版本不能携带该节点。节点接收一张有界、带时间和
+STRING 实体 ID 的 XY Point 观测表，支持显式起始 ID 或另一张起始表。空间、时间和同值属性全部
+满足时形成接触，按最大深度输出每个下游实体首次追踪事件及可选后续轨迹。
+`SNAP_TRACKS` 从 `4.74` 引入；低版本不能携带该节点。节点接收有界 XY Point
+观测表和有界 XY LineString 网络表，按轨迹时间次序使用 Viterbi 联合选择搜索距离内的
+道路候选，并验证同线或共享端点的直接相邻转移及可选方向。首版不搜索无观测的多条中间道路。
+`SPATIAL_SIMILAR_LOCATIONS` 从 `4.75` 引入；低版本不能携带该节点。节点接收参考位置表与候选位置表，
+按 1～32 个同名同数值类型字段形成参考目标并排名。属性值使用标准化平方差之和；属性轮廓使用
+`1 - cosine`，因此 `cosimindex=0` 表示最相似。完整契约见
+[查找相似位置](canvas-spatial-next-processors/spatial-similar-locations.md)。
+`SPATIAL_DESCRIBE_DATASET` 从 `4.76` 引入；低版本不能携带该节点。节点接收一张有界表，保留全部
+入口表，并依次追加字段统计表、数据集描述表、可选样本表和可选范围表。逐字段统计跳过 Geometry/Binary；
+范围表是所选非空 Geometry 的共同 XY Envelope Polygon，继承 CRS 并固定为 XY。完整契约见
+[描述数据集](canvas-spatial-next-processors/spatial-describe-dataset.md)。
+空间裁剪可选 `maskCombination` 从 `4.77` 引入。`DISSOLVE_ALL` 使用空间 INNER Join 为每条来源要素
+定位相交 Mask，以计划内来源行 ID 分组执行 `ST_Union_Agg`，再对来源执行一次 Intersection；重叠覆盖
+不会重复输出，分离片段保留在同一个 Multi Geometry 中。`PAIRWISE` 及缺失/null 保持旧版逐 Mask
+输出。任意非 null 值在低版本返回 `SPATIAL_CLIP_MASK_COMBINATION_REQUIRE_SCHEMA_VERSION`。
+空间连接可选 `outputColumns` 从 `4.54` 引入；缺失/null 保持旧版左表全部字段后接右表全部字段，
+且左右字段同名时拒绝。显式数组按来源侧选择、排除、改名和排序字段；空数组是可保存草稿，Compiler
+返回 `JOIN_OUTPUT_COLUMNS_REQUIRED`。任何非 null 数组在低版本返回
+`SPATIAL_JOIN_OUTPUT_COLUMNS_REQUIRE_SCHEMA_VERSION`。
+空间连接可选 `attributeConditions` 从 `4.55` 引入；缺失/null 保持仅空间条件语义，非 null 数组
+最多 8 项并与所有空间条件按 AND 组合。低版本返回
+`SPATIAL_JOIN_ATTRIBUTE_CONDITIONS_REQUIRE_SCHEMA_VERSION`。
+空间连接 `joinType=LEFT` 从 `4.56` 引入，表示保留全部左侧目标要素；未匹配记录的右侧投影字段为
+NULL。`INNER` 保持旧结果，`RIGHT/FULL` 仍不支持。低版本返回
+`SPATIAL_JOIN_KEEP_ALL_REQUIRE_SCHEMA_VERSION`。
+空间连接可选 `joinOperation` 从 `4.57` 引入；`JOIN_ONE_TO_MANY` 表示同一目标要素命中多条连接记录时
+输出全部匹配组合。缺失/null 保持既有一对多行为；显式值在低版本返回
+`SPATIAL_JOIN_OPERATION_REQUIRE_SCHEMA_VERSION`。Canvas 4.58 起可选择 `JOIN_ONE_TO_ONE` 并通过
+`oneToOne` 配置汇总全部匹配项或确定性保留一项；一对一及任何非 null `oneToOne` 草稿在低版本返回
+`SPATIAL_JOIN_ONE_TO_ONE_REQUIRE_SCHEMA_VERSION`。
+空间连接可选 `temporalCondition` 从 `4.59` 引入；缺失/null 保持不按时间匹配，非 null 对象（包括
+未完成草稿）与全部空间、属性条件按 AND 组合。每侧用开始字段与可选结束字段表达瞬时或闭区间，支持
+15 种有方向时间关系；任何非 null 对象在低版本返回
+`SPATIAL_JOIN_TEMPORAL_CONDITION_REQUIRE_SCHEMA_VERSION`。
+空间连接可选 `spatialNear` 与 `distanceOutput` 从 `4.60` 引入。`spatialNear` 可单独作为空间条件，
+也可与拓扑、属性和时间条件按 AND 组合；`PLANAR` 在来源 CRS 中判断，`GEODESIC` 仅接受
+EPSG:4326 XY 并使用 Geometry 真实最近位置。`distanceOutput.enabled=true` 仅支持一对多，可分别输出
+空间距离和时间 Near 的区间间隔。任一非 null 对象在低版本返回
+`SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION`。
+较低小版本定义继续读取，并在保存和导出时规范化为 `4.77`；
 标记为低于引入版本却携带对应能力的定义必须拒绝，
 不能因为升级而猜测其语义。
 
@@ -451,7 +565,7 @@ interface JdbcQueryInputConfiguration {
 }
 ```
 
-SQL 最大 100,000 字符，只接受 PostgreSQL/MySQL 的单条 `SELECT` 或 `WITH ... SELECT`。不支持模板变量、运行参数、Session 配置、预览和并行分区读取。Hash 使用去除可选终止分号并 trim 后的 UTF-8 SQL 计算，固定为 64 位小写 SHA-256。
+SQL 最大 100,000 字符，只接受 PostgreSQL/HighGo/MySQL/openGauss/人大金仓的单条 `SELECT` 或 `WITH ... SELECT`。不支持模板变量、运行参数、Session 配置、预览和并行分区读取。Hash 使用去除可选终止分号并 trim 后的 UTF-8 SQL 计算，固定为 64 位小写 SHA-256。
 
 ### 5A.2 输入、输出与运行语义
 
@@ -466,7 +580,7 @@ SQL 最大 100,000 字符，只接受 PostgreSQL/MySQL 的单条 `SELECT` 或 `W
 
 ### 5A.3 分析与校验
 
-- `dataSourceId` 必须是已启用、具有 `SOURCE` 用途的 PostgreSQL 或 MySQL 数据源。
+- `dataSourceId` 必须是已启用、具有 `SOURCE` 用途的 PostgreSQL、HighGo、MySQL、openGauss 或人大金仓数据源。
 - `outputTableName` 必填，且不得与当前表 Map 中已有名称冲突。
 - 用户必须通过查询分析接口显式生成 Hash 与字段快照；编辑 SQL 不自动访问数据库。
 - `outputColumns` 至少一项，字段名称精确匹配且不重复；类型参数必须完整合法。
@@ -552,6 +666,20 @@ interface HttpApiInputConfiguration {
       "sourceSide": "RIGHT",
       "sourceColumnName": "id",
       "outputColumnName": "customers_id",
+      "included": true
+    }
+  ],
+  "outputColumns": [
+    {
+      "sourceSide": "LEFT",
+      "sourceColumnName": "id",
+      "outputColumnName": "id",
+      "included": true
+    },
+    {
+      "sourceSide": "RIGHT",
+      "sourceColumnName": "id",
+      "outputColumnName": "regions_id",
       "included": true
     }
   ]
@@ -732,17 +860,87 @@ Join 类型对可空性的影响：
       "predicate": "WITHIN",
       "rightGeometryColumnName": "boundary"
     }
-  ]
+  ],
+  "attributeConditions": [
+    {
+      "leftColumnName": "tenant_id",
+      "operator": "EQUALS",
+      "rightColumnName": "tenant_id"
+    }
+  ],
+  "temporalCondition": {
+    "relationship": "NEAR_BEFORE",
+    "leftStartColumnName": "ordered_at",
+    "leftEndColumnName": null,
+    "rightStartColumnName": "valid_from",
+    "rightEndColumnName": "valid_to",
+    "nearDistance": 15,
+    "nearDistanceUnit": "MINUTES"
+  },
+  "spatialNear": {
+    "leftGeometryColumnName": "location",
+    "rightGeometryColumnName": "boundary",
+    "distanceMethod": "GEODESIC",
+    "distance": 2,
+    "distanceUnit": "KILOMETERS"
+  },
+  "distanceOutput": {
+    "enabled": true,
+    "spatialDistanceColumnName": "join_distance_km",
+    "spatialDistanceUnit": "KILOMETERS",
+    "temporalDifferenceColumnName": "join_time_gap_minutes",
+    "temporalDifferenceUnit": "MINUTES"
+  },
+  "joinOperation": "JOIN_ONE_TO_MANY"
 }
 ```
 
 - 类别为 `PROCESSOR`，执行模式为 `BATCH`，协议引入版本为 `1.20`。
-- 至少一条入边；允许没有出边，左右表从合并后的表 Map 选择，第一阶段只支持 `INNER`。
-- 条件数量为 `1..8`，多条件固定使用 `AND`，重复条件被拒绝。
+- 至少一条入边；允许没有出边，左右表从合并后的表 Map 选择。左表是目标要素，右表是连接要素；
+  支持 `INNER`，Canvas 4.56 起支持 `LEFT`。
+- 拓扑条件数量为 `0..8`，多条件固定使用 `AND`，重复条件被拒绝；`conditions` 与 `spatialNear`
+  至少配置一种。
 - 谓词支持 `INTERSECTS/CONTAINS/WITHIN/COVERS/COVERED_BY/TOUCHES/OVERLAPS/CROSSES/EQUALS`。
 - 两侧字段必须是 Geometry 且 CRS、dimension 完全一致；不执行隐式 CRS 转换。
-- 输出字段顺序为左表后接右表；同名字段返回 `DUPLICATE_COLUMN_NAME`。
-- 不支持 `DISJOINT`、`DWITHIN`、外连接和任意表达式。
+- Canvas 4.55 的可选 `attributeConditions` 最多 8 项，复用普通 Join 的字段等值条件；每项左右字段
+  必须存在且不能是 Geometry，使用 Spark SQL 普通等号，因此任一侧 NULL 都不匹配。属性条件与全部
+  空间条件固定按 `AND` 组合，字段类型能否比较由 Spark Analyzer 判断，不另建平台类型白名单。
+- 缺失/null `attributeConditions` 保持旧空间连接；非 null 空数组表示显式不增加属性条件。纯属性连接
+  继续使用 `JOIN`，不会为 ArcGIS 工具名重复建设第二套普通 Join。
+- Canvas 4.59 的可选 `temporalCondition` 支持 `EQUALS/INTERSECTS/DURING/CONTAINS/FINISHES/
+  FINISHED_BY/MEETS/MET_BY/OVERLAPS/OVERLAPPED_BY/STARTS/STARTED_BY/NEAR/NEAR_BEFORE/NEAR_AFTER`。
+  左侧是目标要素、右侧是连接要素；每侧必填开始/瞬时时间字段，可选结束字段，结束字段为 null 时按瞬时
+  处理。全部字段必须同为 `DATE`、`TIMESTAMP` 或 `TIMESTAMP_NTZ`，区间按闭区间解释。
+- `NEAR/NEAR_BEFORE/NEAR_AFTER` 使用正整数固定时长，单位支持毫秒、秒、分钟、小时、固定 24 小时日和
+  固定 7 日周；时间关系与全部空间及属性条件按 AND 组合。时间为 NULL 或任一侧开始晚于结束的记录
+  不匹配；LEFT 下仍保留该目标记录，右侧投影为 NULL。Compiler 只构造惰性计划，不读取真实时间值。
+- Canvas 4.60 的可选 `spatialNear` 独立于拓扑谓词。`PLANAR` 使用来源 CRS 的二维距离；
+  `GEODESIC` 仅支持 EPSG:4326 XY 的 Point、MultiPoint、LineString、MultiLineString、Polygon 和
+  MultiPolygon，并使用 Geometry 真实最近位置的 WGS84 椭球距离，不使用质心或 Sedona 非点球面近似。
+  GEODESIC 先以 ECEF XY 包围和独立 Z 区间执行保守候选召回，再以真实测地距离作最终包含边界的阈值判断；
+  候选索引只允许假阳性，不决定结果。NULL、Empty 和无效 Geometry 不匹配或以稳定运行错误失败。
+- `distanceOutput.enabled=true` 只允许 `JOIN_ONE_TO_MANY`。空间 Near 输出空间距离；时间
+  `NEAR/NEAR_BEFORE/NEAR_AFTER` 输出两个闭区间的非负间隔，相交时为 0；两种 Near 同时启用时输出
+  两个独立字段。字段类型统一为 `DECIMAL(38,12)`，LEFT 未匹配记录为 NULL。空间和时间输出单位分别
+  独立配置；GEODESIC 不允许来源 CRS 单位。
+- `INNER` 只保留匹配目标；`LEFT` 对应 Join Features 的 Keep all target features，保留全部左表记录，
+  未匹配记录的右侧投影字段为 NULL。一个目标命中多个右表记录时仍逐组合输出，不聚合或去重。
+- Canvas 4.57 的可选 `joinOperation` 可将结果粒度显式声明为 `JOIN_ONE_TO_MANY`。缺失/null 与该值
+  语义相同，均输出全部匹配组合。
+- Canvas 4.58 的 `JOIN_ONE_TO_ONE` 要求 `oneToOne`：`SUMMARIZE_MATCHES` 只直接投影左侧目标字段，
+  追加 Join Count 和至多 32 项右表数值统计；`SUM/MIN/MAX/MEAN/STDDEV` 忽略 NULL，STDDEV 为样本标准差。
+  LEFT 未匹配目标的 Join Count 为 0、统计为 NULL。
+- `KEEP_ONE` 可选择 FIRST、数值最大/最小或日期最新/最旧。FIRST 完全按右表 `stableOrder` 取首项；
+  其他策略先按主字段排序，再以 `stableOrder` 消除并列。稳定顺序至少一项、不能使用 Geometry；完整排序
+  仍并列时运行失败，不依赖 Spark 输入或分区顺序。
+- Canvas 4.54 的 `outputColumns` 复用 Join 字段投影：来源侧与字段必须存在且不能重复，至少启用一项，
+  启用后的最终名称按大小写不敏感规则唯一；结果字段严格按照数组顺序执行限定来源的 `select + alias`。
+- 新建议保持左表字段原名；右表字段与左表重名时使用`右表完整逻辑表名_字段名`。建议后仍重名时不追加
+  隐藏序号，由用户排除或改名。
+- 缺失/null `outputColumns` 保持 4.53 及更早的旧行为：左表全部字段后接右表全部字段，同名字段返回
+  `DUPLICATE_COLUMN_NAME`，不会因读取旧定义而自动改名。
+- 不支持 `DISJOINT`、`DWITHIN`、`RIGHT/FULL`、任意表达式或隐藏拓扑容差；空间 Near 必须通过
+  `spatialNear` 显式配置，时间 Near 仍由 `temporalCondition` 独立表达。
 
 ## 7.7 `GEOMETRY_CONSTRUCT` 节点
 
@@ -775,6 +973,9 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 - 类别为 `PROCESSOR`，支持 `BATCH/STREAMING`，协议引入版本为 `1.21`。
 - PLANAR 使用 CRS 坐标单位或平方；EPSG:4326 产生角度单位 Warning。
 - SPHEROID 只接受 EPSG:4326，长度/周长/距离输出米，面积输出平方米。
+- 4.50 可为 AREA 显式选择公共面积单位，为 LENGTH/PERIMETER/DISTANCE 显式选择公共距离单位；
+  投影 PLANAR 按 CRS 轴单位可靠换算，地理 PLANAR 不把角度/角度平方近似成米制结果。
+- 缺失/null `outputUnit` 保持旧结果；SPHEROID 不接受 `SOURCE_CRS_UNIT`。
 - AREA/PERIMETER 只接受 Polygon/MultiPolygon，LENGTH 只接受
   LineString/MultiLineString，X/Y 只接受 Point。
 - DISTANCE 两侧 dimension 必须一致；PLANAR 还要求 CRS 完全一致。
@@ -804,7 +1005,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 
 ## 7.12 `GEOMETRY_DERIVE` 节点
 
-以下引入于 4.9～4.20 的节点描述当前协议/实现（含明确标记的 4.21～4.47 可选能力），不是 ArcGIS 能力完成声明。
+以下引入于 4.9～4.20 的节点描述当前协议/实现（含明确标记的 4.21～4.60 可选能力），不是 ArcGIS 能力完成声明。
 [空间分析审计路线图](canvas-spatial-analysis-processor-roadmap.md)及各节点 MD 同时记录当前配置、
 目标参数/UI、实质差距与验收条件；目标字段不能直接用于当前定义。
 
@@ -849,17 +1050,24 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
 - 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.11`。
 - 从合并后的入口表 Map 选择来源表和候选表，支持 Top N、最大距离、平面/测地线方法、距离单位和
   显式字段投影；结果始终生成新逻辑表。
-- 参照 Enterprise 标准 Find Nearest 的部分距离能力，非 GA Server 同名工具；非点测地最近位置和路网结果尚未实现。
-- 4.30 可选 `matching: { semantics: EXACT_DISTANCE|LEGACY_KNN|null, sourceIdColumnName, connectionLines }`。
+- 参照 Enterprise 标准 Find Nearest 的部分距离能力，非 GA Server 同名工具；路网结果尚未实现。
+- 4.30 可选 `matching: { semantics: EXACT_DISTANCE|LEGACY_KNN|null, sourceIdColumnName, connectionLines, geodesicGeometryMode? }`。
   matching 缺失/null 及显式 LEGACY_KNN 保持原语义；对象存在且 semantics 缺失/null 表示 EXACT_DISTANCE。
   任何显式 matching 对象（含旧版/非活动设置）低于 4.30 均以 `SPATIAL_NEAREST_MATCHING_REQUIRE_SCHEMA_VERSION` 拒绝。
-- 真实距离策略：PLANAR 支持有效 XY 几何最近位置；GEODESIC 暂仅支持 WGS84 XY Point，已知非点类型以 `GEODESIC_NEAREST_REQUIRES_POINTS` 拒绝，通用 Geometry 在惰性执行时检查。
+- 真实距离策略：PLANAR 支持有效 XY 几何最近位置；GEODESIC 要求 WGS84 XY。缺失/null
+  `geodesicGeometryMode` 按 POINT_ONLY 保持旧版，仅 Point；4.48 显式 GEOMETRY 支持 Point/MultiPoint/
+  LineString/MultiLineString/Polygon/MultiPolygon，GeometryCollection 拒绝，通用 Geometry 在惰性执行时检查。
   来源/候选身份字段在读取计划内验证非空与唯一，分别返回 `SPATIAL_NEAREST_SOURCE_ID_INVALID` / `SPATIAL_NEAREST_CANDIDATE_ID_INVALID`；不在编译阶段扫描数据。
-- 有半径时使用半径候选和真实距离筛选；无半径时用 KNN 取得距离上界，再恢复半径内所有候选，最终按真实距离、候选 ID 排名。
+- 测地真实距离的候选使用 ECEF 三轴保守包围：XY 空间 Join 加 Z 区间不会排除真实范围内候选，
+  但 ECEF 距离不作为结果。有半径时按该半径召回后用真实距离筛选；无半径时用二维 KNN 只取得真实 WGS84
+  距离上界，再以三轴包围恢复上界内所有候选；二维种子不是最终候选判定。平面模式沿用来源 CRS 空间候选。
+  测地距离、上下界和两端实际位置来自同一内部 Struct；半径跨越未决区间时安全失败，Top N 前缀只有在区间顺序
+  可证明时才返回。Point 距离为确定数值；非点区间若不能证明排序或半径侧则安全失败。
   同位置不同来源保持独立；距离列为 DECIMAL(38,12)，排名使用未舍入距离。无半径有中间结果规模 Warning，不保证无限规模。
 - 可选 `connectionLines: { enabled, outputTableName, geometryColumnName, maximumGeodesicSegmentLength, maximumGeodesicSegmentLengthUnit }`。
   启用后追加独立 BOUNDED 表，保留匹配投影/距离/排名，再增加 XY MultiLineString；未命中不生成线。
-  平面端点是几何最近位置；测地点使用真实 WGS84 椭球加密与日期线切分，段长为显式线性单位，单线最多 100 万顶点。
+  平面端点是几何最近位置；测地端点直接复用距离 Struct 的同一位置对，再做 WGS84 椭球加密与日期线切分，
+  不从原 Geometry 二次求解。段长为显式线性单位，单线最多 100 万顶点。
   两表派生于同一惰性匹配关系，不承诺不同 Output Action 只计算一次，不自动缓存或提供跨表事务。
 - `SPATIAL_NEAREST_GEOMETRY_INVALID`、`SPATIAL_NEAREST_DISTANCE_INVALID` 及身份/类型错误为安全 SCHEMA 非重试错误；
   `SPATIAL_NEAREST_CONNECTION_VERTEX_LIMIT_EXCEEDED` 为 CONFIGURATION 非重试错误。摘要不包含坐标或实际数据值。
@@ -1004,7 +1212,7 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
   `TRACK_OBSERVATION_ORDER_NOT_UNIQUE`。无时间观测被排除；编译只构造惰性校验计划，不真实读取。
 - 4.46 可选 `conditionWindows: TrackIncidentWindow[]`，缺失/null 规范化为空数组。
   每项为 `{ bindingName: string, sourceColumnName: string, kind: COUNT|SUM|MEAN|MIN|MAX|FIRST|LAST|STDDEV_POP|VARIANCE_POP|null,
-  startOffset: integer|null, endOffset: integer|null }`。仅 CONDITION_LIFECYCLE 计算，LEGACY 保留但不执行。
+  startOffset: integer|null, endOffset: integer|null, source?: FIELD|TRACK_DISTANCE|TRACK_SPEED|TRACK_ACCELERATION|null }`。仅 CONDITION_LIFECYCLE 计算，LEGACY 保留但不执行。
   任意非空数组（含非活动草稿）低于 4.46 使用 `TRACK_INCIDENT_WINDOWS_REQUIRE_SCHEMA_VERSION` 拒绝；节点引入版本不变。
   指标按轨迹片段及确定次序，从入口原字段一次性生成，不相互依赖。偏移采用左闭右开 `[startOffset,endOffset)`，
   0 为当前、负数为过去、正数为未来；`[-5,0)` 只取前 5 条，边缘裁剪到实际观测。
@@ -1014,6 +1222,32 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
   COUNT 为字段非空计数，FIRST/LAST 保留首末 NULL；其余聚合忽略 NULL。空窗 COUNT=0，其余 NULL；方差/标准差为总体统计。
   类型由 Spark Analyzer 决定，不在前端传播推测 Schema；Inspector 中指标候选仅供节点内条件值编辑。
   指标不输出、不形成独立来源资产；原字段和有界新表语义不变。详见[事件窗口设计](canvas-spatial-next-processors/track-detect-incidents.md#8-446-受控字段窗口条件)。
+- 4.63 的 `source=TRACK_DISTANCE` 复用同一组聚合函数。它对 `[startOffset,endOffset)` 中实际存在的
+  逐观测累计轨迹距离求值。当前片段首观测累计值为 0；官方 `[-1,2)` 示例的 `[0,60,140]` 表示三个
+  观测的累计距离，不是两段长度。边缘自然裁剪，且不跨轨迹或已拆分片段。距离固定使用 EPSG:4326 XY
+  Point 的测地线米，不读取 `distanceMethod`，也不在摘要中记录坐标。NULL Point 使该观测及本片段后续
+  无法证明完整累计值的观测返回 NULL。缺失/null/FIELD 继续聚合 `sourceColumnName`，任意非活动
+  TRACK_DISTANCE 草稿同样要求 4.63。
+- 4.64 的 `source=TRACK_SPEED` 也复用同一组聚合函数，并对相同的逐观测范围求值。片段首观测速度按
+  官方示例为 0；后续值为上一观测到当前观测的 WGS84 测地距离除以时间差，固定使用米/秒。同时间、
+  NULL Point 或前一点缺失时返回 NULL，不除以 0、不跨轨迹或片段，也不读取 `distanceMethod`。任意非活动
+  TRACK_SPEED 草稿同样要求 4.64。
+- 4.65 的 `source=TRACK_ACCELERATION` 继续复用同一组聚合函数。片段首观测加速度按官方示例为 0；
+  后续值为当前速度与前一观测速度之差除以时间差，固定使用米/秒²。同时间、当前或前一速度为 NULL 时
+  返回 NULL，不跨轨迹或片段。任意非活动 TRACK_ACCELERATION 草稿同样要求 4.65。
+- 4.66 可选 `conditionScalars: TrackIncidentScalar[]`，缺失/null 规范化为空数组。4.66 每项为
+  `{ bindingName: string, source: TRACK_START_TIME|TRACK_DURATION|TRACK_CURRENT_TIME|TRACK_INDEX|null, offset?: integer|null }`。
+  四项分别对应官方 TrackStartTime、TrackDuration、TrackCurrentTime 和 TrackIndex；开始/当前时间是
+  Unix Epoch 毫秒，时长是片段起点至当前观测的毫秒数，序号从 0 开始。它们按当前轨迹和既有固定边界/gap
+  片段重置，统一作为 LONG 临时字段，仅供条件引用，不进入输出。名称与原字段、窗口指标和其他标量
+  大小写不敏感唯一；非空数组（包括 LEGACY 非活动草稿）要求 4.66。
+- 4.67 在同一数组增加 `TRACK_POINT_X_AT|TRACK_POINT_Y_AT`。两种来源必须配置
+  `offset`；0 为当前、负数为过去、正数为未来观测，超出当前 DataScalpel 轨迹片段或
+  Geometry 为 NULL 时返回 NULL。必须选择带完整元数据的 Point，坐标为可空 DOUBLE，
+  数值和单位跟随来源 CRS，不限 WGS84。非坐标来源忽略但保留草稿 `offset`。
+  任意坐标来源（包括 LEGACY 非活动草稿）要求 4.67。
+- Distance/Speed/Acceleration 的 Current 等价于对应来源的 `FIRST + [0,1)`，At(n) 等价于
+  `FIRST + [n,n+1)`；Inspector 帮助直接说明该配置，不为等价表达新增协议类型。
 - 四类轨迹节点的 `boundaries.fixedTimeBoundary` 是可选对象：`interval: integer|null`、
   `unit: MILLISECONDS|SECONDS|MINUTES|HOURS|DAYS|WEEKS|MONTHS|YEARS|null`、
   `referenceTime: string|null`、`timeZone: string|null`。缺失/null 不启用，未完成对象允许保存草稿。
@@ -1022,7 +1256,10 @@ STRING。原因仅在 Geometry 无效时写入；有效或 NULL 输入的原因�
   无偏移量参考时间按 IANA 时区解释；夏令时不存在或歧义本地时间拒绝，须填写明确偏移量。
   固定边界与相邻 gap 独立、任一满足即拆分，无时间观测排除；不自动补充空片段。
 - 上述可选能力要求 4.21；旧小版本不能携带非空新能力，未启用时保持旧语义。
-  Manifest、Result 与 HTTP API 不升级。4.46 已接入受控字段窗口；完整 Arcade 几何/运动/时间表达式及真实 ArcGIS 对照仍在待办清单。
+  Manifest、Result 与 HTTP API 不升级。4.46 已接入受控原始字段窗口，4.63～4.65 已接入累计距离、
+  逐观测速度和逐观测加速度窗口，4.66 已接入四种轨迹时间/序号标量，4.67 已接入 Point 相对观测 X/Y 标量。
+  剩余差距是返回复合对象的 Geometry/TrackWindow、整行对象、更丰富的受控表达式，以及真实 ArcGIS 服务对照；不能把这些能力解释为已经
+  支持任意 Arcade。
 - 详细配置分别见[轨迹重建](canvas-spatial-next-processors/track-reconstruct.md)、
   [运动统计](canvas-spatial-next-processors/track-motion-statistics.md)、
   [查找驻留](canvas-spatial-next-processors/track-find-dwell.md)和
@@ -1158,14 +1395,191 @@ interface SpatialHdbscanOptions {
 - 标准距离为平台扩展，不是 GA 同名工具的第五种分析。平均/中位/椭圆时间输出、完整 interval 元数据、官方椭圆加权公式对照与真实规模验收仍未完成；当前不冒称完整 GA 对齐。
 - 完整语义见 [中心与离散统计设计](canvas-spatial-next-processors/spatial-center-dispersion.md)。
 
+## 7.13K `SPATIAL_DENSITY` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.68`；至少一条入边，允许没有出边。
+- 输入必须是带完整 CRS 元数据的投影 XY Point。NULL/Empty Point 不参与；节点始终生成新
+  `BOUNDED` 逻辑表并按配置名追加到入口表 Map，来源表及其他表保持不变。
+- `weighting` 为 `UNIFORM` 或 `KERNEL`。Uniform 对半径内每个点使用
+  `quantity / (πr²)`；Kernel 使用四次核
+  `3 / (πr²) × (1 - d²/r²)² × quantity`，只计算格网中心到点的距离不超过半径的贡献。
+  点数密度始终输出；`fields` 最多 32 个数值数量字段，NULL 数值贡献 0，非有限实际数值安全失败。
+- `binShape` 为 `SQUARE/HEXAGON`；方格大小是边长，六边形大小是对边距离。格网固定对齐
+  `(0, 0)`，只输出有贡献的格网，不生成空格网或 H3。搜索半径换算后必须严格大于格网大小，
+  半径/大小最多为 512。
+- `binSize/radius` 使用独立线性单位并可靠换算到来源 CRS 轴单位；`areaUnit` 只换算密度结果。
+  地理 CRS、不可解析或非线性轴单位在编译期拒绝。
+- 可选 `temporalSlicing` 复用空间汇总的左闭右开固定/日历窗口；NULL 时间或窗口间隙中的点不参与。
+  输出顺序固定为格网 ID、Polygon Geometry、可选窗口起止、点数密度和 `fields` 定义顺序。
+- Compiler 只构造零行/惰性 Spark 计划，不读取真实点数据。Runner 摘要只记录表名、方法、形状、
+  数量字段数和是否切片，不记录半径、数量值或时间内容。
+- 当前公式是 DataScalpel 的确定性平台实现；尚未与真实 ArcGIS Enterprise 作业做逐格网数值、
+  边缘和规模对照，不宣称与 Esri 内部 Kernel 实现完全数值等价。完整设计见
+  [Calculate Density](canvas-spatial-next-processors/spatial-density.md)。
+
+## 7.13L `SPATIAL_HOT_SPOTS` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.69`；至少一条入边，允许没有出边。
+- 输入必须是带完整 CRS 元数据的投影 XY Point。NULL/Empty Point 不参与；节点始终生成新的
+  `BOUNDED` 逻辑表并追加到入口表 Map，来源表及其他表保持不变。
+- 默认 `analysisSource=POINT_COUNT`，使用每格点数计算 Gi*；`FIELD_SUM` 是显式平台扩展，先按格网
+  求和一个数值字段，NULL 贡献 0，实际非有限值安全失败。两种模式均输出点数和最终分析值。
+- `binSize` 是固定原点 `(0, 0)` 方格的边长。分析范围为有效点外包矩形覆盖的完整方格，包含零值格；
+  总格数连同所有时间片最多 1,000,000。
+- `neighborhoodDistance` 以方格中心距离定义二元权重并包含当前格；换算后必须严格大于方格边长，
+  与边长之比最多为 64。两种距离单位分别换算到来源投影 CRS 第一轴单位；地理 CRS 不支持。
+- 每个时间片独立计算 Getis-Ord Gi*。原始双侧 p-value 始终输出；`NONE` 直接分级，`FDR_BH`
+  使用片内 Benjamini-Hochberg 调整值分级。置信分级为 `-3..3`，符号表示冷/热点，绝对值表示
+  90%、95%、99% 三档显著性；退化总体固定输出 `z=0/p=1/bin=0`。
+- 输出顺序为格网 ID、Polygon Geometry、可选窗口起止、点数、分析值、z-score、原始 p-value、
+  调整后 p-value 和置信分级。Compiler 只构造零行/惰性计划；Runner 摘要不记录坐标或数据值。
+- 当前实现采用公开 Gi* 公式、标准正态双侧概率和显式 BH 规则；真实 Enterprise 的边缘、FDR、
+  数值和规模对照仍开放，不宣称与 Esri 内部实现逐位一致。完整设计见
+  [Find Hot Spots](canvas-spatial-next-processors/spatial-hot-spots.md)。
+
+## 7.13M `SPATIAL_MULTI_VARIABLE_GRID` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.70`；至少一条入边，允许没有出边。
+- `variables` 为一至 32 个有序变量。每项选择一张 `BOUNDED` 来源表、带完整相同投影 CRS 元数据的
+  XY Point/Line/Polygon 家族 Geometry、可选受控筛选和唯一输出字段；多个变量可以引用同一张表。
+- 所有唯一“来源表 + Geometry 字段”的有效 Geometry 在不应用变量筛选的情况下共同决定分析外包范围。
+  SQUARE 的大小为边长，HEXAGON 为对边距离，固定原点 `(0, 0)`；输出与范围相交的完整 Polygon 格网。
+- `DISTANCE_TO_NEAREST` 和 `ATTRIBUTE_OF_NEAREST` 必须配置搜索距离，使用格网中心到来源 Geometry 的
+  平面最短距离；半径内无命中输出 NULL。前者输出该变量距离单位下的 DOUBLE，后者继承所选标量字段类型。
+- `ATTRIBUTE_SUMMARY_OF_RELATED` 有搜索距离时按格网中心距离关联，无搜索距离时按要素与完整格网相交。
+  COUNT 输出非空 LONG 且无命中为 0；SUM/MEAN/MIN/MAX/RANGE/STDDEV/VARIANCE 输出可空 DOUBLE；
+  ANY 第一版只接受 STRING，并以确定性最小值实现。
+- 搜索距离与格网大小之比最多 512，格网候选最多 1,000,000。实际无效 Geometry、非有限统计值和
+  容量超限分别使用稳定安全错误；Compiler 只构造零行或惰性计划。
+- 结果列为格网 ID、共同 CRS 的 XY Polygon 和变量数组顺序下的结果字段；来源及其他入口表不变，
+  新的 `BOUNDED` 结果表追加到 Map 末尾，无事件时间和 Watermark。
+- Runner 摘要只记录变量数、来源表数、筛选变量数、格网形状和输出表，不记录字段名、筛选字面量、
+  搜索距离、坐标或数据值。真实 Enterprise 边缘、并列、统计、不同 Geometry/单位及规模对照仍开放。
+  完整契约和面板见 [Build Multi-Variable Grid](canvas-spatial-next-processors/spatial-multi-variable-grid.md)。
+
+## 7.13N `SPATIAL_ENRICH_FROM_GRID` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.71`；至少一条入边，允许没有出边。
+- `pointTableName` 必须是有界 XY Point；`gridTableName` 必须是有界 XY Polygon/MultiPolygon，
+  两侧 Geometry CRS 完全一致。需要变换时在上游显式使用 Spatial Transform。
+- `enrichFields` 显式选择格网非 Geometry 标量字段并可改名；来源字段不得重复，结果字段与 Point
+  原字段及其他结果字段按大小写不敏感规则唯一。空数组只允许保存草稿，Compiler 拒绝执行。
+- 关系固定为 Point 与完整格网 Polygon 相交。每个 Point 恰好输出一行；未匹配时丰富字段为 NULL，
+  共享边界或异常重叠命中多个格网时按 `gridIdColumnName` 的字符串顺序稳定选择一格。
+- 命中格网 ID 为 NULL 时运行返回 `SPATIAL_ENRICH_GRID_ID_NULL`。结果保留 Point 全部字段及顺序，
+  再追加可空的丰富字段；入口表保持不变，新结果表追加到 Map 末尾。
+- 本节点不重算格网变量，不复制 ArcGIS 服务发布和 Data Store 参数，也不自动把格网后续新增字段加入结果。
+  完整契约和面板见 [Enrich From Multi-Variable Grid](canvas-spatial-next-processors/spatial-enrich-from-grid.md)。
+
+## 7.13O `SPATIAL_GROUP_BY_PROXIMITY` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.72`；至少一条入边，允许没有出边。
+- 来源为一张有界、带完整 CRS 的 XY Point/MultiPoint、LineString/MultiLineString 或
+  Polygon/MultiPolygon 表。Intersects 支持三类家族，Touches 只支持 Line/Polygon。
+- Near Planar 使用来源投影 CRS 的二维最近距离；地理 CRS 必须先显式转换。Near Geodesic 只支持
+  EPSG:4326 XY，并使用真实 Geometry 最近位置；不接受来源 CRS 单位。
+- 可选时间关系使用一个开始/瞬时字段和可选结束字段表达闭区间，支持 Intersects 与 Near。时间 NULL
+  不形成边，实际倒置区间稳定失败。毫秒至周使用固定时长，月/年使用会话时区日历区间。
+- 至多 8 个属性关系支持同一字段普通等号或数值绝对差阈值；它们与空间、时间关系全部按 AND 组合。
+  当前不是 ArcGIS 任意对称属性表达式的完整实现。
+- 满足全部条件的要素对构成无向边，结果使用 Connected Components 求传递闭包。NULL/Empty Geometry
+  不形成边但作为孤立顶点保留；每个来源要素恰好输出一行并追加非空 LONG 组 ID。
+- 组 ID 只表达成员关系，不保证连续、排序或跨运行稳定。来源及其他入口表继续保留，新有界结果追加，
+  不传播事件时间或 Watermark。Compiler Preview 不执行图算法。
+- Runner 摘要不记录距离/时间/属性阈值、坐标或字段值。完整契约和面板见
+  [Group By Proximity](canvas-spatial-next-processors/spatial-group-by-proximity.md)。
+
+## 7.13P `TRACE_PROXIMITY_EVENTS` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.73`；至少一条入边，允许没有出边。
+- 来源为一张有界、带完整 CRS 的 XY Point 观测表；实体 ID 必须是 STRING，观测时间必须是 TIMESTAMP。
+  NULL/Empty Geometry、NULL 时间或 NULL 实体 ID 不参与追踪；非空但无效的 Point 稳定失败。
+- Planar 使用来源投影 CRS 的二维距离；Geodesic 仅接受 EPSG:4326 XY 并使用 WGS84 真实距离。
+  空间、时间和至多 8 个同值属性约束全部满足时，不同实体的观测才形成接触。
+- 起始实体可由 1～256 个显式 ID 和可选 Epoch 毫秒开始时间定义，也可从另一张有界上游表读取
+  STRING ID 与可选 TIMESTAMP。起始实体深度为 0，最大传播深度为 1～32。
+- 传播只能使用不早于上游实体到达时间的接触。同一下游实体有多个候选时，按事件时间、上游实体 ID
+  和内部行身份稳定选择首次事件；起始实体不伪造成 `from_id/to_id` 事件。
+- 首次事件结果保留下游首次接触观测的原字段，并追加来源实体、目标实体、深度、持续分钟数和事件时间。
+  可选轨迹表包含起始实体深度 0 轨迹，以及下游实体从首次接触起的后续观测。
+- 入口表继续保留，事件表和可选轨迹表追加到 Map 末尾；两张结果均为 `BOUNDED`，不传播事件时间或 Watermark。
+  Compiler Preview 不执行自连接、起始实体查找、BFS 或 Checkpoint。
+- Runner 摘要和 Canvas 卡片不得展示实体 ID 值、距离值、坐标或数据行。完整契约、错误码和面板见
+  [Trace Proximity Events](canvas-spatial-next-processors/trace-proximity-events.md)。
+
+## 7.13Q `SNAP_TRACKS` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.74`；至少一条入边，允许没有出边。
+- 轨迹观测是有界 XY Point，道路网络是同 CRS 的有界 XY LineString。轨迹由
+  1～8 个标识字段分组，按 TIMESTAMP 和可选同时间顺序字段执行确定性排序。
+- 线网必须显式配置非空唯一线 ID 和非空同类型 From/To 节点。方向对象缺失时所有线双向通行；
+  存在时把显式属性值映射为顺向、逆向、双向或禁行，未命中的实际值按禁行处理。
+- Planar 要求可换算线性单位的投影 CRS；Geodesic 仅支持 EPSG:4326 XY。每个观测在
+  搜索距离内最多允许 32 个候选，超出时稳定失败，不静默截断。
+- 每个轨迹片段使用 Viterbi 动态规划联合匹配。候选转移只允许同一条线，或共享一个 From/To
+  节点的直接相邻线，并按方向检查可达性。不连通的更近候选不得退化成独立最近线结果。
+- 相邻时间 gap、相邻距离 gap 和固定时间周期均可切分轨迹。单观测片段固定标记未匹配。
+- 结果保留点表原字段，可选追加至多 32 个道路标量属性，再追加吸附 Point、匹配线 ID、
+  `M/U` 状态、原/匹配坐标和固定米制匹配距离。`ALL_FEATURES` 保留未匹配观测，
+  `MATCHED_FEATURES` 只保留匹配观测。
+- 入口 Point、Line 和其他表保持原 Map 顺序，新的有界结果表追加；Compiler Preview 只构造
+  零行 Schema，不执行空间 Join、候选聚合或 Viterbi。
+- Canvas 卡片和 Runner 摘要不得展示搜索距离数值、方向映射值、坐标或数据内容。
+  首版只支持直接相邻线，不声明与 ArcGIS 完全等价；完整配置、算法、错误码和面板见
+  [Snap Tracks](canvas-spatial-next-processors/snap-tracks.md)。
+
+## 7.13R `SPATIAL_SIMILAR_LOCATIONS` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.75`；至少一条入边，允许没有出边。
+- 参考表和候选表都必须是有界 XY 空间表；Geometry 类型、CRS 和维度必须一致。NULL/Empty Geometry
+  不参与分析，但其他入口表和两张来源表继续保留，新的有界结果表追加到 Map 末尾。
+- 两侧唯一 ID 在运行时必须非空且唯一。多个参考要素按每个分析字段的标准化平均值形成共同目标；
+  标准化总体固定包含筛选后的参考和候选全集。
+- `ATTRIBUTE_VALUES` 使用各字段标准化值与参考目标的平方差之和，越小越相似；
+  `ATTRIBUTE_PROFILES` 使用标准化向量的 `1 - cosine`，范围为 0～2，0 最相似且至少需要两个字段。
+- 可返回最相似、最不相似或两端候选；`BOTH` 在候选不足时自动缩小每端数量，保证两端不重叠。
+  相同分数按候选 ID 字符串确定排名，不依赖 Spark 分区顺序。
+- 分析字段必须在两表同名、同数值类型，最多 32 项；候选附加标量字段最多 64 项，不参与标准化或排名。
+  分析值的 NULL、NaN 和 Infinity 稳定失败，不静默忽略或填补。
+- 结果同时包含筛选后的全部参考位置和选中候选，显式输出位置类型、参考/候选 ID、两种排名、
+  `simindex`、`cosimindex` 及用于渲染的有符号 `labelrank`。Compiler Preview 只构造惰性计划，
+  不为预检扫描真实 ID 或数值。
+- Canvas 卡片和 Runner 摘要只显示表名、匹配方法、返回范围和字段数量，不显示筛选字面量、属性值、
+  坐标或数据行。当前是 GeoAnalytics 核心可执行子集，不声明与真实 Enterprise 数值完全等价；
+  完整配置、面板和证据边界见
+  [查找相似位置](canvas-spatial-next-processors/spatial-similar-locations.md)。
+
+## 7.13S `SPATIAL_DESCRIBE_DATASET` 节点
+
+- 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `4.76`；至少一条入边，允许没有出边。
+- 来源必须是一张 `BOUNDED` 表。节点保留全部入口表及其顺序，再依次追加字段统计表、数据集描述表、
+  可选样本表和可选范围表；所有启用的结果表名必须非空、大小写不敏感唯一，且不能占用入口表名。
+- 字段统计排除 Geometry 与 Binary。每个其他字段输出非空/空值数；数值字段统一转 DOUBLE 后输出
+  Sum、Mean、Min、Max、Range、总体标准差和总体方差；日期时间字段输出 Min、Max 与毫秒范围；
+  String/Boolean 的 `any_value` 使用确定性的最小非空字符串。
+- 数据集描述表固定一行，包含记录数、字段数、可选 Geometry/事件时间计数与范围，以及同一安全描述的
+  `description_json`。未选择 Geometry 时仍可生成字段统计、描述和样本，不推测空间字段。
+- `sampleSize=0` 关闭样本；启用后使用 Spark `limit`，保留来源 Schema、事件时间和 Watermark 元数据，
+  但不承诺跨重分区得到相同样本。范围开关独立于样本，并要求显式选择带完整元数据的 Geometry。
+- 范围表只对非 NULL、非 Empty Geometry 求共同 XY Envelope，输出继承来源 CRS 的 XY Polygon；无有效
+  Geometry 时输出空表。它不是最小包围几何、凸包或业务边界。
+- Compiler 只构造零行或惰性计划，不执行统计、采样或范围扫描。Canvas 与 Runner 摘要只记录来源、
+  启用的结果种类和安全表名，不记录数据值。完整配置、输出 Schema 和面板见
+  [Describe Dataset](canvas-spatial-next-processors/spatial-describe-dataset.md)。
+
 ## 7.14 `GEOMETRY_BUFFER` 节点
 
 节点保留来源 Geometry，并按显式距离模式追加规范化的 MultiPolygon 缓冲字段。
 
 - 类别为 `PROCESSOR`，支持 `BATCH/STREAMING`，协议引入版本为 `1.22`。
-- 至少一条入边；允许没有出边，距离必须是有限正数。
-- PLANAR 使用来源 CRS 坐标单位；EPSG:4326 下产生角度单位 Warning。
-- SPHEROID 只接受 EPSG:4326，距离单位为米。
+- 至少一条入边；允许没有出边，实际参与计算的距离必须是有限正数。
+- 4.49 可显式保存 `distanceUnit`；PLANAR 将固定线性单位可靠换算到来源投影 CRS 的轴单位，
+  地理 CRS 只允许 `SOURCE_CRS_UNIT` 并产生角度单位 Warning。
+- SPHEROID 只接受 EPSG:4326，将米、千米、国际/美国测量制等固定线性单位换算为米；
+  不接受 `SOURCE_CRS_UNIT`。缺失/null 单位保持旧版固定米语义。
+- 4.52 可显式选择 `CONSTANT/FIELD/EXPRESSION`。缺失/null 来源保持固定值；FIELD 必须是数值字段，
+  EXPRESSION 必须能由 Spark Analyzer 证明为确定性逐行数值表达式，不允许聚合、窗口、生成器或子查询。
+- 动态距离 NULL 产生 NULL Buffer；0、负数、NaN、Infinity 或转换溢出在运行时稳定失败，不跳过行。
 - 结果通过 `ST_Multi` 规范化为 `MULTIPOLYGON`，CRS、dimension 和 nullable 继承来源字段。
 - 完整配置、错误码和运行依赖见
   [Geometry Buffer 设计](canvas-geometry-buffer-processor-design.md)。
@@ -1192,10 +1606,13 @@ interface SpatialHdbscanOptions {
 - 类别为 `PROCESSOR`，仅支持 `BATCH`，协议引入版本为 `1.23`。
 - 至少一条入边；允许没有出边，来源表和 Mask 表从合并后的表 Map 选择，且必须不同并均为 BOUNDED。
 - 固定使用 `ST_Intersects` INNER 候选连接与 `ST_Intersection`；NULL、Empty 和未命中结果不输出。
-- 一个来源行命中多个 Mask 时输出多行，不自动 dissolve、去重或稳定排序。
+- 4.77 新建节点默认 `DISSOLVE_ALL`：每条来源要素先按计划内行 ID 聚合其相交 Mask，再裁剪一次；
+  重叠 Mask 不重复覆盖区域，分离片段作为同一 Multi 结果返回。缺失/null 或 `PAIRWISE` 保持旧版
+  每条 Mask 独立裁剪和多行输出；两种模式都不做来源去重或稳定排序。
 - 两侧 Geometry 的 CRS 和 dimension 必须一致，Mask kind 只允许 Polygon/MultiPolygon。
-- 输出 kind 固定为通用 `GEOMETRY`，CRS 和 dimension 继承来源字段；输出事件时间和 Watermark
-  清空。
+- 4.51 新建节点默认 `SOURCE_FAMILY_2D`：过滤低维边界接触，输出来源对应的
+  MultiPoint/MultiLineString/MultiPolygon + XY。缺失/null 或 `LEGACY_ANY_DIMENSION` 保持旧版
+  通用 `GEOMETRY` 结果；CRS 继承来源字段，输出事件时间和 Watermark 清空。
 - 完整配置、错误码和安全边界见
   [空间裁剪设计](canvas-spatial-clip-processor-design.md)。
 
@@ -1211,6 +1628,11 @@ interface SpatialHdbscanOptions {
 - 每个结果独立继承来源 Geometry 的 CRS 和 dimension，kind 固定为通用 `GEOMETRY`，
   nullable 为 true。
 - 输出 Schema 为分组字段后接聚合字段；输出事件时间和 Watermark 清空。
+- 4.53 可选 `dissolve`：启用时要求单 UNION；空/非空分组分别表达 Create Buffers 的 All/List，
+  结果追加来源要素总数和最多 32 个标量统计。Multipart 每组最多一行，Singlepart 按部件拆行；
+  NULL/Empty UNION 结果不产生 Dissolve 输出要素。
+- 4.61 可选 `dissolve.groupingMode=CONNECTED_COMPONENTS`：只允许空分组和面类型，按二维相交、重叠
+  或接触关系的传递闭包分别 UNION；NULL/Empty 不进入连通图。缺失/null 继续保持 4.53 的全局 All。
 - 完整配置、NULL/Empty 语义和错误码见
   [空间聚合设计](canvas-spatial-aggregate-processor-design.md)。
 
@@ -1302,7 +1724,7 @@ UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSE
 - 写入模式和字段映射配置完整。
 - 字段映射满足目标表必填字段和平台类型兼容要求。
 - UPSERT Key 与目标表当前 `uniqueKeys` 中的一整组字段精确匹配，并满足可写、映射和类型限制。
-- PostgreSQL/MySQL 以外的数据库不得使用 UPSERT；MySQL 目标存在多组唯一键时返回 `MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS` Warning。
+- UPSERT 当前支持 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle 与 SQL Server；ClickHouse 和 TDengine 不开放。MySQL 目标存在多组唯一键时返回 `MYSQL_UPSERT_MULTIPLE_UNIQUE_KEYS` Warning。
 
 ## 9. 设计器配置面板
 
@@ -1337,7 +1759,7 @@ UPSERT 写入前检查当前 Dataset 或 micro-batch：Key 含 NULL 返回 `UPSE
 
 表单顺序：
 
-1. 数据源：只列出已启用、具有 `SOURCE` 用途的 PostgreSQL/MySQL 数据源。
+1. 数据源：只列出已启用、具有 `SOURCE` 用途的 PostgreSQL/HighGo/MySQL/openGauss/人大金仓数据源。
 2. 输出逻辑表名。
 3. Monaco SQL 编辑器。
 4. “分析 SQL”操作区，显示未分析、分析中、有效、已过期或失败状态。
@@ -1383,6 +1805,26 @@ orders INNER customers → order_customer
 - 首次取得两侧 Schema 且当前投影为空时生成建议；已有投影不因上游变化被静默重建。
 - 允许排除、改名、排序和一键排除右侧 Join Key；重建建议必须二次确认。
 - 失效字段和最终重名就地标红，但业务校验错误不阻止应用草稿。
+
+### 9.4B `SPATIAL_JOIN` 面板
+
+- 左表标为目标表，右表标为连接表；“结果范围”提供“仅保留匹配目标（INNER）”与“保留全部目标
+  （LEFT）”。连接粒度紧凑选择“一对多”或“一对一”，一对一旁提供设置入口和当前规则摘要。
+- 一对一设置使用独立 Modal。汇总模式配置 Join Count 和有序数值统计；保留模式配置 FIRST、最大、最小、
+  最新或最旧策略，以及至少一个稳定排序字段。Modal 明确完整顺序仍并列会运行失败，并建议最后使用右表主键。
+- 左右表和空间条件仍在主面板配置；输出字段使用 860px 设置 Modal，避免长字段列表持续撑高 Inspector。
+- “空间 Near”使用独立紧凑 Modal 配置左右 Geometry、Near/Near Geodesic、最大距离和单位；它可以作为
+  唯一空间条件，也可与拓扑、属性、时间条件按 AND 组合。字段失效或配置不完整时保留草稿并就地报错。
+- “距离输出”使用第二个紧凑 Modal。仅一对多可启用；根据当前空间 Near 和时间 Near 分别显示字段名与
+  输出单位，两种 Near 同时启用时显示两组。切换到一对一或移除 Near 不静默清空已有非活动草稿。
+- 新节点在首次选齐左右表时生成投影建议；已有投影不因上游 Schema 变化静默重建。
+- 允许逐项排除、改名和排序；“重建建议”必须确认并明确会覆盖当前编辑。空间条件不是等值 Key，
+  因此不显示普通 Join 的“排除右侧 Join Key”操作。
+- 旧版缺失/null 投影显示“旧版全字段”，用户明确点击“启用字段投影并生成建议”后才写入 4.54 数组，
+  打开或保存旧定义不会自动改变结果字段。
+- 上游字段失效和最终重名就地标红，普通业务错误仍允许应用草稿。Canvas 仅显示启用输出字段数量，
+  并以 `1:N`、`1:1 汇总` 或 `1:1 保留` 展示粒度；Near 只展示方法和距离输出状态，不展示 Geometry、
+  距离阈值、时间阈值、坐标或数据值。
 
 ### 9.5 `RENAME` 面板
 
@@ -1434,7 +1876,12 @@ orders INNER customers → order_customer
 
 ### 9.11 `UNION` 面板
 
-输入表使用可排序列表，至少选择两张可见上游逻辑表。第一张表标记为“输出字段顺序基准”。每张表显示字段数和有界性；字段集合差异以紧凑的“缺少/额外”摘要展示，字段类型差异只标记为等待 Spark Analyzer 判断。
+输入表使用可排序列表，至少选择两张可见上游逻辑表。第一张表标记为“输出字段顺序基准”。每张表显示字段数和有界性；严格模式下，字段集合差异以紧凑的“缺少/额外”摘要展示。
+
+新建节点默认使用“灵活对齐”。每张合并层都有字段设置入口，紧凑表格逐字段选择 Match、Rename 或
+Remove。Match 只列出同类型、数值兼容类型或 Geometry 定义完全一致的目标字段；切换动作时优先保留
+当前合法目标，其次选择同名目标，仅有一个兼容目标时才自动选中。调整基准层或删除输入表时同步移除
+不再适用的字段草稿；保存时只持久化相对默认行为发生变化的规则。
 
 模式为 `ALL` 或 `DISTINCT`。无界输入选择 DISTINCT 时明确提示不支持；有界与无界输入混合、无界事件时间或 Watermark 不一致时保留配置并显示 Task Engine 错误。上游表失效时原位保留并标红。
 
@@ -1652,7 +2099,7 @@ Task Engine 中的 Schema 校验按拓扑顺序执行：
 15. `TOP_N` 对有界来源使用 limit、row_number 或 rank 选择全局/分组前 N 行。
 16. `MASK_FIELDS` 使用节点内嵌规则定义原位替换配置字段，继承来源 Schema 与有界性，不查询全局规则。
 17. `JSON_EXTRACT` 使用 Spark VARIANT JSON 解析和 Path 提取追加结构化字段，继承来源表有界性。
-18. `SPATIAL_CLIP` 合并两个上游 Map，校验 BOUNDED、CRS、dimension 和 Mask kind，追加只含来源属性与裁剪结果的有界表。
+18. `SPATIAL_CLIP` 合并两个上游 Map，校验 BOUNDED、CRS、dimension、Mask kind、来源家族策略与多 Mask 组合方式，按逐 Mask 或逐来源融合 Mask 的语义追加只含来源属性与裁剪结果的有界表。
 19. `SPATIAL_AGGREGATE` 对 BOUNDED 来源执行全局或分组空间聚合，追加清空事件时间和 Watermark 的有界结果表。
 20. `JDBC_OUTPUT`、`MODEL_OUTPUT` 检查源表、目标及字段映射；`KAFKA_OUTPUT` 检查来源、格式、Value 字段和可选 Key，但均不执行真实写入。
 21. 每个节点返回独立校验摘要；图级错误放入单独的 `canvasIssues`，不制造 `@canvas` 伪节点。
@@ -2440,26 +2887,55 @@ Offset 作为首次恢复位置。一个微批读取完整窗口，不使用 `LI
 {
   "inputTableNames": ["current_orders", "history_orders"],
   "outputTableName": "all_orders",
-  "mode": "ALL"
+  "mode": "ALL",
+  "mergingTables": [
+    {
+      "tableName": "history_orders",
+      "fieldRules": [
+        {
+          "sourceColumnName": "legacy_status",
+          "action": "MATCH",
+          "targetColumnName": "status"
+        },
+        {
+          "sourceColumnName": "temporary_note",
+          "action": "REMOVE",
+          "targetColumnName": null
+        }
+      ]
+    }
+  ]
 }
 ```
 
 - `inputTableNames` 至少包含两个不同表名；数组顺序稳定，第一张表决定输出字段顺序。
-- 每张输入表必须具有完全相同的字段名集合，字段原始顺序可以不同。
-- 仅支持按字段名合并，不支持按位置合并、缺失字段补 NULL、忽略额外字段或自动重命名。
+- `mergingTables=null` 或缺失时保持旧版严格模式：每张输入表必须具有完全相同的字段名集合，字段原始
+  顺序可以不同。
+- `mergingTables=[]` 启用默认 Merge Layers：基准层字段全部保留；后续层同名字段 Match，其他字段按
+  原名依次追加，任一输入缺少的输出字段补 NULL。
+- 非空 `mergingTables` 只需保存偏离默认行为的字段规则。`MATCH` 写入当时已经存在的输出字段，
+  `RENAME` 以新名称追加字段，`REMOVE` 排除字段。来源字段和最终输出字段均按大小写不敏感唯一。
+- Match 允许相同平台类型以及数值类型之间的显式 Cast；字符串与数值等其他跨类型 Match 拒绝。
+- 空间输入必须均为空间层或均为具有相同数量 Geometry 字段的空间层。每个 Geometry 必须 Match 到
+  基准层类型、CRS 和维度完全一致的 Geometry，不能 Rename 或 Remove。
 - `ALL` 保留重复行；`DISTINCT` 对完整 Union 结果执行全字段去重。
 
 ### 22.2 Map、Schema 与批流语义
 
 - 节点类别为 `PROCESSOR`，至少一条入边，允许没有出边，支持 `BATCH` 和 `STREAMING`。
 - 直接上游 Map 仍先按普通规则合并；同名 Key 在进入 UNION 前就返回 `DUPLICATE_TABLE_NAME`。
-- Operator 按配置顺序查找表，使用第一张表字段顺序，以 `unionByName` 合并其余 Dataset。
-- 字段类型兼容和必要提升由 Spark Analyzer 判断。输出类型和 nullable 取最终 Analyzer Schema，来源专属物理属性和注释清空，`origin=null`。
+- 严格模式按配置顺序查找表，使用第一张表字段顺序，以 `unionByName` 合并其余 Dataset。
+- Merge Layers 先按规则对每张表执行限定字段的 `select + alias + cast`，再使用允许缺失字段的
+  `unionByName`。后续合并层可以 Match 前面合并层已经追加的字段；不能引用尚未出现的字段。
+- 输出类型和 nullable 取最终 Analyzer Schema，来源专属物理属性和注释清空，`origin=null`。
 - 复制全部输入 Map，以 `outputTableName` 追加结果；输出名与任何现有 Key 冲突时返回 `DUPLICATE_TABLE_NAME`。
 - 所有输入必须具有相同 `datasetKind`：全部有界输出 `BOUNDED`，全部无界输出 `UNBOUNDED`，混合输入拒绝。
-- 无界输入的 `eventTimeColumn` 和 `watermarkDelay` 必须全部一致并由输出继承；有界输出清空这两个字段。
+- 无界严格输入的 `eventTimeColumn` 必须一致；Merge Layers 允许来源事件时间字段名不同，但必须 Match
+  到基准层事件时间字段。两种模式的 `watermarkDelay` 都必须一致并由输出继承；有界输出清空二者。
 - 无界输入只支持 `ALL`；`DISTINCT` 会形成无边界状态，因此返回 `STREAMING_UNION_DISTINCT_NOT_SUPPORTED`。
-- Compiler 与批流 Runner 使用同一个无状态 `UnionNodeOperator`。安全摘要只记录输入/输出表名、输入数量和模式，不记录数据值或重复行样本。
+- Compiler 与批流 Runner 使用同一个无状态 `UnionNodeOperator`。安全摘要只记录输入/输出表名、输入
+  数量、模式、是否启用 Merge Layers、配置层数和规则数量，不记录数据值或字段规则内容。
+- 完整能力边界和 ArcGIS 对齐说明见 [UNION Merge Layers 设计](canvas-union-merge-layers-design.md)。
 
 ## 23. `DEDUPLICATE` 处理器
 
@@ -2945,8 +3421,8 @@ Key 固定保存 `1..32` 个目标字段名，由用户显式指定，不强制�
 ### 31.2 图、编译与执行语义
 
 - 两个节点均为 BATCH Output，恰好一条入边且无出边，只接受 BOUNDED 来源。
-- JDBC 目标必须是具有 DISTRIBUTION 用途的 PostgreSQL/MySQL 普通表；模型目标必须是已发布
-  MANAGED 模型，其存储数据源具有 STORAGE 用途且为 PostgreSQL/MySQL。
+- JDBC 目标必须是具有 DISTRIBUTION 用途的 PostgreSQL/HighGo/MySQL/openGauss/人大金仓普通表；模型目标必须是已发布
+  MANAGED 模型，其存储数据源具有 STORAGE 用途且为上述数据库。PostgreSQL 家族目标在实际具备 PostGIS 兼容扩展时支持 Geometry。
 - 来源字段完成显式映射并 Cast 为目标平台类型后，才参与 Key 校验和比较。
 - 来源与目标 Key 必须非 NULL 且各自唯一；Key 不匹配数据库唯一约束只产生 Warning。
 - 标量按目标类型精确比较，Geometry 使用 kind/CRS/dimension 一致前提下的拓扑相等。

@@ -10,11 +10,14 @@ import {
   fetchDataEntryForms,
   fetchDataEntryOperationLog,
   fetchDataEntryOperationLogs,
+  fetchDataEntryRecordChanges,
   importDataEntryFile,
   previewDataEntryImport,
   queryDataEntryOptions,
+  queryDataEntryDetail,
   submitDataEntry,
   updateDataEntryLookups,
+  updateDataEntryRecord,
 } from '../api/dataEntryApi';
 import type { DataEntryFormStatus, DataEntryLookupInput } from '../model/dataEntry';
 
@@ -34,6 +37,21 @@ export const useDataEntryOperationLogs = (id: string | undefined, request: Searc
 });
 export const useDataEntryOperationLog = (id?: string, logId?: string) => useQuery({
   queryKey: [...key, id, 'logs', logId], queryFn: () => fetchDataEntryOperationLog(id as string, logId as string), enabled: Boolean(id && logId),
+});
+export const useDataEntryRecordDetail = (id?: string, recordKey?: Record<string, unknown>) => useQuery({
+  queryKey: [...key, id, 'record', recordKey],
+  queryFn: () => queryDataEntryDetail(id as string, recordKey as Record<string, unknown>),
+  enabled: Boolean(id && recordKey),
+});
+export const useDataEntryRecordChanges = (id?: string, recordKey?: string, page = 0) => useQuery({
+  queryKey: [...key, id, 'record-changes', recordKey, page],
+  queryFn: () => fetchDataEntryRecordChanges(id as string, { page, size: 20, sort: '-createdAt' }, { recordKey }),
+  enabled: Boolean(id && recordKey),
+});
+export const useDataEntryOperationRecordChanges = (id?: string, operationLogId?: string, page = 0) => useQuery({
+  queryKey: [...key, id, 'operation-record-changes', operationLogId, page],
+  queryFn: () => fetchDataEntryRecordChanges(id as string, { page, size: 20, sort: 'sequenceNo' }, { operationLogId }),
+  enabled: Boolean(id && operationLogId),
 });
 
 export const useCreateDataEntryForm = () => {
@@ -73,3 +91,10 @@ export const useDeleteDataEntries = () => {
   return useMutation({ mutationFn: ({ id, keys }: { id: string; keys: Record<string, unknown>[] }) => deleteDataEntries(id, keys), onSuccess: () => client.invalidateQueries({ queryKey: key }) });
 };
 export const useDataEntryOptions = (id: string, fieldId: string) => useMutation({ mutationFn: (request: { keyword?: string; pageNo?: number; pageSize?: number; values?: unknown[] }) => queryDataEntryOptions(id, fieldId, request) });
+export const useUpdateDataEntryRecord = () => {
+  const client = useQueryClient();
+  return useMutation({
+    mutationFn: ({ id, recordKey, values }: { id: string; recordKey: Record<string, unknown>; values: Record<string, unknown> }) => updateDataEntryRecord(id, recordKey, values),
+    onSuccess: () => client.invalidateQueries({ queryKey: key }),
+  });
+};

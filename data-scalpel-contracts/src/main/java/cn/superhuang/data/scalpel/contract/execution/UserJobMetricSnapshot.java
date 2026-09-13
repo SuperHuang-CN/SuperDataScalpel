@@ -1,13 +1,24 @@
 package cn.superhuang.data.scalpel.contract.execution;
 
+import com.fasterxml.jackson.annotation.JsonClassDescription;
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
+@JsonClassDescription("用户 Spark JAR 作业上报的一个指标快照；由 kind 决定 COUNTER、GAUGE 或 TIMER 对应的有效数值字段。")
 public record UserJobMetricSnapshot(
+        @JsonPropertyDescription("用户作业指标名，匹配字母开头的英文标识符规则；同一次上报中用于区分指标。")
         String name,
+        @JsonPropertyDescription("指标种类：COUNTER 使用累计整数，GAUGE 使用当前数值，TIMER 使用次数与累计耗时。")
         UserJobMetricKind kind,
+        @JsonPropertyDescription("COUNTER 指标累计值；其他指标种类为空。")
         Long counterValue,
+        @JsonPropertyDescription("GAUGE 指标当前值；其他指标种类为空。")
         Double gaugeValue,
+        @JsonPropertyDescription("TIMER 指标记录次数；其他指标种类为空。")
         Long count,
+        @JsonPropertyDescription("TIMER 最近一次耗时，单位毫秒；其他指标种类为空。")
         Long lastDurationMillis,
+        @JsonPropertyDescription("TIMER 累计耗时，单位毫秒；其他指标种类为空。")
         Long totalDurationMillis,
+        @JsonPropertyDescription("TIMER 单次最大耗时，单位毫秒；其他指标种类为空。")
         Long maxDurationMillis
 ) {
     public UserJobMetricSnapshot {

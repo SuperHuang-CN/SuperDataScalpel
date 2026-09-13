@@ -440,7 +440,7 @@ NODE_START / NODE_SUCCESS / NODE_FAILED
 
 保持现有第一期语义：
 
-- 普通标量 JDBC 读取和 APPEND 支持 PostgreSQL、MySQL、openGauss、Kingbase、Oracle、
+- 普通标量 JDBC 读取和 APPEND 支持 PostgreSQL、HighGo、MySQL、openGauss、Kingbase、Oracle、
   SQL Server、ClickHouse 和达梦；TDengine 保持超级表和 TMQ 专用规则。
 - Input 使用数据库类型对应的限定名和标识符引用。
 - Join 支持 INNER、LEFT、RIGHT、FULL。
@@ -448,11 +448,11 @@ NODE_START / NODE_SUCCESS / NODE_FAILED
 - Output 使用目标字段到来源字段的显式映射。
 - APPEND 使用 Spark JDBC append。Oracle、SQL Server、ClickHouse 和达梦第一阶段只承诺写入
   已存在物理表，不自动建表或演进 Schema。
-- OVERWRITE 对 PostgreSQL、MySQL、openGauss、Kingbase、Oracle、SQL Server、ClickHouse 和达梦均执行
+- OVERWRITE 对 PostgreSQL、HighGo、MySQL、openGauss、Kingbase、Oracle、SQL Server、ClickHouse 和达梦均执行
   数据库 TRUNCATE 后 append，不 drop/recreate，也不承诺两步原子性。TDengine 不支持普通 JDBC 输出；
   外键、权限、ClickHouse 集群表及数据库版本造成的 TRUNCATE 失败由真实运行返回 JDBC 错误。
-- UPSERT、JDBC Query Input 和 Snapshot Sync 仅支持 PostgreSQL/MySQL；JDBC 增量输入额外支持
-  openGauss/Kingbase；Geometry JDBC 仅支持 PostgreSQL/PostGIS 和 MySQL 8。
+- UPSERT 支持 PostgreSQL、HighGo、MySQL、openGauss、Kingbase、达梦、Oracle 与 SQL Server；JDBC Query Input 和 Snapshot Sync 支持 PostgreSQL、HighGo、MySQL、openGauss、Kingbase；
+  Geometry JDBC 支持具备 PostGIS 兼容扩展的 PostgreSQL/HighGo/openGauss/Kingbase 和 MySQL 8。
 - 模型质检允许全部普通 JDBC 数据库的标量读取；Spark JAR 允许标量读取和 APPEND，并复用同一
   OVERWRITE、UPSERT 和 Geometry 能力边界。
 - 多个 Output 按稳定拓扑顺序执行，不提供跨库事务。
@@ -485,7 +485,7 @@ NODE_START / NODE_SUCCESS / NODE_FAILED
 data-scalpel-task-engine-*-runner-local.jar
 ```
 
-包含：Spark、Scala、Jackson、Kafka Client，以及 PostgreSQL、MySQL、openGauss、Kingbase、
+包含：Spark、Scala、Jackson、Kafka Client，以及 PostgreSQL、HighGo、MySQL、openGauss、Kingbase、
 Oracle、SQL Server、ClickHouse、达梦和 TDengine JDBC Driver。可直接：
 
 ```text

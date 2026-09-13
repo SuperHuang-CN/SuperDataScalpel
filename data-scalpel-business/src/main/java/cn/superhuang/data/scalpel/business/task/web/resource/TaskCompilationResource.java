@@ -6,6 +6,7 @@ import cn.superhuang.data.scalpel.contract.task.TaskCompilationRequest;
 import cn.superhuang.data.scalpel.contract.task.TaskCompilationResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskCompilationCancellationResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import org.springframework.http.HttpStatus;
@@ -33,7 +34,7 @@ public class TaskCompilationResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "编译任务定义")
     @PostMapping
     @PreAuthorize("hasAuthority('task.view')")
-    @Operation(summary = "编译任务定义")
+    @Operation(summary = "编译 Canvas 任务定义", description = "同步将完整 CANVAS 定义和调用方提供的元数据快照发送给 Task Engine，在受控 Spark 编译会话中执行协议、节点、Schema 和血缘分析；当前不支持其他任务类型。不会保存业务任务定义或提交正式运行，成功 HTTP 响应仍需检查 valid 和问题列表。")
     public TaskCompilationResponse compile(@Valid @RequestBody TaskCompilationRequest request) {
         return service.compile(request);
     }
@@ -42,8 +43,8 @@ public class TaskCompilationResource {
     @PostMapping("/{requestId}/actions/cancel")
     @ResponseStatus(HttpStatus.ACCEPTED)
     @PreAuthorize("hasAuthority('task.view')")
-    @Operation(summary = "取消活动的任务定义编译")
-    public TaskCompilationCancellationResponse cancel(@PathVariable UUID requestId) {
+    @Operation(summary = "取消活动的任务定义编译", description = "按 requestId 请求取消 Task Engine 内仍登记为活动的编译；存在时返回 202 和 CANCEL_REQUESTED，不存在或已完成则返回 404。取消是协作式中断，正在执行的 Spark 操作可能稍后才停止。")
+    public TaskCompilationCancellationResponse cancel(@Parameter(description = "编译请求 UUID；只能取消仍处于活动状态的请求。") @PathVariable UUID requestId) {
         return service.cancel(requestId);
     }
 }

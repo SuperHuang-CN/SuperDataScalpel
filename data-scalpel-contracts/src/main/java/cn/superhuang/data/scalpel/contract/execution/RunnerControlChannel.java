@@ -1,14 +1,20 @@
 package cn.superhuang.data.scalpel.contract.execution;
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 /**
  * Kafka channel used by a dispatcher to address control commands to one
  * long-running Runner attempt.
  */
 public record RunnerControlChannel(
+        @JsonPropertyDescription("Runner 连接执行 Kafka 通道使用的 Bootstrap Servers。")
         String bootstrapServers,
+        @JsonPropertyDescription("Runner 发布事件或接收控制命令的 Kafka Topic。")
         String topic,
+        @JsonPropertyDescription("Kafka 安全协议，例如 PLAINTEXT、SASL_PLAINTEXT、SSL 或 SASL_SSL。")
         RunnerKafkaSecurityProtocol securityProtocol,
+        @JsonPropertyDescription("Runner 使用的稳定 Kafka client.id。")
         String clientId,
+        @JsonPropertyDescription("Runner 控制消息消费者使用的隔离 Kafka Group ID。")
         String groupId
 ) {
     public RunnerControlChannel {

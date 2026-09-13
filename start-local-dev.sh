@@ -327,16 +327,17 @@ if [[ ! -f "$TASK_RUNNER_JAR" ]]; then
   echo "  ./mvnw -pl data-scalpel-task-engine -am package -Dmaven.test.skip=true"
   exit 1
 fi
+# Local Runner packaging skips test compilation; test-only edits cannot stale the runtime JAR.
 if [[ -n "$(find \
-  "$ROOT_DIR/data-scalpel-task-engine/src" \
+  "$ROOT_DIR/data-scalpel-task-engine/src/main" \
   "$ROOT_DIR/data-scalpel-task-engine/pom.xml" \
-  "$ROOT_DIR/data-scalpel-filegdb/src" \
+  "$ROOT_DIR/data-scalpel-filegdb/src/main" \
   "$ROOT_DIR/data-scalpel-filegdb/pom.xml" \
-  "$ROOT_DIR/data-scalpel-filegdb-s3/src" \
+  "$ROOT_DIR/data-scalpel-filegdb-s3/src/main" \
   "$ROOT_DIR/data-scalpel-filegdb-s3/pom.xml" \
-  "$ROOT_DIR/data-scalpel-shapefile/src" \
+  "$ROOT_DIR/data-scalpel-shapefile/src/main" \
   "$ROOT_DIR/data-scalpel-shapefile/pom.xml" \
-  "$ROOT_DIR/data-scalpel-shapefile-s3/src" \
+  "$ROOT_DIR/data-scalpel-shapefile-s3/src/main" \
   "$ROOT_DIR/data-scalpel-shapefile-s3/pom.xml" \
   -type f -newer "$TASK_RUNNER_JAR" -print -quit)" ]]; then
   echo "Task Runner Uber JAR 已过期：$TASK_RUNNER_JAR"

@@ -27,6 +27,15 @@ import {
   createSpatialBinAggregateConfiguration,
   createSpatialPointClusterConfiguration,
   createSpatialCenterDispersionConfiguration,
+  createSpatialDensityConfiguration,
+  createSpatialHotSpotsConfiguration,
+  createSpatialMultiVariableGridConfiguration,
+  createSpatialSimilarLocationsConfiguration,
+  createSpatialDescribeDatasetConfiguration,
+  createSpatialEnrichFromGridConfiguration,
+  createSpatialGroupByProximityConfiguration,
+  createTraceProximityEventsConfiguration,
+  createSnapTracksConfiguration,
   createGeometryRepairConfiguration,
   createGeometrySerializeConfiguration,
   createGeometryValidateConfiguration,
@@ -69,7 +78,7 @@ export type {
 } from '../model/maskingRule';
 
 export const CANVAS_SCHEMA_VERSION = 4 as const;
-export const CANVAS_SCHEMA_MINOR_VERSION = 47 as const;
+export const CANVAS_SCHEMA_MINOR_VERSION = 77 as const;
 export const CANVAS_LEGACY_SCHEMA_MINOR_VERSION = 0 as const;
 export const CANVAS_FILTER_MAX_DEPTH = 12 as const;
 export const CANVAS_FILTER_MAX_CONDITION_NODES = 256 as const;
@@ -92,11 +101,23 @@ export const CANVAS_WINDOW_MAX_FRAME_OFFSET = 1_000_000 as const;
 export const CANVAS_TOP_N_MAX_LIMIT = 1_000_000 as const;
 export const CANVAS_SPATIAL_MEASURE_MAX_MEASUREMENTS = 32 as const;
 export const CANVAS_SPATIAL_AGGREGATE_MAX_AGGREGATIONS = 32 as const;
+export const CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS = 32 as const;
+export const CANVAS_SPATIAL_JOIN_MAX_SUMMARY_STATISTICS = 32 as const;
 export const CANVAS_GEOMETRY_DERIVE_MAX_DERIVATIONS = 32 as const;
 export const CANVAS_SPATIAL_WITHIN_MAX_STATISTICS = 32 as const;
 export const CANVAS_SPATIAL_BIN_MAX_STATISTICS = 32 as const;
 export const CANVAS_SPATIAL_CENTER_MAX_GROUP_COLUMNS = 8 as const;
 export const CANVAS_SPATIAL_CENTER_MAX_ANALYSES = 16 as const;
+export const CANVAS_SPATIAL_DENSITY_MAX_FIELDS = 32 as const;
+export const CANVAS_SPATIAL_MULTI_VARIABLE_GRID_MAX_VARIABLES = 32 as const;
+export const CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_ANALYSIS_FIELDS = 32 as const;
+export const CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_APPEND_FIELDS = 64 as const;
+export const CANVAS_SPATIAL_SIMILAR_LOCATIONS_MAX_RESULTS = 10_000 as const;
+export const CANVAS_SPATIAL_DESCRIBE_DATASET_MAX_SAMPLE_SIZE = 10_000 as const;
+export const CANVAS_TRACE_PROXIMITY_MAX_INTERESTS = 256 as const;
+export const CANVAS_TRACE_PROXIMITY_MAX_ATTRIBUTE_COLUMNS = 8 as const;
+export const CANVAS_TRACE_PROXIMITY_MAX_DEPTH = 32 as const;
+export const CANVAS_SNAP_TRACKS_MAX_LINE_FIELDS = 32 as const;
 
 export const CanvasNodeType = {
   ModelInput: 'MODEL_INPUT',
@@ -125,6 +146,15 @@ export const CanvasNodeType = {
   SpatialBinAggregate: 'SPATIAL_BIN_AGGREGATE',
   SpatialPointCluster: 'SPATIAL_POINT_CLUSTER',
   SpatialCenterDispersion: 'SPATIAL_CENTER_DISPERSION',
+  SpatialDensity: 'SPATIAL_DENSITY',
+  SpatialHotSpots: 'SPATIAL_HOT_SPOTS',
+  SpatialMultiVariableGrid: 'SPATIAL_MULTI_VARIABLE_GRID',
+  SpatialSimilarLocations: 'SPATIAL_SIMILAR_LOCATIONS',
+  SpatialDescribeDataset: 'SPATIAL_DESCRIBE_DATASET',
+  SpatialEnrichFromGrid: 'SPATIAL_ENRICH_FROM_GRID',
+  SpatialGroupByProximity: 'SPATIAL_GROUP_BY_PROXIMITY',
+  TraceProximityEvents: 'TRACE_PROXIMITY_EVENTS',
+  SnapTracks: 'SNAP_TRACKS',
   GeometryBuffer: 'GEOMETRY_BUFFER',
   GeometryExplode: 'GEOMETRY_EXPLODE',
   SpatialMeasure: 'SPATIAL_MEASURE',
@@ -452,6 +482,7 @@ export interface GeometrySimplifyConfiguration {
 }
 
 export type SpatialNearestMatchSemantics = 'EXACT_DISTANCE' | 'LEGACY_KNN';
+export type SpatialNearestGeodesicGeometryMode = 'POINT_ONLY' | 'GEOMETRY';
 
 export interface SpatialNearestConnectionLines {
   enabled: boolean | null;
@@ -465,6 +496,7 @@ export interface SpatialNearestMatching {
   semantics: SpatialNearestMatchSemantics | null;
   sourceIdColumnName: string;
   connectionLines: SpatialNearestConnectionLines | null;
+  geodesicGeometryMode?: SpatialNearestGeodesicGeometryMode | null;
 }
 
 export interface SpatialNearestConfiguration {
@@ -744,10 +776,20 @@ export interface TrackIncidentWindow {
   kind: 'COUNT' | 'SUM' | 'MEAN' | 'MIN' | 'MAX' | 'FIRST' | 'LAST' | 'STDDEV_POP' | 'VARIANCE_POP' | null;
   startOffset: number | null;
   endOffset: number | null;
+  source?: 'FIELD' | 'TRACK_DISTANCE' | 'TRACK_SPEED' | 'TRACK_ACCELERATION' | null;
+}
+
+export interface TrackIncidentScalar {
+  bindingName: string;
+  source: 'TRACK_START_TIME' | 'TRACK_DURATION' | 'TRACK_CURRENT_TIME' | 'TRACK_INDEX'
+    | 'TRACK_POINT_X_AT' | 'TRACK_POINT_Y_AT' | null;
+  /** Only point-coordinate sources use this relative observation offset. */
+  offset?: number | null;
 }
 
 export interface TrackDetectIncidentsConfiguration {
   conditionWindows?: TrackIncidentWindow[];
+  conditionScalars?: TrackIncidentScalar[];
   incidentSemantics?: TrackIncidentSemantics;
   incidentStatusColumnName?: string | null;
   orderByColumns?: string[];
@@ -885,6 +927,289 @@ export interface SpatialCenterDispersionConfiguration {
   resultMode?: SpatialCenterResultMode | null;
 }
 
+export type SpatialDensityWeighting = 'UNIFORM' | 'KERNEL';
+export type SpatialDensityBinShape = 'SQUARE' | 'HEXAGON';
+
+export interface SpatialDensityField {
+  fieldId: string;
+  sourceColumnName: string;
+  outputColumnName: string;
+}
+
+export interface SpatialDensityConfiguration {
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  fields: SpatialDensityField[];
+  weighting: SpatialDensityWeighting | null;
+  binShape: SpatialDensityBinShape | null;
+  binSize: number;
+  binSizeUnit: SpatialDistanceUnit;
+  radius: number;
+  radiusUnit: SpatialDistanceUnit;
+  areaUnit: SpatialAreaUnit;
+  temporalSlicing: SpatialTemporalSlicing | null;
+  outputTableName: string;
+  binIdColumnName: string;
+  binGeometryColumnName: string;
+  countDensityColumnName: string;
+}
+
+export type SpatialHotSpotAnalysisSource = 'POINT_COUNT' | 'FIELD_SUM';
+export type SpatialHotSpotMultipleTesting = 'NONE' | 'FDR_BH';
+
+export interface SpatialHotSpotsConfiguration {
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  analysisSource: SpatialHotSpotAnalysisSource | null;
+  analysisColumnName: string | null;
+  binSize: number;
+  binSizeUnit: SpatialDistanceUnit;
+  neighborhoodDistance: number;
+  neighborhoodDistanceUnit: SpatialDistanceUnit;
+  temporalSlicing: SpatialTemporalSlicing | null;
+  multipleTesting: SpatialHotSpotMultipleTesting | null;
+  outputTableName: string;
+  binIdColumnName: string;
+  binGeometryColumnName: string;
+  pointCountColumnName: string;
+  analysisValueColumnName: string;
+  zScoreColumnName: string;
+  pValueColumnName: string;
+  adjustedPValueColumnName: string;
+  confidenceBinColumnName: string;
+}
+
+export type SpatialMultiVariableGridVariableKind =
+  | 'DISTANCE_TO_NEAREST'
+  | 'ATTRIBUTE_OF_NEAREST'
+  | 'ATTRIBUTE_SUMMARY_OF_RELATED';
+
+export type SpatialMultiVariableGridStatisticKind =
+  | 'COUNT'
+  | 'SUM'
+  | 'MEAN'
+  | 'MIN'
+  | 'MAX'
+  | 'RANGE'
+  | 'STDDEV'
+  | 'VARIANCE'
+  | 'ANY';
+
+export interface SpatialMultiVariableGridVariable {
+  variableId: string;
+  sourceTableName: string;
+  geometryColumnName: string;
+  kind: SpatialMultiVariableGridVariableKind | null;
+  attributeColumnName: string | null;
+  statisticKind: SpatialMultiVariableGridStatisticKind | null;
+  statisticColumnName: string | null;
+  searchDistance: number | null;
+  searchDistanceUnit: SpatialDistanceUnit | null;
+  filter: CanvasFilterCondition | null;
+  outputColumnName: string;
+}
+
+export interface SpatialMultiVariableGridConfiguration {
+  variables: SpatialMultiVariableGridVariable[];
+  binShape: SpatialDensityBinShape | null;
+  binSize: number;
+  binSizeUnit: SpatialDistanceUnit;
+  outputTableName: string;
+  binIdColumnName: string;
+  binGeometryColumnName: string;
+}
+
+export type SpatialSimilarLocationsMatchMethod = 'ATTRIBUTE_VALUES' | 'ATTRIBUTE_PROFILES';
+export type SpatialSimilarLocationsResultMode = 'MOST_SIMILAR' | 'LEAST_SIMILAR' | 'BOTH';
+
+export interface SpatialSimilarLocationsAnalysisField {
+  columnName: string;
+  outputColumnName: string;
+}
+
+export interface SpatialSimilarLocationsAppendField {
+  sourceColumnName: string;
+  outputColumnName: string;
+}
+
+export interface SpatialSimilarLocationsConfiguration {
+  referenceTableName: string;
+  referenceIdColumnName: string;
+  referenceGeometryColumnName: string;
+  referenceFilter: CanvasFilterCondition | null;
+  candidateTableName: string;
+  candidateIdColumnName: string;
+  candidateGeometryColumnName: string;
+  candidateFilter: CanvasFilterCondition | null;
+  analysisFields: SpatialSimilarLocationsAnalysisField[];
+  appendFields: SpatialSimilarLocationsAppendField[];
+  matchMethod: SpatialSimilarLocationsMatchMethod | null;
+  resultMode: SpatialSimilarLocationsResultMode | null;
+  numberOfResults: number;
+  outputTableName: string;
+  outputGeometryColumnName: string;
+  locationTypeColumnName: string;
+  similarityRankColumnName: string;
+  dissimilarityRankColumnName: string;
+  similarityIndexColumnName: string;
+  cosineIndexColumnName: string;
+  labelRankColumnName: string;
+  referenceIdOutputColumnName: string;
+  searchIdOutputColumnName: string;
+}
+
+export interface SpatialDescribeDatasetConfiguration {
+  sourceTableName: string;
+  geometryColumnName: string;
+  statisticsTableName: string;
+  descriptionTableName: string;
+  sampleSize: number;
+  sampleTableName: string;
+  extentOutput: boolean;
+  extentTableName: string;
+}
+
+export interface SpatialEnrichFromGridField {
+  sourceColumnName: string;
+  outputColumnName: string;
+}
+
+export interface SpatialEnrichFromGridConfiguration {
+  pointTableName: string;
+  pointGeometryColumnName: string;
+  gridTableName: string;
+  gridGeometryColumnName: string;
+  gridIdColumnName: string;
+  enrichFields: SpatialEnrichFromGridField[];
+  outputTableName: string;
+}
+
+export type SpatialGroupByProximitySpatialRelationship =
+  | 'INTERSECTS'
+  | 'TOUCHES'
+  | 'NEAR_PLANAR'
+  | 'NEAR_GEODESIC';
+
+export type SpatialGroupByProximityTemporalRelationship = 'INTERSECTS' | 'NEAR';
+
+export type SpatialGroupByProximityTemporalUnit =
+  | 'MILLISECONDS'
+  | 'SECONDS'
+  | 'MINUTES'
+  | 'HOURS'
+  | 'DAYS'
+  | 'WEEKS'
+  | 'MONTHS'
+  | 'YEARS';
+
+export interface SpatialGroupByProximityTemporalCondition {
+  relationship: SpatialGroupByProximityTemporalRelationship | null;
+  startColumnName: string;
+  endColumnName: string | null;
+  nearDistance: number | null;
+  nearDistanceUnit: SpatialGroupByProximityTemporalUnit | null;
+}
+
+export type SpatialGroupByProximityAttributeRelationship =
+  | 'EQUALS'
+  | 'ABSOLUTE_DIFFERENCE_AT_MOST';
+
+export interface SpatialGroupByProximityAttributeCondition {
+  columnName: string;
+  relationship: SpatialGroupByProximityAttributeRelationship | null;
+  maximumDifference: number | null;
+}
+
+export interface SpatialGroupByProximityConfiguration {
+  sourceTableName: string;
+  geometryColumnName: string;
+  spatialRelationship: SpatialGroupByProximitySpatialRelationship | null;
+  spatialNearDistance: number | null;
+  spatialNearDistanceUnit: SpatialDistanceUnit | null;
+  temporalCondition: SpatialGroupByProximityTemporalCondition | null;
+  attributeConditions: SpatialGroupByProximityAttributeCondition[];
+  groupIdColumnName: string;
+  outputTableName: string;
+}
+
+export type TraceProximityInterestSource = 'ENTITY_IDS' | 'TABLE';
+
+export interface TraceProximityEntityOfInterest {
+  entityId: string;
+  startEpochMillis: number | null;
+}
+
+export interface TraceProximityEventsConfiguration {
+  sourceTableName: string;
+  pointGeometryColumnName: string;
+  entityIdColumnName: string;
+  timeColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  spatialSearchDistance: number | null;
+  spatialSearchDistanceUnit: SpatialDistanceUnit | null;
+  temporalSearchDistance: number | null;
+  temporalSearchDistanceUnit: SpatialGroupByProximityTemporalUnit | null;
+  interestSource: TraceProximityInterestSource | null;
+  entitiesOfInterest: TraceProximityEntityOfInterest[];
+  entitiesOfInterestTableName: string;
+  interestEntityIdColumnName: string;
+  interestStartTimeColumnName: string | null;
+  maxTraceDepth: number | null;
+  attributeMatchColumns: string[];
+  includeTracks: boolean;
+  outputTableName: string;
+  tracksOutputTableName: string;
+  fromEntityIdColumnName: string;
+  toEntityIdColumnName: string;
+  depthColumnName: string;
+  durationMinutesColumnName: string;
+  eventTimeColumnName: string;
+}
+
+export type SnapTracksOutputMode = 'ALL_FEATURES' | 'MATCHED_FEATURES';
+
+export interface SnapTracksDirectionMatching {
+  directionColumnName: string;
+  forwardValue: string;
+  backwardValue: string;
+  bothValue: string;
+  noneValue: string;
+}
+
+export interface SnapTracksLineField {
+  sourceColumnName: string;
+  outputColumnName: string;
+}
+
+export interface SnapTracksConfiguration {
+  pointTableName: string;
+  pointGeometryColumnName: string;
+  trackIdColumns: string[];
+  timeColumnName: string;
+  orderByColumns: string[];
+  lineTableName: string;
+  lineGeometryColumnName: string;
+  lineIdColumnName: string;
+  fromNodeColumnName: string;
+  toNodeColumnName: string;
+  searchDistance: number | null;
+  searchDistanceUnit: SpatialDistanceUnit | null;
+  distanceMethod: SpatialDistanceMethod | null;
+  boundaries: TrackBoundaryConfiguration;
+  directionMatching: SnapTracksDirectionMatching | null;
+  lineFields: SnapTracksLineField[];
+  outputMode: SnapTracksOutputMode | null;
+  outputTableName: string;
+  snappedGeometryColumnName: string;
+  matchedLineIdColumnName: string;
+  matchStatusColumnName: string;
+  originalXColumnName: string;
+  originalYColumnName: string;
+  matchXColumnName: string;
+  matchYColumnName: string;
+  matchDistanceColumnName: string;
+}
+
 export interface GeometryBufferConfiguration {
   sourceTableName: string;
   outputTableName: string;
@@ -892,7 +1217,13 @@ export interface GeometryBufferConfiguration {
   outputColumnName: string;
   distance: number;
   mode: SpatialMeasureMode;
+  distanceUnit?: SpatialDistanceUnit | null;
+  distanceSource?: GeometryBufferDistanceSource | null;
+  distanceFieldName?: string | null;
+  distanceExpression?: string | null;
 }
+
+export type GeometryBufferDistanceSource = 'CONSTANT' | 'FIELD' | 'EXPRESSION';
 
 export interface GeometryExplodeConfiguration {
   sourceTableName: string;
@@ -910,18 +1241,21 @@ export type SpatialMeasurement =
     geometryColumnName: string;
     mode: SpatialMeasureMode;
     outputColumnName: string;
+    outputUnit?: SpatialAreaUnit | null;
   }
   | {
     kind: 'LENGTH';
     geometryColumnName: string;
     mode: SpatialMeasureMode;
     outputColumnName: string;
+    outputUnit?: SpatialDistanceUnit | null;
   }
   | {
     kind: 'PERIMETER';
     geometryColumnName: string;
     mode: SpatialMeasureMode;
     outputColumnName: string;
+    outputUnit?: SpatialDistanceUnit | null;
   }
   | {
     kind: 'DISTANCE';
@@ -929,6 +1263,7 @@ export type SpatialMeasurement =
     rightGeometryColumnName: string;
     mode: SpatialMeasureMode;
     outputColumnName: string;
+    outputUnit?: SpatialDistanceUnit | null;
   }
   | { kind: 'X'; geometryColumnName: string; outputColumnName: string }
   | { kind: 'Y'; geometryColumnName: string; outputColumnName: string };
@@ -949,6 +1284,9 @@ export interface GeometrySerializeConfiguration {
   format: GeometrySerializationFormat;
 }
 
+export type SpatialClipGeometryPolicy = 'SOURCE_FAMILY_2D' | 'LEGACY_ANY_DIMENSION';
+export type SpatialClipMaskCombination = 'DISSOLVE_ALL' | 'PAIRWISE';
+
 export interface SpatialClipConfiguration {
   sourceTableName: string;
   maskTableName: string;
@@ -956,6 +1294,8 @@ export interface SpatialClipConfiguration {
   sourceGeometryColumnName: string;
   maskGeometryColumnName: string;
   outputColumnName: string;
+  geometryPolicy?: SpatialClipGeometryPolicy | null;
+  maskCombination?: SpatialClipMaskCombination | null;
 }
 
 export type SpatialAggregationKind =
@@ -970,11 +1310,40 @@ export interface SpatialAggregation {
   outputColumnName: string;
 }
 
+export type SpatialAggregateStatisticKind =
+  | 'COUNT_FIELD'
+  | 'SUM'
+  | 'MEAN'
+  | 'MIN'
+  | 'MAX'
+  | 'RANGE'
+  | 'STDDEV'
+  | 'VARIANCE'
+  | 'ANY';
+
+export interface SpatialAggregateStatistic {
+  statisticId: string;
+  kind: SpatialAggregateStatisticKind;
+  sourceColumnName: string;
+  outputColumnName: string;
+}
+
+export interface SpatialAggregateDissolveOptions {
+  enabled: boolean;
+  multipart: boolean;
+  countOutputColumnName: string;
+  summaryStatistics: SpatialAggregateStatistic[];
+  groupingMode?: SpatialAggregateDissolveGroupingMode | null;
+}
+
+export type SpatialAggregateDissolveGroupingMode = 'ALL_OR_FIELDS' | 'CONNECTED_COMPONENTS';
+
 export interface SpatialAggregateConfiguration {
   sourceTableName: string;
   outputTableName: string;
   groupByColumns: string[];
   aggregations: SpatialAggregation[];
+  dissolve?: SpatialAggregateDissolveOptions | null;
 }
 
 export type SpatialPredicate =
@@ -994,12 +1363,87 @@ export interface SpatialJoinCondition {
   rightGeometryColumnName: string;
 }
 
+export type SpatialJoinType = 'INNER' | 'LEFT';
+export type SpatialJoinOperation = 'JOIN_ONE_TO_MANY' | 'JOIN_ONE_TO_ONE';
+export type SpatialJoinOneToOneMode = 'SUMMARIZE_MATCHES' | 'KEEP_ONE';
+export type SpatialJoinKeepStrategy = 'FIRST' | 'LARGEST' | 'SMALLEST' | 'NEWEST' | 'OLDEST';
+export type SpatialJoinSummaryStatisticKind = 'SUM' | 'MIN' | 'MAX' | 'MEAN' | 'STDDEV';
+export type SpatialJoinTemporalRelationship =
+  | 'EQUALS'
+  | 'INTERSECTS'
+  | 'DURING'
+  | 'CONTAINS'
+  | 'FINISHES'
+  | 'FINISHED_BY'
+  | 'MEETS'
+  | 'MET_BY'
+  | 'OVERLAPS'
+  | 'OVERLAPPED_BY'
+  | 'STARTS'
+  | 'STARTED_BY'
+  | 'NEAR'
+  | 'NEAR_BEFORE'
+  | 'NEAR_AFTER';
+
+export interface SpatialJoinSummaryStatistic {
+  statisticId: string;
+  kind: SpatialJoinSummaryStatisticKind | null;
+  sourceColumnName: string;
+  outputColumnName: string;
+}
+
+export interface SpatialJoinKeepRule {
+  strategy: SpatialJoinKeepStrategy | null;
+  orderByColumnName: string | null;
+  stableOrder: SortField[];
+}
+
+export interface SpatialJoinOneToOneOptions {
+  mode: SpatialJoinOneToOneMode | null;
+  joinCountColumnName: string;
+  summaryStatistics: SpatialJoinSummaryStatistic[];
+  keepRule: SpatialJoinKeepRule | null;
+}
+
+export interface SpatialJoinTemporalCondition {
+  relationship: SpatialJoinTemporalRelationship | null;
+  leftStartColumnName: string;
+  leftEndColumnName: string | null;
+  rightStartColumnName: string;
+  rightEndColumnName: string | null;
+  nearDistance: number | null;
+  nearDistanceUnit: SpatialDurationUnit | null;
+}
+
+export interface SpatialJoinSpatialNearCondition {
+  leftGeometryColumnName: string;
+  rightGeometryColumnName: string;
+  distanceMethod: SpatialDistanceMethod | null;
+  distance: number | null;
+  distanceUnit: SpatialDistanceUnit | null;
+}
+
+export interface SpatialJoinDistanceOutput {
+  enabled: boolean;
+  spatialDistanceColumnName: string;
+  spatialDistanceUnit: SpatialDistanceUnit | null;
+  temporalDifferenceColumnName: string;
+  temporalDifferenceUnit: SpatialDurationUnit | null;
+}
+
 export interface SpatialJoinConfiguration {
   leftTableName: string;
   rightTableName: string;
   outputTableName: string;
-  joinType: 'INNER';
+  joinType: SpatialJoinType;
   conditions: SpatialJoinCondition[];
+  attributeConditions?: JoinCondition[] | null;
+  outputColumns?: JoinOutputColumn[] | null;
+  joinOperation?: SpatialJoinOperation | null;
+  oneToOne?: SpatialJoinOneToOneOptions | null;
+  temporalCondition?: SpatialJoinTemporalCondition | null;
+  spatialNear?: SpatialJoinSpatialNearCondition | null;
+  distanceOutput?: SpatialJoinDistanceOutput | null;
 }
 
 export type StreamJoinType = 'INNER' | 'LEFT';
@@ -1261,10 +1705,24 @@ export interface AggregateConfiguration {
 
 export type UnionMode = 'ALL' | 'DISTINCT';
 
+export type UnionMergeFieldAction = 'MATCH' | 'RENAME' | 'REMOVE';
+
+export interface UnionMergeFieldRule {
+  sourceColumnName: string;
+  action: UnionMergeFieldAction | null;
+  targetColumnName: string | null;
+}
+
+export interface UnionMergeTable {
+  tableName: string;
+  fieldRules: UnionMergeFieldRule[];
+}
+
 export interface UnionConfiguration {
   inputTableNames: string[];
   outputTableName: string;
   mode: UnionMode | null;
+  mergingTables: UnionMergeTable[] | null;
 }
 
 export type DeduplicateKeepStrategy = 'ANY' | 'FIRST' | 'LAST';
@@ -1795,6 +2253,51 @@ export type SpatialCenterDispersionNodeDefinition = CanvasNodeBase<
   SpatialCenterDispersionConfiguration
 >;
 
+export type SpatialDensityNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialDensity,
+  SpatialDensityConfiguration
+>;
+
+export type SpatialHotSpotsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialHotSpots,
+  SpatialHotSpotsConfiguration
+>;
+
+export type SpatialMultiVariableGridNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialMultiVariableGrid,
+  SpatialMultiVariableGridConfiguration
+>;
+
+export type SpatialSimilarLocationsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialSimilarLocations,
+  SpatialSimilarLocationsConfiguration
+>;
+
+export type SpatialDescribeDatasetNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialDescribeDataset,
+  SpatialDescribeDatasetConfiguration
+>;
+
+export type SpatialEnrichFromGridNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialEnrichFromGrid,
+  SpatialEnrichFromGridConfiguration
+>;
+
+export type SpatialGroupByProximityNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SpatialGroupByProximity,
+  SpatialGroupByProximityConfiguration
+>;
+
+export type TraceProximityEventsNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.TraceProximityEvents,
+  TraceProximityEventsConfiguration
+>;
+
+export type SnapTracksNodeDefinition = CanvasNodeBase<
+  typeof CanvasNodeType.SnapTracks,
+  SnapTracksConfiguration
+>;
+
 export type GeometryBufferNodeDefinition = CanvasNodeBase<
   typeof CanvasNodeType.GeometryBuffer,
   GeometryBufferConfiguration
@@ -1961,6 +2464,15 @@ export type CanvasNodeDefinition =
   | SpatialBinAggregateNodeDefinition
   | SpatialPointClusterNodeDefinition
   | SpatialCenterDispersionNodeDefinition
+  | SpatialDensityNodeDefinition
+  | SpatialHotSpotsNodeDefinition
+  | SpatialMultiVariableGridNodeDefinition
+  | SpatialSimilarLocationsNodeDefinition
+  | SpatialDescribeDatasetNodeDefinition
+  | SpatialEnrichFromGridNodeDefinition
+  | SpatialGroupByProximityNodeDefinition
+  | TraceProximityEventsNodeDefinition
+  | SnapTracksNodeDefinition
   | GeometryBufferNodeDefinition
   | GeometryExplodeNodeDefinition
   | SpatialMeasureNodeDefinition
@@ -2024,6 +2536,15 @@ export type CanvasNodeConfigurationUpdate =
   | Pick<SpatialBinAggregateNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<SpatialPointClusterNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<SpatialCenterDispersionNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialDensityNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialHotSpotsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialMultiVariableGridNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialSimilarLocationsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialDescribeDatasetNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialEnrichFromGridNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SpatialGroupByProximityNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<TraceProximityEventsNodeDefinition, 'id' | 'type' | 'configuration'>
+  | Pick<SnapTracksNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<GeometryBufferNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<GeometryExplodeNodeDefinition, 'id' | 'type' | 'configuration'>
   | Pick<SpatialMeasureNodeDefinition, 'id' | 'type' | 'configuration'>
@@ -2347,6 +2868,39 @@ export type CanvasNodeRuntimeData =
     SpatialCenterDispersionConfiguration
   >
   | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialDensity,
+    SpatialDensityConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialHotSpots,
+    SpatialHotSpotsConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialMultiVariableGrid,
+    SpatialMultiVariableGridConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialSimilarLocations,
+    SpatialSimilarLocationsConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialDescribeDataset,
+    SpatialDescribeDatasetConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialEnrichFromGrid,
+    SpatialEnrichFromGridConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.SpatialGroupByProximity,
+    SpatialGroupByProximityConfiguration
+  >
+  | CanvasNodeRuntimeBase<
+    typeof CanvasNodeType.TraceProximityEvents,
+    TraceProximityEventsConfiguration
+  >
+  | CanvasNodeRuntimeBase<typeof CanvasNodeType.SnapTracks, SnapTracksConfiguration>
+  | CanvasNodeRuntimeBase<
     typeof CanvasNodeType.GeometryBuffer,
     GeometryBufferConfiguration
   >
@@ -2427,6 +2981,15 @@ const emptyConfigurationFactories: Record<
   [CanvasNodeType.SpatialBinAggregate]: createSpatialBinAggregateConfiguration,
   [CanvasNodeType.SpatialPointCluster]: createSpatialPointClusterConfiguration,
   [CanvasNodeType.SpatialCenterDispersion]: createSpatialCenterDispersionConfiguration,
+  [CanvasNodeType.SpatialDensity]: createSpatialDensityConfiguration,
+  [CanvasNodeType.SpatialHotSpots]: createSpatialHotSpotsConfiguration,
+  [CanvasNodeType.SpatialMultiVariableGrid]: createSpatialMultiVariableGridConfiguration,
+  [CanvasNodeType.SpatialSimilarLocations]: createSpatialSimilarLocationsConfiguration,
+  [CanvasNodeType.SpatialDescribeDataset]: createSpatialDescribeDatasetConfiguration,
+  [CanvasNodeType.SpatialEnrichFromGrid]: createSpatialEnrichFromGridConfiguration,
+  [CanvasNodeType.SpatialGroupByProximity]: createSpatialGroupByProximityConfiguration,
+  [CanvasNodeType.TraceProximityEvents]: createTraceProximityEventsConfiguration,
+  [CanvasNodeType.SnapTracks]: createSnapTracksConfiguration,
   [CanvasNodeType.GeometryBuffer]: createGeometryBufferConfiguration,
   [CanvasNodeType.GeometryExplode]: createGeometryExplodeConfiguration,
   [CanvasNodeType.SpatialMeasure]: createSpatialMeasureConfiguration,

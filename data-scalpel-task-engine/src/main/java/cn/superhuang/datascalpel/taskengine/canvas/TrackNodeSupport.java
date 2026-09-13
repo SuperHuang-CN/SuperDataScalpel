@@ -150,6 +150,7 @@ final class TrackNodeSupport {
 
         Dataset<Row> dataset = source.dataset();
         if (fixedBoundary != null) dataset = dataset.filter(column(dataset, timeColumnName).isNotNull());
+        String effectiveTimeColumnName = timeColumnName;
         if (orderByColumns != null) {
             // Instant observations without time cannot participate. Uniqueness is checked lazily in Runner.
             dataset = dataset.filter(column(dataset, timeColumnName).isNotNull());
@@ -160,7 +161,8 @@ final class TrackNodeSupport {
             // Time is non-null after the filter. Count it explicitly to preserve source lineage.
             Column ambiguous = functions.count(column(dataset, timeColumnName))
                     .over(Window.partitionBy(observationKeys.toArray(Column[]::new))).gt(1);
-            dataset = dataset.withColumn(timeColumnName, functions.when(ambiguous,
+            effectiveTimeColumnName = internalName(dataset, "__datascalpel_track_validated_time");
+            dataset = dataset.withColumn(effectiveTimeColumnName, functions.when(ambiguous,
                     functions.raise_error(functions.lit("TRACK_OBSERVATION_ORDER_NOT_UNIQUE")))
                     .otherwise(column(dataset, timeColumnName)));
         }
@@ -171,18 +173,19 @@ final class TrackNodeSupport {
         String timeBucket = internalName(dataset, "__datascalpel_track_time_bucket");
         if (fixedBoundary != null) {
             dataset = dataset.withColumn(timeBucket, functions.udf(fixedBoundary,
-                    org.apache.spark.sql.types.DataTypes.LongType).apply(column(dataset, timeColumnName)));
+                    org.apache.spark.sql.types.DataTypes.LongType).apply(column(dataset, effectiveTimeColumnName)));
         }
         List<Column> partitionColumns = new ArrayList<>();
         for (String name : trackIdColumns) partitionColumns.add(column(dataset, name));
         List<Column> sortColumns = new ArrayList<>();
-        sortColumns.add(column(dataset, timeColumnName).asc());
+        sortColumns.add(column(dataset, effectiveTimeColumnName).asc());
         if (orderByColumns != null) {
             for (String name : orderByColumns) sortColumns.add(column(dataset, name).asc_nulls_first());
         }
         WindowSpec ordered = Window.partitionBy(partitionColumns.toArray(Column[]::new))
                 .orderBy(sortColumns.toArray(Column[]::new));
-        Dataset<Row> staged = dataset.withColumn(previousTime, functions.lag(column(dataset, timeColumnName), 1).over(ordered));
+        Dataset<Row> staged = dataset.withColumn(previousTime,
+                functions.lag(column(dataset, effectiveTimeColumnName), 1).over(ordered));
         if (point != null) {
             staged = staged.withColumn(previousPoint,
                     functions.lag(column(dataset, pointGeometryColumnName), 1).over(ordered));
@@ -194,7 +197,7 @@ final class TrackNodeSupport {
         }
         if (boundaries != null && boundaries.maximumTimeGap() != null) {
             double limitMillis = durationMillis(boundaries.maximumTimeGap(), boundaries.maximumTimeGapUnit());
-            Column gapMillis = functions.unix_micros(column(staged, timeColumnName))
+            Column gapMillis = functions.unix_micros(column(staged, effectiveTimeColumnName))
                     .minus(functions.unix_micros(column(staged, previousTime)))
                     .divide(functions.lit(1000d));
             isBreak = isBreak.or(gapMillis.gt(limitMillis));
@@ -285,11 +288,17 @@ final class TrackNodeSupport {
         return List.copyOf(resolved);
     }
 
-    static Column summaryExpression(ResolvedSummary summary, Dataset<Row> dataset) {
+    static Column summaryExpression(
+            ResolvedSummary summary,
+            Dataset<Row> dataset,
+            String rowCountAnchorColumnName
+    ) {
         TrackSummaryStatistic statistic = summary.statistic();
         Column source = summary.source() == null ? null : column(dataset, summary.source().name());
         return switch (statistic.kind()) {
-            case COUNT -> functions.count(functions.lit(1));
+            // struct is non-null even when its field is null, so this remains an exact row count
+            // while retaining a real source-field lineage edge.
+            case COUNT -> functions.count(functions.struct(column(dataset, rowCountAnchorColumnName)));
             case COUNT_FIELD -> functions.count(source);
             case ANY -> functions.first(source, true);
             case SUM -> functions.sum(source);

@@ -2,9 +2,11 @@ package cn.superhuang.datascalpel.taskengine.runner;
 
 import cn.superhuang.data.scalpel.contract.task.TaskLineageEvidence;
 import cn.superhuang.datascalpel.sdk.JdbcTableIdentifier;
+import org.apache.spark.api.java.function.MapPartitionsFunction;
 import org.apache.spark.scheduler.SparkListener;
 import org.apache.spark.scheduler.SparkListenerJobStart;
 import org.apache.spark.sql.Dataset;
+import org.apache.spark.sql.Encoders;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.SparkSession;
 import org.junit.jupiter.api.AfterAll;
@@ -139,6 +141,26 @@ class SparkJarLineageRuntimeTest {
             assertEquals(TaskLineageEvidence.Coverage.FIELD_PARTIAL, flow.coverage());
             assertTrue(flow.fieldEdges().isEmpty());
         }
+    }
+
+    @Test
+    void unmarkedMapPartitionsRemainsPartial() {
+        UUID dataSourceId = UUID.randomUUID();
+        SparkJarLineageRuntime runtime = new SparkJarLineageRuntime(true);
+        Dataset<Row> source = runtime.jdbcTableInput(
+                "source", dataSourceId,
+                JdbcTableIdentifier.schemaTable("public", "customers"),
+                spark.sql("select cast(1 as bigint) id, 'Alice' name"));
+        Dataset<Row> opaque = source.mapPartitions(
+                (MapPartitionsFunction<Row, Row>) iterator -> iterator,
+                Encoders.row(source.schema()));
+
+        var flow = runtime.analyzeJdbcWrite(
+                "target", dataSourceId,
+                JdbcTableIdentifier.schemaTable("report", "customers"),
+                "APPEND", opaque).flow();
+
+        assertEquals(TaskLineageEvidence.Coverage.FIELD_PARTIAL, flow.coverage());
     }
 
     @Test

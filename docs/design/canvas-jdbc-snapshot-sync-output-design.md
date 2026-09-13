@@ -323,7 +323,7 @@ Inspector 只提供数据源/目标表选择器，Model Inspector 只提供模�
 | 错误码 | 级别/阶段 | 条件 |
 | --- | --- | --- |
 | `SNAPSHOT_SYNC_REQUIRES_BOUNDED_INPUT` | ERROR / Compiler | 来源不是 BOUNDED |
-| `SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED` | ERROR / Compiler | 目标不是 PostgreSQL/MySQL |
+| `SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED` | ERROR / Compiler | 目标不是 PostgreSQL/HighGo/MySQL/openGauss/人大金仓 |
 | `SNAPSHOT_SYNC_KEY_REQUIRED` | ERROR / Compiler | Key 为空或超过 32 项 |
 | `SNAPSHOT_SYNC_KEY_DUPLICATE` | ERROR / Compiler | Key 字段重复 |
 | `SNAPSHOT_SYNC_KEY_COLUMN_NOT_FOUND` | ERROR / Compiler | Key 不存在于目标 |
@@ -360,7 +360,7 @@ Inspector 只提供数据源/目标表选择器，Model Inspector 只提供模�
 - Geometry：拓扑相等、真实变化、NULL、无效 Geometry、kind/CRS/dimension 漂移。
 - ChangeSet：INSERT、UPDATE、DELETE、UNCHANGED、RETAINED、Key 变化和只映射 Key。
 - 安全限制：两侧 NULL/重复 Key、行数限制、估算字节限制、空来源和两类删除阈值。
-- PostgreSQL/MySQL 集成：锁等待、并发写阻塞、30 秒超时、DML 顺序、批次、提交、回滚和锁释放。
+- PostgreSQL/HighGo/MySQL/openGauss/人大金仓集成：锁等待、并发写阻塞、30 秒超时、DML 顺序、批次、提交、回滚和锁释放；PostgreSQL 家族在具备 PostGIS 兼容扩展时同时覆盖 Geometry。
 - 指标：七项计数恒等式、rowsWritten、affectedRows、零变化和失败无指标。
 - 前端：创建、配置、Key 推荐、失效值保留、删除确认、默认阈值、摘要和 JSON 导入导出。
 - 共享实现：同一组比较/事务契约测试分别使用 JDBC 目标和 Model 目标适配器运行，防止语义分叉。

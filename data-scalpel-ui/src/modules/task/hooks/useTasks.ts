@@ -5,7 +5,6 @@ import {
   cancelTaskRun,
   compileSparkJarOnlineSource,
   trialRunSparkJarOnlineSource,
-  acceptTaskCanvasProposal,
   createTask,
   generateSparkJarDevelopmentKit,
   createTaskSchedule,
@@ -19,7 +18,6 @@ import {
   executeTaskScheduleCommand,
   executeTaskStreamingCommand,
   fetchTask,
-  fetchTaskCanvasProposal,
   fetchTaskModelRelations,
   fetchTaskTableLineage,
   fetchTaskFieldLineage,
@@ -115,27 +113,6 @@ export const useCanvasTaskDefinition = (id: string | undefined, enabled = true) 
   queryFn: () => fetchCanvasTaskDefinition(id as string),
   enabled: Boolean(id) && enabled,
 });
-
-export const useTaskCanvasProposal = (id: string | undefined) => useQuery({
-  queryKey: ['assistant', 'task-canvas-proposal', id],
-  queryFn: () => fetchTaskCanvasProposal(id as string),
-  enabled: Boolean(id),
-  retry: false,
-});
-
-export const useAcceptTaskCanvasProposal = () => {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: ({ id, taskId }: { id: string; taskId: string }) => acceptTaskCanvasProposal(id, taskId),
-    onSuccess: async (changeSet) => {
-      queryClient.setQueryData(['assistant', 'task-canvas-proposal', changeSet.id], changeSet);
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['assistant', 'sessions'] }),
-        queryClient.invalidateQueries({ queryKey: ['assistant', 'session'] }),
-      ]);
-    },
-  });
-};
 
 export const useModelQualityTaskDefinition = (id: string | undefined, enabled = true) => useQuery({
   queryKey: [tasksKey, id, 'model-quality-definition'],

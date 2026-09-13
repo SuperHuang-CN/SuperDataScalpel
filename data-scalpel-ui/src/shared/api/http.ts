@@ -174,3 +174,47 @@ const toApiError = (body: string, status: number): ApiError => {
 
   return new ApiError(body, status);
 };
+
+/** Authenticated downlink; the ordinary JSON request timeout does not govern a live stream. */
+export const requestEventStream = async (
+  path: string,
+  signal: AbortSignal,
+  onEvent: (event: { event: string; data: string }) => void | Promise<void>,
+): Promise<void> => {
+  const { SseDecoder } = await import('./sse');
+  const controller = new AbortController();
+  const abort = () => controller.abort();
+  signal.addEventListener('abort', abort, { once: true });
+  if (signal.aborted) controller.abort();
+  const timer = window.setTimeout(abort, 55_000);
+  let reader: ReadableStreamDefaultReader<Uint8Array> | undefined;
+  let idleTimer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    const response = await fetch(`${API_BASE_URL}${path}`, {
+      headers: { ...authorizationHeader(), Accept: 'text/event-stream' }, signal: controller.signal,
+    });
+    window.clearTimeout(timer);
+    if (!response.ok) throw toApiError(await response.text(), response.status);
+    if (!response.body || !response.headers.get('content-type')?.includes('text/event-stream')) {
+      throw new ApiError('事件连接返回格式无效');
+    }
+    reader = response.body.getReader();
+    const decoder = new TextDecoder(); const sse = new SseDecoder();
+    while (!signal.aborted) {
+      idleTimer = window.setTimeout(abort, 45_000);
+      const chunk = await reader.read();
+      window.clearTimeout(idleTimer);
+      if (chunk.done) throw new ApiError('事件连接已断开');
+      for (const frame of sse.push(decoder.decode(chunk.value, { stream: true }))) {
+        if (signal.aborted) return;
+        await onEvent(frame);
+      }
+    }
+  } finally {
+    window.clearTimeout(timer);
+    signal.removeEventListener('abort', abort);
+    window.clearTimeout(idleTimer);
+    await reader?.cancel().catch(() => undefined);
+    controller.abort();
+  }
+};

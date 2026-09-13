@@ -17,6 +17,7 @@ export const JoinOutputColumnsEditor = ({
   outputColumns,
   leftLabel,
   rightLabel,
+  showExcludeRightJoinKeys = true,
   onProgrammaticChange,
 }: {
   left: CanvasTable | undefined;
@@ -25,6 +26,7 @@ export const JoinOutputColumnsEditor = ({
   outputColumns: JoinOutputColumn[];
   leftLabel: string;
   rightLabel: string;
+  showExcludeRightJoinKeys?: boolean;
   onProgrammaticChange: (columns: JoinOutputColumn[]) => void;
 }) => {
   const outputNameCounts = outputColumns.reduce<Map<string, number>>((counts, column) => {
@@ -46,7 +48,7 @@ export const JoinOutputColumnsEditor = ({
         {duplicateOutputNames.size > 0 && <Tag color="error">{duplicateOutputNames.size} 个重名待处理</Tag>}
       </Space>
       <Space size={4} wrap>
-        <Button
+        {showExcludeRightJoinKeys && <Button
           size="small"
           disabled={outputColumns.length === 0 || conditions.length === 0}
           onClick={() => {
@@ -59,7 +61,7 @@ export const JoinOutputColumnsEditor = ({
           }}
         >
           排除右侧 Join Key
-        </Button>
+        </Button>}
         <Popconfirm
           title="重建输出字段建议？"
           description="这会覆盖当前的字段改名、排除和排序。"

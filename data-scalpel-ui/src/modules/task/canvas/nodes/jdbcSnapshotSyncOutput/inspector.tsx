@@ -66,7 +66,9 @@ const JdbcSnapshotSyncOutputInspector = ({
   const dataSourceAvailable = dataSourceQuery.data
     ? dataSourceQuery.data.enabled
       && dataSourceQuery.data.connectionKind === 'JDBC'
-      && (dataSourceQuery.data.type === 'POSTGRESQL' || dataSourceQuery.data.type === 'MYSQL')
+      && (dataSourceQuery.data.type === 'POSTGRESQL' || dataSourceQuery.data.type === 'HIGHGO'
+        || dataSourceQuery.data.type === 'MYSQL' || dataSourceQuery.data.type === 'OPENGAUSS'
+        || dataSourceQuery.data.type === 'KINGBASE')
       && dataSourceQuery.data.purposes.includes('DISTRIBUTION')
     : dataSourceQuery.isError ? false : undefined;
   const targetTableAvailable = tableQuery.data
@@ -98,7 +100,7 @@ const JdbcSnapshotSyncOutputInspector = ({
             name: 'dataSourceId',
             errors: [dataSourceQuery.isFetching
               ? '正在读取数据源信息，请稍候'
-              : '仅支持启用、具有数据分发用途的 PostgreSQL/MySQL 数据源'],
+              : '仅支持启用、具有数据分发用途的 PostgreSQL/HighGo/MySQL/openGauss/人大金仓数据源'],
           }]);
 
         }
@@ -146,8 +148,8 @@ const JdbcSnapshotSyncOutputInspector = ({
               <Form.Item name="dataSourceId" label="目标数据源" rules={[{ required: true, message: '请选择目标数据源' }]}>
                 <CanvasJdbcDataSourceSelect
                   purpose="DISTRIBUTION"
-                  allowedTypes={['POSTGRESQL', 'MYSQL']}
-                  placeholder="选择 PostgreSQL 或 MySQL 数据源"
+                  allowedTypes={['POSTGRESQL', 'HIGHGO', 'MYSQL', 'OPENGAUSS', 'KINGBASE']}
+                  placeholder="选择支持快照同步的 JDBC 数据源"
                 />
               </Form.Item>
               <Form.Item

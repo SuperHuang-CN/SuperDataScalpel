@@ -161,6 +161,12 @@ class PointDbscanSparkTest {
                 table.schema().columns().stream().map(c -> new CatalystLineageOutputCandidate.TargetField("out:" + c.name(), null, c.name(), c.name(), TaskLineageEvidence.OutputEffect.WRITTEN_UNKNOWN_SOURCE)).toList());
         var flow = new CatalystLineageAnalyzer().analyze(List.of(candidate)).flows().getFirst();
         assertEquals(TaskLineageEvidence.Coverage.FIELD_COMPLETE, flow.coverage(), () -> flow.warnings().toString());
+        for (CanvasColumnSchema column : raw.schema().columns()) {
+            var direct = flow.fieldEdges().stream().filter(edge -> edge.target().localFieldKey().equals("out:" + column.name())
+                    && edge.source().localFieldKey().equals("input:" + column.name())).toList();
+            assertEquals(1, direct.size(), column.name());
+            assertEquals(TaskLineageEvidence.DerivationType.DIRECT, direct.getFirst().derivationType(), column.name());
+        }
         for (String target : configuration.hdbscan() == null ? List.of("cluster", "noise") : List.of("cluster", "noise", "p", "o", "e", "s")) {
             for (String field : configuration.hdbscan() == null ? List.of("shape", "time", "feature_id") : List.of("shape", "feature_id"))
                 assertTrue(flow.fieldEdges().stream().anyMatch(e -> e.target().localFieldKey().equals("out:" + target) && e.source().localFieldKey().equals("input:" + field)), target + ":" + field);
@@ -169,6 +175,30 @@ class PointDbscanSparkTest {
         assertEquals(0, spark.sparkContext().statusTracker().getJobIdsForGroup(group).length);
         assertEquals(before, spark.sparkContext().getCheckpointDir()); spark.sparkContext().clearJobGroup();
         }
+    }
+
+    @Test void twentyThousandPointPreviewIsLazyAndSpatialDbscanExecutesWithoutDriverCollection() {
+        SparkCanvasTable source = largePointTable(20_000);
+        var configuration = config(SpatialDbscanOptions.Mode.SPATIAL, .25, 2, null);
+        String previewGroup = "point-cluster-preview-" + UUID.randomUUID();
+        spark.sparkContext().setJobGroup(previewGroup, "point cluster preview", false);
+        try {
+            var issues = new Issues();
+            var preview = apply(source, configuration, issues, true);
+            assertFalse(issues.hasErrors(), issues::toString);
+            preview.propagatedTables().get("clusters").dataset().queryExecution().analyzed();
+            assertEquals(0, spark.sparkContext().statusTracker().getJobIdsForGroup(previewGroup).length);
+        } finally {
+            spark.sparkContext().clearJobGroup();
+        }
+
+        var issues = new Issues();
+        var result = apply(source, configuration, issues, false);
+        assertFalse(issues.hasErrors(), issues::toString);
+        Dataset<Row> clusters = result.propagatedTables().get("clusters").dataset();
+        assertEquals(20_000, clusters.count());
+        assertEquals(20_000, clusters.filter("noise").count());
+        assertEquals(0, clusters.filter("cluster IS NOT NULL").count());
     }
 
     @Test void invalidTimeAndWrongGeometryMetadataAreStableCompilerIssuesNotExceptions() {
@@ -210,6 +240,21 @@ class PointDbscanSparkTest {
         var data = raw.withColumn("shape", st_functions.ST_SetSRID(st_constructors.ST_GeomFromWKT(raw.col("wkt")), functions.lit(epsg)));
         columns.add(new CanvasColumnSchema("shape", PlatformDataType.GEOMETRY, null, null, null, true, null, false, false, null,
                 new GeometryTypeDefinition(GeometryKind.POINT, new CrsReference("EPSG", epsg), CoordinateDimension.XY)));
+        return new SparkCanvasTable(new CanvasTableSchema("points", null, columns, CanvasDatasetKind.BOUNDED, null, null), data);
+    }
+    private SparkCanvasTable largePointTable(long size) {
+        Dataset<Row> data = spark.range(size).select(
+                        functions.col("id").alias("feature_id"),
+                        functions.expr("timestamp_seconds(id)").alias("time"),
+                        functions.lit("original-id").alias("id"),
+                        functions.lit("original-src").alias("src"),
+                        functions.lit("original-dst").alias("dst"),
+                        functions.concat(functions.lit("POINT ("), functions.col("id").multiply(2).cast("string"), functions.lit(" 0)")).alias("wkt"))
+                .withColumn("shape", st_functions.ST_SetSRID(st_constructors.ST_Point(functions.col("feature_id").multiply(2).cast("double"), functions.lit(0d)), functions.lit(3857)));
+        var columns = new ArrayList<>(List.of(field("feature_id", PlatformDataType.LONG), field("time", PlatformDataType.TIMESTAMP),
+                field("id", PlatformDataType.STRING), field("src", PlatformDataType.STRING), field("dst", PlatformDataType.STRING), field("wkt", PlatformDataType.STRING)));
+        columns.add(new CanvasColumnSchema("shape", PlatformDataType.GEOMETRY, null, null, null, true, null, false, false, null,
+                new GeometryTypeDefinition(GeometryKind.POINT, new CrsReference("EPSG", 3857), CoordinateDimension.XY)));
         return new SparkCanvasTable(new CanvasTableSchema("points", null, columns, CanvasDatasetKind.BOUNDED, null, null), data);
     }
     private CanvasColumnSchema field(String name, PlatformDataType type) { return new CanvasColumnSchema(name, type, type == PlatformDataType.STRING ? 100 : null, null, null, true, null, false, false, null); }

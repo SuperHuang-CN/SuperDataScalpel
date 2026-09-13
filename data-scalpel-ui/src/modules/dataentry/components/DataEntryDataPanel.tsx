@@ -1,5 +1,5 @@
-import { DeleteOutlined } from '@ant-design/icons';
-import { Button, Modal, Space, Tag, message } from 'antd';
+import { DeleteOutlined, EditOutlined, EyeOutlined } from '@ant-design/icons';
+import { Button, Modal, Space, Tag, Tooltip, message } from 'antd';
 import { useCallback, useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import {
@@ -12,15 +12,20 @@ import { useCurrentUser } from '../../system';
 import { queryDataEntryData, queryDataEntryOptions } from '../api/dataEntryApi';
 import { useDeleteDataEntries } from '../hooks/useDataEntry';
 import type { DataEntryFormDetail } from '../model/dataEntry';
+import { DataEntryRecordDrawer } from './DataEntryRecordDrawer';
 
 export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFormDetail; onMutated: () => void }) => {
   const [selectedRows, setSelectedRows] = useState<DataModelQueryRow[]>([]);
   const [labels, setLabels] = useState<Record<string, { text: string; status: string }>>({});
+  const [recordKey, setRecordKey] = useState<Record<string, unknown>>();
+  const [recordEditing, setRecordEditing] = useState(false);
+  const [refreshToken, setRefreshToken] = useState(0);
   const [messageApi, contextHolder] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const mutation = useDeleteDataEntries();
   const currentUser = useCurrentUser();
   const canDeletePermission = new Set(currentUser.data?.permissions ?? []).has('dataentry.delete');
+  const canEditPermission = new Set(currentUser.data?.permissions ?? []).has('dataentry.submit');
   const primaryKeys = detail.fields.filter((field) => field.primaryKey);
   const fieldTypes = useMemo(
     () => new Map(detail.fields.map((field) => [field.code, field.fieldType])),
@@ -78,6 +83,7 @@ export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFor
         const keys = selectedRows.map((row) => Object.fromEntries(primaryKeys.map((field) => [field.code, row[field.code]])));
         const result = await mutation.mutateAsync({ id: detail.form.id, keys });
         setSelectedRows([]);
+        setRefreshToken((value) => value + 1);
         onMutated();
         if (result.status === 'PARTIALLY_SUCCEEDED') {
           messageApi.warning(result.warningMessage ?? '删除已部分生效，请查看操作日志并人工核对');
@@ -98,6 +104,18 @@ export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFor
         fields={detail.fields.map((field) => ({ ...field, modelId: detail.form.modelId, createdAt: '', updatedAt: '' }))}
         query={executeDataQuery}
         rowKey={makeRowKey}
+        requiredColumns={primaryKeys.map((field) => field.code)}
+        refreshToken={refreshToken}
+        rowActions={(row) => <Space size={2}>
+          <Tooltip title="查看详情"><Button type="text" size="small" icon={<EyeOutlined />} aria-label="查看记录详情" onClick={() => {
+            setRecordEditing(false);
+            setRecordKey(Object.fromEntries(primaryKeys.map((field) => [field.code, row[field.code]])));
+          }} /></Tooltip>
+          {canEditPermission && <Tooltip title="编辑"><Button type="text" size="small" icon={<EditOutlined />} aria-label="编辑记录" disabled={!(detail.health.canUpdateEntries ?? detail.health.canSubmit)} onClick={() => {
+            setRecordEditing(true);
+            setRecordKey(Object.fromEntries(primaryKeys.map((field) => [field.code, row[field.code]])));
+          }} /></Tooltip>}
+        </Space>}
         renderCell={renderCell}
         onResult={(result) => { setSelectedRows([]); void loadLabels(result.rows); }}
         rowSelection={() => ({
@@ -111,6 +129,15 @@ export const DataEntryDataPanel = ({ detail, onMutated }: { detail: DataEntryFor
           </Space>
         )}
       />
+      {recordKey && <DataEntryRecordDrawer
+        key={JSON.stringify(recordKey)}
+        open
+        detail={detail}
+        recordKey={recordKey}
+        initialEditing={recordEditing}
+        onClose={() => setRecordKey(undefined)}
+        onUpdated={() => { setRefreshToken((value) => value + 1); onMutated(); }}
+      />}
     </div>
   );
 };

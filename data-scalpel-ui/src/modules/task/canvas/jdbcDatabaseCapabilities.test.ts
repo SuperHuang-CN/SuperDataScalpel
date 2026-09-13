@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { jdbcWriteModeUnavailableReason } from './jdbcDatabaseCapabilities';
 
 describe('jdbcDatabaseCapabilities', () => {
-  it.each(['ORACLE', 'SQL_SERVER', 'CLICKHOUSE', 'DAMENG'] as const)(
+  it.each(['CLICKHOUSE'] as const)(
     'allows batch OVERWRITE but disables UPSERT for %s',
     (databaseType) => {
       expect(jdbcWriteModeUnavailableReason(databaseType, 'APPEND', 'BATCH')).toBeNull();
@@ -16,8 +16,11 @@ describe('jdbcDatabaseCapabilities', () => {
     expect(jdbcWriteModeUnavailableReason('POSTGRESQL', 'OVERWRITE', 'BATCH')).toBeNull();
     expect(jdbcWriteModeUnavailableReason('MYSQL', 'UPSERT', 'STREAMING')).toBeNull();
     expect(jdbcWriteModeUnavailableReason('OPENGAUSS', 'OVERWRITE', 'BATCH')).toBeNull();
-    expect(jdbcWriteModeUnavailableReason('KINGBASE', 'UPSERT', 'BATCH'))
-      .toContain('暂不支持 UPSERT');
+    expect(jdbcWriteModeUnavailableReason('OPENGAUSS', 'UPSERT', 'BATCH')).toBeNull();
+    expect(jdbcWriteModeUnavailableReason('KINGBASE', 'UPSERT', 'BATCH')).toBeNull();
+    expect(jdbcWriteModeUnavailableReason('DAMENG', 'UPSERT', 'BATCH')).toBeNull();
+    expect(jdbcWriteModeUnavailableReason('ORACLE', 'UPSERT', 'BATCH')).toBeNull();
+    expect(jdbcWriteModeUnavailableReason('SQL_SERVER', 'UPSERT', 'BATCH')).toBeNull();
   });
 
   it('keeps imported streaming overwrite visible as an invalid draft value', () => {

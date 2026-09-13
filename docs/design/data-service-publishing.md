@@ -5,7 +5,7 @@
 数据服务提供三种创建后不可切换的模式：
 
 - `STANDARD_TABLE`：绑定一个已发布模型，将模型对应的单张物理表启用为字段白名单约束的标准查询服务。
-- `SQL_QUERY`：先绑定一个已启用的 PostgreSQL 或 ClickHouse JDBC 数据源，再关联该数据源下的一个或多个模型，并将一条启用时冻结的只读参数化 SQL 模板部署到已注册该数据源的目标 Engine。
+- `SQL_QUERY`：先绑定一个已启用且声明 `SQL_SERVICE_QUERY` 能力的 JDBC 数据源，再关联该数据源下的一个或多个模型，并将一条启用时冻结的只读参数化 SQL 模板部署到已注册该数据源的目标 Engine。当前支持 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle、SQL Server 与 ClickHouse。
 - `SCRIPT_API`：绑定一个已启用的 JDBC 数据源和已注册该数据源的目标 Engine，将 Groovy 脚本交给 Engine 内嵌的 API Studio 保存并注册为公开 `POST` 路由。
 
 SQL 服务不是任意 SQL 执行接口。调用方不能提交 SQL、表名、列名或 SQL 片段，只能向启用快照中声明的标量参数传值。第一版不支持写入语句、列表参数、动态 SQL、标识符参数、自定义 count、路径/Header 参数或自定义响应模板。
@@ -57,9 +57,9 @@ SQL 服务关联的模型只用于来源说明、血缘记录、编辑辅助和�
 
 Engine 属于基础信息，可以独立修改。修改 Engine 不清空或改写原定义；定义页保留原值并展示不兼容原因。重新保存定义和启用时，后台都按当前 Engine 校验数据源 READY 注册。标准单表定义还要求模型已发布、存在字段且绑定有效 JDBC 存储数据源。
 
-SQL 服务先在基础信息中选择 Engine，再在定义页选择该 Engine 已就绪的 PostgreSQL 或 ClickHouse 数据源 → 该数据源下的一个或多个模型 → SQL 和参数。`modelIds` 至少一个、不能包含空值或重复值，且所有模型的 `storageDataSourceId` 必须与 `dataSourceId` 相同。草稿、已发布和已停用模型均可关联，模型状态不参与保存、测试或启用判定。切换数据源后必须重新选择关联模型；切换 Engine 时保留原定义并由用户在定义页调整。
+SQL 服务先在基础信息中选择 Engine，再在定义页选择该 Engine 已就绪且声明 `SQL_SERVICE_QUERY` 能力的数据源 → 该数据源下的一个或多个模型 → SQL 和参数。当前支持 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle、SQL Server 与 ClickHouse。`modelIds` 至少一个、不能包含空值或重复值，且所有模型的 `storageDataSourceId` 必须与 `dataSourceId` 相同。草稿、已发布和已停用模型均可关联，模型状态不参与保存、测试或启用判定。切换数据源后必须重新选择关联模型；切换 Engine 时保留原定义并由用户在定义页调整。
 
-标准单表与 SQL 共用数据服务模块内的模型选择工作区，统一目录树、名称/编码搜索、状态/数仓分层/数据源筛选、分页表格和跨页选中语义，但由各自业务外壳提供候选查询与提交规则。SQL 不再一次加载固定上限的模型到多选下拉框，而是复用通用 `/api/v1/models` Search API，并始终附加当前 PostgreSQL 或 ClickHouse 数据源条件，以每页 20 条执行服务端分页。SQL 选择 Drawer 提供“全部模型/已选模型”视图，选择先保存在 Drawer 草稿中，取消不修改定义，确定后才写入有序 `modelIds`；原有关联顺序保持，新模型按选择顺序追加。
+标准单表与 SQL 共用数据服务模块内的模型选择工作区，统一目录树、名称/编码搜索、状态/数仓分层/数据源筛选、分页表格和跨页选中语义，但由各自业务外壳提供候选查询与提交规则。SQL 不再一次加载固定上限的模型到多选下拉框，而是复用通用 `/api/v1/models` Search API，并始终附加当前 SQL 服务数据源条件，以每页 20 条执行服务端分页。SQL 选择 Drawer 提供“全部模型/已选模型”视图，选择先保存在 Drawer 草稿中，取消不修改定义，确定后才写入有序 `modelIds`；原有关联顺序保持，新模型按选择顺序追加。
 
 已保存但不在当前候选页的 SQL 模型由 `related-models` 摘要接口回显。模型已删除、摘要无法加载或模型已不属于当前数据源时，原引用不会被静默清空；选择器会保留并解释问题，在用户移除或修复前禁止确认。切换数据源且存在关联模型时，页面必须先确认将清空关联模型、测试参数值和测试结果；取消后保持原数据源和编辑状态。
 
@@ -112,6 +112,8 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
 
 草稿调试请求携带 `engineId`、`dataSourceId`、`routePath`、脚本、测试 JSON，以及可选 query/header。Admin 只负责鉴权和代理，Engine 调用 API Studio 的内存草稿执行门面；整个过程不保存脚本、不写历史、不注册公开路由。响应透传执行结果、日志、结构化日志事件、SQL Trace、事务状态、耗时和带行列位置的错误诊断。
 
+脚本可用 `log.debug("阶段={} 行数={}", stage, count)` 辅助排查；当前 API Studio 的 `LogFunction` 独立采集 `source=SCRIPT` 日志到 `logEvents` 和兼容的 `logs`，不依赖控制台 DEBUG 是否开启。`log.error` 本身不会改变执行状态，脚本日志也没有自动脱敏或条数上限。SQL Trace 最多保留 200 条，`sqlCount` 为已保留条数；当前报告不主动设置 `truncated`，不能用 false 证明完整性。第三方 Agent 的阶段日志示例、排查顺序和最终版本补测约定见 [服务开发 Skill：通过日志定位问题](../../skills/datascalpel/references/service-development.md#通过日志定位问题)。
+
 ## 管理端创建与详情工作台
 
 数据服务列表的“新建服务”使用类型下拉菜单，不预设默认类型。选择类型后在列表右侧 Drawer 中维护编码、名称、目录、说明、Service Engine 和服务 `contextPath`；确认后立即形成可恢复草稿并留在当前列表，不自动进入服务定义页。访问方式不属于服务定义，仅在发布网关时配置。用户随后从创建成功提示、列表“继续配置”或详情“服务定义”页签手动进入定义编辑器。列表和详情明确展示“定义未配置”并禁止启用。
@@ -145,7 +147,7 @@ SQL 测试请求同样必须提供 `dataSourceId`、`modelIds`、SQL 和参数�
 
 权限会继续叠加到以上状态：保存要求 `service.update`，详情页 SQL 测试要求 `service.update`，启用、发布到网关、停用、重试和清理要求 `service.publish`。标准服务创建还要求模型和 Engine 查看权限；SQL 服务创建还要求数据源查看权限。缺少依赖资源查看权限时页面持续显示提示，并禁用相关选择和维护操作。
 
-SQL 工作台在桌面端采用左右布局。左侧顶部固定当前 Engine 中已就绪的 PostgreSQL 或 ClickHouse 数据源和关联模型操作区，下方在独立滚动区域直接展示全部已选模型的名称、编码、状态和可复制物理位置，不再截断为前若干项；数据源不会随模型列表滚动。每个有效模型可以就地展开字段结构，同一时间只展开一个，首次展开时通过模型详情接口按需加载并缓存字段、平台类型、可空性、主键和说明，不批量请求所有模型字段。常驻解释性提示不占用左栏空间，仅在模型引用失效、数据源与 Engine 不兼容或权限不足等需要处理的状态下显示问题。更多模型通过约 1080px、窄屏自适应的选择 Drawer 管理。关联模型仍只用于来源说明和血缘，不构成 SQL 访问白名单。右侧使用可拖动的上下分栏，上层维护 Monaco SQL、参数定义和临时测试值，下层展示测试状态、问题和预览数据。预览表列头以两行合并展示字段名、平台类型与可空性，不再单独展示输出字段表。下层可整体收起并保留紧凑状态栏，展开高度由浏览器保存并可双击分隔条复位；编辑器外层不滚动，左侧、上层和结果表分别管理内部滚动。Engine 等基础信息在新增或编辑 Drawer 中维护，窄屏仍使用安全的单列布局。SQL 编辑页面及 Monaco 均通过路由动态加载，不进入数据服务列表首屏包。
+SQL 工作台在桌面端采用左右布局。左侧顶部固定当前 Engine 中已就绪且声明 `SQL_SERVICE_QUERY` 能力的数据源和关联模型操作区，下方在独立滚动区域直接展示全部已选模型的名称、编码、状态和可复制物理位置，不再截断为前若干项；数据源不会随模型列表滚动。每个有效模型可以就地展开字段结构，同一时间只展开一个，首次展开时通过模型详情接口按需加载并缓存字段、平台类型、可空性、主键和说明，不批量请求所有模型字段。常驻解释性提示不占用左栏空间，仅在模型引用失效、数据源与 Engine 不兼容或权限不足等需要处理的状态下显示问题。更多模型通过约 1080px、窄屏自适应的选择 Drawer 管理。关联模型仍只用于来源说明和血缘，不构成 SQL 访问白名单。右侧使用可拖动的上下分栏，上层维护 Monaco SQL、参数定义和临时测试值，下层展示测试状态、问题和预览数据。预览表列头以两行合并展示字段名、平台类型与可空性，不再单独展示输出字段表。下层可整体收起并保留紧凑状态栏，展开高度由浏览器保存并可双击分隔条复位；编辑器外层不滚动，左侧、上层和结果表分别管理内部滚动。Engine 等基础信息在新增或编辑 Drawer 中维护，窄屏仍使用安全的单列布局。SQL 编辑页面及 Monaco 均通过路由动态加载，不进入数据服务列表首屏包。
 
 脚本工作台由 API Studio 的 `@superhuang/super-api-studio-script-workbench` 包提供，DataScalpel 通过固定在 `data-scalpel-ui/vendor` 的 `3.0.0-SNAPSHOT` tarball 使用，不使用 iframe，也不复制 Monaco Groovy 语言实现。定义页左栏选择当前 Engine 中已就绪的默认 JDBC 数据源并维护请求 Example，右侧完整宽度交给受控 `ScriptWorkbench` 管理脚本编辑、执行结果、日志、SQL Trace、耗时和错误定位；执行时使用左栏当前选中的 Example。脚本编辑器与执行结果之间支持上下拖动调整高度、键盘微调和双击恢复默认值，并在本地记忆高度偏好。补全和执行均由浏览器访问 Admin，再由 Admin 访问目标 Engine，浏览器不直接接触 Engine 地址或 Management Token。
 
@@ -203,7 +205,7 @@ Engine 本地部署状态为：
 
 启动时先由 API Studio Bootstrap 从自身配置表恢复数据源和已发布脚本路由，再逐一处理服务：`DEPLOYED`、`DEPLOYING` 重新校验并注册，脚本服务通过幂等 `upsert` 只修复缺失或不同的配置；`DEPLOY_FAILED` 不自动暴露；`REMOVING`、`REMOVE_FAILED` 确保注销并完成为 `REMOVED`。单个服务恢复失败会记录完整日志和失败状态，不影响其他服务或应用启动。
 
-Engine 接收 SQL 快照时再次检查只读单语句、占位符数量、参数顺序、输出快照和数据库 `SQL_SERVICE_QUERY` capability。当前 PostgreSQL 与 ClickHouse 声明该 capability。
+Engine 接收 SQL 快照时再次检查只读单语句、占位符数量、参数顺序、输出快照和数据库 `SQL_SERVICE_QUERY` capability。当前 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦、Oracle、SQL Server 与 ClickHouse 声明该 capability；这些数据库均可注册到 DataScalpel Service Engine，并承载标准表、SQL 查询和脚本服务。
 
 ## 公开调用协议
 
@@ -267,7 +269,7 @@ Content-Type: application/json
 - `pageNo` 默认 1；`pageSize` 默认 20、最大 100。
 - offset 为 `(pageNo - 1) * pageSize`，检查整数溢出且不能超过 Engine `maximum-offset`。
 - `returnCount` 默认 false；为 true 时先执行 `SELECT COUNT(*) FROM (<baseSql>) ds_count`。
-- PostgreSQL 与 ClickHouse 方言都将数据查询包装为 `SELECT * FROM (<baseSql>) ds_query LIMIT ? OFFSET ?`。
+- PostgreSQL、HighGo、MySQL、openGauss、人大金仓与 ClickHouse 使用 `LIMIT/OFFSET`；达梦和 Oracle 使用 `OFFSET/FETCH`；SQL Server 额外补充稳定的分页 `ORDER BY` 后使用 `OFFSET/FETCH`。
 - 基础 SQL 参数先绑定，分页参数最后绑定；count 只复用基础参数。
 - BigDecimal 输出为字符串，日期和时间输出 ISO 字符串，null 保持 null。
 - 每次执行都会比较实际 ResultSet 的字段名称、顺序、类型和 nullable；结构漂移返回安全 502。

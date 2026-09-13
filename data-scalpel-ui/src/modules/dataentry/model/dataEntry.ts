@@ -20,6 +20,7 @@ export interface DataEntryHealthIssue {
 export interface DataEntryHealth {
   canPublish: boolean;
   canSubmit: boolean;
+  canUpdateEntries?: boolean;
   canDeleteEntries: boolean;
   canQueryEntries: boolean;
   issues: DataEntryHealthIssue[];
@@ -100,7 +101,7 @@ export interface DataEntryMutationResponse {
   warningMessage: string | null;
 }
 
-export type DataEntryOperationType = 'INSERT' | 'IMPORT' | 'DELETE';
+export type DataEntryOperationType = 'INSERT' | 'UPDATE' | 'IMPORT' | 'DELETE';
 export type DataEntryOperationStatus = 'PROCESSING' | 'SUCCEEDED' | 'PARTIALLY_SUCCEEDED' | 'FAILED';
 
 export interface DataEntryOperationLog {
@@ -118,6 +119,43 @@ export interface DataEntryOperationLog {
   errorCode: string | null;
   errorMessage: string | null;
   manualVerificationRequired: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export type DataEntryRecordChangeStatus = 'PREPARED' | 'SUCCEEDED' | 'FAILED' | 'UNKNOWN';
+
+export interface DataEntryRecordDetail {
+  recordKey: string;
+  values: Record<string, unknown>;
+}
+
+export interface DataEntryUpdateResponse {
+  changed: boolean;
+  operationLogId: string | null;
+  recordKey: string;
+  values: Record<string, unknown>;
+  manualVerificationRequired: boolean;
+  warningMessage: string | null;
+}
+
+export interface DataEntryRecordChange {
+  id: string;
+  operationLogId: string;
+  formId: string;
+  recordKey: string;
+  sequenceNo: number;
+  operationType: DataEntryOperationType;
+  status: DataEntryRecordChangeStatus;
+  operatorUsername: string;
+  businessKeySnapshot: string;
+  fieldSnapshot: string;
+  submittedSnapshot: string | null;
+  beforeSnapshot: string | null;
+  afterSnapshot: string | null;
+  completedAt: string | null;
+  errorCode: string | null;
+  errorMessage: string | null;
   createdAt: string;
   updatedAt: string;
 }

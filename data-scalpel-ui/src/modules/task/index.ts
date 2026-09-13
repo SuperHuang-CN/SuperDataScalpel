@@ -7,8 +7,6 @@ export { useCancelTaskRun, useStopTaskRun, useForceTerminateTaskRun } from './ho
 export { taskRunStatusLabels, taskRunStatusColors, taskRunTriggerTypeLabels, taskRunExecutionModeLabels } from './model/task';
 export {
   useCanvasTaskDefinition,
-  useTaskCanvasProposal,
-  useAcceptTaskCanvasProposal,
   useModelRelatedTasks,
   useTask,
   useTaskDefinition,
@@ -37,12 +35,6 @@ export type {
   TaskType,
 } from './model/task';
 export type { CanvasDefinition } from './canvas/canvasTypes';
-export type {
-  TaskAssistantCreateDraft,
-  TaskAssistantLocationState,
-  TaskCanvasProposalLocationState,
-  TaskCanvasProposalChangeSet,
-} from './model/taskAssistant';
 
 export { taskViews, getTaskView, resolveTaskView, taskIdFromPath, taskPageHref } from './model/taskViews';
 export type { TaskListView, TaskViewConfiguration } from './model/taskViews';

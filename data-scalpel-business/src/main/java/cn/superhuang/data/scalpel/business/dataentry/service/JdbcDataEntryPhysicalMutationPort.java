@@ -33,6 +33,7 @@ import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Properties;
 import java.util.stream.Collectors;
 
@@ -59,18 +60,31 @@ public class JdbcDataEntryPhysicalMutationPort implements DataEntryPhysicalMutat
             List<DataModelField> fields,
             DataEntryImportRowSource rows
     ) {
+        return insertBatch(dataSource, model, fields, rows, null);
+    }
+
+    @Override
+    public DataEntryPhysicalMutationResult insertBatch(
+            DataSource dataSource, DataModel model, List<DataModelField> fields,
+            DataEntryImportRowSource rows, DataEntryImportBatchListener listener
+    ) {
         DatabaseDialect dialect = registry.require(dataSource.getType().name());
         String sql = insertSql(dialect, dataSource, model, fields);
         try (Connection connection = open(dialect, dataSource, IMPORT_TIMEOUT_SECONDS);
              PreparedStatement statement = connection.prepareStatement(sql)) {
             statement.setQueryTimeout(IMPORT_TIMEOUT_SECONDS);
             ImportBatchState state = new ImportBatchState(
-                    statement, fields, dataSource.getType() == DataSourceType.CLICKHOUSE
+                    statement, fields, dataSource.getType() == DataSourceType.CLICKHOUSE, listener
             );
             try {
                 rows.read(state::add);
                 state.flush();
                 return DataEntryPhysicalMutationResult.succeeded(state.affectedCount);
+            } catch (HistoryCallbackException exception) {
+                return DataEntryPhysicalMutationResult.incomplete(
+                        state.affectedCount, true, "HISTORY_STATUS_SAVE_FAILED",
+                        "目标数据库批次已执行，但实际值回读或历史状态保存失败，请人工核对；系统不会自动重试"
+                );
             } catch (ImportBatchException exception) {
                 return incompleteBatch(
                         state.affectedCount, exception.getCause(),
@@ -87,6 +101,153 @@ public class JdbcDataEntryPhysicalMutationPort implements DataEntryPhysicalMutat
             }
         } catch (SQLException exception) {
             throw translate(exception);
+        }
+    }
+
+    @Override
+    public Map<String, Object> queryRecord(DataSource dataSource, DataModel model, List<DataModelField> fields,
+            List<DataModelField> businessKeyFields, Map<String, Object> key) {
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        try (Connection connection = open(dialect, dataSource, QUERY_TIMEOUT_SECONDS)) {
+            return queryRecord(connection, dialect, dataSource, model, fields, businessKeyFields, key);
+        } catch (DataEntryPhysicalAccessException exception) {
+            throw exception;
+        } catch (SQLException exception) {
+            throw translate(exception);
+        }
+    }
+
+    @Override
+    public List<Map<String, Object>> queryRecords(DataSource dataSource, DataModel model, List<DataModelField> fields,
+            List<DataModelField> businessKeyFields, List<Map<String, Object>> keys) {
+        if (keys.isEmpty()) return List.of();
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        String columns = fields.stream().map(field -> dialect.quoteIdentifier(field.getCode()))
+                .collect(Collectors.joining(", "));
+        String sql = "SELECT " + columns + " FROM " + dialect.qualifiedName(table(dialect, dataSource, model))
+                + " WHERE " + keyPredicate(dialect, businessKeyFields, keys.size());
+        try (Connection connection = open(dialect, dataSource, QUERY_TIMEOUT_SECONDS);
+             PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+            JdbcPlatformParameterBinder.bind(statement, keyParameters(businessKeyFields, keys));
+            Map<List<String>, Map<String, Object>> byKey = new LinkedHashMap<>();
+            try (ResultSet resultSet = statement.executeQuery()) {
+                while (resultSet.next()) {
+                    Map<String, Object> row = new LinkedHashMap<>();
+                    for (int index = 0; index < fields.size(); index++) {
+                        row.put(fields.get(index).getCode(), readPlatformValue(resultSet, index + 1, fields.get(index)));
+                    }
+                    List<String> canonicalKey = canonicalKey(row, businessKeyFields);
+                    if (byKey.putIfAbsent(canonicalKey, Collections.unmodifiableMap(row)) != null) {
+                        throw new DataEntryPhysicalAccessException(
+                                "AFFECTED_COUNT_MISMATCH", "业务主键命中了多条记录", null);
+                    }
+                }
+            }
+            List<Map<String, Object>> ordered = new ArrayList<>(keys.size());
+            for (Map<String, Object> key : keys) {
+                Map<String, Object> row = byKey.get(canonicalKey(key, businessKeyFields));
+                if (row == null) throw new DataEntryPhysicalAccessException(
+                        "ENTRY_NOT_FOUND", "目标记录回读失败", null);
+                ordered.add(row);
+            }
+            return List.copyOf(ordered);
+        } catch (DataEntryPhysicalAccessException exception) {
+            throw exception;
+        } catch (SQLException exception) {
+            throw translate(exception);
+        }
+    }
+
+    @Override
+    public DataEntryRecordUpdateResult updateRecord(DataSource dataSource, DataModel model,
+            List<DataModelField> fields, List<DataModelField> businessKeyFields,
+            Map<String, Object> key, Map<String, Object> values) {
+        DatabaseDialect dialect = registry.require(dataSource.getType().name());
+        List<DataModelField> mutableFields = fields.stream().filter(field -> !field.isPrimaryKey()).toList();
+        try (Connection connection = open(dialect, dataSource, QUERY_TIMEOUT_SECONDS)) {
+            connection.setAutoCommit(false);
+            boolean writeIssued = false;
+            boolean commitStarted = false;
+            try {
+                Map<String, Object> before = queryRecord(connection, dialect, dataSource, model, fields, businessKeyFields, key);
+                boolean changed = mutableFields.stream().anyMatch(field -> !Objects.equals(
+                        DataEntryValueCanonicalizer.canonical(before.get(field.getCode()), field),
+                        DataEntryValueCanonicalizer.canonical(values.get(field.getCode()), field)));
+                if (!changed) {
+                    connection.rollback();
+                    return new DataEntryRecordUpdateResult(false, before, before);
+                }
+                String assignments = mutableFields.stream().map(field -> dialect.quoteIdentifier(field.getCode()) + " = ?")
+                        .collect(Collectors.joining(", "));
+                String predicate = businessKeyFields.stream().map(field -> dialect.quoteIdentifier(field.getCode()) + " = ?")
+                        .collect(Collectors.joining(" AND "));
+                String sql = "UPDATE " + dialect.qualifiedName(table(dialect, dataSource, model)) + " SET "
+                        + assignments + " WHERE " + predicate;
+                try (PreparedStatement statement = connection.prepareStatement(sql)) {
+                    statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+                    List<SqlQueryParameter> parameters = new ArrayList<>();
+                    mutableFields.forEach(field -> parameters.add(new SqlQueryParameter(values.get(field.getCode()), type(field))));
+                    businessKeyFields.forEach(field -> parameters.add(new SqlQueryParameter(key.get(field.getCode()), type(field))));
+                    JdbcPlatformParameterBinder.bind(statement, parameters);
+                    writeIssued = true;
+                    int affected = statement.executeUpdate();
+                    if (affected != 1) throw new DataEntryPhysicalAccessException(
+                            "AFFECTED_COUNT_MISMATCH", "更新必须准确命中一条记录", null);
+                }
+                Map<String, Object> after = queryRecord(connection, dialect, dataSource, model, fields, businessKeyFields, key);
+                commitStarted = true;
+                connection.commit();
+                return new DataEntryRecordUpdateResult(true, before, after);
+            } catch (RuntimeException | SQLException exception) {
+                boolean rollbackFailed = false;
+                try { connection.rollback(); } catch (SQLException rollback) {
+                    rollbackFailed = true;
+                    exception.addSuppressed(rollback);
+                }
+                if (exception instanceof RuntimeException runtime) {
+                    if (writeIssued && rollbackFailed) {
+                        String code = runtime instanceof DataEntryPhysicalAccessException access
+                                ? access.code() : "DATABASE_ERROR";
+                        throw new DataEntryPhysicalAccessException(code,
+                                "更新结果无法确认，请人工核对目标记录，系统不会自动重试", runtime, true);
+                    }
+                    throw runtime;
+                }
+                boolean unknown = writeIssued && (rollbackFailed
+                        || commitStarted && resultUnknown((SQLException) exception));
+                if (unknown) throw new DataEntryPhysicalAccessException(
+                        errorCode((SQLException) exception),
+                        "更新结果无法确认，请人工核对目标记录，系统不会自动重试", exception, true);
+                throw exception;
+            }
+        } catch (DataEntryPhysicalAccessException exception) {
+            throw exception;
+        } catch (SQLException exception) {
+            throw translate(exception);
+        }
+    }
+
+    private Map<String, Object> queryRecord(Connection connection, DatabaseDialect dialect, DataSource dataSource,
+            DataModel model, List<DataModelField> fields, List<DataModelField> businessKeyFields,
+            Map<String, Object> key) throws SQLException {
+        String columns = fields.stream().map(field -> dialect.quoteIdentifier(field.getCode())).collect(Collectors.joining(", "));
+        String predicate = businessKeyFields.stream().map(field -> dialect.quoteIdentifier(field.getCode()) + " = ?")
+                .collect(Collectors.joining(" AND "));
+        String sql = "SELECT " + columns + " FROM " + dialect.qualifiedName(table(dialect, dataSource, model))
+                + " WHERE " + predicate;
+        try (PreparedStatement statement = connection.prepareStatement(sql)) {
+            statement.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
+            List<SqlQueryParameter> parameters = businessKeyFields.stream()
+                    .map(field -> new SqlQueryParameter(key.get(field.getCode()), type(field))).toList();
+            JdbcPlatformParameterBinder.bind(statement, parameters);
+            try (ResultSet resultSet = statement.executeQuery()) {
+                if (!resultSet.next()) throw new DataEntryPhysicalAccessException("ENTRY_NOT_FOUND", "目标记录不存在", null);
+                Map<String, Object> result = new LinkedHashMap<>();
+                for (int index = 0; index < fields.size(); index++) result.put(fields.get(index).getCode(), readPlatformValue(resultSet, index + 1, fields.get(index)));
+                if (resultSet.next()) throw new DataEntryPhysicalAccessException("AFFECTED_COUNT_MISMATCH", "业务主键命中了多条记录", null);
+                return Collections.unmodifiableMap(result);
+            }
         }
     }
 
@@ -348,6 +509,11 @@ public class JdbcDataEntryPhysicalMutationPort implements DataEntryPhysicalMutat
         return parameters;
     }
 
+    private static List<String> canonicalKey(Map<String, Object> values, List<DataModelField> fields) {
+        return fields.stream().map(field -> DataEntryValueCanonicalizer.canonical(values.get(field.getCode()), field))
+                .toList();
+    }
+
     private Connection open(DatabaseDialect dialect, DataSource dataSource, int timeoutSeconds) {
         try {
             JdbcConnectionSpec spec =
@@ -429,12 +595,17 @@ public class JdbcDataEntryPhysicalMutationPort implements DataEntryPhysicalMutat
     }
 
     private static int confirmedAffected(int[] results, boolean acceptNonNegativeUpdateCount) {
-        int affected = 0;
-        for (int result : results) {
+        return confirmedIndexes(results, acceptNonNegativeUpdateCount).size();
+    }
+
+    private static List<Integer> confirmedIndexes(int[] results, boolean acceptNonNegativeUpdateCount) {
+        List<Integer> indexes = new ArrayList<>();
+        for (int index = 0; index < results.length; index++) {
+            int result = results[index];
             if (result == Statement.SUCCESS_NO_INFO || result > 0
-                    || (acceptNonNegativeUpdateCount && result >= 0)) affected++;
+                    || (acceptNonNegativeUpdateCount && result >= 0)) indexes.add(index);
         }
-        return affected;
+        return List.copyOf(indexes);
     }
 
     private static boolean resultUnknown(SQLException exception) {
@@ -468,17 +639,21 @@ public class JdbcDataEntryPhysicalMutationPort implements DataEntryPhysicalMutat
         private final PreparedStatement statement;
         private final List<DataModelField> fields;
         private final boolean acceptNonNegativeUpdateCount;
+        private final DataEntryImportBatchListener listener;
+        private final List<Map<String, Object>> pendingRows = new ArrayList<>();
         private int pendingCount;
         private int affectedCount;
 
         private ImportBatchState(
                 PreparedStatement statement,
                 List<DataModelField> fields,
-                boolean acceptNonNegativeUpdateCount
+                boolean acceptNonNegativeUpdateCount,
+                DataEntryImportBatchListener listener
         ) {
             this.statement = statement;
             this.fields = fields;
             this.acceptNonNegativeUpdateCount = acceptNonNegativeUpdateCount;
+            this.listener = listener;
         }
 
         private void add(Map<String, Object> row) {
@@ -486,6 +661,7 @@ public class JdbcDataEntryPhysicalMutationPort implements DataEntryPhysicalMutat
                 JdbcPlatformParameterBinder.bind(statement, fields.stream()
                         .map(field -> new SqlQueryParameter(row.get(field.getCode()), type(field))).toList());
                 statement.addBatch();
+                pendingRows.add(Collections.unmodifiableMap(new LinkedHashMap<>(row)));
                 pendingCount++;
                 if (pendingCount >= IMPORT_BATCH_SIZE) flush();
             } catch (SQLException exception) {
@@ -495,24 +671,50 @@ public class JdbcDataEntryPhysicalMutationPort implements DataEntryPhysicalMutat
 
         private void flush() {
             if (pendingCount == 0) return;
+            List<Map<String, Object>> batch = List.copyOf(pendingRows);
             try {
+                if (listener != null) listener.beforeBatch(batch);
                 int[] results = statement.executeBatch();
                 if (results.length != pendingCount) {
-                    throw new ImportBatchException(new SQLException("Batch result count mismatch"));
+                    throw new BatchUpdateException("Batch result count mismatch", results);
                 }
                 for (int result : results) {
                     if (result != 1 && result != Statement.SUCCESS_NO_INFO
                             && !(acceptNonNegativeUpdateCount && result >= 0)) {
-                        throw new ImportBatchException(new SQLException("Unexpected batch update count"));
+                        throw new BatchUpdateException("Unexpected batch update count", results);
                     }
                 }
                 statement.clearBatch();
                 affectedCount += pendingCount;
                 pendingCount = 0;
+                pendingRows.clear();
+                if (listener != null) {
+                    try {
+                        listener.afterBatch(batch,
+                                java.util.stream.IntStream.range(0, batch.size()).boxed().toList(),
+                                false, null, null);
+                    }
+                    catch (RuntimeException exception) { throw new HistoryCallbackException(exception); }
+                }
             } catch (SQLException exception) {
+                List<Integer> confirmed = exception instanceof BatchUpdateException batchException
+                        ? confirmedIndexes(batchException.getUpdateCounts(), acceptNonNegativeUpdateCount) : List.of();
+                if (listener != null) {
+                    try {
+                        listener.afterBatch(batch, confirmed, resultUnknown(exception),
+                                errorCode(exception), exception.getMessage());
+                    } catch (RuntimeException callbackException) {
+                        affectedCount += confirmed.size();
+                        throw new HistoryCallbackException(callbackException);
+                    }
+                }
                 throw new ImportBatchException(exception);
             }
         }
+    }
+
+    private static final class HistoryCallbackException extends RuntimeException {
+        private HistoryCallbackException(RuntimeException cause) { super(cause); }
     }
 
     private static final class ImportBatchException extends RuntimeException {

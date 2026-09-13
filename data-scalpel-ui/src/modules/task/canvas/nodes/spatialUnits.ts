@@ -28,6 +28,7 @@ export function unsupportedSpatialDurationPaths(node: CanvasNodeDefinition, mino
   switch (node.type) {
     case CanvasNodeType.SpatialBinAggregate:
     case CanvasNodeType.SpatialSummarizeWithin:
+    case CanvasNodeType.SpatialDensity:
       add('temporalSlicing.intervalUnit', node.configuration.temporalSlicing?.intervalUnit);
       add('temporalSlicing.repeatIntervalUnit', node.configuration.temporalSlicing?.repeatIntervalUnit);
       break;
@@ -71,6 +72,11 @@ export function unsupportedSpatialUnitPaths(node: CanvasNodeDefinition, minorVer
     case CanvasNodeType.SpatialSummarizeWithin:
       add('lengthUnit', node.configuration.lengthUnit); add('areaUnit', node.configuration.areaUnit); break;
     case CanvasNodeType.SpatialBinAggregate: add('binSizeUnit', node.configuration.binSizeUnit); break;
+    case CanvasNodeType.SpatialDensity:
+      add('binSizeUnit', node.configuration.binSizeUnit);
+      add('radiusUnit', node.configuration.radiusUnit);
+      add('areaUnit', node.configuration.areaUnit);
+      break;
     case CanvasNodeType.SpatialPointCluster:
       if (node.configuration.parameters.algorithm === 'DBSCAN') add('parameters.searchDistanceUnit', node.configuration.parameters.searchDistanceUnit);
       break;

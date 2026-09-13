@@ -615,6 +615,7 @@ describe('canvas definition import and export', () => {
                 geometryColumnName: 'shape',
                 mode: 'PLANAR',
                 outputColumnName: 'area',
+                outputUnit: null,
               },
               {
                 kind: 'DISTANCE',
@@ -622,6 +623,7 @@ describe('canvas definition import and export', () => {
                 rightGeometryColumnName: 'shape',
                 mode: 'SPHEROID',
                 outputColumnName: 'distance',
+                outputUnit: null,
               },
             ],
           },
@@ -685,6 +687,10 @@ describe('canvas definition import and export', () => {
             outputColumnName: 'buffer_shape',
             distance: 1000,
             mode: 'SPHEROID',
+            distanceUnit: 'METERS',
+            distanceSource: 'CONSTANT',
+            distanceFieldName: null,
+            distanceExpression: null,
           },
         },
         {
@@ -716,7 +722,83 @@ describe('canvas definition import and export', () => {
     expect(JSON.parse(formatCanvasDefinition(parsed.definition))).toEqual(definition);
   });
 
-  it('round-trips spatial clip and aggregate configurations in Canvas 3.0', () => {
+  it('gates explicit Geometry Buffer distance units at Canvas 4.49', () => {
+    const node = {
+      id: '22222222-2222-4222-8222-222222222222',
+      type: CanvasNodeType.GeometryBuffer,
+      name: 'Geometry Buffer',
+      layout: { x: 0, y: 0, width: 320, height: 188 },
+      configuration: {
+        sourceTableName: 'source', outputTableName: 'buffered',
+        geometryColumnName: 'shape', outputColumnName: 'buffer_shape',
+        distance: 1, mode: 'SPHEROID', distanceUnit: 'KILOMETERS',
+      },
+    };
+    const definition = { schemaVersion: CANVAS_SCHEMA_VERSION, schemaMinorVersion: 48, nodes: [node], edges: [] };
+    const old = parseCanvasDefinitionJson(JSON.stringify(definition));
+    expect(old.success).toBe(false);
+    if (!old.success) expect(old.errors.join(' ')).toContain('GEOMETRY_BUFFER_UNIT_REQUIRE_SCHEMA_VERSION');
+
+    const current = parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+    }));
+    expect(current.success).toBe(true);
+
+    const legacy = parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      nodes: [{ ...node, configuration: { ...node.configuration, distanceUnit: null } }],
+    }));
+    expect(legacy.success).toBe(true);
+  });
+
+  it('gates explicit Spatial Measure output units at Canvas 4.50', () => {
+    const node = {
+      id: '33333333-3333-4333-8333-333333333333',
+      type: CanvasNodeType.SpatialMeasure,
+      name: '空间测量',
+      layout: { x: 0, y: 0, width: 344, height: 216 },
+      configuration: {
+        sourceTableName: 'source',
+        outputTableName: 'measured',
+        measurements: [{
+          kind: 'LENGTH', geometryColumnName: 'shape', mode: 'SPHEROID',
+          outputColumnName: 'length_km', outputUnit: 'KILOMETERS',
+        }],
+      },
+    };
+    const definition = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: 49,
+      nodes: [node],
+      edges: [],
+    };
+    const old = parseCanvasDefinitionJson(JSON.stringify(definition));
+    expect(old.success).toBe(false);
+    if (!old.success) {
+      expect(old.errors.join(' ')).toContain('SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION');
+    }
+
+    const current = parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+    }));
+    expect(current.success).toBe(true);
+
+    const legacy = parseCanvasDefinitionJson(JSON.stringify({
+      ...definition,
+      nodes: [{
+        ...node,
+        configuration: {
+          ...node.configuration,
+          measurements: [{ ...node.configuration.measurements[0], outputUnit: null }],
+        },
+      }],
+    }));
+    expect(legacy.success).toBe(true);
+  });
+
+  it('round-trips spatial clip and aggregate configurations in current Canvas', () => {
     const definition = {
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -733,6 +815,7 @@ describe('canvas definition import and export', () => {
             sourceGeometryColumnName: 'centerline',
             maskGeometryColumnName: 'boundary',
             outputColumnName: 'clipped_centerline',
+            geometryPolicy: null,
           },
         },
         {
@@ -756,6 +839,7 @@ describe('canvas definition import and export', () => {
                 outputColumnName: 'district_envelope',
               },
             ],
+            dissolve: null,
           },
         },
       ],
@@ -774,7 +858,7 @@ describe('canvas definition import and export', () => {
 
   });
 
-  it('round-trips JDBC query input and JDBC output UPSERT in Canvas 3.0', () => {
+  it('round-trips JDBC query input and a JDBC output write in the current Canvas', () => {
     const definition = {
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -810,12 +894,15 @@ describe('canvas definition import and export', () => {
           name: '订单 UPSERT',
           layout: { x: 320, y: 0, width: 240, height: 120 },
           configuration: {
-            sourceTableName: 'query_orders',
             dataSourceId: 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb',
-            targetTableName: 'orders',
-            writeMode: 'UPSERT',
-            columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
-            upsertKeyColumns: ['order_id'],
+            writes: [{
+              writeId: '44444444-4444-4444-8444-444444444444',
+              sourceTableName: 'query_orders',
+              targetTableName: 'orders',
+              writeMode: 'UPSERT',
+              columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
+              upsertKeyColumns: ['order_id'],
+            }],
           },
         },
       ],
@@ -845,22 +932,23 @@ describe('canvas definition import and export', () => {
     }
   });
 
-  it('normalizes a legacy JDBC output without UPSERT keys to an empty array', () => {
-    const legacy = JSON.parse(formatCanvasDefinition(exampleCanvasDefinition())) as {
+  it('normalizes a JDBC output write without UPSERT keys to an empty array', () => {
+    const source = JSON.parse(formatCanvasDefinition(exampleCanvasDefinition())) as {
       nodes: Array<{ type: string; configuration: Record<string, unknown> }>;
     };
-    const output = legacy.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
+    const output = source.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
     if (!output) throw new Error('example JDBC output is missing');
-    delete output.configuration.upsertKeyColumns;
+    const writes = output.configuration.writes as Array<Record<string, unknown>>;
+    delete writes[0]?.upsertKeyColumns;
 
-    const parsed = parseCanvasDefinitionJson(JSON.stringify(legacy));
+    const parsed = parseCanvasDefinitionJson(JSON.stringify(source));
 
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     const parsedOutput = parsed.definition.nodes.find(
       (node) => node.type === CanvasNodeType.JdbcOutput,
     );
-    expect(parsedOutput?.configuration.upsertKeyColumns).toEqual([]);
+    expect(parsedOutput?.configuration.writes?.[0]?.upsertKeyColumns).toEqual([]);
   });
 
   it('rejects unsupported spatial aggregation kinds', () => {
@@ -926,7 +1014,7 @@ describe('canvas definition import and export', () => {
       .toContain(`"schemaMinorVersion": ${CANVAS_SCHEMA_MINOR_VERSION}`);
   });
 
-  it('does not infer JDBC input selections from legacy nested identifiers', () => {
+  it('does not infer JDBC input selections and only reads nested target names inside writes', () => {
     const legacy = JSON.parse(formatCanvasDefinition(exampleCanvasDefinition())) as {
       nodes: Array<{ type: string; configuration: Record<string, unknown> }>;
     };
@@ -935,8 +1023,11 @@ describe('canvas definition import and export', () => {
     if (!input || !output) return;
     delete input.configuration.tables;
     input.configuration.table = { catalogName: 'demo', schemaName: 'public', tableName: 'orders' };
-    delete output.configuration.targetTableName;
-    output.configuration.targetTable = { catalogName: 'demo', schemaName: 'dw', tableName: 'dwd_order_customer' };
+    const writes = output.configuration.writes as Array<Record<string, unknown>>;
+    const firstWrite = writes[0];
+    if (!firstWrite) throw new Error('example JDBC output write is missing');
+    delete firstWrite.targetTableName;
+    firstWrite.targetTable = { catalogName: 'demo', schemaName: 'dw', tableName: 'dwd_order_customer' };
 
     const parsed = parseCanvasDefinitionJson(JSON.stringify(legacy));
 
@@ -945,7 +1036,7 @@ describe('canvas definition import and export', () => {
     const parsedInput = parsed.definition.nodes.find((node) => node.type === CanvasNodeType.JdbcInput);
     const parsedOutput = parsed.definition.nodes.find((node) => node.type === CanvasNodeType.JdbcOutput);
     expect(parsedInput?.configuration.tables).toEqual([]);
-    expect(parsedOutput?.configuration.targetTableName).toBe('dwd_order_customer');
+    expect(parsedOutput?.configuration.writes?.[0]?.targetTableName).toBe('dwd_order_customer');
     expect(formatCanvasDefinition(parsed.definition)).not.toContain('catalogName');
     expect(formatCanvasDefinition(parsed.definition)).not.toContain('schemaName');
   });
@@ -971,7 +1062,9 @@ describe('canvas definition import and export', () => {
           type: CanvasNodeType.ModelInput,
           name: '订单模型输入',
           layout: { x: 10, y: 20, width: 240, height: 120 },
-          configuration: { modelId: '45a1f1bd-c381-45eb-a39b-924fc65122ac' },
+          configuration: {
+            models: [{ modelId: '45a1f1bd-c381-45eb-a39b-924fc65122ac' }],
+          },
         },
         {
           id: '693f6c6b-8978-470f-bab7-cf411eb6e874',
@@ -979,10 +1072,13 @@ describe('canvas definition import and export', () => {
           name: '订单模型输出',
           layout: { x: 320, y: 20, width: 240, height: 120 },
           configuration: {
-            sourceTableName: 'orders',
-            targetModelId: 'e8b93333-d6ee-4c8b-b5af-df5c90c9620d',
-            writeMode: 'APPEND' as const,
-            columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
+            writes: [{
+              writeId: '71055368-bc8c-4499-b5bf-acaa615307a4',
+              sourceTableName: 'orders',
+              targetModelId: 'e8b93333-d6ee-4c8b-b5af-df5c90c9620d',
+              writeMode: 'APPEND' as const,
+              columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'id' }],
+            }],
           },
         },
       ],
@@ -999,9 +1095,13 @@ describe('canvas definition import and export', () => {
       definition,
     });
 
-    definition.nodes[0].configuration.modelId = 'not-a-uuid';
+    const modelSelection = (
+      definition.nodes[0]?.configuration as { models?: Array<{ modelId: string }> }
+    ).models?.[0];
+    if (!modelSelection) throw new Error('model input selection fixture is missing');
+    modelSelection.modelId = 'not-a-uuid';
     expect(parseCanvasDefinitionJson(JSON.stringify(definition)).success).toBe(false);
-    definition.nodes[0].configuration.modelId = '';
+    modelSelection.modelId = '';
     expect(parseCanvasDefinitionJson(JSON.stringify(definition)).success).toBe(true);
   });
 
@@ -1016,9 +1116,11 @@ describe('canvas definition import and export', () => {
         layout: { x: 10, y: 20, width: 240, height: 120 },
         configuration: {
           dataSourceId: '45a1f1bd-c381-45eb-a39b-924fc65122ac',
-          resourceId: 'e8b93333-d6ee-4c8b-b5af-df5c90c9620d',
-          outputTableName: 'api_orders',
-          runtimeParameters: [{ name: 'startTime', value: '2026-07-22T00:00:00Z' }],
+          resources: [{
+            resourceId: 'e8b93333-d6ee-4c8b-b5af-df5c90c9620d',
+            outputTableName: 'api_orders',
+            runtimeParameters: [{ name: 'startTime', value: '2026-07-22T00:00:00Z' }],
+          }],
         },
       }],
       edges: [],
@@ -1029,15 +1131,17 @@ describe('canvas definition import and export', () => {
       definition,
     });
 
-    definition.nodes[0].configuration.runtimeParameters[0].name = 'invalid name';
+    const runtimeParameter = definition.nodes[0]?.configuration.resources[0]?.runtimeParameters[0];
+    if (!runtimeParameter) throw new Error('HTTP runtime parameter fixture is missing');
+    runtimeParameter.name = 'invalid name';
     expect(parseCanvasDefinitionJson(JSON.stringify(definition)).success).toBe(false);
 
-    definition.nodes[0].configuration.runtimeParameters[0].name = 'access_token';
+    runtimeParameter.name = 'access_token';
     const sensitive = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(sensitive.success).toBe(false);
     if (!sensitive.success) {
       expect(sensitive.errors).toContain(
-        'nodes[0].configuration.runtimeParameters[0].name 不允许用于密码、Token、密钥或签名',
+        'nodes[0].configuration.resources[0].runtimeParameters[0].name 不允许用于密码、Token、密钥或签名',
       );
     }
   });
@@ -1082,7 +1186,7 @@ describe('canvas definition import and export', () => {
     expect(parseCanvasDefinitionJson(JSON.stringify(unsafeLayout)).success).toBe(false);
   });
 
-  it('round-trips Rename in Canvas 3.0', () => {
+  it('round-trips Rename operations in the current Canvas', () => {
     const definition = {
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -1092,9 +1196,12 @@ describe('canvas definition import and export', () => {
         name: '订单重命名',
         layout: { x: 10, y: 20, width: 240, height: 120 },
         configuration: {
-          sourceTableName: 'orders',
-          outputTableName: 'source_orders',
-          columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'order_id' }],
+          operations: [{
+            operationId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'orders',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'source_orders' },
+            columnMappings: [{ sourceColumnName: 'id', targetColumnName: 'order_id' }],
+          }],
         },
       }],
       edges: [],
@@ -1114,7 +1221,7 @@ describe('canvas definition import and export', () => {
     expect(parsed).toEqual({ success: true, definition });
   });
 
-  it('round-trips file dataset input in Canvas 3.0', () => {
+  it('round-trips file dataset table selections in the current Canvas', () => {
     const definition = {
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -1124,7 +1231,8 @@ describe('canvas definition import and export', () => {
         name: '订单文件输入',
         layout: { x: 10, y: 20, width: 240, height: 120 },
         configuration: {
-          fileDatasetTableId: '45a1f1bd-c381-45eb-a39b-924fc65122ac',
+          fileDatasetId: 'e8b93333-d6ee-4c8b-b5af-df5c90c9620d',
+          tables: [{ fileDatasetTableId: '45a1f1bd-c381-45eb-a39b-924fc65122ac' }],
         },
       }],
       edges: [],
@@ -1146,18 +1254,21 @@ describe('canvas definition import and export', () => {
         name: '订单文件输出',
         layout: { x: 10, y: 20, width: 240, height: 120 },
         configuration: {
-          sourceTableName: 'orders',
           dataSourceId: '45a1f1bd-c381-45eb-a39b-924fc65122ac',
-          targetPath: 'exports//orders/',
-          conflictPolicy: 'FAIL_IF_EXISTS',
-          formatOptions: {
-            type: 'CSV',
-            header: true,
-            delimiter: ',',
-            quote: '"',
-            escape: '\\',
-            nullValue: '',
-          },
+          writes: [{
+            writeId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'orders',
+            targetPath: 'exports//orders/',
+            conflictPolicy: 'FAIL_IF_EXISTS',
+            formatOptions: {
+              type: 'CSV',
+              header: true,
+              delimiter: ',',
+              quote: '"',
+              escape: '\\',
+              nullValue: '',
+            },
+          }],
         },
       }],
       edges: [],
@@ -1168,17 +1279,19 @@ describe('canvas definition import and export', () => {
     expect(parsed.success).toBe(true);
     if (!parsed.success) return;
     expect(parsed.definition.nodes[0]?.configuration).toMatchObject({
-      sourceTableName: 'orders',
-      targetPath: 'exports/orders',
-      conflictPolicy: 'FAIL_IF_EXISTS',
-      formatOptions: { type: 'CSV' },
+      writes: [{
+        sourceTableName: 'orders',
+        targetPath: 'exports/orders',
+        conflictPolicy: 'FAIL_IF_EXISTS',
+        formatOptions: { type: 'CSV' },
+      }],
     });
     const exported = formatCanvasDefinition(parsed.definition);
     expect(exported).not.toContain('accessKey');
     expect(exported).not.toContain('secretKey');
   });
 
-  it('round-trips Shapefile output in Canvas 3.0', () => {
+  it('round-trips a Shapefile output write in the current Canvas', () => {
     const definition = {
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -1188,22 +1301,25 @@ describe('canvas definition import and export', () => {
         name: '行政区 Shapefile 输出',
         layout: { x: 10, y: 20, width: 240, height: 120 },
         configuration: {
-          sourceTableName: 'districts',
           dataSourceId: '45a1f1bd-c381-45eb-a39b-924fc65122ac',
-          targetPath: 'exports//districts/',
-          conflictPolicy: 'FAIL_IF_EXISTS',
-          formatOptions: {
-            type: 'SHAPEFILE',
-            baseName: 'districts',
-            packageMode: 'ZIP',
-            geometryColumnName: 'geom',
-            targetShapeType: 'POLYGON',
-            attributeMappings: [{
-              sourceColumnName: 'district_name',
-              targetFieldName: 'DIST_NAME',
-              targetStringByteLength: 160,
-            }],
-          },
+          writes: [{
+            writeId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'districts',
+            targetPath: 'exports//districts/',
+            conflictPolicy: 'FAIL_IF_EXISTS',
+            formatOptions: {
+              type: 'SHAPEFILE',
+              baseName: 'districts',
+              packageMode: 'ZIP',
+              geometryColumnName: 'geom',
+              targetShapeType: 'POLYGON',
+              attributeMappings: [{
+                sourceColumnName: 'district_name',
+                targetFieldName: 'DIST_NAME',
+                targetStringByteLength: 160,
+              }],
+            },
+          }],
         },
       }],
       edges: [],
@@ -1216,13 +1332,15 @@ describe('canvas definition import and export', () => {
         schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
         nodes: [{
           configuration: {
-            targetPath: 'exports/districts',
-            formatOptions: {
-              type: 'SHAPEFILE',
-              packageMode: 'ZIP',
-              targetShapeType: 'POLYGON',
-              attributeMappings: [{ targetFieldName: 'DIST_NAME' }],
-            },
+            writes: [{
+              targetPath: 'exports/districts',
+              formatOptions: {
+                type: 'SHAPEFILE',
+                packageMode: 'ZIP',
+                targetShapeType: 'POLYGON',
+                attributeMappings: [{ targetFieldName: 'DIST_NAME' }],
+              },
+            }],
           },
         }],
       });
@@ -1234,34 +1352,40 @@ describe('canvas definition import and export', () => {
         ...definition.nodes[0],
         configuration: {
           ...definition.nodes[0].configuration,
-          formatOptions: {
-            ...definition.nodes[0].configuration.formatOptions,
-            baseName: '',
-            attributeMappings: [],
-          },
+          writes: definition.nodes[0].configuration.writes.map((write) => ({
+            ...write,
+            formatOptions: {
+              ...write.formatOptions,
+              baseName: '',
+              attributeMappings: [],
+            },
+          })),
         },
       }],
     }));
     expect(invalidDraft.success).toBe(true);
   });
 
-  it('round-trips GeoParquet and GeoJSON output in Canvas 3.0', () => {
+  it('round-trips GeoParquet and GeoJSON output writes in the current Canvas', () => {
     const nodes = [{
       id: 'd4fd15b7-f1ac-44d0-bfc8-a624d3192637',
       type: CanvasNodeType.FileOutput,
       name: 'GeoParquet 输出',
       layout: { x: 10, y: 20, width: 240, height: 120 },
       configuration: {
-        sourceTableName: 'districts',
         dataSourceId: '45a1f1bd-c381-45eb-a39b-924fc65122ac',
-        targetPath: 'exports/geoparquet',
-        conflictPolicy: 'FAIL_IF_EXISTS',
-        formatOptions: {
-          type: 'GEOPARQUET',
-          geometryColumnName: 'geom',
-          compression: 'ZSTD',
-          coveringMode: 'ROW_BBOX',
-        },
+        writes: [{
+          writeId: '22222222-2222-4222-8222-222222222222',
+          sourceTableName: 'districts',
+          targetPath: 'exports/geoparquet',
+          conflictPolicy: 'FAIL_IF_EXISTS',
+          formatOptions: {
+            type: 'GEOPARQUET',
+            geometryColumnName: 'geom',
+            compression: 'ZSTD',
+            coveringMode: 'ROW_BBOX',
+          },
+        }],
       },
     }, {
       id: '4584983c-3742-4574-8ee8-3b81f0b52cc1',
@@ -1269,17 +1393,20 @@ describe('canvas definition import and export', () => {
       name: 'GeoJSON 输出',
       layout: { x: 300, y: 20, width: 240, height: 120 },
       configuration: {
-        sourceTableName: 'districts',
         dataSourceId: '45a1f1bd-c381-45eb-a39b-924fc65122ac',
-        targetPath: 'exports/geojson',
-        conflictPolicy: 'OVERWRITE',
-        formatOptions: {
-          type: 'GEOJSON',
-          baseName: 'districts',
-          geometryColumnName: 'geom',
-          idColumnName: 'district_id',
-          ignoreNullProperties: true,
-        },
+        writes: [{
+          writeId: '33333333-3333-4333-8333-333333333333',
+          sourceTableName: 'districts',
+          targetPath: 'exports/geojson',
+          conflictPolicy: 'OVERWRITE',
+          formatOptions: {
+            type: 'GEOJSON',
+            baseName: 'districts',
+            geometryColumnName: 'geom',
+            idColumnName: 'district_id',
+            ignoreNullProperties: true,
+          },
+        }],
       },
     }];
     const definition = {
@@ -1293,18 +1420,22 @@ describe('canvas definition import and export', () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) {
       expect(parsed.definition.nodes[0]?.configuration).toMatchObject({
-        formatOptions: {
-          type: 'GEOPARQUET',
-          compression: 'ZSTD',
-          coveringMode: 'ROW_BBOX',
-        },
+        writes: [{
+          formatOptions: {
+            type: 'GEOPARQUET',
+            compression: 'ZSTD',
+            coveringMode: 'ROW_BBOX',
+          },
+        }],
       });
       expect(parsed.definition.nodes[1]?.configuration).toMatchObject({
-        formatOptions: {
-          type: 'GEOJSON',
-          idColumnName: 'district_id',
-          ignoreNullProperties: true,
-        },
+        writes: [{
+          formatOptions: {
+            type: 'GEOJSON',
+            idColumnName: 'district_id',
+            ignoreNullProperties: true,
+          },
+        }],
       });
       expect(JSON.parse(formatCanvasDefinition(parsed.definition))).toMatchObject({
         schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -1313,7 +1444,7 @@ describe('canvas definition import and export', () => {
 
   });
 
-  it('round-trips Filter in Canvas 3.0', () => {
+  it('round-trips Filter operations in the current Canvas', () => {
     const definition = {
       schemaVersion: CANVAS_SCHEMA_VERSION,
       schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
@@ -1323,18 +1454,23 @@ describe('canvas definition import and export', () => {
         name: '订单筛选',
         layout: { x: 10, y: 20, width: 240, height: 120 },
         configuration: {
-          sourceTableName: 'orders',
-          outputTableName: 'paid_orders',
-          condition: {
-            kind: 'GROUP',
-            operator: 'AND',
-            children: [{
-              kind: 'PREDICATE',
-              columnName: 'status',
-              operator: 'EQUALS',
-              values: [{ dataType: 'STRING', value: 'PAID' }],
-            }],
-          },
+          operations: [{
+            operationId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'orders',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'paid_orders' },
+            mode: 'STRUCTURED',
+            condition: {
+              kind: 'GROUP',
+              operator: 'AND',
+              children: [{
+                kind: 'PREDICATE',
+                columnName: 'status',
+                operator: 'EQUALS',
+                values: [{ dataType: 'STRING', value: 'PAID' }],
+              }],
+            },
+            sqlExpression: '',
+          }],
         },
       }],
       edges: [],
@@ -1347,7 +1483,7 @@ describe('canvas definition import and export', () => {
     }
   });
 
-  it('round-trips processor configurations in Canvas 3.0', () => {
+  it('round-trips multi-table processor operations in the current Canvas', () => {
     const nodes = [
       {
         id: '8e469064-3b2a-41fb-b95a-a392189fbf1b',
@@ -1355,20 +1491,23 @@ describe('canvas definition import and export', () => {
         name: '空值处理',
         layout: { x: 10, y: 20, width: 240, height: 120 },
         configuration: {
-          sourceTableName: 'orders',
-          outputTableName: 'orders_cleaned',
-          rules: [
-            {
-              kind: 'DROP_ROW',
-              columnNames: ['id', 'customer_id'],
-              matchMode: 'ANY_NULL',
-            },
-            {
-              kind: 'FILL_LITERAL',
-              columnName: 'remark',
-              value: { dataType: 'STRING', value: '-' },
-            },
-          ],
+          operations: [{
+            operationId: '11111111-1111-4111-8111-111111111111',
+            sourceTableName: 'orders',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'orders_cleaned' },
+            rules: [
+              {
+                kind: 'DROP_ROW',
+                columnNames: ['id', 'customer_id'],
+                matchMode: 'ANY_NULL',
+              },
+              {
+                kind: 'FILL_LITERAL',
+                columnName: 'remark',
+                value: { dataType: 'STRING', value: '-' },
+              },
+            ],
+          }],
         },
       },
       {
@@ -1377,16 +1516,19 @@ describe('canvas definition import and export', () => {
         name: '值映射',
         layout: { x: 280, y: 20, width: 240, height: 120 },
         configuration: {
-          sourceTableName: 'orders_cleaned',
-          outputTableName: 'orders_mapped',
-          rules: [{
-            columnName: 'status',
-            entries: [{
-              sourceValue: { dataType: 'STRING', value: 'P' },
-              targetValue: { dataType: 'STRING', value: 'PAID' },
+          operations: [{
+            operationId: '22222222-2222-4222-8222-222222222222',
+            sourceTableName: 'orders_cleaned',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'orders_mapped' },
+            rules: [{
+              columnName: 'status',
+              entries: [{
+                sourceValue: { dataType: 'STRING', value: 'P' },
+                targetValue: { dataType: 'STRING', value: 'PAID' },
+              }],
+              unmatchedStrategy: 'KEEP',
+              unmatchedValue: null,
             }],
-            unmatchedStrategy: 'KEEP',
-            unmatchedValue: null,
           }],
         },
       },
@@ -1425,16 +1567,19 @@ describe('canvas definition import and export', () => {
         name: 'Top N',
         layout: { x: 820, y: 20, width: 240, height: 120 },
         configuration: {
-          sourceTableName: 'orders_ranked',
-          outputTableName: 'top_orders',
-          partitionByColumns: ['customer_id'],
-          orderBy: [{
-            columnName: 'amount',
-            direction: 'DESC',
-            nullOrdering: 'LAST',
+          operations: [{
+            operationId: '33333333-3333-4333-8333-333333333333',
+            sourceTableName: 'orders_ranked',
+            output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'top_orders' },
+            partitionByColumns: ['customer_id'],
+            orderBy: [{
+              columnName: 'amount',
+              direction: 'DESC',
+              nullOrdering: 'LAST',
+            }],
+            limit: 3,
+            tieStrategy: 'WITH_TIES',
           }],
-          limit: 3,
-          tieStrategy: 'WITH_TIES',
         },
       },
     ];
@@ -1447,6 +1592,613 @@ describe('canvas definition import and export', () => {
 
     const parsed = parseCanvasDefinitionJson(JSON.stringify(definition));
     expect(parsed).toEqual({ success: true, definition });
+  });
+
+  it('gates Spatial Join output projection at Canvas 4.54 and preserves legacy null semantics', () => {
+    const node = {
+      id: '1c436443-4cc0-4fe8-b748-4c02143eb602',
+      type: CanvasNodeType.SpatialJoin,
+      name: '空间连接',
+      layout: { x: 10, y: 20, width: 368, height: 224 },
+      configuration: {
+        leftTableName: 'orders',
+        rightTableName: 'districts',
+        outputTableName: 'orders_with_district',
+        joinType: 'INNER',
+        conditions: [{
+          leftGeometryColumnName: 'shape',
+          predicate: 'WITHIN',
+          rightGeometryColumnName: 'boundary',
+        }],
+        outputColumns: [{
+          sourceSide: 'RIGHT',
+          sourceColumnName: 'id',
+          outputColumnName: 'districts_id',
+          included: true,
+        }],
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 53,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'SPATIAL_JOIN_OUTPUT_COLUMNS_REQUIRE_SCHEMA_VERSION：空间连接输出字段投影从 Canvas 4.54 开始支持',
+      ]),
+    }));
+
+    for (const legacyValue of ['missing', null] as const) {
+      const legacy = structuredClone(current) as {
+        schemaVersion: number;
+        schemaMinorVersion: number;
+        nodes: Array<{ configuration: Record<string, unknown> }>;
+        edges: unknown[];
+      };
+      legacy.schemaMinorVersion = 53;
+      if (legacyValue === 'missing') {
+        delete legacy.nodes[0].configuration.outputColumns;
+      } else {
+        legacy.nodes[0].configuration.outputColumns = null;
+      }
+      const parsed = parseCanvasDefinitionJson(JSON.stringify(legacy));
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) continue;
+      expect(parsed.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+      const configuration = parsed.definition.nodes[0].configuration;
+      expect('outputColumns' in configuration
+        ? configuration.outputColumns
+        : undefined).toBe(legacyValue === 'missing' ? undefined : null);
+    }
+
+    const invalid = structuredClone(current);
+    invalid.nodes[0].configuration.outputColumns[0].sourceSide = 'MIDDLE';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.outputColumns[0].sourceSide 仅支持 LEFT 或 RIGHT',
+      ]),
+    }));
+  });
+
+  it('gates Spatial Join attribute conditions at Canvas 4.55 and preserves legacy absence', () => {
+    const node = {
+      id: '7acecb7e-82d1-47ee-8fb7-983fd76aa3da',
+      type: CanvasNodeType.SpatialJoin,
+      name: '空间和属性连接',
+      layout: { x: 10, y: 20, width: 368, height: 224 },
+      configuration: {
+        leftTableName: 'orders',
+        rightTableName: 'districts',
+        outputTableName: 'orders_with_district',
+        joinType: 'INNER',
+        conditions: [{
+          leftGeometryColumnName: 'shape',
+          predicate: 'WITHIN',
+          rightGeometryColumnName: 'boundary',
+        }],
+        attributeConditions: [{
+          leftColumnName: 'tenant_id',
+          operator: 'EQUALS',
+          rightColumnName: 'tenant_id',
+        }],
+        outputColumns: null,
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 54,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'SPATIAL_JOIN_ATTRIBUTE_CONDITIONS_REQUIRE_SCHEMA_VERSION：空间连接属性匹配条件从 Canvas 4.55 开始支持',
+      ]),
+    }));
+
+    for (const legacyValue of ['missing', null] as const) {
+      const legacy = structuredClone(current) as {
+        schemaVersion: number;
+        schemaMinorVersion: number;
+        nodes: Array<{ configuration: Record<string, unknown> }>;
+        edges: unknown[];
+      };
+      legacy.schemaMinorVersion = 54;
+      if (legacyValue === 'missing') {
+        delete legacy.nodes[0].configuration.attributeConditions;
+      } else {
+        legacy.nodes[0].configuration.attributeConditions = null;
+      }
+      const parsed = parseCanvasDefinitionJson(JSON.stringify(legacy));
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) continue;
+      const configuration = parsed.definition.nodes[0].configuration;
+      expect('attributeConditions' in configuration
+        ? configuration.attributeConditions
+        : undefined).toBe(legacyValue === 'missing' ? undefined : null);
+    }
+
+    const invalid = structuredClone(current);
+    invalid.nodes[0].configuration.attributeConditions[0].operator = 'NOT_EQUALS';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.attributeConditions[0].operator 仅支持 EQUALS',
+      ]),
+    }));
+  });
+
+  it('gates Spatial Join keep-all target semantics at Canvas 4.56', () => {
+    const node = {
+      id: 'a6a92df8-0bd7-4cc4-9df9-1f27fa4b7f08',
+      type: CanvasNodeType.SpatialJoin,
+      name: '保留全部目标要素',
+      layout: { x: 10, y: 20, width: 368, height: 224 },
+      configuration: {
+        leftTableName: 'orders',
+        rightTableName: 'districts',
+        outputTableName: 'orders_with_district',
+        joinType: 'LEFT',
+        conditions: [{
+          leftGeometryColumnName: 'shape',
+          predicate: 'WITHIN',
+          rightGeometryColumnName: 'boundary',
+        }],
+        attributeConditions: null,
+        outputColumns: null,
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 55,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'SPATIAL_JOIN_KEEP_ALL_REQUIRE_SCHEMA_VERSION：空间连接保留全部目标要素从 Canvas 4.56 开始支持',
+      ]),
+    }));
+
+    const innerLegacy = structuredClone(current) as {
+      schemaVersion: number;
+      schemaMinorVersion: number;
+      nodes: Array<{ configuration: Record<string, unknown> }>;
+      edges: unknown[];
+    };
+    innerLegacy.schemaMinorVersion = 55;
+    innerLegacy.nodes[0].configuration.joinType = 'INNER';
+    expect(parseCanvasDefinitionJson(JSON.stringify(innerLegacy))).toEqual(expect.objectContaining({
+      success: true,
+    }));
+
+    const invalid = structuredClone(current) as {
+      schemaVersion: number;
+      schemaMinorVersion: number;
+      nodes: Array<{ configuration: Record<string, unknown> }>;
+      edges: unknown[];
+    };
+    invalid.nodes[0].configuration.joinType = 'RIGHT';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.joinType 仅支持 INNER 或 LEFT',
+      ]),
+    }));
+  });
+
+  it('gates explicit Spatial Join one-to-many semantics at Canvas 4.57', () => {
+    const node = {
+      id: '295f5f0e-7e53-479f-85d1-e69690b29268',
+      type: CanvasNodeType.SpatialJoin,
+      name: '一对多空间连接',
+      layout: { x: 10, y: 20, width: 368, height: 224 },
+      configuration: {
+        leftTableName: 'orders',
+        rightTableName: 'districts',
+        outputTableName: 'orders_with_district',
+        joinType: 'INNER',
+        conditions: [{
+          leftGeometryColumnName: 'shape',
+          predicate: 'WITHIN',
+          rightGeometryColumnName: 'boundary',
+        }],
+        attributeConditions: null,
+        outputColumns: null,
+        joinOperation: 'JOIN_ONE_TO_MANY',
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 56,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'SPATIAL_JOIN_OPERATION_REQUIRE_SCHEMA_VERSION：空间连接显式结果粒度从 Canvas 4.57 开始支持',
+      ]),
+    }));
+
+    for (const legacyValue of ['missing', null] as const) {
+      const legacy = structuredClone(current) as {
+        schemaVersion: number;
+        schemaMinorVersion: number;
+        nodes: Array<{ configuration: Record<string, unknown> }>;
+        edges: unknown[];
+      };
+      legacy.schemaMinorVersion = 56;
+      if (legacyValue === 'missing') {
+        delete legacy.nodes[0].configuration.joinOperation;
+      } else {
+        legacy.nodes[0].configuration.joinOperation = null;
+      }
+      const parsed = parseCanvasDefinitionJson(JSON.stringify(legacy));
+      expect(parsed.success).toBe(true);
+      if (!parsed.success) continue;
+      expect(parsed.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+      const configuration = parsed.definition.nodes[0].configuration;
+      expect('joinOperation' in configuration
+        ? configuration.joinOperation
+        : undefined).toBe(legacyValue === 'missing' ? undefined : null);
+    }
+
+    const invalid = structuredClone(current) as {
+      nodes: Array<{ configuration: Record<string, unknown> }>;
+    };
+    invalid.nodes[0].configuration.joinOperation = 'JOIN_MANY_TO_ONE';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.joinOperation 仅支持 JOIN_ONE_TO_MANY 或 JOIN_ONE_TO_ONE',
+      ]),
+    }));
+  });
+
+  it('gates Spatial Join one-to-one options at Canvas 4.58', () => {
+    const node = {
+      id: '00aec09f-1622-48db-a3f7-4ba4570bd3cb',
+      type: CanvasNodeType.SpatialJoin,
+      name: '一对一空间连接',
+      layout: { x: 10, y: 20, width: 368, height: 224 },
+      configuration: {
+        leftTableName: 'orders',
+        rightTableName: 'districts',
+        outputTableName: 'orders_with_district',
+        joinType: 'LEFT',
+        conditions: [{
+          leftGeometryColumnName: 'shape',
+          predicate: 'WITHIN',
+          rightGeometryColumnName: 'boundary',
+        }],
+        attributeConditions: [],
+        outputColumns: [{
+          sourceSide: 'LEFT',
+          sourceColumnName: 'id',
+          outputColumnName: 'id',
+          included: true,
+        }],
+        joinOperation: 'JOIN_ONE_TO_ONE',
+        oneToOne: {
+          mode: 'SUMMARIZE_MATCHES',
+          joinCountColumnName: 'join_count',
+          summaryStatistics: [{
+            statisticId: '681e9f34-02e1-4cf7-a3bd-f2042a4e4987',
+            kind: 'MEAN',
+            sourceColumnName: 'amount',
+            outputColumnName: 'amount_mean',
+          }],
+          keepRule: {
+            strategy: 'FIRST',
+            orderByColumnName: null,
+            stableOrder: [{
+              columnName: 'district_id',
+              direction: 'ASC',
+              nullOrdering: 'LAST',
+            }],
+          },
+        },
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 57,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'SPATIAL_JOIN_ONE_TO_ONE_REQUIRE_SCHEMA_VERSION：空间连接一对一规则从 Canvas 4.58 开始支持',
+      ]),
+    }));
+
+    const invalid = structuredClone(current);
+    invalid.nodes[0].configuration.oneToOne.keepRule.stableOrder[0].direction = 'SIDEWAYS';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.oneToOne.keepRule.stableOrder[0].direction 仅支持 ASC 或 DESC',
+      ]),
+    }));
+  });
+
+  it('gates Spatial Join temporal conditions at Canvas 4.59 and preserves inactive values', () => {
+    const node = {
+      id: '00aec09f-1622-48db-a3f7-4ba4570bd3cb',
+      type: CanvasNodeType.SpatialJoin,
+      name: '时空连接',
+      layout: { x: 10, y: 20, width: 368, height: 224 },
+      configuration: {
+        leftTableName: 'targets',
+        rightTableName: 'joins',
+        outputTableName: 'matched',
+        joinType: 'INNER',
+        conditions: [{
+          leftGeometryColumnName: 'shape',
+          predicate: 'INTERSECTS',
+          rightGeometryColumnName: 'shape',
+        }],
+        temporalCondition: {
+          relationship: 'NEAR_BEFORE',
+          leftStartColumnName: 'target_start',
+          leftEndColumnName: 'target_end',
+          rightStartColumnName: 'join_time',
+          rightEndColumnName: null,
+          nearDistance: 15,
+          nearDistanceUnit: 'MINUTES',
+        },
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 58,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'SPATIAL_JOIN_TEMPORAL_CONDITION_REQUIRE_SCHEMA_VERSION：空间连接时间关系从 Canvas 4.59 开始支持',
+      ]),
+    }));
+
+    const missing = structuredClone(current) as {
+      schemaMinorVersion: number;
+      nodes: Array<{ configuration: Record<string, unknown> }>;
+    };
+    missing.schemaMinorVersion = 58;
+    delete missing.nodes[0].configuration.temporalCondition;
+    const parsedMissing = parseCanvasDefinitionJson(JSON.stringify(missing));
+    expect(parsedMissing.success).toBe(true);
+    if (parsedMissing.success) {
+      expect(parsedMissing.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+      expect('temporalCondition' in parsedMissing.definition.nodes[0].configuration).toBe(false);
+    }
+
+    const incomplete = {
+      ...current,
+      nodes: [{
+        ...node,
+        configuration: {
+          ...node.configuration,
+          temporalCondition: {
+            ...node.configuration.temporalCondition,
+            leftStartColumnName: '',
+            nearDistance: null,
+            nearDistanceUnit: null,
+          },
+        },
+      }],
+    };
+    expect(parseCanvasDefinitionJson(JSON.stringify(incomplete))).toEqual({
+      success: true,
+      definition: incomplete,
+    });
+
+    const invalid = structuredClone(current);
+    invalid.nodes[0].configuration.temporalCondition.relationship = 'AROUND';
+    invalid.nodes[0].configuration.temporalCondition.nearDistanceUnit = 'MONTHS';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.temporalCondition.relationship 不是受支持的时间关系',
+        'nodes[0].configuration.temporalCondition.nearDistanceUnit 不是受支持的固定时长单位',
+      ]),
+    }));
+  });
+
+  it('gates Spatial Join Near and distance output at Canvas 4.60', () => {
+    const node = {
+      id: '74ac69a5-8445-4f2f-8820-b306c889853b',
+      type: CanvasNodeType.SpatialJoin,
+      name: '邻近连接',
+      layout: { x: 10, y: 20, width: 368, height: 224 },
+      configuration: {
+        leftTableName: 'targets',
+        rightTableName: 'joins',
+        outputTableName: 'matched',
+        joinType: 'LEFT',
+        conditions: [],
+        spatialNear: {
+          leftGeometryColumnName: 'shape',
+          rightGeometryColumnName: 'boundary',
+          distanceMethod: 'GEODESIC',
+          distance: 5,
+          distanceUnit: 'KILOMETERS',
+        },
+        distanceOutput: {
+          enabled: true,
+          spatialDistanceColumnName: 'spatial_distance',
+          spatialDistanceUnit: 'METERS',
+          temporalDifferenceColumnName: 'time_difference',
+          temporalDifferenceUnit: 'SECONDS',
+        },
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 59,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION：空间连接 Near 和距离输出从 Canvas 4.60 开始支持',
+      ]),
+    }));
+
+    const missing = structuredClone(current) as {
+      schemaMinorVersion: number;
+      nodes: Array<{ configuration: Record<string, unknown> }>;
+    };
+    missing.schemaMinorVersion = 59;
+    delete missing.nodes[0].configuration.spatialNear;
+    delete missing.nodes[0].configuration.distanceOutput;
+    const parsedMissing = parseCanvasDefinitionJson(JSON.stringify(missing));
+    expect(parsedMissing.success).toBe(true);
+    if (parsedMissing.success) {
+      expect(parsedMissing.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+    }
+
+    const invalid = structuredClone(current);
+    invalid.nodes[0].configuration.spatialNear.distanceMethod = 'RHUMB' as 'GEODESIC';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.spatialNear.distanceMethod 仅支持 PLANAR 或 GEODESIC',
+      ]),
+    }));
+  });
+
+  it('gates Union Merge Layers field rules at Canvas 4.62 and preserves legacy null', () => {
+    const node = {
+      id: 'e393e596-5d5c-4a7b-8ae8-4c65925384b6',
+      type: CanvasNodeType.Union,
+      name: 'Merge Layers',
+      layout: { x: 10, y: 20, width: 336, height: 204 },
+      configuration: {
+        inputTableNames: ['base', 'merge'],
+        outputTableName: 'merged',
+        mode: 'ALL',
+        mergingTables: [{
+          tableName: 'merge',
+          fieldRules: [
+            { sourceColumnName: 'status', action: 'MATCH', targetColumnName: 'code' },
+            { sourceColumnName: 'temporary', action: 'REMOVE', targetColumnName: null },
+            { sourceColumnName: 'amount', action: 'RENAME', targetColumnName: 'merge_amount' },
+          ],
+        }],
+      },
+    };
+    const current = {
+      schemaVersion: CANVAS_SCHEMA_VERSION,
+      schemaMinorVersion: CANVAS_SCHEMA_MINOR_VERSION,
+      nodes: [node],
+      edges: [],
+    };
+
+    expect(parseCanvasDefinitionJson(JSON.stringify(current))).toEqual({
+      success: true,
+      definition: current,
+    });
+    expect(parseCanvasDefinitionJson(JSON.stringify({
+      ...current,
+      schemaMinorVersion: 61,
+    }))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'UNION_MERGE_LAYERS_REQUIRE_SCHEMA_VERSION：Union 的 Merge Layers 字段处理从 Canvas 4.62 开始支持',
+      ]),
+    }));
+
+    const legacy = structuredClone(current) as {
+      schemaMinorVersion: number;
+      nodes: Array<{ configuration: Record<string, unknown> }>;
+    };
+    legacy.schemaMinorVersion = 61;
+    delete legacy.nodes[0].configuration.mergingTables;
+    const parsedLegacy = parseCanvasDefinitionJson(JSON.stringify(legacy));
+    expect(parsedLegacy.success).toBe(true);
+    if (parsedLegacy.success) {
+      expect(parsedLegacy.definition.schemaMinorVersion).toBe(CANVAS_SCHEMA_MINOR_VERSION);
+      expect(parsedLegacy.definition.nodes[0].configuration).toEqual(expect.objectContaining({
+        mergingTables: null,
+      }));
+    }
+
+    const invalid = structuredClone(current);
+    invalid.nodes[0].configuration.mergingTables[0].fieldRules[0].action = 'COPY';
+    expect(parseCanvasDefinitionJson(JSON.stringify(invalid))).toEqual(expect.objectContaining({
+      success: false,
+      errors: expect.arrayContaining([
+        'nodes[0].configuration.mergingTables[0].fieldRules[0].action 仅支持 MATCH、RENAME 或 REMOVE',
+      ]),
+    }));
   });
 
   it('does not mutate the current definition when parsing fails', () => {

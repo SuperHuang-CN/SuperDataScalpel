@@ -1,14 +1,20 @@
 package cn.superhuang.data.scalpel.contract.service;
 
+import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 
 /** Explicit one-of deployment definition persisted by a Service Engine. */
 public record ServiceDefinitionSnapshot(
+        @JsonPropertyDescription("服务类型；必须且只能提供与 STANDARD_TABLE、SQL_QUERY、SCRIPT_API 或 SPATIAL_SERVICE 对应的一种定义。")
         @NotNull DataServiceType type,
+        @JsonPropertyDescription("STANDARD 类型服务的结构化单表查询定义；其他类型为空。")
         @Valid StandardServiceDefinition standardDefinition,
+        @JsonPropertyDescription("SQL 类型服务的参数化只读 SQL 定义；其他类型为空。")
         @Valid SqlServiceDefinition sqlDefinition,
+        @JsonPropertyDescription("SCRIPT 类型服务的受限脚本定义；其他类型为空。")
         @Valid ScriptServiceDefinition scriptDefinition,
+        @JsonPropertyDescription("SPATIAL 类型服务的物理表、Geometry 和发布图层定义；其他类型为空。")
         @Valid SpatialServiceDefinition spatialDefinition
 ) {
 

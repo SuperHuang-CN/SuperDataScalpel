@@ -12,6 +12,7 @@ public final class BuiltInDialects {
     public static DialectRegistry registry() {
         return new DialectRegistry(List.of(
                 new PostgreSqlDialect(),
+                new HighGoDialect(),
                 new MySqlDialect(),
                 new OracleDialect(),
                 new SqlServerDialect(),

@@ -8,15 +8,18 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.SpatialClipConfiguration;
 import cn.superhuang.data.scalpel.contract.task.SpatialClipNodeDefinition;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
+import cn.superhuang.datascalpel.taskengine.compiler.lineage.CatalystLineageMetadata;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 import org.apache.spark.sql.functions;
+import org.apache.spark.sql.sedona_sql.expressions.st_aggregates;
 import org.apache.spark.sql.sedona_sql.expressions.st_functions;
 import org.apache.spark.sql.sedona_sql.expressions.st_predicates;
 
@@ -28,6 +31,10 @@ import java.util.Map;
 import java.util.Set;
 
 public final class SpatialClipNodeOperator implements CanvasNodeOperator {
+
+    private static final String SOURCE_ALIAS = "spatial_clip_source";
+    private static final String MASK_ALIAS = "spatial_clip_mask";
+    private static final String MASK_UNION_ALIAS = "spatial_clip_mask_union";
 
     @Override
     public CanvasNodeType nodeType() {
@@ -134,6 +141,14 @@ public final class SpatialClipNodeOperator implements CanvasNodeOperator {
                 && maskGeometry != null && maskGeometry.geometry() != null) {
             GeometryTypeDefinition sourceType = sourceGeometry.geometry();
             GeometryTypeDefinition maskType = maskGeometry.geometry();
+            if (configuration.usesSourceFamily()
+                    && SpatialOverlayGeometrySupport.family(sourceType.kind()) == 0) {
+                issues.error(
+                        "SPATIAL_CLIP_SOURCE_KIND_UNSUPPORTED",
+                        "保持来源家族时只支持明确的 Point、LineString、Polygon 及对应 Multi 类型",
+                        "configuration.sourceGeometryColumnName"
+                );
+            }
             if (sourceType.dimension() != maskType.dimension()) {
                 issues.error(
                         "SPATIAL_CLIP_DIMENSION_MISMATCH",
@@ -161,24 +176,70 @@ public final class SpatialClipNodeOperator implements CanvasNodeOperator {
         }
 
         GeometryTypeDefinition sourceType = sourceGeometry.geometry();
-        Dataset<Row> sourceDataset = source.dataset().alias("spatial_clip_source");
-        Dataset<Row> maskDataset = mask.dataset().alias("spatial_clip_mask");
-        Column sourceGeometryExpression = sourceDataset.col(
-                CanvasNodeSupport.quoteIdentifier(configuration.sourceGeometryColumnName()));
-        Column maskGeometryExpression = maskDataset.col(
-                CanvasNodeSupport.quoteIdentifier(configuration.maskGeometryColumnName()));
-        Dataset<Row> candidates = sourceDataset.join(
-                maskDataset,
-                st_predicates.ST_Intersects(sourceGeometryExpression, maskGeometryExpression),
-                "inner"
-        );
-        Column clippedGeometry = st_functions.ST_SetSRID(
+        GeometryTypeDefinition outputType = outputGeometryType(configuration, sourceType);
+        Dataset<Row> sourceDataset;
+        Dataset<Row> candidates;
+        Column sourceGeometryExpression;
+        Column maskGeometryExpression;
+        if (configuration.dissolvesMasks()) {
+            String rowId = internalName(source.dataset(), mask.dataset(),
+                    "__datascalpel_clip_source_row_id");
+            String maskUnion = internalName(source.dataset(), mask.dataset(),
+                    "__datascalpel_clip_mask_union");
+            sourceDataset = source.dataset().withColumn(rowId,
+                    CatalystLineageMetadata.markTechnicalColumn(
+                            functions.monotonically_increasing_id(), rowId))
+                    .alias(SOURCE_ALIAS);
+            Dataset<Row> maskDataset = mask.dataset().alias(MASK_ALIAS);
+            Column sourceForMatch = qualified(SOURCE_ALIAS,
+                    configuration.sourceGeometryColumnName());
+            Column maskForMatch = qualified(MASK_ALIAS,
+                    configuration.maskGeometryColumnName());
+            if (configuration.usesSourceFamily()) {
+                sourceForMatch = st_functions.ST_Force2D(sourceForMatch);
+                maskForMatch = st_functions.ST_Force2D(maskForMatch);
+            }
+            Dataset<Row> matchedMasks = sourceDataset.join(
+                            maskDataset,
+                            st_predicates.ST_Intersects(sourceForMatch, maskForMatch),
+                            "inner")
+                    .groupBy(qualified(SOURCE_ALIAS, rowId))
+                    .agg(st_aggregates.ST_Union_Agg(maskForMatch).alias(maskUnion))
+                    .alias(MASK_UNION_ALIAS);
+            candidates = sourceDataset.join(
+                    matchedMasks,
+                    qualified(SOURCE_ALIAS, rowId).eqNullSafe(
+                            qualified(MASK_UNION_ALIAS, rowId)),
+                    "inner");
+            sourceGeometryExpression = qualified(SOURCE_ALIAS,
+                    configuration.sourceGeometryColumnName());
+            maskGeometryExpression = qualified(MASK_UNION_ALIAS, maskUnion);
+            if (configuration.usesSourceFamily()) {
+                sourceGeometryExpression = st_functions.ST_Force2D(sourceGeometryExpression);
+            }
+        } else {
+            sourceDataset = source.dataset().alias(SOURCE_ALIAS);
+            Dataset<Row> maskDataset = mask.dataset().alias(MASK_ALIAS);
+            sourceGeometryExpression = qualified(SOURCE_ALIAS,
+                    configuration.sourceGeometryColumnName());
+            maskGeometryExpression = qualified(MASK_ALIAS,
+                    configuration.maskGeometryColumnName());
+            if (configuration.usesSourceFamily()) {
+                sourceGeometryExpression = st_functions.ST_Force2D(sourceGeometryExpression);
+                maskGeometryExpression = st_functions.ST_Force2D(maskGeometryExpression);
+            }
+            candidates = sourceDataset.join(
+                    maskDataset,
+                    st_predicates.ST_Intersects(sourceGeometryExpression, maskGeometryExpression),
+                    "inner");
+        }
+        Column clippedGeometry = SpatialOverlayGeometrySupport.result(
                 st_functions.ST_Intersection(sourceGeometryExpression, maskGeometryExpression),
-                functions.lit(sourceType.crs().code())
+                outputType
         ).alias(configuration.outputColumnName());
         List<Column> projection = new ArrayList<>(source.schema().columns().size() + 1);
         for (CanvasColumnSchema column : source.schema().columns()) {
-            projection.add(sourceDataset.col(CanvasNodeSupport.quoteIdentifier(column.name())));
+            projection.add(qualified(SOURCE_ALIAS, column.name()));
         }
         projection.add(clippedGeometry);
         Dataset<Row> projected = candidates.select(projection.toArray(Column[]::new));
@@ -193,11 +254,7 @@ public final class SpatialClipNodeOperator implements CanvasNodeOperator {
                 configuration.outputColumnName(), PlatformDataType.GEOMETRY,
                 null, null, null, false,
                 null, false, false, null,
-                new GeometryTypeDefinition(
-                        GeometryKind.GEOMETRY,
-                        sourceType.crs(),
-                        sourceType.dimension()
-                )
+                outputType
         ));
         CanvasTableSchema outputSchema = new CanvasTableSchema(
                 configuration.outputTableName(), null, outputColumns,
@@ -205,6 +262,27 @@ public final class SpatialClipNodeOperator implements CanvasNodeOperator {
         Map<String, SparkCanvasTable> output = new LinkedHashMap<>(inputs);
         output.put(outputSchema.name(), new SparkCanvasTable(outputSchema, clippedDataset));
         return CanvasNodeOperationResult.propagated(output, CanvasNodeSupport.schemas(output));
+    }
+
+    private static GeometryTypeDefinition outputGeometryType(
+            SpatialClipConfiguration configuration,
+            GeometryTypeDefinition sourceType
+    ) {
+        if (!configuration.usesSourceFamily()) {
+            return new GeometryTypeDefinition(
+                    GeometryKind.GEOMETRY,
+                    sourceType.crs(),
+                    sourceType.dimension()
+            );
+        }
+        GeometryKind outputKind = switch (SpatialOverlayGeometrySupport.family(sourceType.kind())) {
+            case 1 -> GeometryKind.MULTIPOINT;
+            case 2 -> GeometryKind.MULTILINESTRING;
+            case 3 -> GeometryKind.MULTIPOLYGON;
+            default -> throw new IllegalStateException(
+                    "Spatial Clip source family validation must precede planning");
+        };
+        return new GeometryTypeDefinition(outputKind, sourceType.crs(), CoordinateDimension.XY);
     }
 
     private static void validateBounded(
@@ -244,5 +322,19 @@ public final class SpatialClipNodeOperator implements CanvasNodeOperator {
         }
         CanvasNodeSupport.validateSupportedGeometry(List.of(column), path, issues);
         return column;
+    }
+
+    private static Column qualified(String alias, String name) {
+        return functions.col(alias + "." + CanvasNodeSupport.quoteIdentifier(name));
+    }
+
+    private static String internalName(Dataset<Row> left, Dataset<Row> right, String base) {
+        Set<String> occupied = new HashSet<>();
+        occupied.addAll(List.of(left.columns()));
+        occupied.addAll(List.of(right.columns()));
+        String result = base;
+        int suffix = 1;
+        while (occupied.contains(result)) result = base + "_" + suffix++;
+        return result;
     }
 }

@@ -7,13 +7,18 @@ import cn.superhuang.data.scalpel.contract.task.CanvasNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.CanvasNodeType;
 import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.SpatialAggregateConfiguration;
+import cn.superhuang.data.scalpel.contract.task.SpatialAggregateDissolveOptions;
+import cn.superhuang.data.scalpel.contract.task.SpatialAggregateDissolveGroupingMode;
 import cn.superhuang.data.scalpel.contract.task.SpatialAggregateNodeDefinition;
+import cn.superhuang.data.scalpel.contract.task.SpatialAggregateStatistic;
+import cn.superhuang.data.scalpel.contract.task.SpatialAggregateStatisticKind;
 import cn.superhuang.data.scalpel.contract.task.SpatialAggregation;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import cn.superhuang.datascalpel.taskengine.contract.CanvasNodeCategory;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
+import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
 import org.apache.spark.sql.Column;
 import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.RelationalGroupedDataset;
@@ -26,8 +31,10 @@ import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.UUID;
 
 public final class SpatialAggregateNodeOperator implements CanvasNodeOperator {
 
@@ -178,46 +185,79 @@ public final class SpatialAggregateNodeOperator implements CanvasNodeOperator {
                         List.of(geometryColumn), path + ".geometryColumnName", issues);
             }
         }
+        validateDissolve(
+                configuration,
+                source,
+                sourceColumns,
+                groupByColumns,
+                issues
+        );
         if (source == null || issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
         }
 
         Dataset<Row> sourceDataset = source.dataset();
-        Column[] groupExpressions = groupByColumns.stream()
-                .map(columnName -> sourceDataset.col(CanvasNodeSupport.quoteIdentifier(columnName)))
-                .toArray(Column[]::new);
-        Column[] aggregateExpressions = configuration.aggregations().stream()
-                .map(item -> aggregateExpression(sourceDataset, sourceColumns, item))
-                .toArray(Column[]::new);
+        String connectedGroupColumn = null;
+        if (connectedDissolve(configuration) && !context.runtimeValues().preview()) {
+            if (!SpatialDissolveConnectedSupport.ensureCheckpointDirectory(sourceDataset, issues)) {
+                return CanvasNodeOperationResult.invalid(inputSchemas);
+            }
+            SpatialAggregation union = configuration.aggregations().getFirst();
+            SpatialDissolveConnectedSupport.Prepared prepared =
+                    SpatialDissolveConnectedSupport.prepare(
+                            sourceDataset,
+                            union.geometryColumnName()
+                    );
+            sourceDataset = prepared.source();
+            connectedGroupColumn = prepared.groupingColumnName();
+        }
+        Dataset<Row> aggregateSource = sourceDataset;
+        Column[] groupExpressions = connectedGroupColumn == null
+                ? groupByColumns.stream()
+                .map(columnName -> aggregateSource.col(CanvasNodeSupport.quoteIdentifier(columnName)))
+                .toArray(Column[]::new)
+                : new Column[]{aggregateSource.col(
+                        CanvasNodeSupport.quoteIdentifier(connectedGroupColumn))};
+        List<Column> aggregateExpressionList = new ArrayList<>();
+        configuration.aggregations().stream()
+                .map(item -> aggregateExpression(aggregateSource, sourceColumns, item))
+                .forEach(aggregateExpressionList::add);
+        SpatialAggregateDissolveOptions dissolve = configuration.dissolve();
+        if (dissolve != null && dissolve.enabled()) {
+            aggregateExpressionList.add(functions.count(functions.lit(1L))
+                    .alias(dissolve.countOutputColumnName()));
+            dissolve.summaryStatistics().stream()
+                    .map(item -> statisticExpression(aggregateSource, item)
+                            .alias(item.outputColumnName()))
+                    .forEach(aggregateExpressionList::add);
+        }
+        Column[] aggregateExpressions = aggregateExpressionList.toArray(Column[]::new);
         Dataset<Row> aggregateDataset;
         if (groupExpressions.length == 0) {
-            aggregateDataset = sourceDataset.agg(
+            aggregateDataset = aggregateSource.agg(
                     aggregateExpressions[0], trailing(aggregateExpressions));
         } else {
-            RelationalGroupedDataset grouped = sourceDataset.groupBy(groupExpressions);
+            RelationalGroupedDataset grouped = aggregateSource.groupBy(groupExpressions);
             aggregateDataset = grouped.agg(
                     aggregateExpressions[0], trailing(aggregateExpressions));
         }
+        if (connectedGroupColumn != null) {
+            aggregateDataset = aggregateDataset.drop(connectedGroupColumn);
+        }
+        aggregateDataset = applyDissolvePartMode(
+                aggregateDataset,
+                configuration,
+                sourceColumns
+        );
 
-        List<CanvasColumnSchema> outputColumns = new ArrayList<>(
-                groupByColumns.size() + configuration.aggregations().size());
-        for (String columnName : groupByColumns) {
-            outputColumns.add(groupByColumn(sourceColumns.get(columnName)));
-        }
-        for (SpatialAggregation item : configuration.aggregations()) {
-            GeometryTypeDefinition sourceGeometry = sourceColumns
-                    .get(item.geometryColumnName()).geometry();
-            outputColumns.add(new CanvasColumnSchema(
-                    item.outputColumnName(), PlatformDataType.GEOMETRY,
-                    null, null, null, true,
-                    null, false, false, null,
-                    new GeometryTypeDefinition(
-                            GeometryKind.GEOMETRY,
-                            sourceGeometry.crs(),
-                            sourceGeometry.dimension()
-                    )
-            ));
-        }
+        List<CanvasColumnSchema> fallbackColumns = outputFallbackColumns(
+                configuration,
+                sourceColumns
+        );
+        List<CanvasColumnSchema> outputColumns = SparkTypeMapper.fromStructType(
+                aggregateDataset.schema(),
+                fallbackColumns
+        );
         CanvasTableSchema outputSchema = new CanvasTableSchema(
                 configuration.outputTableName(), null, outputColumns,
                 CanvasDatasetKind.BOUNDED, null, null);
@@ -241,6 +281,321 @@ public final class SpatialAggregateNodeOperator implements CanvasNodeOperator {
         int srid = sourceColumns.get(item.geometryColumnName()).geometry().crs().code();
         return st_functions.ST_SetSRID(aggregate, functions.lit(srid))
                 .alias(item.outputColumnName());
+    }
+
+    private static void validateDissolve(
+            SpatialAggregateConfiguration configuration,
+            SparkCanvasTable source,
+            Map<String, CanvasColumnSchema> sourceColumns,
+            List<String> groupByColumns,
+            CanvasNodeIssueSink issues
+    ) {
+        SpatialAggregateDissolveOptions dissolve = configuration.dissolve();
+        if (dissolve == null || !dissolve.enabled()) return;
+        if (configuration.aggregations().size() != 1
+                || configuration.aggregations().getFirst() == null
+                || configuration.aggregations().getFirst().kind()
+                != cn.superhuang.data.scalpel.contract.task.SpatialAggregationKind.UNION) {
+            issues.error(
+                    "SPATIAL_DISSOLVE_REQUIRES_SINGLE_UNION",
+                    "Dissolve 输出要求恰好配置一个 UNION 空间聚合",
+                    "configuration.aggregations"
+            );
+        }
+        if (dissolve.effectiveGroupingMode()
+                == SpatialAggregateDissolveGroupingMode.CONNECTED_COMPONENTS) {
+            if (!groupByColumns.isEmpty()) {
+                issues.error(
+                        "SPATIAL_DISSOLVE_CONNECTED_GROUP_FIELDS_NOT_ALLOWED",
+                        "按空间连通组 Dissolve 时不能再配置分组字段",
+                        "configuration.groupByColumns"
+                );
+            }
+            if (configuration.aggregations().size() == 1
+                    && configuration.aggregations().getFirst() != null) {
+                CanvasColumnSchema geometry = sourceColumns.get(
+                        configuration.aggregations().getFirst().geometryColumnName());
+                if (geometry != null && geometry.geometry() != null
+                        && geometry.geometry().kind() != GeometryKind.POLYGON
+                        && geometry.geometry().kind() != GeometryKind.MULTIPOLYGON) {
+                    issues.error(
+                            "SPATIAL_DISSOLVE_CONNECTED_REQUIRES_POLYGON",
+                            "按空间连通组 Dissolve 只支持 Polygon 或 MultiPolygon",
+                            "configuration.aggregations[0].geometryColumnName"
+                    );
+                }
+            }
+        }
+        if (dissolve.summaryStatistics() == null) {
+            issues.error(
+                    "REQUIRED_CONFIGURATION",
+                    "Dissolve 标量统计必须是数组",
+                    "configuration.dissolve.summaryStatistics"
+            );
+            return;
+        }
+        if (dissolve.summaryStatistics().size()
+                > SpatialAggregateDissolveOptions.MAX_SUMMARY_STATISTICS) {
+            issues.error(
+                    "SPATIAL_DISSOLVE_STATISTIC_LIMIT_EXCEEDED",
+                    "Dissolve 标量统计不能超过 "
+                            + SpatialAggregateDissolveOptions.MAX_SUMMARY_STATISTICS + " 项",
+                    "configuration.dissolve.summaryStatistics"
+            );
+        }
+
+        Set<String> resultNames = new HashSet<>();
+        for (int index = 0; index < groupByColumns.size(); index++) {
+            addDissolveOutputName(
+                    groupByColumns.get(index),
+                    "configuration.groupByColumns[" + index + "]",
+                    resultNames,
+                    issues
+            );
+        }
+        for (int index = 0; index < configuration.aggregations().size(); index++) {
+            SpatialAggregation aggregation = configuration.aggregations().get(index);
+            if (aggregation != null) {
+                addDissolveOutputName(
+                        aggregation.outputColumnName(),
+                        "configuration.aggregations[" + index + "].outputColumnName",
+                        resultNames,
+                        issues
+                );
+            }
+        }
+        CanvasNodeSupport.required(
+                dissolve.countOutputColumnName(),
+                "请输入来源要素计数字段名",
+                "configuration.dissolve.countOutputColumnName",
+                issues
+        );
+        addDissolveOutputName(
+                dissolve.countOutputColumnName(),
+                "configuration.dissolve.countOutputColumnName",
+                resultNames,
+                issues
+        );
+
+        Set<String> statisticIds = new HashSet<>();
+        for (int index = 0; index < dissolve.summaryStatistics().size(); index++) {
+            SpatialAggregateStatistic statistic = dissolve.summaryStatistics().get(index);
+            String path = "configuration.dissolve.summaryStatistics[" + index + "]";
+            if (statistic == null) {
+                issues.error("REQUIRED_CONFIGURATION", "Dissolve 标量统计不能为空", path);
+                continue;
+            }
+            if (!uuid(statistic.statisticId())) {
+                issues.error(
+                        "INVALID_SPATIAL_DISSOLVE_STATISTIC_ID",
+                        "Dissolve 标量统计 ID 必须是 UUID",
+                        path + ".statisticId"
+                );
+            } else if (!statisticIds.add(statistic.statisticId())) {
+                issues.error(
+                        "DUPLICATE_SPATIAL_DISSOLVE_STATISTIC_ID",
+                        "Dissolve 标量统计 ID 重复",
+                        path + ".statisticId"
+                );
+            }
+            if (statistic.kind() == null) {
+                issues.error(
+                        "INVALID_SPATIAL_DISSOLVE_STATISTIC_KIND",
+                        "请选择 Dissolve 标量统计类型",
+                        path + ".kind"
+                );
+            }
+            CanvasNodeSupport.required(
+                    statistic.sourceColumnName(),
+                    "请选择统计来源字段",
+                    path + ".sourceColumnName",
+                    issues
+            );
+            CanvasNodeSupport.required(
+                    statistic.outputColumnName(),
+                    "请输入统计输出字段名",
+                    path + ".outputColumnName",
+                    issues
+            );
+            addDissolveOutputName(
+                    statistic.outputColumnName(),
+                    path + ".outputColumnName",
+                    resultNames,
+                    issues
+            );
+            if (source == null || CanvasNodeSupport.blank(statistic.sourceColumnName())) {
+                continue;
+            }
+            CanvasColumnSchema column = sourceColumns.get(statistic.sourceColumnName());
+            if (column == null) {
+                issues.error(
+                        "COLUMN_NOT_FOUND",
+                        "统计来源字段不存在：" + statistic.sourceColumnName(),
+                        path + ".sourceColumnName"
+                );
+            } else if (column.fieldType() == PlatformDataType.GEOMETRY) {
+                issues.error(
+                        "GEOMETRY_FIELD_OPERATION_UNSUPPORTED",
+                        "Geometry 字段不能参与 Dissolve 标量统计",
+                        path + ".sourceColumnName"
+                );
+            } else if (statistic.kind() == SpatialAggregateStatisticKind.ANY
+                    && column.fieldType() != PlatformDataType.STRING) {
+                issues.error(
+                        "STRING_COLUMN_REQUIRED",
+                        "ANY 统计要求字符串字段",
+                        path + ".sourceColumnName"
+                );
+            } else if (statistic.kind() != null
+                    && statistic.kind() != SpatialAggregateStatisticKind.ANY
+                    && statistic.kind() != SpatialAggregateStatisticKind.COUNT_FIELD
+                    && !numeric(column.fieldType())) {
+                issues.error(
+                        "NUMERIC_COLUMN_REQUIRED",
+                        statistic.kind() + " 统计要求数值字段",
+                        path + ".sourceColumnName"
+                );
+            }
+        }
+    }
+
+    private static void addDissolveOutputName(
+            String name,
+            String path,
+            Set<String> names,
+            CanvasNodeIssueSink issues
+    ) {
+        if (!CanvasNodeSupport.blank(name) && !names.add(name.toLowerCase(Locale.ROOT))) {
+            issues.error(
+                    "DUPLICATE_COLUMN_NAME",
+                    "Dissolve 输出字段名重复：" + name,
+                    path
+            );
+        }
+    }
+
+    private static Column statisticExpression(
+            Dataset<Row> source,
+            SpatialAggregateStatistic statistic
+    ) {
+        Column column = source.col(CanvasNodeSupport.quoteIdentifier(statistic.sourceColumnName()));
+        return switch (statistic.kind()) {
+            case COUNT_FIELD -> functions.count(column);
+            case SUM -> functions.sum(column);
+            case MEAN -> functions.avg(column);
+            case MIN -> functions.min(column);
+            case MAX -> functions.max(column);
+            case RANGE -> functions.max(column).minus(functions.min(column));
+            case STDDEV -> functions.stddev_samp(column);
+            case VARIANCE -> functions.var_samp(column);
+            case ANY -> functions.first(column, true);
+        };
+    }
+
+    private static Dataset<Row> applyDissolvePartMode(
+            Dataset<Row> aggregate,
+            SpatialAggregateConfiguration configuration,
+            Map<String, CanvasColumnSchema> sourceColumns
+    ) {
+        SpatialAggregateDissolveOptions dissolve = configuration.dissolve();
+        if (dissolve == null || !dissolve.enabled()) return aggregate;
+        SpatialAggregation union = configuration.aggregations().getFirst();
+        String geometryName = union.outputColumnName();
+        int srid = sourceColumns.get(union.geometryColumnName()).geometry().crs().code();
+        Column geometry = aggregate.col(CanvasNodeSupport.quoteIdentifier(geometryName));
+        Dataset<Row> nonEmpty = aggregate.filter(
+                geometry.isNotNull().and(functions.not(st_functions.ST_IsEmpty(geometry)))
+        );
+        geometry = nonEmpty.col(CanvasNodeSupport.quoteIdentifier(geometryName));
+        if (dissolve.multipart()) {
+            return nonEmpty.withColumn(
+                    geometryName,
+                    st_functions.ST_SetSRID(
+                            st_functions.ST_Multi(geometry),
+                            functions.lit(srid)
+                    )
+            );
+        }
+        List<Column> projection = new ArrayList<>(nonEmpty.columns().length);
+        for (String name : nonEmpty.columns()) {
+            Column column = nonEmpty.col(CanvasNodeSupport.quoteIdentifier(name));
+            projection.add(name.equals(geometryName)
+                    ? functions.explode(st_functions.ST_Dump(column)).alias(name)
+                    : column);
+        }
+        Dataset<Row> exploded = nonEmpty.select(projection.toArray(Column[]::new));
+        return exploded.withColumn(
+                geometryName,
+                st_functions.ST_SetSRID(
+                        exploded.col(CanvasNodeSupport.quoteIdentifier(geometryName)),
+                        functions.lit(srid)
+                )
+        );
+    }
+
+    private static List<CanvasColumnSchema> outputFallbackColumns(
+            SpatialAggregateConfiguration configuration,
+            Map<String, CanvasColumnSchema> sourceColumns
+    ) {
+        List<CanvasColumnSchema> columns = new ArrayList<>();
+        for (String name : configuration.groupByColumns()) {
+            columns.add(groupByColumn(sourceColumns.get(name)));
+        }
+        for (SpatialAggregation item : configuration.aggregations()) {
+            GeometryTypeDefinition sourceGeometry = sourceColumns
+                    .get(item.geometryColumnName()).geometry();
+            columns.add(new CanvasColumnSchema(
+                    item.outputColumnName(), PlatformDataType.GEOMETRY,
+                    null, null, null, true,
+                    null, false, false, null,
+                    new GeometryTypeDefinition(
+                            GeometryKind.GEOMETRY,
+                            sourceGeometry.crs(),
+                            sourceGeometry.dimension()
+                    )
+            ));
+        }
+        SpatialAggregateDissolveOptions dissolve = configuration.dissolve();
+        if (dissolve != null && dissolve.enabled()) {
+            columns.add(new CanvasColumnSchema(
+                    dissolve.countOutputColumnName(), PlatformDataType.LONG,
+                    null, null, null, false,
+                    null, false, false, null
+            ));
+            for (SpatialAggregateStatistic statistic : dissolve.summaryStatistics()) {
+                CanvasColumnSchema source = sourceColumns.get(statistic.sourceColumnName());
+                columns.add(new CanvasColumnSchema(
+                        statistic.outputColumnName(), source.fieldType(),
+                        source.length(), source.precision(), source.scale(), true,
+                        null, false, false, source.comment()
+                ));
+            }
+        }
+        return List.copyOf(columns);
+    }
+
+    private static boolean uuid(String value) {
+        if (CanvasNodeSupport.blank(value)) return false;
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException ignored) {
+            return false;
+        }
+    }
+
+    private static boolean numeric(PlatformDataType type) {
+        return type == PlatformDataType.BYTE || type == PlatformDataType.SHORT
+                || type == PlatformDataType.INTEGER || type == PlatformDataType.LONG
+                || type == PlatformDataType.FLOAT || type == PlatformDataType.DOUBLE
+                || type == PlatformDataType.DECIMAL;
+    }
+
+    private static boolean connectedDissolve(SpatialAggregateConfiguration configuration) {
+        SpatialAggregateDissolveOptions dissolve = configuration.dissolve();
+        return dissolve != null && dissolve.enabled()
+                && dissolve.effectiveGroupingMode()
+                == SpatialAggregateDissolveGroupingMode.CONNECTED_COMPONENTS;
     }
 
     private static Column[] trailing(Column[] columns) {

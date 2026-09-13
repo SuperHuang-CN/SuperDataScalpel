@@ -4,12 +4,22 @@ import { resolvedNodeSize } from '../canvasNodePresentation';
 import type { CanvasNodeBodyProps, CanvasNodeCanvasView } from '../nodeSpec';
 
 const body = ({ data }: CanvasNodeBodyProps<typeof CanvasNodeType.SpatialClip>) => {
-  const { sourceTableName, maskTableName, outputTableName, sourceGeometryColumnName, maskGeometryColumnName, outputColumnName } = data.configuration;
+  const { sourceTableName, maskTableName, outputTableName, sourceGeometryColumnName, maskGeometryColumnName, outputColumnName, geometryPolicy, maskCombination } = data.configuration;
+  const sourceKind = data.compilation?.inputTables
+    .find((table) => table.name === sourceTableName)?.columns
+    .find((column) => column.name === sourceGeometryColumnName)?.geometry?.kind;
+  const familyLabel = sourceKind === 'POINT' || sourceKind === 'MULTIPOINT'
+    ? 'MultiPoint · XY'
+    : sourceKind === 'LINESTRING' || sourceKind === 'MULTILINESTRING'
+      ? 'MultiLineString · XY'
+      : sourceKind === 'POLYGON' || sourceKind === 'MULTIPOLYGON'
+        ? 'MultiPolygon · XY'
+        : '来源家族 · XY';
   if (!sourceTableName && !maskTableName) return <NodeEmpty>请选择来源表和 Mask 表</NodeEmpty>;
   return <NodeContent variant="dual">
     <NodeDualFlow left={sourceTableName} right={maskTableName} leftLabel="SOURCE" rightLabel="MASK" operation="CLIP ∩" target={outputTableName} />
     <NodeSplit leftLabel="来源 Geometry" left={sourceGeometryColumnName || '待选择'} rightLabel="Mask Geometry" right={maskGeometryColumnName || '待选择'} />
-    <NodeBadges><NodeBadge tone="spatial">INTERSECTION</NodeBadge><NodeBadge>结果字段 {outputColumnName || '待设置'}</NodeBadge></NodeBadges>
+    <NodeBadges><NodeBadge tone="spatial">{geometryPolicy === 'SOURCE_FAMILY_2D' ? familyLabel : 'Geometry · 旧版'}</NodeBadge><NodeBadge>{maskCombination === 'DISSOLVE_ALL' ? 'Mask 合并' : '逐条 Mask'}</NodeBadge><NodeBadge>结果字段 {outputColumnName || '待设置'}</NodeBadge></NodeBadges>
   </NodeContent>;
 };
 

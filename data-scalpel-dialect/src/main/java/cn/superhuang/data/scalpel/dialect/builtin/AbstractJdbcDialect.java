@@ -224,16 +224,25 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
         if (jdbcSql == null || jdbcSql.isBlank() || offset < 0 || limit < 1) {
             throw new IllegalArgumentException("Invalid SQL service query pagination");
         }
-        List<SqlQueryParameter> dataParameters = new ArrayList<>(parameters);
-        dataParameters.add(new SqlQueryParameter(limit, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
-        dataParameters.add(new SqlQueryParameter(offset, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
-        PreparedSqlQuery dataQuery = new PreparedSqlQuery(
-                "SELECT * FROM (" + jdbcSql + ") ds_query LIMIT ? OFFSET ?", dataParameters
-        );
+        PreparedSqlQuery dataQuery = paginateSqlServiceQuery(jdbcSql, parameters, offset, limit);
         PreparedSqlQuery countQuery = returnCount
                 ? new PreparedSqlQuery("SELECT COUNT(*) FROM (" + jdbcSql + ") ds_count", parameters)
                 : null;
         return new CompiledSqlServiceQuery(dataQuery, countQuery);
+    }
+
+    protected PreparedSqlQuery paginateSqlServiceQuery(
+            String jdbcSql,
+            List<SqlQueryParameter> parameters,
+            int offset,
+            int limit
+    ) {
+        List<SqlQueryParameter> dataParameters = new ArrayList<>(parameters);
+        dataParameters.add(new SqlQueryParameter(limit, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        dataParameters.add(new SqlQueryParameter(offset, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        return new PreparedSqlQuery(
+                "SELECT * FROM (" + jdbcSql + ") ds_query LIMIT ? OFFSET ?", dataParameters
+        );
     }
 
     @Override
@@ -1032,20 +1041,32 @@ abstract class AbstractJdbcDialect implements DatabaseDialect {
                 DatabaseCapability.QUERY_METADATA,
                 DatabaseCapability.INSERT_SELECT
         );
-        if ("POSTGRESQL".equals(id) || "CLICKHOUSE".equals(id)) {
+        if ("POSTGRESQL".equals(id) || "HIGHGO".equals(id) || "MYSQL".equals(id)
+                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id) || "CLICKHOUSE".equals(id)
+                || "DAMENG".equals(id) || "ORACLE".equals(id) || "SQL_SERVER".equals(id)) {
             capabilities.add(DatabaseCapability.SQL_SERVICE_QUERY);
         }
-        if ("POSTGRESQL".equals(id)) {
+        if ("POSTGRESQL".equals(id) || "HIGHGO".equals(id) || "MYSQL".equals(id)
+                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id)) {
+            capabilities.add(DatabaseCapability.JDBC_QUERY_INPUT);
+        }
+        if ("POSTGRESQL".equals(id) || "HIGHGO".equals(id)
+                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id)) {
             capabilities.add(DatabaseCapability.OVERWRITE_INSERT_SELECT);
         }
-        if ("POSTGRESQL".equals(id) || "MYSQL".equals(id)) {
+        if ("POSTGRESQL".equals(id) || "HIGHGO".equals(id) || "MYSQL".equals(id)
+                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id) || "DAMENG".equals(id)
+                || "ORACLE".equals(id) || "SQL_SERVER".equals(id)) {
             capabilities.add(DatabaseCapability.ROW_UPSERT);
         }
-        if ("POSTGRESQL".equals(id) || "MYSQL".equals(id)
-                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id)) {
+        if ("POSTGRESQL".equals(id) || "HIGHGO".equals(id) || "MYSQL".equals(id)
+                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id) || "DAMENG".equals(id)
+                || "ORACLE".equals(id) || "SQL_SERVER".equals(id)) {
             capabilities.add(DatabaseCapability.JDBC_INCREMENTAL_READ);
         }
-        if ("POSTGRESQL".equals(id) || "MYSQL".equals(id) || "CLICKHOUSE".equals(id)) {
+        if ("POSTGRESQL".equals(id) || "HIGHGO".equals(id) || "MYSQL".equals(id)
+                || "OPENGAUSS".equals(id) || "KINGBASE".equals(id) || "CLICKHOUSE".equals(id)
+                || "DAMENG".equals(id)) {
             capabilities.add(DatabaseCapability.CREATE_TABLE);
         }
         return capabilities;

@@ -22,7 +22,13 @@ final class TrackGeodesicPolygon {
 
     /** Validate the original continuous region independently of sampling or Boolean rendering. */
     static Source prepareSource(Geometry shape) {
+        return prepareSource(shape,new Wgs84SegmentDistance.Budget(Wgs84SegmentDistance.MAX_EVALUATIONS));
+    }
+
+    /** Reuse one caller-owned topology budget when several independent regions form one input geometry. */
+    static Source prepareSource(Geometry shape,Wgs84SegmentDistance.Budget topologyBudget) {
         if (!(shape instanceof Polygon||shape instanceof MultiPolygon)||shape.isEmpty()) throw failure("TRACK_AREA_GEOMETRY_INVALID");
+        if (topologyBudget==null) throw failure("INVALID_GEODESIC_DISTANCE_WORK_LIMIT");
         requireCoordinates(shape);
         var allRings = new ArrayList<List<Vertex>>();
         var shells = new ArrayList<List<Vertex>>();
@@ -36,7 +42,6 @@ final class TrackGeodesicPolygon {
         }
         Vertex reference = reference(shells);
         for (var ring : allRings) requireLocal(reference, ring);
-        var topologyBudget = new Wgs84SegmentDistance.Budget(Wgs84SegmentDistance.MAX_EVALUATIONS);
         List<List<Vertex>> nodedRings = Wgs84PolygonArcCheck.validate(allRings,reference,topologyBudget);
         Wgs84PolygonTopology.validate(nodedRings,holeCounts,topologyBudget);
         return new Source(reference,nodedRings);

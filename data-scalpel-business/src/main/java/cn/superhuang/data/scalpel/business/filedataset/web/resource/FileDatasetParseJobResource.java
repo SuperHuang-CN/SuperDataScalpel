@@ -29,7 +29,7 @@ public class FileDatasetParseJobResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "分页查询文件数据集解析任务（只读）")
     @GetMapping
     @PreAuthorize("hasAuthority('filedataset.view')")
-    @Operation(summary = "分页查询文件数据集解析任务（只读）")
+    @Operation(summary = "分页查询文件数据集解析任务（只读）", description = "分页读取文件数据集解析队列中的任务、阶段、进度和失败摘要，不触发重新解析。")
     public PageResponse<FileDatasetParseJobResponse> search(
             @ParameterObject @ModelAttribute SearchRequest request
     ) {
@@ -39,7 +39,7 @@ public class FileDatasetParseJobResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询文件数据集解析队列摘要（只读）")
     @GetMapping("/summary")
     @PreAuthorize("hasAuthority('filedataset.view')")
-    @Operation(summary = "查询文件数据集解析队列摘要（只读）")
+    @Operation(summary = "查询文件数据集解析队列摘要（只读）", description = "汇总当前解析队列的等待、运行、成功和失败数量及执行容量，不改变队列状态。")
     public FileDatasetParseQueueSummaryResponse summary() {
         return service.summary();
     }

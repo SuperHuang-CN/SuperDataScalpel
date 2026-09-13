@@ -71,10 +71,13 @@ public final class JdbcSnapshotSyncOutputNodeOperator implements CanvasNodeOpera
         }
         if (dataSource != null
                 && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.POSTGRESQL
-                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL) {
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.HIGHGO
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.OPENGAUSS
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.KINGBASE) {
             issues.error(
                     "SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED",
-                    "快照同步只支持 PostgreSQL 和 MySQL",
+                    "快照同步只支持 PostgreSQL、HighGo、MySQL、openGauss 和人大金仓",
                     "configuration.dataSourceId"
             );
         }

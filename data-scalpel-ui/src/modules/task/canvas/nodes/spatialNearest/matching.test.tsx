@@ -28,6 +28,7 @@ describe('nearest explicit matching', () => {
   it('preserves old semantics and gates every explicit strategy at 4.30', () => {
     const config = createSpatialNearestConfiguration();
     expect(config.distanceMethod).toBeNull(); expect(usesExactNearest(config)).toBe(true); expect(outputsNearestLines(config)).toBe(false);
+    expect(config.matching?.geodesicGeometryMode).toBe('GEOMETRY');
     for (const semantics of [null, 'EXACT_DISTANCE', 'LEGACY_KNN']) {
       const draft = { ...config, nearestCount: 0, maximumDistance: -3, matching: { ...config.matching, semantics } };
       const parsed = parseCanvasDefinition(definition(draft));
@@ -41,9 +42,19 @@ describe('nearest explicit matching', () => {
     expect(old.success).toBe(true);
     if (old.success) expect(old.definition.nodes[0].configuration).toEqual(config);
     expect(parseCanvasDefinition(definition({ ...config, matching: null }, 11)).success).toBe(true);
+    const pointOnly = { ...createSpatialNearestConfiguration(), matching: { ...createSpatialNearestConfiguration().matching!, geodesicGeometryMode: 'POINT_ONLY' as const } };
+    expect(parseCanvasDefinition(definition(pointOnly, 47)).success).toBe(true);
+    const geometry = createSpatialNearestConfiguration();
+    expect(parseCanvasDefinition(definition(geometry, 47)).success).toBe(false);
+    expect(parseCanvasDefinition(definition(geometry, 48)).success).toBe(true);
     for (const matching of [[], 'bad', { semantics: 'AUTO' }, { sourceIdColumnName: 42 }, { connectionLines: [] }, { connectionLines: { enabled: 'true' } }, { connectionLines: { maximumGeodesicSegmentLength: '10' } }]) {
       expect(parseCanvasDefinition(definition({ ...config, matching })).success).toBe(false);
     }
+    const invalidGeometryMode = createSpatialNearestConfiguration();
+    expect(parseCanvasDefinition(definition({
+      ...invalidGeometryMode,
+      matching: { ...invalidGeometryMode.matching!, geodesicGeometryMode: 'AUTO' },
+    })).success).toBe(false);
   });
 
   it('preserves unmounted output projection and requires confirmation to change semantics', async () => {

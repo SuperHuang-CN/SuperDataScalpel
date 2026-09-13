@@ -5,13 +5,17 @@ import {
   PlusOutlined,
   UpOutlined,
 } from '@ant-design/icons';
-import { Button, Card, Form, Input, Select, Space, Tag, Typography } from 'antd';
+import { Button, Card, Form, Input, Select, Space, Switch, Tag, Typography } from 'antd';
 import { useImperativeHandle, useState } from 'react';
 import {
   CANVAS_SPATIAL_AGGREGATE_MAX_AGGREGATIONS,
+  CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS,
   CanvasNodeType,
   type CanvasColumnSchema,
   type SpatialAggregateConfiguration,
+  type SpatialAggregateDissolveGroupingMode,
+  type SpatialAggregateStatistic,
+  type SpatialAggregateStatisticKind,
   type SpatialAggregation,
   type SpatialAggregationKind,
 } from '../../canvasTypes';
@@ -30,6 +34,10 @@ interface SpatialAggregateFormValues {
   sourceTableName: string;
   outputTableName: string;
   groupByColumns: string[];
+  dissolveEnabled: boolean;
+  dissolveGroupingMode: SpatialAggregateDissolveGroupingMode;
+  multipart: boolean;
+  countOutputColumnName: string;
 }
 
 const aggregationKindOptions: Array<{ value: SpatialAggregationKind; label: string }> = [
@@ -38,6 +46,43 @@ const aggregationKindOptions: Array<{ value: SpatialAggregationKind; label: stri
   { value: 'COLLECT', label: 'COLLECT · 集合收集' },
   { value: 'ENVELOPE', label: 'ENVELOPE · 总包络' },
 ];
+
+const statisticKindOptions: Array<{
+  value: SpatialAggregateStatisticKind;
+  label: string;
+}> = [
+  { value: 'COUNT_FIELD', label: 'COUNT · 非空数' },
+  { value: 'SUM', label: 'SUM · 求和' },
+  { value: 'MEAN', label: 'MEAN · 平均值' },
+  { value: 'MIN', label: 'MIN · 最小值' },
+  { value: 'MAX', label: 'MAX · 最大值' },
+  { value: 'RANGE', label: 'RANGE · 极差' },
+  { value: 'STDDEV', label: 'STDDEV · 样本标准差' },
+  { value: 'VARIANCE', label: 'VARIANCE · 样本方差' },
+  { value: 'ANY', label: 'ANY · 任一字符串' },
+];
+
+const dissolveGroupingOptions: Array<{
+  value: SpatialAggregateDissolveGroupingMode;
+  label: string;
+}> = [
+  { value: 'ALL_OR_FIELDS', label: '全部 / 按字段值' },
+  { value: 'CONNECTED_COMPONENTS', label: '按相交或接触连通组' },
+];
+
+const numericFieldTypes = new Set([
+  'BYTE', 'SHORT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL',
+]);
+
+const statisticAcceptsColumn = (
+  kind: SpatialAggregateStatisticKind,
+  column: CanvasColumnSchema,
+) => {
+  if (column.fieldType === 'GEOMETRY') return false;
+  if (kind === 'COUNT_FIELD') return true;
+  if (kind === 'ANY') return column.fieldType === 'STRING';
+  return numericFieldTypes.has(column.fieldType);
+};
 
 const defaultOutputName = (kind: SpatialAggregationKind) => (
   `${kind.toLowerCase()}_geometry`
@@ -54,6 +99,15 @@ const createAggregation = (
 
 const fingerprint = (value: SpatialAggregateConfiguration) => JSON.stringify(value);
 
+const createStatistic = (
+  columns: CanvasColumnSchema[],
+): SpatialAggregateStatistic => ({
+  statisticId: crypto.randomUUID(),
+  kind: 'COUNT_FIELD',
+  sourceColumnName: columns[0]?.name ?? '',
+  outputColumnName: 'value_count',
+});
+
 const SpatialAggregateInspector = ({
   node,
   validation,
@@ -66,10 +120,21 @@ const SpatialAggregateInspector = ({
   const [aggregations, setAggregations] = useState<SpatialAggregation[]>(
     node.configuration.aggregations,
   );
+  const [summaryStatistics, setSummaryStatistics] = useState<SpatialAggregateStatistic[]>(
+    node.configuration.dissolve?.summaryStatistics ?? [],
+  );
   const sourceTableName = Form.useWatch('sourceTableName', form)
     ?? node.configuration.sourceTableName;
   const groupByColumns = Form.useWatch('groupByColumns', form)
     ?? node.configuration.groupByColumns;
+  const dissolveEnabled = Form.useWatch('dissolveEnabled', form)
+    ?? node.configuration.dissolve?.enabled
+    ?? false;
+  const dissolveGroupingMode = Form.useWatch('dissolveGroupingMode', form)
+    ?? node.configuration.dissolve?.groupingMode
+    ?? 'ALL_OR_FIELDS';
+  const connectedDissolve = dissolveEnabled
+    && dissolveGroupingMode === 'CONNECTED_COMPONENTS';
   const tables = validation?.inputTables ?? [];
   const sourceTable = tables.find((table) => table.name === sourceTableName);
   const geometryColumns = spatialGeometryColumns(sourceTable);
@@ -84,6 +149,7 @@ const SpatialAggregateInspector = ({
   const configuration = (
     values: SpatialAggregateFormValues,
     items: SpatialAggregation[],
+    statistics: SpatialAggregateStatistic[],
   ): SpatialAggregateConfiguration => ({
     sourceTableName: values.sourceTableName ?? '',
     outputTableName: values.outputTableName?.trim() ?? '',
@@ -92,10 +158,25 @@ const SpatialAggregateInspector = ({
       ...item,
       outputColumnName: item.outputColumnName.trim(),
     })),
+    dissolve: node.configuration.dissolve != null || values.dissolveEnabled
+      ? {
+          enabled: Boolean(values.dissolveEnabled),
+          multipart: Boolean(values.multipart),
+          countOutputColumnName: values.countOutputColumnName?.trim() ?? '',
+          groupingMode: values.dissolveGroupingMode ?? 'ALL_OR_FIELDS',
+          summaryStatistics: statistics.map((item) => ({
+            ...item,
+            outputColumnName: item.outputColumnName.trim(),
+          })),
+        }
+      : null,
   });
-  const markDirty = (items = aggregations) => {
+  const markDirty = (
+    items = aggregations,
+    statistics = summaryStatistics,
+  ) => {
     onDirtyChange(
-      fingerprint(configuration(form.getFieldsValue(), items))
+      fingerprint(configuration(form.getFieldsValue(), items, statistics))
         !== fingerprint(node.configuration),
     );
   };
@@ -105,6 +186,15 @@ const SpatialAggregateInspector = ({
   };
   const updateAggregation = (index: number, item: SpatialAggregation) => {
     updateAggregations(aggregations.map((candidate, itemIndex) => (
+      itemIndex === index ? item : candidate
+    )));
+  };
+  const updateSummaryStatistics = (items: SpatialAggregateStatistic[]) => {
+    setSummaryStatistics(items);
+    markDirty(aggregations, items);
+  };
+  const updateSummaryStatistic = (index: number, item: SpatialAggregateStatistic) => {
+    updateSummaryStatistics(summaryStatistics.map((candidate, itemIndex) => (
       itemIndex === index ? item : candidate
     )));
   };
@@ -118,7 +208,7 @@ const SpatialAggregateInspector = ({
     onApply({
       id: node.id,
       type: node.type,
-      configuration: configuration(values, aggregations),
+      configuration: configuration(values, aggregations, summaryStatistics),
     });
     onDirtyChange(false);
   };
@@ -157,6 +247,12 @@ const SpatialAggregateInspector = ({
           sourceTableName: node.configuration.sourceTableName,
           outputTableName: node.configuration.outputTableName,
           groupByColumns: node.configuration.groupByColumns,
+          dissolveEnabled: node.configuration.dissolve?.enabled ?? false,
+          dissolveGroupingMode:
+            node.configuration.dissolve?.groupingMode ?? 'ALL_OR_FIELDS',
+          multipart: node.configuration.dissolve?.multipart ?? false,
+          countOutputColumnName:
+            node.configuration.dissolve?.countOutputColumnName ?? 'feature_count',
         }}
         onFinish={submit}
         onValuesChange={() => markDirty()}
@@ -179,10 +275,17 @@ const SpatialAggregateInspector = ({
         <Form.Item
           name="groupByColumns"
           label="分组字段"
-          validateStatus={invalidGroupColumns.length > 0 ? 'error' : undefined}
-          help={invalidGroupColumns.length > 0
+          validateStatus={invalidGroupColumns.length > 0
+            || connectedDissolve && groupByColumns.length > 0 ? 'error' : undefined}
+          help={connectedDissolve && groupByColumns.length > 0
+            ? '按空间连通组时不能再配置分组字段，请移除这些字段。'
+            : invalidGroupColumns.length > 0
             ? `以下字段已失效或是 Geometry：${invalidGroupColumns.join('、')}`
-            : groupByColumns.length === 0 ? '未选择时执行全局空间聚合。' : undefined}
+            : groupByColumns.length === 0
+              ? connectedDissolve
+                ? '将按 Polygon 相交或接触关系的传递闭包分别融合。'
+                : '未选择时执行全局空间聚合。'
+              : undefined}
         >
           <Select
             mode="multiple"
@@ -211,6 +314,45 @@ const SpatialAggregateInspector = ({
         >
           <Input placeholder="例如 district_geometry" />
         </Form.Item>
+        <Form.Item
+          name="dissolveEnabled"
+          label="Dissolve Boundaries"
+          valuePropName="checked"
+        >
+          <Switch checkedChildren="启用" unCheckedChildren="关闭" />
+        </Form.Item>
+        {dissolveEnabled && (
+          <>
+            <Form.Item
+              name="dissolveGroupingMode"
+              label="Dissolve 分组方式"
+            >
+              <Select options={dissolveGroupingOptions} />
+            </Form.Item>
+            <Alert
+              showIcon
+              type="info"
+              title="Dissolve 要求恰好一个 UNION 聚合"
+              description={connectedDissolve
+                ? '不使用分组字段；面要素只要相交、重叠或接触，就通过传递关系归入同一组。NULL 和 Empty Geometry 不产生结果。'
+                : '空分组对应 All；选择分组字段对应 List。结果始终输出来源要素总数，可继续配置标量统计。'}
+            />
+            <Form.Item
+              name="countOutputColumnName"
+              label="来源要素计数字段"
+              rules={[{ required: true, whitespace: true, message: '请输入计数字段名' }]}
+            >
+              <Input placeholder="feature_count" />
+            </Form.Item>
+            <Form.Item
+              name="multipart"
+              label="输出多部件 Geometry"
+              valuePropName="checked"
+            >
+              <Switch checkedChildren="Multipart" unCheckedChildren="Singlepart" />
+            </Form.Item>
+          </>
+        )}
       </Form>
 
       <div className="canvas-processor-section-header">
@@ -341,6 +483,146 @@ const SpatialAggregateInspector = ({
       <Typography.Text type="secondary">
         输出顺序固定为分组字段在前、空间聚合字段在后；聚合结果统一声明为通用 GEOMETRY。
       </Typography.Text>
+      {dissolveEnabled && (
+        <>
+          <div className="canvas-processor-section-header">
+            <span>
+              <Typography.Text strong>标量统计</Typography.Text>
+              <Typography.Text type="secondary">
+                {` · ${summaryStatistics.length}/${CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS}`}
+              </Typography.Text>
+            </span>
+            <Button
+              size="small"
+              icon={<PlusOutlined />}
+              disabled={
+                !sourceTable
+                || summaryStatistics.length
+                  >= CANVAS_SPATIAL_AGGREGATE_MAX_SUMMARY_STATISTICS
+              }
+              onClick={() => updateSummaryStatistics([
+                ...summaryStatistics,
+                createStatistic(scalarColumns),
+              ])}
+            >
+              添加统计
+            </Button>
+          </div>
+          {summaryStatistics.length === 0 && (
+            <Typography.Text type="secondary">
+              未配置额外统计；来源要素总数仍会输出。
+            </Typography.Text>
+          )}
+          <div className="canvas-processor-rule-list">
+            {summaryStatistics.map((statistic, index) => {
+              const sourceColumn = scalarColumns.find(
+                (column) => column.name === statistic.sourceColumnName,
+              );
+              const sourceMissing = Boolean(statistic.sourceColumnName && !sourceColumn);
+              const sourceTypeInvalid = Boolean(
+                sourceColumn && !statisticAcceptsColumn(statistic.kind, sourceColumn),
+              );
+              const sourceInvalid = sourceMissing || sourceTypeInvalid;
+              return (
+                <Card
+                  size="small"
+                  key={statistic.statisticId || index}
+                  className={`canvas-processor-rule-card${sourceInvalid ? ' is-invalid' : ''}`}
+                  title={(
+                    <Space size={6}>
+                      <Tag color="purple">{index + 1}</Tag>
+                      <span>{statistic.kind}</span>
+                      {sourceInvalid && (
+                        <Tag color="error">
+                          {sourceMissing ? '字段已失效' : '字段类型不适用'}
+                        </Tag>
+                      )}
+                    </Space>
+                  )}
+                  extra={(
+                    <Space size={0}>
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<UpOutlined />}
+                        aria-label={`上移 Dissolve 统计 ${index + 1}`}
+                        disabled={index === 0}
+                        onClick={() => {
+                          const next = [...summaryStatistics];
+                          const [item] = next.splice(index, 1);
+                          next.splice(index - 1, 0, item);
+                          updateSummaryStatistics(next);
+                        }}
+                      />
+                      <Button
+                        type="text"
+                        size="small"
+                        icon={<DownOutlined />}
+                        aria-label={`下移 Dissolve 统计 ${index + 1}`}
+                        disabled={index === summaryStatistics.length - 1}
+                        onClick={() => {
+                          const next = [...summaryStatistics];
+                          const [item] = next.splice(index, 1);
+                          next.splice(index + 1, 0, item);
+                          updateSummaryStatistics(next);
+                        }}
+                      />
+                      <Button
+                        type="text"
+                        danger
+                        size="small"
+                        icon={<DeleteOutlined />}
+                        aria-label={`删除 Dissolve 统计 ${index + 1}`}
+                        onClick={() => updateSummaryStatistics(
+                          summaryStatistics.filter((_, itemIndex) => itemIndex !== index),
+                        )}
+                      />
+                    </Space>
+                  )}
+                >
+                  <Space orientation="vertical" size={8} className="canvas-full-width">
+                    <Select
+                      value={statistic.kind}
+                      options={statisticKindOptions}
+                      onChange={(kind: SpatialAggregateStatisticKind) => updateSummaryStatistic(
+                        index,
+                        { ...statistic, kind },
+                      )}
+                    />
+                    <Select
+                      showSearch
+                      optionFilterProp="label"
+                      value={statistic.sourceColumnName || undefined}
+                      status={sourceInvalid ? 'error' : undefined}
+                      options={spatialColumnOptions(
+                        sourceTable?.columns ?? [],
+                        statistic.sourceColumnName,
+                        (column) => statisticAcceptsColumn(statistic.kind, column),
+                      )}
+                      placeholder="统计来源字段"
+                      onChange={(sourceColumnName) => updateSummaryStatistic(
+                        index,
+                        { ...statistic, sourceColumnName },
+                      )}
+                    />
+                    <Input
+                      value={statistic.outputColumnName}
+                      placeholder="统计输出字段"
+                      onChange={(event) => updateSummaryStatistic(
+                        index,
+                        { ...statistic, outputColumnName: event.target.value },
+                      )}
+                    />
+                  </Space>
+                </Card>
+              );
+            })}
+          </div>
+          <Typography.Text type="secondary">
+            Singlepart 会拆分融合后的多部件 Geometry，并为每个部件重复该组的计数和统计值。
+          </Typography.Text>
+        </>
+      )}
     </Space>
   );
 };

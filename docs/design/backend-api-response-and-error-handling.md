@@ -58,6 +58,19 @@ DataScalpel 是模块化单体。接口响应应当直接、可预测，不引�
 状态字段表达。Dispatcher 不可达、后端日志命令异常或对象存储故障仍返回标准 `ProblemDetail`，前端应
 保留上次成功取得的日志窗口并提供重试，不得把基础设施错误显示成空日志。
 
+## OpenAPI 契约
+
+OpenAPI 同时服务 Swagger UI、系统 MCP 接口目录和其他程序化调用方。新增或修改 REST 接口时，下列信息属于业务契约的一部分：
+
+- Resource 的中文 `@Tag`，用于稳定业务分类。
+- Handler 的 `@Operation.summary` 和 `description`；说明用途、前置条件、副作用、状态变化和主要失败语义，不只重述方法名。
+- 每个路径参数、查询参数、请求字段、响应字段、枚举和多态类型的中文说明；适用时包含单位、格式、可选值、默认值、空值含义、数量或取值范围。Bean Validation 只负责校验，不代替语义说明。
+- 文件或流式响应的媒体类型、文件名、空内容和大小边界；无响应体的命令明确说明成功状态码。
+
+Business 和 Admin 的 Resource/DTO 使用 Swagger 注解。`data-scalpel-contracts` 不引入 Swagger 依赖，契约类使用 Jackson `@JsonClassDescription` 和 `@JsonPropertyDescription`，由 Admin `OpenApiConfiguration` 补入最终文档。
+
+完整性以运行时 `/v3/api-docs` 为准，不以源码是否出现注解为准。新接口的标题、接口说明、参数说明或可达 Schema 字段说明缺失时，该接口未完成，不应在系统 MCP 中开放。`$ref`、`allOf`、`oneOf` 和多态转换后的字段也必须保留说明。
+
 ## 错误码与 HTTP 状态
 
 | HTTP | `code` | 典型场景 |
@@ -141,4 +154,20 @@ MCP 管理接口继续使用上述 ProblemDetail 契约。公开 `POST /mcp/{ser
 
 ### 系统 MCP 边界
 
+系统 MCP 的异步再分派必须通过当前请求属性恢复已认证身份，避免将已生成的 MCP 结果或业务错误替换为通用 401。请求属性不跨 HTTP 请求共享；新请求缺少或使用失效令牌时仍返回 401。
+
+系统 MCP 工作线程因 `Error` 异常退出时，须先提交异步错误结果，由统一异常处理返回安全的 500，不能让未完成的 DeferredResult 等待至默认 503 超时。错误继续抛出并保留完整堆栈；该 500 不承诺业务操作未发生。
+
 系统 MCP 的 HTTP 认证、大小限制、服务关闭和繁忙响应沿用本规范的 ProblemDetail。JSON-RPC 错误由协议层表达；进入工具执行后的业务 HTTP 状态、原 ProblemDetail 和执行状态作为 MCP 工具元信息返回，不改变业务 API 的成功或错误格式。超时及响应不完整的执行语义见 [系统 MCP](system-mcp.md#身份与执行边界)。
+
+### DSH 接入错误
+
+`/api/v1/dsh` 使用现有 `CodedProblemException` 保留稳定错误码：`DSH_RELOGIN_REQUIRED`（旧 JWT 需要重新登录）、`DSH_USER_UNAVAILABLE`、`DSH_CREDENTIAL_UNAVAILABLE`、`DSH_RESULT_UNCERTAIN` 等。不得依赖 `ResponseStatusException` 的任意扩展属性传播业务码。已建立 SSE 后以 `connection.failed` 事件结束，流开始前仍使用标准 ProblemDetail。结果不确定时读取状态与历史，不能自动重试写入。托管令牌手工变更返回 409 `SYSTEM_MCP_TOKEN_MANAGED`。
+
+### DSH 会话管理扩展
+
+聊天附件沿用 ProblemDetail：类型不支持为 415 `DSH_ATTACHMENT_TYPE_UNSUPPORTED`；文件无法解析或编码不符为 422 `DSH_ATTACHMENT_UNREADABLE`（非法 Base64 为 400 `DSH_ATTACHMENT_INVALID`）；大小及解析内容超限为 413 `DSH_ATTACHMENT_TOO_LARGE` / `DSH_ATTACHMENT_CONTENT_TOO_LARGE`。跨会话附件为 404 `BRIDGE_ATTACHMENT_NOT_FOUND`，同一上传标识不同内容为 409 `BRIDGE_ATTACHMENT_CONFLICT`。模型明确不支持图片时在消息入队前返回 422 `BRIDGE_MODEL_IMAGE_UNSUPPORTED`。普通消息接收结果不确定的处理保持不变；单独上传可使用原上传 UUID 和相同内容重试。
+
+会话标题更新遵循统一 Validation；归档忙碌返回 409 `BRIDGE_SESSION_BUSY`，归档会话执行返回 409 `BRIDGE_SESSION_ARCHIVED`，跨用户访问为 404。历史 `mode=cursor` 与 offset 混用返回 400 `DSH_ARGUMENT_INVALID`。Bridge 错误由现有 DSH 转发层保留 ProblemDetail。
+
+SSE 建立前仍为 HTTP ProblemDetail；建立后 `connection.failed` 为事件错误并关闭。前端不将模型轮次完成等同于业务操作成功，工具中保留 HTTP 状态、UNKNOWN 和 RESPONDED_INCOMPLETE 等执行语义。

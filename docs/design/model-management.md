@@ -4,9 +4,9 @@
 
 模型是任务和数据服务后续可以稳定引用的结构契约。一个模型绑定一个 JDBC 数据源，并记录解析后的 Catalog、Schema、物理表名和字段定义。`MANAGED` 模型要求数据源具有“数据存储”用途；`EXTERNAL` 模型只引用已有表，可绑定任意业务用途的 JDBC 数据源。
 
-模型管理已经连接模型所绑定的 JDBC 数据源，支持受控建表、绑定已有表、实时结构校验，以及快速预览和受控条件查询。当前 PostgreSQL、MySQL 与单机 ClickHouse `MergeTree` 可生成受控建表 SQL；其他已登记数据库仍可用于元数据读取，但界面会明确显示“不支持由平台创建物理表”。TDengine WebSocket/RESTful 只允许 `EXTERNAL` 模型绑定已有超级表，子表不属于可选资源。
+模型管理已经连接模型所绑定的 JDBC 数据源，支持受控建表、绑定已有表、实时结构校验，以及快速预览和受控条件查询。当前 PostgreSQL、HighGo、MySQL、openGauss、人大金仓、达梦与单机 ClickHouse `MergeTree` 可生成受控建表 SQL；Oracle 和 SQL Server 仍只用于已有表，界面会明确显示“不支持由平台创建物理表”。PostgreSQL、HighGo、openGauss 与人大金仓在目标实例具备 PostGIS 兼容扩展时开放受管 Geometry。TDengine WebSocket/RESTful 只允许 `EXTERNAL` 模型绑定已有超级表，子表不属于可选资源。
 
-物理表变更已经采用“生成计划—审阅—显式执行”的方式：PostgreSQL 支持受控原表修改与事务型重建，达梦仅在运行参数满足时支持小范围原表修改，ClickHouse 只支持单条原子 `ALTER TABLE` 的安全子集。完整边界、风险和执行语义以[模型物理表演进设计](model-physical-table-evolution.md)为准。默认值/自增/索引配置、在线自由 SQL 和删除物理表仍不在当前范围内；指标管理以后作为独立业务能力通过模型和字段 UUID 引用已发布模型。
+物理表变更已经采用“生成计划—审阅—显式执行”的方式：PostgreSQL、HighGo、openGauss 与人大金仓共用受控原表修改和事务型影子表重建；MySQL 支持安全原表修改子集；达梦仅在运行参数满足时支持小范围原表修改；ClickHouse 只支持单条原子 `ALTER TABLE` 的安全子集。完整边界、风险和执行语义以[模型物理表演进设计](model-physical-table-evolution.md)为准。默认值/自增/索引配置、在线自由 SQL 和删除物理表仍不在当前范围内；指标管理以后作为独立业务能力通过模型和字段 UUID 引用已发布模型。
 
 ## 数据模型
 

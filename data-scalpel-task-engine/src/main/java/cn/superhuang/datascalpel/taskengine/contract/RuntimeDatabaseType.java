@@ -4,6 +4,7 @@ package cn.superhuang.datascalpel.taskengine.contract;
 
 public enum RuntimeDatabaseType {
     POSTGRESQL("jdbc:postgresql://"),
+    HIGHGO("jdbc:highgo://"),
     MYSQL("jdbc:mysql://"),
     ORACLE("jdbc:oracle:thin:@"),
     SQL_SERVER("jdbc:sqlserver://"),

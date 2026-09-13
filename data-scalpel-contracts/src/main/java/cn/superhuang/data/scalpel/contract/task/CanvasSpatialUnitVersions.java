@@ -14,6 +14,8 @@ public final class CanvasSpatialUnitVersions {
         switch (node) {
             case SpatialBinAggregateNodeDefinition n when n.configuration() != null -> durationSlicing(paths, n.configuration().temporalSlicing());
             case SpatialSummarizeWithinNodeDefinition n when n.configuration() != null -> durationSlicing(paths, n.configuration().temporalSlicing());
+            case SpatialDensityNodeDefinition n when n.configuration() != null -> durationSlicing(paths, n.configuration().temporalSlicing());
+            case SpatialHotSpotsNodeDefinition n when n.configuration() != null -> durationSlicing(paths, n.configuration().temporalSlicing());
             case SpatialPointClusterNodeDefinition n when n.configuration() != null -> {
                 if (n.configuration().dbscan() != null) duration(paths, "dbscan.searchDurationUnit", n.configuration().dbscan().searchDurationUnit());
             }
@@ -76,6 +78,16 @@ public final class CanvasSpatialUnitVersions {
             }
             case SpatialBinAggregateNodeDefinition n when n.configuration() != null ->
                     distance(paths, "binSizeUnit", n.configuration().binSizeUnit());
+            case SpatialDensityNodeDefinition n when n.configuration() != null -> {
+                distance(paths, "binSizeUnit", n.configuration().binSizeUnit());
+                distance(paths, "radiusUnit", n.configuration().radiusUnit());
+                var area = n.configuration().areaUnit();
+                if (area != null && area.introducedInMinorVersion() > minorVersion) paths.add("configuration.areaUnit");
+            }
+            case SpatialHotSpotsNodeDefinition n when n.configuration() != null -> {
+                distance(paths, "binSizeUnit", n.configuration().binSizeUnit());
+                distance(paths, "neighborhoodDistanceUnit", n.configuration().neighborhoodDistanceUnit());
+            }
             case SpatialPointClusterNodeDefinition n when n.configuration() != null -> {
                 if (n.configuration().parameters() instanceof SpatialPointClusterParameters.Dbscan dbscan)
                     distance(paths, "parameters.searchDistanceUnit", dbscan.searchDistanceUnit());

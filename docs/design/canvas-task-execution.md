@@ -2,7 +2,7 @@
 
 ## 1. 范围与调用链
 
-已发布的 `SPARK_CANVAS` 可以手动运行，也可以由 Quartz 定时计划触发真实运行。普通标量 JDBC 读取和 APPEND 覆盖 PostgreSQL、MySQL、openGauss、Kingbase、Oracle、SQL Server、ClickHouse 和达梦；HTTP/JSON API 支持只读输入：
+已发布的 `SPARK_CANVAS` 可以手动运行，也可以由 Quartz 定时计划触发真实运行。普通标量 JDBC 读取和 APPEND 覆盖 PostgreSQL、HighGo、MySQL、openGauss、Kingbase、Oracle、SQL Server、ClickHouse 和达梦；HTTP/JSON API 支持只读输入：
 
 ```text
 Admin → 私有 MinIO manifest + Kafka command → Task Dispatcher → Runner
@@ -18,9 +18,10 @@ JDBC 能力按节点而不是全局数据库白名单判定：
 
 | 数据库 | 普通读取 | APPEND | OVERWRITE | UPSERT | Query Input | 增量输入 | 快照同步 | Geometry JDBC |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|
-| PostgreSQL/MySQL | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 是 |
-| openGauss/Kingbase | 是 | 是 | 保持现状 | 否 | 否 | 是 | 否 | 否 |
-| Oracle/SQL Server/ClickHouse/达梦 | 是 | 是 | 是 | 否 | 否 | 否 | 否 | 否 |
+| PostgreSQL/HighGo/openGauss/Kingbase | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 是（需 PostGIS 兼容扩展） |
+| MySQL | 是 | 是 | 是 | 是 | 是 | 是 | 是 | 是（需 MySQL 8 空间能力） |
+| Oracle/SQL Server/达梦 | 是 | 是 | 是 | 是 | 否 | 是 | 否 | 否 |
+| ClickHouse | 是 | 是 | 是 | 否 | 否 | 否 | 否 | 否 |
 | TDengine | 保持现有超级表/TMQ 规则 | 否 | 否 | 否 | 否 | 否 | 否 | 否 |
 
 模型质检开放上述数据库的普通标量读取；Spark JAR 资源绑定开放普通标量读取和 APPEND。特殊能力仍在对应节点或 SDK 写入边界返回稳定配置错误，不再由发布阶段返回整张数据库产品白名单。
@@ -34,7 +35,7 @@ Compiler 同一路径只解析零行惰性计划，不启动 Job、Checkpoint、
 安全摘要只新增指标数量，不记录窗口偏移、别名或条件字面量。逐输出血缘从 Catalyst 追溯原字段，不把临时指标登记为来源。
 这项能力不等同任意 Arcade 脚本，窗口函数与 NULL 规则见[事件检测设计](canvas-spatial-next-processors/track-detect-incidents.md#8-446-受控字段窗口条件)。
 
-manifest 当前写出 `manifestVersion: 27`；Runner 严格只读取 v27，不保留旧版本兼容分支。
+manifest 当前写出 `manifestVersion: 28`；Runner 严格只读取 v28，不保留旧版本兼容分支。v28 仅增加保留厂商身份的 `HIGHGO` 运行时数据库枚举；发布升级前需要处理完旧版本在途任务。
 顶层分为 `execution`、`task`、
 `metadataSnapshot`、`runtimeDataSources`、可空 `runtimeFileStorage`、`runtimeFileInputs` 和
 `snapshotSyncLimits` 和可空的 `canvasTrial`：
@@ -119,9 +120,9 @@ Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output
   数据源 JDBC Properties → 当前表 `readOptions` → 平台最终 `dbtable` → `load()`”应用参数；高级参数只影响
   对应表，不能覆盖连接、目标表或分片参数。Compiler 不连接数据库或执行 `sessionInitStatement`，日志、节点摘要、
   Spark 选项脱敏和错误摘要均不得输出读取参数值。普通标量读取支持能力矩阵中的 JDBC 数据库；
-  Geometry 仅允许 PostgreSQL/PostGIS 和 MySQL 8，使用方言引用的受控查询执行 `ST_AsBinary`，
+  Geometry 仅允许具备 PostGIS 兼容扩展的 PostgreSQL/HighGo/openGauss/Kingbase 和 MySQL 8，使用方言引用的受控查询执行 `ST_AsBinary`，
   Spark 读取 WKB 后通过 Sedona `ST_GeomFromWKB + ST_SetSRID` 生成 `GeometryUDT`。
-- `JDBC_QUERY_INPUT`：只支持 PostgreSQL/MySQL 的单条 `SELECT` 或 `WITH ... SELECT`。Compiler
+- `JDBC_QUERY_INPUT`：只支持 PostgreSQL/HighGo/MySQL/openGauss/Kingbase 的单条 `SELECT` 或 `WITH ... SELECT`。Compiler
   只使用定义中保存的字段快照创建零行 BOUNDED Dataset；Runner 再次校验只读语法和 SQL Hash，
   使用只读 Session 执行受控 Spark JDBC 查询，不比较运行时结果 Schema。实时任务只在启动时读取
   并缓存一次，运行期间不刷新；日志和错误链不包含 SQL。
@@ -158,19 +159,50 @@ Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output
 - `GEOMETRY_REPAIR`：批流共用 `ST_MakeValid(geometry, false)` 追加通用 Geometry 修复字段；
   不覆盖原字段，真实值无法修复时任务失败。
 - `GEOMETRY_BUFFER`：批流共用 Sedona Buffer 表达式追加 MultiPolygon；PLANAR 使用来源 CRS
-  坐标单位，SPHEROID 仅允许 EPSG:4326 并使用米。
+  坐标单位，SPHEROID 仅允许 EPSG:4326 并使用米。Canvas 4.52 可从数值字段或受控确定性
+  逐行表达式计算距离；NULL 动态距离输出 NULL，非正或非有限实际值稳定失败。
 - `GEOMETRY_EXPLODE`：批流共用 `ST_Dump` 和 outer generator，将部件展开为多行；NULL 或
   Empty 输入保留一行，可选序号从 0 开始。
 - `SPATIAL_MEASURE`：批流共用 Sedona Column API 执行平面或 WGS84 椭球测量，按配置顺序
-  追加 DOUBLE 字段；节点不增加流式状态。
+  追加 DOUBLE 字段；4.50 可逐项换算距离/面积输出单位，缺失单位保持旧结果；节点不增加流式状态。
 - `GEOMETRY_SERIALIZE`：批流共用 `ST_AsText/ST_AsBinary/ST_AsGeoJSON`，保留原 Geometry；
   GeoJSON 只允许 EPSG:4326。
 - `SPATIAL_CLIP`：批处理使用 `ST_Intersects` INNER 候选连接与 `ST_Intersection`，过滤 NULL
-  和 Empty 结果，只输出来源属性与裁剪字段；一个来源命中多个 Mask 时输出多行。
+  和 Empty 结果，只输出来源属性与裁剪字段。4.77 的 `DISSOLVE_ALL` 先按计划内来源行 ID 聚合
+  全部相交 Mask，再对每条来源裁剪一次；重叠 Mask 不重复覆盖区域，分离片段保留为一个 Multi 结果。
+  `PAIRWISE` 及缺失/null 保持每条 Mask 独立输出的旧语义。4.51 的
+  `SOURCE_FAMILY_2D` 使用 `ST_Force2D + ST_CollectionExtract + ST_Multi` 过滤低维接触并输出
+  来源对应的 Multi 家族；缺失/null 与旧版策略继续输出通用 Geometry。
 - `SPATIAL_AGGREGATE`：批处理对有界来源执行全局或分组 `ST_Union_Agg`、
   `ST_Intersection_Agg`、`ST_Collect_Agg` 或 `ST_Envelope_Agg`，每个结果独立恢复来源 SRID。
-- `SPATIAL_JOIN`：批处理仅支持 INNER 和九种受控空间谓词，多条件固定使用 AND；两侧
-  Geometry 的 CRS 与 dimension 必须一致。
+  Canvas 4.53 可为单 UNION 启用 Dissolve All/List，追加来源要素计数和受控标量统计，并通过
+  `ST_Multi` 或 `ST_Dump` 输出 Multipart/Singlepart；无结果 Geometry 的组不生成要素。Canvas 4.61
+  可在无分组字段时显式按 Polygon/MultiPolygon 的 `ST_Intersects` 边及 GraphFrames 连通分量分别融合；
+  NULL/Empty 不进入连通图，Compiler 不运行图作业。
+- `SPATIAL_JOIN`：批处理支持 INNER，以及 Canvas 4.56 起保留全部左侧目标要素的 LEFT；LEFT 未匹配时
+  右侧投影字段为 NULL，RIGHT/FULL 仍不支持。九种受控空间谓词多条件固定使用 AND；两侧
+  Geometry 的 CRS 与 dimension 必须一致。Canvas 4.55 可附加至多八组非 Geometry 属性等值条件，
+  与全部空间条件按 AND 组合并使用 Spark SQL 普通等号；缺失/null 保持原空间匹配。Canvas 4.54
+  可按显式来源侧投影、排除、改名和排序左右字段，通过限定列 `select + alias` 解决同名字段；
+  缺失/null 投影保持旧版全字段和同名拒绝语义。Canvas 4.57 可显式设置
+  `joinOperation=JOIN_ONE_TO_MANY`；缺失/null 也保持相同的一对多执行语义，即输出每个匹配组合。
+  Canvas 4.58 的 `JOIN_ONE_TO_ONE` 可汇总全部匹配记录，输出 Join Count 和至多 32 项忽略 NULL 的
+  `SUM/MIN/MAX/MEAN/STDDEV`；也可按 FIRST、数值最大/最小或日期最新/最旧保留一条。保留模式必须提供
+  显式稳定排序，完整排序仍并列时以 `SPATIAL_JOIN_KEEP_ORDER_NOT_UNIQUE` 失败，不依赖 Spark 输入顺序。
+  Canvas 4.59 可再附加一项时间关系：每侧以开始字段和可选结束字段表示瞬时或闭区间，支持 12 种
+  Allen 方向关系及 `NEAR/NEAR_BEFORE/NEAR_AFTER` 固定时长关系。时间字段必须使用相同的
+  `DATE/TIMESTAMP/TIMESTAMP_NTZ` 类型；NULL 或反向区间不匹配。时间关系与全部空间、属性条件按 AND
+  组合，固定日为 24 小时、固定周为 7 日，不使用日历窗口。Canvas 4.60 可增加独立空间 Near：
+  PLANAR 使用来源 CRS，GEODESIC 仅支持 EPSG:4326 XY 并通过 ECEF 三轴保守候选召回后执行真实
+  Geometry 最近位置距离判断，不使用质心。拓扑、空间 Near、属性和时间条件全部按 AND 组合。
+  一对多可选择输出空间距离和时间 Near 区间间隔，均为 `DECIMAL(38,12)`；LEFT 未匹配记录为 NULL。
+  一对一可使用 Near 过滤但不能启用距离输出。
+- `UNION`：缺失/null `mergingTables` 保持旧版严格同字段集合的 `unionByName`。Canvas 4.62 的非 null
+  配置启用 Merge Layers：第一张输入为基准层；后续层默认同名 Match、非同名字段按顺序追加，并为
+  缺失字段补 NULL；自定义规则可 Match 已有字段、Rename 为新字段或 Remove。Match 仅允许同类型或
+  数值类型间显式 Cast，Geometry 必须 Match 到类型、CRS、维度一致的基准 Geometry。无界输入的事件
+  时间允许来源字段名不同，但必须 Match 到基准事件时间字段，Watermark 仍必须一致。Compiler 只构造
+  投影和 Union 计划，不触发 Spark Action；安全摘要只记录模式、表数和规则数。
 - `MASK_FIELDS`：只使用节点内嵌 `definition`，通过 Spark 内置 `Column` 表达式原位替换配置字段；不查询或同步全局脱敏规则，批处理和流处理复用同一个无状态 Operator。
 - `JSON_EXTRACT`：通过 Spark VARIANT `parse_json/try_parse_json` 和 `variant_get/try_variant_get` 从 STRING 字段追加结构化标量字段；Compiler 只分析零行计划，批处理和流处理复用同一个无状态 Operator。
 - `MODEL_OUTPUT`：目标和字段来自模型快照，APPEND 可写受管或外部模型，OVERWRITE 只允许受管模型；UPSERT 自动使用模型完整主键，批流共用 JDBC UPSERT，流式通过独立 `foreachBatch` 和 Checkpoint 按至少一次交付。
@@ -179,9 +211,9 @@ Runner 通过同一个内置 Registry 调用同一组 Input、Processor、Output
   `PreparedStatement`，Geometry 经 `ST_AsBinary` 转为 WKB，再由目标库
   `ST_GeomFromWKB(?, databaseLocalSrid)` 写入。kind、CRS、dimension 必须完全一致。`UPSERT`
   必须完整选择目标主键或安全唯一索引，写入前拒绝 NULL Key 和当前 Dataset/micro-batch 内重复 Key；
-  PostgreSQL 使用所选 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`。每分区独立事务，
+  PostgreSQL/HighGo/openGauss/Kingbase 使用所选 `ON CONFLICT`，MySQL 使用 `ON DUPLICATE KEY UPDATE`，Oracle、SQL Server 和达梦使用受控单行 `MERGE`。每分区独立事务，
   Streaming 通过 `foreachBatch` 提供键级重放收敛，整体仍是至少一次交付，不提供跨分区全局事务。
-- `JDBC_SNAPSHOT_SYNC_OUTPUT/MODEL_SNAPSHOT_SYNC_OUTPUT`：仅用于 BATCH 和 BOUNDED 小数据实体快照。来源映射并 Cast 为目标类型后，在 Driver 校验来源 Key；Runner 使用一条 JDBC 连接取得 PostgreSQL/MySQL 严格表锁，在同一事务中读取目标、校验目标 Key、执行拓扑 Geometry 比较和删除熔断，最后按 `DELETE → UPDATE → INSERT` 提交。模型节点只解析已发布 MANAGED 模型目标，比较与写入完全复用 JDBC 执行器。
+- `JDBC_SNAPSHOT_SYNC_OUTPUT/MODEL_SNAPSHOT_SYNC_OUTPUT`：仅用于 BATCH 和 BOUNDED 小数据实体快照。来源映射并 Cast 为目标类型后，在 Driver 校验来源 Key；Runner 使用一条 JDBC 连接取得 PostgreSQL/HighGo/MySQL/openGauss/Kingbase 严格表锁，在同一事务中读取目标、校验目标 Key、执行比较和删除熔断，最后按 `DELETE → UPDATE → INSERT` 提交。Geometry 比较在具备 PostGIS 兼容扩展的 PostgreSQL 家族及 MySQL 8 开放。模型节点只解析已发布 MANAGED 模型目标，比较与写入完全复用 JDBC 执行器。
 - `KAFKA_OUTPUT`：Canvas 4.6 新写入按 JSON/TEXT/BINARY 序列化上游字段。JSON 使用 `to_json(struct(...), ignoreNullFields=false)`，TEXT 原样发送 STRING，BINARY 原样发送字节；TEXT/BINARY 的 NULL 产生 tombstone。可选 Key 只允许 STRING/BINARY 且保持原类型。4.0～4.5 旧写入继续使用内联 Value Schema、映射、Cast 和字符串 Key 兼容语义。每条 `writeId` 仍启动独立 StreamingQuery/Checkpoint，整体按至少一次交付。
 - `FILE_OUTPUT`：仅用于批任务，将来源表写到精确的 `s3a://{bucket}/{rootPrefix}/{targetPath}/`。CSV、JSON Lines 固定 UTF-8，普通 Parquet 固定 Snappy，并继续使用允许多个 `part-*` 和 `_SUCCESS` 的 Spark 目录数据集语义。Canvas `4.0` 的 Shapefile 使用 Driver 专用 Writer，通过 `toLocalIterator()` 流式生成唯一一套 SHP/SHX/DBF/PRJ/CPG；默认打成 ZIP，也可直接提交五个组件。GeoParquet 通过 Sedona 分布式写出 GeoParquet 1.1.0、WKB、显式 PROJJSON 和可选逐行 bbox；GeoJSON 使用 Driver 专用 Writer 生成唯一 RFC 7946 FeatureCollection，限 EPSG:4326 + XY 且达到 1.8GB 时失败。Shapefile/GeoJSON 制品先完整上传运行级临时前缀，再按冲突策略提交，`_SUCCESS` 始终最后写入；GeoParquet 复用 Spark/Hadoop 目录提交。S3 `OVERWRITE` 均不是原子替换。
 - `OVERWRITE`：普通关系型 JDBC 数据库均使用 `TRUNCATE TABLE` 后 append/受控批量 INSERT，
@@ -199,7 +231,7 @@ Geometry Output 写入前通过 `data-scalpel-dialect` 读取生成写入 SQL �
 Geometry 字段或有效本地 SRID不可用时返回 `SPATIAL_TARGET_METADATA_UNAVAILABLE`；其余问题
 由真实写入结果判断。
 
-空间执行第一阶段只支持 PostgreSQL/PostGIS、MySQL 8、EPSG 和 XY。Canvas `4.0` 的空间
+空间执行第一阶段只支持具备 PostGIS 兼容扩展的 PostgreSQL/HighGo/openGauss/Kingbase、MySQL 8、EPSG 和 XY。Canvas `4.0` 的空间
 基础、修复、缓冲、拆分 Processor 同时支持有界和无界 Dataset，完整继承来源的事件时间和
 Watermark；空间裁剪与空间聚合只接受
 BOUNDED Dataset，输出同为 BOUNDED 并清空事件时间和 Watermark。所有空间 Processor 的

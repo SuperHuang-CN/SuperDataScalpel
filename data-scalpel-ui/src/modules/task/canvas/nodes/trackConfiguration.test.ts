@@ -31,7 +31,7 @@ describe('track optional capabilities', () => {
 
   it('validates the optional shapes without rejecting incomplete business drafts', () => {
     const errors: string[] = [];
-    expect(parseIncidentLifecycleOptions({}, 'configuration', errors)).toEqual({ conditionWindows: [] });
+    expect(parseIncidentLifecycleOptions({}, 'configuration', errors)).toEqual({ conditionWindows: [], conditionScalars: [] });
     parseIncidentLifecycleOptions({ incidentSemantics: 'OTHER', orderByColumns: [1], incidentStatusColumnName: {} }, 'configuration', errors);
     expect(errors).toHaveLength(3);
     const draftErrors: string[] = [];

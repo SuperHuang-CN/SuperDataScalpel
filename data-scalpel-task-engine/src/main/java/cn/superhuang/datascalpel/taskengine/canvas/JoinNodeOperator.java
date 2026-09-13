@@ -9,7 +9,6 @@ import cn.superhuang.data.scalpel.contract.task.CanvasTableSchema;
 import cn.superhuang.data.scalpel.contract.task.JoinCondition;
 import cn.superhuang.data.scalpel.contract.task.JoinConfiguration;
 import cn.superhuang.data.scalpel.contract.task.JoinNodeDefinition;
-import cn.superhuang.data.scalpel.contract.task.JoinOperator;
 import cn.superhuang.data.scalpel.contract.task.JoinOutputColumnSource;
 import cn.superhuang.datascalpel.taskengine.spark.SparkCanvasTable;
 import cn.superhuang.datascalpel.taskengine.spark.SparkTypeMapper;
@@ -18,7 +17,6 @@ import org.apache.spark.sql.Dataset;
 import org.apache.spark.sql.Row;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -104,7 +102,16 @@ public final class JoinNodeOperator implements CanvasNodeOperator {
 
         Map<String, CanvasColumnSchema> leftColumns = CanvasNodeSupport.columns(left.schema());
         Map<String, CanvasColumnSchema> rightColumns = CanvasNodeSupport.columns(right.schema());
-        validateConditions(configuration, leftColumns, rightColumns, issues);
+        JoinConditionSupport.validate(
+                configuration.conditions(),
+                leftColumns,
+                rightColumns,
+                "configuration.conditions",
+                "Join 条件",
+                "普通 Join 不能使用 Geometry 条件，请使用空间连接节点",
+                false,
+                issues
+        );
         List<JoinOutputColumnSupport.ResolvedOutputColumn> outputColumns = JoinOutputColumnSupport.validate(
                 configuration.outputColumns(), leftColumns, rightColumns, issues);
         if (issues.hasErrors()) {
@@ -145,51 +152,6 @@ public final class JoinNodeOperator implements CanvasNodeOperator {
         Map<String, SparkCanvasTable> output = new LinkedHashMap<>(inputs);
         output.put(joinedSchema.name(), new SparkCanvasTable(joinedSchema, projected));
         return CanvasNodeOperationResult.propagated(output, CanvasNodeSupport.schemas(output));
-    }
-
-    private static void validateConditions(
-            JoinConfiguration configuration,
-            Map<String, CanvasColumnSchema> leftColumns,
-            Map<String, CanvasColumnSchema> rightColumns,
-            CanvasNodeIssueSink issues
-    ) {
-        if (configuration.conditions() == null) {
-            return;
-        }
-        Set<String> conditionKeys = new HashSet<>();
-        for (int index = 0; index < configuration.conditions().size(); index++) {
-            JoinCondition condition = configuration.conditions().get(index);
-            String path = "configuration.conditions[" + index + "]";
-            if (condition == null
-                    || CanvasNodeSupport.blank(condition.leftColumnName())
-                    || CanvasNodeSupport.blank(condition.rightColumnName())
-                    || condition.operator() != JoinOperator.EQUALS) {
-                issues.error("REQUIRED_CONFIGURATION", "Join 条件不完整或操作符不受支持", path);
-                continue;
-            }
-            String key = condition.leftColumnName() + "\u0000" + condition.rightColumnName();
-            if (!conditionKeys.add(key)) {
-                issues.error("DUPLICATE_JOIN_CONDITION", "Join 条件重复", path);
-            }
-            if (!leftColumns.containsKey(condition.leftColumnName())) {
-                issues.error("COLUMN_NOT_FOUND", "左表字段不存在：" + condition.leftColumnName(), path);
-            }
-            if (!rightColumns.containsKey(condition.rightColumnName())) {
-                issues.error("COLUMN_NOT_FOUND", "右表字段不存在：" + condition.rightColumnName(), path);
-            }
-            CanvasColumnSchema left = leftColumns.get(condition.leftColumnName());
-            CanvasColumnSchema right = rightColumns.get(condition.rightColumnName());
-            if ((left != null && left.fieldType()
-                    == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)
-                    || (right != null && right.fieldType()
-                    == cn.superhuang.data.scalpel.contract.type.PlatformDataType.GEOMETRY)) {
-                issues.error(
-                        "GEOMETRY_FIELD_OPERATION_UNSUPPORTED",
-                        "普通 Join 不能使用 Geometry 条件，请使用空间连接节点",
-                        path
-                );
-            }
-        }
     }
 
 }

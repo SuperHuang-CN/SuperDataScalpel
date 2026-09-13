@@ -38,13 +38,11 @@ describe('task canvas connection rules', () => {
       tables: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.ModelInput)).toEqual({
-      modelId: '',
+      models: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.HttpApiInput)).toEqual({
       dataSourceId: '',
-      resourceId: '',
-      outputTableName: '',
-      runtimeParameters: [],
+      resources: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.Join)).toEqual({
       leftTableName: '',
@@ -55,32 +53,24 @@ describe('task canvas connection rules', () => {
       outputColumns: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.Rename)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      columnMappings: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.Filter)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      condition: { kind: 'GROUP', operator: 'AND', children: [] },
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.SqlTransform)).toEqual({
       outputTableName: '',
       sql: '',
     });
     expect(emptyNodeConfiguration(CanvasNodeType.SelectColumns)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      columns: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.DeriveColumns)).toEqual({
       globalDerivations: [],
       operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.TypeCast)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      casts: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.Aggregate)).toEqual({
       sourceTableName: '',
@@ -92,35 +82,22 @@ describe('task canvas connection rules', () => {
       inputTableNames: [],
       outputTableName: '',
       mode: 'ALL',
+      mergingTables: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.Deduplicate)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      keyColumns: [],
-      keepStrategy: 'ANY',
-      orderBy: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.NullHandling)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      rules: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.ValueMapping)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      rules: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.MaskFields)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      fieldRules: [],
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.JsonExtract)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      sourceColumnName: '',
-      extractions: [],
-      failureStrategy: 'ERROR',
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.Window)).toEqual({
       sourceTableName: '',
@@ -130,25 +107,22 @@ describe('task canvas connection rules', () => {
       functions: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.TopN)).toEqual({
-      sourceTableName: '',
-      outputTableName: '',
-      partitionByColumns: [],
-      orderBy: [],
-      limit: 10,
-      tieStrategy: 'EXACT',
+      operations: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.JdbcOutput)).toEqual({
-      sourceTableName: '',
       dataSourceId: '',
+      writes: [],
+      sourceTableName: '',
       targetTableName: '',
-      writeMode: null,
-      upsertKeyColumns: [],
+      writeMode: 'OVERWRITE',
       columnMappings: [],
+      upsertKeyColumns: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.ModelOutput)).toEqual({
+      writes: [],
       sourceTableName: '',
       targetModelId: '',
-      writeMode: null,
+      writeMode: 'OVERWRITE',
       columnMappings: [],
     });
     expect(emptyNodeConfiguration(CanvasNodeType.JdbcSnapshotSyncOutput)).toEqual({
@@ -189,7 +163,7 @@ describe('task canvas connection rules', () => {
       }
       if (node.type === CanvasNodeType.JdbcOutput) {
         expect(node.configuration.dataSourceId).toBe('');
-        expect(node.configuration.targetTableName).toBe('');
+        expect(node.configuration.writes).toEqual([]);
       }
     });
   });

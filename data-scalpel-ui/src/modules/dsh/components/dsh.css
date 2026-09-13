@@ -1,0 +1,90 @@
+.dsh-drawer { pointer-events: none; }
+.dsh-drawer .ant-drawer-content-wrapper { pointer-events: auto; max-width: 100vw; }
+.dsh-drawer .ant-drawer-content { border-left: 1px solid #dde4f4; border-radius: 16px 0 0 16px; box-shadow: -12px 0 40px #19345a20; }
+.dsh-drawer .ant-drawer-header { background: linear-gradient(120deg,#f0f5ff,#f5f2fc); padding: 14px 16px; }
+.dsh-drawer .ant-drawer-body { display: flex; flex-direction: column; padding: 0; overflow: hidden; min-height: 0; }
+.dsh-workspace { display: flex; position: relative; flex: 1; min-height: 0; overflow: hidden; background: #fff; }
+.dsh-conversation-pane { display: flex; flex: 1; flex-direction: column; min-width: 0; min-height: 0; overflow: hidden; background: #fff; }
+.dsh-toolbar { display: flex; justify-content: space-between; padding: 8px 12px; border-bottom: 1px solid #edf0f5; flex-shrink: 0; }
+.dsh-conversation-title { display: flex; justify-content: space-between; gap: 12px; padding: 8px 16px; align-items: center; }
+.dsh-conversation-title strong { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.dsh-conversation-title small { color: #697689; white-space: nowrap; }
+.dsh-conversation-empty { display: grid; flex: 1; min-height: 0; place-items: center; padding: 24px; }
+.dsh-session-pane { display: flex; flex-direction: column; min-height: 0; overflow: hidden; background: #fbfcff; }
+.dsh-session-pane.is-persistent { flex: 0 0 280px; width: 280px; border-right: 1px solid #dfe6f2; }
+.dsh-session-pane.is-overlay { position: absolute; z-index: 4; inset: 0 auto 0 0; width: min(360px, calc(100% - 40px)); border-right: 1px solid #d8e0ed; box-shadow: 10px 0 30px #1c315629; }
+.dsh-session-backdrop { position: absolute; z-index: 3; inset: 0; border: 0; background: #1e315324; cursor: default; }
+.dsh-session-pane-header { display: flex; align-items: center; justify-content: space-between; min-height: 49px; padding: 6px 12px 6px 16px; border-bottom: 1px solid #e4e9f2; background: linear-gradient(120deg,#f5f8ff,#faf8ff); }
+.dsh-session-pane-header strong { font-size: 15px; }
+.dsh-session-filters { padding: 12px 16px; display: grid; gap: 12px; }
+.dsh-session-filters form { display: flex; gap: 8px; }
+.dsh-session-list { flex: 1; overflow: auto; padding: 0 12px; }
+.dsh-session-row { display: flex; align-items: center; border-bottom: 1px solid #edf0f5; border-radius: 8px; padding: 8px 4px; }
+.dsh-session-row:hover { background: #f4f7fd; }
+.dsh-session-row.is-selected { background: linear-gradient(90deg,#eaf1ff,#f2efff); box-shadow: inset 3px 0 #5b73e8; }
+.dsh-session-row.is-selected:hover { background: linear-gradient(90deg,#e7efff,#efecff); }
+.dsh-session-select { flex: 1; min-width: 0; border: 0; background: none; cursor: pointer; text-align: left; color: inherit; padding: 6px 8px; }
+.dsh-session-select strong { display: block; font-size: 14px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-session-select span { display: block; color: #738098; font-size: 12px; margin-top: 5px; }
+.dsh-session-select:focus-visible { outline: 2px solid #1668dc; border-radius: 6px; }
+.dsh-list-footer { display: flex; justify-content: space-between; align-items: center; border-top: 1px solid #edf0f5; padding: 12px 16px; }
+.dsh-message-area { flex: 1; min-height: 0; position: relative; }
+.dsh-messages { height: 100%; overflow-y: auto; overflow-x: hidden; padding: 12px 16px; scroll-behavior: auto; }
+.dsh-message { margin-bottom: 20px; min-width: 0; overflow-wrap: anywhere; }
+.dsh-message-user { margin-left: 32px; background: #f0f4ff; border: 1px solid #e4eafa; border-radius: 12px; padding: 12px 14px; }
+.dsh-message-label { font-size: 12px; color: #64738a; margin-bottom: 8px; }
+.dsh-markdown { line-height: 1.7; overflow-wrap: anywhere; min-width: 0; }
+.dsh-markdown p { margin: 0 0 10px; }
+.dsh-markdown > :last-child { margin-bottom: 0; }
+.dsh-markdown h1,.dsh-markdown h2,.dsh-markdown h3 { font-size: 16px; margin: 12px 0 8px; }
+.dsh-markdown ul,.dsh-markdown ol { padding-left: 22px; }
+.dsh-markdown blockquote { border-left: 3px solid #cbd5ec; padding-left: 12px; margin: 8px 0; color: #657388; }
+.dsh-code { position: relative; border: 1px solid #e2e7f0; border-radius: 8px; background: #f7f9fc; margin: 10px 0; }
+.dsh-code > .ant-btn { position: absolute; right: 4px; top: 4px; background: #f7f9fc; }
+.dsh-code pre { margin: 0; overflow-x: auto; padding: 28px 12px 12px; font-size: 12px; }
+.dsh-table { overflow-x: auto; max-width: 100%; margin: 10px 0; }
+.dsh-table table { border-collapse: collapse; font-size: 13px; min-width: 100%; }
+.dsh-table th,.dsh-table td { border: 1px solid #dfe5ef; padding: 6px 10px; min-width: 80px; }
+.dsh-table th { background: #f1f4fa; }
+.dsh-tool { border: 1px solid #e2e7f0; border-radius: 8px; margin: 8px 0; padding: 8px 10px; }
+.dsh-tool summary { cursor: pointer; font-size: 12px; overflow-wrap: anywhere; }
+.dsh-tool summary .ant-tag { margin-left: 8px; white-space: normal; }
+.dsh-tool-details { margin-top: 12px; font-size: 12px; }
+.dsh-tool-details pre { max-height: 320px; overflow: auto; background: #f7f9fc; padding: 8px; }
+.dsh-composer { border-top: 1px solid #e6ebf3; padding: 12px 16px; background: #fff; flex-shrink: 0; }
+.dsh-composer textarea { font-size: 14px; border-radius: 8px; }
+.dsh-composer.is-dragging { background: #f0f5ff; box-shadow: inset 0 0 0 2px #718af3; }
+.dsh-attachments { display: flex; flex-wrap: wrap; gap: 8px; max-height: 184px; overflow-y: auto; margin-bottom: 10px; }
+.dsh-attachment { display: flex; align-items: center; gap: 8px; border: 1px solid #dfe6f2; border-radius: 8px; background: #f8faff; padding: 6px 8px; min-width: 0; max-width: 100%; }
+.dsh-attachments > .dsh-attachment { flex: 1 1 230px; }
+.dsh-attachment-info { display: flex; flex: 1; flex-direction: column; min-width: 0; font-size: 12px; }
+.dsh-attachment-info > span:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dsh-attachment-info small { color: #738098; }
+.dsh-attachment-info .dsh-error { overflow-wrap: anywhere; }
+.dsh-attachment .ant-image { flex-shrink: 0; }
+.dsh-attachment .ant-image-img { object-fit: cover; border-radius: 4px; }
+.dsh-file-icon { font-size: 24px; color: #6d83bd; }
+.dsh-sent-attachment { max-width: 360px; margin: 0 0 8px; }
+.dsh-sent-attachment > .ant-image { display: block; width: fit-content; max-width: 100%; }
+.dsh-sent-attachment > .ant-image .ant-image-img { max-height: 240px; object-fit: contain; border-radius: 8px; }
+.dsh-image-preview { display: block; border: 0; padding: 0; background: transparent; cursor: zoom-in; max-width: 100%; }
+.dsh-image-preview img { display: block; max-width: 100%; max-height: 240px; object-fit: contain; border-radius: 8px; }
+.dsh-image-full { display: block; max-width: 100%; max-height: 75vh; object-fit: contain; margin: auto; }
+.dsh-composer-actions { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 8px; }
+.dsh-composer-actions small { color: #758297; }
+.dsh-new-messages { position: absolute; bottom: 12px; left: 50%; transform: translateX(-50%); box-shadow: 0 3px 12px #18355320; }
+.dsh-questions { border: 1px solid #cfdcf4; border-radius: 10px; padding: 14px; margin: 12px 0; }
+.dsh-question { display: grid; gap: 8px; margin-bottom: 16px; }
+.dsh-question .ant-radio-group,.dsh-question .ant-checkbox-group { display: flex; flex-direction: column; gap: 8px; }
+.dsh-question small { display: block; color: #71809a; }
+.dsh-outcome { font-size: 12px; color: #66768d; margin: 8px 0; text-align: center; }
+.dsh-feedback { margin: 6px 16px; flex-shrink: 0; }
+.dsh-unavailable { padding: 24px 16px; }
+.dsh-error { color: #b42332; font-size: 12px; margin-top: 8px; }
+@media (max-width: 720px) {
+  .dsh-drawer .ant-drawer-content { border-radius: 0; }
+  .dsh-layout-toggle { display: none; }
+  .dsh-session-pane.is-overlay { width: min(360px, calc(100% - 32px)); }
+  .dsh-message-user { margin-left: 12px; }
+  .dsh-composer-actions small { max-width: 60%; }
+}

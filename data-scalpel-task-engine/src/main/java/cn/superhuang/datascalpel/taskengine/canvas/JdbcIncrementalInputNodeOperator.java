@@ -142,8 +142,12 @@ public final class JdbcIncrementalInputNodeOperator implements CanvasNodeOperato
 
     private static boolean supportedDatabase(CanvasJdbcDatabaseType type) {
         return type == CanvasJdbcDatabaseType.POSTGRESQL
+                || type == CanvasJdbcDatabaseType.HIGHGO
                 || type == CanvasJdbcDatabaseType.MYSQL
                 || type == CanvasJdbcDatabaseType.OPENGAUSS
-                || type == CanvasJdbcDatabaseType.KINGBASE;
+                || type == CanvasJdbcDatabaseType.KINGBASE
+                || type == CanvasJdbcDatabaseType.DAMENG
+                || type == CanvasJdbcDatabaseType.ORACLE
+                || type == CanvasJdbcDatabaseType.SQL_SERVER;
     }
 }

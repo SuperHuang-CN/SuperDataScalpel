@@ -125,7 +125,8 @@ public final class TrackReconstructNodeOperator implements CanvasNodeOperator {
                 case LAST -> functions.max_by(
                         TrackNodeSupport.column(dataset, summary.source().name()),
                         order);
-                default -> TrackNodeSupport.summaryExpression(summary, dataset);
+                default -> TrackNodeSupport.summaryExpression(
+                        summary, dataset, configuration.timeColumnName());
             };
             aggregations.add(expression.alias(summary.statistic().outputColumnName()));
         }

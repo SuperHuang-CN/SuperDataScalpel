@@ -42,7 +42,7 @@ public class SpatialDataServicePreviewService {
     private static final int MINIMUM_HEIGHT = 256;
     private static final int MAXIMUM_HEIGHT = 1_200;
     private static final double WEB_MERCATOR_LIMIT = 20_037_508.342789244d;
-    private static final String DISPLAY_CRS = "EPSG:3857";
+    private static final String DISPLAY_CRS = "EPSG:4326";
 
     private final DataServiceRepository dataServiceRepository;
     private final SpatialDataServiceDefinitionRepository definitionRepository;

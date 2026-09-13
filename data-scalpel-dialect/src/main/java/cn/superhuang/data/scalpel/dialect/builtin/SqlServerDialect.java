@@ -4,12 +4,18 @@ import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionChoice;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionDefinition;
 import cn.superhuang.data.scalpel.dialect.api.ConnectionOptionType;
 import cn.superhuang.data.scalpel.dialect.api.NamespaceMode;
+import cn.superhuang.data.scalpel.dialect.api.JdbcIncrementalReadDialect;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
+import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
 import cn.superhuang.data.scalpel.dialect.model.TablePhysicalStatistics;
 import cn.superhuang.data.scalpel.dialect.model.TableStatisticQuality;
 import cn.superhuang.data.scalpel.dialect.query.InsertSelectQuery;
+import cn.superhuang.data.scalpel.dialect.query.PreparedSqlQuery;
+import cn.superhuang.data.scalpel.dialect.query.SqlQueryParameter;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
+import cn.superhuang.data.scalpel.contract.type.PlatformTypeDefinition;
 
 import java.sql.Connection;
 import java.sql.PreparedStatement;
@@ -20,7 +26,7 @@ import java.util.List;
 import java.util.Properties;
 import java.util.Set;
 
-public final class SqlServerDialect extends AbstractJdbcDialect {
+public final class SqlServerDialect extends AbstractJdbcDialect implements JdbcIncrementalReadDialect {
 
     public SqlServerDialect() {
         super(
@@ -54,6 +60,34 @@ public final class SqlServerDialect extends AbstractJdbcDialect {
     @Override
     public String resolveCatalog(JdbcConnectionConfig config, String requestedCatalog) {
         return optional(requestedCatalog) == null ? config.databaseName() : requestedCatalog.trim();
+    }
+
+    @Override
+    protected PreparedSqlQuery paginateSqlServiceQuery(
+            String jdbcSql,
+            List<SqlQueryParameter> parameters,
+            int offset,
+            int limit
+    ) {
+        List<SqlQueryParameter> dataParameters = new java.util.ArrayList<>(parameters);
+        dataParameters.add(new SqlQueryParameter(
+                offset, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        dataParameters.add(new SqlQueryParameter(
+                limit, PlatformTypeDefinition.of(PlatformDataType.INTEGER)));
+        return new PreparedSqlQuery(
+                "SELECT * FROM (" + jdbcSql + ") ds_query ORDER BY (SELECT NULL) "
+                        + "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                dataParameters
+        );
+    }
+
+    @Override
+    public String renderRowUpsert(
+            TableIdentifier target,
+            List<JdbcUpsertColumn> columns,
+            List<String> keyColumns
+    ) {
+        return MergeRowUpsertSupport.renderSqlServer(this, target, columns, keyColumns);
     }
 
     @Override

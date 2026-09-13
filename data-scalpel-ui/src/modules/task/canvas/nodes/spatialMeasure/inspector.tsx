@@ -11,6 +11,8 @@ import {
   CANVAS_SPATIAL_MEASURE_MAX_MEASUREMENTS,
   CanvasNodeType,
   type CanvasColumnSchema,
+  type SpatialAreaUnit,
+  type SpatialDistanceUnit,
   type SpatialMeasureConfiguration,
   type SpatialMeasurement,
 } from '../../canvasTypes';
@@ -24,6 +26,10 @@ import {
   spatialGeometryColumns,
   spatialTableOptions,
 } from '../spatialInspectorOptions';
+import {
+  spatialAreaUnitOptions,
+  spatialDistanceUnitOptions,
+} from '../spatialUnits';
 
 interface SpatialMeasureFormValues {
   sourceTableName: string;
@@ -31,6 +37,7 @@ interface SpatialMeasureFormValues {
 }
 
 type MeasurementKind = SpatialMeasurement['kind'];
+const MODE_DEFAULT_UNIT = '__MODE_DEFAULT__' as const;
 
 const measurementKindOptions: Array<{ value: MeasurementKind; label: string }> = [
   { value: 'AREA', label: 'AREA · 面积' },
@@ -53,6 +60,7 @@ const defaultMeasurement = (
       rightGeometryColumnName: columns[1]?.name ?? first,
       mode: 'PLANAR',
       outputColumnName: 'distance',
+      outputUnit: 'SOURCE_CRS_UNIT',
     };
   }
   if (kind === 'X' || kind === 'Y') {
@@ -62,11 +70,21 @@ const defaultMeasurement = (
       outputColumnName: kind.toLowerCase(),
     };
   }
+  if (kind === 'AREA') {
+    return {
+      kind,
+      geometryColumnName: first,
+      mode: 'PLANAR',
+      outputColumnName: 'area',
+      outputUnit: null,
+    };
+  }
   return {
     kind,
     geometryColumnName: first,
     mode: 'PLANAR',
     outputColumnName: kind.toLowerCase(),
+    outputUnit: 'SOURCE_CRS_UNIT',
   };
 };
 
@@ -85,6 +103,25 @@ const acceptedKind = (measurement: SpatialMeasurement, column: CanvasColumnSchem
 const columnNameOf = (measurement: SpatialMeasurement) => (
   'geometryColumnName' in measurement ? measurement.geometryColumnName : ''
 );
+
+const withOutputUnit = (
+  measurement: SpatialMeasurement,
+  value: string,
+): SpatialMeasurement => {
+  if (measurement.kind === 'AREA') {
+    return {
+      ...measurement,
+      outputUnit: value === MODE_DEFAULT_UNIT ? null : value as SpatialAreaUnit,
+    };
+  }
+  if ('mode' in measurement) {
+    return {
+      ...measurement,
+      outputUnit: value === MODE_DEFAULT_UNIT ? null : value as SpatialDistanceUnit,
+    };
+  }
+  return measurement;
+};
 
 const isWgs84 = (column: CanvasColumnSchema | undefined) => (
   column?.geometry?.crs.authority === 'EPSG'
@@ -273,6 +310,8 @@ const SpatialMeasureInspector = ({
               && (!sourceColumn || !acceptedKind(measurement, sourceColumn)),
             );
           const mode = 'mode' in measurement ? measurement.mode : null;
+          const outputUnit = 'outputUnit' in measurement
+            ? measurement.outputUnit ?? null : null;
           const angularWarning = mode === 'PLANAR' && (distance
             ? isWgs84(leftColumn) || isWgs84(rightColumn)
             : isWgs84(sourceColumn));
@@ -285,6 +324,13 @@ const SpatialMeasureInspector = ({
           const distanceReferenceMismatch = distance
             && Boolean(leftColumn && rightColumn)
             && !hasSameSpatialReference(leftColumn, rightColumn);
+          const spheroidUnitInvalid = mode === 'SPHEROID'
+            && outputUnit === 'SOURCE_CRS_UNIT';
+          const planarFixedUnitInvalid = mode === 'PLANAR' && angularWarning
+            && (measurement.kind === 'AREA'
+              ? outputUnit !== null
+              : outputUnit !== null && outputUnit !== 'SOURCE_CRS_UNIT');
+          const outputUnitInvalid = spheroidUnitInvalid || planarFixedUnitInvalid;
           const filteredOptions = spatialColumnOptions(
             geometryColumns,
             sourceName,
@@ -296,6 +342,7 @@ const SpatialMeasureInspector = ({
               key={index}
               className={`canvas-processor-rule-card${
                 invalidSource || spheroidInvalid || distanceReferenceMismatch
+                  || outputUnitInvalid
                   ? ' is-invalid'
                   : ''
               }`}
@@ -305,6 +352,7 @@ const SpatialMeasureInspector = ({
                   <span>{measurement.kind}</span>
                   {invalidSource && <Tag color="error">字段已失效</Tag>}
                   {distanceReferenceMismatch && <Tag color="error">CRS 不兼容</Tag>}
+                  {outputUnitInvalid && <Tag color="error">单位不兼容</Tag>}
                   {angularWarning && <Tag color="warning">角度单位</Tag>}
                 </Space>
               )}
@@ -406,18 +454,41 @@ const SpatialMeasureInspector = ({
                   />
                 )}
                 {'mode' in measurement && (
-                  <Select
-                    value={measurement.mode}
-                    status={spheroidInvalid ? 'error' : undefined}
-                    options={[
-                      { value: 'PLANAR', label: 'PLANAR · CRS 坐标单位' },
-                      { value: 'SPHEROID', label: 'SPHEROID · 米 / 平方米' },
-                    ]}
-                    onChange={(value: 'PLANAR' | 'SPHEROID') => updateMeasurement(index, {
-                      ...measurement,
-                      mode: value,
-                    })}
-                  />
+                  <Space.Compact block>
+                    <Select
+                      value={measurement.mode}
+                      status={spheroidInvalid ? 'error' : undefined}
+                      style={{ width: '45%' }}
+                      options={[
+                        { value: 'PLANAR', label: 'PLANAR · 当前 CRS' },
+                        { value: 'SPHEROID', label: 'SPHEROID · WGS84' },
+                      ]}
+                      onChange={(value: 'PLANAR' | 'SPHEROID') => updateMeasurement(index, {
+                        ...measurement,
+                        mode: value,
+                      })}
+                    />
+                    <Select
+                      aria-label={`${measurement.kind} 输出单位`}
+                      value={outputUnit ?? MODE_DEFAULT_UNIT}
+                      status={outputUnitInvalid ? 'error' : undefined}
+                      style={{ width: '55%' }}
+                      options={[
+                        {
+                          value: MODE_DEFAULT_UNIT,
+                          label: measurement.kind === 'AREA'
+                            ? mode === 'SPHEROID' ? '平方米（兼容默认）' : '来源 CRS 单位²（兼容默认）'
+                            : mode === 'SPHEROID' ? '米（兼容默认）' : '来源 CRS 单位（兼容默认）',
+                        },
+                        ...(measurement.kind === 'AREA'
+                          ? spatialAreaUnitOptions : spatialDistanceUnitOptions),
+                      ]}
+                      onChange={(value) => updateMeasurement(
+                        index,
+                        withOutputUnit(measurement, value),
+                      )}
+                    />
+                  </Space.Compact>
                 )}
                 {spheroidInvalid && (
                   <Typography.Text type="danger">
@@ -427,6 +498,16 @@ const SpatialMeasureInspector = ({
                 {distanceReferenceMismatch && (
                   <Typography.Text type="danger">
                     距离两侧必须维度一致；PLANAR 还要求 CRS 完全一致。
+                  </Typography.Text>
+                )}
+                {spheroidUnitInvalid && (
+                  <Typography.Text type="danger">
+                    SPHEROID 原始结果为米或平方米，不能使用来源 CRS 单位。
+                  </Typography.Text>
+                )}
+                {planarFixedUnitInvalid && (
+                  <Typography.Text type="danger">
+                    地理 CRS 的 PLANAR 结果是角度或角度平方，不能换算为固定线性/面积单位。
                   </Typography.Text>
                 )}
                 {angularWarning && (

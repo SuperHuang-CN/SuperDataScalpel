@@ -20,12 +20,27 @@ class InsertSelectDialectTest {
     private final TableIdentifier target = new TableIdentifier("warehouse", "public", "order_summary");
 
     @Test
-    void declaresInsertSelectAndQueryMetadataForAllBuiltInDialects() {
-        assertTrue(registry.all().stream().allMatch(dialect ->
+    void declaresInsertSelectAndQueryMetadataForRegularJdbcDialects() {
+        assertTrue(registry.all().stream()
+                .filter(dialect -> !dialect.definition().id().startsWith("TDENGINE_"))
+                .allMatch(dialect ->
                 dialect.definition().capabilities().contains(DatabaseCapability.INSERT_SELECT)
                         && dialect.definition().capabilities().contains(DatabaseCapability.QUERY_METADATA)));
-        assertTrue(registry.require("POSTGRESQL").definition().capabilities().contains(DatabaseCapability.OVERWRITE_INSERT_SELECT));
+        for (String id : List.of("POSTGRESQL", "HIGHGO", "OPENGAUSS", "KINGBASE")) {
+            assertTrue(registry.require(id).definition().capabilities()
+                    .contains(DatabaseCapability.OVERWRITE_INSERT_SELECT), id);
+        }
+        for (String id : List.of("POSTGRESQL", "HIGHGO", "MYSQL", "OPENGAUSS", "KINGBASE")) {
+            assertTrue(registry.require(id).definition().capabilities()
+                    .contains(DatabaseCapability.JDBC_QUERY_INPUT), id);
+        }
+        assertFalse(registry.require("CLICKHOUSE").definition().capabilities()
+                .contains(DatabaseCapability.JDBC_QUERY_INPUT));
         assertFalse(registry.require("CLICKHOUSE").definition().capabilities().contains(DatabaseCapability.OVERWRITE_INSERT_SELECT));
+        assertFalse(registry.require("TDENGINE_WEBSOCKET").definition().capabilities()
+                .contains(DatabaseCapability.INSERT_SELECT));
+        assertFalse(registry.require("TDENGINE_RESTFUL").definition().capabilities()
+                .contains(DatabaseCapability.INSERT_SELECT));
     }
 
     @Test
@@ -55,7 +70,9 @@ class InsertSelectDialectTest {
                 "WITH source AS (SELECT customer_id, amount FROM orders) SELECT customer_id, amount FROM source"
         );
 
-        registry.all().forEach(dialect -> {
+        registry.all().stream()
+                .filter(dialect -> dialect.definition().capabilities().contains(DatabaseCapability.INSERT_SELECT))
+                .forEach(dialect -> {
             assertTrue(dialect.renderInsertSelect(target, List.of("customer_id", "amount"), plain)
                     .startsWith("INSERT INTO "));
             String renderedCte = dialect.renderInsertSelect(target, List.of("customer_id", "amount"), cte);
@@ -66,6 +83,6 @@ class InsertSelectDialectTest {
                 assertTrue(renderedCte.startsWith("INSERT INTO "));
                 assertTrue(renderedCte.contains(" WITH source AS"));
             }
-        });
+                });
     }
 }

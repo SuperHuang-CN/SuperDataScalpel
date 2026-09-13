@@ -35,19 +35,36 @@ class BuiltInDialectsTest {
 
     @Test
     void registersAllSupportedDatabaseTypesWithMetadataCapabilities() {
-        assertEquals(10, registry.all().size());
+        assertEquals(11, registry.all().size());
         assertEquals(
                 java.util.Set.of(
-                        "POSTGRESQL", "MYSQL", "ORACLE", "SQL_SERVER", "CLICKHOUSE", "DAMENG",
+                        "POSTGRESQL", "HIGHGO", "MYSQL", "ORACLE", "SQL_SERVER", "CLICKHOUSE", "DAMENG",
                         "KINGBASE", "OPENGAUSS", "TDENGINE_WEBSOCKET", "TDENGINE_RESTFUL"
                 ),
                 registry.all().stream().map(dialect -> dialect.definition().id()).collect(java.util.stream.Collectors.toSet())
         );
         assertTrue(registry.require("POSTGRESQL").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
+        assertTrue(registry.require("HIGHGO").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("MYSQL").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
+        assertTrue(registry.require("KINGBASE").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
+        assertTrue(registry.require("OPENGAUSS").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("CLICKHOUSE").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
+        assertTrue(registry.require("DAMENG").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("CLICKHOUSE").definition().capabilities()
                 .contains(DatabaseCapability.SQL_SERVICE_QUERY));
+        for (String id : java.util.List.of(
+                "POSTGRESQL", "HIGHGO", "MYSQL", "KINGBASE", "OPENGAUSS", "DAMENG", "ORACLE", "SQL_SERVER")) {
+            assertTrue(registry.require(id).definition().capabilities()
+                    .contains(DatabaseCapability.SQL_SERVICE_QUERY), id);
+            assertTrue(registry.require(id).definition().capabilities()
+                    .contains(DatabaseCapability.ROW_UPSERT), id);
+            assertTrue(registry.require(id).definition().capabilities()
+                    .contains(DatabaseCapability.JDBC_INCREMENTAL_READ), id);
+        }
+        for (String id : java.util.List.of("POSTGRESQL", "HIGHGO", "OPENGAUSS", "KINGBASE")) {
+            assertTrue(registry.require(id).definition().capabilities()
+                    .contains(DatabaseCapability.OVERWRITE_INSERT_SELECT), id);
+        }
         assertFalse(registry.require("ORACLE").definition().capabilities().contains(DatabaseCapability.CREATE_TABLE));
         assertTrue(registry.require("TDENGINE_WEBSOCKET").definition().capabilities()
                 .contains(DatabaseCapability.READ_TABLE_METADATA));
@@ -66,6 +83,7 @@ class BuiltInDialectsTest {
         JdbcConnectionConfig config = config(Map.of());
 
         assertEquals("jdbc:postgresql://db.internal:5432/business", registry.require("POSTGRESQL").createConnectionSpec(config).jdbcUrl());
+        assertEquals("jdbc:highgo://db.internal:5432/business", registry.require("HIGHGO").createConnectionSpec(config).jdbcUrl());
         assertEquals("jdbc:mysql://db.internal:5432/business", registry.require("MYSQL").createConnectionSpec(config).jdbcUrl());
         assertEquals("jdbc:oracle:thin:@//db.internal:5432/business", registry.require("ORACLE").createConnectionSpec(config).jdbcUrl());
         assertEquals("jdbc:sqlserver://db.internal:5432", registry.require("SQL_SERVER").createConnectionSpec(config).jdbcUrl());
@@ -79,6 +97,7 @@ class BuiltInDialectsTest {
                 registry.require("TDENGINE_RESTFUL").createConnectionSpec(config).jdbcUrl());
 
         assertEquals("sales", registry.require("POSTGRESQL").createConnectionSpec(config).schemaName());
+        assertEquals("sales", registry.require("HIGHGO").createConnectionSpec(config).schemaName());
         assertEquals("sales", registry.require("ORACLE").createConnectionSpec(config).schemaName());
         assertEquals("sales", registry.require("DAMENG").createConnectionSpec(config).schemaName());
         assertEquals("sales", registry.require("KINGBASE").createConnectionSpec(config).schemaName());
@@ -159,7 +178,7 @@ class BuiltInDialectsTest {
     }
 
     @Test
-    void rendersControlledCreateTableSqlForPostgresAndMySqlOnly() {
+    void rendersControlledCreateTableSqlForManagedStorageDatabases() {
         TableDefinition definition = new TableDefinition(
                 new TableIdentifier("warehouse", "public", "order_fact"),
                 java.util.List.of(
@@ -178,11 +197,23 @@ class BuiltInDialectsTest {
                 "CREATE TABLE `warehouse`.`order_fact` (`order_id` bigint NOT NULL, `amount` decimal(18,2), `remark` varchar(120), PRIMARY KEY (`order_id`))",
                 registry.require("MYSQL").planCreateTable(definition).statements().getFirst()
         );
+        for (String id : java.util.List.of("HIGHGO", "OPENGAUSS", "KINGBASE")) {
+            assertEquals(
+                    "CREATE TABLE \"public\".\"order_fact\" (\"order_id\" bigint NOT NULL, \"amount\" numeric(18,2), \"remark\" varchar(120), PRIMARY KEY (\"order_id\"))",
+                    registry.require(id).planCreateTable(definition).statements().getFirst(),
+                    id
+            );
+        }
+        assertEquals(
+                "CREATE TABLE \"public\".\"order_fact\" (\"order_id\" BIGINT NOT NULL, "
+                        + "\"amount\" DECIMAL(18,2), \"remark\" VARCHAR(120), PRIMARY KEY (\"order_id\"))",
+                registry.require("DAMENG").planCreateTable(definition).statements().getFirst()
+        );
         assertThrows(UnsupportedOperationException.class, () -> registry.require("ORACLE").planCreateTable(definition));
     }
 
     @Test
-    void rendersControlledPostgresAndMySqlRowUpsertSql() {
+    void rendersControlledRowUpsertSqlForSupportedDatabases() {
         TableIdentifier table = new TableIdentifier("warehouse", "public", "order_fact");
         var columns = java.util.List.of(
                 new JdbcUpsertColumn("tenant_id", null),
@@ -202,6 +233,45 @@ class BuiltInDialectsTest {
                         + "VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE `amount` = VALUES(`amount`)",
                 registry.require("MYSQL").renderRowUpsert(table, columns, keys)
         );
+        for (String id : java.util.List.of("HIGHGO", "OPENGAUSS", "KINGBASE")) {
+            assertEquals(
+                    "INSERT INTO \"public\".\"order_fact\" (\"tenant_id\", \"order_no\", \"amount\") "
+                            + "VALUES (?, ?, ?) ON CONFLICT (\"tenant_id\", \"order_no\") "
+                            + "DO UPDATE SET \"amount\" = EXCLUDED.\"amount\"",
+                    registry.require(id).renderRowUpsert(table, columns, keys),
+                    id
+            );
+        }
+        assertEquals(
+                "MERGE INTO \"public\".\"order_fact\" target_row USING (SELECT ? AS \"tenant_id\", "
+                        + "? AS \"order_no\", ? AS \"amount\" FROM DUAL) incoming ON ("
+                        + "target_row.\"tenant_id\" = incoming.\"tenant_id\" AND "
+                        + "target_row.\"order_no\" = incoming.\"order_no\") "
+                        + "WHEN MATCHED THEN UPDATE SET target_row.\"amount\" = incoming.\"amount\" "
+                        + "WHEN NOT MATCHED THEN INSERT (\"tenant_id\", \"order_no\", \"amount\") "
+                        + "VALUES (incoming.\"tenant_id\", incoming.\"order_no\", incoming.\"amount\")",
+                registry.require("DAMENG").renderRowUpsert(table, columns, keys)
+        );
+        assertEquals(
+                "MERGE INTO \"public\".\"order_fact\" target_row USING (SELECT ? AS \"tenant_id\", "
+                        + "? AS \"order_no\", ? AS \"amount\" FROM DUAL) incoming ON ("
+                        + "target_row.\"tenant_id\" = incoming.\"tenant_id\" AND "
+                        + "target_row.\"order_no\" = incoming.\"order_no\") "
+                        + "WHEN MATCHED THEN UPDATE SET target_row.\"amount\" = incoming.\"amount\" "
+                        + "WHEN NOT MATCHED THEN INSERT (\"tenant_id\", \"order_no\", \"amount\") "
+                        + "VALUES (incoming.\"tenant_id\", incoming.\"order_no\", incoming.\"amount\")",
+                registry.require("ORACLE").renderRowUpsert(table, columns, keys)
+        );
+        assertEquals(
+                "MERGE INTO [warehouse].[public].[order_fact] WITH (HOLDLOCK) AS target_row "
+                        + "USING (VALUES (?, ?, ?)) AS incoming ([tenant_id], [order_no], [amount]) ON ("
+                        + "target_row.[tenant_id] = incoming.[tenant_id] AND "
+                        + "target_row.[order_no] = incoming.[order_no]) "
+                        + "WHEN MATCHED THEN UPDATE SET target_row.[amount] = incoming.[amount] "
+                        + "WHEN NOT MATCHED THEN INSERT ([tenant_id], [order_no], [amount]) "
+                        + "VALUES (incoming.[tenant_id], incoming.[order_no], incoming.[amount]);",
+                registry.require("SQL_SERVER").renderRowUpsert(table, columns, keys)
+        );
         assertEquals(
                 "INSERT INTO \"public\".\"order_fact\" (\"tenant_id\", \"order_no\") "
                         + "VALUES (?, ?) ON CONFLICT (\"tenant_id\", \"order_no\") DO NOTHING",
@@ -212,14 +282,12 @@ class BuiltInDialectsTest {
                         + "ON DUPLICATE KEY UPDATE `tenant_id` = `tenant_id`",
                 registry.require("MYSQL").renderRowUpsert(table, columns.subList(0, 2), keys)
         );
-        assertThrows(
-                UnsupportedOperationException.class,
-                () -> registry.require("ORACLE").renderRowUpsert(table, columns, keys)
-        );
+        assertThrows(UnsupportedOperationException.class, () ->
+                registry.require("CLICKHOUSE").renderRowUpsert(table, columns, keys));
     }
 
     @Test
-    void rendersLockedSnapshotSyncSqlForPostgresAndMySql() {
+    void rendersLockedSnapshotSyncSqlForSupportedDatabases() {
         TableIdentifier table = new TableIdentifier("warehouse", "public", "reservoir");
         var columns = java.util.List.of(
                 new JdbcSnapshotColumn("reservoir_code", null),
@@ -243,6 +311,14 @@ class BuiltInDialectsTest {
                 mysql.lockStatements().get(2));
         assertEquals("UNLOCK TABLES", mysql.unlockSql());
         assertTrue(mysql.insertSql().contains("ST_GeomFromWKB(?, 4326)"));
+        for (String id : java.util.List.of("HIGHGO", "OPENGAUSS", "KINGBASE")) {
+            var compatible = registry.require(id).renderSnapshotSyncSql(
+                    table, columns, keys, Duration.ofSeconds(30));
+            assertEquals("LOCK TABLE \"public\".\"reservoir\" IN ACCESS EXCLUSIVE MODE",
+                    compatible.lockStatements().get(1));
+            assertTrue(compatible.selectSql().contains("ST_AsBinary(\"boundary\")"), id);
+            assertTrue(compatible.updateSql().contains("\"boundary\" = ST_GeomFromWKB(?, 4326)"), id);
+        }
         assertThrows(UnsupportedOperationException.class, () ->
                 registry.require("ORACLE").renderSnapshotSyncSql(
                         table, columns, keys, Duration.ofSeconds(30)));

@@ -169,6 +169,14 @@ final class RunnerFailureClassifier {
         }
         if (causeText.contains("spatial_nearest_connection_vertex_limit_exceeded"))
             return failure("SPATIAL_NEAREST_CONNECTION_VERTEX_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        if (causeText.contains("spatial_join_keep_order_not_unique"))
+            return failure("SPATIAL_JOIN_KEEP_ORDER_NOT_UNIQUE", ExecutionErrorCategory.SCHEMA);
+        for (String code : java.util.List.of("SPATIAL_JOIN_GEOMETRY_INVALID",
+                "SPATIAL_JOIN_DISTANCE_INVALID", "SPATIAL_JOIN_TEMPORAL_DIFFERENCE_INVALID")) {
+            if (causeText.contains(code.toLowerCase(java.util.Locale.ROOT))) {
+                return failure(code, ExecutionErrorCategory.SCHEMA);
+            }
+        }
         for (String code : java.util.List.of("SPATIAL_CENTER_GEOMETRY_INVALID", "SPATIAL_CENTER_WEIGHT_INVALID", "SPATIAL_CENTER_FEATURE_ID_INVALID",
                 "SPATIAL_CENTER_NUMERIC_INVALID", "SPATIAL_CENTER_MEDIAN_NOT_CONVERGED")) {
             if (causeText.contains(code.toLowerCase(java.util.Locale.ROOT))) return failure(code, ExecutionErrorCategory.SCHEMA);
@@ -184,6 +192,7 @@ final class RunnerFailureClassifier {
         if (causeText.contains("spatial_hdbscan_tree_invalid")) return failure("SPATIAL_HDBSCAN_TREE_INVALID", ExecutionErrorCategory.INTERNAL);
         if (causeText.contains("spatial_hdbscan_hierarchy_limit_exceeded")) return failure("SPATIAL_HDBSCAN_HIERARCHY_LIMIT_EXCEEDED", ExecutionErrorCategory.RESOURCE);
         if (causeText.contains("spatial_hdbscan_numeric_range_invalid")) return failure("SPATIAL_HDBSCAN_NUMERIC_RANGE_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("spatial_dissolve_geometry_invalid")) return failure("SPATIAL_DISSOLVE_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
         if (causeText.contains("spatial_calendar_window_limit_exceeded")) return failure("SPATIAL_CALENDAR_WINDOW_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
         if (causeText.contains("spatial_calendar_window_range_invalid")) return failure("SPATIAL_CALENDAR_WINDOW_RANGE_INVALID", ExecutionErrorCategory.SCHEMA);
         if (causeText.contains("spatial_h3_boundary_invalid")) return failure("SPATIAL_H3_BOUNDARY_INVALID", ExecutionErrorCategory.SCHEMA);
@@ -219,13 +228,104 @@ final class RunnerFailureClassifier {
         if (causeText.contains("spatial_overlay_invalid_geometry")) {
             return failure("SPATIAL_OVERLAY_INVALID_GEOMETRY", ExecutionErrorCategory.SCHEMA);
         }
+        if (causeText.contains("spatial_density_value_not_finite")) {
+            return failure("SPATIAL_DENSITY_VALUE_NOT_FINITE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_hot_spot_value_not_finite")) {
+            return failure("SPATIAL_HOT_SPOT_VALUE_NOT_FINITE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_hot_spot_cell_limit_exceeded")) {
+            return failure("SPATIAL_HOT_SPOT_CELL_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        }
+        if (causeText.contains("spatial_multi_variable_grid_cell_limit_exceeded")) {
+            return failure("SPATIAL_MULTI_VARIABLE_GRID_CELL_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        }
+        if (causeText.contains("spatial_multi_variable_grid_value_not_finite")) {
+            return failure("SPATIAL_MULTI_VARIABLE_GRID_VALUE_NOT_FINITE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_multi_variable_grid_geometry_invalid")) {
+            return failure("SPATIAL_MULTI_VARIABLE_GRID_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_enrich_grid_id_null")) {
+            return failure("SPATIAL_ENRICH_GRID_ID_NULL", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_group_geometry_invalid")) {
+            return failure("SPATIAL_GROUP_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_group_temporal_interval_invalid")) {
+            return failure("SPATIAL_GROUP_TEMPORAL_INTERVAL_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("trace_proximity_geometry_invalid")) {
+            return failure("TRACE_PROXIMITY_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("snap_tracks_line_id_invalid")) {
+            return failure("SNAP_TRACKS_LINE_ID_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("snap_tracks_line_id_duplicate")) {
+            return failure("SNAP_TRACKS_LINE_ID_DUPLICATE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("snap_tracks_network_node_invalid")) {
+            return failure("SNAP_TRACKS_NETWORK_NODE_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("snap_tracks_candidate_count_exceeded")) {
+            return failure("SNAP_TRACKS_CANDIDATE_COUNT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
+        }
+        if (causeText.contains("snap_tracks_point_geometry_invalid")) {
+            return failure("SNAP_TRACKS_POINT_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("snap_tracks_line_geometry_invalid")) {
+            return failure("SNAP_TRACKS_LINE_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("snap_tracks_match_geometry_invalid")) {
+            return failure("SNAP_TRACKS_MATCH_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("snap_tracks_match_state_invalid")) {
+            return failure("SNAP_TRACKS_MATCH_STATE_INVALID", ExecutionErrorCategory.INTERNAL);
+        }
+        if (causeText.contains("spatial_similar_locations_reference_id_invalid")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_REFERENCE_ID_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_similar_locations_reference_id_duplicate")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_REFERENCE_ID_DUPLICATE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_similar_locations_candidate_id_invalid")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_CANDIDATE_ID_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_similar_locations_candidate_id_duplicate")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_CANDIDATE_ID_DUPLICATE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_similar_locations_reference_required")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_REFERENCE_REQUIRED", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_similar_locations_value_invalid")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_VALUE_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_similar_locations_zero_profile")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_ZERO_PROFILE", ExecutionErrorCategory.SCHEMA);
+        }
+        if (causeText.contains("spatial_similar_locations_score_invalid")) {
+            return failure("SPATIAL_SIMILAR_LOCATIONS_SCORE_INVALID", ExecutionErrorCategory.SCHEMA);
+        }
+        if ("SPATIAL_DESCRIBE_DATASET".equals(context.nodeType())
+                && spatialLibraryFailure(causeText)) {
+            return failure("SPATIAL_DESCRIBE_DATASET_FAILED", ExecutionErrorCategory.SCHEMA);
+        }
         if ("SPATIAL_OVERLAY".equals(context.nodeType())
                 && spatialLibraryFailure(causeText)) {
             return failure("SPATIAL_OVERLAY_FAILED", ExecutionErrorCategory.SCHEMA);
         }
         if (("SPATIAL_BIN_AGGREGATE".equals(context.nodeType())
                 || "SPATIAL_POINT_CLUSTER".equals(context.nodeType())
-                || "SPATIAL_CENTER_DISPERSION".equals(context.nodeType()))
+                || "SPATIAL_CENTER_DISPERSION".equals(context.nodeType())
+                || "SPATIAL_DENSITY".equals(context.nodeType())
+                || "SPATIAL_HOT_SPOTS".equals(context.nodeType())
+                || "SPATIAL_MULTI_VARIABLE_GRID".equals(context.nodeType())
+                || "SPATIAL_ENRICH_FROM_GRID".equals(context.nodeType())
+                || "SPATIAL_GROUP_BY_PROXIMITY".equals(context.nodeType())
+                || "TRACE_PROXIMITY_EVENTS".equals(context.nodeType())
+                || "SNAP_TRACKS".equals(context.nodeType())
+                || "SPATIAL_SIMILAR_LOCATIONS".equals(context.nodeType())
+                || "SPATIAL_DESCRIBE_DATASET".equals(context.nodeType()))
                 && spatialLibraryFailure(causeText)) {
             return failure("SPATIAL_ANALYSIS_FAILED", ExecutionErrorCategory.SCHEMA);
         }
@@ -233,6 +333,7 @@ final class RunnerFailureClassifier {
         if (causeText.contains("track_geodesic_vertex_limit_exceeded")) return failure("TRACK_GEODESIC_VERTEX_LIMIT_EXCEEDED", ExecutionErrorCategory.CONFIGURATION);
         if (causeText.contains("invalid_track_geodesic_segment_length")) return failure("INVALID_TRACK_GEODESIC_SEGMENT_LENGTH", ExecutionErrorCategory.CONFIGURATION);
         if (causeText.contains("track_buffer_distance_invalid")) return failure("TRACK_BUFFER_DISTANCE_INVALID", ExecutionErrorCategory.SCHEMA);
+        if (causeText.contains("geometry_buffer_distance_value_invalid")) return failure("GEOMETRY_BUFFER_DISTANCE_VALUE_INVALID", ExecutionErrorCategory.SCHEMA);
         if (causeText.contains("track_area_geometry_invalid")) return failure("TRACK_AREA_GEOMETRY_INVALID", ExecutionErrorCategory.SCHEMA);
         if (causeText.contains("track_area_vertex_limit_exceeded")) return failure("TRACK_AREA_VERTEX_LIMIT_EXCEEDED", ExecutionErrorCategory.SCHEMA);
         if (causeText.contains("track_geodesic_buffer_range_not_supported")) return failure("TRACK_GEODESIC_BUFFER_RANGE_NOT_SUPPORTED", ExecutionErrorCategory.SCHEMA);
@@ -569,11 +670,15 @@ final class RunnerFailureClassifier {
             case "SPATIAL_H3_BOUNDARY_INVALID" -> "H3 格网边界无法可靠生成，请检查格网配置";
             case "SPATIAL_H3_RUNTIME_UNAVAILABLE" -> "Runner 无法加载 H3 本地运行库，请检查制品和运行架构";
             case "SPATIAL_NEAREST_GEOMETRY_INVALID" -> "最近邻遇到无效 Geometry 或坐标，请先校验输入";
-            case "GEODESIC_NEAREST_REQUIRES_POINTS" -> "当前真实测地最近位置仅支持 Point，不使用质心替代";
+            case "GEODESIC_NEAREST_REQUIRES_POINTS" -> "当前最近邻配置使用仅 Point 的测地兼容模式，不使用质心替代";
             case "SPATIAL_NEAREST_SOURCE_ID_INVALID" -> "最近邻来源身份字段包含空值或重复值";
             case "SPATIAL_NEAREST_CANDIDATE_ID_INVALID" -> "最近邻候选身份字段包含空值或重复值";
             case "SPATIAL_NEAREST_DISTANCE_INVALID" -> "最近邻距离超出可表示范围，请检查输入坐标和单位";
             case "SPATIAL_NEAREST_CONNECTION_VERTEX_LIMIT_EXCEEDED" -> "测地连接线顶点数超过安全上限，请增大最大段长";
+            case "SPATIAL_JOIN_KEEP_ORDER_NOT_UNIQUE" -> "空间连接保留规则仍存在并列记录，请增加能够唯一确定顺序的稳定排序字段";
+            case "SPATIAL_JOIN_GEOMETRY_INVALID" -> "空间 Near 遇到无效 Geometry 或经纬度，请先校验输入";
+            case "SPATIAL_JOIN_DISTANCE_INVALID" -> "空间 Near 距离超出可表示范围，请检查输入坐标和输出单位";
+            case "SPATIAL_JOIN_TEMPORAL_DIFFERENCE_INVALID" -> "空间连接时间差超出可表示范围，请检查时间字段";
             case "SPATIAL_SUMMARIZE_WITHIN_FAILED" -> "区域内汇总失败";
             case "SPATIAL_WITHIN_AREA_KEY_INVALID" -> "区域唯一键存在空值或重复值，请修正区域来源数据";
             case "SPATIAL_OVERLAY_FAILED" -> "空间叠加失败";
@@ -603,12 +708,14 @@ final class RunnerFailureClassifier {
             case "SPATIAL_HDBSCAN_TREE_INVALID" -> "HDBSCAN 内部生成树或层次关系不一致，未返回聚类结果，请联系维护人员";
             case "SPATIAL_HDBSCAN_HIERARCHY_LIMIT_EXCEEDED" -> "HDBSCAN 层次计算超过当前资源保护上限，未返回部分聚类结果";
             case "SPATIAL_HDBSCAN_NUMERIC_RANGE_INVALID" -> "HDBSCAN 距离或密度超出可靠数值范围，未返回未经验证的诊断结果";
+            case "SPATIAL_DISSOLVE_GEOMETRY_INVALID" -> "空间连通组 Dissolve 遇到无效或非面状 Geometry，请先校验输入";
             case "TRACK_SPATIAL_ANALYSIS_FAILED" -> "轨迹空间分析失败";
             case "TRACK_OBSERVATION_ORDER_NOT_UNIQUE" -> "轨迹存在无法区分次序的同时间观测，请配置同时间顺序字段";
             case "TRACK_DWELL_POINT_INVALID" -> "驻留分析存在不合法的点坐标，请检查 Geometry 类型和坐标范围";
             case "TRACK_MOTION_POINT_INVALID" -> "运动统计存在不合法的点坐标，请检查 Geometry 类型和坐标范围";
             case "TRACK_DWELL_CENTER_UNDEFINED" -> "驻留候选的测地均值中心无法确定，请检查分析范围";
             case "GEOMETRY_BUFFER_FAILED" -> "Geometry Buffer 计算失败";
+            case "GEOMETRY_BUFFER_DISTANCE_VALUE_INVALID" -> "Buffer 逐行距离包含非正数、NaN 或无穷值，请检查距离字段或表达式";
             case "GEOMETRY_EXPLODE_FAILED" -> "Geometry 拆分失败";
             case "SPATIAL_CLIP_FAILED" -> "空间裁剪失败";
             case "SPATIAL_AGGREGATE_FAILED" -> "空间聚合失败";
@@ -769,6 +876,15 @@ final class RunnerFailureClassifier {
                 || "SPATIAL_BIN_AGGREGATE".equals(nodeType)
                 || "SPATIAL_POINT_CLUSTER".equals(nodeType)
                 || "SPATIAL_CENTER_DISPERSION".equals(nodeType)
+                || "SPATIAL_DENSITY".equals(nodeType)
+                || "SPATIAL_HOT_SPOTS".equals(nodeType)
+                || "SPATIAL_MULTI_VARIABLE_GRID".equals(nodeType)
+                || "SPATIAL_ENRICH_FROM_GRID".equals(nodeType)
+                || "SPATIAL_GROUP_BY_PROXIMITY".equals(nodeType)
+                || "TRACE_PROXIMITY_EVENTS".equals(nodeType)
+                || "SNAP_TRACKS".equals(nodeType)
+                || "SPATIAL_SIMILAR_LOCATIONS".equals(nodeType)
+                || "SPATIAL_DESCRIBE_DATASET".equals(nodeType)
                 || "TRACK_RECONSTRUCT".equals(nodeType)
                 || "TRACK_MOTION_STATISTICS".equals(nodeType)
                 || "TRACK_FIND_DWELL".equals(nodeType)

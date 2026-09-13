@@ -59,6 +59,7 @@ public class DataEntryImportService {
     private final DataEntryHealthService healthService;
     private final DataEntryImportFileReader fileReader;
     private final DataEntryOperationLogService logService;
+    private final DataEntryRecordChangeService changeService;
     private final DataEntryPhysicalMutationPort physicalMutationPort;
     private final DataModelRepository modelRepository;
     private final DataModelFieldRepository fieldRepository;
@@ -73,6 +74,7 @@ public class DataEntryImportService {
             DataEntryHealthService healthService,
             DataEntryImportFileReader fileReader,
             DataEntryOperationLogService logService,
+            DataEntryRecordChangeService changeService,
             DataEntryPhysicalMutationPort physicalMutationPort,
             DataModelRepository modelRepository,
             DataModelFieldRepository fieldRepository,
@@ -86,6 +88,7 @@ public class DataEntryImportService {
         this.healthService = healthService;
         this.fileReader = fileReader;
         this.logService = logService;
+        this.changeService = changeService;
         this.physicalMutationPort = physicalMutationPort;
         this.modelRepository = modelRepository;
         this.fieldRepository = fieldRepository;
@@ -127,12 +130,49 @@ public class DataEntryImportService {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "导入文件仍包含未解决问题，不能写入目标表");
             }
             requireSubmittable(analysis.snapshot());
+            java.util.concurrent.atomic.AtomicInteger sequence = new java.util.concurrent.atomic.AtomicInteger(1);
+            DataEntryImportBatchListener listener = new DataEntryImportBatchListener() {
+                private List<UUID> pendingIds = List.of();
+
+                @Override
+                public void beforeBatch(List<Map<String, Object>> rows) {
+                    pendingIds = changeService.prepare(analysis.snapshot().form(), log.getId(),
+                            DataEntryOperationType.IMPORT, username, sequence.getAndAdd(rows.size()),
+                            analysis.snapshot().fields(), rows, null);
+                }
+
+                @Override
+                public void afterBatch(List<Map<String, Object>> rows, List<Integer> confirmedSuccessIndexes,
+                        boolean resultUnknown, String errorCode, String errorMessage) {
+                    List<Integer> succeeded = confirmedSuccessIndexes.stream()
+                            .filter(index -> index >= 0 && index < rows.size()).toList();
+                    List<Map<String, Object>> actual = List.of();
+                    if (!succeeded.isEmpty()) {
+                        try {
+                            List<Map<String, Object>> successfulRows = succeeded.stream().map(rows::get).toList();
+                            actual = physicalMutationPort.queryRecords(
+                                    analysis.snapshot().dataSource(), analysis.snapshot().model(), analysis.snapshot().fields(),
+                                    analysis.validationContext().primaryKeys(), successfulRows.stream()
+                                            .map(row -> businessKey(row, analysis.validationContext().primaryKeys())).toList());
+                        } catch (RuntimeException readbackException) {
+                            changeService.completeAfterReadbackFailure(pendingIds, succeeded, resultUnknown,
+                                    "IMPORT_READBACK_FAILED",
+                                    "导入批次已写入但实际值回读失败，请人工核对；系统不会自动重试");
+                            pendingIds = List.of();
+                            throw readbackException;
+                        }
+                    }
+                    changeService.completeByIndexes(
+                            pendingIds, succeeded, resultUnknown, errorCode, errorMessage, actual);
+                    pendingIds = List.of();
+                }
+            };
             DataEntryPhysicalMutationResult result = physicalMutationPort.insertBatch(
                     analysis.snapshot().dataSource(), analysis.snapshot().model(), analysis.snapshot().fields(),
                     consumer -> fileReader.read(
                             file, analysis.format(), analysis.snapshot().fields(),
                             raw -> consumer.accept(requireNormalized(raw, analysis.validationContext()))
-                    )
+                    ), listener
             );
             String payload = json(analysis.logPayload());
             if (!result.completed()) {

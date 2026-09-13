@@ -81,6 +81,15 @@ public final class DatabaseSpatialPreviewExecutor {
             if ("57014".equals(exception.getSQLState())) {
                 throw new DatabaseAccessException("QUERY_TIMEOUT", "空间预览查询超时", exception);
             }
+            if ("42P01".equals(exception.getSQLState())
+                    || "42703".equals(exception.getSQLState())
+                    || "42883".equals(exception.getSQLState())) {
+                throw new DatabaseAccessException(
+                        "SPATIAL_PREVIEW_UNAVAILABLE",
+                        "目标数据库缺少空间预览所需的 PostGIS 兼容系统表、字段或函数",
+                        exception
+                );
+            }
             throw new DatabaseAccessException("DATABASE_ERROR", "空间预览数据库访问失败", exception);
         }
     }

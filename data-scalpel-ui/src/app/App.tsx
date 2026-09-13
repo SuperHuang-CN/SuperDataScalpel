@@ -2,7 +2,6 @@ import { SystemMcpPage } from '../modules/system-mcp';
 import { lazy, Suspense } from 'react';
 import { createBrowserRouter, createRoutesFromElements, Navigate, Route, RouterProvider, useParams } from 'react-router-dom';
 import { DashboardPage } from '../modules/dashboard';
-import { LlmModelManagementPage } from '../modules/assistant';
 import { ComputeEngineDetailPage, ComputeEnginePage } from '../modules/computeengine';
 import { DataSourcePage } from '../modules/datasource';
 import { ApiConsumerPage } from '../modules/dataservice/pages/ApiConsumerPage';
@@ -158,7 +157,6 @@ const router = createBrowserRouter(createRoutesFromElements(
             <Route path="system/system-mcp" element={<RequirePermission permission="system.mcp.view"><SystemMcpPage /></RequirePermission>} />
             <Route path="system/configurations" element={<RequirePermission permission="system.configuration.view"><SystemConfigurationPage /></RequirePermission>} />
             <Route path="system/model-warehouse-layers" element={<RequirePermission permission="system.configuration.view"><ModelWarehouseLayerPage /></RequirePermission>} />
-            <Route path="system/ai-models" element={<RequirePermission permission="system.configuration.view"><LlmModelManagementPage /></RequirePermission>} />
             <Route path="system/users" element={<RequirePermission permission="system.user.view"><SystemUserManagementPage /></RequirePermission>} />
             <Route path="system/roles" element={<RequirePermission permission="system.role.view"><SystemRoleManagementPage /></RequirePermission>} />
             <Route path="system/permissions" element={<RequirePermission permission="system.permission.view"><SystemPermissionManagementPage /></RequirePermission>} />

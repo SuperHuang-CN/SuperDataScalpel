@@ -31,10 +31,57 @@ class SystemMcpContractTest {
         schemas.validate(c.path("inputSchema"),mapper.readTree("{\"body\":4}"));
         assertThrows(ResponseStatusException.class,()->schemas.validate(c.path("inputSchema"),mapper.readTree("{\"body\":0}")));
     }
+    @Test void rejectsPolymorphicInheritanceCycleBeforeValidation() {
+        var schema = mapper.readTree("""
+            {"$ref":"#/$defs/Base","$defs":{
+              "Base":{"oneOf":[{"$ref":"#/$defs/Child"}]},
+              "Child":{"allOf":[{"$ref":"#/$defs/Base"},{"type":"object"}]}
+            }}
+            """);
+        var failure = assertThrows(IllegalArgumentException.class, () -> schemas.check(schema));
+        assertTrue(failure.getMessage().contains("循环引用"));
+    }
     @Test void rejectsFileResponseBehindLocalReference() {
         var doc = mapper.readTree("{\"components\":{\"responses\":{\"Download\":{\"description\":\"file\",\"content\":{\"application/octet-stream\":{\"schema\":{\"type\":\"string\",\"format\":\"binary\"}}}}}}}");
         var operation = mapper.readTree("{\"responses\":{\"200\":{\"$ref\":\"#/components/responses/Download\"}}}");
         assertThrows(IllegalArgumentException.class, () -> builder.build(doc, mapper.createObjectNode(), operation));
+    }
+
+    @Test void preservesBusinessFieldsNamedAfterSchemaKeywords() {
+        var doc = mapper.readTree("""
+            {"components":{"schemas":{"Column":{"type":"object","properties":{
+              "nullable":{"type":"boolean"},
+              "format":{"type":"string"},
+              "$ref":{"type":"string"},
+              "example":{"type":"string","nullable":true},
+              "enum":{"type":"number","minimum":0,"exclusiveMinimum":true},
+              "allOf":{"type":"string"}
+            },"example":{"nullable":true,"format":"binary"}}}}}
+            """);
+        var operation = mapper.readTree("""
+            {"requestBody":{"content":{"application/json":{"schema":{"$ref":"#/components/schemas/Column"}}}},
+             "responses":{"200":{"content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/Column"}}}}}}}
+            """);
+        var contract = builder.build(doc, mapper.createObjectNode(), operation);
+        var column = contract.path("components").path("schemas").path("Column");
+        assertEquals("boolean", column.path("properties").path("nullable").path("type").asText());
+        assertTrue(column.path("properties").path("example").has("anyOf"));
+        assertEquals(doc.path("components").path("schemas").path("Column").path("example"), column.path("example"));
+        schemas.validate(contract.path("inputSchema"), mapper.readTree("""
+            {"body":{"nullable":false,"format":"text","$ref":"business value","example":null,"enum":1,"allOf":"value"}}
+            """));
+        assertThrows(ResponseStatusException.class, () -> schemas.validate(contract.path("inputSchema"),
+                mapper.readTree("{\"body\":{\"nullable\":\"wrong type\"}}")));
+        assertThrows(ResponseStatusException.class, () -> schemas.validate(contract.path("inputSchema"),
+                mapper.readTree("{\"body\":{\"enum\":0}}")));
+    }
+
+    @Test void rejectsBinarySchemaEvenWhenBusinessFieldIsNamedExample() {
+        var operation = mapper.readTree("""
+            {"responses":{"200":{"content":{"application/json":{"schema":{"type":"object",
+              "properties":{"example":{"type":"string","format":"binary"}}}}}}}}
+            """);
+        assertThrows(IllegalArgumentException.class, () -> builder.build(mapper.createObjectNode(), mapper.createObjectNode(), operation));
     }
 
 }

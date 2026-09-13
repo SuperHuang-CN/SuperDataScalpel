@@ -87,10 +87,13 @@ public final class ModelSnapshotSyncOutputNodeOperator implements CanvasNodeOper
         }
         if (dataSource != null
                 && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.POSTGRESQL
-                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL) {
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.HIGHGO
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.MYSQL
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.OPENGAUSS
+                && dataSource.metadata().jdbcDatabaseType() != CanvasJdbcDatabaseType.KINGBASE) {
             issues.error(
                     "MODEL_SNAPSHOT_SYNC_DATABASE_NOT_SUPPORTED",
-                    "模型快照同步只支持 PostgreSQL 和 MySQL",
+                    "模型快照同步只支持 PostgreSQL、HighGo、MySQL、openGauss 和人大金仓",
                     "configuration.targetModelId"
             );
         }

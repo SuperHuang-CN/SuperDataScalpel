@@ -155,7 +155,7 @@ LocalSqlWriteMode
   OVERWRITE
 ```
 
-`OVERWRITE` 语义为“清空输出表后写入本次查询结果”。第一阶段仅 PostgreSQL 在同一外部 JDBC 事务中实现并声明此能力；其他方言保存草稿时可选择，但发布、校验和运行会返回 `WRITE_MODE_UNSUPPORTED`。ClickHouse 第一阶段只支持 `APPEND`。
+`OVERWRITE` 语义为“清空输出表后写入本次查询结果”。PostgreSQL、HighGo、openGauss 与人大金仓在同一外部 JDBC 事务中实现并声明此能力；其他方言保存草稿时可选择，但发布、校验和运行会返回 `WRITE_MODE_UNSUPPORTED`。ClickHouse 只支持 `APPEND`。
 
 ## 状态与修改规则
 
@@ -481,7 +481,7 @@ modules/task/
 - Local SQL V1 不支持 Geometry 模型输入或输出，不把空间列映射为字符串或二进制。
 - `POST /api/v1/tasks/{id}/actions/run` 只接受已发布任务，并立即创建 `TaskRun` 后提交到有界本地线程池；默认并发为 4、队列为 100，可通过 `DATASCALPEL_TASK_RUN_CONCURRENCY`、`DATASCALPEL_TASK_RUN_QUEUE_CAPACITY` 调整。
 - `TaskRun` 保存无凭据的定义版本快照，状态为 `QUEUED`、`RUNNING`、`SUCCESS`、`FAILED` 或 `TIMED_OUT`。同一任务同时只允许一个活动实例；应用启动时把遗留活动实例标为失败，不尝试恢复外部 JDBC 语句。
-- `APPEND` 执行方言生成的单条 `INSERT INTO ... SELECT`。PostgreSQL `OVERWRITE` 在同一个外部事务中先执行受控清空、再写入，异常时回滚；不对 ClickHouse 或其他方言静默执行 `TRUNCATE + INSERT`。
+- `APPEND` 执行方言生成的单条 `INSERT INTO ... SELECT`。PostgreSQL、HighGo、openGauss 与人大金仓的 `OVERWRITE` 在同一个外部事务中先执行受控清空、再写入，异常时回滚；不对其他方言静默执行 `TRUNCATE + INSERT`。
 - 前端任务列表、定义页、Monaco 编辑器、结构化校验结果和运行记录轮询已接入；Monaco 仅由定义页懒加载。
 
 自动化测试已覆盖八种方言的 SQL 形状、任务定义生命周期、引用保护和运行记录入队。`PostgreSqlLocalSqlTaskIntegrationTest` 还会在可选 PostgreSQL 环境中通过完整任务 Service 与异步 Worker 验收普通/CTE `APPEND`、查询列顺序、列级发布拒绝、运行失败、超时、同任务并发限制、事务性 `OVERWRITE` 回滚、停用/重新启用和无凭据运行快照。该验收已于 2026-07-14 执行通过。
@@ -491,7 +491,8 @@ modules/task/
 | 数据库 | 第一阶段能力 | 验证状态 |
 | --- | --- | --- |
 | PostgreSQL | `APPEND`、事务性 `OVERWRITE` | 方言单测与真实任务集成测试已通过 |
+| HighGo、openGauss、人大金仓 | `APPEND`、事务性 `OVERWRITE` | PostgreSQL 家族方言契约测试；未执行真实库验收 |
 | ClickHouse | `APPEND` | 方言渲染/目标字段顺序单测；未执行真实库验收 |
-| MySQL、Oracle、SQL Server、达梦、人大金仓、openGauss | `APPEND` | 方言渲染单测；未执行真实库验收 |
+| MySQL、Oracle、SQL Server、达梦 | `APPEND` | 方言渲染单测；未执行真实库验收 |
 
 真实 PostgreSQL 验收通过 `DATASCALPEL_PG_INTEGRATION=true` 启用；环境变量和执行命令见[开发计划](./local-sql-task-development-plan.md#postgresql-真实验收的复现方式)。

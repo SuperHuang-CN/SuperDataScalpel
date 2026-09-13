@@ -25,7 +25,6 @@ import {
   type CreateDataSourceRequest,
   type ConnectionTestResult,
   type DataSource,
-  type DataSourceAssistantDraft,
   type DataSourceConnectionInput,
   type DataSourceConnectionKind,
   type DataSourcePurpose,
@@ -50,7 +49,6 @@ interface DataSourceDrawerProps {
   dataSource: DataSource | null;
   open: boolean;
   initialDirectoryId?: string;
-  initialDraft?: DataSourceAssistantDraft | null;
   canViewDirectories: boolean;
   canTest: boolean;
   onClose: () => void;
@@ -173,6 +171,7 @@ const jdbcUrlPreview = (
   switch (type) {
     case 'MYSQL': return `jdbc:mysql://${host}:${port}/${database}`;
     case 'POSTGRESQL': return `jdbc:postgresql://${host}:${port}/${database}`;
+    case 'HIGHGO': return `jdbc:highgo://${host}:${port}/${database}`;
     case 'ORACLE':
       return connection?.options?.connectionMode?.toUpperCase() === 'SID'
         ? `jdbc:oracle:thin:@${host}:${port}:${databaseName}`
@@ -237,7 +236,7 @@ const defaultConnection = (
       {
         const optionValues = defaultJdbcConnectionOptions(definition?.connectionOptions ?? []);
         return {
-          port: definition?.defaultPort ?? (type === 'POSTGRESQL' ? 5432 : undefined),
+          port: definition?.defaultPort ?? (type === 'POSTGRESQL' ? 5432 : type === 'HIGHGO' ? 5866 : undefined),
           schemaName: definition?.defaultSchema ?? undefined,
           ...optionValues,
         };
@@ -522,7 +521,6 @@ export const DataSourceDrawer = ({
   dataSource,
   open,
   initialDirectoryId,
-  initialDraft,
   canViewDirectories,
   canTest,
   onClose,
@@ -556,15 +554,14 @@ export const DataSourceDrawer = ({
     if (!open) return;
     form.resetFields();
     if (dataSource) {
-      const updateDraft = initialDraft?.mode === 'UPDATE' ? initialDraft : null;
       form.setFieldsValue({
         code: dataSource.code,
-        name: updateDraft?.name ?? dataSource.name,
-        directoryId: updateDraft ? (updateDraft.directoryId ?? undefined) : (dataSource.directoryId ?? undefined),
-        purposes: updateDraft?.purposes ?? dataSource.purposes,
+        name: dataSource.name,
+        directoryId: dataSource.directoryId ?? undefined,
+        purposes: dataSource.purposes,
         type: dataSource.type,
-        enabled: updateDraft?.enabled ?? dataSource.enabled,
-        description: updateDraft ? (updateDraft.description ?? undefined) : (dataSource.description ?? undefined),
+        enabled: dataSource.enabled,
+        description: dataSource.description ?? undefined,
         connection: setEditingConnection(
           dataSource,
           dataSourceTypesQuery.data?.find((item) => item.id === dataSource.type),
@@ -572,19 +569,16 @@ export const DataSourceDrawer = ({
       });
       return;
     }
-    const createDraft = initialDraft?.mode === 'CREATE' ? initialDraft : null;
-    const defaultType: DataSourceType = createDraft?.type ?? 'POSTGRESQL';
+    const defaultType: DataSourceType = 'POSTGRESQL';
     form.setFieldsValue({
-      code: createDraft?.code,
-      name: createDraft?.name,
-      directoryId: createDraft ? (createDraft.directoryId ?? undefined) : initialDirectoryId,
-      purposes: createDraft?.purposes ?? ['SOURCE'],
+      directoryId: initialDirectoryId,
+      purposes: ['SOURCE'],
       type: defaultType,
-      enabled: createDraft?.enabled ?? true,
-      description: createDraft?.description ?? undefined,
+      enabled: true,
+      description: undefined,
       connection: defaultConnection(defaultType, dataSourceTypesQuery.data?.find((item) => item.id === defaultType)),
     });
-  }, [dataSource, dataSourceTypesQuery.data, form, initialDirectoryId, initialDraft, open]);
+  }, [dataSource, dataSourceTypesQuery.data, form, initialDirectoryId, open]);
 
   const closeDrawer = () => {
     setTestFailure(null);

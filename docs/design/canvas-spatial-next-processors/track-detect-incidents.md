@@ -18,10 +18,10 @@
 相邻观测距离边界使用公共距离单位。事件状态机、时间单位与固定时间边界不因距离单位扩充而改变。
 单位名称明确国际制/美国测量制，切换不自动换算数值，旧单位结果不变。具体枚举、字段和证据见[公共空间单位](../canvas-spatial-units.md)；不代表整节点已完成官方对照。
 
-### 当前阅读入口与对齐边界（4.46 汇总）
+### 当前阅读入口与对齐边界（4.67 汇总）
 
-- **已接入范围**：4.21 的显式生命周期、状态字段、确定次序及边界见第 7 节；4.46 的受控字段窗口见第 8 节。
-- **官方参照与差异**：参照 GA Detect Incidents；字段窗口已接入，完整 Arcade 几何/运动/时间表达式和官方边界对照仍待完成。
+- **已接入范围**：4.21 的显式生命周期、状态字段、确定次序及边界见第 7 节；4.46 的受控字段窗口见第 8 节；4.63～4.65 的距离、速度和加速度窗口来源见第 9～11 节；4.66 的轨迹时间/序号标量见第 12 节；4.67 的相对观测 Point X/Y 标量见第 13 节。
+- **官方参照与差异**：参照 GA Detect Incidents；字段、累计轨迹距离、逐观测速度和加速度窗口，开始/当前时间、时长和序号标量，以及 Point 的受控相对观测 X/Y 访问已接入；完整 Arcade Geometry/TrackWindow、整行对象、其他表达式和官方边界对照仍待完成。
 - **面板修订要求**：开始条件、可选结束条件及结果模式分开；条件值不进入 Canvas 摘要。
 
 本摘要不替代逐版本契约。下节的“当前”均指 4.20 历史状态；目标线框不作为已实现截图。
@@ -84,7 +84,7 @@ interface TrackDetectIncidentsConfiguration {
 ## 4. 目标 Inspector UI
 
 设计状态：第 7 节（4.21）明确生命周期、次序与逐观测时长，第 8 节（4.46）已接入受控字段窗口。
-完整 Arcade 几何/运动/时间表达式和未核实的结果模式仍为目标，不添加假可用入口；事件成员、Ended 标记行及最终汇总不是同一种输出粒度。
+完整 Arcade Geometry/TrackWindow、其他受控表达式和未核实的结果模式仍为目标，不添加假可用入口；事件成员、Ended 标记行及最终汇总不是同一种输出粒度。
 
 ```text
 来源表              [ vehicle_events ▼]
@@ -163,7 +163,9 @@ Inspector 用确认框切换新旧策略，条件/字段/边界设置按需打�
 
 已通过本地 Spark 官方示例真值表、start/end 同时成立、重复开始、结束后重开、NULL、次序歧义、
 固定边界重置和旧策略回归；月末、闰年、夏令时另有单元验证。
-该阶段之后，4.46 增加下述受控字段窗口。完整 Arcade 轨迹表达式、真实 ArcGIS 服务对照（特别是 Incidents 输出范围）仍待完成。
+该阶段之后，4.46 增加下述受控字段窗口，4.63～4.65 又加入受控距离、速度和加速度窗口来源，
+4.66 加入轨迹时间与序号标量，4.67 加入 Point 的受控相对观测 X/Y 标量。完整 Arcade Geometry/TrackWindow、其他受控表达式及真实 ArcGIS 服务对照
+（特别是 Incidents 输出范围）仍待完成。
 
 ## 8. 4.46 受控字段窗口条件
 
@@ -234,6 +236,174 @@ conditionWindows?: TrackIncidentWindow[];
 
 专项覆盖官方 [-1,2) 示例、[-5,0) 不含当前、未来单点窗口、片段/轨迹重置、同时间次序、全部九函数的 NULL/空窗、
 草稿门槛、别名冲突、禁止指标互引、输出隔离、零 Job 与 FIELD_COMPLETE 原字段血缘；执行结果记于开发清单。
-这是受控字段窗口的接入，不是完整 Arcade 兼容声明。TrackGeometryWindow、TrackWindow 原始复合对象、
-TrackDistance/Speed/Acceleration、时间范围窗口和更丰富受控计算仍在路线图范围内；没有将未实现组合改写成已完成。
+这是受控字段窗口的接入，不是完整 Arcade 兼容声明。后续 4.63～4.65 已补距离、速度与加速度窗口；
+TrackGeometryWindow、TrackWindow 原始复合对象和更丰富受控计算仍在路线图范围内。Distance/Speed/
+Acceleration 的 Current 可由对应来源的 `FIRST + [0,1)` 表达，At(n) 可由 `FIRST + [n,n+1)` 表达，
+不再作为独立协议缺口；没有将复合对象或任意 Arcade 改写成已完成。
 真实 ArcGIS 服务结果、全页面交互与大轨迹容量尚未验收，本节点完成复选框保持开放。
+
+## 9. 4.63 受控轨迹距离窗口
+
+2026-09-12 再次核对 Enterprise 11.3 官方表达式文档：`TrackDistanceWindow(start,end)` 返回
+以当前观测为 0 的左闭右开范围内、各观测对应的累计轨迹距离；官方统一使用 WGS84 测地线，单位为米。
+例如官方 `[-1,2)` 示例在第二个观测返回 `[0,60,140]`：这是片段首点、当前点和下一点的三个累计值，
+不是两个相邻段距离。
+
+`TrackIncidentWindow` 增加可选 `source: FIELD|TRACK_DISTANCE|null`：
+
+- 缺失/null/FIELD 完全保留 4.46 的 `sourceColumnName` 字段窗口。
+- TRACK_DISTANCE 忽略保留的 `sourceColumnName` 草稿，对范围内逐观测累计距离使用现有九种聚合；
+  片段首观测累计值为 0，单观测窗口同样包含该值。
+- 轨迹距离只支持 EPSG:4326 XY Point，距离固定为米，不复用轨迹分段的平面/测地线选项；NULL Point
+  及其之后无法证明完整累计距离的观测返回 NULL，直到新片段重新从 0 开始，并沿用所选聚合的 NULL 规则。
+- 先完成轨迹、固定边界/gap 分段和确定次序，再累计轨迹距离；窗口不跨轨迹或片段。所有绑定仍一次性
+  从准备后的原观测求值，不能引用其他绑定，也不进入结果 Schema。
+- 任何 TRACK_DISTANCE（包括 LEGACY 下的非活动草稿）要求 Canvas 4.63；稳定门槛为
+  `TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION`。缺 Geometry 为
+  `TRACK_INCIDENT_DISTANCE_WINDOW_REQUIRES_GEOMETRY`，非 Point 或非 WGS84 XY 复用既有空间错误码。
+- Inspector 的同一窗口表格增加“原始字段/轨迹距离”来源选择；选择轨迹距离时只显示“累计轨迹距离 · 米”，
+  实际坐标、距离和条件字面量不进入 Canvas 或日志。Canvas 仅显示轨迹距离窗口数量。
+
+该阶段只接入官方 TrackDistanceWindow 的受控标量聚合。Current/At 后续明确由对应来源的单观测窗口
+等价表达，不另建类型；Geometry 数组或任意 Arcade 执行仍未支持。
+
+## 10. 4.64 受控轨迹速度窗口
+
+2026-09-12 核对同一份 Enterprise 11.3 官方表达式文档：`TrackCurrentSpeed()` 是前一观测到当前观测
+的速度，`TrackSpeedWindow(start,end)` 返回以当前观测为 0 的左闭右开范围内逐观测速度数组。所有距离
+使用 WGS84 测地线，速度单位固定为米/秒；官方示例的片段首观测速度为 0，`[-1,2)` 在第二个观测返回
+首点、当前点和下一点的三个速度值。
+
+`TrackIncidentWindow.source` 增加 `TRACK_SPEED`：
+
+- 复用九种受控聚合，窗口直接覆盖 `[startOffset,endOffset)` 中的逐观测速度；不把范围内总距离除以
+  总时长，也不聚合相邻段数组。
+- 片段首观测速度固定为 0。后续速度为上一观测到当前观测的 WGS84 测地距离除以秒；同时间、NULL Point、
+  前一点缺失或无法形成有效时长时返回 NULL。这是平台防除零与缺失值约定，不伪称官方已覆盖异常输入。
+- 只支持 EPSG:4326 XY Point，不复用 `distanceMethod`，不跨轨迹、固定边界或 gap 片段；范围边缘自然裁剪。
+- 任意 TRACK_SPEED（包括 LEGACY 非活动草稿）要求 Canvas 4.64；稳定门槛为
+  `TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION`。缺 Geometry 为
+  `TRACK_INCIDENT_SPEED_WINDOW_REQUIRES_GEOMETRY`，其他 Geometry 限制复用既有错误码。
+- Inspector 的同一窗口表格增加“轨迹速度”来源，显示“逐观测速度 · 米/秒”；条件、Canvas 和 Runner
+  继续只暴露安全计数，不记录坐标、实际速度、偏移或条件字面量。
+
+该阶段只接入官方 TrackSpeedWindow 的受控标量聚合。TrackCurrentSpeed/TrackSpeedAt 后续明确由
+单观测窗口等价表达，不另建类型；Geometry 数组或任意 Arcade 执行仍未支持。
+
+## 11. 4.65 受控轨迹加速度窗口
+
+Enterprise 11.3 将 `TrackCurrentAcceleration()` 定义为前一观测与当前观测之间的加速度，
+`TrackAccelerationWindow(start,end)` 返回左闭右开范围内的逐观测加速度数组；官方示例使用米/秒²，
+片段首观测为 0。平台以当前速度减前一观测速度，再除以两次观测的秒数实现该定义。
+
+`TrackIncidentWindow.source` 增加 `TRACK_ACCELERATION`：
+
+- 窗口直接聚合 `[startOffset,endOffset)` 中逐观测加速度，复用九种受控聚合，不将整个范围简化成首尾
+  速度差除以总时长。
+- 片段首观测加速度为 0；后续值使用 4.64 相同的 WGS84 逐观测速度。同时间、当前或前一速度为 NULL、
+  当前或前一 Point 缺失时返回 NULL，不除以 0。
+- 只支持 EPSG:4326 XY Point，不读取 `distanceMethod`，不跨轨迹、固定边界或 gap 片段。
+- 任意 TRACK_ACCELERATION（包括 LEGACY 非活动草稿）要求 Canvas 4.65；稳定门槛为
+  `TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION`。缺 Geometry 为
+  `TRACK_INCIDENT_ACCELERATION_WINDOW_REQUIRES_GEOMETRY`，其他 Geometry 限制复用既有错误码。
+- Inspector 显示“逐观测加速度 · 米/秒²”；条件、Canvas 与 Runner 继续只保留安全计数。
+
+该阶段只接入官方 TrackAccelerationWindow 的受控标量聚合。TrackCurrentAcceleration/
+TrackAccelerationAt 后续明确由单观测窗口等价表达，不另建类型；Geometry 数组或任意 Arcade 执行仍未支持。
+
+## 12. 4.66 受控轨迹时间与序号标量
+
+2026-09-12 核对 Enterprise 11.3 官方条件表达式文档：`TrackStartTime()` 返回轨迹开始时间的 Unix
+Epoch 毫秒，`TrackDuration()` 返回轨迹开始至当前观测的毫秒数，`TrackCurrentTime()` 返回当前观测
+时间的 Epoch 毫秒，`TrackIndex` 在轨迹首观测返回 0。这四项不是窗口数组，也不应配置 SUM/MEAN 等
+聚合函数，因此没有继续扩张 `TrackIncidentWindow.source`。
+
+配置新增独立数组：
+
+```ts
+interface TrackIncidentScalar {
+  bindingName: string;
+  source: 'TRACK_START_TIME' | 'TRACK_DURATION' | 'TRACK_CURRENT_TIME' | 'TRACK_INDEX' | null;
+}
+
+// TrackDetectIncidentsConfiguration 可选追加
+conditionScalars?: TrackIncidentScalar[];
+```
+
+- 缺失/null 规范化为 `[]`；非空数组（含 LEGACY 非活动草稿）要求 Canvas 4.66，低版本使用
+  `TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION` 拒绝。
+- 四种结果统一为 LONG。开始/当前时间精确到 Epoch 毫秒，时长为当前时间减片段首观测时间，序号使用
+  确定排序后的零基行号；不使用 DATE/TIMESTAMP，避免条件字面量单位含糊。
+- DataScalpel 的固定时间边界、相邻时间 gap 或距离 gap 会形成新的执行片段，因此开始时间、时长和序号
+  随片段重置。这是平台在已有分段扩展下的明确语义，不伪称 ArcGIS 对自有 gap 参数作过同样定义。
+- 标量名遵循窗口指标相同的 ASCII 标识符规则，并与来源字段、窗口指标和其他标量大小写不敏感唯一。
+  空名或空来源允许保存草稿，Compiler 分别使用 `TRACK_INCIDENT_SCALAR_NAME_INVALID` 或
+  `REQUIRED_CONFIGURATION` 拒绝执行。
+- Inspector 使用独立 680px 紧凑表格，不展示无意义的字段、窗口偏移或聚合函数。四项均进入本节点
+  开始/结束条件候选，但不进入最终 Schema、Canvas 详情或日志；Canvas/Runner 只显示安全数量。
+- Spark 计划使用同一轨迹/片段分区和确定次序计算，全程惰性，不增加 Action、缓存或 Checkpoint。
+  条件通过 Catalyst 追溯原始时间/轨迹边界字段，最终输出仍只含来源字段和六个事件结果字段。
+
+运动 Current/At 不另建协议：对 TRACK_DISTANCE、TRACK_SPEED 或 TRACK_ACCELERATION 选择窗口首值，
+`[0,1)` 等价 Current，`[n,n+1)` 等价 At(n)。Inspector 帮助明确这一换算；未来若提供快捷模板，也只生成
+现有窗口配置，不创建新的稳定类型。Geometry/TrackWindow 返回复合对象，当前标量条件树不能安全消费，
+仍需独立设计，不能机械加入九种聚合。
+
+## 13. 4.67 Point 相对观测坐标标量
+
+Enterprise 11.3 官方条件表达式以 `TrackGeometryWindow(-1,0)[0]["x"]` 示例读取轨迹
+Geometry 窗口中某个观测的坐标。DataScalpel 不把 Geometry 数组或整行对象放入现有标量条件树，
+只增加 Point X/Y 的受控单观测入口：
+
+```ts
+interface TrackIncidentScalar {
+  bindingName: string;
+  source:
+    | 'TRACK_START_TIME'
+    | 'TRACK_DURATION'
+    | 'TRACK_CURRENT_TIME'
+    | 'TRACK_INDEX'
+    | 'TRACK_POINT_X_AT'
+    | 'TRACK_POINT_Y_AT'
+    | null;
+  offset?: number | null;
+}
+```
+
+- `TRACK_POINT_X_AT/TRACK_POINT_Y_AT` 必须配置 32 位整数 `offset`：0 为当前观测，负数回看，
+  正数前看。访问只在当前 DataScalpel 轨迹片段内生效，不跨轨迹、固定边界或 gap 边界；
+  超出片段或目标 Geometry 为 NULL 时返回 NULL。
+- 只接受拥有完整 Geometry 元数据的 Point 字段。返回类型为可空 DOUBLE，X/Y 数值和单位
+  跟随来源 CRS；不要求 WGS84，也不做投影换算。
+- 坐标来源（包括 LEGACY 下的非活动草稿）要求 Canvas 4.67，低版本使用
+  `TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION` 拒绝。缺偏移或 Point Geometry 分别使用
+  `TRACK_INCIDENT_POINT_COORDINATE_OFFSET_REQUIRED` 和
+  `TRACK_INCIDENT_POINT_COORDINATE_REQUIRES_GEOMETRY`。
+- 时间/序号来源忽略但保留隐藏 `offset` 草稿，切换来源不静默清空。Inspector 只在
+  Point 坐标来源时显示偏移；Canvas、定义摘要和 Runner 只显示坐标标量数量，不显示绑定名、
+  偏移或坐标值。
+- 结果仅供开始/结束条件引用，不进入节点输出 Schema。Spark 使用同一轨迹/片段窗口的单行
+  frame 读取坐标，不增加 Action、缓存、Checkpoint 或任意 Arcade 执行器。
+
+这是官方 TrackGeometryWindow Point 坐标访问的受控子集，不等于完整 Geometry 窗口、
+`TrackWindow`、整行字段访问或任意 Arcade 支持。
+
+## 14. 当前明确支持范围收口（2026-09-13，Canvas 4.76）
+
+- `LEGACY` 旧语义继续用于兼容，`CONDITION_LIFECYCLE` 已按 Started/OnGoing/Ended 状态机执行：
+  无结束条件时开始条件首次不成立即结束；有结束条件时结束优先，Ended 观测不属于事件成员。
+  `INCIDENTS_ONLY` 和 `ALL_EVENTS` 两种结果范围均已贯通，事件时长按当前观测累计而不是复制整段总时长。
+- 原始字段窗口、WGS84 累计轨迹距离、逐观测速度/加速度、轨迹开始/当前时间、时长、序号，
+  以及相对观测 Point X/Y 坐标均可作为受控条件绑定。窗口保持左闭右开、按轨迹/固定边界/gap 片段重置，
+  同时间观测由显式附加字段确定次序；临时绑定不进入输出 Schema。
+- 两种结果范围均已验证为 `FIELD_COMPLETE`：来源字段保持 `DIRECT`，事件 ID、活动标记、状态、
+  起止时间和逐观测持续时间均能追溯到真实来源字段，不把临时绑定或平台内部列登记为未知物理来源。
+- 20,000 条单轨迹样例在分析阶段不触发 Spark Job，输出保持一条参与观测一行；计划不含 Driver
+  `CollectLimit` 或 `collect_list`。实现使用 Spark 分区窗口和排序，仍会产生单轨迹分区、排序和窗口状态开销，
+  因而不能据此宣称无限单轨容量或 Enterprise 生产容量等价。
+- 真实 Inspector 已验证新节点不立即请求编译、条件生命周期默认值、窗口指标/轨迹标量紧凑表格、
+  无效草稿保存、结果字段和问题详情入口；Canvas 与问题摘要不暴露条件字面量、坐标或运行数据。
+
+当前收口不实现任意 Arcade 解释器，也不承诺完整 `TrackGeometryWindow`、`TrackWindow` 复合对象、
+整行对象、Portal 文案中尚未核实的第三种结果范围、官方字段别名或 Enterprise 服务端数值/边界完全一致。
+本节点仍仅支持 BATCH；若未来需要实时状态机，应单独设计 Watermark、迟到修正和状态保留语义。

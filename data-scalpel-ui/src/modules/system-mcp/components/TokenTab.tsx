@@ -24,10 +24,11 @@ export function TokenTab({ canEdit }: { canEdit: boolean }) {
   <div className="management-results-surface"><div className="management-result-toolbar"><span>访问令牌 · 共 {list.data?.totalElements ?? 0} 项</span>{canEdit && <Button type="primary" onClick={() => edit('new')}>创建令牌</Button>}</div>
   <Table<Token> size="small" className="management-table" rowKey="id" dataSource={list.data?.content ?? []} loading={list.isFetching} scroll={{ y: '100%' }} columns={[
    { title: '名称', dataIndex: 'name' }, { title: '绑定用户', dataIndex: 'username' },
+   { title: '管理方式', render: (_, row) => row.managed ? <Tag>DSH 系统托管</Tag> : '手动' },
    { title: '状态', render: (_, row) => <Tag>{!row.enabled ? '已停用' : row.expiresAt && new Date(row.expiresAt).getTime() < Date.now() ? '已过期' : '启用'}</Tag> },
    { title: '过期时间', render: (_, row) => row.expiresAt ? <ManagementDateTime value={row.expiresAt} /> : '不过期' },
    { title: '最近使用', render: (_, row) => row.lastUsedAt ? <ManagementDateTime value={row.lastUsedAt} /> : '—' },
-   { title: '操作', width: 80, render: (_, row) => canEdit ? <Dropdown trigger={['click']} menu={{ items: [
+   { title: '操作', width: 80, render: (_, row) => canEdit && !row.managed ? <Dropdown trigger={['click']} menu={{ items: [
     { key: 'update', label: '修改', onClick: () => edit(row) },
     { key: 'status', label: row.enabled ? '停用' : '启用', onClick: () => command.mutate({ row, action: row.enabled ? 'disable' : 'enable' }) },
     { key: 'rotate', label: '轮换', onClick: () => modal.confirm({ title: `轮换“${row.name}”？`, content: '旧令牌将立即失效，新令牌仅显示一次。', onOk: () => command.mutateAsync({ row, action: 'rotate' }) }) },

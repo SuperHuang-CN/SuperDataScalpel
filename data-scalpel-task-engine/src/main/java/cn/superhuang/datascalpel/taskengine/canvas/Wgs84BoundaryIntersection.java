@@ -14,17 +14,25 @@ import java.util.List;
 /** Continuous boundary relation, keeping unverified cases distinct from proven separation. */
 final class Wgs84BoundaryIntersection {
     enum Relation { INTERSECTING, DISJOINT, UNRESOLVED }
+    record Match(Relation relation,Position contact) { }
     private Wgs84BoundaryIntersection() { }
 
     /** Caller must validate both complete arc collections before any positive shortcut. */
     static Relation relate(List<Arc> first,List<Arc> second,Budget budget) {
+        return match(first,second,budget).relation;
+    }
+
+    /** A null contact preserves a proven Boolean intersection without fabricating a position. */
+    static Match match(List<Arc> first,List<Arc> second,Budget budget) {
         var endpoints=new HashSet<Position>();
         for (Arc arc : first) {
             budget.consume(); endpoints.add(canonical(arc.start())); endpoints.add(canonical(arc.end()));
         }
         for (Arc arc : second) {
             budget.consume();
-            if (endpoints.contains(canonical(arc.start()))||endpoints.contains(canonical(arc.end()))) return Relation.INTERSECTING;
+            Position start=canonical(arc.start()), end=canonical(arc.end());
+            if (endpoints.contains(start)) return new Match(Relation.INTERSECTING,start);
+            if (endpoints.contains(end)) return new Match(Relation.INTERSECTING,end);
         }
         var entries=new ArrayList<Entry>();
         double[] min={Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY,Double.POSITIVE_INFINITY};
@@ -50,13 +58,13 @@ final class Wgs84BoundaryIntersection {
                 if (!box.overlaps(entry.box)) continue;
                 var relation=Wgs84ArcTopology.probeLocal(arc,entry.arc,budget);
                 switch (relation.kind()) {
-                    case CROSS, TOUCH, OVERLAP -> { return Relation.INTERSECTING; }
+                    case CROSS, TOUCH, OVERLAP -> { return new Match(Relation.INTERSECTING,relation.contact()); }
                     case UNRESOLVED -> unresolved=true;
                     case DISJOINT -> { }
                 }
             }
         }
-        return unresolved ? Relation.UNRESOLVED : Relation.DISJOINT;
+        return new Match(unresolved ? Relation.UNRESOLVED : Relation.DISJOINT,null);
     }
 
     private static Position canonical(Position point) {

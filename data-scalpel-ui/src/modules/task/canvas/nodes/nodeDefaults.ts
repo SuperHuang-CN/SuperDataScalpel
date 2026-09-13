@@ -24,6 +24,15 @@ import type {
   SpatialBinAggregateConfiguration,
   SpatialPointClusterConfiguration,
   SpatialCenterDispersionConfiguration,
+  SpatialDensityConfiguration,
+  SpatialHotSpotsConfiguration,
+  SpatialMultiVariableGridConfiguration,
+  SpatialSimilarLocationsConfiguration,
+  SpatialDescribeDatasetConfiguration,
+  SpatialEnrichFromGridConfiguration,
+  SpatialGroupByProximityConfiguration,
+  TraceProximityEventsConfiguration,
+  SnapTracksConfiguration,
   GeometryRepairConfiguration,
   GeometrySerializeConfiguration,
   GeometryValidateConfiguration,
@@ -294,6 +303,7 @@ export const createTrackFindDwellConfiguration = (): TrackFindDwellConfiguration
 
 export const createTrackDetectIncidentsConfiguration = (): TrackDetectIncidentsConfiguration => ({
   conditionWindows: [],
+  conditionScalars: [],
   incidentSemantics: 'CONDITION_LIFECYCLE',
   incidentStatusColumnName: 'incident_status',
   orderByColumns: [],
@@ -365,6 +375,177 @@ export const createSpatialCenterDispersionConfiguration = (
   resultMode: 'ANALYSIS_TABLES',
 });
 
+export const createSpatialDensityConfiguration = (): SpatialDensityConfiguration => ({
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  fields: [],
+  weighting: 'UNIFORM',
+  binShape: 'SQUARE',
+  binSize: 1000,
+  binSizeUnit: 'METERS',
+  radius: 2000,
+  radiusUnit: 'METERS',
+  areaUnit: 'SQUARE_KILOMETERS',
+  temporalSlicing: null,
+  outputTableName: '',
+  binIdColumnName: 'bin_id',
+  binGeometryColumnName: 'bin_geometry',
+  countDensityColumnName: 'point_density',
+});
+
+export const createSpatialHotSpotsConfiguration = (): SpatialHotSpotsConfiguration => ({
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  analysisSource: 'POINT_COUNT',
+  analysisColumnName: null,
+  binSize: 1000,
+  binSizeUnit: 'METERS',
+  neighborhoodDistance: 2000,
+  neighborhoodDistanceUnit: 'METERS',
+  temporalSlicing: null,
+  multipleTesting: 'FDR_BH',
+  outputTableName: '',
+  binIdColumnName: 'bin_id',
+  binGeometryColumnName: 'bin_geometry',
+  pointCountColumnName: 'point_count',
+  analysisValueColumnName: 'analysis_value',
+  zScoreColumnName: 'gi_z_score',
+  pValueColumnName: 'gi_p_value',
+  adjustedPValueColumnName: 'gi_adjusted_p_value',
+  confidenceBinColumnName: 'gi_bin',
+});
+
+export const createSpatialMultiVariableGridConfiguration = (
+): SpatialMultiVariableGridConfiguration => ({
+  variables: [],
+  binShape: 'SQUARE',
+  binSize: 1000,
+  binSizeUnit: 'METERS',
+  outputTableName: '',
+  binIdColumnName: 'bin_id',
+  binGeometryColumnName: 'bin_geometry',
+});
+
+export const createSpatialSimilarLocationsConfiguration = (
+): SpatialSimilarLocationsConfiguration => ({
+  referenceTableName: '',
+  referenceIdColumnName: '',
+  referenceGeometryColumnName: '',
+  referenceFilter: null,
+  candidateTableName: '',
+  candidateIdColumnName: '',
+  candidateGeometryColumnName: '',
+  candidateFilter: null,
+  analysisFields: [],
+  appendFields: [],
+  matchMethod: 'ATTRIBUTE_VALUES',
+  resultMode: 'MOST_SIMILAR',
+  numberOfResults: 10,
+  outputTableName: '',
+  outputGeometryColumnName: 'geometry',
+  locationTypeColumnName: 'location_type',
+  similarityRankColumnName: 'simrank',
+  dissimilarityRankColumnName: 'dsimrank',
+  similarityIndexColumnName: 'simindex',
+  cosineIndexColumnName: 'cosimindex',
+  labelRankColumnName: 'labelrank',
+  referenceIdOutputColumnName: 'referenceid',
+  searchIdOutputColumnName: 'searchid',
+});
+
+export const createSpatialDescribeDatasetConfiguration = (
+): SpatialDescribeDatasetConfiguration => ({
+  sourceTableName: '',
+  geometryColumnName: '',
+  statisticsTableName: '',
+  descriptionTableName: '',
+  sampleSize: 0,
+  sampleTableName: '',
+  extentOutput: false,
+  extentTableName: '',
+});
+
+export const createSpatialEnrichFromGridConfiguration = (
+): SpatialEnrichFromGridConfiguration => ({
+  pointTableName: '',
+  pointGeometryColumnName: '',
+  gridTableName: '',
+  gridGeometryColumnName: '',
+  gridIdColumnName: '',
+  enrichFields: [],
+  outputTableName: '',
+});
+
+export const createSpatialGroupByProximityConfiguration = (
+): SpatialGroupByProximityConfiguration => ({
+  sourceTableName: '',
+  geometryColumnName: '',
+  spatialRelationship: 'INTERSECTS',
+  spatialNearDistance: 100,
+  spatialNearDistanceUnit: 'METERS',
+  temporalCondition: null,
+  attributeConditions: [],
+  groupIdColumnName: 'group_id',
+  outputTableName: '',
+});
+
+export const createTraceProximityEventsConfiguration = (
+): TraceProximityEventsConfiguration => ({
+  sourceTableName: '',
+  pointGeometryColumnName: '',
+  entityIdColumnName: '',
+  timeColumnName: '',
+  distanceMethod: 'PLANAR',
+  spatialSearchDistance: 10,
+  spatialSearchDistanceUnit: 'METERS',
+  temporalSearchDistance: 5,
+  temporalSearchDistanceUnit: 'MINUTES',
+  interestSource: 'ENTITY_IDS',
+  entitiesOfInterest: [],
+  entitiesOfInterestTableName: '',
+  interestEntityIdColumnName: '',
+  interestStartTimeColumnName: null,
+  maxTraceDepth: 3,
+  attributeMatchColumns: [],
+  includeTracks: false,
+  outputTableName: '',
+  tracksOutputTableName: '',
+  fromEntityIdColumnName: 'trace_from_id',
+  toEntityIdColumnName: 'trace_to_id',
+  depthColumnName: 'trace_depth',
+  durationMinutesColumnName: 'trace_duration_minutes',
+  eventTimeColumnName: 'trace_event_time',
+});
+
+export const createSnapTracksConfiguration = (): SnapTracksConfiguration => ({
+  pointTableName: '',
+  pointGeometryColumnName: '',
+  trackIdColumns: [],
+  timeColumnName: '',
+  orderByColumns: [],
+  lineTableName: '',
+  lineGeometryColumnName: '',
+  lineIdColumnName: '',
+  fromNodeColumnName: '',
+  toNodeColumnName: '',
+  searchDistance: 30,
+  searchDistanceUnit: 'METERS',
+  distanceMethod: 'PLANAR',
+  boundaries: createTrackBoundaryConfiguration(),
+  directionMatching: null,
+  lineFields: [],
+  outputMode: 'ALL_FEATURES',
+  outputTableName: '',
+  snappedGeometryColumnName: 'snapped_geometry',
+  matchedLineIdColumnName: 'matched_line_id',
+  matchStatusColumnName: 'match_status',
+  originalXColumnName: 'original_x',
+  originalYColumnName: 'original_y',
+  matchXColumnName: 'match_x',
+  matchYColumnName: 'match_y',
+  matchDistanceColumnName: 'match_distance',
+});
+
 export const createGeometryBufferConfiguration = (): GeometryBufferConfiguration => ({
   sourceTableName: '',
   outputTableName: '',
@@ -372,6 +553,10 @@ export const createGeometryBufferConfiguration = (): GeometryBufferConfiguration
   outputColumnName: 'buffer_geometry',
   distance: 100,
   mode: 'PLANAR',
+  distanceUnit: 'SOURCE_CRS_UNIT',
+  distanceSource: 'CONSTANT',
+  distanceFieldName: null,
+  distanceExpression: null,
 });
 
 export const createGeometryExplodeConfiguration = (): GeometryExplodeConfiguration => ({
@@ -403,6 +588,8 @@ export const createSpatialClipConfiguration = (): SpatialClipConfiguration => ({
   sourceGeometryColumnName: '',
   maskGeometryColumnName: '',
   outputColumnName: 'clipped_geometry',
+  geometryPolicy: 'SOURCE_FAMILY_2D',
+  maskCombination: 'DISSOLVE_ALL',
 });
 
 export const createSpatialAggregateConfiguration = (): SpatialAggregateConfiguration => ({
@@ -410,6 +597,7 @@ export const createSpatialAggregateConfiguration = (): SpatialAggregateConfigura
   outputTableName: '',
   groupByColumns: [],
   aggregations: [],
+  dissolve: null,
 });
 
 export const createSpatialJoinConfiguration = (): SpatialJoinConfiguration => ({
@@ -418,6 +606,13 @@ export const createSpatialJoinConfiguration = (): SpatialJoinConfiguration => ({
   outputTableName: '',
   joinType: 'INNER',
   conditions: [],
+  attributeConditions: [],
+  outputColumns: [],
+  joinOperation: 'JOIN_ONE_TO_MANY',
+  oneToOne: null,
+  temporalCondition: null,
+  spatialNear: null,
+  distanceOutput: null,
 });
 
 export const createStreamJoinConfiguration = (): StreamJoinConfiguration => ({
@@ -458,6 +653,7 @@ export const createUnionConfiguration = (): UnionConfiguration => ({
   inputTableNames: [],
   outputTableName: '',
   mode: 'ALL',
+  mergingTables: [],
 });
 
 export const createDeduplicateConfiguration = (): DeduplicateConfiguration => ({ operations: [] } as unknown as DeduplicateConfiguration);

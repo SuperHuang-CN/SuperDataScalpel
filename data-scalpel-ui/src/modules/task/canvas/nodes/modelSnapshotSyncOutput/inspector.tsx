@@ -80,7 +80,9 @@ const ModelSnapshotSyncOutputInspector = ({
   const dataSourceAvailable = dataSourceQuery.data
     ? dataSourceQuery.data.enabled
       && dataSourceQuery.data.connectionKind === 'JDBC'
-      && (dataSourceQuery.data.type === 'POSTGRESQL' || dataSourceQuery.data.type === 'MYSQL')
+      && (dataSourceQuery.data.type === 'POSTGRESQL' || dataSourceQuery.data.type === 'HIGHGO'
+        || dataSourceQuery.data.type === 'MYSQL' || dataSourceQuery.data.type === 'OPENGAUSS'
+        || dataSourceQuery.data.type === 'KINGBASE')
       && dataSourceQuery.data.purposes.includes('STORAGE')
     : dataSourceQuery.isError ? false : undefined;
   const modelUnavailable = modelQuery.isError
@@ -90,7 +92,7 @@ const ModelSnapshotSyncOutputInspector = ({
       : model && model.physicalTableMode !== 'MANAGED'
         ? '模型快照同步首版只支持 MANAGED 模型'
         : dataSourceAvailable === false
-          ? '模型存储必须使用启用、具有 STORAGE 用途的 PostgreSQL/MySQL 数据源'
+          ? '模型存储必须使用启用、具有 STORAGE 用途的 PostgreSQL/HighGo/MySQL/openGauss/人大金仓数据源'
           : null;
 
   const toConfiguration = (values: ModelSnapshotSyncFormValues): ModelSnapshotSyncOutputConfiguration => ({

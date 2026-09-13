@@ -70,7 +70,7 @@ describe('requestJson', () => {
 
     expect(error).toBeInstanceOf(ApiError);
     expect(error).toMatchObject({
-      message: '请求参数校验失败',
+      message: '请求参数校验失败：name：不能为空',
       status: 400,
       problem: {
         code: 'VALIDATION_FAILED',

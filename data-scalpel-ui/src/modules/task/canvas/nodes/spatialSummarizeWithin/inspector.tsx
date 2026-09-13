@@ -98,6 +98,11 @@ const SpatialSummarizeWithinInspector = ({
     .find((column) => column.name === areaGeometryColumnName);
   const summaryGeometry = spatialGeometryColumns(summaryTable)
     .find((column) => column.name === summaryGeometryColumnName);
+  const geodesicGeometryInvalid = distanceMethod === 'GEODESIC'
+    && (gridMode ? [summaryGeometry] : [areaGeometry, summaryGeometry]).some((column) => column?.geometry
+      && (column.geometry.crs.authority !== 'EPSG'
+        || column.geometry.crs.code !== 4326
+        || column.geometry.dimension !== 'XY'));
 
   const normalized = (values: SpatialSummarizeWithinConfiguration) => ({
     ...values,
@@ -216,7 +221,7 @@ const SpatialSummarizeWithinInspector = ({
               测量方法
               <ContextHelp
                 ariaLabel="区域内测量说明"
-                content="LENGTH_WITHIN 与 AREA_WITHIN 会先裁剪到区域内部，再计算片段长度或面积。"
+                content="LENGTH_WITHIN 与 AREA_WITHIN 会先裁剪到区域内部，再计算片段长度或面积。测地线要求区域与被汇总 Geometry 都是 EPSG:4326 XY。"
               />
             </span>
           )}
@@ -230,9 +235,9 @@ const SpatialSummarizeWithinInspector = ({
           <Form.Item name="lengthUnit" label={<Space>长度单位<ContextHelp ariaLabel="长度及面积单位说明" content={spatialUnitHelp} /></Space>}><Select options={lengthUnits} /></Form.Item>
           <Form.Item name="areaUnit" label="面积单位"><Select options={areaUnits} /></Form.Item>
         </div>
-        {distanceMethod === 'GEODESIC' && areaGeometry?.geometry?.crs.code !== 4326 && (
+        {geodesicGeometryInvalid && (
           <Typography.Text type="danger" className="canvas-field-inline-warning">
-            测地线测量只支持 EPSG:4326 XY。
+            区域与被汇总 Geometry 都必须是 EPSG:4326 XY；请先进行空间转换或维度处理。
           </Typography.Text>
         )}
 
@@ -283,6 +288,7 @@ const SpatialSummarizeWithinInspector = ({
           <Space size={4}>
             <Switch
               size="small"
+              aria-label="启用时间切片"
               checked={Boolean(temporalSlicing)}
               onChange={(checked) => {
                 form.setFieldValue('temporalSlicing', checked ? temporalDraft : null);

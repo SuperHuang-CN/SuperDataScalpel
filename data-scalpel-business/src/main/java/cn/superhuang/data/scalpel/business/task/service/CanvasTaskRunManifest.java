@@ -42,7 +42,7 @@ public record CanvasTaskRunManifest(
         SparkStreamingJarExecutionPayload streamingSparkJarJob,
         CanvasTrialSpec canvasTrial
 ) {
-    public static final int CURRENT_MANIFEST_VERSION = 27;
+    public static final int CURRENT_MANIFEST_VERSION = 28;
 
     public CanvasTaskRunManifest {
         runtimeDataSources = runtimeDataSources == null ? List.of() : List.copyOf(runtimeDataSources);
@@ -278,6 +278,7 @@ public record CanvasTaskRunManifest(
 
     public enum RuntimeDatabaseType {
         POSTGRESQL,
+        HIGHGO,
         MYSQL,
         ORACLE,
         SQL_SERVER,

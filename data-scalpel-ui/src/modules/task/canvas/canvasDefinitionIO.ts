@@ -1305,6 +1305,76 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
       if (sourceSchemaMinorVersion < 30 && node.type === CanvasNodeType.SpatialNearest && node.configuration.matching != null) {
         errors.push('SPATIAL_NEAREST_MATCHING_REQUIRE_SCHEMA_VERSION：显式最近邻匹配策略从 Canvas 4.30 开始支持');
       }
+      if (sourceSchemaMinorVersion < 48 && node.type === CanvasNodeType.SpatialNearest
+          && node.configuration.matching?.geodesicGeometryMode === 'GEOMETRY') {
+        errors.push('SPATIAL_NEAREST_GEODESIC_GEOMETRY_REQUIRE_SCHEMA_VERSION：非点 WGS84 真实最近位置从 Canvas 4.48 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 49 && node.type === CanvasNodeType.GeometryBuffer
+          && node.configuration.distanceUnit != null) {
+        errors.push('GEOMETRY_BUFFER_UNIT_REQUIRE_SCHEMA_VERSION：Geometry Buffer 显式距离单位从 Canvas 4.49 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 52 && node.type === CanvasNodeType.GeometryBuffer
+          && (node.configuration.distanceSource != null
+          || node.configuration.distanceFieldName != null
+          || node.configuration.distanceExpression != null)) {
+        errors.push('GEOMETRY_BUFFER_DISTANCE_SOURCE_REQUIRE_SCHEMA_VERSION：Geometry Buffer 逐行距离来源从 Canvas 4.52 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 53 && node.type === CanvasNodeType.SpatialAggregate
+          && node.configuration.dissolve != null) {
+        errors.push('SPATIAL_AGGREGATE_DISSOLVE_REQUIRE_SCHEMA_VERSION：空间聚合 Dissolve 选项从 Canvas 4.53 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 61 && node.type === CanvasNodeType.SpatialAggregate
+          && node.configuration.dissolve?.groupingMode != null) {
+        errors.push('SPATIAL_DISSOLVE_GROUPING_MODE_REQUIRE_SCHEMA_VERSION：空间聚合 Dissolve 分组方式从 Canvas 4.61 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 62 && node.type === CanvasNodeType.Union
+          && node.configuration.mergingTables != null) {
+        errors.push('UNION_MERGE_LAYERS_REQUIRE_SCHEMA_VERSION：Union 的 Merge Layers 字段处理从 Canvas 4.62 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 54 && node.type === CanvasNodeType.SpatialJoin
+          && node.configuration.outputColumns != null) {
+        errors.push('SPATIAL_JOIN_OUTPUT_COLUMNS_REQUIRE_SCHEMA_VERSION：空间连接输出字段投影从 Canvas 4.54 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 55 && node.type === CanvasNodeType.SpatialJoin
+          && node.configuration.attributeConditions != null) {
+        errors.push('SPATIAL_JOIN_ATTRIBUTE_CONDITIONS_REQUIRE_SCHEMA_VERSION：空间连接属性匹配条件从 Canvas 4.55 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 56 && node.type === CanvasNodeType.SpatialJoin
+          && node.configuration.joinType === 'LEFT') {
+        errors.push('SPATIAL_JOIN_KEEP_ALL_REQUIRE_SCHEMA_VERSION：空间连接保留全部目标要素从 Canvas 4.56 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 57 && node.type === CanvasNodeType.SpatialJoin
+          && node.configuration.joinOperation != null) {
+        errors.push('SPATIAL_JOIN_OPERATION_REQUIRE_SCHEMA_VERSION：空间连接显式结果粒度从 Canvas 4.57 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 58 && node.type === CanvasNodeType.SpatialJoin
+          && (node.configuration.joinOperation === 'JOIN_ONE_TO_ONE'
+          || node.configuration.oneToOne != null)) {
+        errors.push('SPATIAL_JOIN_ONE_TO_ONE_REQUIRE_SCHEMA_VERSION：空间连接一对一规则从 Canvas 4.58 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 59 && node.type === CanvasNodeType.SpatialJoin
+          && node.configuration.temporalCondition != null) {
+        errors.push('SPATIAL_JOIN_TEMPORAL_CONDITION_REQUIRE_SCHEMA_VERSION：空间连接时间关系从 Canvas 4.59 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 60 && node.type === CanvasNodeType.SpatialJoin
+          && (node.configuration.spatialNear != null
+          || node.configuration.distanceOutput != null)) {
+        errors.push('SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION：空间连接 Near 和距离输出从 Canvas 4.60 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 50 && node.type === CanvasNodeType.SpatialMeasure
+          && node.configuration.measurements.some((measurement) => (
+            'outputUnit' in measurement && measurement.outputUnit != null
+          ))) {
+        errors.push('SPATIAL_MEASURE_UNIT_REQUIRE_SCHEMA_VERSION：空间测量显式输出单位从 Canvas 4.50 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 51 && node.type === CanvasNodeType.SpatialClip
+          && node.configuration.geometryPolicy != null) {
+        errors.push('SPATIAL_CLIP_GEOMETRY_POLICY_REQUIRE_SCHEMA_VERSION：空间裁剪显式几何策略从 Canvas 4.51 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 77 && node.type === CanvasNodeType.SpatialClip
+          && node.configuration.maskCombination != null) {
+        errors.push('SPATIAL_CLIP_MASK_COMBINATION_REQUIRE_SCHEMA_VERSION：空间裁剪多 Mask 组合方式从 Canvas 4.77 开始支持');
+      }
       if (sourceSchemaMinorVersion < 29 && (
         node.type === CanvasNodeType.GeometryDerive && node.configuration.derivations.some(item => item.geometryPolicy != null)
         || node.type === CanvasNodeType.GeometrySimplify && node.configuration.geometryPolicy != null
@@ -1312,6 +1382,27 @@ export const parseCanvasDefinition = (value: unknown): CanvasDefinitionParseResu
       if (sourceSchemaMinorVersion < 46 && node.type === CanvasNodeType.TrackDetectIncidents
           && (node.configuration.conditionWindows?.length ?? 0) > 0) {
         errors.push('TRACK_INCIDENT_WINDOWS_REQUIRE_SCHEMA_VERSION：事件窗口指标从 Canvas 4.46 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 63 && node.type === CanvasNodeType.TrackDetectIncidents
+          && (node.configuration.conditionWindows ?? []).some(window => window.source === 'TRACK_DISTANCE')) {
+        errors.push('TRACK_INCIDENT_DISTANCE_WINDOWS_REQUIRE_SCHEMA_VERSION：事件轨迹距离窗口从 Canvas 4.63 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 64 && node.type === CanvasNodeType.TrackDetectIncidents
+          && (node.configuration.conditionWindows ?? []).some(window => window.source === 'TRACK_SPEED')) {
+        errors.push('TRACK_INCIDENT_SPEED_WINDOWS_REQUIRE_SCHEMA_VERSION：事件轨迹速度窗口从 Canvas 4.64 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 65 && node.type === CanvasNodeType.TrackDetectIncidents
+          && (node.configuration.conditionWindows ?? []).some(window => window.source === 'TRACK_ACCELERATION')) {
+        errors.push('TRACK_INCIDENT_ACCELERATION_WINDOWS_REQUIRE_SCHEMA_VERSION：事件轨迹加速度窗口从 Canvas 4.65 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 66 && node.type === CanvasNodeType.TrackDetectIncidents
+          && (node.configuration.conditionScalars?.length ?? 0) > 0) {
+        errors.push('TRACK_INCIDENT_SCALARS_REQUIRE_SCHEMA_VERSION：事件轨迹标量从 Canvas 4.66 开始支持');
+      }
+      if (sourceSchemaMinorVersion < 67 && node.type === CanvasNodeType.TrackDetectIncidents
+          && (node.configuration.conditionScalars ?? []).some(scalar => scalar.source === 'TRACK_POINT_X_AT'
+            || scalar.source === 'TRACK_POINT_Y_AT')) {
+        errors.push('TRACK_INCIDENT_POINT_COORDINATES_REQUIRE_SCHEMA_VERSION：事件 Point 坐标标量从 Canvas 4.67 开始支持');
       }
       if (sourceSchemaMinorVersion < 45 && node.type === CanvasNodeType.SpatialPointCluster && node.configuration.hdbscan != null) {
         errors.push('SPATIAL_HDBSCAN_OPTIONS_REQUIRE_SCHEMA_VERSION：HDBSCAN 诊断配置从 Canvas 4.45 开始支持');

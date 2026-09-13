@@ -48,7 +48,7 @@ import java.util.Properties;
 import java.util.Set;
 
 /**
- * Controlled PostgreSQL/PostGIS and MySQL 8 Geometry bridge.
+ * Controlled PostgreSQL-family PostGIS-compatible and MySQL 8 Geometry bridge.
  *
  * <p>Native JDBC geometry objects never cross into Spark. Reads use WKB and writes bind WKB to
  * database spatial constructors. All SQL identifiers originate from inspected metadata and are
@@ -245,10 +245,13 @@ final class SpatialJdbcRuntimeSupport {
     static void writeSpatial(CanvasPreparedOutput output, Dataset<Row> dataset) {
         RuntimeDataSource source = output.runtimeDataSource();
         if (source.databaseType() != RuntimeDatabaseType.POSTGRESQL
+                && source.databaseType() != RuntimeDatabaseType.HIGHGO
+                && source.databaseType() != RuntimeDatabaseType.OPENGAUSS
+                && source.databaseType() != RuntimeDatabaseType.KINGBASE
                 && source.databaseType() != RuntimeDatabaseType.MYSQL) {
             throw new RunnerExecutionException(
                     "SPATIAL_JDBC_UNSUPPORTED",
-                    "Geometry 写入只支持 PostgreSQL/PostGIS 和 MySQL 8",
+                    "Geometry 写入只支持 PostgreSQL 家族的 PostGIS 兼容扩展和 MySQL 8",
                     output.node().id()
             );
         }
@@ -330,10 +333,16 @@ final class SpatialJdbcRuntimeSupport {
     static void writeUpsert(CanvasPreparedOutput output, Dataset<Row> dataset) {
         RuntimeDataSource source = output.runtimeDataSource();
         if (source.databaseType() != RuntimeDatabaseType.POSTGRESQL
-                && source.databaseType() != RuntimeDatabaseType.MYSQL) {
+                && source.databaseType() != RuntimeDatabaseType.HIGHGO
+                && source.databaseType() != RuntimeDatabaseType.MYSQL
+                && source.databaseType() != RuntimeDatabaseType.OPENGAUSS
+                && source.databaseType() != RuntimeDatabaseType.KINGBASE
+                && source.databaseType() != RuntimeDatabaseType.DAMENG
+                && source.databaseType() != RuntimeDatabaseType.ORACLE
+                && source.databaseType() != RuntimeDatabaseType.SQL_SERVER) {
             throw new RunnerExecutionException(
                     "UPSERT_DATABASE_NOT_SUPPORTED",
-                    "UPSERT 只支持 PostgreSQL 和 MySQL",
+                    "当前目标数据库未开放 UPSERT",
                     output.node().id()
             );
         }

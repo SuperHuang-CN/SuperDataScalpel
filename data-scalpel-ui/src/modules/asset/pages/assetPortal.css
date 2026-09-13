@@ -409,8 +409,10 @@
 }
 
 .asset-portal-category-card.active {
+  color: var(--ds-directory-selected-color);
+  background: var(--ds-directory-selected-background);
   border-color: rgba(69, 93, 196, 0.46);
-  box-shadow: 0 0 0 2px rgba(69, 93, 196, 0.08), 0 14px 32px rgba(62, 77, 121, 0.11);
+  box-shadow: var(--ds-directory-selected-shadow), var(--ds-panel-shadow);
 }
 
 .asset-portal-category-skeleton.ant-skeleton-element {

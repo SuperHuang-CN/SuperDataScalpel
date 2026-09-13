@@ -18,14 +18,15 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class SqlServiceQueryDialectTest {
 
     @Test
-    void postgresAndClickHouseAdvertiseSqlServiceQueries() {
+    void configuredDatabasesAdvertiseSqlServiceQueries() {
         var registry = BuiltInDialects.registry();
-        assertTrue(registry.require("POSTGRESQL").definition().capabilities()
-                .contains(DatabaseCapability.SQL_SERVICE_QUERY));
-        assertTrue(registry.require("CLICKHOUSE").definition().capabilities()
-                .contains(DatabaseCapability.SQL_SERVICE_QUERY));
+        Set<String> supported = Set.of(
+                "POSTGRESQL", "HIGHGO", "MYSQL", "OPENGAUSS", "KINGBASE", "DAMENG",
+                "ORACLE", "SQL_SERVER", "CLICKHOUSE");
+        supported.forEach(id -> assertTrue(registry.require(id).definition().capabilities()
+                .contains(DatabaseCapability.SQL_SERVICE_QUERY), id));
         registry.all().stream()
-                .filter(dialect -> !Set.of("POSTGRESQL", "CLICKHOUSE").contains(dialect.definition().id()))
+                .filter(dialect -> !supported.contains(dialect.definition().id()))
                 .forEach(dialect -> assertFalse(
                         dialect.definition().capabilities().contains(DatabaseCapability.SQL_SERVICE_QUERY)
                 ));
@@ -55,7 +56,7 @@ class SqlServiceQueryDialectTest {
         assertEquals(List.of(1001L), query.countQuery().parameters().stream()
                 .map(SqlQueryParameter::value).toList());
 
-        assertThrows(UnsupportedOperationException.class, () -> BuiltInDialects.registry().require("MYSQL")
+        assertThrows(UnsupportedOperationException.class, () -> BuiltInDialects.registry().require("TDENGINE_RESTFUL")
                 .compileSqlServiceQuery("SELECT 1", List.of(), 0, 20, false));
     }
 
@@ -81,6 +82,54 @@ class SqlServiceQueryDialectTest {
                 query.countQuery().sql()
         );
         assertEquals(List.of("paid"), query.countQuery().parameters().stream()
+                .map(SqlQueryParameter::value).toList());
+    }
+
+    @Test
+    void damengUsesOffsetFetchWithStableBindingOrder() {
+        var dameng = BuiltInDialects.registry().require("DAMENG");
+        List<SqlQueryParameter> base = List.of(new SqlQueryParameter(
+                1001L, PlatformTypeDefinition.of(PlatformDataType.LONG)
+        ));
+
+        var query = dameng.compileSqlServiceQuery(
+                "SELECT id FROM customer WHERE department_id = ?", base, 40, 20, true
+        );
+
+        assertEquals(
+                "SELECT * FROM (SELECT id FROM customer WHERE department_id = ?) ds_query "
+                        + "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                query.dataQuery().sql()
+        );
+        assertEquals(List.of(1001L, 40, 20), query.dataQuery().parameters().stream()
+                .map(SqlQueryParameter::value).toList());
+        assertEquals(List.of(1001L), query.countQuery().parameters().stream()
+                .map(SqlQueryParameter::value).toList());
+    }
+
+    @Test
+    void oracleAndSqlServerUseTheirNativeOffsetFetchWrappers() {
+        List<SqlQueryParameter> base = List.of(new SqlQueryParameter(
+                1001L, PlatformTypeDefinition.of(PlatformDataType.LONG)
+        ));
+        var oracle = BuiltInDialects.registry().require("ORACLE").compileSqlServiceQuery(
+                "SELECT id FROM customer WHERE department_id = ?", base, 40, 20, false
+        );
+        var sqlServer = BuiltInDialects.registry().require("SQL_SERVER").compileSqlServiceQuery(
+                "SELECT id FROM customer WHERE department_id = ?", base, 40, 20, false
+        );
+
+        assertEquals(
+                "SELECT * FROM (SELECT id FROM customer WHERE department_id = ?) ds_query "
+                        + "OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                oracle.dataQuery().sql()
+        );
+        assertEquals(
+                "SELECT * FROM (SELECT id FROM customer WHERE department_id = ?) ds_query "
+                        + "ORDER BY (SELECT NULL) OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+                sqlServer.dataQuery().sql()
+        );
+        assertEquals(List.of(1001L, 40, 20), sqlServer.dataQuery().parameters().stream()
                 .map(SqlQueryParameter::value).toList());
     }
 }

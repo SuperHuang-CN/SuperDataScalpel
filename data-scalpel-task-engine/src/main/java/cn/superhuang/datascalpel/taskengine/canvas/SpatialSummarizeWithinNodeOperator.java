@@ -14,6 +14,7 @@ import cn.superhuang.data.scalpel.contract.task.SpatialSummarizeWithinNodeDefini
 import cn.superhuang.data.scalpel.contract.task.SpatialTemporalSlicing;
 import cn.superhuang.data.scalpel.contract.task.SpatialWithinStatistic;
 import cn.superhuang.data.scalpel.contract.task.SpatialWithinStatisticKind;
+import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
 import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
@@ -189,8 +190,11 @@ public final class SpatialSummarizeWithinNodeOperator implements CanvasNodeOpera
                     .and(qualified("within_area_scope", WINDOW_START).equalTo(qualified("within_summary_scope", WINDOW_START)))
                     .and(qualified("within_area_scope", WINDOW_END).equalTo(qualified("within_summary_scope", WINDOW_END)));
         }
-        Dataset<Row> joined = areaScope.join(summaryBase, condition,
-                configuration.includeEmptyAreas() ? "left_outer" : "inner");
+        // Sedona cannot turn a spatial LEFT OUTER JOIN into an indexed range join. Build
+        // the real matches with an INNER JOIN, then add unmatched area/window rows through
+        // an equality anti join. This keeps empty-area semantics without falling back to a
+        // BroadcastNestedLoopJoin over every area/summary pair.
+        Dataset<Row> joined = areaScope.join(summaryBase, condition, "inner");
 
         List<Column> preparedProjection = new ArrayList<>();
         preparedProjection.add(qualified("within_area_scope", AREA_ROW_ID));
@@ -241,12 +245,61 @@ public final class SpatialSummarizeWithinNodeOperator implements CanvasNodeOpera
             preparedProjection.add(value.alias(internal));
             statisticSources.put(statistic.statisticId(), internal);
         }
-        Dataset<Row> prepared = joined.select(preparedProjection.toArray(Column[]::new));
+        Dataset<Row> matchedPrepared = joined.select(preparedProjection.toArray(Column[]::new));
+        Dataset<Row> prepared = matchedPrepared;
+        if (configuration.includeEmptyAreas()) {
+            List<Column> matchedKeyProjection = new ArrayList<>();
+            matchedKeyProjection.add(qualified("within_area_scope", AREA_ROW_ID).alias(AREA_ROW_ID));
+            if (temporal != null) {
+                matchedKeyProjection.add(qualified("within_area_scope", WINDOW_START).alias(WINDOW_START));
+                matchedKeyProjection.add(qualified("within_area_scope", WINDOW_END).alias(WINDOW_END));
+            }
+            // LEFT ANTI only needs to know whether a matching key exists. Keeping the
+            // naturally repeated match keys avoids a Catalyst Deduplicate node, which
+            // carries no additional semantics here and obscures complete field lineage.
+            Dataset<Row> matchedAreaKeys = joined.select(matchedKeyProjection.toArray(Column[]::new))
+                    .alias("within_matched_area");
+            Column matchedArea = qualified("within_area_scope", AREA_ROW_ID)
+                    .eqNullSafe(qualified("within_matched_area", AREA_ROW_ID));
+            if (temporal != null) {
+                matchedArea = matchedArea
+                        .and(qualified("within_area_scope", WINDOW_START)
+                                .eqNullSafe(qualified("within_matched_area", WINDOW_START)))
+                        .and(qualified("within_area_scope", WINDOW_END)
+                                .eqNullSafe(qualified("within_matched_area", WINDOW_END)));
+            }
+            Dataset<Row> unmatchedAreas = areaScope.join(matchedAreaKeys, matchedArea, "left_anti")
+                    .alias("within_unmatched_area");
+            Map<String, String> areaOutputSources = new HashMap<>();
+            areaOutputs.forEach(output -> areaOutputSources.put(
+                    output.outputColumnName(), output.sourceColumn().name()));
+            List<Column> unmatchedProjection = new ArrayList<>();
+            for (var field : matchedPrepared.schema().fields()) {
+                String name = field.name();
+                Column value;
+                if (name.equals(AREA_ROW_ID)) {
+                    value = qualified("within_unmatched_area", AREA_ROW_ID);
+                } else if (areaOutputSources.containsKey(name)) {
+                    value = qualified("within_unmatched_area", areaOutputSources.get(name));
+                } else if (temporal != null && (name.equals(WINDOW_START) || name.equals(WINDOW_END))) {
+                    value = qualified("within_unmatched_area", name);
+                } else if (name.equals(MATCHED)) {
+                    value = functions.lit(false);
+                } else {
+                    value = functions.lit(null).cast(field.dataType());
+                }
+                unmatchedProjection.add(value.alias(name));
+            }
+            prepared = matchedPrepared.unionByName(
+                    unmatchedAreas.select(unmatchedProjection.toArray(Column[]::new)));
+        }
 
         List<Column> groupExpressions = new ArrayList<>();
         groupExpressions.add(prepared.col(AREA_ROW_ID));
-        areaOutputs.forEach(output -> groupExpressions.add(
-                prepared.col(CanvasNodeSupport.quoteIdentifier(output.outputColumnName()))));
+        for (JoinOutputColumnSupport.ResolvedOutputColumn output : areaOutputs) {
+            groupExpressions.add(prepared.col(
+                    CanvasNodeSupport.quoteIdentifier(output.outputColumnName())));
+        }
         if (temporal != null) {
             groupExpressions.add(prepared.col(WINDOW_START));
             groupExpressions.add(prepared.col(WINDOW_END));
@@ -425,7 +478,9 @@ public final class SpatialSummarizeWithinNodeOperator implements CanvasNodeOpera
         }
         if (configuration.distanceMethod() == SpatialDistanceMethod.GEODESIC
                 && (!("EPSG".equals(area.crs().authority()) && area.crs().code() == 4326)
-                || !("EPSG".equals(summary.crs().authority()) && summary.crs().code() == 4326))) {
+                || !("EPSG".equals(summary.crs().authority()) && summary.crs().code() == 4326)
+                || area.dimension() != CoordinateDimension.XY
+                || summary.dimension() != CoordinateDimension.XY)) {
             issues.error("GEODESIC_DISTANCE_REQUIRES_WGS84",
                     "测地线测量仅支持 EPSG:4326 XY", "configuration.distanceMethod");
         }

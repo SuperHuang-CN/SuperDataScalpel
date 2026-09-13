@@ -9,6 +9,8 @@ import cn.superhuang.data.scalpel.contract.task.SpatialMeasureConfiguration;
 import cn.superhuang.data.scalpel.contract.task.SpatialMeasureMode;
 import cn.superhuang.data.scalpel.contract.task.SpatialMeasureNodeDefinition;
 import cn.superhuang.data.scalpel.contract.task.SpatialMeasurement;
+import cn.superhuang.data.scalpel.contract.task.SpatialAreaUnit;
+import cn.superhuang.data.scalpel.contract.task.SpatialDistanceUnit;
 import cn.superhuang.data.scalpel.contract.type.CoordinateDimension;
 import cn.superhuang.data.scalpel.contract.type.GeometryKind;
 import cn.superhuang.data.scalpel.contract.type.GeometryTypeDefinition;
@@ -105,11 +107,13 @@ public final class SpatialMeasureNodeOperator implements CanvasNodeOperator {
         Map<String, CanvasColumnSchema> sourceColumns = source == null
                 ? Map.of() : CanvasNodeSupport.columns(source.schema());
         Set<String> outputNames = new HashSet<>(sourceColumns.keySet());
+        List<Double> outputDivisors = new ArrayList<>(configuration.measurements().size());
         for (int index = 0; index < configuration.measurements().size(); index++) {
             SpatialMeasurement measurement = configuration.measurements().get(index);
             String path = "configuration.measurements[" + index + "]";
             if (measurement == null) {
                 issues.error("INVALID_SPATIAL_MEASUREMENT", "空间测量项不能为空", path);
+                outputDivisors.add(1d);
                 continue;
             }
             CanvasNodeSupport.required(
@@ -124,6 +128,7 @@ public final class SpatialMeasureNodeOperator implements CanvasNodeOperator {
                 );
             }
             validateMeasurement(measurement, sourceColumns, source != null, issues, path);
+            outputDivisors.add(resolveOutputDivisor(measurement, sourceColumns, issues, path));
         }
         if (source == null || issues.hasErrors()) {
             return CanvasNodeOperationResult.invalid(inputSchemas);
@@ -136,8 +141,12 @@ public final class SpatialMeasureNodeOperator implements CanvasNodeOperator {
             projection.add(sourceDataset.col(CanvasNodeSupport.quoteIdentifier(column.name())));
         }
         List<CanvasColumnSchema> outputColumns = new ArrayList<>(source.schema().columns());
-        for (SpatialMeasurement measurement : configuration.measurements()) {
-            projection.add(measurementExpression(measurement, sourceDataset)
+        for (int index = 0; index < configuration.measurements().size(); index++) {
+            SpatialMeasurement measurement = configuration.measurements().get(index);
+            Column expression = measurementExpression(measurement, sourceDataset);
+            double divisor = outputDivisors.get(index);
+            if (divisor != 1d) expression = expression.divide(functions.lit(divisor));
+            projection.add(expression
                     .alias(measurement.outputColumnName()));
             outputColumns.add(new CanvasColumnSchema(
                     measurement.outputColumnName(), PlatformDataType.DOUBLE,
@@ -333,10 +342,10 @@ public final class SpatialMeasureNodeOperator implements CanvasNodeOperator {
                     "椭球测量仅支持 EPSG:4326",
                     geometryPath
             );
-        } else if (mode == SpatialMeasureMode.PLANAR && isWgs84(geometry)) {
+        } else if (mode == SpatialMeasureMode.PLANAR && usesAngularUnits(geometry)) {
             issues.warning(
                     "PLANAR_MEASURE_USES_ANGULAR_UNITS",
-                    "EPSG:4326 的平面测量使用角度或角度平方作为单位",
+                    "地理 CRS 的平面测量使用角度或角度平方作为单位",
                     modePath
             );
         }
@@ -359,6 +368,103 @@ public final class SpatialMeasureNodeOperator implements CanvasNodeOperator {
                 && "EPSG".equals(geometry.crs().authority())
                 && geometry.crs().code() == 4326
                 && geometry.dimension() == CoordinateDimension.XY;
+    }
+
+    private static boolean usesAngularUnits(GeometryTypeDefinition geometry) {
+        SpatialDistanceSupport.Resolution resolution = SpatialDistanceSupport.resolve(
+                1d, SpatialDistanceUnit.SOURCE_CRS_UNIT, geometry.crs());
+        return resolution.valid() && resolution.angular();
+    }
+
+    private static double resolveOutputDivisor(
+            SpatialMeasurement measurement,
+            Map<String, CanvasColumnSchema> columns,
+            CanvasNodeIssueSink issues,
+            String path
+    ) {
+        return switch (measurement) {
+            case SpatialMeasurement.Area item -> areaOutputDivisor(
+                    item.mode(), item.outputUnit(), geometry(columns, item.geometryColumnName()),
+                    issues, path + ".outputUnit");
+            case SpatialMeasurement.Length item -> distanceOutputDivisor(
+                    item.mode(), item.outputUnit(), geometry(columns, item.geometryColumnName()),
+                    issues, path + ".outputUnit");
+            case SpatialMeasurement.Perimeter item -> distanceOutputDivisor(
+                    item.mode(), item.outputUnit(), geometry(columns, item.geometryColumnName()),
+                    issues, path + ".outputUnit");
+            case SpatialMeasurement.Distance item -> distanceOutputDivisor(
+                    item.mode(), item.outputUnit(), geometry(columns, item.leftGeometryColumnName()),
+                    issues, path + ".outputUnit");
+            case SpatialMeasurement.X ignored -> 1d;
+            case SpatialMeasurement.Y ignored -> 1d;
+        };
+    }
+
+    private static double distanceOutputDivisor(
+            SpatialMeasureMode mode,
+            SpatialDistanceUnit outputUnit,
+            GeometryTypeDefinition geometry,
+            CanvasNodeIssueSink issues,
+            String path
+    ) {
+        if (outputUnit == null || geometry == null || mode == null) return 1d;
+        if (mode == SpatialMeasureMode.SPHEROID) {
+            double divisor = SpatialDistanceSupport.metresPerConfiguredUnit(outputUnit);
+            if (!Double.isFinite(divisor)) {
+                issues.error("SPATIAL_MEASURE_OUTPUT_UNIT_UNSUPPORTED",
+                        "椭球长度和距离必须使用明确的线性输出单位，不能使用来源 CRS 单位", path);
+                return 1d;
+            }
+            return divisor;
+        }
+        SpatialDistanceSupport.Resolution resolution =
+                SpatialDistanceSupport.sourceUnitsPerConfiguredUnit(outputUnit, geometry.crs());
+        if (!resolution.valid()) {
+            issues.error("SPATIAL_MEASURE_OUTPUT_UNIT_UNSUPPORTED", resolution.error(), path);
+            return 1d;
+        }
+        return resolution.sourceCrsValue();
+    }
+
+    private static double areaOutputDivisor(
+            SpatialMeasureMode mode,
+            SpatialAreaUnit outputUnit,
+            GeometryTypeDefinition geometry,
+            CanvasNodeIssueSink issues,
+            String path
+    ) {
+        if (outputUnit == null || geometry == null || mode == null) return 1d;
+        double squareMetresPerUnit = SpatialDistanceSupport.squareMetresPerConfiguredUnit(outputUnit);
+        if (!Double.isFinite(squareMetresPerUnit)) {
+            issues.error("SPATIAL_MEASURE_OUTPUT_UNIT_UNSUPPORTED",
+                    "无法解释面积输出单位", path);
+            return 1d;
+        }
+        if (mode == SpatialMeasureMode.SPHEROID) return squareMetresPerUnit;
+        SpatialDistanceSupport.Resolution sourceUnitsPerMetre =
+                SpatialDistanceSupport.sourceUnitsPerConfiguredUnit(
+                        SpatialDistanceUnit.METERS, geometry.crs());
+        if (!sourceUnitsPerMetre.valid()) {
+            issues.error("SPATIAL_MEASURE_OUTPUT_UNIT_UNSUPPORTED",
+                    "地理 CRS 的平面面积使用角度平方，不能换算为固定面积单位", path);
+            return 1d;
+        }
+        double divisor = sourceUnitsPerMetre.sourceCrsValue()
+                * sourceUnitsPerMetre.sourceCrsValue() * squareMetresPerUnit;
+        if (!Double.isFinite(divisor) || divisor <= 0d) {
+            issues.error("SPATIAL_MEASURE_OUTPUT_UNIT_UNSUPPORTED",
+                    "来源 CRS 轴单位无法换算为所选面积单位", path);
+            return 1d;
+        }
+        return divisor;
+    }
+
+    private static GeometryTypeDefinition geometry(
+            Map<String, CanvasColumnSchema> columns,
+            String columnName
+    ) {
+        CanvasColumnSchema column = columns.get(columnName);
+        return validGeometry(column) ? column.geometry() : null;
     }
 
     private static Column measurementExpression(

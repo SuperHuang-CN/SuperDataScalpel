@@ -1,5 +1,8 @@
 package cn.superhuang.data.scalpel.contract.task;
 
+import com.fasterxml.jackson.annotation.JsonClassDescription;
+
+@JsonClassDescription("Canvas 节点类型稳定编码；同时作为 CanvasNodeDefinition 的 type 判别值，决定节点 configuration 结构、输入输出度数、最低协议次版本以及 BATCH/STREAMING 支持范围。")
 public enum CanvasNodeType {
     MODEL_INPUT,
     JDBC_INPUT,
@@ -25,6 +28,15 @@ public enum CanvasNodeType {
     TRACK_FIND_DWELL,
     TRACK_DETECT_INCIDENTS,
     SPATIAL_BIN_AGGREGATE,
+    SPATIAL_DENSITY,
+    SPATIAL_HOT_SPOTS,
+    SPATIAL_MULTI_VARIABLE_GRID,
+    SPATIAL_ENRICH_FROM_GRID,
+    SPATIAL_GROUP_BY_PROXIMITY,
+    TRACE_PROXIMITY_EVENTS,
+    SNAP_TRACKS,
+    SPATIAL_SIMILAR_LOCATIONS,
+    SPATIAL_DESCRIBE_DATASET,
     SPATIAL_POINT_CLUSTER,
     SPATIAL_CENTER_DISPERSION,
     GEOMETRY_BUFFER,
@@ -71,6 +83,15 @@ public enum CanvasNodeType {
             case TRACK_FIND_DWELL -> 16;
             case TRACK_DETECT_INCIDENTS -> 17;
             case SPATIAL_BIN_AGGREGATE -> 18;
+            case SPATIAL_DENSITY -> 68;
+            case SPATIAL_HOT_SPOTS -> 69;
+            case SPATIAL_MULTI_VARIABLE_GRID -> 70;
+            case SPATIAL_ENRICH_FROM_GRID -> 71;
+            case SPATIAL_GROUP_BY_PROXIMITY -> 72;
+            case TRACE_PROXIMITY_EVENTS -> 73;
+            case SNAP_TRACKS -> 74;
+            case SPATIAL_SIMILAR_LOCATIONS -> 75;
+            case SPATIAL_DESCRIBE_DATASET -> 76;
             case SPATIAL_POINT_CLUSTER -> 19;
             case SPATIAL_CENTER_DISPERSION -> 20;
             default -> 0;

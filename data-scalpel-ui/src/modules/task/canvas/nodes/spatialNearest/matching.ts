@@ -4,6 +4,7 @@ import { spatialDistanceUnitOptions } from '../spatialUnits';
 export const createNearestMatching = (): SpatialNearestMatching => ({
   semantics: 'EXACT_DISTANCE',
   sourceIdColumnName: '',
+  geodesicGeometryMode: 'GEOMETRY',
   connectionLines: {
     enabled: false, outputTableName: '', geometryColumnName: 'connection',
     maximumGeodesicSegmentLength: 10, maximumGeodesicSegmentLengthUnit: 'KILOMETERS',
@@ -29,10 +30,14 @@ export function parseNearestMatching(raw: Record<string, unknown>, path: string,
     errors.push(`${prefix}.semantics 无效`);
   if (value.sourceIdColumnName != null && typeof value.sourceIdColumnName !== 'string')
     errors.push(`${prefix}.sourceIdColumnName 必须是字符串`);
+  if (value.geodesicGeometryMode != null && value.geodesicGeometryMode !== 'POINT_ONLY' && value.geodesicGeometryMode !== 'GEOMETRY')
+    errors.push(`${prefix}.geodesicGeometryMode 无效`);
   const matching: SpatialNearestMatching = {
     semantics: value.semantics === 'EXACT_DISTANCE' || value.semantics === 'LEGACY_KNN' ? value.semantics : null,
     sourceIdColumnName: typeof value.sourceIdColumnName === 'string' ? value.sourceIdColumnName : '',
     connectionLines: null,
+    geodesicGeometryMode: value.geodesicGeometryMode === 'POINT_ONLY' || value.geodesicGeometryMode === 'GEOMETRY'
+      ? value.geodesicGeometryMode : null,
   };
   if (value.connectionLines == null) return { matching };
   if (!record(value.connectionLines)) { errors.push(`${prefix}.connectionLines 必须是对象或 null`); return { matching }; }

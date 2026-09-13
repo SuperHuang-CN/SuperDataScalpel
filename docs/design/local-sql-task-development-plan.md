@@ -75,7 +75,7 @@
 ## 当前实施状态（2026-07-14）
 
 - P1 至 P7 已实现：方言层只读词法检查、CTE Insert-Select 渲染、任务定义和发布校验、持久化异步运行、任务管理 UI 与运行记录 UI 均已接入。
-- 八种内建方言已有渲染单测；`OVERWRITE` 仅由 PostgreSQL 能力声明，ClickHouse 仅开放 `APPEND`。
+- 内建方言已有渲染单测；`OVERWRITE` 由 PostgreSQL、HighGo、openGauss 与人大金仓声明，ClickHouse 仅开放 `APPEND`。
 - `TaskIntegrationTests` 覆盖定义保存、发布、停用、运行入队、模型/目录引用保护和“有运行记录后不可删除”。
 - `PostgreSqlLocalSqlTaskIntegrationTest` 是按环境变量启用的真实 PostgreSQL 验收：普通和 CTE `APPEND`、查询列顺序、列级发布失败、运行失败、超时、同任务并发限制、`OVERWRITE` 成功与失败回滚、停用/重启用和运行快照均已于 2026-07-14 执行通过。
 - MySQL、Oracle、SQL Server、ClickHouse、达梦、人大金仓和 openGauss 当前只有方言渲染与能力单测；不得将其表述为真实数据库执行验证。

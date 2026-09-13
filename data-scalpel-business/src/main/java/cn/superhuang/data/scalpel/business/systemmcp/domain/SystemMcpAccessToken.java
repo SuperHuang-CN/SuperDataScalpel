@@ -11,6 +11,9 @@ import java.util.UUID;
 public class SystemMcpAccessToken extends BaseEntity {
     @Column(nullable = false, length = 100)
     private String name;
+    @Column private Boolean managed;
+    public boolean isManaged() { return Boolean.TRUE.equals(managed); }
+    public void setManaged(boolean value) { managed=value; }
     @Column(nullable = false)
     private UUID userId;
     @Column(nullable = false, unique = true, length = 64)

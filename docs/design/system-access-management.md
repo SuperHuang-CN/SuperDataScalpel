@@ -69,7 +69,6 @@
 
 除上述公开查询外，资产管理接口仍需 JWT。`GET /api/v1/assets/{id}/source-navigation` 也必须登录，并根据资产来源类型再次校验对应的 `model.view`、`filedataset.view`、`standard.dictionary.view` 或 `service.view`；浏览器不能用门户身份直接访问原模块管理接口。
 
-AI 助手接口 `/api/v1/assistant/**` 全部要求登录且会话只允许创建者访问。助手不新增 `assistant.use` 权限；工具按照当前 JWT authorities 动态提供并在执行时再次校验。目录查询要求 `directory.view`，目录计划生成和确认执行要求 `directory.manage`。AI 模型管理复用 `system.configuration.view/update`，API Key 只返回是否已配置，不能进入 JWT、接口响应或助手审计。
 
 JWT 的 `roles` 和 `permissions` Claim 由登录时的数据库用户、单一角色及有效权限产生。受保护的 Resource 使用 `@PreAuthorize("hasAuthority('权限编码')")` 进行判断。令牌有效期内的角色调整不会立即影响已签发令牌，重新登录后生效；第一版不维护服务端令牌黑名单。
 
@@ -105,3 +104,9 @@ JWT 的 `roles` 和 `permissions` Claim 由登录时的数据库用户、单一�
 - 自定义角色只获得被配置的权限；无权请求返回 `403`。
 - 被用户引用的角色不能删除；内置角色不能改授权或删除；当前用户不能自行停用或删除。
 - 前端验证登录、菜单收敛、用户/角色 CRUD、角色授权和权限目录只读。
+
+DSH 接入使用登录 JWT 的 `userId` UUID 声明，每次请求检查用户当前启用状态；旧 JWT 在原接口继续有效，访问 DSH 需要重新登录。详见 [第三阶段设计](dsh-plugin-phase-three.md)。
+
+### DSH 前端缓存身份
+
+`GET /api/v1/auth/me` 附加返回可空 `userId`，直接来自登录 JWT 的系统用户 UUID 声明。助手以该 UUID 区分会话缓存和输入草稿，退出登录时清除；该字段不替代服务端认证或用户启用状态检查。旧 JWT 可能缺少此字段，原业务访问行为保持不变，访问 DSH 时仍返回明确的重新登录错误。
