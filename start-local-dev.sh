@@ -528,7 +528,7 @@ configure_task_engine() {
 
 register_local_engine() {
   local backend_url="$BACKEND_INTERNAL_URL"
-  local token engine_list engine_id
+  local token engine_list engine_id access_policy_response
 
   echo "正在等待本地管理员可登录…"
   if ! token="$(wait_for_admin_token "$backend_url")"; then
@@ -588,12 +588,15 @@ register_local_engine() {
     "$backend_url/api/v1/service-engines/$engine_id/actions/test" >/dev/null
 
   echo "正在同步本地服务引擎访问策略…"
-  curl --fail-with-body --silent --show-error \
-    --request POST \
-    --header "Authorization: Bearer $token" \
-    --header 'Content-Type: application/json' \
-    --data "$ENGINE_ACCESS_POLICY_JSON" \
-    "$backend_url/api/v1/service-engines/$engine_id/actions/update-access-policy" >/dev/null
+  if ! access_policy_response="$(curl --fail-with-body --silent --show-error \
+      --request POST \
+      --header "Authorization: Bearer $token" \
+      --header 'Content-Type: application/json' \
+      --data "$ENGINE_ACCESS_POLICY_JSON" \
+      "$backend_url/api/v1/service-engines/$engine_id/actions/update-access-policy")"; then
+    [[ -n "$access_policy_response" ]] && echo "$access_policy_response" >&2
+    return 1
+  fi
 
   configure_task_engine "$backend_url" "$token"
 }
