@@ -1,6 +1,8 @@
 ARG NODE_IMAGE=node:24-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553
+ARG NODE_BUILD_IMAGE=${NODE_IMAGE}
+ARG NODE_BUILD_TOOLS_PREINSTALLED=false
 
-FROM ${NODE_IMAGE} AS plugin-build
+FROM ${NODE_BUILD_IMAGE} AS plugin-build
 WORKDIR /plugin
 COPY integrations/dsh-plugin/package.json integrations/dsh-plugin/package-lock.json ./
 RUN npm ci --ignore-scripts && npm cache clean --force
@@ -11,11 +13,14 @@ COPY integrations/dsh-plugin/scripts ./scripts
 COPY integrations/dsh-plugin/README.md ./README.md
 RUN npm run build && mkdir /artifact && npm pack --pack-destination /artifact
 
-FROM ${NODE_IMAGE} AS node-dependencies
+FROM ${NODE_BUILD_IMAGE} AS node-dependencies
+ARG NODE_BUILD_TOOLS_PREINSTALLED
 WORKDIR /opt/dsh
-RUN apt-get update \
-    && apt-get install --yes --no-install-recommends build-essential ca-certificates python3 \
-    && rm -rf /var/lib/apt/lists/*
+RUN if [ "$NODE_BUILD_TOOLS_PREINSTALLED" != "true" ]; then \
+        apt-get update \
+        && apt-get install --yes --no-install-recommends build-essential ca-certificates python3 \
+        && rm -rf /var/lib/apt/lists/*; \
+    fi
 COPY deploy/dsh/package.json deploy/dsh/package-lock.json ./
 RUN npm ci --omit=dev \
     && npm cache clean --force
