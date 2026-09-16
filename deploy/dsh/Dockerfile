@@ -5,7 +5,8 @@ ARG NODE_BUILD_TOOLS_PREINSTALLED=false
 FROM ${NODE_BUILD_IMAGE} AS plugin-build
 WORKDIR /plugin
 COPY integrations/dsh-plugin/package.json integrations/dsh-plugin/package-lock.json ./
-RUN npm ci --ignore-scripts && npm cache clean --force
+RUN NODE_OPTIONS=--max-old-space-size=8192 npm ci --ignore-scripts \
+    && npm cache clean --force
 COPY integrations/dsh-plugin/tsconfig.json ./
 COPY integrations/dsh-plugin/src ./src
 COPY integrations/dsh-plugin/presets ./presets
