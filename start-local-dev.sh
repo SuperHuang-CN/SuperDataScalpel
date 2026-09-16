@@ -411,7 +411,7 @@ wait_for_health() {
     sleep 1
   done
 
-  echo "$name 未能在约 ${SERVICE_STARTUP_TIMEOUT_SECONDS} 秒内就绪：$health_url（最后 HTTP 状态：${http_status:-000}）"
+  echo "$name 未能在约 ${SERVICE_STARTUP_TIMEOUT_SECONDS} 秒内就绪：${health_url}（最后 HTTP 状态：${http_status:-000}）"
   return 1
 }
 
@@ -734,7 +734,14 @@ start_health_check "服务引擎" "$ENGINE_ADMIN_URL/actuator/health" "$ENGINE_P
 start_health_check "Task Engine" "$TASK_ENGINE_URL/health/ready" "$TASK_ENGINE_PID"
 start_health_check "Task Dispatcher" "$DISPATCHER_URL/health/ready" "$DISPATCHER_PID"
 start_health_check "后端" "$BACKEND_INTERNAL_URL/actuator/health" "$BACKEND_PID"
-start_health_check "前端" "http://127.0.0.1:$FRONTEND_PORT" "$FRONTEND_PID"
+FRONTEND_HEALTH_HOST="${FRONTEND_HOST:-localhost}"
+if [[ "$FRONTEND_HEALTH_HOST" == "0.0.0.0" || "$FRONTEND_HEALTH_HOST" == "::" ]]; then
+  FRONTEND_HEALTH_HOST="localhost"
+fi
+if [[ "$FRONTEND_HEALTH_HOST" == *:* && "$FRONTEND_HEALTH_HOST" != \[*\] ]]; then
+  FRONTEND_HEALTH_HOST="[$FRONTEND_HEALTH_HOST]"
+fi
+start_health_check "前端" "http://$FRONTEND_HEALTH_HOST:$FRONTEND_PORT" "$FRONTEND_PID"
 wait_for_background_jobs
 
 register_local_engine

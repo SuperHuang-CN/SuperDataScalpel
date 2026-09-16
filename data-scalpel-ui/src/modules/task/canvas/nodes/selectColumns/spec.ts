@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSelectColumnsConfiguration } from '../nodeDefaults';
+import { createSelectColumnsConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSelectColumns } from '../nodeSummaries';
+import { summarizeSelectColumns } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { selectColumnsCanvasView } from './canvasView';
 
 export const selectColumnsSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SelectColumns,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorColumn,

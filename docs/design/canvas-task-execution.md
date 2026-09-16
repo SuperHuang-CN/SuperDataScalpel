@@ -317,3 +317,7 @@ data-scalpel-task-engine-0.1.0-SNAPSHOT-runner-cluster.jar
 ```
 
 本地 `start-local-dev.sh` 会检查 Kafka、MinIO、Docker 和 Local Runner 制品，启动只负责预检的 Task Engine 及 Local Docker Dispatcher，并登记计算引擎。MinIO 或数据库位于宿主机时，应使用容器可访问的 `host.docker.internal` 或实际 DNS；系统不会自动改写数据源地址。
+
+## 2026-09 运行管理内部职责
+
+TaskRunArtifactQueryService 负责日志、产物下载/预览和 Canvas/JAR 试运行结果读取，继续核对结果版本及运行身份，数据库只读取短事务快照。TaskRunService 保留兼容入口与提交编排；Canvas、JAR 和质检任务复用计划锁/触发去重、计算引擎复核及 Run+Submit Outbox 同事务提交约束，类型专属准备与定义校验仍各自维护。

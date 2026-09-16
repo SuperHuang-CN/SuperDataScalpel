@@ -296,3 +296,9 @@ Engine 通过 `ApiDataSourceRegistry` 取得 API Studio 按数据源复用的连
 ## PostgreSQL 实库验收
 
 默认构建使用 H2 PostgreSQL 模式覆盖 Engine SQL 路由，不要求本机运行 PostgreSQL。设置 `DATASCALPEL_PG_INTEGRATION=true` 以及 `DATASCALPEL_PG_HOST`、`DATASCALPEL_PG_PORT`、`DATASCALPEL_PG_DATABASE`、`DATASCALPEL_PG_SCHEMA`、`DATASCALPEL_PG_USERNAME`、`DATASCALPEL_PG_PASSWORD` 后，`PostgreSqlSqlServiceIntegrationTest` 会在指定的可丢弃 schema 中创建随机表，并验证 PreparedStatement 元数据、标量和重复参数、显式 null、分页、count、read-only connection、BigDecimal 字符串以及日期时间 ISO 输出。测试结束始终删除随机表。
+
+## 2026-09 部署并发约束
+
+Service Engine 对同一服务的完整部署、卸载与启动恢复串行协调，包含运行路由修改及结果落库；运行锁不跨越数据库事务边界，也不把外部调用放进管理数据库事务。启动恢复在获得协调锁后重新读取当前部署状态，避免旧快照恢复已卸载路由。Engine code 仍标识单个运行实例，未引入多实例共享同一动态路由表的能力。
+
+Admin 的每次启用/移除使用独立 operationId，包括复用同一 revision 的相同定义重试；准备与完成阶段持有服务行锁，旧 operationId 的结果返回冲突，不能覆盖新操作状态或样式结果。HTTP 契约仍是按 serviceId 覆盖/卸载；operationId 是本地并发归属，不改变部署 revision 的公开语义。

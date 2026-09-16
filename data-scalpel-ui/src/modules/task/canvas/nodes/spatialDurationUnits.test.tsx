@@ -4,7 +4,7 @@ import { afterEach, expect, it, vi } from 'vitest';
 import { parseCanvasDefinition } from '../canvasDefinitionIO';
 import { CANVAS_SCHEMA_MINOR_VERSION, CanvasNodeType } from '../canvasTypes';
 import * as defaults from './nodeDefaults';
-import { unsupportedSpatialDurationPaths } from './spatialUnits';
+import { unsupportedSpatialDurationPaths } from '../parsing/spatialCompatibility';
 import { TrackBoundaryEditor } from './trackShared';
 import { spatialDurationUnitOptions } from './spatialAggregationOptions';
 import { trackDurationUnitOptions } from './trackOptions';

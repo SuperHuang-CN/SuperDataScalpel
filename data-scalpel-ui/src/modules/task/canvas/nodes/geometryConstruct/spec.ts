@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createGeometryConstructConfiguration } from '../nodeDefaults';
+import { createGeometryConstructConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeGeometryConstruct } from '../nodeSummaries';
+import { summarizeGeometryConstruct } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { geometryConstructCanvasView } from './canvasView';
 
 export const geometryConstructSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.GeometryConstruct,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

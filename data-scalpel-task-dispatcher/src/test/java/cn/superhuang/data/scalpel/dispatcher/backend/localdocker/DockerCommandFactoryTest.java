@@ -22,11 +22,11 @@ class DockerCommandFactoryTest {
                 UUID.fromString("20000000-0000-0000-0000-000000000002"),
                 UUID.fromString("30000000-0000-0000-0000-000000000003"), 1);
 
-        List<String> command = factory.create(identity, Path.of("/tmp/execution"), Path.of("/tmp/execution/runner.env"));
+        List<String> command = factory.create(identity, Path.of("/tmp/execution"), Path.of("/tmp/execution/runner.env"), new cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec(2, 4096, 1, 1, 1024));
 
         assertThat(command.getFirst()).isEqualTo("docker-custom");
         assertThat(command).containsSubsequence("create", "--name", "datascalpel-runner-" + identity.executionId());
-        assertThat(command).contains("--platform", "linux/arm64", "--pull", "missing", "--memory", "4g", "--cpus", "2");
+        assertThat(command).contains("--platform", "linux/arm64", "--pull", "missing", "--memory", "4096m", "--cpus", "2");
         assertThat(command).contains(
                 "cn.superhuang.datascalpel.managed=true",
                 "cn.superhuang.datascalpel.engine-id=" + identity.engineId(),

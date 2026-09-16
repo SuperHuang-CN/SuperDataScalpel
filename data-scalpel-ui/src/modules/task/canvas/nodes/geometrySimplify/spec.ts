@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createGeometrySimplifyConfiguration } from '../nodeDefaults';
+import { createGeometrySimplifyConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeGeometrySimplify } from '../nodeSummaries';
+import { summarizeGeometrySimplify } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { geometrySimplifyCanvasView } from './canvasView';
 
 export const geometrySimplifySpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.GeometrySimplify,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

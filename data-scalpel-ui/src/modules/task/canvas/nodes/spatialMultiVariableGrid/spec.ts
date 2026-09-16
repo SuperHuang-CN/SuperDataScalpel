@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialMultiVariableGridConfiguration } from '../nodeDefaults';
+import { createSpatialMultiVariableGridConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialMultiVariableGrid } from '../nodeSummaries';
+import { summarizeSpatialMultiVariableGrid } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialMultiVariableGridCanvasView } from './canvasView';
 
 export const spatialMultiVariableGridSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialMultiVariableGrid,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

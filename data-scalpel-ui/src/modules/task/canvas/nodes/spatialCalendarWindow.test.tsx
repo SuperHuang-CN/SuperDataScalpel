@@ -1,4 +1,5 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { Modal } from 'antd';
 import { createRef, useState } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -17,6 +18,19 @@ const id = '11111111-1111-4111-8111-111111111111';
 const layout = { x: 17, y: 22, width: 360, height: 224 };
 const time: SpatialTemporalSlicing = { ...createSpatialTemporalSlicing(), interval: 2, intervalUnit: 'HOURS', repeatInterval: 1,
   repeatIntervalUnit: 'DAYS', calendar: { mode: 'CALENDAR', intervalUnit: 'MONTHS', repeatIntervalUnit: 'YEARS' } };
+
+const selectOption = async (fieldLabel: string, optionLabel: string) => {
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: fieldLabel }));
+  const option = await waitFor(() => {
+    const visibleOption = screen.getAllByText(optionLabel).find((element) => {
+      const dropdown = element.closest<HTMLElement>('.ant-select-dropdown');
+      return dropdown && window.getComputedStyle(dropdown).pointerEvents !== 'none';
+    });
+    if (!visibleOption) throw new Error(`未找到可见选项：${optionLabel}`);
+    return visibleOption;
+  });
+  await userEvent.setup({ pointerEventsCheck: 0 }).click(option);
+};
 
 it('gates active and inactive options at 4.39 on both nodes while preserving old fixed JSON', () => {
   for (const type of [CanvasNodeType.SpatialBinAggregate, CanvasNodeType.SpatialSummarizeWithin]) {
@@ -53,14 +67,12 @@ it('requires explicit semantic confirmation and retains inactive units and numer
     return <SpatialTemporalSlicingEditor value={value} columns={[]} onChange={v => { setValue(v); changed(v); }} />;
   }
   render(<Harness />);
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: '时间窗口语义' }));
-  fireEvent.click(await screen.findByText('固定时长', { selector: '.ant-select-item-option-content' }));
+  await selectOption('时间窗口语义', '固定时长');
   expect(changed).not.toHaveBeenCalled();
   const dialog = await screen.findByRole('dialog'); fireEvent.click(within(dialog).getByRole('button', { name: '确认切换' }));
   await waitFor(() => expect(screen.getByRole('combobox', { name: '固定窗口单位' })).toBeTruthy());
   expect(changed.mock.calls[0][0]).toEqual({ ...time, calendar: { ...time.calendar, mode: 'FIXED_DURATION' } });
-  fireEvent.mouseDown(screen.getByRole('combobox', { name: '时间窗口语义' }));
-  fireEvent.click(await screen.findByText('日历周期', { selector: '.ant-select-item-option-content' }));
+  await selectOption('时间窗口语义', '日历周期');
   await waitFor(() => expect(screen.getByRole('button', { name: '确认切换' })).toBeTruthy());
   fireEvent.click(screen.getByRole('button', { name: '确认切换' }));
   await waitFor(() => expect(changed).toHaveBeenCalledTimes(2)); expect(changed.mock.calls[1][0]).toEqual(time);
@@ -76,14 +88,16 @@ for (const type of [CanvasNodeType.SpatialBinAggregate, CanvasNodeType.SpatialSu
     else render(<WithinInspector {...props} node={{ id, type, name: '区域', layout,
       configuration: { ...createSpatialSummarizeWithinConfiguration(), temporalSlicing: time } }} />);
     fireEvent.click(screen.getByRole('button', { name: '设置时间切片' }));
-    fireEvent.change(screen.getByRole('spinbutton', { name: '窗口长度' }), { target: { value: '7' } });
-    fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }));
+    let dialog = await screen.findByRole('dialog');
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: '窗口长度' }), { target: { value: '7' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: /取\s*消/ }));
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });
     expect(apply.mock.calls[0][0].configuration.temporalSlicing).toEqual(time);
     fireEvent.click(screen.getByRole('button', { name: '设置时间切片' }));
-    expect(screen.getByRole('spinbutton', { name: '窗口长度' }).getAttribute('value')).toBe('2');
-    fireEvent.change(screen.getByRole('spinbutton', { name: '窗口长度' }), { target: { value: '' } });
-    fireEvent.click(screen.getByRole('button', { name: '保存草稿' }));
+    dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('spinbutton', { name: '窗口长度' }).getAttribute('value')).toBe('2');
+    fireEvent.change(within(dialog).getByRole('spinbutton', { name: '窗口长度' }), { target: { value: '' } });
+    fireEvent.click(within(dialog).getByRole('button', { name: '保存草稿' }));
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });
     expect(apply.mock.calls.at(-1)?.[0].configuration.temporalSlicing).toEqual({ ...time, interval: 0 });
   });

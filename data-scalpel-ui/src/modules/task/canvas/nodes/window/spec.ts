@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createWindowConfiguration } from '../nodeDefaults';
+import { createWindowConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeWindow } from '../nodeSummaries';
+import { summarizeWindow } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { windowCanvasView } from './canvasView';
 
 export const windowSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.Window,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorAggregate,

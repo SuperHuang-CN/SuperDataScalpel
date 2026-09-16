@@ -64,98 +64,27 @@ class DispatcherExecutionReconciliationServiceTest {
     }
 
     @Test
-    void recognizesNestedDispatcherNotFoundResponse() {
-        HttpClientErrorException notFound = HttpClientErrorException.create(
-                HttpStatus.NOT_FOUND,
-                "Not Found",
-                HttpHeaders.EMPTY,
-                new byte[0],
-                StandardCharsets.UTF_8
-        );
-
-        assertThat(DispatcherExecutionReconciliationService.dispatcherExecutionNotFound(
-                new IllegalStateException("wrapped", notFound)
-        )).isTrue();
-    }
-
-    @Test
-    void stopsUntrackedStreamingRunAndDeploymentAfterRecoveryGrace() {
-        TaskRunRepository runRepository = mock(TaskRunRepository.class);
-        TaskStreamingDeploymentRepository deploymentRepository =
-                mock(TaskStreamingDeploymentRepository.class);
-        TaskStreamingQueryRepository queryRepository = mock(TaskStreamingQueryRepository.class);
-        ComputeEngineExecutionService executionService = mock(ComputeEngineExecutionService.class);
-        DispatcherEventApplicationService eventApplicationService =
-                mock(DispatcherEventApplicationService.class);
-        PlatformTransactionManager transactionManager = mock(PlatformTransactionManager.class);
-        when(transactionManager.getTransaction(any())).thenReturn(new SimpleTransactionStatus());
-
-        UUID runEntityId = UUID.randomUUID();
-        UUID runId = UUID.randomUUID();
-        UUID executionId = UUID.randomUUID();
-        UUID engineId = UUID.randomUUID();
-        UUID deploymentId = UUID.randomUUID();
+    void doesNotInventStoppedStateFromDispatcher404() {
+        TaskRunRepository runs = mock(TaskRunRepository.class);
+        ComputeEngineExecutionService engine = mock(ComputeEngineExecutionService.class);
+        DispatcherEventApplicationService events = mock(DispatcherEventApplicationService.class);
         TaskRun run = mock(TaskRun.class);
-        when(run.getId()).thenReturn(runEntityId);
-        when(run.getTaskType()).thenReturn(TaskType.SPARK_STREAMING_CANVAS);
-        when(run.getStatus()).thenReturn(TaskRunStatus.STOP_REQUESTED);
-        when(run.getExecutionRunId()).thenReturn(runId);
-        when(run.getExternalExecutionId()).thenReturn(executionId);
+        UUID engineId = UUID.randomUUID();
+        UUID executionId = UUID.randomUUID();
+        when(run.getId()).thenReturn(UUID.randomUUID());
         when(run.getComputeEngineId()).thenReturn(engineId);
-        when(run.getAttempt()).thenReturn(1);
-        when(run.getStreamingDeploymentId()).thenReturn(deploymentId);
-        when(run.getLastDispatcherEventSequence()).thenReturn(0L);
-        when(run.getUpdatedAt()).thenReturn(Instant.now().minusSeconds(5));
-
-        when(runRepository.findAllByTaskTypeAndStatusIn(TaskType.SPARK_CANVAS, List.of(
-                TaskRunStatus.QUEUED, TaskRunStatus.RUNNING,
-                TaskRunStatus.CANCEL_REQUESTED, TaskRunStatus.STOP_REQUESTED
-        ))).thenReturn(List.of());
-        when(runRepository.findAllByTaskTypeAndStatusIn(TaskType.SPARK_STREAMING_CANVAS, List.of(
-                TaskRunStatus.QUEUED, TaskRunStatus.RUNNING,
-                TaskRunStatus.CANCEL_REQUESTED, TaskRunStatus.STOP_REQUESTED
-        ))).thenReturn(List.of(run));
-        when(runRepository.findByIdForUpdate(runEntityId)).thenReturn(Optional.of(run));
-
-        HttpClientErrorException notFound = HttpClientErrorException.create(
-                HttpStatus.NOT_FOUND,
-                "Not Found",
-                HttpHeaders.EMPTY,
-                new byte[0],
-                StandardCharsets.UTF_8
-        );
-        when(executionService.execution(engineId, executionId)).thenThrow(notFound);
-
-        TaskStreamingDeployment deployment = mock(TaskStreamingDeployment.class);
-        TaskStreamingQuery query = mock(TaskStreamingQuery.class);
-        when(deployment.getId()).thenReturn(deploymentId);
-        when(deploymentRepository.findByIdForUpdate(deploymentId)).thenReturn(Optional.of(deployment));
-        when(queryRepository.findAllByDeploymentIdOrderByOutputNodeNameAsc(deploymentId))
-                .thenReturn(List.of(query));
-
-        DispatcherExecutionReconciliationService service =
-                new DispatcherExecutionReconciliationService(
-                        runRepository,
-                        org.mockito.Mockito.mock(cn.superhuang.data.scalpel.business.operations.service.TaskRunAlertService.class),
-                        deploymentRepository,
-                        queryRepository,
-                        executionService,
-                        eventApplicationService,
-                        new CanvasTaskRunProperties(Duration.ofMinutes(30), Duration.ZERO),
-                        transactionManager
-                );
-
+        when(run.getExternalExecutionId()).thenReturn(executionId);
+        when(runs.findDispatchedForReconciliation(any(), org.mockito.ArgumentMatchers.isNull(), any()))
+                .thenReturn(List.of(run));
+        when(engine.execution(engineId, executionId)).thenThrow(HttpClientErrorException.create(
+                HttpStatus.NOT_FOUND, "Not Found", HttpHeaders.EMPTY, new byte[0], StandardCharsets.UTF_8));
+        var service = new DispatcherExecutionReconciliationService(runs,
+                mock(cn.superhuang.data.scalpel.business.operations.service.TaskRunAlertService.class),
+                engine, events, new CanvasTaskRunProperties(Duration.ofMinutes(30), Duration.ZERO),
+                mock(PlatformTransactionManager.class));
         service.reconcile();
-
-        verify(run).stop(
-                org.mockito.ArgumentMatchers.contains("未进入 Dispatcher"),
-                any(Instant.class)
-        );
-        verify(runRepository).save(run);
-        verify(deployment).markStopped(any(Instant.class));
-        verify(deploymentRepository).save(deployment);
-        verify(query).markStopped();
-        verify(queryRepository).save(query);
-        verify(eventApplicationService, never()).accept(any());
+        verify(run, never()).stop(any(), any());
+        verify(runs, never()).save(any());
+        verify(events, never()).accept(any());
     }
 }

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialCenterDispersionConfiguration } from '../nodeDefaults';
+import { createSpatialCenterDispersionConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialCenterDispersion } from '../nodeSummaries';
+import { summarizeSpatialCenterDispersion } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialCenterDispersionCanvasView } from './canvasView';
 
 export const spatialCenterDispersionSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialCenterDispersion,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

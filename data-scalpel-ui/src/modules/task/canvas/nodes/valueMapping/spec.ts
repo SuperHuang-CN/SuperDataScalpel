@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createValueMappingConfiguration } from '../nodeDefaults';
+import { createValueMappingConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeValueMapping } from '../nodeSummaries';
+import { summarizeValueMapping } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { valueMappingCanvasView } from './canvasView';
 
 export const valueMappingSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.ValueMapping,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorColumn,

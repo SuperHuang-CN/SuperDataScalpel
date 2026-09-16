@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createTrackFindDwellConfiguration } from '../nodeDefaults';
+import { createTrackFindDwellConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeTrackFindDwell } from '../nodeSummaries';
+import { summarizeTrackFindDwell } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { trackFindDwellCanvasView } from './canvasView';
 
 export const trackFindDwellSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.TrackFindDwell,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

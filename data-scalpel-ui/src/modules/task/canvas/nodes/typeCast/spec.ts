@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createTypeCastConfiguration } from '../nodeDefaults';
+import { createTypeCastConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeTypeCast } from '../nodeSummaries';
+import { summarizeTypeCast } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { typeCastCanvasView } from './canvasView';
 
 export const typeCastSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.TypeCast,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorColumn,

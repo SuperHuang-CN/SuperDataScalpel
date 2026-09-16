@@ -31,6 +31,10 @@ import java.util.UUID;
 
 @Service
 public class DispatcherExecutionStateService {
+    private static final List<DispatcherExecutionState> IN_FLIGHT_WITH_QUEUE = List.of(
+            DispatcherExecutionState.QUEUED, DispatcherExecutionState.SUBMITTING,
+            DispatcherExecutionState.SUBMITTED, DispatcherExecutionState.RUNNING,
+            DispatcherExecutionState.CANCEL_REQUESTED);
     private static final List<DispatcherExecutionState> IN_FLIGHT = List.of(
             DispatcherExecutionState.SUBMITTING, DispatcherExecutionState.SUBMITTED,
             DispatcherExecutionState.RUNNING, DispatcherExecutionState.CANCEL_REQUESTED
@@ -66,7 +70,9 @@ public class DispatcherExecutionStateService {
         if (executionRepository.countByState(DispatcherExecutionState.SUBMITTING)
                 >= registration.getMaxConcurrentSubmissions()) return Optional.empty();
         if (registration.getMaxInFlightApplications() > 0
-                && executionRepository.countByStateIn(IN_FLIGHT) >= registration.getMaxInFlightApplications()) {
+                && executionRepository.countByStateIn(IN_FLIGHT)
+                    + executionRepository.countUnconfirmedTerminalExecutions(IN_FLIGHT_WITH_QUEUE)
+                    >= registration.getMaxInFlightApplications()) {
             return Optional.empty();
         }
         List<DispatcherTaskExecution> queued = executionRepository.findQueuedForUpdate(PageRequest.of(0, 1));
@@ -91,12 +97,14 @@ public class DispatcherExecutionStateService {
         DispatcherTaskExecution execution = locked(executionId);
         execution.submitted(submission.handle().externalId(), submission.handle().trackingUrl());
         executionRepository.save(execution);
+        if (execution.getState().terminal()) return;
         eventService.enqueue(execution, ExecutionMessageType.EXECUTION_SUBMITTED, null, null);
     }
 
     @Transactional
     public void submissionFailed(UUID executionId, String code, String message) {
         DispatcherTaskExecution execution = locked(executionId);
+        if (execution.getState().terminal()) return;
         SafeExecutionError error = dispatcherError(
                 safeCode(code), safeMessage(message), ExecutionErrorCategory.EXTERNAL_SYSTEM, true);
         execution.fail(error);
@@ -161,7 +169,7 @@ public class DispatcherExecutionStateService {
         if (execution.getState().terminal()) return;
         SafeExecutionError error = dispatcherError(
                 "EXECUTION_TERMINATION_UNCONFIRMED",
-                "强制终止后仍无法确认 Backend 终态，平台已停止跟踪该执行",
+                "强制终止后仍无法确认 Backend 终态，后台继续尝试终止和清理",
                 ExecutionErrorCategory.EXTERNAL_SYSTEM,
                 false
         );
@@ -184,6 +192,11 @@ public class DispatcherExecutionStateService {
     @Transactional
     public void recovered(UUID executionId, ExternalExecutionHandle handle) {
         DispatcherTaskExecution execution = locked(executionId);
+        if (execution.getState().terminal()) {
+            execution.attachExternalHandle(handle.externalId(), handle.trackingUrl());
+            executionRepository.save(execution);
+            return;
+        }
         if (execution.getState() != DispatcherExecutionState.SUBMITTING) return;
         execution.submitted(handle.externalId(), handle.trackingUrl());
         executionRepository.save(execution);
@@ -300,10 +313,21 @@ public class DispatcherExecutionStateService {
     }
 
     @Transactional
+    public void externalTerminationConfirmed(UUID executionId) {
+        locked(executionId).externalTerminationConfirmed();
+    }
+
+    @Transactional
     public void externalCleanupCompleted(UUID executionId) {
         DispatcherTaskExecution execution = locked(executionId);
         execution.externalCleanupCompleted();
         executionRepository.save(execution);
+    }
+
+    @Transactional
+    public void scheduleMaintenance(UUID executionId, Instant nextAttempt, boolean cleanupAttempt) {
+        DispatcherTaskExecution execution = locked(executionId);
+        execution.maintenanceScheduled(nextAttempt, cleanupAttempt);
     }
 
     @Transactional

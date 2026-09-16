@@ -10,10 +10,8 @@ import {
   CanvasNodeType,
   type JdbcQueryInputConfiguration,
 } from '../../canvasTypes';
-import {
-  FieldPreview,
-  ValidationIssues,
-} from '../../components/CanvasLegacyInspectors';
+import { CanvasFieldPreview } from '../../components/common/CanvasFieldPreview';
+import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import {
   configurationFingerprint,
   focusFirstInvalidField,
@@ -130,7 +128,7 @@ const JdbcQueryInputInspector = ({
 
   return (
     <Space orientation="vertical" size={12} className="canvas-inspector-content">
-      <ValidationIssues
+      <CanvasNodeValidationIssues
         validation={validation}
         unavailableMessage={validationUnavailableMessage}
       />
@@ -199,7 +197,7 @@ const JdbcQueryInputInspector = ({
         <div className="canvas-inspector-section-title">
           查询结果字段 <Tag>{outputColumns.length}</Tag>
         </div>
-        <FieldPreview columns={outputColumns} loading={analyzing} />
+        <CanvasFieldPreview columns={outputColumns} loading={analyzing} />
       </Form>
     </Space>
   );

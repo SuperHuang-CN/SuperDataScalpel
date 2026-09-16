@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialHotSpotsConfiguration } from '../nodeDefaults';
+import { createSpatialHotSpotsConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialHotSpots } from '../nodeSummaries';
+import { summarizeSpatialHotSpots } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialHotSpotsCanvasView } from './canvasView';
 
 export const spatialHotSpotsSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialHotSpots,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

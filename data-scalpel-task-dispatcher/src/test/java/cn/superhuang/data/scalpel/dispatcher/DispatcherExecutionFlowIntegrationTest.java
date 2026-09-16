@@ -37,6 +37,41 @@ class DispatcherExecutionFlowIntegrationTest {
     @Autowired DispatcherEventOutboxRepository outboxRepository;
     @Autowired DispatcherExecutionCoordinator coordinator;
     @Autowired DispatcherArtifactService artifactService;
+    @Autowired cn.superhuang.data.scalpel.dispatcher.service.DispatcherExecutionStateService states;
+    @Autowired jakarta.persistence.EntityManager entityManager;
+
+    @Test
+    void cleanupQueryExcludesHistoryAndFutureRetriesAndHonorsPageLimit() {
+        Instant now = Instant.now();
+        var due = cleanupCandidate();
+        var secondDue = cleanupCandidate();
+        var completed = cleanupCandidate();
+        completed.externalCleanupCompleted();
+        var deferred = cleanupCandidate();
+        deferred.maintenanceScheduled(now.plusSeconds(300), true);
+        executionRepository.saveAll(java.util.List.of(due, secondDue, completed, deferred));
+        entityManager.flush();
+        entityManager.clear();
+
+        var states = java.util.List.of(DispatcherExecutionState.TIMED_OUT);
+        assertThat(executionRepository.findDueCleanup(states, now, org.springframework.data.domain.PageRequest.of(0, 50)))
+                .extracting(item -> item.getExecutionId())
+                .containsExactlyInAnyOrder(due.getExecutionId(), secondDue.getExecutionId());
+        assertThat(executionRepository.findDueCleanup(states, now, org.springframework.data.domain.PageRequest.of(0, 1)))
+                .hasSize(1);
+    }
+
+    private cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution cleanupCandidate() {
+        var execution = cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution.queue(
+                submit(UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(), 1),
+                "b".repeat(64), cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER,
+                cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(
+                        cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER).defaults());
+        execution.beginSubmission();
+        execution.submitted("external-" + execution.getExecutionId(), null);
+        execution.timedOut("deadline");
+        return execution;
+    }
 
     @Test
     void deduplicatesCommandsAndCompletesFakeBackendLifecycle() throws Exception {
@@ -45,7 +80,7 @@ class DispatcherExecutionFlowIntegrationTest {
                 engineId,
                 new DispatcherTopics("commands.flow", "runner.flow", "admin.flow"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
-        ));
+        , cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER)));
         UUID executionId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         SubmitExecutionCommand first = submit(engineId, executionId, runId, UUID.randomUUID(), 1);
@@ -66,6 +101,7 @@ class DispatcherExecutionFlowIntegrationTest {
         coordinator.admit();
         assertThat(executionRepository.findByExecutionId(executionId).orElseThrow().getState())
                 .isEqualTo(DispatcherExecutionState.SUBMITTED);
+        states.scheduleMaintenance(executionId, Instant.now().minusSeconds(1), false);
         coordinator.observe();
         assertThat(executionRepository.findByExecutionId(executionId).orElseThrow().getState())
                 .isEqualTo(DispatcherExecutionState.RUNNING);
@@ -85,6 +121,7 @@ class DispatcherExecutionFlowIntegrationTest {
                   "error":null
                 }
                 """).formatted(executionId, runId, resultAt.minusMillis(1), resultAt).getBytes(), "application/json");
+        states.scheduleMaintenance(executionId, Instant.now().minusSeconds(1), false);
         coordinator.observe();
         assertThat(executionRepository.findByExecutionId(executionId).orElseThrow().getState())
                 .isEqualTo(DispatcherExecutionState.SUCCESS);
@@ -98,7 +135,7 @@ class DispatcherExecutionFlowIntegrationTest {
                 engineId,
                 new DispatcherTopics("commands.conflict", "runner.conflict", "admin.conflict"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
-        ));
+        , cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER)));
         UUID executionId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID taskId = UUID.randomUUID();
@@ -122,7 +159,7 @@ class DispatcherExecutionFlowIntegrationTest {
                 engineId,
                 new DispatcherTopics("commands.deadline", "runner.deadline", "admin.deadline"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
-        ));
+        , cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER)));
         UUID executionId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         String prefix = "task-runs/" + runId + "/attempts/1/";
@@ -153,7 +190,7 @@ class DispatcherExecutionFlowIntegrationTest {
                 engineId,
                 new DispatcherTopics("commands.streaming-stop", "runner.streaming-stop", "admin.streaming-stop"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
-        ));
+        , cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER)));
         UUID executionId = UUID.randomUUID();
         UUID runId = UUID.randomUUID();
         UUID deploymentId = UUID.randomUUID();
@@ -173,6 +210,19 @@ class DispatcherExecutionFlowIntegrationTest {
                     assertThat(event.getSequence()).isEqualTo(1);
                     assertThat(event.getExecutionId()).isEqualTo(executionId);
                 });
+        entityManager.flush();
+        entityManager.clear();
+        String prefix = "task-runs/" + runId + "/attempts/1/";
+        var delayedStart = new cn.superhuang.data.scalpel.contract.execution.StartStreamingExecutionCommand(
+                1, UUID.randomUUID(), ExecutionMessageType.START_STREAMING_EXECUTION, Instant.now(),
+                engineId, executionId, runId, 1, UUID.randomUUID(), stop.deploymentId(), 1,
+                "checkpoints/" + stop.deploymentId(), ExecutionTaskType.SPARK_STREAMING_CANVAS,
+                new ExecutionArtifactLocation(prefix + "manifest.json", "a".repeat(64),
+                        prefix + "result.json", prefix + "console.log"), null, java.util.List.of());
+        assertThat(commandService.accept(delayedStart, new MessageCoordinates("commands.streaming-stop", 0, 2)))
+                .isEqualTo(DispatcherCommandService.Outcome.DUPLICATE);
+        assertThat(executionRepository.findByExecutionId(executionId)).isEmpty();
+
     }
 
     private static SubmitExecutionCommand submit(

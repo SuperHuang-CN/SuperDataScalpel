@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createGeometryRepairConfiguration } from '../nodeDefaults';
+import { createGeometryRepairConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeGeometryRepair } from '../nodeSummaries';
+import { summarizeGeometryRepair } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { geometryRepairCanvasView } from './canvasView';
 
 export const geometryRepairSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.GeometryRepair,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

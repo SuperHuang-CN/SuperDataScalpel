@@ -777,3 +777,11 @@ git diff --check
 7. 原记录使用 Canvas `3.0`，重构不引入数据库迁移或功能开关；当前版本见文首入口。
 8. 最近使用、收藏和快捷搜索不在本次范围。
 9. 原重构在设计确认后开始实施，该流程已完成。
+
+## 2026-09 节点职责归位
+
+当前 64 个节点的 `parser.ts`、`defaults.ts`、`summary.ts` 由节点目录持有，`spec.ts` 显式绑定 parseConfiguration。specFactory 只保留强类型定义入口，不再路由到中央解析表。原 nodeDefaults/nodeSummaries 保留纯重导出，nodeConfigurationParser 仅兼容调用 Registry，节点实现不反向依赖它。
+
+定义级 IO 只负责整体图和协议能力校验；基础值解析按 scalars、expressions、types、joins 等主题放在 Canvas 的 parsing 目录，均不依赖节点 Registry。多个节点实际共用的配置解析和摘要辅助保留为少量公共函数，单节点辅助随对应 parser 移动。JSON、错误文本和协议版本保持兼容。
+
+空间单位选项仅保留类型依赖；协议版本中的单位兼容性检查位于 `parsing/spatialCompatibility.ts`，避免通过 Canvas 类型文件和节点默认值形成循环加载。

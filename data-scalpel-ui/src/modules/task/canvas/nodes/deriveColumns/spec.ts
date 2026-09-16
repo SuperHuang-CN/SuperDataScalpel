@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createDeriveColumnsConfiguration } from '../nodeDefaults';
+import { createDeriveColumnsConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeDeriveColumns } from '../nodeSummaries';
+import { summarizeDeriveColumns } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { deriveColumnsCanvasView } from './canvasView';
 
 export const deriveColumnsSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.DeriveColumns,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorColumn,

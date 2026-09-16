@@ -455,7 +455,8 @@ class KongGatewayServiceAdapterTest {
                 "订单服务",
                 3,
                 "/open-api/v1/orders",
-                "http://engine.test:8081/"
+                "http://engine.test:8081/",
+                "/open-api/v1/orders", DataServiceAccessMode.PUBLIC
         );
     }
 
@@ -466,8 +467,9 @@ class KongGatewayServiceAdapterTest {
                 service.code(),
                 service.name(),
                 service.revision(),
-                service.routePath(),
+                service.gatewayRoutePath(),
                 service.upstreamUrl(),
+                service.upstreamPath(),
                 DataServiceAccessMode.SUBSCRIPTION_REQUIRED
         );
     }
@@ -604,7 +606,7 @@ class KongGatewayServiceAdapterTest {
                 """.formatted(
                 externalId,
                 service.id(),
-                service.routePath(),
+                service.gatewayRoutePath(),
                 serviceId,
                 jsonTags(tags)
         );

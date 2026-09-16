@@ -66,7 +66,7 @@ export const ContextHelp = ({
         content={<div className="context-help-popover-content">{content}</div>}
         trigger={['hover', 'focus', 'click']}
         placement={placement}
-        overlayClassName="context-help-popover"
+        classNames={{ root: 'context-help-popover' }}
       >
         {trigger}
       </Popover>
@@ -78,7 +78,7 @@ export const ContextHelp = ({
       title={content}
       trigger={['hover', 'focus', 'click']}
       placement={placement}
-      overlayClassName="context-help-tooltip"
+      classNames={{ root: 'context-help-tooltip' }}
     >
       {trigger}
     </Tooltip>
@@ -137,7 +137,7 @@ export const InlineFeedback = ({
       title={ariaLabel ?? textFromNode(label) ?? '查看详情'}
       content={<div className="inline-feedback-popover-content">{detail}</div>}
       trigger={['hover', 'focus', 'click']}
-      overlayClassName="inline-feedback-popover"
+      classNames={{ root: 'inline-feedback-popover' }}
     >
       {content}
     </Popover>

@@ -59,6 +59,8 @@ public enum SystemPermissionDefinition {
     METRIC_VIEW("metric.view", "指标管理", "查看指标", "查看业务口径、版本和资源关联", 341),
     METRIC_MANAGE("metric.manage", "指标管理", "管理指标", "登记指标、编辑草稿和维护结果绑定", 343),
     METRIC_PUBLISH("metric.publish", "指标管理", "发布指标", "发布和停用指标口径", 345),
+    ONTOLOGY_VIEW("ontology.view", "业务建模", "查看业务建模", "查看业务对象类型、当前定义、关系和只读预览", 347),
+    ONTOLOGY_MANAGE("ontology.manage", "业务建模", "管理业务建模", "创建、维护、启停和删除业务对象类型当前定义", 349),
     MODEL_VIEW("model.view", "模型管理", "查看模型", "查询模型、字段定义和常用字段模板", 300),
     MODEL_CREATE("model.create", "模型管理", "新增模型", "新增模型元数据", 310),
     MODEL_UPDATE("model.update", "模型管理", "修改模型", "修改模型元数据和字段定义，并维护常用字段模板", 320),

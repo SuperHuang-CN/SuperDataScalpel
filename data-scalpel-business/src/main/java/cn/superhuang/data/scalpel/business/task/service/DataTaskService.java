@@ -73,6 +73,7 @@ public class DataTaskService {
 
     private final DataTaskRepository taskRepository;
     private final LocalSqlTaskDefinitionRepository definitionRepository;
+    private final CanvasFileDatasetReferenceService fileReferences;
     private final CanvasTaskDefinitionRepository canvasDefinitionRepository;
     private final ModelQualityTaskDefinitionRepository modelQualityDefinitionRepository;
     private final LocalSqlTaskInputRepository inputRepository;
@@ -107,6 +108,7 @@ public class DataTaskService {
     public DataTaskService(
             DataTaskRepository taskRepository,
             LocalSqlTaskDefinitionRepository definitionRepository,
+            CanvasFileDatasetReferenceService fileReferences,
             CanvasTaskDefinitionRepository canvasDefinitionRepository,
             ModelQualityTaskDefinitionRepository modelQualityDefinitionRepository,
             LocalSqlTaskInputRepository inputRepository,
@@ -140,6 +142,7 @@ public class DataTaskService {
         this.workflowDefinitions = workflowDefinitions;
         this.taskRepository = taskRepository;
         this.definitionRepository = definitionRepository;
+        this.fileReferences = fileReferences;
         this.canvasDefinitionRepository = canvasDefinitionRepository;
         this.modelQualityDefinitionRepository = modelQualityDefinitionRepository;
         this.inputRepository = inputRepository;
@@ -414,7 +417,8 @@ public class DataTaskService {
 
     @Transactional
     public void delete(UUID taskId) {
-        DataTask task = requireTask(taskId);
+        DataTask task = taskRepository.findByIdForUpdate(taskId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
         if (task.getStatus() == TaskStatus.PUBLISHED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已发布任务请先停用后再删除");
         }
@@ -425,6 +429,7 @@ public class DataTaskService {
         scheduleService.deleteForTask(taskId);
         dataSourceReferenceRepository.deleteAllByTaskId(taskId);
         canvasModelReferenceRepository.deleteAllByTaskId(taskId);
+        fileReferences.deleteForTask(taskId);
         inputRepository.deleteAllByTaskId(taskId);
         definitionRepository.findByTaskId(taskId).ifPresent(definitionRepository::delete);
         canvasDefinitionRepository.findByTaskId(taskId).ifPresent(canvasDefinitionRepository::delete);

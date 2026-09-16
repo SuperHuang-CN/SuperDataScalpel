@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialDensityConfiguration } from '../nodeDefaults';
+import { createSpatialDensityConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialDensity } from '../nodeSummaries';
+import { summarizeSpatialDensity } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialDensityCanvasView } from './canvasView';
 
 export const spatialDensitySpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialDensity,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

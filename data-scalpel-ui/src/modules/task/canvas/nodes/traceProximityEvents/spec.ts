@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createTraceProximityEventsConfiguration } from '../nodeDefaults';
+import { createTraceProximityEventsConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeTraceProximityEvents } from '../nodeSummaries';
+import { summarizeTraceProximityEvents } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { traceProximityEventsCanvasView } from './canvasView';
 
 export const traceProximityEventsSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.TraceProximityEvents,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

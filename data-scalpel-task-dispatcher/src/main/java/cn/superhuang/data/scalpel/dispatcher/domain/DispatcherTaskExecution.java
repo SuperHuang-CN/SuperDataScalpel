@@ -32,6 +32,7 @@ import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
         @UniqueConstraint(name = "uk_dispatcher_execution_attempt", columnNames = {"execution_id", "attempt"})
 }, indexes = {
         @Index(name = "idx_dispatcher_execution_queue", columnList = "state,queued_at"),
+        @Index(name = "idx_dispatcher_execution_maintenance", columnList = "state,external_cleanup_completed,next_maintenance_at"),
         @Index(name = "idx_dispatcher_execution_run", columnList = "run_id")
 })
 public class DispatcherTaskExecution extends DispatcherBaseEntity {
@@ -162,6 +163,12 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     private boolean logArtifactStored;
     @Column(name = "external_cleanup_completed", nullable = false)
     private boolean externalCleanupCompleted;
+    @Column(name = "next_maintenance_at")
+    private Instant nextMaintenanceAt;
+    @Column(name = "cleanup_attempts")
+    private Integer cleanupAttempts;
+    @Column(name = "external_termination_confirmed")
+    private Boolean externalTerminationConfirmed;
 
     protected DispatcherTaskExecution() {
     }
@@ -254,6 +261,10 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     }
 
     public void submitted(String externalId, String trackingUrl) {
+        if (state.terminal()) {
+            attachExternalHandle(externalId, trackingUrl);
+            return;
+        }
         require(DispatcherExecutionState.SUBMITTING);
         this.externalExecutionId = required(externalId);
         this.trackingUrl = optional(trackingUrl);
@@ -400,7 +411,27 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     }
 
     public void logArtifactStored() { logArtifactStored = true; }
-    public void externalCleanupCompleted() { externalCleanupCompleted = true; }
+    public void externalCleanupCompleted() {
+        externalCleanupCompleted = true;
+        externalTerminationConfirmed = true;
+    }
+
+    public void externalTerminationConfirmed() { externalTerminationConfirmed = true; }
+
+    public void attachExternalHandle(String externalId, String trackingUrl) {
+        this.externalExecutionId = required(externalId);
+        this.trackingUrl = optional(trackingUrl);
+        externalCleanupCompleted = false;
+        externalTerminationConfirmed = false;
+        nextMaintenanceAt = null;
+    }
+
+    public void maintenanceScheduled(Instant nextAttempt, boolean cleanupAttempt) {
+        nextMaintenanceAt = nextAttempt;
+        if (cleanupAttempt) cleanupAttempts = getCleanupAttempts() + 1;
+    }
+
+    public int getCleanupAttempts() { return cleanupAttempts == null ? 0 : cleanupAttempts; }
 
     private void terminal(DispatcherExecutionState target, String code, String message) {
         terminal(target, code, message, Instant.now());

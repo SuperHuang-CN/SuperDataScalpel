@@ -17,11 +17,15 @@ import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherTaskExecutionRepository;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
+import org.springframework.data.domain.PageRequest;
 
 import java.time.Instant;
 import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 @Component
 public class DispatcherExecutionCoordinator {
@@ -43,6 +47,8 @@ public class DispatcherExecutionCoordinator {
     private final DispatcherArtifactProperties artifactProperties;
     private final DispatcherResultService resultService;
     private final DispatcherArtifactService artifactService;
+    private final Set<UUID> submitting = ConcurrentHashMap.newKeySet();
+    private static final int MAINTENANCE_BATCH_SIZE = 50;
 
     public DispatcherExecutionCoordinator(
             TaskExecutionBackend backend,
@@ -62,12 +68,14 @@ public class DispatcherExecutionCoordinator {
         this.artifactService = artifactService;
     }
 
-    @Scheduled(fixedDelayString = "${data-scalpel.dispatcher.admission-poll-interval:500ms}")
+    @Scheduled(scheduler = "dispatcherAdmissionScheduler", fixedDelayString = "${data-scalpel.dispatcher.admission-poll-interval:500ms}")
     public void admit() {
         Optional<ExecutionLaunch> launch = stateService.claimNext();
         if (launch.isEmpty()) return;
+        UUID executionId = launch.get().identity().executionId();
+        submitting.add(executionId);
         try {
-            stateService.submitted(launch.get().identity().executionId(), backend.submit(launch.get()));
+            stateService.submitted(executionId, backend.submit(launch.get()));
         } catch (BackendException exception) {
             if ("BACKEND_SUBMISSION_UNCERTAIN".equals(exception.code())) return;
             stateService.submissionFailed(
@@ -75,28 +83,78 @@ public class DispatcherExecutionCoordinator {
                     DispatcherExecutionStateService.safeCode(exception.code()),
                     DispatcherExecutionStateService.safeMessage(exception.getMessage())
             );
+        } finally {
+            submitting.remove(executionId);
         }
     }
 
-    @Scheduled(fixedDelayString = "${data-scalpel.dispatcher.observation-poll-interval:5s}")
+    @Scheduled(scheduler = "dispatcherObservationScheduler", fixedDelayString = "${data-scalpel.dispatcher.observation-poll-interval:5s}")
     public void observe() {
-        for (DispatcherTaskExecution execution : executionRepository.findAllByStateIn(OBSERVED)) {
-            observe(execution);
+        for (DispatcherTaskExecution execution : executionRepository.findDueObservations(
+                OBSERVED, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE))) {
+            try {
+                observe(execution);
+            } finally {
+                stateService.scheduleMaintenance(execution.getExecutionId(),
+                        Instant.now().plus(properties.observationPollInterval()), false);
+            }
         }
-        for (DispatcherTaskExecution execution : executionRepository.findAllByStateIn(TERMINAL)) {
-            finalizeExternalExecution(execution);
+    }
+
+    @Scheduled(scheduler = "dispatcherCleanupScheduler", fixedDelayString = "${data-scalpel.dispatcher.observation-poll-interval:5s}")
+    public void cleanup() {
+        for (DispatcherTaskExecution execution : executionRepository.findDueCleanup(
+                TERMINAL, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE))) {
+            try {
+                finalizeExternalExecution(execution);
+            } finally {
+                long delay = Math.min(300, 5L << Math.min(execution.getCleanupAttempts(), 6));
+                stateService.scheduleMaintenance(execution.getExecutionId(), Instant.now().plusSeconds(delay), true);
+            }
         }
     }
 
     private void finalizeExternalExecution(DispatcherTaskExecution execution) {
-        if (execution.getExternalExecutionId() == null || execution.isExternalCleanupCompleted()) return;
-        ExternalExecutionHandle handle = handle(execution);
+        if (execution.isExternalCleanupCompleted() || submitting.contains(execution.getExecutionId())) return;
         try {
+            ExternalExecutionHandle handle;
+            if (execution.getExternalExecutionId() == null) {
+                if (execution.getSubmissionStartedAt() == null
+                        || execution.getSubmissionStartedAt().plus(properties.submissionUncertainGrace()).isAfter(Instant.now())) return;
+                Optional<ExternalExecutionHandle> recovered = backend.recover(identity(execution));
+                if (recovered.isEmpty()) {
+                    backend.cleanup(identity(execution));
+                    stateService.externalCleanupCompleted(execution.getExecutionId());
+                    return;
+                }
+                handle = recovered.get();
+                stateService.recovered(execution.getExecutionId(), handle);
+            } else {
+                handle = handle(execution);
+            }
             BackendStatus status = backend.inspect(handle, identity(execution));
+            boolean terminationRequired = execution.getState() == DispatcherExecutionState.TIMED_OUT
+                    || execution.getState() == DispatcherExecutionState.LOST
+                    || execution.getState() == DispatcherExecutionState.CANCELLED;
+            boolean graceExpired = execution.getEndedAt() != null
+                    && !execution.getEndedAt().plus(FORCE_TERMINATION_CONFIRMATION_GRACE).isAfter(Instant.now());
+            if ((status.state() == BackendExecutionState.PENDING || status.state() == BackendExecutionState.RUNNING)
+                    && (terminationRequired || graceExpired)) {
+                if (graceExpired || execution.isForceTerminateRequested()) backend.forceTerminate(handle, identity(execution));
+                else backend.cancel(handle, identity(execution));
+                status = backend.inspect(handle, identity(execution));
+            }
+            if (status.state() == BackendExecutionState.UNKNOWN && terminationRequired) {
+                // UNKNOWN can also mean an unrecognized backend state. Confirm a
+                // successful identity-scoped termination before releasing ownership.
+                backend.forceTerminate(handle, identity(execution));
+                status = backend.inspect(handle, identity(execution));
+            }
             if (status.state() != BackendExecutionState.SUCCEEDED
                     && status.state() != BackendExecutionState.FAILED
                     && status.state() != BackendExecutionState.CANCELLED
                     && status.state() != BackendExecutionState.UNKNOWN) return;
+            stateService.externalTerminationConfirmed(execution.getExecutionId());
             if (!execution.isLogArtifactStored() && status.state() != BackendExecutionState.UNKNOWN) {
                 var log = backend.collectLog(handle);
                 artifactService.store(execution.getLogKey(), log.content(), "text/plain; charset=utf-8");
@@ -111,7 +169,6 @@ public class DispatcherExecutionCoordinator {
 
     private void observe(DispatcherTaskExecution execution) {
         if (execution.getDeadlineAt() != null && Instant.now().isAfter(execution.getDeadlineAt())) {
-            cancelBestEffort(execution);
             stateService.timedOut(execution.getExecutionId());
             return;
         }
@@ -254,6 +311,7 @@ public class DispatcherExecutionCoordinator {
     }
 
     private void recoverSubmission(DispatcherTaskExecution execution) {
+        if (submitting.contains(execution.getExecutionId())) return;
         if (execution.getSubmissionStartedAt() == null
                 || execution.getSubmissionStartedAt().plus(properties.submissionUncertainGrace()).isAfter(Instant.now())) return;
         try {
@@ -277,11 +335,6 @@ public class DispatcherExecutionCoordinator {
             return;
         }
         stateService.observationFailed(execution.getExecutionId());
-    }
-
-    private void cancelBestEffort(DispatcherTaskExecution execution) {
-        if (execution.getExternalExecutionId() == null) return;
-        try { backend.cancel(handle(execution), identity(execution)); } catch (BackendException ignored) { }
     }
 
     private ExternalExecutionHandle handle(DispatcherTaskExecution execution) {

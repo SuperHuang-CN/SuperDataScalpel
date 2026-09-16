@@ -326,6 +326,13 @@ const modelDefinition: CanvasDefinition = {
       targetModelId: modelId,
       writeMode: 'APPEND',
       columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
+      writes: [{
+        writeId: '58a53dcf-2a0d-4208-9c55-60f668f720ac',
+        sourceTableName: 'order_model',
+        targetModelId: modelId,
+        writeMode: 'APPEND',
+        columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_id' }],
+      }],
     },
   }],
   edges: [{
@@ -418,6 +425,7 @@ describe('useCanvasMetadataSnapshot', () => {
           columns: ['order_id'],
         }],
       }],
+      tdEngineTmqTopics: [],
     }]);
     expect(result.current.metadataSnapshot.models).toEqual([]);
     expect(result.current.nodeSummaries.get(definition.nodes[0].id)).toEqual({
@@ -426,6 +434,7 @@ describe('useCanvasMetadataSnapshot', () => {
       dataSourceType: 'POSTGRESQL',
       qualifiedTableName: 'orders',
       primaryKeyColumns: ['order_id'],
+      tables: [{ tableName: 'orders', primaryKeyColumns: ['order_id'] }],
     });
   });
 
@@ -464,6 +473,7 @@ describe('useCanvasMetadataSnapshot', () => {
       jdbcDatabaseType: 'POSTGRESQL',
       purposes: ['DISTRIBUTION', 'SOURCE', 'STORAGE'],
       tables: [],
+      tdEngineTmqTopics: [],
     }]);
     expect(result.current.nodeSummaries.get(queryDefinition.nodes[0].id)).toEqual({
       kind: 'JDBC',
@@ -621,6 +631,7 @@ describe('useCanvasMetadataSnapshot', () => {
       jdbcDatabaseType: null,
       purposes: ['DISTRIBUTION', 'SOURCE'],
       tables: [],
+      tdEngineTmqTopics: [],
     }]);
     expect(result.current.nodeSummaries.get(kafkaDefinition.nodes[0].id)).toEqual({
       kind: 'KAFKA',
@@ -797,6 +808,7 @@ describe('useCanvasMetadataSnapshot', () => {
         }],
         uniqueKeys: [],
       }],
+      tdEngineTmqTopics: [],
     }]);
     expect(result.current.nodeSummaries.get(httpApiDefinition.nodes[0].id)).toEqual({
       kind: 'HTTP_API',

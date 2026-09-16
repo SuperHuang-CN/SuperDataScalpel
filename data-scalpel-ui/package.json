@@ -10,11 +10,12 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",
+    "check:boundaries": "node scripts/check-module-boundaries.mjs",
     "lint": "eslint .",
     "test": "vitest run",
     "test:watch": "vitest",
     "e2e": "playwright test",
-    "check": "pnpm lint && pnpm build && pnpm test",
+    "check": "pnpm check:boundaries && pnpm lint && pnpm build && pnpm test",
     "api:generate": "openapi-typescript http://localhost:8080/v3/api-docs -o src/shared/api/openapi.d.ts"
   },
   "dependencies": {

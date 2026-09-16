@@ -1,4 +1,3 @@
-export { DataSourcePage } from './pages/DataSourcePage';
 export {
   useApiResource,
   useApiResources,

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createAggregateConfiguration } from '../nodeDefaults';
+import { createAggregateConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeAggregate } from '../nodeSummaries';
+import { summarizeAggregate } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { aggregateCanvasView } from './canvasView';
 
 export const aggregateSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.Aggregate,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorAggregate,

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createModelSnapshotSyncOutputConfiguration } from '../nodeDefaults';
+import { createModelSnapshotSyncOutputConfiguration } from './defaults';
 import { collectModelSnapshotSyncOutputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeModelSnapshotSyncOutput } from '../nodeSummaries';
+import { summarizeModelSnapshotSyncOutput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { modelSnapshotSyncOutputCanvasView } from './canvasView';
 
 export const modelSnapshotSyncOutputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.ModelSnapshotSyncOutput,
   category: CanvasNodeCategory.Output,
   group: CanvasNodeGroup.OutputModel,

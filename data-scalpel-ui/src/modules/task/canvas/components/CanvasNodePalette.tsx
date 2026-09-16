@@ -386,7 +386,7 @@ export const CanvasNodePalette = forwardRef<HTMLDivElement, CanvasNodePalettePro
                         <span className="canvas-node-palette-item-content">
                           <span className="canvas-node-palette-item-title">
                             {label}
-                            <Tag bordered={false} className="canvas-node-palette-mode">{modeLabel}</Tag>
+                            <Tag variant="filled" className="canvas-node-palette-mode">{modeLabel}</Tag>
                           </span>
                           <span className="canvas-node-palette-item-description">{template.description}</span>
                         </span>

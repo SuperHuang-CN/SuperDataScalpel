@@ -6,7 +6,7 @@ import {
   type CanvasNodeDefinition,
   type CanvasNodeValidationResult,
 } from '../canvasTypes';
-import { RenameInspector } from '../components/CanvasLegacyInspectors';
+import { RenameInspector } from './rename/inspector';
 import { TypeCastProcessorInspector } from '../components/processors/TypeCastProcessorInspector';
 import { adaptCanvasNodeInspector } from './inspectorAdapter';
 import type { CanvasNodeInspectorHandle } from './nodeSpec';

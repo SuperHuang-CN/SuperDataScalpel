@@ -21,13 +21,13 @@ class ComputeEngineTest {
                 "本地计算引擎", null, "http://127.0.0.1:18092/", "encrypted-token",
                 ComputeBackendType.LOCAL_DOCKER, "commands.local", "runner.local", "admin.events",
                 20, 2, 2
-        );
+        , null);
 
         engine.update(
                 "本地计算引擎", "开发环境", "http://127.0.0.1:18092", "encrypted-token",
                 ComputeBackendType.LOCAL_DOCKER, "commands.local", "runner.local", "admin.events",
                 20, 2, 2
-        );
+        , null);
 
         engine.beginRegistration();
         assertEquals(ComputeEngineRegistrationState.REGISTERING, engine.getRegistrationState());
@@ -38,7 +38,7 @@ class ComputeEngineTest {
                 "本地计算引擎", "更新后的开发环境", "http://127.0.0.1:28092", "new-encrypted-token",
                 ComputeBackendType.LOCAL_DOCKER, "commands.next", "runner.next", "admin.events",
                 20, 2, 2
-        );
+        , null);
         assertNull(engine.getDispatcherInstanceId());
         assertNull(engine.getReportedBackendType());
         assertEquals(ComputeEngineHealthState.UNKNOWN, engine.getHealthState());
@@ -53,15 +53,15 @@ class ComputeEngineTest {
         assertThrows(IllegalArgumentException.class, () -> ComputeEngine.create(
                 "bad", null, "ftp://dispatcher", "cipher", ComputeBackendType.LOCAL_DOCKER,
                 "command", "runner", "admin", 20, 2, 2
-        ));
+        , null));
         assertThrows(IllegalArgumentException.class, () -> ComputeEngine.create(
                 "bad", null, "http://dispatcher", "cipher", ComputeBackendType.LOCAL_DOCKER,
                 "bad topic", "runner", "admin", 20, 2, 2
-        ));
+        , null));
         assertThrows(IllegalArgumentException.class, () -> ComputeEngine.create(
                 "bad", null, "http://dispatcher", "cipher", ComputeBackendType.LOCAL_DOCKER,
                 "command", "runner", "admin", 20, 0, 2
-        ));
+        , null));
     }
 
     @Test
@@ -89,6 +89,6 @@ class ComputeEngineTest {
                 "本地计算引擎", null, "http://127.0.0.1:18092", "encrypted-token",
                 ComputeBackendType.LOCAL_DOCKER, "commands.local", "runner.local", "admin.events",
                 20, 2, 2
-        );
+        , null);
     }
 }

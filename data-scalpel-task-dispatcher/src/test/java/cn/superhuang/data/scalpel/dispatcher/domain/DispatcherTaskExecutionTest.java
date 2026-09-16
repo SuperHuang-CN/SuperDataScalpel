@@ -20,7 +20,9 @@ class DispatcherTaskExecutionTest {
         DispatcherTaskExecution execution = DispatcherTaskExecution.queue(
                 streamingCommand(runId),
                 "f".repeat(64),
-                ExecutionBackendType.LOCAL_DOCKER
+                ExecutionBackendType.LOCAL_DOCKER,
+                cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy
+                        .defaultsFor(ExecutionBackendType.LOCAL_DOCKER).defaults()
         );
 
         execution.beginSubmission();

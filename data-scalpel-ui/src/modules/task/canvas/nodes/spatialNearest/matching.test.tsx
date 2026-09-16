@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Modal } from 'antd';
 import { createRef } from 'react';
@@ -22,6 +22,20 @@ const mount = (configuration: SpatialNearestConfiguration) => {
   render(<Inspector node={{ id: nodeId, type: CanvasNodeType.SpatialNearest, name: '最近邻', layout, configuration }}
     executionMode="BATCH" validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
   return { ref, apply };
+};
+
+const selectMatchingStrategy = async (optionLabel: string) => {
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: '匹配策略' }));
+  const option = await waitFor(() => {
+    const visibleOption = screen.getAllByText(optionLabel).find((element) => {
+      const dropdown = element.closest<HTMLElement>('.ant-select-dropdown');
+      return dropdown && window.getComputedStyle(dropdown).pointerEvents !== 'none';
+    });
+    if (!visibleOption) throw new Error(`未找到可见选项：${optionLabel}`);
+    return visibleOption;
+  });
+  const user = userEvent.setup({ pointerEventsCheck: 0 });
+  await user.click(option);
 };
 
 describe('nearest explicit matching', () => {
@@ -64,13 +78,11 @@ describe('nearest explicit matching', () => {
     expect(screen.getByText('1 / 1')).toBeTruthy();
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[0][0].configuration).toEqual(config);
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: '匹配策略' }));
-    await userEvent.click(await screen.findByText('旧版 KNN', { selector: '.ant-select-item-option-content' }));
+    await selectMatchingStrategy('旧版 KNN');
     fireEvent.click(await screen.findByRole('button', { name: /取\s*消/ }));
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[1][0].configuration).toEqual(config);
-    fireEvent.mouseDown(screen.getByRole('combobox', { name: '匹配策略' }));
-    await userEvent.click(await screen.findByText('旧版 KNN', { selector: '.ant-select-item-option-content' }));
+    await selectMatchingStrategy('旧版 KNN');
     fireEvent.click(await screen.findByRole('button', { name: '确认切换' }));
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[2][0].configuration).toEqual({ ...config, matching: { ...config.matching, semantics: 'LEGACY_KNN' } });
@@ -79,23 +91,24 @@ describe('nearest explicit matching', () => {
   it('connection modal cancels locally, saves invalid drafts, and retains disabled options', async () => {
     const config = createSpatialNearestConfiguration(); config.distanceMethod = 'GEODESIC';
     const { ref, apply } = mount(config);
-    await userEvent.click(screen.getByRole('button', { name: '设置连接线' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置连接线' }));
     let dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('switch'));
-    fireEvent.change(within(dialog).getByRole('textbox', { name: '连接线表名' }), { target: { value: 'lines' } });
+    fireEvent.click(within(dialog).getByRole('switch'));
+    fireEvent.change(await within(dialog).findByRole('textbox', { name: '连接线表名' }), { target: { value: 'lines' } });
     fireEvent.click(within(dialog).getByRole('button', { name: /取\s*消/ }));
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[0][0].configuration).toEqual(config);
-    await userEvent.click(screen.getByRole('button', { name: '设置连接线' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置连接线' }));
     dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('switch'));
-    fireEvent.change(within(dialog).getByRole('spinbutton'), { target: { value: '-1' } });
+    fireEvent.click(within(dialog).getByRole('switch'));
+    fireEvent.change(await within(dialog).findByRole('spinbutton'), { target: { value: '-1' } });
     fireEvent.click(within(dialog).getByRole('button', { name: '保存草稿' }));
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[1][0].configuration.matching.connectionLines).toMatchObject({ enabled: true, outputTableName: '', maximumGeodesicSegmentLength: -1 });
-    await userEvent.click(screen.getByRole('button', { name: '设置连接线' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置连接线' }));
     dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('switch'));
+    fireEvent.click(within(dialog).getByRole('switch'));
+    await waitFor(() => expect(within(dialog).getByRole('switch')).toHaveAttribute('aria-checked', 'false'));
     fireEvent.click(within(dialog).getByRole('button', { name: '保存草稿' }));
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[2][0].configuration.matching.connectionLines).toMatchObject({ enabled: false, maximumGeodesicSegmentLength: -1 });

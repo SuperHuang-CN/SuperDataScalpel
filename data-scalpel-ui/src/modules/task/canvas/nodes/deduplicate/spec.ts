@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createDeduplicateConfiguration } from '../nodeDefaults';
+import { createDeduplicateConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeDeduplicate } from '../nodeSummaries';
+import { summarizeDeduplicate } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { deduplicateCanvasView } from './canvasView';
 
 export const deduplicateSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.Deduplicate,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorRow,

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialOverlayConfiguration } from '../nodeDefaults';
+import { createSpatialOverlayConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialOverlay } from '../nodeSummaries';
+import { summarizeSpatialOverlay } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialOverlayCanvasView } from './canvasView';
 
 export const spatialOverlaySpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialOverlay,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

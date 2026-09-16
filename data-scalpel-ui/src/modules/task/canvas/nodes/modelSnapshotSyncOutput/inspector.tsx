@@ -15,7 +15,7 @@ import {
 } from '../../canvasTypes';
 import { CanvasModelSelect } from '../../components/CanvasModelSelect';
 import { CanvasModelDetailModal } from '../../components/CanvasModelDetailModal';
-import { ValidationIssues } from '../../components/CanvasLegacyInspectors';
+import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import { SnapshotSyncConfigurationFields } from '../../components/SnapshotSyncConfigurationFields';
 import {
   normalizeSnapshotSyncConfiguration,
@@ -134,7 +134,7 @@ const ModelSnapshotSyncOutputInspector = ({
 
   return (
     <Space orientation="vertical" size={12} className="canvas-inspector-content">
-      <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
+      <CanvasNodeValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
       {modelUnavailable && <Alert showIcon type="error" title={modelUnavailable} />}
       <Form<ModelSnapshotSyncFormValues>
         autoComplete="off"

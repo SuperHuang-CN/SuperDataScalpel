@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialSummarizeWithinConfiguration } from '../nodeDefaults';
+import { createSpatialSummarizeWithinConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialSummarizeWithin } from '../nodeSummaries';
+import { summarizeSpatialSummarizeWithin } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialSummarizeWithinCanvasView } from './canvasView';
 
 export const spatialSummarizeWithinSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialSummarizeWithin,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

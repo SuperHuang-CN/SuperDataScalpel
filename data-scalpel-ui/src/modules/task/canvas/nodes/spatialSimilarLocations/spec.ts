@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialSimilarLocationsConfiguration } from '../nodeDefaults';
+import { createSpatialSimilarLocationsConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialSimilarLocations } from '../nodeSummaries';
+import { summarizeSpatialSimilarLocations } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialSimilarLocationsCanvasView } from './canvasView';
 
 export const spatialSimilarLocationsSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialSimilarLocations,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

@@ -1,4 +1,3 @@
-export { FileDatasetPage } from './pages/FileDatasetPage';
 export {
   fetchFileDatasetCanvasMetadata,
 } from './api/fileDatasetApi';

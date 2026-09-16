@@ -22,7 +22,7 @@ class YarnBackendContractTest {
     @Test
     void buildsFixedClusterSubmitCommandWithoutLaunchContent() {
         YarnCommandFactory factory = new YarnCommandFactory(properties());
-        List<String> command = factory.submit(identity, Path.of("/secure/launch.json"));
+        List<String> command = factory.submit(identity, Path.of("/secure/launch.json"), cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.YARN).defaults());
 
         assertThat(command).containsSubsequence("--master", "yarn", "--deploy-mode", "cluster");
         assertThat(command).contains("spark.yarn.submit.waitAppCompletion=false");

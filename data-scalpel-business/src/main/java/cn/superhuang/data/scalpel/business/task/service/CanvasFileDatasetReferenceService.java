@@ -4,9 +4,10 @@ import cn.superhuang.data.scalpel.business.filedataset.domain.FileDatasetTable;
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableRepository;
 import cn.superhuang.data.scalpel.contract.task.*;
 import cn.superhuang.data.scalpel.business.task.domain.CanvasTaskDefinition;
-import cn.superhuang.data.scalpel.business.task.domain.DataTask;
+import cn.superhuang.data.scalpel.business.task.domain.TaskCanvasFileReference;
 import cn.superhuang.data.scalpel.business.task.domain.TaskStatus;
 import cn.superhuang.data.scalpel.business.task.repository.CanvasTaskDefinitionRepository;
+import cn.superhuang.data.scalpel.business.task.repository.TaskCanvasFileReferenceRepository;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +19,7 @@ import tools.jackson.databind.ObjectMapper;
 
 import java.util.Collection;
 import java.util.LinkedHashSet;
-import java.util.Map;
+import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -30,7 +31,8 @@ public class CanvasFileDatasetReferenceService {
     private static final Logger log = LoggerFactory.getLogger(CanvasFileDatasetReferenceService.class);
 
     private final CanvasTaskDefinitionRepository definitionRepository;
-    private final DataTaskRepository taskRepository;
+    private final TaskCanvasFileReferenceRepository references;
+    private final DataTaskRepository tasks;
     private final FileDatasetTableRepository tableRepository;
     private final CanvasDefinitionValidator validator;
     private final CanvasDefinitionUpgrader upgrader;
@@ -38,14 +40,16 @@ public class CanvasFileDatasetReferenceService {
 
     public CanvasFileDatasetReferenceService(
             CanvasTaskDefinitionRepository definitionRepository,
-            DataTaskRepository taskRepository,
+            TaskCanvasFileReferenceRepository references,
+            DataTaskRepository tasks,
             FileDatasetTableRepository tableRepository,
             CanvasDefinitionValidator validator,
             CanvasDefinitionUpgrader upgrader,
             ObjectMapper objectMapper
     ) {
         this.definitionRepository = definitionRepository;
-        this.taskRepository = taskRepository;
+        this.references = references;
+        this.tasks = tasks;
         this.tableRepository = tableRepository;
         this.validator = validator;
         this.upgrader = upgrader;
@@ -58,9 +62,8 @@ public class CanvasFileDatasetReferenceService {
         if (targets.isEmpty()) {
             return;
         }
-        Map<UUID, Set<UUID>> references = referencesByTask();
-        boolean referenced = references.values().stream().anyMatch(ids -> ids.stream().anyMatch(targets::contains));
-        if (referenced) {
+        requireCompleteIndex();
+        if (references.existsByFileTableIdIn(targets)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
                     "文件数据集表仍被 Canvas 任务引用，不能删除或替换"
@@ -78,17 +81,9 @@ public class CanvasFileDatasetReferenceService {
         if (tableIds.isEmpty()) {
             return;
         }
-        Map<UUID, Set<UUID>> references = referencesByTask();
-        Set<UUID> taskIds = references.entrySet().stream()
-                .filter(entry -> entry.getValue().stream().anyMatch(tableIds::contains))
-                .map(Map.Entry::getKey)
-                .collect(Collectors.toSet());
-        if (taskIds.isEmpty()) {
-            return;
-        }
-        boolean protectedReference = taskRepository.findAllById(taskIds).stream()
-                .map(DataTask::getStatus)
-                .anyMatch(status -> status == TaskStatus.PUBLISHED || status == TaskStatus.DISABLED);
+        requireCompleteIndex();
+        boolean protectedReference = references.existsProtectedReference(
+                tableIds, List.of(TaskStatus.PUBLISHED, TaskStatus.DISABLED));
         if (protectedReference) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -97,37 +92,51 @@ public class CanvasFileDatasetReferenceService {
         }
     }
 
-    private Map<UUID, Set<UUID>> referencesByTask() {
-        return definitionRepository.findAll().stream().collect(Collectors.toMap(
-                CanvasTaskDefinition::getTaskId,
-                this::readReferences
-        ));
+    private void requireCompleteIndex() {
+        if (definitionRepository.existsUnindexedFileReferences()) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "Canvas 文件引用索引尚未完成或定义损坏，请修复并重新保存对应定义后重试");
+        }
     }
 
-    private Set<UUID> readReferences(CanvasTaskDefinition persisted) {
-        try {
-            CanvasDefinition definition = objectMapper.readValue(persisted.getDefinitionJson(), CanvasDefinition.class);
-            validator.validate(definition);
-            CanvasDefinition current = upgrader.upgradeToCurrent(definition);
-            Set<UUID> ids = new LinkedHashSet<>();
-            for (CanvasNodeDefinition node : current.nodes()) {
-                if (node instanceof FileDatasetInputNodeDefinition input) {
-                    input.configuration().tables().forEach(selection ->
-                            ids.add(UUID.fromString(selection.fileDatasetTableId())));
-                }
+    /** Called in the same transaction as the Canvas definition write. */
+    @Transactional
+    public void replace(CanvasTaskDefinition persisted, CanvasDefinition definition) {
+        Set<UUID> ids = new LinkedHashSet<>();
+        for (CanvasNodeDefinition node : definition.nodes()) {
+            if (node instanceof FileDatasetInputNodeDefinition input) {
+                input.configuration().tables().stream()
+                        .map(selection -> selection.fileDatasetTableId())
+                        .filter(id -> !id.isBlank()).map(UUID::fromString).forEach(ids::add);
             }
-            return Set.copyOf(ids);
-        } catch (RuntimeException exception) {
-            log.error(
-                    "Cannot inspect Canvas file-dataset references; destructive operation denied taskId={} definitionId={}",
-                    persisted.getTaskId(),
-                    persisted.getId(),
-                    exception
-            );
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "存在无法解析的 Canvas 定义，无法安全确认文件数据集引用"
-            );
         }
+        references.deleteAllByTaskId(persisted.getTaskId());
+        references.flush();
+        references.saveAll(ids.stream().map(id -> TaskCanvasFileReference.create(persisted.getTaskId(), id)).toList());
+        persisted.fileReferencesIndexed();
+    }
+
+    @Transactional
+    public void deleteForTask(UUID taskId) {
+        references.deleteAllByTaskId(taskId);
+    }
+
+    /** Each legacy definition is rebuilt in its own short transaction under the same task lock as writes. */
+    @Transactional
+    public void rebuild(UUID taskId) {
+        if (tasks.findByIdForUpdate(taskId).isEmpty()) return;
+        CanvasTaskDefinition persisted = definitionRepository.findByTaskIdForUpdate(taskId).orElse(null);
+        if (persisted == null || persisted.fileReferencesCurrent()) return;
+        CanvasDefinition definition;
+        try {
+            definition = objectMapper.readValue(persisted.getDefinitionJson(), CanvasDefinition.class);
+            validator.validate(definition);
+            definition = upgrader.upgradeToCurrent(definition);
+        } catch (RuntimeException exception) {
+            persisted.fileReferenceIndexFailed();
+            log.error("Canvas 文件引用索引需要修复 taskId={}", taskId, exception);
+            return;
+        }
+        replace(persisted, definition);
     }
 }

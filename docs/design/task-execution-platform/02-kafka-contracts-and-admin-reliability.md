@@ -389,3 +389,9 @@ admin.execution.event.lag
 - Admin 可以幂等消费 Dispatcher 事件。
 - Kafka 暂时不可用不会丢失 TaskRun 或执行命令。
 - 不再设计任何 Dispatcher 到 Admin 的 HTTP 回调契约。
+
+## 2026-09 执行命令顺序与恢复补充
+
+同一运行的 `SUBMIT_EXECUTION` 或 `START_STREAMING_EXECUTION` 尚未确认发布时，Outbox 不领取其后续控制命令。Dispatcher 在执行账本不存在时收到实时 STOP，会在同一事务保存 stop-before-start 决定及 STOPPED Outbox；后续同身份 START 视为重复，身份冲突拒绝，不创建外部执行。此停止记录不能随普通 Inbox 清理而丢弃。
+
+Admin 的 Dispatcher 查询返回 404 只表示暂时没有可查询账本，不能据此自行确认实时停止；停止结果由 Dispatcher 的持久化停止事件收敛。Admin Outbox 发布与执行对账分别使用独立的单线程调度器；对账按 UUID 游标每轮最多处理 50 条活动分发记录，进程重启可重新遍历。

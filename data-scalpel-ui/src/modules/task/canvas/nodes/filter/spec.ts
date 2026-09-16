@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createFilterConfiguration } from '../nodeDefaults';
+import { createFilterConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeFilter } from '../nodeSummaries';
+import { summarizeFilter } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { filterCanvasView } from './canvasView';
 
 export const filterSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.Filter,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorRow,

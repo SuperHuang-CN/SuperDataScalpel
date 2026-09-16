@@ -1,7 +1,7 @@
 import { AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
-import { Button, Dropdown, Modal, Spin, Tooltip, Tree, message } from 'antd';
+import { Button, Dropdown, Modal, Segmented, Spin, Tooltip, Tree, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
-import { useRef, useState, type KeyboardEvent, type PointerEvent } from 'react';
+import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
 import { useDeleteDirectory, useExportDirectoryTree } from '../hooks/useDirectories';
@@ -67,6 +67,12 @@ interface DirectoryTreePanelProps {
   canManage?: boolean;
   showResourceCounts?: boolean;
   showVirtualNodes?: boolean;
+  navigationTabs?: {
+    activeKey: 'directories' | 'resources';
+    resourceLabel: string;
+    resourceContent: ReactNode;
+    onChange: (key: 'directories' | 'resources') => void;
+  };
   onSelectionChange: (selection: DirectorySelection) => void;
 }
 
@@ -79,6 +85,7 @@ export const DirectoryTreePanel = ({
   canManage = false,
   showResourceCounts = true,
   showVirtualNodes = true,
+  navigationTabs,
   onSelectionChange,
 }: DirectoryTreePanelProps) => {
   const [messageApi, messageContext] = message.useMessage();
@@ -312,14 +319,21 @@ export const DirectoryTreePanel = ({
           </Tooltip>
         ) : (
           <>
-            <span>{label}</span>
+            {navigationTabs ? (
+              <Segmented
+                size="small"
+                value={navigationTabs.activeKey}
+                options={[{ label: '目录', value: 'directories' }, { label: navigationTabs.resourceLabel, value: 'resources' }]}
+                onChange={(value) => navigationTabs.onChange(value as 'directories' | 'resources')}
+              />
+            ) : <span>{label}</span>}
             <span className="directory-tree-panel-header-actions">
-              {canManage && (
+              {canManage && (!navigationTabs || navigationTabs.activeKey === 'directories') && (
                 <Tooltip title={`新建顶级${label}`}>
                   <Button type="text" size="small" icon={<PlusOutlined />} aria-label={`新建顶级${label}`} onClick={() => openCreate()} />
                 </Tooltip>
               )}
-              <Tooltip title={`${label}导入导出`}>
+              {(!navigationTabs || navigationTabs.activeKey === 'directories') && <Tooltip title={`${label}导入导出`}>
                 <Dropdown
                   trigger={['click']}
                   placement="bottomRight"
@@ -342,7 +356,7 @@ export const DirectoryTreePanel = ({
                     aria-label={`${label}导入导出`}
                   />
                 </Dropdown>
-              </Tooltip>
+              </Tooltip>}
               <Tooltip title={`收起${label}`}>
                 <Button
                   type="text"
@@ -358,6 +372,7 @@ export const DirectoryTreePanel = ({
         )}
       </div>
       <div className="directory-tree-panel-content">
+        {navigationTabs?.activeKey === 'resources' ? navigationTabs.resourceContent : <>
         {showVirtualNodes && (
           <div className="directory-tree-panel-quick-filters" aria-label={`${label}快捷筛选`}>
             <Button
@@ -394,6 +409,7 @@ export const DirectoryTreePanel = ({
             onSelect={(keys) => onSelectionChange(keys[0] === undefined ? undefined : String(keys[0]))}
           />
         </Spin>
+        </>}
       </div>
       {!collapsed && (
         <div

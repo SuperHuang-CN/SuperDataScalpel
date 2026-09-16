@@ -128,6 +128,18 @@ public class EngineDeploymentStore {
                 .stream().map(this::read).toList();
     }
 
+    @Transactional(readOnly = true)
+    public java.util.Optional<StoredServiceDeployment> recoverableDeployment(UUID serviceId) {
+        return java.util.Optional.ofNullable(current(serviceId))
+                .filter(item -> DEPLOYMENT_RECOVERY_STATUSES.contains(item.getStatus())).map(this::read);
+    }
+
+    @Transactional(readOnly = true)
+    public java.util.Optional<StoredServiceDeployment> recoverableRemoval(UUID serviceId) {
+        return java.util.Optional.ofNullable(current(serviceId))
+                .filter(item -> REMOVAL_RECOVERY_STATUSES.contains(item.getStatus())).map(this::read);
+    }
+
     private EngineDeployment requireCurrent(UUID serviceId) {
         EngineDeployment deployment = current(serviceId);
         if (deployment == null) {

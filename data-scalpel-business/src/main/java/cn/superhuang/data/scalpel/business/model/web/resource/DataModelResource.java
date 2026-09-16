@@ -124,7 +124,7 @@ public class DataModelResource {
             relatedOperations = {"GET /api/v1/models/{id}", "POST /api/v1/models/{id}/actions/delete"})
     @GetMapping("/{id}/references")
     @PreAuthorize("hasAuthority('model.view')")
-    @Operation(summary = "查询阻止模型删除或字段变更的保护性引用", description = "聚合已保存任务定义、当前未退役任务血缘、数据服务定义和已发布指标中的模型或字段引用。deletable 只表示没有保护性引用，不检查模型是否已停用；缺少 metric.view 时 metrics 列表会隐藏具体指标，但隐藏引用仍会使 deletable=false。")
+    @Operation(summary = "查询阻止模型删除或字段变更的保护性引用", description = "聚合已保存任务定义、当前未退役任务血缘、数据服务定义、已发布指标和业务对象类型当前定义中的模型或字段引用。deletable 只表示没有保护性引用，不检查模型是否已停用；缺少 metric.view 或 ontology.view 时对应列表会隐藏具体资源，但隐藏引用仍会使 deletable=false。")
     public DataModelReferencesResponse references(@Parameter(description = "模型 UUID") @PathVariable UUID id) {
         return referenceQueryService.get(id);
     }

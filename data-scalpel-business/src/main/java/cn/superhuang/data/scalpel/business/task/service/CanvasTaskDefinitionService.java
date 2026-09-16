@@ -39,6 +39,7 @@ public class CanvasTaskDefinitionService {
     private final TaskStreamingDeploymentRepository streamingDeploymentRepository;
     private final cn.superhuang.data.scalpel.business.task.repository.TaskStreamingConfigurationRepository
             streamingConfigurationRepository;
+    private final CanvasFileDatasetReferenceService fileReferences;
     private final CanvasDefinitionValidator validator;
     private final CanvasDefinitionUpgrader upgrader;
     private final TmqConsumerGroupCleanupService tmqCleanupService;
@@ -52,6 +53,7 @@ public class CanvasTaskDefinitionService {
             TaskStreamingDeploymentRepository streamingDeploymentRepository,
             cn.superhuang.data.scalpel.business.task.repository.TaskStreamingConfigurationRepository
                     streamingConfigurationRepository,
+            CanvasFileDatasetReferenceService fileReferences,
             CanvasDefinitionValidator validator,
             CanvasDefinitionUpgrader upgrader,
             TmqConsumerGroupCleanupService tmqCleanupService,
@@ -63,6 +65,7 @@ public class CanvasTaskDefinitionService {
         this.dataSourceReferenceIndexService = dataSourceReferenceIndexService;
         this.streamingDeploymentRepository = streamingDeploymentRepository;
         this.streamingConfigurationRepository = streamingConfigurationRepository;
+        this.fileReferences = fileReferences;
         this.validator = validator;
         this.upgrader = upgrader;
         this.tmqCleanupService = tmqCleanupService;
@@ -79,6 +82,7 @@ public class CanvasTaskDefinitionService {
 
     @Transactional
     public CanvasTaskDefinitionResponse update(UUID taskId, UpdateCanvasTaskDefinitionRequest request) {
+        taskRepository.findByIdForUpdate(taskId).orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
         DataTask task = requireCanvasTask(taskId);
         if (task.getStatus() != TaskStatus.DRAFT && task.getStatus() != TaskStatus.DISABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已发布任务不能修改定义，请先停用");
@@ -102,9 +106,10 @@ public class CanvasTaskDefinitionService {
         }
         replaceModelReferences(taskId, definition);
 
-        CanvasTaskDefinition persisted = definitionRepository.findByTaskId(taskId).orElse(null);
+        CanvasTaskDefinition persisted = definitionRepository.findByTaskIdForUpdate(taskId).orElse(null);
         if (persisted != null && persisted.hasSameContent(
                 definition.schemaVersion(), definition.schemaMinorVersion(), serialized)) {
+            fileReferences.replace(persisted, definition);
             dataSourceReferenceIndexService.replaceCanvasReferences(taskId, persisted.getVersion(), definition);
             return response(persisted);
         }
@@ -117,6 +122,7 @@ public class CanvasTaskDefinitionService {
             persisted.update(definition.schemaVersion(), definition.schemaMinorVersion(), serialized);
         }
         CanvasTaskDefinition saved = definitionRepository.saveAndFlush(persisted);
+        fileReferences.replace(saved, definition);
         dataSourceReferenceIndexService.replaceCanvasReferences(taskId, saved.getVersion(), definition);
         return response(saved);
     }

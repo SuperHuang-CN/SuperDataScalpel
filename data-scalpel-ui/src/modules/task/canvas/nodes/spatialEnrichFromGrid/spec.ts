@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialEnrichFromGridConfiguration } from '../nodeDefaults';
+import { createSpatialEnrichFromGridConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialEnrichFromGrid } from '../nodeSummaries';
+import { summarizeSpatialEnrichFromGrid } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialEnrichFromGridCanvasView } from './canvasView';
 
 export const spatialEnrichFromGridSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialEnrichFromGrid,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

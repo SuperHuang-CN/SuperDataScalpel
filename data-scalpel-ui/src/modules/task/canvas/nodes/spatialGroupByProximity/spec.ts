@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialGroupByProximityConfiguration } from '../nodeDefaults';
+import { createSpatialGroupByProximityConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialGroupByProximity } from '../nodeSummaries';
+import { summarizeSpatialGroupByProximity } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialGroupByProximityCanvasView } from './canvasView';
 
 export const spatialGroupByProximitySpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialGroupByProximity,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

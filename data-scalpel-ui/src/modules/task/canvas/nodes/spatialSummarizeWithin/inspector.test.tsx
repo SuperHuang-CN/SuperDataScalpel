@@ -40,13 +40,13 @@ describe('within statistic inspector', () => {
   });
   it('saves linked settings through a confirmed legacy switch without clearing them', async () => {
     const { ref, apply } = mount();
-    await userEvent.click(screen.getByRole('switch', { name: '启用分组汇总' }));
+    fireEvent.click(screen.getByRole('switch', { name: '启用分组汇总' }));
     await waitFor(() => expect(screen.getByRole('button', { name: '设置区域分组结果' })).toBeEnabled());
-    await userEvent.click(screen.getByRole('button', { name: '设置区域分组结果' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置区域分组结果' }));
     const modal = await screen.findByRole('dialog');
     fireEvent.change(within(modal).getByRole('textbox', { name: '关联组表名' }), { target: { value: 'saved_groups' } });
     fireEvent.mouseDown(within(modal).getByRole('combobox', { name: '分组结果模式' }));
-    await userEvent.click(await screen.findByText('旧版扁平分组表', { selector: '.ant-select-item-option-content' }));
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(await screen.findByText('旧版扁平分组表', { selector: '.ant-select-item-option-content' }));
     fireEvent.click(await screen.findByRole('button', { name: '确认切换' }));
     fireEvent.click(within(modal).getByRole('button', { name: '保存草稿' }));
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });
@@ -54,7 +54,7 @@ describe('within statistic inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: '设置区域分组结果' }));
     const reopened = await screen.findByRole('dialog');
     fireEvent.mouseDown(within(reopened).getByRole('combobox', { name: '分组结果模式' }));
-    await userEvent.click(await screen.findByText('主表 + 关联组表（推荐）', { selector: '.ant-select-item-option-content' }));
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(await screen.findByText('主表 + 关联组表（推荐）', { selector: '.ant-select-item-option-content' }));
     fireEvent.click(await screen.findByRole('button', { name: '确认切换' }));
     expect(within(reopened).getByRole('textbox', { name: '关联组表名' })).toHaveValue('saved_groups');
   });
@@ -71,7 +71,7 @@ describe('within statistic inspector', () => {
     fireEvent.click(screen.getByRole('button', { name: '设置区域统计项' }));
     const modal = await screen.findByRole('dialog');
     fireEvent.mouseDown(within(modal).getByRole('combobox', { name: '统计 1 数量处理' }));
-    await userEvent.click(await screen.findByText('总量分摊', { selector: '.ant-select-item-option-content' }));
+    await userEvent.setup({ pointerEventsCheck: 0 }).click(await screen.findByText('总量分摊', { selector: '.ant-select-item-option-content' }));
     fireEvent.change(within(modal).getByRole('textbox', { name: '统计 1 输出字段' }), { target: { value: 'draft_result' } });
     expect(within(modal).getByRole('button', { name: /统计 1 有.*配置问题/ })).toBeTruthy();
     fireEvent.click(within(modal).getByRole('button', { name: /完\s*成/ }));

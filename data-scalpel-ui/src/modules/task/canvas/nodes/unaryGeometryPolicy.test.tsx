@@ -53,15 +53,15 @@ describe('explicit unary geometry policies', () => {
     const config = createGeometryDeriveConfiguration();
     render(<Derive node={{ id: nodeId, type: CanvasNodeType.GeometryDerive, name: '派生', layout, configuration: config }}
       executionMode="STREAMING" validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
-    await userEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
+    fireEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
     let dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('button', { name: /添加派生/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /添加派生/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: /取\s*消/ }));
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[0][0].configuration).toEqual(config);
-    await userEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
+    fireEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
     dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('button', { name: /添加派生/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /添加派生/ }));
     fireEvent.click(within(dialog).getByRole('button', { name: '保存草稿' }));
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });
     expect(apply.mock.calls[1][0].configuration.derivations[0]).toMatchObject({ kind: null, sourceColumnName: '', outputColumnName: '', geometryPolicy: 'PRESERVE_DIMENSION' });
@@ -72,12 +72,12 @@ describe('explicit unary geometry policies', () => {
     const config = createGeometryDeriveConfiguration();
     render(<Derive node={{ id: nodeId, type: CanvasNodeType.GeometryDerive, name: '派生', layout, configuration: config }}
       executionMode="BATCH" validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
-    await userEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
+    fireEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
     const dialog = await screen.findByRole('dialog');
-    await userEvent.click(within(dialog).getByRole('button', { name: /添加派生/ }));
+    fireEvent.click(within(dialog).getByRole('button', { name: /添加派生/ }));
     const issues = within(dialog).getByRole('status', { name: '第 1 项配置问题' });
     expect(issues.textContent).toContain('3 个配置问题');
-    await userEvent.click(issues);
+    fireEvent.click(issues);
     expect(await screen.findByText('请选择来源 Geometry 字段')).toBeTruthy();
     expect(screen.getByText('请选择派生函数')).toBeTruthy();
     expect(screen.getByText('请输入派生输出字段名')).toBeTruthy();
@@ -93,7 +93,7 @@ describe('explicit unary geometry policies', () => {
     const view = render(<Derive node={{ id: nodeId, type: CanvasNodeType.GeometryDerive, name: '派生', layout, configuration: config }}
       executionMode="BATCH" validation={undefined} validationUnavailableMessage={null} onApply={vi.fn()} onDirtyChange={vi.fn()} inspectorRef={createRef()} />);
     expect(screen.getByText('parcels（等待解析）')).toBeTruthy();
-    await userEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
+    fireEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
     expect(await screen.findByText('shape（等待解析）')).toBeTruthy();
     expect(screen.queryByText(/已失效/)).toBeNull();
     view.unmount();
@@ -121,11 +121,11 @@ describe('explicit unary geometry policies', () => {
     }] };
     render(<Derive node={{ id: nodeId, type: CanvasNodeType.GeometryDerive, name: '派生', layout, configuration: config }}
       executionMode="BATCH" validation={validation} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
-    await userEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
+    fireEvent.click(screen.getByRole('button', { name: /配\s*置/ }));
     const dialog = await screen.findByRole('dialog');
     const issues = within(dialog).getByRole('status', { name: '第 1 项配置问题' });
     expect(issues.textContent).toContain('1 个配置问题');
-    await userEvent.click(issues);
+    fireEvent.click(issues);
     expect(await screen.findByText(message)).toBeTruthy();
     fireEvent.click(within(dialog).getByRole('button', { name: '保存草稿' }));
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });

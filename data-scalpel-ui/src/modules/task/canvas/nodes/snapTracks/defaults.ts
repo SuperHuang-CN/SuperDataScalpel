@@ -1,0 +1,31 @@
+import type { SnapTracksConfiguration } from "../../canvasTypes";
+import { createTrackBoundaryConfiguration } from '../configurationDefaults';
+
+export const createSnapTracksConfiguration = (): SnapTracksConfiguration => ({
+  pointTableName: '',
+  pointGeometryColumnName: '',
+  trackIdColumns: [],
+  timeColumnName: '',
+  orderByColumns: [],
+  lineTableName: '',
+  lineGeometryColumnName: '',
+  lineIdColumnName: '',
+  fromNodeColumnName: '',
+  toNodeColumnName: '',
+  searchDistance: 30,
+  searchDistanceUnit: 'METERS',
+  distanceMethod: 'PLANAR',
+  boundaries: createTrackBoundaryConfiguration(),
+  directionMatching: null,
+  lineFields: [],
+  outputMode: 'ALL_FEATURES',
+  outputTableName: '',
+  snappedGeometryColumnName: 'snapped_geometry',
+  matchedLineIdColumnName: 'matched_line_id',
+  matchStatusColumnName: 'match_status',
+  originalXColumnName: 'original_x',
+  originalYColumnName: 'original_y',
+  matchXColumnName: 'match_x',
+  matchYColumnName: 'match_y',
+  matchDistanceColumnName: 'match_distance',
+});

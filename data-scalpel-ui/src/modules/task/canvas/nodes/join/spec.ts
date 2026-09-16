@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createJoinConfiguration } from '../nodeDefaults';
+import { createJoinConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeJoin } from '../nodeSummaries';
+import { summarizeJoin } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { joinCanvasView } from './canvasView';
 
 export const joinSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.Join,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorRelational,

@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import { Modal } from 'antd';
 import { createRef } from 'react';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -18,6 +18,12 @@ const c: SpatialPointClusterConfiguration = { ...createSpatialPointClusterConfig
   dbscan: { mode: 'LINEAR', timeColumnName: 'private_time', searchDuration: 314159, searchDurationUnit: 'SECONDS' } };
 const definition = (configuration: unknown, schemaMinorVersion = 45) => ({ schemaVersion: 4, schemaMinorVersion,
   nodes: [{ id, type: CanvasNodeType.SpatialPointCluster, name: '聚类', layout, configuration }], edges: [] });
+const mount = (configuration: SpatialPointClusterConfiguration) => {
+  const apply = vi.fn(), ref = createRef<CanvasNodeInspectorHandle>();
+  render(<Inspector node={{ id, type: CanvasNodeType.SpatialPointCluster, name: '聚类', layout, configuration }}
+    executionMode="BATCH" validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
+  return { apply, ref };
+};
 
 it('round trips active and inactive diagnostic settings with an explicit 4.45 gate', () => {
   for (const parameters of [c.parameters, createSpatialPointClusterConfiguration().parameters]) {
@@ -45,40 +51,51 @@ it('keeps blank business drafts but rejects malformed diagnostic structure', () 
   expect(Object.keys(hdbscanFieldErrors(options, ['id']))).toHaveLength(4);
 });
 
-it('cancels diagnostic edits without mutating the inspector and applies an invalid draft explicitly', async () => {
-  const apply = vi.fn(), ref = createRef<CanvasNodeInspectorHandle>();
-  render(<Inspector node={{ id, type: CanvasNodeType.SpatialPointCluster, name: '聚类', layout, configuration: c }}
-    executionMode="BATCH" validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
+it('cancels diagnostic edits without mutating the inspector', async () => {
+  const { apply, ref } = mount(c);
   expect(screen.queryByRole('spinbutton', { name: '聚类时间邻域' })).toBeNull();
   expect(screen.queryByRole('spinbutton', { name: '聚类搜索距离' })).toBeNull();
   fireEvent.click(screen.getByRole('button', { name: '配置 HDBSCAN 诊断字段' }));
-  fireEvent.change(screen.getByRole('textbox', { name: '成员概率输出字段' }), { target: { value: 'cancelled' } });
-  fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByRole('textbox', { name: '成员概率输出字段' }), { target: { value: 'cancelled' } });
+  fireEvent.click(within(dialog).getByRole('button', { name: /取\s*消/ }));
   await act(async () => { expect(await ref.current?.apply()).toBe(true); });
   expect(apply.mock.calls.at(-1)?.[0].configuration.hdbscan).toEqual(c.hdbscan);
+});
+
+it('applies an invalid diagnostic draft explicitly and preserves inactive DBSCAN settings', async () => {
+  const { apply, ref } = mount(c);
   fireEvent.click(screen.getByRole('button', { name: '配置 HDBSCAN 诊断字段' }));
-  fireEvent.change(screen.getByRole('textbox', { name: '成员概率输出字段' }), { target: { value: '' } });
-  expect(screen.getByText('请输入输出字段名')).toBeInTheDocument();
-  fireEvent.click(screen.getByRole('button', { name: '保存诊断草稿' }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByRole('textbox', { name: '成员概率输出字段' }), { target: { value: '' } });
+  expect(within(dialog).getByText('请输入输出字段名')).toBeInTheDocument();
+  fireEvent.click(within(dialog).getByRole('button', { name: '保存诊断草稿' }));
   await waitFor(() => expect(screen.getByText('1 个字段问题')).toBeInTheDocument());
   await act(async () => { expect(await ref.current?.apply()).toBe(true); });
   expect(apply.mock.calls.at(-1)?.[0].configuration.hdbscan).toEqual({ ...c.hdbscan, probabilityColumnName: '' });
   expect(apply.mock.calls.at(-1)?.[0].configuration.dbscan).toEqual(c.dbscan);
 });
 
-it('offers HDBSCAN for new nodes with confirmation and retains diagnostics when returning to DBSCAN', async () => {
-  const original = createSpatialPointClusterConfiguration(), apply = vi.fn(), ref = createRef<CanvasNodeInspectorHandle>();
-  render(<Inspector node={{ id, type: CanvasNodeType.SpatialPointCluster, name: '聚类', layout, configuration: original }}
-    executionMode="BATCH" validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
+it('offers HDBSCAN for new nodes but keeps DBSCAN after a canceled switch', async () => {
+  const original = createSpatialPointClusterConfiguration();
+  mount(original);
   expect(screen.getByRole('radio', { name: 'HDBSCAN' })).not.toBeDisabled();
   fireEvent.click(screen.getByRole('radio', { name: 'HDBSCAN' }));
-  fireEvent.click(screen.getByRole('button', { name: /取\s*消/ }));
+  const dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: /取\s*消/ }));
   expect(screen.getByRole('spinbutton', { name: '聚类搜索距离' })).toBeInTheDocument();
+});
+
+it('confirms HDBSCAN and retains diagnostics when returning to DBSCAN', async () => {
+  const original = createSpatialPointClusterConfiguration();
+  const { apply, ref } = mount(original);
   fireEvent.click(screen.getByRole('radio', { name: 'HDBSCAN' }));
-  fireEvent.click(screen.getByRole('button', { name: '确认切换算法' }));
+  let dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: '确认切换算法' }));
   await waitFor(() => expect(screen.getByText('已配置 4 项诊断')).toBeInTheDocument());
   fireEvent.click(screen.getByRole('radio', { name: 'DBSCAN' }));
-  fireEvent.click(screen.getByRole('button', { name: '确认切换算法' }));
+  dialog = await screen.findByRole('dialog');
+  fireEvent.click(within(dialog).getByRole('button', { name: '确认切换算法' }));
   await act(async () => { expect(await ref.current?.apply()).toBe(true); });
   expect(apply.mock.calls.at(-1)?.[0].configuration.parameters).toEqual(original.parameters);
   expect(apply.mock.calls.at(-1)?.[0].configuration.hdbscan).toEqual(createHdbscanOptions());

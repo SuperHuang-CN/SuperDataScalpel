@@ -104,7 +104,7 @@ class ComputeEngineDispatcherClientTest {
                 engineId,
                 new DispatcherTopics("commands.local", "runner.local", "admin.events"),
                 new DispatcherAdmissionPolicy(20, 2, 2)
-        ));
+        , cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER)));
         assertEquals(DispatcherRegistrationState.ACTIVE, response.state());
         assertEquals(engineId, response.engineId());
         assertFalse(requestBody.get().contains("configRevision"));

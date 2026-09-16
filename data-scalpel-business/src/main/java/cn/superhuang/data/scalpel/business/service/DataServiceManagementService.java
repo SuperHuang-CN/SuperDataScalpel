@@ -400,7 +400,7 @@ public class DataServiceManagementService {
         String finalFailure = failure;
         return requireTransactionResult(transactionTemplate.execute(
                 status -> completeEnable(
-                        id, command.revision(),
+                        id, command.revision(), command.operationId(),
                         command.styleDeployment() == null ? null : command.styleDeployment().styleVersion(),
                         finalFailure
                 )
@@ -448,7 +448,7 @@ public class DataServiceManagementService {
         }
         DataServiceGatewayPublicationService.EngineDisablePreparation ready = preparation.get();
         RemovalCommand command = requireTransactionResult(readTransactionTemplate.execute(
-                status -> removalCommand(ready.serviceId(), ready.engine(), ready.revision(), true)
+                status -> removalCommand(ready.serviceId(), ready.engine(), ready.revision(), ready.operationId(), true)
         ));
         return executeRemoval(command, true);
     }
@@ -611,7 +611,7 @@ public class DataServiceManagementService {
     }
 
     private EnableCommand beginEnable(EnablePreparation preparation, ServiceDefinitionSnapshot definition) {
-        DataService service = requireService(preparation.service().id());
+        DataService service = requireServiceForUpdate(preparation.service().id());
         verifyUnchanged(preparation, service);
         ServiceEngine engine = requireEnabledEngine(service.getEngineId());
         DataSource dataSource = switch (service.getType()) {
@@ -672,7 +672,7 @@ public class DataServiceManagementService {
                             spatial.geometryColumn(), spatial.epsg(), style.styleName()
                     ),
                     style,
-                    revision
+                    revision, deployment.getOperationId()
             );
         }
         return new EnableCommand(
@@ -683,7 +683,7 @@ public class DataServiceManagementService {
                 ),
                 null,
                 null,
-                revision
+                revision, deployment.getOperationId()
         );
     }
 
@@ -728,10 +728,13 @@ public class DataServiceManagementService {
         }
     }
 
-    private DataServiceDetailResponse completeEnable(UUID id, long revision, Integer styleVersion, String failure) {
-        DataService service = requireService(id);
+    private DataServiceDetailResponse completeEnable(UUID id, long revision, UUID operationId, Integer styleVersion, String failure) {
+        DataService service = requireServiceForUpdate(id);
         DataServiceDeployment deployment = requireDeployment(id);
         requireRevision(service, deployment, revision);
+        if (!java.util.Objects.equals(operationId, deployment.getOperationId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务部署操作已被后续操作替代");
+        }
         if (service.getType() == DataServiceType.SPATIAL_SERVICE && styleVersion != null) {
             spatialStyleService.completeDeployment(id, styleVersion, failure);
         }
@@ -750,7 +753,7 @@ public class DataServiceManagementService {
     }
 
     private RemovalCommand beginCleanup(UUID id) {
-        DataService service = requireService(id);
+        DataService service = requireServiceForUpdate(id);
         if (service.getStatus() == DataServiceStatus.ENABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "已启用服务请使用停用操作");
         }
@@ -762,7 +765,7 @@ public class DataServiceManagementService {
         ServiceEngine engine = requireEngine(deployment.getEngineId());
         deployment.beginRemoval();
         deploymentRepository.saveAndFlush(deployment);
-        return removalCommand(id, engine, deployment.getRevision(), false);
+        return removalCommand(id, engine, deployment.getRevision(), deployment.getOperationId(), false);
     }
 
     private DataServiceDetailResponse executeRemoval(RemovalCommand command, boolean disableService) {
@@ -784,14 +787,17 @@ public class DataServiceManagementService {
         }
         String finalFailure = failure;
         return requireTransactionResult(transactionTemplate.execute(
-                status -> completeRemoval(command.serviceId(), command.revision(), finalFailure, disableService)
+                status -> completeRemoval(command.serviceId(), command.revision(), command.operationId(), finalFailure, disableService)
         ));
     }
 
-    private DataServiceDetailResponse completeRemoval(UUID id, long revision, String failure, boolean disableService) {
-        DataService service = requireService(id);
+    private DataServiceDetailResponse completeRemoval(UUID id, long revision, UUID operationId, String failure, boolean disableService) {
+        DataService service = requireServiceForUpdate(id);
         DataServiceDeployment deployment = requireDeployment(id);
         requireRevision(service, deployment, revision);
+        if (!java.util.Objects.equals(operationId, deployment.getOperationId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "数据服务部署操作已被后续操作替代");
+        }
         if (failure == null) {
             deployment.removed();
             if (service.getType() == DataServiceType.SPATIAL_SERVICE) spatialStyleService.markRemoved(id);
@@ -811,6 +817,7 @@ public class DataServiceManagementService {
             UUID serviceId,
             ServiceEngine engine,
             long revision,
+            UUID operationId,
             boolean disableService
     ) {
         DataService service = requireService(serviceId);
@@ -818,10 +825,10 @@ public class DataServiceManagementService {
             SpatialDataServiceDefinition definition = requireSpatialDefinition(serviceId);
             DataModel model = requireModel(definition.getModelId());
             return new RemovalCommand(
-                    serviceId, engine, revision, disableService, service.getCode(), model.getStorageDataSourceId()
+                    serviceId, engine, revision, operationId, disableService, service.getCode(), model.getStorageDataSourceId()
             );
         }
-        return new RemovalCommand(serviceId, engine, revision, disableService, service.getCode(), null);
+        return new RemovalCommand(serviceId, engine, revision, operationId, disableService, service.getCode(), null);
     }
 
     private void saveNewDefinition(
@@ -1639,7 +1646,8 @@ public class DataServiceManagementService {
             ServiceDeploymentRequest request,
             GeoServerClient.LayerSpec layerSpec,
             SpatialDataServiceStyleService.StyleDeployment styleDeployment,
-            long revision
+            long revision,
+            UUID operationId
     ) {
     }
 
@@ -1647,6 +1655,7 @@ public class DataServiceManagementService {
             UUID serviceId,
             ServiceEngine engine,
             long revision,
+            UUID operationId,
             boolean disableService,
             String serviceCode,
             UUID dataSourceId

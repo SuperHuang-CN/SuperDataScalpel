@@ -1,15 +1,17 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createJdbcIncrementalInputConfiguration } from '../nodeDefaults';
+import { createJdbcIncrementalInputConfiguration } from './defaults';
 import { collectJdbcIncrementalInputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeJdbcIncrementalInput } from '../nodeSummaries';
+import { summarizeJdbcIncrementalInput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { jdbcIncrementalInputCanvasView } from './canvasView';
 
 export const jdbcIncrementalInputSpec = createCanvasNodeSpec<
   typeof CanvasNodeType.JdbcIncrementalInput
 >({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.JdbcIncrementalInput,
   category: CanvasNodeCategory.Input,
   group: CanvasNodeGroup.InputStream,

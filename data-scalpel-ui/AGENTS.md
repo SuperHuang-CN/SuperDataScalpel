@@ -7,7 +7,7 @@
 - 保持单一 React / TypeScript / Vite 应用，使用 React Router、Ant Design、TanStack Query、AntV X6；不拆微前端或业务 npm 包。新增全局 UI/状态框架须按根约定确认。
 - 依赖方向为 `app → modules → shared`：`app` 负责路由、布局、Provider；`modules` 放业务；`shared` 不依赖前两层，只放无业务语义且被至少两个业务域复用的能力。
 - 模块按需使用 `api/`、`components/`、`pages/`、`hooks/`、`model/`、`index.ts`。业务代码跟随业务模块，跨模块只通过对方 `index.ts` 公开入口；不为形式解耦添加事件总线、重复 DTO 或适配层。
-- 路由在 `app` 装配，页面在模块内实现；Canvas、Monaco 等大型能力按路由懒加载，不进入普通首页首屏包。页面负责组合，复杂逻辑进入所属 Hook、model 或专用组件。
+- 路由在 `app` 装配，页面在模块内实现；业务模块的 `index.ts` 不导出页面，`app` 可直接按页面文件建立懒加载边界。Canvas、Monaco 等大型能力按路由懒加载，不进入普通首页首屏包。页面负责组合，复杂逻辑进入所属 Hook、model 或专用组件。
 - 复用 Ant Design 和现有组件，避免简单样式的重复封装、万能表单、空目录或无实际用途的层级。命名表达业务含义，避免 `common`、`misc`、`helper` 收纳目录。
 - 使用明确的 TypeScript 类型；JSON 边界使用 `unknown`，不扩散 `any`，不以无理由断言、`@ts-ignore` 或 `eslint-disable` 绕过问题。
 

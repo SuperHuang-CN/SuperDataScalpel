@@ -1,5 +1,3 @@
-export { ComputeEnginePage } from './pages/ComputeEnginePage';
-export { ComputeEngineDetailPage } from './pages/ComputeEngineDetailPage';
 export { useComputeEngine, useComputeEngines } from './hooks/useComputeEngines';
 export {
   computeBackendTypeLabels,

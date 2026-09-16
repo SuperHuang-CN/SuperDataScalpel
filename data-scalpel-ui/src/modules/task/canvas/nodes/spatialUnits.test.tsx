@@ -4,7 +4,8 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { parseCanvasDefinition } from '../canvasDefinitionIO';
 import { CANVAS_SCHEMA_MINOR_VERSION, CanvasNodeType } from '../canvasTypes';
 import * as defaults from './nodeDefaults';
-import { spatialAreaUnitOptions, spatialDistanceUnitOptions, unsupportedSpatialUnitPaths } from './spatialUnits';
+import { spatialAreaUnitOptions, spatialDistanceUnitOptions } from './spatialUnits';
+import { unsupportedSpatialUnitPaths } from '../parsing/spatialCompatibility';
 import { createNearestMatching } from './spatialNearest/matching';
 import { ConnectionLinesModal } from './spatialNearest/ConnectionLinesModal';
 

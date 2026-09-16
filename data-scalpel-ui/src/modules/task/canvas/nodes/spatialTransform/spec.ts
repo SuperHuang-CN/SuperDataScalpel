@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSpatialTransformConfiguration } from '../nodeDefaults';
+import { createSpatialTransformConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialTransform } from '../nodeSummaries';
+import { summarizeSpatialTransform } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialTransformCanvasView } from './canvasView';
 
 export const spatialTransformSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialTransform,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createGeometryDeriveConfiguration } from '../nodeDefaults';
+import { createGeometryDeriveConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeGeometryDerive } from '../nodeSummaries';
+import { summarizeGeometryDerive } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { geometryDeriveCanvasView } from './canvasView';
 
 export const geometryDeriveSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.GeometryDerive,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

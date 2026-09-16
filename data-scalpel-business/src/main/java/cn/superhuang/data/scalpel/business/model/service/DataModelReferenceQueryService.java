@@ -8,6 +8,10 @@ import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelReferenceServiceResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelReferenceTaskResponse;
 import cn.superhuang.data.scalpel.business.model.web.response.DataModelReferencesResponse;
+import cn.superhuang.data.scalpel.business.model.web.response.DataModelReferenceBusinessObjectTypeResponse;
+import cn.superhuang.data.scalpel.business.ontology.domain.BusinessObjectTypeReferenceKind;
+import cn.superhuang.data.scalpel.business.ontology.repository.BusinessObjectTypeReferenceRepository;
+import cn.superhuang.data.scalpel.business.ontology.repository.BusinessObjectTypeRepository;
 import cn.superhuang.data.scalpel.business.service.domain.DataService;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceModelReferenceRepository;
@@ -64,6 +68,8 @@ public class DataModelReferenceQueryService {
     private final SqlDataServiceModelReferenceRepository sqlServiceRepository;
     private final SpatialDataServiceDefinitionRepository spatialServiceRepository;
     private final CanvasTaskDefinitionService canvasDefinitionService;
+    private final BusinessObjectTypeReferenceRepository businessObjectTypeReferences;
+    private final BusinessObjectTypeRepository businessObjectTypes;
 
     public DataModelReferenceQueryService(
             cn.superhuang.data.scalpel.business.metric.repository.MetricReferenceRepository metricReferences,
@@ -82,7 +88,9 @@ public class DataModelReferenceQueryService {
             StandardDataServiceDefinitionRepository standardServiceRepository,
             SqlDataServiceModelReferenceRepository sqlServiceRepository,
             SpatialDataServiceDefinitionRepository spatialServiceRepository,
-            CanvasTaskDefinitionService canvasDefinitionService
+            CanvasTaskDefinitionService canvasDefinitionService,
+            BusinessObjectTypeReferenceRepository businessObjectTypeReferences,
+            BusinessObjectTypeRepository businessObjectTypes
     ) {
         this.metricReferences = metricReferences;
         this.metricRepository = metricRepository;
@@ -101,6 +109,8 @@ public class DataModelReferenceQueryService {
         this.sqlServiceRepository = sqlServiceRepository;
         this.spatialServiceRepository = spatialServiceRepository;
         this.canvasDefinitionService = canvasDefinitionService;
+        this.businessObjectTypeReferences = businessObjectTypeReferences;
+        this.businessObjectTypes = businessObjectTypes;
     }
 
     @Transactional(readOnly = true)
@@ -223,8 +233,17 @@ public class DataModelReferenceQueryService {
         boolean canViewMetrics = authentication != null && authentication.getAuthorities().stream().anyMatch(a -> a.getAuthority().equals("metric.view"));
         var metricResponses = metricRepository.findAllById(canViewMetrics ? metricIds : List.<UUID>of()).stream()
                 .map(m -> new cn.superhuang.data.scalpel.business.model.web.response.DataModelReferenceMetricResponse(m.getId(), m.getName(), m.getCode())).toList();
+        var objectTypeIds = businessObjectTypeReferences.findAllByReferenceKindAndResourceId(
+                        BusinessObjectTypeReferenceKind.MODEL, modelId)
+                .stream().map(reference -> reference.getObjectTypeId()).distinct().toList();
+        boolean canViewOntology = authentication != null && authentication.getAuthorities().stream()
+                .anyMatch(authority -> authority.getAuthority().equals("ontology.view"));
+        var objectTypeResponses = businessObjectTypes.findAllById(canViewOntology ? objectTypeIds : List.<UUID>of()).stream()
+                .map(type -> new DataModelReferenceBusinessObjectTypeResponse(type.getId(), type.getName(), type.getCode()))
+                .sorted(Comparator.comparing(DataModelReferenceBusinessObjectTypeResponse::name)).toList();
         return new DataModelReferencesResponse(
-                modelId, taskResponses.isEmpty() && services.isEmpty() && metricIds.isEmpty(), taskResponses, services, metricResponses);
+                modelId, taskResponses.isEmpty() && services.isEmpty() && metricIds.isEmpty() && objectTypeIds.isEmpty(),
+                taskResponses, services, metricResponses, objectTypeResponses);
     }
 
     private Map<UUID, Map<UUID, String>> canvasNodeNames(List<UUID> taskIds) {

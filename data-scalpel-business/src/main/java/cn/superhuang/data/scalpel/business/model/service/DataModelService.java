@@ -1,7 +1,6 @@
 package cn.superhuang.data.scalpel.business.model.service;
 
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
-import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourceType;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
@@ -37,7 +36,6 @@ import cn.superhuang.data.scalpel.business.model.web.request.CreatePhysicalTable
 import cn.superhuang.data.scalpel.business.model.web.request.CreateDataModelRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.CreateManagedDraftRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryRequest;
-import cn.superhuang.data.scalpel.business.model.web.request.DataModelDataQueryFilterInput;
 import cn.superhuang.data.scalpel.business.model.web.request.DataModelFieldInput;
 import cn.superhuang.data.scalpel.business.model.web.request.ExecutePhysicalTableChangePlanRequest;
 import cn.superhuang.data.scalpel.business.model.web.request.FileDatasetImportPreviewRequest;
@@ -75,33 +73,13 @@ import cn.superhuang.data.scalpel.dialect.api.DatabaseDialect;
 import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
-import cn.superhuang.data.scalpel.dialect.model.DdlPlan;
 import cn.superhuang.data.scalpel.dialect.model.JdbcTypeDescriptor;
 import cn.superhuang.data.scalpel.dialect.model.PhysicalTypeDefinition;
-import cn.superhuang.data.scalpel.dialect.model.TableChangeExecutionMode;
-import cn.superhuang.data.scalpel.dialect.model.TableChangePlan;
-import cn.superhuang.data.scalpel.dialect.model.TableChangeStrategy;
-import cn.superhuang.data.scalpel.dialect.model.TableColumnDefinition;
-import cn.superhuang.data.scalpel.dialect.model.TableDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
-import cn.superhuang.data.scalpel.dialect.model.TableStorageDefinition;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingResult;
 import cn.superhuang.data.scalpel.dialect.model.TypeMappingQuality;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseAccessException;
-import cn.superhuang.data.scalpel.dialect.query.ConditionConjunction;
-import cn.superhuang.data.scalpel.dialect.query.QueryFilterOperator;
-import cn.superhuang.data.scalpel.dialect.query.QuerySortDirection;
-import cn.superhuang.data.scalpel.dialect.query.QueryValueType;
-import cn.superhuang.data.scalpel.dialect.query.StandardQuery;
-import cn.superhuang.data.scalpel.dialect.query.StandardQueryField;
-import cn.superhuang.data.scalpel.dialect.query.StandardQueryFilterGroupInput;
-import cn.superhuang.data.scalpel.dialect.query.StandardQueryFilterInput;
-import cn.superhuang.data.scalpel.dialect.query.StandardQueryInput;
-import cn.superhuang.data.scalpel.dialect.query.StandardQueryLimits;
-import cn.superhuang.data.scalpel.dialect.query.StandardQueryOrderInput;
-import cn.superhuang.data.scalpel.dialect.query.StandardQueryResult;
-import cn.superhuang.data.scalpel.dialect.query.StandardTableQueryCompiler;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import cn.superhuang.data.scalpel.web.error.CodedProblemException;
 import org.springframework.data.domain.Page;
@@ -126,23 +104,22 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
-import java.time.Duration;
 import java.time.Instant;
-import tools.jackson.core.type.TypeReference;
-import tools.jackson.databind.ObjectMapper;
+
+import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionService.NormalizedField;
+import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionService.normalizeCode;
+import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionService.normalizeFields;
+import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionService.platformType;
+import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionService.remoteAccessException;
+import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionService.requireTransactionResult;
+import static cn.superhuang.data.scalpel.business.model.service.ModelDefinitionService.validateClickHouseOrderByFields;
 
 @Service
 public class DataModelService {
 
+
     private static final Pattern LOWER_TABLE_IDENTIFIER = Pattern.compile("[a-z][a-z0-9_]{0,127}");
     private static final Pattern LOWER_FIELD_IDENTIFIER = Pattern.compile("[a-z][a-z0-9_]{0,63}");
-    private static final int QUICK_PREVIEW_ROW_COUNT = 50;
-    private static final int MODEL_QUERY_MAXIMUM_PAGE_SIZE = 100;
-    private static final Duration MODEL_QUERY_TIMEOUT = Duration.ofSeconds(15);
-    private static final StandardTableQueryCompiler STANDARD_QUERY_COMPILER = new StandardTableQueryCompiler();
-    private static final StandardQueryLimits MODEL_QUERY_LIMITS = new StandardQueryLimits(
-            50, MODEL_QUERY_MAXIMUM_PAGE_SIZE, 20, 5, 1_000, 3, 0, 0, 10_000
-    );
 
     private final DataModelRepository repository;
     private final DataModelFieldRepository fieldRepository;
@@ -156,14 +133,16 @@ public class DataModelService {
     private final DirectoryService directoryService;
     private final SearchEngine searchEngine;
     private final ModelPhysicalTablePort physicalTablePort;
-    private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
     private final DialectRegistry dialectRegistry;
     private final StandardDictionaryValueSupport standardDictionaryValueSupport;
     private final ModelQualityRuleService qualityRuleService;
     private final cn.superhuang.data.scalpel.business.metric.service.MetricReferenceGuard metricReferenceGuard;
+    private final cn.superhuang.data.scalpel.business.ontology.service.BusinessObjectTypeReferenceGuard businessObjectTypeReferenceGuard;
     private final DataModelReferenceQueryService referenceQueryService;
-
+    private final ModelDefinitionService definitions;
+    private final DataModelDataQueryService dataQueries;
+    private final DataModelPhysicalChangeService physicalChanges;
     public DataModelService(
             DataModelRepository repository,
             DataModelFieldRepository fieldRepository,
@@ -177,13 +156,16 @@ public class DataModelService {
             DirectoryService directoryService,
             SearchEngine searchEngine,
             ModelPhysicalTablePort physicalTablePort,
-            ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager,
             DialectRegistry dialectRegistry,
             StandardDictionaryValueSupport standardDictionaryValueSupport,
             ModelQualityRuleService qualityRuleService,
+            cn.superhuang.data.scalpel.business.metric.service.MetricReferenceGuard metricReferenceGuard,
+            cn.superhuang.data.scalpel.business.ontology.service.BusinessObjectTypeReferenceGuard businessObjectTypeReferenceGuard,
             DataModelReferenceQueryService referenceQueryService,
-            cn.superhuang.data.scalpel.business.metric.service.MetricReferenceGuard metricReferenceGuard
+            ModelDefinitionService definitions,
+            DataModelDataQueryService dataQueries,
+            DataModelPhysicalChangeService physicalChanges
     ) {
         this.repository = repository;
         this.fieldRepository = fieldRepository;
@@ -197,14 +179,20 @@ public class DataModelService {
         this.directoryService = directoryService;
         this.searchEngine = searchEngine;
         this.physicalTablePort = physicalTablePort;
-        this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
         this.dialectRegistry = dialectRegistry;
         this.standardDictionaryValueSupport = standardDictionaryValueSupport;
         this.qualityRuleService = qualityRuleService;
-        this.referenceQueryService = referenceQueryService;
         this.metricReferenceGuard = metricReferenceGuard;
+        this.businessObjectTypeReferenceGuard = businessObjectTypeReferenceGuard;
+        this.referenceQueryService = referenceQueryService;
+        this.definitions = definitions;
+        this.dataQueries = dataQueries;
+        this.physicalChanges = physicalChanges;
     }
+
+
+
 
     @Transactional(readOnly = true)
     public PageResponse<DataModelResponse> search(SearchRequest request) {
@@ -231,14 +219,14 @@ public class DataModelService {
 
     @Transactional(readOnly = true)
     public DataModelDetailResponse get(UUID id) {
-        return detail(requireModel(id));
+        return detail(definitions.requireModel(id));
     }
 
     public ExternalTableImportPreviewResponse previewExternalTableImport(
             UUID storageDataSourceId,
             String physicalTableName
     ) {
-        DataSource storage = requireModelDataSource(storageDataSourceId, true, PhysicalTableMode.EXTERNAL);
+        DataSource storage = definitions.requireModelDataSource(storageDataSourceId, true, PhysicalTableMode.EXTERNAL);
         validateExternalPhysicalTableName(PhysicalTableMode.EXTERNAL, physicalTableName);
         PhysicalNamespace namespace = resolvePhysicalNamespace(storage);
         TableIdentifier table = new TableIdentifier(
@@ -280,10 +268,10 @@ public class DataModelService {
     }
 
     public ManagedImportPreviewResponse previewManagedImport(ManagedImportPreviewRequest request) {
-        DataSource source = requireModelDataSource(
+        DataSource source = definitions.requireModelDataSource(
                 request.sourceDataSourceId(), true, PhysicalTableMode.EXTERNAL
         );
-        DataSource target = requireStorageDataSource(request.targetStorageDataSourceId(), true);
+        DataSource target = definitions.requireStorageDataSource(request.targetStorageDataSourceId(), true);
         TableIdentifier requestedTable = request.sourceTable().toIdentifier();
         TableMetadata metadata;
         try {
@@ -354,7 +342,7 @@ public class DataModelService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "文件数据集逻辑表没有可创建模型的字段结构");
         }
 
-        DataSource target = requireStorageDataSource(request.targetStorageDataSourceId(), true);
+        DataSource target = definitions.requireStorageDataSource(request.targetStorageDataSourceId(), true);
         DatabaseDialect targetDialect = dialectRegistry.require(target.getType().name());
         List<FileDatasetImportColumnResponse> columns = fileDatasetImportColumns(sourceFields, targetDialect);
         LinkedHashSet<String> issues = new LinkedHashSet<>();
@@ -558,7 +546,7 @@ public class DataModelService {
         }
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
         validateWarehouseLayerAssignment(request.warehouseLayerId(), null);
-        DataSource storage = requireStorageDataSource(request.storageDataSourceId(), true);
+        DataSource storage = definitions.requireStorageDataSource(request.storageDataSourceId(), true);
         PhysicalNamespace namespace = resolvePhysicalNamespace(storage);
         String physicalTableName = normalizeCode(request.physicalTableName());
         List<String> clickHouseOrderByColumns = normalizeClickHouseOrderByColumns(request.clickHouseOrderByColumns());
@@ -570,7 +558,7 @@ public class DataModelService {
         if (fields.stream().anyMatch(field -> field.input().id() != null)) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "新建受管模型草稿的字段不能携带 ID");
         }
-        validateStandardDictionaryAssignments(fields, Map.of());
+        definitions.validateStandardDictionaryAssignments(fields, Map.of());
         validatePhysicalTypeMappings(storage, fields);
         DataModel model = DataModel.create(
                 code, request.name(), request.directoryId(), request.warehouseLayerId(), request.storageDataSourceId(),
@@ -595,7 +583,7 @@ public class DataModelService {
         }
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
         validateWarehouseLayerAssignment(request.warehouseLayerId(), null);
-        requireStorageDataSource(request.storageDataSourceId(), true);
+        definitions.requireStorageDataSource(request.storageDataSourceId(), true);
         validatePhysicalLocationAvailable(
                 request.storageDataSourceId(),
                 preparation.namespace().catalogName(),
@@ -604,7 +592,7 @@ public class DataModelService {
                 null
         );
         DataModel saved = repository.saveAndFlush(preparation.model());
-        validateStandardDictionaryAssignments(preparation.fields(), Map.of());
+        definitions.validateStandardDictionaryAssignments(preparation.fields(), Map.of());
         List<DataModelField> fields = preparation.fields().stream()
                 .map(field -> {
                     DataModelField entity = DataModelField.create(
@@ -622,7 +610,7 @@ public class DataModelService {
 
     @Transactional(readOnly = true)
     public List<PlatformTypeCapabilityResponse> platformTypeCapabilities(UUID storageDataSourceId) {
-        DataSource storage = requireStorageDataSource(storageDataSourceId, false);
+        DataSource storage = definitions.requireStorageDataSource(storageDataSourceId, false);
         DatabaseDialect dialect = dialectRegistry.require(storage.getType().name());
         List<PlatformTypeCapabilityResponse> result = new ArrayList<>();
         for (PlatformDataType type : PlatformDataType.values()) {
@@ -702,7 +690,7 @@ public class DataModelService {
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
         validateWarehouseLayerAssignment(request.warehouseLayerId(), null);
         PhysicalTableMode physicalTableMode = physicalTableMode(request.physicalTableMode());
-        DataSource storage = requireModelDataSource(request.storageDataSourceId(), false, physicalTableMode);
+        DataSource storage = definitions.requireModelDataSource(request.storageDataSourceId(), false, physicalTableMode);
 
         PhysicalNamespace namespace = resolvePhysicalNamespace(storage);
         String physicalTableName = normalizeCode(request.physicalTableName());
@@ -773,14 +761,14 @@ public class DataModelService {
     }
 
     private UpdatePreparation prepareUpdate(UUID id, UpdateDataModelRequest request) {
-        DataModel model = requireModel(id);
+        DataModel model = definitions.requireModel(id);
         directoryService.validateAssignment(DirectoryScope.MODEL, request.directoryId());
         validateWarehouseLayerAssignment(request.warehouseLayerId(), model.getWarehouseLayerId());
 
         PhysicalTableMode physicalTableMode = physicalTableMode(request.physicalTableMode());
         boolean storageChanged = !Objects.equals(model.getStorageDataSourceId(), request.storageDataSourceId());
         DataSource storage = model.getStatus() == DataModelStatus.DRAFT
-                ? requireModelDataSource(request.storageDataSourceId(), false, physicalTableMode)
+                ? definitions.requireModelDataSource(request.storageDataSourceId(), false, physicalTableMode)
                 : null;
         PhysicalNamespace namespace = storageChanged && storage != null
                 ? resolvePhysicalNamespace(storage)
@@ -817,7 +805,7 @@ public class DataModelService {
                 model.getStatus() == DataModelStatus.DRAFT
                         && physicalTableMode == PhysicalTableMode.EXTERNAL
                         && physicalLocationChanged,
-                requiresMissingTableCheck ? fieldsFor(id) : List.of(),
+                requiresMissingTableCheck ? definitions.fieldsFor(id) : List.of(),
                 requiresMissingTableCheck
         );
     }
@@ -828,7 +816,7 @@ public class DataModelService {
             UpdatePreparation preparation,
             List<ExternalTableField> importedFields
     ) {
-        DataModel model = requireModel(id);
+        DataModel model = definitions.requireModel(id);
         if (!Objects.equals(model.getUpdatedAt(), preparation.expectedUpdatedAt())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型定义已发生变化，请重新提交");
         }
@@ -875,12 +863,12 @@ public class DataModelService {
     }
 
     private UpdateFieldsPreparation prepareUpdateFields(UUID id, UpdateDataModelFieldsRequest request) {
-        DataModel model = requireModel(id);
+        DataModel model = definitions.requireModel(id);
         requireFieldsEditable(model);
         requireNoActivePhysicalChange(id);
 
         List<NormalizedField> normalizedFields = normalizeFields(request.fields());
-        DataSource storage = requireModelDataSource(
+        DataSource storage = definitions.requireModelDataSource(
                 model.getStorageDataSourceId(), false, model.getPhysicalTableMode()
         );
         if (model.getPhysicalTableMode() == PhysicalTableMode.MANAGED) {
@@ -893,7 +881,7 @@ public class DataModelService {
                 normalizedFields.stream().map(field -> field.input().fieldType()).toList()
         );
         List<DataModelField> currentFields = fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(id);
-        validateStandardDictionaryAssignments(
+        definitions.validateStandardDictionaryAssignments(
                 normalizedFields,
                 currentFields.stream().collect(Collectors.toMap(DataModelField::getId, Function.identity()))
         );
@@ -903,7 +891,7 @@ public class DataModelService {
     }
 
     private DataModelDetailResponse completeUpdateFields(UUID id, UpdateFieldsPreparation preparation) {
-        DataModel model = requireModel(id);
+        DataModel model = definitions.requireModel(id);
         if (!Objects.equals(model.getUpdatedAt(), preparation.expectedUpdatedAt())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型字段已发生变化，请重新提交");
         }
@@ -915,7 +903,7 @@ public class DataModelService {
                 .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
         Map<String, DataModelPhysicalColumnRole> physicalRolesByCode = currentFields.stream()
                 .collect(Collectors.toMap(DataModelField::getCode, DataModelField::getPhysicalColumnRole));
-        validateStandardDictionaryAssignments(normalizedFields, existingFields);
+        definitions.validateStandardDictionaryAssignments(normalizedFields, existingFields);
         Set<UUID> retainedIds = new HashSet<>();
         List<DataModelField> fieldsToSave = new ArrayList<>();
 
@@ -956,6 +944,7 @@ public class DataModelService {
                 .toList();
         if (!removedFields.isEmpty()) {
             metricReferenceGuard.assertFieldsRemovable(model.getId(), removedFields.stream().map(DataModelField::getId).toList());
+            businessObjectTypeReferenceGuard.assertFieldsRemovable(model.getId(), removedFields.stream().map(DataModelField::getId).toList());
             fieldRepository.deleteAll(removedFields);
             fieldRepository.flush();
         }
@@ -970,132 +959,22 @@ public class DataModelService {
             UUID id,
             CreatePhysicalTableChangePlanRequest request
     ) {
-        ChangePlanPreparation preparation = requireTransactionResult(
-                transactionTemplate.execute(status -> prepareChangePlan(id, request))
-        );
-        DataModel model = preparation.model();
-        DataSource storage = preparation.storage();
-        List<DataModelField> currentFields = preparation.currentFields();
-        List<NormalizedField> targetFields = preparation.targetFields();
-        ModelPhysicalTableInspection inspection = physicalTablePort.inspect(storage, model, currentFields);
-        if (inspection.state() != PhysicalTableState.MATCHED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "物理表未就绪：" + inspection.message());
-        }
-        DatabaseDialect dialect = dialectRegistry.require(storage.getType().name());
-        TableDefinition before = currentTableDefinition(dialect, storage, model, inspection.table(), currentFields);
-        TableDefinition target = targetTableDefinition(dialect, storage, model, inspection.table(), targetFields);
-        TableChangePlan plan;
-        try {
-            plan = physicalTablePort.planChange(storage, model, before, target);
-        } catch (DatabaseAccessException exception) {
-            throw remoteAccessException(exception);
-        } catch (UnsupportedOperationException exception) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
-        }
-        if (!before.structureFingerprint().equals(plan.beforeFingerprint())
-                || !target.structureFingerprint().equals(plan.targetFingerprint())) {
-            throw new IllegalStateException("物理表变更规划返回的结构快照与当前请求不一致");
-        }
-        if (plan.strategy() == TableChangeStrategy.METADATA_ONLY) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "未检测到物理表结构变化，请直接保存字段信息");
-        }
-        return requireTransactionResult(transactionTemplate.execute(
-                status -> completeChangePlan(id, preparation, plan)
-        ));
-    }
-
-    private ChangePlanPreparation prepareChangePlan(UUID id, CreatePhysicalTableChangePlanRequest request) {
-        DataModel model = requireModel(id);
-        if (model.getStatus() != DataModelStatus.DRAFT && model.getStatus() != DataModelStatus.DISABLED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "请先停用已发布模型后再修改物理表结构");
-        }
-        if (model.getPhysicalTableMode() != PhysicalTableMode.MANAGED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "绑定已有表模式暂不支持修改物理表");
-        }
-
-        DataSource storage = requireStorageDataSource(model.getStorageDataSourceId(), true);
-        List<DataModelField> currentFields = fieldsFor(id);
-        if (currentFields.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前模型没有可变更的字段结构");
-        }
-        List<NormalizedField> targetFields = normalizeFields(request.fields());
-        validateClickHouseOrderByFields(
-                storage,
-                model,
-                targetFields.stream().map(NormalizedField::code).toList(),
-                targetFields.stream().map(field -> field.input().fieldType()).toList()
-        );
-        Map<UUID, DataModelField> existingFields = currentFields.stream()
-                .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
-        validateTargetFieldIds(targetFields, existingFields);
-        if (containsGeometry(currentFields)) {
-            requireSpatialConstraintOnlyChange(currentFields, targetFields);
-        }
-        validateStandardDictionaryAssignments(targetFields, existingFields);
-        return new ChangePlanPreparation(
-                model, model.getUpdatedAt(), model.getSchemaVersion(), storage, currentFields, targetFields
-        );
-    }
-
-    private DataModelPhysicalChangeResponse completeChangePlan(
-            UUID id,
-            ChangePlanPreparation preparation,
-            TableChangePlan plan
-    ) {
-        DataModel model = requireModel(id);
-        if (!Objects.equals(model.getUpdatedAt(), preparation.expectedUpdatedAt())
-                || model.getSchemaVersion() != preparation.schemaVersion()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "模型字段已发生变化，请重新生成变更计划");
-        }
-        supersedePlannedChanges(id);
-        DataModelPhysicalChange change = DataModelPhysicalChange.planned(
-                id,
-                model.getSchemaVersion(),
-                Math.addExact(model.getSchemaVersion(), 1),
-                plan.strategy(),
-                plan.risk(),
-                plan.atomicity(),
-                plan.beforeFingerprint().value(),
-                plan.targetFingerprint().value(),
-                writeSnapshot(plan, "无法保存物理表变更计划"),
-                writeSnapshot(
-                        preparation.targetFields().stream().map(ModelPhysicalTableChangeTargetField::from).toList(),
-                        "无法保存目标字段快照"
-                )
-        );
-        return physicalChangeResponse(physicalChangeRepository.saveAndFlush(change));
+        return physicalChanges.createPhysicalTableChangePlan(id, request);
     }
 
     @Transactional(readOnly = true)
     public PageResponse<DataModelPhysicalChangeResponse> searchPhysicalTableChangePlans(UUID modelId, SearchRequest request) {
-        requireModel(modelId);
-        Page<DataModelPhysicalChange> result = searchEngine.search(
-                request,
-                DataModelPhysicalChange.class,
-                physicalChangeRepository,
-                (root, query, builder) -> builder.equal(root.get("modelId"), modelId)
-        );
-        return new PageResponse<>(
-                result.getContent().stream().map(this::physicalChangeResponse).toList(),
-                result.getTotalElements(), result.getTotalPages(), result.getNumber(), result.getSize()
-        );
+        return physicalChanges.searchPhysicalTableChangePlans(modelId, request);
     }
 
     @Transactional(readOnly = true)
     public DataModelPhysicalChangeResponse getPhysicalTableChangePlan(UUID modelId, UUID planId) {
-        requireModel(modelId);
-        return physicalChangeResponse(requirePhysicalChange(modelId, planId));
+        return physicalChanges.getPhysicalTableChangePlan(modelId, planId);
     }
 
     @Transactional
     public DataModelPhysicalChangeResponse cancelPhysicalTableChangePlan(UUID modelId, UUID planId) {
-        requireModel(modelId);
-        DataModelPhysicalChange change = requirePhysicalChange(modelId, planId);
-        if (change.getStatus() != DataModelPhysicalChangeStatus.PLANNED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有待执行计划可以取消");
-        }
-        change.cancel();
-        return physicalChangeResponse(physicalChangeRepository.saveAndFlush(change));
+        return physicalChanges.cancelPhysicalTableChangePlan(modelId, planId);
     }
 
     public DataModelPhysicalChangeResponse executePhysicalTableChangePlan(
@@ -1103,34 +982,7 @@ public class DataModelService {
             UUID planId,
             ExecutePhysicalTableChangePlanRequest request
     ) {
-        ChangeExecutionContext context = requireTransactionResult(transactionTemplate.execute(status -> prepareChangeExecution(
-                modelId, planId, request.executionMode()
-        )));
-        try {
-            physicalTablePort.executeChange(context.storage(), context.model(), context.plan(), context.mode());
-        } catch (DatabaseAccessException exception) {
-            transactionTemplate.executeWithoutResult(status -> {
-                if (context.plan().atomicity() == cn.superhuang.data.scalpel.dialect.model.TableDdlAtomicity.ATOMIC_SINGLE_STATEMENT
-                        && "POSTCHECK_FAILED".equals(exception.code())) {
-                    markChangePartial(modelId, planId, exception.code(), exception.getMessage());
-                } else {
-                    markChangeFailed(modelId, planId, exception);
-                }
-            });
-            throw changeExecutionException(exception);
-        } catch (RuntimeException exception) {
-            DatabaseAccessException databaseException = new DatabaseAccessException(
-                    "CHANGE_EXECUTION_FAILED", "执行物理表变更失败", exception
-            );
-            transactionTemplate.executeWithoutResult(status -> markChangeFailed(modelId, planId, databaseException));
-            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, databaseException.getMessage(), exception);
-        }
-        try {
-            return requireTransactionResult(transactionTemplate.execute(status -> completeChangeExecution(modelId, planId)));
-        } catch (RuntimeException exception) {
-            transactionTemplate.executeWithoutResult(status -> markChangePartial(modelId, planId));
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, "物理表已变更，但模型字段快照保存失败", exception);
-        }
+        return physicalChanges.executePhysicalTableChangePlan(modelId, planId, request);
     }
 
     public DataModelDetailResponse publish(UUID id) {
@@ -1145,7 +997,7 @@ public class DataModelService {
 
     @Transactional
     public DataModelDetailResponse disable(UUID id) {
-        DataModel model = requireModel(id);
+        DataModel model = definitions.requireModel(id);
         if (model.getStatus() != DataModelStatus.PUBLISHED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "只有已发布模型可以停用");
         }
@@ -1154,16 +1006,16 @@ public class DataModelService {
     }
 
     private PublishPreparation preparePublish(UUID id) {
-        DataModel model = requireModel(id);
+        DataModel model = definitions.requireModel(id);
         DataModelStatus sourceStatus = model.getStatus();
         if (sourceStatus != DataModelStatus.DRAFT && sourceStatus != DataModelStatus.DISABLED) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "只有草稿或已停用模型可以发布");
         }
-        List<DataModelField> fields = fieldsFor(id);
+        List<DataModelField> fields = definitions.fieldsFor(id);
         if (fields.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "请先定义至少一个模型字段");
         }
-        DataSource storage = requireModelDataSource(
+        DataSource storage = definitions.requireModelDataSource(
                 model.getStorageDataSourceId(), true, model.getPhysicalTableMode()
         );
         return new PublishPreparation(model, sourceStatus, model.getUpdatedAt(), storage, fields);
@@ -1195,7 +1047,7 @@ public class DataModelService {
     }
 
     private DataModelDetailResponse completePublish(PublishPreparation preparation) {
-        DataModel model = requireModel(preparation.model().getId());
+        DataModel model = definitions.requireModel(preparation.model().getId());
         if (model.getStatus() != preparation.sourceStatus()
                 || !Objects.equals(model.getUpdatedAt(), preparation.expectedUpdatedAt())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "模型状态已发生变化，请重试");
@@ -1365,314 +1217,24 @@ public class DataModelService {
         return true;
     }
 
-    private static boolean containsGeometry(List<DataModelField> fields) {
-        return fields.stream().anyMatch(field -> field.getFieldType() == PlatformDataType.GEOMETRY);
-    }
-
-    private static void requireSpatialConstraintOnlyChange(
-            List<DataModelField> currentFields,
-            List<NormalizedField> requestedFields
-    ) {
-        if (currentFields.size() != requestedFields.size()) {
-            throw spatialStructureChangeNotSupported();
-        }
-        Map<UUID, DataModelField> currentById = currentFields.stream()
-                .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
-        for (NormalizedField requested : requestedFields) {
-            DataModelField current = requested.input().id() == null
-                    ? null
-                    : currentById.get(requested.input().id());
-            if (current == null
-                    || !current.getCode().equals(requested.code())
-                    || current.getFieldType() != requested.input().fieldType()
-                    || !Objects.equals(current.getLength(), requested.length())
-                    || !Objects.equals(current.getPrecision(), requested.precision())
-                    || !Objects.equals(current.getScale(), requested.scale())
-                    || !Objects.equals(current.getGeometry(), requested.geometry())) {
-                throw spatialStructureChangeNotSupported();
-            }
-        }
-    }
-
-    private static ResponseStatusException spatialStructureChangeNotSupported() {
-        return new ResponseStatusException(
-                HttpStatus.CONFLICT,
-                "空间字段所在受管表当前仅支持修改可空性和非空间字段主键约束"
-        );
-    }
-
     public PhysicalTableInspectionResponse inspectPhysicalTable(UUID id) {
-        ModelOperationPreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
-            DataModel model = requireModel(id);
-            return new ModelOperationPreparation(
-                    model, model.getUpdatedAt(),
-                    requireModelDataSource(model.getStorageDataSourceId(), false, model.getPhysicalTableMode()),
-                    fieldsFor(id)
-            );
-        }));
-        return PhysicalTableInspectionResponse.from(
-                preparation.model().getPhysicalTableMode(),
-                physicalTablePort.inspect(preparation.storage(), preparation.model(), preparation.fields())
-        );
+        return physicalChanges.inspectPhysicalTable(id);
     }
 
     public PhysicalTableDdlPlanResponse physicalTableDdl(UUID id) {
-        ModelOperationPreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
-            DataModel model = requireModel(id);
-            return new ModelOperationPreparation(
-                    model,
-                    model.getUpdatedAt(),
-                    requireModelDataSource(
-                            model.getStorageDataSourceId(), false, model.getPhysicalTableMode()
-                    ),
-                    fieldsFor(id)
-            );
-        }));
-        DataModel model = preparation.model();
-        if (model.getPhysicalTableMode() != PhysicalTableMode.MANAGED) {
-            return PhysicalTableDdlPlanResponse.unsupported(
-                    model.getPhysicalTableMode(), "绑定已有表模式不生成建表 SQL"
-            );
-        }
-        List<DataModelField> fields = preparation.fields();
-        if (fields.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "请先定义至少一个模型字段");
-        }
-        DataSource storage = preparation.storage();
-        validateClickHouseOrderByFields(
-                storage,
-                model,
-                fields.stream().map(DataModelField::getCode).toList(),
-                fields.stream().map(DataModelField::getFieldType).toList()
-        );
-        try {
-            DdlPlan plan = physicalTablePort.planCreate(storage, model, fields);
-            return PhysicalTableDdlPlanResponse.supported(model.getPhysicalTableMode(), plan);
-        } catch (DatabaseAccessException | UnsupportedOperationException exception) {
-            return PhysicalTableDdlPlanResponse.unsupported(model.getPhysicalTableMode(), exception.getMessage());
-        }
+        return physicalChanges.physicalTableDdl(id);
     }
 
     public PhysicalTableInspectionResponse createPhysicalTable(UUID id) {
-        DataModel model = requireModel(id);
-        if (model.getStatus() != DataModelStatus.DRAFT) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有草稿模型可以创建物理表");
-        }
-        if (model.getPhysicalTableMode() != PhysicalTableMode.MANAGED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "绑定已有表模式不能创建物理表");
-        }
-        List<DataModelField> fields = fieldsFor(id);
-        if (fields.isEmpty()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "请先定义至少一个模型字段");
-        }
-        DataSource storage = requireStorageDataSource(model.getStorageDataSourceId(), true);
-        validateClickHouseOrderByFields(
-                storage,
-                model,
-                fields.stream().map(DataModelField::getCode).toList(),
-                fields.stream().map(DataModelField::getFieldType).toList()
-        );
-        PhysicalTableInspectionResponse response = PhysicalTableInspectionResponse.from(
-                model.getPhysicalTableMode(), physicalTablePort.create(storage, model, fields)
-        );
-        if (response.state() == PhysicalTableState.MATCHED) {
-            transactionTemplate.executeWithoutResult(status -> physicalStatisticsRepository.deleteByModelId(id));
-        }
-        return response;
+        return physicalChanges.createPhysicalTable(id);
     }
 
     public DataModelPreviewResponse previewPhysicalTable(UUID id) {
-        ModelOperationPreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
-            DataModel model = requireModel(id);
-            return new ModelOperationPreparation(
-                    model, model.getUpdatedAt(),
-                    requireModelDataSource(model.getStorageDataSourceId(), true, model.getPhysicalTableMode()),
-                    fieldsFor(id)
-            );
-        }));
-        DataModel model = preparation.model();
-        DataSource storage = preparation.storage();
-        List<DataModelField> fields = preparation.fields();
-        ModelPhysicalTableInspection inspection = requireQueryablePhysicalTable(storage, model, fields);
-        StandardQueryInput input = new StandardQueryInput(
-                1, QUICK_PREVIEW_ROW_COUNT, List.of(), null,
-                defaultClickHouseOrders(storage, model, fields, List.of()), List.of(), List.of(), false
-        );
-        DataQueryResult result = executeDataQuery(storage, model, fields, inspection.table(), input);
-        return DataModelPreviewResponse.from(model, result.fields(), result.rows(), QUICK_PREVIEW_ROW_COUNT, result.hasNext());
+        return dataQueries.previewPhysicalTable(id);
     }
 
     public DataModelDataQueryResponse queryPhysicalTableData(UUID id, DataModelDataQueryRequest request) {
-        ModelOperationPreparation preparation = requireTransactionResult(transactionTemplate.execute(status -> {
-            DataModel model = requireModel(id);
-            return new ModelOperationPreparation(
-                    model, model.getUpdatedAt(),
-                    requireModelDataSource(model.getStorageDataSourceId(), true, model.getPhysicalTableMode()),
-                    fieldsFor(id)
-            );
-        }));
-        DataModel model = preparation.model();
-        DataSource storage = preparation.storage();
-        List<DataModelField> fields = preparation.fields();
-        ModelPhysicalTableInspection inspection = requireQueryablePhysicalTable(storage, model, fields);
-        StandardQueryInput input = new StandardQueryInput(
-                request.pageNo(), request.pageSize(),
-                request.columns(),
-                queryFilterGroup(request),
-                defaultClickHouseOrders(
-                        storage,
-                        model,
-                        fields,
-                        request.orders().stream().map(order -> new StandardQueryOrderInput(
-                                order.field(), QuerySortDirection.valueOf(order.direction().name())
-                        )).toList()
-                ),
-                List.of(), List.of(), request.returnCount()
-        );
-        DataQueryResult result = executeDataQuery(storage, model, fields, inspection.table(), input);
-        return new DataModelDataQueryResponse(
-                result.fields().stream().map(DataModelDataQueryResponse.Column::from).toList(),
-                result.rows(), result.pageNo(), result.pageSize(), result.hasNext(), result.totalCount(), result.stableOrder()
-        );
-    }
-
-    private DataQueryResult executeDataQuery(
-            DataSource storage,
-            DataModel model,
-            List<DataModelField> fields,
-            TableIdentifier table,
-            StandardQueryInput input
-    ) {
-        final cn.superhuang.data.scalpel.dialect.query.CompiledStandardTableQuery compiled;
-        try {
-            compiled = STANDARD_QUERY_COMPILER.compile(
-                    table, fields.stream().map(DataModelService::queryField).toList(), input, MODEL_QUERY_LIMITS
-            );
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, exception.getMessage(), exception);
-        }
-        int fetchSize = Math.addExact(compiled.pageSize(), 1);
-        StandardQuery query = withLimit(compiled.query(), fetchSize);
-        StandardQueryResult result;
-        try {
-            result = physicalTablePort.query(storage, model, query, fetchSize, MODEL_QUERY_TIMEOUT);
-        } catch (DatabaseAccessException exception) {
-            throw remoteAccessException(exception);
-        } catch (UnsupportedOperationException exception) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, exception.getMessage(), exception);
-        }
-        boolean hasNext = result.rows().size() > compiled.pageSize();
-        List<Map<String, Object>> rows = hasNext ? result.rows().subList(0, compiled.pageSize()) : result.rows();
-        Map<String, DataModelField> fieldsByCode = fields.stream()
-                .collect(Collectors.toMap(DataModelField::getCode, Function.identity()));
-        List<DataModelField> selectedFields = compiled.query().projections().stream()
-                .map(projection -> fieldsByCode.get(projection.alias()))
-                .filter(Objects::nonNull)
-                .toList();
-        return new DataQueryResult(
-                selectedFields, List.copyOf(rows), compiled.pageNo(), compiled.pageSize(), hasNext,
-                result.totalCount(), !compiled.query().orders().isEmpty()
-        );
-    }
-
-    private ModelPhysicalTableInspection requireQueryablePhysicalTable(
-            DataSource storage,
-            DataModel model,
-            List<DataModelField> fields
-    ) {
-        ModelPhysicalTableInspection inspection = physicalTablePort.inspect(storage, model, fields);
-        if (inspection.state() != PhysicalTableState.MATCHED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "物理表未就绪：" + inspection.message());
-        }
-        return inspection;
-    }
-
-    private StandardQueryFilterInput queryFilter(DataModelDataQueryFilterInput input) {
-        try {
-            return new StandardQueryFilterInput(
-                    input.field(), QueryFilterOperator.valueOf(input.operator().trim().toUpperCase(Locale.ROOT)),
-                    queryFilterValue(input)
-            );
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "不支持的过滤运算符：" + input.operator(), exception);
-        }
-    }
-
-    private StandardQueryFilterGroupInput queryFilterGroup(DataModelDataQueryRequest request) {
-        var conditions = request.filters().stream().map(this::queryFilter).toList();
-        if (conditions.isEmpty()) {
-            return null;
-        }
-        return new StandardQueryFilterGroupInput(
-                "OR".equals(request.conditionType()) ? ConditionConjunction.OR : ConditionConjunction.AND,
-                List.copyOf(conditions)
-        );
-    }
-
-    private static Object queryFilterValue(DataModelDataQueryFilterInput input) {
-        if (!input.values().isEmpty()) {
-            if (input.value() != null || input.secondValue() != null) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "values 不能与 value 或 secondValue 同时使用"
-                );
-            }
-            return input.values();
-        }
-        if (input.value() instanceof java.util.Collection<?> && input.secondValue() == null) {
-            return input.value();
-        }
-        if (input.value() != null && input.secondValue() != null) {
-            return List.of(input.value(), input.secondValue());
-        }
-        return input.value();
-    }
-
-    private static List<StandardQueryOrderInput> defaultClickHouseOrders(
-            DataSource storage,
-            DataModel model,
-            List<DataModelField> fields,
-            List<StandardQueryOrderInput> requestedOrders
-    ) {
-        if (!requestedOrders.isEmpty() || storage.getType() != DataSourceType.CLICKHOUSE) {
-            return requestedOrders;
-        }
-        Set<String> fieldCodes = fields.stream().map(DataModelField::getCode).collect(Collectors.toSet());
-        return model.getClickHouseOrderByColumns().stream()
-                .filter(fieldCodes::contains)
-                .map(column -> new StandardQueryOrderInput(column, QuerySortDirection.ASC))
-                .toList();
-    }
-
-    private static StandardQueryField queryField(DataModelField field) {
-        if (field.getFieldType() == PlatformDataType.BINARY
-                || field.getFieldType() == PlatformDataType.GEOMETRY) {
-            return new StandardQueryField(field.getCode(), field.getCode(), null, field.isPrimaryKey(), false);
-        }
-        return new StandardQueryField(
-                field.getCode(), field.getCode(), queryValueType(field.getFieldType()), field.isPrimaryKey(), true
-        );
-    }
-
-    private static QueryValueType queryValueType(PlatformDataType type) {
-        return switch (type) {
-            case STRING -> QueryValueType.STRING;
-            case BYTE, SHORT, INTEGER -> QueryValueType.INTEGER;
-            case LONG -> QueryValueType.LONG;
-            case FLOAT, DOUBLE, DECIMAL -> QueryValueType.DECIMAL;
-            case BOOLEAN -> QueryValueType.BOOLEAN;
-            case DATE -> QueryValueType.DATE;
-            case TIMESTAMP, TIMESTAMP_NTZ -> QueryValueType.DATETIME;
-            case BINARY -> throw new IllegalArgumentException("BINARY 字段不支持数据查询");
-            case GEOMETRY -> throw new IllegalArgumentException("Geometry 字段不支持数据查询");
-        };
-    }
-
-    private static StandardQuery withLimit(StandardQuery source, int limit) {
-        return new StandardQuery(
-                source.table(), source.projections(), source.filter(), source.groups(),
-                source.aggregates(), source.orders(), source.offset(), limit, source.returnCount()
-        );
+        return dataQueries.queryPhysicalTableData(id, request);
     }
 
     private Map<UUID, String> storageNames(List<DataModel> models) {
@@ -1680,183 +1242,6 @@ public class DataModelService {
         Map<UUID, String> names = new HashMap<>();
         dataSourceRepository.findAllById(ids).forEach(source -> names.put(source.getId(), source.getName()));
         return names;
-    }
-
-    private DataModel requireModel(UUID id) {
-        return repository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "模型不存在"));
-    }
-
-    private DataModelPhysicalChange requirePhysicalChange(UUID modelId, UUID planId) {
-        return physicalChangeRepository.findByIdAndModelId(planId, modelId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "物理表变更计划不存在"));
-    }
-
-    private ChangeExecutionContext prepareChangeExecution(
-            UUID modelId,
-            UUID planId,
-            TableChangeExecutionMode mode
-    ) {
-        DataModel model = requireModel(modelId);
-        DataModelPhysicalChange change = requirePhysicalChange(modelId, planId);
-        if (change.getStatus() != DataModelPhysicalChangeStatus.PLANNED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有待执行计划可以执行");
-        }
-        if (model.getSchemaVersion() != change.getBaseSchemaVersion()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "模型字段已变化，请重新生成物理表变更计划");
-        }
-        if (model.getStatus() != DataModelStatus.DRAFT && model.getStatus() != DataModelStatus.DISABLED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "请先停用已发布模型后再执行物理表变更");
-        }
-        if (model.getPhysicalTableMode() != PhysicalTableMode.MANAGED) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "绑定已有表模式不允许执行物理表变更");
-        }
-        Set<UUID> retainedFieldIds = readTargetFieldSnapshot(change).stream()
-                .map(ModelPhysicalTableChangeTargetField::id).filter(Objects::nonNull).collect(Collectors.toSet());
-        metricReferenceGuard.assertFieldsRemovable(modelId, fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(modelId)
-                .stream().map(DataModelField::getId).filter(fieldId -> !retainedFieldIds.contains(fieldId)).toList());
-        TableChangePlan plan = readChangePlan(change);
-        if (!change.getBeforeFingerprint().equals(plan.beforeFingerprint().value())
-                || !change.getTargetFingerprint().equals(plan.targetFingerprint().value())) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "物理表变更规则版本已变化，请重新生成计划"
-            );
-        }
-        try {
-            plan.requireExecutionOption(mode);
-        } catch (IllegalArgumentException exception) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "当前计划不提供所选执行方式", exception);
-        }
-        DataSource storage = requireStorageDataSource(model.getStorageDataSourceId(), true);
-        change.startApplying(mode);
-        physicalChangeRepository.saveAndFlush(change);
-        return new ChangeExecutionContext(storage, model, plan, mode);
-    }
-
-    private DataModelPhysicalChangeResponse completeChangeExecution(UUID modelId, UUID planId) {
-        DataModel model = requireModel(modelId);
-        DataModelPhysicalChange change = requirePhysicalChange(modelId, planId);
-        if (change.getStatus() != DataModelPhysicalChangeStatus.APPLYING) {
-            throw new IllegalStateException("物理表变更计划不处于执行状态");
-        }
-        if (model.getSchemaVersion() != change.getBaseSchemaVersion()) {
-            throw new IllegalStateException("模型字段版本在执行期间发生变化");
-        }
-        applyTargetFieldSnapshot(model, change);
-        model.advanceSchemaVersion();
-        if (model.getSchemaVersion() != change.getTargetSchemaVersion()) {
-            throw new IllegalStateException("目标模型结构版本不一致");
-        }
-        change.succeed();
-        repository.saveAndFlush(model);
-        qualityRuleService.reconcileModelFields(modelId);
-        physicalStatisticsRepository.deleteByModelId(modelId);
-        return physicalChangeResponse(physicalChangeRepository.saveAndFlush(change));
-    }
-
-    private void markChangeFailed(UUID modelId, UUID planId, DatabaseAccessException exception) {
-        DataModelPhysicalChange change = requirePhysicalChange(modelId, planId);
-        if (change.getStatus() == DataModelPhysicalChangeStatus.APPLYING) {
-            change.fail(exception.code(), exception.getMessage());
-            physicalChangeRepository.saveAndFlush(change);
-        }
-    }
-
-    private void markChangePartial(UUID modelId, UUID planId) {
-        markChangePartial(modelId, planId, "MODEL_METADATA_UPDATE_FAILED", "物理表已变更，但模型字段快照保存失败");
-    }
-
-    private void markChangePartial(UUID modelId, UUID planId, String errorCode, String errorMessage) {
-        DataModelPhysicalChange change = requirePhysicalChange(modelId, planId);
-        if (change.getStatus() == DataModelPhysicalChangeStatus.APPLYING) {
-            change.markPartial(errorCode, errorMessage);
-            physicalChangeRepository.saveAndFlush(change);
-        }
-    }
-
-    private void applyTargetFieldSnapshot(DataModel model, DataModelPhysicalChange change) {
-        List<ModelPhysicalTableChangeTargetField> targetFields = readTargetFieldSnapshot(change);
-        Map<UUID, DataModelField> existingFields = fieldRepository
-                .findAllByModelIdOrderBySortOrderAscCodeAsc(model.getId()).stream()
-                .collect(Collectors.toMap(DataModelField::getId, Function.identity()));
-        Set<UUID> retainedIds = new HashSet<>();
-        List<DataModelField> fieldsToSave = new ArrayList<>();
-        for (ModelPhysicalTableChangeTargetField target : targetFields) {
-            DataModelField field;
-            if (target.id() == null) {
-                field = DataModelField.create(
-                        model.getId(), target.code(), target.name(), target.fieldType(), target.length(), target.precision(),
-                        target.scale(), target.geometry(), target.nullable(), target.primaryKey(),
-                        target.sortOrder(), target.description()
-                );
-            } else {
-                field = existingFields.get(target.id());
-                if (field == null || !retainedIds.add(target.id())) {
-                    throw new IllegalStateException("目标字段快照与当前模型字段不一致");
-                }
-                field.update(
-                        target.code(), target.name(), target.fieldType(), target.length(), target.precision(), target.scale(),
-                        target.geometry(), target.nullable(), target.primaryKey(), target.sortOrder(), target.description()
-                );
-            }
-            field.assignStandardDictionary(target.standardDictionaryId());
-            fieldsToSave.add(field);
-        }
-        List<DataModelField> removedFields = existingFields.values().stream()
-                .filter(field -> !retainedIds.contains(field.getId()))
-                .toList();
-        if (!removedFields.isEmpty()) {
-            metricReferenceGuard.assertFieldsRemovable(model.getId(), removedFields.stream().map(DataModelField::getId).toList());
-            fieldRepository.deleteAll(removedFields);
-            fieldRepository.flush();
-        }
-        fieldRepository.saveAllAndFlush(fieldsToSave);
-    }
-
-    private List<ModelPhysicalTableChangeTargetField> readTargetFieldSnapshot(DataModelPhysicalChange change) {
-        try {
-            return objectMapper.readValue(change.getTargetFieldsSnapshot(), new TypeReference<List<ModelPhysicalTableChangeTargetField>>() {
-            });
-        } catch (RuntimeException exception) {
-            throw new IllegalStateException("已保存的目标字段快照无效", exception);
-        }
-    }
-
-    private DataSource requireStorageDataSource(UUID id, boolean requireEnabled) {
-        return requireModelDataSource(id, requireEnabled, PhysicalTableMode.MANAGED);
-    }
-
-    private DataSource requireModelDataSource(
-            UUID id,
-            boolean requireEnabled,
-            PhysicalTableMode physicalTableMode
-    ) {
-        DataSource dataSource = dataSourceRepository.findById(id)
-                .orElseThrow(() -> new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        physicalTableMode == PhysicalTableMode.MANAGED ? "数据存储不存在" : "JDBC 数据源不存在"
-                ));
-        if (!dataSource.getType().isJdbc()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型只能绑定 JDBC 类型的数据源");
-        }
-        if (physicalTableMode == PhysicalTableMode.MANAGED
-                && !dataSource.getPurposes().contains(DataSourcePurpose.STORAGE)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型只能绑定具有数据存储用途的数据源");
-        }
-        if (physicalTableMode == PhysicalTableMode.MANAGED && dataSource.getType().isTdEngine()) {
-            throw new ResponseStatusException(
-                    HttpStatus.BAD_REQUEST,
-                    "TDengine 第一版只能绑定已有超级表，不能创建受管模型"
-            );
-        }
-        if (requireEnabled && !dataSource.isEnabled()) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    physicalTableMode == PhysicalTableMode.MANAGED ? "关联的数据存储已停用" : "关联的 JDBC 数据源已停用"
-            );
-        }
-        return dataSource;
     }
 
     private List<ExternalTableField> importExternalTableFields(DataSource storage, DataModel model) {
@@ -1906,7 +1291,7 @@ public class DataModelService {
             DatabaseDialect dialect
     ) {
         Set<String> primaryKeyCodes = metadata.primaryKey().columns().stream()
-                .map(DataModelService::normalizeCode)
+                .map(ModelDefinitionService::normalizeCode)
                 .collect(Collectors.toSet());
         Set<String> codes = new HashSet<>();
         List<ExternalColumnMapping> mappings = new ArrayList<>();
@@ -1945,7 +1330,7 @@ public class DataModelService {
             DatabaseDialect targetDialect
     ) {
         Set<String> primaryKeyCodes = metadata.primaryKey().columns().stream()
-                .map(DataModelService::normalizeCode)
+                .map(ModelDefinitionService::normalizeCode)
                 .collect(Collectors.toSet());
         Map<String, Integer> normalizedCodeCounts = new LinkedHashMap<>();
         for (ColumnMetadata column : metadata.columns()) {
@@ -2144,6 +1529,7 @@ public class DataModelService {
     ) {
         if (replaceExisting) {
             metricReferenceGuard.assertFieldsRemovable(model.getId(), fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(model.getId()).stream().map(DataModelField::getId).toList());
+            businessObjectTypeReferenceGuard.assertFieldsRemovable(model.getId(), fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(model.getId()).stream().map(DataModelField::getId).toList());
             fieldRepository.deleteAllByModelId(model.getId());
             fieldRepository.flush();
         }
@@ -2219,10 +1605,6 @@ public class DataModelService {
         );
     }
 
-    private List<DataModelField> fieldsFor(UUID modelId) {
-        return fieldRepository.findAllByModelIdOrderBySortOrderAscCodeAsc(modelId);
-    }
-
     private void requireNoActivePhysicalChange(UUID modelId) {
         List<DataModelPhysicalChange> activeChanges = physicalChangeRepository.findAllByModelIdAndStatusIn(
                 modelId, List.of(DataModelPhysicalChangeStatus.PLANNED, DataModelPhysicalChangeStatus.APPLYING)
@@ -2230,137 +1612,6 @@ public class DataModelService {
         if (!activeChanges.isEmpty()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "存在待处理的物理表变更计划，请先取消或完成该计划");
         }
-    }
-
-    private void supersedePlannedChanges(UUID modelId) {
-        List<DataModelPhysicalChange> activeChanges = physicalChangeRepository.findAllByModelIdAndStatusIn(
-                modelId, List.of(DataModelPhysicalChangeStatus.PLANNED, DataModelPhysicalChangeStatus.APPLYING)
-        );
-        if (activeChanges.stream().anyMatch(change -> change.getStatus() == DataModelPhysicalChangeStatus.APPLYING)) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "物理表变更正在执行，不能生成新计划");
-        }
-        activeChanges.forEach(DataModelPhysicalChange::supersede);
-        if (!activeChanges.isEmpty()) {
-            physicalChangeRepository.saveAll(activeChanges);
-        }
-    }
-
-    private DataModelPhysicalChangeResponse physicalChangeResponse(DataModelPhysicalChange change) {
-        return DataModelPhysicalChangeResponse.from(change, readChangePlan(change));
-    }
-
-    private TableChangePlan readChangePlan(DataModelPhysicalChange change) {
-        try {
-            return objectMapper.readValue(change.getPlanSnapshot(), TableChangePlan.class);
-        } catch (RuntimeException exception) {
-            throw new IllegalStateException("已保存的物理表变更计划无效", exception);
-        }
-    }
-
-    private static ResponseStatusException changeExecutionException(DatabaseAccessException exception) {
-        HttpStatus status = switch (exception.code()) {
-            case "TABLE_STRUCTURE_DRIFTED", "PRECHECK_FAILED", "EXECUTION_MODE_NOT_AVAILABLE",
-                    "DDL_ATOMICITY_NOT_SUPPORTED", "POSTCHECK_FAILED" -> HttpStatus.CONFLICT;
-            case "TABLE_NOT_FOUND" -> HttpStatus.NOT_FOUND;
-            default -> HttpStatus.BAD_GATEWAY;
-        };
-        return new ResponseStatusException(status, exception.getMessage(), exception);
-    }
-
-    private static <T> T requireTransactionResult(T result) {
-        if (result == null) {
-            throw new IllegalStateException("事务未返回预期结果");
-        }
-        return result;
-    }
-
-    private String writeSnapshot(Object value, String message) {
-        try {
-            return objectMapper.writeValueAsString(value);
-        } catch (RuntimeException exception) {
-            throw new IllegalStateException(message, exception);
-        }
-    }
-
-    private static TableDefinition currentTableDefinition(
-            DatabaseDialect dialect,
-            DataSource storage,
-            DataModel model,
-            TableIdentifier table,
-            List<DataModelField> fields
-    ) {
-        return new TableDefinition(
-                table,
-                fields.stream().map(field -> physicalColumn(
-                        dialect, field.getCode(), field.getFieldType(), field.getLength(), field.getPrecision(),
-                        field.getScale(), field.getGeometry(), field.isNullable(), field.getId()
-                )).toList(),
-                storage.getType() == DataSourceType.CLICKHOUSE
-                        ? List.of()
-                        : fields.stream().filter(DataModelField::isPrimaryKey).map(DataModelField::getCode).toList(),
-                storageDefinition(storage, model)
-        );
-    }
-
-    private static TableDefinition targetTableDefinition(
-            DatabaseDialect dialect,
-            DataSource storage,
-            DataModel model,
-            TableIdentifier table,
-            List<NormalizedField> fields
-    ) {
-        return new TableDefinition(
-                table,
-                fields.stream().map(field -> physicalColumn(
-                        dialect, field.code(), field.input().fieldType(), field.length(), field.precision(),
-                        field.scale(), field.geometry(), field.input().nullable(), field.input().id()
-                )).toList(),
-                storage.getType() == DataSourceType.CLICKHOUSE
-                        ? List.of()
-                        : fields.stream().filter(field -> field.input().primaryKey()).map(NormalizedField::code).toList(),
-                storageDefinition(storage, model)
-        );
-    }
-
-    private static TableStorageDefinition storageDefinition(DataSource storage, DataModel model) {
-        return storage.getType() == DataSourceType.CLICKHOUSE
-                ? TableStorageDefinition.mergeTree(model.getClickHouseOrderByColumns())
-                : TableStorageDefinition.none();
-    }
-
-    private static TableColumnDefinition physicalColumn(
-            DatabaseDialect dialect,
-            String code,
-            PlatformDataType type,
-            Integer length,
-            Integer precision,
-            Integer scale,
-            GeometryTypeDefinition geometry,
-            boolean nullable,
-            UUID columnId
-    ) {
-        TypeMappingResult<PhysicalTypeDefinition> mapping = dialect.mapToPhysicalType(
-                platformType(type, length, precision, scale, geometry)
-        );
-        if (!mapping.acceptable()) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, code + "：" + mapping.message());
-        }
-        return mapping.definition().column(code, nullable, columnId);
-    }
-
-    private static PlatformTypeDefinition platformType(
-            PlatformDataType type,
-            Integer length,
-            Integer precision,
-            Integer scale,
-            GeometryTypeDefinition geometry
-    ) {
-        return switch (type) {
-            case STRING -> PlatformTypeDefinition.string(length);
-            case DECIMAL -> PlatformTypeDefinition.decimal(precision, scale);
-            case GEOMETRY -> PlatformTypeDefinition.geometry(geometry);
-            default -> PlatformTypeDefinition.of(type);
-        };
     }
 
     private static List<String> normalizeClickHouseOrderByColumns(List<String> values) {
@@ -2408,72 +1659,8 @@ public class DataModelService {
         }
     }
 
-    private static void validateClickHouseOrderByFields(
-            DataSource storage,
-            DataModel model,
-            List<String> fieldCodes,
-            List<PlatformDataType> fieldTypes
-    ) {
-        if (storage.getType() != DataSourceType.CLICKHOUSE) {
-            return;
-        }
-        if (model.getPhysicalTableMode() != PhysicalTableMode.MANAGED) {
-            if (!model.getClickHouseOrderByColumns().isEmpty()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "绑定已有表模式不能配置 ClickHouse 排序键");
-            }
-            return;
-        }
-        Map<String, PlatformDataType> fieldTypesByCode = new HashMap<>();
-        for (int index = 0; index < fieldCodes.size(); index++) {
-            fieldTypesByCode.put(fieldCodes.get(index), fieldTypes.get(index));
-        }
-        for (String orderByColumn : model.getClickHouseOrderByColumns()) {
-            PlatformDataType fieldType = fieldTypesByCode.get(orderByColumn);
-            if (fieldType == null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ClickHouse 排序键字段不存在：" + orderByColumn);
-            }
-            if (fieldType == PlatformDataType.GEOMETRY) {
-                throw new ResponseStatusException(
-                        HttpStatus.BAD_REQUEST,
-                        "ClickHouse Geometry 字段不能作为排序键：" + orderByColumn
-                );
-            }
-        }
-        if (fieldTypes.contains(PlatformDataType.BINARY)) {
-            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "ClickHouse 受控物理表暂不支持二进制字段");
-        }
-    }
-
-    private static void validateTargetFieldIds(
-            List<NormalizedField> targetFields,
-            Map<UUID, DataModelField> existingFields
-    ) {
-        Set<UUID> retainedIds = new HashSet<>();
-        for (NormalizedField targetField : targetFields) {
-            UUID id = targetField.input().id();
-            if (id == null) {
-                continue;
-            }
-            if (!existingFields.containsKey(id)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型字段不存在或不属于当前模型");
-            }
-            if (!retainedIds.add(id)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型字段 ID 重复");
-            }
-        }
-    }
-
     private static PhysicalTableMode physicalTableMode(PhysicalTableMode mode) {
         return mode == null ? PhysicalTableMode.MANAGED : mode;
-    }
-
-    private static ResponseStatusException remoteAccessException(DatabaseAccessException exception) {
-        HttpStatus status = switch (exception.code()) {
-            case "TABLE_NOT_FOUND" -> HttpStatus.NOT_FOUND;
-            case "INVALID_QUERY" -> HttpStatus.BAD_REQUEST;
-            default -> HttpStatus.BAD_GATEWAY;
-        };
-        return new ResponseStatusException(status, exception.getMessage(), exception);
     }
 
     private void validatePhysicalLocationAvailable(
@@ -2493,114 +1680,8 @@ public class DataModelService {
         }
     }
 
-    private static List<NormalizedField> normalizeFields(List<DataModelFieldInput> fields) {
-        Set<String> codes = new HashSet<>();
-        List<NormalizedField> normalized = new ArrayList<>();
-        for (DataModelFieldInput input : fields) {
-            String code = normalizeCode(input.code());
-            if (!codes.add(code)) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "模型字段编码不能重复：" + code);
-            }
-            if (input.primaryKey() && input.nullable()) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "主键字段不能为空：" + code);
-            }
-
-            Integer length = null;
-            Integer precision = null;
-            Integer scale = null;
-            GeometryTypeDefinition geometry = null;
-            if (input.fieldType() == PlatformDataType.STRING) {
-                if (input.geometry() != null) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "非 Geometry 字段不能设置空间参数：" + code);
-                }
-                length = input.length();
-            } else if (input.fieldType() == PlatformDataType.DECIMAL) {
-                if (input.geometry() != null) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "非 Geometry 字段不能设置空间参数：" + code);
-                }
-                if (input.precision() == null) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "小数字段必须指定精度：" + code);
-                }
-                precision = input.precision();
-                scale = input.scale() == null ? 0 : input.scale();
-                if (scale > precision) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "小数字段的小数位不能超过精度：" + code);
-                }
-            } else if (input.fieldType() == PlatformDataType.GEOMETRY) {
-                if (input.geometry() == null) {
-                    throw new ResponseStatusException(
-                            HttpStatus.BAD_REQUEST,
-                            "Geometry 字段必须指定几何类型、CRS 和坐标维度：" + code
-                    );
-                }
-                if (input.length() != null || input.precision() != null || input.scale() != null) {
-                    throw new ResponseStatusException(
-                            HttpStatus.BAD_REQUEST,
-                            "Geometry 字段不能设置长度、精度或小数位：" + code
-                    );
-                }
-                if (!"EPSG".equals(input.geometry().crs().authority())) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geometry 字段第一版只支持 EPSG CRS：" + code);
-                }
-                if (input.geometry().dimension() != CoordinateDimension.XY) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geometry 字段第一版只支持 XY 二维坐标：" + code);
-                }
-                if (input.primaryKey()) {
-                    throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Geometry 字段不能作为主键：" + code);
-                }
-                geometry = input.geometry();
-            } else if (input.geometry() != null) {
-                throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "非 Geometry 字段不能设置空间参数：" + code);
-            }
-            normalized.add(new NormalizedField(input, code, length, precision, scale, geometry));
-        }
-        return normalized;
-    }
-
-    private void validateStandardDictionaryAssignments(
-            List<NormalizedField> fields,
-            Map<UUID, DataModelField> currentFields
-    ) {
-        for (NormalizedField field : fields) {
-            DataModelField current = field.input().id() == null ? null : currentFields.get(field.input().id());
-            standardDictionaryValueSupport.validateAssignment(
-                    field.input().standardDictionaryId(),
-                    current == null ? null : current.getStandardDictionaryId(),
-                    field.input().fieldType(),
-                    field.length(),
-                    field.precision(),
-                    field.scale()
-            );
-        }
-    }
-
-    private static String normalizeCode(String value) {
-        return value.trim().toLowerCase(Locale.ROOT);
-    }
-
     private static String normalizeOptional(String value) {
         return value == null || value.trim().isEmpty() ? null : value.trim();
-    }
-
-    record NormalizedField(
-            DataModelFieldInput input,
-            String code,
-            Integer length,
-            Integer precision,
-            Integer scale,
-            GeometryTypeDefinition geometry
-    ) {
-    }
-
-    private record DataQueryResult(
-            List<DataModelField> fields,
-            List<Map<String, Object>> rows,
-            int pageNo,
-            int pageSize,
-            boolean hasNext,
-            Long totalCount,
-            boolean stableOrder
-    ) {
     }
 
     private record PhysicalNamespace(String catalogName, String schemaName) {
@@ -2678,38 +1759,12 @@ public class DataModelService {
     ) {
     }
 
-    private record ChangePlanPreparation(
-            DataModel model,
-            Instant expectedUpdatedAt,
-            int schemaVersion,
-            DataSource storage,
-            List<DataModelField> currentFields,
-            List<NormalizedField> targetFields
-    ) {
-    }
-
-    private record ModelOperationPreparation(
-            DataModel model,
-            Instant expectedUpdatedAt,
-            DataSource storage,
-            List<DataModelField> fields
-    ) {
-    }
-
     private record PublishPreparation(
             DataModel model,
             DataModelStatus sourceStatus,
             Instant expectedUpdatedAt,
             DataSource storage,
             List<DataModelField> fields
-    ) {
-    }
-
-    private record ChangeExecutionContext(
-            DataSource storage,
-            DataModel model,
-            TableChangePlan plan,
-            TableChangeExecutionMode mode
     ) {
     }
 }

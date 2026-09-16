@@ -437,7 +437,7 @@ class DispatcherRunnerResultIntegrationTest {
         registrationService.activate(new DispatcherRegistrationRequest(
                 engineId,
                 new DispatcherTopics(commandTopic, runnerTopic, "admin." + suffix),
-                new DispatcherAdmissionPolicy(20, 2, 2)));
+                new DispatcherAdmissionPolicy(20, 2, 2), cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER)));
         String prefix = "task-runs/" + runId + "/attempts/1/";
         Instant now = Instant.now();
         ExecutionUserJarArtifact userJar = taskType == ExecutionTaskType.SPARK_JAR

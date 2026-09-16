@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createFileOutputConfiguration } from '../nodeDefaults';
+import { createFileOutputConfiguration } from './defaults';
 import { collectFileOutputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeFileOutput } from '../nodeSummaries';
+import { summarizeFileOutput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { fileOutputCanvasView } from './canvasView';
 
 export const fileOutputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.FileOutput,
   category: CanvasNodeCategory.Output,
   group: CanvasNodeGroup.OutputFile,

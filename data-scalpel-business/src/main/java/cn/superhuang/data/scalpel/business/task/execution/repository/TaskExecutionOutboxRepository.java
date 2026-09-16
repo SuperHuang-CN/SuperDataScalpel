@@ -25,9 +25,9 @@ public interface TaskExecutionOutboxRepository extends JpaRepository<TaskExecuti
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select message from TaskExecutionOutboxMessage message where message.state in :states "
             + "and message.nextAttemptAt <= :now "
-            + "and (message.messageType = 'SUBMIT_EXECUTION' or not exists (select s.id from TaskExecutionOutboxMessage s "
+            + "and (message.messageType in ('SUBMIT_EXECUTION', 'START_STREAMING_EXECUTION') or not exists (select s.id from TaskExecutionOutboxMessage s "
             + "where s.aggregateId = message.aggregateId and s.executionId = message.executionId "
-            + "and s.messageType = 'SUBMIT_EXECUTION' and s.state <> 'PUBLISHED')) "
+            + "and s.messageType in ('SUBMIT_EXECUTION', 'START_STREAMING_EXECUTION') and s.state <> 'PUBLISHED')) "
             + "order by message.nextAttemptAt, message.createdAt")
     List<TaskExecutionOutboxMessage> findDueForUpdate(
             Collection<TaskExecutionOutboxState> states,

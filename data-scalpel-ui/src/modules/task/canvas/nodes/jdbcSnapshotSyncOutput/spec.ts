@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createJdbcSnapshotSyncOutputConfiguration } from '../nodeDefaults';
+import { createJdbcSnapshotSyncOutputConfiguration } from './defaults';
 import { collectJdbcSnapshotSyncOutputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeJdbcSnapshotSyncOutput } from '../nodeSummaries';
+import { summarizeJdbcSnapshotSyncOutput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { jdbcSnapshotSyncOutputCanvasView } from './canvasView';
 
 export const jdbcSnapshotSyncOutputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.JdbcSnapshotSyncOutput,
   category: CanvasNodeCategory.Output,
   group: CanvasNodeGroup.OutputDatabase,

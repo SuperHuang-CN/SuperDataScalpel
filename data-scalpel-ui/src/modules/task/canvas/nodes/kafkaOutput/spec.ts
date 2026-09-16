@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createKafkaOutputConfiguration } from '../nodeDefaults';
+import { createKafkaOutputConfiguration } from './defaults';
 import { collectKafkaOutputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeKafkaOutput } from '../nodeSummaries';
+import { summarizeKafkaOutput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { kafkaOutputCanvasView } from './canvasView';
 
 export const kafkaOutputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.KafkaOutput,
   category: CanvasNodeCategory.Output,
   group: CanvasNodeGroup.OutputStream,

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createJdbcQueryInputConfiguration } from '../nodeDefaults';
+import { createJdbcQueryInputConfiguration } from './defaults';
 import { collectJdbcQueryInputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeJdbcQueryInput } from '../nodeSummaries';
+import { summarizeJdbcQueryInput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { jdbcQueryInputCanvasView } from './canvasView';
 
 export const jdbcQueryInputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.JdbcQueryInput,
   category: CanvasNodeCategory.Input,
   group: CanvasNodeGroup.InputDatabase,

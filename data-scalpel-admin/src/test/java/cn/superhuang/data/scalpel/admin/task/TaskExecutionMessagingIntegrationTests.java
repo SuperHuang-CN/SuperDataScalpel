@@ -44,6 +44,40 @@ class TaskExecutionMessagingIntegrationTests {
     private TaskExecutionOutboxService outboxService;
 
     @Test
+    void stopWaitsForStreamingStartToFinishRetrying() {
+        Fixture fixture = fixture();
+        UUID deploymentId = UUID.randomUUID();
+        Instant now = Instant.now();
+        String prefix = "task-runs/" + fixture.runId() + "/attempts/1/";
+        var start = new cn.superhuang.data.scalpel.contract.execution.StartStreamingExecutionCommand(
+                1, UUID.randomUUID(), ExecutionMessageType.START_STREAMING_EXECUTION, now,
+                fixture.engineId(), fixture.executionId(), fixture.runId(), 1, fixture.taskId(), deploymentId, 1,
+                new cn.superhuang.data.scalpel.contract.execution.ExecutionArtifactLocation(
+                        prefix + "manifest.json", "a".repeat(64), prefix + "result.json", prefix + "console.log"));
+        var stop = new cn.superhuang.data.scalpel.contract.execution.StopStreamingExecutionCommand(
+                1, UUID.randomUUID(), ExecutionMessageType.STOP_STREAMING_EXECUTION, now,
+                fixture.engineId(), fixture.executionId(), fixture.runId(), 1, deploymentId, "停止", 60);
+        outboxService.enqueue("commands.local", start);
+        outboxService.enqueue("commands.local", stop);
+        var pendingStart = outboxRepository.findByMessageId(start.messageId()).orElseThrow();
+        pendingStart.claim(now);
+        pendingStart.failed(now, "retry");
+        var pending = java.util.List.of(
+                cn.superhuang.data.scalpel.business.task.execution.domain.TaskExecutionOutboxState.PENDING,
+                cn.superhuang.data.scalpel.business.task.execution.domain.TaskExecutionOutboxState.FAILED);
+        var page = org.springframework.data.domain.PageRequest.of(0, 50);
+
+        assertThat(outboxRepository.findDueForUpdate(pending, now.plusMillis(100), page)).isEmpty();
+        assertThat(outboxRepository.findDueForUpdate(pending, now.plusSeconds(10), page))
+                .extracting(item -> item.getMessageId()).containsExactly(start.messageId());
+        pendingStart.claim(now.plusSeconds(10));
+        assertThat(outboxRepository.findDueForUpdate(pending, now.plusSeconds(10), page)).isEmpty();
+        pendingStart.published(now.plusSeconds(10));
+        assertThat(outboxRepository.findDueForUpdate(pending, now.plusSeconds(10), page))
+                .extracting(item -> item.getMessageId()).containsExactly(stop.messageId());
+    }
+
+    @Test
     void appliesDispatcherEventsIdempotentlyAndIgnoresOldSequence() {
         Fixture fixture = fixture();
         TaskRun run = runRepository.save(fixture.run());

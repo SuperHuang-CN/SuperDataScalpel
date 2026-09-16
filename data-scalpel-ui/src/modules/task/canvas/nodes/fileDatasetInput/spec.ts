@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createFileDatasetInputConfiguration } from '../nodeDefaults';
+import { createFileDatasetInputConfiguration } from './defaults';
 import { collectFileDatasetInputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeFileDatasetInput } from '../nodeSummaries';
+import { summarizeFileDatasetInput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { fileDatasetInputCanvasView } from './canvasView';
 
 export const fileDatasetInputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.FileDatasetInput,
   category: CanvasNodeCategory.Input,
   group: CanvasNodeGroup.InputFile,

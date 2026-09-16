@@ -16,6 +16,8 @@ import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherMessageInbox;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistration;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState;
 import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherTaskExecution;
+import cn.superhuang.data.scalpel.dispatcher.domain.DispatcherStreamingStop;
+import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherStreamingStopRepository;
 import cn.superhuang.data.scalpel.dispatcher.messaging.ExecutionRequestFingerprint;
 import cn.superhuang.data.scalpel.dispatcher.messaging.MessageCoordinates;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherMessageInboxRepository;
@@ -37,17 +39,20 @@ public class DispatcherCommandService {
     private final DispatcherTaskExecutionRepository executionRepository;
     private final DispatcherRegistrationRepository registrationRepository;
     private final DispatcherEventService eventService;
+    private final DispatcherStreamingStopRepository stoppedExecutions;
 
     public DispatcherCommandService(
             DispatcherMessageInboxRepository inboxRepository,
             DispatcherTaskExecutionRepository executionRepository,
             DispatcherRegistrationRepository registrationRepository,
-            DispatcherEventService eventService
+            DispatcherEventService eventService,
+            DispatcherStreamingStopRepository stoppedExecutions
     ) {
         this.inboxRepository = inboxRepository;
         this.executionRepository = executionRepository;
         this.registrationRepository = registrationRepository;
         this.eventService = eventService;
+        this.stoppedExecutions = stoppedExecutions;
     }
 
     @Transactional
@@ -81,6 +86,15 @@ public class DispatcherCommandService {
             DispatcherRegistration registration,
             DispatcherMessageInbox inbox
     ) {
+        var stopped = stoppedExecutions.findByExecutionIdAndAttempt(command.executionId(), command.attempt());
+        if (stopped.isPresent()) {
+            if (!stopped.get().matches(command)) {
+                inbox.rejected("实时执行与已停止记录的身份不一致");
+                return Outcome.REJECTED;
+            }
+            inbox.processed();
+            return Outcome.DUPLICATE;
+        }
         String fingerprint = ExecutionRequestFingerprint.of(command);
         DispatcherTaskExecution existing = executionRepository.findByExecutionIdAndAttempt(
                 command.executionId(), command.attempt()).orElse(null);
@@ -135,13 +149,18 @@ public class DispatcherCommandService {
         DispatcherTaskExecution execution = executionRepository.findByExecutionIdAndAttempt(
                 command.executionId(), command.attempt()).orElse(null);
         if (execution == null) {
-            /*
-             * A start command can fail before its execution ledger is committed
-             * (for example, because the Dispatcher database schema is stale).
-             * No Backend submission can exist without that ledger. Treat a later
-             * stop as an idempotent stop-before-start and publish a terminal event
-             * so Admin does not remain in STOPPING forever.
-             */
+            // Registration row locking serializes START and STOP. Persist the decision
+            // in the same transaction as the event so a delayed START cannot launch.
+            var stopped = stoppedExecutions.findByExecutionIdAndAttempt(command.executionId(), command.attempt());
+            if (stopped.isPresent()) {
+                if (!stopped.get().matches(command)) {
+                    inbox.rejected("实时停止命令与已停止记录的身份不一致");
+                    return Outcome.REJECTED;
+                }
+                inbox.processed();
+                return Outcome.DUPLICATE;
+            }
+            stoppedExecutions.save(DispatcherStreamingStop.from(command));
             eventService.enqueueUntrackedStreamingStop(command, registration);
             inbox.processed();
             return Outcome.ACCEPTED;

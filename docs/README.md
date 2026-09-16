@@ -11,6 +11,10 @@
 
 维护文档时注明状态与适用范围；计划完成后链接到现行规范。只在主题所属文档维护完整规则，其他位置保留摘要与链接。发现实现和设计冲突时先核对用户已确认的决策，不能仅凭代码或旧计划擅自改变业务语义。测试政策集中维护在 [根约定](../AGENTS.md#测试与验证暂时禁用)。
 
+架构整改：[2026-09 实施计划](design/architecture-remediation-2026-09.md)、[统一检查与已知限制](verification/architecture-remediation-2026-09.md)。
+
+前端模块化整改：[2026-09 实施与验收](verification/frontend-modularization-remediation-2026-09.md)。
+
 ## 按任务阅读
 
 | 修改内容 | 入口 |
@@ -32,6 +36,7 @@
 | 数据服务、引擎或网关发布 | [数据服务](design/data-service-publishing.md)、[网关发布](design/data-service-gateway-publishing.md)、[GeoServer](design/geoserver-spatial-service-publishing-v1.md) |
 | 独立 Super API Gateway | [网关 AGENTS](../super-api-gateway/AGENTS.md)、[Provider 集成](design/super-api-gateway-provider-integration.md) |
 | 数据标准、填报、资产或血缘 | [码表](design/standard-dictionary-management.md)、[填报](design/data-entry-v1.md)、[资产](design/asset-publication-and-synchronization.md)、[血缘](design/lineage-integration-contract.md) |
+| 业务建模 V1、本体总览、人员与部门模型验证 | [本体总览设计](design/business-ontology-overview-v1.md)、[计划对齐检查与开发环境验证](verification/business-ontology-v1-personnel.md)（包含当前能力、实际验证及未完成项，不代表完整业务建模 V1 已验收） |
 | 业务指标、口径说明、结果模型绑定、任务反查或 Excel 整理 | [指标管理 V1](design/metric-management-v1.md)、[关联示例](design/metric-management-v1.md#12-关联与口径维护示例)、[Excel 导入导出](design/metric-management-v1.md#13-excel-导入导出与线下整理)（已实现口径、结果绑定、任务关联及 Excel 整理；指标数据结果查询后续开发） |
 | 系统 MCP、API 开放和智能体访问 | [系统 MCP](design/system-mcp.md)（独立入口、目录、令牌、调用边界与运维） |
 | DSH Docker 测试、原生页面和运行维护 | [DSH Docker 测试环境](../deploy/dsh/README.md)（发布包、持久化、启动、模型配置与升级） |

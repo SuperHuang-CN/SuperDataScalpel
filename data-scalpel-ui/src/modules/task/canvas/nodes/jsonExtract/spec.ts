@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createJsonExtractConfiguration } from '../nodeDefaults';
+import { createJsonExtractConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeJsonExtract } from '../nodeSummaries';
+import { summarizeJsonExtract } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { jsonExtractCanvasView } from './canvasView';
 
 export const jsonExtractSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.JsonExtract,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorColumn,

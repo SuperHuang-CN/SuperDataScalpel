@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialDescribeDatasetConfiguration } from '../nodeDefaults';
+import { createSpatialDescribeDatasetConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialDescribeDataset } from '../nodeSummaries';
+import { summarizeSpatialDescribeDataset } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialDescribeDatasetCanvasView } from './canvasView';
 
 export const spatialDescribeDatasetSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialDescribeDataset,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

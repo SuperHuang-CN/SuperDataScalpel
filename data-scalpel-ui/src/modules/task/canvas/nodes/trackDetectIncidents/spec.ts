@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createTrackDetectIncidentsConfiguration } from '../nodeDefaults';
+import { createTrackDetectIncidentsConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeTrackDetectIncidents } from '../nodeSummaries';
+import { summarizeTrackDetectIncidents } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { trackDetectIncidentsCanvasView } from './canvasView';
 
 export const trackDetectIncidentsSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.TrackDetectIncidents,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

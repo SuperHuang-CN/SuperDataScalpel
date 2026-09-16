@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createHttpApiInputConfiguration } from '../nodeDefaults';
+import { createHttpApiInputConfiguration } from './defaults';
 import { collectHttpApiInputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeHttpApiInput } from '../nodeSummaries';
+import { summarizeHttpApiInput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { httpApiInputCanvasView } from './canvasView';
 
 export const httpApiInputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.HttpApiInput,
   category: CanvasNodeCategory.Input,
   group: CanvasNodeGroup.InputApi,

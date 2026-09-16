@@ -51,25 +51,34 @@ it('rejects malformed JSON but preserves business-invalid window drafts',()=>{
   expect(bufferWindowProblems([binding],[],false)).toEqual([[]]);
 });
 
-it('keeps modal history drafts isolated on cancel and preserves invalid hidden bindings on save',async()=>{
+it('keeps modal history drafts isolated on cancel',async()=>{
   const c=configuration(),ref=createRef<CanvasNodeInspectorHandle>(),apply=vi.fn();
   render(<Inspector node={{id,type:CanvasNodeType.TrackReconstruct,name:'重建',layout,configuration:c}} executionMode="BATCH"
     validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref}/>);
   fireEvent.click(screen.getByRole('button',{name:'设置面轨迹'}));
-  fireEvent.change(screen.getByRole('textbox',{name:'缓冲窗口 1 名称'}),{target:{value:'discard_me'}});
-  fireEvent.click(within(await screen.findByRole('dialog')).getByRole('button',{name:/取\s*消/}));
+  const dialog=await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByRole('textbox',{name:'缓冲窗口 1 名称'}),{target:{value:'discard_me'}});
+  fireEvent.click(within(dialog).getByRole('button',{name:/取\s*消/}));
   await act(async()=>{expect(await ref.current?.apply()).toBe(true);});
   expect(apply.mock.calls.at(-1)?.[0].configuration.reconstruction.areaGeometry.windowBindings).toEqual([binding]);
+});
+
+it('preserves invalid hidden bindings when changing the buffer source and saving',async()=>{
+  const c=configuration(),ref=createRef<CanvasNodeInspectorHandle>(),apply=vi.fn();
+  render(<Inspector node={{id,type:CanvasNodeType.TrackReconstruct,name:'重建',layout,configuration:c}} executionMode="BATCH"
+    validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref}/>);
   fireEvent.click(screen.getByRole('button',{name:'设置面轨迹'}));
-  fireEvent.change(screen.getByRole('spinbutton',{name:'缓冲窗口 1 起点'}),{target:{value:'5'}});
-  fireEvent.mouseDown(screen.getByRole('combobox',{name:'面轨迹缓冲距离来源'}));
+  let dialog=await screen.findByRole('dialog');
+  fireEvent.change(within(dialog).getByRole('spinbutton',{name:'缓冲窗口 1 起点'}),{target:{value:'5'}});
+  fireEvent.mouseDown(within(dialog).getByRole('combobox',{name:'面轨迹缓冲距离来源'}));
   fireEvent.click(await screen.findByText('数值字段',{selector:'.ant-select-item-option-content'}));
   expect(screen.queryByRole('spinbutton',{name:'缓冲窗口 1 起点'})).toBeNull();
-  fireEvent.click(screen.getByRole('button',{name:'保存面轨迹草稿'}));
+  fireEvent.click(within(dialog).getByRole('button',{name:'保存面轨迹草稿'}));
   await act(async()=>{expect(await ref.current?.apply()).toBe(true);});
   expect(apply.mock.calls.at(-1)?.[0].configuration.reconstruction.areaGeometry).toMatchObject({bufferMode:'FIELD',windowBindings:[{...binding,startOffset:5}]});
   fireEvent.click(screen.getByRole('button',{name:'设置面轨迹'}));
-  fireEvent.mouseDown(screen.getByRole('combobox',{name:'面轨迹缓冲距离来源'}));
+  dialog=await screen.findByRole('dialog');
+  fireEvent.mouseDown(within(dialog).getByRole('combobox',{name:'面轨迹缓冲距离来源'}));
   fireEvent.click(await screen.findByText('受控数值表达式',{selector:'.ant-select-item-option-content'}));
   expect(screen.getByRole('spinbutton',{name:'缓冲窗口 1 起点'})).toHaveValue('5');
 });
@@ -77,15 +86,22 @@ it('keeps modal history drafts isolated on cancel and preserves invalid hidden b
 it('sorts complete bindings and confirms removal without editing the expression',async()=>{
   const values=[binding,{...binding,name:'next',startOffset:1,endOffset:3}],change=vi.fn();
   const props={value:values,columns:[],validationAvailable:false,onChange:change};
-  const {rerender}=render(<BufferWindowEditor {...props}/>);
+  render(<BufferWindowEditor {...props}/>);
   fireEvent.click(screen.getByRole('button',{name:'下移缓冲窗口 1'}));
   expect(change.mock.calls.at(-1)?.[0]).toEqual([values[1],values[0]]);
   fireEvent.click(screen.getByRole('button',{name:'删除缓冲窗口 1'}));
   expect(change).toHaveBeenCalledTimes(1);
-  fireEvent.click(await screen.findByRole('button',{name:'删除窗口'}));
+  const confirmationTitle=await screen.findByText('删除窗口 history？');
+  const confirmation=confirmationTitle.closest<HTMLElement>('.ant-popover');
+  expect(confirmation).not.toBeNull();
+  fireEvent.click(within(confirmation as HTMLElement).getByRole('button',{name:'删除窗口'}));
   await waitFor(()=>expect(change).toHaveBeenCalledTimes(2));
   expect(change.mock.calls.at(-1)?.[0]).toEqual([values[1]]);
-  rerender(<BufferWindowEditor {...props} value={Array.from({length:32},(_,i)=>({...binding,name:`history${i}`}))}/>);
+});
+
+it('disables adding a buffer window at the 32-window limit',()=>{
+  render(<BufferWindowEditor value={Array.from({length:32},(_,i)=>({...binding,name:`history${i}`}))}
+    columns={[]} validationAvailable={false} onChange={vi.fn()}/>);
   expect(screen.getByRole('button',{name:'添加缓冲窗口'})).toBeDisabled();
 });
 

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSpatialMeasureConfiguration } from '../nodeDefaults';
+import { createSpatialMeasureConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialMeasure } from '../nodeSummaries';
+import { summarizeSpatialMeasure } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialMeasureCanvasView } from './canvasView';
 
 export const spatialMeasureSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialMeasure,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

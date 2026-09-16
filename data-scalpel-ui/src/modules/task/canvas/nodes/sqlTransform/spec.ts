@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSqlTransformConfiguration } from '../nodeDefaults';
+import { createSqlTransformConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSqlTransform } from '../nodeSummaries';
+import { summarizeSqlTransform } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { sqlTransformCanvasView } from './canvasView';
 
 export const sqlTransformSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SqlTransform,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorRelational,

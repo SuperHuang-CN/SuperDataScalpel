@@ -1,5 +1,3 @@
-export { StandardDictionaryPage } from './pages/StandardDictionaryPage';
-export { StandardDictionaryDetailPage } from './pages/StandardDictionaryDetailPage';
 export {
   invalidateStandardDictionaries,
   useStandardDictionaries,

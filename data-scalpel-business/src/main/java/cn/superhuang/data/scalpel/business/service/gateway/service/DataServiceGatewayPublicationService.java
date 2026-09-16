@@ -356,7 +356,7 @@ public class DataServiceGatewayPublicationService {
         return Optional.of(new EngineDisablePreparation(
                 plan.serviceId(),
                 engine,
-                plan.revision()
+                plan.revision(), deployment.getOperationId()
         ));
     }
 
@@ -505,7 +505,8 @@ public class DataServiceGatewayPublicationService {
     public record EngineDisablePreparation(
             UUID serviceId,
             ServiceEngine engine,
-            long revision
+            long revision,
+            UUID operationId
     ) {
     }
 }

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createTopNConfiguration } from '../nodeDefaults';
+import { createTopNConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeTopN } from '../nodeSummaries';
+import { summarizeTopN } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { topNCanvasView } from './canvasView';
 
 export const topNSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.TopN,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorRow,

@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createUnionConfiguration } from '../nodeDefaults';
+import { createUnionConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeUnion } from '../nodeSummaries';
+import { summarizeUnion } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { unionCanvasView } from './canvasView';
 
 export const unionSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.Union,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorRelational,

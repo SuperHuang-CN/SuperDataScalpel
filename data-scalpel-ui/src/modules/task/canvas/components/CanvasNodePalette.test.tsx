@@ -38,9 +38,9 @@ describe('CanvasNodePalette', () => {
   it('starts collapsed and shows category counts for the current execution mode', () => {
     render(<PaletteHarness />);
 
-    expect(screen.getByRole('button', { name: '输入 5' })).toHaveAttribute('aria-expanded', 'false');
-    expect(screen.getByRole('button', { name: '处理器 26' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '输出 3' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '输入 6' })).toHaveAttribute('aria-expanded', 'false');
+    expect(screen.getByRole('button', { name: '处理器 48' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '输出 5' })).toBeInTheDocument();
     expect(screen.queryByLabelText('输入节点')).not.toBeInTheDocument();
   });
 
@@ -48,16 +48,16 @@ describe('CanvasNodePalette', () => {
     const user = userEvent.setup();
     render(<PaletteHarness />);
 
-    await user.click(screen.getByRole('button', { name: '输入 5' }));
+    await user.click(screen.getByRole('button', { name: '输入 6' }));
     expect(screen.getByLabelText('输入节点')).toBeInTheDocument();
     expect(screen.getByText('JDBC 输入')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '处理器 26' }));
+    await user.click(screen.getByRole('button', { name: '处理器 48' }));
     expect(screen.queryByLabelText('输入节点')).not.toBeInTheDocument();
     expect(screen.getByLabelText('处理器节点')).toBeInTheDocument();
     expect(screen.getByText('Join 处理器')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: '处理器 26' }));
+    await user.click(screen.getByRole('button', { name: '处理器 48' }));
     expect(screen.queryByLabelText('处理器节点')).not.toBeInTheDocument();
   });
 
@@ -95,8 +95,8 @@ describe('CanvasNodePalette', () => {
     const user = userEvent.setup();
     render(<PaletteHarness executionMode="STREAMING" />);
 
-    expect(screen.getByRole('button', { name: '输入 3' })).toBeInTheDocument();
-    await user.click(screen.getByRole('button', { name: '输入 3' }));
+    expect(screen.getByRole('button', { name: '输入 5' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '输入 5' }));
     expect(screen.getByText('JDBC 静态维表')).toBeInTheDocument();
     expect(screen.getByText('JDBC 查询输入')).toBeInTheDocument();
     expect(screen.getByText('Kafka 输入')).toBeInTheDocument();
@@ -169,6 +169,6 @@ describe('CanvasNodePalette', () => {
     fireEvent.keyDown(document, { key: 'Escape' });
 
     expect(screen.queryByLabelText('输出节点')).not.toBeInTheDocument();
-    await waitFor(() => expect(screen.getByRole('button', { name: '输出 3' })).toHaveFocus());
+    await waitFor(() => expect(screen.getByRole('button', { name: '输出 5' })).toHaveFocus());
   });
 });

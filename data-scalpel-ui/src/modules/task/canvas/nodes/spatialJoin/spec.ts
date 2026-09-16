@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSpatialJoinConfiguration } from '../nodeDefaults';
+import { createSpatialJoinConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialJoin } from '../nodeSummaries';
+import { summarizeSpatialJoin } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialJoinCanvasView } from './canvasView';
 
 export const spatialJoinSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialJoin,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

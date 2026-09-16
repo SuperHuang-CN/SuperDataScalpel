@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSpatialAggregateConfiguration } from '../nodeDefaults';
+import { createSpatialAggregateConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialAggregate } from '../nodeSummaries';
+import { summarizeSpatialAggregate } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialAggregateCanvasView } from './canvasView';
 
 export const spatialAggregateSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialAggregate,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

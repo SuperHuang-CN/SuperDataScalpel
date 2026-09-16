@@ -22,7 +22,7 @@ class KubernetesBackendContractTest {
     @Test
     void derivesStableNamesAndFixedClusterSubmitCommand() {
         KubernetesCommandFactory factory = new KubernetesCommandFactory(properties());
-        List<String> command = factory.submit(identity);
+        List<String> command = factory.submit(identity, cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy.defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.KUBERNETES).defaults());
 
         assertThat(KubernetesNames.driverPod(identity))
                 .isEqualTo("ds-22222222222222222222222222222222-driver");

@@ -18,6 +18,15 @@ public class EngineRuntimeDeploymentService {
 
     private static final Logger log = LoggerFactory.getLogger(EngineRuntimeDeploymentService.class);
 
+    // Bounded locks serialize an entire route/state operation without holding a DB transaction.
+    // Engine code identifies one runtime; all mutations and startup recovery use these locks.
+    private final Object[] operationLocks = java.util.stream.IntStream.range(0, 64)
+            .mapToObj(ignored -> new Object()).toArray();
+
+    private Object operationLock(java.util.UUID serviceId) {
+        return operationLocks[Math.floorMod(serviceId.hashCode(), operationLocks.length)];
+    }
+
     private final EngineDeploymentStore store;
     private final EngineDeploymentValidator validator;
     private final DynamicServiceRouteRegistry routeRegistry;
@@ -36,6 +45,12 @@ public class EngineRuntimeDeploymentService {
     }
 
     public ServiceDeploymentResponse deploy(ServiceDeploymentRequest request) {
+        synchronized (operationLock(request.serviceId())) {
+            return deploySerially(request);
+        }
+    }
+
+    private ServiceDeploymentResponse deploySerially(ServiceDeploymentRequest request) {
         validator.validate(request);
         routeRegistry.validate(request);
         EngineDeploymentStore.DeploymentPreparation preparation = store.beginDeployment(request);
@@ -55,6 +70,12 @@ public class EngineRuntimeDeploymentService {
     }
 
     public ServiceDeploymentResponse remove(ServiceUndeploymentRequest request) {
+        synchronized (operationLock(request.serviceId())) {
+            return removeSerially(request);
+        }
+    }
+
+    private ServiceDeploymentResponse removeSerially(ServiceUndeploymentRequest request) {
         EngineDeploymentStore.RemovalPreparation preparation = store.beginRemoval(request);
         if (!preparation.removalRequired()) {
             return preparation.completedResponse();
@@ -70,8 +91,16 @@ public class EngineRuntimeDeploymentService {
 
     @EventListener(ApplicationReadyEvent.class)
     public void restoreRoutes() {
-        store.recoverableRemovals().forEach(this::recoverRemoval);
-        store.recoverableDeployments().forEach(this::recoverDeployment);
+        store.recoverableRemovals().forEach(snapshot -> {
+            synchronized (operationLock(snapshot.request().serviceId())) {
+                store.recoverableRemoval(snapshot.request().serviceId()).ifPresent(this::recoverRemoval);
+            }
+        });
+        store.recoverableDeployments().forEach(snapshot -> {
+            synchronized (operationLock(snapshot.request().serviceId())) {
+                store.recoverableDeployment(snapshot.request().serviceId()).ifPresent(this::recoverDeployment);
+            }
+        });
     }
 
     private void recoverDeployment(StoredServiceDeployment deployment) {

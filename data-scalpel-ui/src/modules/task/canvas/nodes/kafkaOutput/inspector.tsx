@@ -6,7 +6,7 @@ import { useImperativeHandle, useRef, useState } from 'react';
 import {
   CanvasNodeType, type KafkaOutputConfiguration, type KafkaOutputWrite,
 } from '../../canvasTypes';
-import { KafkaOutputInspector } from '../../components/CanvasLegacyInspectors';
+import { KafkaOutputInspector } from './settingsInspector';
 import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import { CanvasKafkaDataSourceSelect } from '../../components/CanvasKafkaSelectors';
 import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } from '../nodeSpec';

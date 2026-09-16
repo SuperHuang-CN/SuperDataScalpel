@@ -1,6 +1,3 @@
-export { DataModelPage } from './pages/DataModelPage';
-export { ModelWarehouseLayerPage } from './pages/ModelWarehouseLayerPage';
-export { ModelFieldTemplatePage } from './pages/ModelFieldTemplatePage';
 export { DataModelDataQueryPanel } from './components/DataModelDataQueryPanel';
 export { DataModelPickerModal } from './components/DataModelPickerModal';
 export type { DataModelPickerSelectionMode } from './components/DataModelPickerModal';

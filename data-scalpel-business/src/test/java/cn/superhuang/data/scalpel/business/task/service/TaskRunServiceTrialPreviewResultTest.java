@@ -31,9 +31,9 @@ class TaskRunServiceTrialPreviewResultTest {
                 }
                 """.formatted(executionRunId, executionId, attempt));
 
-        assertTrue(TaskRunService.isCompatibleTrialPreviewResult(
+        assertTrue(TaskRunArtifactQueryService.isCompatibleTrialPreviewResult(
                 result, TaskType.SPARK_JAR, executionRunId, executionId, attempt));
-        assertFalse(TaskRunService.isCompatibleTrialPreviewResult(
+        assertFalse(TaskRunArtifactQueryService.isCompatibleTrialPreviewResult(
                 result, TaskType.SPARK_JAR, publicTaskRunId, executionId, attempt));
     }
 
@@ -51,9 +51,9 @@ class TaskRunServiceTrialPreviewResultTest {
                 }
                 """.formatted(executionRunId, executionId));
 
-        assertFalse(TaskRunService.isCompatibleTrialPreviewResult(
+        assertFalse(TaskRunArtifactQueryService.isCompatibleTrialPreviewResult(
                 result, TaskType.SPARK_JAR, executionRunId, executionId, 1));
-        assertFalse(TaskRunService.isCompatibleTrialPreviewResult(
+        assertFalse(TaskRunArtifactQueryService.isCompatibleTrialPreviewResult(
                 result, TaskType.SPARK_CANVAS, executionRunId, executionId, 2));
     }
 
@@ -63,12 +63,12 @@ class TaskRunServiceTrialPreviewResultTest {
         UUID executionId = UUID.randomUUID();
 
         for (int schemaVersion : new int[]{10, 11}) {
-            assertTrue(TaskRunService.isCompatibleCanvasTrialPreviewResult(
+            assertTrue(TaskRunArtifactQueryService.isCompatibleCanvasTrialPreviewResult(
                     canvasResult(schemaVersion, executionRunId, executionId),
                     TaskType.SPARK_CANVAS, executionRunId, executionId, 1));
         }
         for (int schemaVersion : new int[]{9, 12}) {
-            assertFalse(TaskRunService.isCompatibleCanvasTrialPreviewResult(
+            assertFalse(TaskRunArtifactQueryService.isCompatibleCanvasTrialPreviewResult(
                     canvasResult(schemaVersion, executionRunId, executionId),
                     TaskType.SPARK_CANVAS, executionRunId, executionId, 1));
         }

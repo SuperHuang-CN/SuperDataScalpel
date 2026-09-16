@@ -5,20 +5,15 @@ import cn.superhuang.data.scalpel.business.compute.service.ComputeEngineExecutio
 import cn.superhuang.data.scalpel.business.task.domain.TaskRun;
 import cn.superhuang.data.scalpel.business.operations.service.TaskRunAlertService;
 import cn.superhuang.data.scalpel.business.task.domain.TaskRunStatus;
-import cn.superhuang.data.scalpel.business.task.domain.TaskType;
 import cn.superhuang.data.scalpel.business.task.repository.TaskRunRepository;
-import cn.superhuang.data.scalpel.business.task.repository.TaskStreamingDeploymentRepository;
-import cn.superhuang.data.scalpel.business.task.repository.TaskStreamingQueryRepository;
 import cn.superhuang.data.scalpel.business.task.service.CanvasTaskRunProperties;
 import cn.superhuang.data.scalpel.contract.execution.DispatcherExecutionEvent;
 import cn.superhuang.data.scalpel.contract.execution.ExecutionMessageType;
 import cn.superhuang.data.scalpel.contract.execution.SafeExecutionError;
-import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import org.springframework.web.client.RestClientResponseException;
 
 import java.nio.charset.StandardCharsets;
 import java.time.Instant;
@@ -35,8 +30,6 @@ public class DispatcherExecutionReconciliationService {
 
     private final TaskRunRepository runRepository;
     private final TaskRunAlertService runAlerts;
-    private final TaskStreamingDeploymentRepository deploymentRepository;
-    private final TaskStreamingQueryRepository queryRepository;
     private final ComputeEngineExecutionService computeEngineExecutionService;
     private final DispatcherEventApplicationService eventApplicationService;
     private final CanvasTaskRunProperties properties;
@@ -45,8 +38,6 @@ public class DispatcherExecutionReconciliationService {
     public DispatcherExecutionReconciliationService(
             TaskRunRepository runRepository,
             TaskRunAlertService runAlerts,
-            TaskStreamingDeploymentRepository deploymentRepository,
-            TaskStreamingQueryRepository queryRepository,
             ComputeEngineExecutionService computeEngineExecutionService,
             DispatcherEventApplicationService eventApplicationService,
             CanvasTaskRunProperties properties,
@@ -54,34 +45,28 @@ public class DispatcherExecutionReconciliationService {
     ) {
         this.runRepository = runRepository;
         this.runAlerts = runAlerts;
-        this.deploymentRepository = deploymentRepository;
-        this.queryRepository = queryRepository;
         this.computeEngineExecutionService = computeEngineExecutionService;
         this.eventApplicationService = eventApplicationService;
         this.properties = properties;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Scheduled(fixedDelayString = "${data-scalpel.task-run.canvas.recovery-interval:30s}")
+    private UUID reconciliationCursor;
+
+    @Scheduled(scheduler = "executionReconciliationScheduler", fixedDelayString = "${data-scalpel.task-run.canvas.recovery-interval:30s}")
     public void reconcile() {
-        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(TaskType.SPARK_CANVAS, ACTIVE)) {
-            reconcile(run);
+        var runs = runRepository.findDispatchedForReconciliation(
+                ACTIVE, reconciliationCursor, org.springframework.data.domain.PageRequest.of(0, 50));
+        if (runs.isEmpty() && reconciliationCursor != null) {
+            reconciliationCursor = null;
+            runs = runRepository.findDispatchedForReconciliation(
+                    ACTIVE, null, org.springframework.data.domain.PageRequest.of(0, 50));
         }
-        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(
-                TaskType.SPARK_MODEL_QUALITY, ACTIVE)) {
+        for (TaskRun run : runs) {
             reconcile(run);
+            reconciliationCursor = run.getId();
         }
-        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(TaskType.SPARK_JAR, ACTIVE)) {
-            reconcile(run);
-        }
-        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(
-                TaskType.SPARK_STREAMING_CANVAS, ACTIVE)) {
-            reconcile(run);
-        }
-        for (TaskRun run : runRepository.findAllByTaskTypeAndStatusIn(
-                TaskType.SPARK_STREAMING_JAR, ACTIVE)) {
-            reconcile(run);
-        }
+        if (runs.size() < 50) reconciliationCursor = null;
     }
 
     private void reconcile(TaskRun run) {
@@ -93,9 +78,6 @@ public class DispatcherExecutionReconciliationService {
                     || response.sequence() <= run.getLastDispatcherEventSequence()) return;
             eventApplicationService.accept(toEvent(run, response));
         } catch (RuntimeException exception) {
-            if (dispatcherExecutionNotFound(exception) && recoverUntrackedStreamingRun(run)) {
-                return;
-            }
             if (run.getDeadlineAt() != null
                     && Instant.now().isAfter(run.getDeadlineAt().plus(properties.recoveryGrace()))) {
                 transactionTemplate.executeWithoutResult(status -> runRepository.findByIdForUpdate(run.getId())
@@ -107,43 +89,6 @@ public class DispatcherExecutionReconciliationService {
                         }));
             }
         }
-    }
-
-    private boolean recoverUntrackedStreamingRun(TaskRun snapshot) {
-        if (!snapshot.getTaskType().isStreaming()
-                || snapshot.getStatus() != TaskRunStatus.STOP_REQUESTED
-                || snapshot.getLastDispatcherEventSequence() != 0
-                || snapshot.getStartedAt() != null
-                || snapshot.getBackendApplicationId() != null) {
-            return false;
-        }
-        Instant reference = snapshot.getUpdatedAt();
-        if (reference == null || reference.plus(properties.recoveryGrace()).isAfter(Instant.now())) {
-            return false;
-        }
-        transactionTemplate.executeWithoutResult(status -> runRepository.findByIdForUpdate(snapshot.getId())
-                .filter(current -> current.getTaskType().isStreaming())
-                .filter(current -> current.getStatus() == TaskRunStatus.STOP_REQUESTED)
-                .filter(current -> current.getLastDispatcherEventSequence() == 0)
-                .filter(current -> current.getStartedAt() == null)
-                .filter(current -> current.getBackendApplicationId() == null)
-                .ifPresent(current -> {
-                    Instant endedAt = Instant.now();
-                    String message = "实时任务未进入 Dispatcher，已确认在启动前停止";
-                    current.stop(message, endedAt);
-                    runRepository.save(current);
-                    if (current.getStreamingDeploymentId() == null) return;
-                    deploymentRepository.findByIdForUpdate(current.getStreamingDeploymentId()).ifPresent(deployment -> {
-                        deployment.markStopped(endedAt);
-                        deploymentRepository.save(deployment);
-                        queryRepository.findAllByDeploymentIdOrderByOutputNodeNameAsc(deployment.getId())
-                                .forEach(query -> {
-                                    query.markStopped();
-                                    queryRepository.save(query);
-                                });
-                    });
-                }));
-        return true;
     }
 
     private static boolean identityMatches(TaskRun run, DispatcherExecutionResponse response) {
@@ -198,16 +143,6 @@ public class DispatcherExecutionReconciliationService {
                     case SPARK_STREAMING_CANVAS -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_STREAMING_CANVAS;
                     default -> cn.superhuang.data.scalpel.contract.execution.ExecutionTaskType.SPARK_CANVAS;
                 }, null, resultSha256);
-    }
-
-    static boolean dispatcherExecutionNotFound(Throwable throwable) {
-        for (Throwable current = throwable; current != null; current = current.getCause()) {
-            if (current instanceof RestClientResponseException response
-                    && response.getStatusCode().value() == HttpStatus.NOT_FOUND.value()) {
-                return true;
-            }
-        }
-        return false;
     }
 
     private static String safeCode(String value, ExecutionMessageType type) {

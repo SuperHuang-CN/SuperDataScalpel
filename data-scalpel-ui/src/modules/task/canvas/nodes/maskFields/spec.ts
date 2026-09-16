@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createMaskFieldsConfiguration } from '../nodeDefaults';
+import { createMaskFieldsConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeMaskFields } from '../nodeSummaries';
+import { summarizeMaskFields } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { maskFieldsCanvasView } from './canvasView';
 
 export const maskFieldsSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.MaskFields,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorColumn,

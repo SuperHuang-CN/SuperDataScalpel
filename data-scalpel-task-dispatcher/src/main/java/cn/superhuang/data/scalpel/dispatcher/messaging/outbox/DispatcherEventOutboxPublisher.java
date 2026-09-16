@@ -39,7 +39,7 @@ public class DispatcherEventOutboxPublisher {
         this.transactions = new TransactionTemplate(transactionManager);
     }
 
-    @Scheduled(fixedDelayString = "${data-scalpel.dispatcher.outbox-poll-interval:500ms}")
+    @Scheduled(scheduler = "dispatcherOutboxScheduler", fixedDelayString = "${data-scalpel.dispatcher.outbox-poll-interval:500ms}")
     public void publishDue() {
         recoverStaleClaims();
         List<Claim> claims = transactions.execute(status -> repository.findDueForUpdate(

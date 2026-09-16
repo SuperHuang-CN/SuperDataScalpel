@@ -27,8 +27,9 @@ describe('dwell inspector', () => {
   it('switches output mode without dropping aggregate fields and edits the point flag', async () => {
     const configuration = createTrackFindDwellConfiguration();
     const { ref, apply } = mount(configuration);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '输出类型' }));
-    await userEvent.click(await screen.findByText('全部点', { selector: '.ant-select-item-option-content' }));
+    await user.click(await screen.findByText('全部点', { selector: '.ant-select-item-option-content' }));
     await waitFor(() => expect(screen.queryByText('片段汇总')).toBeNull());
     fireEvent.click(screen.getByRole('button', { name: '设置驻留结果字段' }));
     fireEvent.change(await screen.findByRole('textbox', { name: '驻留标记' }), { target: { value: 'dwell_flag' } });
@@ -44,8 +45,9 @@ describe('dwell inspector', () => {
     const configuration = createTrackFindDwellConfiguration();
     delete configuration.dwellSemantics; delete configuration.rangeOptions;
     const { ref, apply } = mount(configuration);
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '识别语义' }));
-    await userEvent.click(await screen.findByText('参考点与均值中心', { selector: '.ant-select-item-option-content' }));
+    await user.click(await screen.findByText('参考点与均值中心', { selector: '.ant-select-item-option-content' }));
     expect(screen.queryByText('输出类型')).toBeNull();
     fireEvent.click(await screen.findByRole('button', { name: '确认切换' }));
     await screen.findByRole('combobox', { name: '输出类型' });

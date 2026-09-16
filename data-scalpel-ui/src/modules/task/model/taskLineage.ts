@@ -5,7 +5,7 @@ import type {
   LineageGraphNodeKind,
   LineageOutputFieldEffect,
   LineageWriteMode,
-} from '../../model/model/dataModel';
+} from '../../model';
 
 export interface TaskLineageOutputField {
   fieldKey: string;

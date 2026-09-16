@@ -7,7 +7,7 @@ import {
   CanvasNodeType, type JdbcOutputConfiguration, type JdbcOutputWrite,
 } from '../../canvasTypes';
 import { CanvasJdbcDataSourceSelect } from '../../components/CanvasJdbcSelectors';
-import { JdbcOutputInspector } from '../../components/CanvasLegacyInspectors';
+import { JdbcOutputInspector } from './settingsInspector';
 import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } from '../nodeSpec';
 

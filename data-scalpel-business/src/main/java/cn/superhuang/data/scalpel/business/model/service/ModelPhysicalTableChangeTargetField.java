@@ -21,7 +21,7 @@ public record ModelPhysicalTableChangeTargetField(
         String description,
         UUID standardDictionaryId
 ) {
-    static ModelPhysicalTableChangeTargetField from(DataModelService.NormalizedField field) {
+    static ModelPhysicalTableChangeTargetField from(ModelDefinitionService.NormalizedField field) {
         return new ModelPhysicalTableChangeTargetField(
                 field.input().id(), field.code(), field.input().name(), field.input().fieldType(),
                 field.length(), field.precision(), field.scale(), field.geometry(),

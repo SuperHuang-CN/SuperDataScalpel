@@ -34,6 +34,26 @@ public class CanvasTaskDefinition extends BaseEntity {
     @Column(nullable = false)
     private int version;
 
+    @Column(name = "file_reference_version")
+    private Integer fileReferenceVersion;
+
+    @Column(name = "file_reference_error", length = 200)
+    private String fileReferenceError;
+
+    public boolean fileReferencesCurrent() {
+        return fileReferenceVersion != null && fileReferenceVersion == version;
+    }
+
+    public void fileReferencesIndexed() {
+        fileReferenceVersion = version;
+        fileReferenceError = null;
+    }
+
+    public void fileReferenceIndexFailed() {
+        fileReferenceVersion = null;
+        fileReferenceError = "Canvas 定义无法解析，请修复并重新保存定义后重建文件引用索引";
+    }
+
     protected CanvasTaskDefinition() {
     }
 

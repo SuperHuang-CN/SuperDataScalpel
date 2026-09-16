@@ -13,6 +13,7 @@ import cn.superhuang.data.scalpel.business.directory.web.response.DirectoryImpor
 import cn.superhuang.data.scalpel.business.directory.web.response.DirectoryTreeNodeResponse;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
 import cn.superhuang.data.scalpel.business.mcp.repository.McpServerRepository;
+import cn.superhuang.data.scalpel.business.ontology.repository.BusinessObjectTypeRepository;
 import cn.superhuang.data.scalpel.business.service.repository.DataServiceRepository;
 import cn.superhuang.data.scalpel.business.task.repository.DataTaskRepository;
 import org.springframework.http.HttpStatus;
@@ -46,6 +47,7 @@ public class DirectoryService {
     private final DataServiceRepository dataServiceRepository;
     private final McpServerRepository mcpServerRepository;
     private final cn.superhuang.data.scalpel.business.panorama.repository.PanoramaRepository panoramaRepository;
+    private final BusinessObjectTypeRepository businessObjectTypeRepository;
 
     public DirectoryService(
             cn.superhuang.data.scalpel.business.metric.repository.DataMetricRepository metricRepository,
@@ -57,7 +59,8 @@ public class DirectoryService {
             DataTaskRepository dataTaskRepository,
             DataServiceRepository dataServiceRepository,
             McpServerRepository mcpServerRepository,
-            cn.superhuang.data.scalpel.business.panorama.repository.PanoramaRepository panoramaRepository
+            cn.superhuang.data.scalpel.business.panorama.repository.PanoramaRepository panoramaRepository,
+            BusinessObjectTypeRepository businessObjectTypeRepository
     ) {
         this.metricRepository = metricRepository;
         this.repository = repository;
@@ -69,6 +72,7 @@ public class DirectoryService {
         this.dataServiceRepository = dataServiceRepository;
         this.mcpServerRepository = mcpServerRepository;
         this.panoramaRepository = panoramaRepository;
+        this.businessObjectTypeRepository = businessObjectTypeRepository;
     }
 
     @Transactional(readOnly = true)
@@ -301,6 +305,10 @@ public class DirectoryService {
         List<UUID> directoryIds = directories.stream().map(Directory::getId).toList();
         if (scope == DirectoryScope.METRIC) {
             for (var count : metricRepository.countByDirectoryIdIn(directoryIds)) counts.put(count.directoryId(), count.resourceCount());
+        } else if (scope == DirectoryScope.BUSINESS_OBJECT) {
+            for (var count : businessObjectTypeRepository.countByDirectoryIdIn(directoryIds)) {
+                counts.put(count.directoryId(), count.resourceCount());
+            }
         } else if (scope == DirectoryScope.DATA_SOURCE) {
             for (DataSourceRepository.DirectoryResourceCount count : dataSourceRepository.countByDirectoryIdIn(directoryIds)) {
                 counts.put(count.directoryId(), count.resourceCount());
@@ -342,6 +350,7 @@ public class DirectoryService {
             case FILE_DATASET -> fileDatasetRepository.existsByDirectoryId(directoryId);
             case MODEL -> dataModelRepository.existsByDirectoryId(directoryId);
             case METRIC -> metricRepository.existsByDirectoryId(directoryId);
+            case BUSINESS_OBJECT -> businessObjectTypeRepository.existsByDirectoryId(directoryId);
             case TASK -> dataTaskRepository.existsByDirectoryId(directoryId);
             case DATA_SERVICE -> dataServiceRepository.countByDirectoryIdIn(List.of(directoryId)).stream()
                     .anyMatch(count -> count.resourceCount() > 0);

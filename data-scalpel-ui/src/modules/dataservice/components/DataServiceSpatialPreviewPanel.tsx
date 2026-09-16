@@ -39,6 +39,12 @@ interface DataServiceSpatialPreviewPanelProps {
   onDirtyChange?: (dirty: boolean) => void;
 }
 
+interface SpatialStyleDraft {
+  mode: SpatialStyleMode;
+  document: SpatialStyleDocument | null;
+  sldFile: File | null;
+}
+
 const SOURCE_ID = 'data-scalpel-service-wms-preview-source';
 const LAYER_ID = 'data-scalpel-service-wms-preview-layer';
 const WEB_MERCATOR_MAX_LATITUDE = 85.05112878;
@@ -70,18 +76,24 @@ const SpatialPreviewWorkspace = ({
   const profileMutation = useProfileDataServiceSpatialStyleField();
   const metadata = metadataQuery.data;
   const storedStyle = styleQuery.data;
-  const [mode, setMode] = useState<SpatialStyleMode>('CARTOGRAPHY');
-  const [document, setDocument] = useState<SpatialStyleDocument | null>(null);
-  const [sldFile, setSldFile] = useState<File | null>(null);
-  const [dirty, setDirty] = useState(false);
+  const [styleDraft, setStyleDraft] = useState<SpatialStyleDraft | null>(null);
+  const storedDocument = storedStyle?.styleDocument ?? storedStyle?.defaultStyleDocument ?? null;
+  const mode = styleDraft?.mode ?? storedStyle?.mode ?? 'CARTOGRAPHY';
+  const document = styleDraft?.document ?? storedDocument;
+  const sldFile = styleDraft?.sldFile ?? null;
+  const dirty = styleDraft !== null;
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [mapError, setMapError] = useState<string>();
-  const [legendUrl, setLegendUrl] = useState<string>();
-  const [legendError, setLegendError] = useState(false);
+  const [legendState, setLegendState] = useState<{
+    inputVersion: string;
+    url?: string;
+    error: boolean;
+  }>();
   const [mapReady, setMapReady] = useState(false);
   const [hasRendered, setHasRendered] = useState(false);
-  const [renderPending, setRenderPending] = useState(true);
+  const [viewportVersion, setViewportVersion] = useState(0);
+  const [renderedInputVersion, setRenderedInputVersion] = useState<string>();
   const [previewSource, setPreviewSource] = useState<'LIVE' | 'DRAFT'>(canUpdate ? 'DRAFT' : 'LIVE');
   const effectiveSource = canUpdate ? previewSource : 'LIVE';
   const [renderedSource, setRenderedSource] = useState<string>();
@@ -92,13 +104,41 @@ const SpatialPreviewWorkspace = ({
   const abortRef = useRef<AbortController | null>(null);
   const currentUrlRef = useRef<string | null>(null);
   const requestVersionRef = useRef(0);
-  const renderInputVersionRef = useRef(0);
+  const renderInputVersionRef = useRef('');
   const resizeTimeoutRef = useRef<number | undefined>(undefined);
   const previewReadiness = spatialStylePreviewReadiness(document);
   const wantsCartographyDraft = effectiveSource === 'DRAFT' && mode === 'CARTOGRAPHY';
   const wantsUploadedDraft = effectiveSource === 'DRAFT' && mode === 'UPLOADED_SLD';
   const previewCartography = wantsCartographyDraft && Boolean(document);
   const hasUploadedDraft = Boolean(sldFile || storedStyle?.uploadedSldText);
+  const renderInputVersion = JSON.stringify({
+    viewportVersion,
+    effectiveSource,
+    mode,
+    document,
+    localSldFile: sldFile
+      ? [sldFile.name, sldFile.size, sldFile.lastModified]
+      : null,
+    uploadedSldText: storedStyle?.uploadedSldText ?? null,
+    sldFileName: storedStyle?.sldFileName ?? null,
+    appliedStyleVersion: storedStyle?.appliedStyleVersion ?? null,
+    appliedAt: storedStyle?.appliedAt ?? null,
+  });
+  const renderPending = renderedInputVersion !== renderInputVersion;
+  const legendInputVersion = JSON.stringify({
+    serviceId,
+    available: metadata?.available ?? false,
+    effectiveSource,
+    appliedStyleVersion: storedStyle?.appliedStyleVersion ?? null,
+    appliedAt: storedStyle?.appliedAt ?? null,
+  });
+  const legendUrl = legendState?.inputVersion === legendInputVersion
+    ? legendState.url
+    : undefined;
+  const legendError = legendState?.inputVersion === legendInputVersion
+    ? legendState.error
+    : false;
+  const legendEnabled = Boolean(metadata?.available && effectiveSource === 'LIVE');
   const renderDisabledReason = !metadata?.available
     ? '当前空间服务暂不可预览'
     : !mapReady
@@ -121,26 +161,24 @@ const SpatialPreviewWorkspace = ({
       longitudeToMercator(bounds.getEast()), latitudeToMercator(bounds.getNorth())], container.clientWidth, container.clientHeight,
     { minimumWidth, maximumWidth, minimumHeight, maximumHeight });
   }, [minimumWidth, maximumWidth, minimumHeight, maximumHeight]);
-  const markRenderPending = useCallback(() => {
-    renderInputVersionRef.current += 1;
+  useLayoutEffect(() => {
+    renderInputVersionRef.current = renderInputVersion;
+  }, [renderInputVersion]);
+  const invalidateActiveRequest = useCallback(() => {
     requestVersionRef.current += 1;
     abortRef.current?.abort();
     setLoading(false);
-    setRenderPending(true);
     try { setCurrentScale(getViewport().scaleDenominator); setViewportError(undefined); }
     catch (error: unknown) { setCurrentScale(undefined); setViewportError(error instanceof Error ? error.message : '地图视口不可用'); }
   }, [getViewport]);
+  const markViewportChanged = useCallback(() => {
+    setViewportVersion((current) => current + 1);
+    invalidateActiveRequest();
+  }, [invalidateActiveRequest]);
 
   const querySld = useCallback(async (styleDocument: SpatialStyleDocument, signal: AbortSignal) => (
     await queryDataServiceSpatialStyleSld(serviceId, styleDocument, signal)
   ).sldText, [serviceId]);
-
-  useEffect(() => {
-    if (!storedStyle || dirty) return;
-    setMode(storedStyle.mode);
-    setDocument(storedStyle.styleDocument ?? storedStyle.defaultStyleDocument);
-    setSldFile(null);
-  }, [dirty, storedStyle]);
 
   useEffect(() => {
     onDirtyChange?.(dirty);
@@ -149,24 +187,19 @@ const SpatialPreviewWorkspace = ({
     return () => { window.removeEventListener('beforeunload', warn); onDirtyChange?.(false); };
   }, [dirty, onDirtyChange]);
 
-  useLayoutEffect(() => {
-    markRenderPending();
-  }, [document, markRenderPending, mode, sldFile, effectiveSource, storedStyle?.uploadedSldText,
-    storedStyle?.appliedStyleVersion, storedStyle?.appliedAt]);
-
   const saveDraft = async () => {
     if (mode === 'CARTOGRAPHY' && !previewReadiness.ready) throw new Error(previewReadiness.reason ?? '样式配置不完整');
     if (mode === 'CARTOGRAPHY' && document) await updateMutation.mutateAsync({ id: serviceId, styleDocument: document, mode });
     else if (mode === 'UPLOADED_SLD' && sldFile) await uploadMutation.mutateAsync({ id: serviceId, file: sldFile });
     else if (mode === 'UPLOADED_SLD' && storedStyle?.sldFileName) await updateMutation.mutateAsync({ id: serviceId, styleDocument: null, mode });
     else throw new Error('当前样式草稿不完整');
-    setDirty(false); setSldFile(null); void messageApi.success('样式草稿已保存');
+    setStyleDraft(null); void messageApi.success('样式草稿已保存');
   };
   const applyStyle = async () => {
     await applyMutation.mutateAsync(serviceId);
     void messageApi.success('样式已应用到 GeoServer');
     await metadataQuery.refetch();
-    markRenderPending();
+    invalidateActiveRequest();
   };
   const saveAndApply = async () => { await saveDraft(); await applyStyle(); };
 
@@ -175,7 +208,7 @@ const SpatialPreviewWorkspace = ({
     if (!map || !container || !metadata?.available || !mapReady || renderDisabledReason) return;
     abortRef.current?.abort(); const controller = new AbortController(); abortRef.current = controller;
     const version = ++requestVersionRef.current;
-    const renderInputVersion = renderInputVersionRef.current;
+    const requestedInputVersion = renderInputVersion;
     setLoading(true); setMapError(undefined);
     try {
       const viewport = getViewport();
@@ -191,7 +224,8 @@ const SpatialPreviewWorkspace = ({
             sldFile ?? new File([storedStyle?.uploadedSldText ?? ''], storedStyle?.sldFileName ?? 'draft.sld', { type: 'application/xml' }),
             bbox, width, height, controller.signal);
       if (controller.signal.aborted || version !== requestVersionRef.current
-        || renderInputVersion !== renderInputVersionRef.current || JSON.stringify(getViewport()) !== JSON.stringify(viewport)) return;
+        || requestedInputVersion !== renderInputVersionRef.current
+        || JSON.stringify(getViewport()) !== JSON.stringify(viewport)) return;
       const nextUrl = URL.createObjectURL(blob); const source = map.getSource(SOURCE_ID) as ImageSource | undefined;
       if (source) source.updateImage({ url: nextUrl, coordinates });
       else { map.addSource(SOURCE_ID, { type: 'image', url: nextUrl, coordinates }); map.addLayer({ id: LAYER_ID, type: 'raster', source: SOURCE_ID, paint: { 'raster-fade-duration': 0 } }); }
@@ -199,40 +233,48 @@ const SpatialPreviewWorkspace = ({
       if (previous) window.setTimeout(() => URL.revokeObjectURL(previous), 0);
       setHasRendered(true);
       setRenderedSource(`${effectiveSource === 'LIVE' ? '线上样式' : mode === 'CARTOGRAPHY' ? '在线制图草稿' : '上传 SLD 草稿'} · 1:${Math.round(viewport.scaleDenominator).toLocaleString()}`);
-      if (renderInputVersion === renderInputVersionRef.current) setRenderPending(false);
+      if (requestedInputVersion === renderInputVersionRef.current) {
+        setRenderedInputVersion(requestedInputVersion);
+      }
     } catch (error: unknown) {
       if (!controller.signal.aborted) setMapError(error instanceof ApiError ? error.message : '加载 GeoServer WMS 预览失败');
     } finally { if (version === requestVersionRef.current) setLoading(false); }
-  }, [document, mapReady, metadata?.available, effectiveSource, mode, renderDisabledReason, getViewport, serviceId, sldFile,
-    storedStyle?.uploadedSldText, storedStyle?.sldFileName]);
+  }, [document, mapReady, metadata?.available, effectiveSource, mode, renderDisabledReason,
+    getViewport, renderInputVersion, serviceId, sldFile, storedStyle]);
 
   useEffect(() => {
-    setLegendUrl(undefined); setLegendError(false);
-    if (!metadata?.available || effectiveSource !== 'LIVE') return;
+    if (!legendEnabled) return;
     const controller = new AbortController();
     let url: string | undefined;
     void fetchDataServiceSpatialPreviewLegend(serviceId, controller.signal).then((blob) => {
-      if (!controller.signal.aborted) { url = URL.createObjectURL(blob); setLegendUrl(url); }
-    }).catch(() => { if (!controller.signal.aborted) setLegendError(true); });
+      if (!controller.signal.aborted) {
+        url = URL.createObjectURL(blob);
+        setLegendState({ inputVersion: legendInputVersion, url, error: false });
+      }
+    }).catch(() => {
+      if (!controller.signal.aborted) {
+        setLegendState({ inputVersion: legendInputVersion, error: true });
+      }
+    });
     return () => { controller.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [metadata?.available, effectiveSource, serviceId, storedStyle?.appliedStyleVersion, storedStyle?.appliedAt]);
+  }, [legendEnabled, legendInputVersion, serviceId]);
 
   const [initialWest, initialSouth, initialEast, initialNorth] = metadata?.initialBounds ?? [];
   useEffect(() => {
     if (!containerRef.current || !metadata?.available || initialWest == null || initialSouth == null || initialEast == null || initialNorth == null || mapRef.current) return;
-    setMapReady(false); setHasRendered(false); setRenderedSource(undefined); markRenderPending();
+    setMapReady(false); setHasRendered(false); setRenderedSource(undefined);
     const map = new maplibregl.Map({ container: containerRef.current, style: { version: 8, sources: {}, layers: [{ id: 'background', type: 'background', paint: { 'background-color': '#f3f5f7' } }] }, center: [0, 0], zoom: 1, pitch: 0, bearing: 0, dragRotate: false, pitchWithRotate: false, touchPitch: false, maxPitch: 0, renderWorldCopies: false, trackResize: false, attributionControl: false });
     map.touchZoomRotate.disableRotation(); map.addControl(new maplibregl.NavigationControl({ showCompass: false }), 'top-right'); map.addControl(new maplibregl.ScaleControl({ unit: 'metric' }), 'bottom-left');
     map.fitBounds([[initialWest, initialSouth], [initialEast, initialNorth]], { padding: 32, duration: 0 });
-    map.on('load', () => { setMapReady(true); markRenderPending(); }); map.on('movestart', markRenderPending); map.on('moveend', markRenderPending); mapRef.current = map;
-    const observer = new ResizeObserver(() => { window.clearTimeout(resizeTimeoutRef.current); resizeTimeoutRef.current = window.setTimeout(() => { if (mapRef.current === map && containerRef.current?.clientWidth && containerRef.current.clientHeight) { map.resize(); markRenderPending(); } }, 250); });
+    map.on('load', () => { setMapReady(true); markViewportChanged(); }); map.on('movestart', markViewportChanged); map.on('moveend', markViewportChanged); mapRef.current = map;
+    const observer = new ResizeObserver(() => { window.clearTimeout(resizeTimeoutRef.current); resizeTimeoutRef.current = window.setTimeout(() => { if (mapRef.current === map && containerRef.current?.clientWidth && containerRef.current.clientHeight) { map.resize(); markViewportChanged(); } }, 250); });
     observer.observe(containerRef.current);
     return () => { observer.disconnect(); window.clearTimeout(resizeTimeoutRef.current); abortRef.current?.abort(); map.remove(); mapRef.current = null; if (currentUrlRef.current) URL.revokeObjectURL(currentUrlRef.current); currentUrlRef.current = null; };
-  }, [markRenderPending, metadata?.available, initialWest, initialSouth, initialEast, initialNorth]);
+  }, [markViewportChanged, metadata?.available, initialWest, initialSouth, initialEast, initialNorth]);
 
   const resetView = () => {
     if (!metadata || !mapRef.current) return;
-    markRenderPending();
+    markViewportChanged();
     mapRef.current.fitBounds([[metadata.initialBounds[0], metadata.initialBounds[1]], [metadata.initialBounds[2], metadata.initialBounds[3]]], { padding: 32, duration: 0 });
   };
   const canEnable = canPublish && definitionConfigured && status !== 'ENABLED';
@@ -241,11 +283,24 @@ const SpatialPreviewWorkspace = ({
     ? <CompactAlert type="error" title="空间服务预览检查失败" description={metadataQuery.error.message} action={<Button size="small" onClick={() => void metadataQuery.refetch()}>重试</Button>} />
     : !metadata?.available ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={metadata?.message ?? '当前空间服务暂不可预览'}><Space>{canEnable && <Button type="primary" loading={enableLoading} onClick={onEnable}>{retrying ? '重试启用' : '启用服务'}</Button>}<Button onClick={() => void metadataQuery.refetch()}>刷新状态</Button></Space></Empty> : null;
   const handleError = (error: unknown, fallback: string) => void messageApi.error(error instanceof Error ? error.message : fallback);
+  const updateStyleDraft = (
+    nextMode: SpatialStyleMode,
+    nextDocument: SpatialStyleDocument | null,
+    nextSldFile: File | null,
+  ) => {
+    invalidateActiveRequest();
+    const documentChanged = JSON.stringify(nextDocument) !== JSON.stringify(storedDocument);
+    const nextDirty = nextMode !== storedStyle?.mode
+      || (nextMode === 'CARTOGRAPHY' && documentChanged)
+      || (nextMode === 'UPLOADED_SLD' && Boolean(nextSldFile));
+    setStyleDraft(nextDirty ? {
+      mode: nextMode,
+      document: nextDocument,
+      sldFile: nextSldFile,
+    } : null);
+  };
   const changeMode = (next: SpatialStyleMode) => {
-    setMode(next);
-    const storedDocument = storedStyle?.styleDocument ?? storedStyle?.defaultStyleDocument ?? null;
-    const documentChanged = JSON.stringify(document) !== JSON.stringify(storedDocument);
-    setDirty(next !== storedStyle?.mode || next === 'CARTOGRAPHY' && documentChanged || next === 'UPLOADED_SLD' && Boolean(sldFile));
+    updateStyleDraft(next, document, sldFile);
   };
   const editor = storedStyle ? <SpatialStyleWorkbench
     key={serviceId}
@@ -255,14 +310,14 @@ const SpatialPreviewWorkspace = ({
     saving={updateMutation.isPending || uploadMutation.isPending} applying={applyMutation.isPending}
     uploadedSldText={storedStyle.uploadedSldText} onQuerySld={querySld}
     currentScale={currentScale}
-    onModeChange={changeMode} onChange={(next) => { setDocument(next); setDirty(true); }}
+    onModeChange={changeMode} onChange={(next) => updateStyleDraft(mode, next, sldFile)}
     onFileChange={(file) => {
       if (!/\.(sld|xml)$/i.test(file.name)) { void messageApi.error('仅支持 .sld 或 .xml 文件'); return; }
       if (file.size === 0 || file.size > 512 * 1024) { void messageApi.error('SLD 文件不能为空且不能超过 512KB'); return; }
-      setMode('UPLOADED_SLD'); setSldFile(file); setDirty(true);
+      updateStyleDraft('UPLOADED_SLD', document, file);
     }}
     onProfileField={(request: FieldProfileRequest) => profileMutation.mutateAsync({ id: serviceId, request })}
-    onRestoreDefault={() => { setMode('CARTOGRAPHY'); setDocument(storedStyle.defaultStyleDocument); setDirty(true); }}
+    onRestoreDefault={() => updateStyleDraft('CARTOGRAPHY', storedStyle.defaultStyleDocument, sldFile)}
     onSave={() => void saveDraft().catch((error) => handleError(error, '保存样式失败'))} onSaveAndApply={() => void saveAndApply().catch((error) => handleError(error, '保存并应用样式失败'))} onApply={() => void applyStyle().catch((error) => handleError(error, '应用样式失败'))}
   /> : styleQuery.error ? <CompactAlert type="error" title="读取空间样式失败" description={styleQuery.error.message} action={<Button size="small" onClick={() => void styleQuery.refetch()}>重试</Button>} /> : <Spin tip="正在加载样式…" />;
 
@@ -282,7 +337,7 @@ const SpatialPreviewWorkspace = ({
         </Space>
         <Space size={6} wrap>
           <Segmented<'LIVE' | 'DRAFT'> value={effectiveSource} disabled={!canUpdate} options={[{ value: 'LIVE', label: '线上样式' }, { value: 'DRAFT', label: '当前草稿' }]}
-            onChange={next => { markRenderPending(); setPreviewSource(next); }} />
+            onChange={next => { invalidateActiveRequest(); setPreviewSource(next); }} />
           {!screens.lg && <Button size="small" icon={<EditOutlined />} onClick={() => setDrawerOpen(true)}>在线配图</Button>}
           <Button size="small" disabled={!metadata?.available} onClick={resetView}>复位</Button>
           <Tooltip title={renderDisabledReason ?? '仅在点击后请求 GeoServer 渲染当前地图视图'}><span><Button size="small" icon={<ReloadOutlined />}

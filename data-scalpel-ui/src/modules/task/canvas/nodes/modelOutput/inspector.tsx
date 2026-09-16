@@ -7,7 +7,7 @@ import { useDataModel } from '../../../../model';
 import {
   CanvasNodeType, type ModelOutputConfiguration, type ModelOutputWrite,
 } from '../../canvasTypes';
-import { ModelOutputInspector } from '../../components/CanvasLegacyInspectors';
+import { ModelOutputInspector } from './settingsInspector';
 import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } from '../nodeSpec';
 

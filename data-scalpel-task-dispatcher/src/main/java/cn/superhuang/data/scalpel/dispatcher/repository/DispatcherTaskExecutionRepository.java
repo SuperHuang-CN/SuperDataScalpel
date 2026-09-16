@@ -13,6 +13,7 @@ import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.time.Instant;
 
 public interface DispatcherTaskExecutionRepository extends JpaRepository<DispatcherTaskExecution, UUID> {
     Optional<DispatcherTaskExecution> findByExecutionIdAndAttempt(UUID executionId, int attempt);
@@ -20,6 +21,23 @@ public interface DispatcherTaskExecutionRepository extends JpaRepository<Dispatc
     long countByState(DispatcherExecutionState state);
     long countByStateIn(Collection<DispatcherExecutionState> states);
     boolean existsByStateIn(Collection<DispatcherExecutionState> states);
+
+    @Query("select count(e) from DispatcherTaskExecution e where e.state not in :active "
+            + "and e.externalCleanupCompleted = false and e.submissionStartedAt is not null "
+            + "and (e.externalTerminationConfirmed is null or e.externalTerminationConfirmed = false)")
+    long countUnconfirmedTerminalExecutions(Collection<DispatcherExecutionState> active);
+
+    @Query("select e from DispatcherTaskExecution e where e.state in :states "
+            + "and (e.nextMaintenanceAt is null or e.nextMaintenanceAt <= :now) "
+            + "order by e.nextMaintenanceAt nulls first, e.queuedAt, e.executionId")
+    List<DispatcherTaskExecution> findDueObservations(Collection<DispatcherExecutionState> states, Instant now, Pageable pageable);
+
+    @Query("select e from DispatcherTaskExecution e where e.state in :states "
+            + "and e.externalCleanupCompleted = false "
+            + "and (e.externalExecutionId is not null or e.submissionStartedAt is not null) "
+            + "and (e.nextMaintenanceAt is null or e.nextMaintenanceAt <= :now) "
+            + "order by e.nextMaintenanceAt nulls first, e.queuedAt, e.executionId")
+    List<DispatcherTaskExecution> findDueCleanup(Collection<DispatcherExecutionState> states, Instant now, Pageable pageable);
 
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select execution from DispatcherTaskExecution execution where execution.id = :id")

@@ -1,7 +1,12 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { createRef } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { buildDataSourceSearch, useDataSourceTables, useTableMetadata } from '../../../datasource';
+import {
+  buildDataSourceSearch,
+  useDataSourceTables,
+  useTableMetadata,
+  type TableIdentifier,
+} from '../../../datasource';
 import { exampleCanvasDefinition } from '../defaultCanvas';
 import {
   CanvasNodeType,
@@ -242,7 +247,8 @@ const engineValidationFixture = (
   };
 };
 
-vi.mock('../../../datasource', () => {
+vi.mock('../../../datasource', async () => {
+  const React = await vi.importActual<typeof import('react')>('react');
   const tableComments: Record<string, string> = {
     orders: '订单表',
     customers: '客户表',
@@ -292,8 +298,85 @@ vi.mock('../../../datasource', () => {
         comment: null,
       })),
       primaryKey: null,
+      uniqueKeys: table === 'dwd_order_customer'
+        ? [{ type: 'PRIMARY_KEY', name: 'pk_dwd_order_customer', columns: ['order_id'] }]
+        : [],
       indexes: [],
     };
+  };
+  const useDataSourceTablesMock = vi.fn((id: string | undefined, request?: {
+    keyword?: string;
+    includeViews?: boolean;
+    limit?: number;
+  }) => ({
+    data: {
+      tables: tablesFor(id).filter((table) => !request?.keyword
+        || table.identifier.table.includes(request.keyword)),
+      truncated: metadataFixtures.truncated,
+    },
+    isFetching: false,
+    isError: false,
+    refetch: vi.fn(),
+  }));
+  const JdbcTablePickerModal = ({
+    open,
+    dataSourceId,
+    value,
+    onCancel,
+    onConfirm,
+  }: {
+    open: boolean;
+    dataSourceId: string;
+    value: readonly TableIdentifier[];
+    onCancel: () => void;
+    onConfirm: (tables: TableIdentifier[]) => void;
+  }) => {
+    const [selected, setSelected] = React.useState<TableIdentifier[]>(
+      () => value.map((table) => ({ ...table })),
+    );
+    const [search, setSearch] = React.useState('');
+    const [keyword, setKeyword] = React.useState('');
+    const timerRef = React.useRef<number | undefined>(undefined);
+    React.useEffect(() => () => window.clearTimeout(timerRef.current), []);
+    const query = useDataSourceTablesMock(dataSourceId, {
+      keyword: keyword || undefined,
+      includeViews: false,
+      limit: 100,
+    });
+    if (!open) return null;
+    const selectedNames = new Set(selected.map((table) => table.table));
+    return (
+      <div role="dialog" aria-label="选择 JDBC 物理表">
+        <input
+          placeholder="输入物理表名搜索"
+          value={search}
+          onChange={(event) => {
+            const next = event.target.value;
+            setSearch(next);
+            window.clearTimeout(timerRef.current);
+            timerRef.current = window.setTimeout(() => setKeyword(next.trim()), 300);
+          }}
+        />
+        {query.data.truncated && <span>匹配结果超过 100 项，请输入关键字缩小范围</span>}
+        {query.data.tables.map((table) => (
+          <label key={table.identifier.table}>
+            <input
+              type="checkbox"
+              aria-label={`${table.identifier.catalog}.${table.identifier.schema}.${table.identifier.table}`}
+              checked={selectedNames.has(table.identifier.table)}
+              onChange={(event) => setSelected((current) => event.target.checked
+                ? [...current, { ...table.identifier }]
+                : current.filter((item) => item.table !== table.identifier.table))}
+            />
+            {table.identifier.table}
+          </label>
+        ))}
+        <button type="button" onClick={onCancel}>取消</button>
+        <button type="button" onClick={() => onConfirm(selected)}>
+          确定 · {selected.length} 张表
+        </button>
+      </div>
+    );
   };
   return {
     buildDataSourceSearch: vi.fn(() => undefined),
@@ -328,12 +411,8 @@ vi.mock('../../../datasource', () => {
       data: { content: metadataFixtures.dataSources, totalElements: metadataFixtures.dataSources.length },
       isFetching: false,
     })),
-    useDataSourceTables: vi.fn((id: string | undefined) => ({
-      data: { tables: tablesFor(id), truncated: metadataFixtures.truncated },
-      isFetching: false,
-      isError: false,
-      refetch: vi.fn(),
-    })),
+    JdbcTablePickerModal,
+    useDataSourceTables: useDataSourceTablesMock,
     useTableMetadata: vi.fn((id: string | undefined, identifier: { table: string } | undefined) => {
       const data = metadataFor(id, identifier?.table);
       return { data, isFetching: false, isError: Boolean(identifier) && !data };
@@ -389,6 +468,13 @@ const modelOutputNode = (
   name: '模型输出',
   layout: { x: 800, y: 180, width: 240, height: 120 },
   configuration: {
+    writes: [{
+      writeId: 'd709d3ad-efb1-4b86-bb78-c8172ea0ed37',
+      sourceTableName: 'order_customer',
+      targetModelId,
+      writeMode: 'APPEND',
+      columnMappings: [],
+    }],
     sourceTableName: 'order_customer',
     targetModelId,
     writeMode: 'APPEND',
@@ -437,6 +523,21 @@ const waitForInspector = async () => {
   await waitFor(() => {
     expect(screen.queryByText('正在加载节点配置…')).not.toBeInTheDocument();
   });
+};
+
+const openFirstProcessorOperation = async (sourceTableName = 'orders') => {
+  fireEvent.click(screen.getByRole('button', { name: `配置 ${sourceTableName}` }));
+  await screen.findByRole('button', { name: '保存此项' });
+};
+
+const openFirstJdbcWrite = async () => {
+  fireEvent.click(screen.getByRole('button', { name: '设置第 1 条 JDBC 写入' }));
+  await screen.findByRole('button', { name: '保存此项' });
+};
+
+const openFirstModelWrite = async () => {
+  fireEvent.click(screen.getByRole('button', { name: '设置第 1 条模型写入' }));
+  await screen.findByRole('button', { name: '保存此项' });
 };
 
 describe('CanvasNodeInspector', () => {
@@ -491,7 +592,7 @@ describe('CanvasNodeInspector', () => {
     expect(screen.getByText('order_id')).toBeInTheDocument();
     expect(screen.queryByText('demo.public.orders')).not.toBeInTheDocument();
     expect(screen.queryByLabelText('节点名称')).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '管理物理表' }));
+    fireEvent.click(screen.getByRole('button', { name: /管理物理表/ }));
     fireEvent.click(await screen.findByRole('checkbox', { name: /payments/ }));
     fireEvent.click(screen.getByRole('button', { name: '确定 · 2 张表' }));
     expect(onDirtyChange).toHaveBeenLastCalledWith(true);
@@ -556,8 +657,8 @@ describe('CanvasNodeInspector', () => {
       name: 'HTTP API 输入',
       layout: { x: 80, y: 80, width: 240, height: 120 },
       configuration: {
-        dataSourceId: '',
-        resources: [{ resourceId: '', outputTableName: 'api_orders', runtimeParameters: [{ name: 'accessToken', value: 'must-not-be-persisted' }] }],
+        dataSourceId: 'a2961398-cb9c-4f50-bcb1-b3015685a8bf',
+        resources: [{ resourceId: '1ff5d574-d031-47f2-805b-bd84e7785f52', outputTableName: 'api_orders', runtimeParameters: [{ name: 'accessToken', value: 'must-not-be-persisted' }] }],
       },
     };
     const inspectorRef = createRef<CanvasNodeInspectorHandle>();
@@ -579,7 +680,7 @@ describe('CanvasNodeInspector', () => {
     });
 
     expect(onApply).not.toHaveBeenCalled();
-    expect(await screen.findByText('运行时参数不能用于密码、Token、API Key、Secret 或签名')).toBeInTheDocument();
+    expect(await screen.findByText('运行时参数不能包含密码、Token、API Key 或 Secret')).toBeInTheDocument();
   });
 
   it('keeps and applies an invalid table selection so upstream configuration can be fixed first', async () => {
@@ -635,7 +736,7 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    fireEvent.click(screen.getByRole('button', { name: '管理物理表' }));
+    fireEvent.click(screen.getByRole('button', { name: /管理物理表/ }));
     expect(await screen.findByText(/匹配结果超过 100 项/)).toBeInTheDocument();
   });
 
@@ -655,7 +756,7 @@ describe('CanvasNodeInspector', () => {
         />,
       );
       await waitForInspector();
-      fireEvent.click(screen.getByRole('button', { name: '管理物理表' }));
+      fireEvent.click(screen.getByRole('button', { name: /管理物理表/ }));
       vi.useFakeTimers();
 
       fireEvent.change(screen.getByPlaceholderText('输入物理表名搜索'), { target: { value: 'pay' } });
@@ -798,6 +899,12 @@ describe('CanvasNodeInspector', () => {
       name: '订单重命名',
       layout: { x: 320, y: 20, width: 240, height: 120 },
       configuration: {
+        operations: [{
+          operationId: 'd62a32d1-0a5d-475e-9d9f-aef39f0177b0',
+          sourceTableName: 'orders',
+          output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'source_orders' },
+          columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'source_order_id' }],
+        }],
         sourceTableName: 'orders',
         outputTableName: 'source_orders',
         columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'source_order_id' }],
@@ -823,13 +930,14 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    expect(screen.getByDisplayValue('source_orders')).toBeInTheDocument();
-    expect(screen.getByText(/所有映射同时生效/)).toBeInTheDocument();
-    expect(screen.getByText('字段 1')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: /添加字段重命名/ }));
-    expect(screen.getByText('字段 2')).toBeInTheDocument();
-    fireEvent.click(screen.getByRole('button', { name: '删除字段映射 2' }));
-    expect(screen.queryByText('字段 2')).not.toBeInTheDocument();
+    await openFirstProcessorOperation();
+    expect(screen.getByPlaceholderText('输出逻辑表名')).toHaveValue('source_orders');
+    const renameInput = screen.getByLabelText('重命名 order_id');
+    expect(renameInput).toHaveValue('source_order_id');
+    fireEvent.change(renameInput, { target: { value: 'order_key' } });
+    await waitFor(() => expect(renameInput).toHaveValue('order_key'));
+    fireEvent.click(screen.getByRole('button', { name: '保存此项' }));
+    await waitFor(() => expect(screen.queryByText('配置处理表 · orders')).not.toBeInTheDocument());
 
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
@@ -837,7 +945,14 @@ describe('CanvasNodeInspector', () => {
     expect(onApply).toHaveBeenCalledWith({
       id: rename.id,
       type: CanvasNodeType.Rename,
-      configuration: rename.configuration,
+      configuration: {
+        operations: [{
+          operationId: 'd62a32d1-0a5d-475e-9d9f-aef39f0177b0',
+          sourceTableName: 'orders',
+          output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'source_orders' },
+          columnMappings: [{ sourceColumnName: 'order_id', targetColumnName: 'order_key' }],
+        }],
+      },
     });
   });
 
@@ -857,8 +972,8 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    expect(screen.getByText('Task Engine 尚未完成校验')).toBeInTheDocument();
-    expect(screen.getByText('Task Engine 校验请求失败')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('Task Engine 尚未完成校验'));
+    expect(await screen.findByText('Task Engine 校验请求失败')).toBeInTheDocument();
     expect(screen.getByLabelText('左表')).toBeDisabled();
     expect(screen.getByLabelText('右表')).toBeDisabled();
   });
@@ -891,6 +1006,7 @@ describe('CanvasNodeInspector', () => {
     render(<CanvasNodeInspector node={output} validation={validation.nodeResults.get(output.id)} onApply={vi.fn()} onDirtyChange={vi.fn()} />);
     await waitForInspector();
 
+    await openFirstJdbcWrite();
     expect(screen.getByRole('button', { name: /自动匹配空白字段/ })).toBeInTheDocument();
     expect(screen.getByLabelText('目标字段 order_id 的来源字段')).toBeInTheDocument();
     expect(screen.queryByLabelText('字段映射模式')).not.toBeInTheDocument();
@@ -917,7 +1033,8 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    fireEvent.mouseDown(screen.getByLabelText('目标数据源'));
+    expect(screen.getByText('业务 PostgreSQL')).toBeInTheDocument();
+    fireEvent.mouseDown(screen.getByRole('combobox'));
     expect(vi.mocked(buildDataSourceSearch)).toHaveBeenCalledWith({
       keyword: '',
       purpose: 'DISTRIBUTION',
@@ -926,8 +1043,12 @@ describe('CanvasNodeInspector', () => {
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
-    expect(onApply).toHaveBeenCalledTimes(1);
-    expect(await screen.findByText('数据源不存在、已停用或不具有数据分发用途')).toBeInTheDocument();
+    expect(onApply).toHaveBeenCalledWith(expect.objectContaining({
+      configuration: {
+        dataSourceId: metadataFixtures.sourceId,
+        writes: output.configuration.writes,
+      },
+    }));
   });
 
   it('does not expose add or delete actions for target-driven mappings', async () => {
@@ -940,6 +1061,7 @@ describe('CanvasNodeInspector', () => {
     render(<CanvasNodeInspector node={output} validation={validation.nodeResults.get(output.id)} onApply={vi.fn()} onDirtyChange={vi.fn()} />);
     await waitForInspector();
 
+    await openFirstJdbcWrite();
     expect(screen.getByText('字段映射')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /添加字段映射/ })).not.toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /删除字段映射/ })).not.toBeInTheDocument();
@@ -962,10 +1084,9 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    expect(screen.getByText('模型详情 · 订单客户模型')).toBeInTheDocument();
-    expect(screen.getAllByText('order_customer_model').length).toBeGreaterThan(0);
-    expect(screen.queryByText('demo.dw.order_customer_model')).not.toBeInTheDocument();
-    expect(screen.getByText('订单ID')).toBeInTheDocument();
+    expect(screen.getByText('订单客户模型 · order_customer_model')).toBeInTheDocument();
+    expect(screen.getByText('Schema v3')).toBeInTheDocument();
+    expect(screen.getByText('分发 PostgreSQL')).toBeInTheDocument();
 
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
@@ -973,7 +1094,7 @@ describe('CanvasNodeInspector', () => {
     expect(onApply).toHaveBeenCalledWith({
       id: node.id,
       type: CanvasNodeType.ModelInput,
-      configuration: { modelId: modelFixtures.managedId },
+      configuration: { models: [{ modelId: modelFixtures.managedId }] },
     });
     expect(onDirtyChange).toHaveBeenLastCalledWith(false);
   });
@@ -987,15 +1108,27 @@ describe('CanvasNodeInspector', () => {
       <CanvasNodeInspector
         ref={inspectorRef}
         node={node}
-        validation={{ nodeId: node.id, issues: [], inputTables: [], outputTables: [] }}
+        validation={{
+          nodeId: node.id,
+          issues: [{
+            code: 'MODEL_NOT_PUBLISHED',
+            severity: 'ERROR',
+            message: '模型当前状态为已停用',
+            nodeId: node.id,
+            path: 'configuration.models[0].modelId',
+          }],
+          inputTables: [],
+          outputTables: [],
+        }}
         onApply={onApply}
         onDirtyChange={vi.fn()}
       />,
     );
     await waitForInspector();
 
-    expect(screen.getByText(/模型当前状态为已停用/)).toBeInTheDocument();
-    expect(screen.getByText(/已停用订单模型（disabled_order_model）/)).toBeInTheDocument();
+    expect(screen.getByText('已停用订单模型 · disabled_order_model')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '查看 1 个配置问题' }));
+    expect(await screen.findByText('模型当前状态为已停用')).toBeInTheDocument();
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
@@ -1005,6 +1138,7 @@ describe('CanvasNodeInspector', () => {
   it('keeps and applies invalid EXTERNAL OVERWRITE as a draft without rewriting it', async () => {
     const node = modelOutputNode(modelFixtures.externalId);
     node.configuration.writeMode = 'OVERWRITE';
+    node.configuration.writes![0].writeMode = 'OVERWRITE';
     const validation = modelOutputValidation(node.id);
     const inspectorRef = createRef<CanvasNodeInspectorHandle>();
     const onApply = vi.fn();
@@ -1020,6 +1154,7 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    await openFirstModelWrite();
     expect(screen.getByText('EXTERNAL 模型不允许 OVERWRITE')).toBeInTheDocument();
     expect(screen.getByLabelText('写入模式').closest('.ant-select-content'))
       .toHaveAttribute('title', 'OVERWRITE · EXTERNAL 模型不可用');
@@ -1032,6 +1167,7 @@ describe('CanvasNodeInspector', () => {
   it('offers model-primary-key UPSERT in batch and streaming modes', async () => {
     const batchNode = modelOutputNode(modelFixtures.managedId);
     batchNode.configuration.writeMode = 'UPSERT';
+    batchNode.configuration.writes![0].writeMode = 'UPSERT';
     const { unmount } = render(
       <CanvasNodeInspector
         node={batchNode}
@@ -1043,6 +1179,7 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    await openFirstModelWrite();
     expect(screen.getByText('模型主键：')).toBeInTheDocument();
     expect(screen.getAllByText('order_id').length).toBeGreaterThan(0);
     expect(screen.getByLabelText('写入模式').closest('.ant-select-content'))
@@ -1051,6 +1188,7 @@ describe('CanvasNodeInspector', () => {
 
     const streamingNode = modelOutputNode(modelFixtures.managedId);
     streamingNode.configuration.writeMode = 'OVERWRITE';
+    streamingNode.configuration.writes![0].writeMode = 'OVERWRITE';
     render(
       <CanvasNodeInspector
         node={streamingNode}
@@ -1062,6 +1200,7 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    await openFirstModelWrite();
     expect(screen.getByLabelText('写入模式').closest('.ant-select-content'))
       .toHaveAttribute('title', 'OVERWRITE · 实时模式不支持');
   });
@@ -1084,7 +1223,9 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    await openFirstModelWrite();
     fireEvent.click(screen.getByRole('button', { name: /自动匹配空白字段/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存此项' }));
     await waitFor(() => {
       expect(onDirtyChange).toHaveBeenLastCalledWith(true);
     });
@@ -1095,14 +1236,17 @@ describe('CanvasNodeInspector', () => {
       id: node.id,
       type: CanvasNodeType.ModelOutput,
       configuration: {
-        sourceTableName: 'order_customer',
-        targetModelId: modelFixtures.managedId,
-        writeMode: 'APPEND',
-        columnMappings: [
-          { sourceColumnName: 'order_id', targetColumnName: 'order_id' },
-          { sourceColumnName: 'customer_name', targetColumnName: 'customername' },
-          { sourceColumnName: 'ordered_at', targetColumnName: 'orderedat' },
-        ],
+        writes: [{
+          writeId: 'd709d3ad-efb1-4b86-bb78-c8172ea0ed37',
+          sourceTableName: 'order_customer',
+          targetModelId: modelFixtures.managedId,
+          writeMode: 'APPEND',
+          columnMappings: [
+            { sourceColumnName: 'order_id', targetColumnName: 'order_id' },
+            { sourceColumnName: 'customer_name', targetColumnName: 'customername' },
+            { sourceColumnName: 'ordered_at', targetColumnName: 'orderedat' },
+          ],
+        }],
       },
     });
   });
@@ -1111,6 +1255,11 @@ describe('CanvasNodeInspector', () => {
     const node = modelOutputNode(modelFixtures.managedId);
     node.configuration.sourceTableName = 'archived_orders';
     node.configuration.columnMappings = [{
+      sourceColumnName: 'removed_source',
+      targetColumnName: 'removed_target',
+    }];
+    node.configuration.writes![0].sourceTableName = 'archived_orders';
+    node.configuration.writes![0].columnMappings = [{
       sourceColumnName: 'removed_source',
       targetColumnName: 'removed_target',
     }];
@@ -1125,11 +1274,12 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    await openFirstModelWrite();
     expect(screen.getByText('archived_orders（上游已不可用）')).toBeInTheDocument();
     expect(screen.getByText('目标字段已不存在')).toBeInTheDocument();
     expect(screen.getByText('removed_target')).toBeInTheDocument();
-    expect(screen.getByText('removed_source')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: '清除失效映射' })).toBeInTheDocument();
+    expect(screen.getByText('已保存来源字段：removed_source')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '清除' })).toBeInTheDocument();
   });
 
   it('loads and applies an ordered NULL_HANDLING rule set', async () => {
@@ -1139,6 +1289,23 @@ describe('CanvasNodeInspector', () => {
       name: '空值处理',
       layout: { x: 320, y: 20, width: 240, height: 120 },
       configuration: {
+        operations: [{
+          operationId: '6212fa20-ddfb-4ac5-8bd3-af96d7c3979f',
+          sourceTableName: 'orders',
+          output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'orders_cleaned' },
+          rules: [
+            {
+              kind: 'DROP_ROW',
+              columnNames: ['order_id', 'customer_id'],
+              matchMode: 'ANY_NULL',
+            },
+            {
+              kind: 'FILL_LITERAL',
+              columnName: 'amount',
+              value: { dataType: 'DECIMAL', value: '0.00' },
+            },
+          ],
+        }],
         sourceTableName: 'orders',
         outputTableName: 'orders_cleaned',
         rules: [
@@ -1175,9 +1342,16 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    await openFirstProcessorOperation();
     expect(screen.getByText('删除空值行')).toBeInTheDocument();
     expect(screen.getAllByText('固定值填充')).toHaveLength(2);
     fireEvent.click(screen.getByRole('button', { name: '上移规则 2' }));
+    await waitFor(() => {
+      expect(document.querySelectorAll('.canvas-processor-rule-card')[0])
+        .toHaveTextContent('固定值填充');
+    });
+    fireEvent.click(screen.getByRole('button', { name: '保存此项' }));
+    await waitFor(() => expect(screen.queryByText('配置处理表 · orders')).not.toBeInTheDocument());
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
@@ -1185,8 +1359,13 @@ describe('CanvasNodeInspector', () => {
       id: node.id,
       type: CanvasNodeType.NullHandling,
       configuration: {
-        ...node.configuration,
-        rules: [node.configuration.rules[1], node.configuration.rules[0]],
+        operations: [{
+          ...node.configuration.operations![0],
+          rules: [
+            node.configuration.operations![0].rules[1],
+            node.configuration.operations![0].rules[0],
+          ],
+        }],
       },
     });
   });
@@ -1198,6 +1377,20 @@ describe('CanvasNodeInspector', () => {
       name: '值映射',
       layout: { x: 320, y: 20, width: 240, height: 120 },
       configuration: {
+        operations: [{
+          operationId: 'd06ea816-ab53-48b0-8fc6-f6156ba9b6ee',
+          sourceTableName: 'orders',
+          output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'orders_mapped' },
+          rules: [{
+            columnName: 'customer_id',
+            entries: [{
+              sourceValue: { dataType: 'LONG', value: '1' },
+              targetValue: { dataType: 'LONG', value: '1001' },
+            }],
+            unmatchedStrategy: 'KEEP',
+            unmatchedValue: null,
+          }],
+        }],
         sourceTableName: 'orders',
         outputTableName: 'orders_mapped',
         rules: [{
@@ -1231,15 +1424,20 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
-    expect(screen.getByText('映射 1')).toBeInTheDocument();
+    await openFirstProcessorOperation();
+    expect(screen.getByText('customer_id')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('输入原值')).toHaveValue('1');
+    expect(screen.getByPlaceholderText('输入目标值')).toHaveValue('1001');
     expect(screen.getByText('未匹配非 NULL 值')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存此项' }));
+    await waitFor(() => expect(screen.queryByText('配置处理表 · orders')).not.toBeInTheDocument());
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
     expect(onApply).toHaveBeenCalledWith({
       id: node.id,
       type: CanvasNodeType.ValueMapping,
-      configuration: node.configuration,
+      configuration: { operations: node.configuration.operations },
     });
   });
 
@@ -1285,7 +1483,7 @@ describe('CanvasNodeInspector', () => {
     await waitForInspector();
 
     expect(screen.getByText('ROW_NUMBER')).toBeInTheDocument();
-    expect(screen.getByText('排序只用于窗口计算')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: '排序只用于窗口计算' })).toBeInTheDocument();
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
@@ -1303,6 +1501,19 @@ describe('CanvasNodeInspector', () => {
       name: 'Top N',
       layout: { x: 320, y: 20, width: 240, height: 120 },
       configuration: {
+        operations: [{
+          operationId: '78304473-a7f7-4dbb-b540-b180bdc33d40',
+          sourceTableName: 'orders',
+          output: { mode: 'CREATE_NEW_TABLE', outputTableName: 'top_orders' },
+          partitionByColumns: ['customer_id'],
+          orderBy: [{
+            columnName: 'amount',
+            direction: 'DESC',
+            nullOrdering: 'LAST',
+          }],
+          limit: 3,
+          tieStrategy: 'WITH_TIES',
+        }],
         sourceTableName: 'orders',
         outputTableName: 'top_orders',
         partitionByColumns: ['customer_id'],
@@ -1334,15 +1545,18 @@ describe('CanvasNodeInspector', () => {
     );
     await waitForInspector();
 
+    await openFirstProcessorOperation();
     expect(screen.getByText('每组前 N')).toBeInTheDocument();
     expect(screen.getByText('保留并列')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '保存此项' }));
+    await waitFor(() => expect(screen.queryByText('配置处理表 · orders')).not.toBeInTheDocument());
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);
     });
     expect(onApply).toHaveBeenCalledWith({
       id: node.id,
       type: CanvasNodeType.TopN,
-      configuration: node.configuration,
+      configuration: { operations: node.configuration.operations },
     });
 
     onApply.mockClear();
@@ -1356,6 +1570,7 @@ describe('CanvasNodeInspector', () => {
         onDirtyChange={vi.fn()}
       />,
     );
+    await openFirstProcessorOperation();
     expect(await screen.findByText('Top N 仅支持批处理')).toBeInTheDocument();
     await act(async () => {
       expect(await inspectorRef.current?.apply()).toBe(true);

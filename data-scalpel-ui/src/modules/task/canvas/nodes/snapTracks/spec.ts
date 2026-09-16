@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSnapTracksConfiguration } from '../nodeDefaults';
+import { createSnapTracksConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSnapTracks } from '../nodeSummaries';
+import { summarizeSnapTracks } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { snapTracksCanvasView } from './canvasView';
 
 export const snapTracksSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SnapTracks,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

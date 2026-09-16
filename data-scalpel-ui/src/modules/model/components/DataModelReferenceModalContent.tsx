@@ -9,17 +9,21 @@ interface DataModelReferenceModalContentProps {
 const open = (path: string) => window.open(path, '_blank', 'noopener,noreferrer');
 
 export const DataModelReferenceModalContent = ({ references }: DataModelReferenceModalContentProps) => {
-  if (references.deletable) return <Empty description="没有发现任务、数据服务或已发布指标引用" />;
+  if (references.deletable) return <Empty description="没有发现任务、数据服务、已发布指标或业务对象类型引用" />;
   return (
     <Space orientation="vertical" size={16} className="model-reference-modal-content">
       <Alert
         type="warning"
         showIcon
         message="当前模型不能删除"
-        description="任务和服务沿用原引用规则；指标仅由当前已发布启用的结果绑定保护，请先调整绑定或停用指标。"
+        description="任务和服务沿用原引用规则；指标仅由当前已发布启用的结果绑定保护；业务对象类型仅保护当前已保存定义，请先修改对应绑定。"
       />
       {!!references.metrics?.length && <Table size="small" rowKey="id" pagination={false} title={() => `指标引用（${references.metrics?.length}）`} dataSource={references.metrics} columns={[
         { title: '指标', dataIndex: 'name', render: (name: string, item) => <Button type="link" size="small" onClick={() => open(`/metrics/${item.id}`)}>{name}</Button> },
+        { title: '编码', dataIndex: 'code' },
+      ]} />}
+      {!!references.businessObjectTypes?.length && <Table size="small" rowKey="id" pagination={false} title={() => `业务对象类型引用（${references.businessObjectTypes?.length}）`} dataSource={references.businessObjectTypes} columns={[
+        { title: '对象类型', dataIndex: 'name', render: (name: string, item) => <Button type="link" size="small" onClick={() => open(`/business-object-types/${item.id}`)}>{name}</Button> },
         { title: '编码', dataIndex: 'code' },
       ]} />}
       {references.tasks.length > 0 && (

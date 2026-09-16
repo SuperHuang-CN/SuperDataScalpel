@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createSpatialPointClusterConfiguration } from '../nodeDefaults';
+import { createSpatialPointClusterConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialPointCluster } from '../nodeSummaries';
+import { summarizeSpatialPointCluster } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialPointClusterCanvasView } from './canvasView';
 
 export const spatialPointClusterSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialPointCluster,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

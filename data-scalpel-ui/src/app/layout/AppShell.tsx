@@ -18,7 +18,14 @@ import { Suspense, useState } from 'react';
 import { DshDrawer } from '../../modules/dsh';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useCurrentUser, useLogout, useSystemConfigurations } from '../../modules/system';
-import { getTaskView, resolveTaskView, taskIdFromPath, taskViews, useTask, type TaskViewConfiguration } from '../../modules/task';
+import { useTask } from '../../modules/task/hooks/useTasks';
+import {
+  getTaskView,
+  resolveTaskView,
+  taskIdFromPath,
+  taskViews,
+  type TaskViewConfiguration,
+} from '../../modules/task/model/taskViews';
 import { NotificationBell } from '../../modules/operations';
 
 const APP_SIDEBAR_COLLAPSED_STORAGE_KEY = 'data-scalpel.ui.app-sidebar.collapsed';
@@ -41,6 +48,7 @@ const TOP_LEVEL_MANAGEMENT_PATHS = new Set([
   '/standard/dictionaries',
   '/model',
   '/metrics',
+  '/business-object-types',
   '/model/field-templates',
   '/data-entry',
   ...taskViews.map(view => view.path),
@@ -57,6 +65,7 @@ const TOP_LEVEL_MANAGEMENT_PATHS = new Set([
 
 const isBusinessDetailPath = (pathname: string) => (
   /^\/metrics\/[^/]+$/.test(pathname)
+  || /^\/business-object-types\/[^/]+$/.test(pathname)
   || /^\/datasource\/[^/]+$/.test(pathname)
   || /^\/file-dataset\/[^/]+$/.test(pathname)
   || /^\/panorama\/[^/]+$/.test(pathname)
@@ -109,6 +118,7 @@ const navigationItems = (permissions: Set<string>): NonNullable<MenuProps['items
   const modelingItems = [
     permissions.has('model.view') ? { key: '/model', label: '数据模型' } : null,
     permissions.has('metric.view') ? { key: '/metrics', label: '指标管理' } : null,
+    permissions.has('ontology.view') ? { key: '/business-object-types', label: '业务建模' } : null,
     permissions.has('standard.dictionary.view') ? { key: '/standard/dictionaries', label: '码表管理' } : null,
     permissions.has('model.view') ? { key: '/model/field-templates', label: '字段模板' } : null,
     permissions.has('system.configuration.view') ? { key: '/system/model-warehouse-layers', label: '数仓分层' } : null,
@@ -182,6 +192,7 @@ const menuGroupKey = (pathname: string): string | undefined => {
   if (pathname.startsWith('/standard/dictionaries')
     || pathname.startsWith('/model')
     || pathname.startsWith('/metrics')
+    || pathname.startsWith('/business-object-types')
     || pathname.startsWith('/system/model-warehouse-layers')) return 'modeling';
   if (pathname.startsWith('/task')) return 'task';
   if (pathname.startsWith('/dataservice') || pathname.startsWith('/mcp-management')) return 'services';
@@ -213,6 +224,7 @@ const selectedMenuKey = (pathname: string, taskView: TaskViewConfiguration) => {
   if (pathname.startsWith('/model/field-templates')) return '/model/field-templates';
   if (pathname.startsWith('/model')) return '/model';
   if (pathname.startsWith('/metrics')) return '/metrics';
+  if (pathname.startsWith('/business-object-types')) return '/business-object-types';
   if (pathname.startsWith('/data-entry')) return '/data-entry';
   if (pathname.startsWith('/service-engine')) return '/service-engine';
   if (pathname.startsWith('/compute-engine')) return '/compute-engine';
@@ -253,6 +265,8 @@ const breadcrumbItems = (pathname: string, taskView: TaskViewConfiguration): Bre
   if (pathname.startsWith('/model')) return [{ title: '数据建模' }, { title: '数据模型' }];
   if (/^\/metrics\/[^/]+/.test(pathname)) return [{ title: '数据建模' }, { title: <Link to="/metrics">指标管理</Link> }, { title: '指标详情' }];
   if (pathname.startsWith('/metrics')) return [{ title: '数据建模' }, { title: '指标管理' }];
+  if (/^\/business-object-types\/[^/]+/.test(pathname)) return [{ title: '数据建模' }, { title: <Link to="/business-object-types">业务建模</Link> }, { title: '对象类型详情' }];
+  if (pathname.startsWith('/business-object-types')) return [{ title: '数据建模' }, { title: '业务建模' }];
   if (/^\/data-entry\/[^/]+/.test(pathname)) return [{ title: '数据资源' }, { title: <Link to="/data-entry">数据填报</Link> }, { title: '填报详情' }];
   if (pathname.startsWith('/data-entry')) return [{ title: '数据资源' }, { title: '数据填报' }];
   if (pathname.startsWith('/task/masking-rules')) return [{ title: '任务开发' }, { title: '脱敏规则' }];

@@ -23,18 +23,20 @@ function mount() {
 describe('overlay inspector drafts', () => {
   it('preserves unopened projection and permits invalid ERASE without clearing right fields', async () => {
     const { ref, apply, configuration } = mount();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });
     expect(apply.mock.calls[0][0].configuration).toEqual(configuration);
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '叠加方式' }));
-    await userEvent.click(await screen.findByText('擦除', { selector: '.ant-select-item-option-content span' }));
+    await user.click(await screen.findByText('擦除', { selector: '.ant-select-item-option-content span' }));
     expect(screen.getByText(/当前有 1 个字段需要排除/)).toBeTruthy();
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });
     expect(apply.mock.calls[1][0].configuration).toMatchObject({ operation: 'ERASE', outputColumns: configuration.outputColumns });
   });
   it('requires confirmation to change geometry policy and retains all projection settings', async () => {
     const { ref, apply, configuration } = mount();
+    const user = userEvent.setup({ pointerEventsCheck: 0 });
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '叠加几何输出' }));
-    await userEvent.click(await screen.findByText('旧版 · 通用 Geometry', { selector: '.ant-select-item-option-content' }));
+    await user.click(await screen.findByText('旧版 · 通用 Geometry', { selector: '.ant-select-item-option-content' }));
     expect(await screen.findByText('切换几何输出策略？', { selector: '.ant-modal-confirm-title' })).toBeTruthy();
     fireEvent.click(await screen.findByRole('button', { name: '确认切换' }));
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });

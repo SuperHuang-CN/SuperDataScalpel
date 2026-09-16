@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
-import { createTrackReconstructConfiguration } from '../nodeDefaults';
+import { createTrackReconstructConfiguration } from './defaults';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeTrackReconstruct } from '../nodeSummaries';
+import { summarizeTrackReconstruct } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { trackReconstructCanvasView } from './canvasView';
 
 export const trackReconstructSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.TrackReconstruct,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

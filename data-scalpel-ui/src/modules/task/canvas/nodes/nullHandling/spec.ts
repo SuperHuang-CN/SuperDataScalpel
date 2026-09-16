@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createNullHandlingConfiguration } from '../nodeDefaults';
+import { createNullHandlingConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeNullHandling } from '../nodeSummaries';
+import { summarizeNullHandling } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { nullHandlingCanvasView } from './canvasView';
 
 export const nullHandlingSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.NullHandling,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorQuality,

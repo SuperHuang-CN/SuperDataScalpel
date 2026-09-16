@@ -814,6 +814,7 @@ describe('canvas definition import and export', () => {
             outputTableName: 'district_roads',
             sourceGeometryColumnName: 'centerline',
             maskGeometryColumnName: 'boundary',
+            maskCombination: null,
             outputColumnName: 'clipped_centerline',
             geometryPolicy: null,
           },

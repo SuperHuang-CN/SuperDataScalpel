@@ -163,3 +163,9 @@ Admin、解析 Worker、Task Engine 和 Dispatcher，清空 MinIO 的 `data-scal
 前缀，再执行重建 SQL 并启动应用。MinIO Bucket 必须关闭版本管理和 Object Lock。
 
 引用旧 `tableId` 的 Canvas 节点需要重新选择。
+
+## 2026-09 Canvas 文件引用投影
+
+保存 Canvas 时，在同一事务替换 `task_canvas_file_reference` 中该任务引用的不同文件表 UUID，并标记投影对应的定义版本；空 UUID 字符串表示草稿尚未选择资源，不产生引用。删除任务时同步删除投影。文件表删除/替换及解析参数保护查询目标 UUID 的投影，不扫描解析全部 Canvas JSON。
+
+启动时按每批 100 个任务 ID 修复旧定义投影，每个定义单独加锁提交。无法解析的定义保留明确索引错误；未知或版本不匹配的投影仍阻止破坏性文件操作，修复并保存定义后解除。此保守处理用于无法证明引用完整性的情形，不将合法空选项当作损坏定义。

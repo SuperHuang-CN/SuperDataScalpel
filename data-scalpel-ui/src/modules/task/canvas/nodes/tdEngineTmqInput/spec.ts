@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createTdEngineTmqInputConfiguration } from '../nodeDefaults';
+import { createTdEngineTmqInputConfiguration } from './defaults';
 import { collectTdEngineTmqInputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeTdEngineTmqInput } from '../nodeSummaries';
+import { summarizeTdEngineTmqInput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { tdEngineTmqInputCanvasView } from './canvasView';
 
 export const tdEngineTmqInputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.TdEngineTmqInput,
   category: CanvasNodeCategory.Input,
   group: CanvasNodeGroup.InputStream,

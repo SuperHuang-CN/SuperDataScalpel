@@ -1,5 +1,4 @@
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
 import { Modal } from 'antd';
 import { createRef } from 'react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -32,6 +31,19 @@ function mount(dwell: boolean) {
   return { apply, ref, c };
 }
 
+const selectOption = async (fieldLabel: string, optionLabel: string) => {
+  fireEvent.mouseDown(screen.getByRole('combobox', { name: fieldLabel }));
+  const option = await waitFor(() => {
+    const visibleOption = screen.getAllByText(optionLabel).find((element) => {
+      const dropdown = element.closest<HTMLElement>('.ant-select-dropdown');
+      return dropdown && window.getComputedStyle(dropdown).pointerEvents !== 'none';
+    });
+    if (!visibleOption) throw new Error(`未找到可见选项：${optionLabel}`);
+    return visibleOption;
+  });
+  fireEvent.click(option);
+};
+
 describe('track field statistics', () => {
   it('gates new kinds at 4.35 including inactive dwell summaries and rejects malformed structures', () => {
     for (const type of [CanvasNodeType.TrackFindDwell, CanvasNodeType.TrackReconstruct]) {
@@ -53,17 +65,15 @@ describe('track field statistics', () => {
   it.each([false, true])('isolates cancel, retains invalid fields and saves an invalid draft (dwell=%s)', async dwell => {
     const { apply, ref, c } = mount(dwell);
     const openName = dwell ? '设置驻留片段汇总' : '设置轨迹片段汇总';
-    await userEvent.click(screen.getByRole('button', { name: openName }));
+    fireEvent.click(screen.getByRole('button', { name: openName }));
     fireEvent.change(screen.getByRole('textbox', { name: '汇总输出字段 1' }), { target: { value: 'discard' } });
     fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: /取\s*消/ }));
     await act(async () => { await ref.current?.apply(); }); expect(apply.mock.calls[0][0].configuration).toEqual(c);
-    await userEvent.click(screen.getByRole('button', { name: openName }));
-    await userEvent.click(screen.getByRole('combobox', { name: '汇总类型 1' }));
-    await userEvent.click(screen.getByText('COUNT · 点数'));
-    await userEvent.click(screen.getByRole('combobox', { name: '汇总类型 1' }));
-    await userEvent.click(screen.getByText('COUNT_FIELD · 非空数'));
+    fireEvent.click(screen.getByRole('button', { name: openName }));
+    await selectOption('汇总类型 1', 'COUNT · 点数');
+    await selectOption('汇总类型 1', 'COUNT_FIELD · 非空数');
     fireEvent.change(screen.getByRole('textbox', { name: '汇总输出字段 1' }), { target: { value: '' } });
-    await userEvent.click(screen.getByRole('button', { name: '添加汇总' }));
+    fireEvent.click(screen.getByRole('button', { name: '添加汇总' }));
     fireEvent.click(screen.getByRole('button', { name: '上移汇总 2' }));
     fireEvent.click(screen.getByRole('button', { name: '保存汇总草稿' }));
     await act(async () => { expect(await ref.current?.apply()).toBe(true); });
@@ -79,15 +89,15 @@ describe('track field statistics', () => {
       if (!dialog) throw new Error('删除确认未显示');
       return dialog;
     };
-    await userEvent.click(screen.getByRole('button', { name: '设置轨迹片段汇总' }));
-    await userEvent.click(screen.getByRole('button', { name: '删除汇总 1' }));
+    fireEvent.click(screen.getByRole('button', { name: '设置轨迹片段汇总' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除汇总 1' }));
     const confirm = confirmation();
-    await userEvent.click(within(confirm).getByRole('button', { name: /取\s*消/ }));
+    fireEvent.click(within(confirm).getByRole('button', { name: /取\s*消/ }));
     await waitFor(() => expect(screen.queryAllByText('删除汇总 non_null？')).toHaveLength(0));
     expect(screen.getByRole('textbox', { name: '汇总输出字段 1' })).toHaveValue('non_null');
-    await userEvent.click(screen.getByRole('button', { name: '删除汇总 1' }));
-    await userEvent.click(within(confirmation()).getByRole('button', { name: /删\s*除/ }));
-    await userEvent.click(screen.getByRole('button', { name: '保存汇总草稿' }));
+    fireEvent.click(screen.getByRole('button', { name: '删除汇总 1' }));
+    fireEvent.click(within(confirmation()).getByRole('button', { name: /删\s*除/ }));
+    fireEvent.click(screen.getByRole('button', { name: '保存汇总草稿' }));
     await act(async () => { await ref.current?.apply(); });
     expect(apply.mock.calls[0][0].configuration.summaryStatistics).toEqual([]);
   });

@@ -6,9 +6,10 @@ import cn.superhuang.data.scalpel.business.task.web.response.WorkflowRunResponse
 import cn.superhuang.data.scalpel.business.task.service.WorkflowRunService;
 
 import cn.superhuang.data.scalpel.business.task.service.TaskRunService;
+import cn.superhuang.data.scalpel.business.task.service.TaskRunArtifactQueryService;
 import cn.superhuang.data.scalpel.business.task.service.TaskStreamingService;
-import cn.superhuang.data.scalpel.business.task.service.TaskRunService.TaskRunArtifact;
-import cn.superhuang.data.scalpel.business.task.service.TaskRunService.TaskRunArtifactStream;
+import cn.superhuang.data.scalpel.business.task.service.TaskRunArtifactQueryService.TaskRunArtifact;
+import cn.superhuang.data.scalpel.business.task.service.TaskRunArtifactQueryService.TaskRunArtifactStream;
 import cn.superhuang.data.scalpel.business.task.service.QualityFailureSampleService;
 import cn.superhuang.data.scalpel.business.task.web.response.QualityFailureSampleResponse;
 import cn.superhuang.data.scalpel.business.task.web.response.TaskRunResponse;

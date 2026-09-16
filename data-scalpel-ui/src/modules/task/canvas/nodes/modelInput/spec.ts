@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createModelInputConfiguration } from '../nodeDefaults';
+import { createModelInputConfiguration } from './defaults';
 import { collectModelInputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeModelInput } from '../nodeSummaries';
+import { summarizeModelInput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { modelInputCanvasView } from './canvasView';
 
 export const modelInputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.ModelInput,
   category: CanvasNodeCategory.Input,
   group: CanvasNodeGroup.InputModel,

@@ -39,7 +39,7 @@ public class TaskExecutionOutboxPublisher {
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
 
-    @Scheduled(fixedDelayString = "${data-scalpel.execution.kafka.outbox-poll-interval:500ms}")
+    @Scheduled(scheduler = "executionOutboxScheduler", fixedDelayString = "${data-scalpel.execution.kafka.outbox-poll-interval:500ms}")
     public void publishDue() {
         recoverStaleClaims();
         List<ClaimedMessage> claimed = transactionTemplate.execute(status -> repository.findDueForUpdate(

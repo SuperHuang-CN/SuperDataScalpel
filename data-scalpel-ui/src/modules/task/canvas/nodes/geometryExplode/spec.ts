@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createGeometryExplodeConfiguration } from '../nodeDefaults';
+import { createGeometryExplodeConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeGeometryExplode } from '../nodeSummaries';
+import { summarizeGeometryExplode } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { geometryExplodeCanvasView } from './canvasView';
 
 export const geometryExplodeSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.GeometryExplode,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

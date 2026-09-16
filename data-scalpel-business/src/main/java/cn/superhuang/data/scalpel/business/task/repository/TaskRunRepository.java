@@ -18,6 +18,12 @@ import java.util.UUID;
 
 public interface TaskRunRepository extends SearchRepository<TaskRun, UUID> {
 
+    @Query("select r from TaskRun r where r.status in :statuses "
+            + "and r.computeEngineId is not null and r.externalExecutionId is not null "
+            + "and (:after is null or r.id > :after) order by r.id")
+    List<TaskRun> findDispatchedForReconciliation(Collection<TaskRunStatus> statuses, UUID after,
+                                                org.springframework.data.domain.Pageable pageable);
+
     @Query("select r.id from TaskRun r where r.executionMode = 'REAL' and r.status in ('QUEUED', 'RUNNING') order by r.alertCheckedAt nulls first, r.id")
     List<UUID> alertCandidates(org.springframework.data.domain.Pageable pageable);
 

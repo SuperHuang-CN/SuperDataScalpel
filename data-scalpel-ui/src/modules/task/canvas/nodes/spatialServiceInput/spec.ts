@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSpatialServiceInputConfiguration } from '../nodeDefaults';
+import { createSpatialServiceInputConfiguration } from './defaults';
 import { collectSpatialServiceInputMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialServiceInput } from '../nodeSummaries';
+import { summarizeSpatialServiceInput } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialServiceInputCanvasView } from './canvasView';
 
 export const spatialServiceInputSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialServiceInput,
   category: CanvasNodeCategory.Input,
   group: CanvasNodeGroup.InputApi,

@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen } from '@testing-library/react';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { emptyCanvasDefinition } from '../defaultCanvas';
 import type { CanvasValidationResult } from '../canvasTypes';
@@ -27,6 +27,7 @@ describe('CanvasDefinitionModal', () => {
     );
 
     expect(screen.getByText('尚未完成 Engine 校验')).toBeInTheDocument();
+    fireEvent.click(screen.getByLabelText('当前定义尚无 Task Engine 校验结果'));
     expect(screen.getByText('Task Engine 不可用')).toBeInTheDocument();
     expect(screen.queryByText('定义有效')).not.toBeInTheDocument();
   });

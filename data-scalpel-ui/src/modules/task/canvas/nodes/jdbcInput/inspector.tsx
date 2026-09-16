@@ -18,7 +18,7 @@ import {
 } from '../../../../datasource';
 import { CanvasJdbcDataSourceSelect } from '../../components/CanvasJdbcSelectors';
 import { configurationFingerprint } from '../../components/CanvasInspectorUtils';
-import { FieldPreview } from '../../components/CanvasLegacyInspectors';
+import { CanvasFieldPreview } from '../../components/common/CanvasFieldPreview';
 import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import {
   CanvasNodeType,
@@ -146,7 +146,7 @@ const SelectedTableConfiguration = ({
               action={<Button type="link" size="small" onClick={() => void tableQuery.refetch()}>重试</Button>}
             />
           ) : (
-            <FieldPreview columns={columns} loading={tableQuery.isFetching} />
+            <CanvasFieldPreview columns={columns} loading={tableQuery.isFetching} />
           )}
         </div>
       )}

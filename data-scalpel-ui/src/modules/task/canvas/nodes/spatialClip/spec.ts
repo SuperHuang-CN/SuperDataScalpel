@@ -1,13 +1,15 @@
+import { parseNodeConfiguration } from './parser';
 import { CanvasNodeCategory, CanvasNodeType } from '../../canvasTypes';
-import { createSpatialClipConfiguration } from '../nodeDefaults';
+import { createSpatialClipConfiguration } from './defaults';
 import { collectNoMetadataReferences } from '../nodeMetadataReferences';
 import { CanvasNodeGroup } from '../nodeGroups';
 import { CanvasNodeIconKey } from '../nodeSpec';
-import { summarizeSpatialClip } from '../nodeSummaries';
+import { summarizeSpatialClip } from './summary';
 import { createCanvasNodeSpec } from '../specFactory';
 import { spatialClipCanvasView } from './canvasView';
 
 export const spatialClipSpec = createCanvasNodeSpec({
+  parseConfiguration: parseNodeConfiguration,
   type: CanvasNodeType.SpatialClip,
   category: CanvasNodeCategory.Processor,
   group: CanvasNodeGroup.ProcessorSpatial,

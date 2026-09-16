@@ -12,7 +12,7 @@ import {
   type JdbcSnapshotSyncOutputConfiguration,
 } from '../../canvasTypes';
 import { CanvasJdbcDataSourceSelect, CanvasJdbcTableSelect } from '../../components/CanvasJdbcSelectors';
-import { ValidationIssues } from '../../components/CanvasLegacyInspectors';
+import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import { SnapshotSyncConfigurationFields } from '../../components/SnapshotSyncConfigurationFields';
 import {
   normalizeSnapshotSyncConfiguration,
@@ -124,7 +124,7 @@ const JdbcSnapshotSyncOutputInspector = ({
 
   return (
     <Space orientation="vertical" size={12} className="canvas-inspector-content">
-      <ValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
+      <CanvasNodeValidationIssues validation={validation} unavailableMessage={validationUnavailableMessage} />
       {dataSourceId && dataSourceQuery.isError && <Alert showIcon type="error" title="读取目标数据源失败" />}
       {targetTableName && tableQuery.isError && <Alert showIcon type="error" title="读取目标表元数据失败" />}
       <Form<JdbcSnapshotSyncFormValues>

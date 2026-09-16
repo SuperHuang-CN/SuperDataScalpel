@@ -1,4 +1,6 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { Modal } from 'antd';
 import { afterEach, expect, it, vi } from 'vitest';
 import { createRef } from 'react';
 import { CanvasNodeType, type SpatialSummarizeWithinConfiguration } from '../../canvasTypes';
@@ -9,7 +11,7 @@ import { createWithinRegions } from './regions';
 import Inspector from './inspector';
 import { spatialSummarizeWithinCanvasView } from './canvasView';
 
-afterEach(cleanup);
+afterEach(() => { Modal.destroyAll(); cleanup(); });
 const id = '11111111-1111-4111-8111-111111111111';
 const layout = { x: 15, y: 20, width: 240, height: 120 };
 const c: SpatialSummarizeWithinConfiguration = { ...createSpatialSummarizeWithinConfiguration(),
@@ -17,6 +19,16 @@ const c: SpatialSummarizeWithinConfiguration = { ...createSpatialSummarizeWithin
   regions: { ...createWithinRegions(), mode: 'PLANAR_GRID', binSize: 10 } };
 const definition = (configuration: unknown, schemaMinorVersion = 41) => ({ schemaVersion: 4, schemaMinorVersion,
   nodes: [{ id, type: CanvasNodeType.SpatialSummarizeWithin, name: '汇总', layout, configuration }], edges: [] });
+const findVisibleOption = async (text: string) => {
+  let option: HTMLElement | undefined;
+  await waitFor(() => {
+    option = Array.from(document.querySelectorAll<HTMLElement>('.ant-select-dropdown .ant-select-item-option-content'))
+      .find(element => element.textContent === text
+        && !element.closest('.ant-select-dropdown')?.classList.contains('ant-select-dropdown-hidden'));
+    expect(option).toBeDefined();
+  });
+  return option as HTMLElement;
+};
 
 it('gates all region objects at 4.41 without migrating legacy region-table definitions', () => {
   for (const mode of ['AREA_TABLE', 'PLANAR_GRID'] as const) {
@@ -59,9 +71,10 @@ it('preserves explicit extent coordinates when toggled to data bounds and reopen
     extent: { mode:'EXPLICIT_BOUNDS' as const,minX:0,minY:0,maxX:20,maxY:30 } } } };
   render(<Inspector node={{ id,type:CanvasNodeType.SpatialSummarizeWithin,name:'汇总',layout,configuration }} executionMode="BATCH"
     validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
+  const user = userEvent.setup({ pointerEventsCheck: 0 });
   fireEvent.click(screen.getByRole('button',{name:'设置汇总格网'}));
   fireEvent.mouseDown(screen.getByRole('combobox',{name:'汇总格网范围'}));
-  fireEvent.click(await screen.findByText('被汇总要素范围',{selector:'.ant-select-item-option-content'}));
+  await user.click(await findVisibleOption('被汇总要素范围'));
   expect(screen.queryByRole('spinbutton',{name:'最大 X'})).toBeNull();
   fireEvent.click(screen.getByRole('button',{name:'保存格网草稿'}));
   await act(async () => { expect(await ref.current?.apply()).toBe(true); });
@@ -69,7 +82,7 @@ it('preserves explicit extent coordinates when toggled to data bounds and reopen
     extent:{mode:'DATA_BOUNDS',minX:0,minY:0,maxX:20,maxY:30}});
   fireEvent.click(screen.getByRole('button',{name:'设置汇总格网'}));
   fireEvent.mouseDown(screen.getByRole('combobox',{name:'汇总格网范围'}));
-  fireEvent.click(await screen.findByText('指定业务范围',{selector:'.ant-select-item-option-content'}));
+  await user.click(await findVisibleOption('指定业务范围'));
   expect(screen.getByRole('spinbutton',{name:'最大 X'})).toHaveValue('20');
 });
 
@@ -79,11 +92,20 @@ it('confirms region source changes and keeps table and grid drafts on apply', as
     validation={undefined} validationUnavailableMessage={null} onApply={apply} onDirtyChange={vi.fn()} inspectorRef={ref} />);
   const selectTable = async () => {
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '汇总区域来源' }));
-    fireEvent.click(await screen.findByText('区域表', { selector: '.ant-select-item-option-content' }));
+    const option = await findVisibleOption('区域表');
+    fireEvent.click(option.parentElement as HTMLElement);
   };
-  await selectTable(); fireEvent.click(await screen.findByRole('button', { name: /取\s*消/ }));
+  await selectTable();
+  const confirmationTitle = await screen.findByText('切换汇总区域来源？', { selector: '.ant-modal-title' });
+  const confirmation = confirmationTitle.closest<HTMLElement>('.ant-modal');
+  expect(confirmation).not.toBeNull();
+  fireEvent.click(within(confirmation as HTMLElement).getByRole('button', { name: /取\s*消/ }));
   expect(screen.getByRole('button', { name: '设置汇总格网' })).toBeInTheDocument();
-  await selectTable(); fireEvent.click(await screen.findByRole('button', { name: '确认切换区域' }));
+  await waitFor(() => expect(within(confirmation as HTMLElement)
+    .queryByRole('button', { name: '确认切换区域' })).toBeNull());
+  await selectTable();
+  const confirmButton = await within(confirmation as HTMLElement).findByRole('button', { name: '确认切换区域' });
+  fireEvent.click(confirmButton);
   await waitFor(() => expect(screen.queryByRole('button', { name: '设置汇总格网' })).toBeNull());
   await act(async () => { expect(await ref.current?.apply()).toBe(true); });
   const result = apply.mock.calls.at(-1)?.[0].configuration;

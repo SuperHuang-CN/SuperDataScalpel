@@ -46,6 +46,11 @@ public class DataServiceDeployment extends BaseEntity {
     @Column(name = "deployed_at")
     private Instant deployedAt;
 
+    @Column(name = "operation_id")
+    private UUID operationId;
+
+    public UUID getOperationId() { return operationId; }
+
     protected DataServiceDeployment() {
     }
 
@@ -75,6 +80,7 @@ public class DataServiceDeployment extends BaseEntity {
         this.engineId = java.util.Objects.requireNonNull(engineId, "Engine is required");
         this.definitionDigest = required(definitionDigest, "Definition digest");
         this.definitionJson = required(definitionJson, "Definition JSON");
+        this.operationId = UUID.randomUUID();
         this.status = DataServiceDeploymentStatus.PENDING;
         this.lastError = null;
     }
@@ -86,6 +92,7 @@ public class DataServiceDeployment extends BaseEntity {
     }
 
     public void beginRemoval() {
+        this.operationId = UUID.randomUUID();
         this.status = DataServiceDeploymentStatus.REMOVING;
         this.lastError = null;
     }

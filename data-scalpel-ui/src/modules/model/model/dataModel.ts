@@ -25,6 +25,7 @@ export interface DataModelReferenceService {
 
 export interface DataModelReferences {
   metrics?: { id: string; name: string; code: string }[];
+  businessObjectTypes?: { id: string; name: string; code: string }[];
   modelId: string;
   deletable: boolean;
   tasks: DataModelReferenceTask[];
