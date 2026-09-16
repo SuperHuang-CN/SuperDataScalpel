@@ -47,6 +47,7 @@ Portainer 管理。
 
 `dsh-compose.yaml` 作为独立 Portainer Stack `datascalpel-test69-dsh` 部署
 AI 助手运行时。先在 linux69 构建 `datascalpel-dsh:0.1.5-rc.1`，再把
-`dsh-stack.env.example` 中的环境变量写入 Stack；其值必须与 `runtime.env`
-中的 `DATASCALPEL_DSH_BRIDGE_KEY` 相同。DSH 的原生配置页面发布在
-`http://10.0.0.69:13080`，模型凭据在 **Settings → Models** 中配置。
+`runtime.env` 中的 `DATASCALPEL_DSH_BRIDGE_KEY` 原样写入权限为 `600` 的
+`/data/datascalpel-test69/config/dsh-admin-bridge-token`。Stack 只读挂载该
+密钥文件，Compose 和 Portainer 环境变量不保存秘密值。DSH 的原生配置页面
+发布在 `http://10.0.0.69:13080`，模型凭据在 **Settings → Models** 中配置。

@@ -9,8 +9,13 @@ services:
       TZ: Asia/Shanghai
       DSH_PERMISSION_MODE: workspace-write
       DSH_ADMIN_ENABLED: "true"
-      DATASCALPEL_DSH_ADMIN_BRIDGE_TOKEN: ${DATASCALPEL_DSH_ADMIN_BRIDGE_TOKEN}
       DSH_ADMIN_MCP_URL: http://host.docker.internal:18080/system-mcp
+    entrypoint:
+      - /bin/sh
+      - -ec
+      - |
+        export DATASCALPEL_DSH_ADMIN_BRIDGE_TOKEN="$$(cat /run/secrets/dsh-admin-bridge-token)"
+        exec dsh web --patch /opt/dsh-config/docker.cordis.patch.yml --no-open
     ports:
       - "10.0.0.69:13080:13080"
     healthcheck:
@@ -26,6 +31,7 @@ services:
     volumes:
       - /data/datascalpel-test69/dsh/home:/home/node/.dsh:Z
       - /data/datascalpel-test69/dsh/workspace:/workspace:Z
+      - /data/datascalpel-test69/config/dsh-admin-bridge-token:/run/secrets/dsh-admin-bridge-token:ro,Z
       - /data/SuperDataScalpel/skills:/workspace/skills:ro,Z
       - /data/SuperDataScalpel/deploy/dsh/docker.cordis.patch.yml:/opt/dsh-config/docker.cordis.patch.yml:ro,Z
     extra_hosts:
