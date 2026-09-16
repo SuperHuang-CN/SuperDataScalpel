@@ -44,3 +44,9 @@ Portainer Stack 环境变量来自 `stack.env.example`；其中
 
 脚本以前台方式托管五个应用进程，按 `Ctrl+C` 停止应用；Kafka 和 Kong 继续由
 Portainer 管理。
+
+`dsh-compose.yaml` 作为独立 Portainer Stack `datascalpel-test69-dsh` 部署
+AI 助手运行时。先在 linux69 构建 `datascalpel-dsh:0.1.5-rc.1`，再把
+`dsh-stack.env.example` 中的环境变量写入 Stack；其值必须与 `runtime.env`
+中的 `DATASCALPEL_DSH_BRIDGE_KEY` 相同。DSH 的原生配置页面发布在
+`http://10.0.0.69:13080`，模型凭据在 **Settings → Models** 中配置。

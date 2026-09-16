@@ -65,6 +65,8 @@ required_secrets=(
   DATASCALPEL_TASK_ENGINE_TOKEN
   DATASCALPEL_COMPUTE_ENGINE_CREDENTIAL_KEY
   DATASCALPEL_TASK_DISPATCHER_TOKEN
+  DATASCALPEL_DSH_BRIDGE_KEY
+  DATASCALPEL_DSH_CREDENTIAL_KEY
 )
 for variable_name in "${required_secrets[@]}"; do
   if [[ -z "${!variable_name:-}" ]]; then
@@ -162,7 +164,8 @@ export DATASCALPEL_SERVICE_GATEWAY_PROVIDER="kong"
 export DATASCALPEL_KONG_ADMIN_URL="http://127.0.0.1:18003"
 export DATASCALPEL_KONG_PROXY_URL="http://10.0.0.69:18000"
 export DATASCALPEL_GATEWAY_ACCESS_ENABLED="false"
-export DATASCALPEL_DSH_ENABLED="false"
+export DATASCALPEL_DSH_ENABLED="true"
+export DATASCALPEL_DSH_URL="http://127.0.0.1:13080"
 export DATASCALPEL_PUBLIC_BASE_URL="http://10.0.0.69:18080"
 export DATASCALPEL_MCP_PUBLIC_BASE_URL="$DATASCALPEL_PUBLIC_BASE_URL"
 
@@ -197,6 +200,7 @@ if [[ "$PREPARE_ONLY" == false ]]; then
     echo "test69 Kong 不可用。" >&2
     exit 1
   }
+  nc -z -w 5 127.0.0.1 13080 || { echo "test69 DSH 不可用。" >&2; exit 1; }
 fi
 
 cd "$ROOT_DIR"
