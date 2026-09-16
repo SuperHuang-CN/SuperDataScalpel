@@ -8,6 +8,12 @@ data-scalpel:
     enabled: false
   gateway-access:
     enabled: false
+  file-storage:
+    s3:
+      endpoint: ${DATASCALPEL_FILE_STORAGE_ENDPOINT}
+      runner-endpoint: ${DATASCALPEL_FILE_STORAGE_RUNNER_ENDPOINT}
+      access-key: ${DATASCALPEL_FILE_STORAGE_ACCESS_KEY}
+      secret-key: ${DATASCALPEL_FILE_STORAGE_SECRET_KEY}
   service-gateway:
     provider: kong
     kong:
