@@ -588,7 +588,7 @@ register_local_engine() {
     "$backend_url/api/v1/service-engines/$engine_id/actions/test" >/dev/null
 
   echo "正在同步本地服务引擎访问策略…"
-  curl --fail --silent --show-error \
+  curl --fail-with-body --silent --show-error \
     --request POST \
     --header "Authorization: Bearer $token" \
     --header 'Content-Type: application/json' \
