@@ -554,7 +554,7 @@ register_local_engine() {
       --request POST \
       --header "Authorization: Bearer $token" \
       --header 'Content-Type: application/json' \
-      --data "{\"code\":\"$ENGINE_CODE\",${engine_payload#\{}" \
+      --data "{\"type\":\"DATASCALPEL\",\"code\":\"$ENGINE_CODE\",${engine_payload#\{}" \
       "$backend_url/api/v1/service-engines" >/dev/null
   else
     echo "正在更新已登记的本地服务引擎：$ENGINE_CODE"
