@@ -1,7 +1,9 @@
 package cn.superhuang.data.scalpel.dialect.runtime;
 
 import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
+import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionConfig;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
+import cn.superhuang.data.scalpel.dialect.model.TableQuery;
 import org.junit.jupiter.api.Test;
 
 import java.lang.reflect.InvocationHandler;
@@ -27,6 +29,34 @@ class JdbcMetadataReaderTest {
         assertNull(table.columns().get(0).length());
         assertEquals(128, table.columns().get(1).length());
         assertNull(table.columns().get(2).length());
+    }
+
+    @Test
+    void normalizesSchemaReportedByCatalogOnlyDriver() throws Exception {
+        JdbcMetadataReader reader = new JdbcMetadataReader(BuiltInDialects.registry().require("CLICKHOUSE"));
+        DatabaseMetaData metadata = proxy(DatabaseMetaData.class, (proxy, method, arguments) -> switch (method.getName()) {
+            case "getTables" -> resultSet(List.of(Map.of(
+                    "TABLE_CAT", "",
+                    "TABLE_SCHEM", "4a",
+                    "TABLE_NAME", "jxsl_sys_dept",
+                    "TABLE_TYPE", "MergeTree",
+                    "REMARKS", ""
+            )));
+            default -> defaultValue(method.getReturnType());
+        });
+        Connection connection = proxy(Connection.class, (proxy, method, arguments) -> switch (method.getName()) {
+            case "getMetaData" -> metadata;
+            case "close" -> null;
+            default -> defaultValue(method.getReturnType());
+        });
+
+        var tables = reader.listTables(
+                connection,
+                new JdbcConnectionConfig("localhost", 8123, "4a", null, "default", null, Map.of()),
+                new TableQuery(null, null, null, true, 10)
+        );
+
+        assertEquals(new TableIdentifier("4a", null, "jxsl_sys_dept"), tables.tables().getFirst().identifier());
     }
 
     private static Connection connection() {

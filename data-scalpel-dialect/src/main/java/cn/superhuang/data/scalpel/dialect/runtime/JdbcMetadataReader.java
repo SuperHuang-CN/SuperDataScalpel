@@ -91,11 +91,7 @@ final class JdbcMetadataReader {
                     break;
                 }
                 tables.add(new TableSummary(
-                        new TableIdentifier(
-                                resultSet.getString("TABLE_CAT"),
-                                resultSet.getString("TABLE_SCHEM"),
-                                tableName
-                        ),
+                        metadataTableIdentifier(resultSet, tableName),
                         resultSet.getString("TABLE_TYPE"),
                         resultSet.getString("REMARKS")
                 ));
@@ -175,11 +171,7 @@ final class JdbcMetadataReader {
             while (resultSet.next()) {
                 if (table.table().equals(resultSet.getString("TABLE_NAME"))) {
                     return new TableSummary(
-                            new TableIdentifier(
-                                    resultSet.getString("TABLE_CAT"),
-                                    resultSet.getString("TABLE_SCHEM"),
-                                    resultSet.getString("TABLE_NAME")
-                            ),
+                            metadataTableIdentifier(resultSet, resultSet.getString("TABLE_NAME")),
                             resultSet.getString("TABLE_TYPE"),
                             resultSet.getString("REMARKS")
                     );
@@ -187,6 +179,19 @@ final class JdbcMetadataReader {
             }
         }
         return null;
+    }
+
+    private TableIdentifier metadataTableIdentifier(ResultSet resultSet, String tableName) throws SQLException {
+        TableIdentifier identifier = new TableIdentifier(
+                resultSet.getString("TABLE_CAT"),
+                resultSet.getString("TABLE_SCHEM"),
+                tableName
+        );
+        if (dialect.definition().namespaceMode() == NamespaceMode.CATALOG
+                && identifier.catalog() == null && identifier.schema() != null) {
+            return new TableIdentifier(identifier.schema(), null, identifier.table());
+        }
+        return identifier;
     }
 
     private List<ColumnMetadata> readColumns(DatabaseMetaData metadata, TableIdentifier table) throws SQLException {
