@@ -724,9 +724,10 @@ public class FileDatasetService {
         }));
         try {
             List<List<Object>> rows = new ArrayList<>();
+            int effectiveLimit = limit;
             boolean truncated = false;
-            for (int index = 0; index < preparation.inputs().size() && rows.size() < limit; index++) {
-                int remaining = limit - rows.size();
+            for (int index = 0; index < preparation.inputs().size() && rows.size() < effectiveLimit; index++) {
+                int remaining = effectiveLimit - rows.size();
                 FileDatasetParser.ParseResult result = parseContent(preparation.inputs().get(index), remaining);
                 if (!result.previewSupported()) {
                     throw new ResponseStatusException(
@@ -734,11 +735,18 @@ public class FileDatasetService {
                             "至少一个当前来源不支持安全预览，无法返回部分数据"
                     );
                 }
+                Object sourcePreviewLimit = result.sourceMetadata().get("previewRecordLimit");
+                if (sourcePreviewLimit instanceof Number number && number.intValue() > 0) {
+                    effectiveLimit = Math.min(effectiveLimit, number.intValue() + rows.size());
+                }
                 rows.addAll(result.rows().stream()
                         .map(row -> preparation.fields().stream().map(field -> row.get(field.name())).toList())
                         .toList());
                 truncated = result.truncated()
-                        || (rows.size() >= limit && index < preparation.inputs().size() - 1);
+                        || (rows.size() >= effectiveLimit && index < preparation.inputs().size() - 1);
+                if (result.truncated()) {
+                    break;
+                }
             }
             return new FileDatasetPreviewResponse(preparation.fields(), rows, limit, truncated);
         } catch (FileStorageObjectNotFoundException exception) {
