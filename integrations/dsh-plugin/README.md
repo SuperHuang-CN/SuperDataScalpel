@@ -1,8 +1,10 @@
 # DataScalpel DSH 插件
 
-对话 Bridge 与独立多用户验证插件，包名 `@datascalpel/dsh-plugin`，当前版本 `0.5.0`。源码在本目录维护，使用 Node.js 24、TypeScript 和 DSH `0.1.5-rc.1` 的公开插件接口。阶段一接口保留；阶段二为固定 Alice/Bob 提供个人工作区、会话、MCP 身份及受控文件工具，使用方式及边界见[独立验证台](../dsh-playground/README.md)。
+对话 Bridge 与独立多用户验证插件，包名 `@datascalpel/dsh-plugin`，当前版本 `0.6.0`。源码在本目录维护，使用 Node.js 24、TypeScript 和 DSH `0.1.5-rc.1` 的公开插件接口。阶段一接口保留；阶段二为固定 Alice/Bob 提供个人工作区、会话、MCP 身份及受控文件工具，使用方式及边界见[独立验证台](../dsh-playground/README.md)。
 
 `0.5.0` 增加聊天附件上传、截图、原生附件持久化和会话范围内的 `attachment_read`。控制域以新增表和可选字段兼容旧版记录。支持范围、消息契约、视觉模型要求及升级说明见[聊天附件](../../docs/design/dsh-chat-attachments.md)。
+
+`0.6.0` 为 Admin 系统助手启用 DSH 完整原生工具组合、持久 Bash、Skills、网页工具、子智能体、目标／计划／工作流、`run_code` 和 Cordis 运行控制。部署默认权限为 `danger-full-access`；工具明细与平台限制见[助手工具清单](../../docs/design/dsh-assistant-tools.md)。
 
 ## 开发
 

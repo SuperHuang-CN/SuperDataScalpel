@@ -89,7 +89,7 @@ export async function mountAdmin(ctx: Context, config: Config) {
       if (req.method === 'GET' && url.pathname === '/bridge/v3/capabilities') {
         await ready();
         const model = await ctx.llm.resolveModelInfo(config.provider, config.model);
-        return json(res, 200, { enabled: true, ready: true, protocolVersion: '3', pluginVersion: '0.5.0', dshVersion: '0.1.5-rc.1',
+        return json(res, 200, { enabled: true, ready: true, protocolVersion: '3', pluginVersion: '0.6.0', dshVersion: '0.1.5-rc.1',
           capabilities: ['personal-workspace', 'sessions', 'system-mcp', 'events', 'user-questions', 'resume', 'cancel', 'session-management', 'history-cursor', 'chat-attachments'],
           attachments: { maxFileBytes: MAX_ATTACHMENT_BYTES, maxPerMessage: MAX_MESSAGE_ATTACHMENTS,
             imageSupported: model.inputModalities ? model.inputModalities.includes('image') : null,

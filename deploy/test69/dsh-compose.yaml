@@ -7,7 +7,7 @@ services:
     user: root
     environment:
       TZ: Asia/Shanghai
-      DSH_PERMISSION_MODE: workspace-write
+      DSH_PERMISSION_MODE: danger-full-access
       DSH_ADMIN_ENABLED: "true"
       DSH_ADMIN_MCP_URL: http://host.docker.internal:18080/system-mcp
     entrypoint:

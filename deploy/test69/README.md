@@ -51,3 +51,39 @@ AI 助手运行时。先在 linux69 构建 `datascalpel-dsh:0.1.5-rc.1`，再把
 `/data/datascalpel-test69/config/dsh-admin-bridge-token`。Stack 只读挂载该
 密钥文件，Compose 和 Portainer 环境变量不保存秘密值。DSH 的原生配置页面
 发布在 `http://10.0.0.69:13080`，模型凭据在 **Settings → Models** 中配置。
+
+DSH 默认权限为 `danger-full-access`（完全权限）。更新 `dsh-compose.yaml` 后需在
+Portainer 重新部署该 Stack 才会更新容器环境；已有会话保留自己的权限设置。
+权限含义及生效规则见 [DSH 运维说明](../dsh/README.md#运行环境)。
+
+### 更新 DSH 镜像和 Stack
+
+插件或 Preset 更新后，先在 `/data/SuperDataScalpel` 拉取代码并用服务器已有的
+辅助镜像重新构建同名镜像：
+
+```bash
+git pull --ff-only
+docker build --network host --pull=false \
+  --build-arg NODE_IMAGE=datascalpel-node:24-bookworm-slim \
+  --build-arg NODE_BUILD_IMAGE=datascalpel-node-build:24-bookworm \
+  --build-arg NODE_BUILD_TOOLS_PREINSTALLED=true \
+  -f deploy/dsh/Dockerfile \
+  -t datascalpel-dsh:0.1.5-rc.1 .
+docker compose -f deploy/test69/dsh-compose.yaml config --quiet
+```
+
+随后在 Portainer 打开 `datascalpel-test69-dsh` Stack，使用仓库最新的
+`deploy/test69/dsh-compose.yaml` 更新并重新部署。部署时不要选择重新拉取远程镜像，
+否则会覆盖服务器刚构建的同名镜像。不要用普通 `docker compose up` 接管该 Stack，
+不要删除 `/data/datascalpel-test69/dsh/home`、`workspace` 或密钥文件。
+部署后检查：
+
+```bash
+docker inspect --format '{{.State.Status}} / {{if .State.Health}}{{.State.Health.Status}}{{end}}' \
+  datascalpel-test69-dsh
+docker exec datascalpel-test69-dsh node -p \
+  "require('/opt/dsh/node_modules/@datascalpel/dsh-plugin/package.json').version"
+```
+
+结果应为 `running / healthy` 和 `0.6.0`。已有会话保存旧权限事件；如需它们立即
+采用完全权限，在原生页面切换权限，或新建会话。
