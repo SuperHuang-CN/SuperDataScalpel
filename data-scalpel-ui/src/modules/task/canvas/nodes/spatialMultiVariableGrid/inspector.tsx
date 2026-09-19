@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined, DownOutlined, EditOutlined, PlusOutlined, SettingOutlined, UpOutlined,
@@ -45,7 +46,7 @@ const countConditions = (condition: CanvasFilterCondition | null): number => con
     : condition.children.reduce((sum, child) => sum + countConditions(child), 0);
 const fingerprint = (value: SpatialMultiVariableGridConfiguration) => JSON.stringify(value);
 const createVariable = (index: number): SpatialMultiVariableGridVariable => ({
-  variableId: crypto.randomUUID(),
+  variableId: createUuid(),
   sourceTableName: '',
   geometryColumnName: '',
   kind: 'DISTANCE_TO_NEAREST',

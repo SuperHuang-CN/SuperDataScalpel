@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import type { ReactNode } from 'react';
 import { Button, message } from 'antd';
 import { CopyOutlined } from '@ant-design/icons';
@@ -12,7 +13,7 @@ function textOf(node: ReactNode): string {
 function CodeBlock({ children }: { children?: ReactNode }) {
   const [notice, context] = message.useMessage();
   return <div className="dsh-code">{context}<Button type="text" size="small" icon={<CopyOutlined />} aria-label="复制代码" onClick={() => {
-    void navigator.clipboard.writeText(textOf(children)).then(() => notice.success('已复制'), () => notice.error('复制失败'));
+    void writeClipboardText(textOf(children)).then(() => notice.success('已复制'), () => notice.error('复制失败'));
   }} /><pre>{children}</pre></div>;
 }
 export function Markdown({ text }: { text: string }) {

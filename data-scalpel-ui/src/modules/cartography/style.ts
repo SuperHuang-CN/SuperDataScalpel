@@ -1,3 +1,4 @@
+import { createUuid } from '../../shared/browser/createUuid';
 import type {
   CartographyField, ClassBreaksRenderer, ClassBreakVisualChannel, ClassificationMethod, ColorRamp,
   FieldProfile, LineSymbol, NumericRange, PointSymbol, PolygonSymbol, SpatialGeometryFamily,
@@ -50,7 +51,7 @@ const palette = (ramp: ColorRamp, count: number) => {
 };
 
 const rule = (label: string, family: SpatialGeometryFamily, color?: string): StyleRule => ({
-  id: crypto.randomUUID(),
+  id: createUuid(),
   label,
   symbol: color ? recolorSymbol(defaultSymbol(family), color) : defaultSymbol(family),
 });
@@ -64,7 +65,7 @@ export const uniqueRenderer = (
   const colors = palette(ramp, Math.max(1, profile.uniqueValues.length + 1));
   const previous = new Map((existing?.type === 'UNIQUE_VALUE' ? existing.uniqueValueRules : []).map((item) => [item.value, item]));
   const uniqueValueRules: UniqueValueRule[] = profile.uniqueValues.map((item, index) => previous.get(item.value) ?? ({
-    id: crypto.randomUUID(), value: item.value, label: item.value,
+    id: createUuid(), value: item.value, label: item.value,
     symbol: recolorSymbol(defaultSymbol(family), colors[index]),
   }));
   const old = existing?.type === 'UNIQUE_VALUE' ? existing : null;

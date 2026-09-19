@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Modal } from 'antd';
@@ -43,7 +44,7 @@ describe('motion window inspector', () => {
   it('confirms changing legacy meaning and preserves old metrics', async () => {
     const configuration = createTrackMotionStatisticsConfiguration();
     delete configuration.motionSemantics; delete configuration.windowOptions;
-    configuration.metrics = [{ kind: 'BEARING', metricId: crypto.randomUUID(), outputColumnName: 'old_bearing', outputUnit: 'DEGREES' }];
+    configuration.metrics = [{ kind: 'BEARING', metricId: createUuid(), outputColumnName: 'old_bearing', outputUnit: 'DEGREES' }];
     const { ref, apply } = mount(configuration);
     fireEvent.mouseDown(screen.getByRole('combobox', { name: '计算语义' }));
     await userEvent.click(await screen.findByText('观测历史窗口', { selector: '.ant-select-item-option-content' }));

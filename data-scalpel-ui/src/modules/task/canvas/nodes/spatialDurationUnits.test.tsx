@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../shared/browser/createUuid';
 import { cleanup, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, expect, it, vi } from 'vitest';
@@ -23,7 +24,7 @@ it('preserves every typed fixed-week setting including inactive drafts and gates
   const incidents = defaults.createTrackDetectIncidentsConfiguration(); incidents.boundaries.maximumTimeGapUnit = 'WEEKS'; incidents.incidentDurationUnit = 'WEEKS';
   const motion = defaults.createTrackMotionStatisticsConfiguration(); motion.boundaries.maximumTimeGapUnit = 'WEEKS';
   motion.motionSemantics = 'LEGACY_LAG'; motion.windowOptions!.durationUnit = 'WEEKS'; motion.windowOptions!.idleTimeThresholdUnit = 'WEEKS';
-  motion.metrics = [{ metricId: crypto.randomUUID(), kind: 'DURATION', outputColumnName: 'elapsed', outputUnit: 'WEEKS' }];
+  motion.metrics = [{ metricId: createUuid(), kind: 'DURATION', outputColumnName: 'elapsed', outputUnit: 'WEEKS' }];
   const cases: Array<[CanvasNodeType, unknown, string[]]> = [
     [CanvasNodeType.SpatialBinAggregate, { ...defaults.createSpatialBinAggregateConfiguration(), temporalSlicing: slicing }, ['temporalSlicing.intervalUnit', 'temporalSlicing.repeatIntervalUnit']],
     [CanvasNodeType.SpatialSummarizeWithin, { ...defaults.createSpatialSummarizeWithinConfiguration(), temporalSlicing: slicing }, ['temporalSlicing.intervalUnit', 'temporalSlicing.repeatIntervalUnit']],

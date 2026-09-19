@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../../shared/browser/writeClipboardText';
 import { CompactAlert as Alert } from '../../../../shared/components/ContextualFeedback';
 import { CopyOutlined, DownloadOutlined } from '@ant-design/icons';
 import { Button, Input, List, Modal, Space, Statistic, Tag, message } from 'antd';
@@ -27,7 +28,7 @@ export const CanvasDefinitionModal = ({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(content);
+      await writeClipboardText(content);
       message.success('Canvas 定义已复制');
     } catch {
       message.error('复制失败，请手动选择 JSON 内容');

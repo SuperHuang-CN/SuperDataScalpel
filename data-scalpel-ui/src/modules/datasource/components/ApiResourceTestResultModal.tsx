@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CopyOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Input, Modal, Space, Table, message } from 'antd';
@@ -19,7 +20,7 @@ export const ApiResourceTestResultModal = ({ result, resourceName, onClose }: {
       ...(diagnostic?.causes ?? []).map((cause, index) => `Cause ${index + 1}: ${cause.exceptionType}: ${cause.message ?? '—'}`),
     ].filter(Boolean).join('\n');
     try {
-      await navigator.clipboard.writeText(content);
+      await writeClipboardText(content);
       messageApi.success('诊断信息已复制');
     } catch {
       messageApi.error('复制失败，请手动选择');

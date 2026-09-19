@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import {
   ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined, SettingOutlined,
 } from '@ant-design/icons';
@@ -18,7 +19,7 @@ const configuredWrites = (configuration: KafkaOutputConfiguration): KafkaOutputW
   if (configuration.writes?.length) return configuration.writes;
   if (!configuration.sourceTableName && !configuration.topic) return [];
   return [{
-    writeId: crypto.randomUUID(),
+    writeId: createUuid(),
     sourceTableName: configuration.sourceTableName ?? '',
     topic: configuration.topic ?? '',
     valueFormat: null,
@@ -89,7 +90,7 @@ const KafkaOutputCanvasNodeInspector = ({
     if (writes.length >= MAX_STREAMING_WRITES) return;
     const source = validation?.inputTables.find((table) => table.datasetKind === 'UNBOUNDED');
     const write: KafkaOutputWrite = {
-      writeId: crypto.randomUUID(),
+      writeId: createUuid(),
       sourceTableName: source?.name ?? '',
       topic: '',
       valueFormat: 'JSON',

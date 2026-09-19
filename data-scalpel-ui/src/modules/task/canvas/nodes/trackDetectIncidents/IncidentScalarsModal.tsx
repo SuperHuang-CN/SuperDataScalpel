@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Input, InputNumber, Modal, Select, Space, Table, Tooltip, Typography } from 'antd';
 import { useState } from 'react';
@@ -18,7 +19,7 @@ export function IncidentScalarsModal({ value, columns, windows, pointGeometryCol
   onCancel: () => void;
 }) {
   const [rows, setRows] = useState<DraftRow[]>(() => value.map(item => ({
-    key: crypto.randomUUID(), value: { ...item },
+    key: createUuid(), value: { ...item },
   })));
   const errors = incidentScalarErrors(rows.map(row => row.value), columns, windows,
     schemaAvailable, pointGeometryColumnName);
@@ -48,7 +49,7 @@ export function IncidentScalarsModal({ value, columns, windows, pointGeometryCol
           <p>这是 ArcGIS TrackStartTime、TrackDuration、TrackCurrentTime、TrackIndex 与 TrackGeometryWindow 点坐标访问的受控入口，不返回 Geometry 数组，也不执行 Arcade 脚本。</p>
         </>} />
         <Button size="small" aria-label="添加轨迹标量" icon={<PlusOutlined />} onClick={() => setRows(current => [
-          ...current, { key: crypto.randomUUID(), value: { bindingName: '', source: 'TRACK_DURATION' } },
+          ...current, { key: createUuid(), value: { bindingName: '', source: 'TRACK_DURATION' } },
         ])}>添加轨迹标量</Button>
       </Space>
       {count > 0 && <InlineFeedback tone="warning" label={`${count} 个标量配置问题`} detail={errors.flatMap((row, index) => (

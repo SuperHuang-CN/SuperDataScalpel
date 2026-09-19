@@ -1,3 +1,4 @@
+import { createUuid } from '../../../shared/browser/createUuid';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { cancelTaskCompilation, compileCanvasTask } from '../api/taskCompilationApi';
 import type { CanvasDefinition, CanvasExecutionMode } from './canvasTypes';
@@ -119,7 +120,7 @@ export const useCanvasTaskCompilation = ({
     if (settledRequestKeyRef.current === requestKey) return undefined;
 
     const timeout = window.setTimeout(() => {
-      const requestId = crypto.randomUUID();
+      const requestId = createUuid();
       const controller = new AbortController();
       const compilation = { requestId, fingerprint, requestKey, controller };
       activeRef.current = compilation;

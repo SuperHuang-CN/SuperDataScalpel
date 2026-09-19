@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Form, Input, InputNumber, Modal, Segmented, Select, Space, Switch, Tag, Typography } from 'antd';
@@ -206,7 +207,7 @@ const SpatialDensityInspector = ({
           <Button type="primary" size="small" icon={<PlusOutlined />}
             disabled={fieldDrafts.length >= CANVAS_SPATIAL_DENSITY_MAX_FIELDS}
             onClick={() => setFieldDrafts([...fieldDrafts, {
-              fieldId: crypto.randomUUID(), sourceColumnName: '', outputColumnName: '',
+              fieldId: createUuid(), sourceColumnName: '', outputColumnName: '',
             }])}>添加字段</Button>
         </div>
         <Space orientation="vertical" size={6} style={{ width: '100%' }}>

@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import {
   ArrowLeftOutlined,
   CopyOutlined,
@@ -73,7 +74,7 @@ export const TaskRunLogViewer = ({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(content);
+      await writeClipboardText(content);
       messageApi.success('已复制当前日志窗口');
     } catch {
       messageApi.error('复制失败，请手动选择内容复制');

@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import type { TrackMotionStatistic, TrackMotionStatisticGroup, TrackMotionStatisticsConfiguration, TrackMotionWindowOptions } from '../../canvasTypes';
 import { trackDistanceUnitOptions, trackDurationUnitOptions } from '../trackOptions';
 
@@ -63,7 +64,7 @@ export const accelerationUnits = [
   { value: 'METERS_PER_SECOND_SQUARED', label: '米/秒²' }, { value: 'FEET_PER_SECOND_SQUARED', label: '英尺/秒²' },
 ] as const;
 export const createMotionGroup = (group: TrackMotionStatisticGroup) => motionStatisticGroups[group].map(kind => ({
-  statisticId: crypto.randomUUID(), kind, outputColumnName: kind.toLowerCase(),
+  statisticId: createUuid(), kind, outputColumnName: kind.toLowerCase(),
 }));
 export const createMotionWindowOptions = (): TrackMotionWindowOptions => ({
   observationCount: 3, orderByColumns: [], statistics: [...createMotionGroup('DISTANCE'), ...createMotionGroup('SPEED')],

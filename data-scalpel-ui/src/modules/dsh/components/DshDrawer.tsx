@@ -1,3 +1,4 @@
+import { createUuid } from '../../../shared/browser/createUuid';
 import { ArrowLeftOutlined, ExpandOutlined, HistoryOutlined, PaperClipOutlined, PlusOutlined, RobotOutlined, ShrinkOutlined, MoreOutlined, SendOutlined, StopOutlined } from '@ant-design/icons';
 import { Button, Drawer, Dropdown, Empty, Form, Input, Modal, Segmented, Space, Spin, Tag, Tooltip, message } from 'antd';
 import { useEffect, useRef, useState } from 'react';
@@ -62,7 +63,7 @@ export default function DshDrawer({ user, open, onClose }: { user: string; open:
   };
   const choose = (value: Session) => { setSelected(value.sessionId); saveSession(value); setListing(false); setError(''); };
   const create = () => run('create', async () => {
-    creation.current ??= crypto.randomUUID(); const value = await dshApi.create(creation.current);
+    creation.current ??= createUuid(); const value = await dshApi.create(creation.current);
     creation.current = undefined; choose(value); setArchived(false); setOffset(0);
   });
   const changeArchive = (value: Session) => {
@@ -93,7 +94,7 @@ export default function DshDrawer({ user, open, onClose }: { user: string; open:
     run('send',async () => {
       const previous = receipts.current[id];
       if (previous && (previous.text !== text || JSON.stringify(previous.attachmentIds) !== JSON.stringify(attachmentIds))) throw new ApiError('上一条消息结果尚未确认，请先核对历史，再使用原文和原附件重试或确认后开始新消息。',409);
-      const receipt = previous ?? {id:crypto.randomUUID(),text,attachmentIds}; receipts.current[id] = receipt;
+      const receipt = previous ?? {id:createUuid(),text,attachmentIds}; receipts.current[id] = receipt;
       try { await dshApi.send(id,receipt.id,receipt.text,receipt.attachmentIds); }
       catch (failure) {
         if (failure instanceof ApiError && failure.status && !/UNKNOWN|UNCERTAIN/.test(failure.problem?.code ?? '')) delete receipts.current[id];

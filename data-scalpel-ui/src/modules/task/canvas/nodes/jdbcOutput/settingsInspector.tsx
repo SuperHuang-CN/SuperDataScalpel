@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { Button,Form,Select,Space } from 'antd';
 import { useImperativeHandle,type Ref } from 'react';
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
@@ -232,7 +233,7 @@ export const JdbcOutputInspector = ({
         })),
       ),
       writes: [{
-        writeId: node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID(),
+        writeId: node.configuration.writes?.[0]?.writeId ?? createUuid(),
         sourceTableName: values.sourceTableName ?? '', targetTableName: values.targetTableName ?? '',
         writeMode: values.writeMode ?? null,
         upsertKeyColumns: values.writeMode === 'UPSERT' ? parseUpsertKeyColumns(values.upsertKeySelection) : [],

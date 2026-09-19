@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import {
   ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined, SettingOutlined,
 } from '@ant-design/icons';
@@ -17,7 +18,7 @@ const configuredWrites = (configuration: ModelOutputConfiguration): ModelOutputW
   if (configuration.writes?.length) return configuration.writes;
   if (!configuration.sourceTableName && !configuration.targetModelId) return [];
   return [{
-    writeId: crypto.randomUUID(),
+    writeId: createUuid(),
     sourceTableName: configuration.sourceTableName ?? '',
     targetModelId: configuration.targetModelId ?? '',
     writeMode: configuration.writeMode ?? null,
@@ -67,7 +68,7 @@ const ModelOutputCanvasNodeInspector = ({
 
   const addWrite = () => {
     const write: ModelOutputWrite = {
-      writeId: crypto.randomUUID(),
+      writeId: createUuid(),
       sourceTableName: validation?.inputTables[0]?.name ?? '',
       targetModelId: '', writeMode: 'OVERWRITE', columnMappings: [],
     };

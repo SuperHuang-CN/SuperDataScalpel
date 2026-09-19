@@ -1,3 +1,4 @@
+import { createUuid } from '../../../shared/browser/createUuid';
 import { useEffect, useRef, useState } from 'react';
 import { dshApi } from '../api/dsh';
 import type { Attachment, Capabilities } from '../model/types';
@@ -38,7 +39,7 @@ export function useAttachmentDrafts(limits?: Capabilities['attachments']) {
       if (file.size > limits.maxFileBytes) return `${file.name} 超过 ${limits.maxFileBytes / 1024 / 1024} MiB`;
       if (file.name.length > 200) return '文件名最多 200 个字符';
     }
-    const additions: AttachmentDraft[] = files.map(file => ({ key: crypto.randomUUID(), file, state: 'uploading',
+    const additions: AttachmentDraft[] = files.map(file => ({ key: createUuid(), file, state: 'uploading',
       preview: /\.(png|jpe?g|webp|gif)$/i.test(file.name) ? URL.createObjectURL(file) : undefined }));
     update(session, old => [...old, ...additions]);
     for (const draft of additions) void upload(session, draft);

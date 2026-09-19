@@ -17,6 +17,7 @@ import {
   Tooltip,
   Typography,
 } from 'antd';
+import { createUuid } from '../../../../shared/browser/createUuid';
 
 interface ScriptRequestExamplesPanelProps {
   examples: ScriptRequestExample[];
@@ -33,10 +34,7 @@ interface RequestParameterEditorProps {
 }
 
 const createId = (prefix: string) => {
-  const suffix = typeof globalThis.crypto?.randomUUID === 'function'
-    ? globalThis.crypto.randomUUID()
-    : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-  return `${prefix}-${suffix}`;
+  return `${prefix}-${createUuid()}`;
 };
 
 const uniqueExampleName = (examples: ScriptRequestExample[], preferredName: string) => {

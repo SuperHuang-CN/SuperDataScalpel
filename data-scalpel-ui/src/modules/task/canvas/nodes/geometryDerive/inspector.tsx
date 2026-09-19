@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp, InlineFeedback } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -174,7 +175,7 @@ const GeometryDeriveInspector = ({
     setDraftDerivations((current) => [
       ...current,
       {
-        derivationId: crypto.randomUUID(),
+        derivationId: createUuid(),
         kind: null,
         sourceColumnName: '',
         outputColumnName: '',

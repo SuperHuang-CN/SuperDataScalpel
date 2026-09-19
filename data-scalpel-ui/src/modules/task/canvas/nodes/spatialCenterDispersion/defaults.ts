@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import type { SpatialCenterDispersionConfiguration } from "../../canvasTypes";
 
 export const createSpatialCenterDispersionConfiguration = (
@@ -7,7 +8,7 @@ export const createSpatialCenterDispersionConfiguration = (
   featureIdColumnName: null,
   groupByColumns: [],
   weightColumnName: null,
-  analyses: [{ analysisId: crypto.randomUUID(), kind: 'MEAN_CENTER', outputColumnName: 'mean_center', standardDeviations: null, outputTableName: '' }],
+  analyses: [{ analysisId: createUuid(), kind: 'MEAN_CENTER', outputColumnName: 'mean_center', standardDeviations: null, outputTableName: '' }],
   outputTableName: '',
   resultMode: 'ANALYSIS_TABLES',
 });

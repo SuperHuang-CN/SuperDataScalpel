@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import { CopyOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Alert, Button, Input, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
@@ -36,7 +37,7 @@ export const McpServerPage = () => {
         { title: '状态', dataIndex: 'status', width: 110, render: (value: McpServer['status']) => <Tag color={value === 'ENABLED' ? 'success' : value === 'DISABLED' ? 'warning' : 'default'}>{mcpStatusLabels[value]}</Tag> },
         { title: 'Tools', dataIndex: 'toolCount', width: 90 },
         { title: '发布', width: 150, render: (_: unknown, item: McpServer) => <Space size={4}><span>{item.publishedVersion ? `v${item.publishedVersion}` : '未发布'}</span>{item.unpublishedChanges && <Tag color="processing">有改动</Tag>}</Space> },
-        { title: '访问地址', dataIndex: 'endpoint', ellipsis: true, render: (value: string) => <Space size={4}><Typography.Text ellipsis style={{ maxWidth: 260 }}>{value}</Typography.Text><Tooltip title="复制地址"><Button type="text" size="small" icon={<CopyOutlined />} onClick={() => void navigator.clipboard.writeText(value).then(() => messageApi.success('已复制'))}/></Tooltip></Space> },
+        { title: '访问地址', dataIndex: 'endpoint', ellipsis: true, render: (value: string) => <Space size={4}><Typography.Text ellipsis style={{ maxWidth: 260 }}>{value}</Typography.Text><Tooltip title="复制地址"><Button type="text" size="small" icon={<CopyOutlined />} onClick={() => void writeClipboardText(value).then(() => messageApi.success('已复制'))}/></Tooltip></Space> },
         { title: '操作', width: 80, fixed: 'right' as const, render: (_: unknown, item: McpServer) => permissions.has('mcp.update') ? <Button type="text" icon={<EditOutlined />} aria-label="编辑" onClick={() => setEditor(item)}/> : null },
     ];
     return <div className={permissions.has('directory.view') ? 'directory-management-layout' : 'page-stack'}>

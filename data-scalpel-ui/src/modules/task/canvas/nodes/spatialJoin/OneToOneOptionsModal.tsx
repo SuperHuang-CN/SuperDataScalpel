@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -217,7 +218,7 @@ export const OneToOneOptionsModal = ({
                     icon={<PlusOutlined />}
                     disabled={summaryStatistics.length >= 32}
                     onClick={() => add({
-                      statisticId: crypto.randomUUID(),
+                      statisticId: createUuid(),
                       kind: 'SUM',
                       sourceColumnName: numericColumns[0]?.name ?? '',
                       outputColumnName: `summary_${summaryStatistics.length + 1}`,

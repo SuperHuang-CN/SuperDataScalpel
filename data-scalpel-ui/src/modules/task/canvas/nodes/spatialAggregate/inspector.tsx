@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -102,7 +103,7 @@ const fingerprint = (value: SpatialAggregateConfiguration) => JSON.stringify(val
 const createStatistic = (
   columns: CanvasColumnSchema[],
 ): SpatialAggregateStatistic => ({
-  statisticId: crypto.randomUUID(),
+  statisticId: createUuid(),
   kind: 'COUNT_FIELD',
   sourceColumnName: columns[0]?.name ?? '',
   outputColumnName: 'value_count',

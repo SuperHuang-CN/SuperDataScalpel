@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../shared/browser/createUuid';
 import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Empty, Input, List, Modal, Popconfirm, Radio, Space, Tag, Tooltip, Typography } from 'antd';
 import {
@@ -40,7 +41,7 @@ export type ProcessorOperationDraft = {
 
 const createProcessorOperation = (type: CanvasNodeType, sourceTableName: string): ProcessorOperationDraft => {
   const base: ProcessorOperationDraft = {
-    operationId: crypto.randomUUID(),
+    operationId: createUuid(),
     sourceTableName,
     output: { mode: 'REPLACE_SOURCE', outputTableName: null },
   };

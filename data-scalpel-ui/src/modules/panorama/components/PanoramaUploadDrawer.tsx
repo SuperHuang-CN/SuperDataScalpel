@@ -1,3 +1,4 @@
+import { createUuid } from '../../../shared/browser/createUuid';
 import { CameraOutlined, UploadOutlined } from '@ant-design/icons';
 import { useQueries, useQueryClient } from '@tanstack/react-query';
 import { Button, Drawer, Form, List, Space, Tag, TreeSelect, Upload, message } from 'antd';
@@ -56,7 +57,7 @@ export const PanoramaUploadDrawer = ({ onClose, defaultDirectoryId, target }: { 
         <Upload multiple={!target} accept=".jpg,.jpeg" showUploadList={false} disabled={busy || (!!target && items.some(i => i.status === 'accepted'))}
           beforeUpload={file => {
             if (file.size > 100 * 1024 * 1024) { messageApi.error(`${file.name} 超过 100 MiB`); return false; }
-            const item: UploadItem = { file, requestId: crypto.randomUUID(), status: 'waiting' };
+            const item: UploadItem = { file, requestId: createUuid(), status: 'waiting' };
             setItems(current => target ? [item] : [...current, item]); return false;
           }}><Button icon={<UploadOutlined />}>选择成品</Button></Upload>
       </Form.Item>

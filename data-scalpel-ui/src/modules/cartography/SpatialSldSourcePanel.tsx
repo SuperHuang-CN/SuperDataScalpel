@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../shared/browser/writeClipboardText';
 import { CopyOutlined, ExpandOutlined, SearchOutlined } from '@ant-design/icons';
 import { Button, Collapse, Modal, Space, Spin, Tag, Typography, message } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -72,15 +73,11 @@ export const SpatialSldSourcePanel = (props: SpatialSldSourcePanelProps) => {
   const copySource = async () => {
     if (text == null) return;
     try {
-      if (!navigator.clipboard) {
-        void messageApi.info('当前浏览器不支持一键复制，请在源码中全选后复制');
-        (enlarged ? modalEditorRef : editorRef).current?.focus();
-        return;
-      }
-      await navigator.clipboard.writeText(text);
+      await writeClipboardText(text);
       void messageApi.success('SLD 源码已复制');
     } catch {
       void messageApi.error('复制失败，请在源码中选择文本后复制');
+      (enlarged ? modalEditorRef : editorRef).current?.focus();
     }
   };
   const searchSource = () => editorRef.current?.openFind();

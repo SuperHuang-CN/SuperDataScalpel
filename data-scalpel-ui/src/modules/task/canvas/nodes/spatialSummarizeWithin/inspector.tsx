@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { temporalWindowLabel } from '../spatialCalendarWindow';
 import {
@@ -353,7 +354,7 @@ const SpatialSummarizeWithinInspector = ({
               disabled={statisticsDraft.length >= CANVAS_SPATIAL_WITHIN_MAX_STATISTICS}
               onClick={() => {
                 const next = [...statisticsDraft, {
-                  statisticId: crypto.randomUUID(), kind: 'COUNT' as const,
+                  statisticId: createUuid(), kind: 'COUNT' as const,
                   sourceColumnName: null, outputColumnName: 'feature_count',
                 }];
                 setStatisticsDraft(next);

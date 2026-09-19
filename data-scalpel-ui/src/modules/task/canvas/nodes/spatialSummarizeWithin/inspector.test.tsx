@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { Modal } from 'antd';
@@ -11,7 +12,7 @@ import Inspector from './inspector';
 afterEach(() => { Modal.destroyAll(); cleanup(); });
 function mount(kind: 'MEAN' | 'VARIANCE' | 'STDDEV' = 'MEAN') {
   const configuration = createSpatialSummarizeWithinConfiguration();
-  configuration.statistics = [{ statisticId: crypto.randomUUID(), kind, sourceColumnName: 'amount',
+  configuration.statistics = [{ statisticId: createUuid(), kind, sourceColumnName: 'amount',
     outputColumnName: 'weighted', valueTreatment: 'ORIGINAL_VALUE', weighting: 'INTERSECTION_FRACTION' }];
   const ref = createRef<CanvasNodeInspectorHandle>();
   const apply = vi.fn<CanvasNodeInspectorComponentProps<typeof CanvasNodeType.SpatialSummarizeWithin>['onApply']>();

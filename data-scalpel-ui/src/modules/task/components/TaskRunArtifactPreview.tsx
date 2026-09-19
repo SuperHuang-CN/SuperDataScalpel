@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import {
   ArrowLeftOutlined,
   CopyOutlined,
@@ -57,7 +58,7 @@ export const TaskRunArtifactPreview = ({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(display.content);
+      await writeClipboardText(display.content);
       messageApi.success('已复制全部内容');
     } catch {
       messageApi.error('复制失败，请手动选择内容复制');

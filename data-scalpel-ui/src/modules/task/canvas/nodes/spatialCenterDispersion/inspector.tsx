@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Modal, Select, Space, Table, Tag, Typography } from 'antd';
@@ -137,7 +138,7 @@ const SpatialCenterDispersionInspector = ({
     const kind = analysisKinds.find((candidate) => !used.has(candidate));
     if (!kind) return;
     updateAnalyses([...analyses, {
-      analysisId: crypto.randomUUID(),
+      analysisId: createUuid(),
       kind,
       outputColumnName: defaultOutputNames[kind],
       standardDeviations: kind === 'STANDARD_DISTANCE' || kind === 'DIRECTIONAL_ELLIPSE' ? 1 : null,

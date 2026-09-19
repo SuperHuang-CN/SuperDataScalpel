@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import {
   ArrowLeftOutlined,
   AuditOutlined,
@@ -335,12 +336,8 @@ export const DataServiceDetailPage = () => {
       messageApi.error('当前 Revision 尚未成功发布到网关');
       return;
     }
-    if (!navigator.clipboard) {
-      messageApi.error('当前浏览器不支持自动复制，请使用 HTTPS 或 localhost 访问');
-      return;
-    }
     try {
-      await navigator.clipboard.writeText(buildDataServiceCurlCommand(
+      await writeClipboardText(buildDataServiceCurlCommand(
         binding.gatewayUrl,
         '',
         { ...target, accessMode: binding.accessMode },

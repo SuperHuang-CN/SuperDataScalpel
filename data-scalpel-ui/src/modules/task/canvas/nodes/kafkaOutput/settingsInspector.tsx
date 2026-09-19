@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { SearchOutlined } from '@ant-design/icons';
 import { Form,Input,Select,Space,Table,Tag,Typography } from 'antd';
 import { useImperativeHandle,useState,type Ref } from 'react';
@@ -148,7 +149,7 @@ export const KafkaOutputInspector = ({
       })),
     ) : [],
     writes: [{
-      writeId: node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID(),
+      writeId: node.configuration.writes?.[0]?.writeId ?? createUuid(),
       sourceTableName: values.sourceTableName ?? '', topic: values.topic?.trim() ?? '',
       valueFormat: legacyMode ? null : values.valueFormat ?? 'JSON',
       valueColumnNames: legacyMode ? [] : normalizedValueColumnNames(

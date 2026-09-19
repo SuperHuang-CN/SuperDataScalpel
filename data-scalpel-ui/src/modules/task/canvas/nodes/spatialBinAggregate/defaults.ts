@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import type { SpatialBinAggregateConfiguration } from "../../canvasTypes";
 
 export const createSpatialBinAggregateConfiguration = (): SpatialBinAggregateConfiguration => ({
@@ -9,7 +10,7 @@ export const createSpatialBinAggregateConfiguration = (): SpatialBinAggregateCon
   binSizeUnit: 'METERS',
   includeEmptyBins: false,
   statistics: [{
-    statisticId: crypto.randomUUID(),
+    statisticId: createUuid(),
     kind: 'COUNT',
     sourceColumnName: null,
     outputColumnName: 'point_count',

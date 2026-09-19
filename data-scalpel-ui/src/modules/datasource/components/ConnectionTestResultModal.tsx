@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import { CopyOutlined } from '@ant-design/icons';
 import { Button, Descriptions, Input, Modal, Space, message } from 'antd';
@@ -47,7 +48,7 @@ export const ConnectionTestResultModal = ({
 
   const copy = async () => {
     try {
-      await navigator.clipboard.writeText(formatConnectionTestDiagnostic(result, targetLabel));
+      await writeClipboardText(formatConnectionTestDiagnostic(result, targetLabel));
       messageApi.success('连接诊断信息已复制');
     } catch {
       messageApi.error('复制失败，请手动选择诊断信息');

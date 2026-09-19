@@ -1,3 +1,4 @@
+import { createUuid } from '../../../shared/browser/createUuid';
 import { taskPageHref } from '../model/taskViews';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Button, Empty, Form, InputNumber, List, Modal, Select, Space, Spin, Tag, Typography, message } from 'antd';
@@ -68,7 +69,7 @@ function WorkflowEditor({ task, initial, editable = false, canUpdate, canValidat
     messageApi.success(kind === 'save' ? '工作流定义已保存' : kind === 'publish' ? '工作流已发布' : '工作流校验通过');
   }, onError: (error) => messageApi.error(error instanceof ApiError ? error.message : '工作流操作失败') });
   const addNode = () => {
-    const id = crypto.randomUUID();
+    const id = createUuid();
     change({ ...definition, nodes: [...definition.nodes, { id, taskId: '' }] }); setSelection({ nodeId: id });
   };
   const deleteSelected = () => {

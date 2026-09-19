@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../shared/browser/createUuid';
 import { DeleteOutlined, DownOutlined, PlusOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Form, Input, InputNumber, Modal, Select, Space, Switch, Typography } from 'antd';
 import { useRef } from 'react';
@@ -112,7 +113,7 @@ export const TrackSummaryEditor = ({
           <p>STDDEV/VARIANCE 使用样本公式，少于两个有效值时 NULL；SUM/MEAN 的结果类型按 Spark 提升。配置对应 summaryFields；统计结果不会显示在节点卡片。</p></>} /></Space>
       <Button aria-label="添加汇总" size="small" type="primary" icon={<PlusOutlined />} disabled={value.length >= 32}
         onClick={() => onChange([...value, {
-          statisticId: crypto.randomUUID(), kind: 'COUNT', sourceColumnName: null,
+          statisticId: createUuid(), kind: 'COUNT', sourceColumnName: null,
           outputColumnName: `summary_${value.length + 1}`,
         }])}>添加汇总</Button>
     </div>

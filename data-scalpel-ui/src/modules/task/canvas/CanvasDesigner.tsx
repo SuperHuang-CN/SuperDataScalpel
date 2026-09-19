@@ -1,3 +1,4 @@
+import { createUuid } from '../../../shared/browser/createUuid';
 import {
   AimOutlined,
   CloseOutlined,
@@ -126,7 +127,7 @@ const emptyRuntimeData = (type: CanvasNodeType): CanvasNodeRuntimeData => (
 );
 
 const createNode = (graph: Graph, template: CanvasNodeTemplate) => graph.createNode({
-  id: crypto.randomUUID(),
+  id: createUuid(),
   shape: template.shape,
   width: template.width,
   height: template.height,
@@ -380,7 +381,7 @@ const EditableCanvasDesigner = ({
         router: canvasEdgeRouter,
         connector: canvasEdgeConnector,
         createEdge: () => new Shape.Edge({
-          id: crypto.randomUUID(),
+          id: createUuid(),
           router: canvasEdgeRouter,
           connector: canvasEdgeConnector,
         }),

@@ -1,3 +1,4 @@
+import { createUuid } from '../../shared/browser/createUuid';
 import { EditOutlined, FileTextOutlined, UploadOutlined } from '@ant-design/icons';
 import {
   Button, ColorPicker, Divider, Input, InputNumber, Modal, Popover, Radio, Segmented, Select, Slider,
@@ -242,8 +243,8 @@ const RendererEditor = ({ document, family, fields, disabled, onChange, onProfil
       {colorControls}
       <div className="cartography-rule-list">{renderer.uniqueValueRules.map((item, index) => <RuleRow key={item.id} rule={item} value={frequencies[item.value] == null ? item.value : `${item.value} · ${frequencies[item.value].toLocaleString()} 条`} disabled={disabled}
         onChange={(next) => updateRenderer({ ...renderer, uniqueValueRules: renderer.uniqueValueRules.map((rule, ruleIndex) => ruleIndex === index ? next as UniqueValueRule : rule) })} />)}</div>
-      <div className="cartography-toggle-list"><label><Switch checked={renderer.elseRule != null} disabled={disabled} onChange={(checked) => updateRenderer({ ...renderer, elseRule: checked ? { id: crypto.randomUUID(), label: '其他', symbol: defaultSymbol(family) } : null })} /> 显示其他值</label>
-        <label><Switch checked={renderer.nullHandling === 'SEPARATE'} disabled={disabled} onChange={(checked) => updateRenderer({ ...renderer, nullHandling: checked ? 'SEPARATE' : 'OTHER', nullRule: checked ? { id: crypto.randomUUID(), label: '空值', symbol: defaultSymbol(family) } : null })} /> 空值单独显示</label></div>
+      <div className="cartography-toggle-list"><label><Switch checked={renderer.elseRule != null} disabled={disabled} onChange={(checked) => updateRenderer({ ...renderer, elseRule: checked ? { id: createUuid(), label: '其他', symbol: defaultSymbol(family) } : null })} /> 显示其他值</label>
+        <label><Switch checked={renderer.nullHandling === 'SEPARATE'} disabled={disabled} onChange={(checked) => updateRenderer({ ...renderer, nullHandling: checked ? 'SEPARATE' : 'OTHER', nullRule: checked ? { id: createUuid(), label: '空值', symbol: defaultSymbol(family) } : null })} /> 空值单独显示</label></div>
       {renderer.elseRule && <RuleRow rule={renderer.elseRule} value="未列出的值" disabled={disabled} onChange={(elseRule) => updateRenderer({ ...renderer, elseRule })} />}
       {renderer.nullRule && <RuleRow rule={renderer.nullRule} value="NULL" disabled={disabled} onChange={(nullRule) => updateRenderer({ ...renderer, nullRule })} />}
     </>}
@@ -263,7 +264,7 @@ const RendererEditor = ({ document, family, fields, disabled, onChange, onProfil
       }} /></label>)}</div>
       <div className="cartography-rule-list">{renderer.classBreakRules.map((item, index) => <RuleRow key={item.id} rule={item} disabled={disabled}
         onChange={(next) => updateRenderer({ ...renderer, classBreakRules: renderer.classBreakRules.map((rule, ruleIndex) => ruleIndex === index ? next : rule) })} />)}</div>
-      <label><Switch checked={renderer.nullRule != null} disabled={disabled} onChange={(checked) => updateRenderer({ ...renderer, nullRule: checked ? { id: crypto.randomUUID(), label: '空值', symbol: defaultSymbol(family) } : null })} /> 空值单独显示</label>
+      <label><Switch checked={renderer.nullRule != null} disabled={disabled} onChange={(checked) => updateRenderer({ ...renderer, nullRule: checked ? { id: createUuid(), label: '空值', symbol: defaultSymbol(family) } : null })} /> 空值单独显示</label>
       {renderer.nullRule && <RuleRow rule={renderer.nullRule} value="NULL" disabled={disabled} onChange={(nullRule) => updateRenderer({ ...renderer, nullRule })} />}
     </>}
     {profiling && <div className="cartography-inline-state"><Spin size="small" /> 正在分析字段…</div>}

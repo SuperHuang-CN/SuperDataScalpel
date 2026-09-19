@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { EyeOutlined } from '@ant-design/icons';
 import { Button,Form,Select,Space,Tag,Tooltip,Typography } from 'antd';
 import { useImperativeHandle,useState,type Ref } from 'react';
@@ -183,7 +184,7 @@ export const ModelOutputInspector = ({
       })),
     ),
     writes: [{
-      writeId: node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID(),
+      writeId: node.configuration.writes?.[0]?.writeId ?? createUuid(),
       sourceTableName: values.sourceTableName ?? '', targetModelId: values.targetModelId ?? '',
       writeMode: values.writeMode ?? null,
       columnMappings: orderOutputFieldMappings(targetColumns, (values.columnMappings ?? []).map((mapping) => ({ sourceColumnName: mapping.sourceColumnName ?? '', targetColumnName: mapping.targetColumnName ?? '' }))),

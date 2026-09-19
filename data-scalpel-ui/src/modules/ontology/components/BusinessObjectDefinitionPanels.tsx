@@ -1,3 +1,4 @@
+import { createUuid } from '../../../shared/browser/createUuid';
 import {
   ApiOutlined,
   ApartmentOutlined,
@@ -44,7 +45,7 @@ import {
   type BusinessObjectTypeDefinition,
 } from '../model/businessObjectType';
 
-const newId = () => crypto.randomUUID();
+const newId = () => createUuid();
 const simpleCode = (value: string) => value.trim().toLowerCase()
   .replace(/[^a-z0-9]+/g, '_')
   .replace(/^_+|_+$/g, '')

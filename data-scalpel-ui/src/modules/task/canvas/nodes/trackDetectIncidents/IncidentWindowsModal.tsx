@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Input, InputNumber, Modal, Select, Space, Table, Tooltip, Typography } from 'antd';
 import { useState } from 'react';
@@ -14,7 +15,7 @@ export function IncidentWindowsModal({ value, columns, scalars = [], schemaAvail
   schemaAvailable?: boolean;
   onSave: (value: TrackIncidentWindow[]) => void; onCancel: () => void;
 }) {
-  const [rows, setRows] = useState<DraftRow[]>(() => value.map(item => ({ key: crypto.randomUUID(), value: { ...item } })));
+  const [rows, setRows] = useState<DraftRow[]>(() => value.map(item => ({ key: createUuid(), value: { ...item } })));
   const errors = incidentWindowErrors(rows.map(row => row.value), columns, schemaAvailable, pointGeometryColumnName, scalars);
   const count = errors.reduce((sum, row) => sum + Object.keys(row).length, 0);
   const update = (index: number, patch: Partial<TrackIncidentWindow>) => setRows(current => current.map((row, i) =>
@@ -37,7 +38,7 @@ export function IncidentWindowsModal({ value, columns, scalars = [], schemaAvail
           <p>当前值可用“窗口首值 + [0,1)”表达；偏移 n 的 At 值可用“窗口首值 + [n,n+1)”表达，不需要额外保存另一种函数类型。</p>
           <p>这是受控窗口，不执行 Arcade 脚本；完整 Geometry 与时间窗口表达式仍需后续补齐。统计结果类型由 Spark 解析。</p>
         </>} />
-        <Button size="small" aria-label="添加窗口指标" icon={<PlusOutlined />} onClick={() => setRows(current => [...current, { key: crypto.randomUUID(),
+        <Button size="small" aria-label="添加窗口指标" icon={<PlusOutlined />} onClick={() => setRows(current => [...current, { key: createUuid(),
           value: { bindingName: '', sourceColumnName: '', source: 'FIELD', kind: 'MEAN', startOffset: -5, endOffset: 0 } }])}>添加窗口指标</Button>
       </Space>
       {count > 0 && <InlineFeedback tone="warning" label={`${count} 个窗口配置问题`} detail={errors.flatMap((row, index) =>

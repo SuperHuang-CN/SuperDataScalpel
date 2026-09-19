@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
@@ -686,7 +687,7 @@ export const DataSourceDrawer = ({
   const copyJdbcPreview = async () => {
     if (!jdbcPreview) return;
     try {
-      await navigator.clipboard.writeText(jdbcPreview);
+      await writeClipboardText(jdbcPreview);
       messageApi.success('JDBC 连接地址已复制');
     } catch {
       messageApi.error('复制失败，请手动选择连接地址');

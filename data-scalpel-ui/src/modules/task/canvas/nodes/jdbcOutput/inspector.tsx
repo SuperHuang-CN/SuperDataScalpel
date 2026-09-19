@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import {
   ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined, SettingOutlined,
 } from '@ant-design/icons';
@@ -17,7 +18,7 @@ const configuredWrites = (configuration: JdbcOutputConfiguration): JdbcOutputWri
   if (configuration.writes?.length) return configuration.writes;
   if (!configuration.sourceTableName && !configuration.targetTableName) return [];
   return [{
-    writeId: crypto.randomUUID(),
+    writeId: createUuid(),
     sourceTableName: configuration.sourceTableName ?? '',
     targetTableName: configuration.targetTableName ?? '',
     writeMode: configuration.writeMode ?? null,
@@ -84,7 +85,7 @@ const JdbcOutputCanvasNodeInspector = ({
 
   const addWrite = () => {
     const write: JdbcOutputWrite = {
-      writeId: crypto.randomUUID(),
+      writeId: createUuid(),
       sourceTableName: validation?.inputTables[0]?.name ?? '',
       targetTableName: '',
       writeMode: 'OVERWRITE',

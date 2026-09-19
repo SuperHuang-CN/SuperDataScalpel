@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Form, Input, InputNumber, Modal, Segmented, Select, Space, Tag, Typography } from 'antd';
@@ -38,7 +39,7 @@ const outputNameByKind: Record<MetricKind, string> = {
 };
 
 const createMetric = (kind: MetricKind): TrackMotionMetric => {
-  const base = { kind, metricId: crypto.randomUUID(), outputColumnName: outputNameByKind[kind] };
+  const base = { kind, metricId: createUuid(), outputColumnName: outputNameByKind[kind] };
   switch (kind) {
     case 'DISTANCE': case 'ELEVATION_CHANGE': return { ...base, kind, outputUnit: 'METERS' };
     case 'DURATION': return { ...base, kind, outputUnit: 'SECONDS' };

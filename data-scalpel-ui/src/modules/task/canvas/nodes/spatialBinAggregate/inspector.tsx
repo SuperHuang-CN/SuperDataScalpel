@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { temporalWindowLabel } from '../spatialCalendarWindow';
 import {
@@ -335,7 +336,7 @@ const SpatialBinAggregateInspector = ({
               type="primary" size="small" aria-label="添加统计" icon={<PlusOutlined />}
               disabled={statisticsDraft.length >= CANVAS_SPATIAL_BIN_MAX_STATISTICS}
               onClick={() => setStatisticsDraft([...statisticsDraft, {
-                statisticId: crypto.randomUUID(), kind: 'COUNT',
+                statisticId: createUuid(), kind: 'COUNT',
                 sourceColumnName: null, outputColumnName: 'point_count',
               }])}
             >添加统计</Button>

@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { describe, expect, it } from 'vitest';
 import { CANVAS_SCHEMA_MINOR_VERSION, CanvasNodeType } from '../../canvasTypes';
 import { parseCanvasDefinition } from '../../canvasDefinitionIO';
@@ -34,7 +35,7 @@ describe('within explicit statistic contract', () => {
   it('round-trips separate treatment and weight and requires 4.24', () => {
     const configuration = createSpatialSummarizeWithinConfiguration();
     delete configuration.groupResult;
-    configuration.statistics = [{ statisticId: crypto.randomUUID(), kind: 'MEAN', sourceColumnName: 'rate',
+    configuration.statistics = [{ statisticId: createUuid(), kind: 'MEAN', sourceColumnName: 'rate',
       outputColumnName: 'weighted', valueTreatment: 'ORIGINAL_VALUE', weighting: 'INTERSECTION_FRACTION' }];
     const parsed = parseCanvasDefinition(definition(configuration));
     expect(parsed.success).toBe(true);
@@ -48,14 +49,14 @@ describe('within explicit statistic contract', () => {
     expect(parsed.success).toBe(true);
     if (parsed.success) expect(parsed.definition.nodes[0].configuration).toEqual(configuration);
     for (const kind of ['COUNT_FIELD', 'ANY'] as const) {
-      configuration.statistics = [{ statisticId: crypto.randomUUID(), kind, sourceColumnName: 'name', outputColumnName: 'n' }];
+      configuration.statistics = [{ statisticId: createUuid(), kind, sourceColumnName: 'name', outputColumnName: 'n' }];
       expect(parseCanvasDefinition(definition(configuration, 23)).success).toBe(false);
       expect(parseCanvasDefinition(definition(configuration)).success).toBe(true);
     }
   });
   it('rejects unknown structures but keeps invalid combinations editable', () => {
     const configuration = createSpatialSummarizeWithinConfiguration();
-    const statistic = { statisticId: crypto.randomUUID(), kind: 'MEAN' as const, sourceColumnName: '',
+    const statistic = { statisticId: createUuid(), kind: 'MEAN' as const, sourceColumnName: '',
       outputColumnName: '', valueTreatment: 'APPORTION_TOTAL' as const, weighting: 'INTERSECTION_FRACTION' as const };
     configuration.statistics = [statistic];
     expect(parseCanvasDefinition(definition(configuration)).success).toBe(true);

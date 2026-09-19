@@ -1,3 +1,4 @@
+import { writeClipboardText } from '../../../shared/browser/writeClipboardText';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   AuditOutlined,
@@ -361,13 +362,9 @@ export const DataServiceListPanel = ({
       messageApi.error('当前版本尚未成功发布到网关');
       return;
     }
-    if (!navigator.clipboard) {
-      messageApi.error('当前浏览器不支持自动复制，请使用 HTTPS 或 localhost 访问');
-      return;
-    }
     try {
       const detail = await fetchDataService(dataService.id);
-      await navigator.clipboard.writeText(buildDataServiceCurlCommand(
+      await writeClipboardText(buildDataServiceCurlCommand(
         binding.gatewayUrl,
         '',
         { ...detail, accessMode: binding.accessMode },
@@ -379,12 +376,8 @@ export const DataServiceListPanel = ({
   };
 
   const copyAddress = async (address: string, label: string) => {
-    if (!navigator.clipboard) {
-      messageApi.error('当前浏览器不支持自动复制，请使用 HTTPS 或 localhost 访问');
-      return;
-    }
     try {
-      await navigator.clipboard.writeText(address);
+      await writeClipboardText(address);
       messageApi.success(`${label}已复制`);
     } catch {
       messageApi.error('复制失败，请检查浏览器的剪贴板权限');

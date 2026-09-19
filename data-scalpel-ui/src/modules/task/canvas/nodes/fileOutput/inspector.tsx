@@ -1,3 +1,4 @@
+import { createUuid } from '../../../../../shared/browser/createUuid';
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -368,7 +369,7 @@ const FileOutputWriteEditor = ({
   inspectorRef,
 }: CanvasNodeInspectorComponentProps<typeof CanvasNodeType.FileOutput>) => {
   const [form] = Form.useForm<FileOutputFormValues>();
-  const [writeId] = useState(() => node.configuration.writes?.[0]?.writeId ?? crypto.randomUUID());
+  const [writeId] = useState(() => node.configuration.writes?.[0]?.writeId ?? createUuid());
   const [attributeMappings, setAttributeMappings] = useState<ShapefileAttributeMapping[]>(
     node.configuration.formatOptions.type === 'SHAPEFILE'
       ? node.configuration.formatOptions.attributeMappings : [],
@@ -1066,7 +1067,7 @@ const configuredWrites = (configurationValue: FileOutputConfiguration): FileOutp
   if (configurationValue.writes?.length) return configurationValue.writes;
   if (!configurationValue.sourceTableName && !configurationValue.targetPath) return [];
   return [{
-    writeId: crypto.randomUUID(),
+    writeId: createUuid(),
     sourceTableName: configurationValue.sourceTableName ?? '',
     targetPath: configurationValue.targetPath ?? '',
     conflictPolicy: configurationValue.conflictPolicy ?? 'FAIL_IF_EXISTS',
@@ -1150,7 +1151,7 @@ const FileOutputInspector = ({
   const addWrite = () => {
     const sourceTableName = validation?.inputTables[0]?.name ?? '';
     const write: FileOutputWrite = {
-      writeId: crypto.randomUUID(),
+      writeId: createUuid(),
       sourceTableName,
       targetPath: sourceTableName ? `exports/${sourceTableName}` : '',
       conflictPolicy: 'FAIL_IF_EXISTS',
