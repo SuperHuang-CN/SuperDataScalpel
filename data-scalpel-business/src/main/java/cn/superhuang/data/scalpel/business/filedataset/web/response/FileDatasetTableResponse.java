@@ -19,7 +19,7 @@ public record FileDatasetTableResponse(
         UUID fileDatasetId,
         @Schema(description = "逻辑表在所属文件数据集内的稳定技术编码。")
         String code,
-        @Schema(description = "逻辑表显示名称。")
+        @Schema(description = "逻辑表显示名称；首尾无空白、内部连续空白已转换为下划线，并在所属文件数据集内忽略大小写唯一。")
         String name,
         @Schema(description = "表的解析状态：QUEUED 等待解析，PARSING 正在解析，SCHEMA_READY 仅 Schema 可用，READY 同时支持数据预览。")
         FileDatasetParseStatus parseStatus,

@@ -110,6 +110,7 @@ public class FileDatasetService {
     private final FileDatasetContentParser contentParser;
     private final FileDatasetParseJobSubmissionService parseJobSubmissionService;
     private final FileDatasetSchemaValidator schemaValidator;
+    private final FileDatasetTableNamePolicy tableNamePolicy;
     private final TransactionTemplate transactionTemplate;
     private final CanvasFileDatasetReferenceService canvasReferenceService;
 
@@ -129,6 +130,7 @@ public class FileDatasetService {
             FileDatasetContentParser contentParser,
             FileDatasetParseJobSubmissionService parseJobSubmissionService,
             FileDatasetSchemaValidator schemaValidator,
+            FileDatasetTableNamePolicy tableNamePolicy,
             CanvasFileDatasetReferenceService canvasReferenceService,
             PlatformTransactionManager transactionManager
     ) {
@@ -147,6 +149,7 @@ public class FileDatasetService {
         this.contentParser = contentParser;
         this.parseJobSubmissionService = parseJobSubmissionService;
         this.schemaValidator = schemaValidator;
+        this.tableNamePolicy = tableNamePolicy;
         this.canvasReferenceService = canvasReferenceService;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -362,49 +365,42 @@ public class FileDatasetService {
 
     @Transactional
     public void deleteFile(UUID datasetId, UUID fileId) {
-        FileDataset dataset = requireDatasetLocked(datasetId);
+        requireDatasetLocked(datasetId);
         FileDatasetFile initialFile = requireFile(datasetId, fileId);
-        List<FileDatasetTableSource> fileSources =
-                sourceRepository.findBySourceFileIdOrderByCreatedAtAsc(fileId);
-        if (dataset.getType() != FileDatasetType.EXCEL
-                && dataset.getType() != FileDatasetType.GDB
-                && dataset.getType() != FileDatasetType.GPKG
-                && !fileSources.isEmpty()) {
-            throw new ResponseStatusException(
-                    HttpStatus.CONFLICT,
-                    "单表文件请使用逻辑表的数据来源删除接口"
-            );
-        }
-        List<FileDatasetParseJob> nonTerminalJobs =
-                parseJobRepository.findBySourceFileIdAndStatusIn(fileId, NON_TERMINAL_JOB_STATUSES);
         List<FileDatasetTable> initialAffectedTables = tablesForFile(fileId);
         FileDatasetFile file = parseJobSubmissionService.cancelQueuedPreparationAndLockFile(
                 initialFile,
                 "来源文件已经删除",
                 "文件正在执行准备任务，暂不能删除"
         );
-        List<FileDatasetTable> affectedTables = parseJobSubmissionService.cancelQueuedAndLockTables(
+        List<FileDatasetTable> affectedTables = parseJobSubmissionService.cancelQueuedForFileAndLockTables(
                 initialAffectedTables,
+                fileId,
                 "来源文件已经删除",
                 "文件包含正在解析的表，暂不能替换或删除"
         );
-        Set<UUID> tablesToDelete = new HashSet<>();
-        if (dataset.getType() == FileDatasetType.EXCEL || dataset.getType() == FileDatasetType.GDB
-                || dataset.getType() == FileDatasetType.GPKG) {
-            affectedTables.forEach(table -> tablesToDelete.add(table.getId()));
-        } else {
-            nonTerminalJobs.stream()
-                    .filter(job -> job.getLoadMode() == FileDatasetTableSourceLoadMode.INITIAL)
-                    .map(FileDatasetParseJob::getFileDatasetTableId)
-                    .filter(Objects::nonNull)
-                    .forEach(tablesToDelete::add);
+        Map<UUID, List<FileDatasetTableSource>> remainingByTable = new LinkedHashMap<>();
+        if (!affectedTables.isEmpty()) {
+            sourceRepository.findByFileDatasetTableIdInOrderByFileDatasetTableIdAscSourceOrderAsc(
+                    affectedTables.stream().map(FileDatasetTable::getId).toList()
+            ).stream().filter(source -> !fileId.equals(source.getSourceFileId()))
+                    .forEach(source -> remainingByTable
+                            .computeIfAbsent(source.getFileDatasetTableId(), ignored -> new ArrayList<>())
+                            .add(source));
         }
         List<FileDatasetTable> deletedTables = affectedTables.stream()
-                .filter(table -> tablesToDelete.contains(table.getId()))
+                .filter(table -> !remainingByTable.containsKey(table.getId()))
                 .toList();
         ensureTablesUnreferenced(deletedTables.stream().map(FileDatasetTable::getId).toList());
         deleteFields(deletedTables);
         sourceRepository.deleteBySourceFileId(fileId);
+        sourceRepository.flush();
+        for (List<FileDatasetTableSource> remaining : remainingByTable.values()) {
+            for (int index = 0; index < remaining.size(); index++) {
+                remaining.get(index).setSourceOrder(index);
+            }
+            sourceRepository.saveAll(remaining);
+        }
         sourceRepository.flush();
         deletedTables.forEach(tableRepository::delete);
         tableRepository.flush();
@@ -451,9 +447,13 @@ public class FileDatasetService {
 
     @Transactional
     public FileDatasetTableResponse updateTable(UUID datasetId, UUID tableId, UpdateFileDatasetTableRequest request) {
-        requireDataset(datasetId);
-        FileDatasetTable table = requireTable(datasetId, tableId);
-        table.rename(request.name());
+        requireDatasetLocked(datasetId);
+        FileDatasetTable table = tableRepository.findLockedByIdAndFileDatasetId(tableId, datasetId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "文件数据集表不存在"));
+        String normalizedName = tableNamePolicy.normalizeForRequest(
+                datasetId, List.of(request.name()), List.of(tableId)
+        ).getFirst();
+        table.rename(normalizedName);
         tableRepository.saveAndFlush(table);
         return tableResponse(table);
     }
@@ -863,18 +863,23 @@ public class FileDatasetService {
             Set<String> usedCodes,
             List<UUID> jobIds
     ) {
+        List<String> normalizedNames = tableNamePolicy.normalizeForRequest(
+                dataset.getId(), discovered.stream().map(FileDatasetParser.DiscoveredTable::sourceName).toList(), Set.of()
+        );
         List<FileDatasetTable> tables = new ArrayList<>(discovered.size());
-        for (FileDatasetParser.DiscoveredTable discoveredTable : discovered) {
-            String code = uniqueCode(discoveredTable.sourceName(), usedCodes);
+        for (int index = 0; index < discovered.size(); index++) {
+            FileDatasetParser.DiscoveredTable discoveredTable = discovered.get(index);
+            String tableName = normalizedNames.get(index);
+            String code = uniqueCode(tableName, usedCodes);
             FileDatasetTable table = tableRepository.saveAndFlush(FileDatasetTable.create(
-                    dataset.getId(), code, discoveredTable.sourceName()
+                    dataset.getId(), code, tableName
             ));
             String sourceKey = (dataset.getType() == FileDatasetType.EXCEL || dataset.getType() == FileDatasetType.GPKG)
                     ? discoveredTable.sourceName() : SINGLE_TABLE_SOURCE_KEY;
             FileDatasetParseJobSubmissionService.Submission submission =
                     parseJobSubmissionService.enqueueTableValidation(
                             dataset, file, table, FileDatasetTableSourceLoadMode.INITIAL, null,
-                            discoveredTable.sourceName(), sourceKey
+                            tableName, sourceKey
                     );
             jobIds.add(submission.job().getId());
             tables.add(table);

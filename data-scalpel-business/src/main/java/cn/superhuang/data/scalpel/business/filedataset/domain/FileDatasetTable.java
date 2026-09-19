@@ -59,7 +59,7 @@ public class FileDatasetTable extends BaseEntity {
         }
         this.fileDatasetId = fileDatasetId;
         this.code = required(code, "表代码不能为空");
-        this.name = required(name, "表名称不能为空");
+        this.name = FileDatasetTableNames.normalize(name);
         this.parseStatus = FileDatasetParseStatus.QUEUED;
     }
 
@@ -68,7 +68,7 @@ public class FileDatasetTable extends BaseEntity {
     }
 
     public void rename(String name) {
-        this.name = required(name, "表名称不能为空");
+        this.name = FileDatasetTableNames.normalize(name);
     }
 
     public void queueInitialLoad(UUID jobId) {

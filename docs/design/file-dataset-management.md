@@ -41,6 +41,9 @@ Excel、GDB 和 GeoPackage（GPKG）只支持整文件上传或替换。
 
 逻辑表保存稳定 ID、code、名称、权威 Schema 摘要和当前解析状态：
 
+- 同一文件数据集内的名称去除首尾空白、将内部连续空白转换为下划线后忽略大小写唯一；历史重名
+  保持原状，但新增、文件发现和改名不能继续产生冲突；
+
 - `parse_status`：`QUEUED/PARSING/READY/SCHEMA_READY`；
 - `current_load_job_id`：当前唯一装载任务，非空时拒绝第二个装载；
 - `parsed_metadata`：当前来源组合的预览摘要和来源元数据。
@@ -110,6 +113,8 @@ Worker 在事务外读取和校验，在短事务内锁定 Job、文件和表并
 - `REPLACE_SOURCE` 成功事务原地更新来源。
 - 删除来源时，多来源表直接删除并压缩顺序；最后一个来源有下游引用时返回 `409`，无引用时
   删除表和字段。
+- 所有格式都允许删除物理文件。该操作删除文件贡献的全部来源；仍有其他来源的表保留并压缩顺序，
+  失去最后来源的表连同字段删除。只有将被删除的表检查 Canvas 引用。
 - 事务提交后立即删除不再被任何当前来源或非终态 Job 引用的文件记录、原始对象和物化目录。
 - 对象删除失败只记录告警，极少数孤儿对象由技术人员按日志人工处理。
 
@@ -141,6 +146,7 @@ APPEND 不影响已经生成的 Manifest；覆盖、替换和删除会立即删�
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/append` | 追加单文件 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/replace-data` | 全量覆盖 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/replace` | 替换来源 |
+| `POST` | `/api/v1/file-datasets/{datasetId}/files/{fileId}/actions/delete` | 删除物理文件及其贡献的来源，按剩余来源决定是否删除逻辑表 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/sources/{sourceId}/actions/delete` | 删除来源 |
 | `POST` | `/api/v1/file-datasets/{datasetId}/tables/{tableId}/actions/update-spatial-reference` | 确认 SHP/GDB 表的 EPSG 并重新解析 Schema |
 

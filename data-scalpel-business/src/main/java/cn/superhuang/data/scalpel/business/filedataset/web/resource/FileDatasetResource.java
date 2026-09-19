@@ -135,11 +135,11 @@ public class FileDatasetResource {
         return service.replaceFile(id, fileId, file);
     }
 
-    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除物理文件及其逻辑表")
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "删除物理文件及其数据来源")
     @PostMapping("/{id}/files/{fileId}/actions/delete")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     @PreAuthorize("hasAuthority('filedataset.update')")
-    @Operation(summary = "删除物理文件及其逻辑表", description = "EXCEL、GDB、GPKG 整文件可连同其全部逻辑表、字段和来源删除；单表格式已有生效来源时必须改用来源删除接口。关联表被 Canvas 引用或存在 RUNNING 作业时拒绝，QUEUED 作业会取消。数据库删除不可恢复，对象内容在提交后尽力清理，清理失败可能残留孤儿对象。")
+    @Operation(summary = "删除物理文件及其数据来源", description = "所有文件格式均可删除。删除该文件贡献的全部来源；逻辑表仍有其他来源时保留并压实来源顺序，失去最后来源时连同字段一起删除。仅将被删除的表受 Canvas 引用时拒绝；目标文件的 QUEUED 作业会取消，RUNNING 作业或其他文件正在装载受影响表时返回 409。数据库删除不可恢复，对象内容在提交后尽力清理，清理失败可能残留孤儿对象。")
     public void deleteFile(@Parameter(description = "文件数据集 UUID。") @PathVariable UUID id, @Parameter(description = "必须属于该数据集的文件 UUID。") @PathVariable UUID fileId) {
         service.deleteFile(id, fileId);
     }
@@ -192,7 +192,7 @@ public class FileDatasetResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "修改逻辑表名称")
     @PostMapping("/{id}/tables/{tableId}/actions/update")
     @PreAuthorize("hasAuthority('filedataset.update')")
-    @Operation(summary = "修改逻辑表名称", description = "只修改逻辑表的用户可读名称；稳定编码、Schema、来源和解析状态保持不变。")
+    @Operation(summary = "修改逻辑表名称", description = "名称去除首尾空白并将内部连续空白转换为下划线；同一文件数据集内忽略大小写且不能重名。只修改用户可读名称，稳定编码、Schema、来源和解析状态保持不变。")
     public FileDatasetTableResponse updateTable(
             @Parameter(description = "文件数据集 UUID。") @PathVariable UUID id,
             @Parameter(description = "文件数据表 UUID。") @PathVariable UUID tableId,

@@ -127,6 +127,9 @@ public class FileDatasetParseWorker {
                 return ExecutionOutcome.STALE;
             }
             return ExecutionOutcome.SUCCEEDED;
+        } catch (FileDatasetParsingException exception) {
+            preparationService.discard(result.materializedPrefix());
+            return recordFailure(job, exception);
         } catch (RuntimeException exception) {
             log.error(
                     "提交文件准备结果失败，将由租约恢复重试，jobId={}, datasetId={}, fileId={}",

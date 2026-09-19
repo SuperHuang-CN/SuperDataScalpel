@@ -210,6 +210,48 @@ class FileDatasetShpIntegrationTests {
     }
 
     @Test
+    void rejectsASecondShapefileWhoseNormalizedTableNameAlreadyExists() throws Exception {
+        String datasetId = createShpDataset("SHP 名称约束", null, "GB18030");
+        byte[] firstArchive = roadsArchive(
+                temporaryDirectory.resolve("normalized-name-first"), "Road Data", "UTF-8"
+        );
+        String firstUpload = mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(new MockMultipartFile("files", "roads-first.zip", "application/zip", firstArchive)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID firstFileId = UUID.fromString(JsonPath.read(firstUpload, "$.files[0].id"));
+
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.SUCCEEDED, worker.runOne("normalized-name-prepare-1"));
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.SUCCEEDED, worker.runOne("normalized-name-table-1"));
+        FileDatasetTable firstTable = tablesForSourceFile(firstFileId).getFirst();
+        assertEquals("Road_Data", firstTable.getName());
+
+        byte[] duplicateArchive = roadsArchive(
+                temporaryDirectory.resolve("normalized-name-second"), "road_data", "UTF-8"
+        );
+        String duplicateUpload = mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(new MockMultipartFile(
+                                "files", "roads-second.zip", "application/zip", duplicateArchive
+                        )))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID duplicateFileId = UUID.fromString(JsonPath.read(duplicateUpload, "$.files[0].id"));
+        FileDatasetFile duplicateFile = fileRepository.findById(duplicateFileId).orElseThrow();
+        String duplicateObjectKey = duplicateFile.getObjectKey();
+        String duplicateMaterializedPrefix = "file-datasets/materialized/" + duplicateFileId + "/"
+                + duplicateFile.getCurrentPreparationJobId();
+
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.FAILED, worker.runOne("normalized-name-prepare-2"));
+        assertFalse(fileRepository.existsById(duplicateFileId));
+        assertFalse(storage.contains(duplicateObjectKey));
+        assertFalse(storage.containsPrefix(duplicateMaterializedPrefix));
+        assertEquals(List.of(firstTable.getId()), tableRepository.findByFileDatasetIdOrderByCreatedAtAsc(
+                UUID.fromString(datasetId)
+        ).stream().map(FileDatasetTable::getId).toList());
+        assertEquals(1, tableSourceRepository.findAll().size());
+    }
+
+    @Test
     void rejectsMultipleComponentSetsAndDeletesTheTemporaryFile() throws Exception {
         String datasetId = createShpDataset("非法 SHP", null, "GB18030");
         byte[] invalid = twoComponentSetsArchive(temporaryDirectory.resolve("two-sets"));

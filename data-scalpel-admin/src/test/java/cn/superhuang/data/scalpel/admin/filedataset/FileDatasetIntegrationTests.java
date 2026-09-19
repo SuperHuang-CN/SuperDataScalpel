@@ -300,6 +300,96 @@ class FileDatasetIntegrationTests {
     }
 
     @Test
+    void normalizesTableNamesAndRejectsDatasetScopedDuplicatesIgnoringCase() throws Exception {
+        String datasetId = createFileDataset(
+                "名称约束", "CSV", "Road  Data.csv", "text/csv",
+                "id\n1\n".getBytes(StandardCharsets.UTF_8)
+        );
+        String firstTableId = tableId(datasetId);
+        mockMvc.perform(get("/api/v1/file-datasets/{id}/tables/{tableId}", datasetId, firstTableId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Road_Data"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, fileObjectStorage.size());
+
+        mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(filesPart(
+                                "road_data.csv", "text/csv", "id\n2\n".getBytes(StandardCharsets.UTF_8)
+                        )))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("同一文件数据集内已存在同名数据表：road_data"));
+        org.junit.jupiter.api.Assertions.assertEquals(1, fileObjectStorage.size());
+
+        String secondUpload = mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(filesPart(
+                                "other.csv", "text/csv", "id\n3\n".getBytes(StandardCharsets.UTF_8)
+                        )))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        String secondTableId = JsonPath.read(secondUpload, "$.tables[0].id");
+        mockMvc.perform(post(
+                        "/api/v1/file-datasets/{id}/tables/{tableId}/actions/update", datasetId, secondTableId
+                ).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"ROAD DATA\"}"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.detail").value("同一文件数据集内已存在同名数据表：ROAD_DATA"));
+
+        mockMvc.perform(post(
+                        "/api/v1/file-datasets/{id}/tables/{tableId}/actions/update", datasetId, firstTableId
+                ).contentType(MediaType.APPLICATION_JSON).content("{\"name\":\"Renamed Table\"}"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("Renamed_Table"));
+
+        String otherDatasetId = createFileDataset(
+                "另一数据集", "CSV", "road data.csv", "text/csv",
+                "id\n4\n".getBytes(StandardCharsets.UTF_8)
+        );
+        mockMvc.perform(get(
+                        "/api/v1/file-datasets/{id}/tables/{tableId}", otherDatasetId, tableId(otherDatasetId)
+                ))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.name").value("road_data"));
+    }
+
+    @Test
+    void deletingAFileRemovesOnlyItsContributionAndDeletesTheTableAfterTheLastSource() throws Exception {
+        String datasetId = createFileDataset(
+                "文件级删除", "CSV", "roads.csv", "text/csv",
+                "id,name\n1,Old Road\n".getBytes(StandardCharsets.UTF_8)
+        );
+        String tableId = tableId(datasetId);
+        runUntilTableIsReady(tableId);
+        UUID initialFileId = UUID.fromString(fileId(datasetId));
+
+        String append = mockMvc.perform(multipart(
+                        "/api/v1/file-datasets/{id}/tables/{tableId}/actions/append", datasetId, tableId
+                ).file(filePart(
+                        "roads-part.csv", "text/csv",
+                        "id,name\n2,New Road\n".getBytes(StandardCharsets.UTF_8)
+                )))
+                .andExpect(status().isAccepted())
+                .andReturn().getResponse().getContentAsString();
+        UUID appendedFileId = UUID.fromString(JsonPath.read(append, "$.file.id"));
+        runUntilTableIsReady(tableId);
+
+        mockMvc.perform(post(
+                        "/api/v1/file-datasets/{id}/files/{fileId}/actions/delete", datasetId, appendedFileId
+                ))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/v1/file-datasets/{id}/tables/{tableId}", datasetId, tableId))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.sourceCount").value(1))
+                .andExpect(jsonPath("$.totalRowCount").value(1));
+        org.junit.jupiter.api.Assertions.assertFalse(fileDatasetFileRepository.existsById(appendedFileId));
+
+        mockMvc.perform(post(
+                        "/api/v1/file-datasets/{id}/files/{fileId}/actions/delete", datasetId, initialFileId
+                ))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(get("/api/v1/file-datasets/{id}/tables/{tableId}", datasetId, tableId))
+                .andExpect(status().isNotFound());
+        org.junit.jupiter.api.Assertions.assertTrue(fileObjectStorage.isEmpty());
+    }
+
+    @Test
     void validatesDeclaredFormatAgainstTheUploadedOrStoredFileName() throws Exception {
         String datasetId = createEmptyFileDataset("错误格式", "PARQUET");
         mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)

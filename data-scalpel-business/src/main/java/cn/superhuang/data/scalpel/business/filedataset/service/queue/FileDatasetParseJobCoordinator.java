@@ -21,6 +21,7 @@ import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetRep
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableRepository;
 import cn.superhuang.data.scalpel.business.filedataset.repository.FileDatasetTableSourceRepository;
 import cn.superhuang.data.scalpel.business.filedataset.service.FileDatasetParsedMetadata;
+import cn.superhuang.data.scalpel.business.filedataset.service.FileDatasetTableNamePolicy;
 import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetContentParser;
 import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetParser;
 import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetSchemaValidator;
@@ -68,6 +69,7 @@ public class FileDatasetParseJobCoordinator {
     private final FileDatasetFieldRepository fieldRepository;
     private final FileDatasetParseRetryPolicy retryPolicy;
     private final FileDatasetSchemaValidator schemaValidator;
+    private final FileDatasetTableNamePolicy tableNamePolicy;
     private final ObjectProvider<FileObjectStorage> storageProvider;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
@@ -82,6 +84,7 @@ public class FileDatasetParseJobCoordinator {
             FileDatasetFieldRepository fieldRepository,
             FileDatasetParseRetryPolicy retryPolicy,
             FileDatasetSchemaValidator schemaValidator,
+            FileDatasetTableNamePolicy tableNamePolicy,
             ObjectProvider<FileObjectStorage> storageProvider,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
@@ -95,6 +98,7 @@ public class FileDatasetParseJobCoordinator {
         this.fieldRepository = fieldRepository;
         this.retryPolicy = retryPolicy;
         this.schemaValidator = schemaValidator;
+        this.tableNamePolicy = tableNamePolicy;
         this.storageProvider = storageProvider;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
@@ -189,13 +193,13 @@ public class FileDatasetParseJobCoordinator {
             throw new IllegalArgumentException("文件准备成功结果无效");
         }
         return requireResult(transactionTemplate.execute(status -> {
+            FileDataset dataset = datasetRepository.findLockedById(claimedJob.datasetId()).orElse(null);
             FileDatasetParseJob job = jobRepository.findLockedById(claimedJob.jobId()).orElse(null);
             Instant now = Instant.now();
             if (!hasActiveLease(job, claimedJob.workerId(), now)) {
                 return false;
             }
             FileDatasetFile file = fileRepository.findLockedById(job.getSourceFileId()).orElse(null);
-            FileDataset dataset = datasetRepository.findById(job.getFileDatasetId()).orElse(null);
             FileDatasetTable table = job.getFileDatasetTableId() == null
                     ? null : tableRepository.findLockedById(job.getFileDatasetTableId()).orElse(null);
             if (dataset == null || !matchesPreparingFile(file, job)
@@ -205,6 +209,13 @@ public class FileDatasetParseJobCoordinator {
                 removeFailedTemporaryState(job);
                 return false;
             }
+            List<String> normalizedNames = table == null
+                    ? tableNamePolicy.normalizeForParsing(
+                            dataset.getId(),
+                            result.tables().stream().map(FileDatasetPreparationService.DiscoveredTable::sourceName).toList(),
+                            Set.of()
+                    )
+                    : List.of();
             if (result.materializedPrefix() == null) {
                 file.completePreparationWithoutMaterialization(job.getId());
             } else {
@@ -231,13 +242,15 @@ public class FileDatasetParseJobCoordinator {
             Set<String> usedCodes = new HashSet<>();
             tableRepository.findByFileDatasetIdOrderByCreatedAtAsc(dataset.getId())
                     .forEach(existing -> usedCodes.add(existing.getCode()));
-            for (FileDatasetPreparationService.DiscoveredTable discovered : result.tables()) {
+            for (int index = 0; index < result.tables().size(); index++) {
+                FileDatasetPreparationService.DiscoveredTable discovered = result.tables().get(index);
+                String tableName = normalizedNames.get(index);
                 FileDatasetTable discoveredTable = tableRepository.saveAndFlush(FileDatasetTable.create(
-                        dataset.getId(), uniqueCode(discovered.sourceName(), usedCodes), discovered.sourceName()
+                        dataset.getId(), uniqueCode(tableName, usedCodes), tableName
                 ));
                 FileDatasetParseJob validation = createValidationJob(
                         dataset, file, discoveredTable, FileDatasetTableSourceLoadMode.INITIAL, null,
-                        discovered.sourceName(), discovered.sourceKey(), job.getMaxAttempts()
+                        tableName, discovered.sourceKey(), job.getMaxAttempts()
                 );
                 discoveredTable.queueInitialLoad(validation.getId());
                 tableRepository.saveAndFlush(discoveredTable);

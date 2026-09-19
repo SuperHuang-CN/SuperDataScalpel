@@ -199,6 +199,49 @@ public class FileDatasetParseJobSubmissionService {
         return List.copyOf(ordered);
     }
 
+    /**
+     * Locks affected tables while deleting one physical file. A queued load owned by that file is
+     * cancelled; work owned by another file is left intact and blocks deletion.
+     */
+    @Transactional(propagation = Propagation.MANDATORY)
+    public List<FileDatasetTable> cancelQueuedForFileAndLockTables(
+            List<FileDatasetTable> tables,
+            UUID sourceFileId,
+            String reason,
+            String runningConflictMessage
+    ) {
+        Map<UUID, FileDatasetTable> result = new HashMap<>();
+        for (UUID tableId : tables.stream().map(FileDatasetTable::getId).sorted().toList()) {
+            FileDatasetTable table = tableRepository.findLockedById(tableId)
+                    .orElseThrow(() -> conflict("逻辑表状态已经变化，请稍后重试"));
+            UUID jobId = table.getCurrentLoadJobId();
+            if (jobId != null) {
+                FileDatasetParseJob job = jobRepository.findLockedById(jobId)
+                        .orElseThrow(() -> conflict("表装载状态已经变化，请稍后重试"));
+                if (!tableId.equals(job.getFileDatasetTableId())) {
+                    throw conflict("表装载状态已经变化，请稍后重试");
+                }
+                if (!sourceFileId.equals(job.getSourceFileId())) {
+                    throw conflict("逻辑表正在由其他文件装载，暂不能删除当前文件");
+                }
+                if (job.getStatus() == FileDatasetParseJobStatus.RUNNING) {
+                    throw conflict(runningConflictMessage);
+                }
+                if (job.getStatus() != FileDatasetParseJobStatus.QUEUED) {
+                    throw conflict("表装载状态已经变化，请稍后重试");
+                }
+                job.cancel(reason, Instant.now());
+                table.clearCurrentLoad(jobId);
+                jobRepository.save(job);
+                tableRepository.save(table);
+            }
+            result.put(tableId, table);
+        }
+        List<FileDatasetTable> ordered = new ArrayList<>(tables.size());
+        tables.forEach(table -> ordered.add(result.get(table.getId())));
+        return List.copyOf(ordered);
+    }
+
     private void clearTableIfCurrent(FileDatasetParseJob job) {
         if (job.getFileDatasetTableId() == null) {
             return;

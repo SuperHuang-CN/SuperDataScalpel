@@ -93,6 +93,8 @@ const errorMessage = (error: unknown, fallback: string): string => (
   error instanceof ApiError || error instanceof Error ? error.message : fallback
 );
 
+const normalizeTableName = (value: string): string => value.trim().replace(/\s+/gu, '_');
+
 export const FileDatasetTableResultPanel = ({
   dataset,
   table,
@@ -149,12 +151,13 @@ export const FileDatasetTableResultPanel = ({
       okText: '保存',
       cancelText: '取消',
       onOk: async () => {
-        if (!name.trim()) throw new Error('表名称不能为空');
+        const normalizedName = normalizeTableName(name);
+        if (!normalizedName) throw new Error('表名称不能为空');
         try {
           await updateMutation.mutateAsync({
             datasetId: dataset.id,
             tableId: table.id,
-            name: name.trim(),
+            name: normalizedName,
           });
           messageApi.success('表名称已更新');
         } catch (error) {

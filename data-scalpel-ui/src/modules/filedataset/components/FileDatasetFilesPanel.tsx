@@ -100,14 +100,14 @@ export const FileDatasetFilesPanel = ({
   const remove = (file: FileDatasetFile) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
     title: '删除物理文件',
-    content: `确认删除“${file.originalFileName}”及其全部来源表吗？`,
+    content: `确认删除“${file.originalFileName}”吗？该文件贡献的数据来源会一并删除；失去最后来源的数据表也会被永久删除。`,
     okText: '删除',
     cancelText: '取消',
     okButtonProps: { danger: true },
     onOk: async () => {
       try {
         await deleteMutation.mutateAsync({ datasetId: dataset.id, fileId: file.id });
-        messageApi.success('文件及来源表已删除');
+        messageApi.success('文件及数据来源已删除');
         onRefreshTables();
       } catch (error) {
         messageApi.error(error instanceof ApiError ? error.message : '删除文件失败');
@@ -132,8 +132,8 @@ export const FileDatasetFilesPanel = ({
         const moreItems: MenuProps['items'] = canUpdate ? [
           ...(wholeFileReplacementSupported ? [
             { key: 'replace', icon: <SwapOutlined />, label: '替换文件' },
-            { key: 'delete', icon: <DeleteOutlined />, label: '删除文件', danger: true },
           ] : []),
+          { key: 'delete', icon: <DeleteOutlined />, label: '删除文件', danger: true },
         ] : [];
         return (
           <Space size={2}>
