@@ -139,6 +139,9 @@ SHP/GDB/GeoJSON/GEOJSONL/GeoParquet/GPKG 属性预览按当前来源的 `sourceO
 坐标值；任一来源不支持安全预览时整表返回 `409`。GDB 图层可以处于 `SCHEMA_READY`，此时允许
 作为 Canvas 输入但管理端不提供预览。
 
+SHP 的单要素及累计 Geometry 点数预览上限只控制样本预览；完整校验和导入使用 Shapefile Reader
+的正式安全上限。合法要素超过预览点数上限时保留 Schema 并将预览标记为不可用，不得阻断导入。
+
 Canvas Manifest v27 保存逻辑表 Schema、解析参数和有序来源的精确原归档/物化位置及来源键。
 Task Engine 不使用修订号，也不保护旧对象。覆盖或删除会立即移除旧对象，因此旧任务允许以文件
 不存在错误失败。

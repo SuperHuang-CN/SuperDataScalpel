@@ -110,7 +110,7 @@ public class FileDatasetContentParser {
             Charset override = shp.dbfCharsetOverride() == null
                     ? null : Charset.forName(shp.dbfCharsetOverride());
             ShapefileOpenOptions options = new ShapefileOpenOptions(
-                    shapefilePreviewReadLimits,
+                    fullValidation ? ShapefileReadLimits.defaults() : shapefilePreviewReadLimits,
                     override,
                     Charset.forName(shp.dbfFallbackCharset()),
                     false
