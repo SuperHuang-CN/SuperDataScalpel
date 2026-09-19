@@ -102,14 +102,17 @@ export class Sessions {
       if (!stored && record.state === 'READY') fail(500, 'BRIDGE_PERSISTENCE_FAILED', '原生会话记录缺失。');
       const setup = async (agentCtx: Context, agent: Agent) => {
         await this.ctx.agentPresets.mount(agentCtx, record.presetId);
-        agentCtx.tools.presentAs('native');
-        const allowed = ['ask_user_question', ...(this.managed ? ['skill'] : []),
-          ...await this.setupTools?.(agentCtx, record) ?? []];
-        // restrict() masks global tools only; scoped file/MCP tools remain visible.
-        agentCtx.tools.restrict({ allow: ['ask_user_question', ...(this.managed ? ['skill'] : [])] });
-        agentCtx.tools.guard(execution => allowed.includes(execution.name) ? undefined : 'Bridge tool is outside this session capability set');
+        // Expose native schemas plus DSH's generated run_code SDK. The preset
+        // owns native tools; setupTools adds user-scoped file/MCP tools.
+        agentCtx.tools.presentAs('both');
+        const required = ['ask_user_question', ...await this.setupTools?.(agentCtx, record) ?? []];
+        // Hide unrelated host-global tools. Preset and setup registrations are
+        // scoped, so this does not remove the selected capability set.
+        agentCtx.tools.restrict({ allow: ['ask_user_question'] });
         const names = agentCtx.tools.schemas(scopeOf(agentCtx)).map(tool => tool.name);
-        if (names.length !== allowed.length || names.some(name => !allowed.includes(name))) fail(503, 'BRIDGE_NOT_READY', '验证会话工具与允许清单不匹配。');
+        if (required.some(name => !names.includes(name))) fail(503, 'BRIDGE_NOT_READY', '验证会话工具与允许清单不匹配。');
+        const allowed = new Set(names);
+        agentCtx.tools.guard(execution => allowed.has(execution.name) ? undefined : 'Bridge tool is outside this session capability set');
         // Runs before publication/start: restored queued work must never wake on resume.
         agent.inbox.clear();
         agentCtx.on('user-questions/request', (request, next) => request.agent === agent

@@ -17,7 +17,7 @@ services:
       - path: .env.admin
         required: false
     environment:
-      DSH_PERMISSION_MODE: workspace-write
+      DSH_PERMISSION_MODE: danger-full-access
     ports:
       - '127.0.0.1:${DSH_WEB_PORT:-13080}:13080'
     healthcheck:

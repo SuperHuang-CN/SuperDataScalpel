@@ -49,13 +49,15 @@ docker compose -f deploy/dsh/compose.yml down
 
 实际构建版本保存在容器内 `/opt/dsh/runtime-versions.txt` 和 `/opt/dsh/python-versions.txt`。
 
-DSH_HOME 和工作目录分别使用 Compose 数据卷 `datascalpel-dsh_dsh-home`、`datascalpel-dsh_dsh-workspace`。容器通过 `host.docker.internal` 访问宿主机。`datascalpel-admin` Preset 由 Admin Bridge 按当前用户动态注入系统 MCP 凭据；`datascalpel` Preset 供 DSH 原生页面使用，通过独立、可吊销的 `DATASCALPEL_DSH_SYSTEM_MCP_TOKEN` 连接系统 MCP。两者不共享用户凭据。
+DSH_HOME 和工作目录分别使用 Compose 数据卷 `datascalpel-dsh_dsh-home`、`datascalpel-dsh_dsh-workspace`。容器通过 `host.docker.internal` 访问宿主机，第三阶段通过独立 Admin Preset 连接系统 MCP；原生页面的 MCP 不被覆盖；用户在原生页面保存的 MCP 配置由持久化卷保留。
 
-工程的 `skills/` 目录只读挂载到容器内 `/workspace/skills`，例如 `/workspace/skills/datascalpel/SKILL.md`。`datascalpel` 和 `datascalpel-admin` 两个 Preset 都通过 DSH Skill 注册表发现该目录的一层 Skill bundle；宿主机编辑后可直接读取更新，无需重建镜像。更改挂载配置后执行 `docker compose -f deploy/dsh/compose.yml up -d --no-build dsh` 应用，原有配置与工作数据卷保留。
+工程的 `skills/` 目录只读挂载到容器内 `/workspace/skills`，例如 `/workspace/skills/datascalpel/SKILL.md`。`datascalpel-admin` Preset 已将该目录配置为 Skill 发现根；宿主机编辑后，新一轮 Skill 目录读取即可发现更新，无需构建镜像。更改挂载配置后执行 `docker compose -f deploy/dsh/compose.yml up -d --no-build dsh` 应用，原有配置与工作数据卷保留。
 
-Compose 部署默认使用 `workspace-write`。发布版 DSH 的 Linux sandbox 会通过 bubblewrap 创建 private PID namespace 并重新挂载 `/proc`；这要求执行 DSH 的进程为 root，并具有 `CAP_SYS_ADMIN`。Compose 先使用 `cap_drop: ALL` 删除全部 capability，再只加入 `SYS_ADMIN`，同时保留 `no-new-privileges`、回环端口和两个显式数据卷；没有启用 Docker `privileged` 模式。
+镜像、Compose 和 test69 部署默认使用完全权限 `danger-full-access`（`DSH_PERMISSION_MODE`）。DSH 原生实现将其映射为文件沙箱不限制操作、审批策略 `never`；系统助手的完整工具组合由 `datascalpel-admin` Preset 显式提供，系统 MCP 的开放清单与用户 RBAC 仍独立生效。工具明细见[助手工具清单](../../docs/design/dsh-assistant-tools.md)。
 
-`SYS_ADMIN` 是范围很广的 capability，容器内的 root DSH 进程也比普通非 root 容器拥有更大权限。Docker Desktop 的 Linux VM 及显式挂载仍是宿主机边界；当前仅只读挂载工程 `skills/` 子目录及部署补丁，不应挂载 Docker socket、完整宿主机工程目录或其他敏感路径，也不应发布到公网。若不需要 `workspace-write`，可把 `DSH_PERMISSION_MODE` 改回 `danger-full-access`，删除 `user: root` 和 `cap_add`，让 Docker 容器本身作为隔离边界。
+更改默认权限后执行 `docker compose -f deploy/dsh/compose.yml up -d --no-build dsh` 重新创建容器；只执行 `restart` 不会更新环境变量。新会话采用默认权限；原生设置中显式保存的 `permission.defaultPreset` 优先于部署默认值，已有会话的权限事件也会保留，不能把默认值变更视为旧会话的批量迁移。已有原生会话可在页面权限选择器中切换。
+
+保留既有 root、`cap_drop: ALL`、`cap_add: SYS_ADMIN` 和 `no-new-privileges`，以便原生会话仍可切换到 `workspace-write`：发布版 DSH 的 Linux sandbox 通过 bubblewrap 创建 private PID namespace 并挂载 `/proc`，需要 root 与 `CAP_SYS_ADMIN`。当前没有启用 Docker `privileged` 模式；完全权限也不会使只读挂载可写，或让容器访问未挂载的宿主机文件。工程 `skills/` 与部署补丁继续只读挂载。
 
 ## 升级
 
@@ -84,7 +86,7 @@ docker compose -f deploy/dsh/compose.yml up -d --no-build dsh
 
 ## Admin 接入（第三阶段）
 
-镜像包含 `@datascalpel/dsh-plugin@0.5.0`。默认配置不启用真实用户入口；在不提交的 `.env.admin` 中配置：
+镜像包含 `@datascalpel/dsh-plugin@0.6.0`。默认配置不启用真实用户入口；在不提交的 `.env.admin` 中配置：
 
 ```dotenv
 DSH_ADMIN_ENABLED=true

@@ -25,7 +25,7 @@ RUN if [ "$NODE_BUILD_TOOLS_PREINSTALLED" != "true" ]; then \
 COPY deploy/dsh/package.json deploy/dsh/package-lock.json ./
 RUN npm ci --omit=dev \
     && npm cache clean --force
-COPY --from=plugin-build /artifact/datascalpel-dsh-plugin-0.5.0.tgz /tmp/dsh-plugin.tgz
+COPY --from=plugin-build /artifact/datascalpel-dsh-plugin-0.6.0.tgz /tmp/dsh-plugin.tgz
 RUN mkdir -p node_modules/@datascalpel/dsh-plugin \
     && tar -xzf /tmp/dsh-plugin.tgz --strip-components=1 -C node_modules/@datascalpel/dsh-plugin \
     && node node_modules/@datascalpel/dsh-plugin/scripts/check-runtime.mjs \
@@ -95,7 +95,7 @@ COPY --from=node-dependencies /opt/dsh /opt/dsh
 RUN node -p "'@deepseek-ai/dsh@' + require('/opt/dsh/node_modules/@deepseek-ai/dsh/package.json').version" >> /opt/dsh/runtime-versions.txt
 
 ENV DSH_HOME=/home/node/.dsh \
-    DSH_PERMISSION_MODE=workspace-write \
+    DSH_PERMISSION_MODE=danger-full-access \
     PATH=/opt/dsh-python/bin:/opt/dsh/node_modules/.bin:$PATH \
     PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1
