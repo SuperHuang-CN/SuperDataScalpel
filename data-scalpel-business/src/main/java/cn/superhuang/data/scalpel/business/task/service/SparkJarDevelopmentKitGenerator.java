@@ -236,8 +236,10 @@ public class SparkJarDevelopmentKitGenerator {
                 throw failure("GEOMETRY_NOT_SUPPORTED", "JDBC 表包含 Geometry 字段，暂不支持生成开发包：" + table.table());
             TypeMappingResult<PlatformTypeDefinition> mapped = dialectRegistry.require(source.getType().name())
                     .mapToPlatformType(JdbcTypeDescriptor.from(column));
-            if (mapped.quality() != TypeMappingQuality.EXACT || mapped.definition() == null)
-                throw failure("JDBC_TYPE_NOT_EXACT", "JDBC 表字段类型无法精确映射：" + table.table() + "." + column.name());
+            // Local Parquet mocks preserve values but cannot represent physical length or padding constraints.
+            if (mapped.quality() == TypeMappingQuality.UNSUPPORTED || mapped.definition() == null)
+                throw failure("JDBC_TYPE_NOT_EXACT", "JDBC 表字段类型无法映射为开发包 Schema："
+                        + table.table() + "." + column.name());
             PlatformTypeDefinition definition = mapped.definition();
             if (definition.type() == PlatformDataType.GEOMETRY)
                 throw failure("GEOMETRY_NOT_SUPPORTED", "JDBC 表包含 Geometry 字段，暂不支持生成开发包：" + table.table());

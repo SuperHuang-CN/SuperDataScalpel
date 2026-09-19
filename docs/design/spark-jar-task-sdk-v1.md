@@ -185,8 +185,9 @@ TaskRun保存文件名、SHA-256和大小，但不对外返回对象 Key。终�
 
 开发包还可以声明已保存的READ/READ_WRITE `JDBC_DATA_SOURCE`绑定下的物理表。数据源编码只用于页面默认绑定名和
 展示；用户作业始终以绑定名授权访问。每张表独立选择样例范围，表声明与模型样例配置保存为Spark JAR定义上的开发辅助JSON，
-不影响生产任务定义版本、发布状态或运行语义，也不限制生产JAR读取已授权数据源内的其他表。生成器读取真实表元数据，只接受精确的平台类型映射和普通标量/BINARY；
-LOSSY、UNSUPPORTED或Geometry字段会明确失败。
+不影响生产任务定义版本、发布状态或运行语义，也不限制生产JAR读取已授权数据源内的其他表。生成器读取真实表元数据；
+只要方言能够给出普通标量/BINARY平台类型即可生成本地Parquet和Spark Schema，因此接受`EXACT`、`NORMALIZED`以及仍有平台类型定义的`LOSSY`映射，
+`UNSUPPORTED`或Geometry字段会明确失败。该规则只用于本地开发样例，不放宽受管表导入、建表和Schema校验的类型质量要求。
 
 生成任务使用独立的`task_spark_jar_development_kit_job`持久化队列，不复用TaskRun。Worker通过PostgreSQL
 `FOR UPDATE SKIP LOCKED`领取任务并维护租约与心跳；临时故障最多额外重试两次。每个模型最多1,000,000行，ZIP最多
