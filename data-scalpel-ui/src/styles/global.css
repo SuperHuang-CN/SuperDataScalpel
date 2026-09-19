@@ -14495,3 +14495,9 @@ body.model-preview-column-resizing * {
     animation-iteration-count: 1 !important;
   }
 }
+.app-route-error {
+  align-items: center;
+  display: flex;
+  min-height: 100vh;
+  justify-content: center;
+}
