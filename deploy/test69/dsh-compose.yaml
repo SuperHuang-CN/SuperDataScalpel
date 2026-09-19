@@ -15,7 +15,8 @@ services:
       - -ec
       - |
         export DATASCALPEL_DSH_ADMIN_BRIDGE_TOKEN="$$(cat /run/secrets/dsh-admin-bridge-token)"
-        exec dsh web --patch /opt/dsh-config/docker.cordis.patch.yml --no-open
+        export DATASCALPEL_DSH_SYSTEM_MCP_TOKEN="$$(cat /run/secrets/dsh-system-mcp-token)"
+        exec dsh web --patch /opt/dsh-config/docker.cordis.patch.yml --no-open --trusted-host 10.0.0.69:13080
     ports:
       - "10.0.0.69:13080:13080"
     healthcheck:
@@ -32,6 +33,7 @@ services:
       - /data/datascalpel-test69/dsh/home:/home/node/.dsh:Z
       - /data/datascalpel-test69/dsh/workspace:/workspace:Z
       - /data/datascalpel-test69/config/dsh-admin-bridge-token:/run/secrets/dsh-admin-bridge-token:ro,Z
+      - /data/datascalpel-test69/config/dsh-system-mcp-token:/run/secrets/dsh-system-mcp-token:ro,Z
       - /data/SuperDataScalpel/skills:/workspace/skills:ro,Z
       - /data/SuperDataScalpel/deploy/dsh/docker.cordis.patch.yml:/opt/dsh-config/docker.cordis.patch.yml:ro,Z
     extra_hosts:

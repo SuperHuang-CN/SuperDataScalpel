@@ -20,7 +20,20 @@
 - id: ask-user
   name: "@deepseek-ai/dsh-tool-ask-user"
 
-# Native context maintenance stays scoped to this preset; no extra execution tools.
+# Discover the deployment-owned DataScalpel skill mounted read-only at
+# /workspace/skills.  MCP itself is mounted per Admin user by the bridge so its
+# bearer credential never becomes part of this shared preset.
+- id: skill-filesystem
+  name: '@deepseek-ai/dsh-skill-filesystem'
+  config:
+    includeDefaultRoots: false
+    customSkillDirs:
+      - /workspace/skills
+
+- id: tool-skill
+  name: '@deepseek-ai/dsh-tool-skill'
+
+# Native context maintenance stays scoped to this preset.
 - id: compaction
   name: cordis:group
   group: true

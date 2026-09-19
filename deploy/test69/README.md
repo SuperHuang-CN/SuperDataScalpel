@@ -43,11 +43,19 @@ Portainer Stack 环境变量来自 `stack.env.example`；其中
 ```
 
 脚本以前台方式托管五个应用进程，按 `Ctrl+C` 停止应用；Kafka 和 Kong 继续由
-Portainer 管理。
+Portainer 管理。需要从另一个终端停止这五个应用时，在仓库根目录执行：
+
+```bash
+./stop-local-test69.sh
+```
+
+停止脚本可处理缺失或陈旧的 PID 文件；它只停止 Admin、Service Engine、Task
+Engine、Dispatcher 和前端，不停止 Kafka、Kong、DSH 或
+`datascalpel-compute-engine` 容器。重复执行时若应用未启动，会直接成功返回。
 
 `dsh-compose.yaml` 作为独立 Portainer Stack `datascalpel-test69-dsh` 部署
 AI 助手运行时。先在 linux69 构建 `datascalpel-dsh:0.1.5-rc.1`，再把
 `runtime.env` 中的 `DATASCALPEL_DSH_BRIDGE_KEY` 原样写入权限为 `600` 的
 `/data/datascalpel-test69/config/dsh-admin-bridge-token`。Stack 只读挂载该
-密钥文件，Compose 和 Portainer 环境变量不保存秘密值。DSH 的原生配置页面
+密钥文件，Compose 和 Portainer 环境变量不保存秘密值。从系统 MCP 创建绑定指定系统用户的独立访问令牌，将完整秘密以 `600` 权限保存到 `/data/datascalpel-test69/config/dsh-system-mcp-token`；该令牌只供 DSH 原生页面的 `DataScalpel 个人助手` Preset 使用，Admin AI 助手继续按当前用户动态注入托管凭据。DSH 的原生配置页面
 发布在 `http://10.0.0.69:13080`，模型凭据在 **Settings → Models** 中配置。

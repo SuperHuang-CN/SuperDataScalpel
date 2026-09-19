@@ -49,9 +49,9 @@ docker compose -f deploy/dsh/compose.yml down
 
 实际构建版本保存在容器内 `/opt/dsh/runtime-versions.txt` 和 `/opt/dsh/python-versions.txt`。
 
-DSH_HOME 和工作目录分别使用 Compose 数据卷 `datascalpel-dsh_dsh-home`、`datascalpel-dsh_dsh-workspace`。容器通过 `host.docker.internal` 访问宿主机，第三阶段通过独立 Admin Preset 连接系统 MCP；原生页面的 MCP 不被覆盖；用户在原生页面保存的 MCP 配置由持久化卷保留。
+DSH_HOME 和工作目录分别使用 Compose 数据卷 `datascalpel-dsh_dsh-home`、`datascalpel-dsh_dsh-workspace`。容器通过 `host.docker.internal` 访问宿主机。`datascalpel-admin` Preset 由 Admin Bridge 按当前用户动态注入系统 MCP 凭据；`datascalpel` Preset 供 DSH 原生页面使用，通过独立、可吊销的 `DATASCALPEL_DSH_SYSTEM_MCP_TOKEN` 连接系统 MCP。两者不共享用户凭据。
 
-工程的 `skills/` 目录只读挂载到容器内 `/workspace/skills`，例如 `/workspace/skills/datascalpel/SKILL.md`。宿主机编辑后，容器可直接读取更新，无需构建镜像；此挂载只提供文件访问，不代表已配置 DSH 的自动 Skill 发现。更改挂载配置后执行 `docker compose -f deploy/dsh/compose.yml up -d --no-build dsh` 应用，原有配置与工作数据卷保留。
+工程的 `skills/` 目录只读挂载到容器内 `/workspace/skills`，例如 `/workspace/skills/datascalpel/SKILL.md`。`datascalpel` 和 `datascalpel-admin` 两个 Preset 都通过 DSH Skill 注册表发现该目录的一层 Skill bundle；宿主机编辑后可直接读取更新，无需重建镜像。更改挂载配置后执行 `docker compose -f deploy/dsh/compose.yml up -d --no-build dsh` 应用，原有配置与工作数据卷保留。
 
 Compose 部署默认使用 `workspace-write`。发布版 DSH 的 Linux sandbox 会通过 bubblewrap 创建 private PID namespace 并重新挂载 `/proc`；这要求执行 DSH 的进程为 root，并具有 `CAP_SYS_ADMIN`。Compose 先使用 `cap_drop: ALL` 删除全部 capability，再只加入 `SYS_ADMIN`，同时保留 `no-new-privileges`、回环端口和两个显式数据卷；没有启用 Docker `privileged` 模式。
 

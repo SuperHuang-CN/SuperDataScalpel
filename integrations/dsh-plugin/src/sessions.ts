@@ -103,9 +103,10 @@ export class Sessions {
       const setup = async (agentCtx: Context, agent: Agent) => {
         await this.ctx.agentPresets.mount(agentCtx, record.presetId);
         agentCtx.tools.presentAs('native');
-        const allowed = ['ask_user_question', ...await this.setupTools?.(agentCtx, record) ?? []];
+        const allowed = ['ask_user_question', ...(this.managed ? ['skill'] : []),
+          ...await this.setupTools?.(agentCtx, record) ?? []];
         // restrict() masks global tools only; scoped file/MCP tools remain visible.
-        agentCtx.tools.restrict({ allow: ['ask_user_question'] });
+        agentCtx.tools.restrict({ allow: ['ask_user_question', ...(this.managed ? ['skill'] : [])] });
         agentCtx.tools.guard(execution => allowed.includes(execution.name) ? undefined : 'Bridge tool is outside this session capability set');
         const names = agentCtx.tools.schemas(scopeOf(agentCtx)).map(tool => tool.name);
         if (names.length !== allowed.length || names.some(name => !allowed.includes(name))) fail(503, 'BRIDGE_NOT_READY', '验证会话工具与允许清单不匹配。');
