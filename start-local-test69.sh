@@ -165,7 +165,7 @@ export DATASCALPEL_KONG_ADMIN_URL="http://127.0.0.1:18003"
 export DATASCALPEL_KONG_PROXY_URL="http://10.0.0.69:18000"
 export DATASCALPEL_GATEWAY_ACCESS_ENABLED="false"
 export DATASCALPEL_DSH_ENABLED="true"
-export DATASCALPEL_DSH_URL="http://127.0.0.1:13080"
+export DATASCALPEL_DSH_URL="http://10.0.0.69:13080"
 export DATASCALPEL_PUBLIC_BASE_URL="http://10.0.0.69:18080"
 export DATASCALPEL_MCP_PUBLIC_BASE_URL="$DATASCALPEL_PUBLIC_BASE_URL"
 
@@ -176,18 +176,47 @@ export DATASCALPEL_TASK_DISPATCHER_DOCKER_MEMORY="4g"
 export DATASCALPEL_TASK_DISPATCHER_DOCKER_CPUS="2"
 export DATASCALPEL_MAVEN_THREADS="$MAVEN_THREADS"
 
+port_conflicts_with_bind_address() {
+  local bind_address="$1"
+  local port="$2"
+  local listener
+
+  while IFS= read -r listener; do
+    [[ "$listener" == *":$port" ]] || continue
+    if [[ "$bind_address" == "0.0.0.0" \
+      || "$listener" == "0.0.0.0:$port" \
+      || "$listener" == "*:$port" \
+      || "$listener" == "[::]:$port" \
+      || "$listener" == ":::$port" \
+      || "$listener" == "$bind_address:$port" ]]; then
+      return 0
+    fi
+  done < <(ss -ltnH | awk '{print $4}')
+  return 1
+}
+
+check_application_port() {
+  local name="$1"
+  local bind_address="$2"
+  local port="$3"
+
+  if port_conflicts_with_bind_address "$bind_address" "$port"; then
+    echo "test69 $name 监听地址已被占用：$bind_address:$port" >&2
+    exit 1
+  fi
+}
+
 if [[ "$PREPARE_ONLY" == false ]]; then
   docker info >/dev/null 2>&1 || {
     echo "Docker Daemon 不可用。" >&2
     exit 1
   }
 
-  for port in 8081 18080 18091 18092 18887; do
-    if ss -ltnH | awk '{print $4}' | grep -Eq "(^|:)${port}$"; then
-      echo "test69 应用端口已被占用：$port" >&2
-      exit 1
-    fi
-  done
+  check_application_port "服务引擎" "$DATASCALPEL_START_ENGINE_BIND_ADDRESS" "$ENGINE_PORT"
+  check_application_port "后端" "$DATASCALPEL_START_BACKEND_BIND_ADDRESS" "$BACKEND_PORT"
+  check_application_port "Task Engine" "$DATASCALPEL_START_TASK_ENGINE_HOST" "$TASK_ENGINE_PORT"
+  check_application_port "Task Dispatcher" "$DATASCALPEL_START_DISPATCHER_BIND_ADDRESS" "$DISPATCHER_PORT"
+  check_application_port "前端" "$DATASCALPEL_START_FRONTEND_HOST" "$FRONTEND_PORT"
 
   nc -z -w 5 10.0.0.5 5432 || { echo "linux5 PostgreSQL 不可用。" >&2; exit 1; }
   curl --fail --silent --show-error --max-time 5 \
@@ -200,7 +229,7 @@ if [[ "$PREPARE_ONLY" == false ]]; then
     echo "test69 Kong 不可用。" >&2
     exit 1
   }
-  nc -z -w 5 127.0.0.1 13080 || { echo "test69 DSH 不可用。" >&2; exit 1; }
+  nc -z -w 5 10.0.0.69 13080 || { echo "test69 DSH 不可用。" >&2; exit 1; }
 fi
 
 cd "$ROOT_DIR"

@@ -236,6 +236,17 @@ tail -f /data/datascalpel-test69/runtime/start-local-test69.log
 
 日志显示五个组件就绪后，退出 `tail` 不会停止后台应用。
 
+停止五个应用时执行：
+
+```bash
+cd /data/SuperDataScalpel
+./stop-local-test69.sh
+```
+
+停止脚本会校验 PID 文件和进程的 test69 运行标记；PID 文件缺失或陈旧时会安全
+扫描当前仓库的 test69 进程。它不会停止 Kafka、Kong、DSH 或
+`datascalpel-compute-engine` 容器，重复执行也不会报错。
+
 ### 5. 健康检查
 
 ```bash
