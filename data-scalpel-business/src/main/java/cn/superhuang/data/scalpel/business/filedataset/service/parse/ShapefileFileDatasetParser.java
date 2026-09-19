@@ -40,16 +40,25 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
 
     private static final String GEOMETRY_FIELD_BASE = "_geometry";
     private static final String PREVIEW_LIMIT_REASON = "空间几何超过预览安全上限，仅保留 Schema";
+    private static final int POINT_PREVIEW_RECORD_LIMIT = 1_000;
+    private static final int COMPLEX_GEOMETRY_PREVIEW_RECORD_LIMIT = 10;
 
+    private final int maxPreviewGeometryPointsPerFeature;
     private final long maxPreviewTotalGeometryPoints;
 
     public ShapefileFileDatasetParser(
+            @Value("${data-scalpel.file-parsing.shp.max-preview-geometry-points-per-feature:100000}")
+            int maxPreviewGeometryPointsPerFeature,
             @Value("${data-scalpel.file-parsing.shp.max-preview-total-geometry-points:200000}")
             long maxPreviewTotalGeometryPoints
     ) {
+        if (maxPreviewGeometryPointsPerFeature < 1) {
+            throw new IllegalArgumentException("SHP 单要素预览点数上限必须大于零");
+        }
         if (maxPreviewTotalGeometryPoints < 1) {
             throw new IllegalArgumentException("SHP 预览累计点数上限必须大于零");
         }
+        this.maxPreviewGeometryPointsPerFeature = maxPreviewGeometryPointsPerFeature;
         this.maxPreviewTotalGeometryPoints = maxPreviewTotalGeometryPoints;
     }
 
@@ -78,20 +87,25 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
         CrsReference crs = requireCrs(schema, shpConfiguration.epsgCode());
         List<Field> fields = fields(schema, geometryField, crs);
         List<Map<String, Object>> rows = new ArrayList<>();
+        int previewRecordLimit = previewRecordLimit(schema, recordLimit);
         boolean truncated = false;
         long sampledGeometryPointCount = 0;
         try {
             try (ShapefileFeatureCursor cursor = dataset.openCursor(
-                    ShapefileReadOptions.limit(Math.addExact(recordLimit, 1)))) {
+                    ShapefileReadOptions.limit(previewRecordLimit))) {
                 while (cursor.hasNext()) {
                     ShapefileFeature feature = cursor.next();
-                    if (rows.size() == recordLimit) {
+                    long featurePointCount = geometryPointCount(feature.geometry());
+                    if (featurePointCount > maxPreviewGeometryPointsPerFeature) {
+                        if (rows.isEmpty()) {
+                            return schemaOnlyResult(schema, geometryField, fields, crs, previewRecordLimit);
+                        }
                         truncated = true;
                         break;
                     }
-                    long featurePointCount = geometryPointCount(feature.geometry());
                     if (featurePointCount > maxPreviewTotalGeometryPoints - sampledGeometryPointCount) {
-                        return schemaOnlyResult(schema, geometryField, fields, crs);
+                        truncated = true;
+                        break;
                     }
                     sampledGeometryPointCount += featurePointCount;
                     rows.add(row(schema, feature, geometryField));
@@ -99,11 +113,17 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
             }
         } catch (ShapefileException exception) {
             if (exception.errorCode() == ShapefileErrorCode.LIMIT_EXCEEDED) {
-                return schemaOnlyResult(schema, geometryField, fields, crs);
+                if (rows.isEmpty()) {
+                    return schemaOnlyResult(schema, geometryField, fields, crs, previewRecordLimit);
+                }
+                truncated = true;
+            } else {
+                throw exception;
             }
-            throw exception;
         }
+        truncated = truncated || schema.recordCount() > rows.size();
         Map<String, Object> metadata = sourceMetadata(schema, geometryField, true, crs);
+        addPreviewLimits(metadata, previewRecordLimit);
         metadata.put("sampledGeometryPointCount", sampledGeometryPointCount);
         return new ParseResult(fields, rows, truncated, true, metadata);
     }
@@ -123,9 +143,11 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
         CrsReference crs = requireCrs(schema, shpConfiguration.epsgCode());
         List<Field> fields = fields(schema, geometryField, crs);
         List<Map<String, Object>> rows = new ArrayList<>();
+        int previewRecordLimit = previewRecordLimit(schema, previewLimit);
         long scanned = 0;
         long previewGeometryPoints = 0;
         boolean previewSupported = true;
+        boolean samplingStopped = false;
         if (schema.recordCount() > Integer.MAX_VALUE) {
             throw new FileDatasetParsingException("SHP 记录数超过当前完整校验能力");
         }
@@ -135,13 +157,19 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
                 while (cursor.hasNext()) {
                     ShapefileFeature feature = cursor.next();
                     scanned++;
-                    if (rows.size() >= previewLimit || !previewSupported) {
+                    if (rows.size() >= previewRecordLimit || samplingStopped) {
                         continue;
                     }
                     long points = geometryPointCount(feature.geometry());
+                    if (points > maxPreviewGeometryPointsPerFeature) {
+                        if (rows.isEmpty()) {
+                            previewSupported = false;
+                        }
+                        samplingStopped = true;
+                        continue;
+                    }
                     if (points > maxPreviewTotalGeometryPoints - previewGeometryPoints) {
-                        previewSupported = false;
-                        rows.clear();
+                        samplingStopped = true;
                         continue;
                     }
                     previewGeometryPoints += points;
@@ -152,10 +180,10 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
         Map<String, Object> metadata = sourceMetadata(schema, geometryField, previewSupported, crs);
         metadata.put("shapeHasZ", schema.shapeType().hasZ());
         metadata.put("shapeHasM", schema.shapeType().hasM());
+        addPreviewLimits(metadata, previewRecordLimit);
         metadata.put("sampledGeometryPointCount", previewGeometryPoints);
         if (!previewSupported) {
             metadata.put("previewUnavailableReason", PREVIEW_LIMIT_REASON);
-            metadata.put("maxPreviewTotalGeometryPoints", maxPreviewTotalGeometryPoints);
         }
         return new ParseResult(
                 fields, rows, scanned > rows.size(), previewSupported, metadata, scanned
@@ -166,12 +194,26 @@ public class ShapefileFileDatasetParser implements FileDatasetParser {
             ShapefileSchema schema,
             String geometryField,
             List<Field> fields,
-            CrsReference crs
+            CrsReference crs,
+            int previewRecordLimit
     ) {
         Map<String, Object> metadata = sourceMetadata(schema, geometryField, false, crs);
+        addPreviewLimits(metadata, previewRecordLimit);
         metadata.put("previewUnavailableReason", PREVIEW_LIMIT_REASON);
-        metadata.put("maxPreviewTotalGeometryPoints", maxPreviewTotalGeometryPoints);
         return new ParseResult(fields, List.of(), false, false, metadata);
+    }
+
+    private static int previewRecordLimit(ShapefileSchema schema, int requestedLimit) {
+        int shapeLimit = geometryKind(schema) == GeometryKind.POINT
+                ? POINT_PREVIEW_RECORD_LIMIT
+                : COMPLEX_GEOMETRY_PREVIEW_RECORD_LIMIT;
+        return Math.min(requestedLimit, shapeLimit);
+    }
+
+    private void addPreviewLimits(Map<String, Object> metadata, int previewRecordLimit) {
+        metadata.put("previewRecordLimit", previewRecordLimit);
+        metadata.put("maxPreviewGeometryPointsPerFeature", maxPreviewGeometryPointsPerFeature);
+        metadata.put("maxPreviewTotalGeometryPoints", maxPreviewTotalGeometryPoints);
     }
 
     private static List<Field> fields(

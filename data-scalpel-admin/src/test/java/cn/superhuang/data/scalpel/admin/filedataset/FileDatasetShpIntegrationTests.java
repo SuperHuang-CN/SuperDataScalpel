@@ -80,7 +80,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @ActiveProfiles("test")
 @SpringBootTest(properties = {
         "data-scalpel.file-parsing.shp.max-preview-geometry-points-per-feature=10",
-        "data-scalpel.file-parsing.shp.max-preview-total-geometry-points=6"
+        "data-scalpel.file-parsing.shp.max-preview-total-geometry-points=50"
 })
 @Import(FileDatasetShpIntegrationTests.StorageConfiguration.class)
 class FileDatasetShpIntegrationTests {
@@ -184,6 +184,7 @@ class FileDatasetShpIntegrationTests {
                 .andExpect(jsonPath("$.sourceMetadata.dbfFields[0].name").value("_geometry"))
                 .andExpect(jsonPath("$.sourceMetadata.dbfFields[0].length").value(20))
                 .andExpect(jsonPath("$.sourceMetadata.geometryField").value("_geometry_1"))
+                .andExpect(jsonPath("$.sourceMetadata.previewRecordLimit").value(1000))
                 .andExpect(jsonPath("$.sourceMetadata.spatialReference.wkt").value("LOCAL_CS[\"fixture\"]"));
         mockMvc.perform(get("/api/v1/file-datasets/{id}/tables/{tableId}/preview", datasetId, roadsTableId))
                 .andExpect(status().isOk())
@@ -320,7 +321,8 @@ class FileDatasetShpIntegrationTests {
                 .andExpect(jsonPath("$.previewSupported").value(false))
                 .andExpect(jsonPath("$.sourceMetadata.previewUnavailableReason")
                         .value("空间几何超过预览安全上限，仅保留 Schema"))
-                .andExpect(jsonPath("$.sourceMetadata.maxPreviewTotalGeometryPoints").value(6));
+                .andExpect(jsonPath("$.sourceMetadata.maxPreviewGeometryPointsPerFeature").value(10))
+                .andExpect(jsonPath("$.sourceMetadata.maxPreviewTotalGeometryPoints").value(50));
         mockMvc.perform(get(
                         "/api/v1/file-datasets/{id}/tables/{tableId}/schema", datasetId, table.getId()
                 ))
@@ -332,6 +334,36 @@ class FileDatasetShpIntegrationTests {
                 ))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.detail").value("空间几何超过预览安全上限，仅保留 Schema"));
+    }
+
+    @Test
+    void limitsPolygonPreviewToTenRecordsWithoutDiscardingTheSample() throws Exception {
+        String datasetId = createShpDataset("面预览限制", null, "GB18030");
+        byte[] archive = repeatedPolygonArchive(temporaryDirectory.resolve("polygon-preview"), "polygons", 11);
+        String upload = mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(new MockMultipartFile("files", "polygons.zip", "application/zip", archive)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID fileId = UUID.fromString(JsonPath.read(upload, "$.files[0].id"));
+
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.SUCCEEDED, worker.runOne("polygon-preview-prepare"));
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.SUCCEEDED, worker.runOne("polygon-preview-table"));
+        FileDatasetTable table = tablesForSourceFile(fileId).getFirst();
+
+        mockMvc.perform(get("/api/v1/file-datasets/{id}/tables/{tableId}", datasetId, table.getId()))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parseStatus").value("READY"))
+                .andExpect(jsonPath("$.previewSupported").value(true))
+                .andExpect(jsonPath("$.sourceMetadata.previewRecordLimit").value(10))
+                .andExpect(jsonPath("$.sourceMetadata.sampledGeometryPointCount").value(50));
+        mockMvc.perform(get(
+                        "/api/v1/file-datasets/{id}/tables/{tableId}/preview", datasetId, table.getId()
+                ).param("limit", "50"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.rows.length()").value(10))
+                .andExpect(jsonPath("$.rows[0][0]").value("Building 1"))
+                .andExpect(jsonPath("$.rows[9][0]").value("Building 10"))
+                .andExpect(jsonPath("$.truncated").value(true));
     }
 
     @Test
@@ -495,6 +527,27 @@ class FileDatasetShpIntegrationTests {
                         null
                 ), false, "Oversized")
                 .write();
+        return zipComponents(directory);
+    }
+
+    private static byte[] repeatedPolygonArchive(Path directory, String name, int recordCount) throws IOException {
+        TestShapefileBuilder builder = new TestShapefileBuilder(
+                directory,
+                name,
+                ShapefileShapeType.POLYGON,
+                new ShapefileEnvelope(0, 0, 1, 1, 0, 0, 0, 0)
+        ).field("name", 'C', 20, 0);
+        for (int index = 1; index <= recordCount; index++) {
+            builder.record(TestShapefileBuilder.multipart(
+                    ShapefileShapeType.POLYGON,
+                    new int[]{5},
+                    new double[]{0, 1, 1, 0, 0},
+                    new double[]{0, 0, 1, 1, 0},
+                    null,
+                    null
+            ), false, "Building " + index);
+        }
+        builder.write();
         return zipComponents(directory);
     }
 

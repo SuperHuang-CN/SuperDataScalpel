@@ -140,7 +140,10 @@ SHP/GDB/GeoJSON/GEOJSONL/GeoParquet/GPKG 属性预览按当前来源的 `sourceO
 作为 Canvas 输入但管理端不提供预览。
 
 SHP 的单要素及累计 Geometry 点数预览上限只控制样本预览；完整校验和导入使用 Shapefile Reader
-的正式安全上限。合法要素超过预览点数上限时保留 Schema 并将预览标记为不可用，不得阻断导入。
+的正式安全上限。一个逻辑表按来源顺序累计预览：Point 最多保留 1000 条，Polyline、Polygon 和
+MultiPoint 最多保留 10 条。达到条数或累计点数上限时保留已有样本并标记截断，不跳到后续来源
+补足样本。只有预览窗口中的首个 Geometry 超过单要素点数上限时才保留 Schema 并将预览标记为
+不可用，不得阻断导入。
 
 Canvas Manifest v27 保存逻辑表 Schema、解析参数和有序来源的精确原归档/物化位置及来源键。
 Task Engine 不使用修订号，也不保护旧对象。覆盖或删除会立即移除旧对象，因此旧任务允许以文件
