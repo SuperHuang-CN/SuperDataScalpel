@@ -24,7 +24,9 @@ describe('file dataset list model', () => {
   it('defines type-specific defaults and accepted file extensions', () => {
     expect(defaultFileDatasetParsingOptions('EXCEL')).toEqual({ kind: 'SPREADSHEET', headerRowIndex: 0, dataStartRowIndex: 1 });
     expect(defaultFileDatasetParsingOptions('GDB')).toEqual({ kind: 'GDB' });
-    expect(defaultFileDatasetParsingOptions('SHP')).toEqual({ kind: 'SHP', dbfFallbackCharset: 'GB18030' });
+    expect(defaultFileDatasetParsingOptions('SHP')).toEqual({
+      kind: 'SHP', dbfFallbackCharset: 'GB18030', zipEntryCharset: 'UTF-8',
+    });
     expect(fileDatasetAccept('EXCEL')).toBe('.xls,.xlsx');
     expect(fileDatasetAccept('GDB')).toBe('.zip');
     expect(fileDatasetAccept('SHP')).toBe('.zip');

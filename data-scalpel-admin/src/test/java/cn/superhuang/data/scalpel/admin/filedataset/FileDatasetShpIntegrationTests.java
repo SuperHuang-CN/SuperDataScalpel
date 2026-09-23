@@ -48,6 +48,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.ByteBuffer;
+import java.nio.charset.Charset;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -263,6 +264,11 @@ class FileDatasetShpIntegrationTests {
         String objectKey = fileRepository.findById(UUID.fromString(fileId)).orElseThrow().getObjectKey();
 
         assertEquals(FileDatasetParseWorker.ExecutionOutcome.FAILED, worker.runOne("invalid-shp"));
+        assertTrue(jobRepository.findAll().stream().anyMatch(job ->
+                job.getErrorMessage() != null
+                        && job.getErrorMessage().contains("ZIP 中发现不同名称的 SHP 组件")
+                        && job.getErrorMessage().contains("wrapper/roads.")
+                        && job.getErrorMessage().contains("wrapper/lakes.")));
         mockMvc.perform(get("/api/v1/file-datasets/{id}/files", datasetId))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.content.length()").value(0));
@@ -274,6 +280,66 @@ class FileDatasetShpIntegrationTests {
                         "/api/v1/file-datasets/{id}/files/{fileId}/actions/prepare", datasetId, fileId
                 ))
                 .andExpect(status().isNotFound());
+    }
+
+    @Test
+    void acceptsGb18030ZipEntryNamesWhenSelectedAndRejectsTheDefaultEncoding() throws Exception {
+        String datasetId = createShpDataset("中文 ZIP 文件名", null, "GB18030");
+        Path directory = temporaryDirectory.resolve("gb18030-names");
+        roadsArchive(directory, "乡镇", "UTF-8");
+        byte[] archive = zipComponents(directory, Charset.forName("GB18030"));
+
+        String upload = mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(new MockMultipartFile("files", "towns.zip", "application/zip", archive)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID failedFileId = UUID.fromString(JsonPath.read(upload, "$.files[0].id"));
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.FAILED, worker.runOne("wrong-zip-charset"));
+        assertFalse(fileRepository.existsById(failedFileId));
+        assertEquals(0, storage.materializedObjectCount());
+        assertTrue(jobRepository.findAll().stream().anyMatch(job ->
+                job.getSourceFileId().equals(failedFileId)
+                        && job.getErrorMessage().contains("文件名")));
+
+        mockMvc.perform(post("/api/v1/file-datasets/{id}/actions/update", datasetId)
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {
+                                  "name":"中文 ZIP 文件名",
+                                  "parsingOptions":{
+                                    "kind":"SHP",
+                                    "dbfFallbackCharset":"GB18030",
+                                    "zipEntryCharset":"GB18030"
+                                  }
+                                }
+                                """))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.parsingOptions.zipEntryCharset").value("GB18030"));
+        mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(new MockMultipartFile("files", "towns.zip", "application/zip", archive)))
+                .andExpect(status().isCreated());
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.SUCCEEDED, worker.runOne("gb18030-prepare"));
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.SUCCEEDED, worker.runOne("gb18030-validate"));
+        assertEquals("乡镇", tableSourceRepository.findAll().getFirst().getSourceName());
+    }
+
+    @Test
+    void rejectsAComponentWithIncorrectZipCrcAndCleansPublishedObjects() throws Exception {
+        String datasetId = createShpDataset("损坏 SHP ZIP", null, "GB18030");
+        byte[] archive = roadsArchive(temporaryDirectory.resolve("bad-crc"), "roads", "UTF-8");
+        corruptCentralDirectoryCrc(archive, "roads.shp");
+        String upload = mockMvc.perform(multipart("/api/v1/file-datasets/{id}/files", datasetId)
+                        .file(new MockMultipartFile("files", "bad-crc.zip", "application/zip", archive)))
+                .andExpect(status().isCreated())
+                .andReturn().getResponse().getContentAsString();
+        UUID fileId = UUID.fromString(JsonPath.read(upload, "$.files[0].id"));
+
+        assertEquals(FileDatasetParseWorker.ExecutionOutcome.FAILED, worker.runOne("bad-crc"));
+        assertTrue(jobRepository.findAll().stream().anyMatch(job ->
+                job.getSourceFileId().equals(fileId)
+                        && job.getErrorMessage().contains("CRC")));
+        assertFalse(fileRepository.existsById(fileId));
+        assertEquals(0, storage.materializedObjectCount());
     }
 
     @Test
@@ -594,24 +660,40 @@ class FileDatasetShpIntegrationTests {
     }
 
     private static byte[] twoComponentSetsArchive(Path directory) throws IOException {
-        Path roads = Files.createDirectories(directory.resolve("roads"));
-        Path lakes = Files.createDirectories(directory.resolve("lakes"));
-        polygonArchive(roads, "roads");
-        polygonArchive(lakes, "lakes");
+        polygonArchive(directory, "roads");
+        polygonArchive(directory, "lakes");
+        return zipComponents(directory);
+    }
+
+    private static byte[] zipComponents(Path directory) throws IOException {
+        return zipComponents(directory, StandardCharsets.UTF_8);
+    }
+
+    private static byte[] zipComponents(Path directory, Charset charset) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try (ZipOutputStream zip = new ZipOutputStream(output)) {
-            addDirectory(zip, roads, "roads");
-            addDirectory(zip, lakes, "lakes");
+        try (ZipOutputStream zip = new ZipOutputStream(output, charset)) {
+            addDirectory(zip, directory, "wrapper");
         }
         return output.toByteArray();
     }
 
-    private static byte[] zipComponents(Path directory) throws IOException {
-        ByteArrayOutputStream output = new ByteArrayOutputStream();
-        try (ZipOutputStream zip = new ZipOutputStream(output)) {
-            addDirectory(zip, directory, "wrapper");
+    private static void corruptCentralDirectoryCrc(byte[] archive, String fileName) {
+        for (int offset = 0; offset < archive.length - 46; offset++) {
+            if (archive[offset] != 'P' || archive[offset + 1] != 'K'
+                    || archive[offset + 2] != 1 || archive[offset + 3] != 2) {
+                continue;
+            }
+            int nameLength = (archive[offset + 28] & 0xff) | ((archive[offset + 29] & 0xff) << 8);
+            if (offset + 46 + nameLength > archive.length) {
+                continue;
+            }
+            String name = new String(archive, offset + 46, nameLength, StandardCharsets.UTF_8);
+            if (name.endsWith(fileName)) {
+                archive[offset + 16] ^= 1;
+                return;
+            }
         }
-        return output.toByteArray();
+        throw new IllegalStateException("测试 ZIP 中找不到组件：" + fileName);
     }
 
     private static void addDirectory(ZipOutputStream zip, Path directory, String archiveDirectory) throws IOException {

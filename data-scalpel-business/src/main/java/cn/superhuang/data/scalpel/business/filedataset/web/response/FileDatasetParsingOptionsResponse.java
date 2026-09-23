@@ -61,7 +61,8 @@ public sealed interface FileDatasetParsingOptionsResponse permits
             case FileDatasetParsingOptionsRequest.Avro ignored -> new Avro();
             case FileDatasetParsingOptionsRequest.Gdb value -> new Gdb(value.epsgCode());
             case FileDatasetParsingOptionsRequest.Shp value -> new Shp(
-                    value.dbfCharsetOverride(), value.dbfFallbackCharset(), value.epsgCode()
+                    value.dbfCharsetOverride(), value.dbfFallbackCharset(), value.epsgCode(),
+                    value.zipEntryCharset()
             );
         };
     }
@@ -216,7 +217,7 @@ public sealed interface FileDatasetParsingOptionsResponse permits
         }
     }
 
-    @Schema(description = "当前生效的 Shapefile 解析选项，包括 DBF 字符集策略和文件空间参考无法识别时使用的 EPSG 回退编码。")
+    @Schema(description = "当前生效的 Shapefile 解析选项，包括 ZIP 文件名编码、DBF 内容编码和 EPSG 回退编码。")
 
     record Shp(
             @Schema(description = "强制用于 DBF 属性表的字符集；为空时自动检测。")
@@ -224,8 +225,14 @@ public sealed interface FileDatasetParsingOptionsResponse permits
             @Schema(description = "无法从 DBF 元数据识别编码时使用的后备字符集。")
             String dbfFallbackCharset,
             @Schema(description = "可选 EPSG 回退编码，仅在 .prj 等 Shapefile 空间参考元数据没有可识别 EPSG 标识时使用；文件值可识别时优先使用文件值。")
-            Integer epsgCode
+            Integer epsgCode,
+            @Schema(description = "SHP ZIP 内条目文件名的字符集；旧数据或请求省略时为 UTF-8。仅影响 ZIP 文件名，不影响 DBF 内容；条目带 UTF-8 标志时优先按标志解码。")
+            String zipEntryCharset
     ) implements FileDatasetParsingOptionsResponse {
+        public Shp {
+            zipEntryCharset = zipEntryCharset == null || zipEntryCharset.isBlank()
+                    ? "UTF-8" : zipEntryCharset.trim();
+        }
         @Override
         public FileDatasetParsingOptionsKind kind() {
             return FileDatasetParsingOptionsKind.SHP;

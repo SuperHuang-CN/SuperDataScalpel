@@ -182,7 +182,10 @@ public class FileDatasetService {
         directoryService.validateAssignment(DirectoryScope.FILE_DATASET, request.directoryId());
         validateParsingOptions(dataset.getType(), request.parsingOptions());
         String parsingOptions = writeParsingOptions(FileDatasetParsingOptionsResponse.from(request.parsingOptions()));
-        boolean parsingChanged = !dataset.getParsingOptions().equals(parsingOptions);
+        String currentParsingOptions = dataset.getType() == FileDatasetType.SHP
+                ? writeParsingOptions(readParsingOptions(dataset.getParsingOptions()))
+                : dataset.getParsingOptions();
+        boolean parsingChanged = !currentParsingOptions.equals(parsingOptions);
         if (parsingChanged && (fileRepository.countByFileDatasetId(id) > 0
                 || tableRepository.countByFileDatasetId(id) > 0
                 || parseJobRepository.existsByFileDatasetIdAndStatusIn(id, NON_TERMINAL_JOB_STATUSES))) {
@@ -193,7 +196,7 @@ public class FileDatasetService {
         }
         dataset.update(
                 request.directoryId(), request.name(),
-                parsingOptions,
+                parsingChanged ? parsingOptions : dataset.getParsingOptions(),
                 request.description()
         );
         repository.saveAndFlush(dataset);
@@ -997,6 +1000,9 @@ public class FileDatasetService {
             case FileDatasetParsingOptionsRequest.Avro ignored -> { }
             case FileDatasetParsingOptionsRequest.Gdb ignored -> { }
             case FileDatasetParsingOptionsRequest.Shp value -> {
+                if (hasText(value.zipEntryCharset())) {
+                    validateCharset(value.zipEntryCharset());
+                }
                 if (hasText(value.dbfCharsetOverride())) {
                     validateCharset(value.dbfCharsetOverride());
                 }

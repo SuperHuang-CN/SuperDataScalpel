@@ -105,6 +105,7 @@ export const fileDatasetParsingOptionEntries = (
     case 'SHP':
       return [
         { label: '上传格式', value: '包含一套同名 Shapefile 组件的 ZIP' },
+        { label: 'SHP ZIP 文件名编码', value: options.zipEntryCharset ?? 'UTF-8' },
         { label: '强制 DBF 编码', value: options.dbfCharsetOverride || '不强制（按 CPG / DBF 标记识别）' },
         { label: 'DBF 回退编码', value: options.dbfFallbackCharset },
         { label: '解析方式', value: '规范化组件并生成一张空间数据表' },

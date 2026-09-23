@@ -3,6 +3,7 @@ import { Col, Form, Input, InputNumber, Row, Select, Switch, Typography } from '
 import type { FileDatasetType, FileRecordDelimiter } from '../model/fileDataset';
 
 const charsetOptions = ['UTF-8', 'GBK', 'GB18030', 'ISO-8859-1'].map((value) => ({ value, label: value }));
+const shpZipNameCharsetOptions = charsetOptions.filter((option) => option.value !== 'ISO-8859-1');
 const recordDelimiterOptions: { value: FileRecordDelimiter; label: string }[] = [
   { value: 'AUTO', label: '自动识别' },
   { value: 'LF', label: 'LF（Unix）' },
@@ -126,6 +127,16 @@ export const FileDatasetParsingOptionsFields = ({ type }: { type: FileDatasetTyp
     );
     case 'SHP': return (
       <Row gutter={12}>
+          <Col span={12}>
+            <Form.Item
+              label="SHP ZIP 文件名编码"
+              name="zipEntryCharset"
+              extra="只用于识别 ZIP 内的文件名，不影响 DBF 内容；旧版中文 ZIP 可选 GB18030。"
+              rules={[{ required: true, message: '请选择 SHP ZIP 文件名编码' }]}
+            >
+              <Select options={shpZipNameCharsetOptions} />
+            </Form.Item>
+          </Col>
           <Col span={12}>
             <Form.Item
               label="强制 DBF 编码"

@@ -29,7 +29,7 @@ export type FileDatasetParsingOptions =
   | { kind: 'PARQUET' }
   | { kind: 'AVRO' }
   | { kind: 'GDB'; epsgCode?: number }
-  | { kind: 'SHP'; dbfCharsetOverride?: string; dbfFallbackCharset: string; epsgCode?: number };
+  | { kind: 'SHP'; dbfCharsetOverride?: string; dbfFallbackCharset: string; epsgCode?: number; zipEntryCharset?: string };
 
 export interface FileDatasetField {
   name: string;
@@ -240,7 +240,7 @@ export const defaultFileDatasetParsingOptions = (type: FileDatasetType): FileDat
     case 'PARQUET': return { kind: 'PARQUET' };
     case 'AVRO': return { kind: 'AVRO' };
     case 'GDB': return { kind: 'GDB' };
-    case 'SHP': return { kind: 'SHP', dbfFallbackCharset: 'GB18030' };
+    case 'SHP': return { kind: 'SHP', dbfFallbackCharset: 'GB18030', zipEntryCharset: 'UTF-8' };
   }
 };
 
