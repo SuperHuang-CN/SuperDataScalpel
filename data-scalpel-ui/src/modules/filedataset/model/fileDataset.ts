@@ -108,6 +108,12 @@ export interface FileDatasetTable {
   updatedAt: string;
 }
 
+export const fileDatasetRowCountText = (type: FileDatasetType, table: FileDatasetTable): string => (
+  type === 'GDB' && table.truncated && table.totalRowCount === table.sampledRecordCount
+    ? `至少 ${table.totalRowCount + 1} 条（旧计数）`
+    : `${table.totalRowCount} 条`
+);
+
 export interface FileDatasetTableSource {
   id: string;
   tableId: string;

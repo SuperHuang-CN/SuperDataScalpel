@@ -92,6 +92,23 @@ public class GdbFileDatasetParser implements FileDatasetParser {
         return new ParseResult(fields, rows, truncated, true, metadata);
     }
 
+    @Override
+    public ParseResult validate(
+            FileDatasetParseSource source,
+            FileDatasetParsingConfiguration configuration,
+            int previewLimit
+    ) {
+        ParseResult sample = parse(source, configuration, previewLimit);
+        FileDatasetParsingConfiguration.Gdb gdbConfiguration =
+                (FileDatasetParsingConfiguration.Gdb) configuration;
+        long rowCount = FileDatasetParseSource.requireFileGdb(source)
+                .countFeatures(gdbConfiguration.layerId());
+        return new ParseResult(
+                sample.fields(), sample.rows(), rowCount > sample.rows().size(),
+                sample.previewSupported(), sample.sourceMetadata(), rowCount
+        );
+    }
+
     private static List<Field> fields(FileGdbSchema schema, CrsReference crs) {
         List<Field> fields = new ArrayList<>(schema.fields().size());
         for (int index = 0; index < schema.fields().size(); index++) {

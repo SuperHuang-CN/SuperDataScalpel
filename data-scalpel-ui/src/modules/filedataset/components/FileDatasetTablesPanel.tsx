@@ -3,6 +3,7 @@ import { ReloadOutlined } from '@ant-design/icons';
 import type { TableProps } from 'antd';
 import { Button, Table, Tag } from 'antd';
 import {
+  fileDatasetRowCountText,
   fileDatasetParseStatusLabels,
   type FileDataset,
   type FileDatasetParseStatus,
@@ -44,7 +45,7 @@ export const FileDatasetTablesPanel = ({
       render: (value: string, table: FileDatasetTable) => (
         <div className="file-dataset-table-list-name">
           <span>{value}</span>
-          <small>{table.sourceCount} 个来源 · {table.totalRowCount} 条</small>
+          <small>{table.sourceCount} 个来源 · {fileDatasetRowCountText(dataset.type, table)}</small>
         </div>
       ),
     },

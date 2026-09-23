@@ -26,6 +26,7 @@ import {
 } from '../hooks/useFileDatasets';
 import {
   fileDatasetAccept,
+  fileDatasetRowCountText,
   type FileDataset,
   type FileDatasetField,
   type FileDatasetTable,
@@ -317,7 +318,7 @@ export const FileDatasetTableResultPanel = ({
   const detailItems = [
     { key: 'code', label: '表代码', children: <code>{table.code}</code> },
     { key: 'sourceCount', label: '当前来源', children: `${table.sourceCount} 个` },
-    { key: 'rowCount', label: '总记录数', children: `${table.totalRowCount} 条` },
+    { key: 'rowCount', label: '总记录数', children: fileDatasetRowCountText(dataset.type, table) },
     { key: 'samples', label: '预览样本', children: schemaAvailable ? `${table.sampledRecordCount} 条` : '—' },
     {
       key: 'load',
@@ -562,7 +563,11 @@ export const FileDatasetTableResultPanel = ({
         <Alert type="warning" showIcon message="当前表仅支持 Schema" description={previewUnavailableReason} />
       )}
       {ready && table.truncated && (
-        <Alert type="info" showIcon message="预览样本已截断" description="Schema 已完成全量检查，管理端只保留有界预览样本。" />
+        <Alert type="info" showIcon message="预览样本已截断" description={dataset.type === 'GDB'
+          ? table.totalRowCount === table.sampledRecordCount
+            ? '旧 GDB 的总数尚未计算；重新上传或替换文件后显示索引总数，预览仍只保留有界样本。'
+            : 'GDB 总数按索引记录槽统计，管理端只解码并保留有界预览样本。'
+          : 'Schema 已完成全量检查，管理端只保留有界预览样本。'} />
       )}
       {(sourcesQuery.isError || (schemaAvailable && schemaQuery.isError)
         || (ready && table.previewSupported && previewQuery.isError)) && (

@@ -44,6 +44,19 @@ public final class GdbLayerHandle {
         return schema;
     }
 
+    /** Returns the number of occupied index slots, excluding deleted records. */
+    public long countFeatures() {
+        try (GdbTableIndexReader indexReader = GdbTableIndexReader.open(
+                source, indexFileName, definition.physicalName(), limits)) {
+            if (indexReader.slotCount() > limits.maxIndexSlotsPerCursor()) {
+                throw new FileGdbException(
+                        FileGdbErrorCode.LIMIT_EXCEEDED,
+                        definition.physicalName() + " index exceeds the configured cursor slot limit");
+            }
+            return indexReader.countPresentRecords();
+        }
+    }
+
     public FileGdbFeatureCursor openCursor(int limit, Runnable closeCallback) {
         if (limit > limits.maxFeaturesPerCursor()) {
             throw new FileGdbException(

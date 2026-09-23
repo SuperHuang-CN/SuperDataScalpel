@@ -97,6 +97,26 @@ final class GdbTableIndexReader implements AutoCloseable {
         return slotCount;
     }
 
+    /** Counts occupied index slots without reading or decoding feature records. */
+    long countPresentRecords() {
+        long count = 0;
+        int pageBytes = Math.multiplyExact(SLOTS_PER_PAGE, offsetWidth);
+        for (int page = 0; page < pageCount; page++) {
+            long position = HEADER_BYTES + (long) page * pageBytes;
+            ByteBuffer offsets = channel.read(position, pageBytes);
+            for (int slot = 0; slot < SLOTS_PER_PAGE; slot++) {
+                boolean present = false;
+                for (int offsetByte = 0; offsetByte < offsetWidth; offsetByte++) {
+                    present |= offsets.get() != 0;
+                }
+                if (present) {
+                    count++;
+                }
+            }
+        }
+        return count;
+    }
+
     long recordOffset(int slotIndex) {
         if (slotIndex < 0 || slotIndex >= slotCount) {
             throw new FileGdbException(FileGdbErrorCode.INVALID_OFFSET, role + " slot index is out of range");

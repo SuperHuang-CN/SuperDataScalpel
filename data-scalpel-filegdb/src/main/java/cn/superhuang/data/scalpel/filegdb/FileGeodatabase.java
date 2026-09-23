@@ -81,6 +81,12 @@ public final class FileGeodatabase implements AutoCloseable {
         return handle(layerId).schema();
     }
 
+    /** Counts occupied record slots in a layer's index without decoding attributes or geometry. */
+    public long countFeatures(String layerId) {
+        ensureOpen();
+        return handle(layerId).countFeatures();
+    }
+
     public FileGdbFeatureCursor openCursor(String layerId, FileGdbReadOptions readOptions) {
         ensureOpen();
         Objects.requireNonNull(readOptions, "readOptions");

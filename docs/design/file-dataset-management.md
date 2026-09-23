@@ -84,12 +84,14 @@ source_key`。队列状态为 `QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELLED`，并�
 
 ## 3. 校验与提交
 
-初始来源完整扫描并建立字段、总行数、最多 1000 条预览样本和来源元数据。CSV、TSV、TXT、
+初始来源按格式校验并建立字段、解析器报告的行数、最多 1000 条预览样本和来源元数据。CSV、TSV、TXT、
 JSON、JSONL、GeoJSON 和 GEOJSONL 必须逐条解码；Parquet 和 Avro 校验内置 Schema；GeoParquet 与 GPKG 还会完整扫描
 WKB Geometry 和 GeoParquet Footer；SHP 还比较 Shape 类型、Z/M
 维度、Geometry 字段和规范化 PRJ WKT。GeoJSON 固定为 RFC 7946 `FeatureCollection`：`properties`
 构成属性字段，顶层 `Feature.id` 保存为可空 `_feature_id`，`geometry` 保存为 EPSG + XY 的 Geometry；
 数据集解析参数指定 EPSG（默认 `4326`），不会根据旧式 `crs` 成员或坐标值推测、转换坐标。
+GDB 按 `.gdbtablx` 中非空索引槽统计图层总记录数，不读取全部记录内容；字段和预览只解码有界样本。
+因此 GDB 总数反映索引中的非空记录槽，但上传解析不对样本之外的每条记录做内容校验。
 
 后续来源固定比较字段数量、名称、顺序、完整 `PlatformTypeDefinition` 和 nullable。任一不一致
 都使 Job 失败并清理临时数据，不修改当前来源。
