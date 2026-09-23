@@ -9,7 +9,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-/** Applies spreadsheet row settings and builds one bounded, rectangular sample. */
+/** Counts all eligible spreadsheet rows while retaining one bounded, rectangular sample. */
 final class SpreadsheetSampleCollector {
 
     private final int headerRowIndex;
@@ -19,6 +19,7 @@ final class SpreadsheetSampleCollector {
 
     private Map<Integer, SpreadsheetCell> headerCells = Map.of();
     private int maximumColumnIndex = -1;
+    private long rowCount;
     private boolean truncated;
 
     SpreadsheetSampleCollector(FileDatasetParsingConfiguration.Spreadsheet options, int recordLimit) {
@@ -39,6 +40,7 @@ final class SpreadsheetSampleCollector {
         if (rowIndex < dataStartRowIndex || cells.values().stream().allMatch(SpreadsheetCell::isEmpty)) {
             return;
         }
+        rowCount++;
         updateMaximumColumn(cells);
         if (dataRows.size() >= recordLimit) {
             truncated = true;
@@ -65,7 +67,9 @@ final class SpreadsheetSampleCollector {
             }
             collector.addRow(values, types);
         }
-        return new FileDatasetParser.ParseResult(collector.fields(), collector.rows(), truncated);
+        return new FileDatasetParser.ParseResult(
+                collector.fields(), collector.rows(), truncated, true, Map.of(), rowCount
+        );
     }
 
     private void updateMaximumColumn(Map<Integer, SpreadsheetCell> cells) {
