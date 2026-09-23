@@ -98,10 +98,10 @@ final class GdbTableHeaderReader {
             throw reader.malformed("has an invalid format version");
         }
         int geometryType = reader.readUnsignedByte();
-        reader.readUnsignedByte();
+        boolean stringsUtf8 = (reader.readUnsignedByte() & 1) != 0;
         reader.readUnsignedByte();
         int geometryProperties = reader.readUnsignedByte();
-        int fieldCount = reader.readUnsignedShort() & 0x7fff;
+        int fieldCount = reader.readUnsignedShort();
         if (fieldCount > limits.maxFields()) {
             throw new FileGdbException(FileGdbErrorCode.LIMIT_EXCEEDED, context + " has too many fields");
         }
@@ -117,6 +117,12 @@ final class GdbTableHeaderReader {
                 spatialReference = parsed.spatialReference();
             }
         }
+        // Esri SDK and GDAL include this optional terminator in the field-section length.
+        if (reader.remaining() == Integer.BYTES) {
+            if (reader.readInt() != 0xefbeadde) {
+                throw reader.malformed("has an invalid field-section terminator");
+            }
+        }
         reader.requireFullyConsumed();
         FileGdbLayerType layerType = toLayerType(geometryType, spatialReference != null);
         if (layerType == FileGdbLayerType.TABLE && spatialReference != null) {
@@ -129,6 +135,7 @@ final class GdbTableHeaderReader {
                 largestRecordBytes,
                 geometryType,
                 geometryProperties,
+                stringsUtf8,
                 layerType,
                 fields,
                 spatialReference);
@@ -182,11 +189,8 @@ final class GdbTableHeaderReader {
         int length = reader.readUnsignedByte();
         boolean nullable = (reader.readUnsignedByte() & 1) != 0;
         if (hasDefaultValue) {
-            long defaultLength = reader.readVarUInt();
-            if (defaultLength > Integer.MAX_VALUE) {
-                throw new FileGdbException(FileGdbErrorCode.LIMIT_EXCEEDED, "Field " + name + " default is too large");
-            }
-            reader.skip((int) defaultLength);
+            int defaultLength = reader.readUnsignedByte();
+            reader.skip(defaultLength);
         }
         FileGdbField field = new FileGdbField(name, alias, type, nullable, length);
         return new ParsedField(new GdbFieldDefinition(field, false), null);
@@ -241,10 +245,16 @@ final class GdbTableHeaderReader {
         Double metadataMTolerance = metadataHasM ? nonNegativeFinite(reader.readDouble(), reader, "M tolerance") : null;
         Double metadataZTolerance = metadataHasZ ? nonNegativeFinite(reader.readDouble(), reader, "Z tolerance") : null;
 
-        double xMin = finite(reader.readDouble(), reader, "x minimum");
-        double yMin = finite(reader.readDouble(), reader, "y minimum");
-        double xMax = finite(reader.readDouble(), reader, "x maximum");
-        double yMax = finite(reader.readDouble(), reader, "y maximum");
+        double xMin = dimensionExtent(reader.readDouble(), reader, "x minimum");
+        double yMin = dimensionExtent(reader.readDouble(), reader, "y minimum");
+        double xMax = dimensionExtent(reader.readDouble(), reader, "x maximum");
+        double yMax = dimensionExtent(reader.readDouble(), reader, "y maximum");
+        boolean unknownExtent = Double.isNaN(xMin) && Double.isNaN(yMin)
+                && Double.isNaN(xMax) && Double.isNaN(yMax);
+        if (!unknownExtent && (Double.isNaN(xMin) || Double.isNaN(yMin)
+                || Double.isNaN(xMax) || Double.isNaN(yMax) || xMin > xMax || yMin > yMax)) {
+            throw reader.malformed("shape XY extent is inconsistent");
+        }
         Double zMin = hasZ ? dimensionExtent(reader.readDouble(), reader, "z minimum") : null;
         Double zMax = hasZ ? dimensionExtent(reader.readDouble(), reader, "z maximum") : null;
         Double mMin = hasM ? dimensionExtent(reader.readDouble(), reader, "m minimum") : null;
@@ -255,7 +265,7 @@ final class GdbTableHeaderReader {
             throw reader.malformed("shape grid count is invalid");
         }
         for (int index = 0; index < gridCount; index++) {
-            positiveFinite(reader.readDouble(), reader, "grid size");
+            nonNegativeFinite(reader.readDouble(), reader, "grid size");
         }
 
         FileGdbSpatialReference spatialReference = new FileGdbSpatialReference(

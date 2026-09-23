@@ -14,6 +14,7 @@ import cn.superhuang.data.scalpel.filegdb.FileGdbReadOptions;
 import cn.superhuang.data.scalpel.filegdb.FileGeodatabase;
 import cn.superhuang.data.scalpel.filegdb.model.FileGdbFeature;
 import cn.superhuang.data.scalpel.filegdb.model.FileGdbField;
+import cn.superhuang.data.scalpel.filegdb.model.FileGdbFieldType;
 import cn.superhuang.data.scalpel.filegdb.model.FileGdbSchema;
 import cn.superhuang.data.scalpel.filegdb.s3.S3FileGdbLocation;
 import cn.superhuang.data.scalpel.filegdb.s3.S3FileGdbOptions;
@@ -102,6 +103,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -1025,7 +1027,7 @@ final class FileDatasetBatchReaderRegistry {
         return current;
     }
 
-    private static Row gdbRow(
+    static Row gdbRow(
             FileGdbFeature feature,
             FileGdbSchema sourceSchema,
             List<CanvasColumnSchema> columns
@@ -1039,6 +1041,11 @@ final class FileDatasetBatchReaderRegistry {
             Object value = column.fieldType() == PlatformDataType.GEOMETRY
                     ? FileDatasetGeometryConverter.convert(feature.geometry(), column.geometry())
                     : field == null ? null : feature.attribute(column.name());
+            if (field != null && field.type() == FileGdbFieldType.TIMESTAMP
+                    && column.fieldType() == PlatformDataType.TIMESTAMP_NTZ && value instanceof Instant instant) {
+                // The core reader represents FileGDB wall-clock dates on the UTC epoch, not in the JVM zone.
+                value = LocalDateTime.ofInstant(instant, ZoneOffset.UTC);
+            }
             values[index] = convert(value, column);
         }
         return RowFactory.create(values);

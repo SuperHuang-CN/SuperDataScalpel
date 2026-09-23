@@ -292,6 +292,10 @@ public class GdbFileDatasetParser implements FileDatasetParser {
     }
 
     private static Map<String, Double> envelope(FileGdbEnvelope envelope) {
+        if (Double.isNaN(envelope.xMin()) && Double.isNaN(envelope.yMin())
+                && Double.isNaN(envelope.xMax()) && Double.isNaN(envelope.yMax())) {
+            return null; // Empty layers have no known extent; do not publish NaN coordinates.
+        }
         return Map.of(
                 "xMin", envelope.xMin(),
                 "yMin", envelope.yMin(),

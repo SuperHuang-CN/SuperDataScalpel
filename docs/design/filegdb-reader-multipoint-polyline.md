@@ -27,7 +27,8 @@ MultiPoint 的读取顺序为 encoded type、点数、XY envelope、XY delta、�
 - M 数组以 `0x42` 开始时全部返回 `Double.NaN`，累计 M 量化值为 `-1` 时只将对应点返回为 `Double.NaN`；
 - 数量在分配数组前应用资源限制，part 大小必须为正且总和必须等于点数；
 - Geometry blob 必须完全消费，截断、尾随数据、加法溢出和非有限坐标作为损坏格式拒绝；
-- encoded type 继续只检查 `0x20000000` 曲线标志，Geometry 分类与 Z/M 维度以表 Schema 为准，兼容参考夹具中的 `PolylineM` 编码 `0x17`。
+- encoded type 检查 `0x20000000` 曲线标志，并检查普通、Z/M 和 general shape code 对应的几何类别与 Schema 一致；未知 code 明确拒绝。Z/M 维度仍以 Schema 为准，兼容参考夹具中的 `PolylineM` 编码 `0x17`。
+- 空 blob、Null shape code 0、空点的精简或完整零坐标编码均返回 `null`；Point 的缺失 Z/M 返回 `NaN`，不把缺失量解释为原点附近的数值。未知尾随字节仍拒绝。
 
 曲线返回 `UNSUPPORTED_FORMAT`。已完整读取到记录内存后的 Geometry 结构截断返回 `MALFORMED_HEADER`；S3 Range 本身的短响应仍由来源层返回 `TRUNCATED_INPUT`。
 
