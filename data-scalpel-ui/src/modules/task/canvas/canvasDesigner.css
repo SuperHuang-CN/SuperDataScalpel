@@ -226,6 +226,17 @@ body .canvas-designer.canvas-designer-fullscreen {
   height: 100%;
 }
 
+/* Keep the tool inside its edge so moving onto the button preserves hover. */
+.canvas-graph .x6-edge [data-tools-name='canvas-edge-remove'] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.canvas-graph .x6-edge:hover [data-tools-name='canvas-edge-remove'] {
+  visibility: visible;
+  pointer-events: auto;
+}
+
 .canvas-node-palette {
   position: absolute;
   top: 12px;
