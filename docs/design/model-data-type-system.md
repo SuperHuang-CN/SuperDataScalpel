@@ -59,6 +59,8 @@
 
 这里的 PostgreSQL 家族包括 PostgreSQL、HighGo、openGauss 和人大金仓 R8/R9；各产品保持独立 JDBC 身份，Geometry 仅在连接目标库并确认 PostGIS 兼容扩展、函数和系统目录可用后开放。
 
+PostgreSQL 方言的物理表结构比较对时间戳复用原生类型优先的读取映射，不只依赖 JDBC 类型码：`timestamptz` / `timestamp with time zone` 匹配 `TIMESTAMP`，`timestamp` / `timestamp without time zone` 匹配 `TIMESTAMP_NTZ`（兼容旧 `DATETIME`）。即使驱动对两者返回相同 JDBC 类型码，也不允许带时区与不带时区类型互相匹配；其他字段的比较规则保持不变。
+
 ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型归一：`UInt8 -> SHORT`、`UInt16 -> INTEGER`、`UInt32 -> LONG`、`UInt64 -> DECIMAL(20,0)`。
 
 ClickHouse 的普通 `String` 没有长度参数。模型可以继续配置 `STRING.length`，该值用于统一元数据管理、数据标准和后续跨库迁移；ClickHouse DDL 始终生成 `String`，不使用具有补零语义的 `FixedString`，字段编辑器通过紧凑提示明确物理表不会强制该长度。
