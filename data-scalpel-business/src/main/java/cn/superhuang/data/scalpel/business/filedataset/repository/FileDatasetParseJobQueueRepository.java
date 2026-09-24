@@ -16,6 +16,7 @@ public class FileDatasetParseJobQueueRepository {
     private static final String CLAIM_SQL = """
             select job.*
             from ds_file_dataset_parse_job job
+            join ds_file_dataset dataset on dataset.id = job.file_dataset_id
             where job.status = 'QUEUED'
               and job.available_at <= :now
               and not exists (
@@ -26,17 +27,18 @@ public class FileDatasetParseJobQueueRepository {
               )
             order by job.available_at, job.created_at, job.id
             limit 1
-            for update skip locked
+            for update of dataset, job skip locked
             """;
 
     private static final String RECOVERY_SQL = """
             select job.*
             from ds_file_dataset_parse_job job
+            join ds_file_dataset dataset on dataset.id = job.file_dataset_id
             where job.status = 'RUNNING'
               and job.lease_expires_at <= :now
             order by job.lease_expires_at, job.created_at, job.id
             limit 100
-            for update skip locked
+            for update of dataset, job skip locked
             """;
 
     @PersistenceContext

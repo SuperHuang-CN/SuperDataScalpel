@@ -1591,6 +1591,9 @@ public class FileDatasetService {
 
         fieldRepository.deleteByFileDatasetTableId(table.getId());
         FileDatasetParser.ParseResult canonical = parsedSources.getFirst();
+        // Hibernate inserts before queued entity deletes. Remove the old unique field names
+        // before recreating them in this same atomic transaction.
+        fieldRepository.flush();
         fieldRepository.saveAll(canonical.fields().stream().map(field -> FileDatasetField.create(
                 table.getId(), field.name(), field.sortOrder(), field.type(), field.nullable()
         )).toList());

@@ -79,6 +79,12 @@ public class GeoJsonLinesFileDatasetParser implements FileDatasetParser {
                     FileRecordDelimiter.AUTO,
                     line -> {
                         physicalLine[0]++;
+                        // Java treats RS as whitespace: stripLeading/isBlank would hide the
+                        // framing marker, including a line containing only RS.
+                        if (line.indexOf('\u001E') >= 0) {
+                            throw new FileDatasetParsingException("GEOJSONL 第 " + physicalLine[0]
+                                    + " 行 不支持 RS 分隔的 GeoJSON Text Sequence");
+                        }
                         if (line.isBlank()) return;
                         if (!validateAll && collector.rowCount() >= recordLimit) {
                             truncated[0] = true;
@@ -109,9 +115,6 @@ public class GeoJsonLinesFileDatasetParser implements FileDatasetParser {
 
     private GeoJsonFeatureSupport.Feature readLine(String line, long physicalLine, boolean validateGeometry) {
         String path = "GEOJSONL 第 " + physicalLine + " 行";
-        if (line.stripLeading().startsWith("\u001E")) {
-            throw new FileDatasetParsingException(path + " 不支持 RS 分隔的 GeoJSON Text Sequence");
-        }
         try (JsonParser parser = objectMapper.createParser(line)) {
             if (parser.nextToken() != JsonToken.START_OBJECT) {
                 throw new FileDatasetParsingException(path + " 必须是一个完整 GeoJSON Feature 对象");

@@ -15,6 +15,10 @@
 
 前端模块化整改：[2026-09 实施与验收](verification/frontend-modularization-remediation-2026-09.md)。
 
+文件解析队列：[2026-09-23 多 Admin 压测与修复记录](verification/file-queue-multi-admin-20260923.md)（GDB/SHP 旧 Worker 清理问题已修复并回归；另记录并发启动权限初始化竞争）。
+
+文件数据集：[2026-09-24 功能与压测记录](verification/file-dataset-acceptance-20260924.md)（功能、并发删除、启动竞争、空间参考确认、故障恢复、持续负载及磁盘清理；记录测试条件、实测结果与未覆盖范围）。
+
 ## 按任务阅读
 
 | 修改内容 | 入口 |

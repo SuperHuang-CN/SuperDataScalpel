@@ -129,6 +129,11 @@ public class FileDatasetParseJobCoordinator {
         String sourceMetadata = writeSourceMetadata(result.sourceMetadata());
         String fingerprint = schemaValidator.fingerprint(result.fields());
         return requireResult(transactionTemplate.execute(status -> {
+            // Mutations and worker commits share the dataset lock before touching job/table/file
+            // rows. Keep this inside the short state transaction, never across parsing or S3 I/O.
+            if (datasetRepository.findLockedById(claimedJob.datasetId()).isEmpty()) {
+                return false;
+            }
             FileDatasetParseJob job = jobRepository.findLockedById(claimedJob.jobId()).orElse(null);
             Instant now = Instant.now();
             if (!hasActiveLease(job, claimedJob.workerId(), now)) {
@@ -265,6 +270,9 @@ public class FileDatasetParseJobCoordinator {
     ) {
         int baseDelaySeconds = failure.retryable() ? retryPolicy.currentBaseDelaySeconds() : 1;
         return requireResult(transactionTemplate.execute(status -> {
+            if (datasetRepository.findLockedById(claimedJob.datasetId()).isEmpty()) {
+                return FailureOutcome.STALE;
+            }
             FileDatasetParseJob job = jobRepository.findLockedById(claimedJob.jobId()).orElse(null);
             Instant now = Instant.now();
             if (!hasActiveLease(job, claimedJob.workerId(), now)) {
@@ -335,6 +343,12 @@ public class FileDatasetParseJobCoordinator {
             return Optional.empty();
         }
         FileDatasetParseJob job = candidate.orElseThrow();
+        // The native candidate query can have started before a competing claim committed.
+        // Recheck in a fresh statement while holding the shared dataset lock.
+        if (jobRepository.existsBySourceFileIdAndStatusIn(
+                job.getSourceFileId(), List.of(FileDatasetParseJobStatus.RUNNING))) {
+            return Optional.empty();
+        }
         job.claim(workerId, now, now.plus(LEASE_DURATION));
         return job.getType() == FileDatasetParseJobType.FILE_PREPARATION
                 ? claimPreparation(job, workerId, now)
@@ -360,8 +374,10 @@ public class FileDatasetParseJobCoordinator {
         }
         jobRepository.saveAndFlush(job);
         String suffix = file.getFormat() == FileDatasetFormat.GDB ? ".gdb" : "";
+        // Attempts (and the legacy job-only prefix) must be siblings: a stale worker may still
+        // publish or delete its own prefix after another worker has successfully taken over.
         String materializedPrefix = "file-datasets/materialized/" + file.getId() + "/"
-                + job.getId() + suffix;
+                + job.getId() + "-attempt-" + job.getAttemptCount() + suffix;
         return Optional.of(new ClaimedJob(
                 job.getId(), workerId, job.getType(), job.getFileDatasetId(),
                 job.getSourceFileId(), job.getFileDatasetTableId(), null,

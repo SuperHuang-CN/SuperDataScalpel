@@ -118,6 +118,9 @@ GEOJSONL 是独立类型，不沿用普通 JSONL 的字符集或记录分隔符�
 会忽略。FeatureCollection、独立 Geometry、跨行 Feature、同一行多个 JSON 值和 RS 分隔的 GeoJSON Text
 Sequence 都会使装载失败，并以物理行号报告错误。
 
+RS 检测在空白行忽略之前执行：Java 会将 U+001E 当作空白字符，不能先使用 `stripLeading()`
+或 `isBlank()` 再判断，否则仅含 RS 的行可能被漏掉，或将明确的格式错误误报为普通 JSON 错误。
+
 属性、`_feature_id`、Geometry、EPSG、二维 XY、严格 Schema 校验及表级追加/覆盖语义完全沿用 GeoJSON；
 预览只解析属性和 `_feature_id`，跳过 Geometry 坐标。GEOJSONL 的解析参数也只包含正整数 EPSG，默认
 `4326`，不猜测、变换或交换坐标。
