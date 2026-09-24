@@ -103,6 +103,7 @@
 - Operator 统一负责配置规则、元数据定位、表 Map 语义、Spark Dataset 变换、字段映射和显式 Cast。预检与运行时的差异只能通过 `CanvasNodeDataAccess` 等外部 I/O 端口注入。
 - 预检 I/O 必须使用元数据 Schema 创建零行 Dataset，Output 只分析计划，不得读取 JDBC/HTTP、创建 Writer、TRUNCATE 或写入。Runner I/O 才允许真实读取和生成延迟写入计划。
 - 元数据快照和节点内联 Schema 是 Canvas 的逻辑规划与解析依据，不是物理系统的运行时相等契约。Runner 不得因为字段数量、顺序、类型参数、可空性或 Geometry 元数据与逻辑 Schema 不完全一致而提前拒绝执行；真实读取、Spark Analyzer、Cast、解析器或目标系统能够处理时必须继续，不能处理时报告实际执行失败。
+- 原生 Geometry 输出的 SRID 来自任务快照中目标字段的 EPSG CRS，不回查物理表空间目录；通用 `geometry` 列不需要声明 SRID。适用范围、缺失元数据及坐标转换边界见[空间执行约定](../design/spatial-field-structure-management-v1.md#canvassedona-空间执行扩展)。
 - 文件 Reader 必须以 Manifest 中的快照 Schema 为目标 Schema 并采用 FAILFAST 语义，不得根据运行文件重定义 Canvas Schema。`schemaFingerprint` 仅作为当前 Manifest 的兼容信息，不得用于运行时相等门禁。Manifest 的文件存储配置、对象位置和解析参数属于受保护运行字段，不得回写 Canvas Definition、编译响应或前端状态。
 - Kafka Value Schema 归 `KAFKA_INPUT/KAFKA_OUTPUT` 节点自身所有，Compiler 与 Runner 必须直接使用节点内联字段调用同一个 Operator，不得通过模型 ID、模型元数据快照或运行时模型查询间接取得 Schema。前端从模型导入只能是一次性字段复制，模型引用不得进入 Kafka 节点定义、编译契约或 Manifest。
 - Kafka 节点内联 Schema 只允许平台稳定标量类型和明确的 STRING/DECIMAL 参数；Broker 地址、认证信息、序列化器私有配置和其他运行连接字段仍只能来自受保护 Manifest，不得混入 Value Schema 或 Canvas Definition。

@@ -55,7 +55,7 @@
 | `DATE` | `date` | `DATE` | `Date` |
 | `TIMESTAMP` | `timestamp with time zone` | `TIMESTAMP WITH TIME ZONE` | `DateTime64(6,'UTC')` |
 | `TIMESTAMP_NTZ` | `timestamp` | `TIMESTAMP` | 暂不支持 |
-| `GEOMETRY` | PostGIS 兼容 `geometry(KIND,localSrid)` | 暂不支持 | 原始 WKB `String` / `Nullable(String)` + comment marker |
+| `GEOMETRY` | PostGIS 兼容通用 `geometry`（空间语义由模型字段声明） | 暂不支持 | 原始 WKB `String` / `Nullable(String)` + comment marker |
 
 这里的 PostgreSQL 家族包括 PostgreSQL、HighGo、openGauss 和人大金仓 R8/R9；各产品保持独立 JDBC 身份，Geometry 仅在连接目标库并确认 PostGIS 兼容扩展、函数和系统目录可用后开放。
 
@@ -65,9 +65,10 @@ ClickHouse 无符号整数读取时按能够完整覆盖其值域的平台类型
 
 ClickHouse 的普通 `String` 没有长度参数。模型可以继续配置 `STRING.length`，该值用于统一元数据管理、数据标准和后续跨库迁移；ClickHouse DDL 始终生成 `String`，不使用具有补零语义的 `FixedString`，字段编辑器通过紧凑提示明确物理表不会强制该长度。
 
-MySQL 8 的 Geometry 写入使用 `KIND SRID localSrsId` 并强制 Geometry 受管表为 InnoDB；
-读取通过空间 catalog 还原 subtype、EPSG 和 XY。MySQL 5.7、MariaDB、无 SRID restriction
-的列及非二维空间列均为 `UNSUPPORTED`。
+MySQL 8 的 Geometry 受管建表使用通用 `GEOMETRY`，不写入 subtype/SRID restriction，
+并使用 InnoDB；空间语义保存在模型字段。已有表导入通过空间 catalog 还原 subtype、EPSG
+和 XY，缺少完整语义的列不能自动导入；MySQL 5.7、MariaDB 和非二维空间列不支持。
+Runner 原生空间写入的字段快照取值规则见[空间执行约定](spatial-field-structure-management-v1.md#canvassedona-空间执行扩展)。
 
 单机 ClickHouse 的 Geometry 写入不使用原生 Geo 类型，而是把标准二维 OGC WKB 原始字节
 存入 `String` / `Nullable(String)`。kind、EPSG CRS 和 XY 由版本化列 comment marker

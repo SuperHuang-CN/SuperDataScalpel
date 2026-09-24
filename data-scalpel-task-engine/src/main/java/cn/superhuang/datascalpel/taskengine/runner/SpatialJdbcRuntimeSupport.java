@@ -9,9 +9,7 @@ import cn.superhuang.data.scalpel.dialect.api.DialectRegistry;
 import cn.superhuang.data.scalpel.dialect.builtin.BuiltInDialects;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionFactory;
 import cn.superhuang.data.scalpel.dialect.connection.JdbcConnectionSpec;
-import cn.superhuang.data.scalpel.dialect.model.ColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.JdbcUpsertColumn;
-import cn.superhuang.data.scalpel.dialect.model.SpatialColumnMetadata;
 import cn.superhuang.data.scalpel.dialect.model.TableIdentifier;
 import cn.superhuang.data.scalpel.dialect.model.TableMetadata;
 import cn.superhuang.data.scalpel.dialect.runtime.DatabaseAccessException;
@@ -175,9 +173,9 @@ final class SpatialJdbcRuntimeSupport {
         }
     }
 
-    static Map<String, Integer> resolveGeometryLocalSrids(
-            RuntimeDataSource source,
-            TableIdentifier table,
+    // Native spatial writes use standard EPSG identifiers declared by the target field snapshot.
+    // Generic geometry columns need not declare an SRID; do not query their catalog metadata here.
+    static Map<String, Integer> resolveGeometryWriteSrids(
             CanvasTableSchema logicalSchema,
             String[] requiredColumnNames,
             String nodeId
@@ -190,38 +188,20 @@ final class SpatialJdbcRuntimeSupport {
         if (geometryColumns.isEmpty()) {
             return Map.of();
         }
-        TableMetadata actual;
-        try {
-            actual = INSPECTOR.readTable(
-                    source.databaseType().name(),
-                    jdbcSpec(source.connection()),
-                    table
-            );
-        } catch (DatabaseAccessException exception) {
-            throw new RunnerExecutionException(
-                    "SPATIAL_TARGET_METADATA_UNAVAILABLE",
-                    "无法读取目标表 Geometry 元数据",
-                    nodeId,
-                    exception
-            );
-        }
-        Map<String, ColumnMetadata> physicalColumns = new LinkedHashMap<>();
-        actual.columns().forEach(column -> physicalColumns.put(column.name(), column));
-        Map<String, Integer> localSrids = new LinkedHashMap<>();
+        Map<String, Integer> writeSrids = new LinkedHashMap<>();
         for (CanvasColumnSchema geometryColumn : geometryColumns) {
-            ColumnMetadata physical = physicalColumns.get(geometryColumn.name());
-            SpatialColumnMetadata spatial = physical == null ? null : physical.spatial();
-            Integer localSrid = spatial == null ? null : spatial.spatialReferenceId();
-            if (localSrid == null || localSrid < 1) {
+            var geometry = geometryColumn.geometry();
+            if (geometry == null || geometry.crs() == null
+                    || !"EPSG".equals(geometry.crs().authority()) || geometry.crs().code() < 1) {
                 throw new RunnerExecutionException(
                         "SPATIAL_TARGET_METADATA_UNAVAILABLE",
-                        "目标 Geometry 字段缺少数据库本地 SRID：" + geometryColumn.name(),
+                        "目标 Geometry 字段快照缺少有效的 EPSG CRS：" + geometryColumn.name(),
                         nodeId
                 );
             }
-            localSrids.put(geometryColumn.name(), localSrid);
+            writeSrids.put(geometryColumn.name(), geometry.crs().code());
         }
-        return Map.copyOf(localSrids);
+        return Map.copyOf(writeSrids);
     }
 
     static boolean requiresSpatialWriter(CanvasPreparedOutput output) {
@@ -271,16 +251,16 @@ final class SpatialJdbcRuntimeSupport {
                 );
             }
             boolean geometry = column.fieldType() == PlatformDataType.GEOMETRY;
-            Integer localSrid = geometry ? output.geometryLocalSrids().get(column.name()) : null;
-            if (geometry && (localSrid == null || localSrid < 1)) {
+            Integer writeSrid = geometry ? output.geometryWriteSrids().get(column.name()) : null;
+            if (geometry && (writeSrid == null || writeSrid < 1)) {
                 throw new RunnerExecutionException(
                         "SPATIAL_TARGET_METADATA_UNAVAILABLE",
-                        "目标 Geometry 字段缺少数据库本地 SRID：" + column.name(),
+                        "目标 Geometry 字段快照缺少有效的 EPSG CRS：" + column.name(),
                         output.node().id()
                 );
             }
             targetColumns.add(dialect.quoteIdentifier(column.name()));
-            valueExpressions.add(geometry ? "ST_GeomFromWKB(?, " + localSrid + ")" : "?");
+            valueExpressions.add(geometry ? "ST_GeomFromWKB(?, " + writeSrid + ")" : "?");
             bindings.add(new JdbcBinding(column.name(), geometry));
             writableColumns.add(geometry
                     ? st_functions.ST_AsBinary(sparkColumn(column.name())).as(column.name())
@@ -361,15 +341,15 @@ final class SpatialJdbcRuntimeSupport {
                 );
             }
             boolean geometry = column.fieldType() == PlatformDataType.GEOMETRY;
-            Integer localSrid = geometry ? output.geometryLocalSrids().get(column.name()) : null;
-            if (geometry && (localSrid == null || localSrid < 1)) {
+            Integer writeSrid = geometry ? output.geometryWriteSrids().get(column.name()) : null;
+            if (geometry && (writeSrid == null || writeSrid < 1)) {
                 throw new RunnerExecutionException(
                         "SPATIAL_TARGET_METADATA_UNAVAILABLE",
-                        "目标 Geometry 字段缺少数据库本地 SRID：" + column.name(),
+                        "目标 Geometry 字段快照缺少有效的 EPSG CRS：" + column.name(),
                         output.node().id()
                 );
             }
-            upsertColumns.add(new JdbcUpsertColumn(column.name(), localSrid));
+            upsertColumns.add(new JdbcUpsertColumn(column.name(), writeSrid));
             bindings.add(new JdbcBinding(column.name(), geometry));
             writableColumns.add(geometry
                     ? st_functions.ST_AsBinary(sparkColumn(column.name())).as(column.name())

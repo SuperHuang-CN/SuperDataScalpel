@@ -107,7 +107,7 @@ final class JdbcSnapshotSyncExecutor {
         List<JdbcSnapshotColumn> jdbcColumns = source.columns().stream()
                 .map(column -> new JdbcSnapshotColumn(
                         column.schema().name(),
-                        column.geometry() ? output.geometryLocalSrids().get(column.schema().name()) : null
+                        column.geometry() ? output.geometryWriteSrids().get(column.schema().name()) : null
                 ))
                 .toList();
         if (jdbcColumns.stream().anyMatch(column ->
@@ -115,7 +115,7 @@ final class JdbcSnapshotSyncExecutor {
             throw failure(
                     output,
                     "SPATIAL_TARGET_METADATA_UNAVAILABLE",
-                    "目标 Geometry 字段缺少数据库本地 SRID"
+                    "目标 Geometry 字段快照缺少有效的 EPSG CRS"
             );
         }
         JdbcSnapshotSyncSql sql = dialect.renderSnapshotSyncSql(

@@ -508,8 +508,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         TableIdentifier targetTable =
                 SpatialJdbcRuntimeSupport.tableIdentifier(runtime, write.targetTableName());
         String qualifiedTableName = SpatialJdbcRuntimeSupport.qualifiedTable(runtime, targetTable);
-        Map<String, Integer> geometryLocalSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
-                runtime, targetTable, targetSchema, dataset.columns(), node.id());
+        Map<String, Integer> geometryWriteSrids = SpatialJdbcRuntimeSupport.resolveGeometryWriteSrids(
+                targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedOutput(
                 node,
                 write.writeId(),
@@ -521,7 +521,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 write.writeMode(),
                 dataset,
                 targetSchema,
-                geometryLocalSrids,
+                geometryWriteSrids,
                 write.upsertKeyColumns()
         );
     }
@@ -551,8 +551,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 model.metadata().physicalTableName()
         );
         String qualifiedTableName = SpatialJdbcRuntimeSupport.qualifiedTable(runtime, targetTable);
-        Map<String, Integer> geometryLocalSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
-                runtime, targetTable, targetSchema, dataset.columns(), node.id());
+        Map<String, Integer> geometryWriteSrids = SpatialJdbcRuntimeSupport.resolveGeometryWriteSrids(
+                targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedOutput(
                 node,
                 write.writeId(),
@@ -564,7 +564,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 write.writeMode(),
                 dataset,
                 targetSchema,
-                geometryLocalSrids,
+                geometryWriteSrids,
                 upsertKeyColumns
         );
     }
@@ -582,8 +582,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
         requireSnapshotSyncDatabase(runtime, node.id());
         TableIdentifier targetTable = SpatialJdbcRuntimeSupport.tableIdentifier(
                 runtime, node.configuration().targetTableName());
-        Map<String, Integer> localSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
-                runtime, targetTable, targetSchema, dataset.columns(), node.id());
+        Map<String, Integer> writeSrids = SpatialJdbcRuntimeSupport.resolveGeometryWriteSrids(
+                targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedSnapshotSyncOutput(
                 node,
                 runtime,
@@ -593,7 +593,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 targetSchema,
                 node.configuration().keyColumns(),
                 node.configuration().deletePolicy(),
-                localSrids
+                writeSrids
         );
     }
 
@@ -612,8 +612,8 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 model.metadata().schemaName(),
                 model.metadata().physicalTableName()
         );
-        Map<String, Integer> localSrids = SpatialJdbcRuntimeSupport.resolveGeometryLocalSrids(
-                runtime, targetTable, targetSchema, dataset.columns(), node.id());
+        Map<String, Integer> writeSrids = SpatialJdbcRuntimeSupport.resolveGeometryWriteSrids(
+                targetSchema, dataset.columns(), node.id());
         return new CanvasPreparedSnapshotSyncOutput(
                 node,
                 runtime,
@@ -623,7 +623,7 @@ final class RuntimeCanvasNodeDataAccess implements CanvasNodeDataAccess {
                 targetSchema,
                 node.configuration().keyColumns(),
                 node.configuration().deletePolicy(),
-                localSrids
+                writeSrids
         );
     }
 

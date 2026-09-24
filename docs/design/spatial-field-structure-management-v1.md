@@ -62,8 +62,17 @@ Canvas 协议 `1.21` 继续补齐空间值的基础处理闭环：
 
 Canvas空间执行仍只支持 `EPSG + XY`。Geometry可以被普通投影、重命名和标量字段处理透明
 携带，但不能作为普通等值 Join、排序、分区、聚合、去重或标量 Cast 的运算字段。
-运行时会重新读取数据库空间目录；kind、CRS、dimension或本地SRID发生漂移时，在任何
-Output 写入前终止任务。该执行扩展不改变本文件中 ClickHouse WKB仅用于结构管理的边界。
+运行时使用任务元数据快照中每个目标字段的 `geometry(kind, crs, dimension)`；模型输出
+来自模型字段定义，JDBC 输出来自目标表字段快照。原生空间写入以字段声明的 EPSG code
+作为 `ST_GeomFromWKB` 的 SRID，不为获取 SRID 回查目标物理表或空间目录，也不要求通用
+`geometry` 物理列声明 subtype/SRID 约束。此约定适用于数据库使用标准 EPSG 编号的场景，
+不支持数据库自定义 SRID 与 EPSG 编号之间的映射。
+
+APPEND、OVERWRITE、UPSERT 和快照同步共用该取值规则；参与写入的空间字段快照缺少有效
+EPSG CRS 时，在准备输出阶段、任何清表或写入之前失败，不猜测、不默认填充 CRS。
+设置 SRID 不转换坐标；需要转换时须显式使用空间转换节点。物理列约束或实际值不兼容由
+数据库真实执行结果报告，不设置额外的空间目录漂移门禁。该执行扩展不改变本文件中
+ClickHouse WKB 仅用于结构管理的边界。
 
 ## 稳定平台契约
 
@@ -191,7 +200,7 @@ PostGIS 兼容空间实现是 PostgreSQL、HighGo、openGauss、人大金仓数�
 Geometry 结构能力只对数据库产品确认为 MySQL 8.x 时开放；MySQL 5.7 和 MariaDB 明确拒绝。
 
 - 使用 `INFORMATION_SCHEMA.ST_GEOMETRY_COLUMNS` 读取已有表的 subtype 和 SRS restriction，
-  仅供严格导入和运行期语义使用。
+  用于导入和元数据快照准备；Runner 不回查此目录获取写入 SRID。
 - DDL 使用通用 `GEOMETRY`，不写入 subtype 或 SRID restriction。
 - 含 Geometry 的受管表显式生成 `ENGINE=InnoDB`。
 - `GEOMETRY`、`POINT`、`MULTIPOLYGON` 等 MySQL 空间类型都与模型 Geometry 在物理结构

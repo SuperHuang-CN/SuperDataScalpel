@@ -23,7 +23,7 @@ public record CanvasPreparedOutput(
         JdbcWriteMode writeMode,
         Dataset<Row> dataset,
         CanvasTableSchema targetSchema,
-        Map<String, Integer> geometryLocalSrids,
+        Map<String, Integer> geometryWriteSrids,
         List<String> upsertKeyColumns
 ) {
     public CanvasPreparedOutput {
@@ -37,7 +37,7 @@ public record CanvasPreparedOutput(
         Objects.requireNonNull(writeMode, "writeMode");
         Objects.requireNonNull(dataset, "dataset");
         Objects.requireNonNull(targetSchema, "targetSchema");
-        geometryLocalSrids = geometryLocalSrids == null ? Map.of() : Map.copyOf(geometryLocalSrids);
+        geometryWriteSrids = geometryWriteSrids == null ? Map.of() : Map.copyOf(geometryWriteSrids);
         upsertKeyColumns = upsertKeyColumns == null ? List.of() : List.copyOf(upsertKeyColumns);
     }
 }
