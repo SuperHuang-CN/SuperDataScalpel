@@ -480,7 +480,7 @@ export const TaskDetailPage = () => {
     },
   ];
   const tabItems = task.type === 'WORKFLOW' ? standardTabItems.filter(item => item.key !== 'models' && item.key !== 'lineage') : task.type === 'SPARK_MODEL_QUALITY' ? [
-    standardTabItems[0],
+    ...standardTabItems.filter((item) => item.key === 'basic' || item.key === 'metrics'),
     {
       key: 'quality',
       label: '质检定义',
