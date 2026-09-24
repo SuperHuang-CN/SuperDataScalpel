@@ -207,7 +207,17 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
     return memoryUnit === 'MiB' ? Math.round(value) : Math.round(value * 1024);
   };
 
-  const submit = (values: ComputeEngineFormValues) => {
+  const submit = (formValues: ComputeEngineFormValues) => {
+    // Ant Design omits unmounted Executor fields in Local Docker mode from onFinish.
+    // Keep saved/default values for those fields without replacing visible user edits.
+    const basePolicy = engine?.resourcePolicy ?? defaultSparkExecutionResourcePolicy(formValues.expectedBackendType);
+    const values: ComputeEngineFormValues = {
+      ...formValues,
+      resourcePolicy: {
+        defaults: { ...basePolicy.defaults, ...formValues.resourcePolicy.defaults },
+        maximums: { ...basePolicy.maximums, ...formValues.resourcePolicy.maximums },
+      },
+    };
     if (!engine && !values.accessToken?.trim()) {
       setEditingAccessToken(true);
       form.setFields([{ name: 'accessToken', errors: ['请输入访问 Token'] }]);

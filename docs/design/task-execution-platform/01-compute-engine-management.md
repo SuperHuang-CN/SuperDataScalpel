@@ -183,6 +183,9 @@ Driver 内存（MiB）、Executor 数量、单 Executor CPU 和单 Executor 内�
 
 - Local Docker 固定使用 `local[*]`，只应用 Driver CPU 与内存：分别映射 Docker `--cpus` 和 `--memory`；
   Runner JVM 最大堆取容器内存的 75%。Executor 三项不在页面展示，也不会传给 Spark。
+- 创建、编辑和重新配置提交的 `resourcePolicy.defaults/maximums` 仍须包含完整五项资源字段。
+  Local Docker 表单隐藏的 Executor 三项在新建时取后端默认值，编辑时保留已保存值；可见字段使用当前表单值，
+  不因条件字段未挂载而遗漏请求字段。后端资源范围校验保持不变。
 - YARN 与 Kubernetes 固定使用各自后端，五项资源分别映射 Driver 与 Executor 的 `spark-submit` 参数。
 - Spark JAR 批任务和实时任务将自己的申请资源写入定义版本和 TaskRun 快照。定义未配置时继承计算引擎默认值；
   保存后不再随默认值变化。Canvas 与质检任务继续使用计算引擎默认值。
