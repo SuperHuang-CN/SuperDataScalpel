@@ -95,6 +95,24 @@ public class TaskEngineClient {
                 .build();
     }
 
+    public cn.superhuang.data.scalpel.contract.task.SdkApiDocumentation sdkApi(String baseUrl) {
+        try {
+            var result = client(baseUrl).get().uri("/api/v1/spark-jar-sdk-api").retrieve()
+                    .body(cn.superhuang.data.scalpel.contract.task.SdkApiDocumentation.class);
+            if (result == null || result.types() == null || result.fingerprint() == null)
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "TaskEngine SDK 文档响应不完整");
+            return result;
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404 || exception.getStatusCode().value() == 503)
+                throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "TaskEngine SDK 文档不可用，请重新构建并部署配套版本", exception);
+            throw remoteFailure(exception);
+        } catch (ResourceAccessException exception) {
+            throw accessFailure(exception);
+        } catch (RestClientException exception) {
+            throw clientFailure(exception, "TaskEngine SDK 文档读取失败");
+        }
+    }
+
     private ResponseStatusException remoteFailure(RestClientResponseException exception) {
         int status = exception.getStatusCode().value();
         if (status == 400 || status == 404 || status == 409 || status == 429 || status == 504) {

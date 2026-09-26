@@ -4,6 +4,8 @@ import cn.superhuang.datascalpel.taskengine.compiler.TaskCompilationService;
 import cn.superhuang.datascalpel.taskengine.config.EngineConfiguration;
 import cn.superhuang.datascalpel.taskengine.http.TaskEngineHttpServer;
 import cn.superhuang.datascalpel.taskengine.spark.SparkRuntime;
+import cn.superhuang.datascalpel.taskengine.language.JavaLanguageServer;
+import cn.superhuang.datascalpel.taskengine.language.LanguageServiceConfiguration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -16,14 +18,16 @@ public final class TaskEngineDaemon implements AutoCloseable {
     private final SparkRuntime sparkRuntime;
     private final TaskCompilationService compilationService;
     private final TaskEngineHttpServer httpServer;
+    private final JavaLanguageServer languageServer;
     private final AtomicBoolean closed = new AtomicBoolean();
 
     private TaskEngineDaemon(EngineConfiguration configuration) throws Exception {
         SparkRuntime newSparkRuntime = new SparkRuntime(configuration);
         TaskCompilationService newCompilationService = null;
+        TaskEngineHttpServer newHttpServer = null;
         try {
             newCompilationService = new TaskCompilationService(configuration, newSparkRuntime);
-            TaskEngineHttpServer newHttpServer = new TaskEngineHttpServer(
+            newHttpServer = new TaskEngineHttpServer(
                     configuration,
                     newSparkRuntime,
                     newCompilationService
@@ -31,7 +35,10 @@ public final class TaskEngineDaemon implements AutoCloseable {
             this.sparkRuntime = newSparkRuntime;
             this.compilationService = newCompilationService;
             this.httpServer = newHttpServer;
+            this.languageServer = new JavaLanguageServer(configuration,
+                    LanguageServiceConfiguration.environment(configuration.port()));
         } catch (Exception exception) {
+            if (newHttpServer != null) newHttpServer.close();
             if (newCompilationService != null) newCompilationService.close();
             newSparkRuntime.close();
             throw exception;
@@ -43,6 +50,7 @@ public final class TaskEngineDaemon implements AutoCloseable {
         TaskEngineDaemon daemon = new TaskEngineDaemon(configuration);
         Runtime.getRuntime().addShutdownHook(new Thread(daemon::close, "task-engine-shutdown"));
         daemon.httpServer.start();
+        daemon.languageServer.start();
         log.info("DataScalpel Task Engine is ready");
         new CountDownLatch(1).await();
     }
@@ -52,6 +60,7 @@ public final class TaskEngineDaemon implements AutoCloseable {
         if (!closed.compareAndSet(false, true)) return;
         log.info("Stopping DataScalpel Task Engine");
         httpServer.close();
+        languageServer.close();
         compilationService.close();
         sparkRuntime.close();
     }

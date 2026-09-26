@@ -40,6 +40,7 @@ public final class TaskEngineHttpServer implements AutoCloseable {
     private static final Logger log = LoggerFactory.getLogger(TaskEngineHttpServer.class);
     private static final String COMPILATIONS_PATH = "/api/v1/task-compilations";
     private static final String ONLINE_SOURCE_COMPILATIONS_PATH = "/api/v1/spark-jar-source-compilations";
+    private static final String SDK_API_PATH = "/api/v1/spark-jar-sdk-api";
     private static final String JSON = "application/json; charset=utf-8";
     private static final String PROBLEM_JSON = "application/problem+json; charset=utf-8";
 
@@ -70,6 +71,7 @@ public final class TaskEngineHttpServer implements AutoCloseable {
         server.createContext("/health/ready", this::handleReady);
         server.createContext(COMPILATIONS_PATH, this::handleCompilations);
         server.createContext(ONLINE_SOURCE_COMPILATIONS_PATH, this::handleOnlineSourceCompilations);
+        server.createContext(SDK_API_PATH, this::handleSdkApi);
         server.createContext("/api/v1", this::handleApiNotFound);
     }
 
@@ -171,6 +173,22 @@ public final class TaskEngineHttpServer implements AutoCloseable {
         execute(exchange, () -> {
             requireAuthentication(exchange);
             throw problem(404, "NOT_FOUND", "接口不存在", "请求路径不存在");
+        });
+    }
+
+    private void handleSdkApi(HttpExchange exchange) throws IOException {
+        execute(exchange, () -> {
+            requireAuthentication(exchange);
+            requireExactPath(exchange, SDK_API_PATH);
+            requireMethod(exchange, "GET");
+            // Read the deployed SDK resource, never a front-end snapshot or repository source.
+            try (InputStream input = cn.superhuang.datascalpel.sdk.SparkJobContext.class
+                    .getResourceAsStream("/META-INF/datascalpel/sdk-api.json")) {
+                if (input == null) throw problem(503, "SDK_DOCUMENTATION_UNAVAILABLE", "SDK 文档不可用", "请重新构建并部署配套 SDK 文档");
+                var documentation = objectMapper.readValue(input, cn.superhuang.data.scalpel.contract.task.SdkApiDocumentation.class);
+                exchange.getResponseHeaders().set("Cache-Control", "no-store");
+                sendJson(exchange, 200, documentation);
+            }
         });
     }
 

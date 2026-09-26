@@ -56,9 +56,9 @@ public class SparkJarTaskRunPreparationService {
                 SparkJarExecutionPayload.ExecutionPurpose.REAL);
     }
 
-    public Preparation prepareTrial(SparkJarTaskDefinition definition) {
+    public Preparation prepareTrial(SparkJarTaskDefinition definition, String jobClass) {
         return prepare(definition, SparkJarExecutionPayload.TriggerType.MANUAL, null, null,
-                1, "com.example.datascalpel.ExampleSparkJob",
+                1, jobClass,
                 SparkJarExecutionPayload.ExecutionPurpose.TRIAL);
     }
 
@@ -113,6 +113,14 @@ public class SparkJarTaskRunPreparationService {
             SparkJarTaskDefinition definition,
             cn.superhuang.data.scalpel.business.task.domain.TaskStreamingDeployment deployment
     ) {
+        return prepareStreaming(definition, deployment, definition.getJobClass());
+    }
+
+    StreamingPreparation prepareStreaming(
+            SparkJarTaskDefinition definition,
+            cn.superhuang.data.scalpel.business.task.domain.TaskStreamingDeployment deployment,
+            String jobClass
+    ) {
         List<SparkJarTaskResourceBinding> bindings = bindingRepository
                 .findAllByTaskIdOrderByCreatedAtAsc(definition.getTaskId());
         Set<UUID> modelIds = bindings.stream()
@@ -158,7 +166,7 @@ public class SparkJarTaskRunPreparationService {
                 == cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentExecutionMode.TRIAL;
         SparkStreamingJarExecutionPayload payload = new SparkStreamingJarExecutionPayload(
                 trial ? 1 : definition.getJobApiVersion(),
-                trial ? "com.example.datascalpel.ExampleSparkStreamingJob" : definition.getJobClass(),
+                jobClass,
                 parseEntries(definition.getParametersJson()).stream()
                         .map(entry -> new SparkJarExecutionPayload.Parameter(entry.name(), entry.value())).toList(),
                 parseEntries(definition.getSparkConfJson()).stream()

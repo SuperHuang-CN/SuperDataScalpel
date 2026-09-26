@@ -19,6 +19,34 @@
         <scala.binary.version>2.13</scala.binary.version>
     </properties>
 
+    <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <execution>
+                        <id>generate-sdk-api-documentation</id>
+                        <phase>compile</phase>
+                        <goals><goal>exec</goal></goals>
+                        <configuration>
+                            <classpathScope>compile</classpathScope>
+                            <executable>${java.home}/bin/java</executable>
+                            <arguments>
+                                <argument>${project.basedir}/src/build/java/SdkApiDocGenerator.java</argument>
+                                <argument>${project.basedir}/src/main/java</argument>
+                                <argument>${project.build.outputDirectory}/META-INF/datascalpel/sdk-api.json</argument>
+                                <argument>${project.version}</argument>
+                                <classpath/>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
+    </build>
+
     <dependencies>
         <dependency>
             <groupId>org.apache.spark</groupId>

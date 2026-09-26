@@ -4,6 +4,7 @@ import type { SearchRequest } from '../../../shared/search';
 import {
   cancelTaskRun,
   compileSparkJarOnlineSource,
+  checkSparkJarOnlineSource,
   trialRunSparkJarOnlineSource,
   createTask,
   generateSparkJarDevelopmentKit,
@@ -227,6 +228,10 @@ export const useCompileSparkJarOnlineSource = () => {
     },
   });
 };
+
+export const useCheckSparkJarOnlineSource = () => useMutation({
+  mutationFn: ({ id, sourceCode }: { id: string; sourceCode: string }) => checkSparkJarOnlineSource(id, sourceCode),
+});
 
 export const useTrialRunSparkJarOnlineSource = () => {
   const queryClient = useQueryClient();

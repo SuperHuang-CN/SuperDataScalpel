@@ -200,6 +200,15 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.saveOnlineSource(id, request);
     }
 
+    @PostMapping("/{id}/spark-jar-online-source/actions/check")
+    @PreAuthorize("hasAuthority('task.update')")
+    @Operation(summary = "检查 Spark JAR 在线 Java 代码", description = "仅允许 DRAFT 或 DISABLED 的批流 Spark JAR。使用 Task Engine 编译请求中的源码并返回行列诊断，不执行代码、不保存草稿、不写入对象存储、不替换当前 JAR或增加定义版本。source 返回当前已保存源码状态，不是检查请求源码。编译错误返回 HTTP 200、FAILED；编译服务繁忙、不可用或超时返回标准错误。")
+    public SparkJarOnlineCompilationResponse checkSparkJarOnlineSource(
+            @Parameter(description = "任务 UUID。") @PathVariable UUID id,
+            @Valid @RequestBody SaveSparkJarOnlineSourceRequest request) {
+        return sparkJarTaskDefinitionService.checkOnlineSource(id, request);
+    }
+
     @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "编译并应用 Spark JAR 在线 Java 源码",
             prerequisites = "任务类型必须是 SPARK_JAR 或 SPARK_STREAMING_JAR，状态必须是 DRAFT 或 DISABLED；请求源码会先保存，编译成功后才替换当前生产 JAR。",
             relatedOperations = {"GET /api/v1/tasks/{id}/spark-jar-online-source", "GET /api/v1/tasks/{id}/spark-jar-definition"})

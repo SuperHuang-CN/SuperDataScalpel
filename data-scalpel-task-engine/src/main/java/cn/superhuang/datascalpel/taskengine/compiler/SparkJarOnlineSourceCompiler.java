@@ -14,6 +14,12 @@ import javax.tools.JavaFileObject;
 import javax.tools.StandardJavaFileManager;
 import javax.tools.StandardLocation;
 import javax.tools.ToolProvider;
+import javax.tools.SimpleJavaFileObject;
+import com.sun.source.tree.ClassTree;
+import com.sun.source.util.JavacTask;
+import javax.lang.model.element.Modifier;
+import javax.lang.model.SourceVersion;
+import java.net.URI;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -34,8 +40,8 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import java.util.stream.Stream;
 
-/** Compiles one fixed batch or streaming Spark job source file without loading user classes. */
-final class SparkJarOnlineSourceCompiler {
+/** Compiles one public batch or streaming Spark job class without loading user classes. */
+public final class SparkJarOnlineSourceCompiler {
     static final int MAX_SOURCE_BYTES = 256 * 1024;
     static final int MAX_JAR_BYTES = 5 * 1024 * 1024;
     static final int MAX_DIAGNOSTICS = 200;
@@ -49,7 +55,6 @@ final class SparkJarOnlineSourceCompiler {
     SparkJarSourceCompilationResponse compile(SparkJarSourceCompilationRequest request, long startedNanos) {
         String source = validateAndNormalize(request);
         SparkJarJobMode mode = request.jobMode();
-        String jobClass = jobClass(mode);
         JavaCompiler compiler = ToolProvider.getSystemJavaCompiler();
         if (compiler == null || Runtime.version().feature() != 21) {
             throw problem(503, "ONLINE_COMPILER_UNAVAILABLE", "在线编译不可用",
@@ -57,11 +62,14 @@ final class SparkJarOnlineSourceCompiler {
         }
         Path work = null;
         try {
+            String jobClass = declaredJobClass(compiler, source, mode);
+            if ((jobClass.replace('.', '/') + ".java").equals(CHECK_PATH))
+                throw problem(400, "ONLINE_RESERVED_CLASS", "入口类无效", "此类名由平台编译校验保留，请更换包名或类名");
             work = Files.createTempDirectory("datascalpel-online-spark-");
             Path sourceRoot = Files.createDirectories(work.resolve("src"));
             Path classes = Files.createDirectories(work.resolve("classes"));
-            Path sourceFile = write(sourceRoot, sourcePath(mode), source);
-            Path checkFile = write(sourceRoot, CHECK_PATH, contractCheck(mode));
+            Path sourceFile = write(sourceRoot, jobClass.replace('.', '/') + ".java", source);
+            Path checkFile = write(sourceRoot, CHECK_PATH, contractCheck(mode, jobClass));
             DiagnosticCollector<JavaFileObject> collector = new DiagnosticCollector<>();
             boolean successful;
             try (StandardJavaFileManager files = compiler.getStandardFileManager(collector, Locale.SIMPLIFIED_CHINESE,
@@ -79,14 +87,14 @@ final class SparkJarOnlineSourceCompiler {
                         null, units).call());
             }
             List<SparkJarSourceDiagnostic> diagnostics = diagnostics(
-                    collector.getDiagnostics(), source, mode);
+                    collector.getDiagnostics(), source, mode, jobClass);
             long duration = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - startedNanos);
             String sourceSha = sha256(source.getBytes(StandardCharsets.UTF_8));
             if (!successful) {
                 return new SparkJarSourceCompilationResponse(request.requestId(), false, duration, sourceSha,
                         null, null, diagnostics);
             }
-            byte[] jar = createJar(classes, mode);
+            byte[] jar = createJar(classes, mode, jobClass);
             if (jar.length > MAX_JAR_BYTES) {
                 throw problem(413, "ONLINE_JAR_TOO_LARGE", "在线编译产物过大", "编译产物不能超过 5 MiB");
             }
@@ -122,7 +130,7 @@ final class SparkJarOnlineSourceCompiler {
         return file;
     }
 
-    private static List<Path> compilerClasspath() {
+    public static List<Path> compilerClasspath() {
         String raw = System.getProperty("java.class.path", "");
         List<Path> paths = new ArrayList<>();
         for (String item : raw.split(java.io.File.pathSeparator)) {
@@ -141,7 +149,8 @@ final class SparkJarOnlineSourceCompiler {
     private static List<SparkJarSourceDiagnostic> diagnostics(
             List<Diagnostic<? extends JavaFileObject>> values,
             String source,
-            SparkJarJobMode mode
+            SparkJarJobMode mode,
+            String jobClass
     ) {
         List<SparkJarSourceDiagnostic> result = new ArrayList<>();
         for (Diagnostic<? extends JavaFileObject> value : values) {
@@ -153,7 +162,7 @@ final class SparkJarOnlineSourceCompiler {
             long[] end = generatedCheck ? new long[]{line, column}
                     : endPosition(source, value.getEndPosition(), line, column);
             String message = generatedCheck
-                    ? "主类必须是公开的 " + jobClass(mode) + "，实现 "
+                    ? "主类必须是公开的 " + jobClass + "，实现 "
                     + (mode == SparkJarJobMode.STREAMING ? "SparkStreamingJob" : "SparkBatchJob")
                     + " 并提供公开无参构造器"
                     : limit(value.getMessage(Locale.SIMPLIFIED_CHINESE), 2_000);
@@ -187,12 +196,12 @@ final class SparkJarOnlineSourceCompiler {
         return new long[]{line, column};
     }
 
-    private static byte[] createJar(Path classes, SparkJarJobMode mode) throws IOException {
+    private static byte[] createJar(Path classes, SparkJarJobMode mode, String jobClass) throws IOException {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (JarOutputStream jar = new JarOutputStream(output)) {
             add(jar, "META-INF/MANIFEST.MF", ("Manifest-Version: 1.0\r\n"
                     + "DataScalpel-Job-Api-Version: 1\r\n"
-                    + "DataScalpel-Job-Class: " + jobClass(mode) + "\r\n"
+                    + "DataScalpel-Job-Class: " + jobClass + "\r\n"
                     + "DataScalpel-Job-Mode: " + mode.name() + "\r\n\r\n").getBytes(StandardCharsets.UTF_8));
             try (Stream<Path> files = Files.walk(classes)) {
                 List<Path> entries = files.filter(Files::isRegularFile)
@@ -212,11 +221,7 @@ final class SparkJarOnlineSourceCompiler {
         return mode == SparkJarJobMode.STREAMING ? STREAMING_JOB_CLASS : BATCH_JOB_CLASS;
     }
 
-    private static String sourcePath(SparkJarJobMode mode) {
-        return jobClass(mode).replace('.', '/') + ".java";
-    }
-
-    private static String contractCheck(SparkJarJobMode mode) {
+    private static String contractCheck(SparkJarJobMode mode, String jobClass) {
         String interfaceName = mode == SparkJarJobMode.STREAMING
                 ? "SparkStreamingJob" : "SparkBatchJob";
         return """
@@ -226,7 +231,31 @@ final class SparkJarOnlineSourceCompiler {
                     private final cn.superhuang.datascalpel.sdk.%s job =
                             new %s();
                 }
-                """.formatted(interfaceName, jobClass(mode));
+                """.formatted(interfaceName, jobClass);
+    }
+
+    /** JDK parser only: comments/strings/annotations cannot masquerade as an entry declaration. */
+    private static String declaredJobClass(JavaCompiler compiler, String source, SparkJarJobMode mode) throws IOException {
+        var diagnostics = new DiagnosticCollector<JavaFileObject>();
+        var unit = new SimpleJavaFileObject(URI.create("string:///Source.java"), JavaFileObject.Kind.SOURCE) {
+            @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return source; }
+        };
+        try (var files = compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
+            var task = (JavacTask) compiler.getTask(null, files, diagnostics,
+                    List.of("--release", "21", "-proc:none"), null, List.of(unit));
+            for (var tree : task.parse()) {
+                if (tree.getPackageName() == null) return jobClass(mode);
+                for (var declaration : tree.getTypeDecls()) {
+                    if (declaration instanceof ClassTree type && type.getModifiers().getFlags().contains(Modifier.PUBLIC)) {
+                        String name = tree.getPackageName() + "." + type.getSimpleName();
+                        if (name.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*")
+                                && SourceVersion.isName(name, SourceVersion.RELEASE_21)) return name;
+                    }
+                }
+            }
+        }
+        // Malformed/missing public declaration is diagnosed by the normal compiler and contract check.
+        return jobClass(mode);
     }
 
     private static void add(JarOutputStream jar, String name, byte[] content) throws IOException {

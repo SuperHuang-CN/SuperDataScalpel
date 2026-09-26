@@ -58,6 +58,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.java-websocket</groupId>
+            <artifactId>Java-WebSocket</artifactId>
+            <version>1.6.0</version>
+        </dependency>
+        <dependency>
             <groupId>cn.superhuang</groupId>
             <artifactId>data-scalpel-task-sdk</artifactId>
             <version>${project.version}</version>

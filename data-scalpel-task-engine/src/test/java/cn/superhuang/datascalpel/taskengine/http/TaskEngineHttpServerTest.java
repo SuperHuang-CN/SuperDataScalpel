@@ -55,6 +55,23 @@ class TaskEngineHttpServerTest {
     }
 
     @Test
+    void servesDeployedSdkDocumentationWithAuthentication() throws Exception {
+        String path = "/api/v1/spark-jar-sdk-api";
+        assertProblem(send(path, "GET", null, null), 401, "UNAUTHORIZED");
+        assertProblem(sendAuthenticated(path + "/unknown", "GET", null, null), 404, "NOT_FOUND");
+        assertProblem(sendAuthenticated(path, "POST", "application/json", "{}"), 405, "METHOD_NOT_ALLOWED");
+        var response = sendAuthenticated(path, "GET", null, null);
+        assertEquals(200, response.statusCode());
+        assertEquals("no-store", response.headers().firstValue("Cache-Control").orElse(""));
+        var documentation = objectMapper.readValue(response.body(), cn.superhuang.data.scalpel.contract.task.SdkApiDocumentation.class);
+        assertEquals(64, documentation.fingerprint().length());
+        assertTrue(documentation.types().stream().anyMatch(t -> t.simpleName().equals("SparkJobContext") && t.group().equals("开始编写")));
+        try (var bundled = cn.superhuang.datascalpel.sdk.SparkJobContext.class.getResourceAsStream("/META-INF/datascalpel/sdk-api.json")) {
+            assertEquals(objectMapper.readTree(bundled), objectMapper.readTree(response.body()));
+        }
+    }
+
+    @Test
     void exposesUnauthenticatedHealthChecks() throws Exception {
         HttpResponse<String> live = send("/health/live", "GET", null, null);
         HttpResponse<String> ready = send("/health/ready", "GET", null, null);

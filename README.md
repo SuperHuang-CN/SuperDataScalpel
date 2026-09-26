@@ -195,6 +195,8 @@ pnpm check
 
 `--prepare` 不代表应用已启动或功能验证通过。是否执行测试遵循 [根开发约定](AGENTS.md#测试与验证暂时禁用)，Maven 隔离自动化测试仍使用各模块 `application-test.yml`。
 
+Dispatcher / Docker 已部署在远端时，使用 `./start-local-dev.sh --remote-execution`，仅启动本地 Admin、Task Engine 和前端（默认端口分别为 `8080`、`8091`、`8887`）。该模式不启动本地 Dispatcher / Service Engine，不要求本机安装 Docker，也不替换现有数据库、Kafka、对象存储配置；运行任务仍使用已配置的远端计算引擎。沿用根目录 `config/application-local.yml`，并设置与 Admin 一致的 `DATASCALPEL_TASK_ENGINE_TOKEN`。Java 语义补全的离线运行包及环境变量见 [Task Engine 语言服务部署说明](data-scalpel-task-engine/src/main/distribution/JAVA-LANGUAGE.md)。
+
 本地脚本中的 Dispatcher 数据库连接与 Admin 解耦：默认复用 Admin JDBC URL 的 PostgreSQL 主机和查询参数，但数据库名固定为 `datascalpel`，Schema 默认使用 `dispatcher`。需要配置时使用独立的 `DATASCALPEL_TASK_DISPATCHER_DB_URL` 与 `DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA`，不能通过 `DATASCALPEL_DB_URL` 间接改变 Dispatcher 数据库。
 
 ### Admin 独立部署

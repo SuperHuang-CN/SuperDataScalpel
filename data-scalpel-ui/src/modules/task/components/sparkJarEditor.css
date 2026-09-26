@@ -1,0 +1,142 @@
+@font-face {
+  font-family: 'DataScalpel JetBrains Mono';
+  src: url('../assets/jetbrains-mono/JetBrainsMono-Regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.spark-jar-java-editor-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; height: 100%; }
+.spark-jar-java-editor-shell .spark-jar-java-editor { flex: 1; min-height: 0; }
+.spark-jar-java-editor-area { position: relative; display: flex; flex: 1; min-height: 0; }
+.spark-jar-java-preparing { position: absolute; inset: 0; z-index: 20; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 12px; padding: 24px; background: rgba(246, 248, 255, .97); text-align: center; }
+.spark-jar-java-preparing .ant-typography { margin: 0; }
+.spark-jar-java-language-status { display: flex; align-items: center; justify-content: space-between; min-height: 28px; padding: 0 12px; font-size: 12px; color: #637087; border-top: 1px solid #edf0f7; }
+
+.spark-jar-online-filebar .spark-jar-online-java-file {
+  font-family: 'DataScalpel JetBrains Mono', Consolas, 'Microsoft YaHei', monospace;
+  font-weight: 400;
+  font-size: 13px;
+}
+
+.spark-jar-online-filebar .spark-jar-source-size {
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.spark-jar-mode-choice {
+  padding: 40px 24px;
+  text-align: center;
+  background: white;
+  border: 1px solid #e3e8f5;
+  border-radius: 14px;
+}
+
+.spark-jar-online-entry {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  margin-bottom: 12px;
+  border: 1px solid #e3e8f5;
+  border-radius: 14px;
+  background: white;
+}
+
+.spark-jar-resource-heading, .spark-jar-resource-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.spark-jar-resource-heading { margin-bottom: 8px; }
+.spark-jar-online-resource-actions { padding: 4px 10px 10px; }
+.spark-jar-resource-drawer .ant-drawer-body { padding: 16px 20px; }
+.spark-jar-resource-drawer .ant-form-item { margin-bottom: 12px; }
+.spark-jar-resource-form-top { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.spark-jar-resource-candidates { margin-bottom: 12px; }
+.spark-jar-resource-candidates > .ant-input-affix-wrapper { margin-bottom: 8px; }
+@media (max-width: 600px) {
+  .spark-jar-resource-form-top { grid-template-columns: 1fr; gap: 0; }
+}
+
+/* Task definition is a compact workbench; only the resource body grows/scrolls. */
+.spark-jar-definition-panel .spark-jar-definition-scroll { gap: 12px; background: #f4f6fd; }
+.spark-jar-definition-panel .spark-jar-workspace-stack { gap: 12px; }
+.spark-jar-definition-panel .spark-jar-definition-section,
+.spark-jar-definition-panel .spark-jar-development-kit-panel,
+.spark-jar-definition-panel .spark-jar-artifact-summary { border-radius: 14px; background: #fff; box-shadow: none; }
+.spark-jar-section-hint { margin-top: 3px; font-size: 12px; color: #7c88a0; }
+.spark-jar-definition-panel .spark-jar-online-entry { margin: 0; padding: 16px; }
+.spark-jar-definition-panel .spark-jar-mode-choice { width: min(800px, 100%); margin: 36px auto; padding: 28px; text-align: left; }
+.spark-jar-mode-choice .ant-typography { margin-top: 0; }
+.spark-jar-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; width: 100%; margin: 12px 0 24px; }
+.spark-jar-mode-options .spark-jar-mode-option { position: relative; margin: 0; padding: 22px; border: 1px solid #dfe5f3; border-radius: 12px; align-items: flex-start; transition: border-color .15s, background .15s; }
+.spark-jar-mode-options .ant-radio { position: absolute; right: 16px; top: 16px; }
+.spark-jar-mode-options .ant-radio + span { display: flex; flex-direction: column; gap: 8px; padding: 0; }
+.spark-jar-mode-options .ant-radio-wrapper-checked { background: #f0f3ff; border-color: #6274ef; }
+.spark-jar-mode-options .ant-radio-wrapper:focus-within { outline: 2px solid #9ba9ff; outline-offset: 2px; }
+.spark-jar-mode-options strong { font-size: 17px; color: #25325a; }
+.spark-jar-mode-options small { color: #7c88a0; }
+.spark-jar-mode-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: 10px; background: #e8edff; color: #4d62de; font-size: 23px; }
+.spark-jar-mode-confirm { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.spark-jar-mode-confirm .ant-typography { font-size: 12px; }
+.spark-jar-resource-identity { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.spark-jar-resource-identity > button { min-width: 0; padding: 0; border: 0; background: none; color: #26365d; text-align: left; font: inherit; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; cursor: pointer; }
+.spark-jar-resource-identity > button:hover { color: #4565e4; }
+.spark-jar-resource-identity > button:disabled { cursor: default; opacity: .65; }
+.spark-jar-resource-identity > .ant-typography { font-size: 12px; }
+.spark-jar-code-reference { font: 12px 'DataScalpel JetBrains Mono', Consolas, monospace; }
+.spark-jar-definition-panel .spark-jar-kit-sample-control > .ant-space { flex-wrap: nowrap; }
+.spark-jar-definition-panel .spark-jar-resource-bindings-section .ant-table-cell { padding: 8px 10px; }
+/* AntD fixes overflow-y to scroll inline whenever scroll.y is set. */
+.spark-jar-definition-panel .spark-jar-resource-bindings-section .ant-table-body { overflow-y: auto !important; }
+.spark-jar-definition-panel .spark-jar-delivery-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 12px; }
+.spark-jar-delivery-grid > details { min-width: 0; display: block; }
+.spark-jar-delivery-grid > details > summary { display: none; }
+.spark-jar-delivery-grid .spark-jar-development-kit-panel { width: 100%; height: 100%; box-sizing: border-box; }
+.spark-jar-local-kit-secondary > details > summary { width: fit-content; color: #5974d4; cursor: pointer; font-size: 12px; }
+.spark-jar-local-kit-secondary > details[open] > summary { margin-bottom: 8px; }
+.spark-jar-definition-panel .spark-jar-development-kit-content { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+.spark-jar-definition-panel .spark-jar-development-kit-counts { display: flex; gap: 16px; border: 0; background: none; }
+.spark-jar-definition-panel .spark-jar-development-kit-counts > div { flex-direction: row; gap: 5px; padding: 0; border: 0; }
+.spark-jar-definition-panel .spark-jar-development-kit-counts strong { font-size: 14px; font-weight: 500; }
+.spark-jar-definition-panel .spark-jar-development-kit-counts span { font-size: 12px; }
+.spark-jar-definition-panel .spark-jar-development-kit-state { min-height: 32px; gap: 2px; }
+.spark-jar-definition-panel .spark-jar-development-kit-actions { flex-direction: row; justify-content: flex-end; flex-wrap: wrap; margin-top: 4px; }
+.spark-jar-definition-panel .spark-jar-artifact-summary { grid-template-columns: 42px minmax(0, 1fr); gap: 10px 12px; padding: 14px; align-content: start; }
+.spark-jar-artifact-heading { grid-column: 1 / -1; display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.spark-jar-definition-panel .spark-jar-artifact-actions { grid-column: 1 / -1; align-self: end; margin-top: 4px; }
+.spark-jar-definition-panel .spark-jar-artifact-meta > span:first-child { max-width: 100%; }
+.spark-jar-definition-panel .spark-jar-artifact-meta code { overflow-wrap: anywhere; white-space: normal; }
+.spark-jar-definition-panel .spark-jar-runtime-overview-heading { padding: 12px 14px 0; }
+.spark-jar-definition-panel .spark-jar-runtime-sentence { padding: 10px 14px; font-size: 13px; }
+.spark-jar-definition-panel .spark-jar-runtime-advanced-bar { padding: 8px 14px; }
+.spark-jar-definition-panel .spark-jar-runtime-option-chip { border-radius: 6px; padding: 4px 8px; }
+.spark-jar-drawer-title { display: flex; align-items: center; gap: 12px; }
+.spark-jar-drawer-title small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: #7c88a0; }
+.spark-jar-drawer-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; color: #5267df; background: #eaf0ff; }
+.spark-jar-resource-drawer .spark-jar-resource-form-top { grid-template-columns: 1fr; gap: 0; }
+.spark-jar-purpose-options { display: flex; width: 100%; gap: 8px; }
+.spark-jar-purpose-options .ant-radio-wrapper { margin: 0; flex: 1; padding: 10px; border: 1px solid #dfe5f3; border-radius: 8px; }
+.spark-jar-purpose-options .ant-radio-wrapper-checked { background: #f0f3ff; border-color: #7181ed; }
+.spark-jar-purpose-options small { display: block; color: #7c88a0; font-size: 12px; }
+.spark-jar-resource-drawer .ant-drawer-body { overflow-y: auto; }
+.spark-jar-resource-drawer .ant-drawer-footer { flex-shrink: 0; }
+.spark-jar-runtime-drawer .ant-drawer-footer { text-align: right; }
+.spark-jar-online-page .spark-jar-online-identity { flex: 1; }
+.spark-jar-online-identity > div { min-width: 0; }
+.spark-jar-online-entry-status { display: flex; align-items: center; gap: 6px; margin-top: 5px; flex-wrap: wrap; }
+.spark-jar-online-entry-status > .ant-typography { max-width: 340px; font-size: 12px; }
+.spark-jar-online-entry-status .ant-tag { margin-inline-end: 0; font-size: 11px; }
+.spark-jar-online-page .spark-jar-online-main-actions { flex-shrink: 0; }
+@media (max-width: 1100px) {
+  .spark-jar-definition-panel .spark-jar-delivery-grid { grid-template-columns: minmax(0, 1fr); }
+  .spark-jar-online-page .spark-jar-online-header { flex-wrap: wrap; }
+  .spark-jar-online-page .spark-jar-online-main-actions { justify-content: flex-end; width: 100%; }
+}
+@media (max-width: 600px) {
+  .spark-jar-mode-options { grid-template-columns: 1fr; }
+  .spark-jar-purpose-options { flex-wrap: wrap; }
+}

@@ -1,7 +1,11 @@
 import { taskPageHref } from '../model/taskViews';
+import { sparkJarReadSnippet } from '../model/sparkJarCodeResource';
+import { SdkApiDrawer } from '../components/SdkApiDrawer';
+import '../components/sparkJarOnlineWorkspace.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
+  BookOutlined,
   CheckCircleOutlined,
   CloudUploadOutlined,
   CloudServerOutlined,
@@ -18,7 +22,7 @@ import {
 } from '@ant-design/icons';
 import { useQueries } from '@tanstack/react-query';
 import { Button, Empty, List, Modal, Popover, Result, Skeleton, Space, Spin, Switch, Tag, Tabs, Tooltip, Typography, message } from 'antd';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBlocker, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { fetchDataModel } from '../../model';
@@ -34,6 +38,7 @@ import {
 import { TaskRunLogViewer } from '../components/TaskRunLogViewer';
 import {
   useCompileSparkJarOnlineSource,
+  useCheckSparkJarOnlineSource,
   useTrialRunSparkJarOnlineSource,
   useTaskRuns,
   useTaskRun,
@@ -54,7 +59,7 @@ import {
   taskRunStatusLabels,
 } from '../model/task';
 import type {
-  SparkJarDevelopmentKitJdbcTable,
+  SparkJarDevelopmentKit,
   SparkJarOnlineDiagnostic,
   SparkJarOnlineSource,
   SparkJarTaskDefinition,
@@ -62,6 +67,7 @@ import type {
 } from '../model/task';
 
 const onlineSourceLimit = 256 * 1024;
+const autoSavePreferenceKey = 'datascalpel.spark-jar.auto-save';
 
 const countTrialPreviewOutputs = (preview: SparkJarTrialPreview): number => (
   new Set(preview.writes.map((write) => JSON.stringify([
@@ -81,32 +87,22 @@ const diagnosticLabel = (severity: SparkJarOnlineDiagnostic['severity']) => {
   return '提示';
 };
 
-const resourceSnippet = (resource: SparkJarCodeResource, streaming: boolean): string => {
+const resourceSnippet = (resource: SparkJarCodeResource, streaming: boolean, source: string): string => {
+  if (resource.accessMode !== 'WRITE') return sparkJarReadSnippet(resource, source);
+  const binding = JSON.stringify(resource.bindingName);
+  const name = JSON.stringify(`${resource.bindingName}-output`);
+  const sdk = 'cn.superhuang.datascalpel.sdk.';
+  const reminder = '// TODO: 将 output 替换为待写入的 Dataset<Row>，确认目标与写入方式。\n';
   if (resource.kind === 'KAFKA_TOPIC') {
-    const read = `Dataset<Row> kafkaRows = context.kafka().readStream(\n    "${resource.bindingName}", KafkaStartingOffsets.EARLIEST);`;
-    const write = `context.queries().start("${resource.bindingName}-output", StreamingSinkType.KAFKA, spec ->\n    context.kafka().writeStream("${resource.bindingName}", output)\n        .queryName(spec.queryName())\n        .option("checkpointLocation", spec.checkpointLocation())\n        .start());`;
-    if (resource.accessMode === 'READ') return read;
-    if (resource.accessMode === 'WRITE') return write;
-    return `${read}\n\n${write}`;
+    return reminder + `context.queries().start(${name}, ${sdk}StreamingSinkType.KAFKA, spec ->\n    context.kafka().writeStream(${binding}, output)\n        .queryName(spec.queryName())\n        .option("checkpointLocation", spec.checkpointLocation())\n        .start());\n`;
   }
-  if (resource.kind === 'JDBC_TABLE') {
-    const read = `context.jdbc().readTable("${resource.bindingName}", "${resource.table ?? ''}")`;
-    if (resource.accessMode === 'READ') return read;
-    const writeCall = `context.jdbc().write("${resource.bindingName}", batch)\n    .table(JdbcTableIdentifier.table("target_table"))\n    .mode(JdbcWriteMode.APPEND)\n    .map("target_column", "source_column")\n    .execute();`;
-    const write = streaming
-      ? `context.queries().start("${resource.bindingName}-output", StreamingSinkType.JDBC, spec ->\n    output.writeStream()\n        .queryName(spec.queryName())\n        .option("checkpointLocation", spec.checkpointLocation())\n        .foreachBatch((org.apache.spark.api.java.function.VoidFunction2<Dataset<Row>, Long>) (batch, batchId) -> {\n            ${writeCall.replaceAll('\n', '\n            ')}\n        })\n        .start());`
-      : writeCall.replaceAll('batch', 'dataset');
-    if (resource.accessMode === 'WRITE') return write;
-    return `${read}\n\n${write}`;
-  }
-  const read = `context.models().read("${resource.bindingName}")`;
-  if (resource.accessMode === 'READ') return read;
-  const writeCall = `context.models()\n    .write("${resource.bindingName}", batch)\n    .mode(ModelWriteMode.APPEND)\n    .mapSameName()\n    .checkSchema()\n    .execute();`;
-  const write = streaming
-    ? `context.queries().start("${resource.bindingName}-output", StreamingSinkType.JDBC, spec ->\n    output.writeStream()\n        .queryName(spec.queryName())\n        .option("checkpointLocation", spec.checkpointLocation())\n        .foreachBatch((org.apache.spark.api.java.function.VoidFunction2<Dataset<Row>, Long>) (batch, batchId) -> {\n            ${writeCall.replaceAll('\n', '\n            ')}\n        })\n        .start());`
-    : writeCall.replaceAll('batch', 'dataset');
-  if (resource.accessMode === 'WRITE') return write;
-  return `${read}\n\n${write}`;
+  const jdbc = resource.kind === 'JDBC_TABLE' || resource.kind === 'JDBC_CONNECTION';
+  const dataset = streaming ? 'batch' : 'output';
+  const write = jdbc
+    ? `context.jdbc().write(${binding}, ${dataset})\n    .table(${sdk}JdbcTableIdentifier.table("target_table"))\n    .mode(${sdk}JdbcWriteMode.APPEND)\n    .map("target_column", "source_column")\n    .execute();`
+    : `context.models().write(${binding}, ${dataset})\n    .mode(${sdk}ModelWriteMode.APPEND)\n    .mapSameName()\n    .checkSchema()\n    .execute();`;
+  if (!streaming) return reminder + write + '\n';
+  return reminder + `context.queries().start(${name}, ${sdk}StreamingSinkType.JDBC, spec ->\n    output.writeStream()\n        .queryName(spec.queryName())\n        .option("checkpointLocation", spec.checkpointLocation())\n        .foreachBatch((org.apache.spark.api.java.function.VoidFunction2<org.apache.spark.sql.Dataset<org.apache.spark.sql.Row>, Long>) (batch, batchId) -> {\n            ${write.replaceAll('\n', '\n            ')}\n        })\n        .start());\n`;
 };
 
 interface OnlineWorkbenchProps {
@@ -115,7 +111,7 @@ interface OnlineWorkbenchProps {
   definitionHref: string;
   initialSource: SparkJarOnlineSource;
   definition: SparkJarTaskDefinition;
-  jdbcTables: SparkJarDevelopmentKitJdbcTable[];
+  developmentConfiguration: SparkJarDevelopmentKit['configuration'];
 }
 
 const OnlineWorkbench = ({
@@ -124,16 +120,29 @@ const OnlineWorkbench = ({
   definitionHref,
   initialSource,
   definition,
-  jdbcTables,
+  developmentConfiguration,
 }: OnlineWorkbenchProps) => {
+  const jdbcTables = developmentConfiguration.jdbcTables;
   const navigate = useNavigate();
   const editorRef = useRef<SparkJarJavaEditorHandle>(null);
+  const [languageReady, setLanguageReady] = useState(false);
+  const [sdkApiOpen, setSdkApiOpen] = useState(false);
+  const [editingAllowed, setEditingAllowed] = useState(false);
   const [messageApi, messageContext] = message.useMessage();
   const [source, setSource] = useState(initialSource.sourceCode);
+  const [entryName, setEntryName] = useState(definition.jobMode === 'STREAMING' ? 'ExampleSparkStreamingJob.java' : 'ExampleSparkJob.java');
+  const [entryClassName, setEntryClassName] = useState(`com.example.datascalpel.${entryName.replace(/\.java$/, '')}`);
   const [persistedSource, setPersistedSource] = useState(initialSource.sourceCode);
   const [sourceState, setSourceState] = useState(initialSource);
+  const [autoSave, setAutoSave] = useState(() => {
+    try { return localStorage.getItem(autoSavePreferenceKey) !== 'false'; } catch { return true; }
+  });
+  const [savingDraft, setSavingDraft] = useState(false);
+  const [saveError, setSaveError] = useState('');
+  const saveInFlight = useRef<Promise<void> | null>(null);
   const [diagnostics, setDiagnostics] = useState<SparkJarOnlineDiagnostic[]>([]);
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
+  const [checkedStatus, setCheckedStatus] = useState<'SUCCEEDED' | 'FAILED' | null>(null);
   const [selectedTrialRunId, setSelectedTrialRunId] = useState<string | null>(null);
   const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<'online' | 'log' | 'preview'>('online');
   const [previewAutoRefresh, setPreviewAutoRefresh] = useState(true);
@@ -142,6 +151,9 @@ const OnlineWorkbench = ({
   const [expandedResourceKeys, setExpandedResourceKeys] = useState<string[]>([]);
   const saveMutation = useSaveSparkJarOnlineSource();
   const compileMutation = useCompileSparkJarOnlineSource();
+  const checkMutation = useCheckSparkJarOnlineSource();
+  const sourceRef = useRef(source);
+  useEffect(() => { sourceRef.current = source; }, [source]);
   const trialMutation = useTrialRunSparkJarOnlineSource();
   const cancelMutation = useCancelTaskRun();
   const stopMutation = useStopTaskRun();
@@ -215,6 +227,8 @@ const OnlineWorkbench = ({
       kind: 'JDBC_TABLE',
       accessMode: binding.accessMode,
       table: table.table,
+      catalog: table.catalog,
+      schema: table.schema,
       fieldsLoading: jdbcQueries[index]?.isPending ?? false,
       fields: jdbcQueries[index]?.data?.columns.map((field) => ({
         name: field.name,
@@ -222,6 +236,10 @@ const OnlineWorkbench = ({
         nullable: field.nullable,
       })) ?? [],
     })),
+    ...definition.resourceBindings.filter((binding) => binding.resourceType === 'JDBC_DATA_SOURCE'
+      && !jdbcResources.some((resource) => resource.binding.bindingName === binding.bindingName))
+      .map((binding): SparkJarCodeResource => ({ bindingName: binding.bindingName,
+        label: binding.resourceName ?? binding.bindingName, kind: 'JDBC_CONNECTION', accessMode: binding.accessMode, fields: [] })),
     ...kafkaBindings.map((binding): SparkJarCodeResource => ({
       bindingName: binding.bindingName,
       label: `${binding.resourceName ?? binding.bindingName} · ${binding.topicName ?? 'Topic 未配置'}`,
@@ -229,14 +247,15 @@ const OnlineWorkbench = ({
       accessMode: binding.accessMode,
       fields: [],
     })),
-  ], [jdbcQueries, jdbcResources, kafkaBindings, modelBindings, modelQueries]);
+  ], [definition.resourceBindings, jdbcQueries, jdbcResources, kafkaBindings, modelBindings, modelQueries]);
 
-  const localDirty = source !== persistedSource;
+  // The API normalizes line endings; CRLF must not trigger endless identical saves.
+  const localDirty = source.replace(/\r\n?/g, '\n') !== persistedSource.replace(/\r\n?/g, '\n');
   const hasUncompiledChanges = localDirty || sourceState.hasUncompiledChanges;
   const sourceBytes = new Blob([source]).size;
-  const busy = saveMutation.isPending || compileMutation.isPending || trialMutation.isPending;
+  const busy = savingDraft || saveMutation.isPending || compileMutation.isPending || trialMutation.isPending || checkMutation.isPending;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => (
-    localDirty && currentLocation.pathname !== nextLocation.pathname
+    (localDirty || savingDraft) && currentLocation.pathname !== nextLocation.pathname
   ));
 
   useEffect(() => {
@@ -253,12 +272,12 @@ const OnlineWorkbench = ({
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
-      if (!localDirty) return;
+      if (!localDirty && !savingDraft) return;
       event.preventDefault();
     };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
-  }, [localDirty]);
+  }, [localDirty, savingDraft]);
 
   useEffect(() => {
     if (blocker.state !== 'blocked') return;
@@ -274,19 +293,61 @@ const OnlineWorkbench = ({
     });
   }, [blocker]);
 
-  const save = async () => {
-    if (sourceBytes > onlineSourceLimit) {
-      void messageApi.error('源码不能超过 256 KiB');
-      return;
+  const saveDraft = saveMutation.mutateAsync;
+  const save = useCallback((automatic = false): Promise<void> => {
+    if (saveInFlight.current) return saveInFlight.current;
+    const submittedSource = sourceRef.current;
+    if (new Blob([submittedSource]).size > onlineSourceLimit) {
+      setSaveError('源码不能超过 256 KiB');
+      return Promise.resolve();
     }
+    setSavingDraft(true);
+    setSaveError('');
+    const pending = (async () => {
+      try {
+        const result = await saveDraft({ id: taskId, sourceCode: submittedSource });
+        // A save acknowledges its snapshot, never replace newer text in Monaco.
+        setPersistedSource(result.sourceCode);
+        setSourceState(result);
+        if (!automatic) void messageApi.success('草稿已保存');
+      } catch (error) {
+        setSaveError(error instanceof ApiError ? error.message : '草稿保存失败，请重试');
+      } finally {
+        saveInFlight.current = null;
+        setSavingDraft(false);
+      }
+    })();
+    saveInFlight.current = pending;
+    return pending;
+  }, [saveDraft, taskId, messageApi]);
+
+  useEffect(() => {
+    if (!autoSave || !localDirty || busy || saveError || blocker.state === 'blocked') return;
+    const timer = window.setTimeout(() => { void save(true); }, 1500);
+    return () => window.clearTimeout(timer);
+  }, [autoSave, source, localDirty, busy, saveError, blocker.state, save]);
+
+  const toggleAutoSave = (enabled: boolean) => {
+    setAutoSave(enabled);
+    if (enabled) setSaveError('');
+    try { localStorage.setItem(autoSavePreferenceKey, String(enabled)); } catch { /* Preference is optional. */ }
+  };
+
+  const check = async () => {
+    if (sourceBytes > onlineSourceLimit) { void messageApi.error('源码不能超过 256 KiB'); return; }
+    const checkedSource = source;
     try {
-      const result = await saveMutation.mutateAsync({ id: taskId, sourceCode: source });
-      setPersistedSource(result.sourceCode);
-      setSourceState(result);
-      void messageApi.success('草稿已保存');
-    } catch (error) {
-      void messageApi.error(error instanceof ApiError ? error.message : '草稿保存失败');
-    }
+      const result = await checkMutation.mutateAsync({ id: taskId, sourceCode: checkedSource });
+      if (sourceRef.current !== checkedSource) {
+        void messageApi.info('检查期间代码已修改，请重新检查');
+        return;
+      }
+      setDiagnostics(result.diagnostics);
+      setDiagnosticsExpanded(result.diagnostics.length > 0);
+      setCheckedStatus(result.status);
+      void messageApi[result.status === 'SUCCEEDED' ? 'success' : 'error'](
+        result.status === 'SUCCEEDED' ? '检查通过，未替换当前 JAR' : '检查未通过，请查看诊断');
+    } catch (error) { void messageApi.error(error instanceof ApiError ? error.message : '代码检查暂时不可用'); }
   };
 
   const compile = async () => {
@@ -294,12 +355,18 @@ const OnlineWorkbench = ({
       void messageApi.error('源码不能超过 256 KiB');
       return;
     }
+    const submittedSource = source;
     try {
-      const result = await compileMutation.mutateAsync({ id: taskId, sourceCode: source });
+      await saveInFlight.current;
+      const result = await compileMutation.mutateAsync({ id: taskId, sourceCode: submittedSource });
       setPersistedSource(result.source.sourceCode);
       setSourceState(result.source);
-      setDiagnostics(result.diagnostics);
-      setDiagnosticsExpanded(result.diagnostics.length > 0);
+      setSaveError('');
+      if (sourceRef.current === submittedSource) {
+        setDiagnostics(result.diagnostics);
+        setDiagnosticsExpanded(result.diagnostics.length > 0);
+        setCheckedStatus(result.status);
+      }
       if (result.status === 'SUCCEEDED') {
         void messageApi.success(`编译成功，已应用为当前 JAR（${result.durationMs} ms）`);
       } else {
@@ -316,12 +383,18 @@ const OnlineWorkbench = ({
       void messageApi.error('源码不能超过 256 KiB');
       return;
     }
+    const submittedSource = source;
     try {
-      const result = await trialMutation.mutateAsync({ id: taskId, sourceCode: source });
+      await saveInFlight.current;
+      const result = await trialMutation.mutateAsync({ id: taskId, sourceCode: submittedSource });
       setPersistedSource(result.source.sourceCode);
       setSourceState(result.source);
-      setDiagnostics(result.diagnostics);
-      setDiagnosticsExpanded(result.status === 'COMPILE_FAILED');
+      setSaveError('');
+      if (sourceRef.current === submittedSource) {
+        setDiagnostics(result.diagnostics);
+        setDiagnosticsExpanded(result.status === 'COMPILE_FAILED');
+        setCheckedStatus(result.status === 'COMPILE_FAILED' ? 'FAILED' : 'SUCCEEDED');
+      }
       if (result.status === 'COMPILE_FAILED') {
         setActiveWorkbenchTab('online');
         void messageApi.error('编译未通过，未创建试运行');
@@ -441,31 +514,37 @@ const OnlineWorkbench = ({
   return (
     <div className="spark-jar-online-page">
       {messageContext}
+      {sdkApiOpen && <SdkApiDrawer mode={streaming ? 'STREAMING' : 'BATCH'} onClose={() => setSdkApiOpen(false)} />}
       <header className="spark-jar-online-header">
         <div className="spark-jar-online-identity">
-          <Button type="text" icon={<ArrowLeftOutlined />} onClick={goBack}>返回任务定义</Button>
+          <Tooltip title="返回任务定义"><Button type="text" className="spark-jar-online-back" aria-label="返回任务定义" icon={<ArrowLeftOutlined />} onClick={goBack} /></Tooltip>
           <span className="spark-jar-online-icon"><CodeOutlined /></span>
           <div>
             <Space size={8} wrap>
               <Typography.Text strong className="spark-jar-online-title">{taskName}</Typography.Text>
               <Tag color={streaming ? 'orange' : 'geekblue'}>{streaming ? '实时在线 Java 开发' : '在线 Java 开发'}</Tag>
-              <Tag>Java 21 · Spark 4.1.1 · Job API v1</Tag>
+              <Typography.Text type="secondary" className="spark-jar-online-runtime">Java 21 · Spark 4.1.1 · Job API v1</Typography.Text>
             </Space>
-            <Typography.Text type="secondary">
-              {streaming
-                ? 'com.example.datascalpel.ExampleSparkStreamingJob'
-                : 'com.example.datascalpel.ExampleSparkJob'}
-            </Typography.Text>
+            <div className="spark-jar-online-entry-status">
+              <Typography.Text type="secondary" ellipsis={{ tooltip: entryClassName }}>{entryClassName}</Typography.Text>
+              <Tag color={saveError ? 'error' : savingDraft ? 'processing' : localDirty ? 'orange' : 'default'}>
+                {saveError ? '草稿保存失败' : savingDraft ? '正在保存草稿…' : localDirty ? (autoSave ? '等待自动保存' : '草稿未保存') : sourceState.persisted ? '草稿已保存' : '草稿尚未保存'}
+              </Tag>
+              {saveError && <Tooltip title={saveError}><Button type="link" size="small" danger disabled={busy} onClick={() => void save()}>重试保存</Button></Tooltip>}
+              <Tag color={hasUncompiledChanges ? 'gold' : 'success'}>{hasUncompiledChanges ? '存在未编译修改' : '当前源码已应用'}</Tag>
+              {sourceState.currentJar && <Tag color="blue">当前 JAR：{jarOrigin}</Tag>}
+            </div>
           </div>
         </div>
-        <Space wrap>
-          <Tag color={localDirty ? 'orange' : 'default'}>{localDirty ? '草稿未保存' : '草稿已保存'}</Tag>
-          <Tag color={hasUncompiledChanges ? 'gold' : 'success'}>
-            {hasUncompiledChanges ? '存在未编译修改' : '当前源码已应用'}
-          </Tag>
-          {sourceState.currentJar && <Tag color="blue">当前 JAR：{jarOrigin}</Tag>}
-          <Button icon={<SaveOutlined />} loading={saveMutation.isPending} disabled={compileMutation.isPending} onClick={() => void save()}>
+        <Space className="spark-jar-online-main-actions" wrap>
+          <Tooltip title="停止输入 1.5 秒后保存草稿，不编译、不运行、不替换当前 JAR；开关记住在当前浏览器。">
+            <Space size={8} className="spark-jar-online-autosave"><Typography.Text>自动保存</Typography.Text><Switch size="small" aria-label="自动保存草稿" checked={autoSave} onChange={toggleAutoSave} /></Space>
+          </Tooltip>
+          {!autoSave && <Button icon={<SaveOutlined />} loading={savingDraft} disabled={busy} onClick={() => void save()}>
             保存草稿
+          </Button>}
+          <Button icon={<CheckCircleOutlined />} loading={checkMutation.isPending} disabled={busy} onClick={() => void check()}>
+            检查代码
           </Button>
           <Button icon={<PlayCircleOutlined />} loading={trialMutation.isPending} disabled={busy || Boolean(trialActive)} onClick={() => void trialRunSource()}>
             试运行
@@ -495,8 +574,12 @@ const OnlineWorkbench = ({
               aria-label="查看试运行说明"
             />
           </Popover>
-          <Button type="primary" icon={<CloudUploadOutlined />} loading={compileMutation.isPending} disabled={saveMutation.isPending} onClick={() => void compile()}>
-            编译并应用
+          <Button type="primary" icon={<CloudUploadOutlined />} loading={compileMutation.isPending} disabled={busy} onClick={() => Modal.confirm({
+            title: '应用当前代码到任务？',
+            content: '编译成功后替换当前生效 JAR，不会立即运行任务。编译失败保留原 JAR。',
+            okText: '编译并应用', cancelText: '取消', onOk: compile,
+          })}>
+            应用到任务
           </Button>
         </Space>
       </header>
@@ -507,7 +590,7 @@ const OnlineWorkbench = ({
           animated={false}
           activeKey={activeWorkbenchTab}
           onChange={(key) => setActiveWorkbenchTab(key as 'online' | 'log' | 'preview')}
-          tabBarExtraContent={renderTrialRunStatus()}
+          tabBarExtraContent={<Space>{renderTrialRunStatus()}<Button type="text" icon={<BookOutlined />} onClick={() => setSdkApiOpen(true)}>SDK API</Button></Space>}
           items={[
             {
               key: 'online',
@@ -516,8 +599,7 @@ const OnlineWorkbench = ({
                 <div className="spark-jar-online-workspace">
                   <aside className="spark-jar-online-resources">
                     <div className="spark-jar-online-panel-heading">
-                      <div><Typography.Text strong>任务资源</Typography.Text><Typography.Text type="secondary">点击可插入 SDK 调用</Typography.Text></div>
-                      <Tag>{resources.length}</Tag>
+                      <div><Typography.Text strong>任务资源 <Typography.Text type="secondary">{definition.resourceBindings.length}</Typography.Text></Typography.Text><Typography.Text type="secondary">选择操作，插入代码</Typography.Text></div>
                     </div>
                     <div className="spark-jar-online-resource-list">
                       {resources.length ? resources.map((resource) => {
@@ -526,17 +608,17 @@ const OnlineWorkbench = ({
                         return (
                           <section key={resourceKey} className="spark-jar-online-resource-card">
                             <div className="spark-jar-online-resource-card-header">
-                              <button type="button" className="spark-jar-online-resource-main" onClick={() => editorRef.current?.insertText(resourceSnippet(resource, streaming))}>
+                              <button type="button" disabled={!editingAllowed} className="spark-jar-online-resource-main" onClick={() => editorRef.current?.insertText(resourceSnippet(resource, streaming, source))}>
                                 <span className="spark-jar-online-resource-icon">
                                   {resource.kind === 'MODEL'
                                     ? <DatabaseOutlined />
                                     : resource.kind === 'KAFKA_TOPIC' ? <CloudServerOutlined /> : <TableOutlined />}
                                 </span>
                                 <span>
-                                  <strong>{resource.bindingName}</strong>
-                                  <small>{resource.label}</small>
+                                  <strong title={resource.bindingName}>{resource.bindingName}</strong>
+                                  <small title={resource.label}>{resource.label}</small>
                                 </span>
-                                <Tag color={resource.accessMode === 'WRITE' ? 'purple' : 'blue'}>{resource.accessMode}</Tag>
+                                <Tag color="geekblue">{resource.accessMode === 'READ' ? '输入' : resource.accessMode === 'WRITE' ? '输出' : '输入及输出'}</Tag>
                               </button>
                               {resource.kind !== 'KAFKA_TOPIC' && <Tooltip title={fieldsExpanded ? '收起字段' : '展开字段'}>
                                 <button
@@ -550,14 +632,27 @@ const OnlineWorkbench = ({
                                 </button>
                               </Tooltip>}
                             </div>
+                            <Space size={4} wrap className="spark-jar-online-resource-actions">
+                              {resource.accessMode !== 'WRITE' && resource.kind !== 'JDBC_CONNECTION' && <>
+                                <Button size="small" disabled={!editingAllowed} onClick={() => editorRef.current?.insertText(sparkJarReadSnippet(resource, source))}>插入读取</Button>
+                                {resource.kind !== 'KAFKA_TOPIC' && <Tooltip title="插入读取并打印 20 行的代码；运行后在控制台日志查看，可能扫描真实输入。">
+                                  <Button size="small" disabled={!editingAllowed} onClick={() => editorRef.current?.insertText(sparkJarReadSnippet(resource, source, true))}>打印 20 行</Button>
+                                </Tooltip>}
+                              </>}
+                              {resource.accessMode !== 'READ' && <Tooltip title="插入写入模板，需要补全输出 Dataset 和目标映射。">
+                                <Button size="small" disabled={!editingAllowed} onClick={() => editorRef.current?.insertText(resourceSnippet({ ...resource, accessMode: 'WRITE' }, streaming, source))}>写入模板</Button>
+                              </Tooltip>}
+                              {resource.kind === 'JDBC_CONNECTION' && resource.accessMode !== 'WRITE' && <Typography.Text type="secondary">未选择本地表，可在代码中调用 readQuery/readTable。</Typography.Text>}
+                            </Space>
                             {fieldsExpanded && (
                               <div className="spark-jar-online-fields">
                                 {resource.fields.length ? resource.fields.map((field) => (
                                   <button
                                     key={field.name}
                                     type="button"
-                                    onClick={() => editorRef.current?.insertText(`col("${field.name}")`)}
-                                    title={`插入 col("${field.name}")`}
+                                    disabled={!editingAllowed}
+                                    onClick={() => editorRef.current?.insertText(`col(${JSON.stringify(field.name)})`)}
+                                    title={`插入 col(${JSON.stringify(field.name)})`}
                                   >
                                     <FieldStringOutlined />
                                     <span>{field.name}</span>
@@ -578,30 +673,39 @@ const OnlineWorkbench = ({
 
                   <section className="spark-jar-online-editor-panel">
                     <div className="spark-jar-online-filebar">
-                      <Space><CodeOutlined /><Typography.Text strong>{streaming ? 'ExampleSparkStreamingJob.java' : 'ExampleSparkJob.java'}</Typography.Text></Space>
+                      <Space className="spark-jar-online-file-actions"><CodeOutlined /><Typography.Text className="spark-jar-online-java-file" title={entryName}>{entryName}</Typography.Text>
+                        <Tooltip title={languageReady ? '同步重命名文件、主类和引用；包名仍在源码中编辑' : 'Java 开发环境准备完成后可重命名'}>
+                          <Button type="link" size="small" disabled={!languageReady} onClick={() => editorRef.current?.renameEntry()}>重命名</Button>
+                        </Tooltip>
+                        {localDirty && <Tag color="orange">未保存</Tag>}</Space>
                       <Space>
-                        <Typography.Text type={sourceBytes > onlineSourceLimit ? 'danger' : 'secondary'}>
+                        <Typography.Text className="spark-jar-source-size" type={sourceBytes > onlineSourceLimit ? 'danger' : 'secondary'}>
                           {(sourceBytes / 1024).toFixed(1)} / 256 KiB
                         </Typography.Text>
                         {compileMutation.isPending && <Typography.Text type="secondary"><Spin size="small" /> 正在编译，不会执行用户代码</Typography.Text>}
                       </Space>
                     </div>
                     <SparkJarJavaEditor
+                      key={`${taskId}-${definition.jobMode}`}
                       ref={editorRef}
                       taskId={taskId}
                       value={source}
                       diagnostics={diagnostics}
                       resources={resources}
                       jobMode={definition.jobMode}
-                      onChange={setSource}
+                      onReadyChange={setLanguageReady}
+                      onEditingAllowedChange={setEditingAllowed}
+                      onReturn={goBack}
+                      onEntryChange={(entry) => { setEntryName(entry.fileName); setEntryClassName(entry.className); }}
+                      onChange={(next) => { sourceRef.current = next; setSource(next); setDiagnostics([]); setCheckedStatus(null); }}
                     />
                     <div className={`spark-jar-online-diagnostics${diagnosticsExpanded ? ' spark-jar-online-diagnostics-expanded' : ''}`}>
-                      <button type="button" className="spark-jar-online-diagnostics-heading" onClick={() => setDiagnosticsExpanded((current) => !current)}>
+                      <button type="button" className="spark-jar-online-diagnostics-heading" aria-expanded={diagnosticsExpanded} onClick={() => setDiagnosticsExpanded((current) => !current)}>
                         <span>
                           {diagnostics.some((item) => item.severity === 'ERROR') ? <ExclamationCircleOutlined /> : <CheckCircleOutlined />}
                           编译诊断
                         </span>
-                        <span>{diagnostics.length ? `${diagnostics.length} 项` : '尚未编译'}</span>
+                        <span>{diagnostics.length ? `${diagnostics.length} 项` : checkedStatus === 'SUCCEEDED' ? '检查通过' : checkedStatus === 'FAILED' ? '检查未通过' : '当前代码尚未检查'} <DownOutlined className="spark-jar-online-diagnostics-chevron" /></span>
                       </button>
                       {diagnosticsExpanded && (
                         <div className="spark-jar-online-diagnostics-list">
@@ -621,7 +725,7 @@ const OnlineWorkbench = ({
                                 </List.Item>
                               )}
                             />
-                          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="点击“编译并应用”后查看结果" />}
+                          ) : <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={checkedStatus === 'SUCCEEDED' ? '未发现编译问题' : '点击“检查代码”查看结果'} />}
                         </div>
                       )}
                     </div>
@@ -784,12 +888,13 @@ export const SparkJarOnlineEditorPage = () => {
 
   return (
     <OnlineWorkbench
+      key={taskId}
       taskId={taskId}
       taskName={taskQuery.data.name}
       definitionHref={definitionHref}
       initialSource={sourceQuery.data}
       definition={definitionQuery.data}
-      jdbcTables={kitQuery.data.configuration.jdbcTables}
+      developmentConfiguration={kitQuery.data.configuration}
     />
   );
 };

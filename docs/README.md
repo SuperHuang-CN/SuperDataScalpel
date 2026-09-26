@@ -33,6 +33,8 @@
 | Canvas JSON、节点配置、设计期 API | [定义与节点语义](design/canvas-task-definition.md)、[编译服务](design/task-engine-daemon-and-compilation.md) |
 | Manifest、结果、Kafka 消息、Dispatcher | [Canvas 执行](design/canvas-task-execution.md)、[消息可靠性](design/task-execution-platform/02-kafka-contracts-and-admin-reliability.md)、[Runner 与制品](design/task-execution-platform/05-task-runner-kafka-and-artifacts.md) |
 | 用户 JAR、TestKit、在线开发及试运行 | [SDK 设计](design/spark-jar-task-sdk-v1.md)、[SDK 运行约束](development/task-engine.md#spark-jar) |
+| 在线 SDK API 说明与动态更新 | [说明生成与读取规则](design/spark-jar-task-sdk-v1.md#在线-sdk-api-说明)、[验证记录](verification/sdk-api-documentation-20260926.md) |
+| 在线 Java 补全、语言服务工作区与部署 | [语言服务方案](design/spark-jar-online-java-language-service.md)（已实现；保存版本冲突后续再议）、[本机资源与隔离评估](verification/java-language-service-evaluation-20260925.md)（非生产容量认证） |
 | HTTP 错误、认证、权限 | [错误处理](design/backend-api-response-and-error-handling.md)、[系统访问管理](design/system-access-management.md) |
 | JDBC、平台类型、模型及物理表 | [数据源](design/data-source-management.md)、[类型系统](design/model-data-type-system.md)、[模型](design/model-management.md)、[物理表演进](design/model-physical-table-evolution.md) |
 | 全景成品、地图浏览和全景资产 | [全景影像管理 V1](development/panorama-management-v1.md) |

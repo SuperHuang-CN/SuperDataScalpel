@@ -522,7 +522,8 @@ public class TaskRunService {
             UUID taskId,
             String sourceSha256,
             byte[] userJar,
-            String jarSha256
+            String jarSha256,
+            String jobClass
     ) {
         if (sourceSha256 == null || sourceSha256.isBlank() || userJar == null || userJar.length == 0
                 || !Objects.equals(jarSha256, sha256(userJar))) {
@@ -548,7 +549,7 @@ public class TaskRunService {
             return new SparkJarRunSource(definition.getVersion(), task.getComputeEngineId(), definition);
         }));
         ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
-        SparkJarTaskRunPreparationService.Preparation preparation = sparkJarPreparationService.prepareTrial(source.definition());
+        SparkJarTaskRunPreparationService.Preparation preparation = sparkJarPreparationService.prepareTrial(source.definition(), jobClass);
         TaskRunArtifactStorage storage = requireArtifactStorage();
         UUID runId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
@@ -581,7 +582,7 @@ public class TaskRunService {
         String fileName = "online-trial-" + sourceSha256.substring(0, 12) + ".jar";
         String snapshot = writeSnapshot(new SparkJarRunSnapshotReference(
                 2, executionId, 1, source.definitionVersion(), route.engineId(), fileName,
-                jarSha256, userJar.length, "com.example.datascalpel.ExampleSparkJob", 1,
+                jarSha256, userJar.length, jobClass, 1,
                 preparation.payload().parameters(), preparation.payload().sparkConf(),
                 preparation.payload().resourceBindings(), source.definition().getTimeoutSeconds(), executionResources));
         try {

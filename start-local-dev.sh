@@ -13,6 +13,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PREPARE_ONLY=false
+REMOTE_EXECUTION=false
 MAVEN_THREADS="${DATASCALPEL_MAVEN_THREADS:-1C}"
 MAVEN_SKIP_TESTS_ARGUMENT="-Dmaven.test.skip=true"
 
@@ -30,6 +31,10 @@ export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }$DIRECT_JAVA_OPTIONS_TEXT"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --remote-execution)
+      REMOTE_EXECUTION=true
+      shift
+      ;;
     --prepare)
       PREPARE_ONLY=true
       shift
@@ -51,11 +56,17 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      echo "用法：$0 [--prepare] [--threads <线程数|每核线程数C>]"
+      echo "用法：$0 [--prepare] [--remote-execution] [--threads <线程数|每核线程数C>]"
       exit 1
       ;;
   esac
 done
+if [[ "$REMOTE_EXECUTION" == true ]]; then
+  # Match the existing IDE environment; Dispatcher/Docker and registered engines remain remote.
+  BACKEND_PORT="${BACKEND_PORT:-8080}"
+  TASK_ENGINE_PORT="${TASK_ENGINE_PORT:-8091}"
+  FRONTEND_PORT="${FRONTEND_PORT:-8887}"
+fi
 if [[ ! "$MAVEN_THREADS" =~ ^([1-9][0-9]*|([1-9][0-9]*([.][0-9]+)?|0[.][0-9]*[1-9][0-9]*)C)$ ]]; then
   echo "Maven 并行度无效：${MAVEN_THREADS}；请使用 4、1C 或 0.5C 这类格式。"
   exit 1
@@ -88,6 +99,10 @@ ENGINE_CODE="${DATASCALPEL_LOCAL_ENGINE_CODE:-local_engine}"
 ENGINE_MANAGEMENT_TOKEN="${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:-change-me-engine-management-token}"
 SERVICE_ENGINE_CREDENTIAL_KEY="${DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
 MCP_CREDENTIAL_KEY="${DATASCALPEL_MCP_CREDENTIAL_KEY:-ZGF0YXNjYWxwZWwtbWNwLWxvY2FsLWRldi1rZXktdjE=}"
+if [[ "$REMOTE_EXECUTION" == true && "$PREPARE_ONLY" != true && -z "${DATASCALPEL_TASK_ENGINE_TOKEN:-}" ]]; then
+  echo "远端执行模式需要 DATASCALPEL_TASK_ENGINE_TOKEN，必须与现有 Admin 配置一致。" >&2
+  exit 1
+fi
 TASK_ENGINE_TOKEN="${DATASCALPEL_TASK_ENGINE_TOKEN:-change-me-task-engine-token}"
 DISPATCHER_TOKEN="${DATASCALPEL_TASK_DISPATCHER_TOKEN:-change-me-task-dispatcher-token}"
 DISPATCHER_WORK_DIR="${DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY:-$ROOT_DIR/.local/task-dispatcher}"
@@ -119,6 +134,11 @@ DISPATCHER_DB_SCHEMA="${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:-dispatcher}"
 TASK_RUNNER_JAR="${DATASCALPEL_TASK_RUNNER_JAR:-$ROOT_DIR/data-scalpel-task-engine/target/data-scalpel-task-engine-0.1.0-SNAPSHOT-runner-local.jar}"
 TASK_ENGINE_CONFIG="$ROOT_DIR/data-scalpel-task-engine/src/main/distribution/conf/task-engine.properties"
 TASK_ENGINE_LOG_CONFIG="$ROOT_DIR/data-scalpel-task-engine/src/main/distribution/conf/log4j2.properties"
+if command -v cygpath >/dev/null 2>&1; then
+  TASK_ENGINE_LOG_URI="file:///$(cygpath -m "$TASK_ENGINE_LOG_CONFIG")"
+else
+  TASK_ENGINE_LOG_URI="file:$TASK_ENGINE_LOG_CONFIG"
+fi
 ADMIN_USERNAME="${DATASCALPEL_ADMIN_USERNAME:-admin}"
 ADMIN_PASSWORD="${DATASCALPEL_ADMIN_PASSWORD:-admin123456}"
 ENGINE_DISPLAY_NAME="${DATASCALPEL_START_ENGINE_DISPLAY_NAME:-本地开发服务引擎}"
@@ -200,9 +220,13 @@ fi
 cd "$ROOT_DIR"
 
 echo "正在并行编译后端（Maven 线程：${MAVEN_THREADS}，不执行 package）…"
+APPLICATION_MODULES="data-scalpel-admin,data-scalpel-service-engine,data-scalpel-task-engine,data-scalpel-task-dispatcher"
+if [[ "$REMOTE_EXECUTION" == true ]]; then
+  APPLICATION_MODULES="data-scalpel-admin,data-scalpel-task-engine"
+fi
 ./mvnw -q -T "$MAVEN_THREADS" \
   "$MAVEN_SKIP_TESTS_ARGUMENT" \
-  -pl data-scalpel-admin,data-scalpel-service-engine,data-scalpel-task-engine,data-scalpel-task-dispatcher \
+  -pl "$APPLICATION_MODULES" \
   -am compile
 
 reactor_runtime_classpath() {
@@ -282,20 +306,20 @@ DISPATCHER_CLASSPATH_FILE="$ROOT_DIR/data-scalpel-task-dispatcher/target/dev-lau
 echo "正在并行解析各应用的运行时 classpath…"
 start_classpath_job "Admin 运行时 classpath 解析" "$ADMIN_CLASSPATH_FILE" \
   reactor_runtime_classpath data-scalpel-admin
-start_classpath_job "Service Engine 运行时 classpath 解析" "$ENGINE_CLASSPATH_FILE" \
-  reactor_runtime_classpath data-scalpel-service-engine
 start_classpath_job "Task Engine 运行时 classpath 解析" "$TASK_ENGINE_CLASSPATH_FILE" \
   reactor_runtime_classpath data-scalpel-task-engine
+if [[ "$REMOTE_EXECUTION" == false ]]; then
+start_classpath_job "Service Engine 运行时 classpath 解析" "$ENGINE_CLASSPATH_FILE" \
+  reactor_runtime_classpath data-scalpel-service-engine
 start_classpath_job "Task Dispatcher 运行时 classpath 解析" "$DISPATCHER_CLASSPATH_FILE" \
   reactor_runtime_classpath data-scalpel-task-dispatcher
+fi
 
 load_runtime_classpaths() {
   local file
-  for file in \
-    "$ADMIN_CLASSPATH_FILE" \
-    "$ENGINE_CLASSPATH_FILE" \
-    "$TASK_ENGINE_CLASSPATH_FILE" \
-    "$DISPATCHER_CLASSPATH_FILE"; do
+  local files=("$ADMIN_CLASSPATH_FILE" "$TASK_ENGINE_CLASSPATH_FILE")
+  if [[ "$REMOTE_EXECUTION" == false ]]; then files+=("$ENGINE_CLASSPATH_FILE" "$DISPATCHER_CLASSPATH_FILE"); fi
+  for file in "${files[@]}"; do
     if [[ ! -s "$file" ]]; then
       echo "运行时 classpath 文件不存在或为空：$file" >&2
       return 1
@@ -303,9 +327,11 @@ load_runtime_classpaths() {
   done
 
   ADMIN_CLASSPATH="$(<"$ADMIN_CLASSPATH_FILE")"
-  ENGINE_CLASSPATH="$(<"$ENGINE_CLASSPATH_FILE")"
   TASK_ENGINE_CLASSPATH="$(<"$TASK_ENGINE_CLASSPATH_FILE")"
+  if [[ "$REMOTE_EXECUTION" == false ]]; then
+  ENGINE_CLASSPATH="$(<"$ENGINE_CLASSPATH_FILE")"
   DISPATCHER_CLASSPATH="$(<"$DISPATCHER_CLASSPATH_FILE")"
+  fi
 }
 
 if [[ "$PREPARE_ONLY" == true ]]; then
@@ -315,6 +341,7 @@ if [[ "$PREPARE_ONLY" == true ]]; then
   exit 0
 fi
 
+if [[ "$REMOTE_EXECUTION" == false ]]; then
 command -v docker >/dev/null 2>&1 || { echo "未找到 Docker CLI，无法运行 Spark Canvas 任务。"; exit 1; }
 docker info >/dev/null 2>&1 || { echo "Docker Daemon 不可用，请先启动 Docker。"; exit 1; }
 command -v nc >/dev/null 2>&1 || { echo "未找到 nc，无法检查 Kafka Broker。"; exit 1; }
@@ -363,11 +390,13 @@ if [[ -n "$(find \
   exit 1
 fi
 mkdir -p "$DISPATCHER_WORK_DIR"
+fi
 
 # classpath 解析与 Docker、Kafka、MinIO、Runner 检查并行进行，到真正启动进程前再汇合。
 wait_for_background_jobs
 load_runtime_classpaths
 
+if [[ "$REMOTE_EXECUTION" == false ]]; then
 export DATASCALPEL_ENGINE_MANAGEMENT_TOKEN="$ENGINE_MANAGEMENT_TOKEN"
 export DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY="$SERVICE_ENGINE_CREDENTIAL_KEY"
 export DATASCALPEL_MCP_CREDENTIAL_KEY="$MCP_CREDENTIAL_KEY"
@@ -389,6 +418,10 @@ export DATASCALPEL_FILE_STORAGE_ACCESS_KEY="$FILE_STORAGE_ACCESS_KEY"
 export DATASCALPEL_FILE_STORAGE_SECRET_KEY="$FILE_STORAGE_SECRET_KEY"
 export DATASCALPEL_ADMIN_USERNAME="$ADMIN_USERNAME"
 export DATASCALPEL_ADMIN_PASSWORD="$ADMIN_PASSWORD"
+else
+  # Do not override the user's local profile with this script's all-local defaults.
+  : "${DATASCALPEL_TASK_ENGINE_TOKEN:?请提供与 Admin local 配置一致的 DATASCALPEL_TASK_ENGINE_TOKEN}"
+fi
 
 wait_for_health() {
   local name="$1"
@@ -668,6 +701,7 @@ register_local_compute_engine() {
   fi
 }
 
+if [[ "$REMOTE_EXECUTION" == false ]]; then
 echo "正在按 classpath 启动服务引擎：$ENGINE_ADMIN_URL"
 ENGINE_ENV=("DATASCALPEL_ENGINE_CODE=$ENGINE_CODE")
 [[ -n "${DATASCALPEL_ENGINE_DB_URL:-}" ]] && ENGINE_ENV+=(
@@ -686,15 +720,17 @@ env "${ENGINE_ENV[@]}" java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$ENGINE_CLASSPATH" 
   cn.superhuang.data.scalpel.engine.DataScalpelServiceEngineApplication \
   "${SPRING_RUNTIME_ARGUMENTS[@]}" --server.address="$ENGINE_BIND_ADDRESS" --server.port="$ENGINE_PORT" &
 ENGINE_PID=$!
+fi
 
 echo "正在按 classpath 启动 Task Engine：$TASK_ENGINE_URL"
 DATASCALPEL_TASK_ENGINE_HOST="$TASK_ENGINE_HOST" \
 DATASCALPEL_TASK_ENGINE_PORT="$TASK_ENGINE_PORT" \
-java "${DIRECT_JAVA_OPTIONS[@]}" -Dlog4j.configurationFile="$TASK_ENGINE_LOG_CONFIG" \
+java "${DIRECT_JAVA_OPTIONS[@]}" -Dlog4j.configurationFile="$TASK_ENGINE_LOG_URI" \
   -cp "$TASK_ENGINE_CLASSPATH" \
   cn.superhuang.datascalpel.taskengine.TaskEngineDaemon "$TASK_ENGINE_CONFIG" &
 TASK_ENGINE_PID=$!
 
+if [[ "$REMOTE_EXECUTION" == false ]]; then
 echo "正在按 classpath 启动 Task Dispatcher：$DISPATCHER_URL"
 DATASCALPEL_TASK_DISPATCHER_PORT="$DISPATCHER_PORT" \
 DATASCALPEL_TASK_DISPATCHER_BACKEND="LOCAL_DOCKER" \
@@ -720,6 +756,7 @@ java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$DISPATCHER_CLASSPATH" \
   cn.superhuang.data.scalpel.dispatcher.TaskDispatcherApplication \
   "${SPRING_RUNTIME_ARGUMENTS[@]}" &
 DISPATCHER_PID=$!
+fi
 
 echo "正在按 classpath 启动后端：$BACKEND_INTERNAL_URL"
 java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$ADMIN_CLASSPATH" \
@@ -736,9 +773,11 @@ BACKEND_ORIGIN="$BACKEND_INTERNAL_URL" pnpm --dir "$ROOT_DIR/data-scalpel-ui" "$
 FRONTEND_PID=$!
 
 echo "正在并行等待各本地服务就绪…"
-start_health_check "服务引擎" "$ENGINE_ADMIN_URL/actuator/health" "$ENGINE_PID"
 start_health_check "Task Engine" "$TASK_ENGINE_URL/health/ready" "$TASK_ENGINE_PID"
+if [[ "$REMOTE_EXECUTION" == false ]]; then
+start_health_check "服务引擎" "$ENGINE_ADMIN_URL/actuator/health" "$ENGINE_PID"
 start_health_check "Task Dispatcher" "$DISPATCHER_URL/health/ready" "$DISPATCHER_PID"
+fi
 start_health_check "后端" "$BACKEND_INTERNAL_URL/actuator/health" "$BACKEND_PID"
 FRONTEND_HEALTH_HOST="${FRONTEND_HOST:-localhost}"
 if [[ "$FRONTEND_HEALTH_HOST" == "0.0.0.0" || "$FRONTEND_HEALTH_HOST" == "::" ]]; then
@@ -750,8 +789,17 @@ fi
 start_health_check "前端" "http://$FRONTEND_HEALTH_HOST:$FRONTEND_PORT" "$FRONTEND_PID"
 wait_for_background_jobs
 
-register_local_engine
-register_local_compute_engine
+if [[ "$REMOTE_EXECUTION" == false ]]; then
+  register_local_engine
+  register_local_compute_engine
+else
+  echo "远端执行模式：保留已有计算引擎登记，不启动或修改 Dispatcher/Docker。"
+fi
 
-echo "DataScalpel ${ENVIRONMENT_NAME}前后端、服务引擎、Task Engine 与 Dispatcher 已启动（Java 服务使用 classpath，未执行完整 package），按 Ctrl+C 一起停止。"
-wait "$ENGINE_PID" "$TASK_ENGINE_PID" "$DISPATCHER_PID" "$BACKEND_PID" "$FRONTEND_PID"
+if [[ "$REMOTE_EXECUTION" == true ]]; then
+  echo "DataScalpel ${ENVIRONMENT_NAME}前后端与 TaskEngine 已启动；Dispatcher/Docker 沿用远端配置。按 Ctrl+C 停止本次本地进程。"
+  wait "$TASK_ENGINE_PID" "$BACKEND_PID" "$FRONTEND_PID"
+else
+  echo "DataScalpel ${ENVIRONMENT_NAME}前后端、服务引擎、Task Engine 与 Dispatcher 已启动（Java 服务使用 classpath，未执行完整 package），按 Ctrl+C 一起停止。"
+  wait "$ENGINE_PID" "$TASK_ENGINE_PID" "$DISPATCHER_PID" "$BACKEND_PID" "$FRONTEND_PID"
+fi

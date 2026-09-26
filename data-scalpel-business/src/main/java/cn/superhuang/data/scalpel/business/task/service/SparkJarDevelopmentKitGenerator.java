@@ -141,21 +141,26 @@ public class SparkJarDevelopmentKitGenerator {
             List<SparkJarTaskResourceBinding> kafkaBindings = bindings.stream()
                     .filter(binding -> binding.getResourceType() == SparkJarResourceType.KAFKA_TOPIC).toList();
             boolean streaming = jobMode == SparkJarJobMode.STREAMING;
-            writeText(root.resolve("pom.xml"), SparkJarTaskDefinitionService.templatePom(jobMode));
-            writeText(root.resolve("README.md"), readme(models, jdbcTables, jobMode));
             String exampleJobSource = definition.getOnlineSourceCode() == null
                     ? streaming ? streamingJobSource(models, jdbcTables, kafkaBindings)
                     : jobSource(models, jdbcTables)
                     : definition.getOnlineSourceCode();
             String className = streaming ? "ExampleSparkStreamingJob" : "ExampleSparkJob";
-            writeText(root.resolve("src/main/java/com/example/datascalpel/" + className + ".java"), exampleJobSource);
+            String defaultEntry = "com.example.datascalpel." + className;
+            String entry = developmentEntry(exampleJobSource, defaultEntry);
+            writeText(root.resolve("pom.xml"), SparkJarTaskDefinitionService.templatePom(jobMode).replace(defaultEntry, entry));
+            writeText(root.resolve("README.md"), readme(models, jdbcTables, jobMode).replace(defaultEntry, entry));
+            Path sourceFile = root.resolve("src/main/java/" + entry.replace('.', '/') + ".java");
+            Files.createDirectories(sourceFile.getParent());
+            writeText(sourceFile, exampleJobSource);
             writeText(root.resolve("src/test/java/com/example/datascalpel/" + className + "Test.java"),
-                    streaming ? streamingTestSource(models, jdbcTables, kafkaBindings)
-                            : testSource(models, jdbcTables));
+                    (streaming ? streamingTestSource(models, jdbcTables, kafkaBindings)
+                            : testSource(models, jdbcTables)).replace("new " + className + "()", "new " + entry + "()"));
             Map<String, Object> metadata = new LinkedHashMap<>();
             metadata.put("taskId", job.getTaskId()); metadata.put("taskName", job.getTaskNameSnapshot());
             metadata.put("definitionVersion", job.getDefinitionVersion()); metadata.put("format", "PARQUET_SNAPPY");
             metadata.put("jobMode", jobMode.name());
+            metadata.put("jobClass", entry);
             metadata.put("exampleJobSource", definition.getOnlineSourceCode() == null ? "GENERATED" : "ONLINE_DRAFT");
             metadata.put("generatedAt", Instant.now()); metadata.put("samples", sampleMetadata);
             metadata.put("models", models.stream().map(this::modelMetadata).toList());
@@ -170,6 +175,32 @@ public class SparkJarDevelopmentKitGenerator {
         } catch (RuntimeException | IOException exception) {
             deleteRecursively(work); throw exception;
         }
+    }
+
+    /** Parse only to place an editable draft in the correct Maven path; never compile or execute it. */
+    static String developmentEntry(String source, String fallback) throws IOException {
+        var compiler = javax.tools.ToolProvider.getSystemJavaCompiler();
+        if (compiler == null) throw new IOException("生成 Java 开发工程需要 JDK 21");
+        var diagnostics = new javax.tools.DiagnosticCollector<javax.tools.JavaFileObject>();
+        var unit = new javax.tools.SimpleJavaFileObject(java.net.URI.create("string:///Source.java"), javax.tools.JavaFileObject.Kind.SOURCE) {
+            @Override public CharSequence getCharContent(boolean ignoreEncodingErrors) { return source; }
+        };
+        try (var files = compiler.getStandardFileManager(diagnostics, Locale.ROOT, StandardCharsets.UTF_8)) {
+            var task = (com.sun.source.util.JavacTask) compiler.getTask(null, files, diagnostics,
+                    List.of("--release", "21", "-proc:none"), null, List.of(unit));
+            for (var tree : task.parse()) {
+                if (tree.getPackageName() == null) return fallback;
+                for (var declaration : tree.getTypeDecls()) {
+                    if (declaration instanceof com.sun.source.tree.ClassTree type
+                            && type.getModifiers().getFlags().contains(javax.lang.model.element.Modifier.PUBLIC)) {
+                        String name = tree.getPackageName() + "." + type.getSimpleName();
+                        if (name.matches("[A-Za-z_$][A-Za-z0-9_$]*(\\.[A-Za-z_$][A-Za-z0-9_$]*)*")
+                                && javax.lang.model.SourceVersion.isName(name, javax.lang.model.SourceVersion.RELEASE_21)) return name;
+                    }
+                }
+            }
+        }
+        return fallback; // Preserve malformed drafts for editing; platform compilation diagnoses them.
     }
 
     private List<ModelBundle> resolveModels(List<SparkJarTaskResourceBinding> bindings) {

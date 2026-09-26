@@ -39,7 +39,11 @@ public class TaskCompilationService {
         return taskEngineClient.compileSparkJarSource(taskEngineBaseUrl(), request);
     }
 
-    private String taskEngineBaseUrl() {
+    public cn.superhuang.data.scalpel.contract.task.SdkApiDocumentation sdkApi() {
+        return taskEngineClient.sdkApi(taskEngineBaseUrl());
+    }
+
+    String taskEngineBaseUrl() {
         String configured = systemConfigurationService.requireValue(TASK_ENGINE_BASE_URL_KEY).trim();
         URI uri;
         try {

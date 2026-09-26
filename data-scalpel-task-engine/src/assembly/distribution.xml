@@ -20,6 +20,11 @@
     </dependencySets>
     <files>
         <file>
+            <source>src/main/distribution/JAVA-LANGUAGE.md</source>
+            <outputDirectory>/</outputDirectory>
+            <fileMode>0644</fileMode>
+        </file>
+        <file>
             <source>${project.build.directory}/${project.build.finalName}.jar</source>
             <outputDirectory>lib</outputDirectory>
             <destName>data-scalpel-task-engine.jar</destName>
@@ -30,6 +35,7 @@
         <fileSet>
             <directory>src/main/distribution/bin</directory>
             <outputDirectory>bin</outputDirectory>
+            <lineEnding>unix</lineEnding>
             <fileMode>0755</fileMode>
         </fileSet>
         <fileSet>
