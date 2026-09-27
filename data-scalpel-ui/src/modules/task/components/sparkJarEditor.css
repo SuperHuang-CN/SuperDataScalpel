@@ -69,6 +69,9 @@
 .spark-jar-definition-panel .spark-jar-artifact-summary { border-radius: 14px; background: #fff; box-shadow: none; }
 .spark-jar-section-hint { margin-top: 3px; font-size: 12px; color: #7c88a0; }
 .spark-jar-definition-panel .spark-jar-online-entry { margin: 0; padding: 16px; }
+.spark-jar-online-entry { flex-wrap: wrap; }
+.spark-jar-online-summary { flex: 1; min-width: 0; }
+.spark-jar-online-summary-meta { display: flex; flex-wrap: wrap; gap: 6px 24px; margin-top: 10px; color: #637087; font-size: 12px; overflow-wrap: anywhere; }
 .spark-jar-definition-panel .spark-jar-mode-choice { width: min(800px, 100%); margin: 36px auto; padding: 28px; text-align: left; }
 .spark-jar-mode-choice .ant-typography { margin-top: 0; }
 .spark-jar-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; width: 100%; margin: 12px 0 24px; }

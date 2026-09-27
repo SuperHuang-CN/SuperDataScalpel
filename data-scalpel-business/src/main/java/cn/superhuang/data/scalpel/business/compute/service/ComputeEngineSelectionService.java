@@ -19,9 +19,11 @@ import java.util.stream.Collectors;
 public class ComputeEngineSelectionService {
 
     private final ComputeEngineRepository repository;
+    private final SparkExecutionResourceConfigurationService resourceConfiguration;
 
-    public ComputeEngineSelectionService(ComputeEngineRepository repository) {
+    public ComputeEngineSelectionService(ComputeEngineRepository repository, SparkExecutionResourceConfigurationService resourceConfiguration) {
         this.repository = repository;
+        this.resourceConfiguration = resourceConfiguration;
     }
 
     @Transactional(readOnly = true)
@@ -43,6 +45,14 @@ public class ComputeEngineSelectionService {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "计算引擎当前不可用：" + engine.getName());
         }
         return engine;
+    }
+
+    public void validateResources(UUID id, cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec resources) {
+        var engine = requireExisting(id);
+        var policy = resourceConfiguration.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType());
+        if (resources != null && resources.exceeds(policy.maximums(), SparkExecutionResourceConfigurationService.toExecutionBackend(engine.getExpectedBackendType()))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "任务资源超过计算引擎单次任务上限");
+        }
     }
 
     @Transactional(readOnly = true)

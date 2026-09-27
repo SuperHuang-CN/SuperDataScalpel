@@ -22,6 +22,13 @@ vi.mock('../components/SparkJarJavaEditor', () => ({
   SparkJarJavaEditor: ({ value, onChange }: { value: string; onChange: (value: string) => void }) => (
     <textarea aria-label="Java source" value={value} onChange={(event) => onChange(event.target.value)} />),
 }));
+vi.mock('../components/SparkJarResourceDrawer', () => ({
+  SparkJarResourceDrawer: ({ onConfirm, error }: {
+    onConfirm: (selection: unknown) => void; error?: string;
+  }) => <div>{error}<button onClick={() => onConfirm({
+    binding: { bindingName: 'assets', resourceId: 'model', resourceType: 'MODEL', accessMode: 'READ', topicName: null }, table: null,
+  })}>保存测试资源</button></div>,
+}));
 vi.mock('../hooks/useTasks', () => ({
   useTask: () => ({ data: { id: 'task', name: '测试任务', type: 'SPARK_JAR', status: 'DRAFT' } }),
   useSparkJarOnlineSource: () => ({ data: state.source }),
@@ -30,6 +37,7 @@ vi.mock('../hooks/useTasks', () => ({
   useSaveSparkJarOnlineSource: () => ({ mutateAsync: state.save, isPending: false }),
   useCompileSparkJarOnlineSource: () => ({ mutateAsync: state.compile, isPending: false }),
   useCheckSparkJarOnlineSource: () => ({ mutateAsync: state.check, isPending: false }),
+  useUpdateSparkJarTaskDefinition: () => ({ mutateAsync: state.update, isPending: false }),
   useTrialRunSparkJarOnlineSource: () => ({ mutateAsync: state.trial, isPending: false }),
   useTaskRuns: () => ({ data: { content: [] } }),
   useTaskRun: () => ({}), useSparkJarTrialPreview: () => ({}),
@@ -68,7 +76,35 @@ describe('SparkJarOnlineEditorPage', () => {
     expect(screen.getByText('当前代码尚未检查')).toBeVisible();
   });
 
+  it.each([true, false])('preserves resource inheritance (%s) when saving editor resource bindings', async (inheritEngineResources) => {
+    Object.assign(state.definition, { inheritEngineResources });
+    localStorage.setItem('datascalpel.spark-jar.auto-save', 'false');
+    state.update.mockResolvedValue(state.definition);
+    open();
+    await userEvent.type(screen.getByRole('textbox', { name: 'Java source' }), ' // unsaved');
+    await userEvent.click(screen.getByRole('button', { name: '添加任务资源' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存测试资源' }));
+    await waitFor(() => expect(state.update).toHaveBeenCalledOnce());
+    expect(state.update.mock.calls[0][0]).toEqual({ id: 'task', request: {
+      parameters: state.definition.parameters, sparkConf: state.definition.sparkConf,
+      inheritEngineResources,
+      executionResources: inheritEngineResources ? undefined : state.definition.executionResources, timeoutSeconds: 500,
+      resourceBindings: [{ bindingName: 'assets', resourceId: 'model', resourceType: 'MODEL', accessMode: 'READ', topicName: null }],
+      developmentConfiguration: { samples: [{ bindingName: 'assets', mode: 'ROW_COUNT', rowCount: 1000 }], jdbcTables: [] },
+    } });
+    expect(screen.getByRole('textbox', { name: 'Java source' })).toHaveValue('class Job {} // unsaved');
+    expect(state.save).not.toHaveBeenCalled();
+    expect(state.compile).not.toHaveBeenCalled();
+  });
 
+  it('keeps the resource drawer and unsaved code on save failure', async () => {
+    state.update.mockRejectedValue(new Error('network'));
+    open();
+    await userEvent.click(screen.getByRole('button', { name: '添加任务资源' }));
+    await userEvent.click(screen.getByRole('button', { name: '保存测试资源' }));
+    expect(await screen.findByText('资源保存失败，请重试')).toBeVisible();
+    expect(screen.getByRole('button', { name: '保存测试资源' })).toBeVisible();
+  });
 });
 
 describe('online Java draft autosave', () => {

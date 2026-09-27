@@ -45,8 +45,10 @@ class DispatcherKafkaTopicIntegrationTest {
                 new DefaultKafkaProducerFactory<>(producerConfiguration);
         KafkaAdmin kafkaAdmin = new KafkaAdmin(adminConfiguration);
         DispatcherKafkaListenerManager manager = new DispatcherKafkaListenerManager(
-                null, null, null, null, kafkaAdmin, new KafkaTemplate<>(producerFactory), true);
-        List<String> names = List.of(topics.commandTopic(), topics.runnerEventTopic(), topics.adminEventTopic());
+                null, null, null, null, kafkaAdmin, new KafkaTemplate<>(producerFactory), true,
+                new cn.superhuang.data.scalpel.dispatcher.config.DispatcherMessagingProperties(null, null, null, null), null);
+        List<String> names = List.of(topics.commandTopic(), topics.runnerEventTopic(),
+                topics.adminEventTopic(), topics.runnerControlTopic());
 
         try {
             assertThat(manager.readiness(topics).ready()).isTrue();

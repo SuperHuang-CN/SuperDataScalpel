@@ -9,7 +9,7 @@ import java.util.UUID;
 public record TaskRunLogResponse(
         @Schema(description = "任务运行 UUID。")
         UUID runId,
-        @Schema(description = "日志读取状态：WAITING 尚未产生日志；LIVE 为活动运行的 Dispatcher 窗口；ARCHIVING 表示运行已结束但归档对象尚不可读；FINAL 为归档制品预览；UNAVAILABLE 表示没有外部执行或日志来源不可用。")
+        @Schema(description = "日志读取状态：WAITING 尚未产生日志，包括排队且 Dispatcher 尚未接收到执行命令；LIVE 为活动运行的 Dispatcher 窗口；ARCHIVING 表示运行已结束但归档对象尚不可读；FINAL 为归档制品预览；UNAVAILABLE 表示没有外部执行或日志来源不可用。认证、网络或服务端故障仍返回错误，不视为等待。")
         Status status,
         @Schema(description = "content 来源：NONE 无正文，DISPATCHER 为运行中日志窗口，ARTIFACT 为终态归档日志制品。")
         Source source,

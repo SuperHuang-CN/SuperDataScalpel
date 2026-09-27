@@ -71,6 +71,7 @@ export type TaskMisfirePolicy = 'FIRE_ONCE_NOW' | 'SKIP';
 export type TaskOverlapPolicy = 'FORBID' | 'ALLOW';
 
 export interface DataTask {
+  executionResources?: SparkExecutionResourceSpec | null;
   id: string;
   name: string;
   directoryId: string | null;
@@ -254,6 +255,8 @@ export interface SparkExecutionResourceSpec {
 }
 
 export interface SparkJarTaskDefinition {
+  inheritEngineResources?: boolean;
+  authoringMode: 'ONLINE' | 'UPLOAD' | null;
   taskId: string;
   configured: boolean;
   definitionVersion: number;
@@ -268,10 +271,16 @@ export interface SparkJarTaskDefinition {
 }
 
 export interface UpdateSparkJarTaskDefinitionRequest {
+  inheritEngineResources?: boolean;
+  authoringMode?: 'ONLINE' | 'UPLOAD';
+  developmentConfiguration?: {
+    samples: SparkJarDevelopmentKitInputSample[];
+    jdbcTables: SparkJarDevelopmentKitJdbcTable[];
+  };
   parameters: SparkJarDefinitionEntry[];
   sparkConf: SparkJarDefinitionEntry[];
   resourceBindings: Array<Omit<SparkJarResourceBinding, 'resourceName'>>;
-  executionResources: SparkExecutionResourceSpec;
+  executionResources?: SparkExecutionResourceSpec;
   timeoutSeconds: number;
 }
 
@@ -347,6 +356,7 @@ export interface SparkJarOnlineSource {
   hasUncompiledChanges: boolean;
   currentJarOrigin: SparkJarOnlineJarOrigin | null;
   currentJar: SparkJarArtifact | null;
+  appliedAt?: string | null;
 }
 
 export type SparkJarOnlineDiagnosticSeverity = 'ERROR' | 'WARNING' | 'NOTE';
@@ -411,6 +421,7 @@ export interface UpdateLocalSqlTaskDefinitionRequest {
 }
 
 export interface CreateDataTaskRequest {
+  executionResources?: SparkExecutionResourceSpec | null;
   name: string;
   type: TaskType;
   directoryId?: string;
@@ -419,6 +430,7 @@ export interface CreateDataTaskRequest {
 }
 
 export interface UpdateDataTaskRequest {
+  executionResources?: SparkExecutionResourceSpec | null;
   name: string;
   directoryId?: string;
   description?: string;

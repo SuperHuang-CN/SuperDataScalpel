@@ -70,10 +70,14 @@ public class KubernetesPodParser {
 
     public void requireSecretIdentity(String json, ExecutionIdentity identity) throws BackendException {
         try {
-            JsonNode labels = objectMapper.readTree(json).at("/metadata/labels");
-            if (!"true".equals(text(labels.get(KubernetesNames.MANAGED)))
+            JsonNode root = objectMapper.readTree(json);
+            JsonNode labels = root.at("/metadata/labels");
+            if (!KubernetesNames.secret(identity).equals(text(root.at("/metadata/name")))
+                    || !"true".equals(text(labels.get(KubernetesNames.MANAGED)))
                     || !identity.engineId().toString().equals(text(labels.get(KubernetesNames.ENGINE_ID)))
-                    || !identity.executionId().toString().equals(text(labels.get(KubernetesNames.EXECUTION_ID)))) {
+                    || !identity.executionId().toString().equals(text(labels.get(KubernetesNames.EXECUTION_ID)))
+                    || !identity.runId().toString().equals(text(labels.get(KubernetesNames.RUN_ID)))
+                    || !Integer.toString(identity.attempt()).equals(text(labels.get(KubernetesNames.ATTEMPT)))) {
                 throw new BackendException("EXTERNAL_EXECUTION_CONFLICT", "Kubernetes Secret执行身份不匹配");
             }
         } catch (BackendException exception) {

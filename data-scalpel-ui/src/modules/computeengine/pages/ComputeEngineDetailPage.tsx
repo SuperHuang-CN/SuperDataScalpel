@@ -1,4 +1,6 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { ComputeEngineTopics } from '../components/ComputeEngineTopics';
+import { engineLifecycle } from '../model/computeEngineLifecycle';
 import {
   ApiOutlined,
   ApartmentOutlined,
@@ -156,7 +158,7 @@ const RuntimeOverviewPanel = ({
         children: <Space size={6}><Tag color={dependencyState(dependency.state)}>{dependency.state === 'UP' ? '正常' : '不可用'}</Tag>{dependency.detail && <Typography.Text type="secondary">{dependency.detail}</Typography.Text>}</Space>,
       }))} />
     </BusinessDetailSection>
-    <BusinessDetailSection title="每次执行资源配置" description="配置上限，不代表实时使用量" icon={<ThunderboltOutlined />}>
+    <BusinessDetailSection title="目标默认资源配置" description="来自 Dispatcher 默认策略；任务可自定义，集群堆内存不含额外非堆开销" icon={<ThunderboltOutlined />}>
       <BusinessDetailDescriptions column={{ xs: 1, sm: 2, lg: 3 }} items={resourceItems} />
     </BusinessDetailSection>
   </div>;
@@ -275,7 +277,9 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
   };
   const register = () => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '注册计算引擎', content: `将“${engine.name}”注册到对应 Dispatcher，并启用新任务准入。`,
+    title: '注册计算引擎', content: engine.registrationState === 'DETACHED'
+      ? `请先确认原 Dispatcher 进程已经永久停止。继续后将“${engine.name}”注册到当前 Dispatcher，并重新启用任务准入。`
+      : `将“${engine.name}”注册到对应 Dispatcher，并启用新任务准入。`,
     okText: '注册', cancelText: '取消',
     onOk: async () => {
       try { await commandMutation.mutateAsync({ id: engine.id, command: 'register' }); messageApi.success('计算引擎已激活'); }
@@ -284,21 +288,30 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
   });
   const drain = () => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '排空计算引擎', content: `“${engine.name}”将停止接收新任务，但继续监管已运行任务。`,
-    okText: '开始排空', cancelText: '取消',
+    title: engineLifecycle.pause.label, content: `“${engine.name}”：${engineLifecycle.pause.description}`,
+    okText: engineLifecycle.pause.label, cancelText: '取消',
     onOk: async () => {
-      try { await commandMutation.mutateAsync({ id: engine.id, command: 'drain' }); messageApi.success('计算引擎正在排空'); }
-      catch (error) { showError(error, '排空计算引擎失败'); throw error; }
+      try { await commandMutation.mutateAsync({ id: engine.id, command: 'drain' }); messageApi.success('任务调度已暂停，运行中任务继续'); }
+      catch (error) { showError(error, '暂停任务调度失败'); throw error; }
+    },
+  });
+  const resume = () => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
+    title: engineLifecycle.resume.label, content: `“${engine.name}”：${engineLifecycle.resume.description}`,
+    okText: engineLifecycle.resume.label, cancelText: '取消',
+    onOk: async () => {
+      try { await commandMutation.mutateAsync({ id: engine.id, command: 'resume' }); messageApi.success('任务调度已恢复'); }
+      catch (error) { showError(error, '恢复任务调度失败'); throw error; }
     },
   });
   const deactivate = (force: boolean) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: force ? '强制反注册并取消任务' : '安全反注册计算引擎',
-    content: force ? `Dispatcher 将取消“${engine.name}”中仍在排队或运行的任务，然后完成反注册。确认继续吗？` : `确认安全反注册“${engine.name}”吗？Dispatcher 必须可访问且已无活动任务。`,
-    okText: force ? '强制反注册并取消任务' : '安全反注册', cancelText: '取消', okButtonProps: { danger: force },
+    title: force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label,
+    content: `“${engine.name}”：${force ? engineLifecycle.forceStop.description : engineLifecycle.stop.description} Dispatcher 必须可访问。`,
+    okText: force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label, cancelText: '取消', okButtonProps: { danger: force },
     onOk: async () => {
-      try { await deactivateMutation.mutateAsync({ id: engine.id, force }); messageApi.success('计算引擎已反注册'); }
-      catch (error) { showError(error, '反注册计算引擎失败'); throw error; }
+      try { await deactivateMutation.mutateAsync({ id: engine.id, force }); messageApi.success('计算引擎已停用，配置和历史保留'); }
+      catch (error) { showError(error, '停用计算引擎失败'); throw error; }
     },
   });
   const menuItems: NonNullable<MenuProps['items']> = [];
@@ -308,11 +321,12 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
     menuItems.push({ key: 'register', icon: <SendOutlined />, label: '注册并激活', onClick: register });
   }
   if (canManage && engine.registrationState === 'ACTIVE') {
-    menuItems.push({ key: 'drain', icon: <PauseCircleOutlined />, label: '开始排空', onClick: drain });
+    menuItems.push({ key: 'drain', icon: <PauseCircleOutlined />, label: engineLifecycle.pause.label, onClick: drain });
   }
+  if (canManage && engine.registrationState === 'DRAINING') menuItems.push({ key: 'resume', icon: <SendOutlined />, label: engineLifecycle.resume.label, onClick: resume });
   if (canManage && remotelyManageable) {
-    menuItems.push({ key: 'deactivate', icon: <StopOutlined />, label: '安全反注册', onClick: () => deactivate(false) });
-    menuItems.push({ key: 'force-deactivate', danger: true, icon: <StopOutlined />, label: '强制反注册并取消任务', onClick: () => deactivate(true) });
+    menuItems.push({ key: 'deactivate', icon: <StopOutlined />, label: engineLifecycle.stop.label, onClick: () => deactivate(false) });
+    menuItems.push({ key: 'force-deactivate', danger: true, icon: <StopOutlined />, label: engineLifecycle.forceStop.label, onClick: () => deactivate(true) });
   }
   const tabs = [
     { key: 'overview', label: '概览', children: <RuntimeOverviewPanel overview={runtimeQuery.data} loading={runtimeQuery.isLoading} error={runtimeQuery.error} onRetry={() => void runtimeQuery.refetch()} /> },
@@ -331,9 +345,8 @@ const ComputeEngineDetailContent = ({ engineId }: { engineId: string }) => {
               { key: 'description', label: '说明', children: engine.description ?? '—', span: 3 },
               { key: 'dispatcher', label: 'Dispatcher 地址', children: engine.dispatcherBaseUrl, span: 2 },
               { key: 'instance', label: '实例 ID', children: engine.dispatcherInstanceId ?? '—' },
-              { key: 'command', label: '命令 Topic', children: engine.commandTopic, span: 2 },
-              { key: 'runner', label: 'Runner 事件 Topic', children: engine.runnerEventTopic },
-              { key: 'admin', label: 'Admin 事件 Topic', children: engine.adminEventTopic, span: 3 },
+              { key: 'targetKey', label: '目标 Key', children: engine.targetKey ? <Typography.Text copyable>{engine.targetKey}</Typography.Text> : '旧式单目标配置' },
+              { key: 'topics', label: 'Kafka 消息通道（只读）', children: <ComputeEngineTopics engine={engine} />, span: 3 },
               { key: 'queue', label: '最大排队数', children: engine.maxQueuedExecutions },
               { key: 'submit', label: '最大并发提交数', children: engine.maxConcurrentSubmissions },
               { key: 'flight', label: '最大在途数', children: engine.maxInFlightApplications },

@@ -15,6 +15,7 @@ import {
   Drawer,
   Modal,
   Progress,
+  Radio,
   Space,
   Tag,
   Tabs,
@@ -28,8 +29,67 @@ import type {
   SparkJarDevelopmentKitArtifact,
   SparkJarDevelopmentKitGeneration,
   SparkJarTaskDefinition,
+  SparkJarOnlineSource,
 } from '../model/task';
 import { formatSparkJarBytes, sparkJarKitStageLabels } from './sparkJarDefinitionWorkspaceModel';
+import { ContextHelp } from '../../../shared/components/ContextualFeedback';
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
+
+export const SparkJarOnlineCodeSummary = ({ source, failed, loading, opening, onRetry, onOpen }: {
+  source?: SparkJarOnlineSource;
+  failed: boolean;
+  loading: boolean;
+  opening: boolean;
+  onRetry: () => void;
+  onOpen: () => void;
+}) => {
+  const jar = source?.currentJar;
+  const uploaded = source?.currentJarOrigin === 'UPLOADED';
+  const pending = source?.hasUncompiledChanges;
+  const status = !jar ? '尚未应用' : uploaded ? '当前使用上传的运行包' : pending ? '有修改未应用' : '代码已应用到任务';
+  const hint = !jar ? '尚未生成任务运行包，请进入编辑器编写并应用代码。'
+    : uploaded ? '在线源码尚未应用；当前任务运行包来自上传 JAR。'
+      : pending ? '源码有新修改，尚未应用；任务运行包仍为上次应用的版本。'
+        : '已保存源码与当前任务运行包一致；应用代码不等于发布任务。';
+  return <section className="spark-jar-online-entry" aria-label="在线代码">
+    <div className="spark-jar-online-summary">
+      <Space wrap><Typography.Text strong>在线代码</Typography.Text>
+        {!failed && !loading && source && <Tag color={!jar || uploaded || pending ? 'warning' : 'success'}>{status}</Tag>}
+      </Space>
+      {failed ? <div className="spark-jar-section-hint" role="alert">代码状态加载失败
+        <Button type="link" size="small" onClick={onRetry}>重试</Button></div>
+        : loading || !source ? <div className="spark-jar-section-hint">正在读取代码状态…</div>
+          : <>
+            <div className="spark-jar-section-hint">{hint}</div>
+            {jar && <div className="spark-jar-online-summary-meta">
+              <span>当前运行包入口类：<span className="spark-jar-code-reference">{jar.jobClass}</span></span>
+              {!uploaded && <span>最近应用时间：{formatManagementDateTime(source.appliedAt)}</span>}
+            </div>}
+          </>}
+    </div>
+    <Button type="primary" loading={opening} onClick={onOpen}>进入编辑器</Button>
+  </section>;
+};
+
+export const SparkJarAuthoringModeChoice = ({ onConfirm }: { onConfirm: (mode: 'ONLINE' | 'UPLOAD') => void }) => {
+  const [selected, setSelected] = useState<'ONLINE' | 'UPLOAD' | null>(null);
+  return <section className="spark-jar-mode-choice">
+    <Typography.Title level={4}>选择开发方式</Typography.Title>
+    <Typography.Paragraph type="secondary">两种方式共用任务资源和运行设置，保存后直接进入已选方式。</Typography.Paragraph>
+    <Radio.Group className="spark-jar-mode-options" value={selected} onChange={(event) => setSelected(event.target.value)}>
+      <Radio value="ONLINE" className="spark-jar-mode-option">
+        <span className="spark-jar-mode-icon"><CodeOutlined /></span>
+        <strong>在线开发</strong><span>在浏览器中编写 Java</span><small>代码提示 · 检查 · 试运行</small>
+      </Radio>
+      <Radio value="UPLOAD" className="spark-jar-mode-option">
+        <span className="spark-jar-mode-icon"><FileZipOutlined /></span>
+        <strong>上传 JAR</strong><span>在本地 IDE 开发并打包</span><small>生成开发工程 · 上传作业包</small>
+      </Radio>
+    </Radio.Group>
+    <div className="spark-jar-mode-confirm"><Typography.Text type="secondary">后续可通过“更换开发方式”调整。</Typography.Text>
+      <Button type="primary" disabled={!selected} onClick={() => selected && onConfirm(selected)}>确认并配置</Button></div>
+  </section>;
+};
 
 interface SparkJarArtifactSummaryProps {
   definition: SparkJarTaskDefinition;
@@ -37,8 +97,7 @@ interface SparkJarArtifactSummaryProps {
   uploading: boolean;
   beforeUpload: NonNullable<UploadProps['beforeUpload']>;
   onClearSelection: () => void;
-  onUpload: () => void;
-  onOpenOnlineEditor: () => void;
+  onUpload: () => Promise<void>;
 }
 
 export const SparkJarArtifactSummary = ({
@@ -48,7 +107,6 @@ export const SparkJarArtifactSummary = ({
   beforeUpload,
   onClearSelection,
   onUpload,
-  onOpenOnlineEditor,
 }: SparkJarArtifactSummaryProps) => {
   const [detailOpen, setDetailOpen] = useState(false);
   const pendingFile = uploadFiles[0];
@@ -56,10 +114,12 @@ export const SparkJarArtifactSummary = ({
 
   return (
     <section className="spark-jar-artifact-summary">
+      <div className="spark-jar-artifact-heading"><Typography.Text strong>上传 JAR</Typography.Text>
+        <ContextHelp ariaLabel="JAR 上传说明" content="已有作业包可直接上传，无需先下载工程。作业包需符合平台 SDK 和 Manifest 约定；上传只读取 Manifest 和类条目，不执行用户代码。" /></div>
       <div className="spark-jar-artifact-icon" aria-hidden="true"><FileZipOutlined /></div>
       <div className="spark-jar-artifact-identity">
         <Space size={8} wrap>
-          <Typography.Text strong>{pendingFile?.name ?? jar?.fileName ?? '尚未上传用户作业 JAR'}</Typography.Text>
+          <Typography.Text strong>{pendingFile?.name ?? jar?.fileName ?? '尚未选择 JAR 文件'}</Typography.Text>
           <Tag color={pendingFile ? 'warning' : jar ? 'success' : 'default'}>
             {pendingFile ? '待上传' : jar ? '已上传' : '未上传'}
           </Tag>
@@ -77,20 +137,22 @@ export const SparkJarArtifactSummary = ({
             <span>定义 v{definition.definitionVersion}</span>
           </div>
         ) : (
-          <Typography.Text type="secondary">上传后平台会读取 Manifest 和类条目，不会执行用户代码。</Typography.Text>
+          <Typography.Text type="secondary">选择本地编译好的作业包。</Typography.Text>
         )}
       </div>
       <Space className="spark-jar-artifact-actions" wrap>
         {pendingFile ? (
           <>
             <Button onClick={onClearSelection}>取消选择</Button>
-            <Button type="primary" icon={<UploadOutlined />} loading={uploading} onClick={onUpload}>
+            <Button type="primary" icon={<UploadOutlined />} loading={uploading} onClick={() => jar ? Modal.confirm({
+              title: '替换当前 JAR？', content: `将用“${pendingFile.name}”替换“${jar.fileName}”。在线源码保留，上传失败仍保留当前 JAR。`,
+              okText: '确认替换', cancelText: '取消', onOk: onUpload,
+            }) : onUpload()}>
               {jar ? '覆盖当前 JAR' : '上传 JAR'}
             </Button>
           </>
         ) : (
           <>
-            <Button icon={<CodeOutlined />} onClick={onOpenOnlineEditor}>在线开发</Button>
             {jar && (
               <Button icon={<EyeOutlined />} onClick={() => setDetailOpen(true)}>查看详情</Button>
             )}
@@ -116,7 +178,7 @@ export const SparkJarArtifactSummary = ({
         onCancel={() => setDetailOpen(false)}
       >
         {jar && (
-          <Descriptions bordered size="small" column={1}>
+          <Descriptions size="small" column={1}>
             <Descriptions.Item label="文件名">{jar.fileName}</Descriptions.Item>
             <Descriptions.Item label="大小">{formatSparkJarBytes(jar.sizeBytes)}</Descriptions.Item>
             <Descriptions.Item label="Job Class"><Typography.Text code copyable>{jar.jobClass}</Typography.Text></Descriptions.Item>
@@ -141,6 +203,7 @@ interface SparkJarDevelopmentKitPanelProps {
   outputModelCount: number;
   running: boolean;
   submitting: boolean;
+  disabled?: boolean;
   downloading: boolean;
   onGenerate: () => void;
   onDownload: () => void;
@@ -156,6 +219,7 @@ export const SparkJarDevelopmentKitPanel = ({
   outputModelCount,
   running,
   submitting,
+  disabled = false,
   downloading,
   onGenerate,
   onDownload,
@@ -166,8 +230,8 @@ export const SparkJarDevelopmentKitPanel = ({
     <aside className="spark-jar-development-kit-panel">
       <div className="spark-jar-development-kit-heading">
         <div>
-          <Typography.Text strong>本地开发包</Typography.Text>
-          <Typography.Text type="secondary">代码、Schema 与 Parquet 样例</Typography.Text>
+          <Space><Typography.Text strong>开发工程</Typography.Text><ContextHelp ariaLabel="开发工程说明" content="根据已绑定资源生成 Maven 工程，包含读取代码、输出示例、Schema 和配置的 Parquet 样例。未绑定资源时生成基础工程。下载后在本地 IDE 完善处理逻辑并打包上传；生成工程不执行正式任务。" /></Space>
+          <Typography.Text type="secondary">根据任务资源生成，下载后在本地开发。</Typography.Text>
         </div>
         <Tag color={status.color}>{status.label}</Tag>
       </div>
@@ -207,23 +271,22 @@ export const SparkJarDevelopmentKitPanel = ({
               {usesPreviousArtifact && <Typography.Text type="warning">当前为上一次成功生成的开发包</Typography.Text>}
             </>
           ) : (
-            <Typography.Text type="secondary">配置本地样例后即可生成 Maven 开发工程。</Typography.Text>
+            <Typography.Text type="secondary">样例范围可在上方资源列表中调整。</Typography.Text>
           )}
         </div>
 
         <div className="spark-jar-development-kit-actions">
           <Button
-            type="primary"
-            block
+            type={artifact ? 'default' : 'primary'}
             icon={<ExperimentOutlined />}
-            disabled={running || submitting}
+            disabled={disabled || running || submitting}
             onClick={onGenerate}
           >
-            {artifact ? '重新生成' : '生成开发包'}
+            {artifact ? '重新生成' : '生成开发工程'}
           </Button>
           {artifact && (
-            <Button block icon={<DownloadOutlined />} loading={downloading} onClick={onDownload}>
-              下载开发包
+            <Button type="primary" icon={<DownloadOutlined />} loading={downloading} onClick={onDownload}>
+              下载开发工程
             </Button>
           )}
         </div>
@@ -306,8 +369,7 @@ export const SparkJarRuntimeConfiguration = ({
     <section className="spark-jar-definition-section spark-jar-runtime-configuration spark-jar-runtime-overview">
       <div className="spark-jar-runtime-overview-heading">
         <div>
-          <Typography.Text strong>运行配置</Typography.Text>
-          <Typography.Text type="secondary">任务启动时使用的计算资源与高级参数</Typography.Text>
+          <Typography.Text strong>运行设置</Typography.Text>
         </div>
         <Button type="text" size="small" icon={<EditOutlined />} onClick={togglePrimary}>
           {primaryOpen ? '收起' : '调整'}
@@ -315,9 +377,7 @@ export const SparkJarRuntimeConfiguration = ({
       </div>
 
       <div className="spark-jar-runtime-sentence">
-        <span>此任务将在</span>
         <Tag bordered={false}>{overview.environment}</Tag>
-        <span>上运行，使用</span>
         <strong>{overview.resources}</strong>
         <span className="spark-jar-runtime-sentence-separator" aria-hidden="true">·</span>
         <span>{overview.timeoutLabel ?? '最长运行'}</span>
@@ -365,14 +425,12 @@ export const SparkJarRuntimeConfiguration = ({
 
       <Drawer
         rootClassName="business-overlay business-drawer-overlay spark-jar-runtime-drawer"
-        title="高级运行配置"
+        title={<div className="spark-jar-drawer-title"><span className="spark-jar-drawer-icon"><SettingOutlined /></span><div>高级运行配置<small>按需调整 JVM、任务参数与 Spark Conf</small></div></div>}
         width={960}
         open={Boolean(activeAdvanced)}
         onClose={closeAdvanced}
+        footer={<div className="spark-jar-resource-footer"><Typography.Text type="secondary">修改后需保存任务配置</Typography.Text><Button type="primary" onClick={closeAdvanced}>完成配置</Button></div>}
       >
-        <Typography.Paragraph type="secondary" className="spark-jar-runtime-drawer-intro">
-          这些参数只在需要定制用户作业启动或 Spark 行为时配置，修改后随任务定义一起保存。
-        </Typography.Paragraph>
         <Tabs
           activeKey={activeAdvanced?.key}
           onChange={openAdvanced}

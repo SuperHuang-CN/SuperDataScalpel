@@ -1,0 +1,109 @@
+# Local Docker deployment example; review targets before first start. Never overwrite an existing deployment file.
+# 实例配置：IDEA 在此维护；服务器复制到启动工作目录的 config/application-instance.yml。
+# 技术默认值在 application.yml；需要调整时，在本文件按相同路径覆盖即可。
+# 环境变量为可选方式，也可以直接填写 YAML；真实凭据不得提交仓库。
+# 1. 服务端口、数据库和 Kafka 连接
+server.port: ${DATASCALPEL_TASK_DISPATCHER_PORT:18092}
+spring:
+  datasource:
+    url: ${DATASCALPEL_DB_URL:jdbc:postgresql://127.0.0.1:5432/data_scalpel}
+    username: ${DATASCALPEL_DB_USERNAME:postgres}
+    password: ${DATASCALPEL_DB_PASSWORD:}
+    hikari.schema: ${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:dispatcher}
+  jpa.properties.hibernate.default_schema: ${DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA:dispatcher}
+  kafka.bootstrap-servers: ${DATASCALPEL_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}
+
+data-scalpel:
+  dispatcher:
+    token: ${DATASCALPEL_TASK_DISPATCHER_TOKEN:}
+    ensure-topics: ${DATASCALPEL_TASK_DISPATCHER_ENSURE_TOPICS:false}
+    # 2. 实例消息通道：不同 Dispatcher 使用不同名称，实例重启不变。
+    messaging:
+      command-topic: ${DATASCALPEL_DISPATCHER_COMMAND_TOPIC:datascalpel.execution.command.local}
+      runner-event-topic: ${DATASCALPEL_DISPATCHER_RUNNER_EVENT_TOPIC:datascalpel.runner.event.local}
+      # Admin 事件默认 datascalpel.execution.event；仅需改名时增加 admin-event-topic。
+    # 3. 制品存储：runner-endpoint 必须能被运行任务的容器/Pod 访问。
+    artifact:
+      endpoint: ${DATASCALPEL_FILE_STORAGE_ENDPOINT:}
+      runner-endpoint: ${DATASCALPEL_FILE_STORAGE_RUNNER_ENDPOINT:}
+      access-key: ${DATASCALPEL_FILE_STORAGE_ACCESS_KEY:}
+      secret-key: ${DATASCALPEL_FILE_STORAGE_SECRET_KEY:}
+    runner-kafka:
+      bootstrap-servers: ${DATASCALPEL_KAFKA_RUNNER_BOOTSTRAP_SERVERS:${spring.kafka.bootstrap-servers}}
+    # 4. 执行目标：下一级键就是 Admin 发现并展示的 targetKey；每个目标单独指定 backend。
+    # This Local Docker deployment template enables local-docker; K8s/YARN remain disabled.
+    # 未启用的示例可不写入服务器外置文件；JAR 内三个示例默认关闭。
+    # 注意 Map 会合并：若自行在源码启用了调试目标，须在发布前关闭，或外置同名键明确禁用。
+    targets:
+      local-docker:
+        enabled: true
+        name: Local Docker
+        backend: LOCAL_DOCKER
+        # 每个目标的任务默认值与单次申请上限；Admin 只读。数值为示例，部署时按实际容量调整。
+        resource-policy:
+          defaults:
+            driver-cores: 2
+            driver-memory-mi-b: 4096
+          maximums:
+            driver-cores: 8
+            driver-memory-mi-b: 16384
+        local-docker:
+          image: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_IMAGE:eclipse-temurin:21-jdk}
+          platform: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_PLATFORM:}
+          runner-jar: ${DATASCALPEL_TASK_DISPATCHER_RUNNER_JAR:lib/data-scalpel-task-runner.jar}
+          work-directory: ${DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY:work/task-executions}
+          checkpoint-directory: ${DATASCALPEL_TASK_STREAMING_LOCAL_CHECKPOINT_DIRECTORY:work/task-streaming-checkpoints}
+        streaming:
+          checkpoint-base-uri: ${DATASCALPEL_TASK_STREAMING_CHECKPOINT_BASE_URI:file:///checkpoints}
+      k8s:
+        enabled: false
+        name: Kubernetes
+        backend: KUBERNETES
+        # 每个目标的任务默认值与单次申请上限；Admin 只读。数值为示例，部署时按实际容量调整。
+        resource-policy:
+          defaults:
+            driver-cores: 1
+            driver-memory-mi-b: 2048
+            executor-instances: 2
+            executor-cores: 2
+            executor-memory-mi-b: 2048
+          maximums:
+            driver-cores: 8
+            driver-memory-mi-b: 16384
+            executor-instances: 20
+            executor-cores: 8
+            executor-memory-mi-b: 16384
+        kubernetes:
+          master: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_MASTER:k8s://https://kubernetes.default.svc}
+          namespace: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_NAMESPACE:datascalpel}
+          service-account: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_SERVICE_ACCOUNT:spark-runner}
+          image: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_IMAGE:}
+          kubeconfig: "" # 集群外填写凭据文件路径；留空使用现有集群内/默认认证路径。
+          work-directory: ${DATASCALPEL_TASK_DISPATCHER_KUBERNETES_WORK_DIRECTORY:work/task-executions-kubernetes}
+        # 流式任务须显式配置持久化共享 checkpoint URI，不能使用 Docker 本地文件 URI。
+      yarn:
+        enabled: false
+        name: YARN
+        backend: YARN
+        # 每个目标的任务默认值与单次申请上限；Admin 只读。数值为示例，部署时按实际容量调整。
+        resource-policy:
+          defaults:
+            driver-cores: 1
+            driver-memory-mi-b: 2048
+            executor-instances: 2
+            executor-cores: 2
+            executor-memory-mi-b: 2048
+          maximums:
+            driver-cores: 8
+            driver-memory-mi-b: 16384
+            executor-instances: 20
+            executor-cores: 8
+            executor-memory-mi-b: 16384
+        yarn:
+          cluster-id: yarn-dev
+          hadoop-conf-directory: /etc/hadoop/conf
+          queue: ${DATASCALPEL_TASK_DISPATCHER_YARN_QUEUE:default}
+          runner-jar: ${DATASCALPEL_TASK_DISPATCHER_YARN_RUNNER_JAR:hdfs:///datascalpel/runner/task-runner-cluster.jar}
+          work-directory: ${DATASCALPEL_TASK_DISPATCHER_YARN_WORK_DIRECTORY:work/task-executions-yarn}
+        # streaming:
+        #   checkpoint-base-uri: hdfs:///datascalpel/checkpoints

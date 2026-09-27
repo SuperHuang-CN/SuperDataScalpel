@@ -117,6 +117,18 @@ class ComputeEngineDispatcherClientTest {
         assertTrue(client.executions(baseUrl, "secret-token", DispatcherExecutionScope.QUEUED, 0, 20).content().isEmpty());
     }
 
+    @Test
+    void forcedDeactivationAllowsCleanupBeyondOrdinaryRequestTimeout() {
+        server.createContext("/api/v1/dispatcher/registration/actions/deactivate", exchange -> {
+            java.util.concurrent.locks.LockSupport.parkNanos(Duration.ofMillis(200).toNanos());
+            respond(exchange, "{\"state\":\"INACTIVE\"}");
+        });
+        var client = new ComputeEngineDispatcherClient(new ComputeEngineProperties(
+                null, Duration.ofSeconds(1), Duration.ofMillis(50)));
+        assertEquals(DispatcherRegistrationState.INACTIVE, client.deactivate(baseUrl, "token", UUID.randomUUID(), true).state());
+        assertEquals(DispatcherRegistrationState.INACTIVE, client.deactivate(baseUrl, "token", true).state());
+    }
+
     private void respond(HttpExchange exchange, String body) throws IOException {
         authorization.set(exchange.getRequestHeaders().getFirst("Authorization"));
         requestBody.set(new String(exchange.getRequestBody().readAllBytes(), StandardCharsets.UTF_8));

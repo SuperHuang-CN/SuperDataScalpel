@@ -203,6 +203,10 @@ class DispatcherManagementIntegrationTest {
                     "runnerEventTopic":"runner.local",
                     "adminEventTopic":"admin.events"
                   },
+                  "resourcePolicy":{
+                    "defaults":{"driverCores":2,"driverMemoryMiB":4096,"executorInstances":1,"executorCores":1,"executorMemoryMiB":1024},
+                    "maximums":{"driverCores":8,"driverMemoryMiB":16384,"executorInstances":1,"executorCores":1,"executorMemoryMiB":1024}
+                  },
                   "admissionPolicy":{
                     "maxQueuedExecutions":%d,
                     "maxConcurrentSubmissions":2,

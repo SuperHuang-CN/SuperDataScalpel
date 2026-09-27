@@ -304,6 +304,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
                   name: values.name,
                   directoryId: values.directoryId,
                   description: values.description,
+                  executionResources: values.executionResources,
                   computeEngineId: requiresComputeEngine(drawerTask.type) ? values.computeEngineId : undefined,
                 },
               });
@@ -313,6 +314,7 @@ export const TaskListPage = ({ view = 'all' }: { view?: TaskListView }) => {
                 type: values.type,
                 directoryId: values.directoryId,
                 description: values.description,
+                executionResources: values.executionResources,
                 computeEngineId: requiresComputeEngine(values.type) ? values.computeEngineId : undefined,
               });
 

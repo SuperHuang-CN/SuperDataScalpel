@@ -781,6 +781,8 @@ export interface DataSourceFilters {
   directoryIds?: string[];
   uncategorized?: boolean;
   purpose?: DataSourcePurposeFilter;
+  /** Matches at least one purpose, in addition to other filters. */
+  purposesAny?: DataSourcePurpose[];
   type?: DataSourceType;
   enabled?: boolean;
 }

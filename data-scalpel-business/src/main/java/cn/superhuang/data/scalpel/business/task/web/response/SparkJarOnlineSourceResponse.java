@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.task.web.response;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.UUID;
+import java.time.Instant;
 
 @Schema(description = "任务当前保存的在线 Java 源码及其与已编译 JAR 的一致性。")
 
@@ -23,7 +24,9 @@ public record SparkJarOnlineSourceResponse(
         @Schema(description = "当前 JAR 来源；没有 JAR 时为空。")
         JarOrigin currentJarOrigin,
         @Schema(description = "当前任务 JAR 元数据；未上传或编译时为空。")
-        SparkJarTaskDefinitionResponse.Jar currentJar
+        SparkJarTaskDefinitionResponse.Jar currentJar,
+        @Schema(description = "当前在线运行包成功应用到任务的时间（ISO 8601）；未应用、当前包为上传来源或历史记录未记录时间时为空。保存草稿、检查、试运行和修改配置不会更新此时间。")
+        Instant appliedAt
 ) {
     @Schema(description = "当前任务 JAR 的来源。")
     public enum JarOrigin {

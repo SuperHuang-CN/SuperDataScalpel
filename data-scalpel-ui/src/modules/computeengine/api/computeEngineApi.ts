@@ -10,9 +10,25 @@ import type {
   DetachComputeEngineRequest,
   UpdateComputeEngineRequest,
   DispatcherExecutionScope,
+  ComputeTargetDiscovery,
+  DiscoverComputeTargetsRequest,
+  RegisterComputeTargetsRequest,
+  RegisterComputeTargetsResult,
 } from '../model/computeEngine';
 
 const COMPUTE_ENGINE_PATH = '/v1/compute-engines';
+
+export const discoverComputeTargets = (request: DiscoverComputeTargetsRequest, signal?: AbortSignal) => (
+  requestJson<ComputeTargetDiscovery>(`${COMPUTE_ENGINE_PATH}/actions/query-targets`, {
+    method: 'POST', body: JSON.stringify(request), signal,
+  })
+);
+
+export const registerComputeTargets = (request: RegisterComputeTargetsRequest) => (
+  requestJson<RegisterComputeTargetsResult>(`${COMPUTE_ENGINE_PATH}/actions/register-targets`, {
+    method: 'POST', body: JSON.stringify(request),
+  })
+);
 
 export const fetchComputeEngines = (request: SearchRequest): Promise<PageResponse<ComputeEngine>> => {
   const query = toSearchParams(request).toString();
@@ -58,7 +74,7 @@ export const testComputeEngine = (id: string): Promise<ComputeEngineTestResult> 
   requestJson<ComputeEngineTestResult>(`${COMPUTE_ENGINE_PATH}/${id}/actions/test`, { method: 'POST' })
 );
 
-export type ComputeEngineCommand = 'register' | 'drain';
+export type ComputeEngineCommand = 'register' | 'drain' | 'resume';
 
 export const executeComputeEngineCommand = (id: string, command: ComputeEngineCommand): Promise<ComputeEngine> => (
   requestJson<ComputeEngine>(`${COMPUTE_ENGINE_PATH}/${id}/actions/${command}`, { method: 'POST' })
@@ -67,7 +83,7 @@ export const executeComputeEngineCommand = (id: string, command: ComputeEngineCo
 export const deactivateComputeEngine = (id: string, force: boolean): Promise<ComputeEngine> => (
   requestJson<ComputeEngine>(`${COMPUTE_ENGINE_PATH}/${id}/actions/deactivate`, {
     method: 'POST', body: JSON.stringify({ force }),
-  })
+  }, force ? 90_000 : undefined)
 );
 
 export const detachComputeEngine = (id: string, request: DetachComputeEngineRequest): Promise<ComputeEngine> => (

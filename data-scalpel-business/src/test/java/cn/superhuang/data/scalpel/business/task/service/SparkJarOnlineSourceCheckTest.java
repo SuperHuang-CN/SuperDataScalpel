@@ -41,7 +41,7 @@ class SparkJarOnlineSourceCheckTest {
     private final SparkJarTaskDefinitionService service = new SparkJarTaskDefinitionService(
             tasks, definitions, mock(SparkJarTaskResourceBindingRepository.class), mock(DataModelRepository.class),
             mock(DataSourceRepository.class), mock(DataSourceRuntimeService.class), mock(ComputeEngineSelectionService.class),
-            mock(SparkExecutionResourceConfigurationService.class), storage, compiler,
+            mock(SparkExecutionResourceConfigurationService.class), storage, compiler, mock(SparkJarDevelopmentKitService.class),
             JsonMapper.builderWithJackson2Defaults().build(), transactions);
 
     @ParameterizedTest

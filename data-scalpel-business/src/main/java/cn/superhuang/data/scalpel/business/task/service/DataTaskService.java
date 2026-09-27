@@ -224,15 +224,17 @@ public class DataTaskService {
     public DataTaskResponse create(CreateDataTaskRequest request) {
         directoryService.validateAssignment(DirectoryScope.TASK, request.directoryId());
         validateComputeEngineReference(request.type(), request.computeEngineId());
-        DataTask task = taskRepository.saveAndFlush(DataTask.create(
-                request.name(), request.directoryId(), request.type(), request.description(), request.computeEngineId()
-        ));
+        DataTask task = DataTask.create(
+                request.name(), request.directoryId(), request.type(), request.description(), request.computeEngineId());
+        validateTaskResources(task, request.computeEngineId(), request.executionResources());
+        task.configureExecutionResources(request.executionResources());
+        task = taskRepository.saveAndFlush(task);
         return summary(task, null, null, null, Map.of(), computeEngineNames(task));
     }
 
     @Transactional
     public DataTaskResponse update(UUID id, UpdateDataTaskRequest request) {
-        DataTask task = requireTask(id);
+        DataTask task = requireTaskForUpdate(id);
         directoryService.validateAssignment(DirectoryScope.TASK, request.directoryId());
         validateComputeEngineReference(task.getType(), request.computeEngineId());
         if (task.getStatus() == TaskStatus.PUBLISHED
@@ -245,6 +247,8 @@ public class DataTaskService {
                     sparkJarTaskDefinitionService.validateExecutionResourcesForEngine(
                             definition, request.computeEngineId()));
         }
+        validateTaskResources(task, request.computeEngineId(), request.executionResources());
+        task.configureExecutionResources(request.executionResources());
         task.update(request.name(), request.directoryId(), request.description(), request.computeEngineId());
         DataTask saved = taskRepository.saveAndFlush(task);
         LocalSqlTaskDefinition definition = definitionRepository.findByTaskId(id).orElse(null);
@@ -253,6 +257,27 @@ public class DataTaskService {
         Map<UUID, String> outputModelNames = definition == null ? Map.of() : modelNames(Set.of(definition.getOutputModelId()));
         return summary(saved, definition, canvasDefinition, qualityDefinition,
                 outputModelNames, computeEngineNames(saved));
+    }
+
+    private void validateTaskResources(DataTask task, UUID engineId,
+            cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec resources) {
+        if (!java.util.Objects.equals(task.getExecutionResources(), resources)) {
+            if (task.getStatus() == TaskStatus.PUBLISHED) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "请先停用任务再修改运行资源");
+            }
+            if (task.getId() != null && task.getType() == TaskType.SPARK_STREAMING_CANVAS
+                    && streamingDeploymentRepository.existsByTaskIdAndActualStateIn(task.getId(), List.of(
+                    cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState.STARTING,
+                    cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState.RUNNING,
+                    cn.superhuang.data.scalpel.business.task.domain.StreamingDeploymentActualState.STOPPING))) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "请先停止实时任务再修改运行资源");
+            }
+        }
+        if (resources == null) return;
+        if (!task.getType().requiresComputeEngine() || task.getType().isJar()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "此任务类型不支持在基本配置中设置资源");
+        }
+        computeEngineSelectionService.validateResources(engineId, resources);
     }
 
     @Transactional
@@ -554,6 +579,7 @@ public class DataTaskService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新发布");
             }
             computeEngineExecutionService.assertUnchanged(route);
+            if (!task.getType().isJar()) computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
             canvasPreparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
             canvasPreparationService.assertModelsUnchanged(preparation.modelVersions());
             lineageSnapshotService.publish(lineageDraft);
@@ -611,6 +637,7 @@ public class DataTaskService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新启用");
             }
             computeEngineExecutionService.assertUnchanged(route);
+            if (!task.getType().isJar()) computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
             canvasPreparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
             canvasPreparationService.assertModelsUnchanged(preparation.modelVersions());
             lineageSnapshotService.publish(lineageDraft);
@@ -638,6 +665,7 @@ public class DataTaskService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新操作");
             }
             computeEngineExecutionService.assertUnchanged(route);
+            if (!task.getType().isJar()) computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
             task.publish();
             return summary(taskRepository.saveAndFlush(task), null, null, current,
                     Map.of(), computeEngineNames(task));
@@ -683,6 +711,7 @@ public class DataTaskService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "任务绑定的计算引擎已变化，请重新操作");
             }
             computeEngineExecutionService.assertUnchanged(route);
+            if (!task.getType().isJar()) computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
             if (task.getType() == TaskType.SPARK_JAR) {
                 lineageSnapshotService.retireCurrentIfDefinitionChanged(taskId, current.getVersion());
             }

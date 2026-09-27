@@ -30,6 +30,8 @@ import cn.superhuang.data.scalpel.business.datasource.web.response.TdEngineTmqTo
 import cn.superhuang.data.scalpel.business.directory.domain.DirectoryScope;
 import cn.superhuang.data.scalpel.business.directory.service.DirectoryService;
 import cn.superhuang.data.scalpel.business.model.repository.DataModelRepository;
+import cn.superhuang.data.scalpel.business.model.domain.DataModel;
+import cn.superhuang.data.scalpel.business.model.domain.DataModelStatus;
 import cn.superhuang.data.scalpel.business.service.ServiceEngineDataSourceRegistrationService;
 import cn.superhuang.data.scalpel.business.service.repository.ScriptDataServiceDefinitionRepository;
 import cn.superhuang.data.scalpel.business.service.repository.SqlDataServiceDefinitionRepository;
@@ -41,6 +43,7 @@ import cn.superhuang.data.scalpel.contract.search.SearchRequest;
 import cn.superhuang.data.scalpel.contract.httpapi.HttpApiContracts;
 import cn.superhuang.data.scalpel.search.SearchEngine;
 import org.springframework.data.domain.Page;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -103,7 +106,14 @@ public class DataSourceService {
 
     @Transactional(readOnly = true)
     public PageResponse<DataSourceResponse> search(SearchRequest request) {
-        Page<DataSource> result = searchEngine.search(request, DataSource.class, repository);
+        return search(request, false);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DataSourceResponse> search(SearchRequest request, boolean hasPublishedModels) {
+        Specification<DataSource> fixed = hasPublishedModels
+                ? publishedModelSources() : Specification.unrestricted();
+        Page<DataSource> result = searchEngine.search(request, DataSource.class, repository, fixed);
         return new PageResponse<>(
                 result.getContent().stream().map(DataSourceResponse::from).toList(),
                 result.getTotalElements(),
@@ -111,6 +121,18 @@ public class DataSourceService {
                 result.getNumber(),
                 result.getSize()
         );
+    }
+
+    static Specification<DataSource> publishedModelSources() {
+        return (root, query, builder) -> {
+            var models = query.subquery(UUID.class);
+            var model = models.from(DataModel.class);
+            models.select(model.get("id")).where(
+                    builder.equal(model.get("storageDataSourceId"), root.get("id")),
+                    builder.equal(model.get("status"), DataModelStatus.PUBLISHED));
+            return builder.and(builder.exists(models), root.get("type").in(
+                    java.util.Arrays.stream(DataSourceType.values()).filter(DataSourceType::isJdbc).toList()));
+        };
     }
 
     @Transactional(readOnly = true)

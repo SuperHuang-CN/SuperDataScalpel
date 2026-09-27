@@ -13,6 +13,13 @@ public record DispatcherRegistrationResponse(
         DispatcherTopics topics,
         DispatcherAdmissionPolicy effectiveAdmissionPolicy,
         SparkExecutionResourcePolicy resourcePolicy,
-        String lastError
+        String lastError,
+        String targetKey,
+        String targetFingerprint
 ) {
+    public DispatcherRegistrationResponse(UUID engineId, String dispatcherInstanceId, ComputeBackendType backendType,
+            DispatcherRegistrationState state, DispatcherTopics topics, DispatcherAdmissionPolicy effectiveAdmissionPolicy,
+            SparkExecutionResourcePolicy resourcePolicy, String lastError) {
+        this(engineId, dispatcherInstanceId, backendType, state, topics, effectiveAdmissionPolicy, resourcePolicy, lastError, null, null);
+    }
 }

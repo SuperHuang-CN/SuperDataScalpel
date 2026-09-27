@@ -22,11 +22,12 @@ import static org.mockito.Mockito.*;
 
 class DispatcherTerminationRecoveryTest {
     private final TaskExecutionBackend backend = mock(TaskExecutionBackend.class);
+    private final DispatcherBackendRegistry backends = mock(DispatcherBackendRegistry.class);
     private final DispatcherExecutionStateService states = mock(DispatcherExecutionStateService.class);
     private final DispatcherTaskExecutionRepository executions = mock(DispatcherTaskExecutionRepository.class);
     private final DispatcherProperties properties = mock(DispatcherProperties.class);
     private final DispatcherExecutionCoordinator coordinator = new DispatcherExecutionCoordinator(
-            backend, states, executions, properties, mock(DispatcherArtifactProperties.class),
+            backends, states, executions, properties, mock(DispatcherArtifactProperties.class),
             mock(DispatcherResultService.class), mock(DispatcherArtifactService.class));
 
     @Test
@@ -103,6 +104,7 @@ class DispatcherTerminationRecoveryTest {
     }
 
     private void arrange(DispatcherTaskExecution execution) throws Exception {
+        when(backends.forExecution(any())).thenReturn(backend);
         when(properties.observationPollInterval()).thenReturn(Duration.ofSeconds(5));
         when(properties.submissionUncertainGrace()).thenReturn(Duration.ofSeconds(1));
         when(backend.type()).thenReturn(ExecutionBackendType.LOCAL_DOCKER);

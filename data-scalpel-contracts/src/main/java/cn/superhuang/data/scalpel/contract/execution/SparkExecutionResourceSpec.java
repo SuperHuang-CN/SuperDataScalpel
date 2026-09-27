@@ -11,13 +11,13 @@ import com.fasterxml.jackson.annotation.JsonPropertyDescription;
 public record SparkExecutionResourceSpec(
         @JsonPropertyDescription("Spark Driver 申请的 CPU 核数，范围 1 到 256；LOCAL_DOCKER 映射为容器 CPU 上限。")
         int driverCores,
-        @JsonPropertyDescription("Spark Driver 申请的内存，单位 MiB，范围 1024 到 1048576；LOCAL_DOCKER 映射为容器内存上限。")
+        @JsonPropertyDescription("Driver 内存，单位 MiB，范围 1024 到 1048576；LOCAL_DOCKER 为容器总内存上限且堆取 75%，YARN/KUBERNETES 为 JVM 堆内存，不含容器额外非堆开销。")
         int driverMemoryMiB,
-        @JsonPropertyDescription("Executor 实例数量，范围 1 到 10000；YARN 和 KUBERNETES 使用，LOCAL_DOCKER 的 local 模式忽略。")
+        @JsonPropertyDescription("Executor 实例数量，范围 1 到 10000；YARN/KUBERNETES 使用固定数量，LOCAL_DOCKER 不适用，内部兼容占位为 1，不代表独立 Executor。")
         int executorInstances,
         @JsonPropertyDescription("每个 Executor 申请的 CPU 核数，范围 1 到 256；YARN 和 KUBERNETES 使用，LOCAL_DOCKER 忽略。")
         int executorCores,
-        @JsonPropertyDescription("每个 Executor 申请的内存，单位 MiB，范围 1024 到 1048576；YARN 和 KUBERNETES 使用，LOCAL_DOCKER 忽略。")
+        @JsonPropertyDescription("每个 Executor 的 JVM 堆内存，单位 MiB，范围 1024 到 1048576；YARN/KUBERNETES 使用且容器另需非堆内存，LOCAL_DOCKER 不适用，内部兼容占位 1024。")
         int executorMemoryMiB
 ) {
     public static final int MIN_CORES = 1;
@@ -44,5 +44,16 @@ public record SparkExecutionResourceSpec(
                 || executorInstances > maximums.executorInstances
                 || executorCores > maximums.executorCores
                 || executorMemoryMiB > maximums.executorMemoryMiB;
+    }
+
+    /** Ignore non-applicable Executor fields, including values retained by older clients. */
+    public boolean exceeds(SparkExecutionResourceSpec maximums, ExecutionBackendType backend) {
+        return forBackend(backend).exceeds(maximums.forBackend(backend));
+    }
+
+    public SparkExecutionResourceSpec forBackend(ExecutionBackendType backend) {
+        if (backend == null) throw new IllegalArgumentException("执行后端类型不能为空");
+        return backend == ExecutionBackendType.LOCAL_DOCKER
+                ? new SparkExecutionResourceSpec(driverCores, driverMemoryMiB, 1, 1, 1024) : this;
     }
 }

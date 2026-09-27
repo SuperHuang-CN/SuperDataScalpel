@@ -20,7 +20,8 @@ public final class KubernetesNames {
     public static String selector(ExecutionIdentity identity) {
         return String.join(",",
                 MANAGED + "=true", ENGINE_ID + "=" + identity.engineId(),
-                EXECUTION_ID + "=" + identity.executionId());
+                EXECUTION_ID + "=" + identity.executionId(), RUN_ID + "=" + identity.runId(),
+                ATTEMPT + "=" + identity.attempt());
     }
 
     private static String compact(ExecutionIdentity identity) {

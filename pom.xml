@@ -165,6 +165,28 @@
     </dependencyManagement>
 
     <build>
+        <plugins>
+            <plugin>
+                <groupId>org.codehaus.mojo</groupId>
+                <artifactId>exec-maven-plugin</artifactId>
+                <version>3.5.0</version>
+                <executions>
+                    <!-- Invoked explicitly by start-local-dev.sh; never overrides SDK generation arguments. -->
+                    <execution>
+                        <id>dev-runtime-classpath</id>
+                        <configuration>
+                            <executable>${datascalpel.classpath.printer}</executable>
+                            <classpathScope>runtime</classpathScope>
+                            <arguments>
+                                <argument>__DATASCALPEL_CLASSPATH__%s=%s__DATASCALPEL_CLASSPATH_END__\n</argument>
+                                <argument>${project.artifactId}</argument>
+                                <classpath/>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                </executions>
+            </plugin>
+        </plugins>
         <pluginManagement>
             <plugins>
                 <plugin>

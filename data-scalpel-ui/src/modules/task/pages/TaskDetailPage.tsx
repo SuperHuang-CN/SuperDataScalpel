@@ -374,6 +374,7 @@ export const TaskDetailPage = () => {
           name: values.name,
           directoryId: values.directoryId,
           description: values.description,
+          executionResources: values.executionResources,
           computeEngineId: task.type !== 'LOCAL_SQL' && task.type !== 'WORKFLOW'
             ? values.computeEngineId
             : undefined,

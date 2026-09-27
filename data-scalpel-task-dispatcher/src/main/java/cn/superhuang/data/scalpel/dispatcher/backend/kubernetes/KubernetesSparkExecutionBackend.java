@@ -25,6 +25,10 @@ import org.springframework.stereotype.Component;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.file.Path;
+import java.nio.file.Files;
+import java.io.IOException;
+import java.util.Base64;
+import java.util.Map;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
@@ -42,6 +46,7 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
     private final ClusterLaunchFileService launchFiles;
     private final DispatcherArtifactService artifacts;
     private final DispatcherProperties dispatcherProperties;
+    private final ObjectMapper objectMapper;
 
     public KubernetesSparkExecutionBackend(
             KubernetesProperties properties,
@@ -58,6 +63,7 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
         this.launchFiles = launchFiles;
         this.artifacts = artifacts;
         this.dispatcherProperties = dispatcherProperties;
+        this.objectMapper = objectMapper;
     }
 
     @Override public ExecutionBackendType type() { return ExecutionBackendType.KUBERNETES; }
@@ -66,6 +72,11 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
     public BackendReadiness readiness() {
         List<String> issues = new ArrayList<>();
         if (!properties.immutableImage()) issues.add("Kubernetes Runner镜像必须使用不可变Digest");
+        if (properties.kubeconfig() != null && (!Files.isRegularFile(properties.kubeconfig())
+                || !Files.isReadable(properties.kubeconfig()))) {
+            issues.add("Kubernetes kubeconfig 不存在或不可读");
+            return new BackendReadiness(false, issues);
+        }
         if (!launchFiles.readiness(properties.absoluteWorkDirectory())) issues.add("Kubernetes工作目录不可写");
         BackendReadiness artifactReadiness = artifacts.readiness();
         if (!artifactReadiness.ready()) issues.addAll(artifactReadiness.issues());
@@ -73,6 +84,9 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
             CommandResult version = execute(commands.version(), properties.commandTimeout(), CONTROL_BYTES);
             if (!version.successful() || !version.outputText().contains("4.1.1")) {
                 issues.add("spark-submit不可用或版本不是4.1.1");
+            }
+            if (!supportedServerVersion(execute(commands.serverVersion(), properties.commandTimeout(), CONTROL_BYTES))) {
+                issues.add("无法确认 Kubernetes 版本满足 Spark 4.1.1 所需的最低版本 1.32");
             }
             if (!execute(commands.namespace(), properties.commandTimeout(), CONTROL_BYTES).successful()) {
                 issues.add("Kubernetes Namespace不可访问");
@@ -213,13 +227,25 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
 
     @Override
     public void cleanup(ExternalExecutionHandle handle, ExecutionIdentity identity) throws BackendException {
-        requireHandle(handle);
-        requireSuccess(commands.deleteSecret(identity), "KUBERNETES_SECRET_DELETE_FAILED", "无法清理launch Secret");
+        String podName = requireHandle(handle);
+        Optional<KubernetesPodParser.ParsedPod> pod = driverByName(podName);
+        if (pod.isPresent()) {
+            parser.requireIdentity(pod.get(), identity);
+            if (pod.get().status().state() != BackendExecutionState.SUCCEEDED
+                    && pod.get().status().state() != BackendExecutionState.FAILED) {
+                throw new BackendException("KUBERNETES_CLEANUP_NOT_TERMINAL", "Driver 尚未终止，不能清理运行资源");
+            }
+            // Coordinator persists result/logs before calling terminal cleanup.
+            // Plain Spark Driver pods have no Job TTL controller to remove them.
+            requireSuccess(commands.deleteDriver(podName), "KUBERNETES_DELETE_FAILED", "无法清理已结束Driver Pod");
+        }
+        requireSuccess(commands.deleteExecutors(identity), "KUBERNETES_DELETE_FAILED", "无法清理残留Executor Pod");
+        deleteOwnedSecret(identity);
     }
 
     @Override
     public void cleanup(ExecutionIdentity identity) throws BackendException {
-        requireSuccess(commands.deleteSecret(identity), "KUBERNETES_SECRET_DELETE_FAILED", "无法清理遗留launch Secret");
+        deleteOwnedSecret(identity);
     }
 
     private static List<String[]> requiredPermissions() {
@@ -230,24 +256,70 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
                 new String[]{"create", "secrets"}, new String[]{"get", "secrets"},
                 new String[]{"delete", "secrets"},
                 new String[]{"create", "services"}, new String[]{"get", "services"},
-                new String[]{"delete", "services"},
+                new String[]{"delete", "services"}, new String[]{"patch", "services"},
                 new String[]{"create", "configmaps"}, new String[]{"get", "configmaps"},
-                new String[]{"delete", "configmaps"}
+                new String[]{"delete", "configmaps"}, new String[]{"patch", "configmaps"}
         );
     }
 
     private void recreateSecret(ExecutionIdentity identity, Path launchFile) throws BackendException {
         CommandResult existing = execute(commands.getSecret(identity), properties.commandTimeout(), CONTROL_BYTES);
         if (existing.successful()) {
-            if (!existing.outputText().equals("secret/" + KubernetesNames.secret(identity))) {
-                throw new BackendException("EXTERNAL_EXECUTION_CONFLICT", "同名Kubernetes Secret身份不匹配");
-            }
+            parser.requireSecretIdentity(existing.outputText(), identity);
             requireSuccess(commands.deleteSecret(identity), "KUBERNETES_SECRET_DELETE_FAILED", "无法替换launch Secret");
         } else if (!notFound(existing)) {
             throw new BackendException("KUBERNETES_SECRET_READ_FAILED", "无法检查launch Secret");
         }
-        requireSuccess(commands.createSecret(identity, launchFile), "KUBERNETES_SECRET_CREATE_FAILED", "无法创建launch Secret");
-        requireSuccess(commands.labelSecret(identity), "KUBERNETES_SECRET_LABEL_FAILED", "无法标记launch Secret");
+        // Create data and ownership atomically. A separate label command needs
+        // patch permission and can leave an unowned Secret after interruption.
+        Path secretFile = null;
+        try {
+            secretFile = Files.createTempFile(launchFile.getParent(), "launch-secret-", ".json");
+            Map<String, Object> secret = Map.of(
+                    "apiVersion", "v1", "kind", "Secret", "type", "Opaque",
+                    "metadata", Map.of("name", KubernetesNames.secret(identity),
+                            "namespace", properties.namespace(), "labels", Map.of(
+                                    KubernetesNames.MANAGED, "true",
+                                    KubernetesNames.ENGINE_ID, identity.engineId().toString(),
+                                    KubernetesNames.EXECUTION_ID, identity.executionId().toString(),
+                                    KubernetesNames.RUN_ID, identity.runId().toString(),
+                                    KubernetesNames.ATTEMPT, Integer.toString(identity.attempt()))),
+                    "data", Map.of("launch.json", Base64.getEncoder().encodeToString(Files.readAllBytes(launchFile))));
+            Files.write(secretFile, objectMapper.writeValueAsBytes(secret));
+            requireSuccess(commands.createSecret(secretFile), "KUBERNETES_SECRET_CREATE_FAILED", "无法创建launch Secret");
+        } catch (IOException exception) {
+            throw new BackendException("KUBERNETES_SECRET_CREATE_FAILED", "无法准备launch Secret", exception);
+        } finally {
+            if (secretFile != null) {
+                try { Files.deleteIfExists(secretFile); }
+                catch (IOException ignored) { /* Protected execution directory remains owner-only. */ }
+            }
+        }
+    }
+
+    private boolean supportedServerVersion(CommandResult response) {
+        if (!response.successful()) return false;
+        try {
+            var version = objectMapper.readTree(response.outputText());
+            String major = version.path("major").asText();
+            String minor = version.path("minor").asText();
+            if (!major.matches("[0-9]+") || !minor.matches("[0-9]+\\+?")) return false;
+            int majorNumber = Integer.parseInt(major);
+            int minorNumber = Integer.parseInt(minor.replace("+", ""));
+            return majorNumber > 1 || majorNumber == 1 && minorNumber >= 32;
+        } catch (RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private void deleteOwnedSecret(ExecutionIdentity identity) throws BackendException {
+        CommandResult existing = execute(commands.getSecret(identity), properties.commandTimeout(), CONTROL_BYTES);
+        if (!existing.successful()) {
+            if (notFound(existing)) return;
+            throw new BackendException("KUBERNETES_SECRET_READ_FAILED", "无法检查launch Secret");
+        }
+        parser.requireSecretIdentity(existing.outputText(), identity);
+        requireSuccess(commands.deleteSecret(identity), "KUBERNETES_SECRET_DELETE_FAILED", "无法清理launch Secret");
     }
 
     private Optional<KubernetesPodParser.ParsedPod> driver(ExecutionIdentity identity) throws BackendException {
@@ -269,7 +341,9 @@ public class KubernetesSparkExecutionBackend implements TaskExecutionBackend {
 
     private CommandResult execute(List<String> command, java.time.Duration timeout, long maximumBytes)
             throws BackendException {
-        return executor.execute(command, timeout, maximumBytes);
+        if (properties.kubeconfig() == null) return executor.execute(command, timeout, maximumBytes);
+        return executor.execute(command, timeout, maximumBytes, Map.of("KUBECONFIG",
+                properties.kubeconfig().toAbsolutePath().normalize().toString()));
     }
 
     private BackendSubmission submission(String podName) {

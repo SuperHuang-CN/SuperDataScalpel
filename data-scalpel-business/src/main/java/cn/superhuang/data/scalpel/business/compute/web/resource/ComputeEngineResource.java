@@ -158,9 +158,16 @@ public class ComputeEngineResource {
             relatedOperations = {"POST /api/v1/compute-engines/{id}/actions/deactivate"})
     @PostMapping("/{id}/actions/drain")
     @PreAuthorize("hasAuthority('compute.engine.manage')")
-    @Operation(summary = "排空计算引擎", description = "先核对远端注册归属和完整配置，再使 Dispatcher 进入 DRAINING：停止接收新执行，但继续监管已有执行并接受取消。成功后 Admin 记录 DRAINING/UP；不会自动等待任务结束或反注册。远端调用失败会把健康状态记为 DOWN，但保留原注册状态。")
+    @Operation(summary = "暂停计算引擎任务调度", description = "先核对远端注册归属和完整配置，再使 Dispatcher 进入 DRAINING：停止接收新执行，原有队列保留但暂停提交，运行中任务继续并接受取消。成功后 Admin 记录 DRAINING/UP；不会自动等待任务结束或停用，可调用 resume 恢复。远端调用失败会把健康状态记为 DOWN，但保留原注册状态。")
     public ComputeEngineResponse drain(@Parameter(description = "ACTIVE 计算引擎 UUID。") @PathVariable UUID id) {
         return service.drain(id);
+    }
+
+    @PostMapping("/{id}/actions/resume")
+    @PreAuthorize("hasAuthority('compute.engine.manage')")
+    @Operation(summary = "恢复计算引擎任务调度", description = "仅允许 DRAINING 引擎恢复。核对 Dispatcher 注册归属与完整配置，远端确认目标、制品存储和监听就绪后转为 ACTIVE，Admin 同步 ACTIVE/UP。继续领取原队列并接收新任务，不修改 Topic、资源策略或运行中任务，不撤销已请求的取消。状态不符返回 409；远端失败记录健康错误并保留原注册状态。")
+    public ComputeEngineResponse resume(@Parameter(description = "处于 DRAINING 状态的计算引擎 UUID。") @PathVariable UUID id) {
+        return service.resume(id);
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "计算引擎：反注册 Dispatcher",
@@ -169,7 +176,7 @@ public class ComputeEngineResource {
             relatedOperations = {"POST /api/v1/compute-engines/{id}/actions/drain", "POST /api/v1/compute-engines/{id}/actions/detach"})
     @PostMapping("/{id}/actions/deactivate")
     @PreAuthorize("hasAuthority('compute.engine.manage')")
-    @Operation(summary = "从 Dispatcher 反注册计算引擎", description = "先核对远端注册归属和完整配置。force=false 时仅在没有排队或活动执行时反注册；force=true 时由 Dispatcher 请求取消这些执行并等待状态收敛。只有远端明确返回 INACTIVE 且配置一致时 Admin 才记为 INACTIVE；冲突或等待未收敛时不自动离线解绑，需检查状态后重试。")
+    @Operation(summary = "停用计算引擎", description = "先核对远端注册归属和完整配置。force=false 时仅在没有排队、活动执行及待清理资源时停用；force=true 时由 Dispatcher 请求取消这些执行并等待状态和资源清理收敛。只有远端明确返回 INACTIVE 且配置一致时 Admin 才记为 INACTIVE；业务拒绝返回 409，不透传远端错误正文、不把业务拒绝视为健康故障。冲突或等待未收敛时不自动离线解绑，需检查状态后重试。")
     public ComputeEngineResponse deactivate(
             @Parameter(description = "ACTIVE、DRAINING 或 ERROR 的计算引擎 UUID。") @PathVariable UUID id,
             @RequestBody(required = false) DeactivateComputeEngineRequest request

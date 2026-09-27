@@ -526,7 +526,7 @@ class CanvasTaskLifecycleIntegrationTests {
         }
 
         @Override
-        public Preparation prepare(cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition definition) {
+        public Preparation prepare(cn.superhuang.data.scalpel.contract.task.CanvasDefinition definition) {
             prepareCalls++;
             if (failure != null) throw failure;
             if (preparation == null) throw new AssertionError("未配置 Canvas 预检结果");
@@ -535,7 +535,7 @@ class CanvasTaskLifecycleIntegrationTests {
 
         @Override
         public Preparation prepare(
-                cn.superhuang.data.scalpel.business.task.canvas.CanvasDefinition definition,
+                cn.superhuang.data.scalpel.contract.task.CanvasDefinition definition,
                 CanvasExecutionMode executionMode
         ) {
             return prepare(definition);

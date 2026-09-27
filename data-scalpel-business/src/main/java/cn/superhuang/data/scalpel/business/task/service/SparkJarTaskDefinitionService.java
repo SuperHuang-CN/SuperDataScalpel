@@ -108,6 +108,7 @@ public class SparkJarTaskDefinitionService {
     private final SparkExecutionResourceConfigurationService resourceConfigurationService;
     private final TaskRunArtifactStorage storage;
     private final TaskCompilationService taskCompilationService;
+    private final SparkJarDevelopmentKitService developmentKitService;
     private final ObjectMapper objectMapper;
     private final TransactionTemplate transactionTemplate;
 
@@ -122,6 +123,7 @@ public class SparkJarTaskDefinitionService {
             SparkExecutionResourceConfigurationService resourceConfigurationService,
             TaskRunArtifactStorage storage,
             TaskCompilationService taskCompilationService,
+            SparkJarDevelopmentKitService developmentKitService,
             ObjectMapper objectMapper,
             PlatformTransactionManager transactionManager
     ) {
@@ -135,6 +137,7 @@ public class SparkJarTaskDefinitionService {
         this.resourceConfigurationService = resourceConfigurationService;
         this.storage = storage;
         this.taskCompilationService = taskCompilationService;
+        this.developmentKitService = developmentKitService;
         this.objectMapper = objectMapper;
         this.transactionTemplate = new TransactionTemplate(transactionManager);
     }
@@ -146,7 +149,7 @@ public class SparkJarTaskDefinitionService {
                 .map(this::response)
                 .orElseGet(() -> new SparkJarTaskDefinitionResponse(
                         taskId, false, 0, expectedMode(task), null,
-                        List.of(), List.of(), List.of(), defaultResources(task), 3600, null));
+                        List.of(), List.of(), List.of(), defaultResources(task), 3600, null, null, true));
     }
 
     @Transactional(readOnly = true)
@@ -174,9 +177,19 @@ public class SparkJarTaskDefinitionService {
 
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
                 .orElseGet(() -> SparkJarTaskDefinition.create(taskId, expectedMode(task)));
-        SparkExecutionResourceSpec resources = resolvedResources(task, definition, requestedResources, legacyResources.resources());
+        boolean inherit = Boolean.TRUE.equals(request.inheritEngineResources())
+                || request.inheritEngineResources() == null && requestedResources == null
+                && legacyResources.resources() == null
+                && resourceConfigurationService.resources(definition.getExecutionResourcesJson()) == null;
+        if (Boolean.TRUE.equals(request.inheritEngineResources())
+                && (requestedResources != null || legacyResources.resources() != null)) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "使用引擎默认资源时不能同时提交自定义规格");
+        }
+        SparkExecutionResourceSpec resources = inherit ? defaultResources(task)
+                : resolvedResources(task, definition, requestedResources, legacyResources.resources());
         boolean changed = definition.updateConfiguration(
-                json(parameters), json(sparkConf), resourceConfigurationService.write(resources), request.timeoutSeconds());
+                json(parameters), json(sparkConf), inherit ? null : resourceConfigurationService.write(resources), request.timeoutSeconds());
+        definition.chooseAuthoringMode(request.authoringMode());
         List<SparkJarTaskResourceBinding> existing = bindingRepository.findAllByTaskIdOrderByCreatedAtAsc(taskId);
         if (!sameBindings(existing, bindings)) {
             bindingRepository.deleteAllByTaskId(taskId);
@@ -186,6 +199,9 @@ public class SparkJarTaskDefinitionService {
                     binding.topicName(), binding.accessMode()
             )).toList());
             if (!changed) definition.resourceBindingsChanged();
+        }
+        if (request.developmentConfiguration() != null) {
+            developmentKitService.saveConfiguration(definition, request.developmentConfiguration());
         }
         return response(definitionRepository.saveAndFlush(definition));
     }
@@ -251,7 +267,7 @@ public class SparkJarTaskDefinitionService {
                 .map(definition -> onlineSourceResponse(definition, definition.getOnlineSourceCode() != null))
                 .orElseGet(() -> new SparkJarOnlineSourceResponse(task.getId(), 0, defaultSource,
                         sha256(defaultSource.getBytes(StandardCharsets.UTF_8)), null,
-                        false, true, null, null));
+                        false, true, null, null, null));
     }
 
     public SparkJarOnlineSourceResponse saveOnlineSource(
@@ -392,7 +408,7 @@ public class SparkJarTaskDefinitionService {
                 engine.getResourcePolicyJson(), engine.getExpectedBackendType());
         SparkExecutionResourceSpec configured = resourceConfigurationService.resources(
                 definition.getExecutionResourcesJson());
-        if (configured != null && configured.exceeds(policy.maximums())) {
+        if (configured != null && configured.exceeds(policy.maximums(), SparkExecutionResourceConfigurationService.toExecutionBackend(engine.getExpectedBackendType()))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "任务运行资源超过计算引擎“" + engine.getName() + "”的单次任务上限");
         }
@@ -492,6 +508,9 @@ public class SparkJarTaskDefinitionService {
         SparkJarTaskDefinitionResponse.Jar jar = definition.hasJar() ? new SparkJarTaskDefinitionResponse.Jar(
                 definition.getJarFileName(), definition.getJarSha256(), definition.getJarSizeBytes(),
                 definition.getJobClass(), definition.getJobApiVersion(), definition.getJobMode()) : null;
+        var configuredResources = resourceConfigurationService.resources(definition.getExecutionResourcesJson());
+        var displayResources = legacyResources.resources() != null ? legacyResources.resources()
+                : configuredResources != null ? configuredResources : defaultResources(task);
         return new SparkJarTaskDefinitionResponse(
                 definition.getTaskId(), definition.hasJar(), definition.getVersion(), definition.getJobMode(), jar,
                 parameters.stream().map(entry -> new SparkJarTaskDefinitionResponse.Entry(entry.name(), entry.value())).toList(),
@@ -501,8 +520,9 @@ public class SparkJarTaskDefinitionService {
                         binding.getResourceType() == SparkJarResourceType.MODEL
                                 ? modelNames.get(binding.getResourceId()) : sourceNames.get(binding.getResourceId()),
                         binding.getTopicName(), binding.getAccessMode())).toList(),
-                resolvedResources(task, definition, null, legacyResources.resources()),
-                definition.getTimeoutSeconds(), definition.getUpdatedAt());
+                displayResources,
+                definition.getTimeoutSeconds(), definition.getUpdatedAt(), definition.getAuthoringMode(),
+                configuredResources == null && legacyResources.resources() == null);
     }
 
     private List<UpdateSparkJarTaskDefinitionRequest.Entry> normalizedEntries(
@@ -555,11 +575,11 @@ public class SparkJarTaskDefinitionService {
         SparkExecutionResourceSpec result = requested != null ? requested
                 : legacy != null ? legacy
                 : current != null ? current : policy.defaults();
-        if (result.exceeds(policy.maximums())) {
+        if (result.exceeds(policy.maximums(), SparkExecutionResourceConfigurationService.toExecutionBackend(engine.getExpectedBackendType()))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT,
                     "任务运行资源超过计算引擎“" + engine.getName() + "”的单次任务上限");
         }
-        return result;
+        return result.forBackend(SparkExecutionResourceConfigurationService.toExecutionBackend(engine.getExpectedBackendType()));
     }
 
     private static LegacyResources extractLegacyResources(List<UpdateSparkJarTaskDefinitionRequest.Entry> entries) {
@@ -724,6 +744,7 @@ public class SparkJarTaskDefinitionService {
                     || normalized.startsWith("-xx:onerror")
                     || normalized.startsWith("-xx:onoutofmemoryerror")
                     || normalized.startsWith("-xx:errorfile")
+                    || normalized.matches("-xx:(?:initialheapsize|minheapsize|maxheapsize|softmaxheapsize|maxram(?:percentage|fraction)?|minram(?:percentage|fraction)?|initialram(?:percentage|fraction)?|maxdirectmemorysize|maxmetaspacesize)=.*")
                     || !DRIVER_JVM_OPTION.matcher(option).matches()) {
                 throw new ResponseStatusException(HttpStatus.BAD_REQUEST,
                         "Driver JVM 参数只允许 -D、-XX、--add-opens 或 --add-exports；不能覆盖内存、Agent、classpath 或错误转储配置");
@@ -750,7 +771,8 @@ public class SparkJarTaskDefinitionService {
                 : SparkJarOnlineSourceResponse.JarOrigin.ONLINE_COMPILED;
         return new SparkJarOnlineSourceResponse(definition.getTaskId(), definition.getVersion(), source,
                 sourceSha, definition.getOnlineCompiledSourceSha256(), persisted,
-                !sourceSha.equals(definition.getOnlineCompiledSourceSha256()), origin, definitionResponse.jar());
+                !sourceSha.equals(definition.getOnlineCompiledSourceSha256()), origin, definitionResponse.jar(),
+                definition.getOnlineAppliedAt());
     }
 
     private static String normalizeOnlineSource(String value) {

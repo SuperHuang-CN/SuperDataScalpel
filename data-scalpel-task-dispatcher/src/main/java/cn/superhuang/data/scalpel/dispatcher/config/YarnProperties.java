@@ -19,8 +19,11 @@ public record YarnProperties(
         int numExecutors,
         Duration submitTimeout,
         Duration commandTimeout,
-        Path workDirectory
+        Path workDirectory,
+        Path hadoopConfDirectory,
+        String clusterId
 ) {
+    @org.springframework.boot.context.properties.bind.ConstructorBinding
     public YarnProperties {
         sparkSubmit = text(sparkSubmit, "/opt/spark/bin/spark-submit");
         yarn = text(yarn, "/opt/hadoop/bin/yarn");
@@ -35,6 +38,8 @@ public record YarnProperties(
         submitTimeout = submitTimeout == null ? Duration.ofMinutes(5) : submitTimeout;
         commandTimeout = commandTimeout == null ? Duration.ofMinutes(2) : commandTimeout;
         workDirectory = workDirectory == null ? Path.of("work", "task-executions-yarn") : workDirectory;
+        hadoopConfDirectory = hadoopConfDirectory == null ? null : hadoopConfDirectory.toAbsolutePath().normalize();
+        clusterId = clusterId == null || clusterId.isBlank() ? null : clusterId.trim();
         if (!"cluster".equals(deployMode)) throw new IllegalArgumentException("YARN只支持 cluster deploy mode");
         if (!runnerJar.startsWith("hdfs://") && !runnerJar.startsWith("viewfs://")) {
             throw new IllegalArgumentException("YARN Runner JAR必须使用 HDFS/ViewFS URI");
@@ -46,6 +51,13 @@ public record YarnProperties(
     }
 
     public Path absoluteWorkDirectory() { return workDirectory.toAbsolutePath().normalize(); }
+
+    public YarnProperties(String sparkSubmit, String yarn, String hdfs, String deployMode, String queue, String runnerJar,
+            String driverMemory, String executorMemory, int executorCores, int numExecutors,
+            Duration submitTimeout, Duration commandTimeout, Path workDirectory) {
+        this(sparkSubmit, yarn, hdfs, deployMode, queue, runnerJar, driverMemory, executorMemory, executorCores,
+                numExecutors, submitTimeout, commandTimeout, workDirectory, null, null);
+    }
 
     private static String text(String value, String fallback) {
         return value == null || value.isBlank() ? fallback : value.trim();

@@ -11,6 +11,8 @@ spring:
 
 data-scalpel:
   dispatcher:
+    legacy-single-backend: true
+    messaging.scope: LEGACY_ENGINE
     token: test-dispatcher-token
     backend: LOCAL_DOCKER
     admission-poll-interval: 10s

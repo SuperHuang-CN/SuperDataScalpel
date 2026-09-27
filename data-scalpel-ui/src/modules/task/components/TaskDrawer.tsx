@@ -1,10 +1,10 @@
 import { ApartmentOutlined, CloudServerOutlined, FileTextOutlined } from '@ant-design/icons';
-import { Badge, Button, Col, Drawer, Form, Input, Row, Select, Space, Tag, TreeSelect, Typography } from 'antd';
+import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Radio, Row, Select, Space, Tag, TreeSelect, Typography } from 'antd';
 import { useEffect, useRef, useState } from 'react';
 import { ContextHelp } from '../../../shared/components/ContextualFeedback';
 import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory';
 import { computeEngineRegistrationStateLabels, isComputeEngineSelectable, useComputeEngines } from '../../computeengine';
-import { taskStatusLabels, taskTypeLabels, type DataTask, type TaskType } from '../model/task';
+import { taskStatusLabels, taskTypeLabels, type DataTask, type TaskType, type SparkExecutionResourceSpec } from '../model/task';
 import { getTaskView, type TaskListView } from '../model/taskViews';
 
 export interface TaskDrawerValues {
@@ -13,6 +13,8 @@ export interface TaskDrawerValues {
   directoryId?: string;
   description?: string;
   computeEngineId?: string;
+  executionResources?: SparkExecutionResourceSpec | null;
+  resourceMode?: 'DEFAULT' | 'CUSTOM';
 }
 
 interface TaskDrawerProps {
@@ -40,11 +42,16 @@ export const TaskDrawer = ({
   const fixedType = !task && viewConfig.types.length === 1;
   const [form] = Form.useForm<TaskDrawerValues>();
   const taskType = Form.useWatch('type', form);
+  const engineId = Form.useWatch('computeEngineId', form);
+  const resourceMode = Form.useWatch('resourceMode', form);
   const sparkTask = taskType !== undefined && taskType !== 'LOCAL_SQL' && taskType !== 'WORKFLOW';
   const computeEnginesQuery = useComputeEngines(
     { page: 0, size: 500, sort: 'name' },
     open && sparkTask,
   );
+
+  const selectedEngine = computeEnginesQuery.data?.content.find(engine => engine.id === engineId);
+  const configureResources = sparkTask && taskType !== 'SPARK_JAR' && taskType !== 'SPARK_STREAMING_JAR';
 
   useEffect(() => {
     if (!open) return;
@@ -54,7 +61,9 @@ export const TaskDrawer = ({
       directoryId: task.directoryId ?? undefined,
       description: task.description ?? undefined,
       computeEngineId: task.computeEngineId ?? undefined,
-    } : { name: '', type: viewConfig.defaultType, directoryId: initialDirectoryId, description: '', computeEngineId: undefined });
+      executionResources: task.executionResources ?? undefined,
+      resourceMode: task.executionResources ? 'CUSTOM' : 'DEFAULT',
+    } : { name: '', type: viewConfig.defaultType, directoryId: initialDirectoryId, description: '', computeEngineId: undefined, executionResources: undefined, resourceMode: 'DEFAULT' });
   }, [form, initialDirectoryId, open, task, viewConfig.defaultType]);
 
   const submit = async () => {
@@ -68,7 +77,16 @@ export const TaskDrawer = ({
       } catch {
         return;
       }
-      await onSubmit(values);
+      if (configureResources && values.resourceMode === 'CUSTOM' && (!selectedEngine || !values.executionResources)) {
+        form.setFields([{ name: 'computeEngineId', errors: ['请等待计算引擎资源策略加载完成'] }]);
+        return;
+      }
+      const { resourceMode: mode, ...request } = values;
+      await onSubmit({ ...request, executionResources: configureResources && mode === 'CUSTOM'
+        ? selectedEngine?.expectedBackendType === 'LOCAL_DOCKER'
+          ? { ...values.executionResources!, executorInstances: selectedEngine.resourcePolicy.defaults.executorInstances,
+            executorCores: selectedEngine.resourcePolicy.defaults.executorCores, executorMemoryMiB: selectedEngine.resourcePolicy.defaults.executorMemoryMiB }
+          : values.executionResources : null });
     } catch {
       // The caller presents the API error; keep the drawer open for correction.
     } finally {
@@ -184,6 +202,37 @@ export const TaskDrawer = ({
                   ]}
                 />
               </Form.Item>
+              {configureResources && <>
+                <Form.Item name="resourceMode" label="任务运行资源">
+                  <Radio.Group disabled={task?.status === 'PUBLISHED'} options={[
+                    { value: 'DEFAULT', label: '使用引擎默认值' }, { value: 'CUSTOM', label: '任务自定义' },
+                  ]} onChange={() => {
+                    if (!form.getFieldValue('executionResources') && selectedEngine) {
+                      form.setFieldValue('executionResources', selectedEngine.resourcePolicy.defaults);
+                    }
+                  }} />
+                </Form.Item>
+                {selectedEngine && <Row gutter={14}>
+                  {([['driverCores', 'Driver CPU（核）'], ['driverMemoryMiB', 'Driver 内存（MiB）'],
+                    ['executorInstances', 'Executor 数量'], ['executorCores', '单 Executor CPU（核）'],
+                    ['executorMemoryMiB', '单 Executor 内存（MiB）']] as const)
+                    .filter(([key]) => selectedEngine.expectedBackendType !== 'LOCAL_DOCKER' || key.startsWith('driver'))
+                    .map(([key, label]) => <Col span={12} key={key}>
+                      {resourceMode === 'CUSTOM' ? <Form.Item name={['executionResources', key]}
+                        label={label} tooltip={key.endsWith('MiB') ? (selectedEngine.expectedBackendType === 'LOCAL_DOCKER' ? '容器总内存，JVM 堆取 75%。' : 'JVM 堆内存，集群容器另需非堆内存。') : undefined} extra={`单次上限 ${selectedEngine.resourcePolicy.maximums[key]}`}
+                        rules={[{ required: true, type: 'number', min: key.endsWith('MiB') ? 1024 : 1,
+                          max: selectedEngine.resourcePolicy.maximums[key], message: '请输入上限范围内的资源值' }]}>
+                        <InputNumber disabled={task?.status === 'PUBLISHED'} precision={0}
+                          min={key.endsWith('MiB') ? 1024 : 1} max={selectedEngine.resourcePolicy.maximums[key]} style={{ width: '100%' }} />
+                      </Form.Item> : <Form.Item label={label}>
+                        <Typography.Text>{selectedEngine.resourcePolicy.defaults[key]}</Typography.Text>
+                      </Form.Item>}
+                    </Col>)}
+                </Row>}
+              </>}
+              {sparkTask && !configureResources && <Typography.Text type="secondary">
+                Driver / Executor 资源在任务定义的“运行配置”中维护。
+              </Typography.Text>}
             </div>
           </section>
         )}

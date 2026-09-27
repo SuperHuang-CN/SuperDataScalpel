@@ -45,37 +45,47 @@ public class DispatcherExecutionStateService {
     private final DispatcherEventService eventService;
     private final DispatcherRunnerKafkaProperties runnerKafkaProperties;
     private final DispatcherStreamingProperties streamingProperties;
+    private final cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry backends;
 
     public DispatcherExecutionStateService(
             DispatcherTaskExecutionRepository executionRepository,
             DispatcherRegistrationRepository registrationRepository,
             DispatcherEventService eventService,
             DispatcherRunnerKafkaProperties runnerKafkaProperties,
-            DispatcherStreamingProperties streamingProperties
+            DispatcherStreamingProperties streamingProperties,
+            cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry backends
     ) {
         this.executionRepository = executionRepository;
         this.registrationRepository = registrationRepository;
         this.eventService = eventService;
         this.runnerKafkaProperties = runnerKafkaProperties;
         this.streamingProperties = streamingProperties;
+        this.backends = backends;
     }
 
     @Transactional
     public Optional<ExecutionLaunch> claimNext() {
-        List<DispatcherRegistration> registrations = registrationRepository.findAllForUpdate();
-        if (registrations.isEmpty() || registrations.getFirst().getState() != DispatcherRegistrationState.ACTIVE) {
+        // Legacy single-engine caller; multi-engine scheduling always supplies engineId.
+        var registrations = registrationRepository.findAll();
+        if (registrations.size() != 1) return Optional.empty();
+        return claimNext(registrations.getFirst().getEngineId());
+    }
+
+    @Transactional
+    public Optional<ExecutionLaunch> claimNext(UUID engineId) {
+        DispatcherRegistration registration = registrationRepository.findByEngineIdForUpdate(engineId).orElse(null);
+        if (registration == null || registration.getState() != DispatcherRegistrationState.ACTIVE) {
             return Optional.empty();
         }
-        DispatcherRegistration registration = registrations.getFirst();
-        if (executionRepository.countByState(DispatcherExecutionState.SUBMITTING)
+        if (executionRepository.countByEngineIdAndState(engineId, DispatcherExecutionState.SUBMITTING)
                 >= registration.getMaxConcurrentSubmissions()) return Optional.empty();
         if (registration.getMaxInFlightApplications() > 0
-                && executionRepository.countByStateIn(IN_FLIGHT)
-                    + executionRepository.countUnconfirmedTerminalExecutions(IN_FLIGHT_WITH_QUEUE)
+                && executionRepository.countByEngineIdAndStateIn(engineId, IN_FLIGHT)
+                    + executionRepository.countUnconfirmedTerminalExecutions(engineId, IN_FLIGHT_WITH_QUEUE)
                     >= registration.getMaxInFlightApplications()) {
             return Optional.empty();
         }
-        List<DispatcherTaskExecution> queued = executionRepository.findQueuedForUpdate(PageRequest.of(0, 1));
+        List<DispatcherTaskExecution> queued = executionRepository.findQueuedForUpdate(engineId, PageRequest.of(0, 1));
         if (queued.isEmpty()) return Optional.empty();
         DispatcherTaskExecution execution = queued.getFirst();
         if (execution.getDeadlineAt() != null && !execution.getDeadlineAt().isAfter(Instant.now())) {
@@ -86,10 +96,27 @@ public class DispatcherExecutionStateService {
             eventService.enqueue(execution, ExecutionMessageType.EXECUTION_TIMED_OUT, error, null);
             return Optional.empty();
         }
+        var target = backends.require(execution.getTargetKey());
+        if (target.backend().type() != execution.getBackendType()
+                || ((!backends.legacy() || execution.getTargetFingerprint() != null)
+                    && !java.util.Objects.equals(target.fingerprint(), execution.getTargetFingerprint()))) {
+            return Optional.empty();
+        }
+        var streaming = target.configuration().streaming();
+        if (execution.getStreamingDeploymentId() != null && (streaming == null || !streaming.configured()
+                || (execution.getBackendType() != cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.LOCAL_DOCKER
+                    && streaming.checkpointBaseUri().startsWith("file:")))) {
+            SafeExecutionError error = dispatcherError("STREAMING_TARGET_NOT_CONFIGURED", "执行目标未配置共享流式 Checkpoint",
+                    ExecutionErrorCategory.EXTERNAL_SYSTEM, false);
+            execution.fail(error);
+            executionRepository.save(execution);
+            eventService.enqueue(execution, ExecutionMessageType.EXECUTION_REJECTED, error, null);
+            return Optional.empty();
+        }
         execution.beginSubmission();
         executionRepository.save(execution);
         return Optional.of(launch(
-                execution, registration, runnerKafkaProperties, streamingProperties));
+                execution, registration, runnerKafkaProperties, streaming));
     }
 
     @Transactional

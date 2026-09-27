@@ -17,8 +17,7 @@ import java.util.Objects;
 @Entity
 @Table(name = "compute_engine", uniqueConstraints = {
         @UniqueConstraint(name = "uk_compute_engine_name", columnNames = "name"),
-        @UniqueConstraint(name = "uk_compute_engine_command_topic", columnNames = "command_topic"),
-        @UniqueConstraint(name = "uk_compute_engine_runner_event_topic", columnNames = "runner_event_topic")
+        @UniqueConstraint(name = "uk_compute_engine_target", columnNames = {"target_dispatcher_instance_id", "target_key"})
 })
 public class ComputeEngine extends BaseEntity {
 
@@ -74,6 +73,28 @@ public class ComputeEngine extends BaseEntity {
 
     @Column(name = "dispatcher_instance_id", length = 100)
     private String dispatcherInstanceId;
+
+    @Column(name = "target_dispatcher_instance_id", length = 100)
+    private String targetDispatcherInstanceId;
+
+    @Column(name = "target_key", length = 63)
+    private String targetKey;
+
+    @Column(name = "target_fingerprint", length = 64)
+    private String targetFingerprint;
+
+    public void bindTarget(String instanceId, String key, String fingerprint) {
+        String normalizedInstance = required(instanceId, "目标 Dispatcher 身份");
+        String normalizedKey = required(key, "执行目标键");
+        String normalizedFingerprint = required(fingerprint, "目标身份摘要");
+        if (targetKey != null && (!Objects.equals(targetDispatcherInstanceId, normalizedInstance)
+                || !Objects.equals(targetKey, normalizedKey) || !Objects.equals(targetFingerprint, normalizedFingerprint))) {
+            throw new IllegalArgumentException("计算引擎的执行目标不可替换，请新增引擎");
+        }
+        this.targetDispatcherInstanceId = normalizedInstance;
+        this.targetKey = normalizedKey;
+        this.targetFingerprint = normalizedFingerprint;
+    }
 
     @Column(name = "last_check_at")
     private Instant lastCheckAt;
@@ -134,6 +155,9 @@ public class ComputeEngine extends BaseEntity {
         String normalizedUrl = normalizeUrl(dispatcherBaseUrl);
         String normalizedToken = required(accessTokenCiphertext, "访问令牌密文");
         ComputeBackendType normalizedBackend = Objects.requireNonNull(expectedBackendType, "计算后端类型不能为空");
+        if (targetKey != null && this.expectedBackendType != normalizedBackend) {
+            throw new IllegalArgumentException("已发现目标的后端类型不可修改，请新增引擎");
+        }
         String normalizedCommandTopic = normalizeTopic(commandTopic, "命令 Topic");
         String normalizedRunnerEventTopic = normalizeTopic(runnerEventTopic, "Runner 事件 Topic");
         String normalizedAdminEventTopic = normalizeTopic(adminEventTopic, "Admin 事件 Topic");
@@ -288,7 +312,11 @@ public class ComputeEngine extends BaseEntity {
     public int getMaxConcurrentSubmissions() { return maxConcurrentSubmissions; }
     public int getMaxInFlightApplications() { return maxInFlightApplications; }
     public String getResourcePolicyJson() { return resourcePolicyJson; }
+    public void synchronizeResourcePolicy(String policyJson) { this.resourcePolicyJson = policyJson; }
     public String getDispatcherInstanceId() { return dispatcherInstanceId; }
+    public String getTargetDispatcherInstanceId() { return targetDispatcherInstanceId; }
+    public String getTargetKey() { return targetKey; }
+    public String getTargetFingerprint() { return targetFingerprint; }
     public Instant getLastCheckAt() { return lastCheckAt; }
     public String getLastError() { return lastError; }
     public Instant getDetachedAt() { return detachedAt; }

@@ -15,7 +15,9 @@ public record DispatcherRegistrationResponse(
         DispatcherTopics topics,
         DispatcherAdmissionPolicy effectiveAdmissionPolicy,
         SparkExecutionResourcePolicy resourcePolicy,
-        String lastError
+        String lastError,
+        String targetKey,
+        String targetFingerprint
 ) {
     public static DispatcherRegistrationResponse from(DispatcherRegistration registration) {
         return new DispatcherRegistrationResponse(
@@ -28,7 +30,8 @@ public record DispatcherRegistrationResponse(
                 new DispatcherAdmissionPolicy(
                         registration.getMaxQueuedExecutions(), registration.getMaxConcurrentSubmissions(),
                         registration.getMaxInFlightApplications()
-                ), registration.getResourcePolicy(), registration.getLastError()
+                ), registration.getResourcePolicy(), registration.getLastError(),
+                registration.getTargetKey(), registration.getTargetFingerprint()
         );
     }
 }

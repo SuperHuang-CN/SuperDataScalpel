@@ -23,6 +23,19 @@ final class RunnerArtifactClient implements RunnerArtifactAccess {
 
     @Override
     public byte[] download(URI uri, int maximumBytes) throws Exception {
+        try {
+            return downloadManifest(uri, maximumBytes);
+        } catch (RunnerExecutionException exception) {
+            throw exception;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw exception;
+        } catch (Exception exception) {
+            throw new RunnerExecutionException("MANIFEST_DOWNLOAD_FAILED", "manifest 下载失败", null, exception);
+        }
+    }
+
+    private byte[] downloadManifest(URI uri, int maximumBytes) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri).timeout(Duration.ofSeconds(30)).GET().build();
         HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
         if (response.statusCode() < 200 || response.statusCode() >= 300) {
@@ -78,6 +91,19 @@ final class RunnerArtifactClient implements RunnerArtifactAccess {
 
     @Override
     public void upload(URI uri, byte[] content, String contentType, Duration timeout) throws Exception {
+        try {
+            uploadResult(uri, content, contentType, timeout);
+        } catch (RunnerExecutionException exception) {
+            throw exception;
+        } catch (InterruptedException exception) {
+            Thread.currentThread().interrupt();
+            throw exception;
+        } catch (Exception exception) {
+            throw new RunnerExecutionException("RESULT_UPLOAD_FAILED", "执行结果上传失败", null, exception);
+        }
+    }
+
+    private void uploadResult(URI uri, byte[] content, String contentType, Duration timeout) throws Exception {
         HttpRequest request = HttpRequest.newBuilder(uri)
                 .timeout(timeout)
                 .header("Content-Type", contentType)

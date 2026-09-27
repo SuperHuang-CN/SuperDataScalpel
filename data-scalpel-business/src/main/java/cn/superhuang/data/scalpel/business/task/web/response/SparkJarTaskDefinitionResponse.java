@@ -9,6 +9,7 @@ import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import java.time.Instant;
 import java.util.List;
 import java.util.UUID;
+import cn.superhuang.data.scalpel.business.task.domain.SparkJarAuthoringMode;
 
 @Schema(description = "Spark JAR 任务的当前配置、JAR 元数据和解析后运行资源；响应可在尚无 JAR或尚未满足发布条件时返回。")
 
@@ -34,7 +35,10 @@ public record SparkJarTaskDefinitionResponse(
         @Schema(description = "任务定义保存的作业超时，单位秒；完全未配置时返回默认值 3600。批作业超时后平台请求终止，流式任务的正常生命周期由启动、停止接口管理。")
         int timeoutSeconds,
         @Schema(description = "最后更新时间，ISO-8601 UTC 时间戳。")
-        Instant updatedAt
+        Instant updatedAt,
+        @Schema(description = "已选开发方式；新任务尚未选择时为空。历史任务优先按已生效在线制品、上传制品、已保存源码依次推断。")
+        SparkJarAuthoringMode authoringMode,
+        @Schema(description = "是否使用引擎默认资源；true 时 executionResources 是当前默认值展示，不固化到任务定义；false 为任务自定义。") boolean inheritEngineResources
 ) {
     @Schema(description = "任务固定使用的 JAR 文件及入口类元数据。")
     public record Jar(

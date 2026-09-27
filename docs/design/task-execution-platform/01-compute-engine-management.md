@@ -17,11 +17,14 @@
 9. [YARN Cluster 后端](09-yarn-cluster-backend.md)
 10. [Kubernetes Cluster 后端](10-kubernetes-cluster-backend.md)
 
+现行补充：[Dispatcher 单实例多计算引擎](11-multi-engine-dispatcher.md)（2026-09-26 已实施）。
+单条引擎仍对应一个后端类型和目标；一个 Dispatcher 可以管理多个引擎，以下历史阶段说明按此边界理解。
+
 ## 2. 已确认的架构决定
 
 - `data-scalpel-task-engine` 的 Daemon 最终只提供 Canvas 编译和预检，不再调度真实任务。
 - 新增独立 Maven 模块 `data-scalpel-task-dispatcher`，负责准入、排队、提交、观测、取消和恢复。
-- 一个 Dispatcher 部署只绑定一个执行后端：`LOCAL_DOCKER`、`YARN` 或 `KUBERNETES`。
+- 一个 Dispatcher 可配置多个执行目标；每个目标只绑定一个后端类型：`LOCAL_DOCKER`、`YARN` 或 `KUBERNETES`，并独立登记为计算引擎。
 - YARN 固定使用 `cluster` deploy mode，不提供 client mode。
 - Dispatcher 使用与 Admin 相同的 PostgreSQL 数据库账户，但只访问独立 `dispatcher` Schema。
 - Admin 可以通过 HTTP 调用 Dispatcher 的控制面；Dispatcher 不通过 HTTP 回调 Admin。
@@ -37,7 +40,7 @@ Task Engine 是预检服务。它长期持有 SparkContext，根据 Canvas 定�
 
 ### 3.2 Compute Engine
 
-Compute Engine 是 Admin 中的管理对象，不是单独进程。它描述一套 Dispatcher 部署及其固定计算后端，是任务选择执行位置时使用的业务标识。
+Compute Engine 是 Admin 中的管理对象，不是单独进程。它绑定 Dispatcher 实例中的一个固定执行目标，是任务选择执行位置时使用的业务标识。同一 URL 可有多条记录，不能只按 URL 或后端类型识别目标。
 
 ### 3.3 Task Dispatcher
 
@@ -97,12 +100,15 @@ data-scalpel-ui/src/modules/computeengine
 | `maxInFlightApplications` | Integer | 已提交但未终止的应用上限，0 表示不额外限制 |
 | `resourcePolicyJson` | text | Spark 运行资源的默认值与单次任务上限；不保存总容量或实时利用率 |
 | `dispatcherInstanceId` | String | 注册后锁定的 Dispatcher 稳定身份 |
+| `targetDispatcherInstanceId` | String | 发现时固定的实例身份；与 targetKey 构成唯一绑定，不能被 URL 别名绕过 |
+| `targetKey` | String | Dispatcher 部署侧稳定目标键；旧式单后端记录可为空，切换显式配置需迁移 |
+| `targetFingerprint` | String | 物理目标摘要，注册、运行及管理时核对；不包含凭据 |
 | `lastCheckAt` | Instant | 最近主动检查时间 |
 | `lastError` | String | 脱敏后的最近错误，最长 2000 |
 | `detachedAt` | Instant | 离线解除绑定时间；普通生命周期中为空 |
 | `detachReason` | String | 管理员填写的离线解除绑定原因，最长 500 |
 
-第一期对 Topic 采用保守约束：`commandTopic` 和 `runnerEventTopic` 在全部计算引擎记录中全局唯一，而不只在 `ACTIVE` 引擎之间唯一，避免停用引擎重新启用时与现有 Listener 发生歧义。多个 Dispatcher 可以共享 `adminEventTopic`，Admin 依靠消息中的 `engineId` 路由和校验。
+当前协议 v3 中，`commandTopic` 和 `runnerEventTopic` 由 Dispatcher 实例配置提供，同实例所有引擎共用；不同实例不能占用同一组输入通道。多个 Dispatcher 可以共享 `adminEventTopic`，Admin 依靠消息中的 `engineId` 路由和校验。第一期逐引擎唯一约束已取消；旧库须按[维护窗口迁移说明](../../operations/dispatcher-configuration.md)显式移除两个 Topic 唯一约束，不能依赖 ddl-auto=update 自动删除。
 
 不在该实体保存 YARN ResourceManager、Kubernetes kubeconfig、Docker Socket、Runner JAR 路径或 MinIO 密钥。这些参数属于固定 Dispatcher 部署，不由单个任务下发。
 
@@ -175,22 +181,24 @@ lastDispatcherEventSequence
 
 TaskRun 必须保存本次实际路由的 `computeEngineId` 和命令 Topic 快照，不能在结果或取消处理时重新读取任务、计算引擎的当前值。
 
-### 6.1 Spark JAR 运行资源
+### 6.1 Spark 任务运行资源
 
-计算引擎保存 `SparkExecutionResourcePolicy`，其中 `defaults` 和 `maximums` 均包含 Driver CPU、
+Dispatcher 每个执行目标通过 `resource-policy` 配置资源策略，计算引擎保存发现结果的只读快照
+`SparkExecutionResourcePolicy`，其中 `defaults` 和 `maximums` 均包含 Driver CPU、
 Driver 内存（MiB）、Executor 数量、单 Executor CPU 和单 Executor 内存（MiB）。默认值必须逐项不超过
 最大值；最大值仅表示**单次执行**的申请上限，现有准入策略仍负责并发数量。
 
 - Local Docker 固定使用 `local[*]`，只应用 Driver CPU 与内存：分别映射 Docker `--cpus` 和 `--memory`；
-  Runner JVM 最大堆取容器内存的 75%。Executor 三项不在页面展示，也不会传给 Spark。
-- 创建、编辑和重新配置提交的 `resourcePolicy.defaults/maximums` 仍须包含完整五项资源字段。
-  Local Docker 表单隐藏的 Executor 三项在新建时取后端默认值，编辑时保留已保存值；可见字段使用当前表单值，
-  不因条件字段未挂载而遗漏请求字段。后端资源范围校验保持不变。
+  Runner JVM 最大堆取容器内存的 75%。Executor 三项不在页面或部署模板展示，不参与该后端上限比较，也不会传给 Spark；旧传输契约保留内部占位以兼容历史消息。
+- Admin 发现、登记和编辑目标时只读显示资源策略，不允许独立修改。旧注册请求中的策略字段不作为依据；
+  编辑已绑定目标时，提交不同策略返回 409。策略仍包含完整五项资源字段，Local Docker 页面隐藏 Executor 三项。
 - YARN 与 Kubernetes 固定使用各自后端，五项资源分别映射 Driver 与 Executor 的 `spark-submit` 参数。
-- Spark JAR 批任务和实时任务将自己的申请资源写入定义版本和 TaskRun 快照。定义未配置时继承计算引擎默认值；
-  保存后不再随默认值变化。Canvas 与质检任务继续使用计算引擎默认值。
-- 保存、发布、启动、切换计算引擎以及 Dispatcher 提交前都会校验不超过当前上限。降低上限会检查已绑定 JAR 任务，
-  存在超限任务时返回 409，不自动修改任务定义。
+- Spark JAR 批任务和实时任务在定义版本中维护资源；Canvas 批/实时任务与模型质检任务在任务基本配置中维护资源。
+  每类任务均支持继承引擎默认值或保存任务自定义值；继承模式保存空值，不把当前默认值固化为自定义配置。
+  立即运行不提供临时覆盖，执行读取已保存配置，解析后的申请资源写入命令和 TaskRun 快照。本地 JDBC SQL 不使用 Spark 资源。
+- 保存、发布、启动、切换计算引擎以及 Dispatcher 接收提交时校验资源上限。部署策略调整须先维护停用、重启
+  Dispatcher，再重新注册以同步 Admin 快照。下调上限不改写已有任务；超限任务须调整后才能再次运行，配置仍可打开修改。
+  已接收执行保留原资源快照。完整配置和操作说明见 [Dispatcher 配置](../../operations/dispatcher-configuration.md)。
 
 ## 7. Admin 对外 API
 
@@ -208,6 +216,7 @@ POST /api/v1/compute-engines/{id}/actions/delete
 POST /api/v1/compute-engines/{id}/actions/test
 POST /api/v1/compute-engines/{id}/actions/register
 POST /api/v1/compute-engines/{id}/actions/drain
+POST /api/v1/compute-engines/{id}/actions/resume
 POST /api/v1/compute-engines/{id}/actions/deactivate
 POST /api/v1/compute-engines/{id}/actions/detach
 ```

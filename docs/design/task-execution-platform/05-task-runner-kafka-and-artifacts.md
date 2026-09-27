@@ -216,6 +216,8 @@ Business 使用 TaskRun 中固定的计算引擎、executionId、executionRunId 
 与页面 TaskRun ID 不同时串读日志。管理数据库事务只负责读取该快照，Dispatcher、后端命令和对象存储
 访问均发生在事务外。
 
+Admin 运行仍为 QUEUED 且 Dispatcher 日志端点明确返回 404（执行记录尚未到达）时，返回 WAITING，提示等待 Dispatcher 接收执行命令，而非日志服务故障。仅此排队场景适用；运行中或终态记录缺失、认证失败、网络失败和其他服务端错误不得伪装为等待。该查询不重发命令、不更改运行状态；Kafka Outbox 继续负责投递与重试。
+
 Dispatcher 对 Local Docker 和 Kubernetes Driver 获取最近 2,001 行，统一裁剪为最近 2,000 行且最多
 1 MiB；YARN 聚合日志尚不可用时返回明确的 `UNAVAILABLE` 状态。单次后端日志命令最长 10 秒，读取
 不会更新终态归档标记、清理容器或改变执行状态。最终 `console.log` 出现后，Business 优先返回对象存储

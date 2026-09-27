@@ -139,8 +139,19 @@ public class TaskRunArtifactQueryService {
                     null, false, false);
         }
 
-        DispatcherExecutionLogResponse live = computeEngineExecutionService.executionLog(
-                reference.computeEngineId(), reference.executionId(), reference.attempt());
+        DispatcherExecutionLogResponse live;
+        try {
+            live = computeEngineExecutionService.executionLog(
+                    reference.computeEngineId(), reference.executionId(), reference.attempt());
+        } catch (ResponseStatusException exception) {
+            if (exception.getStatusCode().value() != 404) throw exception;
+            if (reference.status() == TaskRunStatus.QUEUED) {
+                return new TaskRunLogResponse(reference.runId(), TaskRunLogResponse.Status.WAITING,
+                        TaskRunLogResponse.Source.NONE, null, Instant.now(), null, false,
+                        "任务排队中，等待 Dispatcher 接收执行命令；暂未产生日志", null, false, false);
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Dispatcher 当前无法提供运行日志", exception);
+        }
         if (!reference.executionRunId().equals(live.runId())) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "Dispatcher 返回的日志不属于当前任务运行");
         }

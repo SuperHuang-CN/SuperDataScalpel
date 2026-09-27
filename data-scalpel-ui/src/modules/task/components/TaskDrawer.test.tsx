@@ -8,7 +8,10 @@ vi.mock('../../computeengine', () => ({
   computeEngineRegistrationStateLabels: { ACTIVE: '已激活' },
   isComputeEngineSelectable: () => true,
   useComputeEngines: () => ({
-    data: { content: [{ id: 'engine-1', name: '本地引擎', registrationState: 'ACTIVE' }] },
+    data: { content: [{ id: 'engine-1', name: '本地引擎', registrationState: 'ACTIVE', expectedBackendType: 'LOCAL_DOCKER', resourcePolicy: {
+      defaults: { driverCores: 2, driverMemoryMiB: 4096, executorInstances: 1, executorCores: 1, executorMemoryMiB: 1024 },
+      maximums: { driverCores: 8, driverMemoryMiB: 16384, executorInstances: 1, executorCores: 1, executorMemoryMiB: 1024 },
+    } }] },
     isFetching: false,
   }),
 }));
@@ -100,5 +103,23 @@ describe('TaskDrawer', () => {
     render(<TaskDrawer open task={{ ...sparkTask, status: 'DISABLED' }} directories={[]} onClose={vi.fn()} onSubmit={vi.fn()} />);
 
     expect(await screen.findByText('已停用 · Spark 编排')).toBeInTheDocument();
+  });
+
+  it('persists custom task resources and can switch back to engine defaults', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn().mockResolvedValue(undefined);
+    render(<TaskDrawer open task={sparkTask} directories={[]} onClose={vi.fn()} onSubmit={onSubmit} />);
+    await user.click(await screen.findByLabelText('任务自定义'));
+    const cores = screen.getByRole('spinbutton', { name: 'Driver CPU（核）' });
+    await user.clear(cores);
+    await user.type(cores, '4');
+    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({
+      executionResources: expect.objectContaining({ driverCores: 4, driverMemoryMiB: 4096 }),
+    })));
+    onSubmit.mockClear();
+    await user.click(screen.getByLabelText('使用引擎默认值'));
+    await user.click(screen.getByRole('button', { name: /保\s*存/ }));
+    await waitFor(() => expect(onSubmit).toHaveBeenCalledWith(expect.objectContaining({ executionResources: null })));
   });
 });

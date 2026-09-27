@@ -10,6 +10,7 @@ import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Modal, Row, Segme
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { BusinessSecretInput } from '../../../shared/components/BusinessSecretInput';
+import { ComputeEngineTopics } from './ComputeEngineTopics';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { useCreateComputeEngine, useReconfigureComputeEngine, useUpdateComputeEngine } from '../hooks/useComputeEngines';
 import {
@@ -158,9 +159,9 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
       dispatcherBaseUrl: values.dispatcherBaseUrl.trim().replace(/\/$/, ''),
       accessToken: optionalText(values.accessToken),
       expectedBackendType: values.expectedBackendType,
-      commandTopic: values.commandTopic.trim(),
-      runnerEventTopic: values.runnerEventTopic.trim(),
-      adminEventTopic: values.adminEventTopic.trim(),
+      commandTopic: engine?.commandTopic ?? values.commandTopic.trim(),
+      runnerEventTopic: engine?.runnerEventTopic ?? values.runnerEventTopic.trim(),
+      adminEventTopic: engine?.adminEventTopic ?? values.adminEventTopic.trim(),
       maxQueuedExecutions: values.maxQueuedExecutions,
       maxConcurrentSubmissions: values.maxConcurrentSubmissions,
       maxInFlightApplications: values.maxInFlightApplications,
@@ -244,7 +245,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
     modalApi.confirm({
       rootClassName: 'business-overlay business-modal-overlay',
       title: '应用计算引擎配置',
-      content: `将暂停“${engine.name}”的新任务准入，安全排空后自动反注册并重新注册。`,
+      content: `将暂停“${engine.name}”的任务调度，确认无任务和待清理资源后应用配置并重新启用。如仍有任务，将保留当前配置；运行中任务可继续，排队任务需恢复调度后完成或手动取消，再次应用配置。`,
       okText: '应用并重新注册',
       cancelText: '取消',
       onOk: () => save(values),
@@ -285,9 +286,9 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
   const footerStatus = waitingForDrain ? (
     <InlineFeedback
       tone="warning"
-      label="计算引擎正在排空"
-      detail="仍有排队或活动任务。任务结束后，请保留当前配置并再次应用。"
-      ariaLabel="查看计算引擎排空说明"
+      label="任务调度已暂停，配置尚未应用"
+      detail="运行中任务继续；排队任务需恢复调度后完成或手动取消。确认任务结束、资源清理完成后，请再次应用配置。"
+      ariaLabel="查看配置暂未应用原因"
     />
   ) : !editingAllowed ? (
     <InlineFeedback
@@ -297,7 +298,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
       ariaLabel="查看计算引擎只读原因"
     />
   ) : reconfiguring ? (
-    <Badge status="processing" text="保存将触发安全排空与重新注册" />
+    <Badge status="processing" text="保存将暂停调度，确认无任务后应用并重新启用" />
   ) : (
     <Badge status="default" text={engine ? '修改后保存配置' : '创建后等待 Dispatcher 注册'} />
   );
@@ -385,6 +386,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
                 <Col xs={24} md={12}>
                   <Form.Item label="计算后端" name="expectedBackendType" rules={[{ required: true, message: '请选择计算后端' }]}>
                     <Select
+                      disabled={Boolean(engine?.targetKey)}
                       options={Object.entries(computeBackendTypeLabels).map(([value, label]) => ({ value, label }))}
                       onChange={(backend: ComputeBackendType) => {
                         if (!engine) form.setFieldValue('resourcePolicy', defaultSparkExecutionResourcePolicy(backend));
@@ -459,11 +461,11 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
             <ComputeEngineFormSection
               id="compute-engine-messaging"
               title="消息通道"
-              description="配置任务命令、Runner 事件和 Admin 事件的 Kafka Topic"
+              description="注册时自动分配消息通道，已有引擎只读展示"
               icon={<MessageOutlined />}
               help="命令 Topic 用于下发执行命令；Runner 与 Admin 事件 Topic 分别承载运行进度和控制面状态。"
             >
-              <Row gutter={14}>
+              {engine ? <ComputeEngineTopics engine={engine} /> : <Row gutter={14}>
                 <Col span={24}>
                   <Form.Item label="命令 Topic" name="commandTopic" rules={[{ required: true, whitespace: true }, { max: 249 }]}>
                     <Input className="compute-engine-topic-input" name="compute-engine-command-topic" autoComplete="off" />
@@ -479,7 +481,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
                     <Input className="compute-engine-topic-input" name="compute-engine-admin-event-topic" autoComplete="off" />
                   </Form.Item>
                 </Col>
-              </Row>
+              </Row>}
             </ComputeEngineFormSection>
 
             <ComputeEngineFormSection
@@ -511,7 +513,7 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
             <ComputeEngineFormSection
               id="compute-engine-resources"
               title="运行资源策略"
-              description="默认值用于未单独配置的任务，单次申请不得超过最大值"
+              description="Dispatcher 部署配置的只读快照；修改部署配置后重新注册以同步，任务可在上限内自定义"
               icon={<DashboardOutlined />}
               extra={(
                 <span className="compute-engine-memory-unit-control">
@@ -536,24 +538,24 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
                   <Form.Item label={(
                     <span className="compute-engine-field-label">驱动 CPU<ContextHelp ariaLabel="驱动 CPU 说明" content="Spark Driver 可使用的 CPU 核数；Local Docker 映射为容器 --cpus。" /></span>
                   )} name={['resourcePolicy', 'defaults', 'driverCores']} rules={[{ required: true }]}>
-                    <InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
+                    <InputNumber disabled min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item label="驱动 CPU" name={['resourcePolicy', 'maximums', 'driverCores']} rules={[{ required: true }]}>
-                    <InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
+                    <InputNumber disabled min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item label={(
-                    <span className="compute-engine-field-label">驱动内存<ContextHelp ariaLabel="驱动内存说明" content="Spark Driver 内存；Local Docker 映射为容器 --memory。" /></span>
+                    <span className="compute-engine-field-label">驱动内存<ContextHelp ariaLabel="驱动内存说明" content="Local Docker 为容器总内存；YARN/Kubernetes 为 JVM 堆内存，不包含额外非堆开销。" /></span>
                   )} name={['resourcePolicy', 'defaults', 'driverMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}>
-                    <InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} />
+                    <InputNumber disabled min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={memoryUnit === 'MiB' ? 0 : undefined} style={{ width: '100%' }} addonAfter={memoryUnit} />
                   </Form.Item>
                 </Col>
                 <Col xs={24} md={12}>
                   <Form.Item label="驱动内存" name={['resourcePolicy', 'maximums', 'driverMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}>
-                    <InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} />
+                    <InputNumber disabled min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={memoryUnit === 'MiB' ? 0 : undefined} style={{ width: '100%' }} addonAfter={memoryUnit} />
                   </Form.Item>
                 </Col>
               </Row>
@@ -563,32 +565,32 @@ export const ComputeEngineDrawer = ({ open, engine, canUpdate, canManage, onClos
                 <Row gutter={14}>
                   <Col xs={24} md={12}>
                     <Form.Item label="执行器数量" name={['resourcePolicy', 'defaults', 'executorInstances']} rules={[{ required: true }]}>
-                      <InputNumber min={1} max={10000} precision={0} style={{ width: '100%' }} />
+                      <InputNumber disabled min={1} max={10000} precision={0} style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
                     <Form.Item label="执行器数量" name={['resourcePolicy', 'maximums', 'executorInstances']} rules={[{ required: true }]}>
-                      <InputNumber min={1} max={10000} precision={0} style={{ width: '100%' }} />
+                      <InputNumber disabled min={1} max={10000} precision={0} style={{ width: '100%' }} />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
                     <Form.Item label="单执行器 CPU" name={['resourcePolicy', 'defaults', 'executorCores']} rules={[{ required: true }]}>
-                      <InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
+                      <InputNumber disabled min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
                     <Form.Item label="单执行器 CPU" name={['resourcePolicy', 'maximums', 'executorCores']} rules={[{ required: true }]}>
-                      <InputNumber min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
+                      <InputNumber disabled min={1} max={256} precision={0} style={{ width: '100%' }} addonAfter="Core" />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
                     <Form.Item label="单执行器内存" name={['resourcePolicy', 'defaults', 'executorMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}>
-                      <InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} />
+                      <InputNumber disabled min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={memoryUnit === 'MiB' ? 0 : undefined} style={{ width: '100%' }} addonAfter={memoryUnit} />
                     </Form.Item>
                   </Col>
                   <Col xs={24} md={12}>
                     <Form.Item label="单执行器内存" name={['resourcePolicy', 'maximums', 'executorMemoryMiB']} getValueProps={memoryProps} normalize={toMiB} rules={[{ required: true }]}>
-                      <InputNumber min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={0} style={{ width: '100%' }} addonAfter={memoryUnit} />
+                      <InputNumber disabled min={memoryUnit === 'MiB' ? 1024 : 1} max={memoryUnit === 'MiB' ? 1048576 : 1024} precision={memoryUnit === 'MiB' ? 0 : undefined} style={{ width: '100%' }} addonAfter={memoryUnit} />
                     </Form.Item>
                   </Col>
                 </Row>

@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { buildDataSourceSearch } from './dataSourceSearch';
 
 describe('buildDataSourceSearch', () => {
+  it('intersects other filters with any eligible model connection purpose', () => {
+    expect(buildDataSourceSearch({ enabled: true, purposesAny: ['SOURCE', 'STORAGE'] }))
+      .toBe('(sourceEnabled:"true" OR storageEnabled:"true") AND enabled:"true"');
+    expect(buildDataSourceSearch({ purposesAny: ['STORAGE'] })).toBe('(storageEnabled:"true")');
+  });
   it('combines keyword, purpose and scalar filters using the common Search DSL', () => {
     expect(buildDataSourceSearch({
       keyword: '业务',

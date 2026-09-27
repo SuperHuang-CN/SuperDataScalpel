@@ -102,7 +102,7 @@ export const useComputeEngineCommand = () => {
     mutationFn: ({ id, command }: { id: string; command: ComputeEngineCommand }) => (
       executeComputeEngineCommand(id, command)
     ),
-    onSuccess: () => invalidateComputeEngines(queryClient),
+    onSettled: () => invalidateComputeEngines(queryClient),
   });
 };
 

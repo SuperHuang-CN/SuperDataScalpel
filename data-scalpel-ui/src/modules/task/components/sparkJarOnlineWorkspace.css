@@ -42,8 +42,9 @@
 .spark-jar-online-page .spark-jar-online-panel-heading .ant-btn { width: 28px; height: 28px; border-radius: 8px; box-shadow: none; }
 .spark-jar-online-page .spark-jar-online-resource-list { padding: 0 12px 12px; gap: 10px; }
 .spark-jar-online-page .spark-jar-online-resource-card { border-color: var(--java-workspace-border); border-radius: 8px; background: #fff; box-shadow: none; }
-.spark-jar-online-page .spark-jar-online-resource-card-header { grid-template-columns: minmax(0, 1fr) 28px; }
-.spark-jar-online-page .spark-jar-online-resource-main { grid-template-columns: 28px minmax(0, 1fr); padding: 12px 0 10px 12px; gap: 6px 8px; }
+.spark-jar-online-page .spark-jar-online-resource-card-header { grid-template-columns: minmax(0, 1fr); }
+.spark-jar-online-page .spark-jar-online-resource-main { grid-template-columns: 28px minmax(0, 1fr); padding: 12px 12px 10px; gap: 6px 8px; cursor: default; }
+.spark-jar-online-page .spark-jar-online-resource-main:hover { background: transparent; }
 .spark-jar-online-page .spark-jar-online-resource-main strong { white-space: normal; overflow-wrap: anywhere; font-size: 13px; line-height: 20px; font-weight: 600; }
 .spark-jar-online-page .spark-jar-online-resource-main small { font-size: 12px; line-height: 18px; color: var(--java-workspace-muted); }
 .spark-jar-online-page .spark-jar-online-resource-main > .ant-tag { grid-column: 2; justify-self: start; margin: 0; font-size: 11px; line-height: 18px; }

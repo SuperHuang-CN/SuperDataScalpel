@@ -10,6 +10,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 @Component
@@ -21,6 +22,12 @@ public class ProcessBuilderCommandExecutor implements CommandExecutor {
     @Override
     public CommandResult execute(List<String> arguments, Duration timeout, long maximumOutputBytes)
             throws BackendException {
+        return execute(arguments, timeout, maximumOutputBytes, Map.of());
+    }
+
+    @Override
+    public CommandResult execute(List<String> arguments, Duration timeout, long maximumOutputBytes,
+                                 Map<String, String> environment) throws BackendException {
         if (arguments == null || arguments.isEmpty()
                 || arguments.stream().anyMatch(value -> value == null || value.isBlank())) {
             throw new BackendException("INVALID_BACKEND_COMMAND", "Backend 命令参数无效");
@@ -33,7 +40,9 @@ public class ProcessBuilderCommandExecutor implements CommandExecutor {
         Thread reader = null;
         BoundedOutput output = new BoundedOutput((int) maximumOutputBytes);
         try {
-            process = new ProcessBuilder(List.copyOf(arguments)).redirectErrorStream(true).start();
+            ProcessBuilder builder = new ProcessBuilder(List.copyOf(arguments)).redirectErrorStream(true);
+            builder.environment().putAll(Map.copyOf(environment));
+            process = builder.start();
             Process running = process;
             reader = Thread.ofVirtual().name("dispatcher-backend-command-output")
                     .start(() -> read(running.getInputStream(), output));

@@ -14,6 +14,7 @@ import cn.superhuang.data.scalpel.business.task.repository.SparkJarDevelopmentKi
 import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskDefinitionRepository;
 import cn.superhuang.data.scalpel.business.task.repository.SparkJarTaskResourceBindingRepository;
 import cn.superhuang.data.scalpel.business.task.web.request.CreateSparkJarDevelopmentKitRequest;
+import cn.superhuang.data.scalpel.business.task.web.request.UpdateSparkJarTaskDefinitionRequest.DevelopmentConfiguration;
 import cn.superhuang.data.scalpel.business.task.web.response.SparkJarDevelopmentKitResponse;
 import cn.superhuang.data.scalpel.contract.execution.SparkJarResourceType;
 import org.springframework.http.HttpStatus;
@@ -96,13 +97,24 @@ public class SparkJarDevelopmentKitService {
         return response(definition, normalized, job);
     }
 
+    /** Called by definition update in its task-locked transaction, after binding replacement. */
+    void saveConfiguration(SparkJarTaskDefinition definition, DevelopmentConfiguration request) {
+        definition.saveDevelopmentKitConfig(writeConfiguration(normalizeConfiguration(
+                definition.getTaskId(), request.samples(), request.jdbcTables(), true)));
+    }
+
     @Transactional(readOnly = true)
     public SparkJarDevelopmentKitResponse get(UUID taskId) {
         DataTask task = taskRepository.findById(taskId)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "任务不存在"));
         requireJarTask(task);
         SparkJarTaskDefinition definition = definitionRepository.findByTaskId(taskId)
-                .orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "请先保存 Spark JAR 任务定义"));
+                .orElse(null);
+        if (definition == null) {
+            // Opening the online editor must not require or create a saved definition.
+            return new SparkJarDevelopmentKitResponse(taskId, 0,
+                    new SparkJarDevelopmentKitResponse.Configuration(List.of(), List.of()), null, null);
+        }
         SparkJarDevelopmentKitGenerator.Request config = currentConfiguration(taskId, definition);
         return response(definition, config, jobRepository.findFirstByTaskIdOrderByCreatedAtDesc(taskId).orElse(null));
     }

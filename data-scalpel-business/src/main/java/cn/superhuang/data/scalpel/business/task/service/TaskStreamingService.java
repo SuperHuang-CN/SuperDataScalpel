@@ -853,11 +853,13 @@ public class TaskStreamingService {
         computeEngineExecutionService.assertUnchanged(route);
         preparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
         preparationService.assertModelsUnchanged(preparation.modelVersions());
+        var executionResources = computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
         String snapshot = objectMapper.writeValueAsString(Map.of(
                 "manifestVersion", CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
                 "deploymentId", deploymentId.toString(),
                 "manifestKey", manifestKey,
-                "manifestSha256", manifestSha256
+                "manifestSha256", manifestSha256,
+                "executionResources", executionResources
         ));
         TaskRun run = TaskRun.queueDispatchedStreaming(
                 runId, taskId, deploymentId, source.definitionVersion(), snapshot,

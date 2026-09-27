@@ -8,7 +8,7 @@
 
 ## 2. 消息拓扑
 
-每个计算引擎配置两个独占输入 Topic，所有 Dispatcher 共用一个 Admin 事件 Topic：
+每个 Dispatcher 实例配置两个共享输入 Topic，其内部引擎按消息 engineId 路由；所有 Dispatcher 通常共用一个 Admin 事件 Topic：
 
 ```text
 commandTopic       Admin ─────────> Dispatcher
@@ -18,7 +18,7 @@ adminEventTopic    Dispatcher ────> Admin
 
 约束：
 
-- `commandTopic` 和 `runnerEventTopic` 不能被两个 ACTIVE 计算引擎复用。
+- `commandTopic` 和 `runnerEventTopic` 由 Dispatcher 部署配置维护；同实例各引擎共用，不同实例不得复用。
 - `adminEventTopic` 可以共享，Admin 使用一个稳定 Consumer Group。
 - 所有执行消息的 Kafka Key 固定为 `executionId` 字符串。
 - 同一 executionId 的 Submit 和 Cancel 必须进入同一 Topic、同一 Key。

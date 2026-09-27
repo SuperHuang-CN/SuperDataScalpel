@@ -15,9 +15,9 @@ import java.util.UUID;
 public record SparkJarDevelopmentKitResponse(
         @Schema(description = "所属任务 UUID。")
         UUID taskId,
-        @Schema(description = "查询时当前 Spark JAR 任务定义版本；用于下一次生成请求的并发校验，不是 generation 或 artifact 必然使用的版本。")
+        @Schema(description = "查询时当前 Spark JAR 任务定义版本；尚未保存定义时为 0。生成前须先保存定义，并使用保存后的版本做并发校验；不是 generation 或 artifact 必然使用的版本。")
         int definitionVersion,
-        @Schema(description = "当前已保存并按现有资源绑定重新规范化的采样配置；新增可读 MODEL 绑定会以 ROW_COUNT 1000 出现在这里，已删除或失去读取权限的绑定会被过滤。")
+        @Schema(description = "当前已保存并按现有资源绑定重新规范化的采样配置；尚未保存定义时 samples 和 jdbcTables 均为空列表。新增可读 MODEL 绑定会以 ROW_COUNT 1000 出现在这里，已删除或失去读取权限的绑定会被过滤。")
         Configuration configuration,
         @Schema(description = "最近一次生成进度；尚未请求生成时为空。")
         Generation generation,

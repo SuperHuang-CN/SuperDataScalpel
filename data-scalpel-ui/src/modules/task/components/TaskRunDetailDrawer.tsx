@@ -465,6 +465,10 @@ export const TaskRunDetailDrawer = ({
                 ? run.qualityCheckedRows ?? '—'
                 : run.affectedRows ?? <span aria-label="影响行数未知">—</span>}
             </Descriptions.Item>
+            {run.executionResources && <Descriptions.Item label="申请资源快照" span={2}>
+              Driver：{run.executionResources.driverCores} 核 / {run.executionResources.driverMemoryMiB} MiB；
+              集群 Executor：{run.executionResources.executorInstances} 个 × {run.executionResources.executorCores} 核 / {run.executionResources.executorMemoryMiB} MiB（Local Docker 忽略）
+            </Descriptions.Item>}
             <Descriptions.Item label="耗时">{formatTaskRunDuration(run)}</Descriptions.Item>
             {(run.taskType === 'SPARK_JAR' || run.taskType === 'SPARK_STREAMING_JAR') && (
               <>
@@ -477,14 +481,7 @@ export const TaskRunDetailDrawer = ({
                     ? <Typography.Text code copyable ellipsis>{run.userJarSha256}</Typography.Text>
                     : '—'}
                 </Descriptions.Item>
-                <Descriptions.Item label="运行资源" span={2}>
-                  {run.executionResources
-                    ? `${run.executionResources.driverCores} Core / ${run.executionResources.driverMemoryMiB / 1024} GiB`
-                    + (run.taskType === 'SPARK_STREAMING_JAR' || run.executionResources.executorInstances > 1
-                      ? `；${run.executionResources.executorInstances} 个执行器 × ${run.executionResources.executorCores} Core / ${run.executionResources.executorMemoryMiB / 1024} GiB`
-                      : '')
-                    : '—'}
-                </Descriptions.Item>
+
               </>
             )}
             <Descriptions.Item label="排队时间">{formatTaskRunDateTime(run.queuedAt)}</Descriptions.Item>

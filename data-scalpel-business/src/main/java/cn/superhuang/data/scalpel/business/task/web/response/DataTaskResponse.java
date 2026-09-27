@@ -25,7 +25,8 @@ public record DataTaskResponse(
         @Schema(description = "模型质量任务的目标模型 UUID；其他任务类型时为空。") UUID qualityTargetModelId,
         @Schema(description = "质量目标模型当前显示名称；非质检任务或模型已删除时为空。") String qualityTargetModelName,
         @Schema(description = "任务根记录创建时间，ISO-8601 UTC 时间戳。") Instant createdAt,
-        @Schema(description = "任务名称、目录、说明、绑定引擎或生命周期最后变更时间，ISO-8601 UTC 时间戳；类型专属定义有自己的版本和更新时间。") Instant updatedAt
+        @Schema(description = "任务名称、目录、说明、绑定引擎或生命周期最后变更时间，ISO-8601 UTC 时间戳；类型专属定义有自己的版本和更新时间。") Instant updatedAt,
+        @Schema(description = "Canvas/质检任务保存的自定义资源；null 表示使用引擎默认值。JAR 资源见其定义接口，SQL/工作流无此配置。") cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec executionResources
 ) {
 
     public static DataTaskResponse from(
@@ -43,7 +44,7 @@ public record DataTaskResponse(
                 task.getDescription(), task.getComputeEngineId(), computeEngineName,
                 definitionConfigured, definitionVersion, outputModelId, outputModelName,
                 qualityTargetModelId, qualityTargetModelName,
-                task.getCreatedAt(), task.getUpdatedAt()
+                task.getCreatedAt(), task.getUpdatedAt(), task.getExecutionResources()
         );
     }
 

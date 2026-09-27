@@ -12,7 +12,14 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Maven Wrapper honors JAVA_HOME; use the same JVM for the applications as well.
+if [[ -n "${JAVA_HOME:-}" ]]; then
+  launch_java_home="$JAVA_HOME"
+  if command -v cygpath >/dev/null 2>&1; then launch_java_home="$(cygpath -u "$JAVA_HOME")"; fi
+  export PATH="$launch_java_home/bin:$PATH"
+fi
 PREPARE_ONLY=false
+FRONTEND_ONLY=false
 REMOTE_EXECUTION=false
 MAVEN_THREADS="${DATASCALPEL_MAVEN_THREADS:-1C}"
 MAVEN_SKIP_TESTS_ARGUMENT="-Dmaven.test.skip=true"
@@ -31,6 +38,10 @@ export MAVEN_OPTS="${MAVEN_OPTS:+$MAVEN_OPTS }$DIRECT_JAVA_OPTIONS_TEXT"
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
+    --frontend-only)
+      FRONTEND_ONLY=true
+      shift
+      ;;
     --remote-execution)
       REMOTE_EXECUTION=true
       shift
@@ -56,7 +67,7 @@ while [[ $# -gt 0 ]]; do
       shift
       ;;
     *)
-      echo "用法：$0 [--prepare] [--remote-execution] [--threads <线程数|每核线程数C>]"
+      echo "用法：$0 [--prepare | --frontend-only] [--remote-execution] [--threads <线程数|每核线程数C>]"
       exit 1
       ;;
   esac
@@ -95,6 +106,21 @@ DISPATCHER_URL="${DATASCALPEL_START_DISPATCHER_URL:-http://127.0.0.1:$DISPATCHER
 FRONTEND_PORT="${FRONTEND_PORT:-18887}"
 FRONTEND_HOST="${DATASCALPEL_START_FRONTEND_HOST:-}"
 SERVICE_STARTUP_TIMEOUT_SECONDS="${DATASCALPEL_LOCAL_SERVICE_STARTUP_TIMEOUT_SECONDS:-300}"
+if [[ "$FRONTEND_ONLY" == true ]]; then
+  if [[ "$PREPARE_ONLY" == true ]]; then
+    echo "--frontend-only 不能与 --prepare 同时使用。" >&2
+    exit 1
+  fi
+  # IDE owns the Java processes. Do not compile, restart, or register anything here.
+  if ! curl --fail --silent --show-error --connect-timeout 3 --max-time 10 "$BACKEND_INTERNAL_URL/actuator/health" >/dev/null; then
+    echo "现有 Admin 健康检查失败：$BACKEND_INTERNAL_URL；请先启动 Admin。" >&2
+    exit 1
+  fi
+  FRONTEND_ARGUMENTS=(dev --port "$FRONTEND_PORT" --strictPort)
+  if [[ -n "$FRONTEND_HOST" ]]; then FRONTEND_ARGUMENTS+=(--host "$FRONTEND_HOST"); fi
+  echo "仅启动前端：http://${FRONTEND_HOST:-localhost}:$FRONTEND_PORT；复用 $BACKEND_INTERNAL_URL，不操作现有 Java 进程。"
+  BACKEND_ORIGIN="$BACKEND_INTERNAL_URL" exec pnpm --dir "$ROOT_DIR/data-scalpel-ui" "${FRONTEND_ARGUMENTS[@]}"
+fi
 ENGINE_CODE="${DATASCALPEL_LOCAL_ENGINE_CODE:-local_engine}"
 ENGINE_MANAGEMENT_TOKEN="${DATASCALPEL_ENGINE_MANAGEMENT_TOKEN:-change-me-engine-management-token}"
 SERVICE_ENGINE_CREDENTIAL_KEY="${DATASCALPEL_SERVICE_ENGINE_CREDENTIAL_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}"
@@ -235,6 +261,10 @@ reactor_runtime_classpath() {
   local end_marker="__DATASCALPEL_CLASSPATH_END__"
   local reactor_output
   local classpath
+  local classpath_printer=/usr/bin/printf
+  if command -v cygpath >/dev/null 2>&1; then
+    classpath_printer="$(cygpath -m /usr/bin/printf.exe)"
+  fi
 
   echo "正在从 Maven Reactor 解析 $application_module 的运行时 classpath…" >&2
   # 必须通过 -am 使用当前 Reactor 的模块 POM 和 target/classes。
@@ -246,10 +276,8 @@ reactor_runtime_classpath() {
     -pl "$application_module" \
     -am \
     compile \
-    exec:exec \
-    -Dexec.executable=/usr/bin/printf \
-    '-Dexec.args=__DATASCALPEL_CLASSPATH__%s=%s__DATASCALPEL_CLASSPATH_END__\n ${project.artifactId} %classpath' \
-    -Dexec.classpathScope=runtime)"; then
+    exec:exec@dev-runtime-classpath \
+    "-Ddatascalpel.classpath.printer=$classpath_printer")"; then
     printf '%s\n' "$reactor_output" | sed -n '/^\[ERROR\]/p' >&2
     echo "$application_module 的 Reactor 运行时 classpath 解析失败。" >&2
     return 1
@@ -638,67 +666,12 @@ register_local_engine() {
 }
 
 register_local_compute_engine() {
-  local backend_url="$BACKEND_INTERNAL_URL"
-  local token="$ADMIN_ACCESS_TOKEN"
-  local engine_list engine_id registration_state payload
-
-  if [[ -z "$token" ]]; then
-    echo "没有可用于登记计算引擎的管理员 Token。"
-    return 1
-  fi
-
-  engine_list="$(curl --fail --silent --show-error \
-    --get \
-    --header "Authorization: Bearer $token" \
-    --data-urlencode "search=name:\"$COMPUTE_ENGINE_NAME\"" \
-    --data-urlencode 'page=0' \
-    --data-urlencode 'size=1' \
-    "$backend_url/api/v1/compute-engines")"
-  engine_id="$(printf '%s' "$engine_list" | sed -nE 's/.*"id":"([0-9a-fA-F-]{36})".*/\1/p')"
-  registration_state="$(printf '%s' "$engine_list" | sed -nE 's/.*"registrationState":"([A-Z_]+)".*/\1/p')"
-  payload="{\"name\":\"$(json_escape "$COMPUTE_ENGINE_NAME")\",\"description\":\"$(json_escape "$COMPUTE_ENGINE_DESCRIPTION")\",\"dispatcherBaseUrl\":\"$DISPATCHER_URL\",\"accessToken\":\"$(json_escape "$DISPATCHER_TOKEN")\",\"expectedBackendType\":\"LOCAL_DOCKER\",\"commandTopic\":\"$(json_escape "$COMMAND_TOPIC")\",\"runnerEventTopic\":\"$(json_escape "$RUNNER_EVENT_TOPIC")\",\"adminEventTopic\":\"$(json_escape "$ADMIN_EVENT_TOPIC")\",\"maxQueuedExecutions\":20,\"maxConcurrentSubmissions\":2,\"maxInFlightApplications\":2}"
-
-  if [[ -z "$engine_id" ]]; then
-    echo "正在创建本地 Docker 计算引擎。"
-    local create_response
-    create_response="$(curl --fail --silent --show-error \
-      --request POST \
-      --header "Authorization: Bearer $token" \
-      --header 'Content-Type: application/json' \
-      --data "$payload" \
-      "$backend_url/api/v1/compute-engines")"
-    engine_id="$(printf '%s' "$create_response" | sed -nE 's/.*"id":"([0-9a-fA-F-]{36})".*/\1/p')"
-    registration_state="INACTIVE"
-  elif [[ "$registration_state" == "INACTIVE" || "$registration_state" == "ERROR" ]]; then
-    echo "正在更新本地 Docker 计算引擎。"
-    curl --fail --silent --show-error \
-      --request POST \
-      --header "Authorization: Bearer $token" \
-      --header 'Content-Type: application/json' \
-      --data "$payload" \
-      "$backend_url/api/v1/compute-engines/$engine_id/actions/update" >/dev/null
-  elif [[ "$registration_state" != "ACTIVE" ]]; then
-    echo "本地计算引擎当前状态为 $registration_state，请先在管理页面完成 Drain/反注册。"
-    return 1
-  fi
-
-  if [[ -z "$engine_id" ]]; then
-    echo "本地计算引擎创建后未返回 ID。"
-    return 1
-  fi
-
-  echo "正在验证本地 Docker 计算引擎连通性…"
-  curl --fail --silent --show-error \
-    --request POST \
-    --header "Authorization: Bearer $token" \
-    "$backend_url/api/v1/compute-engines/$engine_id/actions/test" >/dev/null
-  if [[ "$registration_state" != "ACTIVE" ]]; then
-    echo "正在激活本地 Docker 计算引擎。"
-    curl --fail --silent --show-error \
-      --request POST \
-      --header "Authorization: Bearer $token" \
-      "$backend_url/api/v1/compute-engines/$engine_id/actions/register" >/dev/null
-  fi
+  ADMIN_ACCESS_TOKEN="$ADMIN_ACCESS_TOKEN" \
+  BACKEND_INTERNAL_URL="$BACKEND_INTERNAL_URL" \
+  DISPATCHER_URL="$DISPATCHER_URL" \
+  DISPATCHER_TOKEN="$DISPATCHER_TOKEN" \
+  COMPUTE_ENGINE_NAME="$COMPUTE_ENGINE_NAME" \
+    node "$ROOT_DIR/scripts/register-local-compute-engine.mjs"
 }
 
 if [[ "$REMOTE_EXECUTION" == false ]]; then
@@ -733,8 +706,9 @@ TASK_ENGINE_PID=$!
 if [[ "$REMOTE_EXECUTION" == false ]]; then
 echo "正在按 classpath 启动 Task Dispatcher：$DISPATCHER_URL"
 DATASCALPEL_TASK_DISPATCHER_PORT="$DISPATCHER_PORT" \
-DATASCALPEL_TASK_DISPATCHER_BACKEND="LOCAL_DOCKER" \
-DATASCALPEL_TASK_DISPATCHER_ENSURE_TOPICS="true" \
+DATASCALPEL_DISPATCHER_COMMAND_TOPIC="$COMMAND_TOPIC" \
+DATASCALPEL_DISPATCHER_RUNNER_EVENT_TOPIC="$RUNNER_EVENT_TOPIC" \
+DATASCALPEL_ADMIN_EVENT_TOPIC="$ADMIN_EVENT_TOPIC" \
 DATASCALPEL_TASK_DISPATCHER_RUNNER_JAR="$TASK_RUNNER_JAR" \
 DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY="$DISPATCHER_WORK_DIR" \
 DATASCALPEL_KAFKA_BOOTSTRAP_SERVERS="$KAFKA_BOOTSTRAP_SERVERS" \
@@ -754,7 +728,8 @@ SPRING_DATASOURCE_PASSWORD="$ADMIN_DB_PASSWORD" \
 SERVER_ADDRESS="$DISPATCHER_BIND_ADDRESS" \
 java "${DIRECT_JAVA_OPTIONS[@]}" -cp "$DISPATCHER_CLASSPATH" \
   cn.superhuang.data.scalpel.dispatcher.TaskDispatcherApplication \
-  "${SPRING_RUNTIME_ARGUMENTS[@]}" &
+  "${SPRING_RUNTIME_ARGUMENTS[@]}" --data-scalpel.dispatcher.ensure-topics=true \
+  --data-scalpel.dispatcher.targets.local-docker.enabled=true &
 DISPATCHER_PID=$!
 fi
 

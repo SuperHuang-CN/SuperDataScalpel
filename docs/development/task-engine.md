@@ -138,7 +138,9 @@
 - 同一异常只允许在最接近失败来源的位置打印一次经过脱敏的完整异常链和调用栈；任务级终态日志只打印结构化摘要，不重复堆栈。
 - 异常链和调用栈必须经过统一脱敏并限制最大长度。当前上限为 64 KiB，截断时必须保留明确标记。
 - 日志和执行结果禁止包含密码、Secret、Token、Credential、Access Key、签名参数、预签名 URL、完整 JDBC Properties、Kafka 认证信息、数据行、SQL 参数值、Manifest 全文和本地敏感路径。
+- 使用 `org.postgresql.Driver` 的运行连接固定设置 `logServerErrorDetail=false`，同时覆盖 JDBC URL 中的同名设置，避免 pgjdbc 把绑定参数和失败行放进异常后被 Spark 底层日志提前输出。保留 SQLState、约束名称及调用栈供分类诊断；该措施不等于所有第三方驱动或用户自建连接的日志都已脱敏。
 - 不得吞掉异常或仅打印自由文本。可预期失败必须形成结构化错误；未知失败必须安全回退为稳定错误码，并保留诊断 ID。
+- Runner 下载 Manifest、上传结果时的 DNS、连接和 HTTP I/O 失败分别归为既有 `MANIFEST_DOWNLOAD_FAILED` / `RESULT_UPLOAD_FAILED`，保留原因供脱敏日志诊断；不得落入 JDBC 连接失败分类。
 
 <a id="execution-results"></a>
 

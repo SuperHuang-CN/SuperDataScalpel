@@ -189,7 +189,10 @@ public class YarnSparkExecutionBackend implements TaskExecutionBackend {
 
     private CommandResult execute(List<String> command, java.time.Duration timeout, long maximumBytes)
             throws BackendException {
-        return executor.execute(command, timeout, maximumBytes);
+        return properties.hadoopConfDirectory() == null ? executor.execute(command, timeout, maximumBytes)
+                : executor.execute(command, timeout, maximumBytes, java.util.Map.of(
+                    "HADOOP_CONF_DIR", properties.hadoopConfDirectory().toString(),
+                    "YARN_CONF_DIR", properties.hadoopConfDirectory().toString()));
     }
 
     private static void requireLaunch(ExecutionLaunch launch) throws BackendException {

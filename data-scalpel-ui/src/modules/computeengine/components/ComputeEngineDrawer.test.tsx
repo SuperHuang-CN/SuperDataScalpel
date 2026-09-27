@@ -78,7 +78,7 @@ describe('ComputeEngineDrawer', () => {
 
   afterEach(() => cleanup());
 
-  it.each(['LOCAL_DOCKER', 'YARN', 'KUBERNETES'] as const)('creates %s with a complete resource policy and edited Driver values', async (backend) => {
+  it.each(['LOCAL_DOCKER', 'YARN', 'KUBERNETES'] as const)('keeps %s resource policy read-only in the legacy creation drawer', async (backend) => {
     const user = userEvent.setup();
     renderDrawer(null);
     fireEvent.change(await screen.findByLabelText('名称'), { target: { value: 'test-engine' } });
@@ -91,12 +91,10 @@ describe('ComputeEngineDrawer', () => {
     }
     if (backend === 'LOCAL_DOCKER') expect(screen.queryByLabelText('执行器数量')).not.toBeInTheDocument();
     const driverCores = screen.getAllByRole('spinbutton', { name: /驱动 CPU/ })[0]!;
-    fireEvent.change(driverCores, { target: { value: '3' } });
-    fireEvent.blur(driverCores);
+    expect(driverCores).toBeDisabled();
     await user.click(screen.getByRole('button', { name: '创建引擎' }));
 
     const policy = defaultSparkExecutionResourcePolicy(backend);
-    policy.defaults.driverCores = 3;
     await waitFor(() => expect(mutations.create).toHaveBeenCalledWith(expect.objectContaining({
       expectedBackendType: backend,
       resourcePolicy: policy,
@@ -125,7 +123,7 @@ describe('ComputeEngineDrawer', () => {
     renderDrawer(engine('ACTIVE'));
 
     await user.click(await screen.findByRole('button', { name: '应用并重新注册' }));
-    expect(await screen.findByText('将暂停“本地 Docker 计算引擎”的新任务准入，安全排空后自动反注册并重新注册。')).toBeInTheDocument();
+    expect(await screen.findByText(/将暂停“本地 Docker 计算引擎”的任务调度，确认无任务和待清理资源后应用配置并重新启用/)).toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: '应用并重新注册' }).at(-1)!);
 
     await waitFor(() => expect(mutations.reconfigure).toHaveBeenCalledWith(expect.objectContaining({
@@ -145,10 +143,10 @@ describe('ComputeEngineDrawer', () => {
     renderDrawer(engine('ACTIVE'));
 
     await user.click(await screen.findByRole('button', { name: '应用并重新注册' }));
-    await screen.findByText('将暂停“本地 Docker 计算引擎”的新任务准入，安全排空后自动反注册并重新注册。');
+    await screen.findByText(/将暂停“本地 Docker 计算引擎”的任务调度，确认无任务和待清理资源后应用配置并重新启用/);
     await user.click(screen.getAllByRole('button', { name: '应用并重新注册' }).at(-1)!);
 
-    expect(await screen.findByText('计算引擎正在排空')).toBeInTheDocument();
+    expect(await screen.findByText('任务调度已暂停，配置尚未应用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '再次应用并重新注册' })).toBeInTheDocument();
     expect(screen.getByLabelText('名称')).toHaveValue('本地 Docker 计算引擎');
   });

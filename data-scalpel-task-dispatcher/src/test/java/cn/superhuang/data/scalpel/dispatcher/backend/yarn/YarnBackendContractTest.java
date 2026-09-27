@@ -26,6 +26,9 @@ class YarnBackendContractTest {
 
         assertThat(command).containsSubsequence("--master", "yarn", "--deploy-mode", "cluster");
         assertThat(command).contains("spark.yarn.submit.waitAppCompletion=false");
+        assertThat(command).contains("spark.dynamicAllocation.enabled=false");
+        assertThat(command).containsSubsequence("--driver-cores", "1", "--driver-memory", "2048m",
+                "--executor-memory", "2048m", "--executor-cores", "2", "--num-executors", "2");
         assertThat(command).contains("spark.yarn.tags=datascalpel-execution-" + identity.executionId());
         assertThat(command.getLast()).isEqualTo("hdfs:///runner.jar");
         assertThat(String.join(" ", command)).doesNotContain("https://", "password", "manifestSha256");

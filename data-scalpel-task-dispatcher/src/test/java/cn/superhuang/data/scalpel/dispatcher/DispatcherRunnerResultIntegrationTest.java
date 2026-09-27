@@ -45,6 +45,7 @@ class DispatcherRunnerResultIntegrationTest {
     @Autowired DispatcherRegistrationService registrationService;
     @Autowired DispatcherCommandService commandService;
     @Autowired DispatcherExecutionCoordinator coordinator;
+    @Autowired cn.superhuang.data.scalpel.dispatcher.service.DispatcherExecutionStateService stateService;
     @Autowired DispatcherRunnerEventService runnerEventService;
     @Autowired DispatcherArtifactService artifactService;
     @Autowired DispatcherResultService resultService;
@@ -65,8 +66,7 @@ class DispatcherRunnerResultIntegrationTest {
         // waits until the backend is terminal and its console log has been stored.
         assertThat(executionRepository.findByExecutionId(prepared.executionId()).orElseThrow().getState())
                 .isEqualTo(DispatcherExecutionState.SUBMITTED);
-        coordinator.observe();
-        coordinator.observe();
+        observeTwoDuePolls(prepared);
 
         var execution = executionRepository.findByExecutionId(prepared.executionId()).orElseThrow();
         assertThat(execution.getState()).isEqualTo(DispatcherExecutionState.SUCCESS);
@@ -119,8 +119,7 @@ class DispatcherRunnerResultIntegrationTest {
         runnerEventService.accept(
                 available(prepared, sha256(result)),
                 new MessageCoordinates("runner.unknown-rows", 0, 4));
-        coordinator.observe();
-        coordinator.observe();
+        observeTwoDuePolls(prepared);
 
         var success = outboxRepository.findAll().stream()
                 .filter(event -> event.getExecutionId().equals(prepared.executionId()))
@@ -156,8 +155,7 @@ class DispatcherRunnerResultIntegrationTest {
 
         runnerEventService.accept(available(prepared, sha256(failedResult)),
                 new MessageCoordinates("runner.structured-failure", 0, 5));
-        coordinator.observe();
-        coordinator.observe();
+        observeTwoDuePolls(prepared);
 
         var execution = executionRepository.findByExecutionId(prepared.executionId()).orElseThrow();
         assertThat(execution.getState()).isEqualTo(DispatcherExecutionState.FAILED);
@@ -348,8 +346,7 @@ class DispatcherRunnerResultIntegrationTest {
 
         runnerEventService.accept(available(prepared, digest),
                 new MessageCoordinates("runner.v8-spark-jar-lineage", 0, 10));
-        coordinator.observe();
-        coordinator.observe();
+        observeTwoDuePolls(prepared);
 
         var execution = executionRepository.findByExecutionId(prepared.executionId()).orElseThrow();
         assertThat(execution.getResultSha256()).isEqualTo(digest);
@@ -422,6 +419,14 @@ class DispatcherRunnerResultIntegrationTest {
                     .as(nodeType.name())
                     .isEqualTo(DispatcherResultResolution.VERIFIED);
         }
+    }
+
+    private void observeTwoDuePolls(Prepared prepared) {
+        coordinator.observe();
+        // Advance the durable scheduling gate, not wall-clock time. Production
+        // deliberately avoids repeatedly polling an execution before it is due.
+        stateService.scheduleMaintenance(prepared.executionId(), Instant.EPOCH, false);
+        coordinator.observe();
     }
 
     private Prepared prepare(String suffix) {

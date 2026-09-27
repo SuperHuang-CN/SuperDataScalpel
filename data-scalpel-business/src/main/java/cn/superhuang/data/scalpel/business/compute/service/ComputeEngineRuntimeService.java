@@ -73,8 +73,10 @@ public class ComputeEngineRuntimeService {
         dispatcherOverview(route);
         PageResponse<DispatcherExecutionSummaryResponse> dispatcherPage;
         try {
-            dispatcherPage = dispatcherClient.executions(
-                    route.dispatcherBaseUrl(), credentialCipher.decrypt(route.tokenCiphertext()), scope, page, size);
+            dispatcherPage = route.targetKey() == null ? dispatcherClient.executions(
+                    route.dispatcherBaseUrl(), credentialCipher.decrypt(route.tokenCiphertext()), scope, page, size)
+                    : dispatcherClient.executions(route.dispatcherBaseUrl(), credentialCipher.decrypt(route.tokenCiphertext()),
+                    route.id(), scope, page, size);
         } catch (RuntimeException exception) {
             throw unavailable("无法读取 Dispatcher 执行列表", exception);
         }
@@ -125,8 +127,9 @@ public class ComputeEngineRuntimeService {
     private DispatcherRuntimeOverviewResponse dispatcherOverview(EngineRoute route) {
         DispatcherRuntimeOverviewResponse response;
         try {
-            response = dispatcherClient.runtimeOverview(
-                    route.dispatcherBaseUrl(), credentialCipher.decrypt(route.tokenCiphertext()));
+            response = route.targetKey() == null ? dispatcherClient.runtimeOverview(
+                    route.dispatcherBaseUrl(), credentialCipher.decrypt(route.tokenCiphertext()))
+                    : dispatcherClient.runtimeOverview(route.dispatcherBaseUrl(), credentialCipher.decrypt(route.tokenCiphertext()), route.id());
         } catch (RuntimeException exception) {
             throw unavailable("Dispatcher 当前不可用", exception);
         }
@@ -145,7 +148,8 @@ public class ComputeEngineRuntimeService {
 
     private static EngineRoute route(ComputeEngine engine) {
         return new EngineRoute(engine.getId(), engine.getDispatcherBaseUrl(), engine.getAccessTokenCiphertext(),
-                engine.getExpectedBackendType(), engine.getDispatcherInstanceId());
+                engine.getExpectedBackendType(), engine.getTargetDispatcherInstanceId() == null
+                ? engine.getDispatcherInstanceId() : engine.getTargetDispatcherInstanceId(), engine.getTargetKey());
     }
 
     private static ResponseStatusException unavailable(String message, RuntimeException cause) {
@@ -159,7 +163,8 @@ public class ComputeEngineRuntimeService {
             String dispatcherBaseUrl,
             String tokenCiphertext,
             ComputeBackendType expectedBackendType,
-            String dispatcherInstanceId
+            String dispatcherInstanceId,
+            String targetKey
     ) {
     }
 }

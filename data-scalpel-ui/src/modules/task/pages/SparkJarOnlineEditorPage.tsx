@@ -1,5 +1,8 @@
 import { taskPageHref } from '../model/taskViews';
 import { sparkJarReadSnippet } from '../model/sparkJarCodeResource';
+import { replaceSparkJarResource, type SparkJarResourceSelection } from '../model/sparkJarResourceConfiguration';
+import { SparkJarResourceDrawer } from '../components/SparkJarResourceDrawer';
+import { SparkJarResourceActions } from '../components/SparkJarResourceActions';
 import { SdkApiDrawer } from '../components/SdkApiDrawer';
 import '../components/sparkJarOnlineWorkspace.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
@@ -16,6 +19,7 @@ import {
   FieldStringOutlined,
   SaveOutlined,
   PlayCircleOutlined,
+  PlusOutlined,
   ReloadOutlined,
   StopOutlined,
   TableOutlined,
@@ -39,6 +43,7 @@ import { TaskRunLogViewer } from '../components/TaskRunLogViewer';
 import {
   useCompileSparkJarOnlineSource,
   useCheckSparkJarOnlineSource,
+  useUpdateSparkJarTaskDefinition,
   useTrialRunSparkJarOnlineSource,
   useTaskRuns,
   useTaskRun,
@@ -143,6 +148,10 @@ const OnlineWorkbench = ({
   const [diagnostics, setDiagnostics] = useState<SparkJarOnlineDiagnostic[]>([]);
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
   const [checkedStatus, setCheckedStatus] = useState<'SUCCEEDED' | 'FAILED' | null>(null);
+  const [resourceEditorIndex, setResourceEditorIndex] = useState<number | 'new' | null>(null);
+  const [resourceSaveError, setResourceSaveError] = useState('');
+  const resourceSaveInFlight = useRef(false);
+  const resourceMutation = useUpdateSparkJarTaskDefinition();
   const [selectedTrialRunId, setSelectedTrialRunId] = useState<string | null>(null);
   const [activeWorkbenchTab, setActiveWorkbenchTab] = useState<'online' | 'log' | 'preview'>('online');
   const [previewAutoRefresh, setPreviewAutoRefresh] = useState(true);
@@ -210,7 +219,7 @@ const OnlineWorkbench = ({
       const detail = modelQueries[index]?.data;
       return {
         bindingName: binding.bindingName,
-        label: detail ? `${detail.model.name} · ${detail.model.code}` : (binding.resourceName ?? binding.bindingName),
+        label: detail ? (detail.model.name === detail.model.code ? detail.model.name : `${detail.model.name} · ${detail.model.code}`) : (binding.resourceName ?? binding.bindingName),
         kind: 'MODEL',
         accessMode: binding.accessMode,
         fieldsLoading: modelQueries[index]?.isPending ?? false,
@@ -253,7 +262,9 @@ const OnlineWorkbench = ({
   const localDirty = source.replace(/\r\n?/g, '\n') !== persistedSource.replace(/\r\n?/g, '\n');
   const hasUncompiledChanges = localDirty || sourceState.hasUncompiledChanges;
   const sourceBytes = new Blob([source]).size;
-  const busy = savingDraft || saveMutation.isPending || compileMutation.isPending || trialMutation.isPending || checkMutation.isPending;
+  const busy = savingDraft || saveMutation.isPending || compileMutation.isPending || trialMutation.isPending || checkMutation.isPending || resourceMutation.isPending;
+  const editingJdbcTable = typeof resourceEditorIndex === 'number' ? jdbcTables.find((item) => (
+    item.bindingName === definition.resourceBindings[resourceEditorIndex]?.bindingName)) : undefined;
   const blocker = useBlocker(({ currentLocation, nextLocation }) => (
     (localDirty || savingDraft) && currentLocation.pathname !== nextLocation.pathname
   ));
@@ -432,6 +443,41 @@ const OnlineWorkbench = ({
   };
 
   const goBack = () => navigate(definitionHref);
+  const editResource = (index: number | 'new') => {
+    setResourceSaveError('');
+    setResourceEditorIndex(index);
+  };
+  const saveResource = (selection: SparkJarResourceSelection) => {
+    if (resourceEditorIndex === null || resourceSaveInFlight.current) return;
+    const bindings = definition.resourceBindings.map(({ bindingName, resourceType, resourceId, topicName, accessMode }) => (
+      { bindingName, resourceType, resourceId, topicName, accessMode }));
+    const index = resourceEditorIndex === 'new' ? bindings.length : resourceEditorIndex;
+    const next = replaceSparkJarResource(bindings, developmentConfiguration, index, selection);
+    const submit = async () => {
+      if (resourceSaveInFlight.current) return;
+      resourceSaveInFlight.current = true;
+      setResourceSaveError('');
+      try {
+        await resourceMutation.mutateAsync({ id: taskId, request: {
+          // Editing bindings must not switch modes or discard runtime settings / the effective JAR.
+          parameters: definition.parameters, sparkConf: definition.sparkConf,
+          inheritEngineResources: definition.inheritEngineResources,
+          executionResources: definition.inheritEngineResources ? undefined : definition.executionResources,
+          timeoutSeconds: definition.timeoutSeconds,
+          resourceBindings: next.bindings, developmentConfiguration: next.configuration,
+        } });
+        setResourceEditorIndex(null);
+        void messageApi.success('资源已保存，源码未修改');
+      } catch (error) {
+        setResourceSaveError(error instanceof ApiError ? error.message : '资源保存失败，请重试');
+      } finally { resourceSaveInFlight.current = false; }
+    };
+    if (next.discardedTableCount > 1) {
+      Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: '更新资源并清除原表选择？',
+        content: `原绑定包含 ${next.discardedTableCount} 张 JDBC 表，本地开发表选择将被替换；不会删除数据库中的表。`,
+        okText: '确认更新', cancelText: '继续编辑', onOk: submit });
+    } else void submit();
+  };
   const jarOrigin = sourceState.currentJarOrigin === 'ONLINE_COMPILED' ? '在线编译' : '本地上传';
   const toggleResourceFields = (resourceKey: string) => {
     setExpandedResourceKeys((current) => (
@@ -600,6 +646,8 @@ const OnlineWorkbench = ({
                   <aside className="spark-jar-online-resources">
                     <div className="spark-jar-online-panel-heading">
                       <div><Typography.Text strong>任务资源 <Typography.Text type="secondary">{definition.resourceBindings.length}</Typography.Text></Typography.Text><Typography.Text type="secondary">选择操作，插入代码</Typography.Text></div>
+                      <Tooltip title="添加任务资源"><Button size="small" icon={<PlusOutlined />} aria-label="添加任务资源"
+                        disabled={busy || definition.resourceBindings.length >= 200} onClick={() => editResource('new')} /></Tooltip>
                     </div>
                     <div className="spark-jar-online-resource-list">
                       {resources.length ? resources.map((resource) => {
@@ -608,7 +656,7 @@ const OnlineWorkbench = ({
                         return (
                           <section key={resourceKey} className="spark-jar-online-resource-card">
                             <div className="spark-jar-online-resource-card-header">
-                              <button type="button" disabled={!editingAllowed} className="spark-jar-online-resource-main" onClick={() => editorRef.current?.insertText(resourceSnippet(resource, streaming, source))}>
+                              <div className="spark-jar-online-resource-main">
                                 <span className="spark-jar-online-resource-icon">
                                   {resource.kind === 'MODEL'
                                     ? <DatabaseOutlined />
@@ -619,31 +667,14 @@ const OnlineWorkbench = ({
                                   <small title={resource.label}>{resource.label}</small>
                                 </span>
                                 <Tag color="geekblue">{resource.accessMode === 'READ' ? '输入' : resource.accessMode === 'WRITE' ? '输出' : '输入及输出'}</Tag>
-                              </button>
-                              {resource.kind !== 'KAFKA_TOPIC' && <Tooltip title={fieldsExpanded ? '收起字段' : '展开字段'}>
-                                <button
-                                  type="button"
-                                  className={`spark-jar-online-resource-expand-button${fieldsExpanded ? ' is-expanded' : ''}`}
-                                  aria-label={`${fieldsExpanded ? '收起' : '展开'} ${resource.bindingName} 的字段`}
-                                  aria-expanded={fieldsExpanded}
-                                  onClick={() => toggleResourceFields(resourceKey)}
-                                >
-                                  <DownOutlined />
-                                </button>
-                              </Tooltip>}
+                              </div>
                             </div>
-                            <Space size={4} wrap className="spark-jar-online-resource-actions">
-                              {resource.accessMode !== 'WRITE' && resource.kind !== 'JDBC_CONNECTION' && <>
-                                <Button size="small" disabled={!editingAllowed} onClick={() => editorRef.current?.insertText(sparkJarReadSnippet(resource, source))}>插入读取</Button>
-                                {resource.kind !== 'KAFKA_TOPIC' && <Tooltip title="插入读取并打印 20 行的代码；运行后在控制台日志查看，可能扫描真实输入。">
-                                  <Button size="small" disabled={!editingAllowed} onClick={() => editorRef.current?.insertText(sparkJarReadSnippet(resource, source, true))}>打印 20 行</Button>
-                                </Tooltip>}
-                              </>}
-                              {resource.accessMode !== 'READ' && <Tooltip title="插入写入模板，需要补全输出 Dataset 和目标映射。">
-                                <Button size="small" disabled={!editingAllowed} onClick={() => editorRef.current?.insertText(resourceSnippet({ ...resource, accessMode: 'WRITE' }, streaming, source))}>写入模板</Button>
-                              </Tooltip>}
-                              {resource.kind === 'JDBC_CONNECTION' && resource.accessMode !== 'WRITE' && <Typography.Text type="secondary">未选择本地表，可在代码中调用 readQuery/readTable。</Typography.Text>}
-                            </Space>
+                            <SparkJarResourceActions resource={resource} busy={busy} editingAllowed={editingAllowed} fieldsExpanded={fieldsExpanded}
+                              onEdit={() => editResource(definition.resourceBindings.findIndex((item) => item.bindingName === resource.bindingName))}
+                              onRead={(print) => editorRef.current?.insertText(sparkJarReadSnippet(resource, source, print))}
+                              onWrite={() => editorRef.current?.insertText(resourceSnippet({ ...resource, accessMode: 'WRITE' }, streaming, source))}
+                              onToggleFields={() => toggleResourceFields(resourceKey)} />
+                            {resource.kind === 'JDBC_CONNECTION' && resource.accessMode !== 'WRITE' && <div className="spark-jar-online-resource-actions"><Typography.Text type="secondary">未选择表，可在代码中调用 readQuery/readTable。</Typography.Text></div>}
                             {fieldsExpanded && (
                               <div className="spark-jar-online-fields">
                                 {resource.fields.length ? resource.fields.map((field) => (
@@ -846,6 +877,13 @@ const OnlineWorkbench = ({
           ]}
         />
       </main>
+      {resourceEditorIndex !== null && <SparkJarResourceDrawer
+        initial={typeof resourceEditorIndex === 'number' ? definition.resourceBindings[resourceEditorIndex] : undefined}
+        initialTable={editingJdbcTable ? { catalog: editingJdbcTable.catalog ?? null,
+          schema: editingJdbcTable.schema ?? null, table: editingJdbcTable.table } : undefined}
+        bindingNames={definition.resourceBindings.map((item) => item.bindingName)} streaming={streaming}
+        saving={resourceMutation.isPending} error={resourceSaveError}
+        onClose={() => setResourceEditorIndex(null)} onConfirm={saveResource} />}
     </div>
   );
 };

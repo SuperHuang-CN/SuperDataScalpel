@@ -14,8 +14,12 @@ public record CreateDataTaskRequest(
         @Schema(description = "TASK 范围目录 UUID，必须指向现有目录；为空表示未分类。目录只用于组织，不构成执行权限。") UUID directoryId,
         @Schema(description = "任务定义家族，决定后续定义结构、发布校验和执行方式，创建后不可修改。") @NotNull TaskType type,
         @Schema(description = "任务业务目的、输入输出或运维说明，去除首尾空白后最长 1000 个字符；为空或全空白时不保存。") @Size(max = 1000) String description,
-        @Schema(description = "计算引擎 UUID。SPARK_CANVAS、SPARK_STREAMING_CANVAS、SPARK_MODEL_QUALITY、SPARK_JAR 和 SPARK_STREAMING_JAR 必填且必须指向现有引擎；LOCAL_SQL 与 WORKFLOW 必须为空。系统不会为缺失值自动选择默认引擎。") UUID computeEngineId
+        @Schema(description = "计算引擎 UUID。SPARK_CANVAS、SPARK_STREAMING_CANVAS、SPARK_MODEL_QUALITY、SPARK_JAR 和 SPARK_STREAMING_JAR 必填且必须指向现有引擎；LOCAL_SQL 与 WORKFLOW 必须为空。系统不会为缺失值自动选择默认引擎。") UUID computeEngineId,
+        @Schema(description = "Canvas 与模型质检的任务资源；null 使用引擎默认值，自定义不得超过 Dispatcher 上限。SQL/工作流必须为空，JAR 在其任务定义配置。仅草稿或停用且无活动实时运行时可变更。") cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec executionResources
 ) {
+    public CreateDataTaskRequest(String name, UUID directoryId, TaskType type, String description, UUID computeEngineId) {
+        this(name, directoryId, type, description, computeEngineId, null);
+    }
     public CreateDataTaskRequest(String name, UUID directoryId, TaskType type, String description) {
         this(name, directoryId, type, description, null);
     }

@@ -1,0 +1,44 @@
+# Historical target examples only. Merge the targets below into application-instance.yml.
+# Do NOT load a third file through SPRING_CONFIG_ADDITIONAL_LOCATION for new deployments.
+# Public DB/Kafka/artifact/token/messaging settings belong to that same instance file.
+data-scalpel:
+  dispatcher:
+    max-concurrent-submissions: 4
+    maintenance-concurrency: 8
+    targets:
+      local-docker-102:
+        name: Local Docker 102
+        backend: LOCAL_DOCKER
+        local-docker:
+          executable: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_EXECUTABLE:docker}
+          image: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_IMAGE:eclipse-temurin:21-jdk}
+          platform: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_PLATFORM:}
+          pull: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_PULL:missing}
+          memory: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_MEMORY:4g}
+          cpus: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_CPUS:2}
+          runner-jar: ${DATASCALPEL_TASK_DISPATCHER_RUNNER_JAR}
+          work-directory: ${DATASCALPEL_TASK_DISPATCHER_WORK_DIRECTORY}
+          checkpoint-directory: ${DATASCALPEL_TASK_STREAMING_LOCAL_CHECKPOINT_DIRECTORY}
+          command-timeout: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_COMMAND_TIMEOUT:30s}
+          stop-timeout: ${DATASCALPEL_TASK_DISPATCHER_DOCKER_STOP_TIMEOUT:10s}
+          runner-java-options: ${DATASCALPEL_TASK_DISPATCHER_RUNNER_JAVA_OPTIONS:-Xms512m -Xmx3g}
+        streaming:
+          checkpoint-base-uri: file:///checkpoints
+      k8s-103:
+        name: Kubernetes 103
+        backend: KUBERNETES
+        kubernetes:
+          master: ${DATASCALPEL_TARGET_K8S_MASTER}
+          namespace: ${DATASCALPEL_TARGET_K8S_NAMESPACE:datascalpel-test}
+          service-account: ${DATASCALPEL_TARGET_K8S_SERVICE_ACCOUNT:spark-runner}
+          image: ${DATASCALPEL_TARGET_K8S_RUNNER_IMAGE}
+          kubeconfig: /config/dispatcher.kubeconfig
+          work-directory: ${DATASCALPEL_TARGET_K8S_WORK_DIRECTORY}
+          executor-instances: 1
+          executor-cores: 1
+          driver-memory: 1g
+          executor-memory: 1g
+          command-timeout: 20s
+          submit-timeout: 2m
+          cancel-grace-seconds: 10
+# K8s streaming intentionally not advertised until a shared durable checkpoint URI is configured.

@@ -21,4 +21,8 @@ public class DispatcherIdentityService {
                 .orElseGet(() -> repository.saveAndFlush(DispatcherIdentity.create()))
                 .getInstanceId();
     }
+
+    public void lockRegistrations() {
+        repository.lockIdentity().orElseThrow(() -> new IllegalStateException("Dispatcher 实例尚未初始化"));
+    }
 }

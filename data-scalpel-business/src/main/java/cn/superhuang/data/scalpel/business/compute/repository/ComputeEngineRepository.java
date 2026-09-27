@@ -22,6 +22,8 @@ public interface ComputeEngineRepository extends SearchRepository<ComputeEngine,
 
     Optional<ComputeEngine> findByNameIgnoreCase(String name);
 
+    Optional<ComputeEngine> findByTargetDispatcherInstanceIdAndTargetKey(String targetDispatcherInstanceId, String targetKey);
+
     boolean existsByCommandTopicAndIdNot(String commandTopic, UUID id);
 
     boolean existsByRunnerEventTopicAndIdNot(String runnerEventTopic, UUID id);

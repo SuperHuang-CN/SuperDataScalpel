@@ -465,6 +465,16 @@ try {
         ) -FailureMessage '上传 Compose 文件失败'
         Invoke-Native -FilePath 'scp.exe' -Arguments @(
             '-o', 'BatchMode=yes',
+            (Join-Path $deployDirectory 'application-instance.example.yml'),
+            "${sshTarget}:$remoteRelease/application-instance.example.yml"
+        ) -FailureMessage '上传实例配置模板失败'
+        [void](Invoke-Ssh -Target $sshTarget -Command (
+            "set -eu; if [ ! -f '$remoteComposeDirectory/application-instance.yml' ]; then " +
+            "cp '$remoteRelease/application-instance.example.yml' '$remoteComposeDirectory/application-instance.yml'; " +
+            "chmod 600 '$remoteComposeDirectory/application-instance.yml'; fi"
+        ) -FailureMessage '初始化外置实例配置失败')
+        Invoke-Native -FilePath 'scp.exe' -Arguments @(
+            '-o', 'BatchMode=yes',
             $remoteEnvPath,
             "${sshTarget}:$remoteComposeDirectory/.env"
         ) -FailureMessage '上传远端环境文件失败'
@@ -566,7 +576,7 @@ try {
             throw
         }
 
-        $dispatcherInfo = Invoke-RestMethod -UseBasicParsing -Uri "$dispatcherBaseUrl/api/v1/dispatcher/info" `
+        $dispatcherInfo = Invoke-RestMethod -UseBasicParsing -Uri "$dispatcherBaseUrl/api/v1/dispatcher/targets" `
             -Headers @{ Authorization = "Bearer $($runtime['DATASCALPEL_TASK_DISPATCHER_TOKEN'])" } `
             -TimeoutSec 15
 
@@ -575,9 +585,9 @@ try {
             "dispatcherBaseUrl=$dispatcherBaseUrl",
             "accessToken=$($runtime['DATASCALPEL_TASK_DISPATCHER_TOKEN'])",
             "expectedBackendType=LOCAL_DOCKER",
-            "commandTopic=$($runtime['DATASCALPEL_COMMAND_TOPIC'])",
-            "runnerEventTopic=$($runtime['DATASCALPEL_RUNNER_EVENT_TOPIC'])",
-            "adminEventTopic=$($runtime['DATASCALPEL_ADMIN_EVENT_TOPIC'])",
+            "commandTopic=$($dispatcherInfo.messaging.commandTopic)",
+            "runnerEventTopic=$($dispatcherInfo.messaging.runnerEventTopic)",
+            "adminEventTopic=$($dispatcherInfo.messaging.adminEventTopic)",
             "maxQueuedExecutions=$($runtime['DATASCALPEL_MAX_QUEUED_EXECUTIONS'])",
             "maxConcurrentSubmissions=$($runtime['DATASCALPEL_MAX_CONCURRENT_SUBMISSIONS'])",
             "maxInFlightApplications=$($runtime['DATASCALPEL_MAX_IN_FLIGHT_APPLICATIONS'])",
@@ -599,16 +609,15 @@ try {
         Write-Host "运行时镜像：$runtimeImage"
         Write-Host "发布目录：$remoteRelease"
         Write-Host "Dispatcher：$dispatcherBaseUrl"
-        Write-Host "后端：$($dispatcherInfo.backendType)"
+        Write-Host "执行目标：$(($dispatcherInfo.targets | ForEach-Object { "$($_.targetKey) [$($_.backendType)]" }) -join ', ')"
         Write-Host "部署方式：$deploymentMode"
         Write-Host "完整连接信息（含 Token）：$connectionInfoPath"
         Write-Host ''
-        Write-Host 'Admin 计算引擎连接参数：' -ForegroundColor Cyan
+        Write-Host 'Admin 点击“连接 Dispatcher”，填写以下地址与 Token，再勾选目标；Topic 自动获取：' -ForegroundColor Cyan
         Write-Host "  dispatcherBaseUrl = $dispatcherBaseUrl"
-        Write-Host '  expectedBackendType = LOCAL_DOCKER'
-        Write-Host "  commandTopic = $($runtime['DATASCALPEL_COMMAND_TOPIC'])"
-        Write-Host "  runnerEventTopic = $($runtime['DATASCALPEL_RUNNER_EVENT_TOPIC'])"
-        Write-Host "  adminEventTopic = $($runtime['DATASCALPEL_ADMIN_EVENT_TOPIC'])"
+        Write-Host "  commandTopic = $($dispatcherInfo.messaging.commandTopic)"
+        Write-Host "  runnerEventTopic = $($dispatcherInfo.messaging.runnerEventTopic)"
+        Write-Host "  adminEventTopic = $($dispatcherInfo.messaging.adminEventTopic)"
         Write-Host '  accessToken = 请从 connection-info.txt 复制'
     } finally {
         if (Test-Path -LiteralPath $temporaryDirectory) {
