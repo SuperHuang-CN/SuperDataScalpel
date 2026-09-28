@@ -133,7 +133,7 @@ public class DispatcherEventService {
                 streamingSourceProgress, qualitySummary,
                 execution.getTaskType(), userJobObservability, resultSha256
         );
-        String topic = registrationRepository.findFirstByOrderByCreatedAtAsc()
+        String topic = registrationRepository.findByEngineId(execution.getEngineId())
                 .orElseThrow(() -> new IllegalStateException("Dispatcher 尚未注册"))
                 .getAdminEventTopic();
         outboxRepository.save(DispatcherEventOutbox.pending(topic, event, codec.write(event)));
@@ -144,7 +144,7 @@ public class DispatcherEventService {
             DispatcherTaskExecution execution,
             StopStreamingExecutionCommand command
     ) {
-        String topic = registrationRepository.findFirstByOrderByCreatedAtAsc()
+        String topic = registrationRepository.findByEngineId(execution.getEngineId())
                 .orElseThrow(() -> new IllegalStateException("Dispatcher 尚未注册"))
                 .getRunnerControlTopic();
         outboxRepository.save(DispatcherEventOutbox.pendingControl(

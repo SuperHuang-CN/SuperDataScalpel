@@ -55,6 +55,7 @@ describe('file dataset detail model', () => {
     expect(fileDatasetParsingOptionEntries({
       kind: 'SHP', dbfCharsetOverride: 'UTF-8', dbfFallbackCharset: 'GB18030',
     })).toEqual(expect.arrayContaining([
+      { label: 'SHP ZIP 文件名编码', value: 'UTF-8' },
       { label: '强制 DBF 编码', value: 'UTF-8' },
       { label: 'DBF 回退编码', value: 'GB18030' },
     ]));

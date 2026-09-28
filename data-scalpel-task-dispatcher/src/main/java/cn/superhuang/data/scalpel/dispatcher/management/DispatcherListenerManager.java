@@ -7,6 +7,8 @@ public interface DispatcherListenerManager {
     void start(DispatcherRegistration registration);
     void stopCommandListener();
     void stopAll();
+    void stop(java.util.UUID engineId);
+    boolean listenersRunning(java.util.UUID engineId);
     boolean listenersRunning();
     BackendReadiness readiness(DispatcherTopics topics);
 }

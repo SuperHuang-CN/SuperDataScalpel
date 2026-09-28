@@ -161,12 +161,16 @@ export const replaceCanvasDefinition = (graph: Graph, definition: CanvasDefiniti
   loadCanvasDefinition(graph, definition);
 };
 
-export const styleCanvasEdge = (edge: Pick<Edge, 'attr' | 'addTools'>) => {
+export const styleCanvasEdge = (edge: Pick<Edge, 'attr' | 'setTools'>) => {
   edge.attr('line', edgeAttrs.line);
-  edge.addTools([
-    {
-      name: 'button-remove',
-      args: { distance: '50%' },
-    },
-  ]);
+  edge.setTools({
+    name: 'canvas-edge-remove',
+    local: true,
+    items: [
+      {
+        name: 'button-remove',
+        args: { distance: '50%' },
+      },
+    ],
+  });
 };

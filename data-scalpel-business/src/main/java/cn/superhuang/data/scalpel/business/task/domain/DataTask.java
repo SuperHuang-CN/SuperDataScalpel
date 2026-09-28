@@ -34,6 +34,29 @@ public class DataTask extends BaseEntity {
     @Column(name = "compute_engine_id")
     private UUID computeEngineId;
 
+    // Canvas / quality task resource configuration; JAR resources remain in its versioned definition.
+    private Integer driverCores;
+    private Integer driverMemoryMiB;
+    private Integer executorInstances;
+    private Integer executorCores;
+    private Integer executorMemoryMiB;
+
+    public cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec getExecutionResources() {
+        return driverCores == null ? null : new cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec(
+                driverCores, driverMemoryMiB, executorInstances, executorCores, executorMemoryMiB);
+    }
+
+    public void configureExecutionResources(cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec resources) {
+        if (resources != null && (!type.requiresComputeEngine() || type.isJar())) {
+            throw new IllegalArgumentException("此任务类型的资源不能在基本配置中维护");
+        }
+        driverCores = resources == null ? null : resources.driverCores();
+        driverMemoryMiB = resources == null ? null : resources.driverMemoryMiB();
+        executorInstances = resources == null ? null : resources.executorInstances();
+        executorCores = resources == null ? null : resources.executorCores();
+        executorMemoryMiB = resources == null ? null : resources.executorMemoryMiB();
+    }
+
     protected DataTask() {
     }
 

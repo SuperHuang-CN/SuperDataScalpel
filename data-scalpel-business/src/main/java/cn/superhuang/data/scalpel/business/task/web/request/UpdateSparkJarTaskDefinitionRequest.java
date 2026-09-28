@@ -6,6 +6,9 @@ import cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourceSpec;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
+import cn.superhuang.data.scalpel.business.task.domain.SparkJarAuthoringMode;
+import cn.superhuang.data.scalpel.business.task.web.request.CreateSparkJarDevelopmentKitRequest.InputSample;
+import cn.superhuang.data.scalpel.business.task.web.request.CreateSparkJarDevelopmentKitRequest.JdbcTableSample;
 
 import java.util.List;
 import java.util.UUID;
@@ -16,8 +19,34 @@ public record UpdateSparkJarTaskDefinitionRequest(
         @Schema(description = "任务级 Spark 配置，最多 100 项；键必须以 spark. 开头，平台控制项被拒绝，值不能为空且最长 2000 个字符。旧版资源键会转换到 executionResources，不能与 executionResources 同时提交。") @NotNull @Size(max = 100) List<@NotNull @Valid Entry> sparkConf,
         @Schema(description = "用户作业可通过 SDK 访问的资源白名单，最多 200 项；发布和每次运行重新校验权限与资源状态") @NotNull @Size(max = 200) List<@NotNull @Valid ResourceBinding> resourceBindings,
         @Schema(description = "可选驱动与执行器资源规格；为空时优先保留已有定义的规格，首次配置时使用绑定计算引擎默认值。解析后的规格不能超过当前计算引擎单任务上限。") @Valid ExecutionResources executionResources,
-        @Schema(description = "作业运行超时，单位秒，范围 1 到 86400；请求必须显式给出，Java 基本类型缺省会按 0 处理并校验失败。") @Min(1) @Max(86400) int timeoutSeconds
+        @Schema(description = "作业运行超时，单位秒，范围 1 到 86400；请求必须显式给出，Java 基本类型缺省会按 0 处理并校验失败。") @Min(1) @Max(86400) int timeoutSeconds,
+        @Schema(description = "开发方式；省略保留原值，兼容旧客户端。切换仅影响编辑入口，不删除在线源码或替换当前 JAR，不增加运行定义版本。") SparkJarAuthoringMode authoringMode,
+        @Schema(description = "可选本地开发配置；省略保留已有配置。提供时与资源绑定在同一事务中保存，不抽取数据、不生成工程、不增加运行定义版本。") @Valid DevelopmentConfiguration developmentConfiguration,
+        @Schema(description = "true 使用引擎默认资源且不保存具体数值；false 使用任务自定义资源；省略兼容旧客户端，保留已有模式。不支持仅本次运行覆盖。") Boolean inheritEngineResources
 ) {
+    public UpdateSparkJarTaskDefinitionRequest(List<Entry> parameters, List<Entry> sparkConf,
+            List<ResourceBinding> resourceBindings, ExecutionResources executionResources, int timeoutSeconds,
+            SparkJarAuthoringMode authoringMode, DevelopmentConfiguration developmentConfiguration) {
+        this(parameters, sparkConf, resourceBindings, executionResources, timeoutSeconds, authoringMode, developmentConfiguration, null);
+    }
+    public UpdateSparkJarTaskDefinitionRequest(List<Entry> parameters, List<Entry> sparkConf,
+            List<ResourceBinding> resourceBindings, ExecutionResources executionResources, int timeoutSeconds) {
+        this(parameters, sparkConf, resourceBindings, executionResources, timeoutSeconds, null, null);
+    }
+
+    @Schema(description = "本地开发样例与 JDBC 表选择；仅辅助代码开发，不限制生产读取条数或替代资源授权")
+    public record DevelopmentConfiguration(
+            @Schema(description = "可读模型的采样配置；空列表或省略时，各可读模型默认最多 1000 行。NONE 仅结构，不导出数据。")
+            @Size(max = 200) List<@NotNull @Valid InputSample> samples,
+            @Schema(description = "可读 JDBC 绑定的表选择和采样配置；空列表或省略表示不选择表。每项须引用本次保存的可读 JDBC 绑定。")
+            @Size(max = 2000) List<@NotNull @Valid JdbcTableSample> jdbcTables
+    ) {
+        public DevelopmentConfiguration {
+            samples = samples == null ? List.of() : List.copyOf(samples);
+            jdbcTables = jdbcTables == null ? List.of() : List.copyOf(jdbcTables);
+        }
+    }
+
     @Schema(description = "名称和值组成的任务参数或 Spark 配置")
     public record Entry(
             @Schema(description = "参数或配置名称，去除首尾空白后在同一列表内区分大小写唯一。普通参数名最长 100 个字符且不能含 CR、LF、NUL；Spark 配置还受平台键白名单约束。") @NotBlank @Size(max = 500) String name,
@@ -30,7 +59,7 @@ public record UpdateSparkJarTaskDefinitionRequest(
             @Schema(description = "绑定资源类型，决定 SDK 读取或写入接口") @NotNull SparkJarResourceType resourceType,
             @Schema(description = "数据源、模型、文件数据集或 API 资源等业务资源 UUID") @NotNull UUID resourceId,
             @Schema(description = "Topic 类型绑定使用的 Topic 名称；其他资源类型为空") @Size(max = 249) String topicName,
-            @Schema(description = "READ 或 WRITE 访问模式；必须符合资源类型和任务执行模式的安全边界") @NotNull SparkJarResourceAccessMode accessMode
+            @Schema(description = "READ 输入、WRITE 输出或 READ_WRITE 输入及输出；必须符合资源类型和任务执行模式的安全边界") @NotNull SparkJarResourceAccessMode accessMode
     ) {
         public ResourceBinding(String bindingName, SparkJarResourceType resourceType, UUID resourceId,
                                SparkJarResourceAccessMode accessMode) {

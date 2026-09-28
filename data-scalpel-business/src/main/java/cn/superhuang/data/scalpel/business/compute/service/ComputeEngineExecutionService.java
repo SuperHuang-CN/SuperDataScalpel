@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.server.ResponseStatusException;
+import org.springframework.web.client.RestClientResponseException;
 
 import java.util.Objects;
 import java.util.UUID;
@@ -60,8 +61,10 @@ public class ComputeEngineExecutionService {
         DispatcherRegistrationResponse registration;
         try {
             String token = credentialCipher.decrypt(snapshot.accessTokenCiphertext());
-            info = dispatcherClient.info(snapshot.dispatcherBaseUrl(), token);
-            registration = dispatcherClient.registration(snapshot.dispatcherBaseUrl(), token);
+            info = snapshot.targetKey() == null ? dispatcherClient.info(snapshot.dispatcherBaseUrl(), token)
+                    : dispatcherClient.info(snapshot.dispatcherBaseUrl(), token, snapshot.id());
+            registration = snapshot.targetKey() == null ? dispatcherClient.registration(snapshot.dispatcherBaseUrl(), token)
+                    : dispatcherClient.registration(snapshot.dispatcherBaseUrl(), token, snapshot.id());
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Dispatcher 当前不可用，本次运行未创建", exception);
         }
@@ -120,8 +123,9 @@ public class ComputeEngineExecutionService {
             ExecutionRoute route,
             SparkExecutionResourceSpec requested
     ) {
-        SparkExecutionResourceSpec result = requested == null ? route.resourcePolicy().defaults() : requested;
-        if (result.exceeds(route.resourcePolicy().maximums())) {
+        SparkExecutionResourceSpec result = (requested == null ? route.resourcePolicy().defaults() : requested).forBackend(
+                SparkExecutionResourceConfigurationService.toExecutionBackend(route.backendType()));
+        if (result.exceeds(route.resourcePolicy().maximums(), SparkExecutionResourceConfigurationService.toExecutionBackend(route.backendType()))) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "任务运行资源超过计算引擎单次任务上限");
         }
         return result;
@@ -150,6 +154,11 @@ public class ComputeEngineExecutionService {
             return response;
         } catch (ResponseStatusException exception) {
             throw exception;
+        } catch (RestClientResponseException exception) {
+            if (exception.getStatusCode().value() == 404) {
+                throw new ResponseStatusException(HttpStatus.NOT_FOUND, "Dispatcher 尚无此执行记录", exception);
+            }
+            throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Dispatcher 当前无法提供运行日志", exception);
         } catch (RuntimeException exception) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Dispatcher 当前无法提供运行日志", exception);
         }
@@ -174,7 +183,7 @@ public class ComputeEngineExecutionService {
                 engine.getMaxInFlightApplications(), engine.getExpectedBackendType(),
                 engine.getDispatcherBaseUrl(), engine.getAccessTokenCiphertext(), engine.getDispatcherInstanceId(),
                 resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType()),
-                engine.getResourcePolicyJson());
+                engine.getResourcePolicyJson(), engine.getTargetKey(), engine.getTargetFingerprint());
     }
 
     private boolean sameRemoteConfiguration(
@@ -184,6 +193,8 @@ public class ComputeEngineExecutionService {
         var topics = registration.topics();
         var policy = registration.effectiveAdmissionPolicy();
         return registration.backendType() == snapshot.backendType()
+                && (snapshot.targetKey() == null || (Objects.equals(snapshot.targetKey(), registration.targetKey())
+                    && Objects.equals(snapshot.targetFingerprint(), registration.targetFingerprint())))
                 && topics != null
                 && Objects.equals(topics.commandTopic(), snapshot.commandTopic())
                 && Objects.equals(topics.runnerEventTopic(), snapshot.runnerEventTopic())
@@ -238,7 +249,9 @@ public class ComputeEngineExecutionService {
             String accessTokenCiphertext,
             String dispatcherInstanceId,
             SparkExecutionResourcePolicy resourcePolicy,
-            String resourcePolicyJson
+            String resourcePolicyJson,
+            String targetKey,
+            String targetFingerprint
     ) {
     }
 }

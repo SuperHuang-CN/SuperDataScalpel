@@ -1,6 +1,7 @@
 package cn.superhuang.data.scalpel.dispatcher.config;
 
 import org.springframework.boot.context.properties.ConfigurationProperties;
+import org.springframework.boot.context.properties.bind.ConstructorBinding;
 
 import java.nio.file.Path;
 import java.time.Duration;
@@ -20,8 +21,10 @@ public record KubernetesProperties(
         Duration submitTimeout,
         Duration commandTimeout,
         int cancelGraceSeconds,
-        Path workDirectory
+        Path workDirectory,
+        Path kubeconfig
 ) {
+    @ConstructorBinding
     public KubernetesProperties {
         sparkSubmit = text(sparkSubmit, "/opt/spark/bin/spark-submit");
         kubectl = text(kubectl, "/usr/local/bin/kubectl");
@@ -37,6 +40,7 @@ public record KubernetesProperties(
         commandTimeout = commandTimeout == null ? Duration.ofMinutes(2) : commandTimeout;
         cancelGraceSeconds = cancelGraceSeconds < 0 ? 10 : cancelGraceSeconds;
         workDirectory = workDirectory == null ? Path.of("work", "task-executions-kubernetes") : workDirectory;
+        kubeconfig = kubeconfig == null || kubeconfig.toString().isBlank() ? null : kubeconfig.toAbsolutePath().normalize();
         if (!master.startsWith("k8s://")) throw new IllegalArgumentException("Kubernetes master必须使用k8s:// URI");
         if (!namespace.matches("[a-z0-9]([-a-z0-9]*[a-z0-9])?")) {
             throw new IllegalArgumentException("Kubernetes Namespace格式无效");
@@ -48,6 +52,19 @@ public record KubernetesProperties(
     }
 
     public Path absoluteWorkDirectory() { return workDirectory.toAbsolutePath().normalize(); }
+
+    public String apiServer() {
+        String server = master.substring("k8s://".length());
+        return server.startsWith("https://") || server.startsWith("http://") ? server : "https://" + server;
+    }
+
+    public KubernetesProperties(String sparkSubmit, String kubectl, String master, String namespace,
+                                String serviceAccount, String image, String driverMemory, String executorMemory,
+                                int executorCores, int executorInstances, Duration submitTimeout,
+                                Duration commandTimeout, int cancelGraceSeconds, Path workDirectory) {
+        this(sparkSubmit, kubectl, master, namespace, serviceAccount, image, driverMemory, executorMemory,
+                executorCores, executorInstances, submitTimeout, commandTimeout, cancelGraceSeconds, workDirectory, null);
+    }
 
     public boolean immutableImage() {
         return image.matches("[^\\s]+@sha256:[0-9a-fA-F]{64}");

@@ -1,4 +1,4 @@
-import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { CompactAlert as Alert, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
   ApiOutlined,
   DeleteOutlined,
@@ -14,7 +14,7 @@ import {
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import type { MenuProps, TableProps } from 'antd';
-import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, message } from 'antd';
+import { Button, Dropdown, Form, Input, Modal, Select, Space, Table, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -38,6 +38,9 @@ import {
 } from '../model/computeEngine';
 import { buildComputeEngineSearch } from '../model/computeEngineSearch';
 import { ComputeEngineDrawer } from './ComputeEngineDrawer';
+import { ComputeEngineDiscoveryDrawer } from './ComputeEngineDiscoveryDrawer';
+import { ComputeEngineTopics } from './ComputeEngineTopics';
+import { engineLifecycle } from '../model/computeEngineLifecycle';
 
 interface ComputeEngineManagementPanelProps {
   canCreate: boolean;
@@ -61,12 +64,13 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
   const [drawerEngine, setDrawerEngine] = useState<ComputeEngine | null | undefined>(undefined);
+  const [discoveryUrl, setDiscoveryUrl] = useState<string | null>(null);
   const [detachEngine, setDetachEngine] = useState<ComputeEngine | null>(null);
   const [detachForm] = Form.useForm<DetachComputeEngineFormValues>();
   const [messageApi, messageContext] = message.useMessage();
   const [modalApi, modalContext] = Modal.useModal();
   const request = useMemo(() => ({
-    search: buildComputeEngineSearch(filters), page, size, sort: '-updatedAt,name',
+    search: buildComputeEngineSearch(filters), page, size, sort: 'dispatcherBaseUrl,expectedBackendType,name',
   }), [filters, page, size]);
   const enginesQuery = useComputeEngines(request);
   const advancedFilterCount = Number(advancedFilters.expectedBackendType !== undefined) + Number(advancedFilters.healthState !== undefined);
@@ -107,25 +111,35 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
 
   const drain = (engine: ComputeEngine) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '排空计算引擎',
-    content: `“${engine.name}”将停止接收新任务，但继续监管已运行任务。`,
-    okText: '开始排空', cancelText: '取消',
+    title: engineLifecycle.pause.label,
+    content: `“${engine.name}”：${engineLifecycle.pause.description}`,
+    okText: engineLifecycle.pause.label, cancelText: '取消',
     onOk: async () => {
-      try { await commandMutation.mutateAsync({ id: engine.id, command: 'drain' }); messageApi.success('计算引擎正在排空'); }
-      catch (error) { showError(error, '排空计算引擎失败'); throw error; }
+      try { await commandMutation.mutateAsync({ id: engine.id, command: 'drain' }); messageApi.success('任务调度已暂停，运行中任务继续'); }
+      catch (error) { showError(error, '暂停任务调度失败'); throw error; }
+    },
+  });
+
+  const resume = (engine: ComputeEngine) => modalApi.confirm({
+    rootClassName: 'business-overlay business-modal-overlay',
+    title: engineLifecycle.resume.label, content: `“${engine.name}”：${engineLifecycle.resume.description}`,
+    okText: engineLifecycle.resume.label, cancelText: '取消',
+    onOk: async () => {
+      try { await commandMutation.mutateAsync({ id: engine.id, command: 'resume' }); messageApi.success('任务调度已恢复'); }
+      catch (error) { showError(error, '恢复任务调度失败'); throw error; }
     },
   });
 
   const deactivate = (engine: ComputeEngine, force: boolean) => modalApi.confirm({
     rootClassName: 'business-overlay business-modal-overlay',
-    title: force ? '强制反注册并取消任务' : '安全反注册计算引擎',
+    title: force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label,
     content: force
-      ? `Dispatcher 将取消“${engine.name}”中仍在排队或运行的任务，然后完成反注册。此操作需要 Dispatcher 可访问，确认继续吗？`
-      : `确认安全反注册“${engine.name}”吗？Dispatcher 必须可访问且已无活动任务。`,
-    okText: force ? '强制反注册并取消任务' : '安全反注册', cancelText: '取消', okButtonProps: { danger: force },
+      ? `“${engine.name}”：${engineLifecycle.forceStop.description} Dispatcher 必须可访问。`
+      : `“${engine.name}”：${engineLifecycle.stop.description} Dispatcher 必须可访问。`,
+    okText: force ? engineLifecycle.forceStop.label : engineLifecycle.stop.label, cancelText: '取消', okButtonProps: { danger: force },
     onOk: async () => {
-      try { await deactivateMutation.mutateAsync({ id: engine.id, force }); messageApi.success('计算引擎已反注册'); }
-      catch (error) { showError(error, '反注册计算引擎失败'); throw error; }
+      try { await deactivateMutation.mutateAsync({ id: engine.id, force }); messageApi.success('计算引擎已停用，配置和历史保留'); }
+      catch (error) { showError(error, '停用计算引擎失败'); throw error; }
     },
   });
 
@@ -169,27 +183,30 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
   const columns: TableProps<ComputeEngine>['columns'] = [
     { title: '引擎', dataIndex: 'name', width: 220, render: (value: string, engine) => <ManagementListCell icon={<ThunderboltOutlined />} iconTone="violet" primary={<Link to={`/compute-engine/${engine.id}`}>{value}</Link>} secondary={computeBackendTypeLabels[engine.expectedBackendType]} /> },
     { title: '注册 / 健康', width: 180, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementStatusIndicator label={computeEngineRegistrationStateLabels[engine.registrationState]} tone={registrationTone(engine.registrationState)} />} secondary={<ManagementStatusIndicator label={computeEngineHealthStateLabels[engine.healthState]} tone={healthTone(engine.healthState)} />} /> },
-    { title: 'Dispatcher', width: 290, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.dispatcherBaseUrl} />} secondary={engine.dispatcherInstanceId || '尚未注册实例'} /> },
-    { title: '消息通道', width: 310, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.commandTopic} />} secondary={`Runner：${engine.runnerEventTopic} · Admin：${engine.adminEventTopic}`} /> },
+    { title: 'Dispatcher / 目标', width: 290, render: (_: unknown, engine) => <ManagementListCell primary={<ManagementCode value={engine.dispatcherBaseUrl} />} secondary={<Tooltip title={engine.targetDispatcherInstanceId || engine.dispatcherInstanceId || '尚未注册实例'}><Typography.Text copyable={engine.targetKey ? { text: engine.targetKey } : false}>{engine.targetKey ? `目标 Key：${engine.targetKey}` : '旧式单目标配置'}</Typography.Text></Tooltip>} /> },
+    { title: '消息通道', width: 310, render: (_: unknown, engine) => <ComputeEngineTopics engine={engine} compact /> },
     { title: '容量 / 最近检查', width: 210, render: (_: unknown, engine) => <ManagementListCell primary={`队列 ${engine.maxQueuedExecutions} · 并发 ${engine.maxConcurrentSubmissions}`} secondary={formatManagementDateTime(engine.lastCheckAt)} /> },
     {
       title: '操作', key: 'actions', width: 110,
       render: (_, engine) => {
-        const deletable = !['ACTIVE', 'DRAINING', 'REGISTERING'].includes(engine.registrationState);
+        const deletable = !['ACTIVE', 'DRAINING', 'REGISTERING'].includes(engine.registrationState)
+          && !(engine.targetKey && engine.registrationState === 'ERROR');
         const reconfigurable = ['ACTIVE', 'DRAINING'].includes(engine.registrationState);
-        const hasRegisteredDispatcher = engine.dispatcherInstanceId !== null;
+        const hasRegisteredDispatcher = Boolean(engine.dispatcherInstanceId || engine.targetDispatcherInstanceId);
         const remotelyManageable = ['ACTIVE', 'DRAINING'].includes(engine.registrationState)
           || (engine.registrationState === 'ERROR' && hasRegisteredDispatcher);
         const editable = engine.registrationState !== 'REGISTERING'
           && canUpdate
           && (!reconfigurable || canManage);
         const items: NonNullable<MenuProps['items']> = [];
+        if (canCreate && canManage && canTest) items.push({ key: 'discover', icon: <PlusOutlined />, label: '添加同实例的其他目标', onClick: () => setDiscoveryUrl(engine.dispatcherBaseUrl) });
         if (canTest) items.push({ key: 'test', icon: <ApiOutlined />, label: '测试连接', onClick: () => void test(engine) });
         items.push({ key: 'configuration', icon: editable ? <EditOutlined /> : <EyeOutlined />, label: editable ? '修改配置' : '查看配置', onClick: () => setDrawerEngine(engine) });
         if (canManage && ['CREATED', 'INACTIVE', 'DETACHED', 'ERROR'].includes(engine.registrationState)) items.push({ key: 'register', icon: <SendOutlined />, label: '注册并激活', onClick: () => register(engine) });
-        if (canManage && engine.registrationState === 'ACTIVE') items.push({ key: 'drain', icon: <PauseCircleOutlined />, label: '开始排空', onClick: () => drain(engine) });
-        if (canManage && remotelyManageable) items.push({ key: 'deactivate', icon: <StopOutlined />, label: '安全反注册', onClick: () => deactivate(engine, false) });
-        if (canManage && remotelyManageable) items.push({ key: 'force-deactivate', danger: true, icon: <StopOutlined />, label: '强制反注册并取消任务', onClick: () => deactivate(engine, true) });
+        if (canManage && engine.registrationState === 'ACTIVE') items.push({ key: 'drain', icon: <PauseCircleOutlined />, label: engineLifecycle.pause.label, onClick: () => drain(engine) });
+        if (canManage && engine.registrationState === 'DRAINING') items.push({ key: 'resume', icon: <SendOutlined />, label: engineLifecycle.resume.label, onClick: () => resume(engine) });
+        if (canManage && remotelyManageable) items.push({ key: 'deactivate', icon: <StopOutlined />, label: engineLifecycle.stop.label, onClick: () => deactivate(engine, false) });
+        if (canManage && remotelyManageable) items.push({ key: 'force-deactivate', danger: true, icon: <StopOutlined />, label: engineLifecycle.forceStop.label, onClick: () => deactivate(engine, true) });
         if (canManage && hasRegisteredDispatcher && engine.healthState === 'DOWN' && ['ACTIVE', 'DRAINING', 'ERROR'].includes(engine.registrationState)) items.push({
           key: 'detach',
           danger: true,
@@ -201,12 +218,14 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
           if (items.length) items.push({ type: 'divider' });
           items.push({ key: 'delete', danger: true, icon: <DeleteOutlined />, label: '删除', onClick: () => remove(engine) });
         }
+        const busy = (commandMutation.isPending && commandMutation.variables?.id === engine.id)
+          || (deactivateMutation.isPending && deactivateMutation.variables?.id === engine.id);
         return <div className="management-row-actions">
           <div className="management-row-actions-shortcuts">
             {canTest && <Tooltip title="测试连接"><Button type="text" size="small" aria-label={`测试${engine.name}`} icon={<ApiOutlined />} loading={testMutation.isPending && testMutation.variables === engine.id} onClick={() => void test(engine)} /></Tooltip>}
             <Tooltip title={editable ? '修改配置' : '查看配置'}><Button type="text" size="small" aria-label={`${editable ? '修改' : '查看'}${engine.name}`} icon={editable ? <EditOutlined /> : <EyeOutlined />} onClick={() => setDrawerEngine(engine)} /></Tooltip>
           </div>
-          <Dropdown menu={{ items }}><Tooltip title="更多操作"><Button className="management-row-actions-more" type="text" size="small" icon={<MoreOutlined />} aria-label={`${engine.name}的更多操作`} /></Tooltip></Dropdown>
+          <Dropdown menu={{ items }} disabled={busy}><Tooltip title="更多操作"><Button loading={busy} className="management-row-actions-more" type="text" size="small" icon={<MoreOutlined />} aria-label={`${engine.name}的更多操作`} /></Tooltip></Dropdown>
         </div>;
       },
     },
@@ -281,9 +300,10 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         <div className="management-result-title">计算引擎 <span className="management-result-count">共 {enginesQuery.data?.totalElements ?? 0} 项</span></div>
         <Space size={4} className="management-result-actions">
           <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新计算引擎列表" onClick={() => void enginesQuery.refetch()} /></Tooltip>
-          {canCreate && <Button type="primary" icon={<PlusOutlined />} onClick={() => setDrawerEngine(null)}>新建</Button>}
+          {canCreate && canTest && canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setDiscoveryUrl('')}>连接 Dispatcher</Button>}
         </Space>
         </div>
+        {enginesQuery.error && <InlineFeedback tone="error" label="计算引擎列表加载失败" detail={enginesQuery.error.message} action={<Button size="small" onClick={() => void enginesQuery.refetch()}>重试</Button>} />}
         <Table<ComputeEngine>
         size="small" className="management-table" rowKey="id" columns={columns}
         dataSource={enginesQuery.data?.content ?? []} loading={enginesQuery.isFetching}
@@ -293,6 +313,7 @@ export const ComputeEngineManagementPanel = ({ canCreate, canUpdate, canDelete, 
         />
       </div>
     </section>
+    {discoveryUrl !== null && <ComputeEngineDiscoveryDrawer initialUrl={discoveryUrl} onClose={() => setDiscoveryUrl(null)} />}
     <ComputeEngineDrawer
       open={drawerEngine !== undefined}
       engine={drawerEngine ?? null}

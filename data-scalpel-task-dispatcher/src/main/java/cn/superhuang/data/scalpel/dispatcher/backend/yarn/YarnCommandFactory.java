@@ -32,18 +32,18 @@ public class YarnCommandFactory {
                 "--num-executors", Integer.toString(resources.executorInstances()),
                 "--conf", "spark.yarn.tags=" + tag(identity),
                 "--conf", "spark.yarn.submit.waitAppCompletion=false",
+                "--conf", "spark.dynamicAllocation.enabled=false",
                 "--files", launchFile.toUri() + "#launch.json",
                 properties.runnerJar()
         ));
-        // User configuration is already allow-listed by Admin; append it after platform defaults.
-        // Platform-controlled keys are rejected before this boundary.
+        // Admin rejects platform-controlled keys; fixed command values also take precedence.
         return List.copyOf(command);
     }
 
     public List<String> submit(ExecutionIdentity identity, Path launchFile, List<SparkConfigurationEntry> sparkConf,
                                 SparkExecutionResourceSpec resources) {
         List<String> base = new ArrayList<>(submit(identity, launchFile, resources));
-        int jarIndex = base.size() - 1;
+        int jarIndex = 1; // User entries precede fixed platform settings, as with Kubernetes.
         String driverJavaOptions = DriverJavaOptions.extract(sparkConf);
         if (driverJavaOptions != null && !driverJavaOptions.isBlank()) {
             base.add(jarIndex++, "--driver-java-options");

@@ -1,10 +1,8 @@
 package cn.superhuang.data.scalpel.filegdb;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import cn.superhuang.data.scalpel.filegdb.model.geometry.FileGdbPolyline;
 import cn.superhuang.data.scalpel.filegdb.testutil.TestFileGdbBuilder;
 import java.io.IOException;
 import java.nio.ByteBuffer;
@@ -70,7 +68,7 @@ class FileGdbMalformedInputTest {
     }
 
     @Test
-    void readsPolylineGeometryAfterDiscoveringItsSchemaType() throws Exception {
+    void rejectsPolygonRecordsWhenTheHeaderClaimsPolyline() throws Exception {
         var fixture = TestFileGdbBuilder.polygons(temporaryDirectory);
         String physicalName = fixture.layerId("PolygonXY");
         Path table = fixture.directory().resolve(physicalName + ".gdbtable");
@@ -80,7 +78,7 @@ class FileGdbMalformedInputTest {
             assertEquals("POLYLINE", database.schema(physicalName).layerType().name());
             try (FileGdbFeatureCursor cursor = database.openCursor(
                     physicalName, FileGdbReadOptions.limit(1))) {
-                assertInstanceOf(FileGdbPolyline.class, cursor.next().geometry());
+                assertCode(FileGdbErrorCode.MALFORMED_HEADER, cursor::next);
             }
         }
     }

@@ -34,6 +34,29 @@ Context提供平台创建的 `SparkSession`、运行身份、有序原始字符�
 用户 POM 将 SDK和 `spark-sql_2.13` 声明为 `provided`；Spark、Scala、Hadoop、SDK不进入用户 JAR。
 Task Engine Uber JAR只是平台 Runner制品，不是用户工程依赖。其他第三方依赖由用户使用 Shade打包。
 
+## 在线 SDK API 说明
+
+在线编辑区的“SDK API”打开统一右侧抽屉。先展示用途和可复制的调用示例，方法重载、参数与限制按需展开；可搜索中文用途、方法名和参数说明，并按当前批处理/实时模式筛选。查看文档不依赖 Java 语义服务就绪，不修改任务，也不执行示例。
+
+展示按用户操作组织：入口先展示“能做什么”，用途导航取自 SDK 的 `apiGroup`，能力卡片提供具体方法用途的快捷入口；选择操作后展示完整用途、示例、签名、参数和后续配置。首页操作标签只展示用途说明的首个短句，完整说明保留在详情及悬停标题中，不要求使用者先认识 Java 类。重载合并为一个操作，在详情选择调用方式；同用途的配置类型和辅助操作按需展开，所有公开类型仍可访问。新增类型、方法和用途无需增加前端白名单。搜索覆盖全部用途，不受先前导航选择限制。
+
+方法示例优先使用方法自己的 `apiExample`；仅当类型示例包含该方法调用时，才作为明确标注“包含相关操作”的完整示例展示，不伪造方法专属示例或将签名拼成可执行代码。无对应示例时保留准确签名与参数说明，类型完整示例仍可从类型入口查看。参数类型和返回类型在 SDK 目录内可继续跳转，类型继承能力也保留入口。
+
+方法详情以“实际调用示例”为主，示例必须包含调用对象（如 `context.spark()`），并由 SDK 注释说明入口参数和放置位置；不得把 `SparkSession spark()` 等方法定义呈现为可直接运行的代码。有示例时，“方法定义与参数（参考）”默认折叠，并明确其不是调用代码；没有对应示例时直接说明缺失，保留展开的定义与所属接口用法入口。常用上下文、模型、JDBC、任务参数及实时上下文入口提供独立方法示例；重载切换同步切换示例，所有示例纳入编译检查，不执行真实读写。
+
+说明的唯一来源是 `data-scalpel-task-sdk/src/main/java` 的公开签名与 Javadoc。构建工具 `src/build/java/SdkApiDocGenerator.java` 使用 JDK 21 Doclet API，自动发现公开类型、方法、枚举和记录组件，不维护方法白名单。SDK Maven `compile` 阶段生成 `META-INF/datascalpel/sdk-api.json`，随 SDK JAR 和 TaskEngine 制品交付；没有新增运行时依赖或独立服务。
+
+- Javadoc 正文：一句话说明用途；所有参数（含 record 组件）维护 `@param`，必要时增加 `@return`。
+- `@apiGroup`：用途分类；嵌套类型可继承；`@apiMode` 为 `BOTH`（默认）、`BATCH` 或 `STREAMING`。
+- `@apiExample`：最短可用 Java 示例；`@apiNote`：权限、前置条件或副作用；可选 `@apiOrder` 调整入口排列。
+- 公共类型、方法或参数缺少必要说明会使文档生成失败，并删除旧输出，避免悄悄交付过期清单。业务意义仍需开发者在修改方法时同步维护注释，不能从方法名自动推断。
+
+读取链路为浏览器 → Admin `GET /api/v1/spark-jar-sdk-api` → 已配置的 TaskEngine 同路径 GET → 配套 SDK 资源。Admin 要求 `task.view`；Engine 沿用 Bearer 认证。成功返回 `SdkApiDocumentation`，包括版本、内容指纹、类型、方法、参数、说明、示例与适用模式。两端使用 `Cache-Control: no-store`；抽屉打开即刷新，打开期间每 30 秒重新读取，也可手动刷新；失败明确提示并重试，不显示旧 API 内容冒充最新。
+
+“最新”是当前 TaskEngine 已部署、可编译使用的 SDK，不是 Git 中未构建的源码。SDK 改动后正常 Maven 构建、部署配套 TaskEngine 即更新文档，无须修改前端；同一 SNAPSHOT 的变化用内容指纹区分。IDEA 开发时也需要通过根 Wrapper 执行 SDK `compile`（仅 IDEA javac 不运行 Doclet），再重启相关应用加载新增接口/类；本次新增接口需要 Admin 和 TaskEngine 各重启一次。缺少文档时 Engine 返回 503，Admin 将其及旧引擎 404 转为可操作的 502，超时为 504，错误沿用 ProblemDetail。
+
+该说明覆盖平台公开 SDK，不展开 Spark 全量 API、TestKit 或 Engine 内部实现。示例中的资源引用名是占位值，使用前替换为任务资源的“代码引用名”；写入示例会产生真实副作用，必须先核对目标和写入方式。
+
 ## 用户作业可观测能力
 
 `SparkJobContext.observability()`提供结构化事件、最新阶段、Counter、Gauge和Operation Timer。名称使用
@@ -177,6 +200,10 @@ TaskRun保存文件名、SHA-256和大小，但不对外返回对象 Key。终�
 
 ## 批流本地开发包
 
+配置保存接口接受可选 `developmentConfiguration`（`samples`、`jdbcTables`），与本次资源绑定在同一事务中规范化保存。
+省略保留原配置，显式空列表按既有规则规范化。保存不会读取样例、生成制品或改变运行定义版本；生成仍使用独立的异步命令。
+因此选择 JDBC 表后可以保存并进入在线开发，不必先生成开发包。重新生成失败仍保留上一份可下载制品。
+
 `SPARK_JAR`和`SPARK_STREAMING_JAR`通过同一异步接口、队列和制品存储生成当前本地开发包。页面提交前自动保存
 当前定义并携带定义版本。模型资源绑定是唯一来源：READ生成输入，WRITE生成输出Target，READ_WRITE同时生成两者。
 样例固定为Snappy Parquet，支持零行、指定条数、指定比例和全部数据；比例按总数向上取整。存在主键时按完整主键
@@ -201,6 +228,10 @@ TaskRun保存文件名、SHA-256和大小，但不对外返回对象 Key。终�
 保存配置。任务定义变化不主动禁用已有开发包；保存配置不同于当前成功制品时，旧制品仍可下载，但页面明确提示它是上一次成功
 生成的开发包。已有安装中配置或指针为空时，读取最近生成记录作为兼容回退；下一次成功生成后进入单一当前制品语义。
 
+尚未保存定义的新建 Spark JAR 任务，开发包查询返回 HTTP 200：`definitionVersion=0`，
+`configuration.samples/jdbcTables` 为空列表，`generation/artifact` 为 null。该查询不创建定义、
+不生成制品；真正提交生成仍须先保存定义并携带保存后的版本。
+
 开发包包含Maven工程、按真实绑定生成的示例作业、含完整StructType和输出Target声明的单元测试、
 `datascalpel-development-kit.json`以及各输入绑定的Parquet。JDBC表示例位于
 `src/test/resources/samples/{bindingName}-{table}-*.parquet`，测试通过`jdbcTableParquet`注册。元数据记录任务版本、模型Schema版本、
@@ -215,25 +246,50 @@ READ_WRITE必须分别使用输入和输出Topic，避免回读自身输出。�
 
 ## 批流在线 Java 开发
 
-两类Spark JAR任务共用全页在线Java工作台。批处理固定编辑
-`com.example.datascalpel.ExampleSparkJob`并实现`SparkBatchJob`；实时固定编辑
-`com.example.datascalpel.ExampleSparkStreamingJob`并实现`SparkStreamingJob`。主类必须公开并提供公开无参构造器。在线草稿保存在
+在线模式的任务定义页按“在线代码 → 任务资源 → 运行设置”排列，不显示本地开发工程和本地样例列；切换到上传 JAR 模式才显示本地开发能力，切换不会清除已有样例配置。在线代码区读取源码接口，区分尚未应用、代码已应用、有修改未应用以及当前包来自上传四种状态；保存草稿和试运行成功不代表已应用。加载失败提供重试，不以缓存成功状态掩盖错误。
+
+当前在线运行包显示入口类及最近应用时间。`online_applied_at` 仅在在线编译成功并替换任务 JAR 时记录，通过源码响应 `appliedAt`（ISO 8601，可空）返回；保存草稿、试运行、配置修改和开发方式切换不更新它，手工上传 JAR 时清空。历史数据没有准确时间时显示“—”，不使用定义更新时间推断。不在此页面展示对象路径或摘要，也不重复编辑器中的检查和试运行操作。
+
+开发方式以可空 `authoring_mode`（`ONLINE` / `UPLOAD`）保存，属于编辑偏好，不改变运行定义版本。
+首次未选择时显示开发方式选择；保存后按已选方式进入配置。低频“更换开发方式”需要确认，不删除源码和当前生效 JAR。
+旧记录没有该字段时，依次按在线编译摘要、现有 JAR、已存源码推断；三者都没有时才要求选择。实际上传或编译应用同步记录对应方式。
+配置页资源统一用右侧 Drawer 编辑，单一用途映射到 READ / WRITE / READ_WRITE，不再重复选择输入输出和访问方式。
+JDBC 表选择使用数据源已配置的 Schema，不增加第二处 Schema 设置；它是开发辅助选择，不缩小该绑定的运行时授权范围。
+
+新建批流 Spark JAR 任务可以直接进入在线工作台，无需先保存任务定义或生成本地开发包。
+页面读取默认源码和空开发包配置；仅在用户保存源码、编译或保存定义时沿用对应的持久化流程。
+
+两类 Spark JAR 任务共用全页在线 Java 工作台。批处理默认入口为
+`com.example.datascalpel.ExampleSparkJob`，实现 `SparkBatchJob`；实时默认入口为
+`com.example.datascalpel.ExampleSparkStreamingJob`，实现 `SparkStreamingJob`。包名、主类可修改，编译器从 Java 语法树确定实际入口；主类必须公开并提供公开无参构造器。在线草稿保存在
 `task_spark_jar_definition.online_source_code`，保存草稿不增加生产定义版本；最后一次成功成为当前JAR的源码摘要保存在
 `online_compiled_source_sha256`。上传本地JAR会清除已编译摘要但保留草稿，因此同一个任务始终只有一个当前生效JAR，同时可以在
 在线编译与本地上传之间切换。
 
+在线编辑器提供默认开启的“自动保存”开关，偏好仅保存在当前浏览器。用户停止输入 1.5 秒后，沿用草稿保存接口保存当前源码；进入页面只读取，不因加载默认模板而写入。关闭后显示“保存草稿”按钮并取消尚未发送的自动保存；已提交的请求仍会完成。自动保存不检查代码、不编译、不运行、不替换当前 JAR。
+
+保存请求串行，响应只确认其提交时的源码快照，不回写覆盖编辑区的新输入；请求期间继续修改的内容会在完成后再保存。编译/试运行等业务操作期间不发起自动保存，应用或试运行等待已提交的草稿保存完成，避免旧请求覆盖其源码。保存成功采用状态提示，不逐次弹成功消息；失败保留编辑内容、显示失败及“重试保存”，暂停自动重试，用户重试或重新开启开关后恢复。未保存或正在保存时，保留刷新/离开提醒；不承诺关闭窗口后仍能完成异步保存。该能力不新增多人保存版本控制，现有同任务保存冲突边界不变。
+
 接口为`GET /api/v1/tasks/{taskId}/spark-jar-online-source`、
 `POST /api/v1/tasks/{taskId}/spark-jar-online-source/actions/save`和
 `POST /api/v1/tasks/{taskId}/spark-jar-online-source/actions/compile`。编译操作先保存完整草稿，再在管理数据库事务外请求Task Engine；
-编译成功后校验固定Manifest、JAR大小和摘要，最后锁定任务并确认源码在编译期间没有变化，再原子替换当前JAR。编译错误作为带行列
+编译成功后校验 Manifest 契约、实际入口、JAR 大小和摘要，最后锁定任务并确认源码在编译期间没有变化，再原子替换当前JAR。编译错误作为带行列
 范围的正常失败结果返回；超时、Task Engine不可用或对象存储失败均不覆盖之前的可运行JAR。
 
+`POST /api/v1/tasks/{taskId}/spark-jar-online-source/actions/check` 单独检查编辑缓冲区，沿用编译接口及诊断契约，
+但不保存源码、不创建定义、不替换 JAR、不运行任务。响应 `source` 仍是已保存状态，不能用它覆盖当前编辑内容。
+页面把“检查代码”和“应用到任务”分开；应用沿用原编译命令并确认替换，检查期间编辑变更时丢弃过时检查结果。
+编辑器字体随前端离线交付 JetBrains Mono；每个编辑器实例独立创建 Monaco 文档，不共享同任务的未保存缓冲区。
+
+任务配置与在线资源栏共用右侧资源抽屉。编辑器中确认绑定会保存资源及本地样例配置，保留运行参数和开发方式，不保存或改写当前源码。历史同一 JDBC 绑定的多表声明不因编辑首张表而被静默丢弃。
+读取片段包含变量声明与分号；模型及 JDBC 表可插入 `show(20, false)` 便于从日志查看，Kafka 流不提供同步打印。写入片段仍需用户补全 Dataset 与映射，不自动执行输入到输出的数据搬运。
+
+在线资源卡片主体仅展示引用名、资源和用途，不再点击插入代码；移除卡片右箭头。一级操作固定为“编辑绑定、复制引用名、代码操作”。代码菜单支持悬停、点击和键盘打开，按读写权限及资源种类提供插入读取、读取并打印前 20 行、写入模板；非 Kafka 资源的查看/收起字段也从菜单进入。只有明确选择插入操作才修改编辑器，复制只复制绑定名，打开菜单不执行代码或查询数据。字段按钮仍明确以插入 `col(...)` 为语义。
+检查、应用和试运行的诊断只标注对应源码；请求期间继续编辑时不把旧诊断覆盖到新源码。实施进度与未完成验证见[本次记录](../verification/spark-jar-editor-optimization-20260925.md)。
+
 Task Engine使用JDK 21`JavaCompiler`、受控Spark 4.1.1/SDK classpath、禁用Annotation Processor且不执行用户代码。
-源码上限256 KiB、诊断最多200条、编译超时30秒、产物上限5 MiB。在线工作台的Monaco提示来自锁定版本的常用Spark/SDK
-API索引和任务资源元数据，支持绑定名、模型字段及已配置JDBC本地表字段；它是轻量提示层，不替代完整Java语言服务，最终以平台
-编译结果为准。生成新的本地开发包时，如果存在在线草稿，会把草稿作为`ExampleSparkJob.java`写入工程，便于继续转为本地开发。
-实时模式对应写入`ExampleSparkStreamingJob.java`，编译请求显式携带`BATCH/STREAMING`模式，Task Engine按模式校验
-固定类名和接口，并在Manifest写入匹配的`DataScalpel-Job-Mode`，不通过源码内容猜测。
+源码上限256 KiB、诊断最多200条、编译超时30秒、产物上限5 MiB。Monaco 通过 Admin 中继连接 Task Engine 管理的 JDT LS，提供 Java 类型补全、参数、悬浮说明、诊断、格式化及符号重命名。服务不可用时明确显示降级状态，保留静态 Spark/SDK 索引和资源提示；最终以平台编译结果为准。绑定名、模型字段及已配置 JDBC 表字段始终来自任务资源元数据。部署、隔离与资源限制见 [Java 语言服务设计](spark-jar-online-java-language-service.md)。
+生成开发包时，在线草稿按实际包名和公开主类写入对应源码路径，并同步 Maven 入口、测试入口及说明；无草稿时沿用批流默认模板。编译和试运行显式携带 `BATCH/STREAMING` 模式，Task Engine 校验实际入口的接口，并在 Manifest 写入匹配的 `DataScalpel-Job-Mode`，不通过源码内容猜测模式。
 
 ### 在线源码真实数据试运行
 

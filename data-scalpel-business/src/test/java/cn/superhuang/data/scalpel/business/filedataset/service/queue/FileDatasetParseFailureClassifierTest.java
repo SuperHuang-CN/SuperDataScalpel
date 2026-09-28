@@ -4,6 +4,8 @@ import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDataset
 import cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetParsingInfrastructureException;
 import cn.superhuang.data.scalpel.business.filedataset.storage.FileStorageException;
 import cn.superhuang.data.scalpel.business.filedataset.storage.FileStorageObjectNotFoundException;
+import cn.superhuang.data.scalpel.filegdb.FileGdbErrorCode;
+import cn.superhuang.data.scalpel.filegdb.FileGdbException;
 import org.junit.jupiter.api.Test;
 
 import java.io.IOException;
@@ -15,6 +17,32 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class FileDatasetParseFailureClassifierTest {
 
     private final FileDatasetParseFailureClassifier classifier = new FileDatasetParseFailureClassifier();
+
+    @Test
+    void reportsGdbFormatCodeAndBoundedDiagnosticWithoutRetrying() {
+        var failure = classifier.classify(new FileGdbException(
+                FileGdbErrorCode.UNSUPPORTED_FORMAT, "Field category has unsupported type code 13\n" + "x".repeat(400)));
+        assertFalse(failure.retryable());
+        assertTrue(failure.message().startsWith("GDB 包含暂不支持的格式（UNSUPPORTED_FORMAT）："));
+        assertTrue(failure.message().contains("type code 13"));
+        assertFalse(failure.message().contains("\n"));
+        assertTrue(failure.message().length() < 360);
+        assertTrue(classifier.classify(new FileGdbException(
+                FileGdbErrorCode.MALFORMED_HEADER, "a00000009 schema has an invalid field-section terminator"))
+                .message().contains("MALFORMED_HEADER"));
+    }
+
+    @Test
+    void hidesGdbStorageDetailsAndPreservesRetrySemantics() {
+        for (var code : new FileGdbErrorCode[]{FileGdbErrorCode.IO_ERROR, FileGdbErrorCode.SOURCE_CHANGED}) {
+            var failure = classifier.classify(new FileGdbException(code, "AccessKey=secret /private/bucket"));
+            assertTrue(failure.retryable());
+            assertEquals("GDB 对象读取暂时失败", failure.message());
+        }
+        var missing = classifier.classify(new FileGdbException(FileGdbErrorCode.MISSING_FILE, "/private/bucket"));
+        assertFalse(missing.retryable());
+        assertEquals("GDB 缺少必要组件（MISSING_FILE）", missing.message());
+    }
 
     @Test
     void retriesOnlyExplicitInfrastructureFailures() {

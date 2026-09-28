@@ -18,3 +18,13 @@ The implementation in this module does not include the reference project's Spark
 - `package.scala`: FileGDB unsigned and signed variable integers.
 
 No external `.gdb` fixture from the reference snapshot is redistributed by this module. Optional compatibility tests accept local fixture paths through Maven system properties.
+
+## GDAL OpenFileGDB format cross-checks
+
+The following GDAL source files were consulted to cross-check binary-format behavior. The Java
+implementation and deterministic tests were independently written; no GDAL code or native library
+is bundled or required at runtime. GDAL-generated diagnostic datasets are not redistributed.
+
+- [GDAL 3.9.3 field writer](https://github.com/OSGeo/gdal/blob/v3.9.3/ogr/ogrsf_frmts/openfilegdb/filegdbtable_write_fields.cpp): optional `DE AD BE EF` terminator, scalar default lengths and string encoding flags.
+- [GDAL 3.9.3 table reader](https://github.com/OSGeo/gdal/blob/v3.9.3/ogr/ogrsf_frmts/openfilegdb/filegdbtable.cpp): sparse index block-map layout and UTF-16 text values.
+- [GDAL 3.12.4 geometry constants](https://github.com/OSGeo/gdal/blob/v3.12.4/ogr/ogrpgeogeometry.h): ordinary, Z/M and general shape codes.

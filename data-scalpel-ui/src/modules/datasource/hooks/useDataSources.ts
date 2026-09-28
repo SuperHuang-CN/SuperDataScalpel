@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { invalidateDirectoryTree } from '../../directory';
 import type { SearchRequest } from '../../../shared/search';
+import type { DataSourceSearchRequest } from '../api/dataSourceApi';
 import {
   createApiResource,
   createDataSource,
@@ -65,10 +66,12 @@ const invalidateDataSources = async (queryClient: ReturnType<typeof useQueryClie
   ]);
 };
 
-export const useDataSources = (request: SearchRequest, enabled = true) => useQuery({
+export const useDataSources = (request: DataSourceSearchRequest, enabled = true) => useQuery({
   queryKey: [dataSourcesQueryKey, request],
   queryFn: () => fetchDataSources(request),
   enabled,
+  staleTime: request.hasPublishedModels ? 0 : undefined,
+  refetchOnMount: request.hasPublishedModels ? 'always' : undefined,
 });
 
 export const useDataSource = (id: string | undefined, enabled = true) => useQuery({

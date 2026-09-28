@@ -40,6 +40,7 @@ class GdbTableIndexReaderTest {
             assertEquals(1_024, reader.slotCount());
             assertTrue(reader.recordOffset(0) > 0);
             assertEquals(0, reader.recordOffset(1));
+            assertEquals(deletedSecondSlot ? 2 : 1, reader.countPresentRecords());
             if (deletedSecondSlot) {
                 assertTrue(reader.recordOffset(2) > 0);
                 assertEquals(3, reader.declaredRowCount());

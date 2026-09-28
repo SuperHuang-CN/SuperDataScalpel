@@ -5,6 +5,7 @@ import cn.superhuang.data.scalpel.filegdb.FileGdbException;
 import cn.superhuang.data.scalpel.filegdb.FileGdbReadLimits;
 import cn.superhuang.data.scalpel.filegdb.model.FileGdbFeature;
 import cn.superhuang.data.scalpel.filegdb.model.FileGdbField;
+import cn.superhuang.data.scalpel.filegdb.model.FileGdbFieldType;
 import cn.superhuang.data.scalpel.filegdb.model.geometry.FileGdbGeometry;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
@@ -58,7 +59,7 @@ final class GdbRecordReader {
                 }
                 continue;
             }
-            Object value = isNull ? null : readValue(reader, field, oid, limits);
+            Object value = isNull ? null : readValue(reader, field, oid, limits, definition.stringsUtf8());
             attributes.put(field.name(), value);
         }
         reader.requireFullyConsumed();
@@ -69,7 +70,8 @@ final class GdbRecordReader {
             BoundedBufferReader reader,
             FileGdbField field,
             int oid,
-            FileGdbReadLimits limits) {
+            FileGdbReadLimits limits,
+            boolean stringsUtf8) {
         return switch (field.type()) {
             case INT16 -> reader.readShort();
             case INT32 -> reader.readInt();
@@ -77,6 +79,12 @@ final class GdbRecordReader {
             case FLOAT64 -> reader.readDouble();
             case STRING, XML -> {
                 int length = reader.readVarUIntAsInt("string byte length", limits.maxStringBytes());
+                if (field.type() == FileGdbFieldType.STRING && !stringsUtf8) {
+                    if ((length & 1) != 0) {
+                        throw reader.malformed("contains an odd UTF-16 string byte length");
+                    }
+                    yield reader.readUtf16Characters(length / 2, limits.maxStringBytes());
+                }
                 yield reader.readUtf8(length, limits.maxStringBytes());
             }
             case TIMESTAMP -> timestamp(reader.readDouble(), reader);

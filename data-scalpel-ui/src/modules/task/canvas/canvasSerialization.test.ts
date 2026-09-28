@@ -49,19 +49,23 @@ describe('canvas X6 serialization boundary', () => {
     expect(json).not.toContain('targetTable"');
   });
 
-  it('adds the built-in remove tool at the middle of an edge', () => {
+  it('adds a locally mounted remove tool for edge-scoped hover visibility', () => {
     const attr = vi.fn();
-    const addTools = vi.fn();
+    const setTools = vi.fn();
 
-    styleCanvasEdge({ attr, addTools });
+    styleCanvasEdge({ attr, setTools });
 
     expect(attr).toHaveBeenCalledWith('line', expect.objectContaining({ stroke: '#1677ff' }));
-    expect(addTools).toHaveBeenCalledWith([
-      {
-        name: 'button-remove',
-        args: { distance: '50%' },
-      },
-    ]);
+    expect(setTools).toHaveBeenCalledWith({
+      name: 'canvas-edge-remove',
+      local: true,
+      items: [
+        {
+          name: 'button-remove',
+          args: { distance: '50%' },
+        },
+      ],
+    });
   });
 
   it('compares definitions by semantics instead of object and graph insertion order', () => {

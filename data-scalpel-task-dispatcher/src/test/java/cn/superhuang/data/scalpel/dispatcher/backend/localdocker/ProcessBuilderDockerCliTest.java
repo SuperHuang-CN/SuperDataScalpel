@@ -3,6 +3,8 @@ package cn.superhuang.data.scalpel.dispatcher.backend.localdocker;
 import org.junit.jupiter.api.Test;
 
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Duration;
 import java.util.List;
 
@@ -27,8 +29,10 @@ class ProcessBuilderDockerCliTest {
 
     @Test
     void keepsStdoutAndStderrSeparate() throws Exception {
+        Path java = Path.of(System.getProperty("java.home"), "bin", "java");
+        if (!Files.isRegularFile(java)) java = java.resolveSibling("java.exe");
         DockerCommandResult result = new ProcessBuilderDockerCli().execute(
-                List.of("sh", "-c", "printf 'container-id'; printf 'platform warning' >&2"),
+                List.of(java.toString(), "-cp", System.getProperty("java.class.path"), OutputProbe.class.getName()),
                 Duration.ofSeconds(5), 1024);
 
         assertThat(result.successful()).isTrue();
@@ -36,5 +40,12 @@ class ProcessBuilderDockerCliTest {
         assertThat(result.stderrText()).isEqualTo("platform warning");
         assertThat(new String(result.combinedOutput(), StandardCharsets.UTF_8))
                 .isEqualTo("container-id\nplatform warning");
+    }
+
+    public static class OutputProbe {
+        public static void main(String[] args) {
+            System.out.print("container-id");
+            System.err.print("platform warning");
+        }
     }
 }

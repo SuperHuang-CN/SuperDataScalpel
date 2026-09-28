@@ -115,7 +115,7 @@ public class ComputeEngineManagementService {
     @Transactional
     public ComputeEngineResponse create(CreateComputeEngineRequest request) {
         requireUniqueName(request.name(), null);
-        requireUniqueTopics(request.commandTopic(), request.runnerEventTopic(), null);
+        requireUniqueTopics(request.commandTopic(), request.runnerEventTopic(), request.adminEventTopic(), null);
         requireListenedAdminEventTopic(request.adminEventTopic());
         SparkExecutionResourcePolicy resourcePolicy = requestedPolicy(request.resourcePolicy(), request.expectedBackendType());
         ComputeEngine engine = ComputeEngine.create(
@@ -131,9 +131,10 @@ public class ComputeEngineManagementService {
     @Transactional
     public ComputeEngineResponse update(UUID id, UpdateComputeEngineRequest request) {
         ComputeEngine engine = requireEngine(id);
+        requireReadOnlyResourcePolicy(engine, request.resourcePolicy());
         requireEditable(engine);
         requireUniqueName(request.name(), id);
-        requireUniqueTopics(request.commandTopic(), request.runnerEventTopic(), id);
+        requireUniqueTopics(request.commandTopic(), request.runnerEventTopic(), request.adminEventTopic(), id);
         requireListenedAdminEventTopic(request.adminEventTopic());
         String ciphertext = request.accessToken() == null || request.accessToken().isBlank()
                 ? engine.getAccessTokenCiphertext() : credentialCipher.encrypt(request.accessToken());
@@ -182,9 +183,7 @@ public class ComputeEngineManagementService {
     public ComputeEngineTestResponse test(UUID id) {
         EngineSnapshot snapshot = snapshot(id);
         try {
-            DispatcherInfoResponse info = requireInfo(snapshot, client.info(
-                    snapshot.baseUrl(), credentialCipher.decrypt(snapshot.tokenCiphertext())
-            ));
+            DispatcherInfoResponse info = requireInfo(snapshot, remoteInfo(snapshot));
             updateIfCurrent(snapshot, engine -> engine.markHealthy(
                     info.dispatcherInstanceId(), info.backendType()
             ));
@@ -199,6 +198,7 @@ public class ComputeEngineManagementService {
     }
 
     public ComputeEngineResponse register(UUID id) {
+        refreshDeploymentPolicy(id);
         EngineSnapshot snapshot = Objects.requireNonNull(transactionTemplate.execute(status -> {
             ComputeEngine engine = requireEngine(id);
             requireListenedAdminEventTopic(engine.getAdminEventTopic());
@@ -213,7 +213,7 @@ public class ComputeEngineManagementService {
         }));
         try {
             String token = credentialCipher.decrypt(snapshot.tokenCiphertext());
-            DispatcherInfoResponse info = requireInfo(snapshot, client.info(snapshot.baseUrl(), token));
+            DispatcherInfoResponse info = requireInfo(snapshot, remoteInfo(snapshot));
             DispatcherRegistrationResponse registration = client.activate(
                     snapshot.baseUrl(), token, new DispatcherRegistrationRequest(
                             snapshot.id(),
@@ -222,7 +222,10 @@ public class ComputeEngineManagementService {
                                     snapshot.maxQueuedExecutions(), snapshot.maxConcurrentSubmissions(),
                                     snapshot.maxInFlightApplications()
                             ),
-                            resourceConfigurationService.policy(snapshot.resourcePolicyJson(), snapshot.expectedBackendType())
+                            resourceConfigurationService.policy(snapshot.resourcePolicyJson(), snapshot.expectedBackendType()),
+                            snapshot.targetKey(), snapshot.targetDispatcherInstanceId(),
+                            SparkExecutionResourceConfigurationService.toExecutionBackend(snapshot.expectedBackendType()),
+                            snapshot.targetFingerprint()
                     )
             );
             requireRegistration(
@@ -243,15 +246,30 @@ public class ComputeEngineManagementService {
         }
         try {
             String token = credentialCipher.decrypt(snapshot.tokenCiphertext());
-            requireOwnedRemoteRegistration(snapshot, client.registration(snapshot.baseUrl(), token));
-            DispatcherRegistrationResponse registration = client.drain(
-                    snapshot.baseUrl(), token
-            );
+            requireOwnedRemoteRegistration(snapshot, remoteRegistration(snapshot, token));
+            DispatcherRegistrationResponse registration = remoteDrain(snapshot, token);
             requireRegistration(snapshot, registration, DispatcherRegistrationState.DRAINING);
             return updateIfCurrent(snapshot, ComputeEngine::markDraining);
         } catch (RuntimeException exception) {
             updateFailure(snapshot, exception, false);
             throw upstream("计算引擎 Drain 失败", exception);
+        }
+    }
+
+    public ComputeEngineResponse resume(UUID id) {
+        EngineSnapshot snapshot = snapshot(id);
+        if (snapshot.registrationState() != ComputeEngineRegistrationState.DRAINING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "只有暂停调度的计算引擎可以恢复");
+        }
+        try {
+            String token = credentialCipher.decrypt(snapshot.tokenCiphertext());
+            requireOwnedRemoteRegistration(snapshot, remoteRegistration(snapshot, token));
+            var registration = client.resume(snapshot.baseUrl(), token, snapshot.targetKey() == null ? null : snapshot.id());
+            requireRegistration(snapshot, registration, DispatcherRegistrationState.ACTIVE);
+            return updateIfCurrent(snapshot, engine -> engine.activate(registration.dispatcherInstanceId(), registration.backendType()));
+        } catch (RuntimeException exception) {
+            updateFailure(snapshot, exception, false);
+            throw upstream("恢复任务调度失败", exception);
         }
     }
 
@@ -264,13 +282,16 @@ public class ComputeEngineManagementService {
         }
         try {
             String token = credentialCipher.decrypt(snapshot.tokenCiphertext());
-            requireOwnedRemoteRegistration(snapshot, client.registration(snapshot.baseUrl(), token));
-            DispatcherRegistrationResponse registration = client.deactivate(
-                    snapshot.baseUrl(), token, force
-            );
+            requireOwnedRemoteRegistration(snapshot, remoteRegistration(snapshot, token));
+            DispatcherRegistrationResponse registration = remoteDeactivate(snapshot, token, force);
             requireRegistration(snapshot, registration, DispatcherRegistrationState.INACTIVE);
             return updateIfCurrent(snapshot, ComputeEngine::markInactive);
         } catch (RuntimeException exception) {
+            if (isConflict(exception)) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, force
+                        ? "暂不能停用引擎：请检查注册状态及任务取消、资源清理进度，确认完成后重试"
+                        : "暂不能停用引擎：请检查注册状态，并确认没有排队、运行中任务或待清理资源", exception);
+            }
             updateFailure(snapshot, exception, false);
             throw upstream("计算引擎反注册失败", exception);
         }
@@ -316,7 +337,11 @@ public class ComputeEngineManagementService {
 
     @Transactional
     public void delete(UUID id) {
-        ComputeEngine engine = requireEngine(id);
+        ComputeEngine engine = repository.findByIdForUpdate(id)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "计算引擎不存在"));
+        if (engine.getTargetKey() != null && engine.getRegistrationState() == ComputeEngineRegistrationState.ERROR) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "异常引擎的远端注册结果可能不确定，请先安全反注册或完成离线解绑");
+        }
         if (engine.getRegistrationState() == ComputeEngineRegistrationState.ACTIVE
                 || engine.getRegistrationState() == ComputeEngineRegistrationState.DRAINING
                 || engine.getRegistrationState() == ComputeEngineRegistrationState.REGISTERING) {
@@ -339,12 +364,13 @@ public class ComputeEngineManagementService {
 
     private ReconfigurationPlan prepareReconfiguration(UUID id, UpdateComputeEngineRequest request) {
         ComputeEngine engine = requireEngine(id);
+        requireReadOnlyResourcePolicy(engine, request.resourcePolicy());
         if (engine.getRegistrationState() != ComputeEngineRegistrationState.ACTIVE
                 && engine.getRegistrationState() != ComputeEngineRegistrationState.DRAINING) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "只有 ACTIVE 或 DRAINING 计算引擎可以自动重新配置");
         }
         requireUniqueName(request.name(), id);
-        requireUniqueTopics(request.commandTopic(), request.runnerEventTopic(), id);
+        requireUniqueTopics(request.commandTopic(), request.runnerEventTopic(), request.adminEventTopic(), id);
         requireListenedAdminEventTopic(request.adminEventTopic());
         String ciphertext = request.accessToken() == null || request.accessToken().isBlank()
                 ? engine.getAccessTokenCiphertext() : credentialCipher.encrypt(request.accessToken());
@@ -359,15 +385,22 @@ public class ComputeEngineManagementService {
                 request.maxConcurrentSubmissions(), request.maxInFlightApplications(),
                 resourceConfigurationService.write(resourcePolicy)
         );
+        if (engine.getTargetKey() != null) {
+            if (candidate.getExpectedBackendType() != engine.getExpectedBackendType()) {
+                throw new ResponseStatusException(HttpStatus.CONFLICT, "已绑定执行目标的后端类型不可修改");
+            }
+            candidate.bindTarget(engine.getTargetDispatcherInstanceId(), engine.getTargetKey(), engine.getTargetFingerprint());
+        }
+        if (taskRunRepository.existsByComputeEngineIdAndStatusIn(id, ACTIVE_RUN_STATES)
+                || executionOutboxRepository.existsByEngineIdAndStateIn(id, UNPUBLISHED_OUTBOX_STATES)) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "仍有活动运行或未发布执行消息，不能删除计算引擎");
+        }
         return new ReconfigurationPlan(snapshot(engine), candidate, !engine.sameConfigurationAs(candidate));
     }
 
     private void preflightCandidate(ComputeEngine candidate) {
         try {
-            DispatcherInfoResponse info = client.info(
-                    candidate.getDispatcherBaseUrl(),
-                    credentialCipher.decrypt(candidate.getAccessTokenCiphertext())
-            );
+            DispatcherInfoResponse info = remoteInfo(snapshot(candidate));
             if (info == null || info.dispatcherInstanceId() == null || info.dispatcherInstanceId().isBlank()
                     || info.backendType() != candidate.getExpectedBackendType()) {
                 throw new IllegalStateException("候选 Dispatcher 信息缺失或后端类型不一致");
@@ -380,10 +413,8 @@ public class ComputeEngineManagementService {
     private EngineSnapshot drainForReconfiguration(EngineSnapshot snapshot) {
         try {
             String token = credentialCipher.decrypt(snapshot.tokenCiphertext());
-            requireOwnedRemoteRegistration(snapshot, client.registration(snapshot.baseUrl(), token));
-            DispatcherRegistrationResponse registration = client.drain(
-                    snapshot.baseUrl(), token
-            );
+            requireOwnedRemoteRegistration(snapshot, remoteRegistration(snapshot, token));
+            DispatcherRegistrationResponse registration = remoteDrain(snapshot, token);
             requireRegistration(snapshot, registration, DispatcherRegistrationState.DRAINING);
             updateIfCurrent(snapshot, ComputeEngine::markDraining);
             return snapshot(snapshot.id());
@@ -396,10 +427,8 @@ public class ComputeEngineManagementService {
     private void deactivateForReconfiguration(EngineSnapshot snapshot) {
         try {
             String token = credentialCipher.decrypt(snapshot.tokenCiphertext());
-            requireOwnedRemoteRegistration(snapshot, client.registration(snapshot.baseUrl(), token));
-            DispatcherRegistrationResponse registration = client.deactivate(
-                    snapshot.baseUrl(), token, false
-            );
+            requireOwnedRemoteRegistration(snapshot, remoteRegistration(snapshot, token));
+            DispatcherRegistrationResponse registration = remoteDeactivate(snapshot, token, false);
             requireRegistration(snapshot, registration, DispatcherRegistrationState.INACTIVE);
             updateIfCurrent(snapshot, ComputeEngine::markInactive);
         } catch (RuntimeException exception) {
@@ -423,7 +452,7 @@ public class ComputeEngineManagementService {
                 throw new ResponseStatusException(HttpStatus.CONFLICT, "计算引擎尚未完成反注册");
             }
             requireUniqueName(candidate.getName(), current.id());
-            requireUniqueTopics(candidate.getCommandTopic(), candidate.getRunnerEventTopic(), current.id());
+            requireUniqueTopics(candidate.getCommandTopic(), candidate.getRunnerEventTopic(), candidate.getAdminEventTopic(), current.id());
             engine.update(
                     candidate.getName(), candidate.getDescription(), candidate.getDispatcherBaseUrl(),
                     candidate.getAccessTokenCiphertext(), candidate.getExpectedBackendType(),
@@ -447,6 +476,67 @@ public class ComputeEngineManagementService {
         }));
     }
 
+    private void requireReadOnlyResourcePolicy(ComputeEngine engine, SparkExecutionResourcePolicy requested) {
+        if (engine.getTargetKey() != null && requested != null && !requested.equals(
+                resourceConfigurationService.policy(engine.getResourcePolicyJson(), engine.getExpectedBackendType()))) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT,
+                    "资源默认值与上限由 Dispatcher 部署配置维护，Admin 不能修改");
+        }
+    }
+
+    private void refreshDeploymentPolicy(UUID id) {
+        EngineSnapshot before = snapshot(id);
+        if (before.targetKey() == null) return;
+        if (before.registrationState() == ComputeEngineRegistrationState.ACTIVE
+                || before.registrationState() == ComputeEngineRegistrationState.DRAINING
+                || before.registrationState() == ComputeEngineRegistrationState.REGISTERING) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "请先停止接收任务并停用注册，再同步部署资源策略");
+        }
+        var directory = client.targets(before.baseUrl(), credentialCipher.decrypt(before.tokenCiphertext()));
+        if (directory == null || !Objects.equals(before.targetDispatcherInstanceId(), directory.dispatcherInstanceId())) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "Dispatcher 实例身份已变化");
+        }
+        var target = directory.targets().stream().filter(value -> before.targetKey().equals(value.targetKey()))
+                .findFirst().orElseThrow(() -> new ResponseStatusException(HttpStatus.CONFLICT, "执行目标已移除"));
+        if (!Objects.equals(before.targetFingerprint(), target.targetFingerprint())
+                || !before.expectedBackendType().name().equals(target.backendType().name())
+                || target.resourcePolicy() == null) {
+            throw new ResponseStatusException(HttpStatus.CONFLICT, "目标已变化或未提供资源策略，请重新发现");
+        }
+        updateIfCurrent(before, engine -> engine.synchronizeResourcePolicy(resourceConfigurationService.write(target.resourcePolicy())));
+    }
+
+    private DispatcherInfoResponse remoteInfo(EngineSnapshot snapshot) {
+        String token = credentialCipher.decrypt(snapshot.tokenCiphertext());
+        if (snapshot.targetKey() == null) return client.info(snapshot.baseUrl(), token);
+        var directory = client.targets(snapshot.baseUrl(), token);
+        if (directory == null || !Objects.equals(snapshot.targetDispatcherInstanceId(), directory.dispatcherInstanceId())) {
+            throw new IllegalStateException("Dispatcher 实例身份与已绑定目标不一致");
+        }
+        var target = directory.targets().stream().filter(t -> snapshot.targetKey().equals(t.targetKey()))
+                .findFirst().orElseThrow(() -> new IllegalStateException("执行目标已禁用或移除"));
+        if (!Objects.equals(snapshot.targetFingerprint(), target.targetFingerprint())
+                || !snapshot.expectedBackendType().name().equals(target.backendType().name())) {
+            throw new IllegalStateException("执行目标的物理环境已变化，请检查部署配置");
+        }
+        return client.targetInfo(snapshot.baseUrl(), token, snapshot.targetKey());
+    }
+
+    private DispatcherRegistrationResponse remoteRegistration(EngineSnapshot snapshot, String token) {
+        return snapshot.targetKey() == null ? client.registration(snapshot.baseUrl(), token)
+                : client.registration(snapshot.baseUrl(), token, snapshot.id());
+    }
+
+    private DispatcherRegistrationResponse remoteDrain(EngineSnapshot snapshot, String token) {
+        return snapshot.targetKey() == null ? client.drain(snapshot.baseUrl(), token)
+                : client.drain(snapshot.baseUrl(), token, snapshot.id());
+    }
+
+    private DispatcherRegistrationResponse remoteDeactivate(EngineSnapshot snapshot, String token, boolean force) {
+        return snapshot.targetKey() == null ? client.deactivate(snapshot.baseUrl(), token, force)
+                : client.deactivate(snapshot.baseUrl(), token, snapshot.id(), force);
+    }
+
     private DispatcherInfoResponse requireInfo(EngineSnapshot snapshot, DispatcherInfoResponse info) {
         if (info == null || info.dispatcherInstanceId() == null || info.dispatcherInstanceId().isBlank()
                 || info.backendType() == null) {
@@ -454,6 +544,10 @@ public class ComputeEngineManagementService {
         }
         if (info.backendType() != snapshot.expectedBackendType()) {
             throw new IllegalStateException("Dispatcher 实际后端与计算引擎配置不一致");
+        }
+        if (snapshot.targetDispatcherInstanceId() != null
+                && !snapshot.targetDispatcherInstanceId().equals(info.dispatcherInstanceId())) {
+            throw new IllegalStateException("Dispatcher 不是已绑定目标所属实例");
         }
         if (snapshot.dispatcherInstanceId() != null
                 && !snapshot.dispatcherInstanceId().equals(info.dispatcherInstanceId())) {
@@ -467,7 +561,8 @@ public class ComputeEngineManagementService {
             DispatcherRegistrationResponse response,
             DispatcherRegistrationState expected
     ) {
-        requireRegistration(snapshot, response, expected, snapshot.dispatcherInstanceId());
+        requireRegistration(snapshot, response, expected, snapshot.targetDispatcherInstanceId() == null
+                ? snapshot.dispatcherInstanceId() : snapshot.targetDispatcherInstanceId());
     }
 
     private void requireRegistration(
@@ -488,8 +583,9 @@ public class ComputeEngineManagementService {
             DispatcherRegistrationResponse response
     ) {
         if (response == null || !snapshot.id().equals(response.engineId())
-                || snapshot.dispatcherInstanceId() == null
-                || !snapshot.dispatcherInstanceId().equals(response.dispatcherInstanceId())
+                || !Objects.equals(snapshot.targetDispatcherInstanceId() == null ? snapshot.dispatcherInstanceId()
+                    : snapshot.targetDispatcherInstanceId(), response.dispatcherInstanceId())
+                || response.dispatcherInstanceId() == null
                 || !sameRemoteConfiguration(snapshot, response)) {
             throw new ResponseStatusException(
                     HttpStatus.CONFLICT,
@@ -505,6 +601,8 @@ public class ComputeEngineManagementService {
         DispatcherTopics topics = response.topics();
         DispatcherAdmissionPolicy policy = response.effectiveAdmissionPolicy();
         return response.backendType() == snapshot.expectedBackendType()
+                && (snapshot.targetKey() == null || (Objects.equals(snapshot.targetKey(), response.targetKey())
+                    && Objects.equals(snapshot.targetFingerprint(), response.targetFingerprint())))
                 && topics != null
                 && Objects.equals(topics.commandTopic(), snapshot.commandTopic())
                 && Objects.equals(topics.runnerEventTopic(), snapshot.runnerEventTopic())
@@ -526,6 +624,9 @@ public class ComputeEngineManagementService {
 
     private static boolean sameTarget(ComputeEngine engine, EngineSnapshot snapshot) {
         return Objects.equals(engine.getDispatcherBaseUrl(), snapshot.baseUrl())
+                && Objects.equals(engine.getTargetKey(), snapshot.targetKey())
+                && Objects.equals(engine.getTargetFingerprint(), snapshot.targetFingerprint())
+                && Objects.equals(engine.getTargetDispatcherInstanceId(), snapshot.targetDispatcherInstanceId())
                 && Objects.equals(engine.getAccessTokenCiphertext(), snapshot.tokenCiphertext())
                 && engine.getExpectedBackendType() == snapshot.expectedBackendType()
                 && Objects.equals(engine.getCommandTopic(), snapshot.commandTopic())
@@ -548,7 +649,8 @@ public class ComputeEngineManagementService {
                 engine.getExpectedBackendType(), engine.getRegistrationState(), engine.getCommandTopic(),
                 engine.getRunnerEventTopic(), engine.getAdminEventTopic(), engine.getMaxQueuedExecutions(),
                 engine.getMaxConcurrentSubmissions(), engine.getMaxInFlightApplications(),
-                engine.getResourcePolicyJson(), engine.getDispatcherInstanceId()
+                engine.getResourcePolicyJson(), engine.getDispatcherInstanceId(),
+                engine.getTargetDispatcherInstanceId(), engine.getTargetKey(), engine.getTargetFingerprint()
         );
     }
 
@@ -567,6 +669,7 @@ public class ComputeEngineManagementService {
     }
 
     private void assertJarTasksWithinMaximums(UUID engineId, SparkExecutionResourceSpec maximums) {
+        var backend = SparkExecutionResourceConfigurationService.toExecutionBackend(requireEngine(engineId).getExpectedBackendType());
         List<cn.superhuang.data.scalpel.business.task.domain.DataTask> tasks = taskRepository
                 .findAllByComputeEngineIdAndTypeIn(engineId, List.of(TaskType.SPARK_JAR, TaskType.SPARK_STREAMING_JAR));
         List<String> affected = sparkJarDefinitionRepository.findAllByTaskIdIn(tasks.stream()
@@ -574,7 +677,7 @@ public class ComputeEngineManagementService {
                 .filter(definition -> {
                     SparkExecutionResourceSpec resources = resourceConfigurationService.resources(
                             definition.getExecutionResourcesJson());
-                    return resources != null && resources.exceeds(maximums);
+                    return resources != null && resources.exceeds(maximums, backend);
                 })
                 .map(definition -> tasks.stream().filter(task -> task.getId().equals(definition.getTaskId()))
                         .findFirst().map(cn.superhuang.data.scalpel.business.task.domain.DataTask::getName)
@@ -599,7 +702,17 @@ public class ComputeEngineManagementService {
         });
     }
 
-    private void requireUniqueTopics(String commandTopic, String runnerEventTopic, UUID currentId) {
+    private void requireUniqueTopics(String commandTopic, String runnerEventTopic, String adminEventTopic, UUID currentId) {
+        if (currentId != null) {
+            var current = requireEngine(currentId);
+            if (current.getTargetKey() != null) {
+                if (!current.getCommandTopic().equals(commandTopic.trim()) || !current.getRunnerEventTopic().equals(runnerEventTopic.trim())
+                        || !current.getAdminEventTopic().equals(adminEventTopic.trim())) {
+                    throw new ResponseStatusException(HttpStatus.CONFLICT, "目标消息通道由 Dispatcher 部署配置维护，不允许逐引擎修改");
+                }
+                return;
+            }
+        }
         UUID excluded = currentId == null ? new UUID(0, 0) : currentId;
         if (repository.existsByCommandTopicAndIdNot(commandTopic.trim(), excluded)) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "命令 Topic 已被其他计算引擎使用");
@@ -620,7 +733,7 @@ public class ComputeEngineManagementService {
 
     private void requireDispatcherTransportUnavailable(EngineSnapshot snapshot) {
         try {
-            client.info(snapshot.baseUrl(), credentialCipher.decrypt(snapshot.tokenCiphertext()));
+            remoteInfo(snapshot);
         } catch (ResourceAccessException expectedTransportFailure) {
             return;
         } catch (RuntimeException exception) {
@@ -682,7 +795,10 @@ public class ComputeEngineManagementService {
             int maxConcurrentSubmissions,
             int maxInFlightApplications,
             String resourcePolicyJson,
-            String dispatcherInstanceId
+            String dispatcherInstanceId,
+            String targetDispatcherInstanceId,
+            String targetKey,
+            String targetFingerprint
     ) {
     }
 

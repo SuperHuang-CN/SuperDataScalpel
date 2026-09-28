@@ -1,5 +1,7 @@
 import type { DataSourceFilters } from './dataSource';
 
+const purposeFields = { SOURCE: 'sourceEnabled', STORAGE: 'storageEnabled', DISTRIBUTION: 'distributionEnabled' } as const;
+
 const escapeDslText = (value: string) => value.replaceAll('\\', '\\\\').replaceAll('"', '\\"');
 
 const contains = (field: string, value: string) => `${field}:*"${escapeDslText(value)}"*`;
@@ -22,6 +24,9 @@ export const buildDataSourceSearch = (filters: DataSourceFilters): string | unde
     filters.purpose === 'DISTRIBUTION' ? equals('distributionEnabled', true) : undefined,
     filters.purpose === 'BOTH'
       ? `${equals('sourceEnabled', true)} AND ${equals('storageEnabled', true)}`
+      : undefined,
+    filters.purposesAny?.length
+      ? `(${filters.purposesAny.map((purpose) => equals(purposeFields[purpose], true)).join(' OR ')})`
       : undefined,
     filters.type ? equals('type', filters.type) : undefined,
     filters.enabled === undefined ? undefined : equals('enabled', filters.enabled),

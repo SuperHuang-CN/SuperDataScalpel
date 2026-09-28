@@ -196,7 +196,7 @@ public sealed interface FileDatasetParsingOptionsRequest permits
         }
     }
 
-    @Schema(description = "Shapefile 解析请求选项；控制 DBF 字符集识别与后备编码，并可指定 EPSG 坐标系。")
+    @Schema(description = "Shapefile 解析请求选项；ZIP 文件名与 DBF 属性内容分别指定编码，并可指定 EPSG 坐标系。")
 
     record Shp(
             @Schema(description = "强制用于 DBF 属性表的字符集；为空时自动检测。")
@@ -204,7 +204,9 @@ public sealed interface FileDatasetParsingOptionsRequest permits
             @Schema(description = "无法从 DBF 元数据识别编码时使用的后备字符集。")
             @NotBlank @Size(max = 40) String dbfFallbackCharset,
             @Schema(description = "可选 EPSG 回退编码，仅在 .prj 等 Shapefile 空间参考元数据没有可识别 EPSG 标识时使用。")
-            @Min(1) Integer epsgCode
+            @Min(1) Integer epsgCode,
+            @Schema(description = "SHP ZIP 内条目文件名的字符集，省略时为 UTF-8；例如旧版中文 ZIP 可选 GB18030。仅影响 ZIP 文件名，不影响 DBF 内容；条目带 UTF-8 标志时优先按标志解码。")
+            @Size(max = 40) String zipEntryCharset
     ) implements FileDatasetParsingOptionsRequest {
         @Override
         public FileDatasetParsingOptionsKind kind() {

@@ -13,6 +13,12 @@ import java.util.UUID;
 public interface DispatcherRegistrationRepository extends JpaRepository<DispatcherRegistration, UUID> {
     Optional<DispatcherRegistration> findFirstByOrderByCreatedAtAsc();
 
+    Optional<DispatcherRegistration> findByEngineId(UUID engineId);
+
+    @Lock(LockModeType.PESSIMISTIC_WRITE)
+    @Query("select r from DispatcherRegistration r where r.engineId = :engineId")
+    Optional<DispatcherRegistration> findByEngineIdForUpdate(UUID engineId);
+
     @Lock(LockModeType.PESSIMISTIC_WRITE)
     @Query("select registration from DispatcherRegistration registration order by registration.createdAt")
     List<DispatcherRegistration> findAllForUpdate();

@@ -1,6 +1,6 @@
 package cn.superhuang.data.scalpel.dispatcher.web.resource;
 
-import cn.superhuang.data.scalpel.dispatcher.backend.TaskExecutionBackend;
+import cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry;
 import cn.superhuang.data.scalpel.dispatcher.management.DispatcherListenerManager;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherIdentityRepository;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherRegistrationRepository;
@@ -20,20 +20,20 @@ import java.util.Map;
 @RequestMapping("/health")
 public class DispatcherHealthResource {
     private final DispatcherIdentityRepository identityRepository;
-    private final TaskExecutionBackend backend;
+    private final DispatcherBackendRegistry backends;
     private final DispatcherListenerManager listenerManager;
     private final DispatcherRegistrationRepository registrationRepository;
     private final DispatcherArtifactService artifactService;
 
     public DispatcherHealthResource(
             DispatcherIdentityRepository identityRepository,
-            TaskExecutionBackend backend,
+            DispatcherBackendRegistry backends,
             DispatcherListenerManager listenerManager,
             DispatcherRegistrationRepository registrationRepository,
             DispatcherArtifactService artifactService
     ) {
         this.identityRepository = identityRepository;
-        this.backend = backend;
+        this.backends = backends;
         this.listenerManager = listenerManager;
         this.registrationRepository = registrationRepository;
         this.artifactService = artifactService;
@@ -45,24 +45,19 @@ public class DispatcherHealthResource {
     @GetMapping("/ready")
     public ResponseEntity<Map<String, Object>> ready() {
         boolean database = identityRepository.count() >= 0;
-        boolean backendReady = backend.readiness().ready();
-        var registration = registrationRepository.findFirstByOrderByCreatedAtAsc();
-        boolean activeRegistration = registration
-                .map(value -> value.getState() == DispatcherRegistrationState.ACTIVE
-                        || value.getState() == DispatcherRegistrationState.DRAINING)
-                .orElse(false);
-        boolean listenerReady = !activeRegistration || listenerManager.listenersRunning();
-        BackendReadiness messaging = listenerManager.readiness(registration
-                .map(value -> new DispatcherTopics(
-                        value.getCommandTopic(), value.getRunnerEventTopic(), value.getAdminEventTopic(),
-                        value.getRunnerControlTopic()))
-                .orElse(null));
+        boolean backendReady = !backends.legacy() || backends.require(null).backend().readiness().ready();
+        var active = registrationRepository.findAll().stream().filter(value -> value.getState() == DispatcherRegistrationState.ACTIVE
+                        || value.getState() == DispatcherRegistrationState.DRAINING).toList();
+        boolean activeRegistration = !active.isEmpty();
+        boolean listenerReady = active.stream().allMatch(value -> listenerManager.listenersRunning(value.getEngineId()));
+        BackendReadiness messaging = listenerManager.readiness(null);
         boolean artifactReady = artifactService.readiness().ready();
-        boolean ready = database && backendReady && artifactReady && messaging.ready() && listenerReady;
+        boolean ready = database && artifactReady && messaging.ready()
+                && (!backends.legacy() || (backendReady && listenerReady));
         return ResponseEntity.status(ready ? HttpStatus.OK : HttpStatus.SERVICE_UNAVAILABLE).body(Map.of(
                 "status", ready ? "UP" : "DOWN",
                 "database", database ? "UP" : "DOWN",
-                "backend", backendReady ? "UP" : "DOWN",
+                "backend", !backends.legacy() ? "PER_TARGET" : backendReady ? "UP" : "DOWN",
                 "artifacts", artifactReady ? "UP" : "DOWN",
                 "kafka", messaging.ready() ? "UP" : "DOWN",
                 "listeners", !activeRegistration ? "INACTIVE" : listenerReady ? "UP" : "DOWN"

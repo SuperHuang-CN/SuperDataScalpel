@@ -10,6 +10,14 @@ public record DispatcherRegistrationRequest(
         @NotNull UUID engineId,
         @NotNull @Valid DispatcherTopics topics,
         @NotNull @Valid DispatcherAdmissionPolicy admissionPolicy,
-        @NotNull @Valid SparkExecutionResourcePolicy resourcePolicy
+        @NotNull @Valid SparkExecutionResourcePolicy resourcePolicy,
+        String targetKey,
+        String dispatcherInstanceId,
+        cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType expectedBackendType,
+        String targetFingerprint
 ) {
+    public DispatcherRegistrationRequest(UUID engineId, DispatcherTopics topics,
+            DispatcherAdmissionPolicy admissionPolicy, SparkExecutionResourcePolicy resourcePolicy) {
+        this(engineId, topics, admissionPolicy, resourcePolicy, null, null, null, null);
+    }
 }

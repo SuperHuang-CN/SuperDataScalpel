@@ -61,12 +61,12 @@ public class SparkJarTrialRunService {
                 || !Objects.equals(compilation.jarSha256(), sha256(jar))) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY, "Task Engine 返回的试运行编译制品无效");
         }
-        definitionService.validateOnlineTrialJar(taskId, jar);
+        String jobClass = definitionService.validateOnlineTrialJar(taskId, jar);
         TaskRunResponse run = jobMode == SparkJarJobMode.STREAMING
                 ? taskStreamingService.submitStreamingJarTrial(
-                        taskId, saved.sourceSha256(), jar, compilation.jarSha256())
+                        taskId, saved.sourceSha256(), jar, compilation.jarSha256(), jobClass)
                 : taskRunService.submitSparkJarTrial(
-                        taskId, saved.sourceSha256(), jar, compilation.jarSha256());
+                        taskId, saved.sourceSha256(), jar, compilation.jarSha256(), jobClass);
         return new SparkJarTrialRunResponse(SparkJarTrialRunResponse.Status.QUEUED,
                 compilation.durationMs(), definitionService.getOnlineSource(taskId), diagnostics, run);
     }

@@ -9,27 +9,35 @@ import org.springframework.stereotype.Component;
 @Component
 @Profile("test")
 public class TestKafkaListenerManager implements DispatcherListenerManager {
-    private boolean running;
+    private final java.util.Set<java.util.UUID> running = java.util.concurrent.ConcurrentHashMap.newKeySet();
+    private final cn.superhuang.data.scalpel.dispatcher.config.DispatcherMessagingProperties messaging;
+
+    public TestKafkaListenerManager(cn.superhuang.data.scalpel.dispatcher.config.DispatcherMessagingProperties messaging) {
+        this.messaging = messaging;
+    }
 
     @Override
     public void start(DispatcherRegistration registration) {
-        running = true;
+        running.add(registration.getEngineId());
     }
 
     @Override
     public void stopCommandListener() {
-        running = false;
+        running.clear();
     }
 
     @Override
     public void stopAll() {
-        running = false;
+        running.clear();
     }
 
     @Override
     public boolean listenersRunning() {
-        return running;
+        return !running.isEmpty();
     }
+
+    @Override public void stop(java.util.UUID engineId) { if (!messaging.shared()) running.remove(engineId); }
+    @Override public boolean listenersRunning(java.util.UUID engineId) { return messaging.shared() ? !running.isEmpty() : running.contains(engineId); }
 
     @Override
     public BackendReadiness readiness(DispatcherTopics topics) {

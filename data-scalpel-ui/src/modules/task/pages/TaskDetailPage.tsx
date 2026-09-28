@@ -374,6 +374,7 @@ export const TaskDetailPage = () => {
           name: values.name,
           directoryId: values.directoryId,
           description: values.description,
+          executionResources: values.executionResources,
           computeEngineId: task.type !== 'LOCAL_SQL' && task.type !== 'WORKFLOW'
             ? values.computeEngineId
             : undefined,
@@ -480,7 +481,7 @@ export const TaskDetailPage = () => {
     },
   ];
   const tabItems = task.type === 'WORKFLOW' ? standardTabItems.filter(item => item.key !== 'models' && item.key !== 'lineage') : task.type === 'SPARK_MODEL_QUALITY' ? [
-    standardTabItems[0],
+    ...standardTabItems.filter((item) => item.key === 'basic' || item.key === 'metrics'),
     {
       key: 'quality',
       label: '质检定义',

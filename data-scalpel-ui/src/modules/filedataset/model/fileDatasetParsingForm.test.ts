@@ -29,15 +29,18 @@ describe('file dataset parsing form model', () => {
 
   it('round-trips the optional SHP charset override and required fallback', () => {
     const options = buildFileDatasetParsingOptions('SHP', {
+      zipEntryCharset: 'GB18030',
       dbfCharsetOverride: 'UTF-8',
       dbfFallbackCharset: 'GB18030',
     });
     expect(options).toEqual({
       kind: 'SHP',
+      zipEntryCharset: 'GB18030',
       dbfCharsetOverride: 'UTF-8',
       dbfFallbackCharset: 'GB18030',
     });
     expect(parsingFormValues(options)).toEqual({
+      zipEntryCharset: 'GB18030',
       dbfCharsetOverride: 'UTF-8',
       dbfFallbackCharset: 'GB18030',
     });

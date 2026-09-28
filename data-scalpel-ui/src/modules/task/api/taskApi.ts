@@ -122,6 +122,11 @@ export const compileSparkJarOnlineSource = (
   60_000,
 );
 
+export const checkSparkJarOnlineSource = (id: string, sourceCode: string): Promise<SparkJarOnlineCompilation> => (
+  requestJson<SparkJarOnlineCompilation>(`${TASK_PATH}/${id}/spark-jar-online-source/actions/check`,
+    { method: 'POST', body: JSON.stringify({ sourceCode }) }, 60_000)
+);
+
 export const trialRunSparkJarOnlineSource = (
   id: string,
   sourceCode: string,

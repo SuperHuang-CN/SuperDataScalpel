@@ -30,6 +30,31 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
     @Column(name = "backend_type", nullable = false, length = 32)
     private ExecutionBackendType backendType;
 
+    @Column(name = "target_key", length = 63)
+    private String targetKey;
+
+    @Column(name = "target_fingerprint", length = 64)
+    private String targetFingerprint;
+
+    // Null on upgraded rows retains the original Kafka group and its committed offsets.
+    @Column(name = "consumer_group_suffix", length = 80)
+    private String consumerGroupSuffix;
+
+    public String getConsumerGroupSuffix() {
+        return consumerGroupSuffix == null ? dispatcherInstanceId.toString() : consumerGroupSuffix;
+    }
+
+    public void bindTarget(String key, String fingerprint) {
+        if (targetKey != null && (!Objects.equals(targetKey, key) || !Objects.equals(targetFingerprint, fingerprint))) {
+            throw new IllegalStateException("已注册引擎不能更换物理执行目标");
+        }
+        targetKey = key;
+        targetFingerprint = fingerprint;
+    }
+
+    public String getTargetKey() { return targetKey; }
+    public String getTargetFingerprint() { return targetFingerprint; }
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private DispatcherRegistrationState state;
@@ -81,6 +106,7 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
             SparkExecutionResourcePolicy resourcePolicy
     ) {
         DispatcherRegistration registration = new DispatcherRegistration();
+        registration.consumerGroupSuffix = dispatcherInstanceId + "-" + engineId;
         registration.engineId = Objects.requireNonNull(engineId);
         registration.dispatcherInstanceId = Objects.requireNonNull(dispatcherInstanceId);
         registration.apply(backendType, commandTopic, runnerEventTopic,
@@ -162,6 +188,12 @@ public class DispatcherRegistration extends DispatcherBaseEntity {
     public void drain() {
         if (state != DispatcherRegistrationState.ACTIVE) throw new IllegalStateException("只有 ACTIVE Dispatcher 可以 Drain");
         state = DispatcherRegistrationState.DRAINING;
+    }
+
+    public void resume() {
+        if (state != DispatcherRegistrationState.DRAINING) throw new IllegalStateException("只有暂停调度的引擎可以恢复");
+        state = DispatcherRegistrationState.ACTIVE;
+        lastError = null;
     }
 
     public void beginForcedDeactivation() {

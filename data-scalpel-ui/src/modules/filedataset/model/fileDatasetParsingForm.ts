@@ -12,6 +12,7 @@ export interface ParsingFormValues {
   dataStartRowIndex?: number;
   dbfCharsetOverride?: string;
   dbfFallbackCharset?: string;
+  zipEntryCharset?: string;
   epsgCode?: number;
 }
 
@@ -40,6 +41,7 @@ export const parsingFormValues = (options: FileDatasetParsingOptions): ParsingFo
     case 'AVRO': return {};
     case 'GDB': return { epsgCode: options.epsgCode };
     case 'SHP': return {
+      zipEntryCharset: options.zipEntryCharset ?? 'UTF-8',
       dbfCharsetOverride: options.dbfCharsetOverride,
       dbfFallbackCharset: options.dbfFallbackCharset,
       epsgCode: options.epsgCode,
@@ -79,6 +81,7 @@ export const buildFileDatasetParsingOptions = (
     case 'GDB': return { kind: 'GDB', epsgCode: values.epsgCode };
     case 'SHP': return {
       kind: 'SHP',
+      zipEntryCharset: values.zipEntryCharset ?? 'UTF-8',
       dbfCharsetOverride: values.dbfCharsetOverride || undefined,
       dbfFallbackCharset: values.dbfFallbackCharset as string,
       epsgCode: values.epsgCode,

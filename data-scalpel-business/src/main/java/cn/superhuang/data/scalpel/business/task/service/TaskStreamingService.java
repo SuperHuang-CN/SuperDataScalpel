@@ -334,7 +334,8 @@ public class TaskStreamingService {
             UUID taskId,
             String sourceSha256,
             byte[] userJar,
-            String jarSha256
+            String jarSha256,
+            String jobClass
     ) {
         if (sourceSha256 == null || sourceSha256.isBlank() || userJar == null || userJar.length == 0
                 || !Objects.equals(jarSha256, sha256(userJar))) {
@@ -386,7 +387,7 @@ public class TaskStreamingService {
                     "streaming-jar-trials/%s/%s".formatted(taskId, runId), generation));
         }));
         SparkJarTaskRunPreparationService.StreamingPreparation preparation =
-                sparkJarPreparationService.prepareStreaming(definition, deployment);
+                sparkJarPreparationService.prepareStreaming(definition, deployment, jobClass);
         String base = "task-runs/%s/attempts/1/".formatted(runId);
         String manifestKey = base + "manifest.json";
         String runJarKey = base + "user-job.jar";
@@ -419,8 +420,8 @@ public class TaskStreamingService {
                 "executionMode", "TRIAL",
                 "jarFileName", fileName,
                 "jarSha256", jarSha256,
-                "jobClass", definition.getJobClass(),
-                "jobApiVersion", definition.getJobApiVersion(),
+                "jobClass", jobClass,
+                "jobApiVersion", 1,
                 "checkpointMode", "FRESH",
                 "executionResources", resources));
         try {
@@ -852,11 +853,13 @@ public class TaskStreamingService {
         computeEngineExecutionService.assertUnchanged(route);
         preparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
         preparationService.assertModelsUnchanged(preparation.modelVersions());
+        var executionResources = computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
         String snapshot = objectMapper.writeValueAsString(Map.of(
                 "manifestVersion", CanvasTaskRunManifest.CURRENT_MANIFEST_VERSION,
                 "deploymentId", deploymentId.toString(),
                 "manifestKey", manifestKey,
-                "manifestSha256", manifestSha256
+                "manifestSha256", manifestSha256,
+                "executionResources", executionResources
         ));
         TaskRun run = TaskRun.queueDispatchedStreaming(
                 runId, taskId, deploymentId, source.definitionVersion(), snapshot,

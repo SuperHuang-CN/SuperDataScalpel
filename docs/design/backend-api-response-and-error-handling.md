@@ -124,6 +124,8 @@ Admin 引擎/注册记录不存在返回 `404 RESOURCE_NOT_FOUND`；对 GeoServe
 
 ## MCP 协议边界
 
+计算引擎停用遇到 Dispatcher 的 409（仍有排队/活动执行、待清理资源或注册状态冲突）时，Admin 保留 409 `BUSINESS_CONFLICT`，使用本地安全说明，不回显远端响应正文，也不因这一业务拒绝把健康状态改为 DOWN。通信或其他上游故障仍按原有上游失败处理。
+
 MCP 管理接口继续使用上述 ProblemDetail 契约。公开 `POST /mcp/{serverCode}` 内的 JSON-RPC 错误遵循 MCP：非法 JSON 为 `-32700`，非法消息为 `-32600`，未知方法为 `-32601`，非法协议参数为 `-32602`；有效 Tool 调用的输入校验失败、脚本异常、超时、输出不符合 Schema 或超限，通过 `CallToolResult.isError=true` 返回安全说明。通知返回 202 空响应，不执行无 ID 的 Tool 调用。
 
 认证失败、Server 未授权、已授权但 Server 未发布启用、HTTP 请求超限、不支持的协议版本头及执行队列饱和属于 HTTP 边界，分别使用公共 401、403、409、413、400、429 ProblemDetail，不得将 429 改写成 HTTP 200 的参数错误。调用审计只记录稳定分类，如 `INPUT_INVALID`、`SCRIPT_FAILED`、`OUTPUT_SCHEMA_MISMATCH`、`EXECUTION_TIMEOUT`、`OUTPUT_TOO_LARGE` 和 `HTTP_429`，不记录脚本异常原文或校验器实例值。审计写入失败输出不含请求正文和数据库绑定值的告警。

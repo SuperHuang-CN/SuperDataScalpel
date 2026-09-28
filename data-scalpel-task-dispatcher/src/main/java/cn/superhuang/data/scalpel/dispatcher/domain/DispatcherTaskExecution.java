@@ -61,6 +61,24 @@ public class DispatcherTaskExecution extends DispatcherBaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(name = "backend_type", nullable = false, length = 32, updatable = false)
     private ExecutionBackendType backendType;
+
+    @Column(name = "target_key", length = 63)
+    private String targetKey;
+
+    @Column(name = "target_fingerprint", length = 64)
+    private String targetFingerprint;
+
+    public void bindTarget(String key, String fingerprint) {
+        if (targetKey != null && (!java.util.Objects.equals(targetKey, key)
+                || !java.util.Objects.equals(targetFingerprint, fingerprint))) {
+            throw new IllegalStateException("执行目标快照不可替换");
+        }
+        targetKey = key;
+        targetFingerprint = fingerprint;
+    }
+
+    public String getTargetKey() { return targetKey; }
+    public String getTargetFingerprint() { return targetFingerprint; }
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 32)
     private DispatcherExecutionState state;

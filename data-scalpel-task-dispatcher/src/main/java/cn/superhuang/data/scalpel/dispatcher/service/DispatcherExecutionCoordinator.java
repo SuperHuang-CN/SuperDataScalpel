@@ -7,6 +7,7 @@ import cn.superhuang.data.scalpel.dispatcher.backend.ExecutionIdentity;
 import cn.superhuang.data.scalpel.dispatcher.backend.ExecutionLaunch;
 import cn.superhuang.data.scalpel.dispatcher.backend.ExternalExecutionHandle;
 import cn.superhuang.data.scalpel.dispatcher.backend.TaskExecutionBackend;
+import cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry;
 import cn.superhuang.data.scalpel.dispatcher.config.DispatcherProperties;
 import cn.superhuang.data.scalpel.dispatcher.config.DispatcherArtifactProperties;
 import cn.superhuang.data.scalpel.dispatcher.artifact.DispatcherResultResolution;
@@ -40,7 +41,7 @@ public class DispatcherExecutionCoordinator {
             DispatcherExecutionState.STOPPED, DispatcherExecutionState.LOST
     );
 
-    private final TaskExecutionBackend backend;
+    private final DispatcherBackendRegistry backends;
     private final DispatcherExecutionStateService stateService;
     private final DispatcherTaskExecutionRepository executionRepository;
     private final DispatcherProperties properties;
@@ -51,7 +52,7 @@ public class DispatcherExecutionCoordinator {
     private static final int MAINTENANCE_BATCH_SIZE = 50;
 
     public DispatcherExecutionCoordinator(
-            TaskExecutionBackend backend,
+            DispatcherBackendRegistry backends,
             DispatcherExecutionStateService stateService,
             DispatcherTaskExecutionRepository executionRepository,
             DispatcherProperties properties,
@@ -59,7 +60,7 @@ public class DispatcherExecutionCoordinator {
             DispatcherResultService resultService,
             DispatcherArtifactService artifactService
     ) {
-        this.backend = backend;
+        this.backends = backends;
         this.stateService = stateService;
         this.executionRepository = executionRepository;
         this.properties = properties;
@@ -68,13 +69,18 @@ public class DispatcherExecutionCoordinator {
         this.artifactService = artifactService;
     }
 
-    @Scheduled(scheduler = "dispatcherAdmissionScheduler", fixedDelayString = "${data-scalpel.dispatcher.admission-poll-interval:500ms}")
     public void admit() {
-        Optional<ExecutionLaunch> launch = stateService.claimNext();
+        admit(null);
+    }
+
+    public void admit(UUID engineId) {
+        Optional<ExecutionLaunch> launch = engineId == null ? stateService.claimNext() : stateService.claimNext(engineId);
         if (launch.isEmpty()) return;
         UUID executionId = launch.get().identity().executionId();
         submitting.add(executionId);
         try {
+            var execution = executionRepository.findByExecutionId(executionId).orElseThrow();
+            TaskExecutionBackend backend = backends.forExecution(execution);
             stateService.submitted(executionId, backend.submit(launch.get()));
         } catch (BackendException exception) {
             if ("BACKEND_SUBMISSION_UNCERTAIN".equals(exception.code())) return;
@@ -88,10 +94,14 @@ public class DispatcherExecutionCoordinator {
         }
     }
 
-    @Scheduled(scheduler = "dispatcherObservationScheduler", fixedDelayString = "${data-scalpel.dispatcher.observation-poll-interval:5s}")
     public void observe() {
-        for (DispatcherTaskExecution execution : executionRepository.findDueObservations(
-                OBSERVED, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE))) {
+        observe((UUID) null);
+    }
+
+    public void observe(UUID engineId) {
+        var due = engineId == null ? executionRepository.findDueObservations(OBSERVED, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE))
+                : executionRepository.findDueObservations(engineId, OBSERVED, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE));
+        for (DispatcherTaskExecution execution : due) {
             try {
                 observe(execution);
             } finally {
@@ -101,10 +111,14 @@ public class DispatcherExecutionCoordinator {
         }
     }
 
-    @Scheduled(scheduler = "dispatcherCleanupScheduler", fixedDelayString = "${data-scalpel.dispatcher.observation-poll-interval:5s}")
     public void cleanup() {
-        for (DispatcherTaskExecution execution : executionRepository.findDueCleanup(
-                TERMINAL, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE))) {
+        cleanup(null);
+    }
+
+    public void cleanup(UUID engineId) {
+        var due = engineId == null ? executionRepository.findDueCleanup(TERMINAL, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE))
+                : executionRepository.findDueCleanup(engineId, TERMINAL, Instant.now(), PageRequest.of(0, MAINTENANCE_BATCH_SIZE));
+        for (DispatcherTaskExecution execution : due) {
             try {
                 finalizeExternalExecution(execution);
             } finally {
@@ -117,6 +131,7 @@ public class DispatcherExecutionCoordinator {
     private void finalizeExternalExecution(DispatcherTaskExecution execution) {
         if (execution.isExternalCleanupCompleted() || submitting.contains(execution.getExecutionId())) return;
         try {
+            TaskExecutionBackend backend = backends.forExecution(execution);
             ExternalExecutionHandle handle;
             if (execution.getExternalExecutionId() == null) {
                 if (execution.getSubmissionStartedAt() == null
@@ -179,6 +194,7 @@ public class DispatcherExecutionCoordinator {
         if (execution.getExternalExecutionId() == null) return;
         ExternalExecutionHandle handle = handle(execution);
         try {
+            TaskExecutionBackend backend = backends.forExecution(execution);
             if (execution.getState() == DispatcherExecutionState.CANCEL_REQUESTED || execution.isCancelRequested()) {
                 if (execution.isForceTerminateRequested()) {
                     if (!execution.getForceTerminateRequestedAt()
@@ -226,6 +242,7 @@ public class DispatcherExecutionCoordinator {
             DispatcherTaskExecution execution,
             ExternalExecutionHandle handle
     ) throws BackendException {
+        TaskExecutionBackend backend = backends.forExecution(execution);
         try {
             BackendStatus before = backend.inspect(handle, identity(execution));
             if (before.state() == BackendExecutionState.SUCCEEDED
@@ -258,6 +275,7 @@ public class DispatcherExecutionCoordinator {
 
     private void cancelAndConfirm(DispatcherTaskExecution execution, ExternalExecutionHandle handle)
             throws BackendException {
+        TaskExecutionBackend backend = backends.forExecution(execution);
         ExecutionIdentity identity = identity(execution);
         BackendStatus before = backend.inspect(handle, identity);
         if (before.state() == BackendExecutionState.SUCCEEDED || before.state() == BackendExecutionState.FAILED) {
@@ -305,6 +323,7 @@ public class DispatcherExecutionCoordinator {
             BackendStatus status
     ) throws BackendException {
         if (execution.isLogArtifactStored() || status.state() == BackendExecutionState.UNKNOWN) return;
+        TaskExecutionBackend backend = backends.forExecution(execution);
         var log = backend.collectLog(handle);
         artifactService.store(execution.getLogKey(), log.content(), "text/plain; charset=utf-8");
         stateService.logArtifactStored(execution.getExecutionId());
@@ -315,6 +334,7 @@ public class DispatcherExecutionCoordinator {
         if (execution.getSubmissionStartedAt() == null
                 || execution.getSubmissionStartedAt().plus(properties.submissionUncertainGrace()).isAfter(Instant.now())) return;
         try {
+            TaskExecutionBackend backend = backends.forExecution(execution);
             Optional<ExternalExecutionHandle> recovered = backend.recover(identity(execution));
             if (recovered.isPresent()) stateService.recovered(execution.getExecutionId(), recovered.get());
             else {
@@ -338,7 +358,7 @@ public class DispatcherExecutionCoordinator {
     }
 
     private ExternalExecutionHandle handle(DispatcherTaskExecution execution) {
-        return new ExternalExecutionHandle(backend.type(), execution.getExternalExecutionId(), execution.getTrackingUrl());
+        return new ExternalExecutionHandle(execution.getBackendType(), execution.getExternalExecutionId(), execution.getTrackingUrl());
     }
 
     private static ExecutionIdentity identity(DispatcherTaskExecution execution) {

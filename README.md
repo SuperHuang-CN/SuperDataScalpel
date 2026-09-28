@@ -195,7 +195,11 @@ pnpm check
 
 `--prepare` 不代表应用已启动或功能验证通过。是否执行测试遵循 [根开发约定](AGENTS.md#测试与验证暂时禁用)，Maven 隔离自动化测试仍使用各模块 `application-test.yml`。
 
+Dispatcher / Docker 已部署在远端时，使用 `./start-local-dev.sh --remote-execution`，仅启动本地 Admin、Task Engine 和前端（默认端口分别为 `8080`、`8091`、`8887`）。该模式不启动本地 Dispatcher / Service Engine，不要求本机安装 Docker，也不替换现有数据库、Kafka、对象存储配置；运行任务仍使用已配置的远端计算引擎。沿用根目录 `config/application-local.yml`，并设置与 Admin 一致的 `DATASCALPEL_TASK_ENGINE_TOKEN`。Java 语义补全的离线运行包及环境变量见 [Task Engine 语言服务部署说明](data-scalpel-task-engine/src/main/distribution/JAVA-LANGUAGE.md)。
+
 本地脚本中的 Dispatcher 数据库连接与 Admin 解耦：默认复用 Admin JDBC URL 的 PostgreSQL 主机和查询参数，但数据库名固定为 `datascalpel`，Schema 默认使用 `dispatcher`。需要配置时使用独立的 `DATASCALPEL_TASK_DISPATCHER_DB_URL` 与 `DATASCALPEL_TASK_DISPATCHER_DB_SCHEMA`，不能通过 `DATASCALPEL_DB_URL` 间接改变 Dispatcher 数据库。
+
+当 Admin / Task Engine 已在 IDEA 运行，仅需恢复前端时：`./start-local-dev.sh --remote-execution --frontend-only`。此模式先检查现有 Admin 健康状态，仅启动前端 8887，不编译或重启 Java 服务、不修改引擎登记；端口被占用会明确失败，不自动改用其他端口。不能与 `--prepare` 同时使用。
 
 ### Admin 独立部署
 
@@ -264,12 +268,13 @@ export DATASCALPEL_TASK_ENGINE_TOKEN="<task-engine-token>"
 ./data-scalpel-task-engine/target/data-scalpel-task-engine-0.1.0-SNAPSHOT-distribution/data-scalpel-task-engine/bin/task-engine
 ```
 
-Task Engine只提供 Canvas预检，不启动或监管真实任务。真实执行由独立 Task Dispatcher负责：
+Task Engine只提供 Canvas预检，不启动或监管真实任务。真实执行由独立 Task Dispatcher负责。Dispatcher 使用两份配置：内置 `application.yml` 保存默认值，`application-instance.yml` 保存本机/部署环境及执行目标；服务器将后者放在工作目录的 `config/` 下即可覆盖。完整参数对照及旧库迁移见[Dispatcher 配置说明](docs/operations/dispatcher-configuration.md)。以下为独立部署示例，本地联调仍使用统一启动脚本：
 
 ```bash
 ./mvnw -pl data-scalpel-task-dispatcher,data-scalpel-task-engine -am package
-export DATASCALPEL_TASK_DISPATCHER_TOKEN="<dispatcher-token>"
-export DATASCALPEL_TASK_DISPATCHER_RUNNER_JAR="$(pwd)/data-scalpel-task-engine/target/data-scalpel-task-engine-0.1.0-SNAPSHOT-runner-local.jar"
+# 在部署工作目录准备 config/application-instance.yml：
+# 配置数据库、Kafka、MinIO、Token、实例 Topic，并显式启用所需 targets。
+# 内置三类目标示例全部禁用，不能只设置 Token 就开始执行。
 java -jar data-scalpel-task-dispatcher/target/data-scalpel-task-dispatcher-0.1.0-SNAPSHOT.jar
 ```
 

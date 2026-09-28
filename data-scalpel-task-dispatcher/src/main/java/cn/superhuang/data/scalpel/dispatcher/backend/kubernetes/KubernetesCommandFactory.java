@@ -42,11 +42,17 @@ public class KubernetesCommandFactory {
                 "--conf", "spark.kubernetes.driverEnv.DATASCALPEL_TASK_LAUNCH_FILE=/opt/datascalpel/runtime/launch.json",
                 "--conf", "spark.kubernetes.driverEnv.DATASCALPEL_TASK_WORK_DIRECTORY=/tmp/datascalpel",
                 "--conf", "spark.kubernetes.submission.waitAppCompletion=false",
+                // This backend uses emptyDir scratch space, not managed PVCs.
+                "--conf", "spark.kubernetes.driver.ownPersistentVolumeClaim=false",
+                "--conf", "spark.kubernetes.driver.reusePersistentVolumeClaim=false",
                 "--conf", "spark.driver.cores=" + resources.driverCores(),
+                "--conf", "spark.kubernetes.driver.request.cores=" + resources.driverCores(),
                 "--conf", "spark.driver.memory=" + resources.driverMemoryMiB() + "m",
                 "--conf", "spark.executor.memory=" + resources.executorMemoryMiB() + "m",
                 "--conf", "spark.executor.cores=" + resources.executorCores(),
+                "--conf", "spark.kubernetes.executor.request.cores=" + resources.executorCores(),
                 "--conf", "spark.executor.instances=" + resources.executorInstances(),
+                "--conf", "spark.dynamicAllocation.enabled=false",
                 "local:///opt/datascalpel/task-runner-cluster.jar"
         ));
         return List.copyOf(command);
@@ -55,7 +61,9 @@ public class KubernetesCommandFactory {
     public List<String> submit(ExecutionIdentity identity, List<SparkConfigurationEntry> sparkConf,
                                SparkExecutionResourceSpec resources) {
         List<String> command = new ArrayList<>(submit(identity, resources));
-        int runnerIndex = command.size() - 1;
+        // User settings precede the fixed backend settings: Spark uses the last
+        // value for duplicate --conf keys. The destination must not be overridden.
+        int runnerIndex = 1;
         String driverJavaOptions = DriverJavaOptions.extract(sparkConf);
         if (driverJavaOptions != null && !driverJavaOptions.isBlank()) {
             command.add(runnerIndex++, "--driver-java-options");
@@ -68,23 +76,12 @@ public class KubernetesCommandFactory {
         return List.copyOf(command);
     }
 
-    public List<String> createSecret(ExecutionIdentity identity, Path launchFile) {
-        return kubectl("create", "secret", "generic", KubernetesNames.secret(identity),
-                "--from-file=launch.json=" + launchFile.toAbsolutePath().normalize());
-    }
-
-    public List<String> labelSecret(ExecutionIdentity identity) {
-        return kubectl("label", "secret", KubernetesNames.secret(identity), "--overwrite",
-                KubernetesNames.MANAGED + "=true",
-                KubernetesNames.ENGINE_ID + "=" + identity.engineId(),
-                KubernetesNames.EXECUTION_ID + "=" + identity.executionId(),
-                KubernetesNames.RUN_ID + "=" + identity.runId(),
-                KubernetesNames.ATTEMPT + "=" + identity.attempt());
+    public List<String> createSecret(Path secretFile) {
+        return kubectl("create", "-f", secretFile.toAbsolutePath().normalize().toString());
     }
 
     public List<String> getSecret(ExecutionIdentity identity) {
-        return kubectl("get", "secret", KubernetesNames.secret(identity),
-                "-l", KubernetesNames.selector(identity), "-o", "name");
+        return kubectl("get", "secret", KubernetesNames.secret(identity), "-o", "json");
     }
 
     public List<String> deleteSecret(ExecutionIdentity identity) {
@@ -131,9 +128,14 @@ public class KubernetesCommandFactory {
 
     public List<String> version() { return List.of(properties.sparkSubmit(), "--version"); }
 
+    public List<String> serverVersion() { return kubectl("get", "--raw=/version"); }
+
     private List<String> kubectl(String... values) {
         List<String> result = new ArrayList<>();
         result.add(properties.kubectl());
+        // Submit, inspect and cleanup must address the same configured API server,
+        // even when the process's default kubeconfig points at another cluster.
+        result.add("--server=" + properties.apiServer());
         result.add("-n");
         result.add(properties.namespace());
         result.addAll(List.of(values));

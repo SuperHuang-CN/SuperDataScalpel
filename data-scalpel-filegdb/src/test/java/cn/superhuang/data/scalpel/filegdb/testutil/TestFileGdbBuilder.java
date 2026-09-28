@@ -378,6 +378,7 @@ public final class TestFileGdbBuilder {
                 }
             }
         }
+        bytes.int32(0xefbeadde);
         return bytes.toByteArray();
     }
 

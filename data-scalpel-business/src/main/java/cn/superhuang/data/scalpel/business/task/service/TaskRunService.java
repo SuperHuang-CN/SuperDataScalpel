@@ -418,8 +418,9 @@ public class TaskRunService {
                 computeEngineExecutionService.assertUnchanged(route);
                 canvasPreparationService.assertDataSourcesUnchanged(preparation.dataSourceVersions());
                 canvasPreparationService.assertModelsUnchanged(preparation.modelVersions());
+                var executionResources = computeEngineExecutionService.resolveResources(route, currentTask.getExecutionResources());
                 TaskRun queued = TaskRun.queueDispatchedCanvasTrial(
-                        runId, taskId, source.definitionVersion(), snapshot, executionId, 1,
+                        runId, taskId, source.definitionVersion(), withResources(snapshot, executionResources), executionId, 1,
                         deadline, route.engineId(), route.commandTopic());
                 queued.captureCanvasTrialContext(source.trialSpec());
                 queued.attachArtifacts(manifestKey, resultKey, logKey);
@@ -428,7 +429,8 @@ public class TaskRunService {
                         1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, Instant.now(),
                         route.engineId(), executionId, runId, 1, taskId, ExecutionTaskType.SPARK_CANVAS,
                         source.definitionVersion(), deadline,
-                        new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey)));
+                        new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey),
+                        List.of(), 0, null, List.of(), executionResources));
                 return saved;
             }));
             return TaskRunResponse.from(run);
@@ -522,7 +524,8 @@ public class TaskRunService {
             UUID taskId,
             String sourceSha256,
             byte[] userJar,
-            String jarSha256
+            String jarSha256,
+            String jobClass
     ) {
         if (sourceSha256 == null || sourceSha256.isBlank() || userJar == null || userJar.length == 0
                 || !Objects.equals(jarSha256, sha256(userJar))) {
@@ -548,7 +551,7 @@ public class TaskRunService {
             return new SparkJarRunSource(definition.getVersion(), task.getComputeEngineId(), definition);
         }));
         ExecutionRoute route = computeEngineExecutionService.requireRunnable(source.computeEngineId());
-        SparkJarTaskRunPreparationService.Preparation preparation = sparkJarPreparationService.prepareTrial(source.definition());
+        SparkJarTaskRunPreparationService.Preparation preparation = sparkJarPreparationService.prepareTrial(source.definition(), jobClass);
         TaskRunArtifactStorage storage = requireArtifactStorage();
         UUID runId = UUID.randomUUID();
         UUID executionId = UUID.randomUUID();
@@ -581,7 +584,7 @@ public class TaskRunService {
         String fileName = "online-trial-" + sourceSha256.substring(0, 12) + ".jar";
         String snapshot = writeSnapshot(new SparkJarRunSnapshotReference(
                 2, executionId, 1, source.definitionVersion(), route.engineId(), fileName,
-                jarSha256, userJar.length, "com.example.datascalpel.ExampleSparkJob", 1,
+                jarSha256, userJar.length, jobClass, 1,
                 preparation.payload().parameters(), preparation.payload().sparkConf(),
                 preparation.payload().resourceBindings(), source.definition().getTimeoutSeconds(), executionResources));
         try {
@@ -922,12 +925,14 @@ public class TaskRunService {
         }
         requireUnchangedDispatchRoute(task, route);
         modelQualityPreparationService.assertUnchanged(preparation);
+        var executionResources = computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
+        String resourceSnapshot = withResources(snapshot, executionResources);
         TaskRun run = trigger.scheduled()
                 ? TaskRun.queueScheduledDispatchedModelQuality(
                 runId, taskId, trigger.scheduleId(), trigger.scheduledFireAt(), source.definitionVersion(),
-                snapshot, executionId, 1, deadline, route.engineId(), route.commandTopic())
+                resourceSnapshot, executionId, 1, deadline, route.engineId(), route.commandTopic())
                 : TaskRun.queueDispatchedModelQuality(
-                runId, taskId, source.definitionVersion(), snapshot, executionId, 1, deadline,
+                runId, taskId, source.definitionVersion(), resourceSnapshot, executionId, 1, deadline,
                 route.engineId(), route.commandTopic());
         run.captureModelQualityContext(source.modelId(), preparation.ruleSnapshotAt());
         run.attachArtifacts(manifestKey, resultKey, logKey);
@@ -941,7 +946,7 @@ public class TaskRunService {
                         .filter(rule -> rule.type() != cn.superhuang.data.scalpel.contract.quality.ModelQualityRuleType.ROW_COUNT
                                 && rule.type() != cn.superhuang.data.scalpel.contract.quality.ModelQualityRuleType.FRESHNESS)
                         .map(cn.superhuang.data.scalpel.contract.quality.ModelQualityExecutionPayload.QualityRuleSnapshot::id)
-                        .toList(), preparation.payload().failureSampleLimit()));
+                        .toList(), preparation.payload().failureSampleLimit(), null, List.of(), executionResources));
     }
 
     private TaskRunResponse submitCanvas(UUID taskId, TaskRunTrigger trigger) {
@@ -1071,21 +1076,30 @@ public class TaskRunService {
         requireUnchangedDispatchRoute(task, route);
         canvasPreparationService.assertDataSourcesUnchanged(dataSourceVersions);
         canvasPreparationService.assertModelsUnchanged(modelVersions);
+        var executionResources = computeEngineExecutionService.resolveResources(route, task.getExecutionResources());
+        String resourceSnapshot = withResources(snapshot, executionResources);
         TaskRun run = trigger.scheduled()
                 ? TaskRun.queueScheduledDispatchedCanvas(
                         runId, taskId, trigger.scheduleId(), trigger.scheduledFireAt(),
-                        expectedDefinitionVersion, snapshot, executionId, 1, deadline,
+                        expectedDefinitionVersion, resourceSnapshot, executionId, 1, deadline,
                         route.engineId(), route.commandTopic())
                 : TaskRun.queueDispatchedCanvas(
-                        runId, taskId, expectedDefinitionVersion, snapshot, executionId, 1, deadline,
+                        runId, taskId, expectedDefinitionVersion, resourceSnapshot, executionId, 1, deadline,
                         route.engineId(), route.commandTopic());
         run.attachArtifacts(manifestKey, resultKey, logKey);
         return commitDispatch(run, trigger, route, new SubmitExecutionCommand(
                 1, UUID.randomUUID(), ExecutionMessageType.SUBMIT_EXECUTION, Instant.now(),
                 route.engineId(), executionId, runId, 1, taskId, ExecutionTaskType.SPARK_CANVAS,
                 expectedDefinitionVersion, deadline,
-                new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey)
+                new ExecutionArtifactLocation(manifestKey, manifestSha256, resultKey, logKey),
+                List.of(), 0, null, List.of(), executionResources
         ));
+    }
+
+    private String withResources(String snapshot, SparkExecutionResourceSpec resources) {
+        var value = (tools.jackson.databind.node.ObjectNode) objectMapper.readTree(snapshot);
+        value.set("executionResources", objectMapper.valueToTree(resources));
+        return writeSnapshot(value);
     }
 
     private RunPreparation readPreparation(UUID taskId) {

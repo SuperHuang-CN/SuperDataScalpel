@@ -84,23 +84,42 @@ source_key`。队列状态为 `QUEUED/RUNNING/SUCCEEDED/FAILED/CANCELLED`，并�
 
 ## 3. 校验与提交
 
-初始来源完整扫描并建立字段、总行数、最多 1000 条预览样本和来源元数据。CSV、TSV、TXT、
+初始来源按格式校验并建立字段、解析器报告的行数、最多 1000 条预览样本和来源元数据。CSV、TSV、TXT、
 JSON、JSONL、GeoJSON 和 GEOJSONL 必须逐条解码；Parquet 和 Avro 校验内置 Schema；GeoParquet 与 GPKG 还会完整扫描
 WKB Geometry 和 GeoParquet Footer；SHP 还比较 Shape 类型、Z/M
 维度、Geometry 字段和规范化 PRJ WKT。GeoJSON 固定为 RFC 7946 `FeatureCollection`：`properties`
 构成属性字段，顶层 `Feature.id` 保存为可空 `_feature_id`，`geometry` 保存为 EPSG + XY 的 Geometry；
 数据集解析参数指定 EPSG（默认 `4326`），不会根据旧式 `crs` 成员或坐标值推测、转换坐标。
+GDB 按 `.gdbtablx` 中非空索引槽统计图层总记录数，不读取全部记录内容；字段和预览只解码有界样本。
+因此 GDB 总数反映索引中的非空记录槽，但上传解析不对样本之外的每条记录做内容校验。
+
+Excel（XLS/XLSX）在现有工作表事件流遍历中独立累计完整有效数据行数，不增加第二遍扫描；
+表头、数据起始行之前的内容和全空行不计数，行号间隙也不计数。只保留最多 1000 条预览样本，
+总数不受样本上限影响；字段类型推断仍沿用现有抽样逻辑。本修复不自动回填历史 Excel 来源
+保存的样本计数，更新程序后需重新上传，或按整文件替换流程重建统计；替换的破坏性语义不变。
 
 后续来源固定比较字段数量、名称、顺序、完整 `PlatformTypeDefinition` 和 nullable。任一不一致
 都使 Job 失败并清理临时数据，不修改当前来源。
 
-异步提交只依赖 Job ID 防止旧结果覆盖当前状态：
+异步提交同时校验当前 Job ID、未过期租约及 leaseOwner，防止旧结果覆盖当前状态：
 
 - 表结果必须满足 `table.currentLoadJobId == job.id`；
 - 文件准备结果必须满足 `file.currentPreparationJobId == job.id`。
 
-Worker 在事务外读取和校验，在短事务内锁定 Job、文件和表并提交。过期结果不会修改当前数据；
-其临时对象按无引用规则清理。
+Worker 在事务外读取和校验，在短事务内提交。业务变更和 Worker 的成功/失败提交先锁定数据集，
+再操作 Job、文件和表；领取与过期恢复使用 PostgreSQL 联表 `FOR UPDATE OF dataset, job SKIP LOCKED`，
+同时取得数据集和 Job 的锁，遇到正在变更的数据集跳过，不在持有 Job 锁时阻塞等待数据集。
+领取后在持有数据集锁的情况下再次检查同一来源是否有 RUNNING Job，避免候选查询的旧语句快照
+造成同文件多图层同时领取。心跳仅更新 Job，不反向申请数据集锁；解析、解压和对象存储读写
+不因上述互斥而进入数据库事务。该规则防止删除持有文件/表锁、Worker 持有 Job/表锁时循环等待。
+同数据集仅串行化短状态事务，不串行化整个解析过程；不同数据集仍可并行。
+过期结果不会修改当前数据；
+其临时对象按无引用规则清理。GDB/SHP 每次领取使用独立的
+`file-datasets/materialized/{fileId}/{jobId}-attempt-{attemptCount}[.gdb]` 前缀，
+attemptCount 在持久化领取时递增。不同尝试与旧版 Job 级前缀互为兄弟目录，不嵌套；
+准备失败、过期结果丢弃及重试开始的清理只作用于本次尝试，不能删除其他尝试已发布的对象。
+已发布文件仍按保存的 materializedPrefix 读取，无需迁移既有来源。被强制终止而无法清理的
+未发布尝试可能留下孤儿目录，由技术人员核对当前引用后处理，不在接管时删除其他尝试目录。
 
 `READY/SCHEMA_READY` 逻辑表可以在模型列表通过“从文件数据集创建”复制 Schema。该操作只读取
 管理数据库中的当前字段定义并创建独立的 `MANAGED + DRAFT` 模型，不读取或复制文件数据，不保存
@@ -160,6 +179,9 @@ APPEND 不影响已经生成的 Manifest；覆盖、替换和删除会立即删�
 
 空间参考确认只接受 `EPSG` 和正整数 code。管理端会重新读取全部当前来源并在成功后刷新表、Schema、
 预览和 Canvas 元数据；文件 WKT 已明确声明不同 EPSG 时拒绝覆盖。
+字段 Schema 重建在同一提交事务内先删除并 `flush` 旧字段，再插入新字段，避免 Hibernate
+先插入后删除导致 `(tableId, fieldName)` 唯一约束冲突；失败仍整体回滚。此操作不重写来源数据、
+不改变来源行数，也不会把完整总数改成重解析样本数。
 
 ## 7. 破坏性重建
 

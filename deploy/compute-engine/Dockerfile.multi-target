@@ -1,0 +1,12 @@
+# Build context supplies the audited kubectl binary. Pin both input images by digest in deployment.
+ARG DOCKER_CLI_IMAGE=docker:cli
+ARG SPARK_IMAGE=apache/spark:4.1.1-scala2.13-java21-python3-ubuntu
+FROM ${DOCKER_CLI_IMAGE} AS docker-cli
+FROM ${SPARK_IMAGE}
+USER root
+COPY --from=docker-cli /usr/local/bin/docker /usr/local/bin/docker
+COPY --chmod=0755 kubectl /usr/local/bin/kubectl
+WORKDIR /app
+EXPOSE 18092
+# The Dispatcher JAR, target configuration and credentials are mounted, never baked into this image.
+ENTRYPOINT ["java"]

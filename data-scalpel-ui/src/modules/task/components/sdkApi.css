@@ -1,0 +1,56 @@
+.sdk-api-drawer .sdk-api-subtitle { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; }
+.sdk-api-drawer .sdk-api-filters { padding: 16px 20px; border-bottom: 1px solid #e8ecf4; }
+.sdk-api-drawer .sdk-api-feedback { padding: 20px; }
+.sdk-api-drawer .sdk-api-layout { display: grid; grid-template-columns: 156px minmax(0, 1fr); flex: 1; min-height: 0; }
+.sdk-api-drawer .sdk-api-nav, .sdk-api-drawer .sdk-api-content { overflow-y: auto; min-height: 0; overscroll-behavior: contain; }
+.sdk-api-drawer .sdk-api-nav { background: #f7f9fd; border-right: 1px solid #e8ecf4; padding: 12px 8px; }
+.sdk-api-drawer .sdk-api-nav button { display: flex; justify-content: space-between; align-items: center; width: 100%; border: 0; border-radius: 8px; background: transparent; padding: 10px 12px; margin-bottom: 4px; text-align: left; cursor: pointer; color: #465570; font-size: 13px; }
+.sdk-api-drawer .sdk-api-nav button .anticon { font-size: 10px; opacity: 0; }
+.sdk-api-drawer .sdk-api-nav button:hover, .sdk-api-drawer .sdk-api-nav button[aria-current] { background: #eaf0ff; color: #3655bd; }
+.sdk-api-drawer .sdk-api-nav button[aria-current] { font-weight: 600; }
+.sdk-api-drawer .sdk-api-nav button[aria-current] .anticon { opacity: 1; }
+.sdk-api-drawer .sdk-api-nav-heading { padding: 18px 12px 8px; font-size: 11px; color: #6f7c92; }
+.sdk-api-drawer .sdk-api-content { padding: 20px 24px; overflow-wrap: anywhere; }
+.sdk-api-drawer .sdk-api-content h4 { margin: 0 0 8px; color: #253957; font-size: 18px; line-height: 1.6; }
+.sdk-api-drawer .sdk-api-intro { margin: 0 0 20px; color: #6a7890; font-size: 13px; line-height: 1.7; }
+.sdk-api-drawer .sdk-api-capabilities { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.sdk-api-drawer .sdk-api-capability { border: 1px solid #e4e9f3; border-radius: 10px; overflow: hidden; padding: 12px; background: #fff; }
+.sdk-api-drawer .sdk-api-capability-heading { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0 0 10px; background: transparent; border: 0; color: #2d4678; font-size: 14px; font-weight: 600; cursor: pointer; }
+.sdk-api-drawer .sdk-api-capability-heading .anticon { font-size: 12px; color: #7b8db4; }
+.sdk-api-drawer .sdk-api-operations { display: flex; flex-direction: column; }
+.sdk-api-drawer .sdk-api-operations > button { display: grid; grid-template-columns: minmax(0, 1fr) auto 12px; align-items: center; gap: 10px; width: 100%; padding: 12px 8px; text-align: left; color: #35445c; background: transparent; border: 0; border-bottom: 1px solid #edf0f6; cursor: pointer; border-radius: 4px; font-size: 13px; line-height: 1.6; }
+.sdk-api-drawer .sdk-api-operations > button:last-child { border-bottom: 0; }
+.sdk-api-drawer .sdk-api-operations > button:hover, .sdk-api-drawer .sdk-api-related button:hover { background: #f2f5ff; color: #3655bd; }
+.sdk-api-drawer .sdk-api-operations code { font-size: 11px; color: #74829a; }
+.sdk-api-drawer .sdk-api-operations .anticon { font-size: 11px; color: #7b8db4; }
+.sdk-api-drawer .sdk-api-capability .sdk-api-operations > button { grid-template-columns: minmax(0, 1fr) 10px; padding: 8px 0; }
+.sdk-api-drawer .sdk-api-capability .sdk-api-operations code { display: none; }
+.sdk-api-drawer .sdk-api-view-all { padding: 10px 0 0; border: 0; background: transparent; color: #526cc0; cursor: pointer; font-size: 12px; }
+.sdk-api-drawer .sdk-api-type-section { margin-bottom: 20px; }
+.sdk-api-drawer .sdk-api-type-heading { display: flex; flex-direction: column; gap: 4px; padding: 10px 8px; background: #f7f9fd; border-radius: 6px; font-size: 13px; }
+.sdk-api-drawer .sdk-api-type-heading button { align-self: start; border: 0; padding: 0; background: transparent; cursor: pointer; font: 12px Consolas, monospace; color: #526cc0; }
+.sdk-api-drawer .sdk-api-origin { font-size: 12px; color: #6e7d96; }
+.sdk-api-drawer code { font-family: 'DataScalpel JetBrains Mono', Consolas, monospace; }
+.sdk-api-drawer .sdk-api-back { margin: -8px 0 12px -8px; color: #687a9a; }
+.sdk-api-drawer .sdk-api-note { margin: 12px 0; color: #5d6b80; font-size: 13px; line-height: 1.7; }
+.sdk-api-drawer pre { white-space: pre-wrap; overflow-wrap: anywhere; font: 12px/1.8 'DataScalpel JetBrains Mono', Consolas, monospace; margin: 10px 0; color: #314363; }
+.sdk-api-drawer .sdk-api-example { background: #f5f7fd; border: 1px solid #e3e9f5; border-radius: 8px; padding: 14px 16px; margin: 18px 0 22px; }
+.sdk-api-drawer .sdk-api-example > div { display: flex; justify-content: space-between; font-size: 12px; }
+.sdk-api-drawer .sdk-api-example > .ant-typography { display: block; font-size: 12px; line-height: 1.6; }
+.sdk-api-drawer .sdk-api-detail-heading { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin: 18px 0 8px; font-size: 13px; }
+.sdk-api-drawer .sdk-api-detail-heading .ant-select { width: 100%; min-width: 0; }
+.sdk-api-drawer .sdk-api-signature { padding: 10px 12px; background: #f7f9fc; border-radius: 6px; }
+.sdk-api-drawer .sdk-api-parameters { margin: 8px 0; }
+.sdk-api-drawer .sdk-api-parameters > div { display: grid; grid-template-columns: minmax(110px, 28%) 1fr; gap: 16px; padding: 10px 0; border-bottom: 1px solid #edf0f6; font-size: 13px; line-height: 1.7; }
+.sdk-api-drawer small { display: block; color: #7c879e; font-size: 11px; overflow-wrap: anywhere; }
+.sdk-api-drawer dd { margin: 0; color: #536078; }
+.sdk-api-drawer .sdk-api-returns { font-size: 13px; color: #536078; }
+.sdk-api-drawer .sdk-api-related { margin-top: 22px; font-size: 13px; }
+.sdk-api-drawer .sdk-api-related button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 12px; margin-top: 8px; text-align: left; background: #f8faff; border: 1px solid #e7ecf5; border-radius: 8px; color: #40577d; cursor: pointer; font-size: 13px; }
+.sdk-api-drawer button:focus-visible { outline: 2px solid #637bd2; outline-offset: -2px; }
+@media (max-width: 700px) {
+  .sdk-api-drawer .sdk-api-layout { grid-template-columns: 124px minmax(0, 1fr); }
+  .sdk-api-drawer .sdk-api-content { padding: 16px; }
+  .sdk-api-drawer .sdk-api-capabilities { grid-template-columns: minmax(0, 1fr); }
+  .sdk-api-drawer .sdk-api-parameters > div { grid-template-columns: minmax(0, 1fr); gap: 4px; }
+}

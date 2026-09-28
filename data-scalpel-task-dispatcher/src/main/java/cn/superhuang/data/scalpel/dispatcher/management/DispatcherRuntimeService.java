@@ -26,6 +26,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.UUID;
+import cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry;
 
 /** Read-only Dispatcher operational projections for the control plane. */
 @Service
@@ -47,6 +49,7 @@ public class DispatcherRuntimeService {
     private final LocalDockerProperties localDockerProperties;
     private final YarnProperties yarnProperties;
     private final KubernetesProperties kubernetesProperties;
+    private final DispatcherBackendRegistry backends;
 
     public DispatcherRuntimeService(
             DispatcherRegistrationService registrationService,
@@ -55,7 +58,8 @@ public class DispatcherRuntimeService {
             DispatcherProperties dispatcherProperties,
             LocalDockerProperties localDockerProperties,
             YarnProperties yarnProperties,
-            KubernetesProperties kubernetesProperties
+            KubernetesProperties kubernetesProperties,
+            DispatcherBackendRegistry backends
     ) {
         this.registrationService = registrationService;
         this.registrationRepository = registrationRepository;
@@ -64,22 +68,30 @@ public class DispatcherRuntimeService {
         this.localDockerProperties = localDockerProperties;
         this.yarnProperties = yarnProperties;
         this.kubernetesProperties = kubernetesProperties;
+        this.backends = backends;
     }
 
-    @Transactional(readOnly = true)
     public DispatcherRuntimeOverviewResponse overview() {
-        DispatcherInfoResponse info = registrationService.info();
-        DispatcherRegistration registration = registrationRepository.findFirstByOrderByCreatedAtAsc().orElse(null);
+        return overview(null);
+    }
+
+    public DispatcherRuntimeOverviewResponse overview(UUID engineId) {
+        // External readiness probes run outside a management database transaction.
+        DispatcherInfoResponse info = registrationService.info(engineId);
+        DispatcherRegistration registration = engineId == null
+                ? registrationRepository.findFirstByOrderByCreatedAtAsc().orElse(null)
+                : registrationRepository.findByEngineId(engineId).orElseThrow();
+        UUID selected = registration == null ? null : registration.getEngineId();
         DispatcherAdmissionCapacity capacity = registration == null ? null : new DispatcherAdmissionCapacity(
                 registration.getMaxQueuedExecutions(), registration.getMaxConcurrentSubmissions(),
                 registration.getMaxInFlightApplications());
         DispatcherAdmissionUsage usage = new DispatcherAdmissionUsage(
-                executionRepository.countByState(DispatcherExecutionState.QUEUED),
-                executionRepository.countByState(DispatcherExecutionState.SUBMITTING),
-                executionRepository.countByState(DispatcherExecutionState.SUBMITTED),
-                executionRepository.countByState(DispatcherExecutionState.RUNNING),
-                executionRepository.countByState(DispatcherExecutionState.CANCEL_REQUESTED),
-                executionRepository.countByStateIn(ACTIVE_STATES)
+                executionRepository.countByEngineIdAndState(selected, DispatcherExecutionState.QUEUED),
+                executionRepository.countByEngineIdAndState(selected, DispatcherExecutionState.SUBMITTING),
+                executionRepository.countByEngineIdAndState(selected, DispatcherExecutionState.SUBMITTED),
+                executionRepository.countByEngineIdAndState(selected, DispatcherExecutionState.RUNNING),
+                executionRepository.countByEngineIdAndState(selected, DispatcherExecutionState.CANCEL_REQUESTED),
+                executionRepository.countByEngineIdAndStateIn(selected, ACTIVE_STATES)
         );
         List<DispatcherRuntimeDependency> dependencies = info.dependencies().stream()
                 .map(value -> new DispatcherRuntimeDependency(value.name(), value.state(), value.detail()))
@@ -88,7 +100,7 @@ public class DispatcherRuntimeService {
                 registration == null ? null : registration.getEngineId(),
                 info.dispatcherInstanceId(), info.backendType(), info.version(),
                 registration == null ? "UNREGISTERED" : registration.getState().name(),
-                dependencies, capacity, usage, resourceConfiguration(), Instant.now());
+                dependencies, capacity, usage, resourceConfiguration(registration), Instant.now());
     }
 
     @Transactional(readOnly = true)
@@ -97,12 +109,19 @@ public class DispatcherRuntimeService {
             int page,
             int size
     ) {
+        return executions(null, scope, page, size);
+    }
+
+    @Transactional(readOnly = true)
+    public PageResponse<DispatcherExecutionSummaryResponse> executions(UUID engineId,
+            DispatcherExecutionScope scope, int page, int size) {
+        UUID selected = registrationService.current(engineId).engineId();
         Page<DispatcherTaskExecution> executions = switch (scope) {
-            case ACTIVE -> executionRepository.findAllByStateIn(ACTIVE_STATES,
+            case ACTIVE -> executionRepository.findAllByEngineIdAndStateIn(selected, ACTIVE_STATES,
                     PageRequest.of(page, size, Sort.by("queuedAt").ascending().and(Sort.by("executionId").ascending())));
-            case QUEUED -> executionRepository.findAllByState(DispatcherExecutionState.QUEUED,
+            case QUEUED -> executionRepository.findAllByEngineIdAndState(selected, DispatcherExecutionState.QUEUED,
                     PageRequest.of(page, size, Sort.by("queuedAt").ascending().and(Sort.by("executionId").ascending())));
-            case RECENT -> executionRepository.findAllByStateIn(TERMINAL_STATES,
+            case RECENT -> executionRepository.findAllByEngineIdAndStateIn(selected, TERMINAL_STATES,
                     PageRequest.of(page, size, Sort.by("endedAt").descending().and(Sort.by("executionId").descending())));
         };
         long firstPosition = (long) page * size + 1;
@@ -116,23 +135,28 @@ public class DispatcherRuntimeService {
                 executions.getNumber(), executions.getSize());
     }
 
-    private DispatcherResourceConfiguration resourceConfiguration() {
-        ExecutionBackendType backend = dispatcherProperties.backend();
+    private DispatcherResourceConfiguration resourceConfiguration(DispatcherRegistration registration) {
+        var target = backends.require(registration == null ? null : registration.getTargetKey());
+        ExecutionBackendType backend = target.backend().type();
+        var localDockerProperties = target.configuration().localDocker();
+        var yarnProperties = target.configuration().yarn();
+        var kubernetesProperties = target.configuration().kubernetes();
+        var resources = target.configuration().resourcePolicy().defaults();
         return switch (backend) {
             case LOCAL_DOCKER -> new DispatcherResourceConfiguration(
-                    backend, localDockerProperties.image(), localDockerProperties.cpus(), localDockerProperties.memory(),
-                    heapOption(localDockerProperties.runnerJavaOptions()), null, null,
+                    backend, localDockerProperties.image(), Integer.toString(resources.driverCores()), resources.driverMemoryMiB() + "m",
+                    "-Xmx" + (resources.driverMemoryMiB() * 3 / 4) + "m", null, null,
                     null, null, null, null
             );
             case YARN -> new DispatcherResourceConfiguration(
                     backend, null, null, null, null, yarnProperties.queue(), null,
-                    yarnProperties.driverMemory(), yarnProperties.executorMemory(), yarnProperties.executorCores(),
-                    yarnProperties.numExecutors()
+                    resources.driverMemoryMiB() + "m", resources.executorMemoryMiB() + "m", resources.executorCores(),
+                    resources.executorInstances()
             );
             case KUBERNETES -> new DispatcherResourceConfiguration(
                     backend, kubernetesProperties.image(), null, null, null, null, kubernetesProperties.namespace(),
-                    kubernetesProperties.driverMemory(), kubernetesProperties.executorMemory(),
-                    kubernetesProperties.executorCores(), kubernetesProperties.executorInstances()
+                    resources.driverMemoryMiB() + "m", resources.executorMemoryMiB() + "m",
+                    resources.executorCores(), resources.executorInstances()
             );
         };
     }
@@ -148,10 +172,4 @@ public class DispatcherRuntimeService {
         );
     }
 
-    private static String heapOption(String javaOptions) {
-        if (javaOptions == null || javaOptions.isBlank()) return null;
-        return javaOptions.lines().flatMap(line -> java.util.Arrays.stream(line.trim().split("\\s+")))
-                .filter(value -> value.startsWith("-Xmx"))
-                .findFirst().orElse(null);
-    }
 }

@@ -1,8 +1,8 @@
-import { cleanup, render, screen, waitFor } from '@testing-library/react';
+import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '../../../shared/api/http';
-import { defaultSparkExecutionResourcePolicy, type ComputeEngine } from '../model/computeEngine';
+import { computeBackendTypeLabels, defaultSparkExecutionResourcePolicy, type ComputeEngine } from '../model/computeEngine';
 
 const mutations = vi.hoisted(() => ({
   create: vi.fn(),
@@ -50,7 +50,7 @@ const engine = (registrationState: ComputeEngine['registrationState']): ComputeE
   updatedAt: '2026-07-19T00:00:00Z',
 });
 
-const renderDrawer = (value: ComputeEngine, canUpdate = true, canManage = true) => render(
+const renderDrawer = (value: ComputeEngine | null, canUpdate = true, canManage = true) => render(
   <ComputeEngineDrawer
     open
     engine={value}
@@ -78,16 +78,57 @@ describe('ComputeEngineDrawer', () => {
 
   afterEach(() => cleanup());
 
+  it.each(['LOCAL_DOCKER', 'YARN', 'KUBERNETES'] as const)('keeps %s resource policy read-only in the legacy creation drawer', async (backend) => {
+    const user = userEvent.setup();
+    renderDrawer(null);
+    fireEvent.change(await screen.findByLabelText('名称'), { target: { value: 'test-engine' } });
+    fireEvent.change(screen.getByLabelText('Dispatcher 地址'), { target: { value: 'http://127.0.0.1:18092' } });
+    await user.click(screen.getByRole('button', { name: '配置 Token' }));
+    fireEvent.change(await screen.findByLabelText('访问 Token'), { target: { value: 'test-token' } });
+    if (backend !== 'LOCAL_DOCKER') {
+      await user.click(screen.getByRole('combobox', { name: '计算后端' }));
+      await user.click(await screen.findByText(computeBackendTypeLabels[backend], { selector: '.ant-select-item-option-content' }));
+    }
+    if (backend === 'LOCAL_DOCKER') expect(screen.queryByLabelText('执行器数量')).not.toBeInTheDocument();
+    const driverCores = screen.getAllByRole('spinbutton', { name: /驱动 CPU/ })[0]!;
+    expect(driverCores).toBeDisabled();
+    await user.click(screen.getByRole('button', { name: '创建引擎' }));
+
+    const policy = defaultSparkExecutionResourcePolicy(backend);
+    await waitFor(() => expect(mutations.create).toHaveBeenCalledWith(expect.objectContaining({
+      expectedBackendType: backend,
+      resourcePolicy: policy,
+    })));
+  });
+
+  it.each(['LOCAL_DOCKER', 'YARN', 'KUBERNETES'] as const)('preserves saved %s resource fields during ordinary editing', async (backend) => {
+    const user = userEvent.setup();
+    const value = engine('CREATED');
+    value.expectedBackendType = backend;
+    value.resourcePolicy = {
+      defaults: { driverCores: 3, driverMemoryMiB: 6144, executorInstances: 3, executorCores: 2, executorMemoryMiB: 3072 },
+      maximums: { driverCores: 10, driverMemoryMiB: 20480, executorInstances: 12, executorCores: 4, executorMemoryMiB: 8192 },
+    };
+    renderDrawer(value);
+    await user.click(await screen.findByRole('button', { name: '保存修改' }));
+
+    await waitFor(() => expect(mutations.update).toHaveBeenCalledWith({
+      id: value.id,
+      request: expect.objectContaining({ resourcePolicy: value.resourcePolicy }),
+    }));
+  });
+
   it('confirms and reconfigures an active engine instead of using ordinary update', async () => {
     const user = userEvent.setup();
     renderDrawer(engine('ACTIVE'));
 
     await user.click(await screen.findByRole('button', { name: '应用并重新注册' }));
-    expect(await screen.findByText('将暂停“本地 Docker 计算引擎”的新任务准入，安全排空后自动反注册并重新注册。')).toBeInTheDocument();
+    expect(await screen.findByText(/将暂停“本地 Docker 计算引擎”的任务调度，确认无任务和待清理资源后应用配置并重新启用/)).toBeInTheDocument();
     await user.click(screen.getAllByRole('button', { name: '应用并重新注册' }).at(-1)!);
 
     await waitFor(() => expect(mutations.reconfigure).toHaveBeenCalledWith(expect.objectContaining({
       id: '3f1f4e86-f468-4764-b8f7-865b0fbe3e29',
+      request: expect.objectContaining({ resourcePolicy: defaultSparkExecutionResourcePolicy('LOCAL_DOCKER') }),
     })));
     expect(mutations.update).not.toHaveBeenCalled();
   });
@@ -102,10 +143,10 @@ describe('ComputeEngineDrawer', () => {
     renderDrawer(engine('ACTIVE'));
 
     await user.click(await screen.findByRole('button', { name: '应用并重新注册' }));
-    await screen.findByText('将暂停“本地 Docker 计算引擎”的新任务准入，安全排空后自动反注册并重新注册。');
+    await screen.findByText(/将暂停“本地 Docker 计算引擎”的任务调度，确认无任务和待清理资源后应用配置并重新启用/);
     await user.click(screen.getAllByRole('button', { name: '应用并重新注册' }).at(-1)!);
 
-    expect(await screen.findByText('计算引擎正在排空')).toBeInTheDocument();
+    expect(await screen.findByText('任务调度已暂停，配置尚未应用')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '再次应用并重新注册' })).toBeInTheDocument();
     expect(screen.getByLabelText('名称')).toHaveValue('本地 Docker 计算引擎');
   });

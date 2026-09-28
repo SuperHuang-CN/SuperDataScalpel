@@ -54,6 +54,9 @@ export interface ComputeEngine {
   maxInFlightApplications: number;
   resourcePolicy: SparkExecutionResourcePolicy;
   dispatcherInstanceId: string | null;
+  targetDispatcherInstanceId?: string | null;
+  targetKey?: string | null;
+  targetFingerprint?: string | null;
   lastCheckAt: string | null;
   lastError: string | null;
   detachedAt: string | null;
@@ -165,6 +168,57 @@ export interface DispatcherCapabilities {
   restartReconciliation: boolean;
 }
 
+export interface ComputeTargetDiscovery {
+  dispatcherInstanceId: string;
+  controlPlaneVersion: number;
+  messaging?: {
+    commandTopic: string;
+    runnerEventTopic: string;
+    adminEventTopic: string;
+    runnerControlTopic: string;
+  } | null;
+  targets: {
+    target: {
+      targetKey: string;
+      name: string;
+      backendType: ComputeBackendType;
+      targetFingerprint: string;
+      ready: boolean;
+      checking?: boolean;
+      issues: string[];
+      registeredEngineId: string | null;
+      registrationState: string;
+      resourcePolicy?: SparkExecutionResourcePolicy | null;
+      capabilities: DispatcherCapabilities & { streaming: boolean; durableCheckpoint: boolean };
+    };
+    engine: ComputeEngine | null;
+  }[];
+}
+
+export interface DiscoverComputeTargetsRequest {
+  dispatcherBaseUrl: string;
+  accessToken: string;
+}
+
+export interface RegisterComputeTarget {
+  targetKey: string;
+  targetFingerprint: string;
+  name: string;
+  maxQueuedExecutions: number;
+  maxConcurrentSubmissions: number;
+  maxInFlightApplications: number;
+  resourcePolicy: SparkExecutionResourcePolicy;
+}
+
+export interface RegisterComputeTargetsRequest extends DiscoverComputeTargetsRequest {
+  dispatcherInstanceId: string;
+  targets: RegisterComputeTarget[];
+}
+
+export interface RegisterComputeTargetsResult {
+  items: { targetKey: string; success: boolean; engine: ComputeEngine | null; error: string | null }[];
+}
+
 export interface DispatcherDependency {
   name: string;
   state: string;
@@ -219,7 +273,7 @@ export const computeEngineRegistrationStateLabels: Record<ComputeEngineRegistrat
   CREATED: '待注册',
   REGISTERING: '注册中',
   ACTIVE: '已激活',
-  DRAINING: '排空中',
+  DRAINING: '调度已暂停',
   INACTIVE: '已停用',
   DETACHED: '离线解绑',
   ERROR: '异常',

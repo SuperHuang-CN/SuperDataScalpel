@@ -58,6 +58,11 @@
 
     <dependencies>
         <dependency>
+            <groupId>org.java-websocket</groupId>
+            <artifactId>Java-WebSocket</artifactId>
+            <version>1.6.0</version>
+        </dependency>
+        <dependency>
             <groupId>cn.superhuang</groupId>
             <artifactId>data-scalpel-task-sdk</artifactId>
             <version>${project.version}</version>
@@ -497,6 +502,19 @@
                 <artifactId>exec-maven-plugin</artifactId>
                 <version>3.5.0</version>
                 <executions>
+                    <!-- This standalone module does not inherit the root POM's launch execution. -->
+                    <execution>
+                        <id>dev-runtime-classpath</id>
+                        <configuration>
+                            <executable>${datascalpel.classpath.printer}</executable>
+                            <classpathScope>runtime</classpathScope>
+                            <arguments>
+                                <argument>__DATASCALPEL_CLASSPATH__%s=%s__DATASCALPEL_CLASSPATH_END__\n</argument>
+                                <argument>${project.artifactId}</argument>
+                                <classpath/>
+                            </arguments>
+                        </configuration>
+                    </execution>
                     <execution>
                         <id>verify-runner-cluster-artifact</id>
                         <phase>verify</phase>

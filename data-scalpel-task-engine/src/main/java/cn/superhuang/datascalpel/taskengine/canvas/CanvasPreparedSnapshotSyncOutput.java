@@ -22,7 +22,7 @@ public record CanvasPreparedSnapshotSyncOutput(
         CanvasTableSchema targetSchema,
         List<String> keyColumns,
         SnapshotDeletePolicy deletePolicy,
-        Map<String, Integer> geometryLocalSrids
+        Map<String, Integer> geometryWriteSrids
 ) {
     public CanvasPreparedSnapshotSyncOutput {
         Objects.requireNonNull(node, "node");
@@ -33,6 +33,6 @@ public record CanvasPreparedSnapshotSyncOutput(
         Objects.requireNonNull(targetSchema, "targetSchema");
         keyColumns = List.copyOf(keyColumns);
         Objects.requireNonNull(deletePolicy, "deletePolicy");
-        geometryLocalSrids = geometryLocalSrids == null ? Map.of() : Map.copyOf(geometryLocalSrids);
+        geometryWriteSrids = geometryWriteSrids == null ? Map.of() : Map.copyOf(geometryWriteSrids);
     }
 }

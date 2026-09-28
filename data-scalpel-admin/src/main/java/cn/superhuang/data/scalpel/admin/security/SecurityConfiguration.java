@@ -158,6 +158,9 @@ public class SecurityConfiguration {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers(HttpMethod.GET, "/api/v1/asset-portal/**").permitAll()
+                        // Authenticated REST issues a 30-second single-use handshake ticket.
+                        // The WebSocket interceptor consumes it before accepting the connection.
+                        .requestMatchers(HttpMethod.GET, "/api/v1/java-language/connection").permitAll()
                         .requestMatchers(
                                 "/api/v1/auth/login",
                                 "/actuator/health/**",

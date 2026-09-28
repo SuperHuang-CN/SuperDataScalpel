@@ -28,8 +28,10 @@ public class DispatcherKafkaListenerManager implements DispatcherListenerManager
     private final KafkaAdmin kafkaAdmin;
     private final KafkaTemplate<String, String> kafkaTemplate;
     private final boolean ensureTopics;
-    private ConcurrentMessageListenerContainer<String, String> commandContainer;
-    private ConcurrentMessageListenerContainer<String, String> runnerContainer;
+    private final cn.superhuang.data.scalpel.dispatcher.config.DispatcherMessagingProperties messaging;
+    private final cn.superhuang.data.scalpel.dispatcher.management.DispatcherIdentityService identity;
+    private final java.util.Map<java.util.UUID, ConcurrentMessageListenerContainer<String, String>> commands = new java.util.LinkedHashMap<>();
+    private final java.util.Map<java.util.UUID, ConcurrentMessageListenerContainer<String, String>> runners = new java.util.LinkedHashMap<>();
 
     public DispatcherKafkaListenerManager(
             ConcurrentKafkaListenerContainerFactory<String, String> factory,
@@ -38,7 +40,9 @@ public class DispatcherKafkaListenerManager implements DispatcherListenerManager
             cn.superhuang.data.scalpel.dispatcher.repository.DispatcherRegistrationRepository registrationRepository,
             KafkaAdmin kafkaAdmin,
             KafkaTemplate<String, String> kafkaTemplate,
-            @Value("${data-scalpel.dispatcher.ensure-topics:false}") boolean ensureTopics
+            @Value("${data-scalpel.dispatcher.ensure-topics:false}") boolean ensureTopics,
+            cn.superhuang.data.scalpel.dispatcher.config.DispatcherMessagingProperties messaging,
+            cn.superhuang.data.scalpel.dispatcher.management.DispatcherIdentityService identity
     ) {
         this.factory = factory;
         this.commandReceiver = commandReceiver;
@@ -47,44 +51,71 @@ public class DispatcherKafkaListenerManager implements DispatcherListenerManager
         this.kafkaAdmin = kafkaAdmin;
         this.kafkaTemplate = kafkaTemplate;
         this.ensureTopics = ensureTopics;
+        this.messaging = messaging;
+        this.identity = identity;
     }
 
     @Override
     public synchronized void start(DispatcherRegistration registration) {
-        stopAll();
-        String suffix = registration.getDispatcherInstanceId().toString();
-        commandContainer = factory.createContainer(registration.getCommandTopic());
+        if (messaging.shared()) {
+            startShared();
+            return;
+        }
+        stop(registration.getEngineId());
+        String suffix = registration.getConsumerGroupSuffix();
+        var commandContainer = factory.createContainer(registration.getCommandTopic());
         commandContainer.getContainerProperties().setGroupId("datascalpel-dispatcher-command-" + suffix);
-        commandContainer.setupMessageListener((MessageListener<String, String>) commandReceiver::receive);
-        runnerContainer = factory.createContainer(registration.getRunnerEventTopic());
+        commandContainer.setupMessageListener((MessageListener<String, String>) record -> commandReceiver.receive(record, registration.getEngineId()));
+        var runnerContainer = factory.createContainer(registration.getRunnerEventTopic());
         runnerContainer.getContainerProperties().setGroupId("datascalpel-dispatcher-runner-" + suffix);
-        runnerContainer.setupMessageListener((MessageListener<String, String>) runnerReceiver::receive);
+        runnerContainer.setupMessageListener((MessageListener<String, String>) record -> runnerReceiver.receive(record, registration.getEngineId()));
+        commands.put(registration.getEngineId(), commandContainer);
+        runners.put(registration.getEngineId(), runnerContainer);
         commandContainer.start();
         runnerContainer.start();
     }
 
     @Override
     public synchronized void stopCommandListener() {
-        if (commandContainer != null) commandContainer.stop();
-        commandContainer = null;
+        commands.values().forEach(ConcurrentMessageListenerContainer::stop);
+        commands.clear();
     }
 
     @Override
+    @jakarta.annotation.PreDestroy
     public synchronized void stopAll() {
-        if (commandContainer != null) commandContainer.stop();
-        if (runnerContainer != null) runnerContainer.stop();
-        commandContainer = null;
-        runnerContainer = null;
+        commands.values().forEach(ConcurrentMessageListenerContainer::stop);
+        runners.values().forEach(ConcurrentMessageListenerContainer::stop);
+        commands.clear();
+        runners.clear();
     }
 
     @Override
     public synchronized boolean listenersRunning() {
-        return commandContainer != null && commandContainer.isRunning()
-                && runnerContainer != null && runnerContainer.isRunning();
+        return !commands.isEmpty() && commands.keySet().stream().allMatch(this::listenersRunning);
+    }
+
+    @Override
+    public synchronized void stop(java.util.UUID engineId) {
+        // An engine lifecycle transition must never stop the instance-wide consumer.
+        if (messaging.shared()) return;
+        var command = commands.remove(engineId);
+        var runner = runners.remove(engineId);
+        if (command != null) command.stop();
+        if (runner != null) runner.stop();
+    }
+
+    @Override
+    public synchronized boolean listenersRunning(java.util.UUID engineId) {
+        if (messaging.shared()) engineId = identity.instanceId();
+        var command = commands.get(engineId);
+        var runner = runners.get(engineId);
+        return command != null && command.isRunning() && runner != null && runner.isRunning();
     }
 
     @Override
     public BackendReadiness readiness(DispatcherTopics topics) {
+        if (messaging.shared()) topics = messaging.topics();
         try {
             if (topics == null) {
                 String clusterId = kafkaAdmin.clusterId();
@@ -117,11 +148,36 @@ public class DispatcherKafkaListenerManager implements DispatcherListenerManager
 
     @Override
     public void run(ApplicationArguments args) {
-        registrationRepository.findFirstByOrderByCreatedAtAsc().ifPresent(registration -> {
+        if (messaging.shared()) {
+            var incompatible = registrationRepository.findAll().stream().anyMatch(row ->
+                    row.getState() != cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState.INACTIVE
+                    && !messaging.topics().equals(new DispatcherTopics(row.getCommandTopic(), row.getRunnerEventTopic(),
+                            row.getAdminEventTopic(), row.getRunnerControlTopic())));
+            if (incompatible) throw new IllegalStateException("存在旧消息通道注册，请完成维护窗口迁移后再启用实例共享通道");
+            startShared();
+            return;
+        }
+        registrationRepository.findAll().forEach(registration -> {
             if (registration.getState() == cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState.ACTIVE
                     || registration.getState() == cn.superhuang.data.scalpel.dispatcher.domain.DispatcherRegistrationState.DRAINING) {
                 start(registration);
             }
         });
+    }
+
+    private synchronized void startShared() {
+        var id = identity.instanceId();
+        if (listenersRunning(id)) return;
+        stopAll();
+        var command = factory.createContainer(messaging.commandTopic());
+        command.getContainerProperties().setGroupId("datascalpel-dispatcher-command-instance-" + id);
+        command.setupMessageListener((MessageListener<String, String>) record -> commandReceiver.receiveShared(record, registrationRepository));
+        var runner = factory.createContainer(messaging.runnerEventTopic());
+        runner.getContainerProperties().setGroupId("datascalpel-dispatcher-runner-instance-" + id);
+        runner.setupMessageListener((MessageListener<String, String>) record -> runnerReceiver.receiveShared(record, registrationRepository));
+        commands.put(id, command);
+        runners.put(id, runner);
+        command.start();
+        runner.start();
     }
 }

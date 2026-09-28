@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 class KubernetesBackendContractTest {
     private final ExecutionIdentity identity = new ExecutionIdentity(
@@ -28,6 +29,10 @@ class KubernetesBackendContractTest {
                 .isEqualTo("ds-22222222222222222222222222222222-driver");
         assertThat(command).containsSubsequence("--master", "k8s://https://cluster.example", "--deploy-mode", "cluster");
         assertThat(command).contains("spark.kubernetes.driver.pod.name=" + KubernetesNames.driverPod(identity));
+        assertThat(command).contains("spark.driver.cores=1", "spark.driver.memory=2048m",
+                "spark.executor.cores=2", "spark.executor.memory=2048m", "spark.executor.instances=2",
+                "spark.kubernetes.driver.request.cores=1", "spark.kubernetes.executor.request.cores=2",
+                "spark.dynamicAllocation.enabled=false");
         assertThat(command).contains(
                 "spark.kubernetes.driverEnv.DATASCALPEL_TASK_LAUNCH_FILE=/opt/datascalpel/runtime/launch.json");
         assertThat(command).contains(
@@ -66,8 +71,8 @@ class KubernetesBackendContractTest {
     @Test
     void secretCommandUsesFilePathAndNeverEmbedsLaunchBody() {
         List<String> command = new KubernetesCommandFactory(properties())
-                .createSecret(identity, Path.of("/secure/launch.json"));
-        assertThat(command).contains("--from-file=launch.json=/secure/launch.json");
+                .createSecret(Path.of("target/secure/secret.json"));
+        assertThat(command).containsSubsequence("create", "-f", Path.of("target/secure/secret.json").toAbsolutePath().normalize().toString());
         assertThat(String.join(" ", command)).doesNotContain("manifestGetUrl", "password", "presigned");
     }
 
@@ -76,11 +81,46 @@ class KubernetesBackendContractTest {
         KubernetesCommandFactory factory = new KubernetesCommandFactory(properties());
 
         assertThat(factory.namespace())
-                .containsExactly("kubectl", "-n", "datascalpel", "get", "namespace", "datascalpel", "-o", "name");
+                .containsExactly("kubectl", "--server=https://cluster.example", "-n", "datascalpel", "get", "namespace", "datascalpel", "-o", "name");
         assertThat(factory.authCanI("get", "pods/log"))
-                .containsExactly("kubectl", "-n", "datascalpel", "auth", "can-i", "get", "pods/log");
+                .containsExactly("kubectl", "--server=https://cluster.example", "-n", "datascalpel", "auth", "can-i", "get", "pods/log");
         assertThat(factory.authCanI("delete", "configmaps"))
-                .containsExactly("kubectl", "-n", "datascalpel", "auth", "can-i", "delete", "configmaps");
+                .containsExactly("kubectl", "--server=https://cluster.example", "-n", "datascalpel", "auth", "can-i", "delete", "configmaps");
+    }
+
+    @Test
+    void fixedDestinationConfigurationWinsOverAdditionalSparkConf() {
+        var factory = new KubernetesCommandFactory(properties());
+        var command = factory.submit(identity, List.of(
+                new cn.superhuang.data.scalpel.contract.execution.SparkConfigurationEntry(
+                        "spark.kubernetes.namespace", "other-namespace")),
+                cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy
+                        .defaultsFor(cn.superhuang.data.scalpel.contract.execution.ExecutionBackendType.KUBERNETES).defaults());
+        assertThat(command.indexOf("spark.kubernetes.namespace=other-namespace"))
+                .isLessThan(command.indexOf("spark.kubernetes.namespace=datascalpel"));
+        assertThat(command.getLast()).isEqualTo("local:///opt/datascalpel/task-runner-cluster.jar");
+        assertThat(command).contains("spark.kubernetes.driver.ownPersistentVolumeClaim=false",
+                "spark.kubernetes.driver.reusePersistentVolumeClaim=false");
+    }
+
+    @Test
+    void refusesSecretWithDifferentAttemptEvenWhenExecutionIdMatches() throws Exception {
+        var mapper = new ObjectMapper();
+        var root = mapper.createObjectNode();
+        var metadata = root.putObject("metadata");
+        metadata.put("name", KubernetesNames.secret(identity));
+        var labels = metadata.putObject("labels");
+        labels.put(KubernetesNames.MANAGED, "true");
+        labels.put(KubernetesNames.ENGINE_ID, identity.engineId().toString());
+        labels.put(KubernetesNames.EXECUTION_ID, identity.executionId().toString());
+        labels.put(KubernetesNames.RUN_ID, identity.runId().toString());
+        labels.put(KubernetesNames.ATTEMPT, "2");
+        var parser = new KubernetesPodParser(mapper);
+        assertThatThrownBy(() -> parser.requireSecretIdentity(mapper.writeValueAsString(root), identity))
+                .isInstanceOf(cn.superhuang.data.scalpel.dispatcher.backend.BackendException.class)
+                .hasMessageContaining("身份不匹配");
+        labels.put(KubernetesNames.ATTEMPT, "1");
+        parser.requireSecretIdentity(mapper.writeValueAsString(root), identity);
     }
 
     private static KubernetesProperties properties() {

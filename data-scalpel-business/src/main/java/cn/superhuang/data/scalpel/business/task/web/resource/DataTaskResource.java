@@ -200,6 +200,15 @@ public class DataTaskResource {
         return sparkJarTaskDefinitionService.saveOnlineSource(id, request);
     }
 
+    @PostMapping("/{id}/spark-jar-online-source/actions/check")
+    @PreAuthorize("hasAuthority('task.update')")
+    @Operation(summary = "检查 Spark JAR 在线 Java 代码", description = "仅允许 DRAFT 或 DISABLED 的批流 Spark JAR。使用 Task Engine 编译请求中的源码并返回行列诊断，不执行代码、不保存草稿、不写入对象存储、不替换当前 JAR或增加定义版本。source 返回当前已保存源码状态，不是检查请求源码。编译错误返回 HTTP 200、FAILED；编译服务繁忙、不可用或超时返回标准错误。")
+    public SparkJarOnlineCompilationResponse checkSparkJarOnlineSource(
+            @Parameter(description = "任务 UUID。") @PathVariable UUID id,
+            @Valid @RequestBody SaveSparkJarOnlineSourceRequest request) {
+        return sparkJarTaskDefinitionService.checkOnlineSource(id, request);
+    }
+
     @SystemMcpOperation(value = SystemMcpOperation.Effect.EXECUTE, summary = "编译并应用 Spark JAR 在线 Java 源码",
             prerequisites = "任务类型必须是 SPARK_JAR 或 SPARK_STREAMING_JAR，状态必须是 DRAFT 或 DISABLED；请求源码会先保存，编译成功后才替换当前生产 JAR。",
             relatedOperations = {"GET /api/v1/tasks/{id}/spark-jar-online-source", "GET /api/v1/tasks/{id}/spark-jar-definition"})
@@ -237,11 +246,11 @@ public class DataTaskResource {
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询当前 Spark JAR 本地开发包",
-            prerequisites = "任务类型必须是 SPARK_JAR 或 SPARK_STREAMING_JAR，且必须已经保存任务定义。",
+            prerequisites = "任务类型必须是 SPARK_JAR 或 SPARK_STREAMING_JAR；尚未保存定义时返回空开发包状态。",
             relatedOperations = {"GET /api/v1/tasks/{id}/spark-jar-definition", "POST /api/v1/tasks/{id}/spark-jar-development-kit/actions/generate"})
     @GetMapping("/{id}/spark-jar-development-kit")
     @PreAuthorize("hasAuthority('task.update') and hasAuthority('model.view') and hasAuthority('datasource.metadata')")
-    @Operation(summary = "查询当前 Spark JAR 本地开发包", description = "读取批处理或流式 Spark JAR 任务当前保存的采样配置、最近一次生成请求，以及最近成功并仍作为当前指针的 ZIP 元数据；不会读取 ZIP 正文。尚未保存 Spark JAR 定义时返回 409。")
+    @Operation(summary = "查询当前 Spark JAR 本地开发包", description = "只读查询批处理或流式 Spark JAR 任务当前保存的采样配置、最近一次生成请求，以及最近成功并仍作为当前指针的 ZIP 元数据；不会读取 ZIP 正文或创建任务定义。尚未保存定义时返回 200，definitionVersion 为 0、配置列表为空、generation 和 artifact 为空。任务不存在时返回 404，任务类型不支持时返回 400。")
     public SparkJarDevelopmentKitResponse getSparkJarDevelopmentKit(@Parameter(description = "任务 UUID。") @PathVariable UUID id) {
         return sparkJarDevelopmentKitService.get(id);
     }
@@ -391,7 +400,7 @@ public class DataTaskResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.WRITE, summary = "保存 Spark JAR 任务定义")
     @PostMapping("/{id}/actions/update-spark-jar-definition")
     @PreAuthorize("hasAuthority('task.update')")
-    @Operation(summary = "保存 Spark JAR 任务定义", description = "整体替换 DRAFT 或 DISABLED Spark JAR 任务的普通参数、受控 Spark 配置、资源绑定和运行资源；保留当前 JAR 与在线源码，不发布也不运行。")
+    @Operation(summary = "保存 Spark JAR 任务定义", description = "整体替换 DRAFT 或 DISABLED Spark JAR 任务的普通参数、受控 Spark 配置、资源绑定和运行资源；可同时保存开发方式与本地开发配置，省略这两项时保留原值。开发配置与资源绑定在同一事务内校验保存，不抽取样例、不生成工程。仅开发方式或开发配置变化不增加运行定义版本；保留当前 JAR 与在线源码，不发布也不运行。")
     public SparkJarTaskDefinitionResponse updateSparkJarDefinition(
             @Parameter(description = "任务 UUID。") @PathVariable UUID id,
             @Valid @RequestBody UpdateSparkJarTaskDefinitionRequest request

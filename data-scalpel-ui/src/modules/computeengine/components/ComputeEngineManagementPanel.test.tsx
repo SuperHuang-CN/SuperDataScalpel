@@ -114,8 +114,8 @@ describe('ComputeEngineManagementPanel', () => {
     expect(screen.queryByText('配置版本')).not.toBeInTheDocument();
     await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
 
-    expect(await screen.findByText('安全反注册')).toBeInTheDocument();
-    expect(screen.getByText('强制反注册并取消任务')).toBeInTheDocument();
+    expect(await screen.findByText('停用引擎（需无任务）')).toBeInTheDocument();
+    expect(screen.getByText('取消全部任务并停用')).toBeInTheDocument();
     expect(screen.getByText('离线解除绑定')).toBeInTheDocument();
   });
 
@@ -124,8 +124,8 @@ describe('ComputeEngineManagementPanel', () => {
     renderPanel(engine());
 
     await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
-    await user.click(await screen.findByText('强制反注册并取消任务'));
-    await user.click((await screen.findAllByRole('button', { name: '强制反注册并取消任务' })).at(-1)!);
+    await user.click(await screen.findByText('取消全部任务并停用'));
+    await user.click((await screen.findAllByRole('button', { name: '取消全部任务并停用' })).at(-1)!);
 
     await waitFor(() => expect(hooks.deactivate.mutateAsync).toHaveBeenCalledWith({
       id: '3f1f4e86-f468-4764-b8f7-865b0fbe3e29',
@@ -145,9 +145,31 @@ describe('ComputeEngineManagementPanel', () => {
     await user.click(await screen.findByLabelText('本地 Docker 计算引擎的更多操作'));
 
     expect(await screen.findByText('注册并激活')).toBeInTheDocument();
-    expect(screen.queryByText('安全反注册')).not.toBeInTheDocument();
-    expect(screen.queryByText('强制反注册并取消任务')).not.toBeInTheDocument();
+    expect(screen.queryByText('停用引擎（需无任务）')).not.toBeInTheDocument();
+    expect(screen.queryByText('取消全部任务并停用')).not.toBeInTheDocument();
     expect(screen.queryByText('离线解除绑定')).not.toBeInTheDocument();
+  });
+
+  it('shows all three read-only topics and exposes their copy controls', async () => {
+    const user = userEvent.setup();
+    const value = engine('ACTIVE', 'UP');
+    renderPanel(value);
+    await user.click(screen.getByRole('button', { name: '查看全部 Topic' }));
+    expect(await screen.findByText('Runner 事件 Topic')).toBeInTheDocument();
+    expect(screen.getByText(value.runnerEventTopic)).toBeInTheDocument();
+    expect(screen.getByText(value.adminEventTopic)).toBeInTheDocument();
+    expect(screen.getAllByRole('button', { name: /copy|复制/i })).toHaveLength(3);
+  });
+
+  it('explains paused queues and restores only the selected engine', async () => {
+    const user = userEvent.setup();
+    renderPanel(engine('DRAINING', 'UP'));
+    await user.click(screen.getByLabelText('本地 Docker 计算引擎的更多操作'));
+    expect(screen.queryByText('暂停任务调度')).not.toBeInTheDocument();
+    await user.click(await screen.findByText('恢复任务调度'));
+    expect(await screen.findByText(/继续提交原有排队任务/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '恢复任务调度' }));
+    await waitFor(() => expect(hooks.command.mutateAsync).toHaveBeenCalledWith({ id: engine().id, command: 'resume' }));
   });
 
   it('requires a reason and exact engine name before offline detach', async () => {

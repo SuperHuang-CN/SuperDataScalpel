@@ -64,6 +64,8 @@ class GeoJsonLinesFileDatasetParserTest {
         assertInvalid("{\"type\":\"FeatureCollection\",\"features\":[]}", "必须为 Feature");
         assertInvalid("{\"type\":\"Feature\",\"properties\":{},\"geometry\":null}{\"type\":\"Feature\",\"properties\":{},\"geometry\":null}", "只能包含一个完整");
         assertInvalid("\u001E{\"type\":\"Feature\",\"properties\":{},\"geometry\":null}", "GeoJSON Text Sequence");
+        assertInvalid(" \t\u001E", "GeoJSON Text Sequence");
+        assertInvalid(feature("[116.3,39.9]") + "\n\u001E", "第 2 行");
         assertInvalid("", "不包含任何 Feature");
     }
 

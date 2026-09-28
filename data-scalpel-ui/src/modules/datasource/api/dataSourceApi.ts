@@ -41,8 +41,12 @@ export const fetchDataSourceTypes = (): Promise<DataSourceTypeDefinition[]> => (
   requestJson<DataSourceTypeDefinition[]>('/v1/data-source-types')
 );
 
-export const fetchDataSources = async (request: SearchRequest): Promise<PageResponse<DataSource>> => {
-  const query = toSearchParams(request).toString();
+export type DataSourceSearchRequest = SearchRequest & { hasPublishedModels?: boolean };
+
+export const fetchDataSources = async (request: DataSourceSearchRequest): Promise<PageResponse<DataSource>> => {
+  const params = toSearchParams(request);
+  if (request.hasPublishedModels) params.set('hasPublishedModels', 'true');
+  const query = params.toString();
   const path = query ? `${DATA_SOURCE_PATH}?${query}` : DATA_SOURCE_PATH;
   return requestJson<PageResponse<DataSource>>(path);
 };

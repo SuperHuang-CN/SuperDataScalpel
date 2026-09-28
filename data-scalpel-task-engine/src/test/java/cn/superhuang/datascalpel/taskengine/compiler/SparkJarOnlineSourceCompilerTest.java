@@ -50,4 +50,29 @@ class SparkJarOnlineSourceCompilerTest {
         assertNull(result.jarBytes());
         assertTrue(result.diagnostics().stream().anyMatch(value -> value.severity().name().equals("ERROR")));
     }
+
+    @Test void renamedClassAndPackageBecomeTheActualManifestEntry() throws Exception {
+        String source = VALID_SOURCE.replace("com.example.datascalpel", "org.acme.jobs").replace("ExampleSparkJob", "AssetJob");
+        var result = new SparkJarOnlineSourceCompiler().compile(new SparkJarSourceCompilationRequest(UUID.randomUUID(), source), System.nanoTime());
+        assertTrue(result.successful(), result.diagnostics()::toString);
+        try (var jar = new JarInputStream(new ByteArrayInputStream(result.jarBytes()))) {
+            assertEquals("org.acme.jobs.AssetJob", jar.getManifest().getMainAttributes().getValue("DataScalpel-Job-Class"));
+        }
+    }
+
+    @Test void deletingPackageIsAVisibleCompilerContractError() {
+        var result = new SparkJarOnlineSourceCompiler().compile(new SparkJarSourceCompilationRequest(UUID.randomUUID(),
+                VALID_SOURCE.replace("package com.example.datascalpel;", "")), System.nanoTime());
+        assertFalse(result.successful());
+        assertTrue(result.diagnostics().stream().anyMatch(d -> d.code().equals("ONLINE_MAIN_CLASS_CONTRACT")));
+    }
+
+    @Test void fakeDeclarationsInCommentsDoNotChangeEntry() throws Exception {
+        var result = new SparkJarOnlineSourceCompiler().compile(new SparkJarSourceCompilationRequest(UUID.randomUUID(),
+                "/* package malicious; public class Fake {} */\n" + VALID_SOURCE), System.nanoTime());
+        assertTrue(result.successful());
+        try (var jar = new JarInputStream(new ByteArrayInputStream(result.jarBytes()))) {
+            assertEquals("com.example.datascalpel.ExampleSparkJob", jar.getManifest().getMainAttributes().getValue("DataScalpel-Job-Class"));
+        }
+    }
 }

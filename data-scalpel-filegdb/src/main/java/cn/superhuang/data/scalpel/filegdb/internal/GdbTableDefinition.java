@@ -11,6 +11,7 @@ record GdbTableDefinition(
         int largestRecordBytes,
         int geometryTypeCode,
         int geometryProperties,
+        boolean stringsUtf8,
         FileGdbLayerType layerType,
         List<GdbFieldDefinition> fields,
         FileGdbSpatialReference spatialReference) {

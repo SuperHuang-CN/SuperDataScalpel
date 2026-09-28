@@ -19,6 +19,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.util.unit.DataSize;
 import tools.jackson.databind.ObjectMapper;
 
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.Charset;
@@ -30,6 +31,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
+import java.util.zip.CRC32;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipException;
 import java.util.zip.ZipFile;
@@ -89,12 +91,14 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
         Path archive = null;
         boolean completed = false;
         try (raw) {
+            FileDatasetParsingOptionsResponse.Shp parsingOptions = parsingOptions(input.parsingOptions());
+            Charset zipEntryCharset = Charset.forName(parsingOptions.zipEntryCharset());
             archive = temporaryFileManager.materialize(
                     raw.inputStream(), raw.contentLength() >= 0 ? raw.contentLength() : input.rawSizeBytes()
             );
-            ArchiveManifest archiveManifest = inspect(archive);
-            publishComponents(storage, archive, input.materializedPrefix(), archiveManifest);
-            validate(storage, input.materializedPrefix(), archiveManifest, openOptions(input.parsingOptions()));
+            ArchiveManifest archiveManifest = inspect(archive, zipEntryCharset);
+            publishComponents(storage, archive, input.materializedPrefix(), archiveManifest, zipEntryCharset);
+            validate(storage, input.materializedPrefix(), archiveManifest, openOptions(parsingOptions));
             byte[] manifestBytes = publishManifest(storage, input.materializedPrefix(), archiveManifest);
             completed = true;
             return new FileDatasetPreparationResult(
@@ -108,7 +112,11 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
                     ))
             );
         } catch (ZipException exception) {
-            throw new FileDatasetParsingException("上传内容不是有效的 ZIP 归档", exception);
+            deletePrefixQuietly(storage, input.materializedPrefix(), "SHP ZIP 读取失败后的前缀清理");
+            String message = exception.getMessage() != null && exception.getMessage().contains("bad entry name")
+                    ? "SHP ZIP 内文件名或注释无法按所选编码解码，请检查“SHP ZIP 文件名编码”后重新上传"
+                    : "上传内容不是有效的 ZIP 归档，或其中的组件已损坏";
+            throw new FileDatasetParsingException(message, exception);
         } catch (RuntimeException | IOException exception) {
             deletePrefixQuietly(storage, input.materializedPrefix(), "SHP 准备失败后的前缀清理");
             throw exception;
@@ -125,12 +133,13 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
         deletePrefixQuietly(requireStorage(), materializedPrefix, "丢弃过期 SHP 物化结果");
     }
 
-    private ArchiveManifest inspect(Path archive) throws IOException {
-        try (ZipFile zip = new ZipFile(archive.toFile())) {
+    private ArchiveManifest inspect(Path archive, Charset zipEntryCharset) throws IOException {
+        try (ZipFile zip = new ZipFile(archive.toFile(), zipEntryCharset)) {
             EnumMap<ShapefileComponent, ArchiveComponent> components = new EnumMap<>(ShapefileComponent.class);
             Set<String> normalizedPaths = new HashSet<>();
             List<AuxiliaryEntry> auxiliaryEntries = new ArrayList<>();
             String componentDirectory = null;
+            String firstComponentPath = null;
             String normalizedStem = null;
             String sourceName = null;
             long totalExpanded = 0;
@@ -160,14 +169,19 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
                 String stem = stem(normalized.fileName());
                 if (componentDirectory == null) {
                     componentDirectory = normalized.directory();
+                    firstComponentPath = normalized.path();
                     normalizedStem = stem.toLowerCase(Locale.ROOT);
                     sourceName = stem;
                     if (sourceName.length() > 255) {
                         throw invalid("SHP 文件名主体不能超过 255 个字符");
                     }
-                } else if (!componentDirectory.equals(normalized.directory())
-                        || !normalizedStem.equals(stem.toLowerCase(Locale.ROOT))) {
-                    throw invalid("ZIP 中必须且只能包含一套同名 SHP 组件");
+                } else if (!normalizedStem.equals(stem.toLowerCase(Locale.ROOT))) {
+                    throw invalid("ZIP 中发现不同名称的 SHP 组件（" + firstComponentPath + "、"
+                            + normalized.path()
+                            + "）；请检查是否混入多套数据或组件命名不一致，每个 ZIP 只允许一套同名组件");
+                } else if (!componentDirectory.equals(normalized.directory())) {
+                    throw invalid("SHP 组件不在同一目录（" + firstComponentPath + "、" + normalized.path()
+                            + "）；请将同一套组件放在同一目录后重新打包");
                 }
                 if (components.containsKey(component)) {
                     throw invalid("ZIP 中存在重复的 SHP 组件");
@@ -176,7 +190,7 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
                 long compressedSize = entry.getCompressedSize();
                 validateEntry(entry, size, compressedSize, totalExpanded);
                 totalExpanded = Math.addExact(totalExpanded, size);
-                components.put(component, new ArchiveComponent(entry.getName(), component, size));
+                components.put(component, new ArchiveComponent(entry.getName(), component, size, entry.getCrc()));
             }
             for (ShapefileComponent component : ShapefileComponent.values()) {
                 if (component.required() && !components.containsKey(component)) {
@@ -200,6 +214,9 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
         if (size < 0 || compressedSize < 0) {
             throw invalid("ZIP 条目缺少可验证的大小信息");
         }
+        if (entry.getCrc() < 0) {
+            throw invalid("ZIP 条目缺少可验证的 CRC 信息");
+        }
         if (size > maxEntrySize) {
             throw invalid("ZIP 中单个文件超过允许大小");
         }
@@ -218,9 +235,10 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
             FileObjectStorage storage,
             Path archive,
             String prefix,
-            ArchiveManifest manifest
+            ArchiveManifest manifest,
+            Charset zipEntryCharset
     ) throws IOException {
-        try (ZipFile zip = new ZipFile(archive.toFile())) {
+        try (ZipFile zip = new ZipFile(archive.toFile(), zipEntryCharset)) {
             for (ShapefileComponent kind : ShapefileComponent.values()) {
                 ArchiveComponent component = manifest.components().get(kind);
                 if (component == null) {
@@ -231,13 +249,28 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
                     throw invalid("ZIP 中的 SHP 组件清单在读取时发生变化");
                 }
                 String objectName = FileDatasetShapefileManifest.CANONICAL_STEM + "." + kind.extension();
-                try (InputStream inputStream = zip.getInputStream(entry)) {
-                    storage.store(
-                            prefix + "/" + objectName,
-                            inputStream,
-                            component.sizeBytes(),
-                            "application/octet-stream"
-                    );
+                try (VerifiedEntryInputStream inputStream = new VerifiedEntryInputStream(
+                        zip.getInputStream(entry), component.sizeBytes(), component.crc(), objectName
+                )) {
+                    try {
+                        storage.store(
+                                prefix + "/" + objectName,
+                                inputStream,
+                                component.sizeBytes(),
+                                "application/octet-stream"
+                        );
+                    } catch (RuntimeException exception) {
+                        if (inputStream.readFailure instanceof FileDatasetParsingException parsingException) {
+                            throw parsingException;
+                        }
+                        if (inputStream.readFailure != null) {
+                            throw new FileDatasetParsingException(
+                                    "SHP ZIP 组件解压失败：" + objectName, inputStream.readFailure
+                            );
+                        }
+                        throw exception;
+                    }
+                    inputStream.verifyComplete();
                 }
             }
         }
@@ -287,7 +320,7 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
         return bytes;
     }
 
-    private ShapefileOpenOptions openOptions(String parsingOptions) {
+    private FileDatasetParsingOptionsResponse.Shp parsingOptions(String parsingOptions) {
         FileDatasetParsingOptionsResponse options;
         try {
             options = objectMapper.readValue(parsingOptions, FileDatasetParsingOptionsResponse.class);
@@ -297,6 +330,10 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
         if (!(options instanceof FileDatasetParsingOptionsResponse.Shp shp)) {
             throw new FileDatasetParsingException("SHP 解析参数类型不匹配");
         }
+        return shp;
+    }
+
+    private ShapefileOpenOptions openOptions(FileDatasetParsingOptionsResponse.Shp shp) {
         Charset override = shp.dbfCharsetOverride() == null || shp.dbfCharsetOverride().isBlank()
                 ? null : Charset.forName(shp.dbfCharsetOverride());
         return new ShapefileOpenOptions(
@@ -414,7 +451,72 @@ public class FileShapefileArchivePreparationService implements FileDatasetPrepar
     ) {
     }
 
-    private record ArchiveComponent(String entryName, ShapefileComponent kind, long sizeBytes) {
+    private record ArchiveComponent(String entryName, ShapefileComponent kind, long sizeBytes, long crc) {
+    }
+
+    /** Confirms the bytes sent to object storage match the ZIP central directory before publishing the manifest. */
+    private static final class VerifiedEntryInputStream extends FilterInputStream {
+
+        private final long expectedSize;
+        private final long expectedCrc;
+        private final String name;
+        private final CRC32 crc = new CRC32();
+        private long bytesRead;
+        private Throwable readFailure;
+
+        private VerifiedEntryInputStream(InputStream input, long expectedSize, long expectedCrc, String name) {
+            super(input);
+            this.expectedSize = expectedSize;
+            this.expectedCrc = expectedCrc;
+            this.name = name;
+        }
+
+        @Override
+        public int read() throws IOException {
+            try {
+                int value = in.read();
+                if (value >= 0) {
+                    bytesRead++;
+                    crc.update(value);
+                    checkSize();
+                }
+                return value;
+            } catch (IOException | FileDatasetParsingException exception) {
+                readFailure = exception;
+                throw exception;
+            }
+        }
+
+        @Override
+        public int read(byte[] buffer, int offset, int length) throws IOException {
+            try {
+                int count = in.read(buffer, offset, length);
+                if (count > 0) {
+                    bytesRead += count;
+                    crc.update(buffer, offset, count);
+                    checkSize();
+                }
+                return count;
+            } catch (IOException | FileDatasetParsingException exception) {
+                readFailure = exception;
+                throw exception;
+            }
+        }
+
+        private void checkSize() {
+            if (bytesRead > expectedSize) {
+                throw invalid("SHP ZIP 组件解压大小与目录声明不一致：" + name);
+            }
+        }
+
+        private void verifyComplete() throws IOException {
+            if (in.read() != -1 || bytesRead != expectedSize) {
+                throw invalid("SHP ZIP 组件解压大小与目录声明不一致：" + name);
+            }
+            if (expectedCrc < 0 || crc.getValue() != expectedCrc) {
+                throw invalid("SHP ZIP 组件 CRC 校验失败：" + name);
+            }
+        }
     }
 
     private record AuxiliaryEntry(String directory, String normalizedStem, String fileName) {

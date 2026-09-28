@@ -1,0 +1,98 @@
+# Example namespace: replace every datascalpel-test occurrence before using elsewhere.
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: datascalpel-test
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: spark-runner
+  namespace: datascalpel-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: spark-runner
+  namespace: datascalpel-test
+rules:
+  - apiGroups: [""]
+    resources: [pods, services, configmaps]
+    verbs: [get, list, watch, create, update, patch, delete, deletecollection]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: spark-runner
+  namespace: datascalpel-test
+subjects:
+  - kind: ServiceAccount
+    name: spark-runner
+    namespace: datascalpel-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: spark-runner
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: datascalpel-dispatcher
+  namespace: datascalpel-test
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: datascalpel-dispatcher
+  namespace: datascalpel-test
+rules:
+  - apiGroups: [""]
+    resources: [pods]
+    verbs: [get, list, watch, create, delete]
+  - apiGroups: [""]
+    resources: [pods/log]
+    verbs: [get]
+  - apiGroups: [""]
+    resources: [secrets]
+    verbs: [get, create, delete]
+  # Spark 4.1.1 submission uses server-side apply for these resources.
+  - apiGroups: [""]
+    resources: [services, configmaps]
+    verbs: [get, create, patch, delete]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: datascalpel-dispatcher
+  namespace: datascalpel-test
+subjects:
+  - kind: ServiceAccount
+    name: datascalpel-dispatcher
+    namespace: datascalpel-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: datascalpel-dispatcher
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: datascalpel-test-namespace-reader
+rules:
+  - apiGroups: [""]
+    resources: [namespaces]
+    resourceNames: [datascalpel-test]
+    verbs: [get]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: datascalpel-test-namespace-reader
+subjects:
+  - kind: ServiceAccount
+    name: datascalpel-dispatcher
+    namespace: datascalpel-test
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: datascalpel-test-namespace-reader

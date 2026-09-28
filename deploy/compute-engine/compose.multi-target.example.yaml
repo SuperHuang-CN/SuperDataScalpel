@@ -1,0 +1,15 @@
+# Use the existing Compose project name, not the configuration directory's default name.
+# docker compose -p datascalpel-compute-engine --env-file .env -f compose.yaml -f compose.multi-target.yaml up -d
+services:
+  datascalpel-compute-engine:
+    image: ${MULTI_TARGET_DISPATCHER_IMAGE}
+    environment:
+      # Must be reachable from ALL target Runner networks; not host.docker.internal.
+      DATASCALPEL_FILE_STORAGE_RUNNER_ENDPOINT: ${DATASCALPEL_FILE_STORAGE_RUNNER_ENDPOINT:?Set a shared LAN/DNS MinIO endpoint}
+      DATASCALPEL_TARGET_K8S_MASTER: ${DATASCALPEL_TARGET_K8S_MASTER}
+      DATASCALPEL_TARGET_K8S_NAMESPACE: ${DATASCALPEL_TARGET_K8S_NAMESPACE}
+      DATASCALPEL_TARGET_K8S_RUNNER_IMAGE: ${DATASCALPEL_TARGET_K8S_RUNNER_IMAGE}
+      DATASCALPEL_TARGET_K8S_WORK_DIRECTORY: ${COMPUTE_ENGINE_ROOT}/state/task-executions-k8s
+    volumes:
+      # The base compose mounts ./application-instance.yml; add both targets to that one file.
+      - ${COMPUTE_ENGINE_ROOT}/config/dispatcher.kubeconfig:/config/dispatcher.kubeconfig:ro,z

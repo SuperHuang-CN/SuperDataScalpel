@@ -183,6 +183,7 @@ class GdbGeometryReaderMalformedTest {
                 1_024,
                 geometryType,
                 properties,
+                true,
                 layerType,
                 List.of(),
                 spatialReference);

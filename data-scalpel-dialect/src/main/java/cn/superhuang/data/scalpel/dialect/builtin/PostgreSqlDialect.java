@@ -468,6 +468,22 @@ public class PostgreSqlDialect extends AbstractJdbcDialect implements JdbcIncrem
     }
 
     @Override
+    protected boolean matchesColumnType(TableColumnDefinition expected, ColumnMetadata actual) {
+        PlatformDataType expectedType = switch (expected.type()) {
+            case TIMESTAMP -> PlatformDataType.TIMESTAMP;
+            case TIMESTAMP_NTZ, DATETIME -> PlatformDataType.TIMESTAMP_NTZ;
+            default -> null;
+        };
+        if (expectedType == null) {
+            return super.matchesColumnType(expected, actual);
+        }
+        // PostgreSQL JDBC may report both timestamp families as Types.TIMESTAMP.
+        // Reuse native-type-first mapping to preserve their distinct time-zone semantics.
+        TypeMappingResult<PlatformTypeDefinition> mapping = mapToPlatformType(JdbcTypeDescriptor.from(actual));
+        return mapping.acceptable() && mapping.definition().type() == expectedType;
+    }
+
+    @Override
     protected boolean matchesGeometryColumn(TableColumnDefinition expected, ColumnMetadata actual) {
         return "geometry".equals(postGisNativeType(actual.nativeType()));
     }

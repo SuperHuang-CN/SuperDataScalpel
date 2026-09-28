@@ -83,7 +83,7 @@
 - 实时 JAR 的全部 `StreamingQuery` 必须通过 `StreamingQueries.start()` 注册。平台生成稳定 Query UUID、Spark Query Name 和 Checkpoint位置；用户 Starter必须使用平台提供的 Query Name和Checkpoint，`SparkStreamingJob.start()`完成注册后返回且不得调用 `awaitTermination()`。零查询、重名、非 Active查询或绕过SDK启动查询都必须使整个Application失败。
 - 实时 JAR由用户代码控制 Trigger、Output Mode和处理逻辑；平台只负责查询集合、进度、停止和Checkpoint生命周期。任一查询失败或意外停止时停止其他查询；正常停止先停止查询再调用一次 `onStop()`，原始执行错误优先于清理错误。
 - 实时 JAR首次启动必须使用 `FRESH`；后续可选 `CONTINUE`复用最近Checkpoint或 `FRESH`创建新世代。跨定义版本继续由实施人员确认代码、查询集合和状态Schema兼容性，平台不得自动转换、删除或复制历史Checkpoint。
-- 在线源码编译必须按任务模式校验固定入口：批处理只接受 `com.example.datascalpel.ExampleSparkJob + SparkBatchJob`，实时只接受 `com.example.datascalpel.ExampleSparkStreamingJob + SparkStreamingJob`；产物 Manifest 必须写入匹配的 `DataScalpel-Job-Mode`，不得根据源码内容猜测模式。
+- 在线源码编译必须按任务模式校验入口接口：批处理接受 `SparkBatchJob`，实时接受 `SparkStreamingJob`；模板提供默认包名和类名，用户可修改，实际入口由 Java 语法树确定，必须公开并提供公开无参构造器。产物 Manifest 必须写入实际入口与匹配的 `DataScalpel-Job-Mode`，不得根据源码内容猜测任务模式。
 - 批流本地开发包共用一套生成队列和制品流程。实时开发包使用独立的 Kafka Input/Output `TestKafkaTopic`，`READ_WRITE` 也不得复用同一个假 Topic；假消息只使用明确可编辑的 UTF-8 样例，不连接线上 Kafka。
 - 实时在线试运行固定创建 `TRIAL + FRESH` Deployment，并使用与正式运行隔离的 Checkpoint 前缀；正式 `CONTINUE`、最新正式状态和恢复来源只能查询 `REAL` Deployment。正常停止或失败后 Runner 最佳努力删除 Trial Checkpoint，强制终止残留由运维按专属前缀清理。
 - 实时试运行允许真实读取已绑定的模型、JDBC和Kafka输入，但只拦截平台SDK的模型、JDBC和Kafka输出。原生Spark Writer、自带凭据或其他客户端副作用不在拦截范围内；不得宣称试运行是JVM沙箱。试运行最长30分钟，到期先正常停止，60秒宽限后才沿用Backend强制终止。
@@ -103,6 +103,7 @@
 - Operator 统一负责配置规则、元数据定位、表 Map 语义、Spark Dataset 变换、字段映射和显式 Cast。预检与运行时的差异只能通过 `CanvasNodeDataAccess` 等外部 I/O 端口注入。
 - 预检 I/O 必须使用元数据 Schema 创建零行 Dataset，Output 只分析计划，不得读取 JDBC/HTTP、创建 Writer、TRUNCATE 或写入。Runner I/O 才允许真实读取和生成延迟写入计划。
 - 元数据快照和节点内联 Schema 是 Canvas 的逻辑规划与解析依据，不是物理系统的运行时相等契约。Runner 不得因为字段数量、顺序、类型参数、可空性或 Geometry 元数据与逻辑 Schema 不完全一致而提前拒绝执行；真实读取、Spark Analyzer、Cast、解析器或目标系统能够处理时必须继续，不能处理时报告实际执行失败。
+- 原生 Geometry 输出的 SRID 来自任务快照中目标字段的 EPSG CRS，不回查物理表空间目录；通用 `geometry` 列不需要声明 SRID。适用范围、缺失元数据及坐标转换边界见[空间执行约定](../design/spatial-field-structure-management-v1.md#canvassedona-空间执行扩展)。
 - 文件 Reader 必须以 Manifest 中的快照 Schema 为目标 Schema 并采用 FAILFAST 语义，不得根据运行文件重定义 Canvas Schema。`schemaFingerprint` 仅作为当前 Manifest 的兼容信息，不得用于运行时相等门禁。Manifest 的文件存储配置、对象位置和解析参数属于受保护运行字段，不得回写 Canvas Definition、编译响应或前端状态。
 - Kafka Value Schema 归 `KAFKA_INPUT/KAFKA_OUTPUT` 节点自身所有，Compiler 与 Runner 必须直接使用节点内联字段调用同一个 Operator，不得通过模型 ID、模型元数据快照或运行时模型查询间接取得 Schema。前端从模型导入只能是一次性字段复制，模型引用不得进入 Kafka 节点定义、编译契约或 Manifest。
 - Kafka 节点内联 Schema 只允许平台稳定标量类型和明确的 STRING/DECIMAL 参数；Broker 地址、认证信息、序列化器私有配置和其他运行连接字段仍只能来自受保护 Manifest，不得混入 Value Schema 或 Canvas Definition。
@@ -137,7 +138,9 @@
 - 同一异常只允许在最接近失败来源的位置打印一次经过脱敏的完整异常链和调用栈；任务级终态日志只打印结构化摘要，不重复堆栈。
 - 异常链和调用栈必须经过统一脱敏并限制最大长度。当前上限为 64 KiB，截断时必须保留明确标记。
 - 日志和执行结果禁止包含密码、Secret、Token、Credential、Access Key、签名参数、预签名 URL、完整 JDBC Properties、Kafka 认证信息、数据行、SQL 参数值、Manifest 全文和本地敏感路径。
+- 使用 `org.postgresql.Driver` 的运行连接固定设置 `logServerErrorDetail=false`，同时覆盖 JDBC URL 中的同名设置，避免 pgjdbc 把绑定参数和失败行放进异常后被 Spark 底层日志提前输出。保留 SQLState、约束名称及调用栈供分类诊断；该措施不等于所有第三方驱动或用户自建连接的日志都已脱敏。
 - 不得吞掉异常或仅打印自由文本。可预期失败必须形成结构化错误；未知失败必须安全回退为稳定错误码，并保留诊断 ID。
+- Runner 下载 Manifest、上传结果时的 DNS、连接和 HTTP I/O 失败分别归为既有 `MANIFEST_DOWNLOAD_FAILED` / `RESULT_UPLOAD_FAILED`，保留原因供脱敏日志诊断；不得落入 JDBC 连接失败分类。
 
 <a id="execution-results"></a>
 

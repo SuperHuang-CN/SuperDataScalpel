@@ -57,7 +57,13 @@ public record ComputeEngineResponse(
         @Schema(description = "创建时间，ISO-8601 UTC 时间戳。")
         Instant createdAt,
         @Schema(description = "最后更新时间，ISO-8601 UTC 时间戳。")
-        Instant updatedAt
+        Instant updatedAt,
+        @Schema(description = "发现时锁定的 Dispatcher 实例身份；旧式单目标配置为空，配置更新或离线解绑不会改变此身份。")
+        String targetDispatcherInstanceId,
+        @Schema(description = "部署侧执行目标键；旧式单目标配置为空。一个实例与目标键只能对应一条引擎记录。")
+        String targetKey,
+        @Schema(description = "发现时锁定的物理目标身份摘要；用于拒绝同键指向其他环境，不包含凭据。")
+        String targetFingerprint
 ) {
     public static ComputeEngineResponse from(ComputeEngine engine, SparkExecutionResourcePolicy resourcePolicy) {
         return new ComputeEngineResponse(
@@ -69,7 +75,8 @@ public record ComputeEngineResponse(
                 resourcePolicy,
                 engine.getDispatcherInstanceId(), engine.getLastCheckAt(), engine.getLastError(),
                 engine.getDetachedAt(), engine.getDetachReason(),
-                engine.getCreatedAt(), engine.getUpdatedAt()
+                engine.getCreatedAt(), engine.getUpdatedAt(),
+                engine.getTargetDispatcherInstanceId(), engine.getTargetKey(), engine.getTargetFingerprint()
         );
     }
 }

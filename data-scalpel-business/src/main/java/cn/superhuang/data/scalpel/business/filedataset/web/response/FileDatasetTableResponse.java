@@ -25,7 +25,7 @@ public record FileDatasetTableResponse(
         FileDatasetParseStatus parseStatus,
         @Schema(description = "当前启用并按顺序合并到该逻辑表的文件来源数量。")
         long sourceCount,
-        @Schema(description = "所有当前来源的 parser-reported rowCount 合计。流式完整校验及带可靠元数据的格式通常为精确总数；Excel、GDB 等有界抽样解析器可能只报告最多 1000 条样本数，不能统一视为精确 COUNT。")
+        @Schema(description = "所有当前来源的解析器报告行数合计。GDB 按非空索引槽统计实际记录数，预览仍最多保留 1000 条；Excel 等有界抽样格式可能只报告样本数，不能对所有格式统一视为精确 COUNT。")
         long totalRowCount,
         @Schema(description = "当前正在改变表来源或重新解析 Schema 的作业 UUID；没有在途加载时为空。")
         UUID currentLoadJobId,

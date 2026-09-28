@@ -40,6 +40,8 @@ class FileGeodatabaseTest {
                     database.layers().stream().map(FileGdbLayer::type).toList());
 
             var schema = database.schema(fixture.layerId("ScalarPointXY"));
+            assertEquals(2, database.countFeatures(fixture.layerId("ScalarPointXY")),
+                    "deleted index slots must not contribute to the layer count");
             assertEquals("显示名称", schema.field("Name").alias());
             assertEquals(FileGdbFieldType.UUID, schema.field("ExternalId").type());
             assertEquals(FileGdbFieldType.GUID, schema.field("GlobalId").type());

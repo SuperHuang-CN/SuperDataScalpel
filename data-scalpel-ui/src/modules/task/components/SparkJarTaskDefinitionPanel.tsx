@@ -1,5 +1,8 @@
+import { SparkJarResourceDrawer, type SparkJarResourceSelection } from './SparkJarResourceDrawer';
+import { replaceSparkJarResource } from '../model/sparkJarResourceConfiguration';
 import { taskPageHref } from '../model/taskViews';
-import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import './sparkJarEditor.css';
+import { CompactAlert as Alert, ContextHelp } from '../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
   ExclamationCircleOutlined,
@@ -7,26 +10,23 @@ import {
   PlusOutlined,
   SaveOutlined,
 } from '@ant-design/icons';
-import { Button, Form, Input, InputNumber, Modal, Select, Space, Spin, Table, Tag, Tooltip, Typography, Upload, message, type UploadFile, type UploadProps } from 'antd';
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react';
+import { Button, Form, Input, InputNumber, Modal, Radio, Select, Space, Spin, Table, Tag, Tooltip, Typography, Upload, message, type UploadFile, type UploadProps } from 'antd';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useBlocker, useLocation, useNavigate, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
-import { DataModelPickerModal, useDataModel } from '../../model';
+import { useDataModel } from '../../model';
 import { computeBackendTypeLabels, useComputeEngine, type ComputeBackendType, type SparkExecutionResourceSpec as EngineSparkExecutionResourceSpec } from '../../computeengine';
 import {
-  JdbcResourcePickerModal,
   jdbcTableIdentifierDisplayName,
   useDataSource,
-  useDataSources,
-  type JdbcResourceSelection,
 } from '../../datasource';
-import { CanvasKafkaTopicSelect } from '../canvas/components/CanvasKafkaSelectors';
 import {
   useGenerateSparkJarDevelopmentKit,
   useDownloadSparkJarDevelopmentKit,
   useSparkJarDevelopmentKit,
   useSparkJarTaskDefinition,
+  useSparkJarOnlineSource,
   useUpdateSparkJarTaskDefinition,
   useUploadSparkJar,
 } from '../hooks/useTasks';
@@ -36,20 +36,22 @@ import type {
   SparkJarDevelopmentKitInputSample,
   SparkJarDevelopmentKitJdbcTable,
   SparkJarDevelopmentKitSampleMode,
-  SparkJarResourceAccessMode,
   SparkJarResourceBinding,
-  SparkJarResourceType,
   UpdateSparkJarTaskDefinitionRequest,
   SparkJarTaskDefinition,
   SparkExecutionResourceSpec,
 } from '../model/task';
 import {
   SparkJarArtifactSummary,
+  SparkJarOnlineCodeSummary,
+  SparkJarAuthoringModeChoice,
   SparkJarDevelopmentKitPanel,
   SparkJarRuntimeConfiguration,
 } from './SparkJarDefinitionWorkspace';
 
 interface SparkJarDefinitionFormValues {
+  inheritEngineResources?: boolean;
+  authoringMode?: 'ONLINE' | 'UPLOAD';
   parameters: SparkJarDefinitionEntry[];
   sparkConf: SparkJarDefinitionEntry[];
   driverJavaOptions: string;
@@ -80,17 +82,6 @@ const resourceBindingFormValue = (
   topicName: binding.topicName,
   accessMode: binding.accessMode,
 });
-
-const accessModeOptions: Array<{ value: SparkJarResourceAccessMode; label: string }> = [
-  { value: 'READ', label: '只读' },
-  { value: 'WRITE', label: '只写' },
-  { value: 'READ_WRITE', label: '读写' },
-];
-
-const baseResourceTypeOptions: Array<{ value: SparkJarResourceType; label: string }> = [
-  { value: 'MODEL', label: '模型' },
-  { value: 'JDBC_DATA_SOURCE', label: 'JDBC 数据源' },
-];
 
 const sampleModeOptions: Array<{ value: SparkJarDevelopmentKitSampleMode; label: string }> = [
   { value: 'NONE', label: '仅 Schema' },
@@ -233,42 +224,50 @@ const SparkJarExecutionTimeoutEditor = ({
 const SparkJarExecutionResourcesEditor = ({
   backend,
   maximums,
+  defaults,
   showEnvironment = true,
 }: {
   backend: ComputeBackendType | undefined;
   maximums: EngineSparkExecutionResourceSpec | undefined;
+  defaults: EngineSparkExecutionResourceSpec | undefined;
   showEnvironment?: boolean;
 }) => {
+  const form = Form.useFormInstance<SparkJarDefinitionFormValues>();
+  const inherited = Form.useWatch('inheritEngineResources', form);
   const localDocker = backend === 'LOCAL_DOCKER';
   const environment = backend === 'LOCAL_DOCKER'
     ? 'Local Docker · local[*]'
     : backend ? computeBackendTypeLabels[backend] : '正在读取计算引擎';
   const driverCoresMax = maximums?.driverCores ?? 256;
-  const driverMemoryMax = Math.floor((maximums?.driverMemoryMiB ?? 1_048_576) / 1024);
+  const driverMemoryMax = (maximums?.driverMemoryMiB ?? 1_048_576) / 1024;
   const executorCountMax = maximums?.executorInstances ?? 10_000;
   const executorCoresMax = maximums?.executorCores ?? 256;
-  const executorMemoryMax = Math.floor((maximums?.executorMemoryMiB ?? 1_048_576) / 1024);
+  const executorMemoryMax = (maximums?.executorMemoryMiB ?? 1_048_576) / 1024;
   return (
     <div className="spark-jar-runtime-resource-editor">
       {showEnvironment && <Form.Item label="运行环境">
         <Input value={environment} readOnly />
       </Form.Item>}
+      <Form.Item name="inheritEngineResources" label="资源配置方式">
+        <Radio.Group options={[{ value: true, label: '使用引擎默认值' }, { value: false, label: '任务自定义' }]}
+          onChange={(event) => { if (event.target.value && defaults) form.setFieldValue('executionResources', defaults); }} />
+      </Form.Item>
       <div className="spark-jar-runtime-resource-grid">
         <Form.Item name={['executionResources', 'driverCores']} label={<span>驱动 CPU <Tooltip title="Spark Driver 使用的 CPU 核数；在 Local Docker 中映射为容器 --cpus。"><InfoCircleOutlined /></Tooltip></span>} rules={[{ required: true }]}>
-          <InputNumber min={1} max={driverCoresMax} precision={0} addonAfter="Core" />
+          <InputNumber disabled={inherited} min={1} max={driverCoresMax} precision={0} addonAfter="Core" />
         </Form.Item>
-        <Form.Item name={['executionResources', 'driverMemoryMiB']} label={<span>驱动内存 <Tooltip title="Spark Driver 内存；在 Local Docker 中映射为容器 --memory，JVM 堆自动取其中的 75%。"><InfoCircleOutlined /></Tooltip></span>} getValueProps={memoryGiBProps} normalize={toMiB} rules={[{ required: true }]}>
-          <InputNumber min={1} max={driverMemoryMax} precision={0} addonAfter="GiB" />
+        <Form.Item name={['executionResources', 'driverMemoryMiB']} label={<span>驱动内存 <Tooltip title="Local Docker：容器总内存，JVM 堆取 75%；YARN/Kubernetes：Driver JVM 堆内存，容器另需非堆开销。"><InfoCircleOutlined /></Tooltip></span>} getValueProps={memoryGiBProps} normalize={toMiB} rules={[{ required: true }]}>
+          <InputNumber disabled={inherited} min={1} max={driverMemoryMax} step={0.25} addonAfter="GiB" />
         </Form.Item>
         {!localDocker && <>
           <Form.Item name={['executionResources', 'executorInstances']} label={<span>执行器数量 <Tooltip title="提交到 YARN 或 Kubernetes 的 Executor 实例数量。"><InfoCircleOutlined /></Tooltip></span>} rules={[{ required: true }]}>
-            <InputNumber min={1} max={executorCountMax} precision={0} />
+            <InputNumber disabled={inherited} min={1} max={executorCountMax} precision={0} />
           </Form.Item>
           <Form.Item name={['executionResources', 'executorCores']} label={<span>单执行器 CPU <Tooltip title="每个 Spark Executor 使用的 CPU 核数。"><InfoCircleOutlined /></Tooltip></span>} rules={[{ required: true }]}>
-            <InputNumber min={1} max={executorCoresMax} precision={0} addonAfter="Core" />
+            <InputNumber disabled={inherited} min={1} max={executorCoresMax} precision={0} addonAfter="Core" />
           </Form.Item>
-          <Form.Item name={['executionResources', 'executorMemoryMiB']} label={<span>单执行器内存 <Tooltip title="每个 Spark Executor 使用的内存。"><InfoCircleOutlined /></Tooltip></span>} getValueProps={memoryGiBProps} normalize={toMiB} rules={[{ required: true }]}>
-            <InputNumber min={1} max={executorMemoryMax} precision={0} addonAfter="GiB" />
+          <Form.Item name={['executionResources', 'executorMemoryMiB']} label={<span>单执行器内存 <Tooltip title="每个 Spark Executor 的 JVM 堆内存；集群容器还需非堆内存，不是容器总额度。"><InfoCircleOutlined /></Tooltip></span>} getValueProps={memoryGiBProps} normalize={toMiB} rules={[{ required: true }]}>
+            <InputNumber disabled={inherited} min={1} max={executorMemoryMax} step={0.25} addonAfter="GiB" />
           </Form.Item>
         </>}
       </div>
@@ -308,7 +307,7 @@ const SampleConfigurationControls = ({
   disabled?: boolean;
 }) => (
   <div className="spark-jar-kit-sample-control">
-    <Space size={8} wrap>
+    <Space size={8}>
       <Select
         value={value.mode}
         options={sampleModeOptions}
@@ -378,28 +377,25 @@ const ResourceSelectionButton = ({
     : null;
 
   if (!binding?.resourceType) return <Typography.Text type="secondary">请先选择资源类型</Typography.Text>;
-  if (binding.resourceType === 'KAFKA_TOPIC') return null;
+  if (binding.resourceType === 'KAFKA_TOPIC') return <Button type="link" disabled={disabled} onClick={onClick}>{binding.topicName ?? 'Kafka Topic'}</Button>;
 
   const label = binding.resourceType === 'MODEL'
     ? modelQuery.data?.model
-      ? `${modelQuery.data.model.name} · ${modelQuery.data.model.code}`
+      ? modelQuery.data.model.name === modelQuery.data.model.code ? modelQuery.data.model.name : `${modelQuery.data.model.name} · ${modelQuery.data.model.code}`
       : binding.resourceId ? '已选择模型' : '选择模型'
     : dataSourceQuery.data
       ? `${dataSourceQuery.data.name} · ${tableLabel ?? dataSourceQuery.data.code}`
       : binding.resourceId ? (tableLabel ? `已选择 JDBC 表 · ${tableLabel}` : '已选择 JDBC 数据源')
         : readableBinding(binding) ? '选择 JDBC 数据源和表' : '选择 JDBC 数据源';
 
-  return (
-    <Button
-      block
-      className="spark-jar-resource-picker-button"
-      disabled={disabled}
-      loading={modelQuery.isFetching || dataSourceQuery.isFetching}
-      onClick={onClick}
-    >
-      <Typography.Text ellipsis>{label}</Typography.Text>
-    </Button>
-  );
+  const failed = modelQuery.isError || dataSourceQuery.isError;
+  return <div className="spark-jar-resource-identity">
+    <button type="button" disabled={disabled} onClick={onClick} title={label}>{label}</button>
+    <Typography.Text type={failed ? 'danger' : 'secondary'}>
+      {failed ? '资源加载失败，点击编辑检查' : binding.resourceType === 'MODEL' ? '数据模型' : tableLabel ? 'JDBC 表' : 'JDBC 连接'}
+      {(modelQuery.isFetching || dataSourceQuery.isFetching) && ' · 加载中'}
+    </Typography.Text>
+  </div>;
 };
 
 const EntryEditor = ({
@@ -487,24 +483,26 @@ export const SparkJarTaskDefinitionPanel = ({
   const [messageApi, messageContext] = message.useMessage();
   const [uploadFiles, setUploadFiles] = useState<UploadFile[]>([]);
   const [dirty, setDirty] = useState(false);
+  const savedNavigation = useRef(false);
   const [kitDraft, setKitDraft] = useState<DevelopmentKitDraftState>({
     taskId: task.id,
     dirty: false,
     samples: {},
     jdbcTables: null,
   });
-  const [modelPickerFieldIndex, setModelPickerFieldIndex] = useState<number | null>(null);
-  const [jdbcPickerFieldIndex, setJdbcPickerFieldIndex] = useState<number | null>(null);
+  const [resourceEditorIndex, setResourceEditorIndex] = useState<number | 'new' | null>(null);
   const [runtimeConfigurationKeys, setRuntimeConfigurationKeys] = useState<string[]>([]);
   const definitionQuery = useSparkJarTaskDefinition(task.id);
   const computeEngineQuery = useComputeEngine(task.computeEngineId ?? undefined);
-  const dataSourcesQuery = useDataSources({ page: 0, size: 500, sort: 'code' }, task.type === 'SPARK_STREAMING_JAR');
   const updateMutation = useUpdateSparkJarTaskDefinition();
   const uploadMutation = useUploadSparkJar();
   const createKitMutation = useGenerateSparkJarDevelopmentKit();
   const downloadKitMutation = useDownloadSparkJarDevelopmentKit();
+  const configurationSaving = updateMutation.isPending || uploadMutation.isPending;
   const kitQuery = useSparkJarDevelopmentKit(task.id, task.type === 'SPARK_JAR' || task.type === 'SPARK_STREAMING_JAR');
   const watchedParameters = Form.useWatch('parameters', form);
+  const authoringMode = Form.useWatch('authoringMode', form);
+  const onlineSourceQuery = useSparkJarOnlineSource(authoringMode === 'ONLINE' ? task.id : undefined);
   const watchedSparkConf = Form.useWatch('sparkConf', form);
   const watchedDriverJavaOptions = Form.useWatch('driverJavaOptions', form);
   const watchedTimeoutSeconds = Form.useWatch('timeoutSeconds', form);
@@ -518,8 +516,8 @@ export const SparkJarTaskDefinitionPanel = ({
   const effectiveExecutionResources = watchedExecutionResources ?? definition?.executionResources;
   const effectiveTimeoutSeconds = watchedTimeoutSeconds ?? definition?.timeoutSeconds;
   const resourceEnvironment = resourceBackend
-    ? computeBackendTypeLabels[resourceBackend]
-    : '正在读取计算引擎';
+    ? `${computeEngineQuery.data?.name ?? ''} · ${computeBackendTypeLabels[resourceBackend]}`
+    : computeEngineQuery.isError ? '计算引擎加载失败' : '正在读取计算引擎';
   const resourceSummary = resourceBackend === 'LOCAL_DOCKER'
     ? `${effectiveExecutionResources?.driverCores ?? '—'} Core CPU 和 ${effectiveExecutionResources?.driverMemoryMiB ? effectiveExecutionResources.driverMemoryMiB / 1024 : '—'} GiB 内存`
     : `Driver ${effectiveExecutionResources?.driverCores ?? '—'} Core / ${effectiveExecutionResources?.driverMemoryMiB ? effectiveExecutionResources.driverMemoryMiB / 1024 : '—'} GiB，${effectiveExecutionResources?.executorInstances ?? '—'} 个 Executor × ${effectiveExecutionResources?.executorCores ?? '—'} Core / ${effectiveExecutionResources?.executorMemoryMiB ? effectiveExecutionResources.executorMemoryMiB / 1024 : '—'} GiB`;
@@ -546,11 +544,14 @@ export const SparkJarTaskDefinitionPanel = ({
   const developmentKitBusy = developmentKitRunning || createKitMutation.isPending;
   const developmentKitArtifact = kitQuery.data?.artifact;
   const developmentKitGeneration = kitQuery.data?.generation;
+  const developmentKitNeedsRefresh = Boolean(developmentKitArtifact && (dirty || kitConfigDirty
+    || !developmentKitArtifact.matchesSavedConfiguration
+    || (developmentKitGeneration && developmentKitGeneration.definitionVersion !== definitionQuery.data?.definitionVersion)));
   const developmentKitStatus = developmentKitBusy
     ? { label: '生成中', color: 'processing' }
     : developmentKitGeneration?.status === 'FAILED'
       ? { label: '生成失败', color: 'error' }
-      : kitConfigDirty || (developmentKitArtifact && !developmentKitArtifact.matchesSavedConfiguration)
+      : kitConfigDirty || developmentKitNeedsRefresh
         ? { label: '配置待生成', color: 'warning' }
         : developmentKitArtifact
           ? { label: '可下载', color: 'success' }
@@ -565,30 +566,27 @@ export const SparkJarTaskDefinitionPanel = ({
   const effectiveKitJdbcTables = useMemo(() => kitJdbcTables.filter((table) => (
     kitJdbcBindingNames.has(table.bindingName)
   )), [kitJdbcBindingNames, kitJdbcTables]);
-  const resourceTypeOptions = useMemo<Array<{ value: SparkJarResourceType; label: string }>>(() => (
-    streaming
-      ? [...baseResourceTypeOptions, { value: 'KAFKA_TOPIC', label: 'Kafka Topic' }]
-      : baseResourceTypeOptions
-  ), [streaming]);
   const blocker = useBlocker(useCallback<BlockerFunction>(
-    ({ currentLocation, nextLocation }) => protectNavigation && (dirty || kitConfigDirty) && (
+    ({ currentLocation, nextLocation }) => protectNavigation && !savedNavigation.current && (dirty || kitConfigDirty) && (
       currentLocation.pathname !== nextLocation.pathname || currentLocation.search !== nextLocation.search
     ),
     [dirty, kitConfigDirty, protectNavigation],
   ));
 
   useEffect(() => {
-    if (!definition) return;
+    if (!definition || dirty) return;
     const runtimeOptions = driverJavaOptionsFromSparkConf(definition.sparkConf);
     form.setFieldsValue({
+      authoringMode: definition.authoringMode ?? undefined,
       parameters: definition.parameters,
       sparkConf: runtimeOptions.sparkConf,
       driverJavaOptions: runtimeOptions.driverJavaOptions,
       resourceBindings: definition.resourceBindings.map(resourceBindingFormValue),
       executionResources: definition.executionResources,
+      inheritEngineResources: definition.inheritEngineResources ?? false,
       timeoutSeconds: definition.timeoutSeconds,
     });
-  }, [definition, form]);
+  }, [definition, form, dirty]);
 
   useEffect(() => {
     const warn = (event: BeforeUnloadEvent) => {
@@ -599,28 +597,6 @@ export const SparkJarTaskDefinitionPanel = ({
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
   }, [dirty, kitConfigDirty]);
-
-  const kafkaOptions = (accessMode: SparkJarResourceAccessMode | undefined) => (
-    (dataSourcesQuery.data?.content ?? [])
-      .filter((source) => {
-        if (!source.enabled || source.connectionKind !== 'KAFKA') return false;
-        if (accessMode === 'READ') return source.purposes.includes('SOURCE');
-        if (accessMode === 'WRITE') return source.purposes.includes('DISTRIBUTION');
-        return source.purposes.includes('SOURCE') && source.purposes.includes('DISTRIBUTION');
-      })
-      .map((source) => ({ value: source.id, label: `${source.name} · ${source.code}` }))
-  );
-
-  const kafkaResourceOptions = (binding: Omit<SparkJarResourceBinding, 'resourceName'> | undefined) => {
-    const options = kafkaOptions(binding?.accessMode);
-    const saved = definition?.resourceBindings.find((item) => (
-      item.bindingName === binding?.bindingName && item.resourceType === 'KAFKA_TOPIC'
-    ));
-    if (binding?.resourceId && !options.some((option) => option.value === binding.resourceId)) {
-      options.push({ value: binding.resourceId, label: `${saved?.resourceName ?? '资源已删除或不可用'} · 当前绑定` });
-    }
-    return options;
-  };
 
   const jdbcTablesForBinding = (bindingName: string): SparkJarDevelopmentKitJdbcTable[] => (
     kitJdbcTables.filter((table) => table.bindingName === bindingName)
@@ -637,30 +613,25 @@ export const SparkJarTaskDefinitionPanel = ({
     });
   };
 
-  const migrateDevelopmentConfiguration = (previousName: string, nextName: string) => {
-    const from = previousName.trim();
-    const to = nextName.trim();
-    if (!from || !to || from === to) return;
-    setKitDraft((current) => {
-      const samples = { ...(current.taskId === task.id ? current.samples : {}) };
-      const sample = samples[from] ?? persistedKitSamples.get(from);
-      delete samples[from];
-      if (sample) samples[to] = { ...sample, bindingName: to };
-      const sourceTables = current.taskId === task.id ? current.jdbcTables ?? persistedKitJdbcTables : persistedKitJdbcTables;
-      const jdbcTables = sourceTables.map((table) => table.bindingName === from ? { ...table, bindingName: to } : table);
-      return { taskId: task.id, dirty: true, samples, jdbcTables };
-    });
-  };
-
   const save = async (): Promise<SparkJarTaskDefinition | null> => {
     try {
       const values = await form.validateFields();
       const sparkConf = withDriverJavaOptions(values.sparkConf ?? [], values.driverJavaOptions);
+      const inheritEngineResources = values.inheritEngineResources
+        ?? form.getFieldValue('inheritEngineResources') ?? definition?.inheritEngineResources ?? true;
       const request: UpdateSparkJarTaskDefinitionRequest = {
+        authoringMode: values.authoringMode,
+        developmentConfiguration: kitQuery.isSuccess ? {
+          samples: kitModelInputs.map((binding) => kitSamples[binding.bindingName]
+            ?? persistedKitSamples.get(binding.bindingName)
+            ?? { bindingName: binding.bindingName, ...defaultSampleConfiguration() }),
+          jdbcTables: effectiveKitJdbcTables,
+        } : undefined,
         parameters: values.parameters ?? [],
         sparkConf,
         resourceBindings: values.resourceBindings ?? [],
-        executionResources: {
+        inheritEngineResources,
+        executionResources: inheritEngineResources ? undefined : {
           ...definition?.executionResources,
           ...values.executionResources,
         },
@@ -669,14 +640,17 @@ export const SparkJarTaskDefinitionPanel = ({
       const saved = await updateMutation.mutateAsync({ id: task.id, request });
       const savedRuntimeOptions = driverJavaOptionsFromSparkConf(saved.sparkConf);
       form.setFieldsValue({
+        authoringMode: saved.authoringMode ?? undefined,
         parameters: saved.parameters,
         sparkConf: savedRuntimeOptions.sparkConf,
         driverJavaOptions: savedRuntimeOptions.driverJavaOptions,
         resourceBindings: saved.resourceBindings.map(resourceBindingFormValue),
         executionResources: saved.executionResources,
+        inheritEngineResources: saved.inheritEngineResources ?? false,
         timeoutSeconds: saved.timeoutSeconds,
       });
       setDirty(false);
+      if (request.developmentConfiguration) setKitDraft({ taskId: task.id, dirty: false, samples: {}, jdbcTables: null });
       messageApi.success(`Spark JAR 定义已保存为 v${saved.definitionVersion}`);
       return saved;
     } catch (error) {
@@ -711,7 +685,7 @@ export const SparkJarTaskDefinitionPanel = ({
       messageApi.warning('请先选择 JAR 文件');
       return;
     }
-    if (dirty && !(await save())) {
+    if ((dirty || kitConfigDirty) && !(await save())) {
       messageApi.warning('请先修正并保存当前配置');
       return;
     }
@@ -726,7 +700,7 @@ export const SparkJarTaskDefinitionPanel = ({
 
   const generateDevelopmentKit = async () => {
     if (developmentKitBusy) return;
-    const saved = dirty ? await save() : definition;
+    const saved = dirty || kitConfigDirty ? await save() : definition;
     if (!saved) return;
     const missingJdbcTables = kitJdbcBindings.filter((binding) => (
       jdbcTablesForBinding(binding.bindingName).length === 0
@@ -764,51 +738,33 @@ export const SparkJarTaskDefinitionPanel = ({
     }
   };
 
-  const applyModelSelection = (modelIds: string[]) => {
-    const fieldIndex = modelPickerFieldIndex;
-    const modelId = modelIds[0];
-    if (fieldIndex === null || !modelId) return;
-    form.setFieldValue(['resourceBindings', fieldIndex, 'resourceId'], modelId);
+  const commitResourceSelection = (selection: SparkJarResourceSelection) => {
+    const index = resourceEditorIndex === 'new' ? resourceBindings.length : resourceEditorIndex;
+    if (index === null) return;
+    const next = replaceSparkJarResource(resourceBindings, {
+      samples: kitModelInputs.map((binding) => kitSamples[binding.bindingName]
+        ?? persistedKitSamples.get(binding.bindingName)
+        ?? { bindingName: binding.bindingName, ...defaultSampleConfiguration() }),
+      jdbcTables: effectiveKitJdbcTables,
+    }, index, selection);
+    form.setFieldValue('resourceBindings', next.bindings);
+    setKitDraft({ taskId: task.id, dirty: true,
+      samples: Object.fromEntries(next.configuration.samples.map((item) => [item.bindingName, item])),
+      jdbcTables: next.configuration.jdbcTables });
     setDirty(true);
-    setModelPickerFieldIndex(null);
+    setResourceEditorIndex(null);
   };
 
-  const applyJdbcSelection = (selection: JdbcResourceSelection) => {
-    const fieldIndex = jdbcPickerFieldIndex;
-    if (fieldIndex === null) return;
-    const binding = resourceBindings[fieldIndex];
-    if (!binding) return;
-    const canRead = readableBinding(binding);
-    const previousName = binding.bindingName?.trim() ?? '';
-    const nextName = previousName || selection.table?.table || selection.dataSourceCode;
-    form.setFieldValue(['resourceBindings', fieldIndex, 'resourceId'], selection.dataSourceId);
-    if (!previousName) form.setFieldValue(['resourceBindings', fieldIndex, 'bindingName'], nextName);
-    if (canRead && selection.table) {
-      const currentTables = jdbcTablesForBinding(previousName || nextName);
-      const previousTable = currentTables[0];
-      const replacement: SparkJarDevelopmentKitJdbcTable = {
-        bindingName: nextName,
-        catalog: selection.table.catalog,
-        schema: selection.table.schema,
-        table: selection.table.table,
-        ...(previousTable ? {
-          mode: previousTable.mode,
-          rowCount: previousTable.rowCount,
-          percentage: previousTable.percentage,
-        } : defaultSampleConfiguration()),
-      };
-      setKitDraft((current) => {
-        const sourceTables = current.taskId === task.id ? current.jdbcTables ?? persistedKitJdbcTables : persistedKitJdbcTables;
-        return {
-          taskId: task.id,
-          dirty: true,
-          samples: current.taskId === task.id ? current.samples : {},
-          jdbcTables: [...sourceTables.filter((table) => table.bindingName !== previousName && table.bindingName !== nextName), replacement],
-        };
-      });
-    }
-    setDirty(true);
-    setJdbcPickerFieldIndex(null);
+  const applyResourceSelection = (selection: SparkJarResourceSelection) => {
+    const previous = typeof resourceEditorIndex === 'number' ? resourceBindings[resourceEditorIndex] : undefined;
+    const oldTables = previous ? jdbcTablesForBinding(previous.bindingName) : [];
+    const dropsTables = oldTables.length > 1 && (previous?.resourceId !== selection.binding.resourceId
+      || previous.resourceType !== selection.binding.resourceType || !readableBinding(selection.binding));
+    if (dropsTables) {
+      Modal.confirm({ title: '更新资源并清除原表选择？',
+        content: `原绑定包含 ${oldTables.length} 张 JDBC 表。更换资源或移除读取用途后，这些本地开发表选择将被清除；不会删除数据库中的表。`,
+        okText: '确认更新', cancelText: '继续编辑', onOk: () => commitResourceSelection(selection) });
+    } else commitResourceSelection(selection);
   };
 
   const downloadDevelopmentKit = async () => {
@@ -837,7 +793,7 @@ export const SparkJarTaskDefinitionPanel = ({
         <div className="spark-jar-binding-local-config">
           <SampleConfigurationControls
             value={sample}
-            disabled={!bindingName}
+            disabled={!bindingName || configurationSaving}
             onChange={(next) => {
               if (!bindingName) return;
               setKitDraft((current) => {
@@ -870,6 +826,7 @@ export const SparkJarTaskDefinitionPanel = ({
         <div className="spark-jar-binding-local-config">
           <SampleConfigurationControls
             value={table}
+            disabled={configurationSaving}
             onChange={(next) => {
               setKitDraft((current) => {
                 const sourceTables = current.taskId === task.id ? current.jdbcTables ?? persistedKitJdbcTables : persistedKitJdbcTables;
@@ -897,13 +854,6 @@ export const SparkJarTaskDefinitionPanel = ({
     return <Typography.Text type="secondary">—</Typography.Text>;
   };
 
-  const modelPickerBinding = modelPickerFieldIndex === null ? undefined : resourceBindings[modelPickerFieldIndex];
-  const jdbcPickerBinding = jdbcPickerFieldIndex === null ? undefined : resourceBindings[jdbcPickerFieldIndex];
-  const jdbcPickerTables = jdbcPickerBinding
-    ? jdbcTablesForBinding(jdbcPickerBinding.bindingName?.trim() ?? '')
-    : [];
-  const jdbcPickerTable = jdbcPickerTables.length === 1 ? jdbcPickerTables[0] : undefined;
-
   if (definitionQuery.isPending) return <div className="task-detail-tab-panel"><Spin tip="正在加载 Spark JAR 定义…" /></div>;
   if (definitionQuery.isError || !definition) return (
     <Alert
@@ -920,167 +870,99 @@ export const SparkJarTaskDefinitionPanel = ({
       <div className="task-detail-tab-toolbar spark-jar-definition-toolbar">
         {toolbarContext ?? <Typography.Text strong>Spark JAR 定义</Typography.Text>}
         <Space wrap>
+          {authoringMode && <Tag color="geekblue">{authoringMode === 'ONLINE' ? '在线开发' : '上传 JAR'}</Tag>}
+          {authoringMode && <Button type="text" disabled={updateMutation.isPending || uploadMutation.isPending} onClick={() => Modal.confirm({
+            title: '更换开发方式？', content: '保留在线源码和当前生效 JAR；只有明确应用代码或上传替换才改变 JAR。',
+            okText: authoringMode === 'ONLINE' ? '改为上传 JAR' : '改为在线开发', cancelText: '取消',
+            onOk: () => { form.setFieldValue('authoringMode', authoringMode === 'ONLINE' ? 'UPLOAD' : 'ONLINE'); setUploadFiles([]); setDirty(true); },
+          })}>更换开发方式</Button>}
           {dirty && <Tag color="warning">任务配置未保存</Tag>}
-          {kitConfigDirty && <Tag color="orange">开发配置待生成</Tag>}
-          <Button type="primary" icon={<SaveOutlined />} loading={updateMutation.isPending} onClick={() => void save()}>
+          {authoringMode === 'UPLOAD' && kitConfigDirty && <Tag color="orange">样例配置未保存</Tag>}
+          <Button type="primary" icon={<SaveOutlined />} disabled={!authoringMode || uploadMutation.isPending} loading={updateMutation.isPending} onClick={() => void save()}>
             保存配置
           </Button>
         </Space>
       </div>
       <div className="spark-jar-definition-scroll">
-        <SparkJarArtifactSummary
-          definition={definition}
-          uploadFiles={uploadFiles}
-          uploading={uploadMutation.isPending || updateMutation.isPending}
-          beforeUpload={beforeJarUpload}
-          onClearSelection={() => setUploadFiles([])}
-          onUpload={() => void upload()}
-          onOpenOnlineEditor={() => navigate(taskPageHref(`/task/${task.id}/online-code`, location.search, task.type))}
-        />
+        {!authoringMode && <SparkJarAuthoringModeChoice onConfirm={(mode) => { form.setFieldValue('authoringMode', mode); setDirty(true); }} />}
 
         <Form<SparkJarDefinitionFormValues>
           className="spark-jar-workspace-stack"
           autoComplete="off"
           form={form}
           layout="vertical"
+          disabled={updateMutation.isPending || uploadMutation.isPending}
           initialValues={{ parameters: [], sparkConf: [], driverJavaOptions: '', resourceBindings: [], timeoutSeconds: 3600 }}
           onValuesChange={() => setDirty(true)}
+          style={{ display: authoringMode ? undefined : 'none' }}
         >
+          <Form.Item name="authoringMode" hidden><Input /></Form.Item>
+          {authoringMode === 'ONLINE' && <SparkJarOnlineCodeSummary
+            source={onlineSourceQuery.data} failed={onlineSourceQuery.isError} loading={onlineSourceQuery.isPending}
+            opening={updateMutation.isPending} onRetry={() => void onlineSourceQuery.refetch()}
+            onOpen={() => void (async () => {
+              if ((dirty || kitConfigDirty) && !await save()) return;
+              savedNavigation.current = true;
+              navigate(taskPageHref(`/task/${task.id}/online-code`, location.search, task.type));
+            })()} />}
           <section className="spark-jar-definition-section spark-jar-resource-bindings-section">
-            <div className="spark-jar-definition-section-title">资源绑定</div>
-            <Form.List name="resourceBindings">
-              {(fields, { add, remove }) => (
-                <Space orientation="vertical" size={8} className="spark-jar-list-editor">
-                  <Table
-                    size="small"
-                    rowKey="key"
-                    pagination={false}
-                    scroll={{ x: streaming ? 1300 : 1180 }}
-                    dataSource={fields}
-                    locale={{ emptyText: '无需平台资源时可以保持为空' }}
-                    columns={[
-                      {
-                        title: '绑定名', width: '22%',
-                        render: (_, field) => {
-                          const binding = resourceBindings[field.name];
-                          return (
-                            <Form.Item name={[field.name, 'bindingName']} rules={[{ required: true, message: '请输入绑定名' }, { max: 100 }]} noStyle>
-                              <Input
-                                placeholder="source_model"
-                                onChange={(event) => migrateDevelopmentConfiguration(binding?.bindingName ?? '', event.target.value)}
-                              />
-                            </Form.Item>
-                          );
-                        },
-                      },
-                      {
-                        title: '资源类型', width: 200,
-                        render: (_, field) => (
-                          <Form.Item name={[field.name, 'resourceType']} rules={[{ required: true, message: '请选择类型' }]} noStyle>
-                            <Select
-                              className="spark-jar-resource-type-select"
-                              options={resourceTypeOptions}
-                              popupMatchSelectWidth={180}
-                              onChange={() => {
-                                const binding = resourceBindings[field.name];
-                                form.setFieldValue(['resourceBindings', field.name, 'resourceId'], undefined);
-                                form.setFieldValue(['resourceBindings', field.name, 'topicName'], undefined);
-                                removeDevelopmentConfiguration(binding?.bindingName ?? '');
-                              }}
-                            />
-                          </Form.Item>
-                        ),
-                      },
-                      {
-                        title: '资源',
-                        render: (_: unknown, field: { name: number }) => {
-                          const binding = resourceBindings[field.name];
-                          if (binding?.resourceType === 'KAFKA_TOPIC') {
-                            return <Form.Item name={[field.name, 'resourceId']} rules={[{ required: true, message: '请选择资源' }]} noStyle><Select showSearch optionFilterProp="label" loading={dataSourcesQuery.isFetching} options={kafkaResourceOptions(binding)} placeholder="请选择 Kafka 数据源" /></Form.Item>;
-                          }
-                          const bindingName = binding?.bindingName?.trim() ?? '';
-                          const jdbcTable = binding?.resourceType === 'JDBC_DATA_SOURCE'
-                            ? jdbcTablesForBinding(bindingName)[0]
-                            : undefined;
-                          return (
-                            <>
-                              <Form.Item name={[field.name, 'resourceId']} rules={[{ required: true, message: '请选择资源' }]} noStyle>
-                                <Input type="hidden" />
-                              </Form.Item>
-                              <ResourceSelectionButton
-                                binding={binding}
-                                jdbcTable={jdbcTable}
-                                disabled={!binding?.resourceType}
-                                onClick={() => {
-                                  if (binding?.resourceType === 'MODEL') setModelPickerFieldIndex(field.name);
-                                  if (binding?.resourceType === 'JDBC_DATA_SOURCE') setJdbcPickerFieldIndex(field.name);
-                                }}
-                              />
-                            </>
-                          );
-                        },
-                      },
-                      ...(streaming ? [{
-                        title: 'Topic',
-                        width: 220,
-                        render: (_: unknown, field: { name: number }) => {
-                          const binding = resourceBindings[field.name];
-                          if (binding?.resourceType !== 'KAFKA_TOPIC') return <Typography.Text type="secondary">—</Typography.Text>;
-                          return (
-                            <Form.Item name={[field.name, 'topicName']} rules={[{ required: true, message: '请选择 Topic' }]} noStyle>
-                              <CanvasKafkaTopicSelect
-                                dataSourceId={binding.resourceId ?? ''}
-                                placeholder="远程搜索 Topic"
-                              />
-                            </Form.Item>
-                          );
-                        },
-                      }] : []),
-                      ...([{
-                        title: '本地开发',
-                        width: 390,
-                        render: (_: unknown, field: { name: number }) => (
-                          renderLocalDevelopmentConfiguration(resourceBindings[field.name])
-                        ),
-                      }]),
-                      {
-                        title: '访问方式', width: 130,
-                        render: (_, field) => <Form.Item name={[field.name, 'accessMode']} rules={[{ required: true, message: '请选择访问方式' }]} noStyle><Select options={accessModeOptions} onChange={(accessMode: SparkJarResourceAccessMode) => {
-                          if (accessMode === 'WRITE') removeDevelopmentConfiguration(resourceBindings[field.name]?.bindingName ?? '');
-                        }} /></Form.Item>,
-                      },
-                      {
-                        title: '操作', width: 56, align: 'center',
-                        render: (_, field) => <Button type="text" danger icon={<DeleteOutlined />} aria-label="删除资源绑定" onClick={() => {
-                          removeDevelopmentConfiguration(resourceBindings[field.name]?.bindingName ?? '');
-                          remove(field.name);
-                        }} />,
-                      },
-                    ]}
-                  />
-                  <Button type="dashed" block icon={<PlusOutlined />} disabled={fields.length >= 200} onClick={() => add({ bindingName: '', resourceType: 'MODEL', resourceId: undefined, topicName: undefined, accessMode: 'READ' })}>
-                    添加资源绑定
-                  </Button>
-                </Space>
-              )}
-            </Form.List>
+            <div className="spark-jar-resource-heading">
+              <div><Space><Typography.Text strong>任务资源</Typography.Text>
+                <ContextHelp ariaLabel="任务资源说明" content="可选。输入允许读取，输出允许写入，输入及输出允许两者。绑定后可在代码中引用，实际读写由代码决定，不要求输入输出成对选择。" /></Space>
+                <div className="spark-jar-section-hint">可选 · 输入读数据，输出写结果。</div></div>
+              <Button icon={<PlusOutlined />} disabled={configurationSaving || resourceBindings.length >= 200 || !kitQuery.isSuccess} onClick={() => setResourceEditorIndex('new')}>添加资源</Button>
+            </div>
+            {kitQuery.isError && <Alert type="error" message="开发配置加载失败，暂不能修改资源" action={<Button onClick={() => void kitQuery.refetch()}>重试</Button>} />}
+            <Form.Item name="resourceBindings" hidden rules={[{ validator: async (_, bindings: SparkJarDefinitionFormValues['resourceBindings']) => {
+              if (bindings?.some((binding) => !binding.bindingName?.trim() || !binding.resourceId || !binding.accessMode)) throw new Error('请补全资源绑定');
+              if (new Set(bindings?.map((binding) => binding.bindingName.trim())).size !== bindings?.length) throw new Error('代码引用名不能重复');
+            } }]}><Input /></Form.Item>
+            <Table size="small" rowKey="bindingName" pagination={false} scroll={{ y: 'clamp(112px, calc(100vh - 630px), 208px)' }}
+              dataSource={resourceBindings} locale={{ emptyText: '暂未添加资源 · 不访问平台数据时可留空' }}
+              columns={[
+                { title: '资源', render: (_, binding, index) => <ResourceSelectionButton binding={binding}
+                  jdbcTable={jdbcTablesForBinding(binding.bindingName)[0]} disabled={configurationSaving || !kitQuery.isSuccess} onClick={() => setResourceEditorIndex(index)} /> },
+                { title: '代码引用名', dataIndex: 'bindingName', width: '20%', ellipsis: true, render: (name: string) => <span className="spark-jar-code-reference">{name}</span> },
+                { title: '用途', width: 110, render: (_, binding) => <Tag color="geekblue">{binding.accessMode === 'READ' ? '输入' : binding.accessMode === 'WRITE' ? '输出' : '输入及输出'}</Tag> },
+                { hidden: authoringMode !== 'UPLOAD', title: <Space>本地样例<ContextHelp ariaLabel="本地样例说明" content="用于生成开发工程，不限制正式运行读取的数据量。零行仅导出结构；全部数据最多 100 万行。" /></Space>, width: 340,
+                  render: (_, binding) => renderLocalDevelopmentConfiguration(binding) },
+                { title: '操作', width: 112, render: (_, binding, index) => <Space size={0}>
+                  <Button type="link" disabled={configurationSaving || !kitQuery.isSuccess} onClick={() => setResourceEditorIndex(index)}>编辑</Button>
+                  <Button type="text" disabled={configurationSaving || !kitQuery.isSuccess} danger icon={<DeleteOutlined />} aria-label={`移除资源 ${binding.bindingName}`} onClick={() => Modal.confirm({
+                    title: `移除资源“${binding.bindingName}”？`, content: '不会删除数据，已有源码中的引用需要自行修改。', okText: '移除', cancelText: '取消', okButtonProps: { danger: true },
+                    onOk: () => { removeDevelopmentConfiguration(binding.bindingName); form.setFieldValue('resourceBindings', resourceBindings.filter((_, i) => i !== index)); setDirty(true); },
+                  })} />
+                </Space> },
+              ]} />
           </section>
 
-          <SparkJarDevelopmentKitPanel
+          {authoringMode === 'UPLOAD' && <div className="spark-jar-delivery-grid">
+          <details open={authoringMode === 'UPLOAD'} key={authoringMode}>
+            <summary>本地开发工程</summary>
+            <SparkJarDevelopmentKitPanel
               status={developmentKitStatus}
               generation={developmentKitGeneration}
               artifact={developmentKitArtifact}
-              configurationDirty={kitConfigDirty}
+              configurationDirty={kitConfigDirty || developmentKitNeedsRefresh}
               inputModelCount={kitModelInputs.length}
               jdbcTableCount={effectiveKitJdbcTables.length}
               outputModelCount={kitModelOutputs.length}
               running={developmentKitRunning}
               submitting={createKitMutation.isPending}
+              disabled={updateMutation.isPending || uploadMutation.isPending}
               downloading={downloadKitMutation.isPending}
               onGenerate={() => void generateDevelopmentKit()}
               onDownload={() => void downloadDevelopmentKit()}
           />
+          </details>
+          {authoringMode === 'UPLOAD' && <SparkJarArtifactSummary
+            definition={definition} uploadFiles={uploadFiles} uploading={uploadMutation.isPending || updateMutation.isPending}
+            beforeUpload={beforeJarUpload} onClearSelection={() => setUploadFiles([])} onUpload={upload}
+          />}
+          </div>}
 
+          {computeEngineQuery.isError && <Alert type="error" message="计算引擎加载失败"
+            action={<Button size="small" onClick={() => void computeEngineQuery.refetch()}>重试</Button>} />}
           <SparkJarRuntimeConfiguration
               activeKeys={runtimeConfigurationKeys}
               onChange={setRuntimeConfigurationKeys}
@@ -1096,7 +978,7 @@ export const SparkJarTaskDefinitionPanel = ({
                   label: '运行资源',
                   summary: resourceSummary,
                   placement: 'primary',
-                  children: <SparkJarExecutionResourcesEditor backend={resourceBackend} maximums={resourceMaximums} showEnvironment={false} />,
+                  children: <SparkJarExecutionResourcesEditor backend={resourceBackend} maximums={resourceMaximums} defaults={computeEngineQuery.data?.resourcePolicy.defaults} showEnvironment={false} />,
                 },
                 {
                   key: 'timeout',
@@ -1169,36 +1051,21 @@ export const SparkJarTaskDefinitionPanel = ({
         onCancel={() => blocker.state === 'blocked' && blocker.reset()}
       >
         {dirty && kitConfigDirty
-          ? '任务配置和本地开发配置均未保存。本地开发配置需要通过“生成开发包”保存。'
+          ? '任务配置和本地样例配置尚未保存。'
           : dirty
             ? '参数、Spark Conf、资源绑定或超时设置尚未保存。'
-            : '本地开发配置尚未保存，需要通过“生成开发包”保存。'}
+            : '本地样例配置尚未保存。'}
       </Modal>
-      <DataModelPickerModal
-        open={modelPickerFieldIndex !== null}
-        value={modelPickerBinding?.resourceId ? [modelPickerBinding.resourceId] : []}
-        title="选择已发布模型"
-        rootClassName="business-overlay business-modal-overlay"
-        onCancel={() => setModelPickerFieldIndex(null)}
-        onConfirm={applyModelSelection}
-      />
-      <JdbcResourcePickerModal
-        open={jdbcPickerFieldIndex !== null}
-        value={jdbcPickerBinding?.resourceId ? {
-          dataSourceId: jdbcPickerBinding.resourceId,
-          dataSourceName: '',
-          dataSourceCode: '',
-          table: jdbcPickerTable
-            ? { catalog: jdbcPickerTable.catalog ?? null, schema: jdbcPickerTable.schema ?? null, table: jdbcPickerTable.table }
-            : null,
-        } : null}
-        purposes={jdbcPickerBinding?.accessMode === 'WRITE' ? ['DISTRIBUTION'] : ['SOURCE', ...(jdbcPickerBinding?.accessMode === 'READ_WRITE' ? ['DISTRIBUTION' as const] : [])]}
-        requireTable={readableBinding(jdbcPickerBinding)}
-        title={readableBinding(jdbcPickerBinding) ? '选择 JDBC 数据源和表' : '选择 JDBC 数据源'}
-        rootClassName="business-overlay business-modal-overlay"
-        onCancel={() => setJdbcPickerFieldIndex(null)}
-        onConfirm={applyJdbcSelection}
-      />
+      {resourceEditorIndex !== null && <SparkJarResourceDrawer
+        key={resourceEditorIndex}
+        initial={resourceEditorIndex === 'new' ? undefined : resourceBindings[resourceEditorIndex]}
+        initialTable={resourceEditorIndex === 'new' ? undefined : (() => {
+          const table = jdbcTablesForBinding(resourceBindings[resourceEditorIndex]?.bindingName ?? '')[0];
+          return table ? { catalog: table.catalog ?? null, schema: table.schema ?? null, table: table.table } : undefined;
+        })()}
+        bindingNames={resourceBindings.map((binding) => binding.bindingName)} streaming={streaming}
+        onClose={() => setResourceEditorIndex(null)} onConfirm={applyResourceSelection}
+      />}
     </div>
   );
 };

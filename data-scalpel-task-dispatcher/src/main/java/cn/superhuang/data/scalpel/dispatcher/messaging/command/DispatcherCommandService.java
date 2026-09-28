@@ -40,19 +40,22 @@ public class DispatcherCommandService {
     private final DispatcherRegistrationRepository registrationRepository;
     private final DispatcherEventService eventService;
     private final DispatcherStreamingStopRepository stoppedExecutions;
+    private final cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry backends;
 
     public DispatcherCommandService(
             DispatcherMessageInboxRepository inboxRepository,
             DispatcherTaskExecutionRepository executionRepository,
             DispatcherRegistrationRepository registrationRepository,
             DispatcherEventService eventService,
-            DispatcherStreamingStopRepository stoppedExecutions
+            DispatcherStreamingStopRepository stoppedExecutions,
+            cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry backends
     ) {
         this.inboxRepository = inboxRepository;
         this.executionRepository = executionRepository;
         this.registrationRepository = registrationRepository;
         this.eventService = eventService;
         this.stoppedExecutions = stoppedExecutions;
+        this.backends = backends;
     }
 
     @Transactional
@@ -62,8 +65,7 @@ public class DispatcherCommandService {
                 command.messageId(), command.messageType().name(), coordinates.topic(), coordinates.partition(),
                 coordinates.offset(), command.executionId()
         ));
-        List<DispatcherRegistration> registrations = registrationRepository.findAllForUpdate();
-        DispatcherRegistration registration = registrations.isEmpty() ? null : registrations.getFirst();
+        DispatcherRegistration registration = registrationRepository.findByEngineIdForUpdate(command.engineId()).orElse(null);
         if (registration == null || !registration.getEngineId().equals(command.engineId())
                 || registration.getState() == DispatcherRegistrationState.INACTIVE
                 || registration.getState() == DispatcherRegistrationState.ERROR) {
@@ -109,7 +111,8 @@ public class DispatcherCommandService {
         SparkExecutionResourceSpec resources = resolveResources(command.executionResources(), registration);
         DispatcherTaskExecution execution = DispatcherTaskExecution.queue(
                 command, fingerprint, registration.getBackendType(), resources);
-        if (resources.exceeds(registration.getResourcePolicy().maximums())) {
+        execution.bindTarget(registration.getTargetKey(), registration.getTargetFingerprint());
+        if (resources.exceeds(resourcePolicy(registration).maximums(), registration.getBackendType())) {
             SafeExecutionError error = new SafeExecutionError(
                     "RESOURCE_LIMIT_EXCEEDED", "任务运行资源超过计算引擎单次任务上限");
             execution.fail(error);
@@ -126,7 +129,7 @@ public class DispatcherCommandService {
             inbox.processed();
             return Outcome.REJECTED;
         }
-        long queued = executionRepository.countByState(DispatcherExecutionState.QUEUED);
+        long queued = executionRepository.countByEngineIdAndState(registration.getEngineId(), DispatcherExecutionState.QUEUED);
         if (queued >= registration.getMaxQueuedExecutions()) {
             SafeExecutionError error = new SafeExecutionError("CAPACITY_EXCEEDED", "Dispatcher 排队容量已满");
             execution.fail(error);
@@ -208,7 +211,8 @@ public class DispatcherCommandService {
         SparkExecutionResourceSpec resources = resolveResources(command.executionResources(), registration);
         DispatcherTaskExecution execution = DispatcherTaskExecution.queue(
                 command, fingerprint, registration.getBackendType(), resources);
-        if (resources.exceeds(registration.getResourcePolicy().maximums())) {
+        execution.bindTarget(registration.getTargetKey(), registration.getTargetFingerprint());
+        if (resources.exceeds(resourcePolicy(registration).maximums(), registration.getBackendType())) {
             SafeExecutionError error = new SafeExecutionError(
                     "RESOURCE_LIMIT_EXCEEDED", "任务运行资源超过计算引擎单次任务上限");
             execution.fail(error);
@@ -225,7 +229,7 @@ public class DispatcherCommandService {
             inbox.processed();
             return Outcome.REJECTED;
         }
-        long queued = executionRepository.countByState(DispatcherExecutionState.QUEUED);
+        long queued = executionRepository.countByEngineIdAndState(registration.getEngineId(), DispatcherExecutionState.QUEUED);
         if (queued >= registration.getMaxQueuedExecutions()) {
             SafeExecutionError error = new SafeExecutionError("CAPACITY_EXCEEDED", "Dispatcher 排队容量已满");
             execution.fail(error);
@@ -291,12 +295,17 @@ public class DispatcherCommandService {
                 null, null, null, ExecutionFailurePhase.DISPATCH, null, UUID.randomUUID());
     }
 
-    private static SparkExecutionResourceSpec resolveResources(
+    private SparkExecutionResourceSpec resolveResources(
             SparkExecutionResourceSpec requested,
             DispatcherRegistration registration
     ) {
         SparkExecutionResourceSpec resources = requested == null
-                ? registration.getResourcePolicy().defaults() : requested;
-        return resources;
+                ? resourcePolicy(registration).defaults() : requested;
+        return resources.forBackend(registration.getBackendType());
+    }
+
+    private cn.superhuang.data.scalpel.contract.execution.SparkExecutionResourcePolicy resourcePolicy(
+            DispatcherRegistration registration) {
+        return backends.require(registration.getTargetKey()).configuration().resourcePolicy();
     }
 }

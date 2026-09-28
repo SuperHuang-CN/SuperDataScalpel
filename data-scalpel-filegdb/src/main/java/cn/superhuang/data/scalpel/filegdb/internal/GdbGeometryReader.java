@@ -49,11 +49,29 @@ final class GdbGeometryReader {
                 definition.physicalName() + " OID " + oid + " geometry",
                 FileGdbErrorCode.MALFORMED_HEADER);
         try {
+            if (reader.remaining() == 0) {
+                return null;
+            }
             long encodedType = reader.readVarUInt();
+            if (encodedType == 0) {
+                reader.requireFullyConsumed();
+                return null;
+            }
             if ((encodedType & CURVE_DESCRIPTION_FLAG) != 0) {
                 throw new FileGdbException(
                         FileGdbErrorCode.UNSUPPORTED_FORMAT,
                         definition.physicalName() + " OID " + oid + " contains curve segments");
+            }
+            FileGdbLayerType encodedLayer = switch ((int) (encodedType & 0xff)) {
+                case 1, 9, 11, 21, 52 -> FileGdbLayerType.POINT;
+                case 8, 18, 20, 28, 53 -> FileGdbLayerType.MULTIPOINT;
+                case 3, 10, 13, 23, 50 -> FileGdbLayerType.POLYLINE;
+                case 5, 15, 19, 25, 51 -> FileGdbLayerType.POLYGON;
+                default -> throw new FileGdbException(FileGdbErrorCode.UNSUPPORTED_FORMAT,
+                        definition.physicalName() + " OID " + oid + " uses unsupported shape code " + encodedType);
+            };
+            if (encodedType > 0xffff_ffffL || encodedLayer != layerType) {
+                throw reader.malformed("shape code disagrees with the layer type");
             }
             FileGdbGeometry geometry = switch (layerType) {
                 case POINT -> readPoint(reader, spatialReference);
@@ -82,28 +100,45 @@ final class GdbGeometryReader {
             FileGdbSpatialReference spatialReference) {
         long encodedX = reader.readVarUInt();
         if (encodedX == 0) {
+            // Accept the compact empty-point form and the SDK form with zero ordinates.
+            int ordinates = 1 + (spatialReference.hasZ() ? 1 : 0) + (spatialReference.hasM() ? 1 : 0);
+            if (reader.remaining() != 0) {
+                for (int index = 0; index < ordinates; index++) {
+                    if (reader.readVarUInt() != 0) {
+                        throw reader.malformed("empty point contains a nonzero ordinate");
+                    }
+                }
+            }
             return null;
         }
         long encodedY = reader.readVarUInt();
+        if (encodedY == 0) {
+            throw reader.malformed("point contains an empty Y ordinate with a nonempty X");
+        }
         double x = coordinate(encodedX - 1, spatialReference.xyScale(), spatialReference.xOrigin(), reader, "x");
         double y = coordinate(encodedY - 1, spatialReference.xyScale(), spatialReference.yOrigin(), reader, "y");
         Double z = spatialReference.hasZ()
-                ? coordinate(
-                        reader.readVarUInt() - 1,
+                ? pointDimension(
+                        reader.readVarUInt(),
                         spatialReference.zScale(),
                         spatialReference.zOrigin(),
                         reader,
                         "z")
                 : null;
         Double m = spatialReference.hasM()
-                ? coordinate(
-                        reader.readVarUInt() - 1,
+                ? pointDimension(
+                        reader.readVarUInt(),
                         spatialReference.mScale(),
                         spatialReference.mOrigin(),
                         reader,
                         "m")
                 : null;
         return new FileGdbPoint(x, y, z, m);
+    }
+
+    private static double pointDimension(long encoded, Double scale, Double origin,
+                                         BoundedBufferReader reader, String role) {
+        return encoded == 0 ? Double.NaN : coordinate(encoded - 1, scale, origin, reader, role);
     }
 
     private static FileGdbMultiPoint readMultiPoint(

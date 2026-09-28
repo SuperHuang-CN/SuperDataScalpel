@@ -29,7 +29,7 @@ export type FileDatasetParsingOptions =
   | { kind: 'PARQUET' }
   | { kind: 'AVRO' }
   | { kind: 'GDB'; epsgCode?: number }
-  | { kind: 'SHP'; dbfCharsetOverride?: string; dbfFallbackCharset: string; epsgCode?: number };
+  | { kind: 'SHP'; dbfCharsetOverride?: string; dbfFallbackCharset: string; epsgCode?: number; zipEntryCharset?: string };
 
 export interface FileDatasetField {
   name: string;
@@ -107,6 +107,12 @@ export interface FileDatasetTable {
   createdAt: string;
   updatedAt: string;
 }
+
+export const fileDatasetRowCountText = (type: FileDatasetType, table: FileDatasetTable): string => (
+  type === 'GDB' && table.truncated && table.totalRowCount === table.sampledRecordCount
+    ? `至少 ${table.totalRowCount + 1} 条（旧计数）`
+    : `${table.totalRowCount} 条`
+);
 
 export interface FileDatasetTableSource {
   id: string;
@@ -240,7 +246,7 @@ export const defaultFileDatasetParsingOptions = (type: FileDatasetType): FileDat
     case 'PARQUET': return { kind: 'PARQUET' };
     case 'AVRO': return { kind: 'AVRO' };
     case 'GDB': return { kind: 'GDB' };
-    case 'SHP': return { kind: 'SHP', dbfFallbackCharset: 'GB18030' };
+    case 'SHP': return { kind: 'SHP', dbfFallbackCharset: 'GB18030', zipEntryCharset: 'UTF-8' };
   }
 };
 

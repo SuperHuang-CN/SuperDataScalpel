@@ -8,6 +8,7 @@ const state = vi.hoisted(() => ({
   taskType: 'SPARK_CANVAS' as DataTask['type'],
   taskStatus: 'DRAFT' as DataTask['status'],
   definitionConfigured: true,
+  extraPermissions: [] as string[],
   updateMutation: { mutateAsync: vi.fn(), isPending: false },
   deleteMutation: { mutateAsync: vi.fn(), isPending: false },
   publishMutation: { mutateAsync: vi.fn(), isPending: false },
@@ -34,7 +35,7 @@ vi.mock('../../directory', () => ({
 
 vi.mock('../../system', () => ({
   useCurrentUser: () => ({
-    data: { permissions: ['directory.view', 'task.update', 'task.publish', 'task.execute', 'task.delete'] },
+    data: { permissions: ['directory.view', 'task.update', 'task.publish', 'task.execute', 'task.delete', ...state.extraPermissions] },
   }),
 }));
 
@@ -108,6 +109,14 @@ vi.mock('../components/TaskDrawer', () => ({
   TaskDrawer: () => null,
 }));
 
+vi.mock('../../metric', () => ({
+  MetricRelationsPanel: ({ taskId }: { taskId: string }) => <div data-testid="task-metrics" data-task-id={taskId}>任务关联指标面板</div>,
+}));
+
+// Navigation tests do not exercise the X6 canvas runtime.
+vi.mock('../canvas/CanvasDesigner', () => ({ CanvasDesigner: () => null }));
+vi.mock('../../model/components/LineageGraphCanvas', () => ({ LineageGraphCanvas: () => null }));
+
 vi.mock('../components/LocalSqlTaskDefinitionPanel', () => ({
   LocalSqlTaskDefinitionPanel: ({ onDirtyChange }: { onDirtyChange: (dirty: boolean) => void }) => (
     <div>
@@ -152,6 +161,7 @@ const renderPage = (entry = '/task/67cc5990-074c-4724-9420-6ddcc331c1c0') => {
     { path: '/task', element: <div>任务列表</div> },
   ], { initialEntries: [entry] });
   render(<RouterProvider router={router} />);
+  return router;
 };
 
 describe('TaskDetailPage', () => {
@@ -159,6 +169,7 @@ describe('TaskDetailPage', () => {
     state.taskType = 'SPARK_CANVAS';
     state.taskStatus = 'DRAFT';
     state.definitionConfigured = true;
+    state.extraPermissions = [];
     state.streamingState = null;
     [
       state.updateMutation,
@@ -187,6 +198,50 @@ describe('TaskDetailPage', () => {
   });
 
   afterEach(() => cleanup());
+
+  it.each(['LOCAL_SQL', 'SPARK_CANVAS', 'SPARK_MODEL_QUALITY'] as const)('switches to metrics and back without losing URL context for %s', async (type) => {
+    state.taskType = type;
+    state.definitionConfigured = false;
+    state.extraPermissions = ['metric.view', 'model.view'];
+    const user = userEvent.setup();
+    const router = renderPage('/task/67cc5990-074c-4724-9420-6ddcc331c1c0?taskView=batch&runId=preserved');
+    expect(screen.getByRole('tab', { name: '基本信息' })).toHaveAttribute('aria-selected', 'true');
+
+    await user.click(screen.getByRole('tab', { name: '关联指标' }));
+    expect(await screen.findByTestId('task-metrics')).toHaveAttribute('data-task-id', '67cc5990-074c-4724-9420-6ddcc331c1c0');
+    expect(screen.getByRole('tab', { name: '关联指标' })).toHaveAttribute('aria-selected', 'true');
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get('tab')).toBe('metrics');
+    expect(params.get('taskView')).toBe('batch');
+    expect(params.get('runId')).toBe('preserved');
+
+    await user.click(screen.getByRole('tab', { name: '基本信息' }));
+    expect(screen.getByRole('tab', { name: '基本信息' })).toHaveAttribute('aria-selected', 'true');
+    await user.click(screen.getByRole('tab', { name: '关联指标' }));
+    expect(await screen.findByTestId('task-metrics')).toBeInTheDocument();
+  });
+
+  it.each(['LOCAL_SQL', 'SPARK_CANVAS', 'SPARK_MODEL_QUALITY'] as const)('restores metrics from the URL on initial load and remount for %s', async (type) => {
+    state.taskType = type;
+    state.extraPermissions = ['metric.view', 'model.view'];
+    const entry = '/task/67cc5990-074c-4724-9420-6ddcc331c1c0?tab=metrics&taskView=batch';
+    renderPage(entry);
+    expect(await screen.findByTestId('task-metrics')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '关联指标' })).toHaveAttribute('aria-selected', 'true');
+
+    cleanup();
+    renderPage(entry);
+    expect(await screen.findByTestId('task-metrics')).toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '关联指标' })).toHaveAttribute('aria-selected', 'true');
+  });
+
+  it.each([['metric.view'], ['model.view'], []])('hides metrics when either required permission is absent: %j', (...permissions) => {
+    state.extraPermissions = permissions;
+    state.taskType = 'SPARK_MODEL_QUALITY';
+    renderPage();
+    expect(screen.queryByRole('tab', { name: '关联指标' })).not.toBeInTheDocument();
+    expect(screen.getByRole('tab', { name: '基本信息' })).toHaveAttribute('aria-selected', 'true');
+  });
 
   it('opens on the common basic information tab', async () => {
     renderPage();

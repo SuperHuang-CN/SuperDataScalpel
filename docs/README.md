@@ -15,6 +15,10 @@
 
 前端模块化整改：[2026-09 实施与验收](verification/frontend-modularization-remediation-2026-09.md)。
 
+文件解析队列：[2026-09-23 多 Admin 压测与修复记录](verification/file-queue-multi-admin-20260923.md)（GDB/SHP 旧 Worker 清理问题已修复并回归；另记录并发启动权限初始化竞争）。
+
+文件数据集：[2026-09-24 功能与压测记录](verification/file-dataset-acceptance-20260924.md)（功能、并发删除、启动竞争、空间参考确认、故障恢复、持续负载及磁盘清理；记录测试条件、实测结果与未覆盖范围）。
+
 ## 按任务阅读
 
 | 修改内容 | 入口 |
@@ -28,7 +32,13 @@
 | 全局运行工作台、告警与通知 | [运行工作台与告警 V1](design/global-runtime-workbench-and-alerts.md)（V1 实现、规则、通知契约与部署配置） |
 | Canvas JSON、节点配置、设计期 API | [定义与节点语义](design/canvas-task-definition.md)、[编译服务](design/task-engine-daemon-and-compilation.md) |
 | Manifest、结果、Kafka 消息、Dispatcher | [Canvas 执行](design/canvas-task-execution.md)、[消息可靠性](design/task-execution-platform/02-kafka-contracts-and-admin-reliability.md)、[Runner 与制品](design/task-execution-platform/05-task-runner-kafka-and-artifacts.md) |
+| Dispatcher 单实例多计算引擎 | [现行设计](design/task-execution-platform/11-multi-engine-dispatcher.md)（已实施；目标发现、批量登记、Kafka 引擎路由、队列隔离、生命周期与受控升级） |
+| Dispatcher 默认配置、IDEA 与外置部署配置 | [配置入口与完整参数对照](operations/dispatcher-configuration.md)（两份配置、实例共享 Topic、目标 Key、覆盖规则及升级前置条件） |
+| 103 单节点 Kubernetes / KubeSphere 联调环境 | [部署与操作记录](operations/k8s103-single-node-test.md)（临时测试环境、访问入口、权限、维护及未验收边界） |
+| Kubernetes 提交联调 | [2026-09-26 修复与验证记录](verification/kubernetes-submission-20260926.md)（102 同进程 Docker/K8s 登记、真实 Admin/Kafka/Runner 链路、故障测试、清理和验证边界） |
 | 用户 JAR、TestKit、在线开发及试运行 | [SDK 设计](design/spark-jar-task-sdk-v1.md)、[SDK 运行约束](development/task-engine.md#spark-jar) |
+| 在线 SDK API 说明与动态更新 | [说明生成与读取规则](design/spark-jar-task-sdk-v1.md#在线-sdk-api-说明)、[验证记录](verification/sdk-api-documentation-20260926.md) |
+| 在线 Java 补全、语言服务工作区与部署 | [语言服务方案](design/spark-jar-online-java-language-service.md)（已实现；保存版本冲突后续再议）、[本机资源与隔离评估](verification/java-language-service-evaluation-20260925.md)（非生产容量认证） |
 | HTTP 错误、认证、权限 | [错误处理](design/backend-api-response-and-error-handling.md)、[系统访问管理](design/system-access-management.md) |
 | JDBC、平台类型、模型及物理表 | [数据源](design/data-source-management.md)、[类型系统](design/model-data-type-system.md)、[模型](design/model-management.md)、[物理表演进](design/model-physical-table-evolution.md) |
 | 全景成品、地图浏览和全景资产 | [全景影像管理 V1](development/panorama-management-v1.md) |

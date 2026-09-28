@@ -78,7 +78,7 @@ public record TaskRunResponse(
         String userJarSha256,
         @Schema(description = "本次运行固定的用户 JAR 大小，单位字节；非 JAR 任务为空。")
         Long userJarSizeBytes,
-        @Schema(description = "JAR 任务提交时固定使用的 Spark Driver 与 Executor 资源规格；非 JAR 或旧版本运行快照无法解析时为空。")
+        @Schema(description = "Spark 任务提交时从任务配置解析并固化的 Driver 与 Executor 资源申请快照，不表示实际用量；SQL、工作流或旧版本未保存资源的运行为空。")
         SparkExecutionResourceSpec executionResources,
         @Schema(description = "质量任务总体结论；非质量任务或未完成时为空。")
         QualityConclusion qualityConclusion,
@@ -146,7 +146,7 @@ public record TaskRunResponse(
     }
 
     private static SparkExecutionResourceSpec executionResourcesFrom(TaskRun run) {
-        if (run == null || (!run.getTaskType().isJar()) || run.getDefinitionSnapshot() == null) return null;
+        if (run == null || (!run.getTaskType().requiresComputeEngine()) || run.getDefinitionSnapshot() == null) return null;
         try {
             return OBSERVABILITY_MAPPER.readTree(run.getDefinitionSnapshot())
                     .path("executionResources").isMissingNode()

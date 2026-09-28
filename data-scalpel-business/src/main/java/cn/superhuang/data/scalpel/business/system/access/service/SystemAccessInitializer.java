@@ -9,6 +9,7 @@ import cn.superhuang.data.scalpel.business.system.access.repository.SystemPermis
 import cn.superhuang.data.scalpel.business.system.access.repository.SystemRolePermissionRepository;
 import cn.superhuang.data.scalpel.business.system.access.repository.SystemRoleRepository;
 import cn.superhuang.data.scalpel.business.system.access.repository.SystemUserRepository;
+import jakarta.persistence.EntityManager;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.context.annotation.Bean;
@@ -40,13 +41,19 @@ class SystemAccessInitializer {
             SystemUserRepository userRepository,
             PasswordEncoder passwordEncoder,
             PlatformTransactionManager transactionManager,
+            EntityManager entityManager,
             @Value("${data-scalpel.security.admin.username}") String administratorUsername,
             @Value("${data-scalpel.security.admin.password}") String administratorPassword
     ) {
         TransactionTemplate transactionTemplate = new TransactionTemplate(transactionManager);
-        return arguments -> transactionTemplate.executeWithoutResult(status -> synchronize(
-                permissionRepository, roleRepository, rolePermissionRepository, userRepository,
-                passwordEncoder, administratorUsername, administratorPassword));
+        return arguments -> transactionTemplate.executeWithoutResult(status -> {
+            // Works even on the first boot with no role/permission rows to lock. PostgreSQL
+            // releases this startup-only lock on commit/rollback; ordinary reads remain available.
+            entityManager.createNativeQuery("lock table sys_permission in share row exclusive mode")
+                    .executeUpdate();
+            synchronize(permissionRepository, roleRepository, rolePermissionRepository, userRepository,
+                    passwordEncoder, administratorUsername, administratorPassword);
+        });
     }
 
     void synchronize(

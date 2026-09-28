@@ -13,6 +13,8 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.RequestParam;
+import java.util.UUID;
 
 @RestController
 @RequestMapping("/api/v1/dispatcher")
@@ -26,13 +28,21 @@ public class DispatcherManagementResource {
     }
 
     @GetMapping("/info")
-    public DispatcherInfoResponse info() { return service.info(); }
+    public DispatcherInfoResponse info(@RequestParam(required = false) UUID engineId,
+                                       @RequestParam(required = false) String targetKey) {
+        if (engineId != null && targetKey != null) throw new org.springframework.web.server.ResponseStatusException(
+                org.springframework.http.HttpStatus.BAD_REQUEST, "engineId 与 targetKey 不能同时指定");
+        return targetKey == null ? service.info(engineId) : service.targetInfo(targetKey);
+    }
+
+    @GetMapping("/targets")
+    public cn.superhuang.data.scalpel.contract.execution.DispatcherTargetDirectoryResponse targets() { return service.targets(); }
 
     @GetMapping("/runtime-overview")
-    public DispatcherRuntimeOverviewResponse runtimeOverview() { return runtimeService.overview(); }
+    public DispatcherRuntimeOverviewResponse runtimeOverview(@RequestParam(required = false) UUID engineId) { return runtimeService.overview(engineId); }
 
     @GetMapping("/registration")
-    public DispatcherRegistrationResponse registration() { return service.current(); }
+    public DispatcherRegistrationResponse registration(@RequestParam(required = false) UUID engineId) { return service.current(engineId); }
 
     @PostMapping("/registration/actions/activate")
     public DispatcherRegistrationResponse activate(@Valid @RequestBody DispatcherRegistrationRequest request) {
@@ -40,10 +50,13 @@ public class DispatcherManagementResource {
     }
 
     @PostMapping("/registration/actions/drain")
-    public DispatcherRegistrationResponse drain() { return service.drain(); }
+    public DispatcherRegistrationResponse drain(@RequestParam(required = false) UUID engineId) { return service.drain(engineId); }
+
+    @PostMapping("/registration/actions/resume")
+    public DispatcherRegistrationResponse resume(@RequestParam(required = false) UUID engineId) { return service.resume(engineId); }
 
     @PostMapping("/registration/actions/deactivate")
-    public DispatcherRegistrationResponse deactivate(@RequestBody(required = false) DispatcherDeactivateRequest request) {
-        return service.deactivate(request != null && request.force());
+    public DispatcherRegistrationResponse deactivate(@RequestParam(required = false) UUID engineId, @RequestBody(required = false) DispatcherDeactivateRequest request) {
+        return service.deactivate(engineId, request != null && request.force());
     }
 }

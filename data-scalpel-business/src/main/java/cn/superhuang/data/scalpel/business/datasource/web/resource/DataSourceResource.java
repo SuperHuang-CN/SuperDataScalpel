@@ -59,10 +59,13 @@ public class DataSourceResource {
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据源")
     @GetMapping
-    @PreAuthorize("hasAuthority('datasource.view')")
-    @Operation(summary = "查询数据源", description = "分页读取管理库中已登记的数据源及其配置摘要，不连接外部数据源，也不执行健康探测。")
-    public PageResponse<DataSourceResponse> search(@ParameterObject @ModelAttribute SearchRequest request) {
-        return service.search(request);
+    @PreAuthorize("hasAuthority('datasource.view') and (!#hasPublishedModels or hasAuthority('model.view'))")
+    @Operation(summary = "查询数据源", description = "分页读取管理库中已登记的数据源及其配置摘要，不连接外部数据源，也不执行健康探测。可在分页前限定为关联已发布模型的 JDBC 连接，与 search 条件取交集；该筛选额外要求 model.view，否则返回 403。不改变模型或数据源状态。")
+    public PageResponse<DataSourceResponse> search(
+            @ParameterObject @ModelAttribute SearchRequest request,
+            @Parameter(description = "是否仅返回至少关联一个已发布（PUBLISHED）模型的 JDBC 数据源，默认 false（不限制）。不自动限制连接启用状态或用途，可通过 search 叠加；true 时额外要求 model.view 权限。")
+            @RequestParam(defaultValue = "false") boolean hasPublishedModels) {
+        return service.search(request, hasPublishedModels);
     }
 
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询数据源详情")

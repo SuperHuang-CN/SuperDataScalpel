@@ -34,7 +34,7 @@ public class FileDatasetParseFailureClassifier {
                     || fileGdbException.code() == FileGdbErrorCode.SOURCE_CHANGED;
             return new Failure(
                     retryable,
-                    retryable ? "GDB 对象读取暂时失败" : "GDB 目录内容无效或当前读取器不支持"
+                    retryable ? "GDB 对象读取暂时失败" : gdbFailureMessage(fileGdbException)
             );
         }
         if (exception instanceof ShapefileException shapefileException) {
@@ -51,6 +51,27 @@ public class FileDatasetParseFailureClassifier {
             return new Failure(false, "文件内容无法按当前格式解析");
         }
         return new Failure(false, "文件解析发生内部错误");
+    }
+
+    private static String gdbFailureMessage(FileGdbException exception) {
+        String summary = switch (exception.code()) {
+            case UNSUPPORTED_FORMAT -> "GDB 包含暂不支持的格式";
+            case MALFORMED_HEADER -> "GDB 文件头、字段或记录结构无效";
+            case INVALID_OFFSET -> "GDB 索引或记录偏移无效";
+            case LIMIT_EXCEEDED -> "GDB 超过读取限制";
+            case TRUNCATED_INPUT -> "GDB 文件内容不完整";
+            case MISSING_FILE -> "GDB 缺少必要组件";
+            default -> "GDB 目录无法读取";
+        };
+        // Only format diagnostics are safe to expose; storage/provider failures keep generic messages.
+        if (exception.code() == FileGdbErrorCode.UNSUPPORTED_FORMAT
+                || exception.code() == FileGdbErrorCode.MALFORMED_HEADER
+                || exception.code() == FileGdbErrorCode.INVALID_OFFSET
+                || exception.code() == FileGdbErrorCode.LIMIT_EXCEEDED) {
+            String detail = safeMessage(exception, "").replaceAll("[\\p{Cntrl}]", " ");
+            return summary + "（" + exception.code() + "）：" + detail.substring(0, Math.min(detail.length(), 300));
+        }
+        return summary + "（" + exception.code() + "）";
     }
 
     private static String safeMessage(Throwable exception, String fallback) {

@@ -7,7 +7,7 @@ import cn.superhuang.data.scalpel.dispatcher.management.DispatcherRuntimeService
 import cn.superhuang.data.scalpel.dispatcher.backend.BackendException;
 import cn.superhuang.data.scalpel.dispatcher.backend.ExecutionIdentity;
 import cn.superhuang.data.scalpel.dispatcher.backend.ExternalExecutionHandle;
-import cn.superhuang.data.scalpel.dispatcher.backend.TaskExecutionBackend;
+import cn.superhuang.data.scalpel.dispatcher.backend.DispatcherBackendRegistry;
 import cn.superhuang.data.scalpel.dispatcher.repository.DispatcherTaskExecutionRepository;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
@@ -32,25 +32,26 @@ import java.time.Instant;
 public class DispatcherExecutionResource {
     private final DispatcherTaskExecutionRepository repository;
     private final DispatcherRuntimeService runtimeService;
-    private final TaskExecutionBackend backend;
+    private final DispatcherBackendRegistry backends;
 
     public DispatcherExecutionResource(
             DispatcherTaskExecutionRepository repository,
             DispatcherRuntimeService runtimeService,
-            TaskExecutionBackend backend
+            DispatcherBackendRegistry backends
     ) {
         this.repository = repository;
         this.runtimeService = runtimeService;
-        this.backend = backend;
+        this.backends = backends;
     }
 
     @GetMapping
     public PageResponse<DispatcherExecutionSummaryResponse> search(
+            @RequestParam(required = false) UUID engineId,
             @RequestParam(defaultValue = "ACTIVE") DispatcherExecutionScope scope,
             @RequestParam(defaultValue = "0") @Min(0) int page,
             @RequestParam(defaultValue = "20") @Min(1) @Max(100) int size
     ) {
-        return runtimeService.executions(scope, page, size);
+        return runtimeService.executions(engineId, scope, page, size);
     }
 
     @GetMapping("/{executionId}")
@@ -66,9 +67,6 @@ public class DispatcherExecutionResource {
     ) {
         var execution = repository.findByExecutionIdAndAttempt(executionId, attempt)
                 .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "执行不存在"));
-        if (execution.getBackendType() != backend.type()) {
-            throw new ResponseStatusException(HttpStatus.CONFLICT, "执行后端与当前 Dispatcher 不一致");
-        }
         if (execution.getExternalExecutionId() == null || execution.getExternalExecutionId().isBlank()) {
             return response(execution, DispatcherExecutionLogResponse.Status.WAITING, null, 0, false,
                     "等待任务启动并产生日志");
@@ -78,6 +76,7 @@ public class DispatcherExecutionResource {
         var handle = new ExternalExecutionHandle(execution.getBackendType(), execution.getExternalExecutionId(),
                 execution.getTrackingUrl());
         try {
+            var backend = backends.forExecution(execution);
             backend.inspect(handle, identity);
             var log = backend.collectRecentLog(handle);
             String content = new String(log.content(), StandardCharsets.UTF_8);

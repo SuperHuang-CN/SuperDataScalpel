@@ -12,6 +12,7 @@ import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
 
 import java.util.Objects;
+import java.time.Instant;
 import java.util.UUID;
 
 @Entity
@@ -55,6 +56,11 @@ public class SparkJarTaskDefinition extends BaseEntity {
     private String onlineSourceCode;
     @Column(name = "online_compiled_source_sha256", length = 64)
     private String onlineCompiledSourceSha256;
+    @Column(name = "online_applied_at")
+    private Instant onlineAppliedAt;
+    @Enumerated(EnumType.STRING)
+    @Column(name = "authoring_mode", length = 16)
+    private SparkJarAuthoringMode authoringMode;
     @Column(name = "timeout_seconds", nullable = false)
     private int timeoutSeconds;
     @Column(nullable = false)
@@ -125,15 +131,32 @@ public class SparkJarTaskDefinition extends BaseEntity {
     public void saveOnlineSource(String sourceCode) {
         if (sourceCode == null || sourceCode.isBlank()) throw new IllegalArgumentException("在线源码不能为空");
         this.onlineSourceCode = sourceCode;
+        if (authoringMode == null) authoringMode = SparkJarAuthoringMode.ONLINE;
     }
 
     public void markOnlineSourceCompiled(String sourceSha256) {
         this.onlineCompiledSourceSha256 = required(sourceSha256);
+        this.onlineAppliedAt = Instant.now();
+        this.authoringMode = SparkJarAuthoringMode.ONLINE;
     }
 
     /** A manually uploaded JAR becomes authoritative without discarding the saved online draft. */
     public void markJarUploaded() {
         this.onlineCompiledSourceSha256 = null;
+        this.onlineAppliedAt = null;
+        this.authoringMode = SparkJarAuthoringMode.UPLOAD;
+    }
+
+    /** Authoring preferences do not change the runnable artifact or production version. */
+    public void chooseAuthoringMode(SparkJarAuthoringMode mode) {
+        if (mode != null) this.authoringMode = mode;
+    }
+
+    public SparkJarAuthoringMode getAuthoringMode() {
+        if (authoringMode != null) return authoringMode;
+        if (onlineCompiledSourceSha256 != null) return SparkJarAuthoringMode.ONLINE;
+        if (hasJar()) return SparkJarAuthoringMode.UPLOAD;
+        return onlineSourceCode == null ? null : SparkJarAuthoringMode.ONLINE;
     }
 
     public void resourceBindingsChanged() { incrementVersion(); }
@@ -180,5 +203,6 @@ public class SparkJarTaskDefinition extends BaseEntity {
     public UUID getCurrentDevelopmentKitJobId() { return currentDevelopmentKitJobId; }
     public String getOnlineSourceCode() { return onlineSourceCode; }
     public String getOnlineCompiledSourceSha256() { return onlineCompiledSourceSha256; }
+    public Instant getOnlineAppliedAt() { return onlineAppliedAt; }
     public boolean hasJar() { return jarObjectKey != null; }
 }

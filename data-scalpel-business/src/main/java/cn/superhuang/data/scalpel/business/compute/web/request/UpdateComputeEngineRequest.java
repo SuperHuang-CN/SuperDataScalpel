@@ -33,7 +33,7 @@ public record UpdateComputeEngineRequest(
         @Min(1) int maxConcurrentSubmissions,
         @Schema(description = "已提交但尚未终止的外部应用数量上限；0 表示不设置额外上限。", minimum = "0")
         @Min(0) int maxInFlightApplications,
-        @Schema(description = "新的 Spark 单次执行资源策略；为空时保留当前策略，即使 expectedBackendType 同时改变也不会换成新后端默认值。降低资源上限时，若已有绑定的 Spark JAR 或实时 JAR 任务申请超限，则整次更新返回冲突且不自动修改任务。")
+        @Schema(description = "已绑定目标的资源策略只读，省略保留注册快照，传入不同值返回 409；请在 Dispatcher 配置后停用并重新注册以同步。旧式未绑定目标的记录保留原编辑行为。")
         @Valid SparkExecutionResourcePolicy resourcePolicy
 ) {
 }
