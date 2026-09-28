@@ -18,6 +18,41 @@ class JavaLanguageWorkspaceIntegrationTest {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String URI = "file:///datascalpel/src/com/example/datascalpel/ExampleSparkJob.java";
 
+    @Test void prebuiltIndexesPrepareReuseAndKeepPrivateCopies() throws Exception {
+        var config = new LanguageServiceConfiguration(Path.of(System.getProperty("datascalpel.test.jdtls.home")), work, 8191, 2, 512, Duration.ofSeconds(5));
+        try (var cache = new JavaLanguageIndexCache(config)) {
+            cache.prepare();
+            Path probe = java.nio.file.Files.createDirectories(work.resolve("copy-check"));
+            assertNotNull(cache.copyToWorkspace(probe), "Background producer must publish a complete matching snapshot");
+            var before = JavaLanguageIndexCache.inventory(config.indexCacheRoot());
+            for (int i = 0; i < 2; i++) {
+                long started = System.nanoTime();
+                try (var workspace = new JavaLanguageWorkspace(config, cache::copyToWorkspace)) {
+                    var output = new LinkedBlockingQueue<String>();
+                    workspace.attach(output::add);
+                    initialize(workspace, output);
+                    openSource(workspace, "package com.example.datascalpel;\npublic class ExampleSparkJob { void run() { new Strin; } }", 1);
+                    assertNotNull(completionAt(workspace, output, 11, "String", 1, 53));
+                    open(workspace, "models", 2);
+                    assertNotNull(completion(workspace, output, 12, "models"));
+                    System.out.printf("PREBUILT_INDEX consumer=%d readyMs=%d%n", i,
+                            TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started));
+                }
+            }
+            assertEquals(before, JavaLanguageIndexCache.inventory(config.indexCacheRoot()));
+            // A fresh manager must reload a published snapshot without launching another producer.
+            try (var reloaded = new JavaLanguageIndexCache(config)) {
+                reloaded.prepare();
+                assertNotNull(reloaded.copyToWorkspace(java.nio.file.Files.createDirectories(work.resolve("reload-check"))));
+                assertEquals(before, JavaLanguageIndexCache.inventory(config.indexCacheRoot()));
+            }
+            // A broken published file must not be passed to JDT or fail the editor's initialization.
+            String index = before.keySet().iterator().next();
+            java.nio.file.Files.writeString(config.indexCacheRoot().resolve(index), "corrupt test index");
+            assertNull(cache.copyToWorkspace(java.nio.file.Files.createDirectories(work.resolve("corruption-check"))));
+        }
+    }
+
     @Test void entryOccurrencesWithSparkWildcardImportAreSemantic() throws Exception {
         var config = new LanguageServiceConfiguration(Path.of(System.getProperty("datascalpel.test.jdtls.home")), work, 8191, 1, 512, Duration.ofSeconds(5));
         try (var workspace = new JavaLanguageWorkspace(config)) {

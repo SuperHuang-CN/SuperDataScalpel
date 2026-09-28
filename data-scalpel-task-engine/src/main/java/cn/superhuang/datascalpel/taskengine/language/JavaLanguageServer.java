@@ -27,6 +27,7 @@ import java.util.concurrent.TimeUnit;
 public final class JavaLanguageServer extends WebSocketServer implements AutoCloseable {
     private static final Logger LOG = LoggerFactory.getLogger(JavaLanguageServer.class);
     private final LanguageServiceConfiguration configuration;
+    private final JavaLanguageIndexCache indexes;
     private final byte[] authorization;
     private final Map<String, JavaLanguageWorkspace> workspaces = new ConcurrentHashMap<>();
     private final Map<WebSocket, JavaLanguageWorkspace> connections = new ConcurrentHashMap<>();
@@ -37,6 +38,7 @@ public final class JavaLanguageServer extends WebSocketServer implements AutoClo
         super(new InetSocketAddress(engine.host(), language.port()), 2,
                 List.of(new Draft_6455(List.of(), LspFrames.MAX_BYTES)));
         configuration = language;
+        indexes = new JavaLanguageIndexCache(language);
         authorization = ("Bearer " + engine.authToken()).getBytes(StandardCharsets.UTF_8);
         setConnectionLostTimeout(30);
         setReuseAddr(true);
@@ -61,7 +63,7 @@ public final class JavaLanguageServer extends WebSocketServer implements AutoClo
         try {
             if (workspace == null) {
                 if (workspaces.size() >= configuration.maxSessions()) { connection.close(1013, "Java language capacity reached"); return; }
-                workspace = new JavaLanguageWorkspace(configuration);
+                workspace = new JavaLanguageWorkspace(configuration, indexes::copyToWorkspace);
                 workspaces.put(key, workspace);
             }
             if (!workspace.attach(value -> {
@@ -93,7 +95,10 @@ public final class JavaLanguageServer extends WebSocketServer implements AutoClo
         LOG.warn("Java language transport failure: {}", exception.getClass().getSimpleName());
         if (connection != null) connection.close(1011);
     }
-    @Override public void onStart() { LOG.info("Task Engine Java language listener ready on port {}", getPort()); }
+    @Override public void onStart() {
+        LOG.info("Task Engine Java language listener ready on port {}", getPort());
+        indexes.start();
+    }
 
     private synchronized void reap() {
         Instant now = Instant.now();
@@ -107,6 +112,7 @@ public final class JavaLanguageServer extends WebSocketServer implements AutoClo
 
     @Override public void close() {
         maintenance.shutdownNow();
+        indexes.close();
         try { stop(1000); } catch (InterruptedException ex) { Thread.currentThread().interrupt(); }
         workspaces.values().forEach(JavaLanguageWorkspace::close);
         workspaces.clear(); connections.clear();

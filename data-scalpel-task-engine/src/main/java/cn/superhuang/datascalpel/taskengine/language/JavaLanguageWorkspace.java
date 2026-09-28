@@ -19,6 +19,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
+import java.util.function.Function;
 
 /** One independent Eclipse process and a single managed Java document; never a user project importer. */
 final class JavaLanguageWorkspace implements AutoCloseable {
@@ -29,6 +30,7 @@ final class JavaLanguageWorkspace implements AutoCloseable {
             "textDocument/signatureHelp", "textDocument/formatting", "textDocument/rename", "textDocument/documentHighlight", "textDocument/documentSymbol");
     private static final String VIRTUAL_ROOT = "file:///datascalpel/";
     private final LanguageServiceConfiguration config;
+    private final Function<Path, Path> indexes;
     private final Path root;
     private final Path project;
     private final String projectUri;
@@ -46,7 +48,12 @@ final class JavaLanguageWorkspace implements AutoCloseable {
     private final Instant createdAt = Instant.now();
 
     JavaLanguageWorkspace(LanguageServiceConfiguration config) throws IOException {
+        this(config, root -> null);
+    }
+
+    JavaLanguageWorkspace(LanguageServiceConfiguration config, Function<Path, Path> indexes) throws IOException {
         this.config = config;
+        this.indexes = indexes;
         Files.createDirectories(config.workRoot());
         root = Files.createTempDirectory(config.workRoot(), "session-");
         project = root.resolve("project");
@@ -236,7 +243,7 @@ final class JavaLanguageWorkspace implements AutoCloseable {
                     .filter(p -> p.toString().endsWith(".jar")).findFirst().orElseThrow(() -> new IOException("Missing JDT launcher"));
         }
         String os = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT);
-        Path originalConfig = config.home().resolve(os.contains("win") ? "config_win" : os.contains("mac") ? "config_mac" : "config_linux");
+        Path originalConfig = config.home().resolve(runtimeConfigDirectory());
         Path eclipseConfig = root.resolve("config");
         try (var paths = Files.walk(originalConfig)) {
             for (Path from : paths.toList()) {
@@ -250,6 +257,8 @@ final class JavaLanguageWorkspace implements AutoCloseable {
                 "-Declipse.product=org.eclipse.jdt.ls.core.product", "-Dlog.level=WARNING", "--add-modules=ALL-SYSTEM",
                 "--add-opens", "java.base/java.util=ALL-UNNAMED", "--add-opens", "java.base/java.lang=ALL-UNNAMED",
                 "-jar", launcher.toString(), "-configuration", eclipseConfig.toString(), "-data", root.resolve("metadata").toString()));
+        Path indexLocation = indexes.apply(root);
+        if (indexLocation != null) command.add(1, "-Djdt.core.sharedIndexLocation=" + indexLocation.toAbsolutePath());
         ProcessBuilder builder = new ProcessBuilder(command).directory(config.home().toFile()).redirectError(ProcessBuilder.Redirect.DISCARD);
         builder.environment().remove("JAVA_TOOL_OPTIONS");
         builder.environment().remove("JDK_JAVA_OPTIONS");
@@ -283,6 +292,10 @@ final class JavaLanguageWorkspace implements AutoCloseable {
     }
 
     private static String xml(String value) { return value.replace("&", "&amp;").replace("\"", "&quot;").replace("<", "&lt;"); }
+    static String runtimeConfigDirectory() {
+        String os = System.getProperty("os.name").toLowerCase(java.util.Locale.ROOT);
+        return os.contains("win") ? "config_win" : os.contains("mac") ? "config_mac" : "config_linux";
+    }
     private synchronized void write(JsonNode message) throws IOException { LspFrames.write(process.getOutputStream(), JSON.writeValueAsBytes(message)); }
     private void emit(ObjectNode message, JsonNode result) throws IOException { message.set("result", result); send(JSON.writeValueAsString(message)); }
     private void send(String value) { Consumer<String> sink = output; if (sink != null) sink.accept(value); }
