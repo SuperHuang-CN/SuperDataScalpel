@@ -7,6 +7,7 @@ import { RequireAuthentication } from './auth/RequireAuthentication';
 import { RequirePermission } from './auth/RequirePermission';
 import { AppShell } from './layout/AppShell';
 import { AppProviders } from './providers/AppProviders';
+import { AppRouteErrorPage } from './routing/AppRouteErrorPage';
 
 const DashboardPage = lazy(async () => ({ default: (await import('../modules/dashboard/pages/DashboardPage')).DashboardPage }));
 const RuntimeWorkbenchPage = lazy(async () => ({ default: (await import('../modules/operations/pages/RuntimeWorkbenchPage')).RuntimeWorkbenchPage }));
@@ -66,7 +67,7 @@ const LegacyDataServiceEditRedirect = () => {
 };
 
 const router = createBrowserRouter(createRoutesFromElements(
-  <>
+  <Route errorElement={<AppRouteErrorPage />}>
         <Route path="login" element={<LoginPage />} />
         <Route path="assets" element={<Suspense fallback="正在加载数据资产门户…"><AssetPortalPage /></Suspense>} />
         <Route path="assets/:id" element={<Suspense fallback="正在加载资产详情…"><AssetPortalDetailPage /></Suspense>} />
@@ -248,7 +249,7 @@ const router = createBrowserRouter(createRoutesFromElements(
           </Route>
         </Route>
         <Route path="*" element={<Navigate to="/" replace />} />
-  </>
+  </Route>
 ));
 
 export const App = () => (
