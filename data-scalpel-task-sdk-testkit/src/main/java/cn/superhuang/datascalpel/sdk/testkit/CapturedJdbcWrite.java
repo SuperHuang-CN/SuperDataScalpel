@@ -18,9 +18,17 @@ public record CapturedJdbcWrite(
         Map<String, String> columnMappings,
         StructType schema,
         List<Row> rows,
-        long affectedRows
+        long affectedRows,
+        cn.superhuang.datascalpel.sdk.BatchWriteOptions batchWrite,
+        Map<String, Integer> geometrySrids
 ) {
+    public CapturedJdbcWrite(String bindingName, JdbcTableIdentifier table, JdbcWriteMode mode,
+                             List<String> upsertKeyColumns, Map<String, String> columnMappings,
+                             StructType schema, List<Row> rows, long affectedRows) {
+        this(bindingName, table, mode, upsertKeyColumns, columnMappings, schema, rows, affectedRows, null, Map.of());
+    }
     public CapturedJdbcWrite {
+        geometrySrids = Map.copyOf(geometrySrids);
         upsertKeyColumns = List.copyOf(upsertKeyColumns);
         columnMappings = Collections.unmodifiableMap(new LinkedHashMap<>(columnMappings));
         rows = List.copyOf(rows);

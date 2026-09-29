@@ -28,6 +28,7 @@
 | 页面、表格、筛选、目录、表单或视觉 | [页面与交互规范](development/frontend-ui.md)，按文内表格定位章节 |
 | 任务中心菜单分组、列表与详情导航 | [任务中心分组](development/frontend-ui.md#task-center-views) |
 | Canvas 节点、编译、Runner、批流或 SDK | [Task Engine AGENTS](../data-scalpel-task-engine/AGENTS.md)、[编译与执行规范](development/task-engine.md) |
+| 批处理写入统一、条件覆盖、原子提交及行数统计 | [实施方案](design/batch-jdbc-write-implementation-20260929.md)、[实测记录](verification/batch-jdbc-write-20260929.md)；[前期讨论稿](design/batch-jdbc-write-atomicity-and-overwrite-design.md)保留决策过程，以实施方案为准 |
 | 任务工作流、依赖、父子运行和取消 | [TaskWorkflow V1](design/task-workflow-v1.md) |
 | 全局运行工作台、告警与通知 | [运行工作台与告警 V1](design/global-runtime-workbench-and-alerts.md)（V1 实现、规则、通知契约与部署配置） |
 | Canvas JSON、节点配置、设计期 API | [定义与节点语义](design/canvas-task-definition.md)、[编译服务](design/task-engine-daemon-and-compilation.md) |

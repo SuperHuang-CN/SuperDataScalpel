@@ -8,7 +8,7 @@ import java.util.List;
 public record CanvasDefinition(
         @JsonPropertyDescription("Canvas 定义主协议版本；当前写入 4，用于选择整体节点契约，不是数据模型 Schema 版本。")
         Integer schemaVersion,
-        @JsonPropertyDescription("同一 Canvas 主协议内的能力次版本；当前写入 77，缺失时按旧版 0 解析。")
+        @JsonPropertyDescription("同一 Canvas 主协议内的能力次版本；当前写入 78，缺失时按旧版 0 解析。")
         Integer schemaMinorVersion,
         @JsonPropertyDescription("Canvas 节点列表。")
         List<CanvasNodeDefinition> nodes,
@@ -16,7 +16,7 @@ public record CanvasDefinition(
         List<CanvasEdgeDefinition> edges
 ) {
     public static final int CURRENT_SCHEMA_VERSION = 4;
-    public static final int CURRENT_SCHEMA_MINOR_VERSION = 77;
+    public static final int CURRENT_SCHEMA_MINOR_VERSION = 78;
     public static final int LEGACY_SCHEMA_MINOR_VERSION = 0;
 
     public CanvasDefinition {

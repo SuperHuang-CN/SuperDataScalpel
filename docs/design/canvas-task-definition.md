@@ -184,11 +184,15 @@ Canvas 定义中的 JDBC 节点只保存 `dataSourceId` 和表选择，文件输
 | 字段 | 类型 | 说明 |
 | --- | --- | --- |
 | `schemaVersion` | integer | Canvas JSON 协议大版本，当前固定为 `4` |
-| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；当前写出版本为 `77` |
+| `schemaMinorVersion` | integer | Canvas JSON 协议小版本；当前写出版本为 `78` |
 | `nodes` | array | 节点定义，按照前端保存顺序持久化；业务逻辑不得依赖数组顺序 |
 | `edges` | array | 有向边定义，业务逻辑不得依赖数组顺序 |
 
-当前写出版本统一为 `4.77`。`4.77` 为 `SPATIAL_CLIP` 增加可选 `maskCombination`：新建节点默认
+当前写出版本统一为 `4.78`。`4.78` 为 `JDBC_OUTPUT` / `MODEL_OUTPUT` 的每次写入增加可选
+`batchWrite: { overwriteCondition, allowEmptyOverwrite }`。缺失/null 保持旧直接提交；对象存在启用中间表与单目标事务。
+`overwriteCondition` 是目标字段的结构化条件，null 为全表，非 OVERWRITE 必须为空；空输入默认失败保留旧数据。
+仅批处理支持，低于 4.78 携带该对象在保存、导入及编译时拒绝。详见[实施方案](batch-jdbc-write-implementation-20260929.md)。
+`4.77` 为 `SPATIAL_CLIP` 增加可选 `maskCombination`：新建节点默认
 `DISSOLVE_ALL`，对每条来源要素只融合与其相交的 Mask 后裁剪一次，避免重叠 Mask 重复输出覆盖区域；
 缺失/null 保持旧版 `PAIRWISE` 逐条 Mask 裁剪。`4.76` 新增批处理 `SPATIAL_DESCRIBE_DATASET`，在保留来源表的同时输出
 逐字段统计表、数据集描述表，以及可选样本表和 XY Envelope 范围表。节点只构造惰性 Spark 计划，
@@ -352,7 +356,7 @@ NULL。`INNER` 保持旧结果，`RIGHT/FULL` 仍不支持。低版本返回
 EPSG:4326 XY 并使用 Geometry 真实最近位置。`distanceOutput.enabled=true` 仅支持一对多，可分别输出
 空间距离和时间 Near 的区间间隔。任一非 null 对象在低版本返回
 `SPATIAL_JOIN_NEAR_REQUIRE_SCHEMA_VERSION`。
-较低小版本定义继续读取，并在保存和导出时规范化为 `4.77`；
+较低小版本定义继续读取，并在保存和导出时规范化为 `4.78`；
 标记为低于引入版本却携带对应能力的定义必须拒绝，
 不能因为升级而猜测其语义。
 

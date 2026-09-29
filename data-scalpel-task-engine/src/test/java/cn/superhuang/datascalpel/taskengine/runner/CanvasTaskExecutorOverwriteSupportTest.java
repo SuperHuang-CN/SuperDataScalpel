@@ -30,7 +30,7 @@ class CanvasTaskExecutorOverwriteSupportTest {
                 RuntimeDatabaseType.KINGBASE
         )) {
             assertDoesNotThrow(
-                    () -> CanvasTaskExecutor.requireOverwriteSupported(runtimeDataSource(databaseType)),
+                    () -> DirectJdbcWriter.requireOverwriteSupported(runtimeDataSource(databaseType)),
                     databaseType.name()
             );
         }
@@ -40,7 +40,7 @@ class CanvasTaskExecutorOverwriteSupportTest {
     void rejectsTdEngineBeforeTruncating() {
         RunnerExecutionException exception = assertThrows(
                 RunnerExecutionException.class,
-                () -> CanvasTaskExecutor.requireOverwriteSupported(
+                () -> DirectJdbcWriter.requireOverwriteSupported(
                         runtimeDataSource(RuntimeDatabaseType.TDENGINE_WEBSOCKET)
                 )
         );
@@ -49,14 +49,28 @@ class CanvasTaskExecutorOverwriteSupportTest {
     }
 
     private static RuntimeDataSource runtimeDataSource(RuntimeDatabaseType databaseType) {
-        return new RuntimeDataSource(
-                UUID.randomUUID(),
-                databaseType,
-                Set.of(DataSourcePurpose.DISTRIBUTION),
-                new RuntimeJdbcConnection(
-                        "example.Driver", "jdbc:example:test", null, null,
-                        "user", "password", Map.of()
-                )
-        );
+        return new RuntimeDataSource(UUID.randomUUID(), databaseType, Set.of(DataSourcePurpose.DISTRIBUTION),
+                new RuntimeJdbcConnection("example.Driver", "jdbc:example:test", null, null,
+                        "user", "password", Map.of()));
     }
+
+    @Test
+    void sharedWriterPreservesUpsertAndGeometryCapabilityBoundaries() {
+        for (RuntimeDatabaseType type : List.of(RuntimeDatabaseType.POSTGRESQL, RuntimeDatabaseType.MYSQL,
+                RuntimeDatabaseType.HIGHGO, RuntimeDatabaseType.OPENGAUSS, RuntimeDatabaseType.KINGBASE)) {
+            assertDoesNotThrow(() -> DirectJdbcWriter.requireSupported(runtimeDataSource(type), "UPSERT", true, "output"));
+        }
+        for (RuntimeDatabaseType type : List.of(RuntimeDatabaseType.ORACLE, RuntimeDatabaseType.DAMENG,
+                RuntimeDatabaseType.SQL_SERVER)) {
+            assertDoesNotThrow(() -> DirectJdbcWriter.requireSupported(runtimeDataSource(type), "UPSERT", false, "output"));
+            var failure = assertThrows(RunnerExecutionException.class,
+                    () -> DirectJdbcWriter.requireSupported(runtimeDataSource(type), "APPEND", true, "output"));
+            assertEquals("SPATIAL_JDBC_UNSUPPORTED", failure.code());
+            assertEquals("output", failure.nodeId());
+        }
+        var failure = assertThrows(RunnerExecutionException.class, () -> DirectJdbcWriter.requireSupported(
+                runtimeDataSource(RuntimeDatabaseType.CLICKHOUSE), "UPSERT", false, "output"));
+        assertEquals("UPSERT_DATABASE_NOT_SUPPORTED", failure.code());
+    }
+
 }

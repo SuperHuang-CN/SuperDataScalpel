@@ -83,10 +83,15 @@ final class SpatialJdbcRuntimeSupport {
             List<JdbcInputReadOption> readOptions,
             String nodeId
     ) {
+        return readTable(spark, source, table, logicalSchema, reader(spark, source, readOptions), nodeId);
+    }
+
+    static Dataset<Row> readTable(SparkSession spark, RuntimeDataSource source, TableIdentifier table,
+                                  CanvasTableSchema logicalSchema, DataFrameReader configuredReader, String nodeId) {
         validateSourceTableBoundary(source, table, nodeId);
         boolean containsGeometry = containsGeometry(logicalSchema);
         if (!containsGeometry) {
-            return reader(spark, source, readOptions)
+            return configuredReader
                     .option("dbtable", qualifiedTable(source, table))
                     .load();
         }
@@ -109,7 +114,7 @@ final class SpatialJdbcRuntimeSupport {
         String query = "(SELECT " + String.join(", ", selectExpressions)
                 + " FROM " + dialect.qualifiedName(table) + ") AS "
                 + dialect.quoteIdentifier(INPUT_ALIAS);
-        Dataset<Row> raw = reader(spark, source, readOptions)
+        Dataset<Row> raw = configuredReader
                 .option("dbtable", query)
                 .load();
         Column[] projected = logicalSchema.columns().stream().map(column -> {
@@ -222,155 +227,42 @@ final class SpatialJdbcRuntimeSupport {
         return false;
     }
 
-    static void writeSpatial(CanvasPreparedOutput output, Dataset<Row> dataset) {
-        RuntimeDataSource source = output.runtimeDataSource();
-        if (source.databaseType() != RuntimeDatabaseType.POSTGRESQL
-                && source.databaseType() != RuntimeDatabaseType.HIGHGO
-                && source.databaseType() != RuntimeDatabaseType.OPENGAUSS
-                && source.databaseType() != RuntimeDatabaseType.KINGBASE
-                && source.databaseType() != RuntimeDatabaseType.MYSQL) {
-            throw new RunnerExecutionException(
-                    "SPATIAL_JDBC_UNSUPPORTED",
-                    "Geometry 写入只支持 PostgreSQL 家族的 PostGIS 兼容扩展和 MySQL 8",
-                    output.node().id()
-            );
+    /** Canvas-specific snapshot validation; SQL and partition writes are shared with SDK. */
+    static Map<String, Integer> directWriteSrids(CanvasPreparedOutput output, Dataset<Row> dataset) {
+        boolean geometry = requiresSpatialWriter(output);
+        DirectJdbcWriter.requireSupported(output.runtimeDataSource(), output.writeMode().name(),
+                geometry, output.node().id());
+        if (!geometry && output.writeMode() != cn.superhuang.data.scalpel.contract.task.JdbcWriteMode.UPSERT) {
+            return Map.of();
         }
-        DatabaseDialect dialect = dialect(source);
         Map<String, CanvasColumnSchema> targetSchemaColumns = columnsByName(output.targetSchema());
-        List<JdbcBinding> bindings = new ArrayList<>();
-        List<String> targetColumns = new ArrayList<>();
-        List<String> valueExpressions = new ArrayList<>();
-        List<Column> writableColumns = new ArrayList<>();
+        Map<String, Integer> srids = new LinkedHashMap<>();
         for (StructField field : dataset.schema().fields()) {
             CanvasColumnSchema column = targetSchemaColumns.get(field.name());
             if (column == null) {
                 throw new RunnerExecutionException(
                         "OUTPUT_MAPPING_INVALID",
                         "输出数据包含目标表中不存在的字段：" + field.name(),
-                        output.node().id()
-                );
+                        output.node().id());
             }
-            boolean geometry = column.fieldType() == PlatformDataType.GEOMETRY;
-            Integer writeSrid = geometry ? output.geometryWriteSrids().get(column.name()) : null;
-            if (geometry && (writeSrid == null || writeSrid < 1)) {
-                throw new RunnerExecutionException(
-                        "SPATIAL_TARGET_METADATA_UNAVAILABLE",
-                        "目标 Geometry 字段快照缺少有效的 EPSG CRS：" + column.name(),
-                        output.node().id()
-                );
+            if (column.fieldType() == PlatformDataType.GEOMETRY) {
+                Integer srid = output.geometryWriteSrids().get(column.name());
+                if (srid == null || srid < 1) {
+                    throw new RunnerExecutionException(
+                            "SPATIAL_TARGET_METADATA_UNAVAILABLE",
+                            "目标 Geometry 字段快照缺少有效的 EPSG CRS：" + column.name(),
+                            output.node().id());
+                }
+                srids.put(column.name(), srid);
             }
-            targetColumns.add(dialect.quoteIdentifier(column.name()));
-            valueExpressions.add(geometry ? "ST_GeomFromWKB(?, " + writeSrid + ")" : "?");
-            bindings.add(new JdbcBinding(column.name(), geometry));
-            writableColumns.add(geometry
-                    ? st_functions.ST_AsBinary(sparkColumn(column.name())).as(column.name())
-                    : sparkColumn(column.name()));
         }
-        String insertSql = "INSERT INTO " + output.qualifiedTableName()
-                + " (" + String.join(", ", targetColumns) + ") VALUES ("
-                + String.join(", ", valueExpressions) + ")";
-        RuntimeJdbcConnection connection = source.connection();
-        Properties properties = jdbcProperties(connection);
-        SpatialWriteSpec writeSpec = new SpatialWriteSpec(
-                connection.driverClassName(),
-                connection.jdbcUrl(),
-                properties,
-                insertSql,
-                List.copyOf(bindings)
-        );
-        dataset.select(writableColumns.toArray(Column[]::new))
-                .foreachPartition((ForeachPartitionFunction<Row>) writeSpec::write);
+        return Map.copyOf(srids);
     }
 
     static void validateUpsertKeys(CanvasPreparedOutput output, Dataset<Row> dataset) {
-        if (output.upsertKeyColumns().isEmpty()) {
-            throw new RunnerExecutionException(
-                    "UPSERT_KEY_REQUIRED", "UPSERT Key 不能为空", output.node().id());
-        }
-        Column nullKey = functions.lit(false);
-        for (String key : output.upsertKeyColumns()) {
-            nullKey = nullKey.or(sparkColumn(key).isNull());
-        }
-        if (dataset.filter(nullKey).limit(1).count() > 0) {
-            throw new RunnerExecutionException(
-                    "UPSERT_KEY_NULL", "UPSERT Key 不能包含 NULL", output.node().id());
-        }
-        Column[] keys = output.upsertKeyColumns().stream()
-                .map(SpatialJdbcRuntimeSupport::sparkColumn)
-                .toArray(Column[]::new);
-        if (dataset.groupBy(keys).count()
-                .filter(functions.col("count").gt(1))
-                .limit(1)
-                .count() > 0) {
-            throw new RunnerExecutionException(
-                    "UPSERT_DUPLICATE_KEY",
-                    "当前批次存在重复 UPSERT Key，请先使用 DEDUPLICATE",
-                    output.node().id()
-            );
-        }
+        DirectJdbcWriter.validateUpsertKeys(dataset, output.upsertKeyColumns(), output.node().id());
     }
 
-    static void writeUpsert(CanvasPreparedOutput output, Dataset<Row> dataset) {
-        RuntimeDataSource source = output.runtimeDataSource();
-        if (source.databaseType() != RuntimeDatabaseType.POSTGRESQL
-                && source.databaseType() != RuntimeDatabaseType.HIGHGO
-                && source.databaseType() != RuntimeDatabaseType.MYSQL
-                && source.databaseType() != RuntimeDatabaseType.OPENGAUSS
-                && source.databaseType() != RuntimeDatabaseType.KINGBASE
-                && source.databaseType() != RuntimeDatabaseType.DAMENG
-                && source.databaseType() != RuntimeDatabaseType.ORACLE
-                && source.databaseType() != RuntimeDatabaseType.SQL_SERVER) {
-            throw new RunnerExecutionException(
-                    "UPSERT_DATABASE_NOT_SUPPORTED",
-                    "当前目标数据库未开放 UPSERT",
-                    output.node().id()
-            );
-        }
-        DatabaseDialect dialect = dialect(source);
-        Map<String, CanvasColumnSchema> targetSchemaColumns = columnsByName(output.targetSchema());
-        List<JdbcBinding> bindings = new ArrayList<>();
-        List<JdbcUpsertColumn> upsertColumns = new ArrayList<>();
-        List<Column> writableColumns = new ArrayList<>();
-        for (StructField field : dataset.schema().fields()) {
-            CanvasColumnSchema column = targetSchemaColumns.get(field.name());
-            if (column == null) {
-                throw new RunnerExecutionException(
-                        "OUTPUT_MAPPING_INVALID",
-                        "输出数据包含目标表中不存在的字段：" + field.name(),
-                        output.node().id()
-                );
-            }
-            boolean geometry = column.fieldType() == PlatformDataType.GEOMETRY;
-            Integer writeSrid = geometry ? output.geometryWriteSrids().get(column.name()) : null;
-            if (geometry && (writeSrid == null || writeSrid < 1)) {
-                throw new RunnerExecutionException(
-                        "SPATIAL_TARGET_METADATA_UNAVAILABLE",
-                        "目标 Geometry 字段快照缺少有效的 EPSG CRS：" + column.name(),
-                        output.node().id()
-                );
-            }
-            upsertColumns.add(new JdbcUpsertColumn(column.name(), writeSrid));
-            bindings.add(new JdbcBinding(column.name(), geometry));
-            writableColumns.add(geometry
-                    ? st_functions.ST_AsBinary(sparkColumn(column.name())).as(column.name())
-                    : sparkColumn(column.name()));
-        }
-        String sql = dialect.renderRowUpsert(
-                output.targetTable(),
-                upsertColumns,
-                output.upsertKeyColumns()
-        );
-        RuntimeJdbcConnection connection = source.connection();
-        SpatialWriteSpec writeSpec = new SpatialWriteSpec(
-                connection.driverClassName(),
-                connection.jdbcUrl(),
-                jdbcProperties(connection),
-                sql,
-                List.copyOf(bindings)
-        );
-        dataset.select(writableColumns.toArray(Column[]::new))
-                .foreachPartition((ForeachPartitionFunction<Row>) writeSpec::write);
-    }
 
     static DatabaseDialect dialect(RuntimeDataSource source) {
         if (source.databaseType() == null) {
@@ -413,6 +305,42 @@ final class SpatialJdbcRuntimeSupport {
             columns.put(column.name(), column);
         }
         return Map.copyOf(columns);
+    }
+
+    /** Same WKB constructor and partition transaction used by Canvas, also used by the public SDK. */
+    static void writeDataset(RuntimeDataSource source, TableIdentifier target, String qualifiedTableName,
+                             Dataset<Row> dataset, List<String> keys, Map<String, Integer> srids) {
+        DatabaseDialect dialect = dialect(source);
+        List<JdbcUpsertColumn> columns = new ArrayList<>();
+        List<JdbcBinding> bindings = new ArrayList<>();
+        List<String> placeholders = new ArrayList<>();
+        for (String name : dataset.columns()) {
+            Integer srid = srids.get(name);
+            columns.add(new JdbcUpsertColumn(name, srid));
+            bindings.add(new JdbcBinding(name, srid != null));
+            placeholders.add(srid == null ? "?" : "ST_GeomFromWKB(?, " + srid + ")");
+        }
+        String sql = keys.isEmpty() ? "INSERT INTO " + qualifiedTableName + " ("
+                + columns.stream().map(c -> dialect.quoteIdentifier(c.name())).collect(java.util.stream.Collectors.joining(", "))
+                + ") VALUES (" + String.join(", ", placeholders) + ")" : dialect.renderRowUpsert(target, columns, keys);
+        var spec = new SpatialWriteSpec(source.connection().driverClassName(), source.connection().jdbcUrl(),
+                jdbcProperties(source.connection()), sql, bindings);
+        encodeGeometry(dataset, srids).foreachPartition((ForeachPartitionFunction<Row>) spec::write);
+    }
+
+    static Dataset<Row> encodeGeometry(Dataset<Row> dataset, Map<String, Integer> srids) {
+        for (StructField field : dataset.schema().fields()) {
+            boolean geometry = field.dataType().typeName().equalsIgnoreCase("geometry")
+                    || field.dataType().getClass().getSimpleName().equals("GeometryUDT");
+            if (geometry != srids.containsKey(field.name())) {
+                throw new RunnerExecutionException("SPATIAL_TARGET_METADATA_UNAVAILABLE", "Geometry 字段与显式 EPSG 配置不匹配", null);
+            }
+        }
+        if (!Set.of(dataset.columns()).containsAll(srids.keySet()) || srids.values().stream().anyMatch(v -> v == null || v <= 0)) {
+            throw new RunnerExecutionException("SPATIAL_TARGET_METADATA_UNAVAILABLE", "Geometry 字段或 EPSG 配置无效", null);
+        }
+        return dataset.select(java.util.Arrays.stream(dataset.columns()).map(name -> srids.containsKey(name)
+                ? st_functions.ST_AsBinary(sparkColumn(name)).as(name) : sparkColumn(name)).toArray(Column[]::new));
     }
 
     private static Column sparkColumn(String name) {

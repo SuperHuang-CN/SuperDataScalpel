@@ -3,7 +3,7 @@
 ## 1. 状态与产品基线
 
 - 审计日期：2026-09-07。审计基线为 Canvas 4.20，后续已进入开发；实现进度见[开发清单](canvas-spatial-development-progress.md)。
-- 当前写出版本为 4.77：`SPATIAL_CLIP` 新增逐来源多 Mask 组合，默认先融合每条来源要素命中的
+- 当前写出版本为 4.78：新增批处理原子写入配置，不改变空间处理算法；4.77 的 `SPATIAL_CLIP` 新增逐来源多 Mask 组合，默认先融合每条来源要素命中的
   所有 Mask 再裁剪一次，避免重叠 Mask 重复覆盖；缺失/null 保持旧 Pairwise 行为。4.76 新增批处理 `SPATIAL_DESCRIBE_DATASET`，保留来源表并输出逐字段统计、
   数据集描述、可选样本和可选 XY Envelope 范围。Geometry 可选，范围输出时必须显式选择；
   4.76 已完成四结果完整血缘、20,000 行规模样例和真实页面验收；真实 Enterprise 字段细节、

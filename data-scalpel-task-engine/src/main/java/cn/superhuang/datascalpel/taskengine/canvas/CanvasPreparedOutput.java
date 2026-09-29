@@ -24,8 +24,16 @@ public record CanvasPreparedOutput(
         Dataset<Row> dataset,
         CanvasTableSchema targetSchema,
         Map<String, Integer> geometryWriteSrids,
-        List<String> upsertKeyColumns
+        List<String> upsertKeyColumns,
+        cn.superhuang.data.scalpel.contract.task.BatchWriteOptions batchWrite
 ) {
+    public CanvasPreparedOutput(CanvasNodeDefinition node, String writeId, String sourceTableName,
+            RuntimeDataSource runtimeDataSource, TableIdentifier targetTable, String qualifiedTableName,
+            String displayTarget, JdbcWriteMode writeMode, Dataset<Row> dataset, CanvasTableSchema targetSchema,
+            Map<String, Integer> geometryWriteSrids, List<String> upsertKeyColumns) {
+        this(node, writeId, sourceTableName, runtimeDataSource, targetTable, qualifiedTableName,
+                displayTarget, writeMode, dataset, targetSchema, geometryWriteSrids, upsertKeyColumns, null);
+    }
     public CanvasPreparedOutput {
         Objects.requireNonNull(node, "node");
         Objects.requireNonNull(writeId, "writeId");

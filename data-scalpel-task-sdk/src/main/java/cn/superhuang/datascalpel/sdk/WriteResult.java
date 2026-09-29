@@ -1,9 +1,9 @@
 package cn.superhuang.datascalpel.sdk;
 
 /**
- * 查看 SDK 写入影响的行数，未知不等于零。
+ * 查看 SDK 成功处理的输入行数，未知不等于零；不是 INSERT/UPDATE/DELETE 物理变更数之和。
  * @apiGroup 写入结果
- * @param affectedRows 影响行数；目标无法可靠统计时为 null。
+ * @param affectedRows 成功处理的输入行数；UPSERT 包含值未变化的匹配行，覆盖不计删除行，无法可靠统计时为 null。
  */
 public record WriteResult(Long affectedRows) {
     /**

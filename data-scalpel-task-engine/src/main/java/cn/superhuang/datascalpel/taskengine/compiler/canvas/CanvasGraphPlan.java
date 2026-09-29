@@ -339,6 +339,13 @@ public final class CanvasGraphPlan {
                     "空间裁剪多 Mask 组合方式从 Canvas 4.77 开始支持",
                     "configuration.maskCombination");
         }
+        if (schemaMinorVersion < 78 && (
+                entry.node() instanceof cn.superhuang.data.scalpel.contract.task.JdbcOutputNodeDefinition jdbc
+                        && jdbc.configuration() != null && jdbc.configuration().writes().stream().anyMatch(w -> w != null && w.batchWrite() != null)
+                || entry.node() instanceof cn.superhuang.data.scalpel.contract.task.ModelOutputNodeDefinition model
+                        && model.configuration() != null && model.configuration().writes().stream().anyMatch(w -> w != null && w.batchWrite() != null))) {
+            entry.result().error("BATCH_WRITE_REQUIRE_SCHEMA_VERSION", "原子批写从 Canvas 4.78 开始支持", "configuration.writes");
+        }
         boolean unaryPolicy = entry.node() instanceof cn.superhuang.data.scalpel.contract.task.GeometryDeriveNodeDefinition derive
                 && derive.configuration() != null && derive.configuration().derivations() != null
                 && derive.configuration().derivations().stream().anyMatch(item -> item != null && item.geometryPolicy() != null)

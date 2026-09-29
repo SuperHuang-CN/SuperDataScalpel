@@ -38,6 +38,33 @@
 - 删除或重命名字段、改变已有字段或节点语义、修改核心图规则等破坏性变化必须升级大版本，并把小版本重置为 `0`。不得通过“低于某个小版本且包含某类节点”的特殊判断承载破坏性变化。
 - 高于当前实现的小版本必须拒绝读取，避免旧程序忽略尚不了解的语义；低于当前大版本的定义只允许明确标记为不兼容并由用户重新配置，不自动覆盖原始定义。
 
+<a id="batch-jdbc-write"></a>
+
+## 批处理原子 JDBC 写入（Canvas 4.78）
+
+`JDBC_OUTPUT`、`MODEL_OUTPUT` 的可选 `batchWrite` 与 SDK 的 `batchWrite(BatchWriteOptions)`
+共用 `BatchJdbcWriter`。不存在该配置的任务保持旧直接写入，实时、文件和 Local SQL 不改变。
+直接写入由 Canvas、JAR/在线开发共用 `DirectJdbcWriter`：普通列使用 Spark JDBC Append，
+Geometry 与 UPSERT 共用分区 JDBC SQL/参数绑定；Geometry 继续使用 WKB、目标快照 EPSG 和原有 NULL 处理。
+直接 OVERWRITE 仍为独立 TRUNCATE 后插入，空输入仍会清空目标，不获得原子模式的条件覆盖、整次回滚或重试隔离。
+Canvas 节点快照校验、SDK 权限/试运行拦截及各自指标归属保留在调用边界，不为共用写入增加额外扫描。
+直接 UPSERT 的 openGauss 方言使用单行 MERGE；不再错误继承 PostgreSQL 的 ON CONFLICT。
+原子模式先写普通物理中间表，成功尝试标识隔离 Spark 分区重试，再由单 JDBC 事务执行目标 DML。
+每个输出独立提交；不要宣称整个 Canvas、多个 SDK execute 或多个数据库全局原子。
+
+条件覆盖使用参与映射的目标字段，参数化执行，不接受 SQL 文本。输入范围外及 SQL UNKNOWN 均在删除前拒绝；
+原子 OVERWRITE 拒绝引用目标的外键存在级联删除、置空、置默认值或未知删除规则，避免修改关联表；不关闭数据库约束。
+空输入默认失败保留原数据。中间表仅投影实际目标列，不克隆目标对象；不改现有 Geometry WKB/EPSG/XY 路线。
+`affectedRows` 表示本次确认成功处理的输入行数，不是目标净增量，也不是 UPSERT 实际改变值的行数，覆盖删除行不计入。
+失败、回滚及提交待确认不返回伪造的成功行数；源/目标总数不能作为准确影响行数。
+
+新增错误码：`BATCH_WRITE_INVALID`（配置错误）、`BATCH_WRITE_EMPTY_INPUT`（空覆盖输入）、
+`BATCH_WRITE_OUTSIDE_SCOPE`（越界输入）、`BATCH_WRITE_REQUIRE_SCHEMA_VERSION`（协议过低）、
+`BATCH_WRITE_FAILED`（底层异常仍交统一分类器）、`BATCH_WRITE_COMMIT_UNKNOWN`（提交结果待确认、不可自动重试）。
+取消提交前回滚；commit 调用后连接故障不得声称已回滚。清理失败仅记录 `BATCH_WRITE_CLEANUP_PENDING`，
+不得将已提交成功改判失败。保留证据或进程崩溃留下的对象需要核对任务终态和数据库结果后人工清理，不能按前缀全库扫删。
+详情和实际能力边界见[实施方案](../design/batch-jdbc-write-implementation-20260929.md)。
+
 <a id="streaming-schema"></a>
 
 ## 数据有界性与流式 Schema 传播

@@ -76,6 +76,7 @@ const nodeThemes: Record<LineageGraphNodeKind, { fill: string; stroke: string }>
 
 const writeLabels: Record<LineageWriteMode, string> = {
   APPEND: '追加', FULL_OVERWRITE: '全量覆盖', UPSERT: '更新或插入',
+  CONDITIONAL_OVERWRITE: '条件覆盖',
   PARTITION_OVERWRITE: '分区覆盖', SNAPSHOT_SYNC: '快照同步', CREATE_NEW: '新建写入',
 };
 

@@ -27,6 +27,9 @@ OutputFieldMappingFields,
 import { CanvasNodeValidationIssues } from '../../components/common/CanvasNodeValidationIssues';
 import { orderOutputFieldMappings } from '../../components/outputFieldMappings';
 import { jdbcWriteModeUnavailableReason } from '../../jdbcDatabaseCapabilities';
+import type { BatchWriteOptions } from '../../canvasTypes';
+import { BatchWriteFields } from '../../components/BatchWriteFields';
+import { activeBatchWrite, batchWriteIssue } from '../batchWriteOptions';
 
 interface CanvasNodeInspectorProps {
   node: CanvasNodeDefinition | null;
@@ -44,6 +47,7 @@ export interface CanvasNodeInspectorHandle {
 
 
 interface JdbcOutputFormValues {
+  batchWrite?: BatchWriteOptions | null;
   sourceTableName: string;
   dataSourceId: string;
   targetTableName?: string;
@@ -209,7 +213,7 @@ export const JdbcOutputInspector = ({
     );
     const action = mode === 'APPEND'
       ? '追加'
-      : mode === 'OVERWRITE' ? '清空后写入' : '按唯一键插入或更新';
+      : mode === 'OVERWRITE' ? '覆盖' : '按唯一键插入或更新';
     return {
       value: mode,
       label: `${mode} · ${unavailableReason ?? action}`,
@@ -233,6 +237,7 @@ export const JdbcOutputInspector = ({
         })),
       ),
       writes: [{
+        batchWrite: activeBatchWrite(values.batchWrite, values.writeMode),
         writeId: node.configuration.writes?.[0]?.writeId ?? createUuid(),
         sourceTableName: values.sourceTableName ?? '', targetTableName: values.targetTableName ?? '',
         writeMode: values.writeMode ?? null,
@@ -249,7 +254,10 @@ export const JdbcOutputInspector = ({
   useImperativeHandle(inspectorRef, () => ({
     apply: async () => {
       try {
-        const values = form.getFieldsValue(true);
+        const values: JdbcOutputFormValues = form.getFieldsValue(true);
+        const batchIssue = batchWriteIssue(values.batchWrite, values.writeMode, selectedTargetColumns,
+          (values.columnMappings ?? []).map(m => m.targetColumnName), targetDatabaseType);
+        if (batchIssue) { form.setFields([{ name: 'batchWrite', errors: [batchIssue] }]); return false; }
         void form.validateFields().catch(() => undefined);
         if (values.dataSourceId && selectedDataSourceAvailable !== true) {
           form.setFields([{
@@ -296,6 +304,7 @@ export const JdbcOutputInspector = ({
         layout="vertical"
         className={splitLayout ? 'canvas-output-write-editor-form' : undefined}
         initialValues={{
+          batchWrite: node.configuration.writes?.[0]?.batchWrite ?? null,
           sourceTableName: node.configuration.sourceTableName,
           dataSourceId: node.configuration.dataSourceId,
           targetTableName: node.configuration.targetTableName || undefined,
@@ -386,7 +395,7 @@ export const JdbcOutputInspector = ({
               label="写入模式"
               tooltip={executionMode === 'STREAMING'
                 ? '实时任务通过 foreachBatch 执行 APPEND 或 UPSERT，整体按至少一次交付。'
-                : 'OVERWRITE 会先执行 TRUNCATE TABLE，再 APPEND 写入。两步不是同一原子事务；后续写入失败时，目标表可能为空或仅部分写入。'}
+                : '覆盖行为由提交保障决定：原子方式先装载中间表再事务覆盖；直接方式先清空再写入，可能部分成功。'}
             />
           )}
           rules={[{ required: true }]}
@@ -395,6 +404,9 @@ export const JdbcOutputInspector = ({
         >
           <Select options={writeModeOptions} />
         </Form.Item>
+        {executionMode === 'BATCH' && <Form.Item name="batchWrite" label="提交保障">
+          <BatchWriteFields mode={writeMode} columns={selectedTargetColumns} databaseType={targetDatabaseType} />
+        </Form.Item>}
         {writeMode === 'UPSERT' && (
           <>
             <Form.Item
