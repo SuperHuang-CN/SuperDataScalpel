@@ -25,6 +25,12 @@ cp config/application-local.example.yml config/application-local.yml
 - 管理 UI：`http://localhost:19080`
 - 健康检查：`http://localhost:19000/actuator/health`
 
+如使用 IDEA 启动 `SuperApiGatewayApplication`，必须显式设置 Active profiles 为
+`local`，Working directory 为本工程目录。也可将本地配置放在
+`src/main/resources/config/application-local.yml`，由 Spring Boot 的 classpath 配置加载。
+不要将工作目录设为上级 DataScalpel 根目录，也不要复用其 `spring.config.location`；
+未激活 `local` 时，本地 Machine Token 不会生效。配置修改后需要重启网关进程。
+
 独立构建与检查：
 
 ```bash
