@@ -30,6 +30,14 @@ import java.util.regex.Pattern;
 @Service
 public class EngineAccessPolicyService {
 
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private cn.superhuang.data.scalpel.engine.cluster.EngineClusterCoordinator cluster;
+    private org.springframework.transaction.support.TransactionTemplate transactions;
+    @org.springframework.beans.factory.annotation.Autowired
+    void configureTransactions(org.springframework.transaction.PlatformTransactionManager manager) {
+        transactions=new org.springframework.transaction.support.TransactionTemplate(manager);
+    }
+
     private static final Pattern ADDRESS_TEXT = Pattern.compile("[0-9a-fA-F:.]+");
 
     private final EngineAccessPolicyRepository repository;
@@ -48,21 +56,37 @@ public class EngineAccessPolicyService {
     }
 
     @EventListener(ApplicationReadyEvent.class)
-    @Transactional(readOnly = true)
-    public void restoreAppliedPolicy() {
-        repository.findByEngineCode(properties.code()).ifPresent(policy -> {
-            try {
-                List<CidrRule> allowed = parseRules(read(policy.getAllowCidrsJson()));
-                if (allowed.isEmpty()) return;
-                snapshot.set(new AccessPolicySnapshot(allowed, parseRules(read(policy.getDenyCidrsJson()))));
-            } catch (RuntimeException ignored) {
-                // An unreadable policy fails closed instead of making the Engine available.
-            }
-        });
+    public void restoreOnStartup() {
+        if (cluster == null) restoreAppliedPolicy();
     }
 
-    @Transactional
+    @Transactional(readOnly = true)
+    public void restoreAppliedPolicy() {
+        AccessPolicySnapshot next = repository.findByEngineCode(properties.code()).map(policy -> {
+            try {
+                List<CidrRule> allowed = parseRules(read(policy.getAllowCidrsJson()));
+                if (allowed.isEmpty()) return null;
+                return new AccessPolicySnapshot(allowed, parseRules(read(policy.getDenyCidrsJson())));
+            } catch (RuntimeException ignored) {
+                // An unreadable policy fails closed instead of making the Engine available.
+                return null;
+            }
+        }).orElse(null);
+        snapshot.set(next);
+    }
+
     public EngineAccessPolicyApplyResponse apply(EngineAccessPolicyApplyRequest request) {
+        if(cluster!=null)return cluster.command(()->saveAndLoad(request));
+        return saveAndLoad(request);
+    }
+
+    private EngineAccessPolicyApplyResponse saveAndLoad(EngineAccessPolicyApplyRequest request) {
+        var response=transactions.execute(status->persist(request));
+        restoreAppliedPolicy();
+        return response;
+    }
+
+    private EngineAccessPolicyApplyResponse persist(EngineAccessPolicyApplyRequest request) {
         if (!properties.code().equals(request.engineCode().trim())) {
             throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "访问策略的 Engine 编码与当前实例不一致");
         }
@@ -78,7 +102,7 @@ public class EngineAccessPolicyService {
         List<String> normalizedDenied = denied.stream().map(CidrRule::canonical).toList();
         String policyHash = hash(normalizedAllowed, normalizedDenied);
 
-        EngineAccessPolicy current = repository.findByEngineCode(properties.code()).orElse(null);
+        EngineAccessPolicy current = repository.findForUpdate(properties.code()).orElse(null);
         if (current != null && request.revision() < current.getRevision()) {
             throw new ResponseStatusException(HttpStatus.CONFLICT, "访问策略版本落后于当前 Engine 配置");
         }
@@ -98,7 +122,6 @@ public class EngineAccessPolicyService {
             next.apply(request.revision(), policyHash, allowCidrsJson, denyCidrsJson);
         }
         repository.saveAndFlush(next);
-        snapshot.set(new AccessPolicySnapshot(allowed, denied));
         return new EngineAccessPolicyApplyResponse(properties.code(), request.revision(), "READY");
     }
 

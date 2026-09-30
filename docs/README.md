@@ -19,6 +19,10 @@
 
 文件数据集：[2026-09-24 功能与压测记录](verification/file-dataset-acceptance-20260924.md)（功能、并发删除、启动竞争、空间参考确认、故障恢复、持续负载及磁盘清理；记录测试条件、实测结果与未覆盖范围）。
 
+服务网关：[2026-09-29 优化与验证记录](verification/gateway-optimization-20260929.md)（统计修复、保护策略、有效期、两端 Web、真实链路回归、初步性能基线及生产边界；待用户验收）。
+
+Service Engine 高可用：[原 Redis 双节点问题记录](verification/service-engine-ha-20260929.md)、[PostgreSQL 轻量多副本修复与验证](verification/service-engine-ha-postgresql-20260929.md)（无新增中间件、真实双节点、断连/恢复、故障隔离及初步性能；待用户验收）。
+
 ## 按任务阅读
 
 | 修改内容 | 入口 |
@@ -44,7 +48,7 @@
 | JDBC、平台类型、模型及物理表 | [数据源](design/data-source-management.md)、[类型系统](design/model-data-type-system.md)、[模型](design/model-management.md)、[物理表演进](design/model-physical-table-evolution.md) |
 | 全景成品、地图浏览和全景资产 | [全景影像管理 V1](development/panorama-management-v1.md) |
 | 文件数据集及空间文件 | [文件数据集](design/file-dataset-management.md)、[空间文件解析](design/geospatial-file-dataset-parsing.md)及对应格式专题 |
-| 数据服务、引擎或网关发布 | [数据服务](design/data-service-publishing.md)、[网关发布](design/data-service-gateway-publishing.md)、[GeoServer](design/geoserver-spatial-service-publishing-v1.md) |
+| 数据服务、引擎或网关发布 | [数据服务](design/data-service-publishing.md)、[Engine 高可用](design/service-engine-ha.md)、[网关发布](design/data-service-gateway-publishing.md)、[GeoServer](design/geoserver-spatial-service-publishing-v1.md) |
 | 独立 Super API Gateway | [网关 AGENTS](../super-api-gateway/AGENTS.md)、[Provider 集成](design/super-api-gateway-provider-integration.md) |
 | 数据标准、填报、资产或血缘 | [码表](design/standard-dictionary-management.md)、[填报](design/data-entry-v1.md)、[资产](design/asset-publication-and-synchronization.md)、[血缘](design/lineage-integration-contract.md) |
 | 业务建模 V1、本体总览、人员与部门模型验证 | [本体总览设计](design/business-ontology-overview-v1.md)、[计划对齐检查与开发环境验证](verification/business-ontology-v1-personnel.md)（包含当前能力、实际验证及未完成项，不代表完整业务建模 V1 已验收） |

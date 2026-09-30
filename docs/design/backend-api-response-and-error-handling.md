@@ -124,6 +124,8 @@ Admin 引擎/注册记录不存在返回 `404 RESOURCE_NOT_FOUND`；对 GeoServe
 
 ## MCP 协议边界
 
+数据服务网关保护/有效期接口：未适配 Provider 为 501 NOT_IMPLEMENTED；对象未同步、远端对象缺失或归属冲突为 409 BUSINESS_CONFLICT；时间/CIDR/数值不合法为 400；远端管理认证、网络和其他未知失败为 502 UPSTREAM_UNAVAILABLE，使用本地安全提示且要求刷新确认，不透传远端响应正文。独立网关的数据面错误码及 401/403/413/429/502/503/504 语义由其自身 [HTTP 契约](../../super-api-gateway/docs/gateway-protection-and-observability.md)维护。
+
 计算引擎停用遇到 Dispatcher 的 409（仍有排队/活动执行、待清理资源或注册状态冲突）时，Admin 保留 409 `BUSINESS_CONFLICT`，使用本地安全说明，不回显远端响应正文，也不因这一业务拒绝把健康状态改为 DOWN。通信或其他上游故障仍按原有上游失败处理。
 
 MCP 管理接口继续使用上述 ProblemDetail 契约。公开 `POST /mcp/{serverCode}` 内的 JSON-RPC 错误遵循 MCP：非法 JSON 为 `-32700`，非法消息为 `-32600`，未知方法为 `-32601`，非法协议参数为 `-32602`；有效 Tool 调用的输入校验失败、脚本异常、超时、输出不符合 Schema 或超限，通过 `CallToolResult.isError=true` 返回安全说明。通知返回 202 空响应，不执行无 ID 的 Tool 调用。
@@ -161,6 +163,10 @@ MCP 管理接口继续使用上述 ProblemDetail 契约。公开 `POST /mcp/{ser
 系统 MCP 工作线程因 `Error` 异常退出时，须先提交异步错误结果，由统一异常处理返回安全的 500，不能让未完成的 DeferredResult 等待至默认 503 超时。错误继续抛出并保留完整堆栈；该 500 不承诺业务操作未发生。
 
 系统 MCP 的 HTTP 认证、大小限制、服务关闭和繁忙响应沿用本规范的 ProblemDetail。JSON-RPC 错误由协议层表达；进入工具执行后的业务 HTTP 状态、原 ProblemDetail 和执行状态作为 MCP 工具元信息返回，不改变业务 API 的成功或错误格式。超时及响应不完整的执行语义见 [系统 MCP](system-mcp.md#身份与执行边界)。
+
+### Engine 副本协调
+
+Engine 节点未完成配置同步、已知同步失败或超过失联阈值时，`/open-api/v1/**` 返回标准 `503 SERVICE_UNAVAILABLE`，附 `Retry-After: 1`；readiness 非 200。源 IP 策略拒绝仍为 403。标准/SQL 服务引用已配置但未加载的业务数据源返回 503，不牵连无关服务。配置竞争或过期部署回调返回 409；管理操作返回 503 时结果可能已经落库，应核对状态，不能当作“没有执行”盲目重试。`GET /internal/v1/runtime` 仅报告当前响应节点，要求管理 Token；`/v3/api-docs` 及子路径也以同一 Token 保护，未携带或无效 Token 返回 401。传播窗口和恢复语义见 [Engine 高可用](service-engine-ha.md)。
 
 ### DSH 接入错误
 

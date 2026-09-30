@@ -16,6 +16,7 @@ import {
 } from '@ant-design/icons';
 import type { MenuProps } from 'antd';
 import { Button, Dropdown, Modal, Result, Skeleton, Space, Tabs, Tag, Tooltip, message } from 'antd';
+import { GatewayTrafficPolicyPanel } from '../components/GatewayTrafficPolicyPanel';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useBlocker, useLocation, useNavigate, useParams, useSearchParams, type BlockerFunction } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
@@ -465,6 +466,10 @@ export const DataServiceDetailPage = () => {
       label: '运行与发布',
       children: <DataServiceRuntimePanel dataService={dataService} engine={enginesById.get(dataService.engineId)} onCopyCurl={() => void copyCurl(dataService)} />,
     },
+    ...(dataService.type !== 'SPATIAL_SERVICE' ? [{
+      key: 'gateway-policy', label: '网关保护与监控',
+      children: <GatewayTrafficPolicyPanel serviceId={dataService.id} canPublish={canPublish} supported={dataService.gatewayBindings.some((binding) => binding.provider === 'DATASCALPEL')} />,
+    }] : []),
   ];
 
   return (

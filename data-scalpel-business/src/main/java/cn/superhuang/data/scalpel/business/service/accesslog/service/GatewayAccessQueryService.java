@@ -80,6 +80,33 @@ public class GatewayAccessQueryService {
     }
 
     @Transactional(readOnly = true)
+    public cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessRecentResponse recent(
+            UUID dataServiceId, UUID consumerId) {
+        Instant to = Instant.now();
+        Instant from = to.minus(15, ChronoUnit.MINUTES);
+        var parameters = new MapSqlParameterSource()
+                .addValue("from", timestamp(from)).addValue("to", timestamp(to));
+        String where = rawWhere(parameters, dataServiceId, consumerId, null, null, false);
+        return jdbcTemplate.queryForObject("""
+                select count(*) as requests,
+                    count(*) filter (where response_status between 200 and 299) as successes,
+                    count(*) filter (where response_status between 400 and 499) as client_errors,
+                    count(*) filter (where response_status >= 500) as server_errors,
+                    count(*) filter (where gateway_rejected) as rejected,
+                    avg(request_latency_ms) as average_latency,
+                    percentile_cont(0.95) within group (order by request_latency_ms) as p95,
+                    percentile_cont(0.99) within group (order by request_latency_ms) as p99,
+                    max(occurred_at) as last_request, max(received_at) as last_received
+                from ds_gateway_access_log l
+                """ + where, parameters, (rs, row) ->
+                new cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessRecentResponse(
+                        properties.enabled(), from, to, rs.getLong("requests"), rs.getLong("successes"),
+                        rs.getLong("client_errors"), rs.getLong("server_errors"), rs.getLong("rejected"),
+                        nullableDouble(rs, "average_latency"), nullableDouble(rs, "p95"), nullableDouble(rs, "p99"),
+                        nullableInstant(rs, "last_request"), nullableInstant(rs, "last_received")));
+    }
+
+    @Transactional(readOnly = true)
     public PageResponse<GatewayAccessLogResponse> searchLogs(
             Instant requestedFrom,
             Instant requestedTo,

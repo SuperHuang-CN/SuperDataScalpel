@@ -12,6 +12,7 @@ import {
 import type { MenuProps, TableProps } from 'antd';
 import { Button, Drawer, Dropdown, Form, Input, Modal, Select, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
+import { GatewayValidityDrawer, type GatewayValidityTarget } from './GatewayValidityDrawer';
 import { ApiError } from '../../../shared/api/http';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import {
@@ -282,15 +283,18 @@ export const ApiConsumerAccessDrawer = ({
     }
   };
 
+  const [validityTarget, setValidityTarget] = useState<GatewayValidityTarget | null>(null);
   const credentialMenu = (credential: ApiConsumerCredential): MenuProps => ({
     items: [
       { key: 'reconcile', icon: <AuditOutlined />, label: '对账网关状态' },
       { key: 'rotate', icon: <SyncOutlined />, label: '轮换 API Key' },
+      ...(credential.gatewayBindings.some((b) => b.provider === 'DATASCALPEL') ? [{ key: 'validity', label: '有效期与续期' }] : []),
       { type: 'divider' },
       { key: 'delete', icon: <DeleteOutlined />, label: '删除 API Key', danger: true },
     ],
     onClick: ({ key }) => {
       if (key === 'reconcile') void reconcileCredential(credential);
+      if (key === 'validity') setValidityTarget({ kind: 'keys', id: credential.id, name: credential.name });
       if (key === 'rotate') {
         modalApi.confirm({
           rootClassName: 'business-overlay business-modal-overlay',
@@ -317,6 +321,7 @@ export const ApiConsumerAccessDrawer = ({
 
   const subscriptionMenu = (subscription: ApiServiceSubscription): MenuProps => ({
     items: [
+      ...(subscription.gatewayBindings.some((b) => b.provider === 'DATASCALPEL') ? [{ key: 'validity', label: '有效期、续期与限流' }] : []),
       { key: 'reconcile', icon: <AuditOutlined />, label: '对账网关状态' },
       ...(subscription.desiredState === 'GRANTED'
         ? [{ key: 'sync', icon: <ReloadOutlined />, label: '同步授权' }]
@@ -326,6 +331,7 @@ export const ApiConsumerAccessDrawer = ({
     ],
     onClick: ({ key }) => {
       if (key === 'reconcile') void reconcileSubscription(subscription);
+      if (key === 'validity') setValidityTarget({ kind: 'subscriptions', id: subscription.id, name: subscription.dataServiceName });
       if (key === 'sync') void syncSubscription(subscription);
       if (key === 'revoke') {
         modalApi.confirm({
@@ -473,6 +479,7 @@ export const ApiConsumerAccessDrawer = ({
   return (
     <>
       {messageContext}{modalContext}
+      {validityTarget && <GatewayValidityDrawer target={validityTarget} onClose={() => setValidityTarget(null)} />}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay"
         className="api-consumer-access-drawer"

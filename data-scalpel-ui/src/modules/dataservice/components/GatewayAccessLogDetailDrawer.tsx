@@ -123,7 +123,7 @@ export const GatewayAccessLogDetailDrawer = ({
     },
     {
       key: 'kongLatency',
-      label: 'Kong 延迟',
+      label: '网关自身延迟',
       children: latency(log.kongLatencyMs),
     },
     {

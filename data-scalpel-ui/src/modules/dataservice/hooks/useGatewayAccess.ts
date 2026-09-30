@@ -1,6 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import {
   fetchGatewayAccessLogs,
+  fetchGatewayAccessRecent,
   fetchGatewayAccessOverview,
   fetchGatewayAccessRankings,
   fetchGatewayAccessTrend,
@@ -10,6 +11,14 @@ import {
 } from '../api/gatewayAccessApi';
 
 const gatewayAccessQueryKey = ['gateway-access'] as const;
+
+export const useGatewayAccessRecent = (query: { dataServiceId?: string; consumerId?: string }) => useQuery({
+  queryKey: [...gatewayAccessQueryKey, 'recent', query],
+  queryFn: () => fetchGatewayAccessRecent(query),
+  staleTime: 10_000,
+  refetchInterval: 15_000,
+  refetchIntervalInBackground: false,
+});
 const AUTO_REFRESH_MS = 5 * 60 * 1000;
 
 const queryOptions = {

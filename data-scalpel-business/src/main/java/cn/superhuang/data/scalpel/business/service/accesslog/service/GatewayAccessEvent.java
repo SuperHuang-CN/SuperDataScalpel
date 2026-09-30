@@ -24,7 +24,8 @@ record GatewayAccessEvent(
 }
 
 @JsonIgnoreProperties(ignoreUnknown = true)
-record GatewayAccessObjectReference(String id, String name) {
+record GatewayAccessObjectReference(String id, String name,
+                                    @JsonProperty("external_id") String externalId) {
 }
 
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -62,6 +63,7 @@ record GatewayAccessLatencies(
         Long request,
         Long kong,
         Long proxy,
-        Long receive
+        Long receive,
+        Long gateway
 ) {
 }

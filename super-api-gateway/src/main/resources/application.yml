@@ -13,6 +13,15 @@ spring:
       server:
         webflux:
           routes: []
+          httpclient:
+            pool:
+              type: fixed
+              max-connections: ${SUPER_API_GATEWAY_MAX_CONNECTIONS:500}
+              acquire-timeout: ${SUPER_API_GATEWAY_CONNECTION_ACQUIRE_TIMEOUT_MS:1000}
+              max-idle-time: 30s
+              max-life-time: 5m
+              eviction-interval: 30s
+              metrics: true
   datasource:
     url: ${SUPER_API_GATEWAY_DB_URL:jdbc:postgresql://localhost:5432/data_scalpel}
     username: ${SUPER_API_GATEWAY_DB_USERNAME:postgres}
@@ -36,12 +45,13 @@ spring:
   kafka:
     bootstrap-servers: ${SUPER_API_GATEWAY_KAFKA_BOOTSTRAP_SERVERS:127.0.0.1:9092}
     producer:
-      acks: 1
+      acks: all
       compression-type: lz4
       properties:
         linger.ms: 50
         batch.size: 65536
-        max.block.ms: 100
+        max.block.ms: 1000
+        request.timeout.ms: 5000
         delivery.timeout.ms: 10000
 
 super-api-gateway:
@@ -64,7 +74,7 @@ super-api-gateway:
     instance-stale-after: ${SUPER_API_GATEWAY_INSTANCE_STALE_AFTER:30s}
   access-log:
     enabled: ${SUPER_API_GATEWAY_ACCESS_LOG_ENABLED:true}
-    topic: ${SUPER_API_GATEWAY_ACCESS_LOG_TOPIC:super-api-gateway.access-log.v1}
+    topic: ${SUPER_API_GATEWAY_ACCESS_LOG_TOPIC:datascalpel.gateway.access.v1}
     queue-capacity: ${SUPER_API_GATEWAY_ACCESS_LOG_QUEUE_CAPACITY:10000}
 
 management:

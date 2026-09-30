@@ -17,6 +17,7 @@ import { useApiConsumers } from '../hooks/useApiConsumers';
 import { useDataServices } from '../hooks/useDataServices';
 import {
   useGatewayAccessLogs,
+  useGatewayAccessRecent,
   useGatewayAccessOverview,
   useGatewayAccessRankings,
   useGatewayAccessTrend,
@@ -114,8 +115,12 @@ const MetricCard = ({
 );
 
 const errorOwner = (log: GatewayAccessLog) => {
+  if (log.responseStatus >= 200 && log.responseStatus < 300) return '成功';
+  if (log.responseStatus >= 300 && log.responseStatus < 400) return '重定向';
   if (log.responseStatus === 401) return '调用认证';
-  if (log.responseStatus === 403) return '订阅授权';
+  if (log.responseStatus === 403) return '授权 / IP 策略';
+  if (log.responseStatus === 413) return '请求体过大';
+  if (log.responseStatus === 499) return '客户端中断';
   if (log.responseStatus === 429) return '网关限流';
   if (log.upstreamError) return '上游服务';
   if (log.gatewayError) return '网关错误';
@@ -147,6 +152,7 @@ export const GatewayOperationsPage = () => {
   const [consumerKeyword, setConsumerKeyword] = useState('');
   const [referenceTime, setReferenceTime] = useState(() => new Date());
   const [logPage, setLogPage] = useState(0);
+  const [abnormalOnly, setAbnormalOnly] = useState(false);
   const [selectedLog, setSelectedLog] = useState<GatewayAccessLog | null>(null);
 
   const debouncedServiceKeyword = useDebouncedValue(serviceKeyword);
@@ -182,6 +188,7 @@ export const GatewayOperationsPage = () => {
   }), [consumerId, dataServiceId, timeWindow.from, timeWindow.to]);
 
   const overviewQuery = useGatewayAccessOverview(statisticsScope);
+  const recentQuery = useGatewayAccessRecent({ dataServiceId, consumerId });
   const trendQuery = useGatewayAccessTrend(statisticsScope);
   const serviceRankingQuery = useGatewayAccessRankings({
     ...statisticsScope,
@@ -200,7 +207,7 @@ export const GatewayOperationsPage = () => {
     to: timeWindow.rawTo,
     dataServiceId,
     consumerId,
-    abnormalOnly: true,
+    abnormalOnly,
     page: logPage,
     size: LOG_PAGE_SIZE,
   });
@@ -458,6 +465,7 @@ export const GatewayOperationsPage = () => {
     setReferenceTime(new Date());
     await Promise.all([
       overviewQuery.refetch(),
+      recentQuery.refetch(),
       trendQuery.refetch(),
       serviceRankingQuery.refetch(),
       consumerRankingQuery.refetch(),
@@ -558,7 +566,7 @@ export const GatewayOperationsPage = () => {
           当前范围：<Typography.Text strong>{scopeLabel}</Typography.Text>
         </Typography.Text>
         <Typography.Text type="secondary">
-          小时统计截至 {formatDateTime(timeWindow.to)}；明细截至当前
+          小时统计截至 {formatDateTime(timeWindow.to)}；明细截至 {formatDateTime(timeWindow.rawTo)}（5 分钟自动刷新）
         </Typography.Text>
       </div>
 
@@ -566,6 +574,22 @@ export const GatewayOperationsPage = () => {
         overviewQuery.error,
         () => void overviewQuery.refetch(),
         '网关访问概览加载失败',
+      )}
+
+      {recentQuery.isError && renderSectionError(recentQuery.error, () => void recentQuery.refetch(), '实时统计加载失败')}
+      {recentQuery.data && (
+        <Card size="small" title="最近 15 分钟 · 实时调用" extra={<Tag>每 15 秒刷新</Tag>}>
+          {!recentQuery.data.ingestionEnabled && <Alert type="warning" showIcon message="当前 Admin 已关闭网关日志接收，新的调用不会入库。请启用 gateway-access.enabled 并检查 Kafka 配置。" />}
+          <Space wrap size="large">
+            <Typography.Text>调用 <strong>{formatNumber(recentQuery.data.requestCount)}</strong></Typography.Text>
+            <Typography.Text>成功 {formatNumber(recentQuery.data.successCount)}</Typography.Text>
+            <Typography.Text>4xx / 5xx {recentQuery.data.clientErrorCount} / {recentQuery.data.serverErrorCount}</Typography.Text>
+            <Typography.Text>拒绝 {recentQuery.data.rejectedCount}</Typography.Text>
+            <Typography.Text>P95 / P99 {formatMilliseconds(recentQuery.data.p95LatencyMs)} / {formatMilliseconds(recentQuery.data.p99LatencyMs)}</Typography.Text>
+            <Typography.Text type="secondary">最近调用 {recentQuery.data.lastRequestAt ? formatDateTime(recentQuery.data.lastRequestAt) : '暂无已接收调用'}</Typography.Text>
+          </Space>
+          <div><Typography.Text type="secondary">仅统计经过网关且已入库的调用；直连引擎不计入。下方仍为已完成小时汇总，两者不相加。</Typography.Text></div>
+        </Card>
       )}
 
       <Row gutter={[12, 12]}>
@@ -700,7 +724,7 @@ export const GatewayOperationsPage = () => {
               </div>
               {[
                 ['401 未认证', overview?.status401Count ?? 0],
-                ['403 未订阅', overview?.status403Count ?? 0],
+                ['403 授权或 IP 拒绝', overview?.status403Count ?? 0],
                 ['429 网关限流', overview?.status429Count ?? 0],
                 ['网关自身 5xx', overview?.gatewayErrorCount ?? 0],
                 ['上游服务 5xx', overview?.upstreamErrorCount ?? 0],
@@ -780,7 +804,7 @@ export const GatewayOperationsPage = () => {
       <Card
         title={(
           <Space orientation="vertical" size={0}>
-            <Typography.Text strong>最近异常调用</Typography.Text>
+            <Typography.Text strong>最近调用明细</Typography.Text>
             <Typography.Text type="secondary" className="gateway-operations-section-subtitle">
               {range === '30d'
                 ? '统计范围为 30 天，原始异常明细仍只保留并展示最近 7 天'
@@ -788,7 +812,7 @@ export const GatewayOperationsPage = () => {
             </Typography.Text>
           </Space>
         )}
-        extra={<Typography.Text type="secondary">{formatNumber(logsQuery.data?.totalElements ?? 0)} 条</Typography.Text>}
+        extra={<Space><Segmented value={abnormalOnly ? 'abnormal' : 'all'} options={[{ value: 'all', label: '全部调用' }, { value: 'abnormal', label: '仅异常' }]} onChange={(value) => { setAbnormalOnly(value === 'abnormal'); setLogPage(0); setReferenceTime(new Date()); }} /><Typography.Text type="secondary">{formatNumber(logsQuery.data?.totalElements ?? 0)} 条</Typography.Text></Space>}
       >
         {logsQuery.isError && renderSectionError(
           logsQuery.error,

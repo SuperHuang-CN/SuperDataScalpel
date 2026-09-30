@@ -16,6 +16,9 @@ import org.springframework.stereotype.Service;
 @Service
 public class EngineRuntimeDeploymentService {
 
+    @org.springframework.beans.factory.annotation.Autowired(required=false)
+    private cn.superhuang.data.scalpel.engine.cluster.EngineClusterCoordinator cluster;
+
     private static final Logger log = LoggerFactory.getLogger(EngineRuntimeDeploymentService.class);
 
     // Bounded locks serialize an entire route/state operation without holding a DB transaction.
@@ -45,6 +48,10 @@ public class EngineRuntimeDeploymentService {
     }
 
     public ServiceDeploymentResponse deploy(ServiceDeploymentRequest request) {
+        if(cluster!=null)return cluster.command(()->deployLocked(request));
+        return deployLocked(request);
+    }
+    private ServiceDeploymentResponse deployLocked(ServiceDeploymentRequest request) {
         synchronized (operationLock(request.serviceId())) {
             return deploySerially(request);
         }
@@ -59,17 +66,21 @@ public class EngineRuntimeDeploymentService {
         }
         try {
             publish(preparation.deployment());
-            return store.completeDeployment(request.serviceId());
+            return store.completeDeployment(request.serviceId(), preparation.deployment().generation());
         } catch (RuntimeException exception) {
             if (!isScript(request)) {
                 routeRegistry.unregister(request.serviceId());
             }
-            store.failDeployment(request.serviceId(), exception.getMessage());
+            store.failDeployment(request.serviceId(), preparation.deployment().generation(), exception.getMessage());
             throw exception;
         }
     }
 
     public ServiceDeploymentResponse remove(ServiceUndeploymentRequest request) {
+        if(cluster!=null)return cluster.command(()->removeLocked(request));
+        return removeLocked(request);
+    }
+    private ServiceDeploymentResponse removeLocked(ServiceUndeploymentRequest request) {
         synchronized (operationLock(request.serviceId())) {
             return removeSerially(request);
         }
@@ -82,15 +93,16 @@ public class EngineRuntimeDeploymentService {
         }
         try {
             removeRuntime(preparation.deployment());
-            return store.completeRemoval(request.serviceId());
+            return store.completeRemoval(request.serviceId(), preparation.deployment().generation());
         } catch (RuntimeException exception) {
-            store.failRemoval(request.serviceId(), exception.getMessage());
+            store.failRemoval(request.serviceId(), preparation.deployment().generation(), exception.getMessage());
             throw exception;
         }
     }
 
     @EventListener(ApplicationReadyEvent.class)
     public void restoreRoutes() {
+        if(cluster!=null)return; // Cluster coordinator owns recovery and readiness.
         store.recoverableRemovals().forEach(snapshot -> {
             synchronized (operationLock(snapshot.request().serviceId())) {
                 store.recoverableRemoval(snapshot.request().serviceId()).ifPresent(this::recoverRemoval);
@@ -109,12 +121,12 @@ public class EngineRuntimeDeploymentService {
             validator.validate(request);
             routeRegistry.validate(request);
             publish(deployment);
-            store.completeDeployment(request.serviceId());
+            store.completeDeployment(request.serviceId(), deployment.generation());
         } catch (RuntimeException exception) {
             if (!isScript(request)) {
                 routeRegistry.unregister(request.serviceId());
             }
-            store.failDeployment(request.serviceId(), exception.getMessage());
+            store.failDeployment(request.serviceId(), deployment.generation(), exception.getMessage());
             log.error("恢复数据服务部署失败，serviceId={}", request.serviceId(), exception);
         }
     }
@@ -123,9 +135,9 @@ public class EngineRuntimeDeploymentService {
         ServiceDeploymentRequest request = deployment.request();
         try {
             removeRuntime(deployment);
-            store.completeRemoval(request.serviceId());
+            store.completeRemoval(request.serviceId(), deployment.generation());
         } catch (RuntimeException exception) {
-            store.failRemoval(request.serviceId(), exception.getMessage());
+            store.failRemoval(request.serviceId(), deployment.generation(), exception.getMessage());
             log.error("恢复数据服务移除失败，serviceId={}", request.serviceId(), exception);
         }
     }
@@ -135,6 +147,14 @@ public class EngineRuntimeDeploymentService {
             scriptService.upsert(deployment);
         } else {
             routeRegistry.register(deployment);
+        }
+    }
+
+    /** Called only while the cross-node configuration lock is held; no healthy writer can still own these. */
+    public void recoverInterruptedOperations() {
+        for(var deployment:store.all()) {
+            if(deployment.status()==EngineDeploymentRecordStatus.DEPLOYING)recoverDeployment(deployment);
+            else if(deployment.status()==EngineDeploymentRecordStatus.REMOVING || deployment.status()==EngineDeploymentRecordStatus.REMOVE_FAILED)recoverRemoval(deployment);
         }
     }
 

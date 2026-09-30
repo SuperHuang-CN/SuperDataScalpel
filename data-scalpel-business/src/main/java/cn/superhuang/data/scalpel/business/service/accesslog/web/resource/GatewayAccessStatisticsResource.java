@@ -33,6 +33,15 @@ public class GatewayAccessStatisticsResource {
         this.queryService = queryService;
     }
 
+    @GetMapping("/recent")
+    @PreAuthorize("hasAuthority('service.view')")
+    @Operation(summary = "查询最近十五分钟调用", description = "只读查询已入库原始日志，包含当前小时，返回真实窗口 P95/P99 和最近调用时间。Kafka 异步接收存在延迟；接收关闭或没有调用不代表服务健康。与小时汇总独立展示，不相加。")
+    public cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessRecentResponse recent(
+            @Parameter(description = "数据服务 UUID；不传则统计全部服务。") @RequestParam(required = false) UUID dataServiceId,
+            @Parameter(description = "消费者 UUID；不传则包含匿名调用。") @RequestParam(required = false) UUID consumerId) {
+        return queryService.recent(dataServiceId, consumerId);
+    }
+
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询网关访问统计概览")
     @GetMapping("/overview")
     @PreAuthorize("hasAuthority('service.view')")
