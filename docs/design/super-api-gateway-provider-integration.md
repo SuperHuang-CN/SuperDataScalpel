@@ -130,6 +130,11 @@ OperationException。404 在删除链路中视为幂等成功；409 只用于并
 四类 `inspect` 分别检查 Service/Route、Consumer、Key 摘要和 Subscription 关联关系。
 对账只保存诊断，不修改远端；修复继续使用 publish、sync、rotate、revoke 等显式 Action。
 
+发布、撤回以操作开始时间校验返回结果是否仍属于当前操作；生成该时间时统一截断到
+PostgreSQL 支持的微秒精度，避免跨事务重新读取后因纳秒精度丢失而丢弃成功或失败结果。
+历史遗留的 `PUBLISHING` 不直接修改数据库；超过现有 30 秒操作保护期后，通过正常的
+再次发布流程重新收敛远端与本地状态。对账不会替代发布或修复操作。
+
 ## 7. 从 Kong 切换
 
 切换需要维护窗口，不提供自动批量迁移：
