@@ -77,6 +77,14 @@ import java.util.List;
 @Tag(name = "模型管理")
 public class DataModelResource {
 
+    @GetMapping("/statistics")
+    @PreAuthorize("hasAuthority('model.view')")
+    @Operation(summary = "查询建设统计", description = "模型发布状态和实际数仓分层，只读，不访问物理表。无查看权限返回403。")
+    public cn.superhuang.data.scalpel.business.model.web.response.DataModelStatisticsResponse statistics() {
+        return service.statistics();
+    }
+
+
     private final DataModelService service;
     private final DataModelPhysicalStatisticsService physicalStatisticsService;
     private final DataModelSpatialPreviewService spatialPreviewService;

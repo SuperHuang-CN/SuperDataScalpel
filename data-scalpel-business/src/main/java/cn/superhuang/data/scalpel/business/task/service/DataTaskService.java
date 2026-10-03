@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.task.service;
 
+import cn.superhuang.data.scalpel.business.task.web.response.DataTaskStatisticsResponse;
+
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSource;
 import cn.superhuang.data.scalpel.business.datasource.domain.DataSourcePurpose;
 import cn.superhuang.data.scalpel.business.datasource.repository.DataSourceRepository;
@@ -70,6 +72,16 @@ import java.util.stream.Collectors;
 /** Direct orchestration for the shared task lifecycle and type-specific definitions. */
 @Service
 public class DataTaskService {
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public DataTaskStatisticsResponse statistics() {
+        var counts = new java.util.EnumMap<cn.superhuang.data.scalpel.business.task.domain.TaskType, Long>(cn.superhuang.data.scalpel.business.task.domain.TaskType.class);
+        taskRepository.statisticsGroups().forEach(row -> counts.put((cn.superhuang.data.scalpel.business.task.domain.TaskType) row[0], ((Number) row[1]).longValue()));
+        var types = java.util.Arrays.stream(cn.superhuang.data.scalpel.business.task.domain.TaskType.values())
+            .map(type -> new DataTaskStatisticsResponse.TypeCount(type, counts.getOrDefault(type, 0L))).toList();
+        return new DataTaskStatisticsResponse(java.time.Instant.now(), types.stream().mapToLong(DataTaskStatisticsResponse.TypeCount::count).sum(), types);
+    }
+
 
     private final DataTaskRepository taskRepository;
     private final LocalSqlTaskDefinitionRepository definitionRepository;

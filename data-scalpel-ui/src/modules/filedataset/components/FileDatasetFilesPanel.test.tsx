@@ -20,6 +20,7 @@ vi.mock('../hooks/useFileDatasets', () => ({
 vi.mock('./ReplaceFileDatasetContentDrawer', () => ({
   ReplaceFileDatasetContentDrawer: () => null,
 }));
+vi.mock('./FileDatasetParseHistoryPanel', () => ({ FileDatasetParseHistoryPanel: () => null }));
 
 import { FileDatasetFilesPanel } from './FileDatasetFilesPanel';
 
@@ -76,7 +77,7 @@ describe('FileDatasetFilesPanel', () => {
     });
     const user = userEvent.setup();
     render(
-      <FileDatasetFilesPanel dataset={dataset(type)} canUpdate onRefreshTables={vi.fn()} />,
+      <FileDatasetFilesPanel dataset={dataset(type)} canUpdate onRefreshTables={vi.fn()} onViewHistory={vi.fn()} />,
     );
 
     await user.click(await screen.findByLabelText(`${sourceFile.originalFileName}更多操作`));
@@ -98,6 +99,7 @@ describe('FileDatasetFilesPanel', () => {
         dataset={dataset('CSV')}
         canUpdate
         onRefreshTables={onRefreshTables}
+        onViewHistory={vi.fn()}
       />,
     );
 

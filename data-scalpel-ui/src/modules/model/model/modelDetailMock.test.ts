@@ -7,6 +7,7 @@ import {
 
 describe('model detail mock interactions', () => {
   it('normalizes unsupported tab keys', () => {
+    expect(normalizeModelDetailTab('metrics')).toBe('metrics');
     expect(normalizeModelDetailTab('fields')).toBe('fields');
     expect(normalizeModelDetailTab('changes')).toBe('changes');
     expect(normalizeModelDetailTab('unknown')).toBe('basic');

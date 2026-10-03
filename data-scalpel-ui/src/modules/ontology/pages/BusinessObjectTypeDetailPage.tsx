@@ -16,6 +16,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
 import { BusinessDetailSection } from '../../../shared/components/BusinessDetailSection';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { ManagementCode } from '../../../shared/components/ManagementListCells';
 import { useCurrentUser } from '../../system';
 import {
@@ -42,9 +43,7 @@ import {
 import { emptyBusinessObjectDefinition, type BusinessObjectTypeDefinition } from '../model/businessObjectType';
 import '../ontology.css';
 
-const savedAt = (value: string) => new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
-}).format(new Date(value));
+const savedAt = formatManagementDateTime;
 
 export const BusinessObjectTypeDetailPage = () => {
   const { id = '' } = useParams();
@@ -143,6 +142,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
       return;
     }
     modal.confirm({
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
       title: '放弃未保存的修改？',
       content: '刷新会重新读取最近保存的当前配置。',
       okText: '放弃并刷新',
@@ -166,6 +166,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
       return;
     }
     const confirmation = modal.confirm({
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
       title: '当前配置尚未保存',
       content: <div className="ontology-unsaved-navigation"><span>前往本体总览前，请选择如何处理本次修改。</span><Button danger type="link" onClick={() => { confirmation.destroy(); setDraft(null); setDirty(false); navigate(target); }}>放弃修改前往</Button></div>,
       okText: '保存后前往',
@@ -180,6 +181,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
   const runLifecycle = (action: 'enable' | 'disable' | 'delete') => {
     const deleting = action === 'delete';
     modal.confirm({
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
       title: deleting ? `删除对象类型“${objectType.name}”？` : `${action === 'enable' ? '启用' : '停用'}对象类型“${objectType.name}”？`,
       content: deleting ? '只删除当前定义和引用投影，不删除来源业务数据。' : action === 'disable' ? '停用后不能预览，也不能被新的关系引用。' : '启用后可以预览，并可被新的关系引用。',
       okText: deleting ? '删除' : action === 'enable' ? '启用' : '停用',
@@ -192,7 +194,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
   const failure = save.error ?? validate.error ?? command.error;
 
   return (
-    <div className="model-detail-page business-detail-page ontology-detail-page">
+    <div className="model-detail-page business-detail-page ontology-detail-page modeling-workspace">
       {modalContext}
       {messageContext}
       <div className="model-detail-header business-detail-header">
@@ -216,7 +218,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
           <Button icon={<CheckCircleOutlined />} loading={validate.isPending} disabled={!canReadModels || dirty} onClick={() => validate.mutate()}>校验</Button>
           {canManage && <Button type="primary" icon={<SaveOutlined />} loading={save.isPending} disabled={!dirty || !canReadModels} onClick={() => save.mutate()}>保存配置</Button>}
           {canManage && (
-            <Dropdown
+            <Dropdown classNames={{ root: 'workspace-resource-menu' }}
               trigger={['click']}
               menu={{
                 items: [

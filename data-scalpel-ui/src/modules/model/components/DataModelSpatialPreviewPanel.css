@@ -27,7 +27,7 @@
   flex:1;
   min-height:280px;
   border:1px solid #dce6eb;
-  border-radius:6px;
+  border-radius:var(--ds-radius-control);
   overflow:hidden;
 }
 .spatial-preview-map {
@@ -51,7 +51,7 @@
   color:#243f4d;
   padding:6px 10px;
   border:1px solid #dce6eb;
-  border-radius:4px;
+  border-radius:var(--ds-radius-control);
   font-size:13px;
 }
 .spatial-preview-feedback .ant-spin {

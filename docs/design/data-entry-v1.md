@@ -103,3 +103,18 @@ BOOLEAN、整数、字符串模式 LONG/DECIMAL、有限浮点数、STRING、DAT
 ## 8. HighGo 边界
 
 HighGo 使用独立 `HIGHGO` 数据源类型、`com.highgo:HgdbJdbc:6.2.5` 驱动、`com.highgo.jdbc.Driver`、`jdbc:highgo://` URL 和默认端口 5866。方言继承 PostgreSQL 主体并保留 HighGo 厂商身份，覆盖元数据、平台类型映射、受控建表与结构维护、查询、填报写入、UPSERT、增量读取和快照同步；空间能力取决于目标库扩展检测。模型、Canvas、Manifest、Runner、标准/SQL/脚本数据服务均保留 `HIGHGO`，GeoServer 空间发布不包含 HighGo。Manifest v28 增加该运行时数据库枚举，Admin、Task Engine 和 Service Engine 使用同一驱动版本。
+
+
+## 候选模型选择
+
+创建表单使用分页候选表格，只展示尚未绑定表单的 MANAGED 受管模型；逻辑注册模型不进入该入口，不提供模型模式筛选。名称／编码、分层（含未分层）及绑定数据源组合筛选点击查询后生效；筛选与翻页保留已选模型。受管模型完整检查原因就近展开但不禁止创建草稿；既有表单、创建命令、发布与写入的原有校验不变。
+
+候选响应保留 `physicalTableMode`、`catalogName`、`schemaName` 和 `physicalTableName`，表格展示数据存储及绑定物理表位置。当前发布与写入仍要求 MANAGED 和存储用途；逻辑注册模型即使绑定存储也不支持填报写入，因此不让用户从新建入口选择该类模型。
+
+适用性直接依据后端 `knownEligible` 和问题码：模型模式、数据库或字段类型不支持时显示“当前不支持填报”，其他问题显示“发布条件待完善”。完整原始原因与基础检查边界始终可查看，不把“基础检查通过”解释为物理表、主键唯一性已经验证。
+
+选择表格的通过项仅显示“基础检查通过”，不提供提示图标或说明弹层；问题项的弹层只列出后端返回的具体原因。发布前仍会完整检查的说明统一放在弹窗顶部，不逐行重复，避免将通过状态误读为异常。这是既有候选接口校验结果的展示调整，不新增业务校验。
+
+- `GET /api/v1/data-entry-forms/model-candidates/page` 使用通用 `SearchRequest` 和 `SearchEngine`，与“尚未绑定填报表单且 physicalTableMode 为 MANAGED”的固定条件取交集，返回 `PageResponse<DataEntryModelCandidateResponse>`。固定条件在分页前应用，客户端条件不能覆盖。支持 `warehouseLayerId`、`storageDataSourceId` 等模型标量条件；`warehouseLayerId:null` 表示未分层。候选附带分层和存储标识及名称，无需逐项调用模型详情接口。
+- `GET /api/v1/data-entry-forms/model-candidates/filters` 返回所有未绑定受管模型实际引用的分层与数据存储及是否存在未分层模型，不受关键词或候选页限制，也不隐藏用户自建或已停用但仍被受管模型引用的分层／存储；排除仅由逻辑注册模型引用的选项。
+- 两个接口沿用 `dataentry.manage` 权限，只读取管理库，不访问外部数据库。原 `model-candidates?keyword=` 数组接口继续保持前 100 项的兼容行为；新选择界面不再受此截断限制。

@@ -360,6 +360,6 @@ const SpatialPreviewWorkspace = ({
         {loading && <div className="data-service-spatial-preview-loading"><Spin size="small" /> 正在渲染当前视图…</div>}
       </div>
     </div>{screens.lg && <aside className="data-service-spatial-style-column">{editor}</aside>}</div>
-    <Drawer open={!screens.lg && drawerOpen} width={440} title="空间服务在线配图" className="business-drawer" onClose={() => setDrawerOpen(false)}>{editor}</Drawer>
+    <Drawer rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" open={!screens.lg && drawerOpen} width={440} title="空间服务在线配图" className="business-drawer" onClose={() => setDrawerOpen(false)}>{editor}</Drawer>
   </div>;
 };

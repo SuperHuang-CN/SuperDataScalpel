@@ -4,16 +4,18 @@ import {
   ApiOutlined,
   CopyOutlined,
   DatabaseOutlined,
-  HddOutlined,
+  FolderOutlined,
   IdcardOutlined,
   SettingOutlined,
-  ShareAltOutlined,
 } from '@ant-design/icons';
-import { Badge, Button, Card, Checkbox, Col, Collapse, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, Tag, Tooltip, TreeSelect, Typography, message } from 'antd';
+import { Badge, Button, Checkbox, Col, Collapse, ConfigProvider, Drawer, Form, Input, InputNumber, Row, Select, Space, Switch, Tooltip, TreeSelect, Typography, message } from 'antd';
 import { type ReactNode, useEffect, useRef, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { DataSourcePurposeIcon } from './DataSourcePurposeIcon';
+import { DataSourceTypeIcon } from './DataSourceTypeIcon';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
 import { BusinessSecretInput } from '../../../shared/components/BusinessSecretInput';
-import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
+import { directoryTreeSelectOptions, useDirectoryTree } from '../../directory';
 import {
   useCreateDataSource,
   useDataSourceTypes,
@@ -45,6 +47,15 @@ import {
 import { ConnectionTestResultModal } from './ConnectionTestResultModal';
 import { JdbcConnectionOptionsFields } from './JdbcConnectionOptionsFields';
 import { HttpApiConnectionFields } from './HttpApiConnectionFields';
+import './data-source-editor.css';
+
+const dataSourceEditorTheme = {
+  ...workspaceResourceTheme,
+  token: {
+    ...workspaceResourceTheme.token,
+    lineHeight: 1.5,
+  },
+};
 
 interface DataSourceDrawerProps {
   dataSource: DataSource | null;
@@ -150,14 +161,6 @@ const connectionKindForType = (type: DataSourceType): DataSourceConnectionKind =
   return 'JDBC';
 };
 
-const purposeIcon = (purpose: DataSourcePurpose) => {
-  switch (purpose) {
-    case 'SOURCE': return <DatabaseOutlined />;
-    case 'STORAGE': return <HddOutlined />;
-    case 'DISTRIBUTION': return <ShareAltOutlined />;
-  }
-};
-
 const jdbcUrlPreview = (
   type: DataSourceType | undefined,
   connection: DataSourceConnectionFormValues | undefined,
@@ -197,14 +200,14 @@ const FormSectionTitle = ({
   icon,
 }: {
   title: string;
-  description: string;
+  description?: string;
   icon: ReactNode;
 }) => (
   <div className="data-source-section-title">
     <span className="data-source-section-title-icon" aria-hidden="true">{icon}</span>
     <span className="data-source-section-title-copy">
       <span>{title}</span>
-      <Typography.Text type="secondary">{description}</Typography.Text>
+      {description && <Typography.Text type="secondary">{description}</Typography.Text>}
     </span>
   </div>
 );
@@ -701,32 +704,23 @@ export const DataSourceDrawer = ({
     return { status: 'error' as const, text: `连接失败 · ${lastTestResult.elapsedMs} ms` };
   })();
 
-  const headerStatus = !testAvailable
-    ? <Tag>暂不支持测试</Tag>
-    : lastTestResult?.success
-      ? <Tag color="success">连接成功</Tag>
-      : lastTestResult
-        ? <Tag color="error">连接失败</Tag>
-        : <Tag>未测试</Tag>;
-
   return (
-    <>
+    <ConfigProvider theme={dataSourceEditorTheme} select={{ classNames: { popup: { root: 'workspace-resource-select data-source-editor-select' } } }}>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay"
         title={(
           <div className="data-source-drawer-title">
-            <span className="data-source-drawer-title-icon" aria-hidden="true"><DatabaseOutlined /></span>
+            <span className="data-source-drawer-title-icon" aria-hidden="true">{selectedType ? <DataSourceTypeIcon type={selectedType} /> : <DatabaseOutlined />}</span>
             <span className="data-source-drawer-title-copy">
               <span>{editing ? '编辑数据源' : '新建数据源'}</span>
-              <Typography.Text type="secondary">配置连接信息并验证可用性</Typography.Text>
+              <Typography.Text type="secondary">{selectedDefinition?.displayName ?? (selectedType ? dataSourceTypeLabels[selectedType] : '配置连接信息')}</Typography.Text>
             </span>
           </div>
         )}
-        extra={<span className="data-source-drawer-header-status">{headerStatus}</span>}
         open={open}
-        size="min(1180px, 100vw)"
-        className="data-source-drawer"
+        size="min(960px, 100vw)"
+        className="data-source-drawer data-source-editor"
         closable={{ placement: 'end' }}
         onClose={closeDrawer}
         destroyOnHidden
@@ -743,14 +737,15 @@ export const DataSourceDrawer = ({
       >
         <div className="data-source-drawer-layout">
           <nav className="data-source-section-nav" aria-label="数据源配置分区">
-            {sections.map((section, index) => (
+            {sections.map((section) => (
               <Button
                 key={section.key}
                 type="text"
                 className={activeSection === section.key ? 'is-active' : undefined}
+                aria-current={activeSection === section.key ? 'location' : undefined}
                 onClick={() => scrollToSection(section.key)}
               >
-                <span className="data-source-section-step" aria-hidden="true">{index + 1}</span>
+                {section.key === 'basic' ? <IdcardOutlined /> : section.key === 'connection' ? <ApiOutlined /> : <SettingOutlined />}
                 <span className="data-source-section-step-label">{section.label}</span>
               </Button>
             ))}
@@ -765,27 +760,34 @@ export const DataSourceDrawer = ({
                 if ('type' in changedValues || 'connection' in changedValues) setLastTestResult(null);
               }}
             >
-              <Card
+              <section
                 id="data-source-basic"
-                size="small"
-                className="data-source-section-card"
-                title={<FormSectionTitle title="基本信息" description="填写数据源的基本信息，便于识别与管理" icon={<IdcardOutlined />} />}
-                extra={(
+                className="data-source-editor-section"
+                aria-label="基本信息"
+              >
+                <header className="data-source-editor-section-header">
+                  <FormSectionTitle title="基本信息" icon={<IdcardOutlined />} />
                   <span className="data-source-enabled-control">
                     <span>启用</span>
                     <Form.Item name="enabled" valuePropName="checked" noStyle>
                       <Switch aria-label="启用数据源" />
                     </Form.Item>
                   </span>
-                )}
-              >
+                </header>
                 <Row gutter={12}>
                   <Col span={12}><Form.Item label="名称" name="name" rules={[{ required: true, whitespace: true, message: '请输入名称' }, { max: 100, message: '名称不能超过 100 个字符' }]}><Input placeholder="如：业务系统 PostgreSQL" /></Form.Item></Col>
                   <Col span={12}><Form.Item label="编码" name="code" rules={editing ? [] : [{ required: true, whitespace: true, message: '请输入编码' }, { pattern: /^[A-Za-z][A-Za-z0-9_]{0,63}$/, message: '编码以字母开头，只能包含字母、数字和下划线' }]}><Input disabled={editing} placeholder="如：business_postgresql" /></Form.Item></Col>
-                  <Col span={canViewDirectories ? 12 : 24}><Form.Item label="数据源类型" name="type" rules={[{ required: true, message: '请选择数据源类型' }]}><Select options={typeOptions} onChange={changeType} /></Form.Item></Col>
-                  {canViewDirectories && <Col span={12}><Form.Item label="目录" name="directoryId"><TreeSelect allowClear treeDefaultExpandAll treeData={directoryTreeSelectData(directoriesQuery.data ?? [])} placeholder="未分类" /></Form.Item></Col>}
+                  <Col span={canViewDirectories ? 12 : 24}><Form.Item label="数据源类型" name="type" rules={[{ required: true, message: '请选择数据源类型' }]}><Select options={typeOptions} onChange={changeType}
+                    popupMatchSelectWidth={360} virtual={false}
+                    optionRender={({ data }) => <span className="workspace-resource-option"><DataSourceTypeIcon type={data.value} /><span>{data.label}</span></span>}
+                    labelRender={({ value, label }) => { const option = typeOptions.find(item => item.value === value); return <span className="workspace-resource-option">{option && <DataSourceTypeIcon type={option.value} />}<span>{label}</span></span>; }}
+                  /></Form.Item></Col>
+                  {canViewDirectories && <Col span={12}><Form.Item label="目录" name="directoryId"><TreeSelect allowClear treeDefaultExpandAll treeIcon treeData={directoryTreeSelectOptions(directoriesQuery.data ?? [])} placeholder="未分类"
+                    prefix={<FolderOutlined className="workspace-directory-prefix" />}
+                    classNames={{ popup: { root: 'workspace-resource-select data-source-editor-select' } }}
+                  /></Form.Item></Col>}
                   <Col span={24}>
-                    <Form.Item label="用途" name="purposes" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个用途' }]}>
+                    <Form.Item label="用途（可多选）" name="purposes" rules={[{ required: true, type: 'array', min: 1, message: '至少选择一个用途' }]}>
                       <Checkbox.Group className="data-source-purpose-options">
                         {purposeOptions.map((option) => (
                           <Checkbox
@@ -794,7 +796,7 @@ export const DataSourceDrawer = ({
                             disabled={option.disabled}
                             className={selectedPurposes.includes(option.value) ? 'is-selected' : undefined}
                           >
-                            <span className="data-source-purpose-icon">{purposeIcon(option.value)}</span>
+                            <span className="data-source-purpose-icon"><DataSourcePurposeIcon purpose={option.value} size={18} /></span>
                             <span className="data-source-purpose-copy">
                               <span>{option.label}</span>
                               <Typography.Text type="secondary">{purposeDescriptions[option.value]}</Typography.Text>
@@ -804,17 +806,18 @@ export const DataSourceDrawer = ({
                       </Checkbox.Group>
                     </Form.Item>
                   </Col>
-                  <Col span={24}><Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}><Input.TextArea placeholder="可选" maxLength={1000} autoSize={{ minRows: 1, maxRows: 3 }} /></Form.Item></Col>
+                  <Col span={24}><Form.Item label="说明" name="description" rules={[{ max: 1000, message: '说明不能超过 1000 个字符' }]}><Input.TextArea placeholder="可选，补充数据源的用途或内容说明" maxLength={1000} autoSize={{ minRows: 2, maxRows: 4 }} /></Form.Item></Col>
                 </Row>
-              </Card>
+              </section>
 
-              <Card
+              <section
                 id="data-source-connection"
-                size="small"
-                className="data-source-section-card"
-                title={<FormSectionTitle title="连接配置" description="填写连接信息并验证可用性" icon={<ApiOutlined />} />}
-                extra={<span className="data-source-section-status"><Badge status={testStatus.status} text={testStatus.text} /></span>}
+                className="data-source-editor-section"
+                aria-label="连接配置"
               >
+                <header className="data-source-editor-section-header">
+                  <FormSectionTitle title="连接配置" icon={<ApiOutlined />} />
+                </header>
                 <Row gutter={12}>
                   {selectedType === 'TDENGINE_WEBSOCKET' && (
                     <Col span={24}>
@@ -871,7 +874,7 @@ export const DataSourceDrawer = ({
                 {(selectedKind === 'KAFKA' || selectedKind === 'S3') && (
                   <Typography.Text type="secondary">Kafka、S3 的真实测试与资源读取将在下一阶段开放。</Typography.Text>
                 )}
-              </Card>
+              </section>
 
               {selectedKind === 'JDBC' && (
                 <div id="data-source-advanced" className="data-source-advanced-section">
@@ -897,6 +900,6 @@ export const DataSourceDrawer = ({
           onClose={() => setTestFailure(null)}
         />
       )}
-    </>
+    </ConfigProvider>
   );
 };

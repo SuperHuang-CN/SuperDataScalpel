@@ -10,7 +10,9 @@ export type RunMode = 'REAL' | 'SIMULATED' | 'TRIAL';
 export interface RuntimeOverview {
   from: string; to: string; collectedAt: string;
   tasks: { current: Partial<Record<TaskRunStatus, number>>; completed: Partial<Record<TaskRunStatus, number>>;
-    qualityFailed: number; successRate: number | null; trend: { from: string; to: string; status: TaskRunStatus; count: number }[] } | null;
+    qualityFailed: number; successRate: number | null; trend: { from: string; to: string; status: TaskRunStatus; count: number }[];
+    types?: { type: TaskType; current: Partial<Record<TaskRunStatus, number>>; completed: Partial<Record<TaskRunStatus, number>>;
+      deployments: Partial<Record<'STARTING' | 'RUNNING' | 'STOPPING' | 'STOPPED' | 'FAILED', number>> }[] } | null;
   engines: { total: number; active: number; unreachable: number; notReady: number; unknown: number } | null;
   openAlerts: number; pendingSignals: number | null; failedDeliveries: number | null;
 }

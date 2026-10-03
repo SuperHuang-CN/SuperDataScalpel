@@ -115,7 +115,7 @@ export const StandardDictionaryDetailPage = () => {
           : '删除节点',
       onClick: () => {
         modalApi.confirm({
-          rootClassName: 'business-overlay business-modal-overlay',
+          rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
           title: '删除码表节点',
           content: `确认删除“${item.name}”吗？`,
           okText: '删除',
@@ -191,7 +191,7 @@ export const StandardDictionaryDetailPage = () => {
               onClick={() => void executeItemCommand(item, item.enabled ? 'disable' : 'enable')}
             />
           </Tooltip>
-          <Dropdown menu={{ items: moreItems(item) }} trigger={['click']}>
+          <Dropdown classNames={{ root: 'workspace-resource-menu' }} menu={{ items: moreItems(item) }} trigger={['click']}>
             <Tooltip title="更多操作">
               <Button type="text" icon={<MoreOutlined />} aria-label={`${item.name}更多操作`} />
             </Tooltip>
@@ -391,7 +391,7 @@ export const StandardDictionaryDetailPage = () => {
   ];
 
   return (
-    <div className="standard-dictionary-detail-page business-detail-page">
+    <div className="standard-dictionary-detail-page business-detail-page modeling-workspace">
       {contextHolder}
       {modalContext}
       <header className="standard-dictionary-detail-header business-detail-header">

@@ -168,7 +168,7 @@ export const DataServiceSubscriptionsDrawer = ({
       if (key === 'sync') void sync(subscription);
       if (key === 'revoke') {
         modalApi.confirm({
-          rootClassName: 'business-overlay business-modal-overlay',
+          rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
           title: '撤回消费者订阅',
           content: `确认撤回“${subscription.consumerName}”对当前服务的调用权限吗？`,
           okText: '撤回',
@@ -242,7 +242,7 @@ export const DataServiceSubscriptionsDrawer = ({
     <>
       {messageContext}{modalContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-service-subscriptions-drawer"
         title={(
           <div className="data-service-subscriptions-title">

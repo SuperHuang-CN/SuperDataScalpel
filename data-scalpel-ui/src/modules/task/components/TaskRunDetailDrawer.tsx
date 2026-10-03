@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   DownloadOutlined,
@@ -92,7 +93,7 @@ const qualityMetric = (metric: QualityRuleExecutionResult['metric']) => {
   }
   if (metric.kind === 'ROW_COUNT') return `实际 ${metric.actualRows} 行，至少 ${metric.minimumRows} 行`;
   return metric.maximumValue
-    ? `最大时间 ${new Date(metric.maximumValue).toLocaleString('zh-CN')}，延迟 ${metric.actualDelayMinutes ?? '—'} 分钟，允许 ${metric.maximumDelayMinutes} 分钟`
+    ? `最大时间 ${formatManagementDateTime(metric.maximumValue)}，延迟 ${metric.actualDelayMinutes ?? '—'} 分钟，允许 ${metric.maximumDelayMinutes} 分钟`
     : `没有有效时间值，允许延迟 ${metric.maximumDelayMinutes} 分钟`;
 };
 
@@ -351,7 +352,7 @@ export const TaskRunDetailDrawer = ({
 
   return (
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className={previewKind ? 'task-run-detail-drawer task-run-detail-drawer-preview' : 'task-run-detail-drawer'}
       open={open}
       size="large"

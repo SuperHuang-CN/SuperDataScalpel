@@ -30,6 +30,22 @@ import java.util.UUID;
 @Service
 public class GatewayAccessQueryService {
 
+    @Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessUsageResponse usage(Instant from, Instant to) {
+        TimeWindow window=hourlyWindow(from,to);
+        var parameters=hourlyParameters(window);
+        String scope=" where hour_start>=:from and hour_start<:to";
+        long services=requiredLong(jdbcTemplate.queryForObject(
+            "select count(distinct data_service_id) from ds_gateway_access_service_hourly" + scope + " and status_2xx_count>0",parameters,Long.class));
+        long consumers=requiredLong(jdbcTemplate.queryForObject(
+            "select count(distinct consumer_id) from ds_gateway_access_consumer_service_hourly" + scope + " and status_2xx_count>0",parameters,Long.class));
+        return jdbcTemplate.queryForObject(
+            "select count(*) as samples,coalesce(sum(status_2xx_count),0) as successes,coalesce(sum(status_5xx_count),0) as errors,max(hour_start) as latest from ds_gateway_access_service_hourly" + scope,
+            parameters,(rs,row)->new cn.superhuang.data.scalpel.business.service.accesslog.web.response.GatewayAccessUsageResponse(
+                Instant.now(),window.fromInclusive(),window.toExclusive(),properties.enabled(),rs.getLong("samples")>0,
+                services,consumers,rs.getLong("successes"),rs.getLong("errors"),nullableInstant(rs,"latest")));
+    }
+
     private static final String HOURLY_COLUMNS = """
             hour_start, gateway_provider, data_service_id,
             request_count,

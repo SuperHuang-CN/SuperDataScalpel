@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import type { TaskRun, TaskRunStatus } from './task';
 
 const ACTIVE_STATUSES = new Set<TaskRunStatus>([
@@ -13,11 +14,7 @@ export const formatTaskRunDateTime = (value: string | null): string => {
   if (!value) return '—';
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '—';
-  return new Intl.DateTimeFormat('zh-CN', {
-    dateStyle: 'short',
-    timeStyle: 'medium',
-    hour12: false,
-  }).format(date);
+  return formatManagementDateTime(value);
 };
 
 export const formatTaskRunDuration = (run: TaskRun): string => {

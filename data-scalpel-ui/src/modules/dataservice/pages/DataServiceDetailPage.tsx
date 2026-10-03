@@ -247,7 +247,7 @@ export const DataServiceDetailPage = () => {
   };
 
   const disable = (target: DataServiceDetail) => modalApi.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: '停用数据服务？',
     content: target.type === 'SPATIAL_SERVICE'
       ? `将从 GeoServer 删除“${target.name}”对应的 Layer 和 FeatureType，保留共享 DataStore 与 Workspace。`
@@ -285,7 +285,7 @@ export const DataServiceDetailPage = () => {
   };
 
   const unpublish = (target: DataServiceDetail) => modalApi.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: '取消发布到网关？',
     content: `取消后“${target.name}”将无法通过网关访问，Service Engine 保持运行。`,
     okText: '取消发布',
@@ -350,7 +350,7 @@ export const DataServiceDetailPage = () => {
   };
 
   const remove = (target: DataServiceDetail) => modalApi.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
     title: '删除数据服务',
     content: `确认删除“${target.name}”吗？`,
     okText: '删除',

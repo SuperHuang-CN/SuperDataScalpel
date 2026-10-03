@@ -114,6 +114,8 @@ export interface AssetPortalFilters {
   keyword?: string;
   assetType?: AssetType;
   directoryId?: string;
+  featured?: boolean;
+  sort?: 'RECOMMENDED' | 'LATEST' | 'CREATED';
 }
 
 export interface AssetSourceNavigation {

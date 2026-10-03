@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { Form, Select } from 'antd';
 import {
   ManagementAdaptiveMoreFilters,
@@ -13,13 +14,19 @@ import {
   type DataModelStatus,
 } from '../model/dataModel';
 
+const filterPopupProps = {
+  popupMatchSelectWidth: 320,
+  classNames: { popup: { root: 'model-list-filter-popup' } },
+  virtual: false,
+};
+
 const jdbcDataSourceRequest = {
   page: 0,
   size: 500,
   sort: 'code',
 } as const;
 
-export const DataModelListFilters = ({ list }: { list: DataModelListState }) => {
+export const DataModelListFilters = ({ list, commands }: { list: DataModelListState; commands?: ReactNode }) => {
   const dataSourcesQuery = useDataSources(jdbcDataSourceRequest);
   const warehouseLayersQuery = useModelWarehouseLayers({
     page: 0,
@@ -97,6 +104,7 @@ export const DataModelListFilters = ({ list }: { list: DataModelListState }) => 
               allowClear
               showSearch
               optionFilterProp="label"
+              {...filterPopupProps}
               placeholder="全部 JDBC 数据源"
               loading={dataSourcesQuery.isFetching}
               options={dataSourceOptions}
@@ -108,9 +116,10 @@ export const DataModelListFilters = ({ list }: { list: DataModelListState }) => 
               allowClear
               showSearch
               optionFilterProp="label"
+              {...filterPopupProps}
               placeholder="全部分层"
               loading={warehouseLayersQuery.isFetching}
-              options={warehouseLayerOptions}
+              options={[{ value: 'unassigned', label: '未分层' }, ...warehouseLayerOptions]}
               className="advanced-filter-select"
             />
           </Form.Item>
@@ -123,6 +132,7 @@ export const DataModelListFilters = ({ list }: { list: DataModelListState }) => 
         loading={list.modelsQuery.isFetching}
         onReset={list.reset}
       />
+      {commands}
     </div>
   );
 };

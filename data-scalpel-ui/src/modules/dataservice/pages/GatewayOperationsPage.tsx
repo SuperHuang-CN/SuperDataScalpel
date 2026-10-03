@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   CheckCircleOutlined,
@@ -10,6 +11,7 @@ import { Line } from '@ant-design/plots';
 import { Button, Card, Col, Empty, Progress, Row, Segmented, Select, Space, Table, Tag, Tooltip, Typography } from 'antd';
 import type { TableProps } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { ManagementCode, ManagementListCell } from '../../../shared/components/ManagementListCells';
 import { GatewayAccessLogDetailDrawer } from '../components/GatewayAccessLogDetailDrawer';
@@ -51,16 +53,7 @@ const formatNumber = (value: number) => numberFormatter.format(value);
 const formatPercent = (value: number) => `${(value * 100).toFixed(2)}%`;
 const formatMilliseconds = (value: number | null) => value === null ? '—' : `${Math.round(value)} ms`;
 
-const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
-  year: 'numeric',
-  month: '2-digit',
-  day: '2-digit',
-  hour: '2-digit',
-  minute: '2-digit',
-  second: '2-digit',
-  hour12: false,
-  timeZoneName: 'short',
-}).format(new Date(value));
+const formatDateTime = formatManagementDateTime;
 
 const formatChartTime = (value: string, range: GatewayAccessRange) => new Intl.DateTimeFormat('zh-CN', {
   month: '2-digit',
@@ -137,8 +130,9 @@ const statusColor = (status: number) => {
 };
 
 export const GatewayOperationsPage = () => {
-  const [range, setRange] = useState<GatewayAccessRange>('24h');
-  const [draftRange, setDraftRange] = useState<GatewayAccessRange>('24h');
+  const [params] = useSearchParams();
+  const [range, setRange] = useState<GatewayAccessRange>(() => params.get('range') === '7d' ? '7d' : '24h');
+  const [draftRange, setDraftRange] = useState<GatewayAccessRange>(range);
   const [trendMetric, setTrendMetric] = useState<GatewayAccessTrendMetric>('TRAFFIC');
   const [dataServiceId, setDataServiceId] = useState<string>();
   const [draftDataServiceId, setDraftDataServiceId] = useState<string>();

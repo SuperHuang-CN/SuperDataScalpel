@@ -70,7 +70,7 @@ const RolePermissionsEditor = ({
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="system-role-permissions-drawer"
         title={(
           <div className="system-role-permissions-title">

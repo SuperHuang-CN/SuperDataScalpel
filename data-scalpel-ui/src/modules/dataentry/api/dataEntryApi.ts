@@ -2,6 +2,7 @@ import { requestBlob, requestJson } from '../../../shared/api/http';
 import type { PageResponse } from '../../../shared/api/pageResponse';
 import { toSearchParams, type SearchRequest } from '../../../shared/search';
 import type {
+  DataEntryCandidateFilters,
   DataEntryForm,
   DataEntryFormDetail,
   DataEntryFormStatus,
@@ -39,6 +40,9 @@ export const fetchDataEntryCandidates = (keyword?: string): Promise<DataEntryMod
   const query = keyword ? `?${new URLSearchParams({ keyword }).toString()}` : '';
   return requestJson<DataEntryModelCandidate[]>(`${PATH}/model-candidates${query}`);
 };
+
+export const fetchDataEntryCandidatePage = (request: SearchRequest): Promise<PageResponse<DataEntryModelCandidate>> => requestJson(`${PATH}/model-candidates/page?${toSearchParams(request)}`);
+export const fetchDataEntryCandidateFilters = (): Promise<DataEntryCandidateFilters> => requestJson(`${PATH}/model-candidates/filters`);
 
 export const fetchDataEntryForm = (id: string): Promise<DataEntryFormDetail> => requestJson(`${PATH}/${id}`);
 export const createDataEntryForm = (modelId: string): Promise<DataEntryFormDetail> => requestJson(PATH, { method: 'POST', body: JSON.stringify({ modelId }) });

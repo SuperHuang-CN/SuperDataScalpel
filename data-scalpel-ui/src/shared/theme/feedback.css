@@ -1,0 +1,23 @@
+/* Portal content and static Ant Design feedback use the same UI font as pages. */
+:is(.ant-message, .ant-notification, .ant-modal, .ant-drawer, .ant-popover, .ant-tooltip) {
+  font-family: var(--ds-ui-font) !important;
+}
+:is(.ant-message, .ant-notification, .ant-modal, .ant-drawer, .ant-popover) :is(.ant-btn, .ant-input, .ant-select, .ant-typography, .ant-form) { font-family: var(--ds-ui-font); }
+.ant-message .ant-message-notice { border-radius: var(--ds-radius-control); background: #fff; box-shadow: 0 5px 20px rgb(31 64 82 / 14%); }
+.ant-message :is(.ant-message-notice, .ant-message-notice-title) { font-family: var(--ds-ui-font); color: #263d4c; font-size: 14px; line-height: 22px; }
+
+/* Outlined artwork from @ant-design/icons-svg (MIT), matching the page icon set.
+   Only default status glyphs are replaced; custom business icons and loading stay intact. */
+:is(.ant-message, .ant-notification) :is(.anticon-check-circle, .anticon-close-circle, .anticon-exclamation-circle, .anticon-info-circle) > svg { display: none; }
+:is(.ant-message, .ant-notification) :is(.anticon-check-circle, .anticon-close-circle, .anticon-exclamation-circle, .anticon-info-circle)::before {
+  content: '';
+  display: block;
+  width: 1em;
+  height: 1em;
+  background: currentColor;
+  mask: var(--feedback-icon) center / contain no-repeat;
+}
+:is(.ant-message, .ant-notification) .anticon-check-circle { --feedback-icon: url('./feedback-icons/success.svg'); color: #268467; }
+:is(.ant-message, .ant-notification) .anticon-close-circle { --feedback-icon: url('./feedback-icons/error.svg'); color: #c04e5b; }
+:is(.ant-message, .ant-notification) .anticon-exclamation-circle { --feedback-icon: url('./feedback-icons/warning.svg'); color: #a97022; }
+:is(.ant-message, .ant-notification) .anticon-info-circle { --feedback-icon: url('./feedback-icons/info.svg'); color: #287f9e; }

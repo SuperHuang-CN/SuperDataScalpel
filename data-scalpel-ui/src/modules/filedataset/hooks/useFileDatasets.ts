@@ -66,9 +66,10 @@ const invalidateTableLoad = async (
   ]);
 };
 
-export const useFileDatasets = (request: SearchRequest) => useQuery({
+export const useFileDatasets = (request: SearchRequest, enabled = true) => useQuery({
   queryKey: fileDatasetQueryKeys.list(request),
   queryFn: () => fetchFileDatasets(request),
+  enabled,
 });
 
 export const useFileDataset = (id: string | undefined, enabled = true) => useQuery({
@@ -102,9 +103,9 @@ export const useFileDatasetFiles = (id: string | undefined, enabled: boolean) =>
   refetchIntervalInBackground: false,
 });
 
-export const useFileDatasetTables = (id: string | undefined, enabled: boolean) => useQuery({
-  queryKey: fileDatasetQueryKeys.tables(id),
-  queryFn: () => fetchFileDatasetTables(id as string, { page: 0, size: 500, sort: 'createdAt' }),
+export const useFileDatasetTables = (id: string | undefined, enabled: boolean, request?: SearchRequest) => useQuery({
+  queryKey: request ? [...fileDatasetQueryKeys.tables(id), request] : fileDatasetQueryKeys.tables(id),
+  queryFn: () => fetchFileDatasetTables(id as string, request ?? { page: 0, size: 500, sort: 'createdAt' }),
   enabled: enabled && Boolean(id),
   refetchInterval: (query) => fileDatasetTablePollingInterval(query.state.data),
   refetchIntervalInBackground: false,

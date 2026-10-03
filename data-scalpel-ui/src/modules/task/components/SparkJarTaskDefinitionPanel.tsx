@@ -1041,7 +1041,7 @@ export const SparkJarTaskDefinitionPanel = ({
         </Form>
       </div>
       <Modal
-        rootClassName="business-overlay business-modal-overlay"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
         title="存在未保存的 Spark JAR 配置"
         okText="放弃修改并离开"

@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { BellOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Select, Tag } from 'antd';
 import type { TableProps } from 'antd';
@@ -8,7 +9,7 @@ import { ManagementDateTime, ManagementListCell } from '../../../shared/componen
 import { useAlerts } from '../hooks/useOperations';
 import { buildAlertSearch, type AlertFilters } from '../model/operationsSearch';
 import { ruleLabels, severityLabels, statusLabels, type AlertIncident, type AlertRuleType } from '../model/operations';
-import { OperationsTable } from '../components/OperationsTable';
+import { OperationsTable, OperationsTableActions } from '../components/OperationsTable';
 import { AlertIncidentDrawer } from '../components/AlertIncidentDrawer';
 import '../components/operations.css';
 
@@ -32,10 +33,10 @@ export const AlertCenterPage = () => {
     { title: '处理状态', width: 140, render: (_, i) => <ManagementListCell primary={<Tag color={i.status === 'OPEN' ? 'processing' : 'default'}>{statusLabels[i.status]}</Tag>} secondary={i.silencedUntil ? '静默中' : i.conditionState === 'UNKNOWN' ? '观测待确认' : null} /> },
     { title: '发生时间', dataIndex: 'occurredAt', width: 170, render: v => <ManagementDateTime value={v} /> },
     { title: '通知状态', width: 185, render: (_, i) => <ManagementListCell primary={i.notifications.failed ? <Tag color="error">Webhook 失败 {i.notifications.failed}</Tag> : i.notifications.pending ? `Webhook 待投递 ${i.notifications.pending}` : i.notifications.sent ? `Webhook 已送达 ${i.notifications.sent}` : '暂无 Webhook 投递'} secondary={`站内 ${i.notifications.inApp} · 抑制 ${i.notifications.suppressed}`} /> },
-    { title: '关闭 / 处理结果', width: 180, render: (_, i) => <ManagementListCell primary={i.closedAt ? new Date(i.closedAt).toLocaleString() : '—'} secondary={i.closeReason} /> },
+    { title: '关闭 / 处理结果', width: 180, render: (_, i) => <ManagementListCell primary={i.closedAt ? formatManagementDateTime(i.closedAt) : '—'} secondary={i.closeReason} /> },
   ];
   return <div className="ops-page"><section className="management-workbench">
-    <div className="management-filter-strip"><Form form={form} initialValues={initial} autoComplete="off" layout="inline" className="management-filter-form" onFinish={values => { const a = advancedOpen ? advanced : advancedForm.getFieldsValue(true); setAdvanced(a); setFilters({ ...values, ruleType: a.ruleType, severity: a.severity, from: a.fromLocal ? new Date(a.fromLocal).toISOString() : undefined, to: a.toLocal ? new Date(a.toLocal).toISOString() : undefined }); setPage(0); }}>
+    <div className="management-filter-strip"><Form form={form} initialValues={initial} autoComplete="off" layout="inline" className="management-filter-form" onFinish={values => { const a = advancedOpen ? advanced : advancedForm.getFieldsValue(true); setAdvanced(a); setFilters({ ...values, ruleType: a.ruleType, severity: a.severity, from: a.fromLocal ? new Date(a.fromLocal).toISOString() : undefined, to: a.toLocal ? new Date(a.toLocal).toISOString() : undefined }); setPage(0); }} id="alert-center-page-filters-0">
       <Form.Item name="keyword"><ManagementSearchInput allowClear placeholder="搜索对象或告警摘要" /></Form.Item>
       <Form.Item name="status"><Select style={{ width: 130 }} options={[{ value: 'ACTIVE', label: '未关闭' }, ...Object.entries(statusLabels).map(([value, label]) => ({ value, label })), { value: 'ALL', label: '全部状态' }]} /></Form.Item>
     </Form><ManagementAdaptiveMoreFilters count={Object.values(advanced).filter(Boolean).length} open={advancedOpen}
@@ -47,7 +48,7 @@ export const AlertCenterPage = () => {
       <Form.Item name="severity" label="告警级别"><Select allowClear placeholder="全部级别" style={{ width: 120 }} options={Object.entries(severityLabels).map(([value, label]) => ({ value, label }))} /></Form.Item>
       <Form.Item name="fromLocal" label="发生时间起点"><Input type="datetime-local" aria-label="告警发生开始时间" style={{ width: 190 }} /></Form.Item>
       <Form.Item name="toLocal" label="发生时间终点"><Input type="datetime-local" aria-label="告警发生结束时间" style={{ width: 190 }} /></Form.Item>
-    </Form></ManagementAdaptiveMoreFilters><ManagementFilterActions form={form} appliedFilters={filters} loading={query.isFetching} onReset={() => { form.resetFields(); form.setFieldsValue({ status: 'ACTIVE', ruleType: undefined }); advancedForm.setFieldsValue(emptyAdvanced); setAdvanced(emptyAdvanced); setAdvancedOpen(false); setFilters({ status: 'ACTIVE' }); setPage(0); }} /></div>
-    <OperationsTable title="告警记录" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }} />
+    </Form></ManagementAdaptiveMoreFilters><ManagementFilterActions form={form} appliedFilters={filters} loading={query.isFetching} onReset={() => { form.resetFields(); form.setFieldsValue({ status: 'ACTIVE', ruleType: undefined }); advancedForm.setFieldsValue(emptyAdvanced); setAdvanced(emptyAdvanced); setAdvancedOpen(false); setFilters({ status: 'ACTIVE' }); setPage(0); }} commands={<OperationsTableActions title="告警记录" query={query} />} formId="alert-center-page-filters-0" /></div>
+    <OperationsTable title="告警记录" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }} showActions={false} />
   </section><AlertIncidentDrawer key={incidentId} incidentId={incidentId} onClose={() => open(null)} /></div>;
 };

@@ -23,7 +23,7 @@
 .spark-jar-online-page .spark-jar-online-entry-status > .ant-typography { max-width: 260px; color: var(--java-workspace-muted); }
 .spark-jar-online-page .spark-jar-online-entry-status .ant-tag { font-size: 12px; line-height: 20px; }
 .spark-jar-online-page .spark-jar-online-main-actions { gap: 8px !important; }
-.spark-jar-online-page .spark-jar-online-main-actions .ant-btn { height: 32px; padding-inline: 12px; border-radius: 8px; font-size: 14px; box-shadow: none; }
+.spark-jar-online-page .spark-jar-online-main-actions .ant-btn { height: 32px; padding-inline: 12px; border-radius: var(--ds-radius-control); font-size: 14px; box-shadow: none; }
 .spark-jar-online-page .spark-jar-online-autosave { margin-right: 8px; padding-right: 16px; border-right: 1px solid var(--java-workspace-border); }
 .spark-jar-online-page .spark-jar-online-autosave .ant-typography { font-size: 13px; color: #52617b; }
 .spark-jar-online-page .spark-jar-trial-help-button.ant-btn { width: 28px; padding: 0; }
@@ -39,9 +39,9 @@
 .spark-jar-online-page .spark-jar-online-resources { padding: 0; gap: 0; background: #f8faff; border-right-color: var(--java-workspace-border); }
 .spark-jar-online-page .spark-jar-online-panel-heading { padding: 16px; }
 .spark-jar-online-page .spark-jar-online-panel-heading > div { gap: 4px; }
-.spark-jar-online-page .spark-jar-online-panel-heading .ant-btn { width: 28px; height: 28px; border-radius: 8px; box-shadow: none; }
+.spark-jar-online-page .spark-jar-online-panel-heading .ant-btn { width: 28px; height: 28px; border-radius: var(--ds-radius-control); box-shadow: none; }
 .spark-jar-online-page .spark-jar-online-resource-list { padding: 0 12px 12px; gap: 10px; }
-.spark-jar-online-page .spark-jar-online-resource-card { border-color: var(--java-workspace-border); border-radius: 8px; background: #fff; box-shadow: none; }
+.spark-jar-online-page .spark-jar-online-resource-card { border-color: var(--java-workspace-border); border-radius: var(--ds-radius-control); background: #fff; box-shadow: none; }
 .spark-jar-online-page .spark-jar-online-resource-card-header { grid-template-columns: minmax(0, 1fr); }
 .spark-jar-online-page .spark-jar-online-resource-main { grid-template-columns: 28px minmax(0, 1fr); padding: 12px 12px 10px; gap: 6px 8px; cursor: default; }
 .spark-jar-online-page .spark-jar-online-resource-main:hover { background: transparent; }
@@ -50,7 +50,7 @@
 .spark-jar-online-page .spark-jar-online-resource-main > .ant-tag { grid-column: 2; justify-self: start; margin: 0; font-size: 11px; line-height: 18px; }
 .spark-jar-online-page .spark-jar-online-resource-expand-button { width: 28px; }
 .spark-jar-online-page .spark-jar-online-resource-actions { display: flex; gap: 4px !important; padding: 8px; border-top: 1px solid #f0f2f7; }
-.spark-jar-online-page .spark-jar-online-resource-actions .ant-btn { height: 26px; padding-inline: 7px; font-size: 12px; border-radius: 6px; box-shadow: none; }
+.spark-jar-online-page .spark-jar-online-resource-actions .ant-btn { height: 26px; padding-inline: 7px; font-size: 12px; border-radius: var(--ds-radius-control); box-shadow: none; }
 .spark-jar-online-page .spark-jar-online-fields { padding: 6px; background: #fbfcff; }
 .spark-jar-online-page .spark-jar-online-fields > button { min-height: 30px; }
 

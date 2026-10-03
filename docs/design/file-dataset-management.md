@@ -178,8 +178,7 @@ APPEND 不影响已经生成的 Manifest；覆盖、替换和删除会立即删�
 装载接口返回 `202 Accepted` 和 `jobId/file/table`，校验成功前不存在来源记录。初始上传响应增加
 `jobIds`。表响应使用 `sourceCount/totalRowCount/currentLoadJobId/previewSupported`。
 
-表级 `actions/parse`、来源 `actions/retry` 和文件 `actions/prepare` 不再提供。具体失败信息统一
-在解析队列抽屉查看。来源页签只展示当前来源及下载、替换和删除操作；GPKG 来源只能下载，替换和
+表级 `actions/parse`、来源 `actions/retry` 和文件 `actions/prepare` 不再提供。具体失败信息可在数据集详情的“最近解析”和“解析记录”中查看，也保留全局解析队列入口。详情复用现有队列查询，固定附加 `fileDatasetId` 条件，支持状态筛选、分页及完整错误展开；只展示系统保留期内任务，自动尝试次数不等同于逐次重试日志。列表可直接打开上传窗口，复用文件页上传逻辑并在提交前重新核对单文件限制。来源页签只展示当前来源及下载、替换和删除操作；GPKG 来源只能下载，替换和
 删除必须从整文件操作发起。危险确认明确提示不可恢复、
 旧对象立即删除以及旧 Canvas 任务可能失败。
 

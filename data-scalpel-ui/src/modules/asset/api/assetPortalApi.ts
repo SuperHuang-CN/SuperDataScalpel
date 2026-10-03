@@ -25,6 +25,8 @@ export const fetchAssetPortalAssets = (
   if (filters.keyword) query.set('keyword', filters.keyword);
   if (filters.assetType) query.set('assetType', filters.assetType);
   if (filters.directoryId) query.set('directoryId', filters.directoryId);
+  if (filters.featured !== undefined) query.set('featured', String(filters.featured));
+  if (filters.sort) query.set('sort', filters.sort);
   return requestJson<PageResponse<AssetPortalAssetSummary>>(
     `${PORTAL_PATH}/assets?${query.toString()}`,
     { skipAuthentication: true },

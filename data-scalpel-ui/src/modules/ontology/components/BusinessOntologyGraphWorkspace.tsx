@@ -197,7 +197,7 @@ export const BusinessOntologyGraphWorkspace = ({
       </div>
       {overlayInspector && (
         <Drawer
-          rootClassName="business-overlay business-drawer-overlay ontology-graph-inspector-drawer"
+          rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay ontology-graph-inspector-drawer"
           open={Boolean(inspector)}
           size={360}
           title="本体详情"

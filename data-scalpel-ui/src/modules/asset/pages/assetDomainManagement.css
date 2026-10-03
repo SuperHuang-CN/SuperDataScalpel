@@ -48,7 +48,7 @@
   font-size: 19px;
   background: linear-gradient(135deg, rgb(78 117 224 / 14%), rgb(123 82 220 / 12%));
   border: 1px solid rgb(82 104 202 / 12%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .asset-domain-detail-identity > div {
@@ -86,7 +86,7 @@
   padding: 14px;
   background: rgb(248 250 255 / 68%);
   border: 1px solid rgb(77 96 166 / 12%);
-  border-radius: 12px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .asset-domain-section-heading {
@@ -125,7 +125,7 @@
   text-align: left;
   background: rgb(255 255 255 / 84%);
   border: 1px solid rgb(77 96 166 / 10%);
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .asset-domain-child-list .ant-btn:hover {

@@ -30,6 +30,7 @@ Service Engine 高可用：[原 Redis 双节点问题记录](verification/servic
 | 本地启动、功能自测或联调 | [启动约定](../AGENTS.md#本地开发与调试)、[脚本用法](../README.md#本地开发与调试) |
 | 前端结构、API、状态、Canvas Inspector | [前端 AGENTS](../data-scalpel-ui/AGENTS.md) |
 | 页面、表格、筛选、目录、表单或视觉 | [页面与交互规范](development/frontend-ui.md)，按文内表格定位章节 |
+| 首页统计、模型/任务/服务分类概览与首页代码结构 | [首页统计与工作台 V1](design/homepage-statistics-v1.md)（已实现；含效果图、指标口径、接口、代码归属与测试记录） |
 | 任务中心菜单分组、列表与详情导航 | [任务中心分组](development/frontend-ui.md#task-center-views) |
 | Canvas 节点、编译、Runner、批流或 SDK | [Task Engine AGENTS](../data-scalpel-task-engine/AGENTS.md)、[编译与执行规范](development/task-engine.md) |
 | 批处理写入统一、条件覆盖、原子提交及行数统计 | [实施方案](design/batch-jdbc-write-implementation-20260929.md)、[实测记录](verification/batch-jdbc-write-20260929.md)；[前期讨论稿](design/batch-jdbc-write-atomicity-and-overwrite-design.md)保留决策过程，以实施方案为准 |
@@ -52,6 +53,7 @@ Service Engine 高可用：[原 Redis 双节点问题记录](verification/servic
 | 数据服务、引擎或网关发布 | [数据服务](design/data-service-publishing.md)、[Engine 高可用](design/service-engine-ha.md)、[网关发布](design/data-service-gateway-publishing.md)、[GeoServer](design/geoserver-spatial-service-publishing-v1.md) |
 | 独立 Super API Gateway | [网关 AGENTS](../super-api-gateway/AGENTS.md)、[Provider 集成](design/super-api-gateway-provider-integration.md) |
 | 数据标准、填报、资产或血缘 | [码表](design/standard-dictionary-management.md)、[填报](design/data-entry-v1.md)、[资产](design/asset-publication-and-synchronization.md)、[血缘](design/lineage-integration-contract.md) |
+| 客户资产门户、首页发现与资源浏览 | [客户资产门户设计](design/asset-portal-customer-design.md)（已实现，含交互 HTML、效果图、统计检索口径、轮播规则及验证记录） |
 | 业务建模 V1、本体总览、人员与部门模型验证 | [本体总览设计](design/business-ontology-overview-v1.md)、[计划对齐检查与开发环境验证](verification/business-ontology-v1-personnel.md)（包含当前能力、实际验证及未完成项，不代表完整业务建模 V1 已验收） |
 | 业务指标、口径说明、结果模型绑定、任务反查或 Excel 整理 | [指标管理 V1](design/metric-management-v1.md)、[关联示例](design/metric-management-v1.md#12-关联与口径维护示例)、[Excel 导入导出](design/metric-management-v1.md#13-excel-导入导出与线下整理)（已实现口径、结果绑定、任务关联及 Excel 整理；指标数据结果查询后续开发） |
 | 系统 MCP、API 开放和智能体访问 | [系统 MCP](design/system-mcp.md)（独立入口、目录、令牌、调用边界与运维） |

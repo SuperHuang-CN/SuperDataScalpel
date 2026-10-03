@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { Button, Modal, Radio, Space, Typography } from 'antd';
-import { DownloadOutlined, UploadOutlined } from '@ant-design/icons';
+import { Button, Dropdown, Modal, Radio, Space, Typography } from 'antd';
+import { DownOutlined, DownloadOutlined, UploadOutlined } from '@ant-design/icons';
 import { exportMetrics } from '../api/metricExcelApi';
 import type { MetricExportMode } from '../model/metricExcel';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
@@ -23,10 +23,15 @@ export const MetricExcelActions = ({ search, selectedIds, onImported }: { search
     },
   });
   return <>
-    {canManage && <Button icon={<UploadOutlined />} onClick={() => setImporting(true)}>导入</Button>}
-    <Button icon={<DownloadOutlined />} onClick={() => { exportFile.reset(); setMode(canExportDraft ? 'DRAFT' : 'PUBLISHED'); }}>导出{selectedIds.length ? `（${selectedIds.length}）` : ''}</Button>
+    <Dropdown trigger={['click']} classNames={{ root: 'workspace-resource-menu' }} menu={{
+      items: [
+        ...(canManage ? [{ key: 'import', icon: <UploadOutlined />, label: '导入指标' }] : []),
+        { key: 'export', icon: <DownloadOutlined />, label: selectedIds.length ? `导出勾选指标（${selectedIds.length}）` : '导出指标' },
+      ],
+      onClick: ({ key }) => { if (key === 'import') setImporting(true); else { exportFile.reset(); setMode(canExportDraft ? 'DRAFT' : 'PUBLISHED'); } },
+    }}><Button>{canManage ? '导入/导出' : '导出'} <DownOutlined /></Button></Dropdown>
     {importing && <MetricImportDrawer onClose={() => setImporting(false)} onImported={onImported} />}
-    <Modal open={mode !== null} title="导出指标" rootClassName="business-overlay business-modal-overlay"
+    <Modal open={mode !== null} title="导出指标" rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay"
       okText="导出 Excel" onCancel={() => !exportFile.isPending && setMode(null)} confirmLoading={exportFile.isPending}
       onOk={() => mode && exportFile.mutate(mode)}>
       <Space orientation="vertical" className="metric-full-width">

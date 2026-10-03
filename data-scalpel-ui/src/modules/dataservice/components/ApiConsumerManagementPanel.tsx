@@ -14,7 +14,7 @@ import type { TableProps } from 'antd';
 import { Button, Dropdown, Form, Modal, Space, Table, Tooltip, message } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
+import { ManagementCode, ManagementDateTime, ManagementListCell, ManagementName, ManagementStatusIndicator, type ManagementStatusTone } from '../../../shared/components/ManagementListCells';
 import { ManagementFilterActions, ManagementSearchInput } from '../../../shared/components/ManagementFilters';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import {
@@ -147,7 +147,7 @@ export const ApiConsumerManagementPanel = ({
 
   const confirmRemove = (consumer: ApiConsumer) => {
     modal.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
       title: '删除 API 消费者',
       content: `确认从网关和 DataScalpel 删除“${consumer.name}”吗？`,
       okText: '删除',
@@ -158,7 +158,7 @@ export const ApiConsumerManagementPanel = ({
   };
 
   const columns: TableProps<ApiConsumer>['columns'] = [
-    { title: '消费者', dataIndex: 'name', width: 270, render: (value: string, consumer) => <ManagementListCell icon={<UsergroupAddOutlined />} iconTone="orange" primary={value} secondary={<><ManagementCode value={consumer.code} /> {consumer.description || ''}</>} /> },
+    { title: '消费者', dataIndex: 'name', width: 270, render: (value: string, consumer) => <ManagementListCell icon={<UsergroupAddOutlined />} iconTone="orange" primary={<ManagementName name={value} code={consumer.code} description={consumer.description}><Tooltip title={value}><span>{value}</span></Tooltip></ManagementName>} secondary={consumer.code !== value ? <ManagementCode value={consumer.code} /> : undefined} /> },
     {
       title: '网关状态',
       dataIndex: 'gatewayBindings',
@@ -243,24 +243,24 @@ export const ApiConsumerManagementPanel = ({
             layout="inline"
             className="management-filter-form"
             onFinish={search}
-          >
+           id="api-consumer-management-panel-filters-0">
             <Form.Item name="keyword">
               <ManagementSearchInput allowClear placeholder="搜索消费者名称或编码" className="data-source-keyword-input" />
             </Form.Item>
           </Form>
-          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={consumersQuery.isFetching} onReset={reset} />
-        </div>
-        <div className="management-results-surface">
-          <div className="management-result-toolbar">
-          <div className="management-result-title">消费者管理 <span className="management-result-count">共 {consumersQuery.data?.totalElements ?? 0} 项</span></div>
-          <Space size={4} className="management-result-actions">
+          <ManagementFilterActions form={filterForm} appliedFilters={filters} loading={consumersQuery.isFetching} onReset={reset} commands={<Space size={4} className="management-result-actions">
             <Tooltip title="刷新列表"><Button type="text" icon={<ReloadOutlined />} aria-label="刷新消费者列表" onClick={() => void consumersQuery.refetch()} /></Tooltip>
             {canManage && (
               <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateDrawerOpen(true)}>
                 新建
               </Button>
             )}
-          </Space>
+          </Space>} formId="api-consumer-management-panel-filters-0" />
+        </div>
+        <div className="management-results-surface">
+          <div className="management-result-toolbar">
+          <div className="management-result-title">消费者管理 <span className="management-result-count">共 {consumersQuery.data?.totalElements ?? 0} 项</span></div>
+
           </div>
           {consumersQuery.isError && (
             <Alert
@@ -278,7 +278,7 @@ export const ApiConsumerManagementPanel = ({
           columns={columns}
           dataSource={consumersQuery.data?.content ?? []}
           loading={consumersQuery.isFetching}
-          scroll={{ y: '100%' }}
+          scroll={{ x: 1050, y: '100%' }}
           pagination={{
             current: page + 1,
             pageSize: size,

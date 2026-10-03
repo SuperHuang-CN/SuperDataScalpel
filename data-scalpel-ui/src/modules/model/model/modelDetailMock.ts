@@ -1,7 +1,7 @@
-export type ModelDetailTabKey = 'basic' | 'fields' | 'quality' | 'changes' | 'data' | 'tasks' | 'lineage';
+export type ModelDetailTabKey = 'basic' | 'metrics' | 'fields' | 'quality' | 'changes' | 'data' | 'tasks' | 'lineage';
 
 export const normalizeModelDetailTab = (value: string | null): ModelDetailTabKey => {
-  if (value === 'fields' || value === 'quality' || value === 'changes' || value === 'data' || value === 'tasks' || value === 'lineage') return value;
+  if (value === 'metrics' || value === 'fields' || value === 'quality' || value === 'changes' || value === 'data' || value === 'tasks' || value === 'lineage') return value;
   return 'basic';
 };
 

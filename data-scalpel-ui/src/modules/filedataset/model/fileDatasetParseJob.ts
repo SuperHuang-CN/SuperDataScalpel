@@ -1,6 +1,7 @@
 export type FileDatasetParseJobStatus = 'QUEUED' | 'RUNNING' | 'SUCCEEDED' | 'FAILED' | 'CANCELLED';
 export type FileDatasetParseJobType = 'FILE_PREPARATION' | 'TABLE_SOURCE_VALIDATE';
 import type { FileDatasetTableSourceLoadMode } from './fileDataset';
+import { andSearch, searchEquals } from '../../../shared/search';
 
 export interface FileDatasetParseJob {
   id: string;
@@ -48,6 +49,7 @@ export interface FileDatasetParseQueueSummary {
 
 export interface FileDatasetParseJobFilters {
   status?: FileDatasetParseJobStatus;
+  fileDatasetId?: string;
 }
 
 export const fileDatasetParseJobStatusLabels: Record<FileDatasetParseJobStatus, string> = {
@@ -75,7 +77,10 @@ export const fileDatasetParseJobStatusOptions = Object.entries(fileDatasetParseJ
 
 export const buildFileDatasetParseJobSearch = (
   filters: FileDatasetParseJobFilters,
-): string | undefined => filters.status ? `status:"${filters.status}"` : undefined;
+): string | undefined => andSearch(
+  searchEquals('status', filters.status),
+  searchEquals('fileDatasetId', filters.fileDatasetId),
+);
 
 export const FILE_DATASET_PARSE_JOB_MONITOR_INTERVAL_MS = 5_000;
 

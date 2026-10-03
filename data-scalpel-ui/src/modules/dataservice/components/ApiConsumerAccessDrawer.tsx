@@ -297,7 +297,7 @@ export const ApiConsumerAccessDrawer = ({
       if (key === 'validity') setValidityTarget({ kind: 'keys', id: credential.id, name: credential.name });
       if (key === 'rotate') {
         modalApi.confirm({
-          rootClassName: 'business-overlay business-modal-overlay',
+          rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
           title: `轮换 API Key“${credential.name}”？`,
           content: '旧密钥会立即失效，请先确认调用方可以同步更新。新密钥同样只显示一次。',
           okText: '轮换',
@@ -307,7 +307,7 @@ export const ApiConsumerAccessDrawer = ({
       }
       if (key === 'delete') {
         modalApi.confirm({
-          rootClassName: 'business-overlay business-modal-overlay',
+          rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
           title: `删除 API Key“${credential.name}”？`,
           content: '删除后使用该密钥的调用方将立即无法通过身份识别。',
           okText: '删除',
@@ -335,7 +335,7 @@ export const ApiConsumerAccessDrawer = ({
       if (key === 'sync') void syncSubscription(subscription);
       if (key === 'revoke') {
         modalApi.confirm({
-          rootClassName: 'business-overlay business-modal-overlay',
+          rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
           title: `撤回服务订阅“${subscription.dataServiceName}”？`,
           content: `确认撤回当前消费者对“${subscription.dataServiceName}”的调用权限吗？`,
           okText: '撤回',
@@ -481,7 +481,7 @@ export const ApiConsumerAccessDrawer = ({
       {messageContext}{modalContext}
       {validityTarget && <GatewayValidityDrawer target={validityTarget} onClose={() => setValidityTarget(null)} />}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="api-consumer-access-drawer"
         title={(
           <div className="api-consumer-access-title">
@@ -599,7 +599,7 @@ export const ApiConsumerAccessDrawer = ({
       </Drawer>
 
       <Modal
-        rootClassName="business-overlay business-modal-overlay api-consumer-key-modal"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay api-consumer-key-modal"
         title={(
           <div className="api-consumer-key-modal-title">
             <span className="api-consumer-key-modal-title-icon" aria-hidden="true"><KeyOutlined /></span>
@@ -653,7 +653,7 @@ export const ApiConsumerAccessDrawer = ({
       </Modal>
 
       <Modal
-        rootClassName="business-overlay business-modal-overlay api-consumer-secret-modal"
+        rootClassName="business-overlay business-modal-overlay resource-workspace-overlay api-consumer-secret-modal"
         title={(
           <div className="api-consumer-key-modal-title">
             <span className="api-consumer-key-modal-title-icon" aria-hidden="true"><SafetyCertificateOutlined /></span>

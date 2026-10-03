@@ -106,7 +106,7 @@ export const MoveStandardDictionaryItemModal = ({
     <>
       {contextHolder}
       <Modal
-        rootClassName="business-overlay business-modal-overlay standard-dictionary-move-modal"
+        rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay standard-dictionary-move-modal"
         title={(
           <div className="standard-dictionary-move-title">
             <span className="standard-dictionary-move-title-icon" aria-hidden="true"><SwapOutlined /></span>

@@ -180,7 +180,7 @@ export const DataServiceBasicDrawer = ({
       return;
     }
     modalApi.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
       title: editing ? '放弃未保存的基础信息？' : '放弃创建数据服务？',
       content: editing
         ? '关闭后，本次对服务基础信息的修改将丢失。'
@@ -253,7 +253,7 @@ export const DataServiceBasicDrawer = ({
       {messageContext}
       {modalContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-service-basic-drawer"
         title={(
           <div className="data-service-basic-drawer-title">

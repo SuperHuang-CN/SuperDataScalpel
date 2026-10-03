@@ -57,7 +57,7 @@ export const SystemRoleDrawer = ({ open, role, onClose }: SystemRoleDrawerProps)
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer system-role-drawer"
         title={(
           <div className="data-model-drawer-title">

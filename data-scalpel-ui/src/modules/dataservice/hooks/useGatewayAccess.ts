@@ -27,15 +27,17 @@ const queryOptions = {
   refetchIntervalInBackground: false,
 };
 
-export const useGatewayAccessOverview = (query: GatewayAccessScope) => useQuery({
+export const useGatewayAccessOverview = (query: GatewayAccessScope, enabled = true) => useQuery({
   queryKey: [...gatewayAccessQueryKey, 'overview', query],
   queryFn: () => fetchGatewayAccessOverview(query),
+  enabled,
   ...queryOptions,
 });
 
-export const useGatewayAccessTrend = (query: GatewayAccessScope) => useQuery({
+export const useGatewayAccessTrend = (query: GatewayAccessScope, enabled = true) => useQuery({
   queryKey: [...gatewayAccessQueryKey, 'trend', query],
   queryFn: () => fetchGatewayAccessTrend(query),
+  enabled,
   ...queryOptions,
 });
 

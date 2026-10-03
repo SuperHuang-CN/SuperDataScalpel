@@ -15,6 +15,10 @@ import jakarta.persistence.LockModeType;
 
 public interface DataTaskRepository extends SearchRepository<DataTask, UUID> {
 
+    @Query("select t.type, count(t) from DataTask t group by t.type")
+    List<Object[]> statisticsGroups();
+
+
     boolean existsByDirectoryId(UUID directoryId);
 
     boolean existsByComputeEngineId(UUID computeEngineId);

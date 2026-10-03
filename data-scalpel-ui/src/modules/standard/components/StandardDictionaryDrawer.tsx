@@ -106,7 +106,7 @@ export const StandardDictionaryDrawer = ({ open, dictionary, onClose }: Props) =
     <>
       {messageContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="standard-dictionary-drawer"
         title={(
           <div className="standard-dictionary-drawer-title">

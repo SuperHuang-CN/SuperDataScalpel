@@ -7,6 +7,7 @@ import {
   MoreOutlined,
   PlusOutlined,
   ReloadOutlined,
+  SafetyCertificateOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons';
 import { Button, Collapse, Dropdown, Empty, Modal, Space, Switch, Table, Tag, Tooltip, Typography, message } from 'antd';
@@ -217,7 +218,7 @@ export const DataModelQualityRulesPanel = ({
   };
 
   const remove = (rule: ModelQualityRule) => modalApi.confirm({
-    rootClassName: 'business-overlay business-modal-overlay',
+    rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
     title: '删除质量规则',
     content: `确认删除“${rule.name}”吗？`,
     okText: '删除',
@@ -390,7 +391,7 @@ export const DataModelQualityRulesPanel = ({
         )}
       </div>
       <div className="model-tab-toolbar">
-        <Space><Typography.Text strong>质量规则</Typography.Text><Tag>{rulesQuery.data?.length ?? 0} 条</Tag></Space>
+        <Space size={8}><SafetyCertificateOutlined className="detail-list-heading-icon" /><Typography.Text strong>质量规则</Typography.Text><Typography.Text type="secondary">共 {rulesQuery.data?.length ?? 0} 条</Typography.Text></Space>
         <Space size={4}>
           <Tooltip title="刷新质量概览和规则">
             <Button
@@ -410,12 +411,12 @@ export const DataModelQualityRulesPanel = ({
         rowKey="id"
         dataSource={rulesQuery.data ?? []}
         loading={rulesQuery.isFetching}
-        locale={{ emptyText: <Empty description="暂未配置质量规则" /> }}
-        scroll={{ x: 1_150, y: '100%' }}
+        locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂未配置质量规则">{canUpdate && <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditingRule(null); setDrawerOpen(true); }}>新增规则</Button>}</Empty> }}
+        scroll={{ x: 1060, y: '100%' }}
         pagination={false}
         columns={[
           {
-            title: '规则', dataIndex: 'name', width: 210,
+            title: '规则 / 程度', dataIndex: 'name', width: '24%',
             render: (value, rule) => (
               <Space orientation="vertical" size={1}>
                 <Typography.Text strong>{value}</Typography.Text>
@@ -428,18 +429,18 @@ export const DataModelQualityRulesPanel = ({
             ),
           },
           {
-            title: '检查对象', width: 220,
+            title: '检查对象', width: '20%',
             render: (_, rule) => <Typography.Text ellipsis={{ tooltip: checkTargetText(rule) }}>{checkTargetText(rule)}</Typography.Text>,
           },
           {
-            title: '参数', width: 170,
+            title: '参数', width: 160,
             render: (_, rule) => <Typography.Text ellipsis={{ tooltip: toleranceText(rule.definition) }}>{toleranceText(rule.definition)}</Typography.Text>,
           },
           {
             title: '当前状态', width: 145,
             render: (_, rule) => (
               <Space size={6}>
-                <Switch size="small" disabled={!canUpdate || commandLoading || Boolean(rule.invalidReason)} checked={rule.enabled} onChange={(checked) => void toggle(rule, checked)} />
+                <Switch aria-label={`启用质量规则 ${rule.name}`} size="small" disabled={!canUpdate || commandLoading || Boolean(rule.invalidReason)} checked={rule.enabled} onChange={(checked) => void toggle(rule, checked)} />
                 {rule.invalidReason
                   ? <Tooltip title={rule.invalidReason}><Tag color="error">已失效</Tag></Tooltip>
                   : (rule.enabled ? <Tag color="success">已启用</Tag> : <Tag>已停用</Tag>)}
@@ -447,8 +448,7 @@ export const DataModelQualityRulesPanel = ({
             ),
           },
           {
-            title: effective ? `最近结果 · ${dateTime(effective.endedAt)}` : '最近结果',
-            width: 320,
+            title: effective ? <Tooltip title={`质检时间：${dateTime(effective.endedAt)}`}>最近结果</Tooltip> : '最近结果',
             render: (_, rule) => resultContent(
               resultByRuleId.get(rule.id),
               Boolean(effective && new Date(rule.updatedAt).getTime() > new Date(effective.ruleSnapshotAt).getTime()),

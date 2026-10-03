@@ -9,7 +9,7 @@ import { hasAccessToken } from '../../../shared/api/http';
 import { useCurrentUser, useLogout } from '../../system';
 
 interface AssetPortalHeaderProps {
-  page: 'home' | 'detail';
+  page: 'home' | 'catalog' | 'detail';
 }
 
 export const AssetPortalHeader = ({ page }: AssetPortalHeaderProps) => {
@@ -24,11 +24,11 @@ export const AssetPortalHeader = ({ page }: AssetPortalHeaderProps) => {
     if (authenticated) navigate('/');
     else navigate('/login', { state: { from: { pathname: '/' } } });
   };
-  const navigateHome = (target?: 'discovery' | 'categories') => {
+  const navigateHome = (target?: 'categories' | 'guide') => {
     if (page === 'home') {
-      const elementId = target === 'discovery' ? 'asset-portal-discovery' : target === 'categories' ? 'asset-portal-categories' : undefined;
-      if (elementId) document.getElementById(elementId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-      else window.scrollTo({ top: 0, behavior: 'smooth' });
+      const behavior = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth';
+      if (target) document.getElementById(`asset-portal-${target}`)?.scrollIntoView({ behavior, block: 'start' });
+      else window.scrollTo({ top: 0, behavior });
       return;
     }
     navigate(target ? `/assets#${target}` : '/assets');
@@ -43,11 +43,12 @@ export const AssetPortalHeader = ({ page }: AssetPortalHeaderProps) => {
         </button>
         <nav className="asset-portal-navigation" aria-label="数据资产门户导航">
           <button type="button" className={`asset-portal-nav-item ${page === 'home' ? 'asset-portal-nav-item-active' : ''}`} onClick={() => navigateHome()}>门户首页</button>
-          <button type="button" className="asset-portal-nav-item" onClick={() => navigateHome('discovery')}>资产浏览</button>
+          <button type="button" className={`asset-portal-nav-item ${page !== 'home' ? 'asset-portal-nav-item-active' : ''}`} aria-current={page === 'catalog' ? 'page' : undefined} onClick={() => navigate('/assets/browse')}>资产浏览</button>
           <button type="button" className="asset-portal-nav-item" onClick={() => navigateHome('categories')}>业务领域</button>
+          <button type="button" className="asset-portal-nav-item" onClick={() => navigateHome('guide')}>使用指南</button>
         </nav>
         <div className="asset-portal-user-actions">
-          <Button className="asset-portal-management-button" icon={<SwapOutlined />} onClick={enterManagement}>进入管理后台</Button>
+          <Button className="asset-portal-management-button" icon={<SwapOutlined />} onClick={enterManagement}>管理工作台</Button>
           {authenticated ? (
             <>
               <Avatar size={30} icon={<TeamOutlined />} className="asset-portal-user-avatar" />

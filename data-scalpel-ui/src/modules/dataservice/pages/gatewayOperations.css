@@ -57,14 +57,14 @@
   padding: 7px 12px;
   background: rgb(255 255 255 / 62%);
   border: 1px solid rgb(77 96 166 / 10%);
-  border-radius: 10px;
+  border-radius: var(--ds-radius-panel);
   backdrop-filter: blur(10px);
 }
 
 .gateway-operations-page .ant-card {
   background: rgb(255 255 255 / 86%);
   border-color: rgb(77 96 166 / 13%);
-  border-radius: 14px;
+  border-radius: var(--ds-radius-panel);
   box-shadow: var(--ds-panel-shadow);
   backdrop-filter: blur(12px);
 }
@@ -72,7 +72,7 @@
 .gateway-operations-page .ant-card > .ant-card-head {
   border-bottom-color: rgb(77 96 166 / 11%);
   background: linear-gradient(180deg, rgb(247 248 255 / 88%), rgb(255 255 255 / 55%));
-  border-radius: 14px 14px 0 0;
+  border-radius: var(--ds-radius-panel) var(--ds-radius-panel) 0 0;
 }
 
 .gateway-operations-metric {
@@ -94,7 +94,7 @@
   height: 26px;
   color: #3f60cc;
   background: linear-gradient(145deg, #e7edff, #f1ecff);
-  border-radius: 8px;
+  border-radius: var(--ds-radius-control);
 }
 
 .gateway-operations-metric-success .gateway-operations-metric-icon {
@@ -119,9 +119,9 @@
 }
 
 .gateway-operations-page .management-stat-table .ant-table-thead > tr > th {
-  color: #4b5678;
-  background: linear-gradient(180deg, #f0f2ff 0%, #f6f7ff 100%);
-  border-bottom-color: rgb(77 96 166 / 12%);
+  color: var(--ds-table-header-color);
+  background: var(--ds-table-header-background);
+  border-bottom-color: var(--ds-table-header-border);
 }
 
 .gateway-operations-page .management-stat-table .ant-table-tbody > tr > td {

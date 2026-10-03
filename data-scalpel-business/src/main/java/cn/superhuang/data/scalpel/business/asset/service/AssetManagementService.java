@@ -1,5 +1,7 @@
 package cn.superhuang.data.scalpel.business.asset.service;
 
+import cn.superhuang.data.scalpel.business.asset.web.response.AssetStatisticsResponse;
+
 import cn.superhuang.data.scalpel.business.asset.domain.Asset;
 import cn.superhuang.data.scalpel.business.asset.domain.AssetStatus;
 import cn.superhuang.data.scalpel.business.asset.domain.AssetSyncStatus;
@@ -33,6 +35,21 @@ import java.util.UUID;
 
 @Service
 public class AssetManagementService {
+
+    @org.springframework.transaction.annotation.Transactional(readOnly = true, isolation = org.springframework.transaction.annotation.Isolation.REPEATABLE_READ)
+    public AssetStatisticsResponse statistics() {
+        long published = 0, outdated = 0, issues = 0;
+        for (var row : repository.statisticsGroups()) {
+            long count = ((Number) row[1]).longValue();
+            published += count;
+            if (row[0] == cn.superhuang.data.scalpel.business.asset.domain.AssetSyncStatus.OUTDATED) outdated += count;
+            if (row[0] == cn.superhuang.data.scalpel.business.asset.domain.AssetSyncStatus.SOURCE_UNAVAILABLE
+                || row[0] == cn.superhuang.data.scalpel.business.asset.domain.AssetSyncStatus.SOURCE_MISSING
+                || row[0] == cn.superhuang.data.scalpel.business.asset.domain.AssetSyncStatus.FAILED) issues += count;
+        }
+        return new AssetStatisticsResponse(java.time.Instant.now(), published, outdated, issues);
+    }
+
 
     private final AssetRepository repository;
     private final AssetSourceService sourceService;

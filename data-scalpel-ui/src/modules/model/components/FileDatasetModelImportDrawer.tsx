@@ -1,22 +1,26 @@
+import { orSearch, searchContains } from '../../../shared/search';
+import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
+import { ModelDataSourcePicker, ModelFileDatasetPicker } from './ModelResourcePicker';
+import './model-create.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   CheckCircleOutlined,
+  FileOutlined,
   CloseCircleOutlined,
   EditOutlined,
   LoadingOutlined,
   ReloadOutlined,
 } from '@ant-design/icons';
 import type { TableProps } from 'antd';
-import { Button, Drawer, Input, Modal, Select, Space, Steps, Table, Tag, TreeSelect, Typography } from 'antd';
+import { Button, ConfigProvider, Drawer, Input, Modal, Select, Space, Steps, Table, Tag, TreeSelect, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
-import { useDataSources } from '../../datasource';
-import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
+import { useDataSource } from '../../datasource';
+import { directoryTreeSelectOptions, useDirectoryTree } from '../../directory';
 import {
   fileDatasetParseStatusLabels,
-  fileDatasetTypeLabels,
   useFileDatasetCanvasMetadata,
-  useFileDatasets,
+  useFileDataset,
   useFileDatasetTables,
   type FileDatasetTable,
 } from '../../filedataset';
@@ -55,19 +59,6 @@ interface FileDatasetModelImportDrawerProps {
   onViewModel: (modelId: string) => void;
   onAdjustFields: (modelId: string) => void;
 }
-
-const listRequest = {
-  page: 0,
-  size: 500,
-  sort: '-updatedAt,name',
-} as const;
-
-const jdbcDataSourceRequest = {
-  search: 'enabled:"true"',
-  page: 0,
-  size: 500,
-  sort: 'code',
-} as const;
 
 const enabledWarehouseLayerRequest = {
   search: 'enabled:"true"',
@@ -109,6 +100,9 @@ export const FileDatasetModelImportDrawer = ({
 }: FileDatasetModelImportDrawerProps) => {
   const [step, setStep] = useState(0);
   const [fileDatasetId, setFileDatasetId] = useState<string>();
+  const [tableKeyword, setTableKeyword] = useState('');
+  const [tableSearch, setTableSearch] = useState('');
+  const [tablePage, setTablePage] = useState(1);
   const [targetStorageDataSourceId, setTargetStorageDataSourceId] = useState<string | undefined>(
     initialTargetStorageDataSourceId,
   );
@@ -121,17 +115,18 @@ export const FileDatasetModelImportDrawer = ({
   const [dirty, setDirty] = useState(false);
   const [modalApi, modalContext] = Modal.useModal();
 
-  const datasetsQuery = useFileDatasets(listRequest);
-  const tablesQuery = useFileDatasetTables(fileDatasetId, open && step === 0);
+  const tablesQuery = useFileDatasetTables(fileDatasetId, open && step === 0, {
+    page: tablePage - 1, size: 20, sort: 'createdAt,code',
+    search: orSearch(searchContains('name', tableSearch), searchContains('code', tableSearch)),
+  });
   const tableIds = (tablesQuery.data?.content ?? []).map((table) => table.id);
   const tableMetadataQuery = useFileDatasetCanvasMetadata(tableIds, open && step === 0 && tableIds.length > 0);
-  const dataSourcesQuery = useDataSources(jdbcDataSourceRequest, open);
   const warehouseLayersQuery = useModelWarehouseLayers(enabledWarehouseLayerRequest, open);
   const directoriesQuery = useDirectoryTree('MODEL', open && canViewDirectories);
   const previewMutation = useFileDatasetImportPreviews();
   const createMutation = useCreateManagedDataModelDrafts();
 
-  const selectedDataset = datasetsQuery.data?.content.find((dataset) => dataset.id === fileDatasetId);
+  const selectedDataset = useFileDataset(fileDatasetId, open).data;
   const metadataByTableId = useMemo(() => new Map(
     (tableMetadataQuery.data?.tables ?? []).map((table) => [table.fileDatasetTableId, table]),
   ), [tableMetadataQuery.data]);
@@ -142,22 +137,10 @@ export const FileDatasetModelImportDrawer = ({
   ), [results]);
   const successCount = results.length - failedKeys.size;
   const busy = previewMutation.isPending || createMutation.isPending;
-  const selectedTarget = dataSourcesQuery.data?.content.find((source) => (
-    source.id === targetStorageDataSourceId && isManagedImportTargetSelectable(source)
-  ));
+  const targetQuery = useDataSource(targetStorageDataSourceId, open);
+  const selectedTarget = targetQuery.data && isManagedImportTargetSelectable(targetQuery.data) ? targetQuery.data : undefined;
   const effectiveTargetStorageDataSourceId = selectedTarget?.id;
 
-  const datasetOptions = datasetsQuery.data?.content.map((dataset) => ({
-    value: dataset.id,
-    label: `${dataset.name}（${fileDatasetTypeLabels[dataset.type]} · 可用表 ${dataset.readyTableCount}/${dataset.tableCount}）`,
-    disabled: dataset.readyTableCount === 0,
-  })) ?? [];
-  const targetOptions = dataSourcesQuery.data?.content
-    .filter(isManagedImportTargetSelectable)
-    .map((source) => ({
-      value: source.id,
-      label: `${source.name}（${source.connection.kind === 'JDBC' ? source.connection.databaseName : source.type}）`,
-    })) ?? [];
   const warehouseLayerOptions = warehouseLayersQuery.data?.content.map((layer) => ({
     value: layer.id,
     label: `${layer.code} · ${layer.name}${layer.modelCodePrefix ? `（${layer.modelCodePrefix}*）` : ''}`,
@@ -171,7 +154,7 @@ export const FileDatasetModelImportDrawer = ({
       return;
     }
     modalApi.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
       title: '放弃未保存的调整？',
       content: '当前模型或字段已有修改，离开后这些调整不会保留。',
       okText: '放弃修改',
@@ -250,7 +233,7 @@ export const FileDatasetModelImportDrawer = ({
     };
     if (drafts.some((draft) => draft.fields.length > 0)) {
       modalApi.confirm({
-        rootClassName: 'business-overlay business-modal-overlay',
+        rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
         title: '切换目标数据存储',
         content: '切换后需要按新目标重新验证字段，当前字段调整会被重置。',
         okText: '确认切换',
@@ -266,7 +249,7 @@ export const FileDatasetModelImportDrawer = ({
     if (!effectiveTargetStorageDataSourceId) return;
     const apply = () => loadPreviews(effectiveTargetStorageDataSourceId, drafts);
     modalApi.confirm({
-      rootClassName: 'business-overlay business-modal-overlay',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
       title: '重新读取逻辑表结构',
       content: '重新读取会重置当前字段调整，但会保留模型编码、名称、说明和目标表名。',
       okText: '重新读取',
@@ -505,6 +488,8 @@ export const FileDatasetModelImportDrawer = ({
       width: 180,
       render: (_value, draft) => (
         <Select
+          popupMatchSelectWidth={320}
+          classNames={{ popup: { root: 'model-create-select-popup' } }}
           allowClear
           showSearch
           optionFilterProp="label"
@@ -620,13 +605,21 @@ export const FileDatasetModelImportDrawer = ({
   })();
 
   return (
-    <>
+    <ConfigProvider theme={workspaceResourceTheme}>
       {modalContext}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
-        title="从文件数据集创建模型"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-create-overlay"
+        title={(
+          <div className="data-model-drawer-title">
+            <span className="data-model-drawer-title-icon"><FileOutlined /></span>
+            <div className="data-model-drawer-title-copy">
+              <span>从文件数据集创建模型</span>
+              <Typography.Text type="secondary">选择已解析逻辑表，校对结构并创建模型草稿</Typography.Text>
+            </div>
+          </div>
+        )}
         open={open}
-        size="large"
+        size="min(1280px, 100vw)"
         className="managed-table-model-import-drawer"
         closable={!busy}
         maskClosable={!busy}
@@ -648,33 +641,42 @@ export const FileDatasetModelImportDrawer = ({
               title="这里只复制已解析的逻辑表 Schema，不复制文件数据、不绑定来源，也不会创建物理表。"
             />
             <div className="managed-import-toolbar">
-              <Select
-                showSearch
-                optionFilterProp="label"
+              <div className="model-create-resource-field"><span className="model-create-field-label">来源文件数据集</span><ModelFileDatasetPicker
                 value={fileDatasetId}
-                loading={datasetsQuery.isFetching}
-                options={datasetOptions}
                 placeholder="选择包含已解析逻辑表的文件数据集"
                 className="managed-import-source-select"
                 onChange={(value) => {
                   setFileDatasetId(value);
+                  setTablePage(1);
+                  setTableKeyword('');
+                  setTableSearch('');
                   setSelectedTables(new Map());
                   setDrafts([]);
                   setResults([]);
                   setDirty(false);
                 }}
-              />
+              /></div>
+              <Input.Search className="managed-import-search" autoComplete="off" allowClear
+                placeholder="搜索逻辑表名称或编码" aria-label="搜索逻辑表名称或编码"
+                disabled={!fileDatasetId} value={tableKeyword}
+                onChange={(event) => { setTableKeyword(event.target.value); if (!event.target.value) { setTableSearch(''); setTablePage(1); } }}
+                onSearch={(value) => { setTableSearch(value.trim()); setTablePage(1); }} />
             </div>
-            {datasetsQuery.isError && <Alert showIcon type="error" title="读取文件数据集失败" action={<Button size="small" onClick={() => void datasetsQuery.refetch()}>重试</Button>} />}
             {tablesQuery.isError && <Alert showIcon type="error" title="读取逻辑表失败" action={<Button size="small" onClick={() => void tablesQuery.refetch()}>重试</Button>} />}
             {tableMetadataQuery.isError && <Alert showIcon type="error" title="读取逻辑表 Schema 摘要失败" action={<Button size="small" onClick={() => void tableMetadataQuery.refetch()}>重试</Button>} />}
+            <div className="model-create-selection-summary">
+              <span>已选择 {selectedTables.size} 张逻辑表，翻页和搜索保留选择</span>
+              <Button type="link" size="small" disabled={selectedTables.size === 0} onClick={() => setSelectedTables(new Map())}>清空选择</Button>
+            </div>
             <Table<FileDatasetTable>
               size="small"
               rowKey="id"
               columns={selectColumns}
               dataSource={tablesQuery.data?.content ?? []}
+              locale={{ emptyText: fileDatasetId ? '没有符合条件的逻辑表，请调整搜索条件' : '请先选择来源文件数据集' }}
               loading={tablesQuery.isFetching || tableMetadataQuery.isFetching}
-              pagination={false}
+              pagination={{ current: tablePage, pageSize: 20, total: tablesQuery.data?.totalElements ?? 0,
+                showSizeChanger: false, showTotal: (total) => `共 ${total} 张表`, onChange: setTablePage }}
               scroll={{ x: 850, y: 430 }}
               rowSelection={{
                 preserveSelectedRowKeys: true,
@@ -716,30 +718,34 @@ export const FileDatasetModelImportDrawer = ({
                 : `已准备好 ${drafts.length} 个受管模型草稿。创建草稿不会执行建表 DDL。`}
             />
             <div className="managed-import-toolbar">
-              <Select
-                showSearch
-                optionFilterProp="label"
+              <div className="model-create-resource-field"><span className="model-create-field-label">目标数据存储</span><ModelDataSourcePicker
+                storageOnly
                 value={effectiveTargetStorageDataSourceId}
-                loading={dataSourcesQuery.isFetching}
                 disabled={busy}
-                options={targetOptions}
-                placeholder="选择具有 STORAGE 用途的目标 JDBC 数据存储"
+                placeholder="选择目标数据存储"
                 className="managed-import-target-select"
                 onChange={selectTarget}
-              />
+              /></div>
               {canViewDirectories && (
-                <TreeSelect
+                <div className="model-create-filter-field"><span className="model-create-field-label">模型目录</span><TreeSelect
+                  treeIcon
+                  showSearch
+                  treeNodeFilterProp="title"
+                  popupMatchSelectWidth={360}
+                  classNames={{ popup: { root: 'model-create-select-popup' } }}
                   allowClear
                   treeDefaultExpandAll
                   value={directoryId}
                   disabled={busy}
-                  treeData={directoryTreeSelectData(directoriesQuery.data ?? [])}
+                  treeData={directoryTreeSelectOptions(directoriesQuery.data ?? [])}
                   placeholder="模型目录：未分类"
                   className="managed-import-directory-select"
                   onChange={(value) => { setDirectoryId(value); setDirty(true); }}
-                />
+                /></div>
               )}
               <Select
+                popupMatchSelectWidth={320}
+                classNames={{ popup: { root: 'model-create-select-popup' } }}
                 allowClear
                 showSearch
                 optionFilterProp="label"
@@ -819,6 +825,6 @@ export const FileDatasetModelImportDrawer = ({
         onCancel={() => setEditingField(undefined)}
         onSave={saveField}
       />
-    </>
+    </ConfigProvider>
   );
 };

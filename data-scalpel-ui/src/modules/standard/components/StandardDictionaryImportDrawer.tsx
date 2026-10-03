@@ -116,7 +116,7 @@ export const StandardDictionaryImportDrawer = ({ open, onClose }: Props) => {
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="standard-dictionary-import-drawer"
         title={(
           <div className="standard-dictionary-import-title">

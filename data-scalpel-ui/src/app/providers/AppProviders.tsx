@@ -1,7 +1,25 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
+import { CheckCircleOutlined, CloseCircleOutlined, InfoCircleOutlined, WarningOutlined } from '@ant-design/icons';
 import { ConfigProvider } from 'antd';
 import zhCN from 'antd/locale/zh_CN';
 import type { PropsWithChildren } from 'react';
+import { workspaceResourceTheme, workspaceStatusTagStyles } from '../../shared/theme/workspaceResourceTheme';
+
+const feedbackIcons = {
+  successIcon: <CheckCircleOutlined style={{ color: '#268467' }} />,
+  errorIcon: <CloseCircleOutlined style={{ color: '#c04e5b' }} />,
+  warningIcon: <WarningOutlined style={{ color: '#a97022' }} />,
+  infoIcon: <InfoCircleOutlined style={{ color: '#287f9e' }} />,
+};
+
+// Static message/notification/modal calls mount outside the application provider.
+ConfigProvider.config({
+  holderRender: (children) => (
+    <ConfigProvider locale={zhCN} theme={workspaceResourceTheme} modal={feedbackIcons} alert={feedbackIcons} tag={{ styles: workspaceStatusTagStyles }}>
+      {children}
+    </ConfigProvider>
+  ),
+});
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -17,15 +35,17 @@ const queryClient = new QueryClient({
 export const AppProviders = ({ children }: PropsWithChildren) => (
   <ConfigProvider
     locale={zhCN}
+    modal={feedbackIcons}
+    alert={feedbackIcons}
+    tag={{ styles: workspaceStatusTagStyles }}
     componentSize="small"
     theme={{
       token: {
-        colorPrimary: '#1668dc',
-        borderRadius: 4,
+        ...workspaceResourceTheme.token,
         controlHeightSM: 24,
-        fontFamily: 'Inter, "PingFang SC", "Microsoft YaHei", sans-serif',
       },
       components: {
+        ...workspaceResourceTheme.components,
         Card: {
           bodyPadding: 12,
           bodyPaddingSM: 12,
@@ -39,11 +59,17 @@ export const AppProviders = ({ children }: PropsWithChildren) => (
           darkItemSelectedColor: '#FFFFFF',
           itemHeight: 38,
           itemMarginBlock: 3,
-          itemBorderRadius: 10,
+          itemBorderRadius: 4,
         },
         Table: {
+          ...workspaceResourceTheme.components?.Table,
           cellPaddingBlockSM: 6,
           cellPaddingInlineSM: 10,
+          rowHoverBg: '#f0f7fa',
+          rowSelectedBg: '#dceef5',
+          rowSelectedHoverBg: '#cde5f0',
+          bodySortBg: '#f7fafc',
+          borderColor: '#e1ebf0',
         },
       },
     }}

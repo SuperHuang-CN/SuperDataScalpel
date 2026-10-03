@@ -1,0 +1,126 @@
+/* Scoped to the data source editor; other resource drawers keep their layout. */
+.workspace-resource-overlay .data-source-editor,
+.data-source-editor-select {
+  --data-source-editor-font: var(--ds-ui-font);
+  font-family: var(--data-source-editor-font);
+  font-size: 14px;
+  line-height: 1.5;
+}
+/* Explicitly include native inputs and labels, which can carry their own font. */
+.workspace-resource-overlay .data-source-editor :is(.ant-form, .ant-form-item-label > label, .ant-input, .ant-input-number-input, .ant-select, .ant-select-input, .ant-typography, .ant-btn, .ant-checkbox-wrapper, .ant-badge-status-text),
+.data-source-editor-select :is(.ant-select-item, .ant-select-tree) {
+  font-family: var(--data-source-editor-font);
+  letter-spacing: normal;
+}
+.workspace-resource-overlay .data-source-editor :is(input, textarea)::placeholder {
+  font-family: var(--data-source-editor-font);
+  font-size: 14px;
+  font-weight: 400;
+  letter-spacing: normal;
+}
+.workspace-resource-overlay.business-drawer-overlay .data-source-editor .ant-drawer-header {
+  min-height: 72px;
+  padding: 16px 24px;
+  background: #fff;
+}
+.workspace-resource-overlay .data-source-editor .data-source-drawer-title { gap: 12px; }
+.workspace-resource-overlay .data-source-editor .data-source-drawer-title-icon { width: 36px; height: 36px; background: #f0f6f9; }
+.workspace-resource-overlay .data-source-editor .data-source-drawer-title-copy { gap: 2px; }
+.workspace-resource-overlay .data-source-editor .data-source-drawer-layout {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
+}
+.workspace-resource-overlay .data-source-editor .data-source-section-nav {
+  flex-direction: row;
+  padding: 6px 24px;
+  gap: 8px;
+  border-right: 0;
+  border-bottom: 1px solid #e1ebf0;
+  background: #fff;
+}
+.workspace-resource-overlay .data-source-editor .data-source-section-nav .ant-btn {
+  flex: none;
+  height: 34px;
+  gap: 8px;
+  padding-inline: 12px;
+  font-size: 14px;
+}
+.workspace-resource-overlay .data-source-editor .data-source-section-nav .ant-btn { border-radius: 0; border-bottom: 2px solid transparent; }
+.workspace-resource-overlay .data-source-editor .data-source-section-nav .ant-btn.is-active { font-weight: 600; background: transparent; border-bottom-color: #287f9e; color: #1e607b; }
+.workspace-resource-overlay .data-source-editor .data-source-section-nav .ant-btn:hover { background: #f3f8fa; }
+.workspace-resource-overlay .data-source-editor .data-source-form-scroll { padding: 20px 24px 28px; background: #fff; }
+.data-source-editor-section { scroll-margin-top: 20px; }
+.data-source-editor-section + .data-source-editor-section { margin-top: 8px; padding-top: 20px; border-top: 1px solid #e1ebf0; }
+.data-source-editor-section-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; min-height: 24px; }
+.workspace-resource-overlay .data-source-editor .data-source-section-title { gap: 8px; }
+.workspace-resource-overlay .data-source-editor .data-source-section-title-icon { width: 20px; height: 20px; border-radius: 0; background: none; font-size: 17px; }
+.workspace-resource-overlay .data-source-editor .data-source-section-title-copy > span { font-size: 15px; }
+.workspace-resource-overlay .data-source-editor .data-source-section-title-copy .ant-typography { font-size: 12px; }
+.workspace-resource-overlay .data-source-editor .data-source-enabled-control { min-height: 24px; padding: 0; border: 0; background: none; box-shadow: none; font-size: 13px; font-weight: 400; gap: 8px; }
+.workspace-resource-overlay .data-source-editor .ant-form-item { margin-bottom: 16px; }
+.workspace-resource-overlay .data-source-editor .ant-form-item-label { padding-bottom: 6px; }
+.workspace-resource-overlay .data-source-editor .ant-form-item-label > label { font-size: 14px; font-weight: 400; color: #263d4c; height: auto; line-height: 22px; }
+.workspace-resource-overlay .data-source-editor :is(input.ant-input, .ant-input-affix-wrapper:not(:has(textarea)), .ant-input-number, .ant-select-single, .ant-select-single .ant-select-selector) {
+  box-sizing: border-box;
+  height: 36px;
+  min-height: 36px;
+  font-size: 14px;
+}
+.workspace-resource-overlay .data-source-editor :is(input.ant-input, .ant-input-affix-wrapper:not(:has(textarea))) { padding: 6px 10px; line-height: 22px; }
+.workspace-resource-overlay .data-source-editor :is(.ant-input-affix-wrapper > input.ant-input, .ant-select input) { height: auto; min-height: 0; padding-block: 0; box-shadow: none; }
+.workspace-resource-overlay .data-source-editor .ant-input-number { width: 100%; }
+.workspace-resource-overlay .data-source-editor .ant-input-number-input { height: 34px; padding-inline: 10px; font-size: 14px; }
+.workspace-resource-overlay .data-source-editor textarea.ant-input { height: auto; min-height: 68px; padding: 10px; font-size: 14px; line-height: 22px; resize: vertical; }
+.workspace-resource-overlay .data-source-editor .ant-form-item-extra { font-size: 12px; line-height: 20px; color: #5b7180; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-options { gap: 10px; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-options .ant-checkbox-wrapper {
+  min-height: 52px;
+  padding: 8px 12px;
+  border-radius: var(--ds-radius-control);
+  gap: 8px;
+}
+/* Ant Design 6 draws the checkmark on this positioned root, not an inner span. */
+.workspace-resource-overlay .data-source-editor .data-source-purpose-options .ant-checkbox { position: relative; inset: auto; flex: none; align-self: center; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-options .ant-checkbox-label { padding: 0; gap: 8px; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-icon { width: 20px; height: 20px; margin: 0; background: none; border-radius: 0; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-copy { gap: 0; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-copy > span:first-child { font-size: 14px; font-weight: 600; line-height: 22px; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-copy .ant-typography { font-size: 12px; line-height: 18px; color: #5b7180; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-copy > span { white-space: normal; overflow: visible; }
+.workspace-resource-overlay .data-source-editor .data-source-purpose-options .ant-checkbox-wrapper-disabled { opacity: 0.55; background: #f5f7f8; border-color: #dce5ea; cursor: not-allowed; }
+.workspace-resource-overlay .data-source-editor .data-source-advanced-section { margin-top: 20px; scroll-margin-top: 16px; }
+.workspace-resource-overlay .data-source-editor .data-source-advanced-section > .ant-collapse { border-radius: var(--ds-radius-control); box-shadow: none; }
+/* Override the legacy drawer's important padding and minimum sizes locally. */
+.workspace-resource-overlay .data-source-editor .data-source-advanced-section .ant-collapse-header { min-height: 48px; padding: 12px 16px !important; align-items: center; }
+.workspace-resource-overlay .data-source-editor .data-source-advanced-section .ant-collapse-content-box { padding: 16px 16px 0 !important; }
+.workspace-resource-overlay .data-source-editor .data-source-jdbc-preview .ant-input { font-family: Consolas, "Liberation Mono", monospace; font-size: 13px; }
+.workspace-resource-overlay .data-source-editor .data-source-credential-tip { display: block; margin-top: 8px; color: #5b7180; font-size: 12px; line-height: 20px; }
+.workspace-resource-overlay.business-drawer-overlay .data-source-editor .ant-drawer-footer { padding: 12px 24px; background: #fff; }
+.workspace-resource-overlay .data-source-editor .data-source-drawer-footer { gap: 12px; }
+.workspace-resource-overlay .data-source-editor .data-source-drawer-footer > .ant-badge { min-width: 0; padding: 0; border: 0; background: none; box-shadow: none; }
+.workspace-resource-overlay .data-source-editor .data-source-drawer-footer .ant-btn { min-width: 72px; min-height: 36px !important; height: 36px; font-size: 14px; }
+.workspace-resource-overlay .data-source-editor .data-source-drawer-footer .ant-btn-primary { min-width: 110px; }
+.data-source-editor .http-api-named-value-row { grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.6fr) 32px; }
+.data-source-editor .http-api-named-value-row > .ant-space-item { min-width: 0; }
+.workspace-resource-overlay .data-source-editor .http-api-named-value-row .ant-form-item { margin-bottom: 0; }
+.workspace-resource-overlay .data-source-editor .http-api-add-value.ant-btn { padding-inline: 0; min-height: 28px; height: 28px; box-shadow: none; }
+.data-source-editor .http-api-field-label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; }
+.data-source-editor .http-api-label-detail { color: #5b7180; font-size: 12px; font-weight: 400; }
+.workspace-resource-overlay .data-source-editor .http-api-field-label .context-help-trigger { min-height: 20px; height: 20px; width: 20px; padding: 0; }
+.data-source-editor .http-api-group-title { margin: 8px 0 16px; padding-top: 20px; border-top: 1px solid #e1ebf0; color: #263d4c; font-size: 14px; font-weight: 600; line-height: 22px; }
+.workspace-resource-overlay .data-source-editor .http-api-signing-settings.ant-collapse { margin-top: 4px; border: 0; border-top: 1px solid #e1ebf0; border-radius: 0; background: transparent; }
+.workspace-resource-overlay .data-source-editor .http-api-signing-settings .ant-collapse-header { padding: 16px 0; background: transparent; align-items: center; }
+.workspace-resource-overlay .data-source-editor .http-api-signing-settings :is(.ant-collapse-content-box, .ant-collapse-body) { padding: 0; }
+.workspace-resource-overlay .data-source-editor .http-api-signing-settings .ant-collapse-content { background: transparent; }
+@media (max-width: 600px) {
+  .workspace-resource-overlay.business-drawer-overlay .data-source-editor :is(.ant-drawer-header, .ant-drawer-footer) { padding-inline: 16px; }
+  .workspace-resource-overlay .data-source-editor .data-source-section-nav { padding-inline: 8px; gap: 2px; }
+  .workspace-resource-overlay .data-source-editor .data-source-section-nav .ant-btn { flex: 1; padding-inline: 6px; }
+  .workspace-resource-overlay .data-source-editor .data-source-form-scroll { padding: 16px; }
+  .data-source-editor .ant-row > :is(.ant-col-6, .ant-col-8, .ant-col-12, .ant-col-16) { flex: 0 0 100%; max-width: 100%; }
+  .workspace-resource-overlay .data-source-editor .data-source-purpose-options { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .workspace-resource-overlay .data-source-editor .data-source-purpose-copy { flex-direction: row; flex-wrap: wrap; gap: 4px 10px; align-items: baseline; }
+  .workspace-resource-overlay .data-source-editor .data-source-drawer-footer { flex-wrap: wrap; }
+  .workspace-resource-overlay .data-source-editor .data-source-drawer-footer > .ant-badge { display: block; }
+  .workspace-resource-overlay .data-source-editor .data-source-drawer-footer > .ant-space { margin-inline-start: auto; }
+}

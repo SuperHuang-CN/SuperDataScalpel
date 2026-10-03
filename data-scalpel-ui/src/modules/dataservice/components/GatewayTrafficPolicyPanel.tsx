@@ -47,7 +47,7 @@ export const GatewayTrafficPolicyPanel = ({ serviceId, canPublish, supported }: 
       {recent.error && <CompactAlert type="error" message={recent.error.message} />}
       {recent.data && <Space wrap><Typography.Text>调用 {recent.data.requestCount} · 成功 {recent.data.successCount} · 拒绝 {recent.data.rejectedCount} · 5xx {recent.data.serverErrorCount}</Typography.Text><Tag color={recent.data.ingestionEnabled ? 'blue' : 'warning'}>{recent.data.ingestionEnabled ? '异步日志接收已启用' : '日志接收已关闭'}</Tag></Space>}
     </BusinessDetailSection>
-    <Drawer title="网关保护策略" rootClassName="business-overlay business-drawer-overlay" size={680} open={open} onClose={() => setOpen(false)}
+    <Drawer title="网关保护策略" rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" size={680} open={open} onClose={() => setOpen(false)}
       footer={<Space style={{ display: 'flex', justifyContent: 'flex-end' }}><Button onClick={() => setOpen(false)}>取消</Button><Button type="primary" loading={mutation.isPending} onClick={() => form.submit()}>保存并下发</Button></Space>}>
       <Form form={form} layout="vertical" autoComplete="off" onFinish={(values) => mutation.mutate(values)}>
         <CompactAlert type="info" message="所有限额按网关节点独立计算；只识别真实 TCP 来源 IP，不信任 X-Forwarded-For。黑名单优先，错误配置可能阻断调用。" />

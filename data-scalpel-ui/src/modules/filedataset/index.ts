@@ -4,6 +4,7 @@ export {
 export {
   useFileDatasetCanvasMetadata,
   useFileDatasets,
+  useFileDataset,
   useFileDatasetTables,
 } from './hooks/useFileDatasets';
 export {
@@ -20,3 +21,5 @@ export type {
   FileDatasetTable,
   FileDatasetType,
 } from './model/fileDataset';
+
+export { FileDatasetTypeIcon } from './components/FileDatasetTypeIcon';

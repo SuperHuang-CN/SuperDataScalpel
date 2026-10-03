@@ -1,24 +1,13 @@
 import { Tooltip } from 'antd';
 import type { ReactNode } from 'react';
 import { dataSourceTypeLabels, type DataSourceType } from '../model/dataSource';
+import mysqlLogo from '../assets/mysql-original.svg';
+import postgresqlLogo from '../assets/postgresql-original.svg';
+import sqlServerLogo from '../assets/microsoftsqlserver-original.svg';
 
 const glyphs = {
-  MYSQL: (
-    <svg viewBox="0 0 24 24" fill="none">
-      <path fill="#00758F" d="M3.2 14.9c2.1-3.9 5.4-6.1 9.4-6.2 2.7-.1 5 .8 6.8 2.7-1.4-.3-2.7-.2-3.7.3 2.2.9 3.8 2.5 4.8 4.8-2.3-1.2-4.5-1.6-6.6-1.1-2.4.5-4.4 1.9-6.1 4.2-1.3-1.8-2.8-3.3-4.6-4.7Z" />
-      <path fill="#F29111" d="M15.2 8.8c.8-1.3 1.9-2.2 3.4-2.7-.2 1.5-.8 2.8-1.9 3.8l-1.5-1.1Z" />
-      <circle cx="14.2" cy="11.4" r=".75" fill="#fff" />
-    </svg>
-  ),
-  POSTGRESQL: (
-    <svg viewBox="0 0 24 24" fill="none">
-      <path fill="#336791" d="M12 3.1c-4.2 0-7.3 2.6-7.3 6.7 0 3.1 1.3 5.3 3.6 6.5l.1 2.5c0 1.2.8 2.1 1.9 2.1 1.3 0 2-1 2-2.4v-2.2c.8.3 1.8.3 2.6.1l.2 2.1c.1 1.3.8 2.1 2 2.1 1.2 0 1.9-.9 1.8-2.2l-.3-3.5c.7-1.2 1-2.7 1-4.6C19.6 5.9 16.5 3.1 12 3.1Z" />
-      <path stroke="#fff" strokeWidth="1.35" strokeLinecap="round" d="M12.1 13.1c.1 1.5.1 3.7-.1 5.1-.1.8-.5 1.2-1.1 1.2-.7 0-1.1-.5-1.1-1.3l-.1-4.2" />
-      <path stroke="#fff" strokeWidth="1.15" strokeLinecap="round" d="M8.1 10.4c.9 1 2.2 1.4 3.9 1.4 1.6 0 3-.5 4-1.5" />
-      <circle cx="9.2" cy="8.8" r=".8" fill="#fff" />
-      <circle cx="14.9" cy="8.8" r=".8" fill="#fff" />
-    </svg>
-  ),
+  MYSQL: <img src={mysqlLogo} width={24} height={24} alt="" />,
+  POSTGRESQL: <img src={postgresqlLogo} width={24} height={24} alt="" />,
   HIGHGO: (
     <svg viewBox="0 0 24 24" fill="none">
       <circle cx="12" cy="12" r="9" fill="#244A9B" />
@@ -30,11 +19,7 @@ const glyphs = {
       <ellipse cx="12" cy="12" rx="9" ry="5.4" stroke="#F80000" strokeWidth="3" />
     </svg>
   ),
-  SQL_SERVER: (
-    <svg viewBox="0 0 24 24" fill="none">
-      <path fill="#CC2927" d="M4 6.2 12.1 3v5.6L4 10.8V6.2Zm0 5.8 8.1-2.1v5.6L4 17.8V12Zm9.3-9.4L20 5.3v4.2l-6.7-1.2V2.6Zm0 7 6.7 1.1v4.1l-6.7.4V9.6Zm0 6.8 6.7-.4v3.1l-6.7 2.3v-5Z" />
-    </svg>
-  ),
+  SQL_SERVER: <img src={sqlServerLogo} width={24} height={24} alt="" />,
   CLICKHOUSE: (
     <svg viewBox="0 0 24 24" fill="none">
       <rect x="2.5" y="2.5" width="19" height="19" rx="3" fill="#1D1D1D" />

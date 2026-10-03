@@ -2,6 +2,7 @@ package cn.superhuang.data.scalpel.business.model.repository;
 
 import cn.superhuang.data.scalpel.business.model.domain.DataModelField;
 import cn.superhuang.data.scalpel.search.SearchRepository;
+import cn.superhuang.data.scalpel.contract.type.PlatformDataType;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
@@ -33,6 +34,16 @@ public interface DataModelFieldRepository extends SearchRepository<DataModelFiel
             group by field.modelId
             """)
     List<ModelFieldCount> countByModelIdIn(@Param("modelIds") Collection<UUID> modelIds);
+
+    @Query("""
+            select distinct field.modelId
+            from DataModelField field
+            where field.modelId in :modelIds and field.fieldType = :fieldType
+            """)
+    List<UUID> findModelIdsByFieldType(
+            @Param("modelIds") Collection<UUID> modelIds,
+            @Param("fieldType") PlatformDataType fieldType
+    );
 
     void deleteAllByModelId(UUID modelId);
 

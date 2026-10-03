@@ -470,6 +470,8 @@ export interface DataModel {
   schemaName: string | null;
   physicalTableName: string;
   physicalTableMode: PhysicalTableMode;
+  /** Whether the model definition contains a GEOMETRY field; absent on older servers. */
+  spatial?: boolean;
   clickHouseOrderByColumns: string[];
   status: DataModelStatus;
   schemaVersion: number;

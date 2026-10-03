@@ -97,7 +97,7 @@ export const TaskDrawer = ({
 
   return (
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className="data-model-drawer task-basic-drawer"
       title={(
         <div className="data-model-drawer-title">

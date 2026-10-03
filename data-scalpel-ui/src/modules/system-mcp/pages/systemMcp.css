@@ -8,7 +8,7 @@
   padding: 7px 12px;
   background: #fdfdff;
   border: 1px solid var(--ds-panel-border);
-  border-radius: 12px;
+  border-radius: var(--ds-radius-panel);
   box-shadow: var(--ds-panel-shadow-subtle);
 }
 
@@ -17,12 +17,12 @@
   gap: 2px;
   padding: 3px;
   background: #edf1fa;
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 .system-mcp-page > .ant-tabs > .ant-tabs-nav .ant-tabs-tab {
   margin: 0;
   padding: 4px 12px;
-  border-radius: 7px;
+  border-radius: var(--ds-radius-control);
 }
 .system-mcp-page > .ant-tabs > .ant-tabs-nav .ant-tabs-tab-btn {
   color: #5f6e8d;
@@ -112,7 +112,7 @@
   overflow: hidden;
   background: var(--ds-panel-background);
   border: 1px solid var(--ds-panel-border);
-  border-radius: 16px;
+  border-radius: var(--ds-radius-panel);
   box-shadow: var(--ds-panel-shadow);
   backdrop-filter: blur(12px);
 }
@@ -150,7 +150,7 @@
   padding: 0 9px;
   color: #46516f;
   text-align: left;
-  border-radius: 9px;
+  border-radius: var(--ds-radius-control);
 }
 
 .system-mcp-module-list > .ant-btn:hover,
@@ -183,7 +183,7 @@
   line-height: 18px;
   text-align: center;
   background: rgb(91 108 168 / 8%);
-  border-radius: 999px;
+  border-radius: var(--ds-radius-tag);
 }
 
 @media (max-width: 900px) {
@@ -276,7 +276,7 @@
   line-height: 18px;
   text-align: center;
   background: #eff2f7;
-  border-radius: 5px;
+  border-radius: var(--ds-radius-control);
 }
 
 .system-mcp-http-method-get { color: #315caa; background: #edf3ff; }

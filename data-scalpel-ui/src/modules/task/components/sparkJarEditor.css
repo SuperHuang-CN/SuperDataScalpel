@@ -29,7 +29,7 @@
   text-align: center;
   background: white;
   border: 1px solid #e3e8f5;
-  border-radius: 14px;
+  border-radius: var(--ds-radius-panel);
 }
 
 .spark-jar-online-entry {
@@ -40,7 +40,7 @@
   padding: 16px;
   margin-bottom: 12px;
   border: 1px solid #e3e8f5;
-  border-radius: 14px;
+  border-radius: var(--ds-radius-panel);
   background: white;
 }
 
@@ -66,7 +66,7 @@
 .spark-jar-definition-panel .spark-jar-workspace-stack { gap: 12px; }
 .spark-jar-definition-panel .spark-jar-definition-section,
 .spark-jar-definition-panel .spark-jar-development-kit-panel,
-.spark-jar-definition-panel .spark-jar-artifact-summary { border-radius: 14px; background: #fff; box-shadow: none; }
+.spark-jar-definition-panel .spark-jar-artifact-summary { border-radius: var(--ds-radius-panel); background: #fff; box-shadow: none; }
 .spark-jar-section-hint { margin-top: 3px; font-size: 12px; color: #7c88a0; }
 .spark-jar-definition-panel .spark-jar-online-entry { margin: 0; padding: 16px; }
 .spark-jar-online-entry { flex-wrap: wrap; }
@@ -75,14 +75,14 @@
 .spark-jar-definition-panel .spark-jar-mode-choice { width: min(800px, 100%); margin: 36px auto; padding: 28px; text-align: left; }
 .spark-jar-mode-choice .ant-typography { margin-top: 0; }
 .spark-jar-mode-options { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; width: 100%; margin: 12px 0 24px; }
-.spark-jar-mode-options .spark-jar-mode-option { position: relative; margin: 0; padding: 22px; border: 1px solid #dfe5f3; border-radius: 12px; align-items: flex-start; transition: border-color .15s, background .15s; }
+.spark-jar-mode-options .spark-jar-mode-option { position: relative; margin: 0; padding: 22px; border: 1px solid #dfe5f3; border-radius: var(--ds-radius-panel); align-items: flex-start; transition: border-color .15s, background .15s; }
 .spark-jar-mode-options .ant-radio { position: absolute; right: 16px; top: 16px; }
 .spark-jar-mode-options .ant-radio + span { display: flex; flex-direction: column; gap: 8px; padding: 0; }
 .spark-jar-mode-options .ant-radio-wrapper-checked { background: #f0f3ff; border-color: #6274ef; }
 .spark-jar-mode-options .ant-radio-wrapper:focus-within { outline: 2px solid #9ba9ff; outline-offset: 2px; }
 .spark-jar-mode-options strong { font-size: 17px; color: #25325a; }
 .spark-jar-mode-options small { color: #7c88a0; }
-.spark-jar-mode-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: 10px; background: #e8edff; color: #4d62de; font-size: 23px; }
+.spark-jar-mode-icon { display: grid; place-items: center; width: 44px; height: 44px; margin-bottom: 6px; border-radius: var(--ds-radius-panel); background: #e8edff; color: #4d62de; font-size: 23px; }
 .spark-jar-mode-confirm { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .spark-jar-mode-confirm .ant-typography { font-size: 12px; }
 .spark-jar-resource-identity { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
@@ -116,13 +116,13 @@
 .spark-jar-definition-panel .spark-jar-runtime-overview-heading { padding: 12px 14px 0; }
 .spark-jar-definition-panel .spark-jar-runtime-sentence { padding: 10px 14px; font-size: 13px; }
 .spark-jar-definition-panel .spark-jar-runtime-advanced-bar { padding: 8px 14px; }
-.spark-jar-definition-panel .spark-jar-runtime-option-chip { border-radius: 6px; padding: 4px 8px; }
+.spark-jar-definition-panel .spark-jar-runtime-option-chip { border-radius: var(--ds-radius-tag); padding: 4px 8px; }
 .spark-jar-drawer-title { display: flex; align-items: center; gap: 12px; }
 .spark-jar-drawer-title small { display: block; margin-top: 3px; font-size: 12px; font-weight: 400; color: #7c88a0; }
-.spark-jar-drawer-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: 9px; color: #5267df; background: #eaf0ff; }
+.spark-jar-drawer-icon { display: grid; place-items: center; width: 36px; height: 36px; border-radius: var(--ds-radius-control); color: #5267df; background: #eaf0ff; }
 .spark-jar-resource-drawer .spark-jar-resource-form-top { grid-template-columns: 1fr; gap: 0; }
 .spark-jar-purpose-options { display: flex; width: 100%; gap: 8px; }
-.spark-jar-purpose-options .ant-radio-wrapper { margin: 0; flex: 1; padding: 10px; border: 1px solid #dfe5f3; border-radius: 8px; }
+.spark-jar-purpose-options .ant-radio-wrapper { margin: 0; flex: 1; padding: 10px; border: 1px solid #dfe5f3; border-radius: var(--ds-radius-control); }
 .spark-jar-purpose-options .ant-radio-wrapper-checked { background: #f0f3ff; border-color: #7181ed; }
 .spark-jar-purpose-options small { display: block; color: #7c88a0; font-size: 12px; }
 .spark-jar-resource-drawer .ant-drawer-body { overflow-y: auto; }

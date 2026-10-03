@@ -98,7 +98,7 @@ export const DataEntrySubmitPanel = ({
         <div className="data-entry-field-grid">
           {detail.fields.map((field) => <DataEntryInputField key={field.id} formId={detail.form.id} field={field} />)}
         </div>
-        <Space>
+        <Space className="data-entry-submit-actions" wrap>
           {canSubmitPermission && <Button type="primary" disabled={!detail.health.canSubmit || unsupported} loading={mutation.isPending} onClick={() => void submit()}>提交并立即生效</Button>}
           <Button onClick={() => form.resetFields()}>清空</Button>
         </Space>

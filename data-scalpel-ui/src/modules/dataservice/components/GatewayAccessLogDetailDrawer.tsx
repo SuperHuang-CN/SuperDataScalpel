@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { Descriptions, Drawer, Space, Tag, Typography } from 'antd';
 import type { DescriptionsProps } from 'antd';
 import type { GatewayAccessLog } from '../model/gatewayAccess';
@@ -14,18 +15,7 @@ interface GatewayAccessLogDetailDrawerProps {
 
 const emptyValue = (value: string | number | null | undefined) => value ?? '—';
 
-const formatDateTime = (value: string | null) => value
-  ? new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-    hour12: false,
-    timeZoneName: 'short',
-  }).format(new Date(value))
-  : '—';
+const formatDateTime = formatManagementDateTime;
 
 const latency = (value: number | null) => value === null ? '—' : `${value} ms`;
 const bytes = (value: number | null) => value === null
@@ -165,7 +155,7 @@ export const GatewayAccessLogDetailDrawer = ({
 
   return (
     <Drawer
-      rootClassName="business-overlay business-drawer-overlay"
+      rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       title="网关调用详情"
       width={720}
       open={open}

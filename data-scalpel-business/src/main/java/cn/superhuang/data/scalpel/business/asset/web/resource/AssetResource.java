@@ -38,6 +38,14 @@ import java.util.UUID;
 @Tag(name = "资产管理")
 public class AssetResource {
 
+    @GetMapping("/statistics")
+    @PreAuthorize("hasAuthority('asset.view')")
+    @Operation(summary = "查询建设统计", description = "已发布资产的最近同步状态，不触发检查和同步。无查看权限返回403。")
+    public cn.superhuang.data.scalpel.business.asset.web.response.AssetStatisticsResponse statistics() {
+        return service.statistics();
+    }
+
+
     private final AssetManagementService service;
     private final AssetPortalService portalService;
 

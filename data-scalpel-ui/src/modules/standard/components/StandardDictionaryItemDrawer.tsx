@@ -133,7 +133,7 @@ export const StandardDictionaryItemDrawer = ({
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="standard-dictionary-drawer standard-dictionary-item-drawer"
         title={(
           <div className="standard-dictionary-drawer-title">

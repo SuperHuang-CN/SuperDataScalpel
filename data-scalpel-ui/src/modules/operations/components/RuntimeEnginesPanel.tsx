@@ -8,7 +8,7 @@ import { ManagementDateTime, ManagementListCell } from '../../../shared/componen
 import { computeBackendTypeLabels } from '../../computeengine';
 import { useRuntimeEngines } from '../hooks/useOperations';
 import type { RuntimeEngine } from '../model/operations';
-import { OperationsTable } from './OperationsTable';
+import { OperationsTable, OperationsTableActions } from './OperationsTable';
 const registrationLabels: Record<string, string> = { CREATED: '待注册', REGISTERING: '注册中', ACTIVE: '已激活', DRAINING: '排空中', INACTIVE: '已停用', DETACHED: '已解绑', ERROR: '异常' };
 export const RuntimeEnginesPanel = () => {
   const [form] = Form.useForm<{ keyword?: string }>(); const [keyword, setKeyword] = useState<string>(); const [page, setPage] = useState(0); const [size, setSize] = useState(20);
@@ -24,9 +24,9 @@ export const RuntimeEnginesPanel = () => {
     { title: '最近观测', dataIndex: 'observedAt', width: 160, render: value => <ManagementDateTime value={value} /> },
   ];
   return <section className="management-workbench">
-    <div className="management-filter-strip"><Form form={form} autoComplete="off" layout="inline" className="management-filter-form" onFinish={v => { setKeyword(v.keyword); setPage(0); }}>
+    <div className="management-filter-strip"><Form form={form} autoComplete="off" layout="inline" className="management-filter-form" onFinish={v => { setKeyword(v.keyword); setPage(0); }} id="runtime-engines-panel-filters-0">
       <Form.Item name="keyword"><ManagementSearchInput placeholder="搜索计算引擎名称" allowClear /></Form.Item>
-    </Form><ManagementFilterActions form={form} appliedFilters={{ keyword }} onReset={() => { form.resetFields(); setKeyword(undefined); setPage(0); }} /></div>
-    <OperationsTable title="计算引擎观测" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }} />
+    </Form><ManagementFilterActions form={form} appliedFilters={{ keyword }} onReset={() => { form.resetFields(); setKeyword(undefined); setPage(0); }} commands={<OperationsTableActions title="计算引擎观测" query={query} />} formId="runtime-engines-panel-filters-0" /></div>
+    <OperationsTable title="计算引擎观测" query={query} columns={columns} page={page} size={size} onPage={(p, s) => { setPage(p); setSize(s); }} showActions={false} />
   </section>;
 };

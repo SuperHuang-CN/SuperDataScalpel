@@ -1,3 +1,4 @@
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { CompassOutlined, DatabaseOutlined, FormOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
 import { Badge, Button, Drawer, Form, Input, Select, Space, Switch, Tag, TreeSelect, Typography, message } from 'antd';
 import { useEffect } from 'react';
@@ -53,11 +54,7 @@ const snapshotLabels: Record<string, string> = {
   deploymentStatus: '部署状态',
 };
 
-const formatDateTime = (value: string | null): string => value
-  ? new Intl.DateTimeFormat('zh-CN', {
-    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit', hour12: false,
-  }).format(new Date(value))
-  : '—';
+const formatDateTime = formatManagementDateTime;
 
 export const AssetEditDrawer = ({ open, asset, directories, readOnly = false, onClose }: AssetEditDrawerProps) => {
   const [form] = Form.useForm<AssetFormValues>();
@@ -98,7 +95,7 @@ export const AssetEditDrawer = ({ open, asset, directories, readOnly = false, on
     <>
       {contextHolder}
       <Drawer
-        rootClassName="business-overlay business-drawer-overlay"
+        rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer asset-edit-drawer"
         title={(
           <div className="data-model-drawer-title">

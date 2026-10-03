@@ -48,7 +48,7 @@ export const MetricImportDrawer = ({ onClose, onImported }: { onClose: () => voi
     </> },
   ];
   return <Drawer
-    open width={1000} rootClassName="business-overlay business-drawer-overlay"
+    open width={1000} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
     title={<Space><FileExcelOutlined /><span>导入指标<Typography.Text type="secondary" className="metric-import-subtitle">上传 Excel，预览后批量保存草稿</Typography.Text></span></Space>}
     onClose={busy ? undefined : onClose} closable={!busy} maskClosable={!busy}
     footer={<div className="metric-editor-footer">
