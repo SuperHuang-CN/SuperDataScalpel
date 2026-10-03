@@ -87,8 +87,8 @@ public class PanoramaResource {
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "全景影像：查询地图配置",
             keywords = {"全景影像", "地图", "XYZ", "底图"})
     @GetMapping("/map-config") @PreAuthorize("hasAuthority('panorama.view')")
-    @Operation(summary = "查询全景地图底图配置", description = "返回系统配置 panorama.map 中的浏览器端 XYZ 瓦片地址、纯文本署名和最大缩放级别；服务端不会请求该地址。")
-    public PanoramaMapConfiguration mapConfig() { return PanoramaMapConfiguration.parse(settings.requireValue("panorama.map")); }
+    @Operation(summary = "查询全景地图底图配置", description = "兼容入口：返回模型空间预览与全景地图共用的 panorama.map 配置，包含浏览器端 XYZ 瓦片地址、纯文本署名和最大瓦片缩放级别；地址为空表示关闭底图，服务端不会请求该地址。")
+    public PanoramaMapConfiguration mapConfig() { return settings.mapConfiguration(); }
     @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "全景影像：查询地图点位",
             keywords = {"全景影像", "地图", "经纬度", "范围检索"},
             relatedOperations = {"GET /api/v1/panoramas", "GET /api/v1/panoramas/{id}"})

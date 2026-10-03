@@ -930,7 +930,8 @@ public class CanvasTaskRunPreparationService {
                     table.getCode(),
                     table.getName(),
                     FileDatasetType.valueOf(dataset.getType().name()),
-                    cn.superhuang.data.scalpel.contract.task.FileDatasetParseStatus.valueOf(effectiveStatus.name()),
+                    cn.superhuang.data.scalpel.contract.task.FileDatasetParseStatus.valueOf(
+                            effectiveStatus==FileDatasetParseStatus.WAITING_CRS?"QUEUED":effectiveStatus.name()),
                     filesReady
                             ? cn.superhuang.data.scalpel.contract.task.FileDatasetFileStatus.READY
                             : cn.superhuang.data.scalpel.contract.task.FileDatasetFileStatus.PREPARING,

@@ -282,6 +282,19 @@ public class FileDatasetParseJobCoordinator {
         }));
     }
 
+    public boolean waitForCrs(ClaimedJob claimed, String wkt) {
+        return Boolean.TRUE.equals(transactionTemplate.execute(status -> {
+            if(datasetRepository.findLockedById(claimed.datasetId()).isEmpty()) return false;
+            var job=jobRepository.findLockedById(claimed.jobId()).orElse(null);
+            if(!hasActiveLease(job,claimed.workerId(),Instant.now()) || job.getLoadMode()!=FileDatasetTableSourceLoadMode.INITIAL) return false;
+            var table=tableRepository.findLockedById(job.getFileDatasetTableId()).orElse(null);
+            if(table==null || !job.getId().equals(table.getCurrentLoadJobId()) || table.hasData()) return false;
+            table.waitForCrs(job.getId(),job.getSourceFileId(),job.getSourceKey(),wkt);
+            job.fail(claimed.workerId(),"待确认空间参考：请在逻辑表中填写 EPSG 编码后继续解析",Instant.now());
+            return true;
+        }));
+    }
+
     public int recoverExpiredLeases() {
         int baseDelaySeconds = retryPolicy.currentBaseDelaySeconds();
         return requireResult(transactionTemplate.execute(status -> {
@@ -408,7 +421,7 @@ public class FileDatasetParseJobCoordinator {
                 job.getSourceFileId(), job.getFileDatasetTableId(),
                 new FileDatasetContentParser.Input(
                         file.getFormat(), file.getCompression(), objectKey, file.getSizeBytes(),
-                        dataset.getParsingOptions(), job.getSourceKey()
+                        dataset.getParsingOptions(), job.getSourceKey(), table.getSpatialReferenceOverride()==null?null:table.getSpatialReferenceOverride().code()
                 ),
                 null
         ));
@@ -520,6 +533,7 @@ public class FileDatasetParseJobCoordinator {
     private void deleteFileIfOrphaned(UUID fileId) {
         FileDatasetFile file = fileRepository.findLockedById(fileId).orElse(null);
         if (file == null
+                || tableRepository.existsByPendingCrsFileId(fileId)
                 || sourceRepository.existsBySourceFileId(fileId)
                 || jobRepository.existsBySourceFileIdAndStatusIn(fileId, NON_TERMINAL)) {
             return;

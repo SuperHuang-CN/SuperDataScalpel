@@ -75,6 +75,8 @@ public class FileDatasetParseWorker {
             }
         } catch (Exception exception) {
             heartbeat.cancel(false);
+            if(exception instanceof cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetMissingCrsException missing
+                    && coordinator.waitForCrs(job,missing.wkt())) return ExecutionOutcome.FAILED;
             return recordFailure(job, exception);
         }
         heartbeat.cancel(false);
@@ -90,6 +92,8 @@ public class FileDatasetParseWorker {
             }
             return ExecutionOutcome.SUCCEEDED;
         } catch (FileDatasetParsingException exception) {
+            if(exception instanceof cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetMissingCrsException missing
+                    && coordinator.waitForCrs(job,missing.wkt())) return ExecutionOutcome.FAILED;
             return recordFailure(job, exception);
         } catch (RuntimeException exception) {
             log.error(
@@ -111,6 +115,8 @@ public class FileDatasetParseWorker {
             result = preparationService.prepare(job.preparationInput());
         } catch (Exception exception) {
             heartbeat.cancel(false);
+            if(exception instanceof cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetMissingCrsException missing
+                    && coordinator.waitForCrs(job,missing.wkt())) return ExecutionOutcome.FAILED;
             return recordFailure(job, exception);
         }
         heartbeat.cancel(false);
@@ -129,6 +135,8 @@ public class FileDatasetParseWorker {
             return ExecutionOutcome.SUCCEEDED;
         } catch (FileDatasetParsingException exception) {
             preparationService.discard(result.materializedPrefix());
+            if(exception instanceof cn.superhuang.data.scalpel.business.filedataset.service.parse.FileDatasetMissingCrsException missing
+                    && coordinator.waitForCrs(job,missing.wkt())) return ExecutionOutcome.FAILED;
             return recordFailure(job, exception);
         } catch (RuntimeException exception) {
             log.error(

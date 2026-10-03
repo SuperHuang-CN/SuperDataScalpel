@@ -30,4 +30,9 @@ public interface SpatialPreviewDialect {
             SpatialPreviewLimits limits,
             Duration timeout
     ) throws SQLException;
+
+    default void streamSpatialPreview(Connection connection, TableIdentifier table, SpatialPreviewColumn column,
+            int maximumRows, Duration timeout, java.util.function.Consumer<byte[]> consumer) throws SQLException {
+        throw new UnsupportedOperationException("当前数据库不支持预览副本读取");
+    }
 }

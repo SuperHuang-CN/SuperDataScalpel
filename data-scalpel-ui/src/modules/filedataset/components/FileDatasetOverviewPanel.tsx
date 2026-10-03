@@ -27,7 +27,7 @@ const formatDateTime = (value: string) => new Intl.DateTimeFormat('zh-CN', {
 }).format(new Date(value));
 
 const parseStatusColors: Record<FileDatasetParseStatus, string> = {
-  QUEUED: 'blue', PARSING: 'processing', SCHEMA_READY: 'warning', READY: 'success',
+  WAITING_CRS: 'warning', QUEUED: 'blue', PARSING: 'processing', SCHEMA_READY: 'warning', READY: 'success',
 };
 
 export const FileDatasetOverviewPanel = ({
@@ -41,7 +41,7 @@ export const FileDatasetOverviewPanel = ({
   const statusCounts = tables.reduce<Record<FileDatasetParseStatus, number>>((counts, table) => {
     counts[table.parseStatus] += 1;
     return counts;
-  }, { QUEUED: 0, PARSING: 0, SCHEMA_READY: 0, READY: 0 });
+  }, { WAITING_CRS: 0, QUEUED: 0, PARSING: 0, SCHEMA_READY: 0, READY: 0 });
   const activeCount = statusCounts.QUEUED + statusCounts.PARSING;
   const basicItems: DescriptionsProps['items'] = [
     { key: 'type', label: '数据集类型', children: <Tag>{fileDatasetTypeLabels[dataset.type]}</Tag> },

@@ -123,6 +123,23 @@ public final class GeoPackageReader implements AutoCloseable {
         List<Column> selectedColumns = schema.columns().stream()
                 .filter(column -> validateGeometry || !column.geometry())
                 .toList();
+        return openRows(schema, selectedColumns, includeGeometryValues);
+    }
+
+    /**
+     * Selects and validates only the registered Geometry column. Spatial previews do not read or
+     * decode unrelated attribute values; full import validation continues to use {@link #openRows}.
+     */
+    public RowCursor openGeometryRows(TableSchema schema) {
+        Objects.requireNonNull(schema, "schema");
+        if (schema.geometry() == null) {
+            throw new IllegalArgumentException("GeoPackage 表没有 Geometry 字段");
+        }
+        List<Column> geometryColumns = schema.columns().stream().filter(Column::geometry).toList();
+        return openRows(schema, geometryColumns, true);
+    }
+
+    private RowCursor openRows(TableSchema schema, List<Column> selectedColumns, boolean includeGeometryValues) {
         String select = selectedColumns.stream()
                 .map(Column::name)
                 .map(GeoPackageReader::quoted)

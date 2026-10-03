@@ -46,6 +46,7 @@ Service Engine 高可用：[原 Redis 双节点问题记录](verification/servic
 | 在线 Java 补全、语言服务工作区与部署 | [语言服务方案](design/spark-jar-online-java-language-service.md)（已实现；保存版本冲突后续再议）、[本机资源与隔离评估](verification/java-language-service-evaluation-20260925.md)（非生产容量认证） |
 | HTTP 错误、认证、权限 | [错误处理](design/backend-api-response-and-error-handling.md)、[系统访问管理](design/system-access-management.md) |
 | JDBC、平台类型、模型及物理表 | [数据源](design/data-source-management.md)、[类型系统](design/model-data-type-system.md)、[模型](design/model-management.md)、[物理表演进](design/model-physical-table-evolution.md) |
+| 空间表与空间文件地图预览、连续交互及缓存 | [实现与边界](design/model-management.md#spatial-preview-design)、[产品验收](verification/spatial-preview-implementation-20261003.md)、[早期实验](verification/spatial-preview-evaluation-20261003.md)（2026-10-04，已实施数据库和六类文件；百万复杂面、701 MiB 文件首次加载、连续操作、失效及旧副本回收验证） |
 | 全景成品、地图浏览和全景资产 | [全景影像管理 V1](development/panorama-management-v1.md) |
 | 文件数据集及空间文件 | [文件数据集](design/file-dataset-management.md)、[空间文件解析](design/geospatial-file-dataset-parsing.md)及对应格式专题 |
 | 数据服务、引擎或网关发布 | [数据服务](design/data-service-publishing.md)、[Engine 高可用](design/service-engine-ha.md)、[网关发布](design/data-service-gateway-publishing.md)、[GeoServer](design/geoserver-spatial-service-publishing-v1.md) |

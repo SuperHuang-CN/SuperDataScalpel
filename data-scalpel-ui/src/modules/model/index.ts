@@ -75,3 +75,5 @@ export type {
   ModelQualityRuleType,
   ViolationMetric,
 } from './model/modelQualityRule';
+
+export { SpatialPreviewPanel } from "./components/DataModelSpatialPreviewPanel";

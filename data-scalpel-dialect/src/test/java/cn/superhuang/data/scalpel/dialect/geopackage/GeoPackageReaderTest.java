@@ -13,9 +13,7 @@ import java.sql.DriverManager;
 import java.sql.Statement;
 import java.util.Map;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.*;
 
 class GeoPackageReaderTest {
 
@@ -66,6 +64,36 @@ class GeoPackageReaderTest {
             try (GeoPackageReader.RowCursor validation = reader.openRows(roads, true, false)) {
                 assertNotNull(validation.next());
             }
+            try (GeoPackageReader.RowCursor geometry = reader.openGeometryRows(roads)) {
+                Map<String, Object> row = geometry.next();
+                assertEquals(java.util.Set.of("shape"), row.keySet());
+                assertArrayEquals(java.util.Arrays.copyOfRange(point(116.4,39.9),8,29), (byte[])row.get("shape"));
+                assertNull(geometry.next());
+            }
+        }
+
+        // A corrupted attribute is deliberately outside a geometry projection, while corrupted
+        // geometry must still fail. Import and task readers retain complete row validation.
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE roads SET name=x'0102'");
+        }
+        try (GeoPackageReader reader = GeoPackageReader.open(file)) {
+            var schema = reader.schema("roads");
+            try (var geometry = reader.openGeometryRows(schema)) {
+                assertNotNull(geometry.next().get("shape"));
+            }
+            try (var complete = reader.openRows(schema,true)) {
+                assertThrows(IllegalArgumentException.class,complete::next);
+            }
+        }
+        try (Connection connection = DriverManager.getConnection("jdbc:sqlite:" + file);
+             Statement statement = connection.createStatement()) {
+            statement.execute("UPDATE roads SET shape=x'0102'");
+        }
+        try (GeoPackageReader reader = GeoPackageReader.open(file);
+             var geometry = reader.openGeometryRows(reader.schema("roads"))) {
+            assertThrows(GeoPackageException.class,geometry::next);
         }
     }
 
@@ -86,6 +114,7 @@ class GeoPackageReaderTest {
             assertEquals(java.util.List.of("codes"), reader.discoverTables().stream()
                     .map(GeoPackageReader.DiscoveredTable::tableName).toList());
             assertEquals(2, reader.schema("codes").columns().size());
+            assertThrows(IllegalArgumentException.class,() -> reader.openGeometryRows(reader.schema("codes")));
         }
     }
 

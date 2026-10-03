@@ -17,7 +17,7 @@ export interface DataModelReferenceTask {
 export interface DataModelReferenceService {
   id: string;
   name: string;
-  type: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API';
+  type: 'STANDARD_TABLE' | 'SQL_QUERY' | 'SCRIPT_API' | 'SPATIAL_SERVICE';
   status: 'DRAFT' | 'ENABLED' | 'DISABLED';
   role: 'PRIMARY' | 'REFERENCE';
   ordinal: number | null;

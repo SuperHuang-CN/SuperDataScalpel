@@ -45,6 +45,9 @@ const invalidateDatasetChildren = async (queryClient: ReturnType<typeof useQuery
   await Promise.all([
     queryClient.invalidateQueries({ queryKey: fileDatasetQueryKeys.all }),
     queryClient.invalidateQueries({ queryKey: fileDatasetQueryKeys.dataset(datasetId) }),
+    queryClient.invalidateQueries({ predicate: (query) =>
+      ['spatial-preview-status', 'spatial-preview-metadata'].includes(String(query.queryKey[0]))
+      && String(query.queryKey[1]).startsWith(`/v1/file-datasets/${datasetId}/tables/`) }),
   ]);
 };
 

@@ -168,6 +168,49 @@ public class FileDatasetContentParser {
         }
     }
 
+    /** Streams full geometry through the existing safe object/manifest boundaries. */
+    public void readGeometry(Input input, String field, java.util.function.Consumer<org.locationtech.jts.geom.Geometry> consumer)
+            throws IOException {
+        var configuration=configuration(readParsingOptions(input.parsingOptions()),input.sourceKey(),input.epsgCodeOverride());
+        var storage=requireStorage();
+        var mode=requireParser(input.format()).inputMode();
+        if(mode==FileDatasetParserInputMode.FILE_GDB) {
+            var limits=cn.superhuang.data.scalpel.filegdb.FileGdbReadLimits.defaults();
+            var previewLimits=new cn.superhuang.data.scalpel.filegdb.FileGdbReadLimits(
+                    limits.maxTableFileBytes(),limits.maxFields(),limits.maxRecordBytes(),limits.maxStringBytes(),
+                    limits.maxBinaryBytes(),limits.maxGeometryParts(),1_000_000,limits.maxIndexSlotsPerCursor(),1_000_001);
+            try(var database=storage.openFileGeodatabase(input.objectKey(),
+                    new cn.superhuang.data.scalpel.filegdb.FileGdbOpenOptions(false,false,previewLimits))) {
+                FileDatasetGeometryReader.read(new FileDatasetParseSource.FileGdb(database),input.format(),configuration,field,objectMapper,consumer);
+            }
+            return;
+        }
+        if(mode==FileDatasetParserInputMode.SHAPEFILE_COMPONENT_SET) {
+            var manifest=readShapefileManifest(storage,input.objectKey());
+            var shp=requireShapefileConfiguration(configuration);
+            var limits=ShapefileReadLimits.defaults();
+            var options=new ShapefileOpenOptions(new ShapefileReadLimits(limits.maxComponentFileBytes(),limits.maxFields(),
+                    limits.maxRecordBytes(),limits.maxMetadataBytes(),limits.maxParts(),1_000_000,limits.maxIndexRecords(),1_000_001),
+                    shp.dbfCharsetOverride()==null?null:Charset.forName(shp.dbfCharsetOverride()),Charset.forName(shp.dbfFallbackCharset()),false);
+            try(var dataset=storage.openShapefile(input.objectKey(),manifest.componentKinds(),options)) {
+                FileDatasetGeometryReader.read(new FileDatasetParseSource.Shapefile(dataset),input.format(),configuration,field,objectMapper,consumer);
+            }
+            return;
+        }
+        var content=storage.open(input.objectKey()); boolean complete=false;
+        try(content) {
+            if(mode==FileDatasetParserInputMode.STREAM) {
+                FileDatasetGeometryReader.read(new FileDatasetParseSource.Stream(parsedInputStream(input.compression(),new StorageReadInputStream(content.inputStream()),true)),
+                        input.format(),configuration,field,objectMapper,consumer);
+            } else {
+                Path file=temporaryFileManager.materialize(new SampledContentSizeLimitInputStream(content.inputStream(),maxValidatedUncompressedSize),input.sizeBytes());
+                try { FileDatasetGeometryReader.read(new FileDatasetParseSource.LocalFile(file),input.format(),configuration,field,objectMapper,consumer); }
+                finally { temporaryFileManager.delete(file); }
+            }
+            complete=true;
+        } finally { if(!complete) abortContent(content); }
+    }
+
     private long materializedSizeLimit(FileDatasetFormat format, boolean fullValidation) {
         // Seekable spatial containers remain previewable after import even when their physical
         // object exceeds the bounded stream-preview limit. GeoParquet separately checks Footer

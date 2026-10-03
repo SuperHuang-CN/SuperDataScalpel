@@ -15,6 +15,8 @@ const hooks = vi.hoisted(() => ({
   update: vi.fn(),
 }));
 
+vi.mock('../../model', () => ({ SpatialPreviewPanel: () => <div>空间地图预览</div> }));
+
 vi.mock('../hooks/useFileDatasets', () => ({
   useFileDatasetSchema: (...args: unknown[]) => hooks.schema(...args),
   useFileDatasetPreview: (...args: unknown[]) => hooks.preview(...args),

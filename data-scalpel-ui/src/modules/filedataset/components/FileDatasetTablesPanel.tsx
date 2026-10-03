@@ -23,7 +23,7 @@ interface FileDatasetTablesPanelProps {
 }
 
 const parseStatusColors: Record<FileDatasetParseStatus, string> = {
-  QUEUED: 'blue', PARSING: 'processing', SCHEMA_READY: 'warning', READY: 'success',
+  WAITING_CRS: 'warning', QUEUED: 'blue', PARSING: 'processing', SCHEMA_READY: 'warning', READY: 'success',
 };
 
 export const FileDatasetTablesPanel = ({

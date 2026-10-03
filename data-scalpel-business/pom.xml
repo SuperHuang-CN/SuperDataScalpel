@@ -15,6 +15,13 @@
     <description>DataScalpel business capabilities organized by business domain packages.</description>
 
     <dependencies>
+        <!-- Approved spatial-preview CRS conversion; EPSG definitions remain explicit. -->
+        <dependency>
+            <groupId>org.locationtech.proj4j</groupId><artifactId>proj4j</artifactId><version>1.4.2</version>
+        </dependency>
+        <dependency>
+            <groupId>org.locationtech.proj4j</groupId><artifactId>proj4j-epsg</artifactId><version>1.4.2</version>
+        </dependency>
         <dependency>
             <groupId>org.springframework</groupId>
             <artifactId>spring-websocket</artifactId>

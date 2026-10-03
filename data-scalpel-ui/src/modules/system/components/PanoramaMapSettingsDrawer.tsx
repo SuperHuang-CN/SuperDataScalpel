@@ -1,14 +1,13 @@
 import { EnvironmentOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, InputNumber, Space, message } from 'antd';
-import { useQueryClient } from '@tanstack/react-query';
 import { ApiError } from '../../../shared/api/http';
 import { useUpdateSystemConfiguration } from '../hooks/useSystemConfigurations';
 import type { SystemConfiguration } from '../model/systemConfiguration';
 import { parsePanoramaMapSettings, type MapSettings } from '../model/panoramaMapSettings';
 export const PanoramaMapSettingsDrawer = ({ configuration, onClose }: { configuration: SystemConfiguration; onClose: () => void }) => {
-  const [form] = Form.useForm<MapSettings>(); const mutation = useUpdateSystemConfiguration(); const client = useQueryClient(); const [messageApi, context] = message.useMessage();
+  const [form] = Form.useForm<MapSettings>(); const mutation = useUpdateSystemConfiguration(); const [messageApi, context] = message.useMessage();
   const submit = async (values: MapSettings) => {
-    try { await mutation.mutateAsync({ id: configuration.id, request: { configValue: JSON.stringify({ url: values.url?.trim() ?? '', attribution: values.attribution?.trim() ?? '', maxZoom: values.maxZoom }) } }); await client.invalidateQueries({ queryKey: ['panorama-map-config'] }); messageApi.success('全景地图设置已保存'); onClose(); }
+    try { await mutation.mutateAsync({ id: configuration.id, request: { configValue: JSON.stringify({ url: values.url?.trim() ?? '', attribution: values.attribution?.trim() ?? '', maxZoom: values.maxZoom }) } }); messageApi.success('全景地图设置已保存'); onClose(); }
     catch (e) { messageApi.error(e instanceof ApiError ? e.message : '保存失败'); }
   };
   return <Drawer open size={680} rootClassName="business-overlay business-drawer-overlay" onClose={onClose} title={<Space><EnvironmentOutlined />全景地图设置</Space>}
