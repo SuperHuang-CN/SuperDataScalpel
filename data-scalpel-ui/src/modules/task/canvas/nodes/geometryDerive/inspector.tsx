@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp, InlineFeedback } from '../../../../../shared/components/ContextualFeedback';
 import {
@@ -269,7 +270,7 @@ const GeometryDeriveInspector = ({
         open={editorOpen}
         width={720}
         destroyOnHidden
-        title="配置 Geometry 派生字段"
+        title={<OverlayTitle variant="workspace" title="配置 Geometry 派生字段" />}
         okText="保存草稿"
         cancelText="取消"
         onOk={commitEditor}
@@ -421,7 +422,7 @@ const GeometryDeriveInspector = ({
                       size="small"
                       aria-label={`删除第 ${index + 1} 个派生字段`}
                       icon={<DeleteOutlined />}
-                      onClick={() => Modal.confirm({ title: `删除派生字段 ${item.outputColumnName || `第 ${index + 1} 项`}？`,
+                      onClick={() => Modal.confirm({ title: <OverlayTitle variant="workspace" title={`删除派生字段 ${item.outputColumnName || `第 ${index + 1} 项`}？`} tone="danger" />,
                         content: '本项配置将一并删除。', okText: '删除', okButtonProps: { danger: true },
                         onOk: () => setDraftDerivations(current => current.filter((_candidate, candidateIndex) => candidateIndex !== index)) })}
                     />

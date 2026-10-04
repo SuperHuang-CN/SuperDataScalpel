@@ -1,5 +1,6 @@
 import { DeleteOutlined } from '@ant-design/icons';
 import type { ModalFuncProps } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { dataSourceTypeLabels, type DataSource } from '../model/dataSource';
 import { DataSourceTypeIcon } from './DataSourceTypeIcon';
 import '../../../shared/theme/workspace-resource.css';
@@ -14,7 +15,7 @@ export const dataSourceDeleteConfirmation = (
   centered: true,
   icon: null,
   focusable: { autoFocusButton: 'cancel' },
-  title: <div className="resource-dialog-title"><DeleteOutlined aria-hidden="true" /><span>删除数据源</span></div>,
+  title: <OverlayTitle title="删除数据源" icon={<DeleteOutlined />} tone="danger" />,
   content: (
     <div className="resource-delete-content">
       <p>确定删除以下数据源？</p>

@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ApiOutlined, DeleteOutlined, EditOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Modal, Popconfirm, Space, Table, Tag, Tooltip, message } from 'antd';
 import { useState } from 'react';
@@ -99,7 +100,7 @@ export const ApiResourceListDrawer = ({
       showIcon
       type="error"
       message="API 资源加载失败"
-      description={resourcesQuery.error instanceof ApiError ? resourcesQuery.error.message : '请稍后重试。'}
+     description={resourcesQuery.error instanceof ApiError ? resourcesQuery.error.message : '请稍后重试。'}
       action={<Button size="small" onClick={() => void resourcesQuery.refetch()}>重试</Button>}
     />
   ) : null;
@@ -133,7 +134,7 @@ export const ApiResourceListDrawer = ({
           { title: '操作', key: 'actions', width: 132, fixed: 'right', render: (_, resource) => <Space size={2}>
             {canUpdate && <Tooltip title="修改"><Button type="text" icon={<EditOutlined />} aria-label={`修改${resource.name}`} onClick={() => { setEditing(resource); setEditorOpen(true); }} /></Tooltip>}
             {canTest && <Tooltip title="测试"><Button type="text" icon={<ApiOutlined />} aria-label={`测试${resource.name}`} loading={testMutation.isPending && testMutation.variables?.resourceId === resource.id} onClick={() => beginTest(resource)} /></Tooltip>}
-            {canDelete && <Popconfirm title="删除 API 资源" description={`确认删除“${resource.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => void remove(resource)}><Tooltip title="删除"><Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除${resource.name}`} /></Tooltip></Popconfirm>}
+            {canDelete && <Popconfirm title={<OverlayTitle variant="popover" title="删除 API 资源" tone="danger" />} description={`确认删除“${resource.name}”吗？`} okText="删除" cancelText="取消" onConfirm={() => void remove(resource)}><Tooltip title="删除"><Button type="text" danger icon={<DeleteOutlined />} aria-label={`删除${resource.name}`} /></Tooltip></Popconfirm>}
           </Space> },
         ]}
     />
@@ -152,10 +153,11 @@ export const ApiResourceListDrawer = ({
         rootClassName="business-overlay business-drawer-overlay"
         open={open}
         width={980}
-        title={`API 资源 · ${dataSource?.name ?? ''}`}
+        title={<OverlayTitle title={`API 资源 · ${dataSource?.name ?? ''}`} icon={<ApiOutlined />} description="查看、维护并测试当前数据源的 API 资源" />}
         destroyOnHidden
         onClose={onClose}
         extra={toolbar}
+        closable={{ placement: 'end' }}
       >
         {resourceError}
         {resourceTable}
@@ -170,7 +172,7 @@ export const ApiResourceListDrawer = ({
     <Modal
       rootClassName="business-overlay business-modal-overlay"
       open={Boolean(testing)}
-      title={`测试 API 资源 · ${testing?.name ?? ''}`}
+      title={<OverlayTitle title={`测试 API 资源 · ${testing?.name ?? ''}`} icon={<ApiOutlined />} />}
       destroyOnHidden
       onCancel={() => setTesting(null)}
       onOk={() => void runTest()}

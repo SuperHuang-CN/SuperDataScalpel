@@ -1,4 +1,5 @@
 import { CompactAlert as Alert, InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -187,8 +188,10 @@ export const SpatialFeatureResourceListDrawer = ({
         label: '删除',
         danger: true,
         onClick: () => modalApi.confirm({
+          icon: null,
+
           rootClassName: 'business-overlay business-modal-overlay',
-          title: '删除空间要素资源',
+          title: <OverlayTitle title="删除空间要素资源" icon={<DeleteOutlined />} tone="danger" />,
           content: `确认删除“${resource.name}”吗？`,
           okText: '删除',
           okButtonProps: { danger: true },
@@ -286,7 +289,7 @@ export const SpatialFeatureResourceListDrawer = ({
       showIcon
       type="error"
       message="空间资源加载失败"
-      description={resourcesQuery.error instanceof ApiError ? resourcesQuery.error.message : '请稍后重试。'}
+     description={resourcesQuery.error instanceof ApiError ? resourcesQuery.error.message : '请稍后重试。'}
       action={<Button size="small" onClick={() => void resourcesQuery.refetch()}>重试</Button>}
     />
   ) : null;
@@ -319,18 +322,11 @@ export const SpatialFeatureResourceListDrawer = ({
         className="spatial-resource-list-drawer"
         open={open}
         size={1040}
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><GlobalOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>空间要素资源</span>
-              <Typography.Text type="secondary">管理“{dataSource?.name ?? '当前数据源'}”已登记的远程图层</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title="空间要素资源" icon={<GlobalOutlined />} description={`管理“${dataSource?.name ?? '当前数据源'}”已登记的远程图层`} />}
         destroyOnHidden
         onClose={onClose}
         extra={<Tag className="data-model-drawer-header-tag">空间服务</Tag>}
+        closable={{ placement: 'end' }}
       >
         <div className="spatial-resource-list-surface">
           {toolbar}
@@ -344,15 +340,7 @@ export const SpatialFeatureResourceListDrawer = ({
       className="spatial-resource-register-modal"
       open={registerOpen}
       width={980}
-      title={(
-        <div className="spatial-resource-modal-title">
-          <span className="spatial-resource-modal-title-icon" aria-hidden="true"><RadarChartOutlined /></span>
-          <span>
-            <strong>发现并登记空间要素资源</strong>
-            <Typography.Text type="secondary">浏览服务目录，选择一个远程图层并确认平台内标识</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle title="发现并登记空间要素资源" icon={<RadarChartOutlined />} description="浏览服务目录，选择一个远程图层并确认平台内标识" />}
       destroyOnHidden
       onCancel={() => setRegisterOpen(false)}
       footer={(
@@ -486,15 +474,7 @@ export const SpatialFeatureResourceListDrawer = ({
       rootClassName="business-overlay business-modal-overlay"
       className="spatial-resource-edit-modal"
       open={Boolean(editing)}
-      title={(
-        <div className="spatial-resource-modal-title">
-          <span className="spatial-resource-modal-title-icon" aria-hidden="true"><EditOutlined /></span>
-          <span>
-            <strong>修改空间要素资源</strong>
-            <Typography.Text type="secondary">远程标识与 Schema 保持不变，仅调整平台展示名称和可用状态</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle title="修改空间要素资源" icon={<EditOutlined />} description="远程标识与 Schema 保持不变，仅调整平台展示名称和可用状态" />}
       destroyOnHidden
       onCancel={() => setEditing(null)}
       footer={(
@@ -539,15 +519,7 @@ export const SpatialFeatureResourceListDrawer = ({
       rootClassName="business-overlay business-modal-overlay"
       className="spatial-resource-preview-modal"
       open={Boolean(previewing)}
-      title={(
-        <div className="spatial-resource-modal-title">
-          <span className="spatial-resource-modal-title-icon" aria-hidden="true"><EyeOutlined /></span>
-          <span>
-            <strong>属性预览 · {previewing?.name ?? ''}</strong>
-            <Typography.Text type="secondary">读取少量属性记录，用于确认字段内容与远端 Schema</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle title={`属性预览 · ${previewing?.name ?? ''}`} icon={<EyeOutlined />} description="读取少量属性记录，用于确认字段内容与远端 Schema" />}
       footer={(
         <div className="spatial-resource-modal-footer">
           <Typography.Text type="secondary">

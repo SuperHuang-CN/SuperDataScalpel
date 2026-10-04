@@ -1,4 +1,6 @@
+import { BarChartOutlined } from '@ant-design/icons';
 import { useState } from 'react';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Drawer, Select, Space, Spin, Table, Tag, Typography } from 'antd';
 import { fetchMetricVersion, fetchMetricVersions } from '../api/metricApi';
@@ -116,7 +118,7 @@ export const MetricVersionsPanel = ({ id, current }: { id: string; current: numb
           { title: '发布时间', dataIndex: 'publishedAt', render: (value: string) => new Date(value).toLocaleString('zh-CN', { hour12: false }) },
         ]}
       />}
-    {version && <Drawer open title={`指标口径快照 V${version}`} width={1100} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay" onClose={() => setVersion(null)}>
+    {version && <Drawer open title={<OverlayTitle title={`指标口径快照 V${version}`} icon={<BarChartOutlined />} description="查看已发布口径的历史定义" />} width={1100} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay" onClose={() => setVersion(null)} closable={{ placement: 'end' }}>
       <Typography.Text type="secondary">快照仅保存口径与绑定，不包含历史业务数据。</Typography.Text>
       <Snapshot key={version} id={id} version={version} current={current ?? version} />
     </Drawer>}

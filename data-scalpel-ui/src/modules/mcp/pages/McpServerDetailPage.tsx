@@ -1,6 +1,7 @@
-import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { ArrowLeftOutlined, DeleteOutlined, EditOutlined, PlusOutlined, PoweroffOutlined, RocketOutlined } from '@ant-design/icons';
-import { Button, Modal, Pagination, Result, Space, Table, Tabs, Tag, Tooltip, Typography, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { Button, Modal, Pagination, Result, Space, Table, Tabs, Tag, Typography, message, Tooltip } from 'antd';
+import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { useState } from 'react';
 import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { BusinessDetailDescriptions } from '../../../shared/components/BusinessDetailDescriptions';
@@ -48,7 +49,7 @@ export const McpServerDetailPage = () => {
     catch (e) {
         messageApi.error(e instanceof ApiError ? e.message : '操作失败');
     } };
-    const toolColumns = [{ title: 'Tool', render: (_: unknown, t: McpToolSummary) => <div><Typography.Link strong disabled={!permissions.has('mcp.update')} onClick={() => navigate(`/mcp-management/${server.id}/tools/${t.id}/edit`)}>{t.name}</Typography.Link><div className="mcp-secondary">{t.code}</div></div> }, { title: '状态', dataIndex: 'enabled', width: 100, render: (v: boolean) => <Tag color={v ? 'success' : 'default'}>{v ? '参与发布' : '已禁用'}</Tag> }, { title: '修订', dataIndex: 'revision', width: 90, render: (v: number) => `r${v}` }, { title: '操作', width: 140, render: (_: unknown, t: McpToolSummary) => <Space>{permissions.has('mcp.update') && <Tooltip title="编辑 Tool"><Button type="text" icon={<EditOutlined />} aria-label={`编辑${t.name}`} onClick={() => navigate(`/mcp-management/${server.id}/tools/${t.id}/edit`)} /></Tooltip>}{permissions.has('mcp.delete') && <Tooltip title="删除 Tool"><Button danger type="text" icon={<DeleteOutlined />} aria-label={`删除${t.name}`} onClick={() => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: '删除 Tool？', content: `确认删除“${t.name}”吗？`, okText: '删除', okButtonProps: { danger: true }, onOk: async () => { try {
+    const toolColumns = [{ title: 'Tool', render: (_: unknown, t: McpToolSummary) => <div><Typography.Link strong disabled={!permissions.has('mcp.update')} onClick={() => navigate(`/mcp-management/${server.id}/tools/${t.id}/edit`)}>{t.name}</Typography.Link><div className="mcp-secondary">{t.code}</div></div> }, { title: '状态', dataIndex: 'enabled', width: 100, render: (v: boolean) => <Tag color={v ? 'success' : 'default'}>{v ? '参与发布' : '已禁用'}</Tag> }, { title: '修订', dataIndex: 'revision', width: 90, render: (v: number) => `r${v}` }, { title: '操作', width: 140, render: (_: unknown, t: McpToolSummary) => <Space>{permissions.has('mcp.update') && <Tooltip title="编辑 Tool"><Button type="text" icon={<EditOutlined />} aria-label={`编辑${t.name}`} onClick={() => navigate(`/mcp-management/${server.id}/tools/${t.id}/edit`)} /></Tooltip>}{permissions.has('mcp.delete') && <Tooltip title="删除 Tool"><Button danger type="text" icon={<DeleteOutlined />} aria-label={`删除${t.name}`} onClick={() => modal.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle title="删除 Tool？" icon={<DeleteOutlined />} tone="danger" />, icon: null, content: `确认删除“${t.name}”吗？`, okText: '删除', okButtonProps: { danger: true }, onOk: async () => { try {
                     await removeTool.mutateAsync(t.id);
                     messageApi.success('Tool 已删除');
                 }

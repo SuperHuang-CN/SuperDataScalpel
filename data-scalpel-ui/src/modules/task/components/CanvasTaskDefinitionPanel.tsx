@@ -1,5 +1,6 @@
 import { Tag } from 'antd';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CloseOutlined, SaveOutlined } from '@ant-design/icons';
 import { Button, Modal, Space, Spin, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
@@ -199,7 +200,7 @@ export const CanvasTaskDefinitionPanel = ({
         </Typography.Paragraph>
         <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
           open={reconfigureConfirmOpen}
-          title="重新配置 Canvas 定义？"
+          title={<OverlayTitle variant="workspace" title="重新配置 Canvas 定义？" />}
           okText="从空白画布开始"
           cancelText="取消"
           onOk={() => {
@@ -291,7 +292,7 @@ export const CanvasTaskDefinitionPanel = ({
       />
       <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={cancelEditConfirmOpen}
-        title="取消编辑 Canvas 定义？"
+        title={<OverlayTitle variant="workspace" title="取消编辑 Canvas 定义？" />}
         closable={false}
         mask={{ closable: false }}
         footer={(
@@ -328,7 +329,7 @@ export const CanvasTaskDefinitionPanel = ({
       </Modal>
       <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
-        title="离开未保存的 Canvas 定义？"
+        title={<OverlayTitle variant="workspace" title="离开未保存的 Canvas 定义？" />}
         closable={false}
         mask={{ closable: false }}
         onCancel={() => blocker.reset?.()}

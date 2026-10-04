@@ -161,7 +161,7 @@ export const DataModelPreviewPanel = ({ model, fields }: DataModelPreviewPanelPr
               type="warning"
               showIcon
               title="暂不能预览物理表数据"
-              description={quickPreviewQuery.error instanceof ApiError ? quickPreviewQuery.error.message : '请先检查并准备物理表。'}
+             description={quickPreviewQuery.error instanceof ApiError ? quickPreviewQuery.error.message : '请先检查并准备物理表。'}
               action={<Button size="small" onClick={() => void quickPreviewQuery.refetch()}>重试</Button>}
             />
           ) : (

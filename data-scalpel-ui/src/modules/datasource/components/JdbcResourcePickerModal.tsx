@@ -1,4 +1,5 @@
 import { SearchOutlined, TableOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Empty, Input, Modal, Select, Space, Spin, Table, Tag, Typography } from 'antd';
 import type { TableColumnsType } from 'antd';
 import { useEffect, useMemo, useRef, useState } from 'react';
@@ -167,8 +168,8 @@ const JdbcResourcePickerModalContent = ({
     <Modal
       open
       width={760}
-      title={title}
-      rootClassName={rootClassName}
+      title={<OverlayTitle title={title} icon={<TableOutlined />} />}
+      rootClassName={`business-overlay business-modal-overlay${rootClassName ? ` ${rootClassName}` : ''}`}
       onCancel={onCancel}
       footer={(
         <Space>

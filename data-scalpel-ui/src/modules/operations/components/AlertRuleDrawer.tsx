@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { SettingOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, InputNumber, Select, Space, Switch, message } from 'antd';
 import { useState } from 'react';
@@ -35,8 +36,8 @@ export const AlertRuleDrawer = ({ rule, onClose }: { rule: AlertRule | null; onC
   };
   const defaults: RuleForm = rule ? { ...rule, subjectIds: rule.subjectId ? [rule.subjectId] : [] }
     : { ruleType: defaultType, subjectIds: [], enabled: true, severity: 'CRITICAL', thresholdSeconds: isEngineRule(defaultType) ? 90 : 0, cooldownSeconds: 600, userIds: [], channelIds: [] };
-  return <>{context}<Drawer rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" open onClose={onClose} width={720}
-    title={<Space><SettingOutlined />{rule ? '编辑告警规则' : '配置对象覆盖'}</Space>} extra={rule?.subjectName}
+  return <>{context}<Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" open onClose={onClose} width={720}
+    title={<OverlayTitle icon={<SettingOutlined />} title={rule ? '编辑告警规则' : '配置对象覆盖'} description="配置告警条件与通知策略" />} extra={rule?.subjectName}
     footer={<div className="ops-panel-toolbar" style={{ margin: 0 }}><span>{rule?.subjectId === null ? '全局默认配置' : '所选对象优先使用本配置'}</span><Space><Button onClick={onClose}>取消</Button><Button type="primary" loading={busy} onClick={() => form.submit()}>保存</Button></Space></div>}>
     <Form form={form} layout="vertical" autoComplete="off" initialValues={defaults} onFinish={values => void submit(values)}>
       <div className="ops-rule-form-columns">

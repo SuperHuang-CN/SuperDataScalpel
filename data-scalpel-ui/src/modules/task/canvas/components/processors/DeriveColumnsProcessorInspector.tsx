@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DownOutlined,
@@ -1179,7 +1180,7 @@ export const DeriveColumnsProcessorInspector = ({
       })}
     </div>
 
-    <Modal open={globalOpen} width={1040} className="canvas-derive-rules-modal" title="配置全局派生规则"
+    <Modal open={globalOpen} width={1040} className="canvas-derive-rules-modal" title={<OverlayTitle variant="workspace" title="配置全局派生规则" />}
       styles={{ body: { overflow: 'hidden' } }} destroyOnHidden
       onCancel={() => { setGlobalDraft(null); setGlobalOpen(false); }} okText="保存全局规则" onOk={() => {
         updateConfiguration({ ...configuration, globalDerivations: structuredClone(globalRules) });
@@ -1222,7 +1223,7 @@ export const DeriveColumnsProcessorInspector = ({
     </Modal>
 
     <Modal open={Boolean(activeOperation)} width={1040} className="canvas-derive-rules-modal"
-      title={activeOperation ? `配置处理表 · ${activeOperation.sourceTableName}` : '配置处理表'} styles={{ body: { overflow: 'hidden' } }} destroyOnHidden
+      title={<OverlayTitle variant="workspace" title={activeOperation ? `配置处理表 · ${activeOperation.sourceTableName}` : '配置处理表'} />} styles={{ body: { overflow: 'hidden' } }} destroyOnHidden
       onCancel={() => setTableDraft(null)} okText="保存此项" onOk={() => {
         if (tableDraft) {
           updateConfiguration({ ...configuration, operations: configuration.operations.map((operation) => (

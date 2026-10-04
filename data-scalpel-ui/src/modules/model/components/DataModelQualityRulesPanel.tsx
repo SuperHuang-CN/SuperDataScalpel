@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   EditOutlined,
@@ -218,8 +219,10 @@ export const DataModelQualityRulesPanel = ({
   };
 
   const remove = (rule: ModelQualityRule) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
-    title: '删除质量规则',
+    title: <OverlayTitle title="删除质量规则" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${rule.name}”吗？`,
     okText: '删除',
     okButtonProps: { danger: true },
@@ -357,7 +360,7 @@ export const DataModelQualityRulesPanel = ({
             showIcon
             type={latestRunActive ? 'info' : overview.latestRun.status === 'FAILED' ? 'error' : 'warning'}
             title={`最近一次质检${runStatusLabels[overview.latestRun.status] ?? overview.latestRun.status}`}
-            description={`${overview.latestRun.taskName} · ${runTriggerLabels[overview.latestRun.triggerType]} · ${dateTime(overview.latestRun.endedAt ?? overview.latestRun.queuedAt)}${latestRunMessage ? ` · ${latestRunMessage}` : ''}`}
+           description={`${overview.latestRun.taskName} · ${runTriggerLabels[overview.latestRun.triggerType]} · ${dateTime(overview.latestRun.endedAt ?? overview.latestRun.queuedAt)}${latestRunMessage ? ` · ${latestRunMessage}` : ''}`}
             action={canViewTasks ? <Button size="small" onClick={() => openRun(overview.latestRun!.taskId, overview.latestRun!.runId)}>查看运行</Button> : undefined}
           />
         )}
@@ -366,7 +369,7 @@ export const DataModelQualityRulesPanel = ({
             showIcon
             type={overview?.resultDetailStatus === 'INVALID' ? 'error' : 'warning'}
             title="最近质量汇总可用，但规则明细暂不可用"
-            description={overview?.resultDetailMessage}
+           description={overview?.resultDetailMessage}
             action={<Button size="small" onClick={() => void overviewQuery.refetch()}>重试</Button>}
           />
         )}

@@ -1,5 +1,6 @@
 import { DatabaseOutlined, FolderOutlined, SettingOutlined } from '@ant-design/icons';
-import { Button, Col, ConfigProvider, Drawer, Form, Input, Row, Select, Space, TreeSelect, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
+import { Button, Col, ConfigProvider, Drawer, Form, Input, Row, Select, Space, Tag, TreeSelect, message } from 'antd';
 import { type ReactNode, useEffect, useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
@@ -155,12 +156,8 @@ export const FileDatasetDrawer = ({
       <Drawer
         rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay"
         className="file-dataset-editor"
-        title={(
-          <div className="file-dataset-editor-title">
-            <FileDatasetTypeIcon type={selectedType} />
-            <div><span>{editing ? '修改文件数据集' : '新建文件数据集'}</span><small>{fileDatasetTypeLabels[selectedType]}</small></div>
-          </div>
-        )}
+        title={<OverlayTitle title={editing ? '修改文件数据集' : '新建文件数据集'} icon={<FileDatasetTypeIcon type={selectedType} />} description={editing ? '维护数据集归属、基础说明与共享解析规则' : '先建立空数据集，再进入文件管理上传并解析文件'} />}
+        extra={<Tag className="file-dataset-drawer-header-tag">{fileDatasetTypeLabels[selectedType]}</Tag>}
         open={open}
         size="min(760px, 100vw)"
         closable={pending ? false : { placement: 'end' }}
@@ -194,6 +191,7 @@ export const FileDatasetDrawer = ({
         >
           <FileDatasetFormSection
             title="数据集信息"
+           description="设置数据集的名称、文件类型和目录归属"
             icon={<DatabaseOutlined />}
           >
             <Row gutter={14}>
@@ -232,7 +230,7 @@ export const FileDatasetDrawer = ({
 
           <FileDatasetFormSection
             title="解析设置"
-            description={`${fileDatasetTypeLabels[selectedType]} 文件共享同一套解析规则`}
+           description={`${fileDatasetTypeLabels[selectedType]} 文件共享同一套解析规则`}
             icon={<SettingOutlined />}
             help={parsingHelp(selectedType)}
           >

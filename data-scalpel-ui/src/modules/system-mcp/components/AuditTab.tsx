@@ -1,3 +1,5 @@
+import { FileSearchOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ManagementFilterActions } from '../../../shared/components/ManagementFilters';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import { Button, Drawer, Form, Input, Select, Table } from 'antd';
@@ -19,5 +21,5 @@ export function AuditTab() {
   { title: '事件', width: 170, render: (_, r) => <Button type="link" onClick={() => setDetail(r)}>{r.toolName ?? r.eventType}</Button> },
   { title: '接口', render: (_, r) => <ManagementCode value={r.operationId ?? '—'} /> }, { title: '状态', width: 100, render: (_, r) => r.status === 'SUCCESS' ? '成功' : '错误' }, { title: '耗时 / ms', dataIndex: 'durationMs', width: 110, align: 'right' },
  ]} pagination={{ current: page + 1, pageSize: size, total: list.data?.totalElements, showSizeChanger: true, hideOnSinglePage: false, onChange: (p, s) => { setPage(s === size ? p - 1 : 0); setSize(s); } }} /></div>
- <Drawer rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" title="操作记录详情" open={Boolean(detail)} onClose={() => setDetail(undefined)}><pre className="system-mcp-contract">{JSON.stringify(detail, null, 2)}</pre></Drawer></section>;
+ <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" title={<OverlayTitle icon={<FileSearchOutlined />} title="操作记录详情" description="查看完整的操作记录" />} open={Boolean(detail)} onClose={() => setDetail(undefined)}><pre className="system-mcp-contract">{JSON.stringify(detail, null, 2)}</pre></Drawer></section>;
 }

@@ -1,3 +1,5 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   ApartmentOutlined,
   ArrowLeftOutlined,
@@ -142,8 +144,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
       return;
     }
     modal.confirm({
-      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
-      title: '放弃未保存的修改？',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="放弃未保存的修改？" tone="danger" />, icon: null,
       content: '刷新会重新读取最近保存的当前配置。',
       okText: '放弃并刷新',
       cancelText: '继续编辑',
@@ -166,8 +167,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
       return;
     }
     const confirmation = modal.confirm({
-      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
-      title: '当前配置尚未保存',
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="当前配置尚未保存" />, icon: null,
       content: <div className="ontology-unsaved-navigation"><span>前往本体总览前，请选择如何处理本次修改。</span><Button danger type="link" onClick={() => { confirmation.destroy(); setDraft(null); setDirty(false); navigate(target); }}>放弃修改前往</Button></div>,
       okText: '保存后前往',
       cancelText: '取消',
@@ -181,8 +181,7 @@ const BusinessObjectTypeEditor = ({ id, initialKey, initialTab, initialRelationI
   const runLifecycle = (action: 'enable' | 'disable' | 'delete') => {
     const deleting = action === 'delete';
     modal.confirm({
-      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
-      title: deleting ? `删除对象类型“${objectType.name}”？` : `${action === 'enable' ? '启用' : '停用'}对象类型“${objectType.name}”？`,
+      rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title={deleting ? `删除对象类型“${objectType.name}”？` : `${action === 'enable' ? '启用' : '停用'}对象类型“${objectType.name}”？`} tone={deleting ? 'danger' : 'default'} />, icon: null,
       content: deleting ? '只删除当前定义和引用投影，不删除来源业务数据。' : action === 'disable' ? '停用后不能预览，也不能被新的关系引用。' : '启用后可以预览，并可被新的关系引用。',
       okText: deleting ? '删除' : action === 'enable' ? '启用' : '停用',
       okButtonProps: deleting ? { danger: true } : undefined,

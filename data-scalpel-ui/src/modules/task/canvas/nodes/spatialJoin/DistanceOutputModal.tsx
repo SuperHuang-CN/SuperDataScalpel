@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import type { SpatialJoinDistanceOutput } from '../../canvasTypes';
 import { spatialDistanceUnitOptions, spatialUnitHelp } from '../spatialUnits';
 import { createSpatialJoinDistanceOutput } from './spatialNear';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 interface Props {
   open: boolean;
@@ -64,7 +65,7 @@ export const DistanceOutputModal = ({
     <Modal
       open={open}
       width={680}
-      title="距离输出"
+      title={<OverlayTitle variant="workspace" title="距离输出" />}
       onCancel={onCancel}
       footer={[
         value ? <Button key="remove" danger onClick={onRemove}>清除配置</Button> : null,

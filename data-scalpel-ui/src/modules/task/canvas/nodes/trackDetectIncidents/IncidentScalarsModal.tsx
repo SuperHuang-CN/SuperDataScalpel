@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ArrowDownOutlined, ArrowUpOutlined, DeleteOutlined, PlusOutlined } from '@ant-design/icons';
 import { Button, Input, InputNumber, Modal, Select, Space, Table, Tooltip, Typography } from 'antd';
@@ -33,12 +34,12 @@ export function IncidentScalarsModal({ value, columns, windows, pointGeometryCol
     return next;
   });
   const remove = (index: number) => Modal.confirm({
-    title: `删除轨迹标量 ${rows[index].value.bindingName || index + 1}？`,
+    title: <OverlayTitle variant="workspace" title={`删除轨迹标量 ${rows[index].value.bindingName || index + 1}？`} tone="danger" />,
     content: '引用它的开始或结束条件会保留，之后需要手动修正。',
     okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
     onOk: () => setRows(current => current.filter((_, i) => i !== index)),
   });
-  return <Modal open width={680} title="配置轨迹条件标量" okText="保存标量草稿" cancelText="取消"
+  return <Modal open width={680} title={<OverlayTitle variant="workspace" title="配置轨迹条件标量" />} okText="保存标量草稿" cancelText="取消"
     onOk={() => onSave(rows.map(row => row.value))} onCancel={onCancel}>
     <Space orientation="vertical" size={8} style={{ width: '100%' }}>
       <Space size={6}><Typography.Text>按当前轨迹片段逐观测计算</Typography.Text>

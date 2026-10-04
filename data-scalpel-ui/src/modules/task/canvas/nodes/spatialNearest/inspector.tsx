@@ -35,6 +35,7 @@ import { createNearestMatching, usesExactNearest } from './matching';
 import { ConnectionLinesModal } from './ConnectionLinesModal';
 
 import { spatialDistanceUnitOptions as unitOptions, spatialUnitHelp } from '../spatialUnits';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const fingerprint = (value: SpatialNearestConfiguration) => JSON.stringify(value);
 
@@ -152,7 +153,7 @@ const SpatialNearestInspector = ({
         </span>}>
           <Select aria-label="匹配策略" value={exact ? 'EXACT_DISTANCE' : 'LEGACY_KNN'}
             options={[{ value: 'EXACT_DISTANCE', label: '真实距离 · 稳定同距排序' }, { value: 'LEGACY_KNN', label: '旧版 KNN' }]}
-            onChange={semantics => Modal.confirm({ title: '切换最近邻匹配策略？',
+            onChange={semantics => Modal.confirm({ title: <OverlayTitle variant="workspace" title={'切换最近邻匹配策略？'} />,
               content: '真实距离策略要求两侧 ID 非空且唯一，并按测地 Geometry 范围使用真实最近位置。旧版保留原 KNN / 质心行为且忽略连接线配置。已有字段和连接线草稿不会清除，请检查下游结果。',
               okText: '确认切换', cancelText: '取消', onOk: () => {
                 form.setFieldValue('matching', { ...(form.getFieldValue('matching') ?? createNearestMatching()), semantics });
@@ -320,7 +321,7 @@ const SpatialNearestInspector = ({
         <Modal
           open={projectionOpen}
           width={860}
-          title="设置最近邻输出字段"
+          title={<OverlayTitle variant="workspace" title="设置最近邻输出字段" />}
           okText="完成"
           cancelText="关闭"
           onOk={() => setProjectionOpen(false)}

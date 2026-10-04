@@ -12,6 +12,7 @@ import type { TableProps } from 'antd';
 import { Button, Popconfirm, Space, Table, Tag, Tooltip, Typography, message } from 'antd';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   useCreateTaskSchedule,
   useDeleteTaskSchedule,
@@ -138,7 +139,7 @@ export const TaskSchedulesPanel = ({ task, canUpdate, canPublish, canDelete }: T
             )}
             {canDelete && (
               <Popconfirm
-                title={`删除计划“${schedule.name}”？`}
+                title={<OverlayTitle variant="popover" title={`删除计划“${schedule.name}”？`} tone="danger" />}
                 description="删除后 Quartz 中对应的触发器也会被清理。"
                 okText="删除"
                 cancelText="取消"

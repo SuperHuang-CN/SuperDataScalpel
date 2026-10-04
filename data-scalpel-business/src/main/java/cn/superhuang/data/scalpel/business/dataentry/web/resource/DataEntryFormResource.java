@@ -104,12 +104,12 @@ public class DataEntryFormResource {
         return formService.search(status, keyword, page, size);
     }
 
-    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询尚未建立填报表单的模型",
+    @SystemMcpOperation(value = SystemMcpOperation.Effect.READ, summary = "查询已发布且尚未建立填报表单的模型",
             keywords = {"数据填报", "候选模型", "创建表单"},
             relatedOperations = {"POST /api/v1/data-entry-forms"})
     @GetMapping("/model-candidates")
     @PreAuthorize("hasAuthority('dataentry.manage')")
-    @Operation(summary = "查询尚未建立填报表单的模型", description = "返回当前尚未绑定表单的模型候选及基础状态。创建时仍会重新校验模型存在且未被其他表单绑定。")
+    @Operation(summary = "查询已发布且尚未建立填报表单的模型", description = "返回当前已发布且尚未绑定表单的模型候选、数据存储和数仓分层展示信息及基础适用性状态；先按状态和关键词筛选，再取前 100 项。创建时仍会重新校验模型存在且未被其他表单绑定。")
     public List<DataEntryModelCandidateResponse> candidates(@Parameter(description = "可选关键词，用于名称或编码的模糊匹配。") @RequestParam(required = false) String keyword) {
         return formService.candidates(keyword);
     }
@@ -238,7 +238,7 @@ public class DataEntryFormResource {
             keywords = {"数据填报", "字段选项", "码表", "关联模型", "历史值"})
     @PostMapping("/{id}/fields/{fieldId}/actions/query-options")
     @PreAuthorize("hasAuthority('dataentry.view')")
-    @Operation(summary = "搜索字段下拉选项或反查已有值", description = "对码表或关联模型字段分页搜索可选值，也可一次反查最多 100 个已有标量值。返回 ACTIVE、DISABLED、MISSING 或 SOURCE_UNAVAILABLE，不改变配置或数据。")
+    @Operation(summary = "搜索字段下拉选项或反查已有值", description = "对码表或关联模型字段分页搜索可选值，也可一次反查最多 100 个已有标量值。关联模型的标签为 null 或空白时仅显示业务主键。返回 ACTIVE、DISABLED、MISSING 或 SOURCE_UNAVAILABLE，不改变配置或数据。")
     public DataEntryOptionResponse queryOptions(
             @Parameter(description = "填报表单 UUID。") @PathVariable UUID id,
             @Parameter(description = "目标模型字段 UUID；该字段必须绑定码表或关联模型下拉。") @PathVariable UUID fieldId,

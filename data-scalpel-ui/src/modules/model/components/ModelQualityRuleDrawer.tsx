@@ -1,4 +1,5 @@
 import { DashboardOutlined, DeleteOutlined, ExperimentOutlined, PlusOutlined, SafetyCertificateOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Badge, Button, Col, Drawer, Form, Input, InputNumber, Radio, Row, Select, Space, Switch, Tag, Typography } from 'antd';
 import { useEffect, useMemo, useState } from 'react';
 import { ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
@@ -412,15 +413,7 @@ export const ModelQualityRuleDrawer = ({
     <Drawer
       rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-detail-overlay model-quality-overlay"
       className="data-model-drawer model-quality-rule-drawer"
-      title={(
-        <div className="data-model-drawer-title">
-          <span className="data-model-drawer-title-icon" aria-hidden="true"><SafetyCertificateOutlined /></span>
-          <span className="data-model-drawer-title-copy">
-            <span>{rule ? '修改质量规则' : '新增质量规则'}</span>
-            <Typography.Text type="secondary">定义检查条件、异常级别与可接受的容忍阈值</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle title={rule ? '修改质量规则' : '新增质量规则'} icon={<SafetyCertificateOutlined />} description="定义检查条件、异常级别与可接受的容忍阈值" />}
       extra={<Tag className="data-model-drawer-header-tag">{modelQualityRuleTypeLabels[type]}</Tag>}
       size="min(860px, 100vw)"
       open={open}

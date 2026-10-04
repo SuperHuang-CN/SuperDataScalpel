@@ -1,4 +1,5 @@
-import { AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, FolderOpenOutlined, FolderOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined, RightOutlined } from '@ant-design/icons';
+import { AppstoreOutlined, DeleteOutlined, DownOutlined, EditOutlined, EllipsisOutlined, ExportOutlined, FolderAddOutlined, ImportOutlined, InboxOutlined, MenuFoldOutlined, MenuUnfoldOutlined, MoreOutlined, PlusOutlined, RightOutlined, FolderOpenOutlined, FolderOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Dropdown, Modal, Segmented, Spin, Tooltip, Tree, message } from 'antd';
 import type { DataNode } from 'antd/es/tree';
 import { useRef, useState, type KeyboardEvent, type PointerEvent, type ReactNode } from 'react';
@@ -139,8 +140,9 @@ export const DirectoryTreePanel = ({
       rootClassName: `business-overlay business-modal-overlay${resourceStyle ? ' workspace-resource-overlay resource-delete-modal' : ''}`,
       width: resourceStyle ? 440 : undefined,
       centered: resourceStyle,
-      ...(resourceStyle ? { icon: null, focusable: { autoFocusButton: 'cancel' as const } } : {}),
-      title: resourceStyle ? <div className="resource-dialog-title"><DeleteOutlined aria-hidden="true" /><span>删除{label}</span></div> : `删除${label}`,
+      ...(resourceStyle ? { focusable: { autoFocusButton: 'cancel' as const } } : {}),
+      icon: null,
+      title: <OverlayTitle title={`删除${label}`} icon={<DeleteOutlined />} tone="danger" />,
       content: resourceStyle ? (
         <div className="resource-delete-content">
           <p>确定删除以下{label}？</p>

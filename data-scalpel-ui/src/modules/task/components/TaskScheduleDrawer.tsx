@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CalendarOutlined, ClockCircleOutlined, ControlOutlined } from '@ant-design/icons';
 import { AutoComplete, Badge, Button, Col, Drawer, Form, Input, Row, Select, Space, Tag, Typography } from 'antd';
 import { useEffect } from 'react';
@@ -71,18 +72,10 @@ export const TaskScheduleDrawer = ({
   };
 
   return (
-    <Drawer
+    <Drawer closable={{ placement: 'end' }}
       rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className="data-model-drawer task-schedule-drawer"
-      title={(
-        <div className="data-model-drawer-title">
-          <span className="data-model-drawer-title-icon" aria-hidden="true"><CalendarOutlined /></span>
-          <span className="data-model-drawer-title-copy">
-            <span>{schedule ? '修改定时计划' : '新建定时计划'}</span>
-            <Typography.Text type="secondary">配置触发时间、补偿策略与并发边界</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle icon={<CalendarOutlined />} title={schedule ? '修改定时计划' : '新建定时计划'} description="配置触发时间、补偿策略与并发边界" />}
       extra={<Tag className="data-model-drawer-header-tag">{schedule ? taskScheduleStatusLabels[schedule.status] : '新计划'}</Tag>}
       open={open}
       size={720}

@@ -1,5 +1,7 @@
+import { ExclamationCircleOutlined, FileTextOutlined } from '@ant-design/icons';
 import { SpatialPreviewPanel } from '../../model';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DownloadOutlined,
@@ -141,8 +143,10 @@ export const FileDatasetTableResultPanel = ({
   const rename = () => {
     let name = table.name;
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '修改表名称',
+      title: <OverlayTitle title="修改表名称" icon={<FileTextOutlined />} />,
       content: (
         <Input
           defaultValue={table.name}
@@ -174,8 +178,10 @@ export const FileDatasetTableResultPanel = ({
     const effectiveCrs = geometryField?.platformTypeDefinition.geometry?.crs;
     let epsgCode = table.spatialReferenceOverride?.code ?? effectiveCrs?.code ?? null;
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '确认源数据空间参考',
+      title: <OverlayTitle title="确认源数据空间参考" icon={<FileTextOutlined />} />,
       width: 520,
       content: (
         <Space direction="vertical" size={12} style={{ width: '100%' }}>
@@ -183,7 +189,7 @@ export const FileDatasetTableResultPanel = ({
             type="info"
             showIcon
             message="该操作声明源坐标的 CRS，不会转换坐标值"
-            description="系统会在事务外重新读取所有当前来源，确认 Schema 一致后更新 Geometry 元数据并刷新 Canvas 预检。文件中已经明确声明的 EPSG 不能被覆盖。"
+           description="系统会在事务外重新读取所有当前来源，确认 Schema 一致后更新 Geometry 元数据并刷新 Canvas 预检。文件中已经明确声明的 EPSG 不能被覆盖。"
           />
           <div>
             当前有效 CRS：{effectiveCrs ? `${effectiveCrs.authority}:${effectiveCrs.code}` : '尚未识别'}
@@ -235,8 +241,10 @@ export const FileDatasetTableResultPanel = ({
   };
 
   const replaceAll = (file: File) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '全量覆盖表数据',
+    title: <OverlayTitle title="全量覆盖表数据" icon={<ExclamationCircleOutlined />} tone="danger" />,
     content: `文件“${file.name}”校验成功后将替代当前全部来源，并立即删除旧文件和对象，操作不可恢复。已排队或运行的 Canvas 任务可能因旧对象消失而失败；校验期间当前数据仍可使用。`,
     okText: '确认覆盖',
     cancelText: '取消',
@@ -257,8 +265,10 @@ export const FileDatasetTableResultPanel = ({
   });
 
   const replaceSource = (source: FileDatasetTableSource, file: File) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '替换当前数据来源',
+    title: <OverlayTitle title="替换当前数据来源" icon={<SwapOutlined />} tone="danger" />,
     content: `文件“${file.name}”校验成功后将替换“${source.sourceName}”，并立即删除旧文件和对象。操作不可恢复，已排队或运行的 Canvas 任务可能失败。`,
     okText: '确认替换',
     cancelText: '取消',
@@ -280,8 +290,10 @@ export const FileDatasetTableResultPanel = ({
   });
 
   const deleteSource = (source: FileDatasetTableSource) => modalApi.confirm({
+    icon: null,
+
     rootClassName: 'business-overlay business-modal-overlay',
-    title: '删除当前数据来源',
+    title: <OverlayTitle title="删除当前数据来源" icon={<DeleteOutlined />} tone="danger" />,
     content: `确认删除“${source.sourceName}”吗？对象会立即删除且不可恢复；如果这是最后一个来源，逻辑表也会被删除。已排队或运行的 Canvas 任务可能失败。`,
     okText: '删除',
     cancelText: '取消',
@@ -556,7 +568,7 @@ export const FileDatasetTableResultPanel = ({
           type="info"
           showIcon
           message="已就绪 · 正在追加或覆盖"
-          description="新文件正在后台执行完整 Schema 校验；完成前当前数据、Schema 和预览保持可用。"
+         description="新文件正在后台执行完整 Schema 校验；完成前当前数据、Schema 和预览保持可用。"
         />
       )}
       {table.parseStatus === 'WAITING_CRS' && <Alert type="warning" showIcon message="请先确认空间参考" description="文件已保留。点击上方“确认 CRS”填写 EPSG 编码后继续，无需重新上传。" />}

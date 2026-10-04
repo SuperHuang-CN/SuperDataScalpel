@@ -251,7 +251,7 @@ export const DataModelTasksPanel = ({ modelId }: DataModelTasksPanelProps) => {
           type="error"
           showIcon
           message="关联任务加载失败"
-          description="请稍后重试。"
+         description="请稍后重试。"
           action={<Button size="small" onClick={() => void relatedTasksQuery.refetch()}>重试</Button>}
         />
       )}

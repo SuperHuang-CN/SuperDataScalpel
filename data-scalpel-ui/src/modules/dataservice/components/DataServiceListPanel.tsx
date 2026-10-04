@@ -63,6 +63,7 @@ import { DataServiceSubscriptionsDrawer } from './DataServiceSubscriptionsDrawer
 import { DataServiceTypeIcon } from './DataServiceTypeIcon';
 import { PublishDataServiceModal } from './PublishDataServiceModal';
 import { dataServiceTypeIconTones } from './dataServiceTypeIconTone';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 const DEFAULT_PAGE_SIZE = 20;
 
@@ -350,8 +351,9 @@ export const DataServiceListPanel = ({
     }
   };
   const confirmRemove = (dataService: DataServiceSummary) => modalApi.confirm({
+    icon: null,
     rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-    title: '删除数据服务', content: `确认删除“${dataService.name}”吗？`, okText: '删除', cancelText: '取消',
+    title: <OverlayTitle title="删除数据服务" icon={<DeleteOutlined />} tone="danger" />, content: `确认删除“${dataService.name}”吗？`, okText: '删除', cancelText: '取消',
     okButtonProps: { danger: true }, onOk: () => remove(dataService),
   });
 
@@ -500,7 +502,7 @@ export const DataServiceListPanel = ({
             </Tooltip>
           )}
           {canPublish && dataService.status === 'ENABLED' && (
-            <Tooltip title="停用"><Button type="text" size="small" danger aria-label={`停用${dataService.name}`} icon={<StopOutlined />} loading={disableMutation.isPending && disableMutation.variables === dataService.id} onClick={() => modalApi.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: '停用数据服务？', content: dataService.type === 'SPATIAL_SERVICE' ? `将从 GeoServer 删除“${dataService.name}”对应的 Layer 和 FeatureType，保留共享 DataStore 与 Workspace。` : `将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`, okText: '停用', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => disable(dataService) })} /></Tooltip>
+            <Tooltip title="停用"><Button type="text" size="small" danger aria-label={`停用${dataService.name}`} icon={<StopOutlined />} loading={disableMutation.isPending && disableMutation.variables === dataService.id} onClick={() => modalApi.confirm({ icon: null, rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle title="停用数据服务？" icon={<StopOutlined />} tone="danger" />, content: dataService.type === 'SPATIAL_SERVICE' ? `将从 GeoServer 删除“${dataService.name}”对应的 Layer 和 FeatureType，保留共享 DataStore 与 Workspace。` : `将先从所有网关撤回“${dataService.name}”，再从 Service Engine 移除。`, okText: '停用', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => disable(dataService) })} /></Tooltip>
           )}
           {dataService.type !== 'SPATIAL_SERVICE' && canPublish && dataService.status === 'ENABLED' && dataService.deploymentStatus === 'DEPLOYED' && (
             dataService.gatewayBindings.length > 0 ? (
@@ -512,7 +514,7 @@ export const DataServiceListPanel = ({
                   aria-label={`取消发布${dataService.name}`}
                   icon={<RollbackOutlined />}
                   loading={unpublishMutation.isPending && unpublishMutation.variables === dataService.id}
-                  onClick={() => modalApi.confirm({ rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: '取消发布到网关？', content: `取消后“${dataService.name}”将无法通过网关访问，Service Engine 保持运行。`, okText: '取消发布', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => unpublish(dataService) })}
+                  onClick={() => modalApi.confirm({ icon: null, rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay', title: <OverlayTitle title="取消发布到网关？" icon={<RollbackOutlined />} tone="danger" />, content: `取消后“${dataService.name}”将无法通过网关访问，Service Engine 保持运行。`, okText: '取消发布', cancelText: '返回', okButtonProps: { danger: true }, onOk: () => unpublish(dataService) })}
                 />
               </Tooltip>
             ) : (

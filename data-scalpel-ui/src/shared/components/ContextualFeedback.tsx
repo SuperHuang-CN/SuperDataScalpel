@@ -9,6 +9,7 @@ import type { AlertProps } from 'antd';
 import { Button, Popover, Tooltip } from 'antd';
 import type { CSSProperties, MouseEventHandler, ReactNode } from 'react';
 import { useState } from 'react';
+import { OverlayTitle } from './OverlayTitle';
 
 export type FeedbackTone = 'success' | 'info' | 'warning' | 'error';
 
@@ -62,7 +63,7 @@ export const ContextHelp = ({
   if (presentation === 'popover') {
     return (
       <Popover
-        title={ariaLabel}
+        title={<OverlayTitle variant="popover" title={ariaLabel} />}
         content={<div className="context-help-popover-content">{content}</div>}
         trigger={['hover', 'focus', 'click']}
         placement={placement}
@@ -134,7 +135,7 @@ export const InlineFeedback = ({
 
   return (
     <Popover
-      title={ariaLabel ?? textFromNode(label) ?? '查看详情'}
+      title={<OverlayTitle variant="popover" title={ariaLabel ?? textFromNode(label) ?? '查看详情'} />}
       content={<div className="inline-feedback-popover-content">{detail}</div>}
       trigger={['hover', 'focus', 'click']}
       classNames={{ root: 'inline-feedback-popover' }}

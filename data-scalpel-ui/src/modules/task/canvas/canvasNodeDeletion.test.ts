@@ -1,5 +1,6 @@
 import type { Graph, Node } from '@antv/x6';
 import { Modal } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   confirmCanvasNodeDeletion,
@@ -40,7 +41,10 @@ describe('canvas node deletion', () => {
     confirmCanvasNodeDeletion(graph, [first, second, first]);
 
     expect(Modal.confirm).toHaveBeenCalledWith(expect.objectContaining({
-      title: '删除选中的 2 个节点？',
+      title: expect.objectContaining({
+        type: OverlayTitle,
+        props: expect.objectContaining({ variant: 'workspace', title: '删除选中的 2 个节点？' }),
+      }),
       content: expect.stringContaining('同时会删除 2 条关联连接线'),
       okButtonProps: { danger: true },
     }));
@@ -69,7 +73,10 @@ describe('canvas node deletion', () => {
     unregister();
     requestCanvasNodeDeletion(graph, [target]);
     expect(Modal.confirm).toHaveBeenCalledWith(expect.objectContaining({
-      title: '删除节点“订单输入”？',
+      title: expect.objectContaining({
+        type: OverlayTitle,
+        props: expect.objectContaining({ variant: 'workspace', title: '删除节点“订单输入”？' }),
+      }),
     }));
   });
 });

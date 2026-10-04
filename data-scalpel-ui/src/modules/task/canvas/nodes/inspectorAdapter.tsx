@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../shared/browser/createUuid';
 import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Empty, Input, List, Modal, Popconfirm, Radio, Space, Tag, Tooltip, Typography } from 'antd';
@@ -283,7 +284,7 @@ export const ProcessorTablePickerModal = ({
       open={open}
       width={860}
       className="canvas-processor-table-picker"
-      title="管理处理表"
+      title={<OverlayTitle variant="workspace" title="管理处理表" />}
       onCancel={onCancel}
       destroyOnHidden
       footer={<Space><Button onClick={onCancel}>取消</Button><Button type="primary" onClick={() => onConfirm(draft)}>确定 · {draft.length} 张表</Button></Space>}
@@ -326,7 +327,7 @@ export const ProcessorTablePickerModal = ({
                   <Space size={0}>
                     <Tooltip title="上移"><Button type="text" size="small" disabled={index === 0} icon={<UpOutlined />} onClick={() => move(index, -1)} /></Tooltip>
                     <Tooltip title="下移"><Button type="text" size="small" disabled={index === draft.length - 1} icon={<DownOutlined />} onClick={() => move(index, 1)} /></Tooltip>
-                    {operationHasConfiguredRules(type, operation) ? <Popconfirm title="移除这张处理表？" description="该表的处理规则也会一并删除。" okText="移除" cancelText="保留" okButtonProps={{ danger: true }} onConfirm={() => remove(operation.operationId)}><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`移除 ${operation.sourceTableName}`} /></Popconfirm> : <Tooltip title="移除"><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`移除 ${operation.sourceTableName}`} onClick={() => remove(operation.operationId)} /></Tooltip>}
+                    {operationHasConfiguredRules(type, operation) ? <Popconfirm title={<OverlayTitle variant="popover" title="移除这张处理表？" />} description="该表的处理规则也会一并删除。" okText="移除" cancelText="保留" okButtonProps={{ danger: true }} onConfirm={() => remove(operation.operationId)}><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`移除 ${operation.sourceTableName}`} /></Popconfirm> : <Tooltip title="移除"><Button type="text" size="small" danger icon={<DeleteOutlined />} aria-label={`移除 ${operation.sourceTableName}`} onClick={() => remove(operation.operationId)} /></Tooltip>}
                   </Space>
                 </List.Item>
               );
@@ -600,7 +601,7 @@ const MultiTableProcessorInspector = <T extends CanvasNodeType>({
         open={Boolean(editorDraft)}
         width={processorModalWidth(type)}
         className={`canvas-processor-operation-modal is-${typeClass}${splitProcessorTypes.has(type) ? ' is-split' : ' is-single'}`}
-        title={editorDraft ? `配置处理表 · ${editorDraft.sourceTableName}` : '配置处理表'}
+        title={<OverlayTitle variant="workspace" title={editorDraft ? `配置处理表 · ${editorDraft.sourceTableName}` : '配置处理表'} />}
         styles={{ body: { overflow: 'hidden' } }}
         destroyOnHidden
         onCancel={closeEditor}

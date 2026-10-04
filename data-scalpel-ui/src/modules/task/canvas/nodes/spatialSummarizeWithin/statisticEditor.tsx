@@ -1,6 +1,7 @@
 import { DeleteOutlined, DownOutlined, UpOutlined, WarningOutlined } from '@ant-design/icons';
 import { Button, Input, Popconfirm, Select, Space, Table, Tooltip } from 'antd';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import type { CanvasColumnSchema, SpatialWithinStatistic } from '../../canvasTypes';
 import { spatialColumnOptions } from '../spatialInspectorOptions';
 import { supportsWithinWeighting, withinStatisticNeedsSource, withinStatisticProblems, withinWeightedDispersionHelp } from './statisticOptions';
@@ -86,7 +87,7 @@ export const WithinStatisticEditor = ({ value, columns, lineOrPolygon, onChange 
           <Tooltip title="下移"><Button type="text" size="small" icon={<DownOutlined />}
             aria-label={`下移统计 ${index + 1}`} disabled={index === value.length - 1}
             onClick={() => move(index, index + 1)} /></Tooltip>
-          <Popconfirm title={`删除统计 ${item.outputColumnName || index + 1}？`} description="该项字段与统计配置将一并删除。"
+          <Popconfirm title={<OverlayTitle variant="popover" title={`删除统计 ${item.outputColumnName || index + 1}？`} />} description="该项字段与统计配置将一并删除。"
             onConfirm={() => onChange(value.filter((_, i) => i !== index))}>
             <Button type="text" danger size="small" icon={<DeleteOutlined />} aria-label={`删除统计 ${index + 1}`} />
           </Popconfirm>

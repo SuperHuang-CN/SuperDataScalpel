@@ -36,6 +36,7 @@ import type {
   CanvasNodeInspectorHandle,
 } from '../nodeSpec';
 import { spatialColumnOptions, spatialTableOptions } from '../spatialInspectorOptions';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const numericTypes = new Set(['BYTE', 'SHORT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL']);
 const emptyFilter = (): CanvasFilterCondition => ({ kind: 'GROUP', operator: 'AND', children: [] });
@@ -323,7 +324,7 @@ const SpatialSimilarLocationsInspector = ({
       </Form.Item>
 
       <Modal open={filterSide != null && currentFilter != null} width={760}
-        title={`设置${filterSide === 'reference' ? '参考' : '候选'}位置筛选`}
+        title={<OverlayTitle variant="workspace" title={`设置${filterSide === 'reference' ? '参考' : '候选'}位置筛选`} />}
         okText="完成" cancelText="关闭"
         onOk={() => setFilterSide(null)} onCancel={() => setFilterSide(null)}>
         {filterSide && currentFilter && <FilterConditionTreeEditor
@@ -334,7 +335,7 @@ const SpatialSimilarLocationsInspector = ({
           }} />}
       </Modal>
 
-      <Modal open={resultFieldsOpen} width={680} title="设置结果字段"
+      <Modal open={resultFieldsOpen} width={680} title={<OverlayTitle variant="workspace" title="设置结果字段" />}
         okText="完成" cancelText="关闭"
         onOk={() => setResultFieldsOpen(false)} onCancel={() => setResultFieldsOpen(false)}>
         <Typography.Paragraph type="secondary">

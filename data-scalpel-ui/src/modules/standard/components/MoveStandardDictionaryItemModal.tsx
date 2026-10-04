@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { NodeIndexOutlined, SwapOutlined } from '@ant-design/icons';
 import { Button, Form, InputNumber, Modal, Space, Tag, TreeSelect, Typography, message } from 'antd';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -107,15 +108,7 @@ export const MoveStandardDictionaryItemModal = ({
       {contextHolder}
       <Modal
         rootClassName="business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay standard-dictionary-move-modal"
-        title={(
-          <div className="standard-dictionary-move-title">
-            <span className="standard-dictionary-move-title-icon" aria-hidden="true"><SwapOutlined /></span>
-            <span className="standard-dictionary-move-title-copy">
-              <span>调整码表节点位置</span>
-              <Typography.Text type="secondary">选择新的父节点和同级排序位置</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<SwapOutlined />} title="调整码表节点位置" description="选择新的父节点和同级排序位置" />}
         open={open}
         destroyOnHidden
         closable={!mutation.isPending}

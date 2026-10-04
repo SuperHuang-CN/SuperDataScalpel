@@ -1,5 +1,6 @@
-import { ThunderboltOutlined } from '@ant-design/icons';
+import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Empty, Modal, Space, Table, Typography } from 'antd';
 import { useState } from 'react';
 import {
@@ -34,7 +35,7 @@ export const ModelQualityRuleSuggestionsModal = ({
   return (
     <Modal
       rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay model-quality-overlay"
-      title={<Space size={10}><ThunderboltOutlined /><span>模型质量规则建议</span></Space>}
+      title={<OverlayTitle title="模型质量规则建议" icon={<SafetyCertificateOutlined />} />}
       width={820}
       open={open}
       afterClose={() => setSelectedKeys(null)}

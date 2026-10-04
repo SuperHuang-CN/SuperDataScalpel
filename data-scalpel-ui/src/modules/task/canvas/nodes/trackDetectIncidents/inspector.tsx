@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { ContextHelp, InlineFeedback } from '../../../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, EditOutlined, SettingOutlined } from '@ant-design/icons';
 import { Button, Form, Input, Modal, Segmented, Select, Space, Tag, Typography } from 'antd';
@@ -166,7 +167,7 @@ const TrackDetectIncidentsInspector = ({
           { value: 'CONDITION_LIFECYCLE', label: '条件生命周期' },
           { value: 'LEGACY', label: '旧版行为（兼容）' },
         ]} onChange={(value) => Modal.confirm({
-          title: '切换事件语义？', content: '这会改变事件成员、结束边界和持续时间的计算。已有条件和字段配置会保留。',
+          title: <OverlayTitle variant="workspace" title="切换事件语义？" />, content: '这会改变事件成员、结束边界和持续时间的计算。已有条件和字段配置会保留。',
           okText: '确认切换', cancelText: '取消', onOk: () => {
             form.setFieldsValue({ incidentSemantics: value,
               incidentStatusColumnName: form.getFieldValue('incidentStatusColumnName') || 'incident_status' });
@@ -188,7 +189,7 @@ const TrackDetectIncidentsInspector = ({
           <Tag>{boundaryCount === 0 ? '不限' : `${boundaryCount} 项`}</Tag></Space>
         <Button size="small" aria-label="设置轨迹边界" icon={<SettingOutlined />} onClick={() => setBoundariesOpen(true)}>设置</Button>
       </div>
-      <Modal open={boundariesOpen} width={680} title="设置事件检测轨迹边界" okText="完成"
+      <Modal open={boundariesOpen} width={680} title={<OverlayTitle variant="workspace" title="设置事件检测轨迹边界" />} okText="完成"
         cancelText="关闭" onOk={() => setBoundariesOpen(false)} onCancel={() => setBoundariesOpen(false)}>
         <TrackBoundaryEditor value={boundaries} onChange={(value) => updateField('boundaries', value)} />
       </Modal>
@@ -224,7 +225,7 @@ const TrackDetectIncidentsInspector = ({
           setStartDraft(structuredClone(startCondition)); setStartOpen(true);
         }}>编辑</Button>
       </div>
-      <Modal open={startOpen} width={860} title="编辑事件开始条件" okText="保存条件草稿" cancelText="取消"
+      <Modal open={startOpen} width={860} title={<OverlayTitle variant="workspace" title="编辑事件开始条件" />} okText="保存条件草稿" cancelText="取消"
         onOk={() => { updateField('startCondition', startDraft); setStartOpen(false); }} onCancel={() => setStartOpen(false)}>
         <FilterConditionTreeEditor condition={startDraft} columns={conditionColumns} onChange={setStartDraft} />
       </Modal>
@@ -243,7 +244,7 @@ const TrackDetectIncidentsInspector = ({
           }}>{endCondition ? '编辑' : '配置'}</Button>
         </Space>
       </div>
-      <Modal open={endOpen} width={860} title="编辑事件结束条件" okText="保存条件草稿" cancelText="取消"
+      <Modal open={endOpen} width={860} title={<OverlayTitle variant="workspace" title="编辑事件结束条件" />} okText="保存条件草稿" cancelText="取消"
         onOk={() => { updateField('endCondition', endDraft); setEndOpen(false); }} onCancel={() => setEndOpen(false)}>
         <FilterConditionTreeEditor condition={endDraft} columns={conditionColumns} onChange={setEndDraft} />
       </Modal>
@@ -256,7 +257,7 @@ const TrackDetectIncidentsInspector = ({
         <Space size={6}><Typography.Text strong>事件结果字段</Typography.Text><Tag>{lifecycle ? 6 : 5} 个</Tag></Space>
         <Button size="small" aria-label="设置事件结果字段" icon={<SettingOutlined />} onClick={() => setFieldsOpen(true)}>设置</Button>
       </div>
-      <Modal open={fieldsOpen} width={680} title="设置事件结果字段" okText="完成" cancelText="关闭"
+      <Modal open={fieldsOpen} width={680} title={<OverlayTitle variant="workspace" title="设置事件结果字段" />} okText="完成" cancelText="关闭"
         onOk={() => setFieldsOpen(false)} onCancel={() => setFieldsOpen(false)}>
         <div className="canvas-spatial-pair-grid">
           <Form.Item name="incidentIdColumnName" label="事件 ID" rules={[{ required: true, whitespace: true }]}><Input /></Form.Item>

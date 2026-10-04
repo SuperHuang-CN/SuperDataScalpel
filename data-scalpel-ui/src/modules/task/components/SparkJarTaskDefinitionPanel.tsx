@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { SparkJarResourceDrawer, type SparkJarResourceSelection } from './SparkJarResourceDrawer';
 import { replaceSparkJarResource } from '../model/sparkJarResourceConfiguration';
 import { taskPageHref } from '../model/taskViews';
@@ -761,7 +762,7 @@ export const SparkJarTaskDefinitionPanel = ({
     const dropsTables = oldTables.length > 1 && (previous?.resourceId !== selection.binding.resourceId
       || previous.resourceType !== selection.binding.resourceType || !readableBinding(selection.binding));
     if (dropsTables) {
-      Modal.confirm({ title: '更新资源并清除原表选择？',
+      Modal.confirm({ rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="更新资源并清除原表选择？" />, icon: null,
         content: `原绑定包含 ${oldTables.length} 张 JDBC 表。更换资源或移除读取用途后，这些本地开发表选择将被清除；不会删除数据库中的表。`,
         okText: '确认更新', cancelText: '继续编辑', onOk: () => commitResourceSelection(selection) });
     } else commitResourceSelection(selection);
@@ -872,7 +873,7 @@ export const SparkJarTaskDefinitionPanel = ({
         <Space wrap>
           {authoringMode && <Tag color="geekblue">{authoringMode === 'ONLINE' ? '在线开发' : '上传 JAR'}</Tag>}
           {authoringMode && <Button type="text" disabled={updateMutation.isPending || uploadMutation.isPending} onClick={() => Modal.confirm({
-            title: '更换开发方式？', content: '保留在线源码和当前生效 JAR；只有明确应用代码或上传替换才改变 JAR。',
+            rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<ExclamationCircleOutlined />} title="更换开发方式？" />, icon: null, content: '保留在线源码和当前生效 JAR；只有明确应用代码或上传替换才改变 JAR。',
             okText: authoringMode === 'ONLINE' ? '改为上传 JAR' : '改为在线开发', cancelText: '取消',
             onOk: () => { form.setFieldValue('authoringMode', authoringMode === 'ONLINE' ? 'UPLOAD' : 'ONLINE'); setUploadFiles([]); setDirty(true); },
           })}>更换开发方式</Button>}
@@ -929,7 +930,7 @@ export const SparkJarTaskDefinitionPanel = ({
                 { title: '操作', width: 112, render: (_, binding, index) => <Space size={0}>
                   <Button type="link" disabled={configurationSaving || !kitQuery.isSuccess} onClick={() => setResourceEditorIndex(index)}>编辑</Button>
                   <Button type="text" disabled={configurationSaving || !kitQuery.isSuccess} danger icon={<DeleteOutlined />} aria-label={`移除资源 ${binding.bindingName}`} onClick={() => Modal.confirm({
-                    title: `移除资源“${binding.bindingName}”？`, content: '不会删除数据，已有源码中的引用需要自行修改。', okText: '移除', cancelText: '取消', okButtonProps: { danger: true },
+                    rootClassName: 'business-overlay business-modal-overlay', title: <OverlayTitle icon={<DeleteOutlined />} title={`移除资源“${binding.bindingName}”？`} tone="danger" />, icon: null, content: '不会删除数据，已有源码中的引用需要自行修改。', okText: '移除', cancelText: '取消', okButtonProps: { danger: true },
                     onOk: () => { removeDevelopmentConfiguration(binding.bindingName); form.setFieldValue('resourceBindings', resourceBindings.filter((_, i) => i !== index)); setDirty(true); },
                   })} />
                 </Space> },
@@ -1043,7 +1044,7 @@ export const SparkJarTaskDefinitionPanel = ({
       <Modal
         rootClassName="business-overlay business-modal-overlay resource-workspace-overlay"
         open={blocker.state === 'blocked'}
-        title="存在未保存的 Spark JAR 配置"
+        title={<OverlayTitle icon={<ExclamationCircleOutlined />} title="存在未保存的 Spark JAR 配置" />}
         okText="放弃修改并离开"
         okButtonProps={{ danger: true }}
         cancelText="继续编辑"

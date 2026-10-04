@@ -1,4 +1,6 @@
+import { DeleteOutlined, TableOutlined, WarningOutlined } from '@ant-design/icons';
 import { Button, Modal, Space, Table, Typography, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useState } from 'react';
 import { ApiError } from '../../../shared/api/http';
 import { downloadBlob } from '../../../shared/browser/downloadBlob';
@@ -52,8 +54,10 @@ export const useDataModelListActions = (list: DataModelListState) => {
     if (publishingModelIds.has(model.id)) return;
     if (model.status !== 'PUBLISHED') {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '发布模型',
+        title: <OverlayTitle title="发布模型" icon={<TableOutlined />} />,
         content: <DataModelPublishConfirmationContent model={model} />,
         okText: '发布',
         cancelText: '取消',
@@ -126,7 +130,8 @@ export const useDataModelListActions = (list: DataModelListState) => {
       }));
       const resultModal = {
         rootClassName: 'business-overlay business-modal-overlay',
-        title: allFailed ? '批量发布失败' : '批量发布部分成功',
+        title: <OverlayTitle title={allFailed ? '批量发布失败' : '批量发布部分成功'} icon={<WarningOutlined />} tone={allFailed ? 'danger' : undefined} />,
+        icon: null,
         width: 760,
         okText: '关闭',
         content: (
@@ -170,8 +175,10 @@ export const useDataModelListActions = (list: DataModelListState) => {
     const models = [...list.publishableSelectedModels];
     const skippedModels = [...list.publishedSelectedModels];
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay',
-      title: '批量发布模型',
+      title: <OverlayTitle title="批量发布模型" icon={<TableOutlined />} />,
       width: 620,
       okText: `发布 ${models.length} 个模型`,
       cancelText: '取消',
@@ -180,7 +187,7 @@ export const useDataModelListActions = (list: DataModelListState) => {
           type="warning"
           showIcon
           message={`将发布 ${models.length} 个模型${skippedModels.length ? `，跳过已发布模型 ${skippedModels.length} 个` : ''}`}
-          description="发布会实时检查物理表；缺失的受管物理表将自动创建，外部表只校验、不创建。各模型独立执行，允许部分成功。"
+         description="发布会实时检查物理表；缺失的受管物理表将自动创建，外部表只校验、不创建。各模型独立执行，允许部分成功。"
         />
       ),
       onOk: () => batchPublish(models, skippedModels),
@@ -296,7 +303,7 @@ export const useDataModelListActions = (list: DataModelListState) => {
     <Modal
       rootClassName="business-overlay business-modal-overlay"
       open={Boolean(referenceModel)}
-      title={referenceModel ? `删除模型：${referenceModel.name}` : '删除模型'}
+      title={<OverlayTitle title={referenceModel ? `删除模型：${referenceModel.name}` : '删除模型'} icon={<DeleteOutlined />} tone="danger" />}
       width={760}
       okText="确认删除"
       okButtonProps={{
@@ -315,7 +322,7 @@ export const useDataModelListActions = (list: DataModelListState) => {
           type="warning"
           showIcon
           message={`确认删除“${referenceModel.name}”吗？`}
-          description="只删除模型元数据，不操作物理表。"
+         description="只删除模型元数据，不操作物理表。"
         />
       )}
       {referencesQuery.isPending && <Typography.Text>正在检查模型引用…</Typography.Text>}
@@ -324,7 +331,7 @@ export const useDataModelListActions = (list: DataModelListState) => {
           type="error"
           showIcon
           message="模型引用检查失败"
-          description={referencesQuery.error instanceof ApiError
+         description={referencesQuery.error instanceof ApiError
             ? referencesQuery.error.message
             : '请稍后重试。'}
           action={<Button size="small" onClick={() => void referencesQuery.refetch()}>重试</Button>}

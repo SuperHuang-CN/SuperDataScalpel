@@ -42,6 +42,7 @@ import {
 } from '../model/apiConsumerAccess';
 import { publishedGatewayBinding } from '../model/dataServiceGateway';
 import { GatewayReconciliationTag } from './GatewayReconciliationTag';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface ApiConsumerAccessDrawerProps {
   open: boolean;
@@ -297,8 +298,9 @@ export const ApiConsumerAccessDrawer = ({
       if (key === 'validity') setValidityTarget({ kind: 'keys', id: credential.id, name: credential.name });
       if (key === 'rotate') {
         modalApi.confirm({
+          icon: null,
           rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-          title: `轮换 API Key“${credential.name}”？`,
+          title: <OverlayTitle title={`轮换 API Key“${credential.name}”？`} icon={<KeyOutlined />} />,
           content: '旧密钥会立即失效，请先确认调用方可以同步更新。新密钥同样只显示一次。',
           okText: '轮换',
           cancelText: '取消',
@@ -307,8 +309,9 @@ export const ApiConsumerAccessDrawer = ({
       }
       if (key === 'delete') {
         modalApi.confirm({
+          icon: null,
           rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-          title: `删除 API Key“${credential.name}”？`,
+          title: <OverlayTitle title={`删除 API Key“${credential.name}”？`} icon={<DeleteOutlined />} tone="danger" />,
           content: '删除后使用该密钥的调用方将立即无法通过身份识别。',
           okText: '删除',
           okButtonProps: { danger: true },
@@ -335,8 +338,9 @@ export const ApiConsumerAccessDrawer = ({
       if (key === 'sync') void syncSubscription(subscription);
       if (key === 'revoke') {
         modalApi.confirm({
+          icon: null,
           rootClassName: 'business-overlay business-modal-overlay resource-workspace-overlay',
-          title: `撤回服务订阅“${subscription.dataServiceName}”？`,
+          title: <OverlayTitle title={`撤回服务订阅“${subscription.dataServiceName}”？`} icon={<DeleteOutlined />} tone="danger" />,
           content: `确认撤回当前消费者对“${subscription.dataServiceName}”的调用权限吗？`,
           okText: '撤回',
           okButtonProps: { danger: true },
@@ -480,19 +484,11 @@ export const ApiConsumerAccessDrawer = ({
     <>
       {messageContext}{modalContext}
       {validityTarget && <GatewayValidityDrawer target={validityTarget} onClose={() => setValidityTarget(null)} />}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="api-consumer-access-drawer"
-        title={(
-          <div className="api-consumer-access-title">
-            <span className="api-consumer-access-title-icon" aria-hidden="true"><UsergroupAddOutlined /></span>
-            <span className="api-consumer-access-title-copy">
-              <span>消费者访问配置</span>
-              <Typography.Text type="secondary">{consumer?.name ?? 'API 消费者'} · 管理身份密钥与服务订阅关系</Typography.Text>
-            </span>
-          </div>
-        )}
-        extra={<Tag className="api-consumer-access-header-tag">{consumer ? `v${consumer.revision}` : '—'}</Tag>}
+        title={<OverlayTitle title="消费者访问配置" icon={<UsergroupAddOutlined />} description={`${consumer?.name ?? 'API 消费者'} · 管理身份密钥与服务订阅关系`} />}
+        extra={consumer ? <Tag className="api-consumer-access-header-tag">v{consumer.revision}</Tag> : undefined}
         open={open}
         width={860}
         onClose={() => {
@@ -600,15 +596,7 @@ export const ApiConsumerAccessDrawer = ({
 
       <Modal
         rootClassName="business-overlay business-modal-overlay resource-workspace-overlay api-consumer-key-modal"
-        title={(
-          <div className="api-consumer-key-modal-title">
-            <span className="api-consumer-key-modal-title-icon" aria-hidden="true"><KeyOutlined /></span>
-            <span className="api-consumer-key-modal-title-copy">
-              <span>新建 API Key</span>
-              <Typography.Text type="secondary">为当前消费者创建一组新的身份凭据</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title="新建 API Key" icon={<KeyOutlined />} description="为当前消费者创建一组新的身份凭据" />}
         open={createCredentialOpen}
         closable={!createCredentialMutation.isPending}
         maskClosable={!createCredentialMutation.isPending}
@@ -654,15 +642,7 @@ export const ApiConsumerAccessDrawer = ({
 
       <Modal
         rootClassName="business-overlay business-modal-overlay resource-workspace-overlay api-consumer-secret-modal"
-        title={(
-          <div className="api-consumer-key-modal-title">
-            <span className="api-consumer-key-modal-title-icon" aria-hidden="true"><SafetyCertificateOutlined /></span>
-            <span className="api-consumer-key-modal-title-copy">
-              <span>立即保存 API Key</span>
-              <Typography.Text type="secondary">密钥原文不会再次出现在平台界面中</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title="立即保存 API Key" icon={<SafetyCertificateOutlined />} description="密钥原文不会再次出现在平台界面中" />}
         open={Boolean(oneTimeSecret)}
         footer={(
           <div className="api-consumer-secret-footer">

@@ -1,4 +1,5 @@
 import { ApartmentOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Drawer, Form, Input, Space, TreeSelect } from 'antd';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createBusinessObjectType, updateBusinessObjectType } from '../api/businessObjectTypeApi';
@@ -30,9 +31,9 @@ export const BusinessObjectTypeBasicsDrawer = ({
       onSaved(result);
     },
   });
-  return <Drawer
+  return <Drawer closable={{ placement: 'end' }}
     open
-    title={<span className="modeling-dialog-title"><ApartmentOutlined aria-hidden /><span>{objectType ? '修改业务对象类型资料' : '新建业务对象类型'}</span></span>}
+    title={<OverlayTitle icon={<ApartmentOutlined />} title={objectType ? '修改业务对象类型资料' : '新建业务对象类型'} description="维护对象类型的名称、编码与归属" />}
     width={640}
     rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
     onClose={onClose}

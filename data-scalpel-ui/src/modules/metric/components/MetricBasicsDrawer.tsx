@@ -1,5 +1,6 @@
 import { BarChartOutlined } from '@ant-design/icons';
 import { Button, Drawer, Form, Input, Select, Space, TreeSelect, message } from 'antd';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
 import { createMetric, updateMetric } from '../api/metricApi';
 import { directoryTreeSelectData, useDirectoryTree } from '../../directory';
@@ -10,7 +11,7 @@ import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 export const MetricBasicsDrawer = ({ metric, directoryId, onClose, onCreated }: { metric?: Metric; directoryId?: string | null; onClose: () => void; onCreated: (metric: Metric) => void }) => {
  const [form] = Form.useForm<MetricBasics & { code: string }>(); const client = useQueryClient(); const user = useCurrentUser(); const canViewDirectories = user.data?.permissions.includes('directory.view') ?? false; const directories = useDirectoryTree('METRIC', canViewDirectories); const [msg, context] = message.useMessage();
  const mutation = useMutation({ mutationFn: (value: MetricBasics & { code: string }) => metric ? updateMetric(metric.id, value) : createMetric(value), onSuccess: async result => { await invalidateMetrics(client); void msg.success('指标基础资料已保存'); onCreated(result); } });
- return <Drawer open title={<span className="modeling-dialog-title"><BarChartOutlined aria-hidden /><span>{metric ? '修改指标资料' : '新建指标'}</span></span>} width={720} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay" onClose={onClose} footer={<Space className="metric-drawer-actions"><Button onClick={onClose}>取消</Button><Button type="primary" loading={mutation.isPending} onClick={() => form.submit()}>{metric ? '保存' : '创建并配置口径'}</Button></Space>}>
+ return <Drawer open title={<OverlayTitle title={metric ? '修改指标资料' : '新建指标'} icon={<BarChartOutlined />} description="维护指标身份、归属与业务负责人" />} width={720} rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay" onClose={onClose} footer={<Space className="metric-drawer-actions"><Button onClick={onClose}>取消</Button><Button type="primary" loading={mutation.isPending} onClick={() => form.submit()}>{metric ? '保存' : '创建并配置口径'}</Button></Space>} closable={{ placement: 'end' }}>
   {context}<Form name="metric-basics" form={form} layout="vertical" autoComplete="off" initialValues={metric ?? { kind: 'DERIVED', directoryId: directoryId ?? null }} onFinish={value => mutation.mutate(value)}><div className="metric-form-grid">
    <Form.Item label="指标名称" name="name" rules={[{ required: true, whitespace: true, max: 100 }]}><Input maxLength={100} /></Form.Item>
    <Form.Item label="指标编码" name="code" rules={[{ required: true, pattern: /^[a-z][a-z0-9_]{0,63}$/, message: '小写字母开头，仅含小写字母、数字和下划线，最长 64 位' }]}><Input disabled={Boolean(metric)} maxLength={64} /></Form.Item>

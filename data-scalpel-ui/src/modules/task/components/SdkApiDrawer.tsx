@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { ArrowLeftOutlined, ArrowRightOutlined, BookOutlined, ReloadOutlined, SearchOutlined } from '@ant-design/icons';
 import { useQuery } from '@tanstack/react-query';
 import { Button, Collapse, Drawer, Empty, Input, Select, Skeleton, Space, Tag, Typography } from 'antd';
@@ -54,10 +55,10 @@ export function SdkApiDrawer({ mode, onClose }: { mode: 'BATCH' | 'STREAMING'; o
   const parentTypes = activeType?.parents.map(parent => types.find(type => type.name === parent)).filter(type => type !== undefined) ?? [];
   const showDetail = !searching && activeType && (!selected?.memberName || member);
 
-  return <Drawer open placement="right" size={960} onClose={onClose}
+  return <Drawer closable={{ placement: 'end' }} open placement="right" size={960} onClose={onClose}
     rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay sdk-api-drawer"
     styles={{ body: { display: 'flex', flexDirection: 'column', overflow: 'hidden', padding: 0 } }}
-    title={<Space><BookOutlined /><div>SDK 使用指南<Typography.Text type="secondary" className="sdk-api-subtitle">按用途找操作，示例与当前 SDK 同步</Typography.Text></div></Space>}
+    title={<OverlayTitle icon={<BookOutlined />} title="SDK 使用指南" description="按用途找操作，示例与当前 SDK 同步" />}
     extra={<Button icon={<ReloadOutlined />} loading={query.isFetching} onClick={() => void query.refetch()}>刷新</Button>}
     footer={<Space wrap><Typography.Text type="secondary">{query.data ? `SDK ${query.data.version} · ${query.data.fingerprint.slice(0, 8)}` : '当前 TaskEngine 配套 SDK'}</Typography.Text><Tag>{mode === 'BATCH' ? '批处理' : '实时处理'}</Tag></Space>}>
     <div className="sdk-api-filters"><Input autoComplete="off" aria-label="搜索 SDK API" placeholder="想做什么？搜索读取、写入、参数，或方法名" prefix={<SearchOutlined />} allowClear value={search} onChange={event => { setSearch(event.target.value); setSelected(undefined); setGroup(undefined); }} /></div>

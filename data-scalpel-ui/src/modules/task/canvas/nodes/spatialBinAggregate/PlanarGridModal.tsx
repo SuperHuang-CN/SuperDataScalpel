@@ -3,6 +3,7 @@ import { useState } from 'react';
 import type { SpatialPlanarGridOptions } from '../../canvasTypes';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { newPlanarGrid, planarGridHelp, planarGridProblems } from './planarGrid';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 /** Mounted only when opened, so cancel never modifies the owning Inspector form. */
 export function PlanarGridModal({ initialValue, onSave, onCancel }: {
@@ -13,10 +14,10 @@ export function PlanarGridModal({ initialValue, onSave, onCancel }: {
   const [draft, setDraft] = useState<SpatialPlanarGridOptions>(() => structuredClone(initialValue ?? newPlanarGrid()));
   const problems = planarGridProblems(draft);
   const extent = draft.extent;
-  return <Modal open width={680} title={<Space>格网范围与对齐<ContextHelp ariaLabel="格网范围与对齐说明" content={planarGridHelp} /></Space>}
+  return <Modal open width={680} title={<OverlayTitle variant="workspace" title={<span style={{ display: 'inline-flex', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>格网范围与对齐<ContextHelp ariaLabel="格网范围与对齐说明" content={planarGridHelp} /></span>} />}
     okText="保存范围草稿" cancelText="取消" onCancel={onCancel} onOk={() => onSave(draft)}
     footer={(_, { OkBtn, CancelBtn }) => <Space>
-      <Button onClick={() => Modal.confirm({ title: '恢复旧版格网定位？',
+      <Button onClick={() => Modal.confirm({ title: <OverlayTitle variant="workspace" title={'恢复旧版格网定位？'} />,
         content: '将删除原点和范围配置，恢复 (0,0) 与来源范围，格网 ID 会改变。', okText: '恢复旧版',
         onOk: () => onSave(null),
       })}>恢复旧版</Button><CancelBtn /><OkBtn />

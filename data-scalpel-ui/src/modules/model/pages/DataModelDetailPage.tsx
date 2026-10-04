@@ -1,4 +1,6 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { MetricRelationsPanel } from '../../metric';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
   ArrowLeftOutlined,
@@ -175,8 +177,10 @@ export const DataModelDetailPage = () => {
   const transition = (target: DataModel) => {
     if (target.status !== 'PUBLISHED') {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
-        title: '发布模型',
+        title: <OverlayTitle title="发布模型" icon={<TableOutlined />} />,
         content: (
           <DataModelPublishConfirmationContent
             model={target}
@@ -227,8 +231,10 @@ export const DataModelDetailPage = () => {
       return;
     }
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay',
-      title: '放弃未保存的字段修改？',
+      title: <OverlayTitle title="放弃未保存的字段修改？" icon={<ExclamationCircleOutlined />} tone="danger" />,
       content: '刷新模型详情会重新加载最后保存的字段定义，当前修改会丢失。',
       okText: '放弃修改并刷新',
       okButtonProps: { danger: true },
@@ -395,7 +401,7 @@ export const DataModelDetailPage = () => {
       <Modal
         rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay"
         open={referenceModalOpen}
-        title={`删除模型：${model.name}`}
+        title={<OverlayTitle title={`删除模型：${model.name}`} icon={<DeleteOutlined />} tone="danger" />}
         width={760}
         okText={fieldsDirty ? '放弃修改并删除' : '确认删除'}
         okButtonProps={{
@@ -412,7 +418,7 @@ export const DataModelDetailPage = () => {
             type="warning"
             showIcon
             message={fieldsDirty ? '字段定义有未保存修改，删除后将一并丢失' : `确认删除“${model.name}”吗？`}
-            description="只删除模型元数据，不操作物理表。"
+           description="只删除模型元数据，不操作物理表。"
           />
         )}
         {referencesQuery.isPending && <Typography.Text>正在检查模型引用…</Typography.Text>}
@@ -421,7 +427,7 @@ export const DataModelDetailPage = () => {
             type="error"
             showIcon
             message="模型引用检查失败"
-            description={referencesQuery.error instanceof ApiError ? referencesQuery.error.message : '请稍后重试。'}
+           description={referencesQuery.error instanceof ApiError ? referencesQuery.error.message : '请稍后重试。'}
             action={<Button size="small" onClick={() => void referencesQuery.refetch()}>重试</Button>}
           />
         )}
@@ -430,7 +436,7 @@ export const DataModelDetailPage = () => {
       <Modal
         rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-detail-overlay"
         open={blocker.state === 'blocked'}
-        title="离开未保存的字段定义？"
+        title={<OverlayTitle title="离开未保存的字段定义？" icon={<TableOutlined />} />}
         okText="放弃并离开"
         okButtonProps={{ danger: true }}
         cancelText="继续编辑"

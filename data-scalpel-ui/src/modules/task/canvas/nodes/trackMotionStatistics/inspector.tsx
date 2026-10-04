@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../../shared/browser/createUuid';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { DeleteOutlined, DownOutlined, PlusOutlined, SettingOutlined, UpOutlined } from '@ant-design/icons';
@@ -158,7 +159,7 @@ const TrackMotionStatisticsInspector = ({
         { value: 'OBSERVATION_WINDOW', label: '观测历史窗口' }, { value: 'LEGACY_LAG', label: '历史点偏移（旧版）' },
       ]} onChange={(value: 'OBSERVATION_WINDOW' | 'LEGACY_LAG') => {
         if (value === semantics) return;
-        Modal.confirm({ title: '切换运动统计语义？', content: '窗口统计与旧版两点比较不同；旧指标及新窗口配置分别保留，不自动转换。新窗口默认选择距离和速度组。',
+        Modal.confirm({ title: <OverlayTitle variant="workspace" title="切换运动统计语义？" />, content: '窗口统计与旧版两点比较不同；旧指标及新窗口配置分别保留，不自动转换。新窗口默认选择距离和速度组。',
           okText: '确认切换', cancelText: '取消', onOk: () => {
             if (value === 'OBSERVATION_WINDOW' && !form.getFieldValue('windowOptions')) form.setFieldValue('windowOptions', createMotionWindowOptions());
             updateField('motionSemantics', value);
@@ -206,7 +207,7 @@ const TrackMotionStatisticsInspector = ({
           <Tag>{boundaryCount === 0 ? '不限' : `${boundaryCount} 项`}</Tag></Space>
         <Button size="small" icon={<SettingOutlined />} onClick={() => setBoundariesOpen(true)}>设置</Button>
       </div>
-      <Modal open={boundariesOpen} width={680} title="设置运动统计片段边界" okText="完成"
+      <Modal open={boundariesOpen} width={680} title={<OverlayTitle variant="workspace" title="设置运动统计片段边界" />} okText="完成"
         cancelText="关闭" onOk={() => setBoundariesOpen(false)} onCancel={() => setBoundariesOpen(false)}>
         <TrackBoundaryEditor value={boundaries} onChange={(value) => updateField('boundaries', value)} />
       </Modal>
@@ -215,7 +216,7 @@ const TrackMotionStatisticsInspector = ({
         <Space size={6}><Typography.Text strong>输出指标</Typography.Text><Tag>{windowMode ? windowOptions?.statistics.length ?? 0 : metrics.length} 项</Tag></Space>
         <Button aria-label="设置运动指标" size="small" icon={<SettingOutlined />} onClick={() => setMetricsOpen(true)}>设置</Button>
       </div>
-      <Modal open={metricsOpen} width={900} title="设置运动指标" okText="完成" cancelText="关闭"
+      <Modal open={metricsOpen} width={900} title={<OverlayTitle variant="workspace" title="设置运动指标" />} okText="完成" cancelText="关闭"
         onOk={() => setMetricsOpen(false)} onCancel={() => setMetricsOpen(false)}>
         {windowMode ? (windowOptions && <MotionWindowEditor value={windowOptions} columns={columns}
           onChange={value => updateField('windowOptions', value)} />) : <>

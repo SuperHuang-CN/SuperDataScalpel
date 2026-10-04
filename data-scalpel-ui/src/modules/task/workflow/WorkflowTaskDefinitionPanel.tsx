@@ -1,3 +1,5 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../shared/browser/createUuid';
 import { taskPageHref } from '../model/taskViews';
 import { useMutation, useQueries, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -118,7 +120,7 @@ function WorkflowEditor({ task, initial, editable = false, canUpdate, canValidat
         </Form>
       </aside>
     </div>
-    <Modal rootClassName="business-overlay business-modal-overlay resource-workspace-overlay" open={blocker.state === 'blocked'} title="工作流定义尚未保存" okText="放弃修改并离开" cancelText="继续编辑"
+    <Modal open={blocker.state === 'blocked'} rootClassName="business-overlay business-modal-overlay resource-workspace-overlay" title={<OverlayTitle icon={<ExclamationCircleOutlined />} title="工作流定义尚未保存" />} okText="放弃修改并离开" cancelText="继续编辑"
       onOk={() => blocker.state === 'blocked' && blocker.proceed()} onCancel={() => blocker.state === 'blocked' && blocker.reset()}>
       当前修改尚未保存，离开后将丢失这些修改。
     </Modal>

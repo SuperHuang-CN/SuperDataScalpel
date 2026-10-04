@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { SafetyCertificateOutlined, TeamOutlined } from '@ant-design/icons';
 import { Badge, Button, Col, Drawer, Form, Input, Row, Space, Tag, Typography, message } from 'antd';
 import { useEffect } from 'react';
@@ -56,19 +57,11 @@ export const SystemRoleDrawer = ({ open, role, onClose }: SystemRoleDrawerProps)
   return (
     <>
       {messageContext}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer system-role-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><TeamOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{isEditing ? '修改系统角色' : '新建系统角色'}</span>
-              <Typography.Text type="secondary">定义角色身份与职责边界，权限在保存后单独配置</Typography.Text>
-            </span>
-          </div>
-        )}
-        extra={<Tag className="data-model-drawer-header-tag">{role?.builtIn ? '内置角色' : isEditing ? '自定义角色' : '新角色'}</Tag>}
+        title={<OverlayTitle icon={<TeamOutlined />} title={isEditing ? '修改系统角色' : '新建系统角色'} description="定义角色身份与职责边界，权限在保存后单独配置" />}
+        extra={role?.builtIn ? <Tag className="data-model-drawer-header-tag">内置角色</Tag> : undefined}
         open={open}
         size={680}
         onClose={onClose}

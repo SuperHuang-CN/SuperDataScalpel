@@ -21,6 +21,7 @@ import { FilterConditionTreeEditor } from '../../components/processors/FilterPro
 import type { CanvasNodeInspectorComponentProps, CanvasNodeInspectorHandle } from '../nodeSpec';
 import { spatialColumnOptions, spatialTableOptions } from '../spatialInspectorOptions';
 import { spatialDistanceUnitOptions, spatialUnitHelp } from '../spatialUnits';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 
 const numericTypes = new Set(['BYTE', 'SHORT', 'INTEGER', 'LONG', 'FLOAT', 'DOUBLE', 'DECIMAL']);
 const geometryKinds = new Set(['POINT', 'MULTIPOINT', 'LINESTRING', 'MULTILINESTRING', 'POLYGON', 'MULTIPOLYGON']);
@@ -142,7 +143,7 @@ const SpatialMultiVariableGridInspector = ({
     const remove = () => updateVariables(variables.filter((_, itemIndex) => itemIndex !== index));
     if (variable.filter != null || variable.attributeColumnName || variable.statisticColumnName) {
       Modal.confirm({
-        title: `删除变量“${variable.outputColumnName || index + 1}”？`,
+        title: <OverlayTitle variant="workspace" title={`删除变量“${variable.outputColumnName || index + 1}”？`} />,
         content: '该变量的字段、搜索距离和筛选配置会一并删除。',
         okText: '删除', cancelText: '取消', okButtonProps: { danger: true }, onOk: remove,
       });
@@ -232,7 +233,7 @@ const SpatialMultiVariableGridInspector = ({
       </Form.Item>
 
       <Modal open={draft != null} width={720}
-        title={`${editingIndex == null ? '添加' : '配置'}格网变量`}
+        title={<OverlayTitle variant="workspace" title={`${editingIndex == null ? '添加' : '配置'}格网变量`} />}
         okText="保存变量草稿" cancelText="取消" onOk={saveVariable}
         onCancel={() => { setDraft(null); setEditingIndex(null); }}>
         {draft && <Space orientation="vertical" size={12} style={{ width: '100%' }}>
@@ -300,13 +301,13 @@ const SpatialMultiVariableGridInspector = ({
         </Space>}
       </Modal>
 
-      <Modal open={filterOpen && draft?.filter != null} width={760} title="设置当前变量筛选"
+      <Modal open={filterOpen && draft?.filter != null} width={760} title={<OverlayTitle variant="workspace" title="设置当前变量筛选" />}
         okText="完成" cancelText="关闭" onOk={() => setFilterOpen(false)} onCancel={() => setFilterOpen(false)}>
         {draft?.filter && <FilterConditionTreeEditor condition={draft.filter} columns={draftColumns}
           onChange={filter => setDraft({ ...draft, filter })} />}
       </Modal>
 
-      <Modal open={outputFieldsOpen} width={560} title="设置格网基础字段" okText="完成" cancelText="关闭"
+      <Modal open={outputFieldsOpen} width={560} title={<OverlayTitle variant="workspace" title="设置格网基础字段" />} okText="完成" cancelText="关闭"
         onOk={() => setOutputFieldsOpen(false)} onCancel={() => setOutputFieldsOpen(false)}>
         <div className="canvas-spatial-pair-grid">
           <Form.Item name="binIdColumnName" label="格网 ID" rules={[{ required: true, whitespace: true }]}><Input /></Form.Item>

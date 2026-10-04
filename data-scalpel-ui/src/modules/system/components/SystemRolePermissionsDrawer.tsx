@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { SafetyCertificateOutlined } from '@ant-design/icons';
 import { Button, Checkbox, Drawer, Empty, Space, Spin, Tag, Typography, message } from 'antd';
 import { useMemo, useState } from 'react';
@@ -72,19 +73,11 @@ const RolePermissionsEditor = ({
       <Drawer
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="system-role-permissions-drawer"
-        title={(
-          <div className="system-role-permissions-title">
-            <span className="system-role-permissions-title-icon" aria-hidden="true"><SafetyCertificateOutlined /></span>
-            <span className="system-role-permissions-title-copy">
-              <span>配置角色权限</span>
-              <Typography.Text type="secondary">{role.name} · 按业务模块分配可访问功能</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle icon={<SafetyCertificateOutlined />} title="配置角色权限" description={`${role.name} · 按业务模块分配可访问功能`} />}
         extra={<Tag className="system-role-permissions-header-tag">已选 {selectedPermissionIds.length} 项</Tag>}
         open={open}
         onClose={close}
-        closable={!updateMutation.isPending}
+        closable={updateMutation.isPending ? false : { placement: 'end' }}
         maskClosable={!updateMutation.isPending}
         destroyOnHidden
         width={560}

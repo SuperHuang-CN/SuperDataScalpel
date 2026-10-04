@@ -26,6 +26,7 @@ import {
   useProfileDataServiceSpatialStyleField, useUpdateDataServiceSpatialStyle, useUploadDataServiceSpatialSld,
 } from '../hooks/useDataServices';
 import type { DataServiceDeploymentStatus, DataServiceStatus } from '../model/dataService';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface DataServiceSpatialPreviewPanelProps {
   serviceId: string;
@@ -94,6 +95,7 @@ const SpatialPreviewWorkspace = ({
   const [hasRendered, setHasRendered] = useState(false);
   const [viewportVersion, setViewportVersion] = useState(0);
   const [renderedInputVersion, setRenderedInputVersion] = useState<string>();
+  const [renderAfterApply, setRenderAfterApply] = useState(0);
   const [previewSource, setPreviewSource] = useState<'LIVE' | 'DRAFT'>(canUpdate ? 'DRAFT' : 'LIVE');
   const effectiveSource = canUpdate ? previewSource : 'LIVE';
   const [renderedSource, setRenderedSource] = useState<string>();
@@ -104,6 +106,7 @@ const SpatialPreviewWorkspace = ({
   const abortRef = useRef<AbortController | null>(null);
   const currentUrlRef = useRef<string | null>(null);
   const requestVersionRef = useRef(0);
+  const renderedApplyRef = useRef(0);
   const renderInputVersionRef = useRef('');
   const resizeTimeoutRef = useRef<number | undefined>(undefined);
   const previewReadiness = spatialStylePreviewReadiness(document);
@@ -200,6 +203,7 @@ const SpatialPreviewWorkspace = ({
     void messageApi.success('样式已应用到 GeoServer');
     await metadataQuery.refetch();
     invalidateActiveRequest();
+    setRenderAfterApply((current) => current + 1);
   };
   const saveAndApply = async () => { await saveDraft(); await applyStyle(); };
 
@@ -241,6 +245,13 @@ const SpatialPreviewWorkspace = ({
     } finally { if (version === requestVersionRef.current) setLoading(false); }
   }, [document, mapReady, metadata?.available, effectiveSource, mode, renderDisabledReason,
     getViewport, renderInputVersion, serviceId, sldFile, storedStyle]);
+
+  useEffect(() => {
+    if (!renderAfterApply || renderedApplyRef.current === renderAfterApply
+      || renderDisabledReason || styleQuery.isFetching || metadataQuery.isFetching) return;
+    renderedApplyRef.current = renderAfterApply;
+    void requestImage();
+  }, [renderAfterApply, renderDisabledReason, styleQuery.isFetching, metadataQuery.isFetching, requestImage]);
 
   useEffect(() => {
     if (!legendEnabled) return;
@@ -305,7 +316,7 @@ const SpatialPreviewWorkspace = ({
   const editor = storedStyle ? <SpatialStyleWorkbench
     key={serviceId}
     mode={mode} geometryFamily={storedStyle.geometryFamily} fields={storedStyle.fields} value={document} defaultDocument={storedStyle.defaultStyleDocument}
-    file={sldFile} fileName={storedStyle.sldFileName} fileSize={storedStyle.sldFileSize} styleVersion={storedStyle.styleVersion} appliedStyleVersion={storedStyle.appliedStyleVersion}
+    file={sldFile} fileName={storedStyle.sldFileName} fileSize={storedStyle.sldFileSize}
     syncStatus={storedStyle.syncStatus} syncError={storedStyle.syncError} deployed={storedStyle.deployed} dirty={dirty} editable={canUpdate} applicable={canPublish}
     saving={updateMutation.isPending || uploadMutation.isPending} applying={applyMutation.isPending}
     uploadedSldText={storedStyle.uploadedSldText} onQuerySld={querySld}
@@ -327,39 +338,40 @@ const SpatialPreviewWorkspace = ({
 
   return <div className="data-service-detail-tab-panel data-service-spatial-preview-panel">{messageContext}
     <div className="data-service-spatial-preview-main"><div className="data-service-spatial-preview-map-column">
-      <div className="data-service-spatial-preview-toolbar">
-        <Space size={8} wrap><Tag color="blue">WMS</Tag><code>{metadata?.qualifiedLayerName ?? '空间服务尚未发布'}</code>
-          {currentScale != null && <Tooltip title="根据实际 GetMap 范围、图片尺寸和 OGC 0.28mm 像元计算"><span>请求比例尺 1:{Math.round(currentScale).toLocaleString()}</span></Tooltip>}
-          {renderedSource && <Tag>当前图片：{renderedSource}</Tag>}
-          {renderPending && metadata?.available && <Tag color="gold">当前选择待渲染</Tag>}
-          {outsideSymbols && <Tag color="warning">草稿符号超出可见比例尺</Tag>}
-          {outsideLabels && <Tag color="warning">草稿标注超出可见比例尺</Tag>}
-        </Space>
-        <Space size={6} wrap>
-          <Segmented<'LIVE' | 'DRAFT'> value={effectiveSource} disabled={!canUpdate} options={[{ value: 'LIVE', label: '线上样式' }, { value: 'DRAFT', label: '当前草稿' }]}
-            onChange={next => { invalidateActiveRequest(); setPreviewSource(next); }} />
-          {!screens.lg && <Button size="small" icon={<EditOutlined />} onClick={() => setDrawerOpen(true)}>在线配图</Button>}
-          <Button size="small" disabled={!metadata?.available} onClick={resetView}>复位</Button>
-          <Tooltip title={renderDisabledReason ?? '仅在点击后请求 GeoServer 渲染当前地图视图'}><span><Button size="small" icon={<ReloadOutlined />}
-            disabled={Boolean(renderDisabledReason)} loading={loading} onClick={() => void requestImage()}>渲染当前视图</Button></span></Tooltip>
-        </Space>
-      </div>
       <div className="data-service-spatial-preview-map-wrap">
-        {mapState && <div className="data-service-spatial-preview-map-state">{mapState}</div>}
         <div ref={containerRef} className="data-service-spatial-preview-map" />
-        {mapError && <FloatingFeedback type="warning" title="WMS 预览加载失败" description={mapError}
+        <div className="data-service-spatial-preview-toolbar">
+          <div className="data-service-spatial-preview-controls"><Space size={6} wrap>
+            <Segmented<'LIVE' | 'DRAFT'> value={effectiveSource} disabled={!canUpdate} options={[{ value: 'LIVE', label: '线上样式' }, { value: 'DRAFT', label: '当前草稿' }]}
+              onChange={next => { invalidateActiveRequest(); setPreviewSource(next); }} />
+            {!screens.lg && <Button size="small" icon={<EditOutlined />} onClick={() => setDrawerOpen(true)}>在线配图</Button>}
+            <Button size="small" disabled={!metadata?.available} onClick={resetView}>复位</Button>
+            <Tooltip title={renderDisabledReason ?? '仅在点击后请求 GeoServer 渲染当前地图视图'}><span><Button size="small" icon={<ReloadOutlined />}
+              disabled={Boolean(renderDisabledReason)} loading={loading} onClick={() => void requestImage()}>渲染当前视图</Button></span></Tooltip>
+          </Space></div>
+          {(currentScale != null || renderedSource || metadata?.available && renderPending || outsideSymbols || outsideLabels || loading) &&
+            <div className="data-service-spatial-preview-indicators">
+              {currentScale != null && <Tooltip title="根据实际 GetMap 范围、图片尺寸和 OGC 0.28mm 像元计算"><span>请求比例尺 1:{Math.round(currentScale).toLocaleString()}</span></Tooltip>}
+              {renderedSource && <Tag>当前图片：{renderedSource}</Tag>}
+              {renderPending && metadata?.available && <Tag color="gold">当前选择待渲染</Tag>}
+              {outsideSymbols && <Tag color="warning">草稿符号超出可见比例尺</Tag>}
+              {outsideLabels && <Tag color="warning">草稿标注超出可见比例尺</Tag>}
+              {metadata?.available && renderPending && !loading && !mapError && <span className="data-service-spatial-preview-manual-hint">
+                {renderDisabledReason ?? (hasRendered ? '当前视图或样式已变化，请手动渲染' : '点击“渲染当前视图”加载地图')}
+              </span>}
+              {loading && <span className="data-service-spatial-preview-loading"><Spin size="small" /> 正在渲染当前视图…</span>}
+            </div>}
+        </div>
+        {mapState && <div className="data-service-spatial-preview-map-state">{mapState}</div>}
+        {mapError && <FloatingFeedback placement="bottom-left" type="warning" title="WMS 预览加载失败" description={mapError}
           action={<Button size="small" disabled={Boolean(renderDisabledReason)} onClick={() => void requestImage()}>重试</Button>} closable onClose={() => setMapError(undefined)} />}
-        {metadata?.available && renderPending && !loading && !mapError && <div className="data-service-spatial-preview-manual-hint">
-          {renderDisabledReason ?? (hasRendered ? '当前视图或样式已变化，请手动渲染' : '点击“渲染当前视图”加载地图')}
-        </div>}
         {metadata?.available && <div className="data-service-spatial-preview-legend">
           {effectiveSource === 'LIVE' ? legendUrl ? <img src={legendUrl} alt="GeoServer 线上图例" /> : <span>{legendError ? '线上图例暂不可用' : '正在加载线上图例…'}</span>
             : mode === 'CARTOGRAPHY' ? <><span>当前草稿图例（示意）</span><SpatialStyleLegend document={document} /></>
               : <span>上传草稿以 WMS 渲染为准，不展示线上图例</span>}
         </div>}
-        {loading && <div className="data-service-spatial-preview-loading"><Spin size="small" /> 正在渲染当前视图…</div>}
       </div>
     </div>{screens.lg && <aside className="data-service-spatial-style-column">{editor}</aside>}</div>
-    <Drawer rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" open={!screens.lg && drawerOpen} width={440} title="空间服务在线配图" className="business-drawer" onClose={() => setDrawerOpen(false)}>{editor}</Drawer>
+    <Drawer closable={{ placement: 'end' }} rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay" open={!screens.lg && drawerOpen} width={440} title={<OverlayTitle title="空间服务在线配图" icon={<EditOutlined />} description="调整当前空间服务的地图样式" />} className="business-drawer" onClose={() => setDrawerOpen(false)}>{editor}</Drawer>
   </div>;
 };

@@ -2,8 +2,8 @@ import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceT
 import '../../../shared/theme/resource-workspace.css';
 import { DatabaseOutlined, EyeOutlined, FormOutlined, PlusOutlined, ReloadOutlined } from '@ant-design/icons';
 import { ConfigProvider, Button, Empty, Form, Select, Table, Tag, Tooltip, message } from 'antd';
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useRef, useState } from 'react';
+import { Link, useNavigate } from 'react-router-dom';
 import { ApiError } from '../../../shared/api/http';
 import { InlineFeedback } from '../../../shared/components/ContextualFeedback';
 import '../dataEntry.css';
@@ -23,6 +23,7 @@ export const DataEntryPage = () => {
   const [page, setPage] = useState(0);
   const [size, setSize] = useState(20);
   const [createOpen, setCreateOpen] = useState(false);
+  const creatingRef = useRef(false);
   const [messageApi, contextHolder] = message.useMessage();
   const currentUser = useCurrentUser();
   const canManage = new Set(currentUser.data?.permissions ?? []).has('dataentry.manage');
@@ -36,12 +37,16 @@ export const DataEntryPage = () => {
   };
 
   const create = async (candidateId: string) => {
+    if (creatingRef.current) return;
+    creatingRef.current = true;
     try {
       const detail = await createMutation.mutateAsync(candidateId);
       setCreateOpen(false);
       navigate(`/data-entry/${detail.form.id}`);
     } catch (error) {
       messageApi.error(error instanceof ApiError ? error.message : '创建填报表单失败');
+    } finally {
+      creatingRef.current = false;
     }
   };
 
@@ -72,7 +77,7 @@ export const DataEntryPage = () => {
           locale={{ emptyText: <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={filters.keyword || filters.status ? '没有符合条件的填报表单' : '还没有填报表单'}>{filters.keyword || filters.status ? <Button onClick={resetFilters}>清空筛选</Button> : canManage && <Button type="primary" icon={<PlusOutlined />} onClick={() => setCreateOpen(true)}>创建填报表单</Button>}</Empty> }}
           className="management-table" rowKey="id" size="small" loading={formsQuery.isFetching} dataSource={formsQuery.data?.content ?? []}
           columns={[
-            { title: '模型', key: 'model', width: 280, render: (_, row) => <ManagementListCell icon={<DatabaseOutlined />} primary={<ManagementName name={row.modelName ?? '模型已删除'} code={row.modelCode ?? row.modelId} description={row.modelDescription}><Button type="link" className="data-entry-model-link" onClick={() => navigate(`/data-entry/${row.id}`)}>{row.modelName ?? '模型已删除'}</Button></ManagementName>} secondary={row.modelCode !== row.modelName ? row.modelCode ?? row.modelId : undefined} /> },
+            { title: '模型', key: 'model', width: 280, render: (_, row) => <ManagementListCell icon={<DatabaseOutlined />} primary={<ManagementName name={row.modelName ?? '模型已删除'} code={row.modelCode ?? row.modelId} description={row.modelDescription}><Button type="link" className="data-entry-model-link" onClick={() => navigate(`/data-entry/${row.id}`)}>{row.modelName ?? '模型已删除'}</Button></ManagementName>} secondary={row.modelCode !== row.modelName ? <Link to={`/data-entry/${row.id}`}>{row.modelCode ?? row.modelId}</Link> : undefined} /> },
             { title: '状态', dataIndex: 'status', width: 120, render: (value) => <Tag color={statusColor[value as DataEntryFormStatus]}>{dataEntryStatusLabels[value as DataEntryFormStatus]}</Tag> },
             { title: '模型版本 / 发布版本', key: 'versions', width: 180, render: (_, row) => `${row.modelSchemaVersion ?? '—'} / ${row.publishedModelSchemaVersion ?? '—'}` },
             { title: '运行健康', key: 'health', width: 180, render: (_, row) => row.issues.length ? <Tooltip title={row.issues.map((issue) => issue.message).join('；')}><Tag color="warning">需检查 · {row.issues.length}</Tag></Tooltip> : row.healthSummary === 'DETAIL_CHECK_REQUIRED' ? <Tag color="processing">进入详情检查</Tag> : <Tag color="success">正常</Tag> },

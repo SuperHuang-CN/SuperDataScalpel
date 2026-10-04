@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import {
   DeleteOutlined,
@@ -330,7 +331,7 @@ const SnapTracksInspector = ({
             }}>设置</Button>
         </Space>
       </div>
-      <Modal open={directionOpen} width={680} title="设置道路方向匹配" okText="保存设置"
+      <Modal open={directionOpen} width={680} title={<OverlayTitle variant="workspace" title="设置道路方向匹配" />} okText="保存设置"
         cancelText="取消" onOk={saveDirection} onCancel={() => setDirectionOpen(false)}>
         <Space orientation="vertical" size={10} style={{ width: '100%' }}>
           <Form.Item label="方向字段" required>
@@ -360,7 +361,7 @@ const SnapTracksInspector = ({
         <Button size="small" icon={<SettingOutlined />} aria-label="设置输出道路属性"
           onClick={() => setLineFieldsOpen(true)}>设置</Button>
       </div>
-      <Modal open={lineFieldsOpen} width={760} title="设置输出道路属性" okText="完成"
+      <Modal open={lineFieldsOpen} width={760} title={<OverlayTitle variant="workspace" title="设置输出道路属性" />} okText="完成"
         cancelText="关闭" onOk={() => setLineFieldsOpen(false)} onCancel={() => setLineFieldsOpen(false)}>
         <Space orientation="vertical" size={8} style={{ width: '100%' }}>
           <div className="canvas-spatial-modal-toolbar">
@@ -444,7 +445,7 @@ const SnapTracksInspector = ({
         <Button size="small" icon={<SettingOutlined />} aria-label="设置吸附轨迹边界"
           onClick={() => setBoundariesOpen(true)}>设置</Button>
       </div>
-      <Modal open={boundariesOpen} width={680} title="设置吸附轨迹边界" okText="完成"
+      <Modal open={boundariesOpen} width={680} title={<OverlayTitle variant="workspace" title="设置吸附轨迹边界" />} okText="完成"
         cancelText="关闭" onOk={() => setBoundariesOpen(false)} onCancel={() => setBoundariesOpen(false)}>
         <TrackBoundaryEditor value={boundaries} onChange={updateBoundaries} />
       </Modal>
@@ -471,7 +472,7 @@ const SnapTracksInspector = ({
         <Button size="small" icon={<SettingOutlined />} aria-label="设置吸附结果字段"
           onClick={() => setResultFieldsOpen(true)}>设置</Button>
       </div>
-      <Modal open={resultFieldsOpen} width={680} title="设置吸附结果字段" okText="完成"
+      <Modal open={resultFieldsOpen} width={680} title={<OverlayTitle variant="workspace" title="设置吸附结果字段" />} okText="完成"
         cancelText="关闭" onOk={() => setResultFieldsOpen(false)} onCancel={() => setResultFieldsOpen(false)}>
         <div className="canvas-spatial-pair-grid">
           {([

@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import {
   DeleteOutlined,
   DownOutlined,
@@ -120,7 +121,7 @@ const SelectedTableConfiguration = ({
           </Tooltip>
           {table.readOptions.length > 0 ? (
             <Popconfirm
-              title="移除物理表？"
+              title={<OverlayTitle variant="popover" title="移除物理表？" />}
               description={`同时删除 ${table.readOptions.length} 项读取参数。`}
               okText="移除"
               cancelText="取消"

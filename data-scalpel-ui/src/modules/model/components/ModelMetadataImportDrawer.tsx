@@ -1,7 +1,9 @@
+import { ExclamationCircleOutlined } from '@ant-design/icons';
 import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceTheme';
 import { ModelDataSourcePicker } from './ModelResourcePicker';
 import './model-create.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   CheckCircleOutlined,
   DownloadOutlined,
@@ -169,7 +171,7 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
   return (
     <Modal
       rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay"
-      title={field ? `调整 Excel 字段：${field.code || `第 ${field.rowNumber} 行`}` : '调整字段'}
+      title={<OverlayTitle title={field ? `调整 Excel 字段：${field.code || `第 ${field.rowNumber} 行`}` : '调整字段'} icon={<FileExcelOutlined />} />}
       open={Boolean(field)}
       width={680}
       destroyOnHidden
@@ -189,7 +191,7 @@ const MetadataFieldEditor = ({ field, storageDataSourceId, onCancel, onSave }: M
           showIcon
           type="warning"
           title={field.standardDictionaryIssue}
-          description={canViewDictionaries
+         description={canViewDictionaries
             ? '请选择其他兼容码表，或清空绑定后保存。'
             : '当前账号没有查看码表权限，无法在这里处理该问题。'}
         />
@@ -354,8 +356,10 @@ export const ModelMetadataImportDrawer = ({
     if (busy) return;
     if (step < 2 && (uploadFile || drafts.length > 0)) {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
-        title: '放弃本次 Excel 导入？',
+        title: <OverlayTitle title="放弃本次 Excel 导入？" icon={<ExclamationCircleOutlined />} tone="danger" />,
         content: '已上传或调整的模型结构尚未创建，离开后不会保留。',
         okText: '放弃并关闭',
         okButtonProps: { danger: true },
@@ -396,8 +400,10 @@ export const ModelMetadataImportDrawer = ({
     };
     if (drafts.length) {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
-        title: '重新解析 Excel',
+        title: <OverlayTitle title="重新解析 Excel" icon={<FileExcelOutlined />} />,
         content: '重新解析会覆盖当前模型和字段调整，确认继续吗？',
         okText: '重新解析',
         cancelText: '取消',
@@ -641,15 +647,7 @@ export const ModelMetadataImportDrawer = ({
       {messageContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-create-overlay"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon"><FileExcelOutlined /></span>
-            <div className="data-model-drawer-title-copy">
-              <span>从 Excel 模板导入模型</span>
-              <Typography.Text type="secondary">上传模板，校对模型与字段并创建模型草稿</Typography.Text>
-            </div>
-          </div>
-        )}
+        title={<OverlayTitle title="从 Excel 导入模型元数据" icon={<FileExcelOutlined />} description="解析 Excel 模板并创建模型元数据" />}
         open={open}
         size="min(1280px, 100vw)"
         className="managed-table-model-import-drawer"
@@ -687,7 +685,7 @@ export const ModelMetadataImportDrawer = ({
               showIcon
               type={hasDraftIssues ? 'warning' : 'success'}
               title={hasDraftIssues ? '请处理标红内容；目录问题需要先维护目录或修改 Excel 后重新上传。' : `${drafts.length} 个模型已就绪，将整批创建且不会执行 DDL。`}
-              description={fileIssues.length ? fileIssues.join('；') : undefined}
+             description={fileIssues.length ? fileIssues.join('；') : undefined}
             />
             {submitError && <Alert showIcon type="error" title={submitError} description="本次整批操作已回滚，没有保存任何模型。" />}
             <Space>
@@ -721,7 +719,7 @@ export const ModelMetadataImportDrawer = ({
               showIcon
               type="success"
               title={`已原子创建 ${result?.modelCount ?? 0} 个模型、${result?.fieldCount ?? 0} 个字段`}
-              description="全部模型均为 MANAGED + DRAFT；物理表仍需在模型详情中显式创建。"
+             description="全部模型均为 MANAGED + DRAFT；物理表仍需在模型详情中显式创建。"
             />
             <Table<ImportedModelMetadata> size="small" rowKey="id" columns={resultColumns} dataSource={result?.models ?? []} pagination={false} />
           </div>

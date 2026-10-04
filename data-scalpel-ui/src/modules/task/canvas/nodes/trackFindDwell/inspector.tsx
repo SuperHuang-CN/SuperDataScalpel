@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../../shared/components/OverlayTitle';
 import { ContextHelp } from '../../../../../shared/components/ContextualFeedback';
 import { SettingOutlined } from '@ant-design/icons';
 import { Button, Form, Input, InputNumber, Modal, Segmented, Select, Space, Tag, Typography } from 'antd';
@@ -109,7 +110,7 @@ const TrackFindDwellInspector = ({
           options={[{ value: 'REFERENCE_CENTER', label: '参考点与均值中心' }, { value: 'LEGACY_ADJACENT', label: '相邻连段（旧版）' }]}
           onChange={(value: 'REFERENCE_CENTER' | 'LEGACY_ADJACENT') => {
             if (value === semantics) return;
-            Modal.confirm({ title: '切换驻留识别语义？',
+            Modal.confirm({ title: <OverlayTitle variant="workspace" title="切换驻留识别语义？" />,
               content: '两种算法的驻留归属可能不同。已有输出和规则配置将保留，不自动换算距离或时长。',
               okText: '确认切换', cancelText: '取消', onOk: () => {
                 if (value === 'REFERENCE_CENTER' && !form.getFieldValue('rangeOptions')) {
@@ -178,7 +179,7 @@ const TrackFindDwellInspector = ({
           <Tag>{boundaryCount === 0 ? '不限' : `${boundaryCount} 项`}</Tag></Space>
         <Button size="small" icon={<SettingOutlined />} onClick={() => setBoundariesOpen(true)}>设置</Button>
       </div>
-      <Modal open={boundariesOpen} width={680} title="设置驻留分析轨迹边界" okText="完成"
+      <Modal open={boundariesOpen} width={680} title={<OverlayTitle variant="workspace" title="设置驻留分析轨迹边界" />} okText="完成"
         cancelText="关闭" onOk={() => setBoundariesOpen(false)} onCancel={() => setBoundariesOpen(false)}>
         <TrackBoundaryEditor value={boundaries} onChange={(value) => updateField('boundaries', value)} />
       </Modal>
@@ -195,7 +196,7 @@ const TrackFindDwellInspector = ({
           setSummariesOpen(true);
         }}>设置</Button>
       </div>}
-      <Modal open={summariesOpen} destroyOnHidden width={860} title="设置驻留片段汇总" okText="保存汇总草稿"
+      <Modal open={summariesOpen} destroyOnHidden width={860} title={<OverlayTitle variant="workspace" title="设置驻留片段汇总" />} okText="保存汇总草稿"
         cancelText="取消" onOk={() => { updateField('summaryStatistics', summariesDraft); setSummariesOpen(false); }} onCancel={() => setSummariesOpen(false)}>
         <TrackSummaryEditor value={summariesDraft} columns={columns} allowNumericAny validationAvailable={validation != null}
           onChange={setSummariesDraft} />
@@ -204,7 +205,7 @@ const TrackFindDwellInspector = ({
         <Space size={6}><Typography.Text strong>结果字段</Typography.Text><Tag>{features ? 2 : referenceCenter ? 7 : 6} 个</Tag></Space>
         <Button aria-label="设置驻留结果字段" size="small" icon={<SettingOutlined />} onClick={() => setFieldsOpen(true)}>设置</Button>
       </div>
-      <Modal open={fieldsOpen} width={680} title="设置驻留结果字段" okText="完成" cancelText="关闭"
+      <Modal open={fieldsOpen} width={680} title={<OverlayTitle variant="workspace" title="设置驻留结果字段" />} okText="完成" cancelText="关闭"
         onOk={() => setFieldsOpen(false)} onCancel={() => setFieldsOpen(false)}>
         <div className="canvas-spatial-pair-grid">
           <Form.Item name="dwellIdColumnName" label="驻留 ID" rules={[{ required: true, whitespace: true }]}><Input /></Form.Item>

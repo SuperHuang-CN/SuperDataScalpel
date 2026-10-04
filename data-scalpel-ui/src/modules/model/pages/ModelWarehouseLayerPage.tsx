@@ -1,4 +1,5 @@
 import { CompactAlert as Alert, ContextHelp, InlineFeedback } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   ApartmentOutlined,
   DeleteOutlined,
@@ -132,16 +133,8 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
       <Drawer
         rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay modeling-overlay"
         className="data-model-drawer warehouse-layer-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><ApartmentOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{layer ? '修改数仓分层' : '新建数仓分层'}</span>
-              <Typography.Text type="secondary">维护分层身份、模型编码规范与允许的数据流向</Typography.Text>
-            </span>
-          </div>
-        )}
-        extra={<Tag className="data-model-drawer-header-tag">{layer?.code ?? '待创建'}</Tag>}
+        title={<OverlayTitle title={layer ? '修改数仓分层' : '新建数仓分层'} icon={<ApartmentOutlined />} description="维护分层身份、模型编码规范与允许的数据流向" />}
+        extra={layer?.code ? <Tag className="data-model-drawer-header-tag">{layer.code}</Tag> : undefined}
         open={open}
         width={720}
         onClose={onClose}
@@ -164,6 +157,7 @@ const LayerDrawer = ({ open, layer, onClose }: LayerDrawerProps) => {
             </Space>
           </div>
         )}
+        closable={{ placement: 'end' }}
       >
         <Form<CreateModelWarehouseLayerRequest>
           name="warehouse-layer-editor-form"
@@ -374,8 +368,10 @@ export const ModelWarehouseLayerPage = () => {
 
   const remove = (layer: ModelWarehouseLayer) => {
     modalApi.confirm({
+      icon: null,
+
       rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay modeling-overlay',
-      title: '删除数仓分层',
+      title: <OverlayTitle title="删除数仓分层" icon={<DeleteOutlined />} tone="danger" />,
       content: `确认删除“${layer.name}（${layer.code}）”吗？删除后不会自动恢复。`,
       okText: '删除',
       okButtonProps: { danger: true },

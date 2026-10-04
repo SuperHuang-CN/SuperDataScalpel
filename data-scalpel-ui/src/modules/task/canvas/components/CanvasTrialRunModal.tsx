@@ -19,6 +19,7 @@ import {
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ApiError } from '../../../../shared/api/http';
 import { InlineFeedback } from '../../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import {
   useCancelTaskRun,
   useCanvasTrialPreview,
@@ -291,7 +292,7 @@ export const CanvasTrialRunModal = (props: CanvasTrialRunModalProps) => {
   return (
     <Modal
       open={open}
-      title={`试运行数据预览 · ${target.nodeName}`}
+      title={<OverlayTitle variant="workspace" title={`试运行数据预览 · ${target.nodeName}`} />}
       width={1120}
       destroyOnHidden
       className="canvas-trial-modal"

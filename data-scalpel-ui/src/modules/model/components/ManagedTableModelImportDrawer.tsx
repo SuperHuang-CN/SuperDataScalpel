@@ -2,6 +2,7 @@ import { workspaceResourceTheme } from '../../../shared/theme/workspaceResourceT
 import { ModelDataSourcePicker } from './ModelResourcePicker';
 import './model-create.css';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import {
   CheckCircleOutlined,
   DatabaseOutlined,
@@ -165,7 +166,7 @@ export const ManagedImportFieldEditor = ({
   return (
     <Modal
       rootClassName="business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay"
-      title={field ? `调整字段：${field.sourceName}` : '调整字段'}
+      title={<OverlayTitle title={field ? `调整字段：${field.sourceName}` : '调整字段'} icon={<DatabaseOutlined />} />}
       open={open}
       width={680}
       destroyOnHidden
@@ -179,7 +180,7 @@ export const ManagedImportFieldEditor = ({
           showIcon
           type="warning"
           title="源字段有未自动带入的信息"
-          description={field.sourceIssues.join('；')}
+         description={field.sourceIssues.join('；')}
           className="managed-import-field-alert"
         />
       ) : null}
@@ -416,8 +417,10 @@ export const ManagedTableModelImportDrawer = ({
     };
     if (drafts.some((draft) => draft.fields.length > 0)) {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
-        title: '切换目标数据存储',
+        title: <OverlayTitle title="切换目标数据存储" icon={<DatabaseOutlined />} />,
         content: '切换后需要按新目标重新映射字段，当前字段调整会被重置。确认继续吗？',
         okText: '确认切换',
         cancelText: '取消',
@@ -433,8 +436,10 @@ export const ManagedTableModelImportDrawer = ({
     const apply = () => loadPreviews(effectiveTargetStorageDataSourceId, drafts);
     if (drafts.some((draft) => draft.fields.length > 0)) {
       modalApi.confirm({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay workspace-resource-overlay model-create-overlay',
-        title: '重新读取源表结构',
+        title: <OverlayTitle title="重新读取源表结构" icon={<DatabaseOutlined />} />,
         content: '重新读取会重置当前字段调整，但会保留模型编码、名称、说明和目标表名。确认继续吗？',
         okText: '重新读取',
         cancelText: '取消',
@@ -759,15 +764,7 @@ export const ManagedTableModelImportDrawer = ({
       {modalContext}
       <Drawer
         rootClassName="business-overlay business-drawer-overlay workspace-resource-overlay model-create-overlay"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon"><DatabaseOutlined /></span>
-            <div className="data-model-drawer-title-copy">
-              <span>从数据源表创建模型</span>
-              <Typography.Text type="secondary">选择源表，校对结构并批量创建模型草稿</Typography.Text>
-            </div>
-          </div>
-        )}
+        title={<OverlayTitle title="从 JDBC 表结构创建模型" icon={<DatabaseOutlined />} description="读取 JDBC 表结构并创建模型草稿" />}
         open={open}
         size="min(1280px, 100vw)"
         className="managed-table-model-import-drawer"
@@ -927,7 +924,7 @@ export const ManagedTableModelImportDrawer = ({
                 showIcon
                 type="warning"
                 title="部分源结构无法完整表达"
-                description="展开对应模型查看字段映射；默认值、自增、生成列和索引等未支持信息仅作提示，不会伪造到模型中。"
+               description="展开对应模型查看字段映射；默认值、自增、生成列和索引等未支持信息仅作提示，不会伪造到模型中。"
               />
             )}
             <Table<ManagedTableModelDraft>
@@ -973,7 +970,7 @@ export const ManagedTableModelImportDrawer = ({
               showIcon
               type={failedKeys.size === 0 ? 'success' : successCount > 0 ? 'warning' : 'error'}
               title={`成功 ${successCount} 个，失败 ${failedKeys.size} 个`}
-              description={failedKeys.size > 0
+             description={failedKeys.size > 0
                 ? '已成功的模型不会回滚；可以保留失败项，修改后单独重试。物理表仍需在模型详情中显式创建。'
                 : '模型和字段已保存为受管草稿，尚未创建物理表。请先调整字段，再显式创建物理表。'}
             />

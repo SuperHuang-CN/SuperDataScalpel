@@ -1,4 +1,5 @@
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { CodeOutlined } from '@ant-design/icons';
 import { Button, Modal, Space, Typography, message } from 'antd';
 import { ApiError } from '../../../shared/api/http';
@@ -25,8 +26,10 @@ export const DataModelPublishConfirmationContent = ({
         return;
       }
       modalApi.info({
+        icon: null,
+
         rootClassName: 'business-overlay business-modal-overlay',
-        title: '建表 SQL',
+        title: <OverlayTitle title="建表 SQL" icon={<CodeOutlined />} />,
         width: 820,
         okText: '关闭',
         content: (
@@ -55,7 +58,7 @@ export const DataModelPublishConfirmationContent = ({
           type="warning"
           showIcon
           message="当前字段定义有未保存修改"
-          description="发布只使用最后保存的字段定义；发布成功后当前修改将被放弃。"
+         description="发布只使用最后保存的字段定义；发布成功后当前修改将被放弃。"
         />
       )}
       {model.physicalTableMode === 'MANAGED' ? (

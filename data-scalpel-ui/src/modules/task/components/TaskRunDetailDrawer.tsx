@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { formatManagementDateTime } from '../../../shared/format/managementDateTime';
 import { CompactAlert as Alert } from '../../../shared/components/ContextualFeedback';
 import {
@@ -351,13 +352,13 @@ export const TaskRunDetailDrawer = ({
   ];
 
   return (
-    <Drawer
+    <Drawer closable={{ placement: 'end' }}
       rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
       className={previewKind ? 'task-run-detail-drawer task-run-detail-drawer-preview' : 'task-run-detail-drawer'}
       open={open}
       size="large"
       destroyOnHidden
-      title={run ? `运行详情：${run.id}` : '运行详情'}
+      title={<OverlayTitle icon={<EyeOutlined />} title={run ? `运行详情：${run.id}` : '运行详情'} description="查看运行状态、日志与输出结果" />}
       onClose={onClose}
       extra={(
         <Tooltip title="刷新运行详情">

@@ -7,6 +7,7 @@ import { ContextHelp, InlineFeedback } from '../../../shared/components/Contextu
 import { directoryTreeSelectData, type DirectoryTreeNode } from '../../directory';
 import { useUpdateAsset } from '../hooks/useAssets';
 import { assetSyncStatusLabels, assetTypeLabels, type Asset, type AssetSensitivityLevel, type UpdateAssetRequest } from '../model/asset';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface AssetEditDrawerProps {
   open: boolean;
@@ -94,18 +95,10 @@ export const AssetEditDrawer = ({ open, asset, directories, readOnly = false, on
   return (
     <>
       {contextHolder}
-      <Drawer
+      <Drawer closable={{ placement: 'end' }}
         rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay"
         className="data-model-drawer asset-edit-drawer"
-        title={(
-          <div className="data-model-drawer-title">
-            <span className="data-model-drawer-title-icon" aria-hidden="true"><CompassOutlined /></span>
-            <span className="data-model-drawer-title-copy">
-              <span>{readOnly ? '资产门户详情' : '编辑资产门户信息'}</span>
-              <Typography.Text type="secondary">{asset ? `${asset.sourceName}${asset.sourceCode ? ` · ${asset.sourceCode}` : ''}` : '维护门户呈现与治理属性'}</Typography.Text>
-            </span>
-          </div>
-        )}
+        title={<OverlayTitle title={readOnly ? '资产门户详情' : '编辑资产门户信息'} icon={<CompassOutlined />} description={asset ? `${asset.sourceName}${asset.sourceCode ? ` · ${asset.sourceCode}` : ''}` : '维护门户呈现与治理属性'} />}
         extra={asset && <Tag className="data-model-drawer-header-tag">{assetTypeLabels[asset.assetType]}</Tag>}
         open={open}
         width={820}

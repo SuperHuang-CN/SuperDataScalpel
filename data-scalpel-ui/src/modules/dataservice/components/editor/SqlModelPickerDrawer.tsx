@@ -1,3 +1,4 @@
+import { DatabaseOutlined } from '@ant-design/icons';
 import { Button, Drawer, Segmented, Space, Typography } from 'antd';
 import { useMemo, useState } from 'react';
 import {
@@ -17,6 +18,7 @@ import {
   type ModelSelectionCandidate,
   type ModelSelectionFilters,
 } from './ModelSelectionWorkspace';
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 
 interface SqlModelPickerDrawerProps {
   open: boolean;
@@ -183,16 +185,11 @@ export const SqlModelPickerDrawer = ({
   const displaySize = view === 'all' ? size : selectedSize;
 
   return (
-    <Drawer
+    <Drawer closable={{ placement: 'end' }}
       rootClassName="business-overlay business-drawer-overlay resource-workspace-overlay sql-model-picker-drawer"
       open={open}
       size="min(1080px, calc(100vw - 24px))"
-      title={(
-        <div>
-          <Typography.Text strong>{readOnly ? '查看关联模型' : '选择关联模型'}</Typography.Text>
-          <div><Typography.Text type="secondary">当前数据源：{dataSourceName ?? dataSourceId}</Typography.Text></div>
-        </div>
-      )}
+      title={<OverlayTitle title={readOnly ? '查看关联模型' : '选择关联模型'} icon={<DatabaseOutlined />} description={`当前数据源：${dataSourceName ?? dataSourceId}`} />}
       destroyOnHidden
       onClose={close}
       styles={{ body: { padding: 0, overflow: 'hidden' } }}

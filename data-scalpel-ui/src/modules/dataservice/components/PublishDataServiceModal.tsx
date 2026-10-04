@@ -7,6 +7,7 @@ import {
   type GatewayServiceBinding,
   type PublishDataServiceRequest,
 } from '../model/dataService';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 
 interface PublishDataServiceModalProps {
   service: { code: string; name: string; contextPath: string | null; gatewayBindings: GatewayServiceBinding[] } | null;
@@ -37,15 +38,7 @@ export const PublishDataServiceModal = ({
   return (
     <Modal
       rootClassName="business-overlay business-modal-overlay resource-workspace-overlay publish-data-service-modal"
-      title={(
-        <div className="publish-data-service-title">
-          <span className="publish-data-service-title-icon" aria-hidden="true"><CloudUploadOutlined /></span>
-          <span className="publish-data-service-title-copy">
-            <span>发布数据服务到网关</span>
-            <Typography.Text type="secondary">配置稳定公开路径与调用方访问模式</Typography.Text>
-          </span>
-        </div>
-      )}
+      title={<OverlayTitle title="发布数据服务到网关" icon={<CloudUploadOutlined />} description="配置稳定公开路径与调用方访问模式" />}
       open={Boolean(service)}
       closable={!loading}
       maskClosable={!loading}

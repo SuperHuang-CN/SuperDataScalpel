@@ -1,3 +1,4 @@
+import { OverlayTitle } from '../../../../shared/components/OverlayTitle';
 import { createUuid } from '../../../../shared/browser/createUuid';
 import { DeleteOutlined, DownOutlined, PlusOutlined, UpOutlined } from '@ant-design/icons';
 import { Button, Form, Input, InputNumber, Modal, Select, Space, Switch, Typography } from 'antd';
@@ -149,7 +150,7 @@ export const TrackSummaryEditor = ({
             aria-label={`下移汇总 ${index + 1}`} onClick={() => move(index, index + 1)} />
           <Button type="text" danger size="small" icon={<DeleteOutlined />}
             aria-label={`删除汇总 ${index + 1}`}
-            onClick={() => modal.confirm({ title: `删除汇总 ${statistic.outputColumnName || index + 1}？`,
+            onClick={() => modal.confirm({ title: <OverlayTitle variant="workspace" title={`删除汇总 ${statistic.outputColumnName || index + 1}？`} tone="danger" />,
               content: '该输出字段将被移除，下游引用可能失效。', okText: '删除', cancelText: '取消', okButtonProps: { danger: true },
               onOk: () => onChange(value.filter((_, itemIndex) => itemIndex !== index)) })} />
         </Space>

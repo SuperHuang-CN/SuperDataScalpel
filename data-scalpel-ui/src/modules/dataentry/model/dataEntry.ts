@@ -2,6 +2,7 @@ import type {
   DataModelDataQueryRequest,
   DataModelDataQueryResponse,
   DataModelField,
+  ModelWarehouseLayerSummary,
   PlatformDataType,
 } from '../../model';
 import type { StandardDictionarySummary } from '../../standard';
@@ -88,13 +89,14 @@ export interface DataEntryModelCandidate {
   modelName: string;
   modelStatus: string;
   schemaVersion: number;
+  warehouseLayer: ModelWarehouseLayerSummary | null;
   knownEligible: boolean;
   issues: DataEntryHealthIssue[];
 }
 
 export interface DataEntryOption {
   value: unknown;
-  label: string;
+  label: string | null;
   displayLabel: string;
   status: DataEntryOptionStatus;
 }

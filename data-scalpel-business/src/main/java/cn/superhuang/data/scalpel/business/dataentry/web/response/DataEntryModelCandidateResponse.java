@@ -1,5 +1,6 @@
 package cn.superhuang.data.scalpel.business.dataentry.web.response;
 
+import cn.superhuang.data.scalpel.business.model.web.response.ModelWarehouseLayerSummaryResponse;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.UUID;
@@ -13,10 +14,14 @@ public record DataEntryModelCandidateResponse(
         String modelCode,
         @Schema(description = "模型名称。")
         String modelName,
-        @Schema(description = "模型查询时的生命周期状态：DRAFT、PUBLISHED 或 DISABLED；创建表单只要求模型存在，发布表单要求模型为 PUBLISHED。")
+        @Schema(description = "模型查询时的生命周期状态；旧列表仅返回 PUBLISHED，分页候选还包含未发布的受管模型。")
         String modelStatus,
         @Schema(description = "模型查询时的字段结构版本，从 1 开始并在字段结构实际变化时递增；表单发布时会固化该值。")
         int schemaVersion,
+        @Schema(description = "模型绑定的数据存储当前名称；数据源已删除时为空。")
+        String storageDataSourceName,
+        @Schema(description = "模型当前数仓分层摘要；未分层或分层已删除时为空。")
+        ModelWarehouseLayerSummaryResponse warehouseLayer,
         @Schema(description = "轻量管理库检查已知条件下是否适合作为填报目标；true 不代表物理表、业务主键唯一性等外部数据库条件已经验证，创建后仍需详情健康检查。")
         boolean knownEligible,
         @Schema(description = "模型不适合作为填报目标的具体原因；knownEligible 为 true 时为空列表。")
@@ -27,8 +32,6 @@ public record DataEntryModelCandidateResponse(
         String warehouseLayerName,
         @Schema(description = "模型绑定的 JDBC 数据源 UUID；逻辑注册模型不要求该数据源具有存储用途。")
         UUID storageDataSourceId,
-        @Schema(description = "模型绑定的数据源名称；数据源不存在时为 null。")
-        String storageDataSourceName,
         @Schema(description = "模型物理表模式：MANAGED 为平台创建物理表，EXTERNAL 为逻辑注册并绑定已有表。当前填报发布与写入只支持 MANAGED；两种模式均可创建草稿。", allowableValues = {"MANAGED", "EXTERNAL"})
         String physicalTableMode,
         @Schema(description = "绑定物理表的 Catalog；不适用或未指定时为 null。")

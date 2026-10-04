@@ -9,7 +9,7 @@ GeoServer 与 DataScalpel Service Engine 是控制面管理的同级运行时。
 - `ServiceEngine.type` 固定为 `DATASCALPEL` 或 `GEOSERVER`，类型和 Code 创建后不可修改。
 - GeoServer 保存规范化管理地址、运行地址、加密管理凭据和专属 Workspace；Workspace 默认 `datascalpel`。
 - 注册 GeoServer 时探测版本、PostGIS DataStore 扩展、WMS/WFS GetCapabilities，创建或复用 Workspace，并把 Workspace 级 WFS 设为 `BASIC`。
-- GeoServer 只接受已启用且具有存储用途的 PostgreSQL/PostGIS 数据源。DataStore 名固定为 `ds_<dataSourceId 去横线>`，重复同步覆盖连接参数。
+- GeoServer 只接受已启用且具有存储用途的 PostgreSQL/PostGIS 数据源。DataStore 名固定为 `ds_<dataSourceId 去横线>`，重复同步覆盖连接参数；连接参数开启 `Expose primary keys`，确保模型主键可用于 WFS 属性和 SLD 分类、标注。
 - 删除本地 Engine 不删除远端 Workspace；解除数据源注册只定向删除对应 DataStore，并先检查已启用空间服务引用。
 
 ## 空间服务
@@ -60,7 +60,7 @@ DataScalpel 是空间服务样式的源数据，GeoServer 只保存部署副本�
 
 文档整体和 Labeling 各自保存 `scaleRange`，字段为 `minScaleDenominator / maxScaleDenominator`，默认均为空（不限制）。非空分母必须是有限正数，最小值严格小于最大值。整体范围作用于全部绘制层，标注取两个范围交集；启用标注但交集为空时阻止保存。SLD 使用最小值包含、最大值不包含的 `MinScaleDenominator / MaxScaleDenominator`。界面以 `1:N` 展示，提供常用分母和“当前视图”填值。
 
-标注保留一个非 Geometry、非 Binary 字段、固定 `SansSerif`、8–48px 字号、粗体、文字色和 0–5px Halo，新增：
+标注保留一个非 Geometry、非 Binary 字段、固定 `Noto Serif CJK SC`、8–48px 字号、粗体、文字色和 0–5px Halo。目标 GeoServer 运行环境须安装该字体；草稿预览与正式应用生成的 SLD 使用同一字体，已部署的在线制图样式需重新应用才能更新。新增：
 
 - 前缀、后缀各最多 50 字符；数值字段可选 0–6 位小数，默认保留原值；null 和空字符串不标注。
 - 点：上、下、左、右，默认上方；偏移默认 6px，范围 0–64px。
@@ -95,15 +95,15 @@ V4 替换原 V3 启动处理，不并存两套逻辑；沿用 `style_document_js
 
 已部署服务可以预览尚未保存的 Renderer 或上传 SLD。Admin 在内存中校验并编译 Renderer；上传 SLD 会再次经过安全校验，并且只在预览 DOM 中把 `NamedLayer/Name` 改为当前 Qualified Layer Name。随后通过 GeoServer 公开 WMS 地址提交 `GetMap + SLD_BODY`，返回 PNG。这个流程不创建临时 Style、不更新版本，也不修改同步状态；原始上传文本在保存和正式部署时保持不变。
 
-前端 `src/modules/cartography` 是独立业务模块，只公开制图类型、受控工作台、点/线/面专属 Symbol 编辑器、固定色带、规则构造和本地图例，不导入 DataService API、服务 ID、权限点或 Engine。数值分级先选择 Geometry 支持的表达方式，再选择字段与分级方法；切换表达方式保留字段、断点、规则 ID 和自定义名称，只重新物化颜色、点大小或线宽。DataService 预览容器负责接口、权限、部署状态和响应适配。宽屏采用左地图右编辑器，窄屏编辑器进入 Drawer；字段、符号或视口变化仅标记待渲染，用户点击“渲染当前视图”才请求 WMS，新请求取消旧请求，失败时保留上一张成功图片。
+前端 `src/modules/cartography` 是独立业务模块，只公开制图类型、受控工作台、点/线/面专属 Symbol 编辑器、固定色带、规则构造和本地图例，不导入 DataService API、服务 ID、权限点或 Engine。数值分级先选择 Geometry 支持的表达方式，再选择字段与分级方法；切换表达方式保留字段、断点、规则 ID 和自定义名称，只重新物化颜色、点大小或线宽。DataService 预览容器负责接口、权限、部署状态和响应适配。宽屏采用左地图右编辑器，窄屏编辑器进入 Drawer；地图左上角用紧凑浮层展示来源切换、视口操作、请求比例尺与渲染状态，不重复显示 WMS 类型和图层名。字段、符号或视口变化仅标记待渲染，用户点击“渲染当前视图”才请求 WMS，新请求取消旧请求，失败时保留上一张成功图片。
 
 在线编辑器包含“符号化 / 标注 / 比例尺”三个页签。外描边和图案按开关展开，分类规则与单一符号复用控件；标注未启用时禁止编辑标注比例尺。
 
-地图明确选择“线上样式 / 当前草稿”：有更新权限默认草稿，仅查看权限固定线上。线上走已有 GetMap 与 GeoServer 图例；草稿始终使用当前文档，不根据脏状态或同步状态推断。上传草稿优先使用新文件，否则提交已保存上传原文；上传草稿不显示线上图例。切换不保存、不自动渲染、不修改样式版本。应用成功也只标记待渲染，由用户手动刷新。
+地图明确选择“线上样式 / 当前草稿”：有更新权限默认草稿，仅查看权限固定线上。线上走已有 GetMap 与 GeoServer 图例；草稿始终使用当前文档，不根据脏状态或同步状态推断。上传草稿优先使用新文件，否则提交已保存上传原文；上传草稿不显示线上图例。切换不保存、不自动渲染、不修改样式版本。应用成功后自动请求并渲染当前视图；请求失败时保留上一张成功图片和重试入口。
 
 当前视图比例尺依据实际 EPSG:3857 BBox 和图片尺寸计算，标准像元为 0.28mm，GetMap 显式使用 `scaleMethod=OGC`，不直接使用 MapLibre zoom。图片宽 256–1600、高 256–1200，等比缩放并调整 BBox 维持正方形像元；过于狭长或超出 Mercator 可表示范围时提示调整视图。超出草稿符号、标注范围分别提示，不把透明图片当成渲染失败。
 
-成功图片始终标识其实际来源和请求比例尺；后续编辑、切换、应用、移动或缩放标记“待渲染”，保留上一张成功图片。取消和响应校验同时覆盖视口、模式与草稿版本，过期结果不得覆盖当前图片。未部署服务仅可编辑、本地查看图例和源码，不请求 WMS。
+成功图片始终标识其实际来源和请求比例尺；后续编辑、切换、移动或缩放标记“待渲染”，保留上一张成功图片。取消和响应校验同时覆盖视口、模式与草稿版本，过期结果不得覆盖当前图片。未部署服务仅可编辑、本地查看图例和源码，不请求 WMS。
 
 ### SLD 源码只读查看
 

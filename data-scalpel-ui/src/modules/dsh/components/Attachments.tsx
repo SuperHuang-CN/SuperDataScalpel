@@ -1,4 +1,5 @@
 import { CloseOutlined, DownloadOutlined, FileOutlined, ReloadOutlined } from '@ant-design/icons';
+import { OverlayTitle } from '../../../shared/components/OverlayTitle';
 import { Button, Image, Modal, Spin, Tooltip } from 'antd';
 import { useQuery } from '@tanstack/react-query';
 import { useEffect, useRef, useState } from 'react';
@@ -43,7 +44,7 @@ export function SentAttachment({ user, sessionId, attachment }: { user: string; 
   };
   return <div className={`dsh-sent-attachment ${attachment.kind === 'image' ? 'is-image' : ''}`}>
     {image.data && <button className="dsh-image-preview" aria-label={`预览 ${attachment.name}`} onClick={() => setPreview(true)}><img ref={thumbnail} alt={attachment.name} /></button>}
-    <Modal title={attachment.name} open={preview} onCancel={() => setPreview(false)} footer={null} destroyOnHidden width="min(90vw, 1000px)" afterOpenChange={() => {
+    <Modal rootClassName="business-overlay business-modal-overlay" title={<OverlayTitle title={attachment.name} icon={<FileOutlined />} />} open={preview} onCancel={() => setPreview(false)} footer={null} destroyOnHidden width="min(90vw, 1000px)" afterOpenChange={() => {
       if (fullImage.current && thumbnail.current) fullImage.current.src = thumbnail.current.src;
     }}><img ref={fullImage} className="dsh-image-full" alt={attachment.name} /></Modal>
     {image.isFetching && <Spin size="small" />}
